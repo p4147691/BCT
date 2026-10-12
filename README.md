@@ -80,6 +80,16 @@ operation ID는 두 번째 프로세스나 입력을 만들지 않는다.
 
 GitHub main은 BCT 소스 정본이다. 인증정보, Chrome 프로필, 사용자 설정과 runtime DB/log는 커밋하지 않는다.
 
+로컬 패키지 배치는 한곳으로 모은다.
+
+- 정본 source checkout: `D:\BCT\source`
+- immutable 운영 release와 service receipt: `D:\BCT\runtime`
+- operation/model/session 상태: `D:\BCT\data`
+- Git 밖 대형 모델: `D:\BCT\models`
+- 격리 개발 worktree: `D:\BCT\worktrees`
+
+`D:\PROJECTS\BCT`는 초기 bootstrap checkout으로만 보존하며 새 개발·배포의 정본으로 사용하지 않는다.
+
 ## 로컬 검증
 
 ```powershell

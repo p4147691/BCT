@@ -46,7 +46,7 @@ original result without repeating deployment, start, stop, or restart.
 
 ## Stable paths
 
-- Source: `D:\PROJECTS\BCT`
+- Source: `D:\BCT\source`
 - Runtime: `D:\BCT\runtime`
 - Releases: `D:\BCT\runtime\releases\<source-head>`
 - Active pointer: `D:\BCT\runtime\current.json`
