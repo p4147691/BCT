@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 import unittest
@@ -35,6 +36,21 @@ class RccSourceBaselineTests(unittest.TestCase):
             "PENDING_CREATE_RECEIPT_REQUIRED", "SUBMIT_UNKNOWN", "move-tab",
         ):
             self.assertIn(marker, background)
+
+    def test_native_host_install_contract_is_bct_owned(self):
+        manifest = json.loads(
+            (self.root / "modules" / "rcc" / "native-host" /
+             "com.ai_workspace_relay.host.v2.json").read_text(encoding="utf-8-sig")
+        )
+        self.assertEqual("com.ai_workspace_relay.host", manifest["name"])
+        self.assertEqual(
+            r"D:\ChromeExtensions\RCC\native\RelayNativeHostV2.exe", manifest["path"]
+        )
+        self.assertEqual(
+            ["chrome-extension://bhlcnmbodlhbephppahojbigleklpmhj/"],
+            manifest["allowed_origins"],
+        )
+        self.assertNotIn(r"D:\ACT", json.dumps(manifest))
 
     def test_runtime_javascript_has_valid_syntax(self):
         node = shutil.which("node")

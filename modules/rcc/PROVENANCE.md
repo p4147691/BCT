@@ -12,8 +12,14 @@ semantic, formatting, or line-ending changes.
   was not byte-identical to the previous canonical repository. BCT therefore
   preserves the live bytes as its baseline instead of overwriting the working
   installation with older source.
-- Native-host executable is deliberately not committed. It remains installed
-  at the existing ACT path until a separately verified BCT build and cutover.
+- Native-host executable is deliberately not committed. BCT rebuilds it from the tracked C# source
+  and installs it at `D:\ChromeExtensions\RCC\native\RelayNativeHostV2.exe`; the manifest keeps the
+  existing host name and exact Chrome extension origin.
+
+The recovered ACT paths above document where the byte baseline came from. They are provenance, not
+the BCT installation contract. The extension path cutover is separate because an unpacked Chrome
+extension without a manifest key derives its ID from its path; BCT must migrate its local state before
+changing that path.
 
 ## Exact imported SHA-256 values
 
@@ -43,4 +49,3 @@ semantic, formatting, or line-ending changes.
 | `extension/test_window_state_presence.js` | `42bb896055f3afc0a31d99263c19f4fa6993d7a1c379328de62731c3d1a48727` |
 | `native-host/RelayNativeHostV2.cs` | `164695e660a775b08d5d3289ff95340e28adb319a65d45e6e88790f4d1ee24ab` |
 | `native-host/com.ai_workspace_relay.host.v2.json` | `6358254cb45cd84c3821eac52ed5ef57e2f2ebafec5fbb91055e04dc348b31fd` |
-
