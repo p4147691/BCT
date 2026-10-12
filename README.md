@@ -64,7 +64,10 @@ ACT Python 모듈을 runtime에서 import하지 않는다.
 
 모든 실행은 work root, operation ID, PID/fingerprint, timeout, 종료 코드와 제한된 출력을
 receipt에 연결한다. 동일 operation ID는 두 번 실행되지 않는다. Python/PowerShell 기능은
-제공하되 Codex MCP 설정에서 실행·서비스·배포 도구는 사용자 승인 prompt 대상으로 둔다.
+제공한다. `bct_process_session`은 같은 실행 계약으로 장시간 Python·PowerShell·argv 프로세스를
+시작하고, 상태·증분 출력·표준 입력·정확한 종료를 제공한다. BCT가 직접 시작하며 기록한
+PID/fingerprint만 제어하고 외부 프로세스를 세션으로 승격하지 않는다. 동일 session ID와
+operation ID는 두 번째 프로세스나 입력을 만들지 않는다.
 
 ## 플랫폼 구성요소
 

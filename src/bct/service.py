@@ -20,6 +20,7 @@ from .features.github import (
 from .features.tests import TestFeature
 from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
+from .features.process_session import ProcessSessionFeature
 from .features.decision import DecisionModelFeature
 from .features.monitor import MonitorFeature
 from .features.decision_service import DecisionServiceFeature
@@ -44,7 +45,7 @@ class BCT:
             GitHubSyncMainFeature(),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             RelayBrowserFeature(),
-            SystemInspectFeature(), ExecuteFeature(),
+            SystemInspectFeature(), ExecuteFeature(), ProcessSessionFeature(policy_path),
             DecisionModelFeature(policy_path),
             MonitorFeature(policy_path),
             DecisionServiceFeature(policy_path),

@@ -23,6 +23,60 @@ def _bounded_text(value: bytes) -> tuple[str, bool]:
     return data.decode("utf-8", errors="replace"), clipped
 
 
+def resolve_execution(work: Work, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Resolve one explicit argv/Python/PowerShell request inside a work root."""
+    kind = str(arguments.get("kind") or "argv").strip().casefold()
+    if kind not in {"argv", "python", "powershell"}:
+        raise PreconditionError("EXECUTION_KIND_INVALID")
+    cwd = resolve_in_work(work, str(arguments.get("cwd") or ""), must_exist=True)
+    if not cwd.is_dir():
+        raise PreconditionError("EXECUTION_CWD_NOT_DIRECTORY")
+
+    argv: list[str]
+    if kind == "argv":
+        supplied = arguments.get("argv")
+        if not isinstance(supplied, list) or not supplied or not all(isinstance(item, str) and item for item in supplied):
+            raise PreconditionError("EXECUTION_ARGV_INVALID")
+        argv = list(supplied)
+    elif kind == "python":
+        supplied = arguments.get("args") or []
+        if not isinstance(supplied, list) or not all(isinstance(item, str) for item in supplied):
+            raise PreconditionError("EXECUTION_ARGS_INVALID")
+        module = str(arguments.get("module") or "").strip()
+        script = str(arguments.get("script") or "").strip()
+        if bool(module) == bool(script):
+            raise PreconditionError("PYTHON_MODULE_OR_SCRIPT_REQUIRED")
+        if script:
+            script_path = resolve_in_work(work, script, must_exist=True)
+            if not script_path.is_file():
+                raise PreconditionError("PYTHON_SCRIPT_NOT_FILE")
+            argv = [sys.executable, str(script_path), *supplied]
+        else:
+            argv = [sys.executable, "-m", module, *supplied]
+    else:
+        supplied = arguments.get("args") or []
+        if not isinstance(supplied, list) or not all(isinstance(item, str) for item in supplied):
+            raise PreconditionError("EXECUTION_ARGS_INVALID")
+        command = arguments.get("command")
+        script = str(arguments.get("script") or "").strip()
+        if bool(command) == bool(script):
+            raise PreconditionError("POWERSHELL_COMMAND_OR_SCRIPT_REQUIRED")
+        executable = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
+        if not executable:
+            raise PreconditionError("POWERSHELL_NOT_FOUND")
+        prefix = [executable, "-NoLogo", "-NonInteractive", "-NoProfile"]
+        if script:
+            script_path = resolve_in_work(work, script, must_exist=True)
+            if not script_path.is_file():
+                raise PreconditionError("POWERSHELL_SCRIPT_NOT_FILE")
+            argv = [*prefix, "-File", str(script_path), *supplied]
+        elif isinstance(command, str) and command.strip():
+            argv = [*prefix, "-Command", command, *supplied]
+        else:
+            raise PreconditionError("POWERSHELL_COMMAND_INVALID")
+    return {"kind": kind, "cwd": str(cwd), "argv": argv}
+
+
 class SystemInspectFeature:
     capability = "system_inspect"
 
@@ -62,65 +116,17 @@ class ExecuteFeature:
     capability = "execute"
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
-        kind = str(arguments.get("kind") or "argv").strip().casefold()
-        if kind not in {"argv", "python", "powershell"}:
-            raise PreconditionError("EXECUTION_KIND_INVALID")
-        cwd = resolve_in_work(work, str(arguments.get("cwd") or ""), must_exist=True)
-        if not cwd.is_dir():
-            raise PreconditionError("EXECUTION_CWD_NOT_DIRECTORY")
+        resolved = resolve_execution(work, arguments)
         timeout_s = float(arguments.get("timeout_s") or 60.0)
         if not 0.1 <= timeout_s <= 3600.0:
             raise PreconditionError("EXECUTION_TIMEOUT_INVALID")
 
-        argv: list[str]
-        if kind == "argv":
-            supplied = arguments.get("argv")
-            if not isinstance(supplied, list) or not supplied or not all(isinstance(item, str) and item for item in supplied):
-                raise PreconditionError("EXECUTION_ARGV_INVALID")
-            argv = list(supplied)
-        elif kind == "python":
-            supplied = arguments.get("args") or []
-            if not isinstance(supplied, list) or not all(isinstance(item, str) for item in supplied):
-                raise PreconditionError("EXECUTION_ARGS_INVALID")
-            module = str(arguments.get("module") or "").strip()
-            script = str(arguments.get("script") or "").strip()
-            if bool(module) == bool(script):
-                raise PreconditionError("PYTHON_MODULE_OR_SCRIPT_REQUIRED")
-            if script:
-                script_path = resolve_in_work(work, script, must_exist=True)
-                if not script_path.is_file():
-                    raise PreconditionError("PYTHON_SCRIPT_NOT_FILE")
-                argv = [sys.executable, str(script_path), *supplied]
-            else:
-                argv = [sys.executable, "-m", module, *supplied]
-        else:
-            supplied = arguments.get("args") or []
-            if not isinstance(supplied, list) or not all(isinstance(item, str) for item in supplied):
-                raise PreconditionError("EXECUTION_ARGS_INVALID")
-            command = arguments.get("command")
-            script = str(arguments.get("script") or "").strip()
-            if bool(command) == bool(script):
-                raise PreconditionError("POWERSHELL_COMMAND_OR_SCRIPT_REQUIRED")
-            executable = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
-            if not executable:
-                raise PreconditionError("POWERSHELL_NOT_FOUND")
-            prefix = [executable, "-NoLogo", "-NonInteractive", "-NoProfile"]
-            if script:
-                script_path = resolve_in_work(work, script, must_exist=True)
-                if not script_path.is_file():
-                    raise PreconditionError("POWERSHELL_SCRIPT_NOT_FILE")
-                argv = [*prefix, "-File", str(script_path), *supplied]
-            elif isinstance(command, str) and command.strip():
-                argv = [*prefix, "-Command", command, *supplied]
-            else:
-                raise PreconditionError("POWERSHELL_COMMAND_INVALID")
-
         return FeatureRequest(
             self.capability,
-            str(cwd),
-            {"kind": kind, "cwd": str(cwd), "argv": argv, "timeout_s": timeout_s},
-            ("execution:" + str(cwd).casefold(),),
-            {"cwd": str(cwd)},
+            resolved["cwd"],
+            {**resolved, "timeout_s": timeout_s},
+            ("execution:" + resolved["cwd"].casefold(),),
+            {"cwd": resolved["cwd"]},
         )
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
