@@ -395,6 +395,24 @@ class RuntimeServiceController:
                 time.sleep(0.1)
             if health is None:
                 raise RuntimeError("SERVICE_READINESS_TIMEOUT")
+            stability_deadline = time.monotonic() + 0.5
+            while time.monotonic() < stability_deadline:
+                if process.poll() is not None:
+                    health = None
+                    break
+                candidate = self._health()
+                if candidate is None:
+                    health = None
+                    break
+                try:
+                    self._validate_running(process_started, candidate)
+                except PreconditionError:
+                    health = None
+                    break
+                health = candidate
+                time.sleep(0.1)
+            if health is None:
+                raise RuntimeError("SERVICE_READINESS_NOT_STABLE")
             running = {
                 **process_started,
                 "state": "RUNNING",
