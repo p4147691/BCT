@@ -26,6 +26,13 @@ class ModuleLayoutTests(unittest.TestCase):
         self.assertTrue(any(item.startswith("modules/monitor/") for item in files))
         self.assertFalse(any(item.startswith("components/") for item in files))
 
+    def test_tunnel_profile_uses_file_referenced_header_map(self):
+        profile = (self.root / "modules" / "mcp" / "bct-control.profile.example.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(2, profile.count("X-BCT-Token: 'file:D:\\BCT\\runtime\\mcp.token'"))
+        self.assertNotIn("- 'X-BCT-Token:", profile)
+
 
 if __name__ == "__main__":
     unittest.main()
