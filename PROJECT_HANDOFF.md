@@ -12,7 +12,7 @@
 
 ## 완료된 구현과 현재 경계
 
-FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_TESTED.
+FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED.
 코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
 파일 읽기·원자적 쓰기, Python test, expected HEAD·정확한 dirty set·new-file SHA proof 기반 Git commit을 BCT 소스로 구현했다.
 13개 first-slice 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
@@ -41,6 +41,14 @@ exact PID/executable/creation fingerprint/generation/instance health, duplicate 
 stop/restart 검증 및 failed-readiness 전체 rollback을 구현했다. focused 4개와 전체 23개 테스트,
 compile 및 diff 검사를 통과했다. 상세 계약은 `docs/DEPLOYMENT_SERVICE.md`를 따른다.
 
+PR #6의 exact head `a3e8cddcf3a1293741a14408a5ac9f5129e43147`은 Windows CI run
+`38244408181` 통과 후 merge `5ac41fd61636a5c6a4486d84702ba22069c65c96`로 통합됐다.
+해당 merge를 최초 운영 release로 배포해 manifest
+`ae95acec3d830e19d6392e4676a03212c13e9bdeba744f969fb46854680d745a`와 모든 source/runtime
+파일 해시 일치를 확인했다. service는 최초 PID 10672에서 정확히 한 번 restart되어 PID 19344,
+generation 2가 되었고 health `OK`, duplicate deploy/restart 재호출에서 추가 process가 생기지 않았다.
+ACT/MCP/RCC/Chrome은 이 acceptance에서 변경하지 않았다.
+
 ## 모델 전환
 
 사용자는 Astra로 코어 구조·노드 신원·권한 경계 설계까지 마친 뒤 SOL로 구현을 이어가기를 선택했다.
@@ -59,6 +67,6 @@ compile 및 diff 검사를 통과했다. 상세 계약은 `docs/DEPLOYMENT_SERVI
 
 ## 다음 이전 순서
 
-현재 feature branch를 GitHub CI/main에 통합한 뒤 `D:\BCT\runtime` live acceptance를 완료한다.
-그 다음 MCP, 마지막으로 RCC를 이전한다. 각 기능은 전환 acceptance 전까지 기존 ACT 운영 경로를
-유지한다.
+다음 feature는 MCP다. BCT core의 기존 identity/work/operation 계약을 MCP tool catalogue와
+연결하되 도구 명세와 실제 capability가 같은 목록에서 생성되게 한다. 마지막으로 RCC를 이전한다.
+각 기능은 전환 acceptance 전까지 기존 ACT 운영 경로를 유지한다.

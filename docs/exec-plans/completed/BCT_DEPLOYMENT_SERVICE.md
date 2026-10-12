@@ -25,5 +25,14 @@ Chrome profile.
 - Tests cover duplicate deployment/restart, stale source/current state, dirty source,
   fingerprint tampering, immutable releases, and a broken release rollback.
 
-Live acceptance evidence is recorded in `PROJECT_HANDOFF.md` after the merged source is
-deployed to `D:\BCT\runtime`.
+## Live acceptance
+
+- PR #6 exact-head Windows CI: run `38244408181`, passed.
+- GitHub merge: `5ac41fd61636a5c6a4486d84702ba22069c65c96`.
+- Runtime root: `D:\BCT\runtime`.
+- Manifest: `ae95acec3d830e19d6392e4676a03212c13e9bdeba744f969fb46854680d745a`.
+- Exact source/release hash mismatches: zero.
+- Initial start: PID 10672, generation 1, health OK.
+- One controlled restart: pre PID 10672, post PID 19344, generation 2, health OK.
+- Duplicate deploy and duplicate restart: original receipts returned; no second effect.
+- Existing ACT, MCP, RCC, Chrome profile and bindings: untouched.
