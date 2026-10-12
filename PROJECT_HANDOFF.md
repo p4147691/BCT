@@ -12,7 +12,7 @@
 
 ## 완료된 구현과 현재 경계
 
-FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED / MCP_V1_TESTED.
+FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED / MCP_V1_ACCEPTED.
 코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
 파일 읽기·원자적 쓰기, Python test, expected HEAD·정확한 dirty set·new-file SHA proof 기반 Git commit을 BCT 소스로 구현했다.
 13개 first-slice 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
@@ -56,6 +56,16 @@ MCP V1은 별도 정책·receipt·service를 만들지 않고 BCT core service�
 사용한다. focused test에서 무인증 401, initialize/list, exact 14-tool catalogue, work create/recover,
 실제 read, duplicate receipt, conflicting work 거부를 검증했다. 상세는 `docs/MCP_INTEGRATION.md`다.
 
+MCP source는 PR #8로 통합되었고, 실제 upgrade preflight에서 발견한 두 호환성 문제도 남기지
+않았다. PR #9는 이전 release를 자기 manifest로 검증하면서 새 release는 새 profile과 exact match하게
+했고 Windows restart 전 exclusive port release fence를 추가했다. PR #10은 health contract version을
+도입해 V1 service는 V1 증거로 정확히 검사한 뒤 업그레이드할 수 있고, 새 V2 service는 MCP readiness를
+반드시 증명하게 했다. 최종 live release는 `5d18519e9a0d3b68ef60ab7ee3c3551d741628ab`,
+manifest `2f5b31d3340991429b162aff4c18ca3268b66d60b09a477d5ad06707f8486387`, PID 35428,
+generation 4, health contract 2다. 표준 MCP protocol `2025-11-25`에서 무인증 401, 14개 exact tool,
+실제 work/read/duplicate receipt를 확인했다. Codex global server `bct`를 stable endpoint에 등록하고,
+새 Codex 프로세스가 BCT work 생성과 read를 실제 수행했다. 기존 ACT MCP 설정은 변경하지 않았다.
+
 ## 모델 전환
 
 사용자는 Astra로 코어 구조·노드 신원·권한 경계 설계까지 마친 뒤 SOL로 구현을 이어가기를 선택했다.
@@ -74,6 +84,6 @@ MCP V1은 별도 정책·receipt·service를 만들지 않고 BCT core service�
 
 ## 다음 이전 순서
 
-현재 MCP feature를 GitHub CI/main에 통합하고 BCT service live endpoint 및 Codex catalogue를
-수용 검증한다. 그 다음 마지막 feature인 RCC를 이전한다. 각 기능은 전환 acceptance 전까지
-기존 ACT 운영 경로를 유지한다.
+다음 feature는 마지막 단계인 RCC다. 기존 Chrome profile/extension/native host와 production
+bindings를 먼저 read-only로 식별하고, 검증된 relay 기능 소스와 테스트를 BCT에 가져온다. BCT
+RCC live acceptance 전까지 기존 ACT/RCC 운영 경로와 탭을 유지한다.

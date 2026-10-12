@@ -266,6 +266,19 @@ def _read_current(profile: DeploymentProfile) -> dict[str, Any] | None:
     return value
 
 
+def _start_with_one_safe_retry(
+    controller: RuntimeServiceController,
+    release: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        return controller.start(release)
+    except ConfirmedFailure:
+        state = controller.inspect()
+        if state.get("state") != "STOPPED_STALE_RECEIPT":
+            raise
+        return controller.start(release)
+
+
 class DeployFeature:
     capability = "deploy"
 
@@ -317,7 +330,7 @@ class DeployFeature:
                         "manifest_sha256": manifest["manifest_sha256"],
                         "service": service_before, "already_current": True,
                     })
-                service = controller.start(current)
+                service = _start_with_one_safe_retry(controller, current)
             else:
                 service = service_before
             return FeatureResult(Outcome.APPLIED, {
@@ -348,7 +361,7 @@ class DeployFeature:
             if request.arguments["restart"]:
                 if service_before.get("state") == "RUNNING":
                     controller.stop()
-                service = controller.start(release)
+                service = _start_with_one_safe_retry(controller, release)
             else:
                 service = controller.inspect()
             completed = {
@@ -378,7 +391,7 @@ class DeployFeature:
                 _write_current(profile, current)
                 if request.arguments["restart"] and service_before.get("state") == "RUNNING":
                     assert current is not None
-                    restored = controller.start(current)
+                    restored = _start_with_one_safe_retry(controller, current)
                     if restored.get("release_sha") != current_head:
                         raise RuntimeError("DEPLOYMENT_ROLLBACK_SERVICE_MISMATCH")
                 current_rollback = _read_current(profile)
