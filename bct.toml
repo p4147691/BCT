@@ -57,6 +57,7 @@ files = [
   "src/bct/service.py",
   "src/bct/service_runtime.py",
   "src/bct/runtime_server.py",
+  "src/bct/supervisor.py",
   "src/bct/mcp_server.py",
   "src/bct/monitor_runtime.py",
   "src/bct/background_operations.py",

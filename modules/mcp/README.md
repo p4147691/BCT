@@ -17,3 +17,7 @@ file reference to the BCT token, and refuses a mismatched running target. The co
 remains `act-control` until the owning ChatGPT App display name is changed; that alias is not an
 ACT runtime dependency.
 
+`ops/run_bct_core_supervisor.ps1` is the matching BCT Core recovery entry point. It loads only the
+exact release named by `D:\BCT\runtime\current.json`; `bct.supervisor` verifies the immutable release,
+durable service receipt, PID fingerprint and health contract before it accepts or starts the process.
+
