@@ -1,5 +1,20 @@
 # BCT 인수인계
 
+## 현재 검증 상태
+
+`BCT_PLATFORM_PACKAGE_V1=LIVE_ACCEPTED`.
+
+- GitHub `p4147691/BCT`의 `main`이 공식 정본이며 로컬 정본은 `D:\BCT\source`다.
+- 운영 release는 `D:\BCT\runtime`, receipt와 session 상태는 `D:\BCT\data`에 있다.
+- BCT core, MCP, health와 BCT Monitor가 한 서비스/한 release에서 실행된다.
+- 파일·Git·GitHub·배포·서비스·RCC·Laya·Python/PowerShell/argv 실행과 지속 세션은
+  BCT 구현과 공통 operation receipt를 사용한다.
+- Python과 PowerShell은 일반 개발 실행으로 사용할 수 있다. 지속 mutation, 배포, 서비스 및
+  브라우저 변경은 별도의 주의 경계를 유지한다.
+- BCT runtime은 ACT 모듈을 import하지 않는다. ACT와 초기 `D:\PROJECTS\BCT` checkout은
+  기존 구성요소의 rollback/bootstrap 증거로만 보존한다.
+- 기능별 정확한 소유권은 `docs/CAPABILITY_OWNERSHIP.md`, 사용법은 `docs/USER_GUIDE.md`를 따른다.
+
 ## 현재 결정
 
 - 이름: BCT. 약어 풀네임은 미정. 저장소 p4147691/BCT, private, main.
@@ -100,7 +115,7 @@ bindings, pending 상태는 변경하지 않았다.
 
 ## 다음 작업
 
-기본 이전 순서는 완료됐다. 새 BCT 기능은 같은 core work/operation/receipt 및 GitHub→deploy
-절차를 사용한다. Chrome 확장이나 Native Host 자체 코드를 변경해야 할 때만 별도 exact-file
-deployment/build profile과 Chrome reload acceptance를 추가한다. 현재 설치를 재설정하거나
-ACT를 급히 제거할 필요는 없다.
+패키지 이전은 완료됐다. 이후 작업은 새 관리 계층을 추가하지 않고 같은
+work/operation/receipt → GitHub main → exact deploy → live acceptance 흐름으로 진행한다.
+Chrome 확장이나 Native Host 자체 코드를 변경할 때만 별도 exact-file profile과 reload
+acceptance를 추가한다. ACT 제거와 기존 Chrome 설정 재구성은 현재 작업의 선행조건이 아니다.

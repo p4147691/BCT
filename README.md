@@ -6,24 +6,17 @@ BCT는 사용자 지시에 따라 개발·로컬 실행·브라우저·데스크
 
 ## 현재 상태
 
-FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED / MCP_V1_ACCEPTED / RCC_V1_ACCEPTED.
-코어 구조와 파일 읽기·쓰기, Python 테스트, 정확한 Git commit의 첫 구현을 마쳤다.
-격리된 Git 프로젝트에서 읽기 → 수정 → 재수정 → 새 파일 → 테스트 → commit을 실제 검증했다.
+`BCT_PLATFORM_PACKAGE_V1=LIVE_ACCEPTED`.
 
-GitHub 통합은 exact-SHA branch push, 요청 표식 기반 PR 중복 방지, required-check 확인,
-exact-head merge, verified `main`의 clean fast-forward 동기화를 BCT 기능으로 제공한다.
-GitHub 인증정보는 저장하지 않고 공식 `gh` CLI의 기존 credential store를 사용한다.
-이 기능 자체를 사용해 PR #2를 생성·중복 검증·CI gate·1회 merge하고 로컬 `main`을
-merge SHA로 동기화하는 실제 수용 검증을 완료했다.
-배포·서비스 V1은 exact named profile, immutable release, process fingerprint ownership,
-health 확인, 중복 방지와 rollback을 구현하고 전체 회귀 및 `D:\BCT\runtime` 운영 acceptance를
-통과했다. BCT core service는 포트 18790에서 독립 실행된다. MCP V1은 같은 서비스 안의
-인증된 표준 Streamable HTTP endpoint와 capability 기반 catalogue를 구현하고 live protocol 및
-새 Codex 프로세스의 실제 work/read 호출까지 통과했다. RCC V1은 현재 live 확장 소스를
-byte-exact 기준선으로 보존하고 exact-instance 제어 경계를 BCT에 구현했다. 운영 확장 덮어쓰기나
-Chrome 재설정 없이 GitHub/배포/live acceptance까지 통과했다.
-현재 ACT는 아직 이전되지 않은 기능의 rollback/compatibility 경로로 계속 운영한다. BCT는
-ACT Python 모듈을 runtime에서 import하지 않는다.
+BCT는 현재 파일 읽기·쓰기, 테스트, Git/GitHub, exact 배포·서비스 제어, MCP, RCC,
+로컬 Python·PowerShell·argv 실행과 지속 세션, Laya 결정 모델, BCT Monitor를 자체 소스와
+공통 operation receipt로 제공한다. 새 파일을 포함한 구조화 Git commit과 deployment profile의
+안전한 파일 목록 진화도 실제 수용 검증을 마쳤다.
+
+정본은 GitHub `p4147691/BCT`의 `main`, 로컬 정본 checkout은 `D:\BCT\source`, 운영본은
+`D:\BCT\runtime`이다. BCT core/MCP/Monitor는 `127.0.0.1:18790`에서 함께 실행되며
+Monitor UI는 `http://127.0.0.1:18790/monitor`이다. BCT runtime은 ACT Python 모듈을 import하지
+않는다. ACT는 기존 작업과 아직 제거하지 않은 호환 구성요소의 rollback 경로로만 보존한다.
 
 ## 구조
 
@@ -52,7 +45,9 @@ ACT Python 모듈을 runtime에서 import하지 않는다.
 10. [RCC 통합 계약](docs/RCC_INTEGRATION.md)
 11. [RCC V1 완료 기록](docs/exec-plans/completed/BCT_RCC_V1.md)
 12. [인수인계](PROJECT_HANDOFF.md)
-13. [BCT 전체 패키지 이전 계획](docs/exec-plans/active/BCT_PLATFORM_PACKAGE_V1.md)
+13. [BCT 전체 패키지 완료 기록](docs/exec-plans/active/BCT_PLATFORM_PACKAGE_V1.md)
+14. [기능 소유권 지도](docs/CAPABILITY_OWNERSHIP.md)
+15. [사용 안내](docs/USER_GUIDE.md)
 
 ## 실행 기능
 

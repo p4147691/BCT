@@ -39,12 +39,18 @@ The service health endpoint reports MCP readiness, endpoint, and tool count. The
 deployment process verifies those fields together with the exact service PID/fingerprint,
 release, manifest, generation, and instance.
 
-Codex approval configuration intentionally follows the user-facing risk boundary:
+Codex approval configuration follows the user's operating policy:
 
 - automatic: capability discovery, work creation/recovery, operation receipt, file read,
-  and GitHub PR status;
-- prompt: write, test/process execution, Git commit, GitHub mutations, deployment, and
-  service control, and RCC browser control.
+  system inspection, one-shot Python/PowerShell/argv execution, persistent process sessions,
+  decision-model recommendation, monitor state, and GitHub PR status;
+- prompt: file write, tests that can execute project code, Git commit, GitHub mutations,
+  deployment, service control, RCC browser mutation, and decision-service lifecycle changes.
+
+Python and PowerShell are normal BCT development tools, not privileged escape hatches. They may
+run without an extra Codex prompt, but BCT still records the exact work, operation, working root,
+PID/fingerprint, timeout and bounded output. A prompt remains for operations whose primary effect
+is durable mutation, publication, deployment, service lifecycle change, or browser mutation.
 
 The prompt is a Codex safety notice for a real side effect. BCT still performs its own exact
 work, operation, path, SHA, resource ownership, and duplicate-effect checks after approval.
