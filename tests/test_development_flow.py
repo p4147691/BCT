@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from bct import BCT
 from bct.core.models import Outcome, PreconditionError, Principal
@@ -125,6 +126,33 @@ class DevelopmentFlowTests(unittest.TestCase):
             "expected_head": "0" * 40, "new_files": [],
         })
         self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        self.assertEqual(self.initial_head, run_git(self.repo, "rev-parse", "HEAD"))
+
+    def test_confirmed_commit_failure_releases_claim_when_head_and_dirty_set_are_unchanged(self):
+        source = self.repo / "calculator.py"
+        source.write_text("def add(a, b):\n    return 10\n", encoding="utf-8")
+        from bct.features import git as git_feature
+
+        original_git = git_feature._git
+
+        def fail_commit(root, *arguments, **kwargs):
+            if arguments and arguments[0] == "commit":
+                return subprocess.CompletedProcess(
+                    ["git", "commit"], 128, "", "confirmed pre-commit rejection"
+                )
+            return original_git(root, *arguments, **kwargs)
+
+        arguments = {
+            "path": str(self.repo), "paths": ["calculator.py"],
+            "message": "must fail before commit", "expected_head": self.initial_head,
+            "new_files": [],
+        }
+        with patch("bct.features.git._git", side_effect=fail_commit):
+            first = self.call("commit-confirmed-failure-1", "git_commit", arguments)
+            second = self.call("commit-confirmed-failure-2", "git_commit", arguments)
+        self.assertEqual(Outcome.FAILED, first.outcome)
+        self.assertEqual(Outcome.FAILED, second.outcome)
+        self.assertIn("GIT_COMMIT_NOT_APPLIED", first.error)
         self.assertEqual(self.initial_head, run_git(self.repo, "rev-parse", "HEAD"))
 
     def test_stale_file_hash_is_not_written(self):
