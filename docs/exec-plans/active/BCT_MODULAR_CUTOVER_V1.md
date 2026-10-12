@@ -26,7 +26,7 @@ replaceable capabilities are modules.
 ## Acceptance order
 
 1. Source layout and tests.
-2. GitHub integration and canonical main sync.
+2. GitHub integration and exact official-main sync.
 3. BCT runtime release and status UI.
 4. Existing ACT Control App identity retargeted to BCT MCP without a duplicate plugin. The App's
    external display name is a compatibility label until it is renamed in the owning App settings;
