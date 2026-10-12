@@ -1,34 +1,50 @@
-# BCT Foundation
+# BCT Foundation — 다음 구현
 
-상태: PROJECT_INITIALIZED / DESIGN_PROPOSED
+상태: CORE_DESIGN_COMPLETE / FIRST_SLICE_PENDING.
 
-## 승인된 방향
+## 이번 설계 단계
 
-사용자는 BCT라는 새 GitHub 프로젝트에서 단순한 구조와 기존 ACT 기능 재사용을 제안했다. 노드 이름·역할·그룹·연결을 자유롭게 변경할 수 있는 구조를 원한다.
+완료: core 구조, node identity, authorization boundary, operation 중복/인계 계약, 설계 시나리오 검토.
+미완료: 구현, 실제 테스트/CI, ACT 기능 호환, MCP/RCC LIVE 전환.
+사용자는 이 설계 단계 후 SOL로 구현을 이어가기로 했다.
 
-이번 착수 범위는 저장소 생성과 설계/이전 기준 기록이다. ACT 운영 교체나 기능 전체 이전이 완료된 것은 아니다.
+## 다음 작업의 범위
 
-## 다음 구현 순서
+단일 Python 패키지와 SQLite를 사용해 docs/DESIGN.md의 core와 첫 files/git/tests 경로를 구현한다.
+첫 검증 대상은 격리된 disposable Git 프로젝트다. 기존 ACT task/worktree/live 파일을 수정할 필요가 없다.
 
-1. 현재 ACT 기능과 실제 source/runtime 경로의 최소 inventory 작성. 기존 코드가 가진 재사용 가능한 실행 계약을 확인한다.
-2. 단일 패키지 안에서 core / adapters의 첫 경로를 구현한다.
-3. disposable 프로젝트의 읽기 → 편집 → 재편집 → 신규 파일 → 테스트 → commit을 끝까지 검증한다.
-4. 이름·그룹·연결 변경 및 작업 인계의 독립성을 검증한다.
-5. GitHub 통합·선택적 배포·서비스·RCC 등 기능별로 adapter와 acceptance를 확장한다.
-6. 기능별 검증과 복구 경로가 확보된 범위에서만 운영을 전환한다.
+1. 현재 ACT 파일/Git/테스트 구현과 관련 테스트의 exact source commit/path/의존성 확인.
+2. 필요한 구현과 테스트를 BCT 안에 가져오고 provenance/라이선스 기록. ACT 전체 gateway 영구 의존 금지.
+3. core의 계약·정책·identity·store·operations 구현.
+4. 실제 read → edit → re-edit → new file → test → commit 완료.
+5. 설계 검토표의 관련 항목을 실제 테스트로 연결. 권한 거부/충돌/crash/duplicate도 포함.
+6. GitHub CI와 결과를 저장하고 다음 feature 이전 범위를 명시.
 
-새 오류 장부는 만들지 않는다. ACT에서 발견한 병목은 기존 Improvement Ledger에 연결한다. 이 문서는 BCT 구현 계획이다.
+첫 경로에서 기능마다 새로운 registry/권한 저장소/receipt engine을 만들지 않는다.
+필요 없는 deploy/services/rcc 모듈은 아직 만들지 않는다.
+기능이 추가될 때만 core 계약을 작게 확장한다.
 
-## 완료 기준
+## 첫 구현 acceptance
 
-- 전체 기능 inventory에서 각 기능의 보존/이전 상태와 증거가 확인됨.
-- 현재 사용 기능이 실제 환경에서 작동함.
-- 설정의 위치 및 최종 판단 주체가 명확함.
-- 사용자에게 내부 신원/receipt 복구 절차를 반복 요구하지 않음.
-- 동일 operation의 중복 부작용 및 동시 변경 보호 유지.
-- 기존 운영본으로 복구 가능.
-- source, CI, live acceptance를 각각 확인한 뒤 완료 보고.
+- 인증된 사용자 요청 범위의 미등록 개발 프로젝트 작업 가능.
+- node 없이도 정상 로컬 작업 가능.
+- name/role/group 변경 후 기존 work와 권한 유지.
+- wrong principal, foreign dirty, stale hash/HEAD 및 reparse 우회 거부.
+- task-owned 신규 파일과 여러 번 수정한 파일을 함께 commit.
+- 동일 operation 두 번 요청해도 executor는 한 번.
+- 실제 실행의 결과 유실은 UNKNOWN; 새 ID로 중복 효과 생성 금지.
+- 이전 실행 없음 + terminal evidence일 때 인계 가능.
+- 테스트 통과/실패가 실제 결과와 일치하며 source 완료를 LIVE 완료라고 보고하지 않음.
 
-## 가장 먼저 할 일
+## 이후 기능 이전
 
-파일/Git/테스트의 실제 진입점과 의존성을 읽고, BCT의 첫 개발 작업 경로를 어디까지 독립적으로 재사용할 수 있는지 확정한다. 아직 확정되지 않은 API나 운영 capability를 구현 완료로 가정하지 않는다.
+GitHub 통합 → 배포/서비스 → MCP/RCC 순서를 기본으로 하되 실제 의존성 확인 후 조정 가능.
+각 기능은 BCT에 실제 소스와 테스트를 두고 공개 계약·설치 연결을 확인한 다음 운영 전환한다.
+전체 기능 보존 목록은 실제 조사로 확정한다. 이전 전 기능을 compatible로 표시하지 않는다.
+현재 ACT와 BCT가 같은 물리 대상의 독립 writer가 되지 않게 한다.
+
+## 최종 BCT 완료 기준
+
+기능별 구현/회귀/설정 보존/복구 및 live acceptance가 모두 증명되어야 한다.
+노드 이름·그룹·연결·실행자 변경이 필요한 범위에만 영향을 주는지 실제 검증한다.
+현재 상태와 차단 이유를 한 경로에서 확인할 수 있어야 한다.
