@@ -1,0 +1,228 @@
+from pathlib import Path
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import sys
+
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+def main():
+    parser = argparse.ArgumentParser(description='Validate DesktopWindow Monitor structural invariants')
+    parser.add_argument('--root', default=str(Path(__file__).resolve().parents[1]))
+    args = parser.parse_args()
+    root = Path(args.root)
+    ext = root / 'extension'
+    native = root / 'native'
+    errors = []
+    warnings = []
+    facts = {}
+
+    required = [
+        ext/'AGENTS.md', ext/'MONITOR_STRUCTURE.md', ext/'MONITOR_JS_MAP.md',
+        ext/'MONITOR_MODULE_BOUNDARIES.md', ext/'MONITOR_ORGANIZATION_MODEL.md', ext/'MONITOR_JS_INDEX.md',
+        ext/'manifest.json', ext/'desktop.html', ext/'monitor.js', ext/'monitor.css',
+        ext/'monitor-provider-launch-queue.js', ext/'monitor-act-transport.js',
+        root/'tools'/'Request-MonitorDeploymentCheck.ps1',
+        root/'tools'/'Publish-MonitorDeployment.ps1',
+        root/'tools'/'build_monitor_js_index.py',
+        root/'tools'/'check_monitor_organization_model.py',
+        root/'tools'/'check_monitor_live_organization.py',
+    ]
+    missing = [str(p) for p in required if not p.exists()]
+    if missing: errors.append({'kind':'missing_required','paths':missing})
+
+    org_doc_name = 'MONITOR_ORGANIZATION_MODEL.md'
+    for route_doc in [ext/'AGENTS.md', ext/'MONITOR_STRUCTURE.md', ext/'MONITOR_MODULE_BOUNDARIES.md']:
+        if route_doc.exists() and org_doc_name not in route_doc.read_text(encoding='utf-8', errors='replace'):
+            errors.append({'kind':'organization_model_not_routed','path':str(route_doc),'required':org_doc_name})
+
+    monitor = ext/'monitor.js'
+    index = ext/'MONITOR_JS_INDEX.md'
+    if monitor.exists() and index.exists():
+        monitor_hash = sha256(monitor)
+        text = index.read_text(encoding='utf-8', errors='replace')
+        m = re.search(r'^- sha256: `([0-9a-f]{64})`$', text, re.M)
+        index_hash = m.group(1) if m else None
+        facts['monitor_js_sha256'] = monitor_hash
+        facts['index_sha256'] = index_hash
+        if index_hash != monitor_hash:
+            errors.append({'kind':'stale_function_index','monitor':monitor_hash,'index':index_hash})
+
+    html = ext/'desktop.html'
+    loaded_js = set()
+    if html.exists():
+        t = html.read_text(encoding='utf-8', errors='replace')
+        scripts = re.findall(r'<script\s+src="([^"]+)"', t)
+        loaded_js.update(s.split('?')[0] for s in scripts)
+        missing_scripts = [s for s in scripts if not (ext/s.split('?')[0]).exists()]
+        facts['desktop_scripts'] = scripts
+        if missing_scripts: errors.append({'kind':'missing_script','scripts':missing_scripts})
+        if 'monitor-provider-launch-queue.js' not in scripts:
+            errors.append({'kind':'provider_queue_not_loaded'})
+        if 'monitor-act-transport.js' not in scripts:
+            errors.append({'kind':'act_transport_not_loaded'})
+        else:
+            monitor_script = next((s for s in scripts if s.startswith('monitor.js')), None)
+            if monitor_script and scripts.index('monitor-act-transport.js') > scripts.index(monitor_script):
+                errors.append({'kind':'act_transport_loaded_after_monitor'})
+        if 'monitor-naver-launch-queue.js' in scripts:
+            errors.append({'kind':'legacy_provider_queue_name_loaded'})
+
+    manifest = ext/'manifest.json'
+    if manifest.exists():
+        try:
+            manifest_obj = json.loads(manifest.read_text(encoding='utf-8-sig'))
+            worker = (manifest_obj.get('background') or {}).get('service_worker')
+            if worker:
+                loaded_js.add(worker)
+            for item in manifest_obj.get('content_scripts') or []:
+                loaded_js.update(item.get('js') or [])
+        except Exception as e:
+            errors.append({'kind':'extension_manifest_invalid','path':str(manifest),'error':str(e)})
+
+    node = shutil.which('node')
+    facts['node_executable'] = node
+    js_syntax = {}
+    if not node:
+        errors.append({'kind':'js_syntax_checker_missing','executable':'node'})
+    else:
+        for name in sorted(loaded_js):
+            js_path = ext / name
+            if js_path.suffix.lower() != '.js' or not js_path.exists():
+                continue
+            try:
+                js_run = subprocess.run(
+                    [node, '--check', str(js_path)],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    timeout=20,
+                )
+                js_syntax[name] = js_run.returncode
+                if js_run.returncode != 0:
+                    errors.append({
+                        'kind':'js_syntax_failed',
+                        'path':str(js_path),
+                        'returncode':js_run.returncode,
+                        'stderr':js_run.stderr[-4000:],
+                    })
+            except Exception as e:
+                js_syntax[name] = None
+                errors.append({'kind':'js_syntax_check_error','path':str(js_path),'error':str(e)})
+    facts['js_syntax_check_rc'] = js_syntax
+
+    top_level_js = sorted(p.name for p in ext.glob('*.js') if p.is_file())
+    orphan_js = sorted(name for name in top_level_js if name not in loaded_js)
+    facts['top_level_js'] = top_level_js
+    facts['loaded_js'] = sorted(loaded_js)
+    if orphan_js:
+        errors.append({'kind':'unreferenced_top_level_js','files':orphan_js})
+
+    css_path = ext/'monitor.css'
+    if css_path.exists():
+        css_text = css_path.read_text(encoding='utf-8', errors='replace')
+        monitor_text = monitor.read_text(encoding='utf-8', errors='replace') if monitor.exists() else ''
+        # Same-tab chat changes are an explicit user-decision flow.  Keep its
+        # controls distinct from ordinary node discovery: restore is orange,
+        # approve is green, and both remain in the row's right-side status area.
+        recovery_contract = {
+            'chat_changed_branch': 'nodeLocationState?.status === "CHAT_CHANGED"' in monitor_text,
+            'restore_then_approve': 'changeControls.append(restore,approve); status.append(changeControls);' in monitor_text,
+            'right_status_layout': bool(re.search(r'\.monitor-worker-row\s*\{[^}]*justify-content:\s*space-between', css_text, re.S)),
+            'right_control_layout': bool(re.search(r'\.monitor-node-chat-change-controls\s*\{[^}]*justify-content:\s*flex-end', css_text, re.S)),
+            'approve_green': bool(re.search(r'\.monitor-node-chat-change-controls\s+\.monitor-node-approve\s*\{[^}]*color:\s*#bdf3ce', css_text, re.S)),
+            'restore_orange': bool(re.search(r'\.monitor-node-chat-change-controls\s+\.monitor-node-restore\s*\{[^}]*color:\s*#ffe0a2', css_text, re.S)),
+        }
+        facts['chat_change_recovery_contract'] = recovery_contract
+        missing_contract = [name for name, present in recovery_contract.items() if not present]
+        if missing_contract:
+            errors.append({'kind':'chat_change_recovery_contract_broken','missing':missing_contract})
+        individual_recovery_start = monitor_text.find('async function restoreMonitorDetachedTask(')
+        individual_recovery_end = monitor_text.find('\nasync function ', individual_recovery_start + 1)
+        individual_recovery_text = monitor_text[individual_recovery_start:individual_recovery_end if individual_recovery_end >= 0 else None]
+        individual_recovery_contract = {
+            'exact_conversation_launch': 'restoreChatGptConversation' in individual_recovery_text,
+            'duplicate_open_rejected': 'alreadyOpen.length>1' in individual_recovery_text,
+            'old_node_binding_not_copied': 'monitorStoreNodeBinding' not in individual_recovery_text,
+        }
+        facts['individual_recovery_contract'] = individual_recovery_contract
+        missing_individual_contract = [name for name, present in individual_recovery_contract.items() if not present]
+        if missing_individual_contract:
+            errors.append({'kind':'individual_recovery_contract_broken','missing':missing_individual_contract})
+        panel_z_match = re.search(r'monitorStructurePanel\.style\.cssText="[^"]*z-index:(\d+)', monitor_text)
+        ghost_block_match = re.search(r'\.monitor-node-drag-ghost\s*\{([^}]*)\}', css_text, re.S)
+        ghost_z_match = re.search(r'z-index:\s*(\d+)', ghost_block_match.group(1) if ghost_block_match else '')
+        org_ghost_block_match = re.search(r'\.monitor-org-drag-ghost\s*\{([^}]*)\}', css_text, re.S)
+        panel_z = int(panel_z_match.group(1)) if panel_z_match else None
+        ghost_z = int(ghost_z_match.group(1)) if ghost_z_match else None
+        facts['structure_panel_z_index'] = panel_z
+        facts['drag_ghost_z_index'] = ghost_z
+        if panel_z is None or ghost_z is None:
+            errors.append({'kind':'drag_ghost_layer_unresolved','panel_z':panel_z,'ghost_z':ghost_z})
+        elif ghost_z <= panel_z:
+            errors.append({'kind':'drag_ghost_layer_not_above_structure_panel','panel_z':panel_z,'ghost_z':ghost_z})
+        if org_ghost_block_match and re.search(r'\bz-index\s*:', org_ghost_block_match.group(1)):
+            errors.append({'kind':'drag_ghost_layer_split_ownership','selector':'.monitor-org-drag-ghost'})
+        legacy_sketch_selectors = [
+            x for x in ['.monitor-side-sketchpad', '.monitor-sketchpad-title']
+            if x in css_text
+        ]
+        if legacy_sketch_selectors:
+            warnings.append({'kind':'legacy_sketchpad_css_pending','selectors':legacy_sketch_selectors})
+
+    bad_live = []
+    if ext.exists():
+        for p in ext.iterdir():
+            n = p.name.lower()
+            if p.is_file() and ('.bak' in n or n.endswith('.tmp') or 'patch-' in n):
+                bad_live.append(p.name)
+    if bad_live: errors.append({'kind':'live_extension_artifacts','files':bad_live})
+
+    if (native/'live').exists():
+        errors.append({'kind':'ambiguous_native_live_directory','path':str(native/'live')})
+
+    manifests = [
+        native/'com.pas40.desktop_window_monitor.json',
+        native/'com.pas40.desktop_window_monitor_control.json',
+    ]
+    active = []
+    for p in manifests:
+        if not p.exists():
+            errors.append({'kind':'native_manifest_missing','path':str(p)})
+            continue
+        try:
+            obj = json.loads(p.read_text(encoding='utf-8-sig'))
+            target = Path(obj.get('path',''))
+            active.append(str(target))
+            if not target.exists():
+                errors.append({'kind':'native_target_missing','manifest':str(p),'target':str(target)})
+        except Exception as e:
+            errors.append({'kind':'native_manifest_invalid','path':str(p),'error':str(e)})
+    facts['active_native_targets'] = active
+
+    hist = root/'backup'/'native-history'
+    facts['native_history_exists'] = hist.exists()
+    if hist.exists() and not (hist/'README.md').exists():
+        warnings.append({'kind':'native_history_missing_readme','path':str(hist)})
+
+    org_checker = root/'tools'/'check_monitor_organization_model.py'
+    if org_checker.exists():
+        try:
+            org_run = subprocess.run([sys.executable, str(org_checker), '--root', str(root)], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
+            facts['organization_model_check_rc'] = org_run.returncode
+            if org_run.returncode != 0:
+                errors.append({'kind':'organization_model_check_failed','stdout':org_run.stdout[-6000:],'stderr':org_run.stderr[-2000:]})
+        except Exception as e:
+            errors.append({'kind':'organization_model_check_error','error':str(e)})
+
+    result = {'ok':not errors,'errors':errors,'warnings':warnings,'facts':facts}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if not errors else 1
+
+if __name__ == '__main__':
+    raise SystemExit(main())

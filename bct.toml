@@ -12,8 +12,35 @@ normal_actions = [
   "deploy",
   "service_control",
   "relay_browser",
+  "system_inspect",
+  "execute",
+  "decision_model",
+  "monitor",
+  "decision_service",
 ]
 approval_actions = ["delete", "credential_change"]
+
+[decision]
+endpoint_file = "D:\\BCT\\data\\decision-endpoint.json"
+timeout_s = 1.0
+
+[decision.service]
+state_root = "D:\\BCT\\data"
+model_path = "D:\\BCT\\models\\act-laya-v2"
+model_name = "act-laya-v2"
+model_sha256 = "0B34911A3D48C38AEB7B6A0C9AB972DF8EEE50C567AEDD907F3115F2D5079280"
+port = 18771
+python = "C:\\Users\\시우세영\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
+python_paths = [
+  "D:\\BCT\\local-llm\\laya-0.4.3",
+  "D:\\BCT\\local-llm\\deps",
+]
+module = "laya.serve"
+readiness_timeout = 60.0
+
+[monitor]
+source_root = "components/monitor"
+live_root = "D:\\ChromeExtensions\\DesktopWindow-Monitor"
 
 [deployment.profiles.bct_runtime_v1]
 source_root = "D:\\PROJECTS\\BCT"
@@ -40,8 +67,61 @@ files = [
   "src/bct/features/git.py",
   "src/bct/features/github.py",
   "src/bct/features/rcc.py",
+  "src/bct/features/execution.py",
+  "src/bct/features/decision.py",
+  "src/bct/features/monitor.py",
+  "src/bct/features/decision_service.py",
   "src/bct/features/tests.py",
   "src/bct/integrations/__init__.py",
   "src/bct/integrations/github.py",
   "src/bct/integrations/rcc.py",
+  "src/bct/integrations/native_process.py",
+  "src/bct/integrations/decision.py",
+  "src/bct/decision_service.py",
+  "components/monitor/ACTIVE_SOURCE.md",
+  "components/monitor/BASELINE_SHA256.txt",
+  "components/monitor/PROVENANCE.md",
+  "components/monitor/README.md",
+  "components/monitor/extension/AGENTS.md",
+  "components/monitor/extension/MONITOR_JS_INDEX.md",
+  "components/monitor/extension/MONITOR_JS_MAP.md",
+  "components/monitor/extension/MONITOR_MODULE_BOUNDARIES.md",
+  "components/monitor/extension/MONITOR_ORGANIZATION_MODEL.md",
+  "components/monitor/extension/MONITOR_STRUCTURE.md",
+  "components/monitor/extension/background.js",
+  "components/monitor/extension/desktop-window-chrome.js",
+  "components/monitor/extension/desktop.css",
+  "components/monitor/extension/desktop.html",
+  "components/monitor/extension/desktop.js",
+  "components/monitor/extension/google-bootstrap.js",
+  "components/monitor/extension/icons/icon128.png",
+  "components/monitor/extension/icons/icon16.png",
+  "components/monitor/extension/icons/icon32.png",
+  "components/monitor/extension/icons/icon48.png",
+  "components/monitor/extension/manifest.json",
+  "components/monitor/extension/monitor-act-transport.js",
+  "components/monitor/extension/monitor-context-resume.js",
+  "components/monitor/extension/monitor-native-trace.js",
+  "components/monitor/extension/monitor-project-context-recall.js",
+  "components/monitor/extension/monitor-provider-launch-queue.js",
+  "components/monitor/extension/monitor-thumbnail-service.js",
+  "components/monitor/extension/monitor-work-recovery.js",
+  "components/monitor/extension/monitor.css",
+  "components/monitor/extension/monitor.js",
+  "components/monitor/native/com.pas40.desktop_window_monitor.json",
+  "components/monitor/native/com.pas40.desktop_window_monitor_control.json",
+  "components/monitor/native/src/DesktopVisualSnapshot.cs",
+  "components/monitor/native/src/MonitorDesktopHost.cs",
+  "components/monitor/tools/Build-MonitorCore.ps1",
+  "components/monitor/tools/Publish-MonitorDeployment.ps1",
+  "components/monitor/tools/Request-MonitorDeploymentCheck.ps1",
+  "components/monitor/tools/build_monitor_js_index.py",
+  "components/monitor/tools/check_monitor_capture_route.js",
+  "components/monitor/tools/check_monitor_desktop_visual.js",
+  "components/monitor/tools/check_monitor_live_organization.py",
+  "components/monitor/tools/check_monitor_ncodex_rdp_route.js",
+  "components/monitor/tools/check_monitor_node_binding_idempotence.js",
+  "components/monitor/tools/check_monitor_organization_model.py",
+  "components/monitor/tools/check_monitor_structure.py",
+  "components/monitor/tools/check_monitor_thumbnail_service.js",
 ]

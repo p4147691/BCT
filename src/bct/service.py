@@ -19,6 +19,10 @@ from .features.github import (
 )
 from .features.tests import TestFeature
 from .features.rcc import RelayBrowserFeature
+from .features.execution import ExecuteFeature, SystemInspectFeature
+from .features.decision import DecisionModelFeature
+from .features.monitor import MonitorFeature
+from .features.decision_service import DecisionServiceFeature
 from .integrations.github import GhCliClient, GitHubClient
 
 
@@ -40,6 +44,10 @@ class BCT:
             GitHubSyncMainFeature(),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             RelayBrowserFeature(),
+            SystemInspectFeature(), ExecuteFeature(),
+            DecisionModelFeature(policy_path),
+            MonitorFeature(policy_path),
+            DecisionServiceFeature(policy_path),
         ):
             self.operations.register(feature)
 

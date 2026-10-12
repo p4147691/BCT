@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bct-control"
-version = "0.5.0"
-description = "A small user-directed development control core"
+version = "0.6.0"
+description = "An independent user-directed development and desktop control package"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
   "mcp>=1.26,<2",
+  "psutil>=7,<8",
   "uvicorn>=0.41,<1",
 ]
 
