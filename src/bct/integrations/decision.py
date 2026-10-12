@@ -10,20 +10,47 @@ from typing import Any
 
 DEFAULT_QUESTIONS = {
     "task_type": {
+        "type": "choice",
         "instructions": "Classify the requested work by its dominant effect.",
-        "options": ["READ", "WRITE", "SYSTEM"],
+        "criteria": {
+            "READ": "Inspect, list, search, compare, or report without changing state.",
+            "WRITE": "Create, edit, patch, rename, or otherwise change project/user data.",
+            "SYSTEM": "Start, stop, restart, reconfigure, or change runtime or host state.",
+        },
     },
     "executor": {
+        "type": "choice",
         "instructions": "Recommend the smallest capable execution boundary.",
-        "options": ["BCT", "CODEX", "RCC", "LOCAL_LLM"],
+        "criteria": {
+            "BCT": "A bounded structured BCT capability can complete the operation deterministically.",
+            "CODEX": "Cross-file implementation, debugging, migration, or substantial reasoning is needed.",
+            "RCC": "The operation must interact with an existing browser or ChatGPT web session.",
+            "NONE": "No executor should run because the request is informational or already complete.",
+        },
     },
     "failure_cause": {
+        "type": "choice",
         "instructions": "Classify the most likely failure family from the supplied evidence.",
-        "options": ["INPUT", "AUTH", "OWNERSHIP", "PRECONDITION", "EXECUTION", "TRANSPORT", "UNKNOWN"],
+        "criteria": {
+            "INPUT": "Required input is missing, malformed, stale, or contradictory.",
+            "AUTHORITY": "Authentication, permission, ownership, or approval is the proven blocker.",
+            "CONFLICT": "Concurrent work, a lease, dirty paths, or state ownership conflicts.",
+            "TRANSPORT": "A connection, timeout, response loss, endpoint, or session transport failed.",
+            "EXECUTION": "The selected tool or process ran and failed with a confirmed execution error.",
+            "NONE": "No failure is present in the stated facts.",
+            "UNKNOWN": "The evidence is insufficient to distinguish the cause.",
+        },
     },
     "next_action": {
+        "type": "choice",
         "instructions": "Recommend one safe next action.",
-        "options": ["RECHECK", "RETRY", "STOP", "ESCALATE", "NOOP"],
+        "criteria": {
+            "RETRY": "Retry once because the operation is idempotent and a concrete transient condition changed.",
+            "RECHECK": "Collect or refresh exact evidence before deciding whether to execute again.",
+            "STOP": "Do not repeat the operation because it is unsafe, stale, duplicate, or already applied.",
+            "ESCALATE": "A user or higher-authority decision is genuinely required.",
+            "NOOP": "No further action is required.",
+        },
     },
 }
 
