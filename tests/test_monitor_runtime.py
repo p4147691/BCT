@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from bct.core.models import Principal, Work
 from bct.core.store import Store
-from bct.monitor_runtime import build_monitor_state
+from bct.monitor_runtime import _rcc_states, build_monitor_state
 from bct.service_runtime import ProcessIdentity, atomic_json
 
 
@@ -19,11 +19,12 @@ class MonitorRuntimeTests(unittest.TestCase):
             store.create_work(Work(
                 "monitor-work", "monitor test", (str(root),), frozenset({"read"}), "owner"
             ))
-            state = build_monitor_state(
-                store=store,
-                service_state={"ready": True, "release_sha": "1" * 40, "pid": 123},
-                data_root=root / "data",
-            )
+            with patch("bct.monitor_runtime.discover_instance_ids", return_value=[]):
+                state = build_monitor_state(
+                    store=store,
+                    service_state={"ready": True, "release_sha": "1" * 40, "pid": 123},
+                    data_root=root / "data",
+                )
             self.assertEqual(1, state["schema"])
             self.assertEqual(1, state["counts"]["works"])
             self.assertEqual("UNCONFIGURED", state["decision"]["state"])
@@ -45,7 +46,9 @@ class MonitorRuntimeTests(unittest.TestCase):
                 "warmed_up": True,
                 "process": identity.as_dict(),
             })
-            with patch("bct.monitor_runtime.process_identity", return_value=identity):
+            with patch("bct.monitor_runtime.process_identity", return_value=identity), patch(
+                "bct.monitor_runtime.discover_instance_ids", return_value=[]
+            ):
                 state = build_monitor_state(
                     store=Store(root / "state.sqlite"),
                     service_state={"ready": True, "release_sha": "1" * 40, "pid": 7},
@@ -53,6 +56,25 @@ class MonitorRuntimeTests(unittest.TestCase):
                 )
             self.assertEqual("RUNNING", state["decision"]["state"])
             self.assertTrue(state["decision"]["owned"])
+
+    def test_rcc_state_exposes_only_window_tab_and_presence_fields(self):
+        class Client:
+            def request(self, **kwargs):
+                return {"state": {
+                    "backgroundBuildId": "build-1",
+                    "settings": {"token": "must-not-leak"},
+                    "registrations": {"MANAGER": {"secret": "must-not-leak"}},
+                    "tabs": [{"id": 12, "windowId": 34, "title": "Manager", "url": "https://chatgpt.com/c/x"}],
+                    "endpoints": [{"tabId": 12, "presence": "OPEN", "tabActive": True, "generating": False}],
+                }}
+
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+            rows = _rcc_states(["instance_123"])
+        self.assertEqual("OPEN", rows[0]["state"])
+        self.assertEqual(12, rows[0]["tabs"][0]["tab_id"])
+        self.assertNotIn("settings", rows[0])
+        self.assertNotIn("registrations", rows[0])
+        self.assertNotIn("must-not-leak", repr(rows))
 
 
 if __name__ == "__main__":
