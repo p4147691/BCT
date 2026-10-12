@@ -5,7 +5,7 @@ BCT는 사용자 지시에 따라 개발 작업을 끝까지 수행하기 위한
 
 ## 현재 상태
 
-FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_TESTED.
+FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED.
 코어 구조와 파일 읽기·쓰기, Python 테스트, 정확한 Git commit의 첫 구현을 마쳤다.
 격리된 Git 프로젝트에서 읽기 → 수정 → 재수정 → 새 파일 → 테스트 → commit을 실제 검증했다.
 
@@ -15,8 +15,8 @@ GitHub 인증정보는 저장하지 않고 공식 `gh` CLI의 기존 credential 
 이 기능 자체를 사용해 PR #2를 생성·중복 검증·CI gate·1회 merge하고 로컬 `main`을
 merge SHA로 동기화하는 실제 수용 검증을 완료했다.
 배포·서비스 V1은 exact named profile, immutable release, process fingerprint ownership,
-health 확인, 중복 방지와 rollback을 구현하고 전체 회귀를 통과했다. 실제 운영 acceptance는
-병합된 source를 `D:\BCT\runtime`에 처음 배포하며 완료한다. MCP와 RCC 전환은 아직 수행하지
+health 확인, 중복 방지와 rollback을 구현하고 전체 회귀 및 `D:\BCT\runtime` 운영 acceptance를
+통과했다. BCT core service는 포트 18790에서 독립 실행된다. MCP와 RCC 전환은 아직 수행하지
 않았다. 현재 ACT는 계속 운영한다.
 
 ## 구조

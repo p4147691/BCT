@@ -13,9 +13,8 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
 
 - Implemented and accepted: core identity/policy/operation store, bounded file read/write, Python test,
   Git commit, and GitHub integration V1 (exact push, idempotent PR, CI-gated merge, verified-main sync).
-- Implemented and locally verified: deployment/service V1 (named exact-file profile, immutable release,
-  exact process ownership and health, idempotent control, rollback). Do not mark it live accepted until
-  `D:\BCT\runtime` evidence is recorded.
+- Implemented and live accepted: deployment/service V1 (named exact-file profile, immutable release,
+  exact process ownership and health, idempotent control, rollback) at `D:\BCT\runtime`, port 18790.
 - Unmigrated: MCP catalogue/server, RCC/Chrome extension.
 - Keep current ACT, MCP, RCC, Chrome profile and bindings operational while features are migrated.
 - Do not claim an unmigrated feature is compatible or live accepted.
