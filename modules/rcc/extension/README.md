@@ -24,7 +24,7 @@ A local-only Chrome Manifest V3 extension that relays messages between registere
 
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
-3. Choose **Load unpacked** and select `D:\ACT\relay\extension-live`.
+3. Choose **Load unpacked** and select `D:\ChromeExtensions\RCC\extension`.
 4. Refresh the ChatGPT tabs that will participate.
 5. Open the extension popup and assign one tab `CONTROL`, others `WS2`, `WS3`, etc.
 6. First run a manual relay with automatic relay still DISARMED.
