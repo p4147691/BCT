@@ -1,7 +1,8 @@
 # BCT
 
-BCT는 사용자 지시에 따라 개발 작업을 끝까지 수행하기 위한 작은 제어 시스템이다.
-기존 ACT의 기능 구현과 테스트를 BCT 안으로 단계적으로 이전한다.
+BCT는 사용자 지시에 따라 개발·로컬 실행·브라우저·데스크톱·모델 운영을 끝까지 수행하기
+위한 독립 제어 패키지다. 기존 ACT의 검증된 기능은 기능별 acceptance가 끝날 때까지 운영을
+유지하면서 BCT 소스와 공통 operation receipt로 이전한다.
 
 ## 현재 상태
 
@@ -21,14 +22,16 @@ health 확인, 중복 방지와 rollback을 구현하고 전체 회귀 및 `D:\B
 새 Codex 프로세스의 실제 work/read 호출까지 통과했다. RCC V1은 현재 live 확장 소스를
 byte-exact 기준선으로 보존하고 exact-instance 제어 경계를 BCT에 구현했다. 운영 확장 덮어쓰기나
 Chrome 재설정 없이 GitHub/배포/live acceptance까지 통과했다.
-현재 ACT는 계속 운영한다.
+현재 ACT는 아직 이전되지 않은 기능의 rollback/compatibility 경로로 계속 운영한다. BCT는
+ACT Python 모듈을 runtime에서 import하지 않는다.
 
 ## 구조
 
 `사용자/인증된 MCP → core → BCT 안의 feature 구현 → 실행 결과`
 
 - core: 작업·공통 권한 판단·변경 충돌·operation 결과.
-- features: 파일·Git·테스트·배포·서비스·RCC의 실제 구현과 연결 계약.
+- features: 파일·Git·테스트·실행·프로세스 진단·배포·서비스·RCC·Monitor·로컬 결정 모델의
+  실제 구현과 연결 계약.
 - integrations: MCP와 필요한 기간만 쓰는 ACT 호환 연결.
 - 한 설정 진입점, 하나의 운영 상태 저장소. 별도 정책 서버는 만들지 않는다.
 
@@ -49,6 +52,28 @@ Chrome 재설정 없이 GitHub/배포/live acceptance까지 통과했다.
 10. [RCC 통합 계약](docs/RCC_INTEGRATION.md)
 11. [RCC V1 완료 기록](docs/exec-plans/completed/BCT_RCC_V1.md)
 12. [인수인계](PROJECT_HANDOFF.md)
+13. [BCT 전체 패키지 이전 계획](docs/exec-plans/active/BCT_PLATFORM_PACKAGE_V1.md)
+
+## 실행 기능
+
+`bct_execute`는 shell 문자열로 몰래 우회하지 않고 실행 종류를 명시한다.
+
+- `kind=argv`: 프로그램과 인자 배열을 직접 실행한다.
+- `kind=python`: BCT가 사용하는 Python으로 프로젝트 module 또는 script를 실행한다.
+- `kind=powershell`: PowerShell command 또는 프로젝트 안의 `.ps1`을 실행한다.
+
+모든 실행은 work root, operation ID, PID/fingerprint, timeout, 종료 코드와 제한된 출력을
+receipt에 연결한다. 동일 operation ID는 두 번 실행되지 않는다. Python/PowerShell 기능은
+제공하되 Codex MCP 설정에서 실행·서비스·배포 도구는 사용자 승인 prompt 대상으로 둔다.
+
+## 플랫폼 구성요소
+
+- RCC 소스와 제어 계약은 `rcc/`에 있다.
+- DesktopWindow Monitor의 활성 baseline은 `components/monitor/`에 있다.
+- Laya 모델 파일은 Git 밖의 `D:\BCT\models`에, 전용 실행 dependency는
+  `D:\BCT\local-llm`에 둔다.
+- BCT는 모델 endpoint health, advisory inference, PID/fingerprint service receipt와
+  deterministic fallback을 소유한다. 모델 추천은 인증·권한·중복 방지 결정을 대체하지 않는다.
 
 GitHub main은 BCT 소스 정본이다. 인증정보, Chrome 프로필, 사용자 설정과 runtime DB/log는 커밋하지 않는다.
 
