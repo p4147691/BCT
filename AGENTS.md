@@ -1,6 +1,6 @@
 # BCT contributor map
 
-Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant file under `docs/exec-plans/active/` before changing BCT.
+Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan before changing BCT.
 
 ## Source of truth
 
@@ -26,4 +26,3 @@ Run:
     git diff --check
 
 Use isolated disposable repositories for mutation acceptance. Never point a new BCT test at ACT live state or a protected user project.
-

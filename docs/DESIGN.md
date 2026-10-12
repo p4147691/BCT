@@ -1,6 +1,6 @@
 # BCT Core V1 — 구현 기준
 
-상태: DESIGN_COMPLETE / IMPLEMENTATION_PENDING.
+상태: CORE_V1_IMPLEMENTED / FIRST_SLICE_CI_PASS.
 범위: 코어 구조, 노드 신원, 권한 경계와 첫 구현 계약.
 이 문서는 설계 결정이다. 구현 테스트, ACT 전체 감사, 기능 호환 및 LIVE acceptance의 증거가 아니다.
 
@@ -214,8 +214,8 @@ RCC 이전 acceptance:
 4. node rename/group change/reconnect/handoff가 작업과 권한에 주는 영향 검증.
 5. 문서의 acceptance matrix를 실제 테스트 결과로 연결.
 
-이 단계는 설계 완료다. feature 구현, CI, MCP/RCC 전환과 LIVE acceptance는 후속 상태로 각각 보고한다.
-상세 검토 결과는 CORE_DESIGN_REVIEW.md, 다음 실행 지시는 exec-plans/active/BCT_FOUNDATION.md를 따른다.
+이 첫 단계는 구현과 CI까지 완료했다. MCP/RCC 전환과 LIVE acceptance는 후속 상태로 각각 보고한다.
+상세 검토 결과는 CORE_DESIGN_REVIEW.md, 완료 증거는 exec-plans/completed/BCT_FOUNDATION.md를 따른다.
 
 ## 11. 근거와 남은 검증
 

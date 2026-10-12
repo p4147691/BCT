@@ -5,10 +5,10 @@ BCT는 사용자 지시에 따라 개발 작업을 끝까지 수행하기 위한
 
 ## 현재 상태
 
-FIRST_SLICE_SOURCE_TESTED / CI_PENDING.
+FIRST_SLICE_COMPLETE / CI_PASS.
 코어 구조와 파일 읽기·쓰기, Python 테스트, 정확한 Git commit의 첫 구현을 마쳤다.
 격리된 Git 프로젝트에서 읽기 → 수정 → 재수정 → 새 파일 → 테스트 → commit을 실제 검증했다.
-MCP/RCC와 LIVE 전환은 아직 수행하지 않았다. 현재 ACT는 계속 운영한다.
+GitHub Windows CI도 통과했다. MCP/RCC와 LIVE 전환은 아직 수행하지 않았다. 현재 ACT는 계속 운영한다.
 
 ## 구조
 
@@ -26,7 +26,7 @@ MCP/RCC와 LIVE 전환은 아직 수행하지 않았다. 현재 ACT는 계속 �
 
 1. [설계 기준](docs/DESIGN.md)
 2. [설계 검토와 테스트 시나리오](docs/CORE_DESIGN_REVIEW.md)
-3. [다음 구현 작업](docs/exec-plans/active/BCT_FOUNDATION.md)
+3. [첫 구현 완료 기록](docs/exec-plans/completed/BCT_FOUNDATION.md)
 4. [인수인계](PROJECT_HANDOFF.md)
 
 GitHub main은 BCT 소스 정본이다. 인증정보, Chrome 프로필, 사용자 설정과 runtime DB/log는 커밋하지 않는다.
