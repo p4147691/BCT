@@ -11,8 +11,9 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
 
 ## Current boundary
 
-- Implemented first slice: core identity/policy/operation store plus bounded file read/write, Python test, and Git commit.
-- Unmigrated: GitHub integration, deployment/service control, MCP catalogue/server, RCC/Chrome extension.
+- Implemented and accepted: core identity/policy/operation store, bounded file read/write, Python test,
+  Git commit, and GitHub integration V1 (exact push, idempotent PR, CI-gated merge, verified-main sync).
+- Unmigrated: deployment/service control, MCP catalogue/server, RCC/Chrome extension.
 - Keep current ACT, MCP, RCC, Chrome profile and bindings operational while features are migrated.
 - Do not claim an unmigrated feature is compatible or live accepted.
 

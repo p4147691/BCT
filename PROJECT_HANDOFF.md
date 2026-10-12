@@ -23,11 +23,16 @@ ACT 전체 feature 호환, MCP/RCC, LIVE 배포는 아직 없다.
 GitHub integration V1은 BCT 소스로 구현되었다. exact-SHA branch push, deterministic request marker를
 사용한 PR 생성 중복 방지, required-check 조회, exact-head merge 및 verified `main` fast-forward를
 공통 operation receipt와 resource claim으로 실행한다. 인증은 공식 `gh`의 기존 credential store를
-사용하고 token은 BCT 상태에 저장하지 않는다. 5개 focused test를 포함한 전체 18개 로컬 테스트,
+사용하고 token은 BCT 상태에 저장하지 않는다. Git commit의 실행 전 확정 실패가 HEAD와 dirty set을
+보존한 경우 claim을 안전하게 해제하는 회귀까지 포함해 전체 19개 로컬 테스트,
 PR #2 Windows CI run `38241115179`, merge commit `9140bc07d7e0fac9b809a208818a20f6bf094653`,
 merge-main push CI run `38241278661`이 통과했다. 동일 operation 및 새 operation ID의 중복
 push/PR/merge가 실제로 추가 효과를 만들지 않는 것을 확인했다. 상세 계약은
 `docs/GITHUB_INTEGRATION.md`, 증거는 `docs/exec-plans/completed/BCT_GITHUB_INTEGRATION.md`를 따른다.
+
+실사용 중 발견한 commit-failure claim 문제는 PR #4, merge
+`c770eb5595856776db63fbb085ea148f731bdb92`로 수정·CI 검증했다. 중앙 BOOTSTRAP의 BCT 상태도
+PR #23, merge `f478d5e75c57e4e8455914b503d1c5f5fee41546`으로 갱신했다.
 
 ## 모델 전환
 

@@ -16,7 +16,8 @@ Status: ACCEPTED
 
 ## Tests
 
-- Local full suite: 18/18 PASS (13 existing/core development tests + 5 GitHub focused tests).
+- Local full suite after follow-up regression: 19/19 PASS
+  (14 core/development tests + 5 GitHub focused tests).
 - `python -m compileall -q src tests`: PASS.
 - `git diff --check`: PASS.
 - Negative coverage: stale remote SHA, dirty sync tree, missing required check, duplicate operation,
@@ -36,7 +37,21 @@ Status: ACCEPTED
 - BCT `github_sync_main` fast-forwarded local `main` from
   `934c69fd39032b0dea3981c922f8527441935de5` to the exact merge SHA.
 - Merge-main push CI run `38241278661`: PASS.
-- Post-merge local full suite: 18/18 PASS; local `main == origin/main` and worktree clean.
+- Post-follow-up local full suite: 19/19 PASS; local `main == origin/main` and worktree clean.
+
+## Follow-up defect resolved during adoption
+
+The central registry repository rejected its first structured commit before changing HEAD because that checkout
+had no local Git author identity. BCT originally retained the resource claim even though exact HEAD and dirty-set
+evidence proved the commit was not applied. The Git commit feature now releases a claim only when both facts are
+re-verified after failure; any unavailable or unexpected post-state remains `UNKNOWN` and keeps the claim.
+
+- Fix PR: BCT #4.
+- Fix merge: `c770eb5595856776db63fbb085ea148f731bdb92`.
+- Regression: two consecutive confirmed pre-commit rejections can be evaluated without a stale claim, while
+  the repository HEAD remains unchanged.
+- Central recovery registry status: BOOTSTRAP PR #23, merge
+  `f478d5e75c57e4e8455914b503d1c5f5fee41546`, doctor PASS.
 
 ## Bootstrap observation
 
