@@ -157,20 +157,50 @@ def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str
     }
 
 
-def _validate_release(profile: DeploymentProfile, release: dict[str, Any]) -> None:
+def _validate_release(
+    profile: DeploymentProfile,
+    release: dict[str, Any],
+    *,
+    require_profile_files: bool = False,
+) -> None:
     release_root = Path(str(release.get("release_path") or "")).resolve()
     expected_root = profile.runtime_root / "releases" / str(release.get("source_head") or "")
     if release_root != expected_root.resolve():
         raise PreconditionError("DEPLOYMENT_RELEASE_PATH_MISMATCH")
     manifest = read_json(release_root / "manifest.json")
-    if manifest is None or manifest.get("manifest_sha256") != release.get("manifest_sha256"):
+    if (
+        manifest is None
+        or manifest.get("manifest_sha256") != release.get("manifest_sha256")
+        or manifest.get("source_head") != release.get("source_head")
+    ):
         raise PreconditionError("DEPLOYMENT_RELEASE_MANIFEST_MISMATCH")
     files = manifest.get("files")
-    if not isinstance(files, dict) or set(files) != set(profile.files):
+    if not isinstance(files, dict) or not files:
         raise PreconditionError("DEPLOYMENT_RELEASE_FILE_SET_MISMATCH")
+    try:
+        manifest_files = tuple(DeploymentProfiles._file(relative) for relative in files)
+    except ValueError as exc:
+        raise PreconditionError("DEPLOYMENT_RELEASE_FILE_SET_INVALID") from exc
+    if len(manifest_files) != len(set(relative.casefold() for relative in manifest_files)):
+        raise PreconditionError("DEPLOYMENT_RELEASE_FILE_SET_DUPLICATE")
+    if require_profile_files and set(files) != set(profile.files):
+        raise PreconditionError("DEPLOYMENT_RELEASE_FILE_SET_MISMATCH")
+    payload = json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if hashlib.sha256(payload).hexdigest() != release.get("manifest_sha256"):
+        raise PreconditionError("DEPLOYMENT_RELEASE_MANIFEST_HASH_MISMATCH")
     for relative, digest in files.items():
         path = release_root / Path(relative)
-        if not path.is_file() or path.is_symlink() or not _SHA256.fullmatch(str(digest)):
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(release_root)
+        except ValueError as exc:
+            raise PreconditionError("DEPLOYMENT_RELEASE_FILE_ESCAPE:" + relative) from exc
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or resolved != path.absolute()
+            or not _SHA256.fullmatch(str(digest))
+        ):
             raise PreconditionError("DEPLOYMENT_RELEASE_FILE_INVALID:" + relative)
         if _sha256(path) != digest:
             raise PreconditionError("DEPLOYMENT_RELEASE_FILE_HASH_MISMATCH:" + relative)
@@ -188,7 +218,7 @@ def _stage_release(profile: DeploymentProfile, manifest: dict[str, Any]) -> dict
     release_root = releases / manifest["source_head"]
     release = {**manifest, "release_path": str(release_root.resolve())}
     if release_root.exists():
-        _validate_release(profile, release)
+        _validate_release(profile, release, require_profile_files=True)
         return release
     staging = Path(tempfile.mkdtemp(prefix=manifest["source_head"] + "-", dir=staging_root))
     try:
@@ -206,7 +236,7 @@ def _stage_release(profile: DeploymentProfile, manifest: dict[str, Any]) -> dict
     finally:
         if staging.exists() and staging.resolve().parent == staging_root.resolve():
             shutil.rmtree(staging)
-    _validate_release(profile, release)
+    _validate_release(profile, release, require_profile_files=True)
     return release
 
 
@@ -279,7 +309,7 @@ class DeployFeature:
         )
         service_before = controller.inspect()
         if current_head == manifest["source_head"]:
-            _validate_release(profile, current)
+            _validate_release(profile, current, require_profile_files=True)
             if request.arguments["restart"]:
                 if service_before.get("state") == "RUNNING" and service_before.get("release_sha") == current_head:
                     return FeatureResult(Outcome.APPLIED, {

@@ -54,18 +54,7 @@ class DeploymentServiceTests(unittest.TestCase):
         self.files.insert(0, "bct.toml")
         self.port = free_port()
         self.policy = self.source / "bct.toml"
-        self.policy.write_text(
-            "[policy]\n"
-            "normal_actions=[\"deploy\",\"service_control\"]\n"
-            "approval_actions=[]\n\n"
-            "[deployment.profiles.test_runtime]\n"
-            f"source_root={json.dumps(str(self.source))}\n"
-            f"runtime_root={json.dumps(str(self.runtime))}\n"
-            "service_name=\"bct-test\"\n"
-            f"port={self.port}\n"
-            f"files={json.dumps(self.files)}\n",
-            encoding="utf-8",
-        )
+        self.write_policy()
         git(self.source, "init", "-b", "main")
         git(self.source, "config", "user.name", "BCT Test")
         git(self.source, "config", "user.email", "bct-test@example.invalid")
@@ -82,6 +71,20 @@ class DeploymentServiceTests(unittest.TestCase):
             roots=[str(self.source)],
             actions=["deploy", "service_control"],
             principal=self.principal,
+        )
+
+    def write_policy(self):
+        self.policy.write_text(
+            "[policy]\n"
+            "normal_actions=[\"deploy\",\"service_control\"]\n"
+            "approval_actions=[]\n\n"
+            "[deployment.profiles.test_runtime]\n"
+            f"source_root={json.dumps(str(self.source))}\n"
+            f"runtime_root={json.dumps(str(self.runtime))}\n"
+            "service_name=\"bct-test\"\n"
+            f"port={self.port}\n"
+            f"files={json.dumps(self.files)}\n",
+            encoding="utf-8",
         )
 
     def tearDown(self):
@@ -209,6 +212,23 @@ class DeploymentServiceTests(unittest.TestCase):
         self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
         self.assertFalse((self.runtime / "current.json").exists())
         self.assertFalse((self.runtime / "service.json").exists())
+
+    def test_profile_file_addition_allows_upgrade_but_new_release_is_exact(self):
+        first = self.deploy("deploy-before-profile-expansion", self.head, None)
+        self.assertEqual(Outcome.APPLIED, first.outcome)
+        added = self.source / "src" / "bct" / "new_runtime_module.py"
+        added.write_text("VALUE = 1\n", encoding="utf-8")
+        self.files.append("src/bct/new_runtime_module.py")
+        self.write_policy()
+        git(self.source, "add", "bct.toml", "src/bct/new_runtime_module.py")
+        git(self.source, "commit", "-m", "expand deployment profile")
+        expanded_head = git(self.source, "rev-parse", "HEAD")
+        upgraded = self.deploy("deploy-after-profile-expansion", expanded_head, self.head)
+        self.assertEqual(Outcome.APPLIED, upgraded.outcome, upgraded.as_dict())
+        old_manifest = read_json(self.runtime / "releases" / self.head / "manifest.json")
+        new_manifest = read_json(self.runtime / "releases" / expanded_head / "manifest.json")
+        self.assertNotIn("src/bct/new_runtime_module.py", old_manifest["files"])
+        self.assertIn("src/bct/new_runtime_module.py", new_manifest["files"])
 
 
 if __name__ == "__main__":
