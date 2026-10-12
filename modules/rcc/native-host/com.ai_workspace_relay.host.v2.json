@@ -4,6 +4,7 @@
     "path": "D:\\ChromeExtensions\\RCC\\native\\RelayNativeHostV2.exe",
     "type": "stdio",
     "allowed_origins": [
-        "chrome-extension://bhlcnmbodlhbephppahojbigleklpmhj/"
+        "chrome-extension://bhlcnmbodlhbephppahojbigleklpmhj/",
+        "chrome-extension://ocbidbaplechjjdacmokhnfbdmgjkphf/"
     ]
 }

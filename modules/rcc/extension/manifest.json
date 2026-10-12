@@ -3,6 +3,7 @@
   "name": "Remote Chrome Commander",
   "version": "0.1.0",
   "description": "ChatGPT tab control via Native Messaging and local automation.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4tbpwYtZZDlryqHeNDMzVMk8LmBA54m3zghUXmOQ1MMJa5YOFlFhFeWCfZhPkhf18PQPCVGidRQABtbYyzXhPHUqzWNZVhcpGLLgiM0Q2o7KxDmjhx92YrcCQqxNOsubyPw799QONuUCLfzcb5Y0OAe76BtZjYgI3RXr35TcyxFN/tHfvERe2JbABO7l6PardLOcqnQvCQCMqeT50urQMQ+S9gqle+4tYadY0g8g3Px37v65AWtSs9/GJM2eOmP+PIPmprU69byCRBCULSIz/x5jSSD3v8n5Sgh/qeZ5k3LUU72hay+DKizvP0x7IYP4rAruonnP6j03OXoIkpl/zQIDAQAB",
   "permissions": [
     "scripting",
     "nativeMessaging",

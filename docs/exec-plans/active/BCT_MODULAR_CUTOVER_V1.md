@@ -53,6 +53,9 @@ replaceable capabilities are modules.
   payload directories. RCC stayed OPEN with two existing tabs and Laya stayed RUNNING.
 - The existing ChatGPT App was renamed from `ACT Control` to `BCT Control`, its description now
   names the BCT contracts, and its tool catalogue was refreshed from the BCT MCP endpoint.
+- RCC installed-path migration is in progress with a committed fixed extension identity
+  (`ocbidbaplechjjdacmokhnfbdmgjkphf`). The transition accepts the old path-derived origin only long
+  enough to prove and rebind exact open registrations; pending sends are never copied or retried.
 
 Every live cutover is reversible, exact-SHA fenced and single-writer. An installed component is not
 retired merely because its source has moved.
