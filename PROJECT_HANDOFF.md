@@ -16,7 +16,7 @@ FIRST_SLICE_COMPLETE / CI_PASS.
 코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
 파일 읽기·원자적 쓰기, Python test, expected HEAD·정확한 dirty set·new-file SHA proof 기반 Git commit을 BCT 소스로 구현했다.
 12개 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
-GitHub Actions run `38234473954`에서 Windows CI가 통과했다.
+GitHub Actions run `38234844806`에서 최신 Actions major로 Windows CI가 통과했다.
 ACT 전체 feature 호환, MCP/RCC, LIVE 배포는 아직 없다.
 현재 ACT live, 기존 탭/role binding, 서비스, 기존 작업과 소스는 이 설계 작업에서 수정하지 않았다.
 
