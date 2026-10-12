@@ -6,13 +6,15 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 from bct import BCT
-from bct.core.models import Outcome, Principal
-from bct.features.deploy import DeploymentProfiles
+from bct.core.models import ConfirmedFailure, Outcome, Principal, UnknownEffectError
+from bct.features.deploy import DeploymentProfiles, _start_with_one_safe_retry
 from bct.service_runtime import RuntimeServiceController, atomic_json, process_identity, read_json
 
 
@@ -111,6 +113,10 @@ class DeploymentServiceTests(unittest.TestCase):
                     )
                     if process.returncode not in {0, 128}:
                         raise
+                    deadline = time.monotonic() + 5
+                    while process_identity(receipt["pid"]) is not None and time.monotonic() < deadline:
+                        time.sleep(0.1)
+                    time.sleep(0.2)
         finally:
             self.temp.cleanup()
 
@@ -159,6 +165,25 @@ class DeploymentServiceTests(unittest.TestCase):
         started = self.service("start-1", "start", self.head)
         self.assertEqual("RUNNING", started.evidence["service"]["state"])
         self.assertNotEqual(second_pid, started.evidence["service"]["pid"])
+
+    def test_start_retries_once_only_after_confirmed_no_effect(self):
+        release = {"source_head": self.head}
+        confirmed = Mock()
+        confirmed.start.side_effect = [
+            ConfirmedFailure("SERVICE_START_NOT_APPLIED", release_claims=True),
+            {"state": "RUNNING"},
+        ]
+        confirmed.inspect.return_value = {"state": "STOPPED_STALE_RECEIPT"}
+        self.assertEqual(
+            "RUNNING", _start_with_one_safe_retry(confirmed, release)["state"]
+        )
+        self.assertEqual(2, confirmed.start.call_count)
+
+        ambiguous = Mock()
+        ambiguous.start.side_effect = UnknownEffectError("SERVICE_START_UNKNOWN")
+        with self.assertRaises(UnknownEffectError):
+            _start_with_one_safe_retry(ambiguous, release)
+        self.assertEqual(1, ambiguous.start.call_count)
 
     def test_new_release_restarts_and_broken_release_rolls_back(self):
         first = self.deploy("deploy-first", self.head, None)

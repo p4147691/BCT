@@ -31,6 +31,16 @@ The service health endpoint reports MCP readiness, endpoint, and tool count. The
 deployment process verifies those fields together with the exact service PID/fingerprint,
 release, manifest, generation, and instance.
 
+Codex approval configuration intentionally follows the user-facing risk boundary:
+
+- automatic: capability discovery, work creation/recovery, operation receipt, file read,
+  and GitHub PR status;
+- prompt: write, test/process execution, Git commit, GitHub mutations, deployment, and
+  service control.
+
+The prompt is a Codex safety notice for a real side effect. BCT still performs its own exact
+work, operation, path, SHA, resource ownership, and duplicate-effect checks after approval.
+
 ## Failure and restart behavior
 
 MCP is served by the same process as BCT health and control. A service restart therefore
@@ -39,4 +49,5 @@ change across releases. Existing ACT MCP configuration is preserved during migra
 
 Adding the Codex MCP entry is a one-time client configuration change. A running Codex task
 does not acquire newly configured tools retroactively; a new Codex task/session loads the
-entry. Protocol live acceptance is performed independently against the running endpoint.
+entry. This was verified with a fresh ephemeral Codex process that created a BCT work and
+read a repository file through the configured MCP server.
