@@ -7,6 +7,7 @@ from pathlib import Path
 from bct import BCT
 from bct.core.models import Principal
 from bct.features.decision import DecisionModelFeature
+from bct.integrations.decision import DEFAULT_QUESTIONS
 
 
 class _DecisionClient:
@@ -86,6 +87,16 @@ class DecisionIntegrationTests(unittest.TestCase):
         self.assertTrue(first.output["available"])
         self.assertTrue(second.duplicate)
         self.assertEqual(len(self.client.calls), 1)
+
+    def test_default_questions_use_laya_choice_contract(self):
+        self.assertEqual(set(DEFAULT_QUESTIONS), {
+            "task_type", "executor", "failure_cause", "next_action",
+        })
+        for question in DEFAULT_QUESTIONS.values():
+            self.assertEqual(question["type"], "choice")
+            self.assertIsInstance(question["criteria"], dict)
+            self.assertGreaterEqual(len(question["criteria"]), 2)
+            self.assertNotIn("options", question)
 
 
 if __name__ == "__main__":
