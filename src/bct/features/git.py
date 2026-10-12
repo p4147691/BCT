@@ -5,7 +5,15 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from bct.core.models import ConfirmedFailure, FeatureRequest, FeatureResult, Outcome, PreconditionError, Work
+from bct.core.models import (
+    ConfirmedFailure,
+    FeatureRequest,
+    FeatureResult,
+    Outcome,
+    PreconditionError,
+    UnknownEffectError,
+    Work,
+)
 
 from .common import relative_git_path, resolve_in_work, sha256_file
 
@@ -132,7 +140,22 @@ class GitCommitFeature:
         if committed.returncode != 0:
             if new_paths:
                 _git(root, "reset", "--mixed", "HEAD", "--", *[":(literal)" + item for item in new_paths])
-            raise ConfirmedFailure("GIT_COMMIT_FAILED:" + (committed.stderr or committed.stdout)[-500:])
+            try:
+                after_failure = _git(root, "rev-parse", "HEAD")
+                dirty_after_failure = _dirty_paths(root)
+            except Exception as exc:
+                raise UnknownEffectError("GIT_COMMIT_FAILURE_STATE_UNAVAILABLE") from exc
+            if (
+                after_failure.returncode == 0
+                and after_failure.stdout.strip().lower() == request.preconditions["expected_head"]
+                and {item.casefold() for item in dirty_after_failure}
+                == {item.casefold() for item in paths}
+            ):
+                raise ConfirmedFailure(
+                    "GIT_COMMIT_NOT_APPLIED:" + (committed.stderr or committed.stdout)[-500:],
+                    release_claims=True,
+                )
+            raise UnknownEffectError("GIT_COMMIT_FAILURE_STATE_UNEXPECTED")
         after = _git(root, "rev-parse", "HEAD")
         if after.returncode != 0 or after.stdout.strip().lower() == request.preconditions["expected_head"]:
             raise ConfirmedFailure("GIT_COMMIT_POST_HEAD_INVALID")
