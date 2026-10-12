@@ -2,7 +2,7 @@
 
 ## Purpose
 
-BCT의 로컬 개발 결과를 GitHub 공식 정본에 안전하게 통합한다. 별도 workflow engine이나
+BCT의 로컬 개발 결과를 GitHub 공식 소스에 안전하게 통합한다. 별도 workflow engine이나
 credential store를 만들지 않고 기존 BCT operation/ownership/receipt와 공식 `git`/`gh` 실행기를 사용한다.
 
 ## Capabilities
