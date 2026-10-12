@@ -122,7 +122,7 @@ class DeploymentProfiles:
         )
 
 
-def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str, Any]:
+def _validate_source_repository(profile: DeploymentProfile, expected_head: str) -> Path:
     root = profile.source_root
     top = _git(root, "rev-parse", "--show-toplevel")
     head = _git(root, "rev-parse", "HEAD")
@@ -136,6 +136,39 @@ def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str
         raise PreconditionError("DEPLOYMENT_SOURCE_MAIN_REQUIRED")
     if status.returncode != 0 or status.stdout.strip():
         raise PreconditionError("DEPLOYMENT_SOURCE_NOT_CLEAN")
+    policy = root / "bct.toml"
+    resolved_policy = policy.resolve()
+    tracked = _git(root, "ls-files", "--error-unmatch", "--", "bct.toml")
+    if (
+        not policy.is_file()
+        or policy.is_symlink()
+        or resolved_policy != policy.absolute()
+        or tracked.returncode != 0
+    ):
+        raise PreconditionError("DEPLOYMENT_SOURCE_POLICY_INVALID")
+    return policy
+
+
+def _target_profile(profile: DeploymentProfile, expected_head: str) -> DeploymentProfile:
+    policy = _validate_source_repository(profile, expected_head)
+    target = DeploymentProfiles(policy).get(profile.name)
+    invariant_values = (
+        ("SOURCE_ROOT", target.source_root, profile.source_root),
+        ("RUNTIME_ROOT", target.runtime_root, profile.runtime_root),
+        ("SERVICE_NAME", target.service_name, profile.service_name),
+        ("PORT", target.port, profile.port),
+    )
+    for label, actual, expected in invariant_values:
+        if actual != expected:
+            raise PreconditionError("DEPLOYMENT_TARGET_PROFILE_" + label + "_MISMATCH")
+    if "bct.toml" not in target.files:
+        raise PreconditionError("DEPLOYMENT_TARGET_PROFILE_POLICY_FILE_REQUIRED")
+    return target
+
+
+def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str, Any]:
+    _validate_source_repository(profile, expected_head)
+    root = profile.source_root
     hashes: dict[str, str] = {}
     for relative in profile.files:
         path = root / Path(relative)
@@ -310,7 +343,8 @@ class DeployFeature:
         )
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
-        profile = self.profiles.get(request.arguments["profile"])
+        trusted_profile = self.profiles.get(request.arguments["profile"])
+        profile = _target_profile(trusted_profile, request.arguments["expected_source_head"])
         manifest = _validate_source(profile, request.arguments["expected_source_head"])
         current = _read_current(profile)
         current_head = current.get("source_head") if current else None

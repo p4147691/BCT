@@ -64,7 +64,9 @@ class DeploymentServiceTests(unittest.TestCase):
         git(self.source, "add", ".")
         git(self.source, "commit", "-m", "initial runtime")
         self.head = git(self.source, "rev-parse", "HEAD")
-        self.bct = BCT(state_path=self.base / "controller.sqlite", policy_path=self.policy)
+        self.running_policy = self.base / "running-bct.toml"
+        shutil.copyfile(self.policy, self.running_policy)
+        self.bct = BCT(state_path=self.base / "controller.sqlite", policy_path=self.running_policy)
         self.principal = Principal(
             "developer", "test", frozenset({"deploy", "service_control"})
         )
@@ -92,7 +94,7 @@ class DeploymentServiceTests(unittest.TestCase):
 
     def tearDown(self):
         try:
-            profile = DeploymentProfiles(self.policy).get("test_runtime")
+            profile = DeploymentProfiles(self.running_policy).get("test_runtime")
             controller = RuntimeServiceController(
                 runtime_root=profile.runtime_root,
                 service_name=profile.service_name,
@@ -298,6 +300,38 @@ class DeploymentServiceTests(unittest.TestCase):
         new_manifest = read_json(self.runtime / "releases" / expanded_head / "manifest.json")
         self.assertNotIn("src/bct/new_runtime_module.py", old_manifest["files"])
         self.assertIn("src/bct/new_runtime_module.py", new_manifest["files"])
+
+    def test_target_profile_cannot_change_trusted_deployment_boundaries(self):
+        original = self.policy.read_text(encoding="utf-8")
+        changes = {
+            "SOURCE_ROOT": original.replace(
+                f"source_root={json.dumps(str(self.source))}",
+                f"source_root={json.dumps(str(self.base / 'foreign-source'))}",
+            ),
+            "RUNTIME_ROOT": original.replace(
+                f"runtime_root={json.dumps(str(self.runtime))}",
+                f"runtime_root={json.dumps(str(self.base / 'foreign-runtime'))}",
+            ),
+            "SERVICE_NAME": original.replace(
+                'service_name="bct-test"', 'service_name="foreign-service"'
+            ),
+            "PORT": original.replace(f"port={self.port}", f"port={self.port + 1}"),
+        }
+        for label, changed in changes.items():
+            with self.subTest(label=label):
+                self.policy.write_text(changed, encoding="utf-8")
+                git(self.source, "add", "bct.toml")
+                git(self.source, "commit", "-m", f"attempt {label.lower()} drift")
+                bad_head = git(self.source, "rev-parse", "HEAD")
+                denied = self.deploy(f"deny-target-{label.lower()}", bad_head, None)
+                self.assertEqual(Outcome.NOT_APPLIED, denied.outcome, denied.as_dict())
+                self.assertIn(
+                    f"DEPLOYMENT_TARGET_PROFILE_{label}_MISMATCH",
+                    str(denied.error),
+                )
+                self.policy.write_text(original, encoding="utf-8")
+                git(self.source, "add", "bct.toml")
+                git(self.source, "commit", "-m", f"restore after {label.lower()} drift")
 
 
 if __name__ == "__main__":
