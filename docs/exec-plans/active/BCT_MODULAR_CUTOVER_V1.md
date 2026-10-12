@@ -1,6 +1,6 @@
 # BCT Modular Cutover V1
 
-Status: `CORE_RELEASE_BOUNDARY_ACCEPTED_SOURCE`
+Status: `CORE_RELEASE_BOUNDARY_LIVE_ACCEPTED`
 
 ## Goal
 
@@ -28,9 +28,8 @@ replaceable capabilities are modules.
 1. Source layout and tests.
 2. GitHub integration and exact official-main sync.
 3. BCT runtime release and status UI.
-4. Existing ACT Control App identity retargeted to BCT MCP without a duplicate plugin. The App's
-   external display name is a compatibility label until it is renamed in the owning App settings;
-   the local target and recovery owner are BCT.
+4. Existing ChatGPT App identity retargeted to BCT MCP without a duplicate plugin and renamed to
+   `BCT Control`; the same App ID and connection are preserved.
 5. RCC installed-path migration with extension identity/state evidence.
 6. Monitor ACT/AI_TOOLS dependency retirement and focused window/node/status acceptance.
 7. BDC parity for the retained desktop primitives, then ADC retirement.
@@ -49,6 +48,11 @@ replaceable capabilities are modules.
   retained.
 - Old ACT and ADC scheduled starts are disabled; retained ACT-path processes and runners remain
   explicit retirement gates rather than hidden dependencies.
+- GitHub PR #33 merged as `558fb2800a2f940aa3de01aa510b267971d91e4f`; local source and live Core
+  release match that SHA. The live release contains `modules/status-ui` but no Monitor/RCC/BDC
+  payload directories. RCC stayed OPEN with two existing tabs and Laya stayed RUNNING.
+- The existing ChatGPT App was renamed from `ACT Control` to `BCT Control`, its description now
+  names the BCT contracts, and its tool catalogue was refreshed from the BCT MCP endpoint.
 
 Every live cutover is reversible, exact-SHA fenced and single-writer. An installed component is not
 retired merely because its source has moved.

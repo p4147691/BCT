@@ -50,6 +50,7 @@ Monitor UI는 `http://127.0.0.1:18790/monitor`이다. BCT runtime은 ACT Python 
 14. [기능 소유권 지도](docs/CAPABILITY_OWNERSHIP.md)
 15. [사용 안내](docs/USER_GUIDE.md)
 16. [공식 소스·배포·운영 상태 모델](docs/OPERATING_MODEL.md)
+17. [로컬 폴더 구조](docs/LOCAL_LAYOUT.md)
 
 ## 실행 기능
 
