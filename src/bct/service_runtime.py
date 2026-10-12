@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import secrets
+import socket
 import subprocess
 import sys
 import time
@@ -259,6 +260,20 @@ class RuntimeServiceController:
             time.sleep(0.1)
         return process_identity(pid) is None
 
+    def _wait_for_port_available(self, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as candidate:
+                    if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                        candidate.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                    candidate.bind(("127.0.0.1", self.port))
+            except OSError:
+                time.sleep(0.1)
+                continue
+            return True
+        return False
+
     def stop(self) -> dict[str, Any]:
         state = self.inspect()
         if state["state"] != "RUNNING":
@@ -290,6 +305,8 @@ class RuntimeServiceController:
                 raise UnknownEffectError("SERVICE_CHILD_HANDLE_NOT_REAPED") from exc
         if self._health() is not None:
             raise UnknownEffectError("SERVICE_ENDPOINT_REMAINS_AFTER_STOP")
+        if not self._wait_for_port_available(5):
+            raise UnknownEffectError("SERVICE_PORT_REMAINS_AFTER_STOP")
         stopped = {
             **receipt,
             "state": "STOPPED",
@@ -311,6 +328,8 @@ class RuntimeServiceController:
             raise PreconditionError("SERVICE_DIFFERENT_RELEASE_RUNNING")
         if state["state"] not in {"STOPPED", "STOPPED_STALE_RECEIPT"}:
             raise PreconditionError("SERVICE_STATE_NOT_STARTABLE")
+        if not self._wait_for_port_available(5):
+            raise PreconditionError("SERVICE_PORT_NOT_AVAILABLE")
         previous = read_json(self.service_path) or {}
         generation = int(previous.get("generation") or 0) + 1
         instance_id = secrets.token_hex(16)
@@ -395,6 +414,24 @@ class RuntimeServiceController:
                 time.sleep(0.1)
             if health is None:
                 raise RuntimeError("SERVICE_READINESS_TIMEOUT")
+            stability_deadline = time.monotonic() + 0.5
+            while time.monotonic() < stability_deadline:
+                if process.poll() is not None:
+                    health = None
+                    break
+                candidate = self._health()
+                if candidate is None:
+                    health = None
+                    break
+                try:
+                    self._validate_running(process_started, candidate)
+                except PreconditionError:
+                    health = None
+                    break
+                health = candidate
+                time.sleep(0.1)
+            if health is None:
+                raise RuntimeError("SERVICE_READINESS_NOT_STABLE")
             running = {
                 **process_started,
                 "state": "RUNNING",

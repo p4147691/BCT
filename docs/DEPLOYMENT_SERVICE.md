@@ -21,6 +21,10 @@ If activation or readiness fails, BCT restores the previous `current.json` and t
 previous running release. A verified rollback is `FAILED`; an unverified rollback is
 `UNKNOWN` and retains the operation's resource claim.
 
+An older immutable release is verified against its own fenced manifest, while the new
+release must exactly match the current named profile. This permits a reviewed profile to
+add or remove files without weakening either old-release rollback or new-release bounds.
+
 ## Service ownership
 
 The controller launches one fixed Python module from the immutable release. It records
