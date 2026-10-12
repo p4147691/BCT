@@ -1,0 +1,77 @@
+body {
+  width: 420px;
+  margin: 0;
+  padding: 12px;
+  font: 13px/1.4 system-ui, sans-serif;
+  background: #111827;
+  color: #f3f4f6;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+section {
+  border-top: 1px solid #374151;
+  padding-top: 10px;
+  margin-top: 10px;
+}
+h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.tab-row {
+  display: grid;
+  grid-template-columns: 1fr 90px 70px;
+  gap: 6px;
+  margin: 6px 0;
+  align-items: center;
+}
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+input, textarea, button {
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid #4b5563;
+  padding: 7px;
+}
+input, textarea {
+  width: 100%;
+  background: #1f2937;
+  color: #fff;
+  margin-bottom: 6px;
+}
+button {
+  cursor: pointer;
+  background: #374151;
+  color: #fff;
+}
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+#bootstrap { grid-column: 1 / -1; }
+#armedBadge {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #7f1d1d;
+  font-size: 11px;
+}
+#status {
+  max-height: 150px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: #0b1220;
+  padding: 8px;
+  border-radius: 6px;
+}
+label {
+  display: block;
+  margin: 4px 0 8px;
+}
+label input { width: auto; }
