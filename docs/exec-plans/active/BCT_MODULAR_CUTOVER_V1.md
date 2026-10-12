@@ -17,6 +17,7 @@ replaceable capabilities are modules.
 - `modules/monitor`: window observation and simple node/status UI.
 - `modules/decision`: optional Laya lifecycle and recommendation.
 - `modules/github`: GitHub and runner operating contract.
+- `modules/mcp`: existing ChatGPT App/tunnel ingress retargeted to BCT.
 - `modules/status-ui`: read-only Core status page.
 - `D:\ChromeExtensions`: installed Chrome payloads only.
 - `D:\PROJECTS`, `D:\TOOLS`, `D:\MODELS`, `D:\Archive`: user projects, shared tools/assets,
@@ -37,4 +38,3 @@ replaceable capabilities are modules.
 
 Every live cutover is reversible, exact-SHA fenced and single-writer. An installed component is not
 retired merely because its source has moved.
-
