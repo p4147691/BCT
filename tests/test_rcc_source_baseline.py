@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import base64
 import shutil
 import subprocess
 import unittest
@@ -19,15 +20,23 @@ class RccSourceBaselineTests(unittest.TestCase):
             "background.js": "3de6118e2d3bac81cc212a0e4dc1d9d6e2d355731e5fd5dd7f196c71be89a9dd",
             "content.js": "1c0ca238dbf287ad6f0a01660c1a7f1ebf78b5e8c1806c5d8c81d5d012391406",
             "relay_core.js": "27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91",
-            "manifest.json": "959903799ad2983319e0dfda331785c0587b04bea1fe4aef7e8fc0d320e75957",
         }
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
         native = self.root / "modules" / "rcc" / "native-host" / "RelayNativeHostV2.cs"
-        self.assertEqual(
-            "164695e660a775b08d5d3289ff95340e28adb319a65d45e6e88790f4d1ee24ab",
-            hashlib.sha256(native.read_bytes()).hexdigest(),
+        self.assertIn("bhlcnmbodlhbephppahojbigleklpmhj", native.read_text(encoding="utf-8-sig"))
+        self.assertIn("ocbidbaplechjjdacmokhnfbdmgjkphf", native.read_text(encoding="utf-8-sig"))
+
+    def test_committed_manifest_key_fixes_bct_install_identity(self):
+        manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
+        public_key = base64.b64decode(manifest["key"], validate=True)
+        alphabet = "abcdefghijklmnop"
+        extension_id = "".join(
+            alphabet[nibble]
+            for byte in hashlib.sha256(public_key).digest()[:16]
+            for nibble in (byte >> 4, byte & 0x0f)
         )
+        self.assertEqual("ocbidbaplechjjdacmokhnfbdmgjkphf", extension_id)
 
     def test_current_browser_contract_is_present(self):
         background = (self.extension / "background.js").read_text(encoding="utf-8")
@@ -47,7 +56,10 @@ class RccSourceBaselineTests(unittest.TestCase):
             r"D:\ChromeExtensions\RCC\native\RelayNativeHostV2.exe", manifest["path"]
         )
         self.assertEqual(
-            ["chrome-extension://bhlcnmbodlhbephppahojbigleklpmhj/"],
+            [
+                "chrome-extension://bhlcnmbodlhbephppahojbigleklpmhj/",
+                "chrome-extension://ocbidbaplechjjdacmokhnfbdmgjkphf/",
+            ],
             manifest["allowed_origins"],
         )
         self.assertNotIn(r"D:\ACT", json.dumps(manifest))

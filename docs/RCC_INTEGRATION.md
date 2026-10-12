@@ -39,7 +39,12 @@ into BCT receipts.
 
 ## Deployment
 
-Only the two Python integration files are loaded into the BCT runtime. The recovered RCC
-extension source is versioned in BCT but is not copied over the accepted ACT extension in
-V1. A future extension change must use a separate exact-file Chrome deployment profile and
-explicit reload acceptance.
+Only the two Python integration files are loaded into the BCT Core runtime. RCC itself is an
+installable module and is deployed separately to `D:\ChromeExtensions\RCC`.
+
+The first installed-path migration keeps the running legacy instance available while a second,
+fixed-identity BCT instance is loaded.  The old instance is read exactly once, registrations are
+recreated only against matching open tab/conversation identities, and no pending/result operation is
+copied or retried.  The old extension is disabled only after the new exact instance is healthy.  The
+committed public key fixes the BCT extension ID at `ocbidbaplechjjdacmokhnfbdmgjkphf`, so later source
+updates do not depend on the checkout or installation path.

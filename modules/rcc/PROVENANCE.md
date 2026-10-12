@@ -21,6 +21,20 @@ the BCT installation contract. The extension path cutover is separate because an
 extension without a manifest key derives its ID from its path; BCT must migrate its local state before
 changing that path.
 
+## BCT installed identity
+
+The baseline hash table below remains the recovery evidence. The BCT installation intentionally adds
+one manifest public key after recovery so the installed extension ID is independent of its directory:
+
+- installed path: `D:\ChromeExtensions\RCC\extension`;
+- fixed extension ID: `ocbidbaplechjjdacmokhnfbdmgjkphf`;
+- legacy path-derived ID during the bounded cutover only: `bhlcnmbodlhbephppahojbigleklpmhj`.
+
+The Native Host transition manifest accepts both IDs while the old instance is inspected and the
+verified registrations are rebound to the new exact instance.  It does not copy pending sends or
+re-run an old browser operation.  The legacy origin can be removed after the old extension is disabled
+and the new instance passes state and duplicate-operation acceptance.
+
 ## Exact imported SHA-256 values
 
 | File | SHA-256 |
