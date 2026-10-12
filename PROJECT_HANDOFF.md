@@ -10,7 +10,7 @@
 - 공통 정책 판단 구현은 하나, 실행 직전 대상 검사와 원격 인증은 실행 경계에서 유지한다.
 - 설계의 유일한 상세 기준은 docs/DESIGN.md다.
 
-## 이번 완료와 한계
+## 완료된 구현과 현재 경계
 
 FIRST_SLICE_COMPLETE / CI_PASS.
 코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
@@ -19,6 +19,11 @@ FIRST_SLICE_COMPLETE / CI_PASS.
 GitHub Actions run `38234844806`에서 최신 Actions major로 Windows CI가 통과했다.
 ACT 전체 feature 호환, MCP/RCC, LIVE 배포는 아직 없다.
 현재 ACT live, 기존 탭/role binding, 서비스, 기존 작업과 소스는 이 설계 작업에서 수정하지 않았다.
+
+GitHub integration V1은 BCT 소스로 구현되었다. exact-SHA branch push, deterministic request marker를
+사용한 PR 생성 중복 방지, required-check 조회, exact-head merge 및 verified `main` fast-forward를
+공통 operation receipt와 resource claim으로 실행한다. 인증은 공식 `gh`의 기존 credential store를
+사용하고 token은 BCT 상태에 저장하지 않는다. 상세 계약은 `docs/GITHUB_INTEGRATION.md`를 따른다.
 
 ## 모델 전환
 
@@ -36,6 +41,7 @@ ACT 전체 feature 호환, MCP/RCC, LIVE 배포는 아직 없다.
 - 구현체를 BCT로 가져오기 전에 라이선스·의존성과 현재 계약을 확인.
 - 기능 이전을 이유로 사용자의 기존 MCP/Chrome 설정을 임의 초기화하지 않음.
 
-## 다음 한 작업
+## 다음 이전 순서
 
-다음 feature는 GitHub 통합이며, 구현 전에 현재 ACT/GitHub 경로의 공개 계약만 조사한다.
+GitHub integration의 실제 PR/CI/main acceptance를 완료한 뒤 다음 feature는 배포·서비스다.
+그 다음 MCP, 마지막으로 RCC를 이전한다. 각 기능은 전환 acceptance 전까지 기존 ACT 운영 경로를 유지한다.
