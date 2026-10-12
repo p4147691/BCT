@@ -455,7 +455,14 @@ class RuntimeServiceController:
         try:
             started = self.start(release)
         except ConfirmedFailure as exc:
-            raise UnknownEffectError("SERVICE_RESTART_FAILED_AFTER_CONFIRMED_STOP") from exc
+            state = self.inspect()
+            if state.get("state") != "STOPPED_STALE_RECEIPT":
+                raise UnknownEffectError("SERVICE_RESTART_FAILED_AFTER_CONFIRMED_STOP") from exc
+            time.sleep(1.0)
+            try:
+                started = self.start(release)
+            except ConfirmedFailure as retry_exc:
+                raise UnknownEffectError("SERVICE_RESTART_FAILED_AFTER_SAFE_RETRY") from retry_exc
         if int(started["pid"]) == pre_pid or started["fingerprint"] == pre_fingerprint:
             raise UnknownEffectError("SERVICE_RESTART_IDENTITY_NOT_CHANGED")
         return {**started, "pre_pid": pre_pid, "pre_fingerprint": pre_fingerprint}
