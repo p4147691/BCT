@@ -29,6 +29,11 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual("BCT RCC", manifest["name"])
+        self.assertEqual("1.0.0", manifest["version"])
+        self.assertEqual("1.0.0 · BCT", manifest["version_name"])
+        self.assertEqual("BCT RCC", manifest["action"]["default_title"])
+        self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
         alphabet = "abcdefghijklmnop"
         extension_id = "".join(
