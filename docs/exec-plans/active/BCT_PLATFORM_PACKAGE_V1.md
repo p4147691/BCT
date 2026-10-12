@@ -88,7 +88,8 @@ mutation safety checks.
 
 ## Accepted result
 
-- Canonical source moved to `D:\BCT\source`; `D:\PROJECTS\BCT` remains a bootstrap witness only.
+- Canonical source moved to `D:\BCT\source`; the former `D:\PROJECTS\BCT` bootstrap checkout and
+  linked worktrees are archived under `D:\Archive\BCT-Bootstrap-20261013` with recovery evidence.
 - BCT core, MCP and Monitor run from the same exact release and health contract.
 - Python, PowerShell and argv are supported as one-shot operations and durable process sessions.
 - Laya is BCT-owned at the lifecycle/receipt boundary and remains advisory with deterministic fallback.

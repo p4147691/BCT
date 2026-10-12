@@ -83,7 +83,9 @@ GitHub main은 BCT 소스 정본이다. 인증정보, Chrome 프로필, 사용�
 - Git 밖 대형 모델: `D:\BCT\models`
 - 격리 개발 worktree: `D:\BCT\worktrees`
 
-`D:\PROJECTS\BCT`는 초기 bootstrap checkout으로만 보존하며 새 개발·배포의 정본으로 사용하지 않는다.
+초기 `D:\PROJECTS\BCT` bootstrap checkout과 연결 worktree는
+`D:\Archive\BCT-Bootstrap-20261013`에 검증 가능한 ZIP·Git bundle과 함께 보존한다.
+활성 개발·배포 정본은 `D:\BCT\source` 하나뿐이다.
 
 ## 로컬 검증
 

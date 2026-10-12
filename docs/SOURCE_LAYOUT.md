@@ -14,6 +14,6 @@ The user-facing BCT package is rooted at `D:\BCT`.
 GitHub `main` remains the source authority.  The local source checkout must be clean and at the
 exact verified main SHA before deployment.  Runtime files are never edited in place.
 
-The former `D:\PROJECTS\BCT` checkout is retained only as a rollback/bootstrap witness during
-the source-root transition.  It is not deleted or silently updated, and new BCT work should use
-`D:\BCT\source` or a worktree under `D:\BCT\worktrees`.
+The former `D:\PROJECTS\BCT` checkout and its linked worktrees are archived under
+`D:\Archive\BCT-Bootstrap-20261013` with verified ZIP and Git-bundle evidence.  The only active
+source checkout is `D:\BCT\source`; new isolated work belongs under `D:\BCT\worktrees`.

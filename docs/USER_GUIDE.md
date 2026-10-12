@@ -35,7 +35,9 @@ Chrome/RCC mutation처럼 지속되는 부작용이 있는 단계에서는 Codex
 - 로컬 LLM dependency: `D:\BCT\local-llm`
 - 격리 worktree: `D:\BCT\worktrees`
 
-`D:\PROJECTS\BCT`는 초기 bootstrap 복구본이며 새 작업의 정본이 아니다.
+초기 `D:\PROJECTS\BCT` bootstrap 복구본과 연결 worktree는
+`D:\Archive\BCT-Bootstrap-20261013`에 보존되어 있다. 활성 정본은 `D:\BCT\source`이며,
+새 격리 작업만 `D:\BCT\worktrees` 아래에 만든다.
 
 ## 문제가 생겼을 때
 

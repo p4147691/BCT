@@ -11,8 +11,10 @@
   BCT 구현과 공통 operation receipt를 사용한다.
 - Python과 PowerShell은 일반 개발 실행으로 사용할 수 있다. 지속 mutation, 배포, 서비스 및
   브라우저 변경은 별도의 주의 경계를 유지한다.
-- BCT runtime은 ACT 모듈을 import하지 않는다. ACT와 초기 `D:\PROJECTS\BCT` checkout은
-  기존 구성요소의 rollback/bootstrap 증거로만 보존한다.
+- BCT runtime은 ACT 모듈을 import하지 않는다. 초기 `D:\PROJECTS\BCT` checkout과 연결
+  worktree는 `D:\Archive\BCT-Bootstrap-20261013`에 rollback/bootstrap 증거로 보존했고,
+  활성 BCT 소스 정본은 `D:\BCT\source` 하나뿐이다. ACT 외부 연동의 잔여 의존성은
+  완전 전환 전까지 별도로 추적한다.
 - 기능별 정확한 소유권은 `docs/CAPABILITY_OWNERSHIP.md`, 사용법은 `docs/USER_GUIDE.md`를 따른다.
 
 ## 현재 결정
