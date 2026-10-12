@@ -20,7 +20,7 @@ These capabilities live in the BCT repository and do not import ACT runtime modu
 
 ## BCT-owned components and external assets
 
-The DesktopWindow Monitor source baseline lives under `components/monitor`. Its existing Chrome
+The DesktopWindow Monitor source baseline lives under `modules/monitor`. Its existing Chrome
 installation stays at the external extension path for compatibility. It is not a second authority;
 the independent BCT Monitor is the core operational view.
 

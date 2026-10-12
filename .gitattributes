@@ -1,2 +1,2 @@
-rcc/** -text
-components/monitor/** -text
+modules/rcc/** -text
+modules/monitor/** -text

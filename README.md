@@ -13,8 +13,9 @@ BCT는 현재 파일 읽기·쓰기, 테스트, Git/GitHub, exact 배포·서비
 공통 operation receipt로 제공한다. 새 파일을 포함한 구조화 Git commit과 deployment profile의
 안전한 파일 목록 진화도 실제 수용 검증을 마쳤다.
 
-정본은 GitHub `p4147691/BCT`의 `main`, 로컬 정본 checkout은 `D:\BCT\source`, 운영본은
-`D:\BCT\runtime`이다. BCT core/MCP/Monitor는 `127.0.0.1:18790`에서 함께 실행되며
+공식 소스는 GitHub `p4147691/BCT`의 `main` 하나다. `D:\BCT\source`는 그 main을
+동기화한 로컬 checkout이고, `D:\BCT\runtime`은 검증된 commit으로 만든 실행본이다.
+BCT core/MCP/Monitor는 `127.0.0.1:18790`에서 함께 실행되며
 Monitor UI는 `http://127.0.0.1:18790/monitor`이다. BCT runtime은 ACT Python 모듈을 import하지
 않는다. ACT는 기존 작업과 아직 제거하지 않은 호환 구성요소의 rollback 경로로만 보존한다.
 
@@ -66,18 +67,21 @@ operation ID는 두 번째 프로세스나 입력을 만들지 않는다.
 
 ## 플랫폼 구성요소
 
-- RCC 소스와 제어 계약은 `rcc/`에 있다.
-- DesktopWindow Monitor의 활성 baseline은 `components/monitor/`에 있다.
+- BCT 제품은 작은 `Core`와 독립적인 `modules/`로 구성된다.
+- RCC 소스와 제어 계약은 `modules/rcc/`에 있다. RCC는 사용자 기능 이름이고 Relay는 내부 전송 계층 이름이다.
+- DesktopWindow Monitor의 활성 baseline은 `modules/monitor/`에 있다.
+- BDC(BCT Desktop Control)는 `modules/bdc/`가 소유하며, Core 밖의 데스크톱 자동화 기능이다.
+- 읽기 전용 운영 화면은 `modules/status-ui/`에 있다.
 - Laya 모델 파일은 Git 밖의 `D:\BCT\models`에, 전용 실행 dependency는
   `D:\BCT\local-llm`에 둔다.
 - BCT는 모델 endpoint health, advisory inference, PID/fingerprint service receipt와
   deterministic fallback을 소유한다. 모델 추천은 인증·권한·중복 방지 결정을 대체하지 않는다.
 
-GitHub main은 BCT 소스 정본이다. 인증정보, Chrome 프로필, 사용자 설정과 runtime DB/log는 커밋하지 않는다.
+GitHub main은 BCT의 유일한 공식 소스다. 인증정보, Chrome 프로필, 사용자 설정과 runtime DB/log는 커밋하지 않는다.
 
 로컬 패키지 배치는 한곳으로 모은다.
 
-- 정본 source checkout: `D:\BCT\source`
+- GitHub main을 따라가는 로컬 checkout: `D:\BCT\source`
 - immutable 운영 release와 service receipt: `D:\BCT\runtime`
 - operation/model/session 상태: `D:\BCT\data`
 - Git 밖 대형 모델: `D:\BCT\models`
@@ -85,7 +89,8 @@ GitHub main은 BCT 소스 정본이다. 인증정보, Chrome 프로필, 사용�
 
 초기 `D:\PROJECTS\BCT` bootstrap checkout과 연결 worktree는
 `D:\Archive\BCT-Bootstrap-20261013`에 검증 가능한 ZIP·Git bundle과 함께 보존한다.
-활성 개발·배포 정본은 `D:\BCT\source` 하나뿐이다.
+새 변경은 `D:\BCT\worktrees`에서 만들고 PR/CI로 GitHub main에 통합한다. 통합 후
+`D:\BCT\source`를 exact main SHA로 동기화하고 그 commit만 LIVE에 배포한다.
 
 ## 로컬 검증
 

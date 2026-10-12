@@ -15,7 +15,7 @@ bindings and the installed extension/native host were not replaced or reconfigur
 - PR CI: `38254069968` PASS; main CI: `38254397056` PASS.
 - Local and hosted regression: 38/38 PASS; compile and diff checks PASS.
 
-The hardening commit prevents Git checkout line-ending conversion under `rcc/` and
+The hardening commit prevents Git checkout line-ending conversion under `modules/rcc/` and
 reconciles a lost service shutdown response by exact PID/endpoint post-state instead of
 leaving a completed stop ambiguous.
 

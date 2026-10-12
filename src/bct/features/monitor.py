@@ -28,7 +28,7 @@ class MonitorFeature:
     def _config(self) -> tuple[Path, Path]:
         data = tomllib.loads(self.policy_path.read_text(encoding="utf-8"))
         config = data.get("monitor") or {}
-        source_value = str(config.get("source_root") or "components/monitor")
+        source_value = str(config.get("source_root") or "modules/monitor")
         live_value = str(config.get("live_root") or "").strip()
         source = Path(source_value)
         if not source.is_absolute():
