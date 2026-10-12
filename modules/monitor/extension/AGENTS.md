@@ -1,0 +1,20 @@
+# BCT Monitor module instructions
+
+- Official source: GitHub `p4147691/BCT` main. Local main checkout:
+  `D:\BCT\source\modules\monitor`.
+- Installed payload: `D:\ChromeExtensions\DesktopWindow-Monitor`.
+- Native host authority is the registered manifest path, not the newest-looking directory.
+- Monitor owns observation, exact window controls and presentation only. BCT Core owns identity,
+  work, policy, operation receipts and conflicts.
+- Do not add dependencies on ACT ports, ACT roles, old node groups, `D:\AI_TOOLS`, or another
+  policy/ownership store.
+- Google Chrome's current user profile is the only supported ChatGPT profile. Do not recreate the
+  retired NAVER profile.
+- Window actions require exact HWND/endpoint evidence. Mutations use the BCT operation contract and
+  must not be silently retried.
+- Keep source, installed payload and loaded runtime distinct. Validate exact files before reload.
+- Run `tools/check_monitor_structure.py` and affected Node checks before publishing.
+- Do not write `.reload-token` directly. Use the bounded publication path and verify the loaded
+  version after reload.
+- The former ACT organization projection is compatibility-only. Do not extend it; remove it only
+  with focused node-number/status and window-control regression coverage.

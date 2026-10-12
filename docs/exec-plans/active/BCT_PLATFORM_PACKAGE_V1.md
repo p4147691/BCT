@@ -72,8 +72,8 @@ mutation safety checks.
 3. Monitor exact-source baseline, validators and bounded deployment/control.
 4. Remaining accepted ADC-native operations and compatibility catalogue.
 5. Unified BCT release, live acceptance and ACT-dependency audit.
-6. Move the canonical checkout to `D:\BCT\source` after all configured source-root references can
-   be changed atomically; keep the old checkout only until the new source path is verified.
+6. Move the local main checkout to `D:\BCT\source` after all configured source-root references can
+   be changed atomically; GitHub main remains the only official source.
 
 ## Completion
 
@@ -88,7 +88,7 @@ mutation safety checks.
 
 ## Accepted result
 
-- Canonical source moved to `D:\BCT\source`; the former `D:\PROJECTS\BCT` bootstrap checkout and
+- The local main checkout moved to `D:\BCT\source`; the former `D:\PROJECTS\BCT` bootstrap checkout and
   linked worktrees are archived under `D:\Archive\BCT-Bootstrap-20261013` with recovery evidence.
 - BCT core, MCP and Monitor run from the same exact release and health contract.
 - Python, PowerShell and argv are supported as one-shot operations and durable process sessions.

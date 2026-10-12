@@ -79,7 +79,7 @@ def main() -> int:
 
     @mcp.custom_route("/monitor", methods=["GET"], include_in_schema=False)
     async def monitor(request: Request) -> FileResponse:
-        asset = release_root / "components" / "bct-monitor" / "index.html"
+        asset = release_root / "modules" / "status-ui" / "index.html"
         if not asset.is_file():
             return JSONResponse({"error": "BCT_MONITOR_ASSET_MISSING"}, status_code=503)
         return FileResponse(asset, media_type="text/html; charset=utf-8")

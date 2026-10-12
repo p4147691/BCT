@@ -25,13 +25,19 @@ ACT 전체를 영구적으로 호출하는 wrapper는 최종 구조로 삼지 �
         policy.py       # 권한/추가 승인 판단의 유일한 구현
         operations.py   # 작업·operation 실행 조정, 중복/충돌/복구
         store.py        # SQLite 원자적 상태 변경
-      features/
+      features/             # thin capability adapters; not separate authorities
         files/          # BCT가 소유하는 실제 파일 구현 + adapter
         git/
         tests/
         deploy/
         services/
-        rcc/
+    modules/
+      bdc/                  # BCT Desktop Control
+      rcc/                  # browser relay product and native host source
+      monitor/              # DesktopWindow Monitor source
+      decision/             # local model lifecycle boundary
+      github/               # GitHub/runner operating contract
+      status-ui/            # read-only BCT operational screen
       integrations/
         mcp/            # 인증된 요청 변환과 공개 도구 계약
         act_compat/     # 필요한 기능에만 적용하는 임시 이전 연결
@@ -52,6 +58,11 @@ MCP catalogue도 이 목록에서 생성/검사하여 공개만 되고 실행기
 복잡한 자동 discovery나 별도 registry service를 만들지 않는다.
 
 ## 3. 설정과 운영 상태의 정본
+
+소스 전달 단계의 용어는 고정한다. GitHub main이 유일한 공식 소스다. 로컬 checkout과
+worktree는 개발 사본이며, runtime과 Chrome extension 폴더는 특정 commit에서 배포한
+설치·실행 사본이다. 이 관계는 BCT 자체와 BCT가 다루는 사용자 프로젝트에 동일하게
+적용한다. 운영 DB, receipt, 모델 weight와 Chrome profile은 소스가 아니라 상태/자산이다.
 
 - bct.toml: 사람이 관리하는 정책/위험 기본값/기능 설정. 명시한 사용자 요청 안의 일반 개발 작업은 기본 허용.
 - state.sqlite: node, connection, work, operation, resource_claim, event 및 적용 revision.

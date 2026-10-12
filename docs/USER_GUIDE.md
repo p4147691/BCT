@@ -28,7 +28,8 @@ Chrome/RCC mutation처럼 지속되는 부작용이 있는 단계에서는 Codex
 
 ## 위치
 
-- 소스 정본: `D:\BCT\source`
+- 공식 소스: GitHub `p4147691/BCT`의 `main`
+- 로컬 main checkout: `D:\BCT\source`
 - 운영 release: `D:\BCT\runtime`
 - 상태와 receipt: `D:\BCT\data`
 - 모델: `D:\BCT\models`
@@ -36,8 +37,8 @@ Chrome/RCC mutation처럼 지속되는 부작용이 있는 단계에서는 Codex
 - 격리 worktree: `D:\BCT\worktrees`
 
 초기 `D:\PROJECTS\BCT` bootstrap 복구본과 연결 worktree는
-`D:\Archive\BCT-Bootstrap-20261013`에 보존되어 있다. 활성 정본은 `D:\BCT\source`이며,
-새 격리 작업만 `D:\BCT\worktrees` 아래에 만든다.
+`D:\Archive\BCT-Bootstrap-20261013`에 보존되어 있다. 새 격리 작업은
+`D:\BCT\worktrees` 아래에 만들고, GitHub main 통합 후 `D:\BCT\source`를 동기화한다.
 
 ## 문제가 생겼을 때
 

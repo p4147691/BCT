@@ -11,7 +11,7 @@ class RccSourceBaselineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parents[1]
-        cls.extension = cls.root / "rcc" / "extension"
+        cls.extension = cls.root / "modules" / "rcc" / "extension"
 
     def test_accepted_live_baseline_hashes_are_preserved(self):
         expected = {
@@ -22,7 +22,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         }
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
-        native = self.root / "rcc" / "native-host" / "RelayNativeHostV2.cs"
+        native = self.root / "modules" / "rcc" / "native-host" / "RelayNativeHostV2.cs"
         self.assertEqual(
             "164695e660a775b08d5d3289ff95340e28adb319a65d45e6e88790f4d1ee24ab",
             hashlib.sha256(native.read_bytes()).hexdigest(),

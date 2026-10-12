@@ -3,7 +3,7 @@
 ## Boundary
 
 BCT owns a byte-exact source baseline of the currently accepted Chrome extension and
-Native Host source under `rcc/`. The already installed extension, Chrome profile, native
+Native Host source under `modules/rcc/`. The already installed extension, Chrome profile, native
 host executable, tabs, and role bindings remain in place. V1 adds a BCT control path to
 the existing exact-instance Native Messaging pipe; it does not silently reinstall or
 reload Chrome components.
