@@ -48,3 +48,9 @@ recreated only against matching open tab/conversation identities, and no pending
 copied or retried.  The old extension is disabled only after the new exact instance is healthy.  The
 committed public key fixes the BCT extension ID at `ocbidbaplechjjdacmokhnfbdmgjkphf`, so later source
 updates do not depend on the checkout or installation path.
+
+The installed BCT extension is displayed as `BCT RCC`; the legacy compatibility extension keeps its
+old display name.  The BCT manifest starts at product version `1.0.0`.  Every subsequently deployed
+extension payload change must increase the four-part-compatible Chrome manifest version and update
+`version_name` when a human-readable qualifier is useful.  The fixed public key, not the display name
+or version, remains the durable extension identity.
