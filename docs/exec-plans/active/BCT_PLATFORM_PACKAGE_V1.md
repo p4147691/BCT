@@ -1,4 +1,6 @@
-# BCT Platform Package V1
+# BCT Platform Package V1 — COMPLETE
+
+Status: `LIVE_ACCEPTED`
 
 ## Goal
 
@@ -83,3 +85,16 @@ mutation safety checks.
 - Existing ACT remains usable during migration and can be retired component-by-component only
   after BCT live acceptance.
 - Full tests, CI, source/runtime hash checks and focused live acceptance pass.
+
+## Accepted result
+
+- Canonical source moved to `D:\BCT\source`; `D:\PROJECTS\BCT` remains a bootstrap witness only.
+- BCT core, MCP and Monitor run from the same exact release and health contract.
+- Python, PowerShell and argv are supported as one-shot operations and durable process sessions.
+- Laya is BCT-owned at the lifecycle/receipt boundary and remains advisory with deterministic fallback.
+- RCC uses the accepted exact-instance boundary without changing protected tabs or bindings.
+- DesktopWindow Monitor baseline is preserved as a BCT component; the independent BCT Monitor provides
+  the core operational view.
+- Deployment profile evolution was fixed so a verified target commit may safely add exact new files.
+- Full unit regression, GitHub CI, duplicate deployment fencing, source/runtime checks and integrated
+  live acceptance passed.

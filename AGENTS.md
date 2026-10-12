@@ -12,18 +12,17 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
 
 ## Current boundary
 
-- Implemented and accepted: core identity/policy/operation store, bounded file read/write, Python test,
-  Git commit, and GitHub integration V1 (exact push, idempotent PR, CI-gated merge, verified-main sync).
-- Implemented and live accepted: deployment/service V1 (named exact-file profile, immutable release,
-  exact process ownership and health, idempotent control, rollback) at `D:\BCT\runtime`, port 18790.
-- Implemented and live accepted: MCP V1 (same-process Streamable HTTP, bearer authentication,
-  catalogue generated from real capabilities, common work/operation receipts) at
-  `http://127.0.0.1:18790/mcp`; Codex server name `bct`.
-- Implemented and live accepted: RCC V1 exact live-source baseline and exact-instance BCT
-  relay boundary through `bct_relay_browser`. The existing extension/native host stays
-  installed while BCT owns the tracked source and operation contract.
-- Keep current ACT, MCP, RCC, Chrome profile and bindings operational while features are migrated.
-- Do not claim an unmigrated feature is compatible or live accepted.
+- `BCT_PLATFORM_PACKAGE_V1` is live accepted. The BCT repository owns core identity/policy/receipt,
+  file and Git workflows, GitHub integration, deployment/service control, MCP, RCC control,
+  Python/PowerShell/argv execution and persistent sessions, Laya runtime integration, and the BCT Monitor.
+- Runtime is `D:\BCT\runtime`, data is `D:\BCT\data`, and the same BCT process serves health,
+  MCP (`http://127.0.0.1:18790/mcp`) and Monitor (`http://127.0.0.1:18790/monitor`).
+- The DesktopWindow Monitor Chrome component remains installed at its existing live location; BCT owns
+  its accepted source baseline and validation while the independent BCT Monitor is the core status UI.
+- ACT is a rollback/legacy compatibility installation. BCT runtime must not import ACT modules or
+  dispatch a mutation through ACT.
+- Project-specific ADC utilities are not platform subsystems. Run them as ordinary project workflows
+  through BCT execution when needed instead of copying every historical tool into BCT core.
 
 ## Development
 
