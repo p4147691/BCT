@@ -17,6 +17,14 @@ Every capability tool accepts `work_id`, `operation_id`, `arguments`, and an opt
 `approval_ref`. It delegates to the same policy, work ownership, resource claim, duplicate
 operation, precondition, and outcome code used by direct BCT calls.
 
+Capability execution runs outside the ASGI event loop so a long Python, PowerShell, test, or
+model operation cannot make `/health` and MCP transport appear dead.  The two operations that
+can replace the BCT process itself (`deploy` and `service_control`) use a durable one-shot worker:
+the server first records the exact operation and resource claim, writes an immutable job/launch
+receipt, and returns `RUNNING`; the worker performs the already-fenced operation exactly once.
+After a restart, callers retrieve the same operation receipt instead of dispatching again.  A
+worker crash leaves the operation and claim unresolved and therefore fails closed.
+
 ## Transport and authentication
 
 - Standard transport: MCP Streamable HTTP.

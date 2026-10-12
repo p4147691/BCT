@@ -83,6 +83,38 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(second.duplicate)
         self.assertEqual(1, feature.calls)
 
+    def test_background_begin_and_resume_execute_exactly_once(self):
+        feature = CountingFeature()
+        self.replace_feature(feature)
+        call = {
+            "principal": self.owner, "work_id": "work-1", "operation_id": "background-1",
+            "capability": "write", "arguments": {"resource": "background"},
+        }
+        created, pending = self.bct.operations.begin(**call)
+        repeated, duplicate = self.bct.operations.begin(**call)
+        self.assertTrue(created)
+        self.assertFalse(repeated)
+        self.assertEqual("RUNNING", pending.state.value)
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(0, feature.calls)
+
+        completed = self.bct.operations.resume(**call)
+        completed_again = self.bct.operations.resume(**call)
+        self.assertEqual(Outcome.APPLIED, completed.outcome)
+        self.assertTrue(completed_again.duplicate)
+        self.assertEqual(1, feature.calls)
+
+    def test_background_resume_without_begin_is_not_applied(self):
+        feature = CountingFeature()
+        self.replace_feature(feature)
+        result = self.bct.operations.resume(
+            principal=self.owner, work_id="work-1", operation_id="background-unprepared",
+            capability="write", arguments={"resource": "unprepared"},
+        )
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        self.assertEqual("BACKGROUND_OPERATION_NOT_PREPARED", result.error)
+        self.assertEqual(0, feature.calls)
+
     def test_same_operation_id_with_different_request_is_denied(self):
         self.replace_feature(CountingFeature())
         self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-1",
