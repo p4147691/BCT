@@ -1,4 +1,13 @@
 [policy]
-normal_actions = ["read", "write", "test", "git_commit"]
+normal_actions = [
+  "read",
+  "write",
+  "test",
+  "git_commit",
+  "github_push",
+  "github_pr_create",
+  "github_pr_status",
+  "github_pr_merge",
+  "github_sync_main",
+]
 approval_actions = ["deploy", "service_control", "delete", "credential_change"]
-

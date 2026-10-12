@@ -11,3 +11,6 @@ The retained behavioral ideas are bounded target resolution, explicit expected h
 
 No third-party source was copied into this first slice. Python standard-library components are used.
 
+GitHub integration V1 was independently authored in BCT. It uses the documented `git` command-line
+contracts and the official GitHub CLI `gh api` interface. No ACT GitHub implementation, credential,
+runtime database, workflow receipt, or token was copied into BCT.
