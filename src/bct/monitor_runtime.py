@@ -4,9 +4,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from bct.integrations.native_process import process_matches
 from bct.integrations.rcc import discover_instance_ids
-from bct.service_runtime import read_json
+from bct.integrations.native_process import process_matches
+from bct.service_runtime import process_identity, read_json
 
 
 def _decision_state(endpoint_path: Path) -> dict[str, Any]:
@@ -14,7 +14,17 @@ def _decision_state(endpoint_path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {"state": "UNCONFIGURED"}
     process = value.get("process") if isinstance(value.get("process"), dict) else {}
-    owned = bool(process) and process_matches(process)
+    try:
+        current = process_identity(int(process.get("pid") or 0))
+    except (TypeError, ValueError):
+        current = None
+    owned = bool(
+        current is not None
+        and current.pid == process.get("pid")
+        and current.executable == process.get("executable")
+        and current.creation_marker == process.get("creation_marker")
+        and current.fingerprint == process.get("fingerprint")
+    )
     return {
         "state": "RUNNING" if owned else "STALE",
         "owner": str(value.get("owner") or ""),
