@@ -23,7 +23,9 @@ class ModuleLayoutTests(unittest.TestCase):
     def test_runtime_profile_has_no_legacy_source_paths(self):
         files = self.config["deployment"]["profiles"]["bct_runtime_v1"]["files"]
         self.assertIn("modules/status-ui/index.html", files)
-        self.assertTrue(any(item.startswith("modules/monitor/") for item in files))
+        self.assertFalse(any(item.startswith("modules/monitor/") for item in files))
+        self.assertFalse(any(item.startswith("modules/rcc/") for item in files))
+        self.assertFalse(any(item.startswith("modules/bdc/") for item in files))
         self.assertFalse(any(item.startswith("components/") for item in files))
 
     def test_tunnel_profile_uses_file_referenced_header_map(self):

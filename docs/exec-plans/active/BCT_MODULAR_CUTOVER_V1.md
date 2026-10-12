@@ -1,6 +1,6 @@
 # BCT Modular Cutover V1
 
-Status: `SOURCE_RESTRUCTURE_IN_PROGRESS`
+Status: `CORE_RELEASE_BOUNDARY_ACCEPTED_SOURCE`
 
 ## Goal
 
@@ -37,6 +37,18 @@ replaceable capabilities are modules.
 8. Reduce runner pool; replace/retire ACT scheduled tasks.
 9. Archive profiles and legacy tools only after all references and active processes are absent.
 10. Cold-start acceptance, then archive and delete ACT.
+
+## 2026-10-13 progress
+
+- GitHub main is the sole official source; local source and Core runtime were verified at one exact
+  release before this slice.
+- `bct_runtime_v1` now excludes DesktopWindow Monitor, RCC and BDC module payloads. Core keeps only
+  the runtime implementation and its read-only status UI; module source remains maintained in Git.
+- Legacy `D:\AI_TOOLS` and `D:\ChromeExtensions` staging/verification copies were moved, unchanged,
+  into SHA-manifested archives. Active installed extensions, active tools and project candidates were
+  retained.
+- Old ACT and ADC scheduled starts are disabled; retained ACT-path processes and runners remain
+  explicit retirement gates rather than hidden dependencies.
 
 Every live cutover is reversible, exact-SHA fenced and single-writer. An installed component is not
 retired merely because its source has moved.
