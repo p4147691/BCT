@@ -12,7 +12,7 @@
 
 ## 완료된 구현과 현재 경계
 
-FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED.
+FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_TESTED.
 코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
 파일 읽기·원자적 쓰기, Python test, expected HEAD·정확한 dirty set·new-file SHA proof 기반 Git commit을 BCT 소스로 구현했다.
 13개 first-slice 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
@@ -34,6 +34,13 @@ push/PR/merge가 실제로 추가 효과를 만들지 않는 것을 확인했다
 `c770eb5595856776db63fbb085ea148f731bdb92`로 수정·CI 검증했다. 중앙 BOOTSTRAP의 BCT 상태도
 PR #23, merge `f478d5e75c57e4e8455914b503d1c5f5fee41546`으로 갱신했다.
 
+Deployment/service V1은 source checkout과 runtime을 분리한다. `bct_runtime_v1` named profile만
+`D:\PROJECTS\BCT`의 명시된 파일을 `D:\BCT\runtime\releases\<source-head>`로 옮길 수 있다.
+clean main/exact commit, file SHA manifest, atomic current pointer, durable deployment receipt,
+exact PID/executable/creation fingerprint/generation/instance health, duplicate operation fencing,
+stop/restart 검증 및 failed-readiness 전체 rollback을 구현했다. focused 4개와 전체 23개 테스트,
+compile 및 diff 검사를 통과했다. 상세 계약은 `docs/DEPLOYMENT_SERVICE.md`를 따른다.
+
 ## 모델 전환
 
 사용자는 Astra로 코어 구조·노드 신원·권한 경계 설계까지 마친 뒤 SOL로 구현을 이어가기를 선택했다.
@@ -52,7 +59,6 @@ PR #23, merge `f478d5e75c57e4e8455914b503d1c5f5fee41546`으로 갱신했다.
 
 ## 다음 이전 순서
 
-다음 feature는 배포·서비스다. BCT 실행 코드를 소스 checkout과 분리된 안정된 설치/서비스로
-운영하고, exact source/runtime SHA·backup·atomic replace·rollback·최소 restart·health verification을
-한 계약으로 구현한다. 그 다음 MCP, 마지막으로 RCC를 이전한다. 각 기능은 전환 acceptance 전까지
-기존 ACT 운영 경로를 유지한다.
+현재 feature branch를 GitHub CI/main에 통합한 뒤 `D:\BCT\runtime` live acceptance를 완료한다.
+그 다음 MCP, 마지막으로 RCC를 이전한다. 각 기능은 전환 acceptance 전까지 기존 ACT 운영 경로를
+유지한다.

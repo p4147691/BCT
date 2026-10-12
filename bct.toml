@@ -9,5 +9,35 @@ normal_actions = [
   "github_pr_status",
   "github_pr_merge",
   "github_sync_main",
+  "deploy",
+  "service_control",
 ]
-approval_actions = ["deploy", "service_control", "delete", "credential_change"]
+approval_actions = ["delete", "credential_change"]
+
+[deployment.profiles.bct_runtime_v1]
+source_root = "D:\\PROJECTS\\BCT"
+runtime_root = "D:\\BCT\\runtime"
+service_name = "bct-core"
+port = 18790
+files = [
+  "bct.toml",
+  "src/bct/__init__.py",
+  "src/bct/service.py",
+  "src/bct/service_runtime.py",
+  "src/bct/runtime_server.py",
+  "src/bct/core/__init__.py",
+  "src/bct/core/identity.py",
+  "src/bct/core/models.py",
+  "src/bct/core/operations.py",
+  "src/bct/core/policy.py",
+  "src/bct/core/store.py",
+  "src/bct/features/__init__.py",
+  "src/bct/features/common.py",
+  "src/bct/features/deploy.py",
+  "src/bct/features/files.py",
+  "src/bct/features/git.py",
+  "src/bct/features/github.py",
+  "src/bct/features/tests.py",
+  "src/bct/integrations/__init__.py",
+  "src/bct/integrations/github.py",
+]

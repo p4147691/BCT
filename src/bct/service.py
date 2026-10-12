@@ -9,6 +9,7 @@ from .core.policy import Policy
 from .core.store import Store
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.git import GitCommitFeature
+from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
 from .features.github import (
     GitHubPullRequestFeature,
     GitHubPullRequestMergeFeature,
@@ -30,11 +31,13 @@ class BCT:
         self.identity = IdentityService(self.store)
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)
         github = github_client or GhCliClient()
+        deployment_profiles = DeploymentProfiles(policy_path)
         for feature in (
             FileReadFeature(), FileWriteFeature(), TestFeature(), GitCommitFeature(),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github),
             GitHubSyncMainFeature(),
+            DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
         ):
             self.operations.register(feature)
 
