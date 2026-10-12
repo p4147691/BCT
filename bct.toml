@@ -47,7 +47,7 @@ source_root = "components/monitor"
 live_root = "D:\\ChromeExtensions\\DesktopWindow-Monitor"
 
 [deployment.profiles.bct_runtime_v1]
-source_root = "D:\\PROJECTS\\BCT"
+source_root = "D:\\BCT\\source"
 runtime_root = "D:\\BCT\\runtime"
 service_name = "bct-core"
 port = 18790

@@ -36,7 +36,7 @@ push/PR/merge가 실제로 추가 효과를 만들지 않는 것을 확인했다
 PR #23, merge `f478d5e75c57e4e8455914b503d1c5f5fee41546`으로 갱신했다.
 
 Deployment/service V1은 source checkout과 runtime을 분리한다. `bct_runtime_v1` named profile만
-`D:\PROJECTS\BCT`의 명시된 파일을 `D:\BCT\runtime\releases\<source-head>`로 옮길 수 있다.
+`D:\BCT\source`의 명시된 파일을 `D:\BCT\runtime\releases\<source-head>`로 옮길 수 있다.
 clean main/exact commit, file SHA manifest, atomic current pointer, durable deployment receipt,
 exact PID/executable/creation fingerprint/generation/instance health, duplicate operation fencing,
 stop/restart 검증 및 failed-readiness 전체 rollback을 구현했다. focused 4개와 전체 23개 테스트,

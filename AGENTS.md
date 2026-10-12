@@ -6,7 +6,8 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
 
 - Repository: `p4147691/BCT`
 - Default branch: `main`
-- Local development checkout: `D:\PROJECTS\BCT`
+- Canonical local source checkout: `D:\BCT\source`
+- Runtime releases and durable state remain separate under `D:\BCT\runtime` and `D:\BCT\data`.
 - BCT source and tests live in this repository. ACT runtime is not the BCT source tree.
 
 ## Current boundary
