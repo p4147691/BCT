@@ -185,6 +185,50 @@ class Store:
                     frozenset(json.loads(row["actions_json"])), row["owner_principal_id"],
                     row["assignment_epoch"], row["state"])
 
+    def monitor_snapshot(self, *, event_limit: int = 50) -> dict[str, Any]:
+        """Return a bounded, read-only projection for the local BCT monitor."""
+        limit = max(1, min(int(event_limit), 200))
+        db = self._connect()
+        try:
+            nodes = [dict(row) for row in db.execute(
+                "SELECT node_id,name,role,group_name,revision,active FROM nodes ORDER BY node_id"
+            ).fetchall()]
+            connections = [dict(row) for row in db.execute(
+                "SELECT connection_id,node_id,kind,instance,endpoint,generation,active "
+                "FROM connections ORDER BY connection_id"
+            ).fetchall()]
+            works = [dict(row) for row in db.execute(
+                "SELECT work_id,request_summary,owner_principal_id,assignment_epoch,state "
+                "FROM works ORDER BY rowid DESC LIMIT 100"
+            ).fetchall()]
+            operations = [dict(row) for row in db.execute(
+                "SELECT operation_id,work_id,capability,target,state,outcome,created_at,updated_at "
+                "FROM operations ORDER BY updated_at DESC LIMIT 100"
+            ).fetchall()]
+            claims = [dict(row) for row in db.execute(
+                "SELECT resource_key,operation_id,work_id,assignment_epoch "
+                "FROM resource_claims WHERE unresolved=1 ORDER BY resource_key"
+            ).fetchall()]
+            events = [dict(row) for row in db.execute(
+                "SELECT event_id,kind,subject_id,created_at FROM events "
+                "ORDER BY event_id DESC LIMIT ?", (limit,)
+            ).fetchall()]
+        finally:
+            db.close()
+        for node in nodes:
+            node["active"] = bool(node["active"])
+            node["group"] = node.pop("group_name")
+        for connection in connections:
+            connection["active"] = bool(connection["active"])
+        return {
+            "nodes": nodes,
+            "connections": connections,
+            "works": works,
+            "operations": operations,
+            "unresolved_claims": claims,
+            "events": events,
+        }
+
     def handoff_work(self, *, work_id: str, old_principal_id: str, new_principal_id: str,
                      expected_epoch: int) -> Work:
         with self.transaction() as db:

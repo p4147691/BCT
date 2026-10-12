@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hmac
 import os
 import time
@@ -9,10 +10,11 @@ from typing import Any
 
 import uvicorn
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, JSONResponse
 
 from bct import BCT
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
+from bct.monitor_runtime import build_monitor_state
 from bct.service_runtime import current_process_identity
 
 
@@ -65,6 +67,22 @@ def main() -> int:
     @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
     async def health(request: Request) -> JSONResponse:
         return JSONResponse(state)
+
+    @mcp.custom_route("/monitor/state", methods=["GET"], include_in_schema=False)
+    async def monitor_state(request: Request) -> JSONResponse:
+        return JSONResponse(await asyncio.to_thread(
+            build_monitor_state,
+            store=bct.store,
+            service_state=state,
+            data_root=runtime_root.parent / "data",
+        ))
+
+    @mcp.custom_route("/monitor", methods=["GET"], include_in_schema=False)
+    async def monitor(request: Request) -> FileResponse:
+        asset = release_root / "components" / "bct-monitor" / "index.html"
+        if not asset.is_file():
+            return JSONResponse({"error": "BCT_MONITOR_ASSET_MISSING"}, status_code=503)
+        return FileResponse(asset, media_type="text/html; charset=utf-8")
 
     @mcp.custom_route("/shutdown", methods=["POST"], include_in_schema=False)
     async def shutdown(request: Request) -> JSONResponse:
