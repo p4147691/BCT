@@ -12,10 +12,10 @@
 
 ## 완료된 구현과 현재 경계
 
-FIRST_SLICE_COMPLETE / CI_PASS.
+FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED.
 코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
 파일 읽기·원자적 쓰기, Python test, expected HEAD·정확한 dirty set·new-file SHA proof 기반 Git commit을 BCT 소스로 구현했다.
-12개 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
+13개 first-slice 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
 GitHub Actions run `38234844806`에서 최신 Actions major로 Windows CI가 통과했다.
 ACT 전체 feature 호환, MCP/RCC, LIVE 배포는 아직 없다.
 현재 ACT live, 기존 탭/role binding, 서비스, 기존 작업과 소스는 이 설계 작업에서 수정하지 않았다.
@@ -23,7 +23,11 @@ ACT 전체 feature 호환, MCP/RCC, LIVE 배포는 아직 없다.
 GitHub integration V1은 BCT 소스로 구현되었다. exact-SHA branch push, deterministic request marker를
 사용한 PR 생성 중복 방지, required-check 조회, exact-head merge 및 verified `main` fast-forward를
 공통 operation receipt와 resource claim으로 실행한다. 인증은 공식 `gh`의 기존 credential store를
-사용하고 token은 BCT 상태에 저장하지 않는다. 상세 계약은 `docs/GITHUB_INTEGRATION.md`를 따른다.
+사용하고 token은 BCT 상태에 저장하지 않는다. 5개 focused test를 포함한 전체 18개 로컬 테스트,
+PR #2 Windows CI run `38241115179`, merge commit `9140bc07d7e0fac9b809a208818a20f6bf094653`,
+merge-main push CI run `38241278661`이 통과했다. 동일 operation 및 새 operation ID의 중복
+push/PR/merge가 실제로 추가 효과를 만들지 않는 것을 확인했다. 상세 계약은
+`docs/GITHUB_INTEGRATION.md`, 증거는 `docs/exec-plans/completed/BCT_GITHUB_INTEGRATION.md`를 따른다.
 
 ## 모델 전환
 
@@ -43,5 +47,7 @@ GitHub integration V1은 BCT 소스로 구현되었다. exact-SHA branch push, d
 
 ## 다음 이전 순서
 
-GitHub integration의 실제 PR/CI/main acceptance를 완료한 뒤 다음 feature는 배포·서비스다.
-그 다음 MCP, 마지막으로 RCC를 이전한다. 각 기능은 전환 acceptance 전까지 기존 ACT 운영 경로를 유지한다.
+다음 feature는 배포·서비스다. BCT 실행 코드를 소스 checkout과 분리된 안정된 설치/서비스로
+운영하고, exact source/runtime SHA·backup·atomic replace·rollback·최소 restart·health verification을
+한 계약으로 구현한다. 그 다음 MCP, 마지막으로 RCC를 이전한다. 각 기능은 전환 acceptance 전까지
+기존 ACT 운영 경로를 유지한다.
