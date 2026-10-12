@@ -12,7 +12,7 @@
 
 ## 완료된 구현과 현재 경계
 
-FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED.
+FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED / MCP_V1_TESTED.
 코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
 파일 읽기·원자적 쓰기, Python test, expected HEAD·정확한 dirty set·new-file SHA proof 기반 Git commit을 BCT 소스로 구현했다.
 13개 first-slice 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
@@ -49,6 +49,13 @@ PR #6의 exact head `a3e8cddcf3a1293741a14408a5ac9f5129e43147`은 Windows CI run
 generation 2가 되었고 health `OK`, duplicate deploy/restart 재호출에서 추가 process가 생기지 않았다.
 ACT/MCP/RCC/Chrome은 이 acceptance에서 변경하지 않았다.
 
+MCP V1은 별도 정책·receipt·service를 만들지 않고 BCT core service에 Streamable HTTP `/mcp`를
+탑재한다. 실제 `OperationCoordinator.capabilities`에서 `bct_<capability>` 도구를 생성하므로
+미구현 도구가 catalogue에 남을 수 없다. loopback endpoint는 별도 durable bearer token으로
+인증되며 모든 실행은 기존 work owner, operation ID, resource claim 및 outcome 경로를 그대로
+사용한다. focused test에서 무인증 401, initialize/list, exact 14-tool catalogue, work create/recover,
+실제 read, duplicate receipt, conflicting work 거부를 검증했다. 상세는 `docs/MCP_INTEGRATION.md`다.
+
 ## 모델 전환
 
 사용자는 Astra로 코어 구조·노드 신원·권한 경계 설계까지 마친 뒤 SOL로 구현을 이어가기를 선택했다.
@@ -67,6 +74,6 @@ ACT/MCP/RCC/Chrome은 이 acceptance에서 변경하지 않았다.
 
 ## 다음 이전 순서
 
-다음 feature는 MCP다. BCT core의 기존 identity/work/operation 계약을 MCP tool catalogue와
-연결하되 도구 명세와 실제 capability가 같은 목록에서 생성되게 한다. 마지막으로 RCC를 이전한다.
-각 기능은 전환 acceptance 전까지 기존 ACT 운영 경로를 유지한다.
+현재 MCP feature를 GitHub CI/main에 통합하고 BCT service live endpoint 및 Codex catalogue를
+수용 검증한다. 그 다음 마지막 feature인 RCC를 이전한다. 각 기능은 전환 acceptance 전까지
+기존 ACT 운영 경로를 유지한다.

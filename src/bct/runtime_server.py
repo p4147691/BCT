@@ -2,54 +2,18 @@ from __future__ import annotations
 
 import argparse
 import hmac
-import json
 import os
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import uvicorn
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
 from bct import BCT
+from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.service_runtime import current_process_identity
-
-
-class RuntimeHTTPServer(ThreadingHTTPServer):
-    daemon_threads = True
-    state: dict[str, Any]
-    control_token: str
-
-
-class Handler(BaseHTTPRequestHandler):
-    server: RuntimeHTTPServer
-
-    def log_message(self, format: str, *args: object) -> None:
-        return
-
-    def _json(self, status: int, value: dict[str, Any]) -> None:
-        payload = json.dumps(value, sort_keys=True).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def do_GET(self) -> None:
-        if self.path != "/health":
-            self._json(404, {"error": "NOT_FOUND"})
-            return
-        self._json(200, self.server.state)
-
-    def do_POST(self) -> None:
-        if self.path != "/shutdown":
-            self._json(404, {"error": "NOT_FOUND"})
-            return
-        supplied = self.headers.get("X-BCT-Control-Token", "")
-        if not hmac.compare_digest(supplied, self.server.control_token):
-            self._json(403, {"error": "CONTROL_TOKEN_INVALID"})
-            return
-        self._json(200, {"accepted": True})
-        threading.Thread(target=self.server.shutdown, daemon=True).start()
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -74,8 +38,12 @@ def main() -> int:
     bct = BCT(state_path=runtime_root / "state" / "state.sqlite", policy_path=policy_path)
     identity = current_process_identity()
     control_token = os.environ.get("BCT_CONTROL_TOKEN", "")
+    mcp_token = os.environ.get("BCT_MCP_TOKEN", "")
     if len(control_token) != 64:
         raise RuntimeError("BCT_CONTROL_TOKEN_MISSING")
+    if len(mcp_token) != 64:
+        raise RuntimeError("BCT_MCP_TOKEN_MISSING")
+    mcp = build_mcp(bct)
     state = {
         "status": "OK",
         "ready": True,
@@ -86,16 +54,31 @@ def main() -> int:
         "generation": arguments.generation,
         "instance_id": arguments.instance_id,
         "capabilities": list(bct.operations.capabilities),
+        "mcp_ready": True,
+        "mcp_endpoint": f"http://127.0.0.1:{arguments.port}/mcp",
+        "mcp_tool_count": len(bct.operations.capabilities) + 3,
         "started_at": time.time(),
     }
-    server = RuntimeHTTPServer(("127.0.0.1", arguments.port), Handler)
-    server.state = state
-    server.control_token = control_token
-    try:
-        server.serve_forever(poll_interval=0.2)
-    finally:
-        server.server_close()
-    return 0
+    holder: dict[str, uvicorn.Server] = {}
+
+    @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
+    async def health(request: Request) -> JSONResponse:
+        return JSONResponse(state)
+
+    @mcp.custom_route("/shutdown", methods=["POST"], include_in_schema=False)
+    async def shutdown(request: Request) -> JSONResponse:
+        supplied = request.headers.get("X-BCT-Control-Token", "")
+        if not hmac.compare_digest(supplied, control_token):
+            return JSONResponse({"error": "CONTROL_TOKEN_INVALID"}, status_code=403)
+        holder["server"].should_exit = True
+        return JSONResponse({"accepted": True})
+
+    app = LocalBearerMiddleware(mcp.streamable_http_app(), mcp_token)
+    config = uvicorn.Config(app, host="127.0.0.1", port=arguments.port, log_level="warning")
+    server = uvicorn.Server(config)
+    holder["server"] = server
+    server.run()
+    return 0 if server.started else 1
 
 
 if __name__ == "__main__":

@@ -144,15 +144,16 @@ class RuntimeServiceController:
         self.readiness_timeout = readiness_timeout
         self.service_path = self.runtime_root / "service.json"
         self.secret_path = self.runtime_root / "control.token"
+        self.mcp_secret_path = self.runtime_root / "mcp.token"
 
-    def _secret(self) -> str:
+    def _secret_at(self, path: Path) -> str:
         self.runtime_root.mkdir(parents=True, exist_ok=True)
         try:
-            value = self.secret_path.read_text(encoding="ascii").strip()
+            value = path.read_text(encoding="ascii").strip()
         except FileNotFoundError:
             value = secrets.token_hex(32)
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-            descriptor = os.open(self.secret_path, flags, 0o600)
+            descriptor = os.open(path, flags, 0o600)
             try:
                 os.write(descriptor, (value + "\n").encode("ascii"))
                 os.fsync(descriptor)
@@ -161,6 +162,12 @@ class RuntimeServiceController:
         if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
             raise PreconditionError("SERVICE_CONTROL_TOKEN_INVALID")
         return value
+
+    def _secret(self) -> str:
+        return self._secret_at(self.secret_path)
+
+    def mcp_secret(self) -> str:
+        return self._secret_at(self.mcp_secret_path)
 
     def _health(self) -> dict[str, Any] | None:
         request = urllib.request.Request(f"http://127.0.0.1:{self.port}/health", method="GET")
@@ -209,6 +216,8 @@ class RuntimeServiceController:
             "generation": int(receipt.get("generation") or 0),
             "instance_id": str(receipt.get("instance_id") or ""),
             "ready": True,
+            "mcp_ready": True,
+            "mcp_endpoint": f"http://127.0.0.1:{self.port}/mcp",
         }
         for key, value in exact.items():
             if health.get(key) != value:
@@ -275,7 +284,10 @@ class RuntimeServiceController:
             raise UnknownEffectError("SERVICE_SHUTDOWN_UNVERIFIED")
         child = _LIVE_CHILDREN.pop(pid, None)
         if child is not None:
-            child.poll()
+            try:
+                child.wait(timeout=1)
+            except subprocess.TimeoutExpired as exc:
+                raise UnknownEffectError("SERVICE_CHILD_HANDLE_NOT_REAPED") from exc
         if self._health() is not None:
             raise UnknownEffectError("SERVICE_ENDPOINT_REMAINS_AFTER_STOP")
         stopped = {
@@ -323,6 +335,7 @@ class RuntimeServiceController:
         environment = dict(os.environ)
         environment["PYTHONPATH"] = str(source_path)
         environment["BCT_CONTROL_TOKEN"] = token
+        environment["BCT_MCP_TOKEN"] = self.mcp_secret()
         command = [
             sys.executable,
             "-m",
@@ -400,6 +413,7 @@ class RuntimeServiceController:
                     self._write_service({**starting, "state": "FAILED_UNVERIFIED", "failed_at": time.time()})
                     raise UnknownEffectError("SERVICE_FAILED_PROCESS_REMAINS") from terminate_exc
             if process is not None:
+                process.wait(timeout=1)
                 _LIVE_CHILDREN.pop(process.pid, None)
             if process is not None and process_identity(process.pid) is not None:
                 self._write_service({**starting, "state": "FAILED_UNVERIFIED", "failed_at": time.time()})
