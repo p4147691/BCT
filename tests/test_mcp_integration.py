@@ -169,6 +169,14 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertFalse(completed.isError, completed)
                     self.assertEqual("APPLIED", completed.structuredContent["outcome"])
 
+        monitor = httpx.get(f"http://127.0.0.1:{self.port}/monitor/state", timeout=3)
+        self.assertEqual(200, monitor.status_code)
+        monitor_state = monitor.json()
+        self.assertEqual(1, monitor_state["schema"])
+        self.assertEqual(self.release_sha, monitor_state["service"]["release_sha"])
+        self.assertGreaterEqual(monitor_state["counts"]["works"], 2)
+        self.assertGreaterEqual(monitor_state["counts"]["operations"], 2)
+
     def test_authenticated_catalogue_work_call_and_duplicate_receipt(self):
         asyncio.run(self.exercise_mcp())
 
