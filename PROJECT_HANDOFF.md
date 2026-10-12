@@ -12,13 +12,14 @@
 
 ## 완료된 구현과 현재 경계
 
-FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED / MCP_V1_ACCEPTED.
+FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED / MCP_V1_ACCEPTED / RCC_V1_ACCEPTED.
 코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
 파일 읽기·원자적 쓰기, Python test, expected HEAD·정확한 dirty set·new-file SHA proof 기반 Git commit을 BCT 소스로 구현했다.
 13개 first-slice 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
 GitHub Actions run `38234844806`에서 최신 Actions major로 Windows CI가 통과했다.
-ACT 전체 feature 호환, MCP/RCC, LIVE 배포는 아직 없다.
-현재 ACT live, 기존 탭/role binding, 서비스, 기존 작업과 소스는 이 설계 작업에서 수정하지 않았다.
+ACT 전체 legacy feature 호환을 목표로 하지 않는다. BCT의 core, 개발 흐름, GitHub,
+배포·서비스, MCP, bounded RCC 제어가 각각 live acceptance를 통과했다.
+기존 ACT live와 RCC 탭/role binding은 계속 보존된다.
 
 GitHub integration V1은 BCT 소스로 구현되었다. exact-SHA branch push, deterministic request marker를
 사용한 PR 생성 중복 방지, required-check 조회, exact-head merge 및 verified `main` fast-forward를
@@ -82,8 +83,24 @@ generation 4, health contract 2다. 표준 MCP protocol `2025-11-25`에서 무�
 - 구현체를 BCT로 가져오기 전에 라이선스·의존성과 현재 계약을 확인.
 - 기능 이전을 이유로 사용자의 기존 MCP/Chrome 설정을 임의 초기화하지 않음.
 
-## 다음 이전 순서
+RCC V1은 현재 운영 확장 22개 파일과 Native Host source/manifest를 exact SHA 기준선으로 BCT에
+보존했다. `relay_browser`는 exact instance만 사용하며 BCT operation ID를 Native Host와 확장의
+mutation operation ID로 재사용한다. pre-dispatch 실패는 확정 실패로, dispatch 이후 응답 유실은
+UNKNOWN으로 기록해 자동 재실행하지 않는다. state 응답의 token/secret/authorization은 BCT
+receipt에 들어오기 전에 제거한다.
 
-다음 feature는 마지막 단계인 RCC다. 기존 Chrome profile/extension/native host와 production
-bindings를 먼저 read-only로 식별하고, 검증된 relay 기능 소스와 테스트를 BCT에 가져온다. BCT
-RCC live acceptance 전까지 기존 ACT/RCC 운영 경로와 탭을 유지한다.
+PR #13 head `72b50d391d5fd901696b732ac3d2779d1903112a`는 CI run `38254069968` 통과 후
+merge `15f8ce551e7360ab77266c331758c0e249706d85`로 통합됐다. main CI run
+`38254397056`도 통과했다. 전체 38개 테스트, compile, diff 검사가 통과했다. live release는
+동일 SHA, manifest `35f4c8e2ccaa517e37b8449e888bce64f03003845abbf93e40dd6003f26288c6`,
+PID 38252, generation 7이며 source/runtime mismatch는 0이다. MCP catalogue는 15개 도구를
+노출하고 `bct_relay_browser` read-only state 호출과 duplicate receipt가 실제 RCC instance
+`b91fe69d935f4e3893caa30836e4b13c`에서 통과했다. 기존 보호 탭 `594832035`와 다른 열린 탭,
+bindings, pending 상태는 변경하지 않았다.
+
+## 다음 작업
+
+기본 이전 순서는 완료됐다. 새 BCT 기능은 같은 core work/operation/receipt 및 GitHub→deploy
+절차를 사용한다. Chrome 확장이나 Native Host 자체 코드를 변경해야 할 때만 별도 exact-file
+deployment/build profile과 Chrome reload acceptance를 추가한다. 현재 설치를 재설정하거나
+ACT를 급히 제거할 필요는 없다.
