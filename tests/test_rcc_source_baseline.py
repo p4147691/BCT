@@ -24,8 +24,9 @@ class RccSourceBaselineTests(unittest.TestCase):
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
         native = self.root / "modules" / "rcc" / "native-host" / "RelayNativeHostV2.cs"
-        self.assertIn("bhlcnmbodlhbephppahojbigleklpmhj", native.read_text(encoding="utf-8-sig"))
-        self.assertIn("ocbidbaplechjjdacmokhnfbdmgjkphf", native.read_text(encoding="utf-8-sig"))
+        native_text = native.read_text(encoding="utf-8-sig")
+        self.assertNotIn("bhlcnmbodlhbephppahojbigleklpmhj", native_text)
+        self.assertIn("ocbidbaplechjjdacmokhnfbdmgjkphf", native_text)
 
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
@@ -62,7 +63,6 @@ class RccSourceBaselineTests(unittest.TestCase):
         )
         self.assertEqual(
             [
-                "chrome-extension://bhlcnmbodlhbephppahojbigleklpmhj/",
                 "chrome-extension://ocbidbaplechjjdacmokhnfbdmgjkphf/",
             ],
             manifest["allowed_origins"],

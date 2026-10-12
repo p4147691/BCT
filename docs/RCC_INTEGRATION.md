@@ -54,3 +54,7 @@ old display name.  The BCT manifest starts at product version `1.0.0`.  Every su
 extension payload change must increase the four-part-compatible Chrome manifest version and update
 `version_name` when a human-readable qualifier is useful.  The fixed public key, not the display name
 or version, remains the durable extension identity.
+
+After `BCT RCC 1.0.0` passed exact-instance and preserved-tab acceptance, the legacy extension was
+disabled.  The steady-state Native Host manifest and executable therefore accept only
+`ocbidbaplechjjdacmokhnfbdmgjkphf`; the former path-derived origin is not a fallback identity.
