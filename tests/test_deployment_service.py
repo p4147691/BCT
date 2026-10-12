@@ -172,6 +172,7 @@ class DeploymentServiceTests(unittest.TestCase):
         self.assertTrue(restart_duplicate.duplicate)
         self.assertEqual(second_pid, restart_duplicate.evidence["service"]["pid"])
         stopped = self.service("stop-1", "stop", self.head)
+        self.assertEqual(Outcome.APPLIED, stopped.outcome, self.failure_context(stopped, self.head))
         self.assertEqual("STOPPED", stopped.evidence["service"]["state"])
         started = self.service("start-1", "start", self.head)
         self.assertEqual("RUNNING", started.evidence["service"]["state"])
