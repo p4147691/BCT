@@ -1,0 +1,4 @@
+[policy]
+normal_actions = ["read", "write", "test", "git_commit"]
+approval_actions = ["deploy", "service_control", "delete", "credential_change"]
+

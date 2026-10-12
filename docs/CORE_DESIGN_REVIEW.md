@@ -1,6 +1,7 @@
 # Core V1 설계 검토 및 acceptance matrix
 
-상태: DESIGN_REVIEW_COMPLETE. 아래는 시나리오에 대한 설계상 판정이며 실행 테스트 PASS가 아니다.
+상태: DESIGN_REVIEW_COMPLETE / FIRST_SLICE_RELEVANT_CASES_TESTED.
+아래 전체 표는 설계 판정이며, 첫 files/git/tests 범위에 해당하는 실행 증거는 `exec-plans/completed/BCT_FOUNDATION.md`에 기록한다.
 검토자: 현재 Codex 작업. 별도 독립 리뷰 또는 서브에이전트 리뷰를 수행했다고 주장하지 않는다.
 
 ## 결합/실패 시나리오 검토
