@@ -28,7 +28,9 @@ replaceable capabilities are modules.
 1. Source layout and tests.
 2. GitHub integration and canonical main sync.
 3. BCT runtime release and status UI.
-4. Existing ACT Control App identity retargeted to BCT MCP without a duplicate plugin.
+4. Existing ACT Control App identity retargeted to BCT MCP without a duplicate plugin. The App's
+   external display name is a compatibility label until it is renamed in the owning App settings;
+   the local target and recovery owner are BCT.
 5. RCC installed-path migration with extension identity/state evidence.
 6. Monitor ACT/AI_TOOLS dependency retirement and focused window/node/status acceptance.
 7. BDC parity for the retained desktop primitives, then ADC retirement.

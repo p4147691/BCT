@@ -11,3 +11,9 @@ neither changes the principal or capability catalogue.
 The third-party tunnel-client binary is an external tool asset. It is installed under
 `D:\TOOLS\OpenAI\tunnel-client`, hash-verified, and is not committed to this repository.
 
+`ops/run_bct_tunnel_supervisor.ps1` is BCT's logon recovery entry point. It keeps the existing
+private App/tunnel identity, verifies the exact executable and BCT MCP target, injects only the
+file reference to the BCT token, and refuses a mismatched running target. The compatibility alias
+remains `act-control` until the owning ChatGPT App display name is changed; that alias is not an
+ACT runtime dependency.
+

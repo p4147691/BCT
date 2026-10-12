@@ -33,6 +33,16 @@ class ModuleLayoutTests(unittest.TestCase):
         self.assertEqual(2, profile.count("X-BCT-Token: 'file:D:\\BCT\\runtime\\mcp.token'"))
         self.assertNotIn("- 'X-BCT-Token:", profile)
 
+    def test_tunnel_supervisor_is_bct_owned_and_exact(self):
+        script = (self.root / "modules" / "mcp" / "ops" / "run_bct_tunnel_supervisor.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("D:\\TOOLS\\OpenAI\\tunnel-client\\0.0.14\\tunnel-client.exe", script)
+        self.assertIn("http://127.0.0.1:18790/mcp", script)
+        self.assertIn("file:D:\\BCT\\runtime\\mcp.token", script)
+        self.assertIn("BCT_TUNNEL_TARGET_MISMATCH", script)
+        self.assertNotIn("D:\\ACT", script)
+
 
 if __name__ == "__main__":
     unittest.main()
