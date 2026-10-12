@@ -16,3 +16,8 @@ kernel.
 
 Modules use Core's work, policy, operation, receipt and conflict contracts.
 They do not import ACT code or create their own ownership/policy systems.
+
+Module source stays in the official Git repository but is not copied into the
+`bct_runtime_v1` Core release. Each installable module gets its own exact
+deployment boundary when it is activated. The only module asset embedded in
+the Core release is the read-only `status-ui` that Core itself serves.

@@ -22,7 +22,9 @@ These capabilities live in the BCT repository and do not import ACT runtime modu
 
 The DesktopWindow Monitor source baseline lives under `modules/monitor`. Its existing Chrome
 installation stays at the external extension path for compatibility. It is not a second authority;
-the independent BCT Monitor is the core operational view.
+the independent BCT Monitor is the core operational view. Monitor extension/native source is not
+copied into the Core runtime release; it will use a separate exact module deployment profile when
+its installation is cut over.
 
 Laya weights and Python dependencies live outside Git under `D:\BCT\models` and
 `D:\BCT\local-llm`. BCT owns their configured lifecycle and evidence, while the third-party model
