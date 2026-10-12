@@ -1,0 +1,54 @@
+{
+    "manifest_version":  3,
+    "name":  "DesktopWindow Monitor",
+    "version":  "1.9.20.178",
+    "description":  "DesktopWindow 기반 내부 AI 작업·가상 데스크톱·Orchestrator 관제 확장입니다.",
+    "key":  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvMTpffTyiOSOKnPg9jD43awxJKOZ9EBfVRKkbWRyjR6jSiZS9wk2gdVAZs5ETAWn8brlHf7pSB1/hQhB0awSBMM62J+5tzPxTBxyjGmrWKu8TmEFFfInDewJM8l7AsvR43PqUby9IRpmvnNeh+18TND0D/cbVZcBDKW1VX63wdwRDJg+/IjYJDPWJcg5ww50FQc1Q0U7hjHsaZ4XZ+BqUVkll0ZPy0xN7qjcHeac/65Hf3MN4zrIQXuN2K2g6XVsRnwKkFHIhJKcnCx9toCSwTscs8KoWpk312KMGVuYbwfQo3aZDtvg6kgJWhz+st6mXskYsln5MyiDMEFmCE9bmwIDAQAB",
+    "permissions":  [
+                        "clipboardWrite",
+                        "nativeMessaging",
+                        "scripting",
+                        "storage"
+                    ],
+    "background":  {
+                       "service_worker":  "background.js"
+                   },
+    "icons":  {
+                  "16":  "icons/icon16.png",
+                  "32":  "icons/icon32.png",
+                  "48":  "icons/icon48.png",
+                  "128":  "icons/icon128.png"
+              },
+    "action":  {
+                   "default_title":  "DesktopWindow Monitor",
+                   "default_icon":  {
+                                        "16":  "icons/icon16.png",
+                                        "32":  "icons/icon32.png"
+                                    }
+               },
+    "commands":  {
+                     "toggle-desktop-window":  {
+                                                   "suggested_key":  {
+                                                                         "default":  "Alt+M"
+                                                                     },
+                                                   "description":  "DesktopWindow Monitor 열기"
+                                               }
+                 },
+    "host_permissions":  [
+                             "http://127.0.0.1/*",
+                             "https://chatgpt.com/*",
+                             "https://chat.openai.com/*"
+                         ],
+    "content_scripts":  [
+                            {
+                                "matches":  [
+                                                "https://chatgpt.com/*",
+                                                "https://chat.openai.com/*"
+                                            ],
+                                "js":  [
+                                           "google-bootstrap.js"
+                                       ],
+                                "run_at":  "document_idle"
+                            }
+                        ]
+}

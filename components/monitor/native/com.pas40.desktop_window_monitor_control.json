@@ -1,0 +1,9 @@
+{
+  "name": "com.pas40.desktop_window_monitor_control",
+  "description": "DesktopWindow Monitor virtual desktop control host",
+  "path": "D:\\ChromeExtensions\\DesktopWindow-Monitor\\native\\1.9.20.173-dwm-ui\\DesktopWindowMonitorControlHost.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://kaigandfpieiogfbfaemoimenmipedck/"
+  ]
+}

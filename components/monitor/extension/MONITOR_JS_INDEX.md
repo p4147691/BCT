@@ -1,0 +1,594 @@
+# Monitor JS Function Index
+
+Generated from the deployed runtime. Do not edit by hand.
+
+- source: `D:\ChromeExtensions\DesktopWindow-Monitor\extension\monitor.js`
+- sha256: `ba4a546f2047c4d03559de7c52e1fc9a2c08a280a6c67f14a49372c9c56e950d`
+- line count: 81623
+- declared functions: 533
+
+Search by function name first; line numbers are snapshot hints only.
+
+## Lines 1-5000
+
+- `monitorExtensionVersion` — line 421
+- `monitorWindowTitle` — line 426
+- `monitorIsOwnWindowTitle` — line 431
+- `monitorRecordRefreshTiming` — line 676
+- `monitorSketchHideTextSizeMenu` — line 1075
+- `monitorSketchSetTool` — line 1080
+- `monitorSketchSetTextSize` — line 1094
+- `monitorSketchShowTextSizeMenu` — line 1104
+- `monitorSketchStartTextLongPress` — line 1110
+- `monitorSketchStopTextLongPress` — line 1121
+- `monitorSketchPoint` — line 1127
+- `monitorSketchCssPoint` — line 1137
+- `monitorSketchUpdateCursor` — line 1147
+- `monitorSketchClearOverlay` — line 1169
+- `monitorSketchPrepareShapeContext` — line 1173
+- `monitorSketchDrawShape` — line 1181
+- `monitorSketchDrawPreview` — line 1201
+- `monitorSketchCommitShape` — line 1207
+- `monitorSketchSnapshot` — line 1213
+- `monitorSketchUpdateHistoryButtons` — line 1217
+- `monitorSketchRemember` — line 1222
+- `monitorSketchApplySnapshot` — line 1233
+- `monitorSketchUndoAction` — line 1248
+- `monitorSketchRedoAction` — line 1260
+- `monitorSketchSave` — line 1272
+- `monitorSketchRestore` — line 1276
+- `monitorSketchCancelText` — line 1285
+- `monitorSketchCommitText` — line 1291
+- `monitorSketchTextLeftBearing` — line 1317
+- `monitorSketchSyncTextInputBearing` — line 1328
+- `monitorSketchBeginText` — line 1337
+- `monitorSketchStop` — line 1355
+- `syncMonitorPanelToDesktopSwitcher` — line 1477
+- `syncMonitorTitle` — line 1565
+- `monitorNoteId` — line 1958
+- `monitorNoteTitleFromText` — line 1974
+- `monitorParseNoteBundle` — line 1990
+- `monitorSerializeNotes` — line 2102
+- `monitorActiveNote` — line 2118
+- `monitorNoteSnapshot` — line 2182
+- `monitorNoteHistoryState` — line 2198
+- `monitorSyncHistoryButtons` — line 2214
+- `monitorRecordUndoBeforeEdit` — line 2518
+- `monitorApplyHistorySnapshot` — line 2534
+- `monitorUndoNote` — line 2550
+- `monitorRedoNote` — line 2566
+- `monitorUndoListDelete` — line 2582
+- `monitorRedoListDelete` — line 2598
+- `monitorUpdateNoteInsertLine` — line 2662
+- `monitorNoteDragScrollTick` — line 2918
+- `monitorBindNoteDrag` — line 2998
+- `persistMonitorTrashedNotes` — line 3766
+- `trashMonitorNote` — line 3814
+- `restoreMonitorTrashedNote` — line 3862
+- `deleteMonitorTrashedNote` — line 3910
+- `clearMonitorTrashedNotes` — line 3926
+- `monitorRenderNoteList` — line 3942
+- `monitorHighlightLastViewedNote` — line 4183
+- `monitorShowNoteList` — line 4375
+- `monitorOpenNote` — line 4391
+- `monitorCreateNote` — line 4407
+- `monitorUpdateActiveFromEditor` — line 4631
+- `monitorQueueNoteBundleSave` — line 4647
+- `syncMonitorSideNote` — line 4695
+
+## Lines 5001-10000
+
+- `organizeMonitorNoteWithAi` — line 5254
+- `monitorNoteNative` — line 5910
+- `monitorNoteScrollRatio` — line 6102
+- `refreshMonitorSharedNoteView` — line 6182
+- `refreshMonitorSharedNote` — line 6646
+- `monitorDesktopScrollStep` — line 7310
+- `syncMonitorDesktopScrollArrows` — line 7326
+- `monitorDesktopManagementMode` — line 7926
+- `monitorDesktopManagementModeText` — line 7931
+- `monitorDesktopManagementNextMode` — line 7937
+- `monitorSetDesktopManagementMode` — line 7943
+- `monitorAttachDesktopManagementControl` — line 7954
+- `refreshInitialBackgroundThumbs` — line 8105
+- `monitorApplySharedDesktopSelection` — line 8185
+- `setMonitorStatus` — line 8329
+- `monitorRoleAdminCandidates` — line 8630
+- `monitorRoleAdminPath` — line 8726
+- `monitorRoleAdminPayload` — line 8742
+- `monitorRoleAdminErrorText` — line 8822
+- `monitorSelectedRoleWorker` — line 8838
+- `monitorSetRoleAssignMode` — line 8998
+- `monitorExactOpenEndpoint` — line 9238
+- `monitorBootstrapExempt` — line 9318
+- `monitorApplyRoleMode` — line 9325
+- `monitorTurnWorkerOff` — line 9709
+
+## Lines 10001-15000
+
+- `monitorRoleAdminShort` — line 10029
+- `setMonitorRoleAdminStatus` — line 10045
+- `renderMonitorRoleAdmin` — line 10061
+- `refreshMonitorRoleAdmin` — line 10365
+- `runMonitorRoleAdminAction` — line 10461
+- `isMonitorVisibleWorker` — line 10685
+- `classifyMonitorWorker` — line 10877
+- `monitorWorkerReadyForUse` — line 10887
+- `monitorIsExplicitCodexResource` — line 10925
+- `monitorCodexResourceProfile` — line 10936
+- `monitorIsActionableCodexResource` — line 10940
+- `activateMonitorCodexResource` — line 10946
+- `monitorLlmWorkersFromState` — line 10985
+- `monitorLocalModelIsLoaded` — line 11030
+- `monitorLocalOllamaModels` — line 11036
+- `monitorLlmRuntimePresentation` — line 11044
+- `monitorCodexWorkersFromState` — line 11058
+- `cleanMonitorWorkerName` — line 11109
+- `stationForMonitorWorker` — line 11221
+- `monitorStationMetadata` — line 11317
+- `monitorCanonicalJsonValue` — line 11545
+- `monitorCanonicalNodeBindings` — line 11558
+- `monitorNodeBindingsSignature` — line 11569
+- `monitorPersistNodeBindings` — line 11587
+- `monitorChatTransitionKey` — line 11658
+- `monitorChatTransitionIsApproved` — line 11722
+- `monitorRememberApprovedChatTransition` — line 11770
+- `monitorBrowserLineageKey` — line 11834
+- `monitorTabBindingKey` — line 11946
+- `monitorStableNodeForWindow` — line 12026
+- `monitorStableNodeForEndpoint` — line 12154
+- `monitorStoreNodeBinding` — line 12602
+- `monitorNodeChatChangeState` — line 12970
+- `normalizeMonitorWindowTitle` — line 13869
+- `monitorStructureNodeIsPlacementExempt` — line 14019
+- `rememberMonitorDesktopWindows` — line 14320
+- `monitorHwndHasOpenChatEndpoint` — line 14759
+- `refreshMonitorWindowIdentity` — line 14919
+
+## Lines 15001-20000
+
+- `refreshMonitorIdentityIndex` — line 15639
+- `monitorOpenEndpointsForConversation` — line 15721
+- `monitorFreshNativeLocations` — line 15849
+- `monitorEndpointInstanceId` — line 16025
+- `monitorEndpointGeometry` — line 16089
+- `monitorLocationForEndpoint` — line 16153
+- `monitorExactConversationWindow` — line 16777
+- `monitorNodeIdentityParts` — line 16988
+- `monitorPhysicalWindowPeerLocation` — line 17022
+- `monitorCanonicalPhysicalLocation` — line 17342
+- `monitorEndpointLocation` — line 18093
+- `resolveStableMonitorLocation` — line 18101
+- `monitorActBrowserNode` — line 18165
+- `monitorStableBrowserNodeKey` — line 18277
+- `monitorStableNodeSlotRecord` — line 18373
+- `monitorStableNodeSlot` — line 18661
+- `monitorBrowserDisplaySlots` — line 18709
+- `monitorWindowGroupKeyForWorker` — line 18725
+- `monitorGroupChatgptMembersForDisplay` — line 18853
+- `monitorNodeNumbersForMinimizedHwnd` — line 19141
+- `monitorMinimizedNodeSlotsByDesktop` — line 19150
+- `profileForMonitorWorker` — line 19172
+- `endpointForMonitorWorker` — line 19268
+- `monitorEndpointWindowKey` — line 19588
+- `monitorEndpointNativeChatExpired` — line 19652
+- `monitorEndpointIsMinimized` — line 19732
+- `monitorWorkersForState` — line 19860
+- `monitorWorkersProjectionForState` — line 19974
+- `endpointRegistryIsAuthoritative` — line 19983
+
+## Lines 20001-25000
+
+- `endpointOsWindowHandle` — line 20063
+- `monitorTrustedPhysicalWindowKey` — line 20159
+- `monitorResolvedWorkerHwnd` — line 20335
+- `monitorPersistSystemNodes` — line 20559
+- `monitorMarkSystemNode` — line 20575
+- `monitorDirectConversationGenerationState` — line 20639
+- `monitorDirectEndpointGenerationState` — line 20767
+- `monitorDirectEndpointUserAttention` — line 20871
+- `monitorUserAttentionVisualDetail` — line 20883
+- `monitorConversationUserAttentionDetail` — line 20890
+- `monitorHwndUserAttentionDetail` — line 20902
+- `monitorEncodeSharedUserAttention` — line 20908
+- `monitorDecodeSharedGenerationAttention` — line 20915
+- `monitorCancelScheduledCompletionAlert` — line 20965
+- `monitorScheduleChatCompletionAlert` — line 21045
+- `monitorApplyDirectUserClick` — line 21253
+- `monitorBrowserWindowIdForEndpoint` — line 21634
+- `monitorHwndForBrowserWindowId` — line 21639
+- `applyMonitorChatNavigationIdentity` — line 21662
+- `scheduleMonitorBrowserVisualRefresh` — line 21691
+- `scheduleMonitorChatNavigationRefresh` — line 21742
+- `pruneMonitorEphemeralGenerationState` — line 22524
+- `monitorPublishSharedRuntime` — line 22579
+- `monitorPublishSharedInstance` — line 22643
+- `monitorSyncSharedRuntime` — line 22789
+- `monitorPersistentRoleClass` — line 23701
+- `monitorIsActivelyWorking` — line 23749
+- `monitorIsPostWorkWaiting` — line 23789
+- `monitorCreateChatCompletionAlert` — line 23853
+- `monitorChatAlertDetail` — line 23981
+- `monitorReportMatchesTask` — line 24029
+- `monitorAuthoritativeConversationForTask` — line 24197
+- `monitorAuthoritativeAlertDetail` — line 24357
+- `monitorSyncAuthoritativeCompletionAlerts` — line 24533
+- `monitorSyncChatCompletionTransitions` — line 24581
+- `monitorPostWorkPersist` — line 24620
+- `monitorAcknowledgePostWork` — line 24740
+- `monitorAcknowledgePostWorkForHwnd` — line 24884
+
+## Lines 25001-30000
+
+- `monitorLiveRoleForConversation` — line 25045
+- `monitorEndpointGenerationIsActive` — line 25173
+- `monitorConversationIsGenerating` — line 25335
+- `monitorOpenEndpointForHwnd` — line 25495
+- `monitorHwndIsGenerating` — line 25829
+- `monitorVisualConversationForHwnd` — line 25925
+- `monitorConversationGroupVisual` — line 26181
+- `applyMonitorConversationGroupVisual` — line 26405
+- `applyPersistentMonitorRoleClass` — line 26613
+- `compareMonitorSharedSelectionRevision` — line 27063
+- `publishMonitorSharedSelection` — line 27303
+- `applyMonitorSharedSelection` — line 27607
+- `syncMonitorSharedSelection` — line 27879
+- `monitorSyncSharedState` — line 27991
+- `monitorPreviewAtPointer` — line 28135
+- `recheckMonitorHover` — line 28231
+- `applyMonitorWindowHover` — line 28311
+- `scheduleMonitorHoverRecheck` — line 28666
+- `applyMonitorWindowHighlight` — line 28794
+- `monitorEndpointFreshnessState` — line 29242
+- `resolveWorkerConnectionState` — line 29354
+- `resolveWorkerWorkState` — line 29642
+- `monitorWorkSymbol` — line 29946
+
+## Lines 30001-35000
+
+- `monitorSortLocationParts` — line 30122
+- `monitorWorkerSortKey` — line 30250
+- `compareMonitorWorkers` — line 30394
+- `monitorGhostBoundText` — line 30900
+- `monitorGhostTime` — line 30916
+- `monitorGhostWorkerId` — line 30932
+- `monitorGhostUsage` — line 30948
+- `monitorGhostTail` — line 31092
+- `monitorGhostTaskForWorker` — line 31156
+- `monitorGhostMeaningfulTitle` — line 31268
+- `monitorGhostNumericTime` — line 31364
+- `monitorGhostConversationTime` — line 31428
+- `monitorGhostObservationTime` — line 31524
+- `monitorGhostTaskHistory` — line 31588
+- `monitorContextTitleRecord` — line 31795
+- `monitorTitlesEquivalent` — line 31811
+- `monitorReconcilePendingTitles` — line 31875
+- `monitorContextTitleDisplay` — line 32035
+- `monitorContextTitleDisplayFromRecord` — line 32213
+- `monitorPatchContextTitleRows` — line 32225
+- `monitorPublishSharedRebootSnapshot` — line 32271
+- `monitorCaptureRebootSnapshot` — line 32353
+- `monitorPublishSharedContextTitle` — line 32421
+- `persistMonitorContextTitles` — line 32501
+- `monitorContextTitleInput` — line 32593
+- `monitorContextTitleSignature` — line 32689
+- `refreshMonitorContextTitle` — line 32705
+- `setMonitorManualContextTitle` — line 32945
+- `resetMonitorContextTitleToBrowser` — line 33009
+- `monitorLifecycleTooltip` — line 33073
+- `requestMonitorConversationRename` — line 33137
+- `attachMonitorContextTitleMenu` — line 33745
+- `monitorContextTitlePart` — line 34049
+- `monitorWorkerMeaningfulTitle` — line 34145
+- `monitorWorkerContextTitle` — line 34321
+- `monitorGhostAuthoritativeLocation` — line 34433
+- `monitorGhostAgeing` — line 34529
+- `monitorGhostArchiveAgeing` — line 34657
+- `monitorGhostValidLease` — line 34785
+- `monitorGhostProtected` — line 34849
+- `monitorGhostCanAutoHide` — line 34913
+
+## Lines 35001-40000
+
+- `monitorGhostPersist` — line 35001
+- `monitorClosedConversationRecoveryItems` — line 35098
+- `monitorClosedConversationPreviousLocation` — line 35338
+- `monitorClosedConversationContextTitle` — line 35402
+- `renderMonitorClosedConversationRecoveryPanel` — line 35618
+- `configureMonitorProviderLaunchButton` — line 36504
+- `rememberMonitorWorkerPlacement` — line 36527
+- `syncMonitorPhysicalWorkplaces` — line 36687
+- `monitorPersistWorkerOrder` — line 36807
+- `monitorSetWorkerOrder` — line 36887
+- `monitorRemoveWorkerOrderKey` — line 36967
+- `monitorMoveWorkerOrderKey` — line 37031
+- `monitorReorderWorkerKey` — line 37095
+- `monitorListDisplaySlots` — line 37159
+- `initializeMonitorWorkerOrderStorage` — line 37287
+- `flushDeferredMonitorWorkerRender` — line 37388
+- `settleMonitorWorkerPointerInteraction` — line 37500
+- `monitorRenderDiagnosticText` — line 37884
+- `monitorLocalLlmReadyState` — line 37923
+- `monitorLocalLlmIsUsable` — line 37927
+- `monitorLocalLlmSummary` — line 37932
+- `monitorLocalLlmActivityText` — line 37943
+- `monitorUpdateLocalLlmToggleButtons` — line 37985
+- `monitorUpdateLocalLlmToggleButton` — line 37991
+- `monitorAdoptLocalLlmControlPayload` — line 38015
+- `monitorEnsureLocalLlmControlStatus` — line 38033
+- `monitorSetLocalLlmEnabled` — line 38062
+- `renderWorkers` — line 38093
+- `performMonitorWorkerRender` — line 38123
+
+## Lines 40001-45000
+
+- `positionMonitorTrashRecoveryMenu` — line 42718
+- `refreshMonitorEndpointRegistry` — line 42996
+- `scheduleMonitorStartupRecovery` — line 43525
+- `refreshActHealth` — line 43621
+- `refreshAiMonitor` — line 43885
+
+## Lines 45001-50000
+
+- `monitorCaptureDataUriToObjectUrl` — line 45236
+- `ensureMonitorNativePort` — line 45262
+- `handleMonitorForegroundChangedEvent` — line 45521
+- `removeMonitorEventThumbWindow` — line 45532
+- `upsertMonitorEventThumbWindow` — line 45772
+- `scheduleMonitorWindowLifecycleEvent` — line 46167
+- `drainMonitorWindowLifecycleEvents` — line 46174
+- `handleMonitorWindowLifecycleEvent` — line 46191
+- `monitorNative` — line 46610
+- `monitorControlNativeRequest` — line 46614
+- `monitorNativeLaunchIsolated` — line 46748
+- `monitorNativeWithTimeout` — line 47116
+- `approveMonitorNodeChatChange` — line 47308
+- `restoreMonitorNodeChatChange` — line 47704
+- `restoreMonitorAllRecovery` — line 48043
+- `restoreMonitorRebootSnapshot` — line 48139
+- `createMonitorContextContinueButton` — line 48891
+- `createMonitorProjectContextRecallButton` — line 48900
+- `createMonitorWorkRecoveryButton` — line 48907
+- `restoreMonitorDetachedTask` — line 48914
+- `ensureMonitorCoreNativePort` — line 49720
+
+## Lines 50001-55000
+
+- `monitorCoreNative` — line 50041
+- `monitorCoreNativeRequest` — line 50045
+- `monitorRememberWallpaperEntry` — line 50219
+- `monitorLightweightWallpaperDataUri` — line 50231
+- `monitorDesktopFrameGeneration` — line 50310
+- `monitorRevokeThumbWindowCaptureSource` — line 50331
+- `createMonitorWindowCaptureService` — line 50381
+- `monitorWindowCaptureService` — line 50426
+- `monitorGetWindowCapture` — line 50473
+- `ensureMonitorOwnFrozenSnapshot` — line 50481
+- `ensureMonitorCurrentWallpaperSnapshot` — line 50542
+- `monitorCapturePaused` — line 50617
+- `monitorIsActiveDesktopRenderer` — line 50621
+- `getObservedWallpaper` — line 50644
+- `applyObservedWallpaper` — line 50993
+- `monitorActDesktopVisualForDesktop` — line 51113
+- `monitorWindowUsesFrozenCapture` — line 51369
+- `monitorWindowFallbackDataUri` — line 51373
+- `captureDesktopFrame` — line 51380
+- `syncMonitorPauseOverlay` — line 52579
+- `monitorAgeIdentityForWorkerGroup` — line 52838
+- `monitorAgeIdentityForHwnd` — line 53078
+- `monitorObservedDesktopForHwnd` — line 53222
+- `monitorActNodeNumbersForHwnd` — line 53242
+- `monitorBadgeNodeNumbersForHwnd` — line 53277
+- `syncMonitorDesktopNumberBadge` — line 53281
+- `syncMonitorNonChatCountdown` — line 53519
+- `syncMonitorStatusLayer` — line 53775
+- `reconcileFrame` — line 54263
+
+## Lines 55001-60000
+
+- `syncMonitorThumbnailTabBadges` — line 55087
+- `syncMonitorAllDesktopThumbnailNodeBadges` — line 55426
+- `syncMonitorNativeZOrder` — line 55497
+- `applyMonitorForegroundFocus` — line 55789
+- `monitorViewportScreenOrigin` — line 55901
+- `monitorSelectedEntries` — line 55981
+- `monitorProfileIdForHwnd` — line 56109
+- `moveMonitorWindowSet` — line 56237
+- `snapshotAllChromeHwnds` — line 56493
+- `waitForNewChromeHwnd` — line 56557
+- `cloneMonitorWindowSet` — line 56701
+- `performMonitorWindowDrop` — line 57117
+- `createMonitorNodeDragGhost` — line 57181
+- `moveMonitorNodeDragGhost` — line 57341
+- `destroyMonitorNodeDragGhost` — line 57405
+- `monitorTrashDropTargetAt` — line 57421
+- `clearMonitorTrashDropTarget` — line 57501
+- `monitorConversationKeysForHwnd` — line 57517
+- `monitorTrashRecordForKey` — line 57581
+- `persistMonitorTrashedNodes` — line 57709
+- `updateMonitorNodeTrashUndoUi` — line 57773
+- `trashMonitorConversationKeys` — line 57869
+- `refreshMonitorRecoveryMenu` — line 58349
+- `restoreMonitorTrashRecord` — line 58445
+- `deleteMonitorTrashRecord` — line 58461
+- `deleteMonitorRecoveryRecord` — line 58477
+- `monitorDeletedDesktopLoadImage` — line 58557
+- `monitorDeletedDesktopDrawCover` — line 58645
+- `monitorFreezeDesktopThumbnail` — line 58701
+- `persistMonitorTrashedDesktops` — line 59053
+- `monitorDesktopNodeSnapshots` — line 59069
+- `restoreMonitorDesktopNodeSnapshots` — line 59085
+- `storeMonitorTrashedDesktop` — line 59101
+- `deleteMonitorTrashedDesktop` — line 59117
+- `restoreMonitorTrashedDesktop` — line 59133
+- `clearMonitorThumbnailRecovery` — line 59149
+- `clearMonitorConversationRecovery` — line 59229
+- `monitorDesktopDropTargetAt` — line 59389
+- `monitorCreateDesktopDropTargetAt` — line 59453
+- `clearMonitorDesktopDropTargets` — line 59517
+- `monitorWorkerRowOrderTargetAt` — line 59613
+- `clearMonitorWorkerOrderTargets` — line 59677
+- `beginMonitorWorkerRowPointerDrag` — line 59725
+- `updateMonitorWorkerRowPointerDrag` — line 59885
+
+## Lines 60001-65000
+
+- `finishMonitorWorkerRowPointerDrag` — line 60205
+- `cancelMonitorWorkerRowPointerDrag` — line 60717
+- `beginMonitorWindowPointerDrag` — line 60781
+- `updateMonitorWindowPointerDrag` — line 61085
+- `finishMonitorWindowPointerDrag` — line 61421
+- `cancelMonitorWindowPointerDrag` — line 62173
+- `beginMonitorDesktopPointerDrag` — line 62333
+- `updateMonitorDesktopPointerDrag` — line 62525
+- `finishMonitorDesktopPointerDrag` — line 62749
+- `cancelMonitorDesktopPointerDrag` — line 63245
+- `invalidateMonitorDesktopFrames` — line 63565
+- `moveMonitorWindowToDesktop` — line 63766
+- `getDesktopBrowserWindowHandles` — line 63910
+- `refreshDesktopDropThumbnails` — line 64086
+- `createDesktopForDrop` — line 64246
+- `bindDesktopDropTarget` — line 64918
+
+## Lines 65001-70000
+
+- `refreshDesktopThumb` — line 65270
+- `syncMonitorMinimizedNodeBadges` — line 65465
+- `syncDesktopSwitcher` — line 65651
+- `refreshObservedWindows` — line 66610
+- `refreshDesktopThumbBatch` — line 66821
+- `refreshSelectedThumb` — line 67064
+- `refreshInitialSelectedThumb` — line 67164
+- `refreshBackgroundThumbs` — line 67175
+- `scheduleInitialSemanticThumbSync` — line 67192
+- `applyMonitorLiveWindowGeometry` — line 67278
+- `monitorThumbnailLayoutWatch` — line 67806
+- `refreshWindowsCurrentState` — line 68338
+- `renderLightweightDesktopCards` — line 68348
+- `renderVirtualDesktops` — line 68801
+- `refreshVirtualDesktops` — line 69672
+
+## Lines 70001-75000
+
+- `flashDesktopTransition` — line 70376
+- `primeSelectedDesktopPreview` — line 70520
+- `selectVirtualDesktopPreview` — line 70540
+- `expireDesktopUndoSession` — line 71011
+- `resetDesktopUndoSessionExpiry` — line 71107
+- `pushDesktopUndoSnapshot` — line 71155
+- `peekDesktopUndoSnapshot` — line 71235
+- `commitDesktopUndoRestore` — line 71299
+- `updateDesktopUndoUi` — line 71363
+- `showDesktopUndo` — line 71571
+- `updateDeletedDesktopTrashUi` — line 71635
+- `showDeletedDesktopTrashUndo` — line 71763
+- `undoDeletedDesktopTrash` — line 71811
+- `removeVirtualDesktopPreview` — line 72067
+- `removeCreatedDesktopIfSafe` — line 72459
+- `settleNewDesktopWallpaper` — line 73067
+- `checkMonitorDeploymentUpdate` — line 74444
+- `monitorConversationStateSignature` — line 74854
+- `refreshMonitorConversationStateFast` — line 74889
+
+## Lines 75001-80000
+
+- `monitorStructureFinishHtmlDragGhost` — line 75570
+- `monitorStructureTrackHtmlDragGhost` — line 75575
+- `monitorStructureUseNodeDragGhost` — line 75580
+- `monitorStructureNodeFromWorker` — line 75858
+- `monitorStructureNodeIdentityTokens` — line 76050
+- `monitorStructureAvailableNodes` — line 76059
+- `monitorStructureEffectiveDesktopId` — line 76142
+- `monitorStructureMoveNodeToDesk` — line 76150
+- `monitorStructureMoveBundleToDesk` — line 76158
+- `monitorStructureBundleOrder` — line 76178
+- `monitorStructureBundleKinds` — line 76180
+- `monitorStructureEnsureBundleDefaults` — line 76208
+- `monitorStructureBundleName` — line 76276
+- `monitorStructureNodeIsActive` — line 76280
+- `monitorStructureBundleIsActive` — line 76290
+- `monitorStructureShowLocalModels` — line 76295
+- `monitorStructureBundleNode` — line 76334
+- `monitorStructureSyncLocalBundleManagerEdges` — line 76351
+- `monitorStructureBundleCard` — line 76374
+- `monitorStructureInstalledBundles` — line 76407
+- `monitorStructureDeskNodeGrid` — line 76409
+- `monitorStructureBundlePalette` — line 76423
+- `monitorStructureAutoLayout` — line 76439
+- `monitorStructureNodeForHwnd` — line 76686
+- `monitorStructurePersistSockets` — line 76702
+- `monitorStructureRemoveNode` — line 76718
+- `monitorStructureNodeControlState` — line 76814
+- `monitorStructurePersistNodeControls` — line 76878
+- `monitorStructureToggleNodeControl` — line 76894
+- `monitorStructureNodeDisplayName` — line 77006
+- `monitorStructureNodeShortNumber` — line 77016
+- `monitorStructureSocketCard` — line 77022
+- `monitorStructureRenderSocket` — line 77048
+- `monitorStructureWorkerStrip` — line 77063
+- `monitorStructureDeskTransferSlot` — line 77113
+- `monitorStructureDefaultParents` — line 77129
+- `monitorStructureEffectiveParents` — line 77293
+- `monitorStructureAuthorityOverrides` — line 77295
+- `monitorStructurePersistLinks` — line 77321
+- `monitorStructureWouldCycle` — line 77337
+- `monitorStructureSupervisorKeys` — line 77353
+- `monitorStructureResourceConnections` — line 77401
+- `monitorStructureToggleResourceEdge` — line 77449
+- `monitorStructureRenderResourcePools` — line 77563
+- `monitorStructureApplyActHierarchy` — line 77963
+- `monitorStructureRefreshAuthority` — line 78091
+- `monitorStructureBuildSavePayload` — line 78179
+- `monitorStructurePersistSavedLocal` — line 78413
+- `monitorStructureCloneDraftValue` — line 78445
+- `monitorStructureHistorySnapshot` — line 78449
+- `monitorStructureHistoryKey` — line 78461
+- `monitorStructureUpdateHistoryButtons` — line 78463
+- `monitorStructureHistoryReset` — line 78470
+- `monitorStructureHistoryCommit` — line 78476
+- `monitorStructureApplyHistorySnapshot` — line 78488
+- `monitorStructureUndoAction` — line 78502
+- `monitorStructureRedoAction` — line 78514
+- `monitorStructureBaselineSnapshot` — line 78526
+- `monitorStructurePersistWorkingDraft` — line 78530
+- `monitorStructureReconcileSnapshot` — line 78535
+- `monitorStructureBaselineIsCompatible` — line 78599
+- `monitorStructurePersistBaseline` — line 78614
+- `monitorStructureApplyBaseline` — line 78620
+- `monitorStructureRunAutoLayout` — line 78631
+- `monitorStructureDetachAll` — line 78710
+- `monitorStructureSetNodeExempt` — line 78745
+- `monitorStructureDetachBlankStep` — line 78762
+- `monitorStructureResetDraft` — line 78796
+- `monitorStructureExecuteDeskMoves` — line 78842
+- `monitorStructureRollbackDeskMoves` — line 79050
+- `monitorStructureFinalizeDeskMoves` — line 79210
+- `monitorStructureSavePlacement` — line 79258
+- `monitorStructureSave` — line 79284
+- `monitorStructureConnectNodesByPosition` — line 79396
+- `monitorStructureRestoreExemptForDirectLink` — line 79410
+- `monitorStructureSetParent` — line 79418
+- `monitorStructureDrawLinks` — line 79506
+- `monitorStructureDrawLiveLink` — line 79522
+- `monitorStructureFitViewport` — line 79538
+- `monitorStructureAlignLowerDesksToOrchestrator` — line 79557
+- `renderMonitorStructure` — line 79572
+- `monitorStructureDropNode` — line 79702
+- `monitorHierarchyTargetAt` — line 79733
+- `clearMonitorHierarchyTargets` — line 79749
+- `monitorHierarchyApplyDrop` — line 79765
+- `openMonitorStructure` — line 79781
+- `closeMonitorStructure` — line 79935
+- `monitorDiagTextError` — line 79951
+- `refreshMonitorAutoProcess` — line 79967
+
+## Lines 80001-81623
+
+- `toggleMonitorAutoProcess` — line 80031
+- `refreshMonitorActDiagnostic` — line 80113
+- `showMonitorDiagText` — line 80231
+- `refreshMonitorCurrentDiagnosticView` — line 80232
+- `monitorStructureClearDragFeedback` — line 80518
+- `monitorStructureUpdateDragGhost` — line 80520
+- `monitorStructurePointerTargetAt` — line 80522
+- `monitorStructureSlotAtPoint` — line 80629
