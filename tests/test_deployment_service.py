@@ -137,6 +137,16 @@ class DeploymentServiceTests(unittest.TestCase):
             "restart": True,
         })
 
+    def failure_context(self, result, head: str) -> dict[str, Any]:
+        stderr_path = self.runtime / "logs" / "service.stderr.log"
+        return {
+            "result": result.as_dict(),
+            "deployment_receipt": read_json(self.runtime / "deployments" / f"{head}.json"),
+            "service_receipt": read_json(self.runtime / "service.json"),
+            "stderr": stderr_path.read_text(encoding="utf-8", errors="replace")[-8000:]
+            if stderr_path.exists() else "",
+        }
+
     def service(self, operation: str, action: str, head: str):
         return self.call(operation, "service_control", {
             "profile": "test_runtime", "action": action, "expected_release_sha": head,
@@ -154,6 +164,7 @@ class DeploymentServiceTests(unittest.TestCase):
         status = self.service("status-1", "status", self.head)
         self.assertEqual("RUNNING", status.evidence["service"]["state"])
         restarted = self.service("restart-1", "restart", self.head)
+        self.assertEqual(Outcome.APPLIED, restarted.outcome, restarted.as_dict())
         second_pid = restarted.evidence["service"]["pid"]
         self.assertEqual(first_pid, restarted.evidence["service"]["pre_pid"])
         self.assertNotEqual(first_pid, second_pid)
@@ -194,7 +205,11 @@ class DeploymentServiceTests(unittest.TestCase):
         git(self.source, "commit", "-m", "second release")
         second_head = git(self.source, "rev-parse", "HEAD")
         second = self.deploy("deploy-second", second_head, self.head)
-        self.assertEqual(Outcome.APPLIED, second.outcome, second.as_dict())
+        self.assertEqual(
+            Outcome.APPLIED,
+            second.outcome,
+            self.failure_context(second, second_head),
+        )
         second_pid = second.evidence["service"]["pid"]
         self.assertNotEqual(first_pid, second_pid)
         self.assertTrue((self.runtime / "releases" / self.head).is_dir())
@@ -273,7 +288,11 @@ class DeploymentServiceTests(unittest.TestCase):
         git(self.source, "commit", "-m", "expand deployment profile")
         expanded_head = git(self.source, "rev-parse", "HEAD")
         upgraded = self.deploy("deploy-after-profile-expansion", expanded_head, self.head)
-        self.assertEqual(Outcome.APPLIED, upgraded.outcome, upgraded.as_dict())
+        self.assertEqual(
+            Outcome.APPLIED,
+            upgraded.outcome,
+            self.failure_context(upgraded, expanded_head),
+        )
         old_manifest = read_json(self.runtime / "releases" / self.head / "manifest.json")
         new_manifest = read_json(self.runtime / "releases" / expanded_head / "manifest.json")
         self.assertNotIn("src/bct/new_runtime_module.py", old_manifest["files"])

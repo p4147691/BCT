@@ -276,6 +276,7 @@ def _start_with_one_safe_retry(
         state = controller.inspect()
         if state.get("state") != "STOPPED_STALE_RECEIPT":
             raise
+        time.sleep(1.0)
         return controller.start(release)
 
 
