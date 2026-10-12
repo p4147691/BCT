@@ -1,6 +1,6 @@
 # BCT Foundation — 다음 구현
 
-상태: CORE_DESIGN_COMPLETE / FIRST_SLICE_PENDING.
+상태: FIRST_SLICE_SOURCE_TESTED / CI_PENDING.
 
 ## 이번 설계 단계
 
@@ -8,7 +8,21 @@
 미완료: 구현, 실제 테스트/CI, ACT 기능 호환, MCP/RCC LIVE 전환.
 사용자는 이 설계 단계 후 SOL로 구현을 이어가기로 했다.
 
-## 다음 작업의 범위
+## 구현 결과
+
+- `src/bct/core`: 공통 계약, 정책, SQLite 상태, node/connection revision, work handoff, operation/claim 중복 차단.
+- `src/bct/features`: bounded read/write, Python compile/unittest, exact Git commit.
+- `tests`: 격리된 실제 Git 저장소를 포함한 12개 테스트.
+- 기능 소스와 테스트는 BCT에 있으며 ACT Python package를 import하지 않는다.
+- read/test의 원문 출력은 호출 응답에만 두고 SQLite receipt에는 hash/status/길이만 기록한다.
+
+로컬 acceptance:
+
+- read → edit → re-edit → create file → py_compile/unittest → exact commit PASS.
+- duplicate operation, wrong principal, UNKNOWN duplicate guard, foreign dirty, stale SHA/HEAD, symlink escape, handoff PASS.
+- py_compile와 `git diff --check` PASS.
+
+## 최초 계획의 범위
 
 단일 Python 패키지와 SQLite를 사용해 docs/DESIGN.md의 core와 첫 files/git/tests 경로를 구현한다.
 첫 검증 대상은 격리된 disposable Git 프로젝트다. 기존 ACT task/worktree/live 파일을 수정할 필요가 없다.
@@ -35,6 +49,10 @@
 - 실제 실행의 결과 유실은 UNKNOWN; 새 ID로 중복 효과 생성 금지.
 - 이전 실행 없음 + terminal evidence일 때 인계 가능.
 - 테스트 통과/실패가 실제 결과와 일치하며 source 완료를 LIVE 완료라고 보고하지 않음.
+
+## 남은 절차
+
+GitHub CI를 통과시키고 main에 통합한 뒤 이 계획을 completed로 이동한다.
 
 ## 이후 기능 이전
 

@@ -12,10 +12,11 @@
 
 ## 이번 완료와 한계
 
-CORE_DESIGN_COMPLETE / IMPLEMENTATION_PENDING.
-코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 설계했다.
-docs/CORE_DESIGN_REVIEW.md에 34개 시나리오를 정리했다. 설계 검토이며 실행 테스트 PASS가 아니다.
-ACT 전체 소스 조사, feature 호환 검증, BCT 실행 코드/CI/LIVE 배포는 아직 없다.
+FIRST_SLICE_SOURCE_TESTED / CI_PENDING.
+코어 구조·노드 신원·권한 경계 및 동시 변경/중복 실행/인계 계약을 구현했다.
+파일 읽기·원자적 쓰기, Python test, expected HEAD·정확한 dirty set·new-file SHA proof 기반 Git commit을 BCT 소스로 구현했다.
+12개 로컬 테스트에서 실제 격리 Git 흐름, wrong principal, duplicate operation, UNKNOWN 중복 차단, foreign dirty, stale hash/HEAD, symlink escape 및 인계를 검증했다.
+ACT 전체 feature 호환, MCP/RCC, LIVE 배포는 아직 없다. GitHub CI 결과는 pending이다.
 현재 ACT live, 기존 탭/role binding, 서비스, 기존 작업과 소스는 이 설계 작업에서 수정하지 않았다.
 
 ## 모델 전환
@@ -36,6 +37,5 @@ ACT 전체 소스 조사, feature 호환 검증, BCT 실행 코드/CI/LIVE 배�
 
 ## 다음 한 작업
 
-docs/exec-plans/active/BCT_FOUNDATION.md를 따라 core + files/git/tests 첫 경로를 구현한다.
-필요한 현재 source entrypoint만 읽고 disposable Git 프로젝트에서 편집·재편집·신규 파일·test·commit을 검증한다.
-사용자가 모델을 변경해도 이 결정과 승인 범위를 유지한다.
+현재 commit의 GitHub CI를 통과시키고 main에 통합한 뒤 첫 slice를 완료 상태로 바꾼다.
+다음 feature는 GitHub 통합이며, 구현 전에 현재 ACT/GitHub 경로의 공개 계약만 조사한다.

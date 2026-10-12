@@ -5,9 +5,10 @@ BCT는 사용자 지시에 따라 개발 작업을 끝까지 수행하기 위한
 
 ## 현재 상태
 
-CORE_DESIGN_COMPLETE / IMPLEMENTATION_PENDING.
-코어 구조·노드 신원·권한 경계 설계를 확정하고 시나리오 검토를 마쳤다.
-실행 코드, 기능 이전, CI 및 LIVE 전환은 아직 수행하지 않았다. 현재 ACT는 계속 운영한다.
+FIRST_SLICE_SOURCE_TESTED / CI_PENDING.
+코어 구조와 파일 읽기·쓰기, Python 테스트, 정확한 Git commit의 첫 구현을 마쳤다.
+격리된 Git 프로젝트에서 읽기 → 수정 → 재수정 → 새 파일 → 테스트 → commit을 실제 검증했다.
+MCP/RCC와 LIVE 전환은 아직 수행하지 않았다. 현재 ACT는 계속 운영한다.
 
 ## 구조
 
@@ -29,3 +30,11 @@ CORE_DESIGN_COMPLETE / IMPLEMENTATION_PENDING.
 4. [인수인계](PROJECT_HANDOFF.md)
 
 GitHub main은 BCT 소스 정본이다. 인증정보, Chrome 프로필, 사용자 설정과 runtime DB/log는 커밋하지 않는다.
+
+## 로컬 검증
+
+```powershell
+python -m pip install -e .
+python -m unittest discover -s tests -v
+python -m compileall -q src tests
+```
