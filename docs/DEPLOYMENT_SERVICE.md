@@ -25,6 +25,12 @@ An older immutable release is verified against its own fenced manifest, while th
 release must exactly match the current named profile. This permits a reviewed profile to
 add or remove files without weakening either old-release rollback or new-release bounds.
 
+When deployment or core service control is requested through BCT's own MCP endpoint, a durable
+one-shot worker executes it after the request has returned.  This avoids asking the service being
+replaced to synchronously wait for its own PID to exit.  The common operation ID is fenced before
+the worker is launched, duplicate calls return the same `RUNNING`/terminal receipt, and the worker
+finishes that exact operation in the shared state store after restart and health verification.
+
 ## Service ownership
 
 The controller launches one fixed Python module from the immutable release. It records

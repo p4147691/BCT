@@ -7,7 +7,8 @@ from typing import Any
 
 from .models import (
     AuthorizationError, ConfirmedFailure, DecisionKind, Feature, FeatureResult,
-    OperationResult, Outcome, PreconditionError, Principal, UnknownEffectError,
+    OperationResult, OperationState, Outcome, PreconditionError, Principal,
+    UnknownEffectError,
 )
 from .policy import Policy
 from .store import Store
@@ -28,8 +29,8 @@ class OperationCoordinator:
     def capabilities(self) -> tuple[str, ...]:
         return tuple(sorted(self._features))
 
-    def run(self, *, principal: Principal, work_id: str, operation_id: str,
-            capability: str, arguments: dict[str, Any], approval_ref: str | None = None) -> OperationResult:
+    def _prepare(self, *, principal: Principal, work_id: str, operation_id: str,
+                 capability: str, arguments: dict[str, Any], approval_ref: str | None):
         feature = self._features.get(capability)
         if feature is None:
             raise KeyError("FEATURE_NOT_REGISTERED:" + capability)
@@ -51,13 +52,61 @@ class OperationCoordinator:
             "arguments": request.arguments,
             "preconditions": request.preconditions,
         }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        return feature, work, decision, request, digest
+
+    def _begin(self, *, principal: Principal, work_id: str, operation_id: str,
+               capability: str, arguments: dict[str, Any], approval_ref: str | None):
+        feature, work, decision, request, digest = self._prepare(
+            principal=principal, work_id=work_id, operation_id=operation_id,
+            capability=capability, arguments=arguments, approval_ref=approval_ref,
+        )
         created, current = self.store.begin_operation(
             operation_id=operation_id, work=work, principal_id=principal.principal_id,
             request_digest=digest, capability=capability, target=request.target,
             resources=request.resources, policy_revision=decision.policy_revision,
         )
+        return feature, request, created, current
+
+    def begin(self, *, principal: Principal, work_id: str, operation_id: str,
+              capability: str, arguments: dict[str, Any],
+              approval_ref: str | None = None) -> tuple[bool, OperationResult]:
+        """Durably fence an operation before an external one-shot worker starts."""
+        _, _, created, current = self._begin(
+            principal=principal, work_id=work_id, operation_id=operation_id,
+            capability=capability, arguments=arguments, approval_ref=approval_ref,
+        )
+        return created, current
+
+    def resume(self, *, principal: Principal, work_id: str, operation_id: str,
+               capability: str, arguments: dict[str, Any],
+               approval_ref: str | None = None) -> OperationResult:
+        """Execute an exact operation already fenced by :meth:`begin`."""
+        feature, request, created, current = self._begin(
+            principal=principal, work_id=work_id, operation_id=operation_id,
+            capability=capability, arguments=arguments, approval_ref=approval_ref,
+        )
+        if created:
+            return self.store.finish_operation(
+                operation_id=operation_id, outcome=Outcome.NOT_APPLIED,
+                evidence={"phase": "DISPATCH", "code": "BACKGROUND_OPERATION_NOT_PREPARED"},
+                error="BACKGROUND_OPERATION_NOT_PREPARED", release_claims=True,
+            )
+        if current.state is OperationState.FINISHED:
+            return current
+        return self._execute(feature=feature, request=request)
+
+    def run(self, *, principal: Principal, work_id: str, operation_id: str,
+            capability: str, arguments: dict[str, Any], approval_ref: str | None = None) -> OperationResult:
+        feature, request, created, current = self._begin(
+            principal=principal, work_id=work_id, operation_id=operation_id,
+            capability=capability, arguments=arguments, approval_ref=approval_ref,
+        )
         if not created:
             return current
+        return self._execute(feature=feature, request=request)
+
+    def _execute(self, *, feature: Feature, request) -> OperationResult:
+        operation_id = request.operation_id
         try:
             result = feature.execute(request)
             if not isinstance(result, FeatureResult):

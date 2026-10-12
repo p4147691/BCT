@@ -6,6 +6,7 @@ import json
 import shutil
 import socket
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -30,6 +31,16 @@ class MCPIntegrationTests(unittest.TestCase):
         self.project = self.root / "project"
         self.project.mkdir()
         (self.project / "hello.txt").write_text("hello from MCP\n", encoding="utf-8")
+        (self.project / "slow.py").write_text(
+            textwrap.dedent(
+                """\
+                import time
+                time.sleep(1.25)
+                print("slow execution complete")
+                """
+            ),
+            encoding="utf-8",
+        )
         self.release_sha = "1" * 40
         self.manifest_sha = hashlib.sha256(b"mcp-test").hexdigest()
         self.release = self.runtime / "releases" / self.release_sha
@@ -129,6 +140,32 @@ class MCPIntegrationTests(unittest.TestCase):
                         **work_arguments, "roots": [str(self.root)],
                     })
                     self.assertTrue(conflict.isError)
+
+                    execute_work = {
+                        "work_id": "mcp-execute-work",
+                        "request_summary": "prove MCP execution does not block service health",
+                        "roots": [str(self.project)],
+                        "actions": ["execute"],
+                    }
+                    await session.call_tool("bct_work_create", execute_work)
+                    pending = asyncio.create_task(session.call_tool("bct_execute", {
+                        "work_id": execute_work["work_id"],
+                        "operation_id": "mcp-slow-execute",
+                        "arguments": {
+                            "kind": "python", "cwd": str(self.project),
+                            "script": str(self.project / "slow.py"), "timeout_s": 5,
+                        },
+                    }))
+                    await asyncio.sleep(0.1)
+                    async with httpx.AsyncClient(timeout=0.5) as health_client:
+                        health = await health_client.get(
+                            f"http://127.0.0.1:{self.port}/health"
+                        )
+                    self.assertEqual(200, health.status_code)
+                    self.assertTrue(health.json()["ready"])
+                    completed = await pending
+                    self.assertFalse(completed.isError, completed)
+                    self.assertEqual("APPLIED", completed.structuredContent["outcome"])
 
     def test_authenticated_catalogue_work_call_and_duplicate_receipt(self):
         asyncio.run(self.exercise_mcp())

@@ -54,6 +54,8 @@ files = [
   "src/bct/service_runtime.py",
   "src/bct/runtime_server.py",
   "src/bct/mcp_server.py",
+  "src/bct/background_operations.py",
+  "src/bct/operation_worker.py",
   "src/bct/core/__init__.py",
   "src/bct/core/identity.py",
   "src/bct/core/models.py",

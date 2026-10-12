@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 from pathlib import Path
 from typing import Any, Callable, Coroutine
@@ -7,6 +8,7 @@ from typing import Any, Callable, Coroutine
 from mcp.server.fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
+from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .core.models import Principal, Work
 
 
@@ -95,14 +97,28 @@ def build_mcp(bct: Any) -> FastMCP:
             arguments: dict[str, Any],
             approval_ref: str | None = None,
         ) -> dict[str, Any]:
-            return bct.operations.run(
+            if capability in BACKGROUND_CAPABILITIES:
+                result = await asyncio.to_thread(
+                    launch_background_operation,
+                    bct,
+                    principal=principal,
+                    work_id=work_id,
+                    operation_id=operation_id,
+                    capability=capability,
+                    arguments=arguments,
+                    approval_ref=approval_ref,
+                )
+                return result.as_dict()
+            result = await asyncio.to_thread(
+                bct.operations.run,
                 principal=principal,
                 work_id=work_id,
                 operation_id=operation_id,
                 capability=capability,
                 arguments=arguments,
                 approval_ref=approval_ref,
-            ).as_dict()
+            )
+            return result.as_dict()
 
         execute.__name__ = "bct_" + capability
         execute.__doc__ = f"Execute the registered BCT {capability!r} capability."
