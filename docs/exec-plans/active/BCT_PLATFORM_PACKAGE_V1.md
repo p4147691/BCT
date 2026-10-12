@@ -65,7 +65,7 @@ mutation safety checks.
 
 ## Delivery slices
 
-1. Platform inventory/status and native process execution/inspection.
+1. Platform inventory/status, native process execution/inspection, and durable Python/PowerShell sessions.
 2. Local decision provider and model-service ownership under `D:\BCT`.
 3. Monitor exact-source baseline, validators and bounded deployment/control.
 4. Remaining accepted ADC-native operations and compatibility catalogue.

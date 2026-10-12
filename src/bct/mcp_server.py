@@ -97,7 +97,11 @@ def build_mcp(bct: Any) -> FastMCP:
             arguments: dict[str, Any],
             approval_ref: str | None = None,
         ) -> dict[str, Any]:
-            if capability in BACKGROUND_CAPABILITIES:
+            background = (
+                capability == "deploy"
+                or (capability == "service_control" and str(arguments.get("action") or "") != "status")
+            )
+            if background:
                 result = await asyncio.to_thread(
                     launch_background_operation,
                     bct,

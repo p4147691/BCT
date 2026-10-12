@@ -14,11 +14,15 @@ normal_actions = [
   "relay_browser",
   "system_inspect",
   "execute",
+  "process_session",
   "decision_model",
   "monitor",
   "decision_service",
 ]
 approval_actions = ["delete", "credential_change"]
+
+[execution.sessions]
+state_root = "D:\\BCT\\data\\process-sessions"
 
 [decision]
 endpoint_file = "D:\\BCT\\data\\decision-endpoint.json"
@@ -56,6 +60,7 @@ files = [
   "src/bct/mcp_server.py",
   "src/bct/background_operations.py",
   "src/bct/operation_worker.py",
+  "src/bct/process_session_worker.py",
   "src/bct/core/__init__.py",
   "src/bct/core/identity.py",
   "src/bct/core/models.py",
@@ -70,6 +75,7 @@ files = [
   "src/bct/features/github.py",
   "src/bct/features/rcc.py",
   "src/bct/features/execution.py",
+  "src/bct/features/process_session.py",
   "src/bct/features/decision.py",
   "src/bct/features/monitor.py",
   "src/bct/features/decision_service.py",
