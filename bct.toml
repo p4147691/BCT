@@ -25,6 +25,7 @@ files = [
   "src/bct/service.py",
   "src/bct/service_runtime.py",
   "src/bct/runtime_server.py",
+  "src/bct/mcp_server.py",
   "src/bct/core/__init__.py",
   "src/bct/core/identity.py",
   "src/bct/core/models.py",

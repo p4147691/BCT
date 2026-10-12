@@ -15,7 +15,10 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
   Git commit, and GitHub integration V1 (exact push, idempotent PR, CI-gated merge, verified-main sync).
 - Implemented and live accepted: deployment/service V1 (named exact-file profile, immutable release,
   exact process ownership and health, idempotent control, rollback) at `D:\BCT\runtime`, port 18790.
-- Unmigrated: MCP catalogue/server, RCC/Chrome extension.
+- Implemented and locally verified: MCP V1 (same-process Streamable HTTP, bearer authentication,
+  catalogue generated from real capabilities, common work/operation receipts). Do not mark it live
+  accepted until protocol and Codex configuration evidence is recorded.
+- Unmigrated: RCC/Chrome extension.
 - Keep current ACT, MCP, RCC, Chrome profile and bindings operational while features are migrated.
 - Do not claim an unmigrated feature is compatible or live accepted.
 

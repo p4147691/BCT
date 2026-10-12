@@ -4,10 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bct-control"
-version = "0.3.0"
+version = "0.4.0"
 description = "A small user-directed development control core"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
+dependencies = [
+  "mcp>=1.26,<2",
+  "uvicorn>=0.41,<1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
