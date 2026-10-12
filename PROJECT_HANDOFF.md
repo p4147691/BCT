@@ -2,9 +2,11 @@
 
 ## 현재 검증 상태
 
-`BCT_PLATFORM_PACKAGE_V1=LIVE_ACCEPTED`.
+`BCT_PLATFORM_PACKAGE_V1=LIVE_ACCEPTED`; `BCT_CORE_RELEASE_BOUNDARY=LIVE_ACCEPTED`.
 
-- GitHub `p4147691/BCT`의 `main`이 공식 정본이며 로컬 정본은 `D:\BCT\source`다.
+- GitHub `p4147691/BCT`의 `main`이 유일한 공식 소스이며 `D:\BCT\source`는 그 main의
+  깨끗한 로컬 checkout이다. 현재 source와 live Core release는
+  `558fb2800a2f940aa3de01aa510b267971d91e4f`로 일치한다.
 - 운영 release는 `D:\BCT\runtime`, receipt와 session 상태는 `D:\BCT\data`에 있다.
 - BCT core, MCP, health와 BCT Monitor가 한 서비스/한 release에서 실행된다.
 - 파일·Git·GitHub·배포·서비스·RCC·Laya·Python/PowerShell/argv 실행과 지속 세션은
@@ -16,6 +18,12 @@
   활성 BCT 소스 정본은 `D:\BCT\source` 하나뿐이다. ACT 외부 연동의 잔여 의존성은
   완전 전환 전까지 별도로 추적한다.
 - 기능별 정확한 소유권은 `docs/CAPABILITY_OWNERSHIP.md`, 사용법은 `docs/USER_GUIDE.md`를 따른다.
+- Core release에는 Core 실행 코드와 읽기 전용 status UI만 들어간다. Monitor, RCC, BDC의
+  유지 소스는 `modules/`에 있지만 Core runtime에 복사되지 않는다.
+- ChatGPT App은 기존 App ID와 연결을 유지한 채 `BCT Control`로 이름·설명을 변경했고 현재
+  BCT MCP 도구 목록을 새로 고쳤다.
+- 과거 staging/verify 사본은 `docs/LOCAL_LAYOUT.md`에 기록한 SHA-manifested Archive로 이동했다.
+  실행 중인 도구와 project 후보는 이동하지 않았다.
 
 ## 현재 결정
 
