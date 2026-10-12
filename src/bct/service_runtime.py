@@ -217,9 +217,14 @@ class RuntimeServiceController:
             "generation": int(receipt.get("generation") or 0),
             "instance_id": str(receipt.get("instance_id") or ""),
             "ready": True,
-            "mcp_ready": True,
-            "mcp_endpoint": f"http://127.0.0.1:{self.port}/mcp",
         }
+        health_contract = int(receipt.get("health_contract") or 1)
+        if health_contract >= 2:
+            exact.update({
+                "health_contract": health_contract,
+                "mcp_ready": True,
+                "mcp_endpoint": f"http://127.0.0.1:{self.port}/mcp",
+            })
         for key, value in exact.items():
             if health.get(key) != value:
                 raise PreconditionError("SERVICE_HEALTH_OWNERSHIP_MISMATCH:" + key)
@@ -340,6 +345,7 @@ class RuntimeServiceController:
             "manifest_sha256": release["manifest_sha256"],
             "generation": generation,
             "instance_id": instance_id,
+            "health_contract": 2,
             "port": self.port,
             "launch_intent_at": time.time(),
         }

@@ -53,6 +53,7 @@ def main() -> int:
         "manifest_sha256": arguments.manifest_sha256,
         "generation": arguments.generation,
         "instance_id": arguments.instance_id,
+        "health_contract": 2,
         "capabilities": list(bct.operations.capabilities),
         "mcp_ready": True,
         "mcp_endpoint": f"http://127.0.0.1:{arguments.port}/mcp",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -12,7 +13,7 @@ from typing import Any
 from bct import BCT
 from bct.core.models import Outcome, Principal
 from bct.features.deploy import DeploymentProfiles
-from bct.service_runtime import RuntimeServiceController, atomic_json, read_json
+from bct.service_runtime import RuntimeServiceController, atomic_json, process_identity, read_json
 
 
 def git(root: Path, *arguments: str) -> str:
@@ -212,6 +213,29 @@ class DeploymentServiceTests(unittest.TestCase):
         self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
         self.assertFalse((self.runtime / "current.json").exists())
         self.assertFalse((self.runtime / "service.json").exists())
+
+    def test_health_contract_allows_v1_upgrade_and_requires_v2_mcp_fields(self):
+        identity = process_identity(os.getpid())
+        self.assertIsNotNone(identity)
+        controller = RuntimeServiceController(
+            runtime_root=self.runtime,
+            service_name="bct-test",
+            port=self.port,
+        )
+        receipt = {
+            "service": "bct-test",
+            **identity.as_dict(),
+            "release_sha": self.head,
+            "manifest_sha256": "2" * 64,
+            "generation": 1,
+            "instance_id": "legacy",
+        }
+        legacy_health = {**receipt, "ready": True}
+        self.assertEqual(identity, controller._validate_running(receipt, legacy_health))
+        with self.assertRaisesRegex(Exception, "mcp_ready"):
+            controller._validate_running({**receipt, "health_contract": 2}, {
+                **legacy_health, "health_contract": 2,
+            })
 
     def test_profile_file_addition_allows_upgrade_but_new_release_is_exact(self):
         first = self.deploy("deploy-before-profile-expansion", self.head, None)
