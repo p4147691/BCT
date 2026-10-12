@@ -18,7 +18,8 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
 - Implemented and live accepted: MCP V1 (same-process Streamable HTTP, bearer authentication,
   catalogue generated from real capabilities, common work/operation receipts) at
   `http://127.0.0.1:18790/mcp`; Codex server name `bct`.
-- Unmigrated: RCC/Chrome extension.
+- Source tested: RCC V1 exact live-source baseline and exact-instance BCT relay boundary.
+- Not yet live accepted: BCT MCP exposure of RCC V1. The existing Chrome extension remains authoritative until acceptance.
 - Keep current ACT, MCP, RCC, Chrome profile and bindings operational while features are migrated.
 - Do not claim an unmigrated feature is compatible or live accepted.
 

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Workspace Relay</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <strong>AI Workspace Relay</strong>
+    <span id="armedBadge">DISARMED</span>
+  </header>
+
+  <section>
+    <h3>열린 ChatGPT 탭</h3>
+    <div id="tabs"></div>
+  </section>
+
+  <section class="controls">
+    <button id="refreshAll">새로고침</button>
+    <button id="bootstrap">CONTROL 프로토콜 넣기</button>
+    <button id="arm">자동중계 6회 허용</button>
+    <button id="disarm">자동중계 끄기</button>
+  </section>
+
+  <section>
+    <h3>수동 테스트</h3>
+    <input id="target" placeholder="대상 역할 (예: WS2)">
+    <textarea id="message" rows="4" placeholder="보낼 메시지"></textarea>
+    <label><input id="returnControl" type="checkbox" checked> 결과를 CONTROL 채팅으로 반환</label>
+    <button id="send">보내기</button>
+  </section>
+
+  <section>
+    <h3>상태</h3>
+    <pre id="status">로딩...</pre>
+  </section>
+  <script src="popup.js"></script>
+</body>
+</html>

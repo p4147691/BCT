@@ -279,20 +279,40 @@ class RuntimeServiceController:
             headers={"X-BCT-Control-Token": token, "Content-Type": "application/json"},
             method="POST",
         )
+        response_error: Exception | None = None
         try:
             with urllib.request.urlopen(request, timeout=3) as response:
                 response.read(4096)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise UnknownEffectError("SERVICE_SHUTDOWN_RESPONSE_UNAVAILABLE") from exc
+            # The service can terminate the HTTP connection while applying the
+            # authenticated shutdown. Reconcile the exact PID and endpoint before
+            # classifying a lost response; never issue a second shutdown here.
+            response_error = exc
         pid = int(receipt["pid"])
         if not self._wait_for_exit(pid, 10):
+            if response_error is not None:
+                try:
+                    after = self.inspect()
+                except Exception as inspect_exc:
+                    raise UnknownEffectError("SERVICE_SHUTDOWN_RESPONSE_UNAVAILABLE") from inspect_exc
+                if (
+                    after.get("state") == "RUNNING"
+                    and int(after.get("pid") or 0) == pid
+                    and after.get("fingerprint") == receipt.get("fingerprint")
+                ):
+                    raise ConfirmedFailure(
+                        "SERVICE_SHUTDOWN_NOT_APPLIED", release_claims=True
+                    ) from response_error
             raise UnknownEffectError("SERVICE_SHUTDOWN_UNVERIFIED")
         child = _LIVE_CHILDREN.pop(pid, None)
         if child is not None:
             try:
-                child.wait(timeout=1)
-            except subprocess.TimeoutExpired as exc:
-                raise UnknownEffectError("SERVICE_CHILD_HANDLE_NOT_REAPED") from exc
+                child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Exact PID exit and endpoint absence are the side-effect proof.
+                # A delayed local Popen handle reap must not make that proof
+                # ambiguous or provoke a duplicate stop.
+                pass
         if self._health() is not None:
             raise UnknownEffectError("SERVICE_ENDPOINT_REMAINS_AFTER_STOP")
         stopped = {

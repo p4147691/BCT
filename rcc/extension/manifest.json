@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Remote Chrome Commander",
+  "version": "0.1.0",
+  "description": "ChatGPT tab control via Native Messaging and local automation.",
+  "permissions": [
+    "scripting",
+    "nativeMessaging",
+    "storage",
+    "tabs",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "background_loader.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Remote Chrome Commander"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "relay_core.js",
+        "content.js",
+        "act_content.js",
+        "act_command_bridge.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

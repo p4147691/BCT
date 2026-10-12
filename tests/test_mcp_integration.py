@@ -42,6 +42,7 @@ class MCPIntegrationTests(unittest.TestCase):
         capabilities = [
             "read", "write", "test", "git_commit", "github_push", "github_pr_create",
             "github_pr_status", "github_pr_merge", "github_sync_main", "deploy", "service_control",
+            "relay_browser",
         ]
         (self.release / "bct.toml").write_text(
             "[policy]\n"
@@ -85,6 +86,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
                         "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push",
                         "bct_github_sync_main", "bct_read", "bct_service_control",
+                        "bct_relay_browser",
                         "bct_test", "bct_write",
                     }
                     self.assertEqual(

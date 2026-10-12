@@ -58,6 +58,7 @@ class FeatureRequest:
     arguments: dict[str, Any]
     resources: tuple[str, ...]
     preconditions: dict[str, Any] = field(default_factory=dict)
+    operation_id: str = ""
 
 
 @dataclass(frozen=True)

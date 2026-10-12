@@ -11,6 +11,7 @@ normal_actions = [
   "github_sync_main",
   "deploy",
   "service_control",
+  "relay_browser",
 ]
 approval_actions = ["delete", "credential_change"]
 
@@ -38,7 +39,9 @@ files = [
   "src/bct/features/files.py",
   "src/bct/features/git.py",
   "src/bct/features/github.py",
+  "src/bct/features/rcc.py",
   "src/bct/features/tests.py",
   "src/bct/integrations/__init__.py",
   "src/bct/integrations/github.py",
+  "src/bct/integrations/rcc.py",
 ]

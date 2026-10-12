@@ -1,0 +1,9 @@
+﻿{
+    "name": "com.ai_workspace_relay.host",
+    "description": "Remote Chrome Commander authenticated ACT bridge",
+    "path": "D:\\ACT\\relay\\native-host\\RelayNativeHostV2.rcc-presence-race-v2.exe",
+    "type": "stdio",
+    "allowed_origins": [
+        "chrome-extension://bhlcnmbodlhbephppahojbigleklpmhj/"
+    ]
+}

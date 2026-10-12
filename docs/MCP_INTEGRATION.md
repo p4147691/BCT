@@ -36,7 +36,7 @@ Codex approval configuration intentionally follows the user-facing risk boundary
 - automatic: capability discovery, work creation/recovery, operation receipt, file read,
   and GitHub PR status;
 - prompt: write, test/process execution, Git commit, GitHub mutations, deployment, and
-  service control.
+  service control, and RCC browser control.
 
 The prompt is a Codex safety notice for a real side effect. BCT still performs its own exact
 work, operation, path, SHA, resource ownership, and duplicate-effect checks after approval.
