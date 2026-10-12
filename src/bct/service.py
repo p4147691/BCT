@@ -18,6 +18,7 @@ from .features.github import (
     GitHubSyncMainFeature,
 )
 from .features.tests import TestFeature
+from .features.rcc import RelayBrowserFeature
 from .integrations.github import GhCliClient, GitHubClient
 
 
@@ -38,6 +39,7 @@ class BCT:
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github),
             GitHubSyncMainFeature(),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
+            RelayBrowserFeature(),
         ):
             self.operations.register(feature)
 

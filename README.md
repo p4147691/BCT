@@ -5,7 +5,7 @@ BCT는 사용자 지시에 따라 개발 작업을 끝까지 수행하기 위한
 
 ## 현재 상태
 
-FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED / MCP_V1_ACCEPTED.
+FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_ACCEPTED / MCP_V1_ACCEPTED / RCC_V1_SOURCE_TESTED.
 코어 구조와 파일 읽기·쓰기, Python 테스트, 정확한 Git commit의 첫 구현을 마쳤다.
 격리된 Git 프로젝트에서 읽기 → 수정 → 재수정 → 새 파일 → 테스트 → commit을 실제 검증했다.
 
@@ -18,7 +18,9 @@ merge SHA로 동기화하는 실제 수용 검증을 완료했다.
 health 확인, 중복 방지와 rollback을 구현하고 전체 회귀 및 `D:\BCT\runtime` 운영 acceptance를
 통과했다. BCT core service는 포트 18790에서 독립 실행된다. MCP V1은 같은 서비스 안의
 인증된 표준 Streamable HTTP endpoint와 capability 기반 catalogue를 구현하고 live protocol 및
-새 Codex 프로세스의 실제 work/read 호출까지 통과했다. RCC 전환은 아직 수행하지 않았다.
+새 Codex 프로세스의 실제 work/read 호출까지 통과했다. RCC V1은 현재 live 확장 소스를
+byte-exact 기준선으로 보존하고 exact-instance 제어 경계를 BCT에 구현했다. 운영 확장 덮어쓰기나
+Chrome 재설정 없이 GitHub/배포/live acceptance를 진행한다.
 현재 ACT는 계속 운영한다.
 
 ## 구조
@@ -44,7 +46,9 @@ health 확인, 중복 방지와 rollback을 구현하고 전체 회귀 및 `D:\B
 7. [배포·서비스 구현 기록](docs/exec-plans/completed/BCT_DEPLOYMENT_SERVICE.md)
 8. [MCP 통합 계약](docs/MCP_INTEGRATION.md)
 9. [MCP 구현 기록](docs/exec-plans/completed/BCT_MCP_V1.md)
-10. [인수인계](PROJECT_HANDOFF.md)
+10. [RCC 통합 계약](docs/RCC_INTEGRATION.md)
+11. [RCC V1 실행 기록](docs/exec-plans/active/BCT_RCC_V1.md)
+12. [인수인계](PROJECT_HANDOFF.md)
 
 GitHub main은 BCT 소스 정본이다. 인증정보, Chrome 프로필, 사용자 설정과 runtime DB/log는 커밋하지 않는다.
 

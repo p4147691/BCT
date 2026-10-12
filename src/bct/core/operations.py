@@ -38,7 +38,10 @@ class OperationCoordinator:
                                       approval_ref=approval_ref)
         if decision.kind is not DecisionKind.ALLOW:
             raise AuthorizationError(decision.reason_code + ":" + decision.next_action)
-        request = feature.prepare(work=work, arguments=arguments)
+        request = replace(
+            feature.prepare(work=work, arguments=arguments),
+            operation_id=operation_id,
+        )
         if not request.resources:
             raise ValueError("FEATURE_RESOURCE_REQUIRED")
         digest = hashlib.sha256(json.dumps({
