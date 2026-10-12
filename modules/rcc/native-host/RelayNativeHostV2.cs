@@ -36,9 +36,8 @@ public class RelayNativeHostV2
 
     public static void Main(string[] args)
     {
-        ActOriginAllowed = args.Length > 0 && (
-            args[0] == "chrome-extension://bhlcnmbodlhbephppahojbigleklpmhj/" ||
-            args[0] == "chrome-extension://ocbidbaplechjjdacmokhnfbdmgjkphf/");
+        ActOriginAllowed = args.Length > 0 &&
+            args[0] == "chrome-extension://ocbidbaplechjjdacmokhnfbdmgjkphf/";
         try { NativeReadLoop(); }
         catch (Exception ex) { Console.Error.WriteLine("native loop: " + ex.Message); }
     }

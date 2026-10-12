@@ -30,10 +30,10 @@ one manifest public key after recovery so the installed extension ID is independ
 - fixed extension ID: `ocbidbaplechjjdacmokhnfbdmgjkphf`;
 - legacy path-derived ID during the bounded cutover only: `bhlcnmbodlhbephppahojbigleklpmhj`.
 
-The Native Host transition manifest accepts both IDs while the old instance is inspected and the
-verified registrations are rebound to the new exact instance.  It does not copy pending sends or
-re-run an old browser operation.  The legacy origin can be removed after the old extension is disabled
-and the new instance passes state and duplicate-operation acceptance.
+The migration transition temporarily accepted both IDs while the old instance was inspected.  It did
+not copy pending sends or re-run an old browser operation.  After the legacy extension was disabled
+and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
+contract was reduced to the BCT ID only.
 
 ## Exact imported SHA-256 values
 
