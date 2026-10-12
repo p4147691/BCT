@@ -13,7 +13,10 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
 
 - Implemented and accepted: core identity/policy/operation store, bounded file read/write, Python test,
   Git commit, and GitHub integration V1 (exact push, idempotent PR, CI-gated merge, verified-main sync).
-- Unmigrated: deployment/service control, MCP catalogue/server, RCC/Chrome extension.
+- Implemented and locally verified: deployment/service V1 (named exact-file profile, immutable release,
+  exact process ownership and health, idempotent control, rollback). Do not mark it live accepted until
+  `D:\BCT\runtime` evidence is recorded.
+- Unmigrated: MCP catalogue/server, RCC/Chrome extension.
 - Keep current ACT, MCP, RCC, Chrome profile and bindings operational while features are migrated.
 - Do not claim an unmigrated feature is compatible or live accepted.
 
