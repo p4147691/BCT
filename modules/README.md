@@ -11,8 +11,8 @@ kernel.
 | `monitor` | Window observation and simple window/node status | Chrome extension + Native Messaging host |
 | `decision` | Optional local decision-model recommendation | Local model endpoint; deterministic policy remains in Core |
 | `github` | GitHub integration and runner operations | GitHub API/Actions and bounded runner services |
+| `mcp` | ChatGPT/Codex control ingress | Existing App/tunnel identity retargeted to BCT MCP |
 | `status-ui` | Read-only BCT operational page | Served by the BCT runtime |
 
 Modules use Core's work, policy, operation, receipt and conflict contracts.
 They do not import ACT code or create their own ownership/policy systems.
-

@@ -86,6 +86,13 @@ class MCPIntegrationTests(unittest.TestCase):
         url = f"http://127.0.0.1:{self.port}/mcp"
         unauthorized = httpx.post(url, json={}, timeout=3)
         self.assertEqual(401, unauthorized.status_code)
+        tunnel_probe = httpx.post(
+            url,
+            headers={"X-BCT-Token": self.controller.mcp_secret()},
+            json={},
+            timeout=3,
+        )
+        self.assertNotEqual(401, tunnel_probe.status_code)
         headers = {"Authorization": "Bearer " + self.controller.mcp_secret()}
         async with httpx.AsyncClient(headers=headers, timeout=10) as http_client:
             async with streamable_http_client(url, http_client=http_client) as (read, write, _):

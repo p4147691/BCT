@@ -1,0 +1,22 @@
+config_version: 1
+control_plane:
+  base_url: https://api.openai.com
+  tunnel_id: tunnel_RETAIN_EXISTING_ID
+  api_key: env:CONTROL_PLANE_API_KEY
+health:
+  listen_addr: 127.0.0.1:0
+  url_file: C:\Users\USER\.local\state\tunnel-client\health\bct-control.url
+admin_ui:
+  open_browser: false
+log:
+  level: info
+  format: json
+  file: C:\Users\USER\.local\state\tunnel-client\logs\bct-control.log
+mcp:
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:18790/mcp
+  extra_headers:
+    - 'X-BCT-Token: file:D:\BCT\runtime\mcp.token'
+  discovery_extra_headers:
+    - 'X-BCT-Token: file:D:\BCT\runtime\mcp.token'

@@ -147,8 +147,13 @@ class LocalBearerMiddleware:
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope.get("type") == "http" and str(scope.get("path") or "").rstrip("/") == "/mcp":
             headers = {key.lower(): value for key, value in scope.get("headers", [])}
-            supplied = headers.get(b"authorization", b"").decode("latin-1")
-            if not hmac.compare_digest(supplied, "Bearer " + self.token):
+            bearer = headers.get(b"authorization", b"").decode("latin-1")
+            exact_token = headers.get(b"x-bct-token", b"").decode("latin-1")
+            authenticated = (
+                hmac.compare_digest(bearer, "Bearer " + self.token)
+                or hmac.compare_digest(exact_token, self.token)
+            )
+            if not authenticated:
                 response = JSONResponse(
                     {"error": "MCP_BEARER_TOKEN_INVALID"},
                     status_code=401,
