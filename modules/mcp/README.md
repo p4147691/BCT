@@ -21,3 +21,9 @@ ACT runtime dependency.
 exact release named by `D:\BCT\runtime\current.json`; `bct.supervisor` verifies the immutable release,
 durable service receipt, PID fingerprint and health contract before it accepts or starts the process.
 
+`ops/BCT-Core-Supervisor.task.xml` is the user-session Task Scheduler wrapper for that exact
+supervisor. It is intentionally bounded to the BCT runtime path, starts at sign-in, hides its host
+window, keeps one instance, and asks Windows to restart the supervisor after an unexpected exit.
+It does not launch a second BCT Core directly, does not run an arbitrary command, and retains the
+supervisor's PID/fingerprint/health checks before any Core start.
+
