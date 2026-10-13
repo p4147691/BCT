@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
+import logging
+import time
+import uuid
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
@@ -13,6 +18,19 @@ from .core.models import Principal, Work
 
 
 MCP_PRINCIPAL_ID = "bct-mcp-local"
+_MCP_TRACE_ID: ContextVar[str | None] = ContextVar("bct_mcp_trace_id", default=None)
+_MCP_TRACE_LOG = logging.getLogger("bct.mcp.trace")
+
+
+def _trace_stage(stage: str, **durations_ms: float) -> None:
+    """Only synthetic trace ID and bounded durations; never headers or bodies."""
+    trace_id = _MCP_TRACE_ID.get()
+    if trace_id is None:
+        return
+    payload = {"trace_id": trace_id, "stage": stage}
+    payload.update({key: round(value, 3) for key, value in durations_ms.items()})
+    _MCP_TRACE_LOG.info("MCP_TIMING %s", json.dumps(payload, separators=(",", ":")))
+
 _GENERAL_TOOLS = ("bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get")
 _CAPABILITY_USAGE = {
     "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use arguments={\"operation\": \"directory_tree\", \"path\": \"absolute directory path\", \"depth\": 2, \"limit\": 200}.",
@@ -124,6 +142,7 @@ def build_mcp(
                 capability == "deploy"
                 or (capability == "service_control" and str(arguments.get("action") or "") != "status")
             )
+            started_ns = time.perf_counter_ns()
             if background:
                 result = await asyncio.to_thread(
                     launch_background_operation,
@@ -135,6 +154,7 @@ def build_mcp(
                     arguments=arguments,
                     approval_ref=approval_ref,
                 )
+                _trace_stage("handler_done", handler_ms=(time.perf_counter_ns()-started_ns)/1e6)
                 return result.as_dict()
             result = await asyncio.to_thread(
                 bct.operations.run,
@@ -145,6 +165,7 @@ def build_mcp(
                 arguments=arguments,
                 approval_ref=approval_ref,
             )
+            _trace_stage("handler_done", handler_ms=(time.perf_counter_ns()-started_ns)/1e6)
             return result.as_dict()
 
         execute.__name__ = "bct_" + capability
@@ -187,4 +208,30 @@ class LocalBearerMiddleware:
                 )
                 await response(scope, receive, send)
                 return
-        await self.app(scope, receive, send)
+        if scope.get("type") != "http" or str(scope.get("path") or "").rstrip("/") != "/mcp":
+            await self.app(scope, receive, send)
+            return
+
+        # Independent random ID: no trust in caller-supplied trace headers.
+        # Do not parse or log request bodies, authentication, or user content.
+        trace_id = uuid.uuid4().hex
+        token = _MCP_TRACE_ID.set(trace_id)
+        ingress_ns = time.perf_counter_ns()
+        first_response_ns = None
+
+        async def traced_send(message: dict[str, Any]) -> None:
+            nonlocal first_response_ns
+            if message.get("type") == "http.response.start" and first_response_ns is None:
+                first_response_ns = time.perf_counter_ns()
+            await send(message)
+            if message.get("type") == "http.response.body" and not message.get("more_body", False):
+                finished_ns = time.perf_counter_ns()
+                _trace_stage(
+                    "response_complete",
+                    asgi_total_ms=(finished_ns-ingress_ns)/1e6,
+                    asgi_to_headers_ms=((first_response_ns or finished_ns)-ingress_ns)/1e6,
+                )
+        try:
+            await self.app(scope, receive, traced_send)
+        finally:
+            _MCP_TRACE_ID.reset(token)
