@@ -15,5 +15,6 @@ The recovery deliberately excludes `private/`, `local-token.js`, `wireproxy.conf
 `__pycache__` and `wireproxy.exe`. Those are secret, generated or third-party runtime assets and
 must never be committed. `BASELINE_SHA256.txt` records the exact imported public bytes.
 
-The installed path remains unchanged until a fixed extension identity and runtime-data migration
-are accepted. Moving this directory alone would change the path-derived Chrome identity.
+The replacement manifest uses fixed extension ID `belokajbbpdnchnobjmmllelhmiajikn`. The legacy
+installed path and identity remain in service until the replacement is loaded, state is verified and
+the old extension is disabled.
