@@ -152,6 +152,24 @@ Candidate extension payload SHA-256 for 1.0.6:
 | `extension/manifest.json` | `5531360bfdbc10e5030fb55ae2b6601ec7b2fcfaecd86cf34edc0b391ac02ace` |
 | `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
 
+## BCT RCC 1.0.7 common terminal classifier candidate
+
+The one-shot independent-window E2E delivered exactly one prompt and received
+the exact expected answer, but the normal final-response classifier produced the
+same stale-stop false negative before the 1.0.6 recovery helper ran. Version
+1.0.7 applies the same dual exact-turn terminal requirement to the common
+classifier: both completed turn state and completion action UI are required to
+override a stop/generating signal. Either signal alone stays fail-closed.
+
+Candidate extension payload SHA-256 for 1.0.7:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `a6518a52f17c10ec463454506fefb8daf8035b85a84ddd7c7206311d415536e4` |
+| `extension/content.js` | `82067236285442ca1c38685027e750736cb787bb674b13fa6452eecd63fcdcb2` |
+| `extension/manifest.json` | `2338ae089c439c1915c8b10bc5c90e5df00789176d108be187db129c6e047dc1` |
+| `extension/relay_core.js` | `b74d8d5528eb7eaf60600ca3a046da351295c99f7bec1dfebf9b8f21192b2a31` |
+
 Promotion to LIVE requires exact-file backup, clean official main SHA,
 existing-tab preservation, loaded backgroundBuildId
 `2026-10-13-rcc-editor-gate-v1`, and a distinct one-shot bootstrap E2E.

@@ -127,3 +127,8 @@ RCC 1.0.6 tightens that recovery completion check. A stale inert stop control ma
 be ignored only when the exact routed turn independently reports both a complete
 turn state and its completion action UI. Missing either signal remains fail-closed;
 the recovery path still never clicks or submits.
+
+RCC 1.0.7 applies the same dual-signal rule to the normal final-response
+classifier. This removes the equivalent false negative before recovery while
+preserving the stricter streaming result whenever either exact-turn signal is
+missing.
