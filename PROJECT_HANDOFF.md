@@ -52,8 +52,9 @@ FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_AC
 GitHub Actions run `38234844806`에서 최신 Actions major로 Windows CI가 통과했다.
 ACT 전체 legacy feature 호환을 목표로 하지 않는다. BCT의 core, 개발 흐름, GitHub,
 배포·서비스, MCP, bounded RCC 제어가 각각 live acceptance를 통과했다.
-기존 RCC 탭/role binding은 계속 보존된다. ACT 경로에서 실행 중인 남은 구성은 GitHub
-Runner뿐이며, CI/복구 중단을 피하기 위해 별도 runner 이동 단계까지 의도적으로 유지한다.
+기존 RCC 탭/role binding은 계속 보존된다. 활성 GitHub Runner 네 개는 GitHub의 같은
+runner ID·이름·label을 유지한 채 `D:\BCT\runtime\runners\github`로 이동했고 모두
+`online / busy=false`가 확인됐다. 이동 receipt는 `D:\BCT\data\migrations`에 보존한다.
 
 GitHub integration V1은 BCT 소스로 구현되었다. exact-SHA branch push, deterministic request marker를
 사용한 PR 생성 중복 방지, required-check 조회, exact-head merge 및 verified `main` fast-forward를
@@ -134,8 +135,10 @@ bindings, pending 상태는 변경하지 않았다.
 
 ## 다음 작업
 
-제어 경로와 브라우저 모듈의 ACT runtime 퇴역은 완료됐다. 남은 ACT 삭제 gate는 현재 CI와
-복구에 사용 중인 GitHub Runner를 중단 없이 중립/BCT 경로로 옮기는 일과, DesktopWindow
-Monitor의 오래된 조직 UI 호환 코드를 단순 상태 UI로 축소하는 일이다. 이후 작업도 새 관리
+제어 경로와 브라우저 모듈의 ACT runtime 퇴역 및 활성 GitHub Runner 경로 이동은 완료됐다.
+DesktopWindow Monitor 2.0은 Native HWND/thumbnail을 창의 정본으로 유지하고, 노드·조직
+정보를 창 존재 판정에서 분리하며, 구형 ACT startup/focus 호출을 기본 비활성화하는 소스와
+회귀 검사가 준비됐다. 남은 순서는 GitHub main 통합, 설치본 exact 배포와 live acceptance,
+그리고 SHA manifest를 남긴 구형 runner 백업/비활성 서비스 정리다. 이후 작업도 새 관리
 계층을 추가하지 않고 같은 work/operation/receipt → GitHub main → exact deploy → live
-acceptance 흐름으로 진행한다. 현재 BCT 사용에는 이 두 후속 정리가 필요하지 않다.
+acceptance 흐름으로 진행한다.

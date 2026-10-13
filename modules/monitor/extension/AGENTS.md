@@ -18,3 +18,4 @@
   version after reload.
 - The former ACT organization projection is compatibility-only. Do not extend it; remove it only
   with focused node-number/status and window-control regression coverage.
+- Compatibility-only organization behavior is documented in `MONITOR_ORGANIZATION_MODEL.md`.

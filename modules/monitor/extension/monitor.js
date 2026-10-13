@@ -425,12 +425,13 @@ function monitorExtensionVersion() {
 
 function monitorWindowTitle() {
   const version = monitorExtensionVersion();
-  return version ? `DWM · ${version}` : "DWM";
+  return version ? `BCT Window Monitor · ${version}` : "BCT Window Monitor";
 }
 
 function monitorIsOwnWindowTitle(value) {
   const title = String(value || "").trim();
-  return title === "DWM" || title.startsWith("DWM ·") || title.startsWith("DesktopWindow Monitor");
+  return title === "BCT Window Monitor" || title.startsWith("BCT Window Monitor ·") ||
+    title === "DWM" || title.startsWith("DWM ·") || title.startsWith("DesktopWindow Monitor");
 }
 
 document.title = monitorWindowTitle();
@@ -467,7 +468,7 @@ monitorRoot.className = "desktop-window-monitor";
 
 
 
-monitorRoot.setAttribute("aria-label", "DWM Monitor");
+monitorRoot.setAttribute("aria-label", "BCT Window Monitor");
 
 
 
@@ -515,7 +516,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">DWM</strong><span id="monitorVersion" class="monitor-version"></span><div class="monitor-act-row"><span id="monitorService" style="display:none">ACT 확인 중…</span><button id="monitorActRestart" type="button" title="활성 또는 대기 ACT 작업이 없을 때만 ACT 서버를 재시작합니다">ACT 재시작</button><button id="monitorExtensionReload" type="button" title="DWM 확장을 다시 로드한 뒤 같은 위치에 Monitor 창을 안전하게 복구하고, 리로드로 생긴 빈 새 탭은 닫습니다">확장 리로드</button><button id="monitorNodeSync" type="button" title="현재 열린 ChatGPT 탭의 conversation key와 tab ID를 ACT endpoint registry와 다시 대조해 노드 목록 갱신">노드 동기화</button></div></div></div>
+    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BCT Window Monitor</strong><span id="monitorVersion" class="monitor-version"></span><div class="monitor-act-row"><span id="monitorService" style="display:none">호환 계층 확인 중…</span><span id="monitorBctStatus" class="monitor-bct-status" role="status">BCT 확인 중…</span><button id="monitorBctOpen" type="button" title="BCT Core의 읽기 전용 상태 화면을 엽니다">BCT 상태</button><button id="monitorLocalLlmOpen" type="button" title="BCT 상태 화면에서 현재 Laya 서비스 상태를 확인합니다">Laya 상태</button><button id="monitorExtensionReload" type="button" title="이미 설치된 BCT Window Monitor 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">설치본 리로드</button></div></div></div>
 
 
 
@@ -531,7 +532,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-header-actions"><span id="monitorWorkRecoveryMount"></span><button id="monitorClosedRecovery" type="button" title="닫힌 ChatGPT 대화 복구" aria-label="닫힌 ChatGPT 대화 복구">복구</button><button id="monitorCollapse" type="button" title="Monitor 전체 접기" aria-label="Monitor 전체 접기">−</button></div>
+    <div class="monitor-header-actions"><button id="monitorCollapse" type="button" title="Monitor 전체 접기" aria-label="Monitor 전체 접기">−</button></div>
 
 
 
@@ -579,7 +580,7 @@ monitorRoot.innerHTML = `
 
 
 
-  <section class="monitor-section monitor-ai-section">
+  <section class="monitor-section monitor-ai-section" hidden>
 
 
 
@@ -651,12 +652,13 @@ const MONITOR_FEATURE_SKETCH_ENABLED = true;
 const MONITOR_FEATURE_RECOVERY_ENABLED = true;
 const MONITOR_ACTIVE_STARTUP_ENABLED = true;
 const MONITOR_ACT_STARTUP_TEST_ENABLED = false;
-const MONITOR_NODE_RENDER_ENABLED = true;
+const MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED = false;
+const MONITOR_NODE_RENDER_ENABLED = false;
 const MONITOR_NODE_RENDER_PROJECTION_ONLY = false;
 
 // Event-only runtime diagnostics. These counters live only in this renderer;
 // they never write storage and never schedule work.
-const MONITOR_BUILD_ID = "20260924-orchestrator-pyramid-19";
+const MONITOR_BUILD_ID = "20261013-bct-window-monitor-2";
 const monitorRenderDiagnostics = {
   startedAt: Date.now(),
   renderRequests: 0,
@@ -1595,10 +1597,10 @@ function syncMonitorTitle() {
 
 
   const version = monitorExtensionVersion();
-  monitorTitle.textContent = "DWM";
+  monitorTitle.textContent = "BCT Window Monitor";
   if (monitorVersion) {
     monitorVersion.textContent = version ? `v${version}` : "버전 미확인";
-    monitorVersion.title = version ? `실행 중인 DWM 확장 버전 ${version}` : "실행 중인 확장 버전을 확인하지 못했습니다";
+    monitorVersion.title = version ? `실행 중인 BCT Window Monitor 버전 ${version}` : "실행 중인 확장 버전을 확인하지 못했습니다";
   }
   document.title = monitorWindowTitle();
 
@@ -42993,6 +42995,41 @@ const monitorActRestart = document.getElementById("monitorActRestart");
 
 const monitorNodeSync = document.getElementById("monitorNodeSync");
 
+const monitorBctStatus = document.getElementById("monitorBctStatus");
+const monitorBctOpen = document.getElementById("monitorBctOpen");
+const monitorLocalLlmOpen = document.getElementById("monitorLocalLlmOpen");
+const monitorBctShell = globalThis.MonitorBctShell?.create?.();
+
+async function refreshMonitorBctStatus() {
+  if (!monitorBctStatus || !monitorBctShell) return;
+  monitorBctStatus.textContent = "BCT 확인 중…";
+  monitorBctStatus.classList.remove("healthy", "unhealthy");
+  try {
+    const state = await monitorBctShell.health();
+    monitorBctStatus.textContent = `BCT 정상 · G${state.generation}`;
+    monitorBctStatus.title = `PID ${state.pid} · ${state.releaseSha || "release 미확인"}`;
+    monitorBctStatus.classList.add("healthy");
+  } catch (error) {
+    monitorBctStatus.textContent = "BCT 연결 안 됨";
+    monitorBctStatus.title = error?.message || String(error);
+    monitorBctStatus.classList.add("unhealthy");
+  }
+}
+
+monitorBctOpen?.addEventListener("click", () => {
+  void monitorBctShell?.openStatus?.().catch((error) => {
+    setMonitorStatus(`BCT 상태 화면 열기 실패 · ${error?.message || error}`, false);
+  });
+});
+
+monitorLocalLlmOpen?.addEventListener("click", () => {
+  void monitorBctShell?.openLocalLlm?.().catch((error) => {
+    setMonitorStatus(`Laya 상태 화면 열기 실패 · ${error?.message || error}`, false);
+  });
+});
+
+void refreshMonitorBctStatus();
+
 async function refreshMonitorEndpointRegistry() {
   const refreshUrl = new URL("/browser/endpoints/refresh", ORCHESTRATOR_ROLE_ADMIN_URL).toString();
   const response = await actFetch(refreshUrl, {
@@ -74832,15 +74869,17 @@ if (MONITOR_ACTIVE_STARTUP_ENABLED) {
       renderWorkers(monitorLastAiState);
     }
     monitorPostWorkStorageReady=true;
-    void monitorSyncSharedState("startup", true);
-    void (async () => {
-      try { await refreshMonitorEndpointRegistry(); }
-      catch (error) { console.warn("DesktopWindow Monitor startup endpoint reconciliation failed", error); }
-      await refreshAiMonitor();
-    })();
-    scheduleMonitorStartupRecovery();
+    if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) {
+      void monitorSyncSharedState("startup", true);
+      void (async () => {
+        try { await refreshMonitorEndpointRegistry(); }
+        catch (error) { console.warn("BCT Window Monitor legacy endpoint reconciliation failed", error); }
+        await refreshAiMonitor();
+      })();
+      scheduleMonitorStartupRecovery();
+    }
   });
-  refreshActHealth();
+  if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) refreshActHealth();
   void refreshWindowsCurrentState();
   checkMonitorDeploymentUpdate();
 }
@@ -74915,9 +74954,9 @@ async function refreshMonitorConversationStateFast(forceBadgeSync = false) {
   }
 }
 
-if (MONITOR_ACTIVE_STARTUP_ENABLED) void refreshMonitorConversationStateFast();
+if (MONITOR_ACTIVE_STARTUP_ENABLED && MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) void refreshMonitorConversationStateFast();
 if (MONITOR_ACT_STARTUP_TEST_ENABLED) {
-  refreshActHealth();
+  if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) refreshActHealth();
   void (async () => {
     try { await refreshMonitorEndpointRegistry(); }
     catch (error) { console.warn("DesktopWindow Monitor ACT-only endpoint reconciliation failed", error); }
@@ -75165,7 +75204,7 @@ window.addEventListener("focus", () => {
 
 
 
-  refreshActHealth();
+  if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) refreshActHealth();
 
 
 
@@ -75181,7 +75220,9 @@ window.addEventListener("focus", () => {
 
 
 
-  refreshAiMonitor();
+  if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) refreshAiMonitor();
+
+  void refreshMonitorBctStatus();
 
 
 
@@ -75611,6 +75652,7 @@ const monitorDiagnostics=document.createElement("details");
 
 
 monitorDiagnostics.className="monitor-bottom-diagnostics";
+monitorDiagnostics.hidden=true;
 
 
 

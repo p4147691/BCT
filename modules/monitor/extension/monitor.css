@@ -133,6 +133,9 @@
 
 
 .monitor-act-row #monitorService { margin: 0; min-width: 64px; font-weight: 600; }
+.monitor-bct-status { margin:0; min-width:92px; font-weight:700; color:rgba(255,211,145,.94); }
+.monitor-bct-status.healthy { color:rgba(154,236,181,.98); }
+.monitor-bct-status.unhealthy { color:rgba(255,145,145,.98); }
 
 
 .monitor-act-row button { min-height: 22px; padding: 1px 7px; border-radius: 6px; font-size: 11px; }
