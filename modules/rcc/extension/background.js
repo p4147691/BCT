@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-compose-v1';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-compose-v2';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 
@@ -1023,6 +1023,59 @@ async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, subm
     throw new Error(String(result?.error || 'RELAY_RECOVERY_DIRECT_FAILED'));
   }
   return { ok: true, recovered: true, recoveredReply: String(result.reply || ''), directDom: true };
+}
+
+async function recoverCreatedResult(relayId) {
+  const state = await loadState();
+  const existing = state.resultReceipts?.[relayId] || null;
+  if (existing?.resultState === 'RESULT_PERSISTED') {
+    return { type: 'host:result', ok: true, relayId, found: true,
+      completed: true, pending: false, result: publicResultFromReceipt(existing) };
+  }
+  const pending = state.pending?.[relayId] || null;
+  let fingerprint;
+  try { fingerprint = JSON.parse(String(pending?.fingerprint || '')); }
+  catch (_) { fingerprint = null; }
+  if (!pending || pending.bootstrapCreatedTab !== true
+      || !Array.isArray(fingerprint) || fingerprint.length !== 6
+      || String(fingerprint[1] || '') !== String(state.settings.instanceId || '')
+      || Number(fingerprint[3]) !== Number(pending.tabId)
+      || Number(fingerprint[4]) !== Number(pending.windowId)
+      || !String(fingerprint[0] || '').startsWith('bct-compose-c-')
+      || !String(fingerprint[5] || '')) {
+    throw new Error('COMPOSE_RECOVERY_PENDING_IDENTITY_MISMATCH');
+  }
+  const tab = await chrome.tabs.get(Number(pending.tabId));
+  const conversationKey = RelayCore.conversationKey(tab?.url || '');
+  if (!conversationKey) throw new Error('COMPOSE_RECOVERY_CONVERSATION_NOT_READY');
+  const recovered = await recoverCompletedReplyDirectlyFromTab(
+    Number(pending.tabId), conversationKey, String(fingerprint[5])
+  );
+  if (!recovered?.ok || recovered.recovered !== true
+      || !String(recovered.recoveredReply || '').trim()) {
+    throw new Error(String(recovered?.error || 'COMPOSE_RECOVERY_RESULT_NOT_READY'));
+  }
+  pending.conversationKey = conversationKey;
+  pending.deliveryConfirmed = true;
+  pending.acceptedAt = Number(pending.acceptedAt || 0) || Date.now();
+  pending.submittedAt = Number(pending.submittedAt || 0)
+    || Number(pending.networkStartedAt || 0) || Date.now();
+  pending.submissionState = 'SUBMITTED_RECOVERED_FROM_EXACT_DOM';
+  pending.submitUnknown = true;
+  state.pending[relayId] = pending;
+  await chrome.storage.local.set({ pending: state.pending });
+  await deliverResult(relayId, {
+    ok: true,
+    reply: String(recovered.recoveredReply),
+    recovered: 'exact-created-tab-dom'
+  }, Number(pending.tabId));
+  const completedState = await loadState();
+  const receipt = completedState.resultReceipts?.[relayId] || null;
+  if (!receipt || receipt.resultState !== 'RESULT_PERSISTED') {
+    throw new Error('COMPOSE_RECOVERY_RESULT_NOT_PERSISTED');
+  }
+  return { type: 'host:result', ok: true, relayId, found: true,
+    completed: true, pending: false, result: publicResultFromReceipt(receipt) };
 }
 
 function bootstrapSubmissionEvidenceIsExact(pending, recovered, expected) {
@@ -2162,6 +2215,20 @@ async function handleNativeCommand(message) {
           networkStartedAt: Number(pending.networkStartedAt || 0) || null,
 
           networkCompletedAt: Number(pending.networkCompletedAt || 0) || null } : null });
+
+      return;
+
+    }
+
+    if (message.command === 'recover-created-result') {
+
+      const relayId = String(message.text || message.relayId || '').trim();
+
+      if (!relayId) throw new Error('RELAY_ID_REQUIRED');
+
+      const recovered = await recoverCreatedResult(relayId);
+
+      postNative({ ...recovered, requestId });
 
       return;
 

@@ -292,6 +292,7 @@ class RelayBrowserFeature:
         proof_at=time.monotonic()
         deadline=began+float(values["timeout_s"])
         proof={"instance_id":instance_id,"extra":identity,"text":values["text"]}
+        recovery_attempted = False
         while time.monotonic()<deadline:
             remaining=deadline-time.monotonic()
             try:
@@ -301,6 +302,23 @@ class RelayBrowserFeature:
                     timeout_s=max(0.1,min(2.0,remaining)))
             except (RelayUnavailable,RelayEffectUnknown):
                 done={}
+            pending_status = done.get("pendingStatus") if isinstance(
+                done.get("pendingStatus"), dict) else {}
+            if (
+                done.get("pending") is True
+                and pending_status.get("networkCompletedAt")
+                and not recovery_attempted
+            ):
+                recovery_attempted = True
+                try:
+                    done = self.client.request(
+                        instance_id=instance_id,
+                        request_id=_readback_request_id(send_id) + ".recover",
+                        command="recover-created-result", text=send_id,
+                        timeout_s=max(0.1, min(10.0, deadline-time.monotonic())),
+                    )
+                except (RelayUnavailable, RelayEffectUnknown):
+                    done = {}
             if _exact_bootstrap_terminal_success(done,operation_id=send_id,values=proof):
                 return FeatureResult(Outcome.APPLIED,{
                     "command":"create-and-send","create_operation_id":create_id,
@@ -339,9 +357,14 @@ class RelayBrowserFeature:
             if values["command"] in {"create-chat-window", "create-chat-tab"}:
                 extra["instanceId"] = values["instance_id"]
         try:
-            host_command = ("result" if values["command"] in
-                            (_RECONCILE_COMMANDS | {"result-of-create-and-send"})
-                            else values["command"])
+            host_command = (
+                "recover-created-result"
+                if values["command"] == "reconcile-create-and-send"
+                else "result"
+                if values["command"] in
+                (_RECONCILE_COMMANDS | {"result-of-create-and-send"})
+                else values["command"]
+            )
             result = self.client.request(
                 instance_id=values["instance_id"], request_id=request.operation_id,
                 command=host_command, to=values["to"], text=values["text"],

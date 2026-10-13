@@ -397,6 +397,27 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual(1,sum(c["command"]=="send-to-created-tab" for c in self.client.calls))
         self.assertGreaterEqual(result.evidence["total_ms"],0)
 
+    def test_create_and_send_recovers_completed_exact_dom_without_resend(self):
+        create, send, created, sent, terminal = self._compose_receipts("compose-dom-recovery")
+        pending = {
+            "type": "host:result", "ok": True, "relayId": send,
+            "found": False, "completed": False, "pending": True,
+            "pendingStatus": {"networkStartedAt": 100, "networkCompletedAt": 200},
+        }
+        self.client.results = [created, sent, pending, terminal]
+        result = self.call("compose-dom-recovery", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "text": "hello",
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("OK", result.output["result"]["result"]["reply"])
+        commands = [call["command"] for call in self.client.calls]
+        self.assertEqual(
+            ["create-chat-tab", "send-to-created-tab", "result",
+             "recover-created-result"], commands,
+        )
+        self.assertEqual(1, commands.count("send-to-created-tab"))
+
     def test_create_and_send_unknown_parent_reconciles_from_exact_child_receipt(self):
         create, send, created, _, terminal = self._compose_receipts("compose-reconcile")
         self.client.results = [created, {"ok": False, "state": "SUBMIT_UNKNOWN"}, {
@@ -414,6 +435,7 @@ class RccIntegrationTests(unittest.TestCase):
             "relay_id": "compose-reconcile",
         })
         self.assertEqual(Outcome.APPLIED, reconciled.outcome)
+        self.assertEqual("recover-created-result", self.client.calls[-1]["command"])
         self.assertEqual("compose-reconcile", reconciled.evidence["reconciled_operation_id"])
         self.assertEqual(send, reconciled.evidence["terminal_relay_id"])
         self.assertEqual(create, json.loads(
