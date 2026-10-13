@@ -47,6 +47,27 @@ pending, or result-ack semantics. The exact payload hashes approved for the 1.0.
 | `extension/manifest.json` | `86124e21fd9ddb70a51e61ffa231f27f1529cdf2784eeefd765f7324347d62c3` |
 | `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
 
+## BCT RCC 1.0.4 integrated create-and-send candidate
+
+Issue #66 removes the fixed sequential network-signal wait by accepting the
+first exact proof from either the observed conversation request or the exact
+new user turn. A single BCT `create-and-send` operation now creates the target,
+submits once with deterministic child operation IDs, waits read-only for the
+persisted assistant result, and returns the conversation and reply. The
+receipt records timestamp-only composer stages without storing prompt text.
+An UNKNOWN parent can be released only by `reconcile-create-and-send` after an
+exact persisted child receipt proves the derived create/send identity; it is
+never resent.
+
+Candidate extension payload SHA-256 for 1.0.4:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `486c61e16bbb4bf3aa7df15d1dfa44099f960b8e2ce8a78e6f64a0e750c1f080` |
+| `extension/content.js` | `7edb4d4c55ab192e99cc5f5ef4d076a2078bb38246c2fe3304c95ae9c2f9a8b1` |
+| `extension/manifest.json` | `d72baf788e792463e96b434b310a3b2e4a1b8d3591831e2cf77df18fb8972b8b` |
+| `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
+
 ## Exact imported SHA-256 values
 
 | File | SHA-256 |
@@ -71,7 +92,7 @@ pending, or result-ack semantics. The exact payload hashes approved for the 1.0.
 | `extension/test_full_result_capture.js` | `15e12a226a9d62e9d4046ec6efc05160983f812ead7b2280cfa8c92772a2f33b` |
 | `extension/test_identity_guard.js` | `5deafa1e96741644949887fe6e219fdb98f71c4489cf1de3dd4b4d2fd5d2bffc` |
 | `extension/test_relay_core.js` | `303802bed62a545b944da3dd96cfcd12e8ace8d320552259b7295de5c8dd8ef6` |
-| `extension/test_relay_lightweight_identity.js` | `3f647299bb8d2522471b18284ef53195369c3b188aa490e8107935c432b18aa3` |
+| `extension/test_relay_lightweight_identity.js` | `446f495045daa07b854e4093096a70e3a2086ce6f3f5acf4b5fa710bdc3a9e10` |
 | `extension/test_window_state_presence.js` | `42bb896055f3afc0a31d99263c19f4fa6993d7a1c379328de62731c3d1a48727` |
 | `native-host/RelayNativeHostV2.cs` | `164695e660a775b08d5d3289ff95340e28adb319a65d45e6e88790f4d1ee24ab` |
 | `native-host/com.ai_workspace_relay.host.v2.json` | `6358254cb45cd84c3821eac52ed5ef57e2f2ebafec5fbb91055e04dc348b31fd` |

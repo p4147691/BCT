@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-13-rcc-bootstrap-identity-v2';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-compose-v1';
 
 async function relayChatInjectionEnabled() {
   const match = location.pathname.match(/^\/c\/([a-z0-9-]{8,64})/i);
@@ -845,8 +845,9 @@ async function submitEditor(editor, options = {}) {
     if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
     // A React render may replace or disable the button after the observer resolved.
     if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
+    const readyAt = Date.now();
     button.click();
-    return { ok: true, method: 'send-button' };
+    return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now() };
   }
   if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
 
@@ -1149,6 +1150,15 @@ function waitForNaverChatMode(trySelectChat, timeoutMs = 5000) {
     timer = setTimeout(() => finish(false), timeoutMs);
     check();
   });
+}
+
+// The actual user turn and the operation-fenced network-start signal are two
+// independent affirmative proofs. Neither needs to wait for the other's timeout.
+function firstSubmissionEvidence(networkStartedPromise, exactUserTurnPromise) {
+  return Promise.any([
+    networkStartedPromise.then(() => 'network'),
+    exactUserTurnPromise.then(() => 'exact-user-turn')
+  ]);
 }
 
 function waitForRelaySubmissionAccepted(beforeUserCount, timeoutMs = 5000) {
@@ -1678,7 +1688,8 @@ async function deliverTrackedRelayResult(record, result) {
 
 
 
-  const completed={...record,phase:'completed',result,completedAt:Date.now()};
+  const completedAt = Number(result?.stageTiming?.assistantResponseCompletedAt || 0) || Date.now();
+  const completed={...record,phase:'completed',result,completedAt};
 
 
 
@@ -1709,15 +1720,19 @@ async function deliverTrackedRelayResult(record, result) {
 async function deliverTrackedRelayResultWithRetry(record, result, attempts = 3) {
   let lastError = null;
   const limit = Math.max(1, Math.min(3, Number(attempts) || 1));
+  const completedAt = Date.now();
+  const deliveryResult = { ...result, stageTiming: { ...(record.stageTiming || {}),
+    assistantResponseStartedAt: Number(telemetry?.generationStartedAt || 0) || null,
+    assistantResponseCompletedAt: completedAt } };
   for (let index = 0; index < limit; index += 1) {
     try {
-      const response = await deliverTrackedRelayResult(record, result);
+      const response = await deliverTrackedRelayResult(record, deliveryResult);
       if (response?.ok) return response;
       lastError = new Error(String(response?.error || 'RELAY_RESULT_DELIVERY_REJECTED'));
     } catch (error) {
       lastError = error;
     }
-    saveRelayExecution({ ...record, phase: 'completed', result, completedAt: Date.now(),
+    saveRelayExecution({ ...record, phase: 'completed', result: deliveryResult, completedAt,
       resultDeliveryAttempts: index + 1, resultDeliveryError: String(lastError?.message || lastError || '') });
     if (index + 1 < limit) await sleep(250 * (index + 1));
   }
@@ -2219,6 +2234,8 @@ async function continueCreatedTabRelayExecution(record, networkCompletePromise =
 
 async function beginRelayExecution(message) {
 
+  const commandReceivedAt = Date.now();
+
 
 
   if (!(await relayChatInjectionEnabled())) return { ok: false, submitted: false, error: 'CHAT_INJECTION_DISABLED' };
@@ -2243,6 +2260,8 @@ async function beginRelayExecution(message) {
 
 
   const editor = await waitForEditor();
+
+  const editorReadyAt = Date.now();
 
 
 
@@ -2298,7 +2317,9 @@ async function beginRelayExecution(message) {
     throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
   }
 
-  await submitEditor(editor, {
+  const draftExactAt = Date.now();
+
+  const submission = await submitEditor(editor, {
     expectedText: requestedText,
     allowKeyboardFallback: message.bootstrapCreatedTab !== true,
     allowDocumentFallback: message.bootstrapCreatedTab !== true
@@ -2306,15 +2327,16 @@ async function beginRelayExecution(message) {
 
 
 
-  let networkStarted = false;
+  // Observe the exact submitted user turn in parallel with network start.
+  // A missing network signal must not add 5 seconds after the DOM already
+  // proves the intended message was submitted. Both paths are bounded.
+  const submissionEvidence = await firstSubmissionEvidence(
+    networkStartedPromise,
+    waitForExactUserSubmission(requestedText, beforeUserCount, 5000)
+  );
+  const networkStarted = submissionEvidence === 'network';
 
-
-
-  try { await networkStartedPromise; networkStarted = true; }
-
-
-
-  catch (_) { await waitForRelaySubmissionAccepted(beforeUserCount); }
+  const userTurnConfirmedAt = Date.now();
 
 
 
@@ -2333,6 +2355,13 @@ async function beginRelayExecution(message) {
     record.conversationKey = await waitForConversationKey(5000);
 
   }
+
+  const conversationCapturedAt = record.conversationKey ? Date.now() : null;
+
+  record.stageTiming = { commandReceivedAt, editorReadyAt, draftExactAt,
+    sendButtonReadyAt: Number(submission?.readyAt || 0) || null,
+    sendButtonClickedAt: Number(submission?.clickedAt || 0) || null,
+    userTurnConfirmedAt, conversationCapturedAt };
 
 
 
@@ -2383,7 +2412,8 @@ async function beginRelayExecution(message) {
 
     completionSource: record.completionSource, conversationKey: String(record.conversationKey || ''),
 
-    conversationPending: record.bootstrapCreatedTab && !record.conversationKey };
+    conversationPending: record.bootstrapCreatedTab && !record.conversationKey,
+    stageTiming: record.stageTiming };
 
 
 

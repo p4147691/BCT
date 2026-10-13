@@ -23,11 +23,13 @@ from bct.integrations.rcc import (
 )
 
 
-_READ_COMMANDS = {"state", "presence", "result"}
-_RECONCILE_COMMANDS = {"reconcile-send-to-created-tab"}
+_READ_COMMANDS = {"state", "presence", "result", "result-of-create-and-send"}
+_RECONCILE_COMMANDS = {
+    "reconcile-send-to-created-tab", "reconcile-create-and-send",
+}
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
-    "rename-conversation", "reload-extension", "send",
+    "rename-conversation", "reload-extension", "send", "create-and-send",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS
 _COMMON = {"command", "instance_id", "timeout_s"}
@@ -125,7 +127,7 @@ class RelayBrowserFeature:
             "command": command, "instance_id": instance_id,
             "timeout_s": timeout_s, "to": "", "text": "", "extra": {},
         }
-        if command == "result" or command in _RECONCILE_COMMANDS:
+        if command in {"result", "result-of-create-and-send"} or command in _RECONCILE_COMMANDS:
             allowed.add("relay_id")
             relay_id = str(arguments.get("relay_id") or "").strip()
             if not relay_id or len(relay_id) > 80:
@@ -135,6 +137,19 @@ class RelayBrowserFeature:
             pass
         elif command in {"create-chat-window", "reload-extension"}:
             pass
+        elif command == "create-and-send":
+            allowed.update({"mode", "text", "window_id"})
+            mode = str(arguments.get("mode") or "").strip().lower()
+            message = str(arguments.get("text") or "")
+            if mode not in {"tab", "window"} or not message:
+                raise PreconditionError("RCC_COMPOSE_MODE_OR_TEXT_REQUIRED")
+            if mode == "window" and arguments.get("window_id") is not None:
+                raise PreconditionError("RCC_COMPOSE_WINDOW_ID_FORBIDDEN")
+            prepared["text"] = message
+            prepared["extra"]["mode"] = mode
+            if arguments.get("window_id") is not None:
+                prepared["extra"]["windowId"] = _positive_int(
+                    arguments["window_id"], "RCC_WINDOW_ID_INVALID")
         elif command == "create-chat-tab":
             allowed.add("window_id")
             if arguments.get("window_id") is not None:
@@ -208,15 +223,125 @@ class RelayBrowserFeature:
             {"command": command, "mutating": command in _MUTATING_COMMANDS},
         )
 
+    def _execute_create_and_send(self, request: FeatureRequest) -> FeatureResult:
+        """One BCT parent, two separately fenced durable RCC child operations."""
+        values = request.arguments
+        instance_id, extra = values["instance_id"], values["extra"]
+        digest = hashlib.sha256(request.operation_id.encode("utf-8")).hexdigest()[:24]
+        create_id, send_id = "bct-compose-c-" + digest, "bct-compose-s-" + digest
+        began = time.monotonic()
+
+        def remaining() -> float:
+            return max(0.1, float(values["timeout_s"]) - (time.monotonic() - began))
+
+        try:
+            created = self.client.request(
+                instance_id=instance_id, request_id=create_id,
+                command="create-chat-window" if extra["mode"] == "window" else "create-chat-tab",
+                extra={"operationId": create_id, "instanceId": instance_id,
+                       **({"windowId": extra["windowId"]} if "windowId" in extra else {})},
+                timeout_s=remaining())
+        except RelayUnavailable as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        except RelayEffectUnknown as exc:
+            raise UnknownEffectError("RCC_COMPOSE_CREATE_UNKNOWN:" + str(exc)) from exc
+        create_ms = round((time.monotonic() - began)*1000,2)
+        receipt = created.get("creationReceipt")
+        if not isinstance(receipt,dict):
+            if created.get("ok") is False and created.get("state") in {
+                "NOT_APPLIED","NOT_SENT","FAILED_CONFIRMED",
+            }:
+                return FeatureResult(Outcome.NOT_APPLIED, {"command":"create-and-send",
+                    "create_operation_id":create_id,"phase":"CREATE_NOT_APPLIED"},
+                    output={"result":_sanitize(created)})
+            raise UnknownEffectError("RCC_COMPOSE_CREATE_RECEIPT_UNVERIFIED")
+        try:
+            tab = _positive_int(created.get("tabId"),"RCC_COMPOSE_TAB_INVALID")
+            window = _positive_int(created.get("windowId"),"RCC_COMPOSE_WINDOW_INVALID")
+        except PreconditionError as exc:
+            raise UnknownEffectError("RCC_COMPOSE_CREATED_IDENTITY_UNVERIFIED") from exc
+        session = str(created.get("sessionId") or "")
+        if not (created.get("ok") is True and created.get("created") is True
+                and created.get("state") == "PENDING_UNBOUND"
+                and created.get("instanceId") == instance_id and session
+                and receipt.get("tabId")==tab and receipt.get("windowId")==window
+                and receipt.get("instanceId")==instance_id and receipt.get("sessionId")==session
+                and receipt.get("bindingState")=="PENDING_UNBOUND"
+                and ("windowId" not in extra or extra["windowId"] == window)):
+            raise UnknownEffectError("RCC_COMPOSE_CREATED_IDENTITY_UNVERIFIED")
+        identity={"instanceId":instance_id,"sessionId":session,"tabId":tab,
+                  "windowId":window,"createOperationId":create_id}
+        send_at=time.monotonic()
+        try:
+            send=self.client.request(instance_id=instance_id,request_id=send_id,
+                command="send-to-created-tab",text=values["text"],
+                extra={"operationId":send_id,**identity},timeout_s=remaining())
+        except (RelayUnavailable,RelayEffectUnknown) as exc:
+            raise UnknownEffectError("RCC_COMPOSE_SEND_UNKNOWN:"+str(exc)) from exc
+        send_ms=round((time.monotonic()-send_at)*1000,2)
+        initial_confirmed = (
+            send.get("ok") is True
+            and send.get("state") in {
+                "SUBMITTED", "SUBMITTED_RECOVERED_AFTER_NAVIGATION"}
+            and send.get("operationId") == send_id
+            and send.get("createOperationId") == create_id
+            and send.get("tabId") == tab
+            and send.get("windowId") == window)
+        if not initial_confirmed and send.get("state") != "SUBMIT_UNKNOWN":
+            raise UnknownEffectError("RCC_COMPOSE_SEND_ACK_UNVERIFIED")
+        proof_at=time.monotonic()
+        deadline=began+float(values["timeout_s"])
+        proof={"instance_id":instance_id,"extra":identity,"text":values["text"]}
+        while time.monotonic()<deadline:
+            remaining=deadline-time.monotonic()
+            try:
+                done=self.client.request(instance_id=instance_id,
+                    request_id=_readback_request_id(send_id),
+                    command="result",text=send_id,
+                    timeout_s=max(0.1,min(2.0,remaining)))
+            except (RelayUnavailable,RelayEffectUnknown):
+                done={}
+            if _exact_bootstrap_terminal_success(done,operation_id=send_id,values=proof):
+                return FeatureResult(Outcome.APPLIED,{
+                    "command":"create-and-send","create_operation_id":create_id,
+                    "send_operation_id":send_id,"instance_id":instance_id,
+                    "session_id":session,"tab_id":tab,"window_id":window,
+                    "conversation_key":str(done["result"]["conversationKey"]),
+                    "host_state":("SUBMITTED" if initial_confirmed else "SUBMIT_UNKNOWN"),
+                    "result_state":"RESULT_PERSISTED",
+                    "create_ms":create_ms,"send_ms":send_ms,
+                    "readback_ms":round((time.monotonic()-proof_at)*1000,2),
+                    "total_ms":round((time.monotonic()-began)*1000,2)},
+                    output={"creation":_sanitize(created),"submission":_sanitize(send),
+                            "result":_sanitize(done)})
+            if done.get("found") is True and done.get("completed") is True and done.get("pending") is False:
+                raise UnknownEffectError("RCC_COMPOSE_TERMINAL_EVIDENCE_MISMATCH")
+            time.sleep(min(0.1,max(0.0,deadline-time.monotonic())))
+        raise UnknownEffectError("RCC_COMPOSE_TERMINAL_NOT_CONFIRMED")
+
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments["command"] == "create-and-send":
+            return self._execute_create_and_send(request)
         values = request.arguments
         extra = dict(values["extra"])
+        compose_parent_id = ""
+        if values["command"] in {
+            "result-of-create-and-send", "reconcile-create-and-send",
+        }:
+            # The coordinator has already authorized the exact parent work,
+            # principal and instance; no arbitrary RCC child ID is accepted.
+            compose_parent_id = values["text"]
+            digest = hashlib.sha256(compose_parent_id.encode("utf-8")).hexdigest()[:24]
+            values = dict(values)
+            values["text"] = "bct-compose-s-" + digest
         if request.preconditions["mutating"]:
             extra["operationId"] = request.operation_id
             if values["command"] in {"create-chat-window", "create-chat-tab"}:
                 extra["instanceId"] = values["instance_id"]
         try:
-            host_command = "result" if values["command"] in _RECONCILE_COMMANDS else values["command"]
+            host_command = ("result" if values["command"] in
+                            (_RECONCILE_COMMANDS | {"result-of-create-and-send"})
+                            else values["command"])
             result = self.client.request(
                 instance_id=values["instance_id"], request_id=request.operation_id,
                 command=host_command, to=values["to"], text=values["text"],
@@ -233,6 +358,12 @@ class RelayBrowserFeature:
                 fingerprint = json.loads(str(receipt.get("fingerprint") or ""))
             except (TypeError, ValueError, json.JSONDecodeError):
                 fingerprint = None
+            expected_create_id = (
+                "bct-compose-c-" + hashlib.sha256(
+                    compose_parent_id.encode("utf-8")
+                ).hexdigest()[:24]
+                if compose_parent_id else ""
+            )
             bootstrap_fingerprint = (
                 isinstance(fingerprint, list)
                 and len(fingerprint) == 6
@@ -243,6 +374,7 @@ class RelayBrowserFeature:
                 and isinstance(fingerprint[4], int) and fingerprint[4] > 0
                 and bool(str(fingerprint[5] or ""))
                 and int(receipt.get("tabId") or 0) == fingerprint[3]
+                and (not expected_create_id or fingerprint[0] == expected_create_id)
             )
             submit_state = str(receipt.get("submitState") or "")
             # RCC 1.0.1 persisted this field but did not expose it from the
@@ -272,14 +404,15 @@ class RelayBrowserFeature:
                 {
                     "instance_id": values["instance_id"],
                     "command": values["command"],
-                    "reconciled_operation_id": relay_id,
+                    "reconciled_operation_id": compose_parent_id or relay_id,
+                    "terminal_relay_id": relay_id,
                     "result_state": "RESULT_PERSISTED",
                     "submit_state": submit_state or "LEGACY_OMITTED_VERIFIED_BY_ORIGINAL",
                     "pending": False,
                     "conversation_key": str(receipt["conversationKey"]),
                 },
                 output={"result": _sanitize(result)},
-                reconciled_operation_ids=(relay_id,),
+                reconciled_operation_ids=(compose_parent_id or relay_id,),
             )
         raw_state = result.get("state")
         state = str(raw_state or "").upper() if not isinstance(raw_state, dict) else "STATE_RETURNED"

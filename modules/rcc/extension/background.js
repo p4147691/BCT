@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-13-rcc-editor-gate-v1';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-compose-v1';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 
@@ -167,6 +167,8 @@ function publicResultFromReceipt(receipt) {
     ackState: String(receipt.ackState || ''),
     receiverAckState: String(receipt.receiverAckState || ''),
     returnState: String(receipt.returnState || ''),
+    stageTiming: receipt.stageTiming || null,
+    timing: receipt.timing || null,
     at: Number(receipt.completedAt || 0) || null
   };
 }
@@ -192,6 +194,21 @@ async function persistDurableResultReceipt(relayId, pending, result) {
     }
     if (!pending) throw new Error('Unknown relay result');
     const completedAt = Date.now();
+    const createdAt = Number(pending.createdAt || 0) || null;
+    const networkStartedAt = Number(pending.networkStartedAt || 0) || null;
+    const networkCompletedAt = Number(pending.networkCompletedAt || 0) || null;
+    const timing = {
+      createdAt,
+      acceptedAt: Number(pending.acceptedAt || 0) || null,
+      submittedAt: Number(pending.submittedAt || 0) || null,
+      networkStartedAt,
+      networkCompletedAt,
+      completedAt,
+      deliveryMs: createdAt && networkStartedAt ? Math.max(0, networkStartedAt - createdAt) : null,
+      processingMs: networkStartedAt && networkCompletedAt ? Math.max(0, networkCompletedAt - networkStartedAt) : null,
+      returnMs: networkCompletedAt ? Math.max(0, completedAt - networkCompletedAt) : null,
+      totalMs: createdAt ? Math.max(0, completedAt - createdAt) : null
+    };
     const receipt = {
       version: 1,
       routeId,
@@ -208,6 +225,8 @@ async function persistDurableResultReceipt(relayId, pending, result) {
       resultPayload,
       tabId: Number(pending.tabId) || null,
       conversationKey: String(pending.conversationKey || ''),
+      stageTiming: pending.stageTiming || null,
+      timing,
       createdAt: Number(pending.createdAt || 0) || null,
       completedAt,
       ackState: 'UNACKED',
@@ -3705,6 +3724,9 @@ async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode 
 
   latestPending.acceptedAt = Date.now();
 
+  latestPending.stageTiming = ack.stageTiming && typeof ack.stageTiming === 'object'
+    ? { ...ack.stageTiming } : null;
+
   if (ack.submitted === true) latestPending.submittedAt = Date.now();
 
   if (bootstrapAuthorized) {
@@ -3762,6 +3784,20 @@ async function deliverResult(relayId, result, senderTabId) {
 
   }
 
+  if (result?.stageTiming && typeof result.stageTiming === 'object') {
+    const allowed = [
+      'commandReceivedAt', 'editorReadyAt', 'draftExactAt',
+      'sendButtonReadyAt', 'sendButtonClickedAt', 'userTurnConfirmedAt',
+      'conversationCapturedAt', 'assistantResponseStartedAt',
+      'assistantResponseCompletedAt'
+    ];
+    pending.stageTiming = { ...(pending.stageTiming || {}) };
+    for (const key of allowed) {
+      const value = Number(result.stageTiming[key] || 0);
+      pending.stageTiming[key] = value > 0 ? value : null;
+    }
+  }
+
   if (pending.tabId !== senderTabId) throw new Error('Relay result came from wrong tab');
 
   if (pending.bootstrapCreatedTab === true) {
@@ -3811,6 +3847,8 @@ async function deliverResult(relayId, result, senderTabId) {
     totalMs: createdAt ? Math.max(0, completedAt - createdAt) : null
 
   };
+
+  pending.timing = timing;
 
   const completedResult = {
 
