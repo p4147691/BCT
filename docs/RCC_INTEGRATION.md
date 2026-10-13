@@ -116,3 +116,9 @@ the DOM already proves submission. Timestamp-only stage evidence covers editor
 ready, exact draft, send-button ready/click, user-turn confirmation and
 conversation capture. `reconcile-create-and-send` is the only release path for
 an UNKNOWN composed parent and requires its deterministic child receipt.
+
+If the exact created conversation completed after its content response port was
+lost, RCC 1.0.5 performs a single result-only DOM recovery after the recorded
+network request completes. It verifies the composed fingerprint and exact
+instance/tab/window/conversation, requires one matching user turn and one
+completed assistant turn, and persists the result without clicking or sending.

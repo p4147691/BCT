@@ -92,7 +92,7 @@ Candidate extension payload SHA-256 for 1.0.4:
 | `extension/test_full_result_capture.js` | `15e12a226a9d62e9d4046ec6efc05160983f812ead7b2280cfa8c92772a2f33b` |
 | `extension/test_identity_guard.js` | `5deafa1e96741644949887fe6e219fdb98f71c4489cf1de3dd4b4d2fd5d2bffc` |
 | `extension/test_relay_core.js` | `303802bed62a545b944da3dd96cfcd12e8ace8d320552259b7295de5c8dd8ef6` |
-| `extension/test_relay_lightweight_identity.js` | `446f495045daa07b854e4093096a70e3a2086ce6f3f5acf4b5fa710bdc3a9e10` |
+| `extension/test_relay_lightweight_identity.js` | `9acaebf0b16a1bf1c3aa804e9a8da1c85d24e768d4f3d47f8d614cd92a6b244a` |
 | `extension/test_window_state_presence.js` | `42bb896055f3afc0a31d99263c19f4fa6993d7a1c379328de62731c3d1a48727` |
 | `native-host/RelayNativeHostV2.cs` | `164695e660a775b08d5d3289ff95340e28adb319a65d45e6e88790f4d1ee24ab` |
 | `native-host/com.ai_workspace_relay.host.v2.json` | `6358254cb45cd84c3821eac52ed5ef57e2f2ebafec5fbb91055e04dc348b31fd` |
@@ -112,6 +112,26 @@ Candidate extension payload SHA-256 for 1.0.2:
 | `extension/background.js` | `c98195324962ca63711cf8a98e6de9641aeaf3458ca012fdbcf9d36a03f4d90b` |
 | `extension/content.js` | `5af022ebf266f505baac254285c4b148713ee748229eb96d74ec0753ad824b0f` |
 | `extension/manifest.json` | `8c878c7db1f2d264161c30f6b3c120d397a489154666be63e8b784b43d48b640` |
+| `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
+
+## BCT RCC 1.0.5 exact terminal DOM recovery candidate
+
+The first 1.0.4 LIVE tab proved a submitted request and completed network in
+the exact created conversation, but the navigation-disconnected content port
+left the durable result pending. Version 1.0.5 permits one result-only recovery:
+after network completion, it verifies the pending composed fingerprint, exact
+instance/tab/window and conversation, finds exactly one matching user turn and
+a completed assistant turn, then persists that reply. It never clicks the send
+button and never dispatches the prompt again. The same path safely reconciles
+the already-UNKNOWN parent operation.
+
+Candidate extension payload SHA-256 for 1.0.5:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `504d34d515a5855d826e30d5c1e0d195badfd89a3af421181b8f47072c7e4a22` |
+| `extension/content.js` | `2c0c05e28bdc2e18862da05a159ef2a4f49fe818ae1bca98dc86539258e11242` |
+| `extension/manifest.json` | `8427dd109c65b24f4924156b3e6fc57abef591ca3f2234123f677ceae910efb5` |
 | `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
 
 Promotion to LIVE requires exact-file backup, clean official main SHA,
