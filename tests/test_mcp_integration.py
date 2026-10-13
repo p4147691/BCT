@@ -118,7 +118,12 @@ class MCPIntegrationTests(unittest.TestCase):
                     )
                     capabilities = await session.call_tool("bct_capabilities", {})
                     self.assertFalse(capabilities.isError)
-                    self.assertEqual(expected_capability_tools, set(capabilities.structuredContent["tools"]))
+                    self.assertEqual(
+                        expected_capability_tools | {
+                            "bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get",
+                        },
+                        set(capabilities.structuredContent["tools"]),
+                    )
                     status = await session.call_tool("bct_status", {})
                     self.assertFalse(status.isError)
                     self.assertTrue(status.structuredContent["core"]["ready"])

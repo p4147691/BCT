@@ -13,6 +13,13 @@ from .core.models import Principal, Work
 
 
 MCP_PRINCIPAL_ID = "bct-mcp-local"
+_GENERAL_TOOLS = ("bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get")
+_CAPABILITY_USAGE = {
+    "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use arguments={\"operation\": \"directory_tree\", \"path\": \"absolute directory path\", \"depth\": 2, \"limit\": 200}.",
+    "system_inspect": "Use arguments.operation as process_list, process, or port. process_list accepts optional query and limit; process requires pid; port requires port.",
+    "monitor": "Use arguments.operation as status or validate.",
+    "relay_browser": "For read-only RCC inspection use arguments={\"command\": \"state\", \"instance_id\": \"exact instance id\"}. Prefer bct_status for routine status.",
+}
 
 
 def _work_dict(work: Work) -> dict[str, Any]:
@@ -50,7 +57,7 @@ def build_mcp(
     async def bct_capabilities() -> dict[str, Any]:
         return {
             "capabilities": list(capabilities),
-            "tools": [f"bct_{name}" for name in capabilities],
+            "tools": [*_GENERAL_TOOLS, *[f"bct_{name}" for name in capabilities]],
         }
 
     @server.tool(
@@ -147,7 +154,10 @@ def build_mcp(
     for capability in capabilities:
         server.tool(
             name="bct_" + capability,
-            description=f"Run BCT capability {capability} with an exact work and operation ID.",
+            description=(
+                f"Run BCT capability {capability} with an exact work and operation ID. "
+                + _CAPABILITY_USAGE.get(capability, "")
+            ),
             structured_output=True,
         )(make_executor(capability))
     return server
