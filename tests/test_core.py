@@ -172,6 +172,70 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED, result[0].outcome)
         self.assertEqual(1, feature.calls)
 
+    def test_same_work_running_claim_reports_owner_without_reexecution(self):
+        feature = BlockingFeature()
+        self.replace_feature(feature)
+        results = []
+
+        def first_writer():
+            results.append(self.bct.operations.run(
+                principal=self.owner, work_id="work-1", operation_id="running-owner",
+                capability="write", arguments={"resource": "shared"},
+            ))
+
+        thread = threading.Thread(target=first_writer)
+        thread.start()
+        self.assertTrue(feature.started.wait(5))
+        try:
+            with self.assertRaisesRegex(
+                ConflictError, "RESOURCE_ALREADY_CLAIMED:SAME_WORK:running-owner:RUNNING:NONE:WAIT_RECHECK"
+            ):
+                self.bct.operations.run(
+                    principal=self.owner, work_id="work-1", operation_id="blocked-contender",
+                    capability="write", arguments={"resource": "shared"},
+                )
+        finally:
+            feature.release.set()
+            thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(1, feature.calls)
+        self.assertEqual(Outcome.APPLIED, results[0].outcome)
+        self.assertEqual(Outcome.APPLIED, self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="after-release",
+            capability="write", arguments={"resource": "shared"},
+        ).outcome)
+
+    def test_unknown_claim_reports_review_without_retry(self):
+        feature = UnknownFeature()
+        self.replace_feature(feature)
+        self.bct.operations.run(principal=self.owner, work_id="work-1",
+                                operation_id="unknown-owner", capability="write",
+                                arguments={"resource": "unknown-resource"})
+        with self.assertRaisesRegex(
+            ConflictError, "RESOURCE_ALREADY_CLAIMED:SAME_WORK:unknown-owner:FINISHED:UNKNOWN:REVIEW_UNRESOLVED"
+        ):
+            self.bct.operations.run(principal=self.owner, work_id="work-1",
+                                    operation_id="blocked-unknown", capability="write",
+                                    arguments={"resource": "unknown-resource"})
+        self.assertEqual(1, feature.calls)
+
+    def test_foreign_claim_does_not_expose_owner_or_resource(self):
+        self.replace_feature(UnknownFeature())
+        self.bct.operations.run(principal=self.owner, work_id="work-1",
+                                operation_id="secret-owner", capability="write",
+                                arguments={"resource": "secret-resource"})
+        self.bct.create_work(work_id="other-work", request_summary="other",
+                             roots=[str(self.root)], actions=["write"], principal=self.other)
+        with self.assertRaises(ConflictError) as caught:
+            self.bct.operations.run(principal=self.other, work_id="other-work",
+                                    operation_id="foreign-contender", capability="write",
+                                    arguments={"resource": "secret-resource"})
+        self.assertEqual("RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK", str(caught.exception))
+        self.assertEqual(1, self.bct.store.get_operation_for(
+            operation_id="secret-owner", work_id="work-1",
+            principal_id=self.owner.principal_id,
+        ).evidence.get("calls", 1))
+
     def test_node_properties_and_connection_are_independent_of_work(self):
         node = self.bct.identity.create_node(node_id="node-1", name="EXEC1", role="EXEC", group="A")
         connection = self.bct.identity.replace_connection(
