@@ -47,3 +47,12 @@ This keeps the platform small without losing the ability to perform the work.
 ACT remains installed as a rollback witness for older live components and protected historical work.
 BCT does not need ACT to run its core, MCP, Monitor, Laya recommendation, RCC boundary, or development
 workflow. No existing ACT task, Chrome tab, binding or ambiguous operation is replayed during BCT work.
+
+The old ACT ADC MCP/controller and ACT-path Laya runtime have been retired. This does not claim
+desktop-control parity: BDC remains the future home for the small set of desktop primitives that are
+actually retained. Until that contract is implemented and accepted, BCT uses its own development,
+MCP, RCC and status capabilities and does not expose a misleading ADC compatibility layer.
+
+DesktopWindow Monitor and Chrome Auto Proxy are external compatibility modules, not Core. Their
+active installed paths stay fixed until their exact extension/native identities are migrated. Runner
+services are operations infrastructure; they are not part of Core and do not grant BCT authority.

@@ -39,12 +39,18 @@ DesktopWindow Monitor, BDC처럼 설치·교체 가능한 기능은 Git 저장�
   `D:\Archive\AI_TOOLS-Legacy-20261013`.
 - `ChromeExtensions`의 비활성 ACT/bridge/review 사본과 루트 임시 파일 19개:
   `D:\Archive\ChromeExtensions-Legacy-20261013`.
+- 구형 RCC 소스·설치본·Native Host 트리: `D:\Archive\ACT-Relay-Legacy-20261013`.
+- 비활성 ACT/ADC 예약 작업 5개: XML과 SHA manifest를
+  `D:\Archive\ACT-Scheduled-Tasks-Legacy-20261013`에 보존한 뒤 예약 작업에서 제거했다.
+- GitHub에 남아 있던 오프라인 ACT runner 등록 27개를 exact offline/busy=false 확인 후
+  제거했다. 로컬 runner 파일과 Windows 서비스는 이 작업에서 삭제하지 않았다.
 
 각 Archive에는 원래 경로, 파일 수·크기, tree SHA와 Git 정보가 든 manifest가 있다.
 
 ## 아직 이동하지 않는 항목
 
-- `D:\ACT`: RCC 확장 로드 경로, 일부 Runner, 프록시, 자연 종료 대기 중인 ADC가 남아 있다.
+- `D:\ACT`: RCC는 더 이상 이 경로를 사용하지 않는다. 일부 Runner, Chrome Auto Proxy,
+  관리자 소유 ADC agent/connector, DesktopWindow Monitor의 구형 backend 계약만 남아 있다.
 - `D:\AI_TOOLS`: Quick Hotkey, Chrome 테스트 자산, DesktopCommander와 아직 분류 중인 실제
   프로젝트만 남겼다.
 - `D:\ChromeExtensions`: 현재 로드된 확장과 Native Host, 그리고 Git 프로젝트로 이동 여부를
@@ -53,3 +59,15 @@ DesktopWindow Monitor, BDC처럼 설치·교체 가능한 기능은 Git 저장�
 
 이 항목들은 실행 참조를 제거하거나 대체한 뒤에만 이동한다. 단순히 이름이 낡았다는 이유로
 활성 경로를 옮기지 않는다.
+
+## 현재 실행 기준
+
+- BCT Core/MCP: `D:\BCT\runtime`, port 18790.
+- BCT Laya: `D:\BCT\models` + `D:\BCT\local-llm`, port 18771.
+- BCT RCC 설치본: `D:\ChromeExtensions\RCC`, Native Host는 BCT 고정 extension origin만 허용.
+- BCT Monitor: Core의 `http://127.0.0.1:18790/monitor`.
+- DesktopWindow Monitor: `D:\ChromeExtensions\DesktopWindow-Monitor`; 현재는 별도 호환 모듈.
+
+GitHub `p4147691/BCT`의 `main`이 제품의 유일한 공식 소스다. `D:\BCT\source`는 그 main을
+동기화하는 로컬 checkout이고, `runtime`과 `ChromeExtensions`는 검증된 source SHA로 만든
+설치·실행 결과다. 운영 파일을 직접 정본으로 삼지 않는다.
