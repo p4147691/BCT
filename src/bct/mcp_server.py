@@ -33,7 +33,7 @@ def _trace_stage(stage: str, **durations_ms: float) -> None:
 
 _GENERAL_TOOLS = ("bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get")
 _CAPABILITY_USAGE = {
-    "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use arguments={\"operation\": \"directory_tree\", \"path\": \"absolute directory path\", \"depth\": 2, \"limit\": 200}.",
+    "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use operation=directory_tree; combine related reads with operation=batch and items containing unique id, path, and optional directory_tree bounds.",
     "system_inspect": "Use arguments.operation as process_list, process, or port. process_list accepts optional query and limit; process requires pid; port requires port.",
     "monitor": "Use arguments.operation as status or validate.",
     "relay_browser": "For read-only RCC inspection use arguments={\"command\": \"state\", \"instance_id\": \"exact instance id\"}. Prefer bct_status for routine status.",

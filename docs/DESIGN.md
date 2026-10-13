@@ -184,6 +184,11 @@ claim은 실행 부재와 검증된 terminal 결과/완료된 rollback 등 안�
 보장 목표는 durable intent + 중복 dispatch 차단 + 정확한 증거 기반 reconciliation이다.
 RCC 제출 확인과 응답 완료는 별도 기능 단계다. 응답 지연 때문에 확인된 submit을 재전송하지 않는다.
 
+안전 조건과 승인 경계가 같은 읽기·상태 확인은 가능한 경우 하나의 bounded operation으로 묶는다.
+외부 transport 왕복을 줄이기 위한 묶음은 기존 work scope, operation digest, resource claim과
+항목별 증거를 그대로 사용한다. 변경 작업, 승인 경계, UNKNOWN 결과와 exact-SHA 검증은 성능을
+이유로 합치거나 생략하지 않는다.
+
 ## 9. 기능 계약과 소스 이전
 
 Feature는 validate/execute/inspect_outcome 세 역할을 구현한다.

@@ -155,6 +155,29 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual("hello from MCP\n", read_result.structuredContent["output"]["text"])
                     self.assertTrue(duplicate.structuredContent["duplicate"])
                     self.assertEqual("APPLIED", receipt.structuredContent["outcome"])
+                    batch_result = await session.call_tool("bct_read", {
+                        "work_id": "mcp-read-work",
+                        "operation_id": "mcp-read-batch-1",
+                        "arguments": {
+                            "operation": "batch",
+                            "items": [
+                                {"id": "hello", "path": str(self.project / "hello.txt")},
+                                {"id": "tree", "operation": "directory_tree",
+                                 "path": str(self.project), "depth": 0, "limit": 20},
+                            ],
+                        },
+                    })
+                    self.assertFalse(batch_result.isError, batch_result)
+                    self.assertEqual("APPLIED", batch_result.structuredContent["outcome"])
+                    self.assertEqual("COMPLETE", batch_result.structuredContent["output"]["status"])
+                    self.assertEqual(
+                        ["hello", "tree"],
+                        [item["id"] for item in batch_result.structuredContent["output"]["items"]],
+                    )
+                    self.assertEqual(
+                        "hello from MCP\n",
+                        batch_result.structuredContent["output"]["items"][0]["output"]["text"],
+                    )
                     conflict = await session.call_tool("bct_work_create", {
                         **work_arguments, "roots": [str(self.root)],
                     })
