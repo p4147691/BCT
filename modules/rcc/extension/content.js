@@ -2141,14 +2141,24 @@ async function continueRelayExecution(record, networkCompletePromise = null) {
         const reply = await collectReplyAfterNetworkComplete(record, 60000);
         result = { ok: true, reply, completion: networkError ? 'network-error-dom' : 'network-dom' };
       } catch (domError) {
-        if (networkError) throw new Error(networkError);
-        throw domError;
+        const domReason = String(domError?.message || domError || 'DOM_FINAL_UNKNOWN').slice(0, 300);
+        const networkReason = String(networkError || '').slice(0, 300);
+        const error = new Error(networkReason || domReason);
+        error.relayFailureEvidence = {
+          phase: 'FINAL_DOM_VALIDATION', networkError: networkReason,
+          domError: domReason,
+          networkSignal: signal?.ok === false ? 'FAILED' : (signal?.ok === true ? 'COMPLETE' : 'UNKNOWN')
+        };
+        throw error;
       }
     } else {
       const reply = await collectReplyAfterNetworkComplete(record, 360000);
       result = { ok: true, reply, completion: 'dom' };
     }
-  } catch (error) { result = { ok: false, error: error.message }; }
+  } catch (error) {
+    result = { ok: false, error: error.message };
+    if (error.relayFailureEvidence) result.failureEvidence = error.relayFailureEvidence;
+  }
 
 
 

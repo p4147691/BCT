@@ -35,6 +35,18 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.1 release payload
+
+Issue #57 adds bounded network-versus-DOM failure evidence without changing submission, duplicate,
+pending, or result-ack semantics. The exact payload hashes approved for the 1.0.1 deployment are:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `41415bfbfd91a709a40ba261bd5cd6310964ec67ba33ee4d3a1be14b740e5397` |
+| `extension/content.js` | `07884b56191e52fddd00bde2b39ab690e63ec4eeac1854410b8aab2f4cc6f60a` |
+| `extension/manifest.json` | `86124e21fd9ddb70a51e61ffa231f27f1529cdf2784eeefd765f7324347d62c3` |
+| `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
+
 ## Exact imported SHA-256 values
 
 | File | SHA-256 |
