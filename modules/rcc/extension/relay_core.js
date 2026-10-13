@@ -103,7 +103,9 @@
       return { ready: false, terminal: false, reason: 'ROUTE_TURN_NOT_RESOLVED' };
     }
     if (state?.interrupted === true) return { ready: false, terminal: true, reason: 'ASSISTANT_GENERATION_INTERRUPTED' };
-    if (state?.generating === true || state?.hasStopAction === true) {
+    const exactTurnTerminal = String(state?.turnState || '').toLowerCase() === 'complete'
+      && state?.completionUiReady === true;
+    if (!exactTurnTerminal && (state?.generating === true || state?.hasStopAction === true)) {
       return { ready: false, terminal: false, reason: 'ASSISTANT_STILL_STREAMING' };
     }
     const selected = selectAssistantCandidate(state?.assistantCandidates);
@@ -116,7 +118,7 @@
         reason: selected.reason
       };
     }
-    const complete = String(state?.turnState || '').toLowerCase() === 'complete'
+    const complete = exactTurnTerminal
       || state?.completionUiReady === true
       || state?.generationLifecycleComplete === true;
     if (!complete) return { ready: false, terminal: false, reason: 'ASSISTANT_FINAL_STATE_UNKNOWN' };

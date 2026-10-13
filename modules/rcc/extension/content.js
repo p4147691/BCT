@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-compose-v3';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-compose-v4';
 
 async function relayChatInjectionEnabled() {
   const match = location.pathname.match(/^\/c\/([a-z0-9-]{8,64})/i);
