@@ -279,7 +279,22 @@ class Store:
             for resource in sorted(set(resources)):
                 row = db.execute("SELECT * FROM resource_claims WHERE resource_key=? AND unresolved=1", (resource,)).fetchone()
                 if row is not None:
-                    raise ConflictError("RESOURCE_ALREADY_CLAIMED:" + resource)
+                    # Only the current work may see its own operation identity.
+                    # Foreign claims remain opaque, including their resource key.
+                    if row["work_id"] != work.work_id:
+                        raise ConflictError("RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK")
+                    owner = db.execute(
+                        "SELECT state,outcome FROM operations WHERE operation_id=? AND work_id=?",
+                        (row["operation_id"], work.work_id),
+                    ).fetchone()
+                    if owner is None:
+                        raise ConflictError("RESOURCE_ALREADY_CLAIMED:SAME_WORK_UNVERIFIED")
+                    next_action = "WAIT_RECHECK" if owner["state"] != OperationState.FINISHED.value else "REVIEW_UNRESOLVED"
+                    raise ConflictError(
+                        "RESOURCE_ALREADY_CLAIMED:SAME_WORK:"
+                        + row["operation_id"] + ":" + owner["state"] + ":"
+                        + (owner["outcome"] or "NONE") + ":" + next_action
+                    )
                 db.execute(
                     "INSERT OR REPLACE INTO resource_claims VALUES(?,?,?,?,1)",
                     (resource, operation_id, work.work_id, work.assignment_epoch),
