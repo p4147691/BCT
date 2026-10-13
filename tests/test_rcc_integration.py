@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,10 +15,16 @@ class FakeRelayClient:
     def __init__(self):
         self.calls: list[dict] = []
         self.result: dict = {"type": "host:result", "ok": True}
+        self.results: list[dict | Exception] = []
         self.error: Exception | None = None
 
     def request(self, **values):
         self.calls.append(values)
+        if self.results:
+            result = self.results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return dict(result)
         if self.error:
             raise self.error
         return dict(self.result)
@@ -34,7 +41,9 @@ class RccIntegrationTests(unittest.TestCase):
         )
         self.client = FakeRelayClient()
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=policy)
-        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(self.client)
+        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(
+            self.client, result_readback_timeout_s=0.25,
+        )
         self.principal = Principal("codex", "test", frozenset({"relay_browser"}))
         self.bct.create_work(
             work_id="rcc-work", request_summary="test exact relay integration",
@@ -234,6 +243,60 @@ class RccIntegrationTests(unittest.TestCase):
         extra = self.client.calls[-1]["extra"]
         self.assertEqual("send-good", extra["operationId"])
         self.assertEqual("create-1", extra["createOperationId"])
+
+    def test_bootstrap_unknown_recovers_only_from_exact_terminal_success(self):
+        fingerprint = json.dumps([
+            "create-1", "instance123", "session-1", 10, 11, "hello",
+        ], separators=(",", ":"))
+        self.client.results = [
+            {"type": "host:result", "ok": False, "state": "SUBMIT_UNKNOWN"},
+            {"type": "host:result", "ok": True, "relayId": "send-readback",
+             "found": False, "completed": False, "pending": True},
+            {"type": "host:result", "ok": True, "relayId": "send-readback",
+             "found": True, "completed": True, "pending": False,
+             "result": {"id": "send-readback", "ok": True, "ambiguous": False,
+                        "reply": "done", "tabId": 10,
+                        "conversationKey": "conversation-1234",
+                        "resultHash": "result-hash", "resultState": "RESULT_PERSISTED",
+                        "fingerprint": fingerprint}},
+        ]
+        result = self.call("send-readback", {
+            "command": "send-to-created-tab", "instance_id": "instance123",
+            "session_id": "session-1", "tab_id": 10, "window_id": 11,
+            "create_operation_id": "create-1", "text": "hello",
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(
+            "SUBMITTED_CONFIRMED_BY_TERMINAL_RESULT",
+            result.evidence["host_state"],
+        )
+        self.assertEqual(
+            ["send-to-created-tab", "result", "result"],
+            [call["command"] for call in self.client.calls],
+        )
+        self.assertEqual("send-readback", self.client.calls[1]["text"])
+
+    def test_bootstrap_readback_mismatch_remains_unknown_without_resend(self):
+        self.client.results = [
+            {"type": "host:result", "ok": False, "state": "SUBMIT_UNKNOWN"},
+            {"type": "host:result", "ok": True, "relayId": "send-mismatch",
+             "found": True, "completed": True, "pending": False,
+             "result": {"id": "send-mismatch", "ok": True, "ambiguous": False,
+                        "reply": "done", "tabId": 99,
+                        "conversationKey": "conversation-1234",
+                        "resultHash": "result-hash", "resultState": "RESULT_PERSISTED",
+                        "fingerprint": "[]"}},
+        ]
+        result = self.call("send-mismatch", {
+            "command": "send-to-created-tab", "instance_id": "instance123",
+            "session_id": "session-1", "tab_id": 10, "window_id": 11,
+            "create_operation_id": "create-1", "text": "hello",
+        })
+        self.assertEqual(Outcome.UNKNOWN, result.outcome)
+        self.assertEqual(
+            ["send-to-created-tab", "result"],
+            [call["command"] for call in self.client.calls],
+        )
 
     def test_conversation_rename_uses_exact_identity_and_duplicate_fence(self):
         self.client.result = {
