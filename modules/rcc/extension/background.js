@@ -125,6 +125,12 @@ function boundedRelayResultPayload(result) {
   const reply = String(result?.reply || '');
   if (reply.length > 1048576) throw new Error('RELAY_RESULT_TOO_LARGE');
   return {
+    failureEvidence: result?.failureEvidence ? {
+      phase: String(result.failureEvidence.phase || '').slice(0, 80),
+      networkError: String(result.failureEvidence.networkError || '').slice(0, 300),
+      domError: String(result.failureEvidence.domError || '').slice(0, 300),
+      networkSignal: String(result.failureEvidence.networkSignal || '').slice(0, 40)
+    } : null,
     ok: result?.ok === true,
     reply,
     error: String(result?.error || '').slice(0, 1000),
@@ -148,6 +154,7 @@ function publicResultFromReceipt(receipt) {
     reply: String(payload.reply || ''),
     replyLength: String(payload.reply || '').length,
     error: String(payload.error || ''),
+    failureEvidence: payload.failureEvidence || null,
     ambiguous: payload.ambiguous === true,
     fingerprint: String(receipt.dispatchFingerprint || ''),
 

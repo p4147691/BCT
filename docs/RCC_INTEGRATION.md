@@ -10,7 +10,7 @@ reload Chrome components.
 
 The MCP capability is `relay_browser` (`bct_relay_browser`). It exposes only:
 
-- read-only: `state`, `presence`;
+- read-only: `state`, `presence`, `result`;
 - bounded side effects: `create-chat-tab`, `create-chat-window`,
   `send-to-created-tab`, `move-tab`, `rename-conversation`, `send`.
 
@@ -58,6 +58,11 @@ old display name.  The BCT manifest starts at product version `1.0.0`.  Every su
 extension payload change must increase the four-part-compatible Chrome manifest version and update
 `version_name` when a human-readable qualifier is useful.  The fixed public key, not the display name
 or version, remains the durable extension identity.
+
+`BCT RCC 1.0.1` adds bounded final-response failure evidence to durable result receipts. It records
+the final DOM validation phase, the network signal/error, and the independent DOM reason without
+including submitted or assistant message text. This is diagnostic evidence only: it does not weaken
+the exact-operation duplicate fence or retry an `UNKNOWN` submission.
 
 After `BCT RCC 1.0.0` passed exact-instance and preserved-tab acceptance, the legacy extension was
 disabled.  The steady-state Native Host manifest and executable therefore accept only
