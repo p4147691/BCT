@@ -148,3 +148,26 @@ Chrome reload가 완료됐다. 같은 extension ID에서 새 Native Host 연결,
 보존까지 확인했다. 남은 순서는 SHA manifest를 남긴 구형 runner 백업/비활성 서비스 정리다. 이후 작업도 새 관리
 계층을 추가하지 않고 같은 work/operation/receipt → GitHub main → exact deploy → live
 acceptance 흐름으로 진행한다.
+
+## Batch read 및 왕복 절감 완료
+
+`bct_read`는 기존 file/directory-tree 계약을 유지하면서 최대 20개의 bounded read를 한
+operation으로 처리한다. 모든 요청을 선검증하고 resource claim을 원자적으로 잡으며, 파일당
+512 KiB·파일 합계 1 MiB·directory entry 합계 2,000 제한을 적용한다. receipt에는 content를
+저장하지 않고 SHA와 메타데이터만 남긴다. 부분 실행 실패도 operation을 `FAILED`로 종결하고
+claim을 해제한다.
+
+PR #72는 CI 통과 후 merge `212623809a5cff60efa5543b90d531ed7512b90f`로 통합됐고 동일 SHA가
+LIVE Core에 배포됐다. 전체 111개 테스트, compile, diff 검사가 통과했다. LIVE direct-MCP에서
+5개 개별 read 165 ms 대비 한 batch 41 ms였고 모든 SHA가 일치했다. Hosted ChatGPT E2E의
+`bct-batch-read-chatgpt-e2e-op-01` 영수증은 `FINISHED / APPLIED`, 5/5 OK, 27,751 bytes이며
+ChatGPT가 관찰한 batch tool call은 4.930초였다. 서로 다른 경로의 수치는 직접 차감하지 않는다.
+
+속도 우선 원칙은 같은 안전·승인 경계의 독립 read를 가능한 한 한 batch로 묶는 것이다. write,
+배포, 서비스 제어, 브라우저 mutation의 승인 경계나 operation ID 멱등성, atomic claim,
+UNKNOWN no-retry, exact-SHA 배포 조건은 완화하지 않는다.
+
+추가 관측으로, 실제 tunnel dispatcher는 ChatGPT 명령을 정상 전달했지만 health URL 파일 부재로
+`runtimes status`가 `healthy=false / starting`을 반환했고 supervisor가 reconnect를 반복 시도했다.
+현재 tunnel을 재시작하지 말고, 별도 작업에서 supervisor의 readiness 판정을 실제 dispatcher
+생존 및 전달 증거와 정합화한다.
