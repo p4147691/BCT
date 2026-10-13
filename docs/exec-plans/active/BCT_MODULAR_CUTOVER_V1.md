@@ -1,6 +1,6 @@
 # BCT Modular Cutover V1
 
-Status: `RUNNERS_MIGRATED_MONITOR_V2_SOURCE_TESTED_LIVE_ACCEPTANCE_REMAINS`
+Status: `RUNNERS_MIGRATED_MONITOR_V2_LIVE_ACCEPTED_ARCHIVE_CLEANUP_REMAINS`
 
 ## Goal
 
@@ -31,7 +31,7 @@ replaceable capabilities are modules.
 4. Existing ChatGPT App identity retargeted to BCT MCP without a duplicate plugin and renamed to
    `BCT Control`; the same App ID and connection are preserved.
 5. RCC installed-path migration with extension identity/state evidence. **Complete.**
-6. Monitor ACT/AI_TOOLS dependency retirement and focused window/status acceptance. **Source tested; live acceptance remains.**
+6. Monitor ACT/AI_TOOLS dependency retirement and focused window/status acceptance. **Complete.**
 7. BDC parity for retained desktop primitives; retire the isolated ADC runtime. **Runtime retirement complete.**
 8. Reduce runner pool; replace/retire ACT scheduled tasks. **Active pool and path migration complete.**
 9. Archive profiles and legacy tools only after all references and active processes are absent.
@@ -86,14 +86,15 @@ replaceable capabilities are modules.
 - Monitor 2.0 source now treats Native HWND/window capture as authoritative, hides the legacy
   organization/node surface, disables retired ACT startup/focus calls, exposes BCT and Laya status,
   and labels extension reload as installed-payload reload. Focused thumbnail/capture/node-write
-  regressions and BCT shell checks pass. It is not complete until GitHub main and the installed
-  extension are accepted.
+  regressions and BCT shell checks pass. PR #43 merged as
+  `f00510b9c6411b4d6ee8dd5636594f4957f08cc6`; PR and main CI passed. Exact source/live SHA fencing,
+  verified backups, atomic replacement and duplicate fencing were recorded by deployment operations
+  `BCT-MONITOR-V2-LIVE-20261013-01` and `BCT-MONITOR-V2-INDEX-20261013-02`. Chrome reloaded the
+  same extension ID `kaigandfpieiogfbfaemoimenmipedck`; fresh Native Host/Control Host connections,
+  BCT/Laya health and the protected RCC tab were verified after reload.
 
 ## Remaining ACT deletion gates
 
-- Integrate Monitor 2.0 through GitHub main, deploy the exact installed payload, and live-accept
-  physical window/desktop thumbnails plus BCT/Laya status without legacy ACT startup calls. Its
-  Native Messaging hosts are already independent of retired ports 18766/18769.
 - SHA-manifest and archive the old runner directory backups, then remove only the disabled legacy
   runner service registrations whose processes and GitHub registrations are absent. The active
   runners must remain on their current BCT paths.
