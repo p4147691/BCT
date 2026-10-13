@@ -39,6 +39,24 @@ class OperationCoordinator:
                                       approval_ref=approval_ref)
         if decision.kind is not DecisionKind.ALLOW:
             raise AuthorizationError(decision.reason_code + ":" + decision.next_action)
+        if capability == "relay_browser" and str(arguments.get("command") or "").strip().lower() == "result":
+            # The RCC result endpoint is scoped to an operation owned by this exact work.
+            # It must never be a cross-work arbitrary relay receipt lookup.
+            relay_id = str(arguments.get("relay_id") or "").strip()
+            if not relay_id:
+                raise PreconditionError("RCC_RESULT_OPERATION_ID_REQUIRED")
+            original = self.store.get_operation_for(
+                operation_id=relay_id, work_id=work_id, principal_id=principal.principal_id,
+            )
+            if self.store.get_operation_target_for(
+                operation_id=relay_id, work_id=work_id, principal_id=principal.principal_id,
+            ) != str(arguments.get("instance_id") or "").strip():
+                raise PreconditionError("RCC_RESULT_INSTANCE_MISMATCH")
+            if original.state is not OperationState.FINISHED or not (
+                original.evidence.get("command") == "send-to-created-tab"
+                or str(original.error or "").startswith("RCC_HOST_OUTCOME_UNVERIFIED:")
+            ):
+                raise PreconditionError("RCC_RESULT_ORIGINAL_SEND_REQUIRED")
         request = replace(
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,

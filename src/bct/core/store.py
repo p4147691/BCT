@@ -339,6 +339,21 @@ class Store:
             raise ConflictError("OPERATION_RESULT_ACCESS_DENIED")
         return self._row_result(row)
 
+    def get_operation_target_for(self, *, operation_id: str, work_id: str, principal_id: str) -> str:
+        # Reuse the exact work/principal authorization check before revealing target.
+        self.get_operation_for(operation_id=operation_id, work_id=work_id, principal_id=principal_id)
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT target FROM operations WHERE operation_id=? AND work_id=?",
+                (operation_id, work_id),
+            ).fetchone()
+        finally:
+            db.close()
+        if row is None:
+            raise KeyError("OPERATION_NOT_FOUND")
+        return str(row["target"])
+
     @staticmethod
     def _row_result(row: sqlite3.Row, *, duplicate: bool = False) -> OperationResult:
         return OperationResult(
