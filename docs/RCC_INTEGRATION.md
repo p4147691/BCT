@@ -12,7 +12,7 @@ The MCP capability is `relay_browser` (`bct_relay_browser`). It exposes only:
 
 - read-only: `state`, `presence`;
 - bounded side effects: `create-chat-tab`, `create-chat-window`,
-  `send-to-created-tab`, `move-tab`, `send`.
+  `send-to-created-tab`, `move-tab`, `rename-conversation`, `send`.
 
 Binding creation/reassignment, ACK/CANCEL/RESEND, extension reload, state clearing, and
 manager promotion are deliberately not exposed by this slice.
@@ -29,6 +29,10 @@ manager promotion are deliberately not exposed by this slice.
   the claim and never submits a second browser mutation automatically.
 - Exact session/tab/window/create-operation identity is required for bootstrap send and
   tab movement.
+- Conversation rename requires exact instance/session/tab/conversation identity and a bounded
+  title. It changes the actual ChatGPT conversation title through the installed RCC UI path,
+  verifies the saved title, publishes a fresh endpoint snapshot, and uses the BCT operation ID
+  for both BCT and RCC duplicate fencing.
 
 ## Secret boundary
 

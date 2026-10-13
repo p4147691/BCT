@@ -62,6 +62,7 @@ class MonitorRuntimeTests(unittest.TestCase):
             def request(self, **kwargs):
                 return {"state": {
                     "backgroundBuildId": "build-1",
+                    "sessionId": "session-123",
                     "settings": {"token": "must-not-leak"},
                     "registrations": {"MANAGER": {"secret": "must-not-leak"}},
                     "tabs": [{"id": 12, "windowId": 34, "title": "Manager", "url": "https://chatgpt.com/c/x"}],
@@ -71,6 +72,7 @@ class MonitorRuntimeTests(unittest.TestCase):
         with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
             rows = _rcc_states(["instance_123"])
         self.assertEqual("OPEN", rows[0]["state"])
+        self.assertEqual("session-123", rows[0]["session_id"])
         self.assertEqual(12, rows[0]["tabs"][0]["tab_id"])
         self.assertNotIn("settings", rows[0])
         self.assertNotIn("registrations", rows[0])

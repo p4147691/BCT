@@ -8,8 +8,18 @@
 ### BCT status shell — READY / EXTRACTED
 - 구현: `monitor-bct-shell.js`; public `MonitorBctShell.create()`.
 - 입력: exact BCT Core health/status endpoint and Chrome window API.
-- 출력: read-only BCT/Laya status windows. Service mutation and deployment are not exposed.
+- 출력: BCT/Laya status windows와 exact RCC instance/session/tab/conversation에 묶인
+  ChatGPT 대화 제목 변경. 제목 변경은 BCT `relay_browser` operation receipt를 사용하고
+  응답 불명확 시 자동 재시도하지 않는다. Service mutation and deployment are not exposed.
 - 검증: `..\tools\check_monitor_bct_shell.js`.
+
+### BCT window-node summary — ACTIVE BCT PROJECTION
+- `N<n>`은 현재 열린 RCC ChatGPT 탭의 표시 순서일 뿐 권한·역할·영구 신원이 아니다.
+- 행 제목은 별도 Monitor alias가 아니라 RCC가 관측한 실제 ChatGPT 대화 제목이다.
+- 우클릭 편집은 확인/Enter에서만 실제 제목을 변경한다. 취소/X/Escape/바깥 클릭은
+  operation을 만들지 않는다.
+- 실제 변경 authority는 RCC이고, BCT Core가 exact identity와 durable duplicate fence를
+  소유한다. Monitor는 이 계약의 UI projection만 소유한다.
 
 ### Work context summary — READ-ONLY PROJECTION
 - 구현: `monitor-context-resume.js`; public `MonitorContextResume.createButton`.
@@ -59,8 +69,9 @@
 - 규칙: `monitor.js`에 별도 capture queue/cache/inflight map을 다시 만들거나 Native `captureWindow` 호출을 분산하지 않는다.
 
 ### Node identity / endpoint projection — KEEP TOGETHER FOR NOW
-- node numbering/identity는 ACT authority와 강하게 결합돼 있다.
-- physical HWND/desktop truth와도 조정하므로 부분 추출 위험이 높다.
+- 기본 목록은 ACT node authority를 사용하지 않고 RCC의 exact instance/session/tab/conversation을
+  BCT 상태에서 읽는다. physical HWND/desktop 표기는 Native Host 관측이 연결된 뒤에만 추가한다.
+- 이전 조직 projection은 compatibility-only이며 기본 목록의 신원이나 권한을 결정하지 않는다.
 
 ### Shared state / selection — KEEP TOGETHER FOR NOW
 - profile-local state와 Native shared state의 경계를 잘못 나누면 재동기화 버그가 생길 수 있다.

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import hmac
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -13,9 +14,82 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 
 from bct import BCT
+from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
 from bct.service_runtime import current_process_identity
+
+
+MONITOR_EXTENSION_ORIGIN = "chrome-extension://kaigandfpieiogfbfaemoimenmipedck"
+MONITOR_PRINCIPAL_ID = "bct-monitor-extension"
+MONITOR_WORK_ID = "bct-monitor-extension-control"
+_OPERATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+
+
+def monitor_extension_origin_allowed(value: str) -> bool:
+    return str(value or "").rstrip("/") == MONITOR_EXTENSION_ORIGIN
+
+
+def ensure_monitor_work(bct: BCT, *, runtime_root: Path) -> Principal:
+    """Create the one durable BCT work used by the installed Monitor extension."""
+    principal = Principal(
+        MONITOR_PRINCIPAL_ID,
+        "monitor-extension-origin",
+        frozenset({"relay_browser"}),
+    )
+    expected = Work(
+        MONITOR_WORK_ID,
+        "BCT Monitor exact conversation controls",
+        (str(runtime_root.resolve()),),
+        frozenset({"relay_browser"}),
+        principal.principal_id,
+    )
+    try:
+        current = bct.store.get_work(MONITOR_WORK_ID)
+    except KeyError:
+        bct.store.create_work(expected)
+    else:
+        if current != expected:
+            raise RuntimeError("MONITOR_WORK_CONTRACT_MISMATCH")
+    return principal
+
+
+def run_monitor_conversation_rename(
+    bct: BCT,
+    *,
+    principal: Principal,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Run one exact RCC title mutation through the normal BCT receipt path."""
+    allowed = {
+        "instance_id", "session_id", "tab_id", "conversation_key",
+        "title", "operation_id", "timeout_s",
+    }
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError("MONITOR_RENAME_FIELD_NOT_ALLOWED:" + ",".join(sorted(unknown)))
+    operation_id = str(payload.get("operation_id") or "").strip()
+    if not _OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise ValueError("MONITOR_RENAME_OPERATION_ID_INVALID")
+    title = str(payload.get("title") or "").strip()
+    if not title or len(title) > 100:
+        raise ValueError("MONITOR_RENAME_TITLE_INVALID")
+    arguments = {
+        "command": "rename-conversation",
+        "instance_id": str(payload.get("instance_id") or "").strip(),
+        "session_id": str(payload.get("session_id") or "").strip(),
+        "tab_id": payload.get("tab_id"),
+        "conversation_key": str(payload.get("conversation_key") or "").strip(),
+        "title": title,
+        "timeout_s": payload.get("timeout_s", 30.0),
+    }
+    return bct.operations.run(
+        principal=principal,
+        work_id=MONITOR_WORK_ID,
+        operation_id=operation_id,
+        capability="relay_browser",
+        arguments=arguments,
+    ).as_dict()
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -38,6 +112,7 @@ def main() -> int:
     if not policy_path.is_file():
         raise RuntimeError("RUNTIME_POLICY_MISSING")
     bct = BCT(state_path=runtime_root / "state" / "state.sqlite", policy_path=policy_path)
+    monitor_principal = ensure_monitor_work(bct, runtime_root=runtime_root)
     identity = current_process_identity()
     control_token = os.environ.get("BCT_CONTROL_TOKEN", "")
     mcp_token = os.environ.get("BCT_MCP_TOKEN", "")
@@ -83,6 +158,28 @@ def main() -> int:
         if not asset.is_file():
             return JSONResponse({"error": "BCT_MONITOR_ASSET_MISSING"}, status_code=503)
         return FileResponse(asset, media_type="text/html; charset=utf-8")
+
+    @mcp.custom_route(
+        "/monitor/conversation-title/rename",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def monitor_conversation_title_rename(request: Request) -> JSONResponse:
+        if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+            return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_INVALID"}, status_code=403)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("MONITOR_RENAME_OBJECT_REQUIRED")
+            result = await asyncio.to_thread(
+                run_monitor_conversation_rename,
+                bct,
+                principal=monitor_principal,
+                payload=payload,
+            )
+        except (ValueError, BCTError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse(result)
 
     @mcp.custom_route("/shutdown", methods=["POST"], include_in_schema=False)
     async def shutdown(request: Request) -> JSONResponse:

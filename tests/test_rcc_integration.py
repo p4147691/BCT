@@ -108,6 +108,45 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual("send-good", extra["operationId"])
         self.assertEqual("create-1", extra["createOperationId"])
 
+    def test_conversation_rename_uses_exact_identity_and_duplicate_fence(self):
+        self.client.result = {
+            "type": "host:result", "requestId": "rename-1", "ok": True,
+            "savedTitle": "새 대화 이름", "tabId": 10,
+            "conversationKey": "conversation-1234",
+        }
+        arguments = {
+            "command": "rename-conversation", "instance_id": "instance123",
+            "session_id": "session-1", "tab_id": 10,
+            "conversation_key": "conversation-1234", "title": "새 대화 이름",
+        }
+        first = self.call("rename-1", arguments)
+        duplicate = self.call("rename-1", arguments)
+        self.assertEqual(Outcome.APPLIED, first.outcome)
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(1, len(self.client.calls))
+        self.assertEqual({
+            "sessionId": "session-1", "tabId": 10,
+            "conversationKey": "conversation-1234", "title": "새 대화 이름",
+            "operationId": "rename-1",
+        }, self.client.calls[0]["extra"])
+
+    def test_conversation_rename_rejects_missing_or_oversized_title(self):
+        with self.assertRaisesRegex(PreconditionError, "RCC_RENAME_IDENTITY_REQUIRED"):
+            self.call("rename-session-missing", {
+                "command": "rename-conversation", "instance_id": "instance123",
+                "tab_id": 10, "conversation_key": "conversation-1234", "title": "name",
+            })
+        with self.assertRaisesRegex(PreconditionError, "RCC_RENAME_IDENTITY_REQUIRED"):
+            self.call("rename-missing", {
+                "command": "rename-conversation", "instance_id": "instance123",
+                "tab_id": 10, "conversation_key": "conversation-1234", "title": "",
+            })
+        with self.assertRaisesRegex(PreconditionError, "RCC_RENAME_IDENTITY_REQUIRED"):
+            self.call("rename-long", {
+                "command": "rename-conversation", "instance_id": "instance123",
+                "tab_id": 10, "conversation_key": "conversation-1234", "title": "x" * 101,
+            })
+
     def test_confirmed_not_applied_releases_claim(self):
         self.client.result = {
             "type": "host:result", "ok": False, "state": "NOT_APPLIED",
