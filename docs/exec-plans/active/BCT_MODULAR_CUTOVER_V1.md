@@ -84,8 +84,10 @@ replaceable capabilities are modules.
   are `BCT-MOVE-RUNNER-SI2-20261013-01`, `BCT-MOVE-RUNNER-BOOTSTRAP-20261013-01` and
   `BCT-MOVE-SERVICE-RUNNERS-20261013-01` under `D:\BCT\data\migrations`.
 - Monitor 2.0 source now treats Native HWND/window capture as authoritative, hides the legacy
-  organization/node surface, disables retired ACT startup/focus calls, exposes BCT and Laya status,
-  and labels extension reload as installed-payload reload. Focused thumbnail/capture/node-write
+  organization authority, and projects only the exact RCC-observed Chrome window/tab IDs and
+  OPEN/active/generating state in its BCT-native main list. Its `N<n>` labels are display order,
+  not role, permission, ownership or HWND identity. It disables retired ACT startup/focus calls,
+  exposes BCT and Laya status, and labels extension reload as installed-payload reload. Focused thumbnail/capture/node-write
   regressions and BCT shell checks pass. PR #43 merged as
   `f00510b9c6411b4d6ee8dd5636594f4957f08cc6`; PR and main CI passed. Exact source/live SHA fencing,
   verified backups, atomic replacement and duplicate fencing were recorded by deployment operations

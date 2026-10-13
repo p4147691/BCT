@@ -920,6 +920,26 @@
 
 .monitor-ai-section { padding-top:5px; }
 
+.monitor-bct-nodes-head { display:flex; align-items:center; gap:8px; margin:0 0 7px; color:#f4f8ff; }
+.monitor-bct-nodes-head strong { font:700 13px/1.2 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-nodes-head #monitorBctNodeSummary { min-width:0; flex:1; color:rgba(224,235,249,.62); font:600 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#monitorBctNodesRefresh { flex:0 0 auto; height:25px; padding:0 9px; border:1px solid rgba(117,184,255,.34); border-radius:6px; background:rgba(117,184,255,.10); color:#eef6ff; font:700 11px/1 "Segoe UI","Malgun Gothic",sans-serif; cursor:pointer; }
+#monitorBctNodesRefresh:hover { background:rgba(117,184,255,.20); border-color:rgba(117,184,255,.62); }
+#monitorBctNodesRefresh:disabled { opacity:.55; cursor:default; }
+.monitor-bct-nodes { display:grid; gap:6px; }
+.monitor-bct-node-row { display:grid; grid-template-columns:36px minmax(0,1fr) auto; align-items:center; gap:9px; min-height:46px; padding:7px 9px; border:1px solid rgba(255,255,255,.09); border-radius:9px; background:rgba(9,16,25,.56); box-shadow:inset 0 1px 0 rgba(255,255,255,.025); }
+.monitor-bct-node-number { display:grid; place-items:center; width:32px; height:32px; border:1px solid rgba(117,184,255,.42); border-radius:8px; background:rgba(117,184,255,.13); color:#f2f8ff; font:800 12px/1 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-node-body { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.monitor-bct-node-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f7f9fc; font:700 12px/1.25 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-node-identity { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:rgba(218,228,241,.58); font:600 10px/1.2 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-node-state { padding:4px 7px; border:1px solid rgba(255,255,255,.13); border-radius:999px; color:#eaf1f8; background:rgba(255,255,255,.06); font:800 10px/1 "Segoe UI","Malgun Gothic",sans-serif; white-space:nowrap; }
+.monitor-bct-node-state.is-open { border-color:rgba(105,210,157,.35); background:rgba(74,177,124,.11); color:#baf1d4; }
+.monitor-bct-node-state.is-active { border-color:rgba(117,184,255,.52); background:rgba(117,184,255,.16); color:#d9edff; }
+.monitor-bct-node-state.is-busy { border-color:rgba(255,196,92,.48); background:rgba(255,183,64,.13); color:#ffe0a8; }
+.monitor-bct-node-state.is-closed { border-color:rgba(255,126,126,.35); background:rgba(211,78,78,.11); color:#ffc1c1; }
+.monitor-bct-node-empty { padding:15px 12px; border:1px dashed rgba(255,255,255,.13); border-radius:9px; color:rgba(225,234,245,.68); text-align:center; font:600 11px/1.45 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-node-empty.is-error { border-color:rgba(255,126,126,.34); color:#ffc1c1; }
+
 
 
 

@@ -15,6 +15,8 @@ model. No new BCT feature may depend on it. The BCT 2.0 surface hides that compa
 keeps physical window/desktop/thumbnail behavior independent of node or organization metadata.
 
 The primary Monitor header exposes only live, explicit boundaries: BCT health/status, Laya status
-through the BCT status view, and installed-extension reload. Reload reads the installed payload
-again; it is not source integration or deployment. The retired Local LLM UI on port 7865 is not
-presented as a working feature.
+through the BCT status view, and installed-extension reload. Its main panel shows a read-only,
+BCT-native summary of RCC-observed ChatGPT windows/tabs using exact Chrome window and tab IDs; it
+does not revive the former ACT organization authority. Reload reads the installed payload again;
+it is not source integration or deployment. The retired Local LLM UI on port 7865 is not presented
+as a working feature.
