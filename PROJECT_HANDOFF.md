@@ -23,7 +23,10 @@
   유지 소스는 `modules/`에 있지만 Core runtime에 복사되지 않는다.
 - ChatGPT App은 기존 App ID와 연결을 유지한 채 `BCT Control` 1.0.0으로 이름·설명을
   변경했다. 원격 터널도 `BCT Control Private`로 정리했고, 로컬 인증 호출과 ChatGPT의 도구
-  새로 고침에서 BCT MCP 21개 도구가 확인됐다.
+  새로 고침에서 BCT MCP 22개 도구가 확인됐다.
+- `bct_read`는 기존 파일 읽기를 유지하면서 `operation: "directory_tree"`로 제한된 폴더
+  목록을 제공한다. 조회 결과는 file/directory/symlink를 구분하고 work root 밖 및 link/reparse
+  point 추적을 막는다. 이 기능은 GitHub CI와 LIVE MCP의 실제 `D:\BCT` 조회로 검증했다.
 - BCT RCC, BCT ChatGPT New Tab, BCT Auto Proxy는 각각 독립 설치 모듈로
   `D:\ChromeExtensions`에서 실행된다. Proxy helper/wireproxy의 실행 backend는
   `D:\BCT\runtime\modules\chrome-auto-proxy`이며 더 이상 ACT runtime을 사용하지 않는다.
