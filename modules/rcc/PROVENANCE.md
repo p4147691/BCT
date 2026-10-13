@@ -103,3 +103,22 @@ identity and for that conversation to render exactly one matching user turn.
 It also requires the background-observed conversation POST request identity
 before returning `SUBMITTED_RECOVERED_AFTER_NAVIGATION`; otherwise the original
 `SUBMIT_UNKNOWN` fence remains.
+
+## BCT RCC 1.0.3 bootstrap conversation identity acceptance candidate
+
+The first 1.0.2 LIVE E2E proved that ChatGPT can replace the blank route with a
+new conversation while the content-side final reply validator is still using a
+provisional identity. Version 1.0.3 permits that validator to rebind only for a
+newly created bootstrap tab whose pre-submit turn set was empty and whose new
+conversation contains exactly one new user turn matching the exact submitted
+text. Existing conversations, non-bootstrap sends, non-empty histories,
+missing identities and ambiguous matching turns remain fail-closed.
+
+Candidate extension payload SHA-256 for 1.0.3:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `c98195324962ca63711cf8a98e6de9641aeaf3458ca012fdbcf9d36a03f4d90b` |
+| `extension/content.js` | `4c564336cfeb5e9dd8e5fbc21409b055a1ceec16887ab258a846850518ad1da6` |
+| `extension/manifest.json` | `2030720bd299c65cb5766acdff4256de127874b69bbabb7214ad8e4cc8e5d294` |
+| `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
