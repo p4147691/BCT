@@ -24,7 +24,17 @@ class BrowserModuleBaselineTests(unittest.TestCase):
             self.assertEqual(expected.lower(), hashlib.sha256(path.read_bytes()).hexdigest(), relative)
 
     def test_proxy_public_source_matches_recovered_live_bytes(self) -> None:
-        self._assert_baseline("proxy", superseded=frozenset({"extension/manifest.json"}))
+        self._assert_baseline(
+            "proxy",
+            superseded=frozenset(
+                {
+                    "extension/manifest.json",
+                    "helper.py",
+                    "launcher.py",
+                    "validate_extension.py",
+                }
+            ),
+        )
 
     def test_new_tab_source_matches_recovered_live_bytes(self) -> None:
         self._assert_baseline("chatgpt-new-tab", superseded=frozenset({"extension/manifest.json"}))
@@ -59,6 +69,27 @@ class BrowserModuleBaselineTests(unittest.TestCase):
             self.assertEqual(name, manifest["name"])
             self.assertEqual("1.0.0", manifest["version"])
             self.assertEqual(expected_id, self._extension_id(manifest["key"]))
+
+    def test_proxy_operational_paths_are_bct_owned(self) -> None:
+        root = ROOT / "modules" / "proxy"
+        sources = {
+            relative: (root / relative).read_text(encoding="utf-8")
+            for relative in ("helper.py", "launcher.py", "validate_extension.py", "start_proxy.cmd")
+        }
+        for relative, text in sources.items():
+            self.assertNotIn(r"D:\ACT", text, relative)
+        self.assertIn(
+            r'D:\BCT\runtime\modules\chrome-auto-proxy',
+            sources["helper.py"],
+        )
+        self.assertIn(
+            r'D:\ChromeExtensions\BCT-Auto-Proxy\extension',
+            sources["validate_extension.py"],
+        )
+        self.assertIn(
+            r'D:\BCT\runtime\modules\chrome-auto-proxy\launcher.py',
+            sources["start_proxy.cmd"],
+        )
 
 
 if __name__ == "__main__":

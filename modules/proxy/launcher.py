@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 
-ROOT = pathlib.Path(r"D:\ACT\runtime\chrome-auto-proxy")
+ROOT = pathlib.Path(r"D:\BCT\runtime\modules\chrome-auto-proxy")
 HELPER = ROOT / "helper.py"
 
 def helper_alive():

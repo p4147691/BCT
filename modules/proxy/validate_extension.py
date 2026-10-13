@@ -7,9 +7,9 @@ from pathlib import Path
 import requests
 import websocket
 
-ROOT = Path(r"D:\ACT\runtime\chrome-auto-proxy")
-EXT = ROOT
-PROFILE = ROOT / "chrome-test-profile"
+ROOT = Path(r"D:\BCT\runtime\modules\chrome-auto-proxy")
+EXT = Path(r"D:\ChromeExtensions\BCT-Auto-Proxy\extension")
+PROFILE = Path(r"D:\BCT\data\test-profiles\chrome-auto-proxy")
 CHROME = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 PORT = 9237
 
