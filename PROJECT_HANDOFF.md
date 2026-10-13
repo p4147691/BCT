@@ -5,8 +5,9 @@
 `BCT_PLATFORM_PACKAGE_V1=LIVE_ACCEPTED`; `BCT_CORE_RELEASE_BOUNDARY=LIVE_ACCEPTED`.
 
 - GitHub `p4147691/BCT`의 `main`이 유일한 공식 소스이며 `D:\BCT\source`는 그 main의
-  깨끗한 로컬 checkout이다. 현재 source와 live Core release는
-  `f7885a10950c50f7f96734540e8f3231fe4c201a`로 일치한다.
+  깨끗한 로컬 checkout이다. 현재 정합성은 문서에 금방 낡는 SHA를 복사하지 않고
+  `origin/main`, 로컬 `HEAD`, `D:\BCT\runtime\current.json`의 `source_head`, `/health`의
+  `release_sha`가 모두 같은지 기계적으로 비교해 판정한다.
 - 운영 release는 `D:\BCT\runtime`, receipt와 session 상태는 `D:\BCT\data`에 있다.
 - BCT core, MCP, health와 BCT Monitor가 한 서비스/한 release에서 실행된다.
 - 파일·Git·GitHub·배포·서비스·RCC·Laya·Python/PowerShell/argv 실행과 지속 세션은
