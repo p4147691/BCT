@@ -750,7 +750,7 @@ function setEditorText(editor, text) {
 
 
 
-function findReadySendButton(editor = null) {
+function findReadySendButton(editor = null, options = {}) {
   // Only accept controls that explicitly identify themselves as ChatGPT send
   // controls. A page-wide form[type=submit] fallback can hit the new-chat
   // navigation form and turn "기깃" into ?prompt-textarea=기깃 without sending.
@@ -770,19 +770,27 @@ function findReadySendButton(editor = null) {
   if (form) scopes.push(form);
   const composer = editor?.closest?.('[data-testid*="composer"], [data-testid="composer"]');
   if (composer && !scopes.includes(composer)) scopes.push(composer);
-  scopes.push(document);
+  if (options?.allowDocumentFallback !== false) scopes.push(document);
 
   for (const scope of scopes) {
     for (const selector of selectors) {
       const button = scope.querySelector(selector);
-      if (button && !button.disabled && button.getClientRects().length > 0) return button;
+      if (button && button.isConnected !== false && !button.disabled &&
+          button.getAttribute?.('aria-disabled') !== 'true' && button.getClientRects().length > 0) return button;
     }
   }
   return null;
 }
 
-function waitForReadySendButton(editor = null, timeoutMs = 8000) {
-  const existing = findReadySendButton(editor);
+function waitForReadySendButton(editor = null, timeoutMs = 8000, options = {}) {
+  const findVerified = () => {
+    if (typeof options?.expectedText === 'string') {
+      if (getEditor() !== editor ||
+          editorDraftText(editor) !== RelayCore.normalizeMessageText(options.expectedText)) return null;
+    }
+    return findReadySendButton(editor, options);
+  };
+  const existing = findVerified();
   if (existing) return Promise.resolve(existing);
 
   return new Promise((resolve) => {
@@ -799,7 +807,7 @@ function waitForReadySendButton(editor = null, timeoutMs = 8000) {
     };
 
     const check = () => {
-      const button = findReadySendButton(editor);
+      const button = findVerified();
       if (button) finish(button);
     };
 
@@ -818,11 +826,21 @@ function waitForReadySendButton(editor = null, timeoutMs = 8000) {
 async function submitEditor(editor, options = {}) {
   const allowKeyboardFallback = options?.allowKeyboardFallback !== false;
   const waitMs = Number(options?.waitMs || 8000);
-  const button = await waitForReadySendButton(editor, waitMs);
+  const expected = typeof options?.expectedText === 'string'
+    ? RelayCore.normalizeMessageText(options.expectedText) : null;
+  const matchesDraft = () => expected === null ||
+    (getEditor() === editor && editorDraftText(editor) === expected);
+  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  // Wait for ChatGPT to swap its empty-composer voice control for the enabled send arrow.
+  const button = await waitForReadySendButton(editor, waitMs, options);
   if (button) {
+    if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+    // A React render may replace or disable the button after the observer resolved.
+    if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     button.click();
     return { ok: true, method: 'send-button' };
   }
+  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
 
   if (!allowKeyboardFallback) {
     throw new Error('RELAY_SEND_BUTTON_NOT_READY');
@@ -2262,11 +2280,21 @@ async function beginRelayExecution(message) {
 
 
 
-  setEditorText(editor, String(message.text || ''));
+  const requestedText = String(message.text || '');
+  setEditorText(editor, requestedText);
 
+  // The draft must be visible in the exact editor before sending. Do not assume
+  // an input event has already changed ChatGPT's composer button.
+  if (getEditor() !== editor ||
+      editorDraftText(editor) !== RelayCore.normalizeMessageText(requestedText)) {
+    throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  }
 
-
-  await submitEditor(editor);
+  await submitEditor(editor, {
+    expectedText: requestedText,
+    allowKeyboardFallback: message.bootstrapCreatedTab !== true,
+    allowDocumentFallback: message.bootstrapCreatedTab !== true
+  });
 
 
 

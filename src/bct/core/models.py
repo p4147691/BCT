@@ -67,6 +67,7 @@ class FeatureResult:
     evidence: dict[str, Any]
     release_claims: bool = True
     output: dict[str, Any] = field(default_factory=dict)
+    reconciled_operation_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

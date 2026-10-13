@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from bct.core.models import (
@@ -21,11 +22,12 @@ from bct.integrations.rcc import (
 
 
 _READ_COMMANDS = {"state", "presence", "result"}
+_RECONCILE_COMMANDS = {"reconcile-send-to-created-tab"}
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "rename-conversation", "send",
 }
-_COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS
+_COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 
@@ -80,7 +82,7 @@ class RelayBrowserFeature:
             "command": command, "instance_id": instance_id,
             "timeout_s": timeout_s, "to": "", "text": "", "extra": {},
         }
-        if command == "result":
+        if command == "result" or command in _RECONCILE_COMMANDS:
             allowed.add("relay_id")
             relay_id = str(arguments.get("relay_id") or "").strip()
             if not relay_id or len(relay_id) > 80:
@@ -156,7 +158,7 @@ class RelayBrowserFeature:
         if unknown:
             raise PreconditionError("RCC_ARGUMENT_NOT_ALLOWED:" + ",".join(sorted(unknown)))
         resource = "rcc-instance:" + instance_id
-        if command in _READ_COMMANDS:
+        if command in _READ_COMMANDS or command in _RECONCILE_COMMANDS:
             resource += ":read:" + command
         return FeatureRequest(
             self.capability, instance_id, prepared, (resource,),
@@ -171,15 +173,64 @@ class RelayBrowserFeature:
             if values["command"] in {"create-chat-window", "create-chat-tab"}:
                 extra["instanceId"] = values["instance_id"]
         try:
+            host_command = "result" if values["command"] in _RECONCILE_COMMANDS else values["command"]
             result = self.client.request(
                 instance_id=values["instance_id"], request_id=request.operation_id,
-                command=values["command"], to=values["to"], text=values["text"],
+                command=host_command, to=values["to"], text=values["text"],
                 extra=extra, timeout_s=values["timeout_s"],
             )
         except RelayUnavailable as exc:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
         except RelayEffectUnknown as exc:
             raise UnknownEffectError(str(exc)) from exc
+        if values["command"] in _RECONCILE_COMMANDS:
+            relay_id = values["text"]
+            receipt = result.get("result") if isinstance(result.get("result"), dict) else {}
+            try:
+                fingerprint = json.loads(str(receipt.get("fingerprint") or ""))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                fingerprint = None
+            bootstrap_fingerprint = (
+                isinstance(fingerprint, list)
+                and len(fingerprint) == 6
+                and bool(str(fingerprint[0] or "").strip())
+                and str(fingerprint[1] or "") == values["instance_id"]
+                and bool(str(fingerprint[2] or "").strip())
+                and isinstance(fingerprint[3], int) and fingerprint[3] > 0
+                and isinstance(fingerprint[4], int) and fingerprint[4] > 0
+                and bool(str(fingerprint[5] or ""))
+                and int(receipt.get("tabId") or 0) == fingerprint[3]
+            )
+            terminal = (
+                result.get("ok") is True
+                and str(result.get("relayId") or "") == relay_id
+                and result.get("found") is True
+                and result.get("completed") is True
+                and result.get("pending") is False
+                and str(receipt.get("id") or "") == relay_id
+                and str(receipt.get("submitState") or "") == "SUBMIT_UNKNOWN"
+                and str(receipt.get("resultState") or "") == "RESULT_PERSISTED"
+                and bool(str(receipt.get("conversationKey") or "").strip())
+                and bootstrap_fingerprint
+            )
+            if not terminal:
+                raise ConfirmedFailure(
+                    "RCC_RECONCILIATION_EVIDENCE_INSUFFICIENT",
+                    release_claims=True,
+                )
+            return FeatureResult(
+                Outcome.APPLIED,
+                {
+                    "instance_id": values["instance_id"],
+                    "command": values["command"],
+                    "reconciled_operation_id": relay_id,
+                    "result_state": "RESULT_PERSISTED",
+                    "pending": False,
+                    "conversation_key": str(receipt["conversationKey"]),
+                },
+                output={"result": _sanitize(result)},
+                reconciled_operation_ids=(relay_id,),
+            )
         raw_state = result.get("state")
         state = str(raw_state or "").upper() if not isinstance(raw_state, dict) else "STATE_RETURNED"
         if result.get("ok") is True:

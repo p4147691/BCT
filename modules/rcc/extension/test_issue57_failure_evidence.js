@@ -9,6 +9,7 @@ assert(content.includes("signal?.ok === true ? 'COMPLETE' : 'UNKNOWN'"));
 assert(content.includes("result.failureEvidence = error.relayFailureEvidence"));
 assert(background.includes("failureEvidence: result?.failureEvidence ?"));
 assert(background.includes("failureEvidence: payload.failureEvidence || null"));
+assert(background.includes("submitState: String(receipt.submitState || '')"));
 const marker = "function boundedRelayResultPayload(result) {";
 const begin = background.indexOf(marker);
 const end = background.indexOf("async function relaySha256", begin);

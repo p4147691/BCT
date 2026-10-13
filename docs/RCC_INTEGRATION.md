@@ -67,3 +67,22 @@ the exact-operation duplicate fence or retry an `UNKNOWN` submission.
 After `BCT RCC 1.0.0` passed exact-instance and preserved-tab acceptance, the legacy extension was
 disabled.  The steady-state Native Host manifest and executable therefore accept only
 `ocbidbaplechjjdacmokhnfbdmgjkphf`; the former path-derived origin is not a fallback identity.
+
+`BCT RCC 1.0.2` gates new-tab first-message submission on the exact
+composer draft and the composer-local enabled send-arrow transition.
+Before clicking it verifies the same editor/button remain valid; for bootstrap
+messages keyboard Enter fallback is disabled. Existing conversations retain
+their bounded legacy fallback. The loaded build marker and exact release hashes
+are checked separately from the Core runtime SHA.
+
+If the first-message route change closes the original content-script response
+port, submission is accepted only when the background has recorded the exact
+conversation POST and the exact created tab/window subsequently exposes one
+conversation ID with one matching user turn. Any incomplete or ambiguous
+evidence remains `SUBMIT_UNKNOWN` and is never resent automatically.
+
+An old `SUBMIT_UNKNOWN` claim may be released only through
+`reconcile-send-to-created-tab`. The command is scoped to the original work,
+operation and RCC instance, requires a persisted terminal result with no pending
+host work and a conversation ID, records a separate reconciliation operation,
+and does not rewrite or replay the original UNKNOWN operation.

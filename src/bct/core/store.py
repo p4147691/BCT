@@ -307,8 +307,30 @@ class Store:
 
     def finish_operation(self, *, operation_id: str, outcome: Outcome,
                          evidence: dict[str, Any], error: str | None,
-                         release_claims: bool) -> OperationResult:
+                         release_claims: bool,
+                         reconciled_operation_ids: tuple[str, ...] = ()) -> OperationResult:
         with self.transaction() as db:
+            resolver = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?", (operation_id,)
+            ).fetchone()
+            if resolver is None or resolver["state"] != OperationState.RUNNING.value:
+                raise ConflictError("OPERATION_NOT_RUNNING")
+            reconciled = tuple(sorted(set(reconciled_operation_ids)))
+            for original_id in reconciled:
+                original = db.execute(
+                    "SELECT * FROM operations WHERE operation_id=?", (original_id,)
+                ).fetchone()
+                if original is None or original["work_id"] != resolver["work_id"]:
+                    raise ConflictError("RECONCILIATION_OPERATION_ACCESS_DENIED")
+                if (original["state"] != OperationState.FINISHED.value
+                        or original["outcome"] != Outcome.UNKNOWN.value):
+                    raise ConflictError("RECONCILIATION_ORIGINAL_NOT_UNKNOWN")
+                unresolved = db.execute(
+                    "SELECT COUNT(*) FROM resource_claims WHERE operation_id=? AND unresolved=1",
+                    (original_id,),
+                ).fetchone()[0]
+                if not unresolved:
+                    raise ConflictError("RECONCILIATION_CLAIM_NOT_UNRESOLVED")
             changed = db.execute(
                 "UPDATE operations SET state=?,outcome=?,evidence_json=?,error=?,updated_at=? "
                 "WHERE operation_id=? AND state=?",
@@ -319,8 +341,18 @@ class Store:
                 raise ConflictError("OPERATION_NOT_RUNNING")
             if release_claims:
                 db.execute("UPDATE resource_claims SET unresolved=0 WHERE operation_id=?", (operation_id,))
+            for original_id in reconciled:
+                db.execute(
+                    "UPDATE resource_claims SET unresolved=0 WHERE operation_id=?",
+                    (original_id,),
+                )
+                self._event(db, "OPERATION_RECONCILED", original_id, {
+                    "resolver_operation_id": operation_id,
+                    "original_outcome": Outcome.UNKNOWN.value,
+                })
             self._event(db, "OPERATION_FINISHED", operation_id,
-                        {"outcome": outcome.value, "claims_released": release_claims})
+                        {"outcome": outcome.value, "claims_released": release_claims,
+                         "reconciled_operation_ids": list(reconciled)})
             row = db.execute("SELECT * FROM operations WHERE operation_id=?", (operation_id,)).fetchone()
         return self._row_result(row)
 

@@ -75,3 +75,31 @@ pending, or result-ack semantics. The exact payload hashes approved for the 1.0.
 | `extension/test_window_state_presence.js` | `42bb896055f3afc0a31d99263c19f4fa6993d7a1c379328de62731c3d1a48727` |
 | `native-host/RelayNativeHostV2.cs` | `164695e660a775b08d5d3289ff95340e28adb319a65d45e6e88790f4d1ee24ab` |
 | `native-host/com.ai_workspace_relay.host.v2.json` | `6358254cb45cd84c3821eac52ed5ef57e2f2ebafec5fbb91055e04dc348b31fd` |
+
+## BCT RCC 1.0.2 editor send-button readiness acceptance candidate
+
+Issue #57 adds an exact text gate before sending, waits for the composer-local
+visible enabled send-arrow control, checks the editor and button a second time
+immediately before clicking, and forbids keyboard Enter fallback for newly
+created ChatGPT tabs. It does not resend previous UNKNOWN submissions and keeps
+existing network-versus-DOM receipt instrumentation.
+
+Candidate extension payload SHA-256 for 1.0.2:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `c98195324962ca63711cf8a98e6de9641aeaf3458ca012fdbcf9d36a03f4d90b` |
+| `extension/content.js` | `5af022ebf266f505baac254285c4b148713ee748229eb96d74ec0753ad824b0f` |
+| `extension/manifest.json` | `8c878c7db1f2d264161c30f6b3c120d397a489154666be63e8b784b43d48b640` |
+| `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
+
+Promotion to LIVE requires exact-file backup, clean official main SHA,
+existing-tab preservation, loaded backgroundBuildId
+`2026-10-13-rcc-editor-gate-v1`, and a distinct one-shot bootstrap E2E.
+
+For a first-message route transition that closes the original content-script
+response port, 1.0.2 waits for the exact created tab to acquire one conversation
+identity and for that conversation to render exactly one matching user turn.
+It also requires the background-observed conversation POST request identity
+before returning `SUBMITTED_RECOVERED_AFTER_NAVIGATION`; otherwise the original
+`SUBMIT_UNKNOWN` fence remains.
