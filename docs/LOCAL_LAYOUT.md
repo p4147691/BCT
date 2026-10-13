@@ -44,21 +44,29 @@ DesktopWindow Monitor, BDC처럼 설치·교체 가능한 기능은 Git 저장�
   `D:\Archive\ACT-Scheduled-Tasks-Legacy-20261013`에 보존한 뒤 예약 작업에서 제거했다.
 - GitHub에 남아 있던 오프라인 ACT runner 등록 27개를 exact offline/busy=false 확인 후
   제거했다. 로컬 runner 파일과 Windows 서비스는 이 작업에서 삭제하지 않았다.
+- `D:\AI_Models`는 Ollama 무중단 검증을 거쳐 `D:\MODELS`로 옮기고
+  `OLLAMA_MODELS=D:\MODELS\ollama\models`로 전환했다.
+- `D:\AI_TOOLS`의 실제 프로젝트는 `D:\PROJECTS`, 공용 도구와 Chrome 테스트 자산은
+  `D:\TOOLS`, 사용하지 않는 프로필·RDC·runner 인덱스는 `D:\Archive`로 분리했다.
+- `D:\PAS40\40RUDI\_ACTIVE`의 GitHub main checkout은 `D:\PROJECTS\40RUDI`로 옮겼다.
+- `D:\[PRODUCT]`, `D:\PRODUCTS`, `D:\[TEMP]`, `D:\TEMP`의 과거 사본은
+  `D:\Archive`로 보존하고 루트 alias를 제거했다.
 
-각 Archive에는 원래 경로, 파일 수·크기, tree SHA와 Git 정보가 든 manifest가 있다.
+Archive 이동 증거는 `D:\BCT\data\migrations`에 둔다. 기존 archive의 tree SHA manifest와
+대규모 같은 볼륨 이동의 경로·Git·health receipt를 용도에 맞게 사용한다.
 
-## 아직 이동하지 않는 항목
+## 의도적으로 남긴 예외
 
-- `D:\ACT`: RCC는 더 이상 이 경로를 사용하지 않는다. 일부 Runner, Chrome Auto Proxy,
-  관리자 소유 ADC agent/connector, DesktopWindow Monitor의 구형 backend 계약만 남아 있다.
-- `D:\AI_TOOLS`: Quick Hotkey, Chrome 테스트 자산, DesktopCommander와 아직 분류 중인 실제
-  프로젝트만 남겼다.
-- `D:\ChromeExtensions`: 현재 로드된 확장과 Native Host, 그리고 Git 프로젝트로 이동 여부를
-  별도 확인해야 하는 소스 checkout만 남겼다.
-- `D:\AI_Models\ollama`: Ollama가 사용하는 대형 모델 저장소라서 설정 전환 없이 이동하지 않는다.
+- `D:\ChromeExtensions`: 현재 로드된 확장과 Native Host 설치 위치이므로 독립된 최상위
+  폴더로 유지한다.
+- `D:\StabilityMatrix-win-x64`: 내부 Python 환경과 package 경로를 가진 설치형 앱이다.
+  애플리케이션이 지원하는 이전 절차를 확인하기 전에는 직접 이동하지 않는다.
+- `D:\VTL`: Hyper-V VM/media 운영 데이터다. 관리자 권한으로 등록 VM 경로를 확인하고
+  정식 이전 절차를 사용할 때까지 현재 위치를 유지한다.
 
-이 항목들은 실행 참조를 제거하거나 대체한 뒤에만 이동한다. 단순히 이름이 낡았다는 이유로
-활성 경로를 옮기지 않는다.
+과거 `D:\ACT`, `D:\AI_TOOLS`, `D:\AI_Models`, `D:\PAS40`, `D:\[PRODUCT]`,
+`D:\PRODUCTS`, `D:\[TEMP]`, `D:\TEMP`는 더 이상 현재 루트가 아니다. Archive의 사본은
+복구 증거이며 live/source 권한으로 사용하지 않는다.
 
 ## 현재 실행 기준
 
