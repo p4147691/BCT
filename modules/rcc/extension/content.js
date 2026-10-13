@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-10-rcc-e2e-recovery-v1';
+const RCC_BUILD_VERSION = '2026-10-13-rcc-bootstrap-identity-v2';
 
 async function relayChatInjectionEnabled() {
   const match = location.pathname.match(/^\/c\/([a-z0-9-]{8,64})/i);
@@ -447,20 +447,28 @@ function submittedPromptMatchesTurn(record, turn) {
 
 
 function resolveRoutedTurn(record) {
-  if (!record?.conversationKey || currentConversationKey() !== record.conversationKey) {
-    return { ok: false, terminal: true, reason: 'CONVERSATION_IDENTITY_CHANGED' };
-  }
   const submittedText = RelayCore.normalizeMessageText(record.submittedText || '');
   if (!submittedText) return { ok: false, terminal: true, reason: 'ROUTE_PROMPT_IDENTITY_MISSING' };
+  const currentKey = currentConversationKey();
   const turns = getConversationTurns();
+  const before = new Set(Array.isArray(record.beforeTurnKeys) ? record.beforeTurnKeys : []);
+  const matches = turns.filter((turn) => !before.has(turnIdentity(turn)) && submittedPromptMatchesTurn(record, turn));
+  if (!record?.conversationKey || currentKey !== record.conversationKey) {
+    // A first message starts on the blank route and ChatGPT may replace the
+    // provisional document/route while the exact submitted turn is rendering.
+    // Rebind only a genuinely blank bootstrap with one exact new user turn.
+    if (record?.bootstrapCreatedTab !== true || !currentKey || before.size !== 0 || matches.length !== 1) {
+      return { ok: false, terminal: true, reason: 'CONVERSATION_IDENTITY_CHANGED' };
+    }
+    record.conversationKey = currentKey;
+    record.routeTurnKey = '';
+  }
   if (record.routeTurnKey) {
     const exact = turns.filter((turn) => turnIdentity(turn) === record.routeTurnKey);
     if (exact.length !== 1) return { ok: false, terminal: false, reason: 'ROUTE_TURN_NOT_FOUND' };
     if (!submittedPromptMatchesTurn(record, exact[0])) return { ok: false, terminal: true, reason: 'ROUTE_TURN_USER_MISMATCH' };
     return { ok: true, turn: exact[0], turnKey: record.routeTurnKey };
   }
-  const before = new Set(Array.isArray(record.beforeTurnKeys) ? record.beforeTurnKeys : []);
-  const matches = turns.filter((turn) => !before.has(turnIdentity(turn)) && submittedPromptMatchesTurn(record, turn));
   if (matches.length > 1) return { ok: false, terminal: true, reason: 'ROUTE_TURN_AMBIGUOUS' };
   if (matches.length !== 1) return { ok: false, terminal: false, reason: 'ROUTE_TURN_NOT_RESOLVED' };
   return { ok: true, turn: matches[0], turnKey: turnIdentity(matches[0]) };

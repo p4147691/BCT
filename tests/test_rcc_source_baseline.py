@@ -18,8 +18,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
             "background.js": "c98195324962ca63711cf8a98e6de9641aeaf3458ca012fdbcf9d36a03f4d90b",
-            "content.js": "5af022ebf266f505baac254285c4b148713ee748229eb96d74ec0753ad824b0f",
-            "manifest.json": "8c878c7db1f2d264161c30f6b3c120d397a489154666be63e8b784b43d48b640",
+            "content.js": "4c564336cfeb5e9dd8e5fbc21409b055a1ceec16887ab258a846850518ad1da6",
+            "manifest.json": "2030720bd299c65cb5766acdff4256de127874b69bbabb7214ad8e4cc8e5d294",
             "relay_core.js": "27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.2", manifest["version"])
-        self.assertEqual("1.0.2 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.3", manifest["version"])
+        self.assertEqual("1.0.3 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -95,6 +95,19 @@ class RccSourceBaselineTests(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
         self.assertIn("7 negative fences PASS", completed.stdout)
+
+    def test_first_message_bootstrap_identity_rebind(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is unavailable")
+        completed = subprocess.run(
+            [node, "test_issue57_bootstrap_identity.js"],
+            cwd=str(self.extension),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+        self.assertIn("5 fences PASS", completed.stdout)
 
     def test_runtime_javascript_has_valid_syntax(self):
         node = shutil.which("node")

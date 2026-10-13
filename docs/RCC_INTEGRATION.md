@@ -90,3 +90,11 @@ For an existing 1.0.1 receipt, the public projection may omit `submitState`;
 that legacy case is accepted only when the original BCT error is exactly
 `RCC_HOST_OUTCOME_UNVERIFIED:SUBMIT_UNKNOWN` and all terminal/bootstrap identity
 fences still match. Newer receipts expose and verify `submitState` directly.
+
+`BCT RCC 1.0.3` also covers a distinct content-side route race observed by the
+one-shot 1.0.2 LIVE E2E: the blank bootstrap route may acquire or replace its
+conversation identity before final reply validation. Rebinding is allowed only
+when the send is a created-tab bootstrap, the pre-submit turn set was empty,
+the new route has a conversation identity, and exactly one new user turn
+matches the submitted text. This does not relax identity changes for existing
+conversations and does not retry an UNKNOWN send.
