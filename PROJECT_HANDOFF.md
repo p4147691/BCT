@@ -6,7 +6,7 @@
 
 - GitHub `p4147691/BCT`의 `main`이 유일한 공식 소스이며 `D:\BCT\source`는 그 main의
   깨끗한 로컬 checkout이다. 현재 source와 live Core release는
-  `558fb2800a2f940aa3de01aa510b267971d91e4f`로 일치한다.
+  `f7885a10950c50f7f96734540e8f3231fe4c201a`로 일치한다.
 - 운영 release는 `D:\BCT\runtime`, receipt와 session 상태는 `D:\BCT\data`에 있다.
 - BCT core, MCP, health와 BCT Monitor가 한 서비스/한 release에서 실행된다.
 - 파일·Git·GitHub·배포·서비스·RCC·Laya·Python/PowerShell/argv 실행과 지속 세션은
@@ -20,8 +20,15 @@
 - 기능별 정확한 소유권은 `docs/CAPABILITY_OWNERSHIP.md`, 사용법은 `docs/USER_GUIDE.md`를 따른다.
 - Core release에는 Core 실행 코드와 읽기 전용 status UI만 들어간다. Monitor, RCC, BDC의
   유지 소스는 `modules/`에 있지만 Core runtime에 복사되지 않는다.
-- ChatGPT App은 기존 App ID와 연결을 유지한 채 `BCT Control`로 이름·설명을 변경했고 현재
-  BCT MCP 도구 목록을 새로 고쳤다.
+- ChatGPT App은 기존 App ID와 연결을 유지한 채 `BCT Control` 1.0.0으로 이름·설명을
+  변경했다. 원격 터널도 `BCT Control Private`로 정리했고, 로컬 인증 호출과 ChatGPT의 도구
+  새로 고침에서 BCT MCP 21개 도구가 확인됐다.
+- BCT RCC, BCT ChatGPT New Tab, BCT Auto Proxy는 각각 독립 설치 모듈로
+  `D:\ChromeExtensions`에서 실행된다. Proxy helper/wireproxy의 실행 backend는
+  `D:\BCT\runtime\modules\chrome-auto-proxy`이며 더 이상 ACT runtime을 사용하지 않는다.
+- 구형 ACT MCP(18769)와 ADC agent(18766)는 exact PID·시작시각·명령줄 fence와 durable
+  receipt로 퇴역했다. BCT Core(18790), Laya(18771), RCC, Monitor Native Host와 Proxy는
+  전환 후에도 정상이다.
 - 과거 staging/verify 사본은 `docs/LOCAL_LAYOUT.md`에 기록한 SHA-manifested Archive로 이동했다.
   실행 중인 도구와 project 후보는 이동하지 않았다.
 
@@ -44,7 +51,8 @@ FIRST_SLICE_COMPLETE / GITHUB_INTEGRATION_V1_ACCEPTED / DEPLOYMENT_SERVICE_V1_AC
 GitHub Actions run `38234844806`에서 최신 Actions major로 Windows CI가 통과했다.
 ACT 전체 legacy feature 호환을 목표로 하지 않는다. BCT의 core, 개발 흐름, GitHub,
 배포·서비스, MCP, bounded RCC 제어가 각각 live acceptance를 통과했다.
-기존 ACT live와 RCC 탭/role binding은 계속 보존된다.
+기존 RCC 탭/role binding은 계속 보존된다. ACT 경로에서 실행 중인 남은 구성은 GitHub
+Runner뿐이며, CI/복구 중단을 피하기 위해 별도 runner 이동 단계까지 의도적으로 유지한다.
 
 GitHub integration V1은 BCT 소스로 구현되었다. exact-SHA branch push, deterministic request marker를
 사용한 PR 생성 중복 방지, required-check 조회, exact-head merge 및 verified `main` fast-forward를
@@ -125,7 +133,8 @@ bindings, pending 상태는 변경하지 않았다.
 
 ## 다음 작업
 
-패키지 이전은 완료됐다. 이후 작업은 새 관리 계층을 추가하지 않고 같은
-work/operation/receipt → GitHub main → exact deploy → live acceptance 흐름으로 진행한다.
-Chrome 확장이나 Native Host 자체 코드를 변경할 때만 별도 exact-file profile과 reload
-acceptance를 추가한다. ACT 제거와 기존 Chrome 설정 재구성은 현재 작업의 선행조건이 아니다.
+제어 경로와 브라우저 모듈의 ACT runtime 퇴역은 완료됐다. 남은 ACT 삭제 gate는 현재 CI와
+복구에 사용 중인 GitHub Runner를 중단 없이 중립/BCT 경로로 옮기는 일과, DesktopWindow
+Monitor의 오래된 조직 UI 호환 코드를 단순 상태 UI로 축소하는 일이다. 이후 작업도 새 관리
+계층을 추가하지 않고 같은 work/operation/receipt → GitHub main → exact deploy → live
+acceptance 흐름으로 진행한다. 현재 BCT 사용에는 이 두 후속 정리가 필요하지 않다.
