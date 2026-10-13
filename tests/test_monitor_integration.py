@@ -66,6 +66,30 @@ class MonitorIntegrationTests(unittest.TestCase):
         self.assertTrue(result.output["valid"])
         self.assertEqual(result.output["checked"], 1)
 
+    def test_relative_source_falls_back_to_canonical_source_root(self):
+        runtime_policy = self.root / "runtime" / "bct.toml"
+        runtime_policy.parent.mkdir()
+        runtime_policy.write_text(
+            '[policy]\nnormal_actions=["monitor"]\napproval_actions=[]\n\n'
+            '[monitor]\nsource_root="modules/monitor"\n'
+            f'canonical_source_root="{self.root.as_posix()}"\n'
+            f'live_root="{self.live.as_posix()}"\n',
+            encoding="utf-8",
+        )
+        canonical_module = self.root / "modules" / "monitor"
+        canonical_module.parent.mkdir()
+        self.source.rename(canonical_module)
+        fallback_bct = BCT(state_path=self.root / "fallback.sqlite", policy_path=runtime_policy)
+        fallback_bct.create_work(
+            work_id="fallback-work", request_summary="monitor fallback", roots=[str(self.root)],
+            actions=["monitor"], principal=self.principal,
+        )
+        result = fallback_bct.operations.run(
+            principal=self.principal, work_id="fallback-work", operation_id="monitor-fallback",
+            capability="monitor", arguments={"operation": "status"},
+        )
+        self.assertTrue(result.output["source_live_exact"])
+
 
 if __name__ == "__main__":
     unittest.main()
