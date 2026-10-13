@@ -134,6 +134,24 @@ Candidate extension payload SHA-256 for 1.0.5:
 | `extension/manifest.json` | `8427dd109c65b24f4924156b3e6fc57abef591ca3f2234123f677ceae910efb5` |
 | `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
 
+## BCT RCC 1.0.6 exact-turn terminal override candidate
+
+The first 1.0.5 reconciliation found the exact submitted turn and its completed
+assistant response, but an inert stop control elsewhere in the retained document
+caused the result-only recovery to classify it as still streaming. Version 1.0.6
+may ignore that stale signal only when the exact routed turn has both
+`data-talvt-turn-state=complete` and a completion action UI. The path remains
+result-only and never clicks or resubmits.
+
+Candidate extension payload SHA-256 for 1.0.6:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `13c6dedd62e313ea6e5d0a24d6c82da85517de0bf26c1476b4229e0d580316f2` |
+| `extension/content.js` | `1f3976bf66947e73fcb37df50048712ac76d20a3cceb9c362b1f1ea180ef0af8` |
+| `extension/manifest.json` | `5531360bfdbc10e5030fb55ae2b6601ec7b2fcfaecd86cf34edc0b391ac02ace` |
+| `extension/relay_core.js` | `27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91` |
+
 Promotion to LIVE requires exact-file backup, clean official main SHA,
 existing-tab preservation, loaded backgroundBuildId
 `2026-10-13-rcc-editor-gate-v1`, and a distinct one-shot bootstrap E2E.

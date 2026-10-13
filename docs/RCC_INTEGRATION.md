@@ -122,3 +122,8 @@ lost, RCC 1.0.5 performs a single result-only DOM recovery after the recorded
 network request completes. It verifies the composed fingerprint and exact
 instance/tab/window/conversation, requires one matching user turn and one
 completed assistant turn, and persists the result without clicking or sending.
+
+RCC 1.0.6 tightens that recovery completion check. A stale inert stop control may
+be ignored only when the exact routed turn independently reports both a complete
+turn state and its completion action UI. Missing either signal remains fail-closed;
+the recovery path still never clicks or submits.
