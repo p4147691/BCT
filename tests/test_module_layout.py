@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tomllib
 import unittest
 from pathlib import Path
@@ -44,6 +45,14 @@ class ModuleLayoutTests(unittest.TestCase):
         self.assertIn("file:D:\\BCT\\runtime\\mcp.token", script)
         self.assertIn("BCT_TUNNEL_TARGET_MISMATCH", script)
         self.assertNotIn("D:\\ACT", script)
+
+    def test_handoff_current_state_uses_live_proof_not_self_referential_sha(self):
+        handoff = (self.root / "PROJECT_HANDOFF.md").read_text(encoding="utf-8")
+        current_section = handoff.split("## 현재 결정", 1)[0]
+        self.assertIn("origin/main", current_section)
+        self.assertIn("runtime\\current.json", current_section)
+        self.assertIn("release_sha", current_section)
+        self.assertIsNone(re.search(r"\b[0-9a-f]{40}\b", current_section))
 
 
 if __name__ == "__main__":
