@@ -18,6 +18,10 @@ Codex는 BCT work와 operation을 만들고 읽기, 수정, 실행, 테스트, c
 - Laya 추천 조회와 Monitor 상태 확인
 - 기존 operation 결과와 GitHub PR 상태 조회
 
+폴더 내용은 파일 읽기와 구분해 `bct_read`의 `operation: "directory_tree"`로 조회한다.
+경로는 현재 work의 허용 root 안에 있어야 하며, 기본 깊이는 2, 기본 최대 항목 수는 200이다.
+결과는 파일(`file`)·하위 폴더(`directory`)·따라가지 않는 링크/재분석 지점(`symlink`)을 구분한다.
+
 이 실행들도 BCT receipt, 정확한 작업 루트, PID/fingerprint, timeout과 중복 방지 기록을 남긴다.
 
 ## 주의 메시지가 필요한 일

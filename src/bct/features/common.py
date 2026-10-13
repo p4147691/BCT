@@ -38,12 +38,20 @@ def _reject_reparse(root: Path, target: Path) -> None:
         current = current / part
         paths.append(current)
     for path in paths:
-        if not path.exists() and not path.is_symlink():
-            continue
-        info = os.lstat(path)
-        attributes = getattr(info, "st_file_attributes", 0)
-        if stat.S_ISLNK(info.st_mode) or attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        if is_reparse_point(path):
             raise PreconditionError("REPARSE_POINT_FORBIDDEN:" + str(path))
+
+
+def is_reparse_point(path: Path) -> bool:
+    """Return whether *path* must not be followed during a scoped file operation."""
+    if not path.exists() and not path.is_symlink():
+        return False
+    info = os.lstat(path)
+    attributes = getattr(info, "st_file_attributes", 0)
+    return bool(
+        stat.S_ISLNK(info.st_mode)
+        or attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    )
 
 
 def relative_git_path(root: Path, target: Path) -> str:

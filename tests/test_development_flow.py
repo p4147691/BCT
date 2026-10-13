@@ -106,6 +106,42 @@ class DevelopmentFlowTests(unittest.TestCase):
         self.assertEqual(committed.evidence["head_after"], run_git(self.repo, "rev-parse", "HEAD"))
         self.assertEqual(first.evidence["path"], second.evidence["path"])
 
+    def test_read_directory_tree_is_bounded_and_does_not_follow_symlinks(self):
+        nested = self.repo / "nested"
+        nested.mkdir()
+        (nested / "note.txt").write_text("tree entry\n", encoding="utf-8")
+        result = self.call("read-tree", "read", {
+            "operation": "directory_tree", "path": str(nested), "depth": 2, "limit": 20,
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertIn({"path": "note.txt", "kind": "file"}, result.output["entries"])
+        self.assertFalse(result.output["truncated"])
+
+        outside = self.base / "outside"
+        outside.mkdir()
+        link = self.repo / "outside-link"
+        try:
+            os.symlink(outside, link, target_is_directory=True)
+        except OSError:
+            return
+        linked = self.call("read-tree-link", "read", {
+            "operation": "directory_tree", "path": str(self.repo), "depth": 2, "limit": 30,
+        })
+        self.assertIn({"path": "outside-link", "kind": "symlink"}, linked.output["entries"])
+        self.assertFalse(any(item["path"].startswith("outside-link/") for item in linked.output["entries"]))
+
+    def test_read_directory_tree_rejects_outside_scope_and_invalid_bounds(self):
+        outside = self.base / "outside"
+        outside.mkdir()
+        with self.assertRaisesRegex(PreconditionError, "TARGET_OUTSIDE_WORK_SCOPE"):
+            self.call("read-tree-outside", "read", {
+                "operation": "directory_tree", "path": str(outside), "depth": 1, "limit": 20,
+            })
+        with self.assertRaisesRegex(PreconditionError, "READ_TREE_BOUNDS_INVALID"):
+            self.call("read-tree-bad-bounds", "read", {
+                "operation": "directory_tree", "path": str(self.repo), "depth": "many", "limit": 20,
+            })
+
     def test_foreign_dirty_is_not_committed(self):
         source = self.repo / "calculator.py"
         source.write_text("def add(a, b):\n    return 10\n", encoding="utf-8")
