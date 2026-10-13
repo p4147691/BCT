@@ -580,7 +580,7 @@ monitorRoot.innerHTML = `
 
 
 
-  <section class="monitor-section monitor-ai-section" hidden>
+  <section class="monitor-section monitor-ai-section">
 
 
 
@@ -596,7 +596,8 @@ monitorRoot.innerHTML = `
 
 
 
-    <div id="monitorWorkers" class="monitor-workers"></div>
+    <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="BCT가 현재 확인한 RCC 창과 탭 상태를 다시 읽습니다">새로고침</button></div>
+    <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
 
 
 
@@ -655,10 +656,11 @@ const MONITOR_ACT_STARTUP_TEST_ENABLED = false;
 const MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED = false;
 const MONITOR_NODE_RENDER_ENABLED = false;
 const MONITOR_NODE_RENDER_PROJECTION_ONLY = false;
+const MONITOR_BCT_NODE_SUMMARY_ENABLED = true;
 
 // Event-only runtime diagnostics. These counters live only in this renderer;
 // they never write storage and never schedule work.
-const MONITOR_BUILD_ID = "20261013-bct-window-monitor-2";
+const MONITOR_BUILD_ID = "20261013-bct-window-monitor-3";
 const monitorRenderDiagnostics = {
   startedAt: Date.now(),
   renderRequests: 0,
@@ -42998,7 +43000,78 @@ const monitorNodeSync = document.getElementById("monitorNodeSync");
 const monitorBctStatus = document.getElementById("monitorBctStatus");
 const monitorBctOpen = document.getElementById("monitorBctOpen");
 const monitorLocalLlmOpen = document.getElementById("monitorLocalLlmOpen");
+const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
+const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
+let monitorBctWindowNodeRefreshBusy = false;
+
+function monitorBctWindowNodeState(node) {
+  if (node.generating) return { label: "응답 생성 중", tone: "busy" };
+  if (node.presence !== "OPEN" || node.instanceState !== "OPEN") return { label: node.presence || node.instanceState || "UNKNOWN", tone: "closed" };
+  if (node.active) return { label: "OPEN · 활성", tone: "active" };
+  return { label: "OPEN", tone: "open" };
+}
+
+function renderMonitorBctWindowNodes(nodes) {
+  if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
+  const fragment = document.createDocumentFragment();
+  if (!nodes.length) {
+    const empty = document.createElement("div");
+    empty.className = "monitor-bct-node-empty";
+    empty.textContent = "현재 RCC에서 확인된 ChatGPT 창이 없습니다.";
+    fragment.append(empty);
+  }
+  nodes.forEach((node, index) => {
+    const row = document.createElement("article");
+    row.className = "monitor-bct-node-row";
+    row.dataset.tabId = String(node.tabId);
+    row.dataset.windowId = String(node.windowId);
+
+    const number = document.createElement("span");
+    number.className = "monitor-bct-node-number";
+    number.textContent = `N${index + 1}`;
+
+    const body = document.createElement("span");
+    body.className = "monitor-bct-node-body";
+    const title = document.createElement("strong");
+    title.className = "monitor-bct-node-title";
+    title.textContent = node.title;
+    const identity = document.createElement("span");
+    identity.className = "monitor-bct-node-identity";
+    identity.textContent = `창 ${node.windowId} · 탭 ${node.tabId}`;
+    if (node.conversationKey) identity.title = `대화 ${node.conversationKey}`;
+    body.append(title, identity);
+
+    const state = monitorBctWindowNodeState(node);
+    const badge = document.createElement("span");
+    badge.className = `monitor-bct-node-state is-${state.tone}`;
+    badge.textContent = state.label;
+    row.append(number, body, badge);
+    fragment.append(row);
+  });
+  monitorWorkers.replaceChildren(fragment);
+  if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = `${nodes.length}개 · BCT/RCC 실시간 상태`;
+}
+
+async function refreshMonitorBctWindowNodes() {
+  if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell || monitorBctWindowNodeRefreshBusy) return;
+  monitorBctWindowNodeRefreshBusy = true;
+  if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = true;
+  if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
+  try {
+    const state = await monitorBctShell.monitorState();
+    renderMonitorBctWindowNodes(monitorBctShell.windowNodes(state));
+  } catch (error) {
+    if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "상태 확인 실패";
+    const message = document.createElement("div");
+    message.className = "monitor-bct-node-empty is-error";
+    message.textContent = `BCT 창 현황을 불러오지 못했습니다 · ${error?.message || error}`;
+    monitorWorkers?.replaceChildren(message);
+  } finally {
+    monitorBctWindowNodeRefreshBusy = false;
+    if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = false;
+  }
+}
 
 async function refreshMonitorBctStatus() {
   if (!monitorBctStatus || !monitorBctShell) return;
@@ -43028,7 +43101,12 @@ monitorLocalLlmOpen?.addEventListener("click", () => {
   });
 });
 
+monitorBctNodesRefresh?.addEventListener("click", () => {
+  void refreshMonitorBctWindowNodes();
+});
+
 void refreshMonitorBctStatus();
+void refreshMonitorBctWindowNodes();
 
 async function refreshMonitorEndpointRegistry() {
   const refreshUrl = new URL("/browser/endpoints/refresh", ORCHESTRATOR_ROLE_ADMIN_URL).toString();
@@ -75223,6 +75301,7 @@ window.addEventListener("focus", () => {
   if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) refreshAiMonitor();
 
   void refreshMonitorBctStatus();
+  void refreshMonitorBctWindowNodes();
 
 
 

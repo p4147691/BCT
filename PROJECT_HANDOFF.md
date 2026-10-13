@@ -137,7 +137,9 @@ bindings, pending 상태는 변경하지 않았다.
 
 제어 경로와 브라우저 모듈의 ACT runtime 퇴역 및 활성 GitHub Runner 경로 이동은 완료됐다.
 DesktopWindow Monitor 2.0은 Native HWND/thumbnail을 창의 정본으로 유지하고, 노드·조직
-정보를 창 존재 판정에서 분리하며, 구형 ACT startup/focus 호출을 기본 비활성화했다. PR #43,
+정보를 창 존재 판정에서 분리하며, 구형 ACT startup/focus 호출을 기본 비활성화했다. 기본 화면은
+RCC가 실제 관측한 Chrome window/tab ID와 OPEN·active·generating 상태만 읽기 전용으로
+보여준다. 이 `N1`, `N2` 표시는 순번일 뿐 역할·권한·소유권·물리 HWND를 만들지 않는다. PR #43,
 merge `f00510b9c6411b4d6ee8dd5636594f4957f08cc6`과 main CI 통과 후 exact 6-file 설치 배포와
 Chrome reload가 완료됐다. 같은 extension ID에서 새 Native Host 연결, BCT/Laya health와 RCC
 보존까지 확인했다. 남은 순서는 SHA manifest를 남긴 구형 runner 백업/비활성 서비스 정리다. 이후 작업도 새 관리
