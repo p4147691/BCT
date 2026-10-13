@@ -67,7 +67,7 @@ class MCPIntegrationTests(unittest.TestCase):
             runtime_root=self.runtime,
             service_name="bct-mcp-test",
             port=self.port,
-            readiness_timeout=10,
+            readiness_timeout=30,  # Windows GitHub-hosted runners may take longer to start the test service.
         )
         self.service = self.controller.start({
             "source_head": self.release_sha,
