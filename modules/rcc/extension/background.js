@@ -1938,6 +1938,8 @@ async function handleNativeCommand(message) {
 
     if (message.command === 'state') {
 
+      await endpointSessionReady;
+
       const state = await loadState();
 
       const chatTabs = await getChatTabs();
@@ -1948,7 +1950,7 @@ async function handleNativeCommand(message) {
 
       postNative({ type: 'host:result', requestId, ok: true, state: {
 
-        instanceId: state.settings.instanceId, tabs, endpoints,
+        instanceId: state.settings.instanceId, sessionId: endpointSessionId, tabs, endpoints,
 
         registrations: state.registrations, settings: state.settings,
 

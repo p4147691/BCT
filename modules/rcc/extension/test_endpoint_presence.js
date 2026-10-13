@@ -156,6 +156,8 @@ function endpointMessages(messages) {
   const beforeStateQuery = h.queryCount();
   const stateResult = await h.nativeCommand('state');
   assert.strictEqual(stateResult.ok, true);
+  assert.match(stateResult.state.sessionId, /^[a-f0-9]{32}$/i,
+    'state must expose the exact endpoint session used by mutations');
   assert.strictEqual(h.queryCount() - beforeStateQuery, 1, 'state should reuse one ChatGPT tab snapshot');
 
   const refresh = await h.forceRefresh();

@@ -17,7 +17,7 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_accepted_live_baseline_hashes_are_preserved(self):
         expected = {
-            "background.js": "3de6118e2d3bac81cc212a0e4dc1d9d6e2d355731e5fd5dd7f196c71be89a9dd",
+            "background.js": "816534f6f4d9e6b8db8f692e8f222ec6722d194b3eef6e1336ef05e0fb79a404",
             "content.js": "1c0ca238dbf287ad6f0a01660c1a7f1ebf78b5e8c1806c5d8c81d5d012391406",
             "relay_core.js": "27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91",
         }
