@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-compose-v2';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-compose-v3';
 
 async function relayChatInjectionEnabled() {
   const match = location.pathname.match(/^\/c\/([a-z0-9-]{8,64})/i);
@@ -1593,16 +1593,23 @@ function recoverCompletedReplyFromDom(record) {
   if (!routed.ok) throw new Error(`RELAY_RECOVERY_DOM_UNKNOWN:${routed.reason}`);
   if (!submittedPromptMatchesTurn(record, routed.turn)) throw new Error('RELAY_RECOVERY_PROMPT_IDENTITY_MISMATCH');
   if (turnGenerationInterrupted(routed.turn)) throw new Error('RELAY_RECOVERY_ASSISTANT_INTERRUPTED');
-  if (turnHasStopAction(routed.turn) || isGenerating()) throw new Error('RELAY_RECOVERY_ASSISTANT_STILL_STREAMING');
-
-  const candidates = assistantCandidatesForTurn(routed.turn);
-  const selected = RelayCore.selectAssistantCandidate(candidates);
-  if (!selected.ok) throw new Error(`RELAY_RECOVERY_DOM_UNKNOWN:${selected.reason}`);
 
   const completeState = turnCompletionState(routed.turn) === 'complete';
   const completionUiReady = !!routed.turn.querySelector(
     'button[data-testid="copy-turn-action-button"],button[data-testid*="copy"],button[aria-label="Copy"],button[aria-label="복사"],button[aria-label="복사하기"]'
   );
+  // ChatGPT can leave an inert stop control in the document after a completed
+  // background turn.  Treat it as stale only when the exact routed turn has
+  // both independent terminal signals.  Otherwise recovery remains fail-closed.
+  const exactTurnTerminal = completeState && completionUiReady;
+  if (!exactTurnTerminal && (turnHasStopAction(routed.turn) || isGenerating())) {
+    throw new Error('RELAY_RECOVERY_ASSISTANT_STILL_STREAMING');
+  }
+
+  const candidates = assistantCandidatesForTurn(routed.turn);
+  const selected = RelayCore.selectAssistantCandidate(candidates);
+  if (!selected.ok) throw new Error(`RELAY_RECOVERY_DOM_UNKNOWN:${selected.reason}`);
+
   if (!completeState && !completionUiReady) throw new Error('RELAY_RECOVERY_FINAL_STATE_UNKNOWN');
   return selected.candidate.text;
 }
