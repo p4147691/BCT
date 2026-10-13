@@ -80,6 +80,45 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertNotIn("authorization", state["registrations"]["WORK"])
         self.assertEqual(7, state["registrations"]["WORK"]["tabId"])
 
+    def test_result_read_requires_exact_original_work_and_instance(self):
+        self.client.result = {
+            "type": "host:result", "ok": False, "state": "SUBMIT_UNKNOWN"
+        }
+        original = self.call("original-send", {
+            "command": "send-to-created-tab", "instance_id": "instance123",
+            "session_id": "session-1", "tab_id": 10, "window_id": 11,
+            "create_operation_id": "create-1", "text": "hello",
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.client.result = {
+            "type": "host:result", "ok": True, "relayId": "original-send",
+            "found": False, "pending": True, "pendingStatus": {"deliveryConfirmed": False},
+        }
+        result = self.call("result-read", {
+            "command": "result", "instance_id": "instance123", "relay_id": "original-send",
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("original-send", self.client.calls[-1]["text"])
+        self.assertEqual("result", self.client.calls[-1]["command"])
+        with self.assertRaisesRegex(PreconditionError, "RCC_RESULT_INSTANCE_MISMATCH"):
+            self.call("wrong-instance", {
+                "command": "result", "instance_id": "otherinstance", "relay_id": "original-send",
+            })
+        with self.assertRaisesRegex(PreconditionError, "RCC_RESULT_ORIGINAL_SEND_REQUIRED"):
+            self.call("result-of-read", {
+                "command": "result", "instance_id": "instance123", "relay_id": "result-read",
+            })
+        other = Principal("foreign", "test", frozenset({"relay_browser"}))
+        self.bct.create_work(work_id="other-work", request_summary="foreign",
+                             roots=[str(self.root)], actions=["relay_browser"], principal=other)
+        with self.assertRaisesRegex(Exception, "OPERATION_RESULT_ACCESS_DENIED"):
+            self.bct.operations.run(
+                principal=other, work_id="other-work", operation_id="foreign-result",
+                capability="relay_browser",
+                arguments={"command": "result", "instance_id": "instance123",
+                           "relay_id": "original-send"},
+            )
+
     def test_browser_mutation_uses_bct_operation_id(self):
         self.client.result = {
             "type": "host:result", "requestId": "create-1", "ok": True,

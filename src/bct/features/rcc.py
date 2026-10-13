@@ -20,7 +20,7 @@ from bct.integrations.rcc import (
 )
 
 
-_READ_COMMANDS = {"state", "presence"}
+_READ_COMMANDS = {"state", "presence", "result"}
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "rename-conversation", "send",
@@ -80,7 +80,13 @@ class RelayBrowserFeature:
             "command": command, "instance_id": instance_id,
             "timeout_s": timeout_s, "to": "", "text": "", "extra": {},
         }
-        if command in _READ_COMMANDS:
+        if command == "result":
+            allowed.add("relay_id")
+            relay_id = str(arguments.get("relay_id") or "").strip()
+            if not relay_id or len(relay_id) > 80:
+                raise PreconditionError("RCC_RESULT_OPERATION_ID_REQUIRED")
+            prepared["text"] = relay_id
+        elif command in _READ_COMMANDS:
             pass
         elif command == "create-chat-window":
             pass
