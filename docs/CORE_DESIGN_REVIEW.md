@@ -64,3 +64,22 @@
 - 파일/Git/테스트의 대상/프로세스 evidence가 직접 호출과 MCP 호출에 일관적인가.
 
 이 검토는 실행 증거를 대신하지 않는다. 후속 구현에서 위 ID를 실제 테스트/acceptance에 연결한다.
+
+## 설계 요구사항과 검증 증거 연결 (2026-10-13)
+
+아래 표는 대표적인 **직접 확인된** 테스트 연결이다. 하나의 테스트가 여러 조건을 검증할 수 있지만, 모든 matrix ID가 개별 테스트로 검증됐다는 뜻은 아니다. 설계 검토와 최초 acceptance는 별도 문서로 유지한다.
+
+| 설계 ID | 대응 테스트 / 증거 | 범위 |
+| --- | --- | --- |
+| I01, I02, I05 | `tests/test_core.py::CoreTests.test_node_properties_and_connection_are_independent_of_work` | 노드 이름·역할·그룹·연결 변경과 work 분리 |
+| O01 | `tests/test_core.py::CoreTests.test_duplicate_operation_executes_once` | 동일 작업 중복 실행 방지 |
+| O02 | `tests/test_core.py::CoreTests.test_same_operation_id_with_different_request_is_denied` | ID 충돌 거부 |
+| O05 | `tests/test_core.py::CoreTests.test_unknown_effect_blocks_new_operation_for_same_resource` | 불확실한 효과의 중복 실행 방지 |
+| O07 | `tests/test_core.py::CoreTests.test_concurrent_writer_for_same_resource_is_denied` | 동시 writer 충돌 |
+| O11 | `tests/test_core.py::CoreTests.test_wrong_principal_cannot_run_or_read_result` | 타 principal 결과 접근 차단 |
+| P03 | `tests/test_development_flow.py::DevelopmentFlowTests.test_stale_file_hash_is_not_written`; `test_stale_head_is_not_committed` | 오래된 파일 SHA / HEAD 거부 |
+| P07 | `tests/test_development_flow.py::DevelopmentFlowTests.test_symlink_escape_is_denied_when_platform_allows_creation` | 허용 root 밖 symlink 접근 차단 |
+| M02 | `tests/test_mcp_integration.py::MCPIntegrationTests.test_authenticated_catalogue_work_call_and_duplicate_receipt` | MCP 카탈로그와 등록 executor 일치 |
+| O04, M03 (부분) | `tests/test_rcc_integration.py::RCCIntegrationTests.test_ambiguous_effect_is_not_retried` | 불확실한 RCC 효과 재전송 방지 |
+
+기타 ID는 별도 후속 모듈 테스트, acceptance 또는 추가 검증과의 매핑이 필요하다. **이 표에 없는 ID를 PASS로 간주하지 않는다.** 첫 구현 당시의 검증 기록은 [BCT_FOUNDATION.md](exec-plans/completed/BCT_FOUNDATION.md)를 참고한다.
