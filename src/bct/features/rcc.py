@@ -25,7 +25,7 @@ _READ_COMMANDS = {"state", "presence", "result"}
 _RECONCILE_COMMANDS = {"reconcile-send-to-created-tab"}
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
-    "rename-conversation", "send",
+    "rename-conversation", "reload-extension", "send",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS
 _COMMON = {"command", "instance_id", "timeout_s"}
@@ -90,7 +90,7 @@ class RelayBrowserFeature:
             prepared["text"] = relay_id
         elif command in _READ_COMMANDS:
             pass
-        elif command == "create-chat-window":
+        elif command in {"create-chat-window", "reload-extension"}:
             pass
         elif command == "create-chat-tab":
             allowed.add("window_id")

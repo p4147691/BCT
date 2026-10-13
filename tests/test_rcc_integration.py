@@ -202,6 +202,23 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual("create-1", self.client.calls[0]["extra"]["operationId"])
         self.assertEqual("instance123", self.client.calls[0]["extra"]["instanceId"])
 
+    def test_extension_reload_is_an_explicit_idempotent_mutation(self):
+        self.client.result = {
+            "type": "host:result", "requestId": "reload-1", "ok": True,
+            "reloading": True,
+        }
+        first = self.call("reload-1", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        duplicate = self.call("reload-1", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, first.outcome)
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(1, len(self.client.calls))
+        self.assertEqual("reload-extension", self.client.calls[0]["command"])
+        self.assertEqual("reload-1", self.client.calls[0]["extra"]["operationId"])
+
     def test_bootstrap_send_requires_exact_creation_identity(self):
         with self.assertRaisesRegex(PreconditionError, "RCC_BOOTSTRAP_IDENTITY_REQUIRED"):
             self.call("send-bad", {
