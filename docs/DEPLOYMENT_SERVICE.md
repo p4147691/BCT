@@ -56,3 +56,13 @@ original result without repeating deployment, start, stop, or restart.
 
 The runtime directory contains generated state and is never a source-of-truth checkout.
 GitHub `main` remains the source of truth.
+
+## Local recovery host
+
+`modules/mcp/ops/BCT-Core-Supervisor.task.xml` is the one user-session recovery host for BCT Core.
+It runs the exact runtime supervisor at sign-in and has a bounded Task Scheduler restart policy if
+that supervisor exits unexpectedly. The supervisor still makes the final decision: it only starts a
+Core process when the current immutable release, service receipt, PID fingerprint and health contract
+prove that the previous process is absent or stale. A Chrome extension reload is intentionally not
+performed by this host; Chrome owns that boundary and a version mismatch must remain visible to the
+user.
