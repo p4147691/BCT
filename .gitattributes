@@ -1,2 +1,4 @@
 modules/rcc/** -text
 modules/monitor/** -text
+modules/proxy/** -text
+modules/chatgpt-new-tab/** -text

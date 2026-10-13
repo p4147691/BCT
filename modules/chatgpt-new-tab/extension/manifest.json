@@ -1,0 +1,1 @@
+{"manifest_version":3,"name":"ChatGPT New Tab","version":"3.0.0","description":"Open ChatGPT when a blank Chrome tab is created, without overriding the New Tab Page.","permissions":["tabs"],"background":{"service_worker":"background.js"},"action":{"default_title":"ChatGPT New Tab","default_popup":"popup.html"}}

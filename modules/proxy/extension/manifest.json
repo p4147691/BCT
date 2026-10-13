@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Chrome Auto Proxy",
+  "version": "0.2.0",
+  "description": "Routes only restricted sites through a local Proton WireGuard proxy and can refresh Proton configs.",
+  "permissions": [
+    "proxy",
+    "storage",
+    "webRequest",
+    "webNavigation",
+    "tabs",
+    "downloads",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1:25346/*",
+    "https://account.protonvpn.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Chrome Auto Proxy",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://account.protonvpn.com/*"
+      ],
+      "js": [
+        "proton_auto.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

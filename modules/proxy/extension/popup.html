@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chrome Auto Proxy</title>
+<style>
+body{font:13px system-ui,sans-serif;width:330px;margin:14px;color:#202124}h1{font-size:16px;margin:0 0 10px}
+.card{border:1px solid #ddd;border-radius:8px;padding:10px;margin:8px 0}.ok{color:#137333}.bad{color:#b3261e}
+button{width:100%;padding:9px;margin-top:8px;border-radius:7px;border:1px solid #bbb;background:#fff;cursor:pointer}
+button.primary{background:#6d4aff;color:#fff;border-color:#6d4aff}ul{max-height:120px;overflow:auto;padding-left:20px;margin:6px 0}
+small{color:#666;display:block;margin-top:6px}
+</style></head><body>
+<h1>Chrome Auto Proxy</h1>
+<div class="card"><div id="state">상태 확인 중…</div><small id="helper"></small></div>
+<div class="card"><b>Proton 설정</b><div id="job">현재 설정 사용 중</div>
+<button class="primary" id="proton">Proton 설정 자동 받기</button>
+<small>로그인되어 있으면 WireGuard 설정 생성·다운로드·적용을 자동으로 시도합니다. 로그인 필요 시 Proton 로그인 화면에서 로그인만 하면 이어집니다.</small></div>
+<div class="card"><b>자동 우회 사이트</b><ul id="routes"></ul><button id="reset">학습 목록 초기화</button></div>
+<script src="popup.js"></script></body></html>
