@@ -112,13 +112,18 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_work_create", "bct_operation_get",
+                            "bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get",
                         },
                         names,
                     )
                     capabilities = await session.call_tool("bct_capabilities", {})
                     self.assertFalse(capabilities.isError)
                     self.assertEqual(expected_capability_tools, set(capabilities.structuredContent["tools"]))
+                    status = await session.call_tool("bct_status", {})
+                    self.assertFalse(status.isError)
+                    self.assertTrue(status.structuredContent["core"]["ready"])
+                    self.assertEqual(self.release_sha, status.structuredContent["runtime"]["release_sha"])
+                    self.assertIn("rcc", status.structuredContent["monitor"])
                     work_arguments = {
                         "work_id": "mcp-read-work",
                         "request_summary": "read one exact test file",

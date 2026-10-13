@@ -27,7 +27,11 @@ def _work_dict(work: Work) -> dict[str, Any]:
     }
 
 
-def build_mcp(bct: Any) -> FastMCP:
+def build_mcp(
+    bct: Any,
+    *,
+    status_provider: Callable[[], dict[str, Any]] | None = None,
+) -> FastMCP:
     """Build the public MCP catalogue from the registered BCT capabilities."""
     capabilities = tuple(bct.operations.capabilities)
     principal = Principal(MCP_PRINCIPAL_ID, "local-bearer", frozenset(capabilities))
@@ -48,6 +52,18 @@ def build_mcp(bct: Any) -> FastMCP:
             "capabilities": list(capabilities),
             "tools": [f"bct_{name}" for name in capabilities],
         }
+
+    @server.tool(
+        description=(
+            "Return the current read-only BCT summary: Core release/health, Monitor projection, "
+            "RCC instances, and active process sessions. Takes no arguments and creates no work or mutation."
+        ),
+        structured_output=True,
+    )
+    async def bct_status() -> dict[str, Any]:
+        if status_provider is None:
+            return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
+        return await asyncio.to_thread(status_provider)
 
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
     async def bct_work_create(
