@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "BCT Auto Proxy",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAusere7sd//9wWaq8KMlhrqqcuTrYPler54fTQPg9fWICJCQFtzgrT5kI4Sup9Guvtrfj/+Rx4RZoLtquipIqlvpUjycBFl9e9sVcyGHSudat6l+rgB84WU5r1+Klq9PimGNqpu8Fgao0EEM7n/TW2DtA66+dWSw2yPJ8Ck/xqCn+AJZApbvq/xikfNIi5aUiWFj+hGlnKV2IlGWMB0UOyRoh1pi89JOZzRwqGPP3E/OyM7M5hRktpc4Ma3O66lHBzkalpaUoxvPbM6kPvCRx9DuK0/wiGJ9W9u8l/BOcEQJZC/xD1Urz6D3cXdhM0WIn7enOeW6uStFMcaF9f3h0yQIDAQAB",
+  "description": "Routes only restricted sites through a local Proton WireGuard proxy and can refresh Proton configs.",
+  "permissions": [
+    "proxy",
+    "storage",
+    "webRequest",
+    "webNavigation",
+    "tabs",
+    "downloads",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1:25346/*",
+    "https://account.protonvpn.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "BCT Auto Proxy",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://account.protonvpn.com/*"
+      ],
+      "js": [
+        "proton_auto.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
