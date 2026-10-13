@@ -44,6 +44,10 @@ class ModuleLayoutTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:18790/mcp", script)
         self.assertIn("file:D:\\BCT\\runtime\\mcp.token", script)
         self.assertIn("BCT_TUNNEL_TARGET_MISMATCH", script)
+        self.assertIn("BCT_TUNNEL_HEALTH_RECOVERED", script)
+        self.assertIn("BCT_TUNNEL_DEGRADED", script)
+        self.assertIn("Get-NetTCPConnection -State Listen -OwningProcess", script)
+        self.assertIn("$healthy.Count -ne 1", script)
         self.assertNotIn("D:\\ACT", script)
 
     def test_handoff_current_state_uses_live_proof_not_self_referential_sha(self):

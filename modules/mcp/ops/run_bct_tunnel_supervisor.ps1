@@ -6,7 +6,10 @@ param(
     [string]$ProfileDir = 'C:\Users\시우세영\AppData\Roaming\tunnel-client',
     [string]$McpServerUrl = 'http://127.0.0.1:18790/mcp',
     [string]$TunnelClientPath = 'D:\TOOLS\OpenAI\tunnel-client\0.0.14\tunnel-client.exe',
-    [string]$RuntimeDir = 'D:\BCT\runtime'
+    [string]$RuntimeDir = 'D:\BCT\runtime',
+    [string]$HealthUrlFile = 'C:\Users\시우세영\.local\state\tunnel-client\health\act-control.url',
+    [switch]$RepairHealthOnly,
+    [int]$RepairProcessId = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,10 +41,13 @@ function Get-RuntimeStatus {
     try { return ($raw | ConvertFrom-Json) } catch { return $null }
 }
 
-function Assert-ExactRuntime($Status) {
-    if ($null -eq $Status -or -not $Status.process_running -or -not $Status.healthy) { return $false }
+function Assert-ExactProcess($Status) {
+    if ($null -eq $Status -or -not $Status.process_running) { return $false }
     if ($Status.process.target_value -ne $McpServerUrl) {
         throw "BCT_TUNNEL_TARGET_MISMATCH actual=$($Status.process.target_value)"
+    }
+    if ($Status.process.tunnel_id -ne $TunnelId) {
+        throw "BCT_TUNNEL_ID_MISMATCH actual=$($Status.process.tunnel_id)"
     }
     $expected = [IO.Path]::GetFullPath($TunnelClientPath)
     $actual = (Get-CimInstance Win32_Process -Filter "ProcessId=$($Status.process.pid)" -ErrorAction Stop).ExecutablePath
@@ -51,11 +57,62 @@ function Assert-ExactRuntime($Status) {
     return $true
 }
 
+function Assert-ExactRuntime($Status) {
+    if (-not (Assert-ExactProcess $Status)) { return $false }
+    return [bool]$Status.healthy
+}
+
+function Test-HealthEndpoint([string]$BaseUrl) {
+    try {
+        $health = Invoke-WebRequest -UseBasicParsing -Uri ($BaseUrl + '/healthz') -TimeoutSec 2
+        $ready = Invoke-WebRequest -UseBasicParsing -Uri ($BaseUrl + '/readyz') -TimeoutSec 2
+        return (
+            [int]$health.StatusCode -eq 200 -and $health.Content.Trim() -eq 'live' -and
+            [int]$ready.StatusCode -eq 200 -and $ready.Content.Trim() -eq 'ready'
+        )
+    } catch {
+        return $false
+    }
+}
+
+function Repair-HealthUrlFile([int]$ProcessId) {
+    if ($ProcessId -le 0) { throw 'BCT_TUNNEL_HEALTH_REPAIR_PID_INVALID' }
+    $listeners = @(
+        Get-NetTCPConnection -State Listen -OwningProcess $ProcessId -ErrorAction Stop |
+            Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
+            Select-Object -ExpandProperty LocalPort -Unique
+    )
+    $healthy = @()
+    foreach ($port in $listeners) {
+        $candidate = 'http://127.0.0.1:' + [int]$port
+        if (Test-HealthEndpoint $candidate) { $healthy += $candidate }
+    }
+    if ($healthy.Count -ne 1) {
+        throw "BCT_TUNNEL_HEALTH_ENDPOINT_AMBIGUOUS count=$($healthy.Count)"
+    }
+    $parent = Split-Path -Parent $HealthUrlFile
+    [IO.Directory]::CreateDirectory($parent) | Out-Null
+    $temp = Join-Path $parent ('.' + [IO.Path]::GetFileName($HealthUrlFile) + '.' + [guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        [IO.File]::WriteAllText($temp, $healthy[0] + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $temp -Destination $HealthUrlFile -Force
+    } finally {
+        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
+    }
+    return $healthy[0]
+}
+
 function Ensure-ProfileHeaders {
     $profilePath = Join-Path $ProfileDir ($Alias + '.yaml')
     $raw = Get-Content -LiteralPath $profilePath -Raw -ErrorAction Stop
     try { $profile = $raw | ConvertFrom-Json } catch { throw "BCT_TUNNEL_PROFILE_NOT_JSON path=$profilePath" }
     if ($null -eq $profile.mcp) { throw "BCT_TUNNEL_PROFILE_MCP_MISSING path=$profilePath" }
+    if ($null -eq $profile.health -or $profile.health.url_file -ne $HealthUrlFile) {
+        throw "BCT_TUNNEL_HEALTH_FILE_MISMATCH actual=$($profile.health.url_file)"
+    }
+    if ($profile.health.listen_addr -ne '127.0.0.1:0') {
+        throw "BCT_TUNNEL_HEALTH_LISTEN_MISMATCH actual=$($profile.health.listen_addr)"
+    }
     $headers = [pscustomobject]@{ 'X-BCT-Token' = $HeaderReference }
     $profile.mcp | Add-Member -MemberType NoteProperty -Name extra_headers -Value $headers -Force
     $profile.mcp | Add-Member -MemberType NoteProperty -Name discovery_extra_headers -Value $headers -Force
@@ -79,6 +136,21 @@ function Start-Runtime {
     Ensure-ProfileHeaders
 }
 
+if ($RepairHealthOnly) {
+    $probe = [pscustomobject]@{
+        process_running = $true
+        process = [pscustomobject]@{
+            pid = $RepairProcessId
+            target_value = $McpServerUrl
+            tunnel_id = $TunnelId
+        }
+    }
+    if (-not (Assert-ExactProcess $probe)) { throw 'BCT_TUNNEL_HEALTH_REPAIR_PROCESS_MISSING' }
+    $recoveredUrl = Repair-HealthUrlFile $RepairProcessId
+    [pscustomobject]@{ repaired = $true; health_url = $recoveredUrl } | ConvertTo-Json -Compress
+    exit 0
+}
+
 try {
     try { $Acquired = $Mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $Acquired = $true }
     if (-not $Acquired) { exit 0 }
@@ -96,11 +168,28 @@ try {
         if (Test-Path -LiteralPath $StopFlag) { Write-Event 'BCT_TUNNEL_EXPLICIT_STOP'; exit 0 }
         Set-RuntimeEnvironment
         $status = Get-RuntimeStatus
-        if (-not (Assert-ExactRuntime $status)) {
+        $exactProcess = Assert-ExactProcess $status
+        if ($exactProcess -and -not $status.healthy) {
+            try {
+                $recoveredUrl = Repair-HealthUrlFile ([int]$status.process.pid)
+                $status = Get-RuntimeStatus
+                if (-not (Assert-ExactRuntime $status)) { throw 'BCT_TUNNEL_HEALTH_REPAIR_NOT_VISIBLE' }
+                Write-Event 'BCT_TUNNEL_HEALTH_RECOVERED' "pid=$($status.process.pid) url=$recoveredUrl"
+            } catch {
+                Write-Event 'BCT_TUNNEL_DEGRADED' "pid=$($status.process.pid) reason=$($_.Exception.Message)"
+                Start-Sleep -Seconds ([Math]::Max($CheckIntervalSeconds, 30))
+                continue
+            }
+        } elseif (-not $exactProcess) {
             try {
                 Start-Runtime
                 Start-Sleep -Seconds $RestartDelaySeconds
                 $status = Get-RuntimeStatus
+                if ((Assert-ExactProcess $status) -and -not $status.healthy) {
+                    $recoveredUrl = Repair-HealthUrlFile ([int]$status.process.pid)
+                    $status = Get-RuntimeStatus
+                    Write-Event 'BCT_TUNNEL_HEALTH_RECOVERED' "pid=$($status.process.pid) url=$recoveredUrl"
+                }
                 if (-not (Assert-ExactRuntime $status)) { throw 'BCT_TUNNEL_NOT_READY_AFTER_CONNECT' }
             } catch {
                 Write-Event 'BCT_TUNNEL_START_FAILED' $_.Exception.Message
