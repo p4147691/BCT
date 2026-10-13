@@ -5,6 +5,12 @@
 
 ## 이미 분리된 경계
 
+### BCT status shell — READY / EXTRACTED
+- 구현: `monitor-bct-shell.js`; public `MonitorBctShell.create()`.
+- 입력: exact BCT Core health/status endpoint and Chrome window API.
+- 출력: read-only BCT/Laya status windows. Service mutation and deployment are not exposed.
+- 검증: `..\tools\check_monitor_bct_shell.js`.
+
 ### Work context summary — READ-ONLY PROJECTION
 - 구현: `monitor-context-resume.js`; public `MonitorContextResume.createButton`.
 - 입력: 정확한 conversation key와 선택적 project/task 식별자, 기존 `actFetch`, 기존 채팅 복구 callback.

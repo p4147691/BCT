@@ -1,6 +1,6 @@
 # BCT Modular Cutover V1
 
-Status: `BROWSER_MODULES_ACCEPTED_ACT_CONTROL_RUNTIME_RETIRED_RUNNER_MIGRATION_REMAINS`
+Status: `RUNNERS_MIGRATED_MONITOR_V2_SOURCE_TESTED_LIVE_ACCEPTANCE_REMAINS`
 
 ## Goal
 
@@ -31,9 +31,9 @@ replaceable capabilities are modules.
 4. Existing ChatGPT App identity retargeted to BCT MCP without a duplicate plugin and renamed to
    `BCT Control`; the same App ID and connection are preserved.
 5. RCC installed-path migration with extension identity/state evidence. **Complete.**
-6. Monitor ACT/AI_TOOLS dependency retirement and focused window/node/status acceptance.
+6. Monitor ACT/AI_TOOLS dependency retirement and focused window/status acceptance. **Source tested; live acceptance remains.**
 7. BDC parity for retained desktop primitives; retire the isolated ADC runtime. **Runtime retirement complete.**
-8. Reduce runner pool; replace/retire ACT scheduled tasks. **Pool reduction complete; path migration remains.**
+8. Reduce runner pool; replace/retire ACT scheduled tasks. **Active pool and path migration complete.**
 9. Archive profiles and legacy tools only after all references and active processes are absent.
 10. Cold-start acceptance, then archive and delete ACT.
 
@@ -73,19 +73,30 @@ replaceable capabilities are modules.
   browser modules. Their old extension identities are disabled. NewTab redirect, exact-once RCC tab
   creation/duplicate fencing and the Proxy BCT backend were live accepted. Old ACT relay, new-tab and
   proxy backend payloads are in SHA-manifested archives.
-- DesktopWindow Monitor source and installed payload match exactly (excluding policy documentation).
-  The installed Monitor remains an external compatibility module because its organization UI still
-  calls the old Agent Orchestrator API. The independent BCT Monitor is already the default Core
-  status view for BCT, Laya, RCC windows/tabs, work and operation state.
+- Before the Monitor 2.0 worktree change, DesktopWindow Monitor main source and installed payload
+  matched exactly (excluding policy documentation). The installed Monitor remains the baseline
+  compatibility module until the tested 2.0 source is integrated and deployed. The independent BCT
+  Monitor is already the default Core status view for BCT, Laya, RCC windows/tabs, work and operation
+  state.
+- All four active runners now execute from `D:\BCT\runtime\runners\github`: three under
+  `AI-CODE-TEAM` and the recovery runner under `BOOTSTRAP`. Their GitHub runner IDs, names and
+  labels were preserved and all four were verified `online / busy=false`. Exact migration receipts
+  are `BCT-MOVE-RUNNER-SI2-20261013-01`, `BCT-MOVE-RUNNER-BOOTSTRAP-20261013-01` and
+  `BCT-MOVE-SERVICE-RUNNERS-20261013-01` under `D:\BCT\data\migrations`.
+- Monitor 2.0 source now treats Native HWND/window capture as authoritative, hides the legacy
+  organization/node surface, disables retired ACT startup/focus calls, exposes BCT and Laya status,
+  and labels extension reload as installed-payload reload. Focused thumbnail/capture/node-write
+  regressions and BCT shell checks pass. It is not complete until GitHub main and the installed
+  extension are accepted.
 
 ## Remaining ACT deletion gates
 
-- Move the three active `AI-CODE-TEAM` runners and the separate BOOTSTRAP recovery runner away from
-  `D:\ACT` without changing their GitHub identity or interrupting an active job. Disabled local runner
-  services remain non-running evidence until that bounded migration removes their registrations.
-- Decide the small retained window/status surface of DesktopWindow Monitor, migrate that surface to
-  BCT, then disable the old ACT-coupled organization UI. Its Native Messaging hosts are already
-  independent of the retired ports 18766/18769.
+- Integrate Monitor 2.0 through GitHub main, deploy the exact installed payload, and live-accept
+  physical window/desktop thumbnails plus BCT/Laya status without legacy ACT startup calls. Its
+  Native Messaging hosts are already independent of retired ports 18766/18769.
+- SHA-manifest and archive the old runner directory backups, then remove only the disabled legacy
+  runner service registrations whose processes and GitHub registrations are absent. The active
+  runners must remain on their current BCT paths.
 - Remove the dormant ACT direct-bridge compatibility code from the RCC Native Host only with a
   focused rebuild/reload acceptance. Current BCT RCC named-pipe control does not depend on it.
 - The unused remote tunnel named `ACT Control Tunnel Runtime` is not connected to the installed
