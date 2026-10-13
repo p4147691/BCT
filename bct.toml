@@ -44,6 +44,7 @@ readiness_timeout = 60.0
 
 [monitor]
 source_root = "modules/monitor"
+canonical_source_root = "D:\\BCT\\source"
 live_root = "D:\\ChromeExtensions\\DesktopWindow-Monitor"
 
 [deployment.profiles.bct_runtime_v1]

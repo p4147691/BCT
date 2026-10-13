@@ -120,7 +120,6 @@ def main() -> int:
         raise RuntimeError("BCT_CONTROL_TOKEN_MISSING")
     if len(mcp_token) != 64:
         raise RuntimeError("BCT_MCP_TOKEN_MISSING")
-    mcp = build_mcp(bct)
     state = {
         "status": "OK",
         "ready": True,
@@ -134,9 +133,29 @@ def main() -> int:
         "capabilities": list(bct.operations.capabilities),
         "mcp_ready": True,
         "mcp_endpoint": f"http://127.0.0.1:{arguments.port}/mcp",
-        "mcp_tool_count": len(bct.operations.capabilities) + 3,
+        "mcp_tool_count": len(bct.operations.capabilities) + 4,
         "started_at": time.time(),
     }
+
+    def status_snapshot() -> dict[str, Any]:
+        """Expose one no-argument, read-only operator view for MCP clients."""
+        monitor = build_monitor_state(
+            store=bct.store,
+            service_state=state,
+            data_root=runtime_root.parent / "data",
+        )
+        return {
+            "schema": 1,
+            "core": dict(state),
+            "runtime": {
+                "release_sha": arguments.release_sha,
+                "manifest_sha256": arguments.manifest_sha256,
+                "generation": arguments.generation,
+            },
+            "monitor": monitor,
+        }
+
+    mcp = build_mcp(bct, status_provider=status_snapshot)
     holder: dict[str, uvicorn.Server] = {}
 
     @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)

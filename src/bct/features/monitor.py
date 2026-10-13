@@ -33,6 +33,10 @@ class MonitorFeature:
         source = Path(source_value)
         if not source.is_absolute():
             source = self.policy_path.parent / source
+            if not source.is_dir():
+                canonical_root = str(config.get("canonical_source_root") or "").strip()
+                if canonical_root:
+                    source = Path(canonical_root) / source_value
         if not live_value:
             raise PreconditionError("MONITOR_LIVE_ROOT_NOT_CONFIGURED")
         live = Path(live_value)
