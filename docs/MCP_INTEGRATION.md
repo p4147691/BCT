@@ -7,9 +7,10 @@ second BCT service. At process start, `build_mcp()` reads the exact capabilities
 registered in `OperationCoordinator` and creates one `bct_<capability>` tool for each.
 The catalogue therefore cannot advertise a capability with no executor.
 
-Three management tools are added:
+Four management tools are added:
 
 - `bct_capabilities`: return the exact runtime capability/tool mapping.
+- `bct_status`: return a read-only Core release/health, Monitor, RCC and active process-session snapshot without creating a work.
 - `bct_work_create`: create or recover one exact work record.
 - `bct_operation_get`: retrieve an operation receipt for the owning work.
 
@@ -65,3 +66,5 @@ Adding the Codex MCP entry is a one-time client configuration change. A running 
 does not acquire newly configured tools retroactively; a new Codex task/session loads the
 entry. This was verified with a fresh ephemeral Codex process that created a BCT work and
 read a repository file through the configured MCP server.
+
+Catalogue acceptance checks authenticated server tools/list and a fresh client session after deployment. Already-running clients may retain an older catalogue; this alone does not indicate server registration failure.
