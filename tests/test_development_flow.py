@@ -9,7 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bct import BCT
-from bct.core.models import Outcome, PreconditionError, Principal
+from bct.core.models import ConflictError, Outcome, PreconditionError, Principal
+from bct.features.files import FileReadFeature
 
 
 def run_git(root: Path, *args: str) -> str:
@@ -141,6 +142,117 @@ class DevelopmentFlowTests(unittest.TestCase):
             self.call("read-tree-bad-bounds", "read", {
                 "operation": "directory_tree", "path": str(self.repo), "depth": "many", "limit": 20,
             })
+
+    def test_batch_read_returns_files_and_tree_without_persisting_content(self):
+        nested = self.repo / "nested"
+        nested.mkdir()
+        note = nested / "note.txt"
+        note.write_text("batch note\n", encoding="utf-8")
+        result = self.call("read-batch-1", "read", {
+            "operation": "batch",
+            "items": [
+                {"id": "source", "path": str(self.repo / "calculator.py")},
+                {"id": "note", "path": str(note)},
+                {"id": "tree", "operation": "directory_tree", "path": str(nested),
+                 "depth": 1, "limit": 20},
+            ],
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("COMPLETE", result.output["status"])
+        self.assertEqual(["source", "note", "tree"], [item["id"] for item in result.output["items"]])
+        source = result.output["items"][0]
+        self.assertIn("def add", source["output"]["text"])
+        self.assertEqual(digest(self.repo / "calculator.py"), source["sha256"])
+        self.assertIsInstance(source["observed_at"], float)
+        self.assertIn({"path": "note.txt", "kind": "file"}, result.output["items"][2]["output"]["entries"])
+        self.assertEqual(3, result.evidence["items_succeeded"])
+        self.assertNotIn("output", result.evidence["items"][0])
+        database = (self.base / "state.sqlite").read_bytes()
+        self.assertNotIn(b"batch note", database)
+        self.assertNotIn(b"def add", database)
+
+        duplicate = self.call("read-batch-1", "read", {
+            "operation": "batch",
+            "items": [
+                {"id": "source", "path": str(self.repo / "calculator.py")},
+                {"id": "note", "path": str(note)},
+                {"id": "tree", "operation": "directory_tree", "path": str(nested),
+                 "depth": 1, "limit": 20},
+            ],
+        })
+        self.assertTrue(duplicate.duplicate)
+        self.assertFalse(duplicate.output)
+        with self.assertRaisesRegex(ConflictError, "OPERATION_ID_REQUEST_MISMATCH"):
+            self.call("read-batch-1", "read", {
+                "operation": "batch",
+                "items": [{"id": "different", "path": str(note)}],
+            })
+
+    def test_batch_read_validates_scope_ids_targets_and_bounds_before_start(self):
+        outside = self.base / "outside.txt"
+        outside.write_text("outside\n", encoding="utf-8")
+        with self.assertRaisesRegex(PreconditionError, "TARGET_OUTSIDE_WORK_SCOPE"):
+            self.call("read-batch-outside", "read", {
+                "operation": "batch",
+                "items": [
+                    {"id": "inside", "path": str(self.repo / "calculator.py")},
+                    {"id": "outside", "path": str(outside)},
+                ],
+            })
+        with self.assertRaisesRegex(PreconditionError, "READ_BATCH_ITEM_ID_DUPLICATE"):
+            self.call("read-batch-id", "read", {
+                "operation": "batch",
+                "items": [
+                    {"id": "same", "path": str(self.repo / "calculator.py")},
+                    {"id": "same", "path": str(self.repo / "test_calculator.py")},
+                ],
+            })
+        with self.assertRaisesRegex(PreconditionError, "READ_BATCH_TARGET_DUPLICATE"):
+            self.call("read-batch-target", "read", {
+                "operation": "batch",
+                "items": [
+                    {"id": "one", "path": str(self.repo / "calculator.py")},
+                    {"id": "two", "path": str(self.repo / "calculator.py")},
+                ],
+            })
+        with self.assertRaisesRegex(PreconditionError, "READ_BATCH_ITEMS_INVALID"):
+            self.call("read-batch-empty", "read", {"operation": "batch", "items": []})
+        with self.assertRaisesRegex(PreconditionError, "READ_BATCH_ITEMS_INVALID"):
+            self.call("read-batch-many", "read", {
+                "operation": "batch",
+                "items": [
+                    {"id": f"item-{index}", "path": str(self.repo / "calculator.py")}
+                    for index in range(21)
+                ],
+            })
+        oversized = self.repo / "oversized.txt"
+        oversized.write_bytes(b"x" * (FileReadFeature.batch_max_file_bytes + 1))
+        with self.assertRaisesRegex(PreconditionError, "READ_BATCH_FILE_TOO_LARGE"):
+            self.call("read-batch-large", "read", {
+                "operation": "batch", "items": [{"id": "large", "path": str(oversized)}],
+            })
+
+    def test_batch_read_reports_runtime_item_failure_without_unknown_claim(self):
+        binary = self.repo / "binary.dat"
+        binary.write_bytes(b"\xff\xfe")
+        result = self.call("read-batch-partial", "read", {
+            "operation": "batch",
+            "items": [
+                {"id": "source", "path": str(self.repo / "calculator.py")},
+                {"id": "binary", "path": str(binary)},
+            ],
+        })
+        self.assertEqual(Outcome.FAILED, result.outcome)
+        self.assertEqual("PARTIAL_FAILURE", result.output["status"])
+        self.assertEqual("OK", result.output["items"][0]["status"])
+        self.assertEqual("ERROR", result.output["items"][1]["status"])
+        self.assertEqual(1, result.evidence["items_failed"])
+        claim = self.bct.store.get_operation_for(
+            operation_id="read-batch-partial", work_id="dev", principal_id="developer",
+        )
+        self.assertEqual(Outcome.FAILED, claim.outcome)
+        unresolved = self.bct.store.monitor_snapshot()["unresolved_claims"]
+        self.assertFalse(any(item["operation_id"] == "read-batch-partial" for item in unresolved))
 
     def test_foreign_dirty_is_not_committed(self):
         source = self.repo / "calculator.py"
