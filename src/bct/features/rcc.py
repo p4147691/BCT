@@ -201,6 +201,12 @@ class RelayBrowserFeature:
                 and bool(str(fingerprint[5] or ""))
                 and int(receipt.get("tabId") or 0) == fingerprint[3]
             )
+            submit_state = str(receipt.get("submitState") or "")
+            # RCC 1.0.1 persisted this field but did not expose it from the
+            # read-only result projection. The coordinator has already proved
+            # that the exact original BCT operation ended in SUBMIT_UNKNOWN;
+            # all other terminal/bootstrap fences below still apply.
+            submit_state_compatible = submit_state in {"", "SUBMIT_UNKNOWN"}
             terminal = (
                 result.get("ok") is True
                 and str(result.get("relayId") or "") == relay_id
@@ -208,7 +214,7 @@ class RelayBrowserFeature:
                 and result.get("completed") is True
                 and result.get("pending") is False
                 and str(receipt.get("id") or "") == relay_id
-                and str(receipt.get("submitState") or "") == "SUBMIT_UNKNOWN"
+                and submit_state_compatible
                 and str(receipt.get("resultState") or "") == "RESULT_PERSISTED"
                 and bool(str(receipt.get("conversationKey") or "").strip())
                 and bootstrap_fingerprint
@@ -225,6 +231,7 @@ class RelayBrowserFeature:
                     "command": values["command"],
                     "reconciled_operation_id": relay_id,
                     "result_state": "RESULT_PERSISTED",
+                    "submit_state": submit_state or "LEGACY_OMITTED_VERIFIED_BY_ORIGINAL",
                     "pending": False,
                     "conversation_key": str(receipt["conversationKey"]),
                 },

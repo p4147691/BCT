@@ -137,7 +137,7 @@ class RccIntegrationTests(unittest.TestCase):
                 "id": "unknown-bootstrap", "resultState": "RESULT_PERSISTED",
                 "conversationKey": "conversation-1234", "ok": False,
                 "error": "net::ERR_ABORTED", "ackState": "UNACKED",
-                "submitState": "SUBMIT_UNKNOWN", "tabId": 10,
+                "tabId": 10,
                 "fingerprint": '["create-1","instance123","session-1",10,11,"hello"]',
             },
         }
@@ -150,6 +150,9 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual("unknown-bootstrap", self.client.calls[-1]["text"])
         self.assertEqual(
             "unknown-bootstrap", reconciled.evidence["reconciled_operation_id"]
+        )
+        self.assertEqual(
+            "LEGACY_OMITTED_VERIFIED_BY_ORIGINAL", reconciled.evidence["submit_state"]
         )
         self.client.result = {"type": "host:result", "ok": True}
         next_mutation = self.call("after-reconciliation", {

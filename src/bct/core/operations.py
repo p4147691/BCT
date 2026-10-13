@@ -62,7 +62,7 @@ class OperationCoordinator:
                 raise PreconditionError("RCC_RESULT_ORIGINAL_SEND_REQUIRED")
             if rcc_command == "reconcile-send-to-created-tab" and (
                 original.outcome is not Outcome.UNKNOWN
-                or not str(original.error or "").startswith("RCC_HOST_OUTCOME_UNVERIFIED:")
+                or str(original.error or "") != "RCC_HOST_OUTCOME_UNVERIFIED:SUBMIT_UNKNOWN"
             ):
                 raise PreconditionError("RCC_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
         request = replace(
