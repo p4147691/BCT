@@ -17,6 +17,15 @@ file reference to the BCT token, and refuses a mismatched running target. The co
 remains `act-control` until the owning ChatGPT App display name is changed; that alias is not an
 ACT runtime dependency.
 
+The tunnel client's loopback health URL file is discovery metadata, not the tunnel process itself.
+If that file is removed while the exact process remains alive, the supervisor enumerates only that
+PID's loopback listeners, requires exactly one endpoint whose `/healthz` and `/readyz` return the
+expected bodies, and atomically restores the configured URL file. A missing file never authorizes a
+second tunnel process. An ambiguous or failed probe is logged as degraded and left for diagnosis.
+Development probes must use a distinct profile directory, alias, and health URL file; reusing the
+production `act-control` profile can overwrite and later delete the production discovery file even
+when the production process itself remains healthy.
+
 `ops/run_bct_core_supervisor.ps1` is the matching BCT Core recovery entry point. It loads only the
 exact release named by `D:\BCT\runtime\current.json`; `bct.supervisor` verifies the immutable release,
 durable service receipt, PID fingerprint and health contract before it accepts or starts the process.
