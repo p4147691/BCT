@@ -22,7 +22,8 @@ from bct.integrations.rcc import (
 
 _READ_COMMANDS = {"state", "presence"}
 _MUTATING_COMMANDS = {
-    "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab", "send",
+    "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
+    "rename-conversation", "send",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS
 _COMMON = {"command", "instance_id", "timeout_s"}
@@ -131,6 +132,19 @@ class RelayBrowserFeature:
                 "windowId": _positive_int(arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"),
                 "index": index, "conversationKey": conversation_key,
                 "createOperationId": create_id,
+            })
+        elif command == "rename-conversation":
+            allowed.update({"session_id", "tab_id", "conversation_key", "title"})
+            session_id = str(arguments.get("session_id") or "").strip()
+            conversation_key = str(arguments.get("conversation_key") or "").strip()
+            title = str(arguments.get("title") or "").strip()
+            if not session_id or not conversation_key or not title or len(title) > 100:
+                raise PreconditionError("RCC_RENAME_IDENTITY_REQUIRED")
+            prepared["extra"].update({
+                "sessionId": session_id,
+                "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                "conversationKey": conversation_key,
+                "title": title,
             })
         unknown = set(arguments) - allowed
         if unknown:

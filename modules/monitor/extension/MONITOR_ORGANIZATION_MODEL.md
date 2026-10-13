@@ -1,5 +1,11 @@
 # Monitor Organization Model
 
+> 2026-10-13 현재 이 문서의 ACT 조직 편집 모델은 compatibility-only다. 기본 BCT 화면은
+> 조직/권한을 만들지 않으며, 현재 열린 RCC ChatGPT 대화를 두 열의 작은 목록으로 투영한다.
+> `N<n>`은 표시 순서이고, 행 이름은 실제 ChatGPT 대화 제목이다. 제목 변경은 BCT receipt와
+> RCC exact identity 검증을 통과한 경우에만 실제 ChatGPT UI에 적용된다. 아래 내용은 숨겨진
+> 구형 조직 화면의 의미를 보존하기 위한 참고이며 새 기본 authority가 아니다.
+
 목적: 다음 노드가 Monitor의 조직 구조를 역할명이나 화면 배치로 추측하지 않고, **연결(edge)과 authority** 기준으로 이해하게 한다.
 
 ## 1. Authority

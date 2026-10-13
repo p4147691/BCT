@@ -6,6 +6,7 @@
   const URLS = Object.freeze({
     health: "http://127.0.0.1:18790/health",
     monitorState: "http://127.0.0.1:18790/monitor/state",
+    renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
     status: "http://127.0.0.1:18790/monitor",
     localLlm: "http://127.0.0.1:18790/monitor#local-llm",
   });
@@ -13,6 +14,7 @@
   function create(options = {}) {
     const fetcher = options.fetcher || root.fetch?.bind(root);
     const windowsApi = options.windowsApi || root.chrome?.windows;
+    const randomId = options.randomId || (() => root.crypto?.randomUUID?.());
 
     async function health() {
       if (typeof fetcher !== "function") throw new Error("BCT_HEALTH_FETCH_UNAVAILABLE");
@@ -59,6 +61,7 @@
           const conversationMatch = url.match(/\/c\/([a-z0-9-]+)/i);
           nodes.push(Object.freeze({
             instanceId,
+            sessionId: String(instance?.session_id || "").trim(),
             instanceState,
             tabId,
             windowId,
@@ -77,6 +80,48 @@
       return Object.freeze(nodes);
     }
 
+    async function renameConversation(node, nextTitle, operationId = "") {
+      if (typeof fetcher !== "function") throw new Error("BCT_RENAME_FETCH_UNAVAILABLE");
+      const title = String(nextTitle || "").trim();
+      const instanceId = String(node?.instanceId || "").trim();
+      const sessionId = String(node?.sessionId || "").trim();
+      const conversationKey = String(node?.conversationKey || "").trim();
+      const tabId = Number(node?.tabId || 0);
+      if (!instanceId || !sessionId || !conversationKey ||
+          !Number.isSafeInteger(tabId) || tabId <= 0) {
+        throw new Error("BCT_RENAME_EXACT_IDENTITY_REQUIRED");
+      }
+      if (!title || title.length > 100) throw new Error("BCT_RENAME_TITLE_INVALID");
+      const generated = String(operationId || `monitor.rename.${randomId?.() || ""}`).trim();
+      if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(generated)) {
+        throw new Error("BCT_RENAME_OPERATION_ID_INVALID");
+      }
+      const response = await fetcher(URLS.renameConversation, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          instance_id: instanceId,
+          session_id: sessionId,
+          tab_id: tabId,
+          conversation_key: conversationKey,
+          title,
+          operation_id: generated,
+          timeout_s: 30,
+        }),
+      });
+      const receipt = await response?.json?.().catch(() => null);
+      if (!response?.ok) {
+        throw new Error(String(receipt?.error || `BCT_RENAME_HTTP_${Number(response?.status || 0)}`));
+      }
+      if (String(receipt?.outcome || "").toUpperCase() !== "APPLIED") {
+        throw new Error(String(receipt?.error || `BCT_RENAME_${receipt?.outcome || "UNVERIFIED"}`));
+      }
+      const savedTitle = String(receipt?.output?.result?.savedTitle || "").trim();
+      if (savedTitle && savedTitle !== title) throw new Error("BCT_RENAME_TITLE_MISMATCH");
+      return Object.freeze({ receipt, operationId: generated, title });
+    }
+
     async function open(url, size) {
       if (!windowsApi?.create) throw new Error("BCT_WINDOW_CREATE_UNAVAILABLE");
       return windowsApi.create({
@@ -92,6 +137,7 @@
       health,
       monitorState,
       windowNodes,
+      renameConversation,
       openStatus: () => open(URLS.status, { width: 1120, height: 820 }),
       openLocalLlm: () => open(URLS.localLlm, { width: 1200, height: 820 }),
     });

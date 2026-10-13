@@ -97,6 +97,7 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                 })
             rows.append({
                 "instance_id": instance_id,
+                "session_id": str(state.get("sessionId") or ""),
                 "state": "OPEN",
                 "background_build_id": str(state.get("backgroundBuildId") or ""),
                 "tabs": tabs,

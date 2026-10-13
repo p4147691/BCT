@@ -43004,12 +43004,115 @@ const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
 let monitorBctWindowNodeRefreshBusy = false;
+let monitorBctRenameEditor = null;
 
-function monitorBctWindowNodeState(node) {
-  if (node.generating) return { label: "응답 생성 중", tone: "busy" };
-  if (node.presence !== "OPEN" || node.instanceState !== "OPEN") return { label: node.presence || node.instanceState || "UNKNOWN", tone: "closed" };
-  if (node.active) return { label: "OPEN · 활성", tone: "active" };
-  return { label: "OPEN", tone: "open" };
+function closeMonitorBctRenameEditor() {
+  if (!monitorBctRenameEditor || monitorBctRenameEditor.busy) return;
+  monitorBctRenameEditor.overlay.remove();
+  monitorBctRenameEditor = null;
+}
+
+function openMonitorBctRenameEditor(node, row) {
+  if (!monitorBctShell?.renameConversation || !node?.conversationKey || !node?.sessionId) {
+    setMonitorStatus("이 창의 정확한 RCC 대화 신원을 확인할 수 없어 이름을 바꾸지 않았습니다.", false, 5000);
+    return;
+  }
+  closeMonitorBctRenameEditor();
+  const overlay = document.createElement("div");
+  overlay.className = "monitor-bct-rename-overlay";
+  const dialog = document.createElement("form");
+  dialog.className = "monitor-bct-rename-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", "ChatGPT 대화 이름 바꾸기");
+  const head = document.createElement("div");
+  head.className = "monitor-bct-rename-head";
+  const heading = document.createElement("strong");
+  heading.textContent = `N${Number(row?.dataset?.nodeIndex || 0)} · ChatGPT 방 이름`;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "monitor-bct-rename-close";
+  close.setAttribute("aria-label", "취소");
+  close.textContent = "×";
+  head.append(heading, close);
+  const input = document.createElement("input");
+  input.className = "monitor-bct-rename-input";
+  input.type = "text";
+  input.maxLength = 100;
+  input.value = String(node.title || "").trim();
+  input.autocomplete = "off";
+  const error = document.createElement("div");
+  error.className = "monitor-bct-rename-error";
+  error.setAttribute("aria-live", "polite");
+  const actions = document.createElement("div");
+  actions.className = "monitor-bct-rename-actions";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "취소";
+  const confirm = document.createElement("button");
+  confirm.type = "submit";
+  confirm.className = "is-primary";
+  confirm.textContent = "확인";
+  actions.append(cancel, confirm);
+  dialog.append(head, input, error, actions);
+  overlay.append(dialog);
+  document.body.append(overlay);
+  monitorBctRenameEditor = { overlay, dialog, input, error, cancel, close, confirm, busy: false };
+
+  const cancelEditor = () => closeMonitorBctRenameEditor();
+  close.addEventListener("click", cancelEditor);
+  cancel.addEventListener("click", cancelEditor);
+  overlay.addEventListener("pointerdown", (event) => {
+    if (event.target === overlay) cancelEditor();
+  });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelEditor();
+    }
+  });
+  dialog.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const editor = monitorBctRenameEditor;
+    if (!editor || editor.busy) return;
+    const title = editor.input.value.trim();
+    if (!title) {
+      editor.error.textContent = "이름을 입력하세요.";
+      editor.input.focus();
+      return;
+    }
+    if (title === String(node.title || "").trim()) {
+      editor.overlay.remove();
+      monitorBctRenameEditor = null;
+      return;
+    }
+    editor.busy = true;
+    editor.input.disabled = true;
+    editor.cancel.disabled = true;
+    editor.close.disabled = true;
+    editor.confirm.disabled = true;
+    editor.confirm.textContent = "변경 중…";
+    editor.error.textContent = "";
+    try {
+      await monitorBctShell.renameConversation(node, title);
+      row.querySelector(".monitor-bct-node-title").textContent = title;
+      editor.overlay.remove();
+      monitorBctRenameEditor = null;
+      setMonitorStatus(`ChatGPT 방 이름을 '${title}'(으)로 변경했습니다.`, true, 3500);
+      globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 600);
+    } catch (renameError) {
+      editor.busy = false;
+      editor.input.disabled = false;
+      editor.cancel.disabled = false;
+      editor.close.disabled = false;
+      editor.confirm.disabled = false;
+      editor.confirm.textContent = "확인";
+      editor.error.textContent = `변경되지 않았습니다 · ${renameError?.message || renameError}`;
+      editor.input.focus();
+    }
+  });
+  input.focus();
+  input.select();
 }
 
 function renderMonitorBctWindowNodes(nodes) {
@@ -43026,6 +43129,11 @@ function renderMonitorBctWindowNodes(nodes) {
     row.className = "monitor-bct-node-row";
     row.dataset.tabId = String(node.tabId);
     row.dataset.windowId = String(node.windowId);
+    row.dataset.nodeIndex = String(index + 1);
+    row.dataset.conversationKey = node.conversationKey;
+    row.title = node.conversationKey
+      ? `우클릭하여 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
+      : `창 ${node.windowId} · 탭 ${node.tabId}`;
 
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
@@ -43036,17 +43144,19 @@ function renderMonitorBctWindowNodes(nodes) {
     const title = document.createElement("strong");
     title.className = "monitor-bct-node-title";
     title.textContent = node.title;
-    const identity = document.createElement("span");
-    identity.className = "monitor-bct-node-identity";
-    identity.textContent = `창 ${node.windowId} · 탭 ${node.tabId}`;
-    if (node.conversationKey) identity.title = `대화 ${node.conversationKey}`;
-    body.append(title, identity);
+    body.append(title);
 
-    const state = monitorBctWindowNodeState(node);
-    const badge = document.createElement("span");
-    badge.className = `monitor-bct-node-state is-${state.tone}`;
-    badge.textContent = state.label;
-    row.append(number, body, badge);
+    const presence = document.createElement("span");
+    presence.className = `monitor-bct-node-presence${node.generating ? " is-busy" : ""}`;
+    presence.setAttribute("aria-label", node.generating ? "응답 생성 중" : "열려 있음");
+    presence.title = node.generating ? "응답 생성 중" : "열려 있음";
+    row.append(number, body, presence);
+    if (node.conversationKey) {
+      row.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        openMonitorBctRenameEditor(node, row);
+      });
+    }
     fragment.append(row);
   });
   monitorWorkers.replaceChildren(fragment);

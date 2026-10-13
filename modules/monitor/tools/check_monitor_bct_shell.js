@@ -27,6 +27,7 @@ const monitorState = {
   rcc: {
     instances: [{
       instance_id: "rcc-live",
+      session_id: "session-live",
       state: "OPEN",
       tabs: [
         { tab_id: 22, window_id: 12, title: "둘", url: "https://chatgpt.com/", presence: "OPEN", active: false, generating: true },
@@ -39,6 +40,27 @@ const context = {
   globalThis: null,
   fetch: async (url, init) => {
     assert.equal(init?.cache, "no-store");
+    if (url === "http://127.0.0.1:18790/monitor/conversation-title/rename") {
+      assert.equal(init.method, "POST");
+      assert.equal(init.headers["Content-Type"], "application/json");
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body, {
+        instance_id: "rcc-live",
+        session_id: "session-live",
+        tab_id: 11,
+        conversation_key: "chat-one",
+        title: "새 이름",
+        operation_id: "monitor.rename.test-id",
+        timeout_s: 30,
+      });
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { outcome: "APPLIED", output: { result: { savedTitle: "새 이름" } } };
+        },
+      };
+    }
     if (url === "http://127.0.0.1:18790/monitor/state") {
       return { ok: true, status: 200, async json() { return monitorState; } };
     }
@@ -77,7 +99,12 @@ vm.runInContext(source, context);
   assert.doesNotMatch(monitorSource, /monitor-ai-section" hidden/);
   assert.match(monitorSource, /id="monitorBctNodesRefresh"/);
   assert.match(monitorSource, /refreshMonitorBctWindowNodes/);
-  const shell = context.MonitorBctShell.create();
+  assert.match(monitorSource, /addEventListener\("contextmenu"/);
+  assert.match(monitorSource, /monitorBctShell\.renameConversation\(node, title\)/);
+  assert.match(monitorSource, /event\.target === overlay/);
+  assert.match(monitorSource, /event\.key === "Escape"/);
+  assert.match(monitorSource, /dialog\.addEventListener\("submit"/);
+  const shell = context.MonitorBctShell.create({ randomId: () => "test-id" });
   const health = await shell.health();
   assert.equal(health.service, "bct-core");
   assert.equal(health.generation, 3);
@@ -89,8 +116,12 @@ vm.runInContext(source, context);
     [[10, 11, "OPEN", true, false], [12, 22, "OPEN", false, true]],
   );
   assert.equal(nodes[0].conversationKey, "chat-one");
+  assert.equal(nodes[0].sessionId, "session-live");
   assert.equal(nodes[1].conversationKey, "");
   assert.throws(() => shell.windowNodes({ rcc: {} }), /BCT_RCC_STATE_INVALID/);
+  const renamed = await shell.renameConversation(nodes[0], " 새 이름 ");
+  assert.equal(renamed.operationId, "monitor.rename.test-id");
+  await assert.rejects(shell.renameConversation(nodes[1], "이름"), /BCT_RENAME_EXACT_IDENTITY_REQUIRED/);
   await shell.openStatus();
   await shell.openLocalLlm();
   assert.deepEqual(
