@@ -28,6 +28,7 @@ class CoreRecoveryTaskTests(unittest.TestCase):
         self.assertEqual("IgnoreNew", task.findtext(".//t:MultipleInstancesPolicy", namespaces=namespace))
         self.assertNotIn("ACT", document)
         self.assertNotIn("codex-runtimes", document)
+        self.assertNotIn("<?xml", document)
 
 
 if __name__ == "__main__":
