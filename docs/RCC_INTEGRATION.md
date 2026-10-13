@@ -106,3 +106,13 @@ only if the terminal receipt is persisted, successful and non-ambiguous, has a
 conversation and reply, and its complete bootstrap fingerprint exactly matches
 the create operation, RCC instance/session, tab/window and submitted text.
 Missing, pending, failed or mismatched evidence remains `UNKNOWN`.
+
+`BCT RCC 1.0.4` adds `create-and-send` as the normal new-chat path. One BCT
+operation creates a tab or independent window, submits the exact draft once,
+waits read-only for the durable assistant result, and returns the conversation
+identity and reply. Network-start and exact-user-turn evidence race in parallel,
+so a missing network observer no longer adds a fixed five-second delay after
+the DOM already proves submission. Timestamp-only stage evidence covers editor
+ready, exact draft, send-button ready/click, user-turn confirmation and
+conversation capture. `reconcile-create-and-send` is the only release path for
+an UNKNOWN composed parent and requires its deterministic child receipt.

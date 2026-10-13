@@ -42,6 +42,7 @@ class OperationCoordinator:
         rcc_command = str(arguments.get("command") or "").strip().lower()
         if capability == "relay_browser" and rcc_command in {
             "result", "reconcile-send-to-created-tab",
+            "result-of-create-and-send", "reconcile-create-and-send",
         }:
             # The RCC result endpoint is scoped to an operation owned by this exact work.
             # It must never be a cross-work arbitrary relay receipt lookup.
@@ -56,13 +57,23 @@ class OperationCoordinator:
             ) != str(arguments.get("instance_id") or "").strip():
                 raise PreconditionError("RCC_RESULT_INSTANCE_MISMATCH")
             if original.state is not OperationState.FINISHED or not (
-                original.evidence.get("command") == "send-to-created-tab"
-                or str(original.error or "").startswith("RCC_HOST_OUTCOME_UNVERIFIED:")
+                (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
+                 and (original.evidence.get("command") == "create-and-send"
+                      or str(original.error or "").startswith("RCC_COMPOSE_")))
+                or (rcc_command not in {"result-of-create-and-send", "reconcile-create-and-send"}
+                    and (original.evidence.get("command") == "send-to-created-tab"
+                         or str(original.error or "").startswith(
+                             "RCC_HOST_OUTCOME_UNVERIFIED:")))
             ):
                 raise PreconditionError("RCC_RESULT_ORIGINAL_SEND_REQUIRED")
             if rcc_command == "reconcile-send-to-created-tab" and (
                 original.outcome is not Outcome.UNKNOWN
                 or str(original.error or "") != "RCC_HOST_OUTCOME_UNVERIFIED:SUBMIT_UNKNOWN"
+            ):
+                raise PreconditionError("RCC_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
+            if rcc_command == "reconcile-create-and-send" and (
+                original.outcome is not Outcome.UNKNOWN
+                or not str(original.error or "").startswith("RCC_COMPOSE_")
             ):
                 raise PreconditionError("RCC_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
         request = replace(

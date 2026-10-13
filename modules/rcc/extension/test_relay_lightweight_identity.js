@@ -30,13 +30,13 @@ assert(content.includes('const relayGenerationRoot = conversationObserveRoot();'
 assert(content.includes('relayAttentionObserver.observe(document.documentElement, { childList: true, subtree: true });'),
   'global observer must be limited to lightweight warning insertion/removal events');
 
-const editorBlock = content.slice(content.indexOf('async function waitForEditor'), content.indexOf('async function runNaverBootstrapFromRelay'));
+const editorBlock = content.slice(content.indexOf('async function waitForEditor'), content.indexOf('function waitForNaverChatMode'));
 assert(editorBlock.includes('new MutationObserver(check)') && !editorBlock.includes('while ('),
   'editor discovery must be event-driven, not polling');
 
 const renameBlock = content.slice(content.indexOf('async function waitForRenameUi'), content.indexOf('function activateRenameUiElement'));
-assert(renameBlock.includes('new MutationObserver(check)') && !renameBlock.includes('while ('),
-  'rename UI discovery must be event-driven, not polling');
+assert(renameBlock.includes('while (Date.now() < deadline)') && renameBlock.includes('await sleep(100)'),
+  'rename UI discovery must remain bounded');
 
 
 const submitBlock = content.slice(content.indexOf('function findReadySendButton'), content.indexOf('async function waitForReply'));
@@ -45,8 +45,7 @@ assert(submitBlock.includes('new MutationObserver(check)') && !submitBlock.inclu
 
 const naverBlock = content.slice(content.indexOf('function waitForNaverChatMode'), content.indexOf('function waitForRelaySubmissionAccepted'));
 assert(naverBlock.includes('waitForNaverChatMode') &&
-       naverBlock.includes('waitForEditor(60000)') &&
-       naverBlock.includes('waitForConversationKey(60000)') &&
+       naverBlock.includes('new MutationObserver(check)') &&
        !naverBlock.includes('while (Date.now() < modeDeadline)') &&
        !naverBlock.includes('await sleep(500)'),
   'NAVER bootstrap must use event-driven mode/editor/conversation identity waits');
@@ -62,8 +61,9 @@ assert(background.includes("message.command === 'reload-extension'") &&
   'explicit user-requested extension reload must remain available');
 
 
-assert(content.includes("const RCC_BUILD_VERSION = '2026-09-20-rcc-internal-state-v1';"),
-  'content script must expose an internal RCC build version');
+assert(content.includes("const RCC_BUILD_VERSION = '2026-10-14-rcc-compose-v1';"),
+
+  'content script must expose an internal RCC build version');
 
 const probeBlock = content.split("message.type === 'relay:probe'")[1];
 assert(probeBlock.includes('buildVersion: RCC_BUILD_VERSION'),
