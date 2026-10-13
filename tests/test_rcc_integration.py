@@ -137,7 +137,7 @@ class RccIntegrationTests(unittest.TestCase):
                 "id": "unknown-bootstrap", "resultState": "RESULT_PERSISTED",
                 "conversationKey": "conversation-1234", "ok": False,
                 "error": "net::ERR_ABORTED", "ackState": "UNACKED",
-                "submitState": "SUBMIT_UNKNOWN", "tabId": 10,
+                "tabId": 10,
                 "fingerprint": '["create-1","instance123","session-1",10,11,"hello"]',
             },
         }
@@ -150,6 +150,9 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual("unknown-bootstrap", self.client.calls[-1]["text"])
         self.assertEqual(
             "unknown-bootstrap", reconciled.evidence["reconciled_operation_id"]
+        )
+        self.assertEqual(
+            "LEGACY_OMITTED_VERIFIED_BY_ORIGINAL", reconciled.evidence["submit_state"]
         )
         self.client.result = {"type": "host:result", "ok": True}
         next_mutation = self.call("after-reconciliation", {
@@ -198,6 +201,23 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED, result.outcome)
         self.assertEqual("create-1", self.client.calls[0]["extra"]["operationId"])
         self.assertEqual("instance123", self.client.calls[0]["extra"]["instanceId"])
+
+    def test_extension_reload_is_an_explicit_idempotent_mutation(self):
+        self.client.result = {
+            "type": "host:result", "requestId": "reload-1", "ok": True,
+            "reloading": True,
+        }
+        first = self.call("reload-1", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        duplicate = self.call("reload-1", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, first.outcome)
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(1, len(self.client.calls))
+        self.assertEqual("reload-extension", self.client.calls[0]["command"])
+        self.assertEqual("reload-1", self.client.calls[0]["extra"]["operationId"])
 
     def test_bootstrap_send_requires_exact_creation_identity(self):
         with self.assertRaisesRegex(PreconditionError, "RCC_BOOTSTRAP_IDENTITY_REQUIRED"):

@@ -86,3 +86,7 @@ An old `SUBMIT_UNKNOWN` claim may be released only through
 operation and RCC instance, requires a persisted terminal result with no pending
 host work and a conversation ID, records a separate reconciliation operation,
 and does not rewrite or replay the original UNKNOWN operation.
+For an existing 1.0.1 receipt, the public projection may omit `submitState`;
+that legacy case is accepted only when the original BCT error is exactly
+`RCC_HOST_OUTCOME_UNVERIFIED:SUBMIT_UNKNOWN` and all terminal/bootstrap identity
+fences still match. Newer receipts expose and verify `submitState` directly.
