@@ -39,7 +39,10 @@ class OperationCoordinator:
                                       approval_ref=approval_ref)
         if decision.kind is not DecisionKind.ALLOW:
             raise AuthorizationError(decision.reason_code + ":" + decision.next_action)
-        if capability == "relay_browser" and str(arguments.get("command") or "").strip().lower() == "result":
+        rcc_command = str(arguments.get("command") or "").strip().lower()
+        if capability == "relay_browser" and rcc_command in {
+            "result", "reconcile-send-to-created-tab",
+        }:
             # The RCC result endpoint is scoped to an operation owned by this exact work.
             # It must never be a cross-work arbitrary relay receipt lookup.
             relay_id = str(arguments.get("relay_id") or "").strip()
@@ -57,6 +60,11 @@ class OperationCoordinator:
                 or str(original.error or "").startswith("RCC_HOST_OUTCOME_UNVERIFIED:")
             ):
                 raise PreconditionError("RCC_RESULT_ORIGINAL_SEND_REQUIRED")
+            if rcc_command == "reconcile-send-to-created-tab" and (
+                original.outcome is not Outcome.UNKNOWN
+                or not str(original.error or "").startswith("RCC_HOST_OUTCOME_UNVERIFIED:")
+            ):
+                raise PreconditionError("RCC_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
         request = replace(
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
@@ -132,6 +140,7 @@ class OperationCoordinator:
             stored = self.store.finish_operation(
                 operation_id=operation_id, outcome=result.outcome, evidence=result.evidence,
                 error=None, release_claims=result.release_claims,
+                reconciled_operation_ids=result.reconciled_operation_ids,
             )
             return replace(stored, output=result.output)
         except PreconditionError as exc:

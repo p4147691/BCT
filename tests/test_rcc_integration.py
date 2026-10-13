@@ -119,6 +119,74 @@ class RccIntegrationTests(unittest.TestCase):
                            "relay_id": "original-send"},
             )
 
+    def test_terminal_result_reconciles_only_exact_unknown_claim(self):
+        self.client.result = {
+            "type": "host:result", "ok": False, "state": "SUBMIT_UNKNOWN"
+        }
+        original = self.call("unknown-bootstrap", {
+            "command": "send-to-created-tab", "instance_id": "instance123",
+            "session_id": "session-1", "tab_id": 10, "window_id": 11,
+            "create_operation_id": "create-1", "text": "hello",
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+
+        self.client.result = {
+            "type": "host:result", "ok": True, "relayId": "unknown-bootstrap",
+            "found": True, "completed": True, "pending": False,
+            "result": {
+                "id": "unknown-bootstrap", "resultState": "RESULT_PERSISTED",
+                "conversationKey": "conversation-1234", "ok": False,
+                "error": "net::ERR_ABORTED", "ackState": "UNACKED",
+                "submitState": "SUBMIT_UNKNOWN", "tabId": 10,
+                "fingerprint": '["create-1","instance123","session-1",10,11,"hello"]',
+            },
+        }
+        reconciled = self.call("reconcile-bootstrap", {
+            "command": "reconcile-send-to-created-tab",
+            "instance_id": "instance123", "relay_id": "unknown-bootstrap",
+        })
+        self.assertEqual(Outcome.APPLIED, reconciled.outcome)
+        self.assertEqual("result", self.client.calls[-1]["command"])
+        self.assertEqual("unknown-bootstrap", self.client.calls[-1]["text"])
+        self.assertEqual(
+            "unknown-bootstrap", reconciled.evidence["reconciled_operation_id"]
+        )
+        self.client.result = {"type": "host:result", "ok": True}
+        next_mutation = self.call("after-reconciliation", {
+            "command": "create-chat-tab", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, next_mutation.outcome)
+
+    def test_reconciliation_without_terminal_receipt_keeps_original_claim(self):
+        self.client.result = {
+            "type": "host:result", "ok": False, "state": "SUBMIT_UNKNOWN"
+        }
+        self.call("unknown-bootstrap", {
+            "command": "send-to-created-tab", "instance_id": "instance123",
+            "session_id": "session-1", "tab_id": 10, "window_id": 11,
+            "create_operation_id": "create-1", "text": "hello",
+        })
+        self.client.result = {
+            "type": "host:result", "ok": True, "relayId": "unknown-bootstrap",
+            "found": True, "completed": True, "pending": False,
+            "result": {
+                "id": "unknown-bootstrap", "resultState": "RESULT_PERSISTED",
+                "submitState": "SUBMIT_UNKNOWN", "conversationKey": "conversation-1234",
+                "tabId": 10, "fingerprint": '["not-a-bootstrap-fingerprint"]',
+            },
+        }
+        rejected = self.call("reconcile-incomplete", {
+            "command": "reconcile-send-to-created-tab",
+            "instance_id": "instance123", "relay_id": "unknown-bootstrap",
+        })
+        self.assertEqual(Outcome.FAILED, rejected.outcome)
+        self.assertEqual("RCC_RECONCILIATION_EVIDENCE_INSUFFICIENT", rejected.error)
+        self.client.result = {"type": "host:result", "ok": True}
+        with self.assertRaisesRegex(Exception, "unknown-bootstrap:FINISHED:UNKNOWN"):
+            self.call("still-blocked", {
+                "command": "create-chat-tab", "instance_id": "instance123",
+            })
+
     def test_browser_mutation_uses_bct_operation_id(self):
         self.client.result = {
             "type": "host:result", "requestId": "create-1", "ok": True,

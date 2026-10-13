@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "41415bfbfd91a709a40ba261bd5cd6310964ec67ba33ee4d3a1be14b740e5397",
-            "content.js": "07884b56191e52fddd00bde2b39ab690e63ec4eeac1854410b8aab2f4cc6f60a",
-            "manifest.json": "86124e21fd9ddb70a51e61ffa231f27f1529cdf2784eeefd765f7324347d62c3",
+            "background.js": "c98195324962ca63711cf8a98e6de9641aeaf3458ca012fdbcf9d36a03f4d90b",
+            "content.js": "5af022ebf266f505baac254285c4b148713ee748229eb96d74ec0753ad824b0f",
+            "manifest.json": "8c878c7db1f2d264161c30f6b3c120d397a489154666be63e8b784b43d48b640",
             "relay_core.js": "27d95fdaa6bd3586ff3aa2cb9279edaf02725a44afad374a3da6b3f7261adc91",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.1", manifest["version"])
-        self.assertEqual("1.0.1 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.2", manifest["version"])
+        self.assertEqual("1.0.2 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -69,6 +69,32 @@ class RccSourceBaselineTests(unittest.TestCase):
             manifest["allowed_origins"],
         )
         self.assertNotIn(r"D:\ACT", json.dumps(manifest))
+
+    def test_exact_send_button_transition_gate(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is unavailable")
+        completed = subprocess.run(
+            [node, "test_issue57_editor_gate.js"],
+            cwd=str(self.extension),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+        self.assertIn("7 tests PASS", completed.stdout)
+
+    def test_first_message_navigation_ack_recovery(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is unavailable")
+        completed = subprocess.run(
+            [node, "test_issue57_navigation_ack.js"],
+            cwd=str(self.extension),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+        self.assertIn("7 negative fences PASS", completed.stdout)
 
     def test_runtime_javascript_has_valid_syntax(self):
         node = shutil.which("node")

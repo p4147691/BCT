@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-10-rcc-e2e-recovery-v1';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-13-rcc-editor-gate-v1';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 
@@ -162,6 +162,7 @@ function publicResultFromReceipt(receipt) {
     tabId: Number(receipt.tabId) || null,
     conversationKey: String(receipt.conversationKey || ''),
     resultHash: String(receipt.resultHash || ''),
+    submitState: String(receipt.submitState || ''),
     resultState: String(receipt.resultState || ''),
     ackState: String(receipt.ackState || ''),
     receiverAckState: String(receipt.receiverAckState || ''),
@@ -1005,6 +1006,142 @@ async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, subm
   return { ok: true, recovered: true, recoveredReply: String(result.reply || ''), directDom: true };
 }
 
+function bootstrapSubmissionEvidenceIsExact(pending, recovered, expected) {
+  return pending?.bootstrapCreatedTab === true
+    && Number(pending?.tabId) === Number(expected?.tabId)
+    && Number(pending?.windowId) === Number(expected?.windowId)
+    && Number(pending?.networkStartedAt || 0) > 0
+    && !!String(pending?.networkRequestId || '')
+    && recovered?.ok === true
+    && Number(recovered?.tabId) === Number(expected?.tabId)
+    && Number(recovered?.windowId) === Number(expected?.windowId)
+    && !!String(recovered?.conversationKey || '')
+    && String(recovered?.submittedText || '') === String(expected?.submittedText || '');
+}
+
+function waitForCreatedConversationIdentity(tabId, windowId, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      try { chrome.tabs.onUpdated.removeListener(checkUpdate); } catch (_) {}
+      try { chrome.tabs.onRemoved.removeListener(checkRemoved); } catch (_) {}
+    };
+    const finish = (error, value = null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      error ? reject(error) : resolve(value);
+    };
+    const inspect = async () => {
+      try {
+        const tab = await chrome.tabs.get(Number(tabId));
+        const conversationKey = RelayCore.conversationKey(tab?.url || '');
+        if (!isChatTab(tab) || Number(tab?.windowId) !== Number(windowId)) {
+          finish(new Error('BOOTSTRAP_ACK_TAB_IDENTITY_MISMATCH'));
+        } else if (conversationKey) {
+          finish(null, { tab, conversationKey });
+        }
+      } catch (error) {
+        finish(error);
+      }
+    };
+    const checkUpdate = (updatedTabId) => {
+      if (Number(updatedTabId) === Number(tabId)) inspect();
+    };
+    const checkRemoved = (removedTabId) => {
+      if (Number(removedTabId) === Number(tabId)) {
+        finish(new Error('BOOTSTRAP_ACK_TAB_REMOVED'));
+      }
+    };
+    chrome.tabs.onUpdated.addListener(checkUpdate);
+    chrome.tabs.onRemoved.addListener(checkRemoved);
+    timer = setTimeout(() => finish(new Error('BOOTSTRAP_ACK_CONVERSATION_TIMEOUT')), timeoutMs);
+    inspect();
+  });
+}
+
+async function recoverBootstrapSubmissionAfterTransportLoss(
+  operationId, tabId, windowId, submittedText, timeoutMs = 8000
+) {
+  const identity = await waitForCreatedConversationIdentity(tabId, windowId, timeoutMs);
+  const injected = await chrome.scripting.executeScript({
+    target: { tabId: Number(tabId) },
+    args: [String(submittedText || ''), Number(timeoutMs)],
+    func: (expectedRaw, waitMs) => new Promise((resolve) => {
+      const normalize = (value) => String(value || '')
+        .replace(/\r\n?/g, '\n')
+        .replace(/\u00a0/g, ' ')
+        .split('\n').map((line) => line.replace(/[ \t]+$/g, '')).join('\n').trim();
+      const expected = normalize(expectedRaw);
+      let observer = null;
+      let timer = null;
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        try { observer?.disconnect(); } catch (_) {}
+        if (timer) clearTimeout(timer);
+        resolve(value);
+      };
+      const userText = (unit) => {
+        const clone = unit.cloneNode(true);
+        clone.querySelectorAll('button,[role="button"],[contenteditable="true"]').forEach((item) => item.remove());
+        return normalize(clone.textContent || '');
+      };
+      const check = () => {
+        const candidates = Array.from(document.querySelectorAll(
+          '[data-message-author-role="user"],[data-content-search-unit-key$=":user"],[data-user-message-bubble="true"]'
+        )).filter((unit, index, all) => !all.some((other, otherIndex) =>
+          otherIndex !== index && other.contains(unit)
+        ));
+        const matches = candidates.filter((unit) => userText(unit) === expected);
+        if (matches.length === 1) finish({
+          ok: true,
+          conversationKey: location.pathname.match(/^\/c\/([a-z0-9-]{8,64})/i)?.[1] || '',
+          submittedText: expected,
+        });
+        else if (matches.length > 1) finish({ ok: false, error: 'BOOTSTRAP_ACK_USER_TURN_AMBIGUOUS' });
+      };
+      observer = new MutationObserver(check);
+      observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+      timer = setTimeout(() => finish({ ok: false, error: 'BOOTSTRAP_ACK_USER_TURN_TIMEOUT' }), waitMs);
+      check();
+    }),
+  });
+  const observed = injected?.[0]?.result || null;
+  const recovered = {
+    ...observed,
+    tabId: Number(identity.tab.id),
+    windowId: Number(identity.tab.windowId),
+    conversationKey: String(observed?.conversationKey || identity.conversationKey || ''),
+  };
+  const state = await loadState();
+  const pending = state.pending?.[operationId];
+  const expected = {
+    tabId, windowId,
+    submittedText: RelayCore.normalizeMessageText(submittedText || ''),
+  };
+  if (!bootstrapSubmissionEvidenceIsExact(pending, recovered, expected)
+      || recovered.conversationKey !== identity.conversationKey) {
+    throw new Error(String(observed?.error || 'BOOTSTRAP_ACK_EVIDENCE_INSUFFICIENT'));
+  }
+  pending.deliveryConfirmed = true;
+  pending.acceptedAt = Date.now();
+  pending.submittedAt = Number(pending.networkStartedAt) || Date.now();
+  pending.submissionState = 'SUBMITTED_RECOVERED_AFTER_NAVIGATION';
+  pending.conversationKey = identity.conversationKey;
+  pending.submitUnknown = false;
+  state.pending[operationId] = pending;
+  await chrome.storage.local.set({ pending: state.pending });
+  return {
+    ok: true, state: 'SUBMITTED_RECOVERED_AFTER_NAVIGATION', operationId,
+    tabId: Number(tabId), windowId: Number(windowId),
+    conversationKey: identity.conversationKey, recoveredAfterTransportLoss: true,
+  };
+}
+
 async function sendToChatTab(tabId, message) {
 
   try {
@@ -1231,6 +1368,14 @@ async function sendToCreatedTab(message) {
       });
 
     } catch (error) {
+
+      try {
+
+        return await recoverBootstrapSubmissionAfterTransportLoss(
+          operationId, Number(resolved.tab.id), Number(resolved.tab.windowId), payloadText
+        );
+
+      } catch (_) {}
 
       const unknownState = await loadState();
 
