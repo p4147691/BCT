@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import time
 from typing import Any
 
 from bct.core.models import (
@@ -30,6 +32,7 @@ _MUTATING_COMMANDS = {
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
+_BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
 
 
 def _positive_int(value: object, code: str) -> int:
@@ -56,11 +59,51 @@ def _sanitize(value: Any) -> Any:
     return value
 
 
+def _readback_request_id(operation_id: str) -> str:
+    digest = hashlib.sha256(operation_id.encode("utf-8")).hexdigest()[:16]
+    return operation_id[:55] + ".rb." + digest
+
+
+def _exact_bootstrap_terminal_success(
+    result: dict[str, Any], *, operation_id: str, values: dict[str, Any]
+) -> bool:
+    receipt = result.get("result") if isinstance(result.get("result"), dict) else {}
+    try:
+        fingerprint = json.loads(str(receipt.get("fingerprint") or ""))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    extra = values["extra"]
+    expected = [
+        extra.get("createOperationId"), values["instance_id"], extra.get("sessionId"),
+        extra.get("tabId"), extra.get("windowId"), values["text"],
+    ]
+    return (
+        result.get("ok") is True
+        and str(result.get("relayId") or "") == operation_id
+        and result.get("found") is True
+        and result.get("completed") is True
+        and result.get("pending") is False
+        and str(receipt.get("id") or "") == operation_id
+        and receipt.get("ok") is True
+        and receipt.get("ambiguous") is False
+        and str(receipt.get("resultState") or "") == "RESULT_PERSISTED"
+        and bool(str(receipt.get("conversationKey") or "").strip())
+        and bool(str(receipt.get("resultHash") or "").strip())
+        and bool(str(receipt.get("reply") or "").strip())
+        and fingerprint == expected
+        and int(receipt.get("tabId") or 0) == int(extra.get("tabId") or 0)
+    )
+
+
 class RelayBrowserFeature:
     capability = "relay_browser"
 
-    def __init__(self, client: RelayClient | None = None):
+    def __init__(
+        self, client: RelayClient | None = None,
+        *, result_readback_timeout_s: float = _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S,
+    ):
         self.client = client or NamedPipeRelayClient()
+        self.result_readback_timeout_s = result_readback_timeout_s
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         command = str(arguments.get("command") or "").strip().lower()
@@ -240,6 +283,40 @@ class RelayBrowserFeature:
             )
         raw_state = result.get("state")
         state = str(raw_state or "").upper() if not isinstance(raw_state, dict) else "STATE_RETURNED"
+        if values["command"] == "send-to-created-tab" and state == "SUBMIT_UNKNOWN":
+            deadline = time.monotonic() + min(
+                self.result_readback_timeout_s, float(values["timeout_s"])
+            )
+            readback_id = _readback_request_id(request.operation_id)
+            while time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                try:
+                    terminal = self.client.request(
+                        instance_id=values["instance_id"], request_id=readback_id,
+                        command="result", text=request.operation_id,
+                        timeout_s=max(0.1, min(2.0, remaining)),
+                    )
+                except (RelayUnavailable, RelayEffectUnknown):
+                    terminal = {}
+                if _exact_bootstrap_terminal_success(
+                    terminal, operation_id=request.operation_id, values=values
+                ):
+                    receipt = terminal["result"]
+                    return FeatureResult(Outcome.APPLIED, {
+                        "instance_id": values["instance_id"],
+                        "command": values["command"],
+                        "host_request_id": request.operation_id,
+                        "host_state": "SUBMITTED_CONFIRMED_BY_TERMINAL_RESULT",
+                        "conversation_key": str(receipt["conversationKey"]),
+                        "result_state": "RESULT_PERSISTED",
+                    }, output={"result": _sanitize(terminal)})
+                if (
+                    terminal.get("found") is True
+                    and terminal.get("completed") is True
+                    and terminal.get("pending") is False
+                ):
+                    break
+                time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
         if result.get("ok") is True:
             return FeatureResult(Outcome.APPLIED, {
                 "instance_id": values["instance_id"], "command": values["command"],

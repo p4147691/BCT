@@ -98,3 +98,11 @@ when the send is a created-tab bootstrap, the pre-submit turn set was empty,
 the new route has a conversation identity, and exactly one new user turn
 matches the submitted text. This does not relax identity changes for existing
 conversations and does not retry an UNKNOWN send.
+
+The BCT coordinator performs one bounded read-only result lookup when a
+`send-to-created-tab` dispatch initially reports `SUBMIT_UNKNOWN`. It never
+dispatches the message again. The original operation is accepted as `APPLIED`
+only if the terminal receipt is persisted, successful and non-ambiguous, has a
+conversation and reply, and its complete bootstrap fingerprint exactly matches
+the create operation, RCC instance/session, tab/window and submitted text.
+Missing, pending, failed or mismatched evidence remains `UNKNOWN`.
