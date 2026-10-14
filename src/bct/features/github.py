@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -307,7 +309,11 @@ class GitHubPullRequestFeature:
 
 
 def _check_evidence(runs: list[dict[str, Any]], required: list[str]) -> tuple[bool, list[dict[str, str]]]:
-    by_name = {str(run.get("name") or ""): run for run in runs}
+    by_name = {}
+    for run in runs:
+        name = str(run.get("name") or "")
+        if name not in by_name or int(run.get("id", 0)) > int(by_name[name].get("id", 0)):
+            by_name[name] = run
     evidence: list[dict[str, str]] = []
     ready = True
     for name in required:
@@ -342,15 +348,38 @@ class GitHubPullRequestStatusFeature:
             raise PreconditionError("GITHUB_REQUIRED_CHECKS_INVALID")
         if len(set(required)) != len(required):
             raise PreconditionError("GITHUB_REQUIRED_CHECKS_DUPLICATE")
+        wait = float(arguments.get("wait_seconds", 0))
+        if not math.isfinite(wait) or not 0 <= wait <= 300:
+            raise PreconditionError("GITHUB_WAIT_INVALID")
         return FeatureRequest(
             self.capability, f"{repository}#{number}",
             {"repository": repository, "number": number,
-             "expected_head": expected_head, "required_checks": required},
+             "expected_head": expected_head, "required_checks": required,
+             **({"wait_seconds": wait} if wait else {})},
             (f"github-pr:{repository.casefold()}:{number}",),
             {"expected_head": expected_head},
         )
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        values = request.arguments
+        started = time.monotonic()
+        deadline = started + values.get("wait_seconds", 0)
+        polls = 0
+        while True:
+            result = self._snapshot(request)
+            polls += 1
+            evidence = result.evidence
+            failed = any(check["status"] == "completed" and check["conclusion"] != "success"
+                         for check in evidence["checks"])
+            done = evidence["checks_ready"] or failed or evidence["state"] != "open"
+            if done or time.monotonic() >= deadline:
+                return FeatureResult(Outcome.APPLIED, {**evidence, "poll_count": polls,
+                    "wait_status": "READY" if evidence["checks_ready"] else (
+                        "FAILED" if failed else "CLOSED" if evidence["state"] != "open" else "PENDING"),
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 3)})
+            time.sleep(min(5.0, max(0, deadline - time.monotonic())))
+
+    def _snapshot(self, request: FeatureRequest) -> FeatureResult:
         values = request.arguments
         pull = self.client.get_pull_request(values["repository"], values["number"])
         head_sha = str(pull.get("head", {}).get("sha") or "").lower()
@@ -360,9 +389,12 @@ class GitHubPullRequestStatusFeature:
             self.client.get_check_runs(values["repository"], head_sha),
             values["required_checks"],
         )
+        after = self.client.get_pull_request(values["repository"], values["number"])
+        if str(after.get("head", {}).get("sha") or "").lower() != head_sha:
+            raise PreconditionError("GITHUB_PR_HEAD_MISMATCH")
         return FeatureResult(Outcome.APPLIED, {
-            **_pr_evidence(pull), "checks": checks, "checks_ready": ready,
-            "merged": bool(pull.get("merged")),
+            **_pr_evidence(after), "checks": checks, "checks_ready": ready,
+            "merged": bool(after.get("merged")),
         })
 
 

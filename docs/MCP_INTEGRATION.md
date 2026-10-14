@@ -14,6 +14,23 @@ Four management tools are added:
 - `bct_work_create`: create or recover one exact work record.
 - `bct_operation_get`: retrieve an operation receipt for the owning work.
 
+`bct_status(compact=true)` limits each history category to five rows, while preserving
+current state, counts and unresolved claims. Use `compact=false` for detailed history.
+`bct_operation_get(wait_seconds=0..25)` waits for an existing operation without dispatching
+it again. Receipt reuse is appropriate for immutable past results, not fresh health or CI.
+
+`bct_verify` accepts up to eight `{id, capability, arguments}` steps, restricted to bounded
+read metadata, existing tests and exact-head GitHub PR status. It requires the work and
+principal to allow every child capability and verifies current policy before each step.
+All resources are claimed atomically. It stops on the first failed/pending/unknown step;
+UNKNOWN retains claims. File content and test console output are not persisted. The
+receipt contains ordered evidence and timings, including completed steps before failure.
+Use `bct_read` batch when file contents, rather than verification metadata, are needed.
+
+Verification and positive `github_pr_status.wait_seconds` use the existing one-shot worker
+and survive MCP disconnect. Polling CI is local to that bounded operation, never a daemon.
+Recover results with `bct_operation_get`; do not create a new operation to retry UNKNOWN.
+
 Every capability tool accepts `work_id`, `operation_id`, `arguments`, and an optional
 `approval_ref`. It delegates to the same policy, work ownership, resource claim, duplicate
 operation, precondition, and outcome code used by direct BCT calls.

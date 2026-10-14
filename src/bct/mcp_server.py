@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import json
 import logging
+import math
 import time
 import uuid
 from contextvars import ContextVar
@@ -33,6 +34,8 @@ def _trace_stage(stage: str, **durations_ms: float) -> None:
 
 _GENERAL_TOOLS = ("bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get")
 _CAPABILITY_USAGE = {
+    "verify": "Run up to 8 read metadata, test, or github_pr_status steps using id/capability/arguments. Requires each child action in work scope. Background operation; retrieve durable summary with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
+    "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",
     "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use operation=directory_tree; combine related reads with operation=batch and items containing unique id, path, and optional directory_tree bounds.",
     "system_inspect": "Use arguments.operation as process_list, process, or port. process_list accepts optional query and limit; process requires pid; port requires port.",
     "monitor": "Use arguments.operation as status or validate.",
@@ -85,10 +88,18 @@ def build_mcp(
         ),
         structured_output=True,
     )
-    async def bct_status() -> dict[str, Any]:
+    async def bct_status(compact: bool = True) -> dict[str, Any]:
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
-        return await asyncio.to_thread(status_provider)
+        snapshot = await asyncio.to_thread(status_provider)
+        if compact and isinstance(snapshot.get("monitor"), dict):
+            monitor = dict(snapshot["monitor"])
+            for key in ("works", "operations", "events", "nodes", "connections"):
+                rows = monitor.get(key)
+                if isinstance(rows, list):
+                    monitor[key] = rows[:5]
+            snapshot = {**snapshot, "monitor": monitor, "compact": True}
+        return snapshot
 
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
     async def bct_work_create(
@@ -124,12 +135,16 @@ def build_mcp(
         return {"work": _work_dict(current), "duplicate": duplicate}
 
     @server.tool(description="Read one exact operation receipt owned by the current MCP work.", structured_output=True)
-    async def bct_operation_get(work_id: str, operation_id: str) -> dict[str, Any]:
-        return bct.store.get_operation_for(
-            operation_id=operation_id,
-            work_id=work_id,
-            principal_id=principal.principal_id,
-        ).as_dict()
+    async def bct_operation_get(work_id: str, operation_id: str, wait_seconds: float = 0) -> dict[str, Any]:
+        if not math.isfinite(wait_seconds) or not 0 <= wait_seconds <= 25:
+            raise ValueError("OPERATION_WAIT_INVALID")
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            result = await asyncio.to_thread(bct.store.get_operation_for,
+                operation_id=operation_id, work_id=work_id, principal_id=principal.principal_id)
+            if result.state.value == "FINISHED" or time.monotonic() >= deadline:
+                return result.as_dict()
+            await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
 
     def make_executor(capability: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
         async def execute(
@@ -140,6 +155,8 @@ def build_mcp(
         ) -> dict[str, Any]:
             background = (
                 capability == "deploy"
+                or capability == "verify"
+                or (capability == "github_pr_status" and float(arguments.get("wait_seconds", 0)) > 0)
                 or (capability == "service_control" and str(arguments.get("action") or "") != "status")
             )
             started_ns = time.perf_counter_ns()

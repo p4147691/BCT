@@ -18,6 +18,7 @@ from .features.github import (
     GitHubSyncMainFeature,
 )
 from .features.tests import TestFeature
+from .features.verification import VerificationFeature
 from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
@@ -51,6 +52,7 @@ class BCT:
             DecisionServiceFeature(policy_path),
         ):
             self.operations.register(feature)
+        self.operations.register(VerificationFeature(self.operations._features))
 
     def create_work(self, *, work_id: str, request_summary: str, roots: list[str],
                     actions: list[str], principal: Principal) -> Work:

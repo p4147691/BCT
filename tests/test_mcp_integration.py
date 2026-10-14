@@ -54,7 +54,7 @@ class MCPIntegrationTests(unittest.TestCase):
             "read", "write", "test", "git_commit", "github_push", "github_pr_create",
             "github_pr_status", "github_pr_merge", "github_sync_main", "deploy", "service_control",
             "relay_browser", "system_inspect", "execute", "decision_model", "decision_service", "monitor",
-            "process_session",
+            "process_session", "verify",
         ]
         (self.release / "bct.toml").write_text(
             "[policy]\n"
@@ -108,7 +108,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_relay_browser",
                         "bct_system_inspect", "bct_execute", "bct_decision_model", "bct_decision_service", "bct_monitor",
                         "bct_process_session",
-                        "bct_test", "bct_write",
+                        "bct_test", "bct_write", "bct_verify",
                     }
                     self.assertEqual(
                         expected_capability_tools | {
@@ -208,6 +208,37 @@ class MCPIntegrationTests(unittest.TestCase):
                     completed = await pending
                     self.assertFalse(completed.isError, completed)
                     self.assertEqual("APPLIED", completed.structuredContent["outcome"])
+
+                    await session.call_tool("bct_work_create", {
+                        "work_id": "verification", "request_summary": "bounded verification",
+                        "roots": [str(self.project)], "actions": ["verify", "read", "test"],
+                    })
+                    verification = {
+                        "work_id": "verification", "operation_id": "verification-1",
+                        "arguments": {"steps": [
+                            {"id": "source", "capability": "read", "arguments": {"path": str(self.project / "slow.py")}},
+                            {"id": "compile", "capability": "test", "arguments": {
+                                "cwd": str(self.project), "kind": "py_compile", "targets": ["slow.py"]}},
+                        ]},
+                    }
+                    accepted = await session.call_tool("bct_verify", verification)
+                    self.assertFalse(accepted.isError, accepted)
+                    duplicate = await session.call_tool("bct_verify", verification)
+                    self.assertTrue(duplicate.structuredContent["duplicate"])
+
+        # Disconnect before waiting: the one-shot worker must complete independently.
+        async with httpx.AsyncClient(headers=headers, timeout=30) as http_client:
+            async with streamable_http_client(url, http_client=http_client) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    completed = await session.call_tool("bct_operation_get", {
+                        "work_id": "verification", "operation_id": "verification-1", "wait_seconds": 25,
+                    })
+                    self.assertFalse(completed.isError, completed)
+                    self.assertEqual("APPLIED", completed.structuredContent["outcome"])
+                    self.assertEqual("PASS", completed.structuredContent["evidence"]["status"])
+                    self.assertEqual(2, len(completed.structuredContent["evidence"]["steps"]))
+                    self.assertNotIn("output", completed.structuredContent)
 
         monitor = httpx.get(f"http://127.0.0.1:{self.port}/monitor/state", timeout=3)
         self.assertEqual(200, monitor.status_code)

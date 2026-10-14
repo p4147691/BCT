@@ -13,7 +13,7 @@ from .core.models import OperationResult, Outcome, Principal
 from .service_runtime import atomic_json, process_identity
 
 
-BACKGROUND_CAPABILITIES = frozenset({"deploy", "service_control"})
+BACKGROUND_CAPABILITIES = frozenset({"deploy", "service_control", "verify", "github_pr_status"})
 
 
 def _runtime_root(bct: Any) -> Path:
@@ -118,8 +118,14 @@ def launch_background_operation(
         })
         return current
     except Exception as exc:
-        if process is not None and process.poll() is None:
-            process.terminate()
+        if process is not None:
+            # Popen returned: the worker may already have entered the feature. Failure
+            # to write launch metadata is not proof of no effect. Let its receipt win;
+            # a lost worker remains unresolved and must never release claims here.
+            return bct.store.get_operation_for(
+                operation_id=operation_id, work_id=work_id,
+                principal_id=principal.principal_id,
+            )
         return bct.store.finish_operation(
             operation_id=operation_id,
             outcome=Outcome.NOT_APPLIED,
