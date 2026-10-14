@@ -35,9 +35,10 @@ class VerificationTests(unittest.TestCase):
             {"id": "compile", "capability": "test", "arguments": {"cwd": str(self.root), "kind": "py_compile", "targets": ["sample.py"]}},
         ]
 
-    def call(self, operation="verify-1", steps=None, principal=None):
+    def call(self, operation="verify-1", steps=None, principal=None, arguments=None):
         return self.bct.operations.run(principal=principal or self.principal, work_id="work",
-            operation_id=operation, capability="verify", arguments={"steps": self.steps if steps is None else steps})
+            operation_id=operation, capability="verify",
+            arguments=arguments or {"steps": self.steps if steps is None else steps})
 
     def test_real_checks_duplicate_and_durable_metadata(self):
         result = self.call()
@@ -48,6 +49,13 @@ class VerificationTests(unittest.TestCase):
             self.assertTrue(self.call().duplicate)
         receipt = self.bct.store.get_operation_for(operation_id="verify-1", work_id="work", principal_id="owner")
         self.assertEqual(result.evidence, receipt.evidence)
+        journal = self.bct.store.get_operation_steps_for(
+            operation_id="verify-1", work_id="work", principal_id="owner",
+        )
+        self.assertEqual(["source", "compile"], [step["step_id"] for step in journal])
+        self.assertEqual(["FINISHED", "FINISHED"], [step["state"] for step in journal])
+        self.assertEqual(["APPLIED", "APPLIED"], [step["outcome"] for step in journal])
+        self.assertTrue(all(len(step["request_digest"]) == 64 for step in journal))
 
     def test_all_steps_prevalidated_and_principal_scoped(self):
         with patch.object(self.bct.operations._features["read"], "execute") as execute:
@@ -69,6 +77,9 @@ class VerificationTests(unittest.TestCase):
             result = self.call()
             self.assertEqual(Outcome.UNKNOWN, result.outcome)
             execute.assert_not_called()
+        journal = self.bct.store.get_operation_steps(operation_id="verify-1")
+        self.assertEqual("UNKNOWN", journal[0]["outcome"])
+        self.assertEqual("SKIPPED", journal[1]["state"])
         with self.assertRaises(ConflictError):
             self.call(operation="cannot-bypass")
 
@@ -77,6 +88,76 @@ class VerificationTests(unittest.TestCase):
             result = self.call(steps=[self.steps[1], {**self.steps[1], "id": "later"}])
             self.assertEqual(Outcome.FAILED, result.outcome)
             self.assertEqual(1, execute.call_count)
+        journal = self.bct.store.get_operation_steps(operation_id="verify-1")
+        self.assertEqual("FAILED", journal[0]["outcome"])
+        self.assertEqual("SKIPPED", journal[1]["state"])
+
+    def test_abrupt_worker_loss_leaves_exact_checkpoint_without_replay(self):
+        steps = [self.steps[0], self.steps[1], {**self.steps[0], "id": "later"}]
+        with patch.object(self.bct.operations._features["test"], "execute",
+                          side_effect=KeyboardInterrupt("simulated worker loss")):
+            with self.assertRaises(KeyboardInterrupt):
+                self.call(operation="abrupt", steps=steps)
+        operation = self.bct.store.get_operation_for(
+            operation_id="abrupt", work_id="work", principal_id="owner",
+        )
+        self.assertEqual("RUNNING", operation.state.value)
+        journal = self.bct.store.get_operation_steps(operation_id="abrupt")
+        self.assertEqual(["FINISHED", "RUNNING", "PENDING"], [step["state"] for step in journal])
+        self.assertEqual("APPLIED", journal[0]["outcome"])
+        self.assertIsNone(journal[1]["outcome"])
+
+    def test_fixed_local_recipe_and_versioned_digest(self):
+        arguments = {
+            "recipe_id": "local-python-validation",
+            "recipe_version": 1,
+            "inputs": {
+                "paths": [str(self.root / "sample.py")],
+                "cwd": str(self.root),
+                "kind": "py_compile",
+                "targets": ["sample.py"],
+                "timeout_s": 30,
+            },
+        }
+        result = self.call(operation="recipe-local", arguments=arguments)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("local-python-validation", result.evidence["recipe"]["id"])
+        self.assertEqual(1, result.evidence["recipe"]["version"])
+        self.assertEqual(64, len(result.evidence["recipe"]["plan_digest"]))
+        self.assertEqual(["sources", "tests"], [
+            step["step_id"] for step in self.bct.store.get_operation_steps(
+                operation_id="recipe-local",
+            )
+        ])
+        self.assertTrue(self.call(operation="recipe-local", arguments=arguments).duplicate)
+        changed = {**arguments, "inputs": {**arguments["inputs"], "timeout_s": 31}}
+        with self.assertRaises(ConflictError):
+            self.call(operation="recipe-local", arguments=changed)
+
+    def test_fixed_pr_recipe_and_invalid_recipe_contracts(self):
+        arguments = {
+            "recipe_id": "pr-readiness", "recipe_version": 1,
+            "inputs": {
+                "repository": "owner/repo", "number": 1,
+                "expected_head": self.sha, "required_checks": ["test"],
+                "wait_seconds": 0,
+            },
+        }
+        result = self.call(operation="recipe-pr", arguments=arguments)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("github_pr_status", self.bct.store.get_operation_steps(
+            operation_id="recipe-pr",
+        )[0]["capability"])
+        invalid = [
+            {**arguments, "recipe_version": 2},
+            {**arguments, "recipe_version": 1.0},
+            {**arguments, "recipe_id": "arbitrary"},
+            {**arguments, "steps": self.steps},
+            {**arguments, "inputs": {**arguments["inputs"], "unknown": True}},
+        ]
+        for index, value in enumerate(invalid):
+            with self.assertRaises(PreconditionError):
+                self.call(operation=f"invalid-recipe-{index}", arguments=value)
 
     def test_policy_change_between_steps_stops(self):
         reader = self.bct.operations._features["read"]

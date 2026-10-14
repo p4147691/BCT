@@ -248,6 +248,11 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual("APPLIED", completed.structuredContent["outcome"])
                     self.assertEqual("PASS", completed.structuredContent["evidence"]["status"])
                     self.assertEqual(2, len(completed.structuredContent["evidence"]["steps"]))
+                    self.assertEqual(2, len(completed.structuredContent["step_journal"]))
+                    self.assertTrue(all(
+                        step["state"] == "FINISHED"
+                        for step in completed.structuredContent["step_journal"]
+                    ))
                     self.assertNotIn("output", completed.structuredContent)
 
         monitor = httpx.get(f"http://127.0.0.1:{self.port}/monitor/state", timeout=3)

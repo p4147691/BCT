@@ -74,6 +74,15 @@ class Store:
                     event_id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
                     subject_id TEXT NOT NULL, data_json TEXT NOT NULL, created_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS operation_steps (
+                    operation_id TEXT NOT NULL, step_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
+                    capability TEXT NOT NULL, request_digest TEXT NOT NULL,
+                    state TEXT NOT NULL, outcome TEXT, evidence_json TEXT NOT NULL,
+                    error TEXT, started_at REAL, finished_at REAL,
+                    PRIMARY KEY(operation_id, step_id),
+                    UNIQUE(operation_id, ordinal),
+                    FOREIGN KEY(operation_id) REFERENCES operations(operation_id)
+                );
                 """
             )
 
@@ -356,6 +365,124 @@ class Store:
             row = db.execute("SELECT * FROM operations WHERE operation_id=?", (operation_id,)).fetchone()
         return self._row_result(row)
 
+    def initialize_operation_steps(self, *, operation_id: str,
+                                   steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Persist one immutable ordered plan before the first child is dispatched."""
+        with self.transaction() as db:
+            operation = db.execute(
+                "SELECT state FROM operations WHERE operation_id=?", (operation_id,),
+            ).fetchone()
+            if operation is None or operation["state"] != OperationState.RUNNING.value:
+                raise ConflictError("OPERATION_NOT_RUNNING")
+            existing = db.execute(
+                "SELECT step_id,ordinal,capability,request_digest FROM operation_steps "
+                "WHERE operation_id=? ORDER BY ordinal", (operation_id,),
+            ).fetchall()
+            expected = [
+                (str(step["step_id"]), int(step["ordinal"]), str(step["capability"]),
+                 str(step["request_digest"]))
+                for step in steps
+            ]
+            if existing:
+                actual = [
+                    (row["step_id"], row["ordinal"], row["capability"], row["request_digest"])
+                    for row in existing
+                ]
+                if actual != expected:
+                    raise ConflictError("OPERATION_STEP_PLAN_MISMATCH")
+            else:
+                for step_id, ordinal, capability, request_digest in expected:
+                    db.execute(
+                        "INSERT INTO operation_steps VALUES(?,?,?,?,?,'PENDING',NULL,'{}',NULL,NULL,NULL)",
+                        (operation_id, step_id, ordinal, capability, request_digest),
+                    )
+                self._event(db, "OPERATION_STEPS_INITIALIZED", operation_id, {
+                    "count": len(expected),
+                    "steps": [value[0] for value in expected],
+                })
+        return self.get_operation_steps(operation_id=operation_id)
+
+    def start_operation_step(self, *, operation_id: str, step_id: str) -> dict[str, Any]:
+        now = time.time()
+        with self.transaction() as db:
+            changed = db.execute(
+                "UPDATE operation_steps SET state='RUNNING',started_at=? "
+                "WHERE operation_id=? AND step_id=? AND state='PENDING'",
+                (now, operation_id, step_id),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("OPERATION_STEP_NOT_PENDING")
+            self._event(db, "OPERATION_STEP_STARTED", operation_id, {"step_id": step_id})
+        return self.get_operation_step(operation_id=operation_id, step_id=step_id)
+
+    def finish_operation_step(self, *, operation_id: str, step_id: str,
+                              outcome: Outcome, evidence: dict[str, Any],
+                              error: str | None = None) -> dict[str, Any]:
+        now = time.time()
+        with self.transaction() as db:
+            changed = db.execute(
+                "UPDATE operation_steps SET state='FINISHED',outcome=?,evidence_json=?,"
+                "error=?,finished_at=? WHERE operation_id=? AND step_id=? AND state='RUNNING'",
+                (outcome.value, json.dumps(evidence, sort_keys=True), error, now,
+                 operation_id, step_id),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("OPERATION_STEP_NOT_RUNNING")
+            self._event(db, "OPERATION_STEP_FINISHED", operation_id, {
+                "step_id": step_id, "outcome": outcome.value,
+            })
+        return self.get_operation_step(operation_id=operation_id, step_id=step_id)
+
+    def skip_pending_operation_steps(self, *, operation_id: str,
+                                     after_ordinal: int, reason: str) -> None:
+        now = time.time()
+        with self.transaction() as db:
+            rows = db.execute(
+                "SELECT step_id FROM operation_steps WHERE operation_id=? AND ordinal>? "
+                "AND state='PENDING' ORDER BY ordinal", (operation_id, after_ordinal),
+            ).fetchall()
+            for row in rows:
+                db.execute(
+                    "UPDATE operation_steps SET state='SKIPPED',outcome=?,evidence_json=?,"
+                    "finished_at=? WHERE operation_id=? AND step_id=? AND state='PENDING'",
+                    (Outcome.NOT_APPLIED.value, json.dumps({"code": reason}, sort_keys=True),
+                     now, operation_id, row["step_id"]),
+                )
+                self._event(db, "OPERATION_STEP_SKIPPED", operation_id, {
+                    "step_id": row["step_id"], "reason": reason,
+                })
+
+    def get_operation_step(self, *, operation_id: str, step_id: str) -> dict[str, Any]:
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT * FROM operation_steps WHERE operation_id=? AND step_id=?",
+                (operation_id, step_id),
+            ).fetchone()
+        finally:
+            db.close()
+        if row is None:
+            raise KeyError("OPERATION_STEP_NOT_FOUND")
+        return self._step_row(row)
+
+    def get_operation_steps(self, *, operation_id: str) -> list[dict[str, Any]]:
+        db = self._connect()
+        try:
+            rows = db.execute(
+                "SELECT * FROM operation_steps WHERE operation_id=? ORDER BY ordinal",
+                (operation_id,),
+            ).fetchall()
+        finally:
+            db.close()
+        return [self._step_row(row) for row in rows]
+
+    def get_operation_steps_for(self, *, operation_id: str, work_id: str,
+                                principal_id: str) -> list[dict[str, Any]]:
+        self.get_operation_for(
+            operation_id=operation_id, work_id=work_id, principal_id=principal_id,
+        )
+        return self.get_operation_steps(operation_id=operation_id)
+
     def get_operation_for(self, *, operation_id: str, work_id: str, principal_id: str) -> OperationResult:
         db = self._connect()
         try:
@@ -393,3 +520,18 @@ class Store:
             Outcome(row["outcome"]) if row["outcome"] else None,
             json.loads(row["evidence_json"]), duplicate, row["error"],
         )
+
+    @staticmethod
+    def _step_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "step_id": row["step_id"],
+            "ordinal": row["ordinal"],
+            "capability": row["capability"],
+            "request_digest": row["request_digest"],
+            "state": row["state"],
+            "outcome": row["outcome"],
+            "evidence": json.loads(row["evidence_json"]),
+            "error": row["error"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+        }
