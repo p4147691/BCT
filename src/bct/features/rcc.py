@@ -29,12 +29,13 @@ _RECONCILE_COMMANDS = {
     "reconcile-rename-conversation", "reclassify-rename-claim",
 }
 _RENAME_INSPECTION_COMMAND = "inspect-rename-receipt"
+_OPERATOR_QUARANTINE_COMMAND = "quarantine-legacy-rename-claim"
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "rename-conversation", "reload-extension", "send", "create-and-send",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
-    _RENAME_INSPECTION_COMMAND,
+    _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
 }
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
@@ -133,7 +134,8 @@ class RelayBrowserFeature:
             "command": command, "instance_id": instance_id,
             "timeout_s": timeout_s, "to": "", "text": "", "extra": {},
         }
-        if (command in {"result", "result-of-create-and-send", _RENAME_INSPECTION_COMMAND}
+        if (command in {"result", "result-of-create-and-send", _RENAME_INSPECTION_COMMAND,
+                        _OPERATOR_QUARANTINE_COMMAND}
                 or command in _RECONCILE_COMMANDS):
             allowed.add("relay_id")
             relay_id = str(arguments.get("relay_id") or "").strip()
@@ -151,6 +153,32 @@ class RelayBrowserFeature:
                 prepared["extra"].update({
                     "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
                     "conversationKey": conversation_key,
+                })
+            if command == _OPERATOR_QUARANTINE_COMMAND:
+                # This is an exceptional, audited containment action for a
+                # historical receipt that has already been evicted.  It never
+                # decides whether the rename applied and never releases the
+                # original UNKNOWN claim.
+                allowed.update({"session_id", "tab_id", "conversation_key", "title",
+                                "original_timeout_s", "operator_justification",
+                                "operator_acknowledgement"})
+                session_id = str(arguments.get("session_id") or "").strip()
+                conversation_key = str(arguments.get("conversation_key") or "").strip()
+                title = str(arguments.get("title") or "").strip()
+                justification = str(arguments.get("operator_justification") or "").strip()
+                acknowledgement = str(arguments.get("operator_acknowledgement") or "").strip()
+                if (not session_id or not conversation_key or not title or len(title) > 100
+                        or not justification or not acknowledgement or len(justification) > 500
+                        or len(acknowledgement) > 200):
+                    raise PreconditionError("RCC_RENAME_OPERATOR_QUARANTINE_ACK_REQUIRED")
+                prepared["extra"].update({
+                    "sessionId": session_id,
+                    "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                    "conversationKey": conversation_key,
+                    "title": title,
+                    "originalTimeoutS": float(arguments.get("original_timeout_s", 30.0)),
+                    "operatorJustification": justification,
+                    "operatorAcknowledgement": acknowledgement,
                 })
             if command in {"reconcile-rename-conversation", "reclassify-rename-claim"}:
                 allowed.update({"relay_id", "session_id", "tab_id", "conversation_key", "title", "original_timeout_s"})
@@ -256,7 +284,8 @@ class RelayBrowserFeature:
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
                 prepared["extra"]["conversationKey"])
-        elif command in _READ_COMMANDS or command in _RECONCILE_COMMANDS or command == _RENAME_INSPECTION_COMMAND:
+        elif (command in _READ_COMMANDS or command in _RECONCILE_COMMANDS
+              or command in {_RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND}):
             resource += ":read:" + command
         return FeatureRequest(
             self.capability, instance_id, prepared, (resource,),
@@ -410,7 +439,7 @@ class RelayBrowserFeature:
             host_command = (
                 "rename-receipt" if values["command"] in {
                     _RENAME_INSPECTION_COMMAND, "reconcile-rename-conversation",
-                    "reclassify-rename-claim",
+                    "reclassify-rename-claim", _OPERATOR_QUARANTINE_COMMAND,
                 }
                 else "recover-created-result"
                 if values["command"] == "reconcile-create-and-send"
@@ -446,6 +475,42 @@ class RelayBrowserFeature:
                 "tab_id": extra["tabId"],
                 "conversation_key": extra["conversationKey"],
                 "receipt_found": isinstance(result.get("receipt"), dict),
+            }, output={"result": _sanitize(result)})
+        if values["command"] == _OPERATOR_QUARANTINE_COMMAND:
+            observed = result.get("observed") if isinstance(result.get("observed"), dict) else {}
+            # An absent terminal receipt is the point of this containment path.
+            # Treat any other receipt state as evidence that canonical
+            # reconciliation, rather than operator quarantine, must be used.
+            missing_receipt = (
+                result.get("receipt") is None and result.get("receiptState") == "MISSING"
+            )
+            exact_observation = (
+                result.get("ok") is True
+                and result.get("relayId") == values["text"]
+                and result.get("instanceId") == values["instance_id"]
+                and observed.get("tabId") == extra["tabId"]
+                and observed.get("conversationKey") == extra["conversationKey"]
+                and observed.get("presence") == "OPEN"
+            )
+            if not (missing_receipt and exact_observation):
+                raise ConfirmedFailure("RCC_RENAME_OPERATOR_QUARANTINE_EVIDENCE_INSUFFICIENT",
+                                       release_claims=True)
+            return FeatureResult(Outcome.APPLIED, {
+                "command": _OPERATOR_QUARANTINE_COMMAND,
+                "audit_kind": "OPERATOR_QUARANTINE_NOT_RECONCILIATION",
+                "original_operation_id": values["text"],
+                "expected_original_digest": str(
+                    request.preconditions.get("original_request_digest") or ""),
+                "instance_id": values["instance_id"],
+                "new_resource_key": ("rcc-instance:" + values["instance_id"]
+                                     + ":rename:" + str(extra["tabId"])
+                                     + ":" + extra["conversationKey"]),
+                "observed_tab_id": observed["tabId"],
+                "observed_conversation_key": observed["conversationKey"],
+                "observed_presence": observed["presence"],
+                "receipt_state": "MISSING",
+                "operator_justification": extra["operatorJustification"],
+                "operator_acknowledgement": extra["operatorAcknowledgement"],
             }, output={"result": _sanitize(result)})
         if values["command"] in {"reconcile-rename-conversation", "reclassify-rename-claim"}:
             expected = extra

@@ -766,6 +766,132 @@ class RccIntegrationTests(unittest.TestCase):
             db.close()
         self.assertEqual(("rcc-instance:instance123", 1), tuple(claim))
 
+    def _make_legacy_broad_rename_claim(self, tag="operator-quarantine"):
+        self._rename_recovery_fixture(tag)
+        original_id = "original-" + tag
+        db = self.bct.store._connect()
+        try:
+            db.execute("UPDATE resource_claims SET resource_key=? WHERE operation_id=?",
+                       ("rcc-instance:instance123", original_id))
+            db.commit()
+        finally:
+            db.close()
+        return original_id
+
+    def _operator_quarantine_args(self, original_id):
+        return {
+            "command": "quarantine-legacy-rename-claim", "instance_id": "instance123",
+            "relay_id": original_id, "session_id": "session-original", "tab_id": 114,
+            "conversation_key": "conv-abc", "title": "새 제목",
+            "operator_justification": "Historical terminal receipt was evicted; isolate only this rename.",
+            "operator_acknowledgement": "Original UNKNOWN remains unresolved and is not retried.",
+        }
+
+    def _missing_rename_receipt_observation(self, original_id):
+        return {
+            "type": "host:result", "ok": True, "instanceId": "instance123",
+            "relayId": original_id, "receipt": None, "receiptState": "MISSING",
+            "observed": {"tabId": 114, "conversationKey": "conv-abc",
+                         "presence": "OPEN", "title": "이전 제목"},
+        }
+
+    def test_operator_quarantine_narrows_only_missing_receipt_legacy_claim(self):
+        original_id = self._make_legacy_broad_rename_claim()
+        self.client.result = self._missing_rename_receipt_observation(original_id)
+        quarantined = self.call("operator-quarantine", self._operator_quarantine_args(original_id))
+        self.assertEqual(Outcome.APPLIED, quarantined.outcome)
+        self.assertEqual("rename-receipt", self.client.calls[-1]["command"])
+        self.assertEqual("OPERATOR_QUARANTINE_NOT_RECONCILIATION",
+                         quarantined.evidence["audit_kind"])
+        original = self.bct.store.get_operation_for(
+            operation_id=original_id, work_id="rcc-work", principal_id="codex")
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_HOST_OUTCOME_UNVERIFIED:MISSING", original.error)
+        db = self.bct.store._connect()
+        try:
+            claim = db.execute(
+                "SELECT resource_key,unresolved FROM resource_claims WHERE operation_id=?",
+                (original_id,)).fetchone()
+            audit = db.execute(
+                "SELECT kind FROM events WHERE subject_id=? ORDER BY event_id DESC",
+                (original_id,)).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(("rcc-instance:instance123:rename:114:conv-abc", 1), tuple(claim))
+        self.assertEqual("RCC_RENAME_CLAIM_OPERATOR_QUARANTINED", audit)
+
+    def test_operator_quarantine_fails_closed_for_receipt_or_observation_mismatch(self):
+        for case in ("terminal", "wrong-tab", "closed"):
+            with self.subTest(case=case):
+                self.tearDown()
+                self.setUp()
+                original_id = self._make_legacy_broad_rename_claim(case)
+                proof = self._missing_rename_receipt_observation(original_id)
+                if case == "terminal":
+                    proof["receiptState"] = "TERMINAL"
+                elif case == "wrong-tab":
+                    proof["observed"]["tabId"] = 115
+                else:
+                    proof["observed"]["presence"] = "CLOSED"
+                self.client.result = proof
+                result = self.call("operator-quarantine-" + case,
+                                   self._operator_quarantine_args(original_id))
+                self.assertNotEqual(Outcome.APPLIED, result.outcome)
+                original = self.bct.store.get_operation_for(
+                    operation_id=original_id, work_id="rcc-work", principal_id="codex")
+                self.assertEqual(Outcome.UNKNOWN, original.outcome)
+                db = self.bct.store._connect()
+                try:
+                    claim = db.execute(
+                        "SELECT resource_key,unresolved FROM resource_claims WHERE operation_id=?",
+                        (original_id,)).fetchone()
+                finally:
+                    db.close()
+                self.assertEqual(("rcc-instance:instance123", 1), tuple(claim))
+
+    def test_operator_quarantine_requires_acknowledgement_and_exact_owner(self):
+        original_id = self._make_legacy_broad_rename_claim("operator-fences")
+        arguments = self._operator_quarantine_args(original_id)
+        arguments["operator_acknowledgement"] = ""
+        with self.assertRaisesRegex(PreconditionError, "OPERATOR_QUARANTINE_ACK_REQUIRED"):
+            self.call("operator-quarantine-no-ack", arguments)
+        foreign = Principal("foreign", "test", frozenset({"relay_browser"}))
+        self.bct.create_work(work_id="foreign-work", request_summary="foreign",
+                             roots=[str(self.root)], actions=["relay_browser"], principal=foreign)
+        with self.assertRaisesRegex(Exception, "OPERATION_RESULT_ACCESS_DENIED"):
+            self.bct.operations.run(
+                principal=foreign, work_id="foreign-work", operation_id="operator-foreign",
+                capability="relay_browser", arguments=self._operator_quarantine_args(original_id),
+            )
+
+    def test_operator_quarantine_requires_exact_original_request_digest_before_read(self):
+        for field, replacement in {
+            "session_id": "session-other", "tab_id": 115,
+            "conversation_key": "conv-other", "title": "다른 제목",
+        }.items():
+            with self.subTest(field=field):
+                self.tearDown()
+                self.setUp()
+                original_id = self._make_legacy_broad_rename_claim("digest-" + field)
+                arguments = self._operator_quarantine_args(original_id)
+                arguments[field] = replacement
+                prior_calls = len(self.client.calls)
+                with self.assertRaisesRegex(PreconditionError,
+                                            "RCC_RENAME_ORIGINAL_REQUEST_DIGEST_MISMATCH"):
+                    self.call("operator-quarantine-digest-" + field, arguments)
+                self.assertEqual(prior_calls, len(self.client.calls))
+                original = self.bct.store.get_operation_for(
+                    operation_id=original_id, work_id="rcc-work", principal_id="codex")
+                self.assertEqual(Outcome.UNKNOWN, original.outcome)
+                db = self.bct.store._connect()
+                try:
+                    claim = db.execute(
+                        "SELECT resource_key,unresolved FROM resource_claims WHERE operation_id=?",
+                        (original_id,)).fetchone()
+                finally:
+                    db.close()
+                self.assertEqual(("rcc-instance:instance123", 1), tuple(claim))
+
     def test_conversation_rename_rejects_missing_or_oversized_title(self):
         with self.assertRaisesRegex(PreconditionError, "RCC_RENAME_IDENTITY_REQUIRED"):
             self.call("rename-session-missing", {
