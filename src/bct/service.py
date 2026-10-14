@@ -52,7 +52,7 @@ class BCT:
             DecisionServiceFeature(policy_path),
         ):
             self.operations.register(feature)
-        self.operations.register(VerificationFeature(self.operations._features))
+        self.operations.register(VerificationFeature(self.operations._features, self.store))
 
     def create_work(self, *, work_id: str, request_summary: str, roots: list[str],
                     actions: list[str], principal: Principal) -> Work:

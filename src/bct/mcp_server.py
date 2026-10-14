@@ -35,7 +35,7 @@ def _trace_stage(stage: str, **durations_ms: float) -> None:
 _GENERAL_TOOLS = ("bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get")
 _CAPABILITY_USAGE = {
     "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; this requires verify and every child capability in work scope.",
-    "verify": "Run up to 8 read metadata, test, or github_pr_status steps using id/capability/arguments. Requires each child action in work scope. Background operation; retrieve durable summary with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
+    "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled. Requires each child action in work scope. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
     "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",
     "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use operation=directory_tree; combine related reads with operation=batch and items containing unique id, path, and optional directory_tree bounds.",
     "system_inspect": "Use arguments.operation as process_list, process, or port. process_list accepts optional query and limit; process requires pid; port requires port.",
@@ -144,7 +144,15 @@ def build_mcp(
             result = await asyncio.to_thread(bct.store.get_operation_for,
                 operation_id=operation_id, work_id=work_id, principal_id=principal.principal_id)
             if result.state.value == "FINISHED" or time.monotonic() >= deadline:
-                return result.as_dict()
+                value = result.as_dict()
+                steps = await asyncio.to_thread(
+                    bct.store.get_operation_steps_for,
+                    operation_id=operation_id, work_id=work_id,
+                    principal_id=principal.principal_id,
+                )
+                if steps:
+                    value["step_journal"] = steps
+                return value
             await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
 
     def make_executor(capability: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:

@@ -26,6 +26,10 @@ All resources are claimed atomically. It stops on the first failed/pending/unkno
 UNKNOWN retains claims. File content and test console output are not persisted. The
 receipt contains ordered evidence and timings, including completed steps before failure.
 Use `bct_read` batch when file contents, rather than verification metadata, are needed.
+The same tool accepts fixed versioned `local-python-validation` and `pr-readiness` recipes.
+Every prepared child is checkpointed in SQLite before dispatch and exposed by
+`bct_operation_get.step_journal`; an in-flight step after worker loss remains unresolved and
+is never treated as safe to replay merely because earlier steps are complete.
 
 Verification and positive `github_pr_status.wait_seconds` use the existing one-shot worker
 and survive MCP disconnect. Polling CI is local to that bounded operation, never a daemon.

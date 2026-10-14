@@ -24,6 +24,44 @@ retrieve the same ID if transport is lost. RUNNING means wait/inspect, not resub
 a new ID. FINISHED/UNKNOWN means investigate existing evidence; never retry the effect.
 The receipt is a permanent observation, not a current source or CI approval token.
 
+Each prepared step is also stored in the SQLite `operation_steps` journal before the first
+child is dispatched. `bct_operation_get` returns this as `step_journal`, including the stable
+step request digest, `PENDING/RUNNING/FINISHED/SKIPPED` state, outcome, bounded evidence and
+timestamps. A process loss can therefore distinguish completed steps from the exact in-flight
+step. It does not make that in-flight effect safe to retry: `RUNNING` without a terminal
+checkpoint remains unresolved until capability-specific reconciliation proves the effect.
+
+## Fixed recipes
+
+Versioned recipes use the same `verify` capability, policy checks, claims, worker and receipt.
+They are server-owned plans rather than caller-defined control flow. V1 exposes:
+
+- `local-python-validation` version `1`: one bounded batch metadata read followed by one
+  existing `py_compile` or `unittest` step.
+- `pr-readiness` version `1`: one exact-head required-check observation/wait.
+
+Submit a fixed recipe with `recipe_id`, exact `recipe_version`, and `inputs` instead of
+`steps`. Unknown recipe names, versions and input fields fail before an operation is recorded.
+The normalized plan receives a stable SHA-256 `plan_digest` in its final evidence.
+
+```json
+{
+  "recipe_id": "local-python-validation",
+  "recipe_version": 1,
+  "inputs": {
+    "paths": ["D:\\project\\module.py"],
+    "cwd": "D:\\project",
+    "kind": "py_compile",
+    "targets": ["module.py"],
+    "timeout_s": 60
+  }
+}
+```
+
+Recipes do not support arbitrary YAML, loops, conditions, nested recipes, writes, Git
+mutations, merge or deployment. Those remain separate capabilities with their existing
+approval and exact-effect contracts.
+
 For CI, add a `github_pr_status` step with repository, number, exact expected_head,
 required_checks, and optional wait_seconds up to 300. Standalone CI waits use the same
 existing capability. A pending check at the deadline is PENDING, not PASS. Verification
