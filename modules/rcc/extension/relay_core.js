@@ -132,6 +132,12 @@
     return { ready: true, terminal: true, reason: 'FINAL_RESPONSE_READY', candidate: selected.candidate };
   }
 
+  function needsDirectCaptureRecovery(result) {
+    return !(result?.ok === true
+      && result?.recovered === true
+      && normalizeMessageText(result?.recoveredReply));
+  }
+
   function makeResultEnvelope(from, id, text) {
     const safeFrom = normalizeRole(from);
     const safeId = String(id || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -156,6 +162,7 @@
     messageRoleFromEvidence,
     selectAssistantCandidate,
     classifyFinalResponse,
+    needsDirectCaptureRecovery,
     makeResultEnvelope
   };
 

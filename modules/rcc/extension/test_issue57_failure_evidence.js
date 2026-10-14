@@ -1,5 +1,6 @@
 const assert = require('assert');
 const fs = require('fs');
+const core = require('./relay_core.js');
 const content = fs.readFileSync('content.js', 'utf8');
 const background = fs.readFileSync('background.js', 'utf8');
 assert(content.includes("phase: 'FINAL_DOM_VALIDATION'"));
@@ -49,4 +50,16 @@ assert.strictEqual(recoverableFn({
     networkSignal: 'FAILED'
   }
 }), true);
+assert.strictEqual(typeof core.needsDirectCaptureRecovery, 'function');
+assert.strictEqual(core.needsDirectCaptureRecovery({
+  ok: false, recovered: false, error: 'RELAY_RECOVERY_DOM_UNKNOWN:ROUTE_TURN_NOT_RESOLVED'
+}), true);
+assert.strictEqual(core.needsDirectCaptureRecovery({
+  ok: true, recovered: true, recoveredReply: ''
+}), true);
+assert.strictEqual(core.needsDirectCaptureRecovery({
+  ok: true, recovered: true, recoveredReply: 'bounded result'
+}), false);
+assert(background.includes('RelayCore.needsDirectCaptureRecovery(recovered)'));
+assert(background.includes('captureRecoveryError'));
 console.log('Issue57 failure evidence tests PASS');

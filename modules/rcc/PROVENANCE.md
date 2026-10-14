@@ -332,6 +332,35 @@ Candidate extension payload SHA-256 for 1.0.16:
 | `extension/manifest.json` | `924ecc447798007dc9afb4ed03fa7dc5361216f7168afd04d5f0cfc4fef815be` |
 | `extension/relay_core.js` | `74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc` |
 
+## BCT RCC 1.0.17 canonical turn recovery candidate
+
+The first LIVE result-only recovery candidate still returned UNKNOWN after the
+exact assignment and exact assistant result were both rendered. Read-only DOM
+diagnostics showed nested compatibility and semantic wrappers for the same
+logical turn and message units. The route collector treated those wrappers as
+separate candidates, so the exact submitted turn could not be resolved.
+
+Version 1.0.17 canonicalizes a wrapper with one `data-turn-key` descendant to
+that keyed turn and prefers the one semantic message unit nested inside a
+legacy author-role wrapper. A structured content-recovery failure now invokes
+the existing direct DOM recovery path; a failed direct recovery preserves the
+original durable receipt but reports `recovered=false` instead of advertising
+the unchanged failure as recovered. Neither recovery path sends a message.
+
+The runtime build identifier is
+`2026-10-14-rcc-orchestration-recovery-v10`. Promotion requires the full Python
+and RCC JavaScript suites plus a fresh single manager/worker LIVE gate before
+any multi-worker chain.
+
+Candidate extension payload SHA-256 for 1.0.17:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `95523761698dde4c2f35d6c147cae0ab9a875a77d6c008958bdff988a1b2c2da` |
+| `extension/content.js` | `4d78084524018b634e3cda2d302953a6825afd9d50f4957957e535d19c05eb32` |
+| `extension/manifest.json` | `9fe7855146f17ff2119781054b7a780e194db557d74c551c1740588e82175119` |
+| `extension/relay_core.js` | `b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd` |
+
 ## BCT RCC 1.0.12 durable result and composer candidate
 
 Version 1.0.12 closes two fail-closed conditions found by the first 1.0.11
