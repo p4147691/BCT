@@ -13,8 +13,18 @@ from typing import Any
 from unittest.mock import Mock
 
 from bct import BCT
-from bct.core.models import ConfirmedFailure, Outcome, Principal, UnknownEffectError
+from bct.core.models import (
+    ConfirmedFailure,
+    ConflictError,
+    Outcome,
+    Principal,
+    UnknownEffectError,
+)
 from bct.features.deploy import DeploymentProfiles, _start_with_one_safe_retry
+from bct.runtime_server import (
+    GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+    build_server_config,
+)
 from bct.service_runtime import RuntimeServiceController, atomic_json, process_identity, read_json
 
 
@@ -154,6 +164,49 @@ class DeploymentServiceTests(unittest.TestCase):
             "profile": "test_runtime", "action": action, "expected_release_sha": head,
         })
 
+    def make_unknown_deploy_claim(self, operation: str) -> Path:
+        arguments = {
+            "profile": "test_runtime",
+            "expected_source_head": self.head,
+            "expected_current_source_head": self.head,
+            "restart": True,
+        }
+        created, _ = self.bct.operations.begin(
+            principal=self.principal,
+            work_id="deployment",
+            operation_id=operation,
+            capability="deploy",
+            arguments=arguments,
+        )
+        self.assertTrue(created)
+        receipt_path = self.runtime / "deployments" / f"{self.head}.json"
+        receipt = read_json(receipt_path)
+        self.assertIsNotNone(receipt)
+        atomic_json(receipt_path, {
+            **receipt,
+            "state": "ROLLBACK_FAILED",
+            "failure": "UnknownEffectError:SERVICE_SHUTDOWN_UNVERIFIED",
+            "rollback_failure": "PreconditionError:SERVICE_PROCESS_RUNNING_WITHOUT_HEALTH",
+        })
+        self.bct.store.finish_operation(
+            operation_id=operation,
+            outcome=Outcome.UNKNOWN,
+            evidence={"phase": "EXECUTION"},
+            error="DEPLOYMENT_ROLLBACK_UNVERIFIED:" + str(receipt_path),
+            release_claims=False,
+        )
+        return receipt_path
+
+    def reconcile(self, operation: str, original: str):
+        return self.call(operation, "deploy", {
+            "operation": "reconcile",
+            "original_operation_id": original,
+            "profile": "test_runtime",
+            "expected_source_head": self.head,
+            "expected_current_source_head": self.head,
+            "restart": False,
+        })
+
     def test_deploy_duplicate_restart_stop_and_start(self):
         deployed = self.deploy("deploy-1", self.head, None)
         self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
@@ -179,6 +232,38 @@ class DeploymentServiceTests(unittest.TestCase):
         started = self.service("start-1", "start", self.head)
         self.assertEqual("RUNNING", started.evidence["service"]["state"])
         self.assertNotEqual(second_pid, started.evidence["service"]["pid"])
+
+    def test_exact_unknown_deploy_can_be_reconciled_from_live_state(self):
+        deployed = self.deploy("deploy-before-unknown", self.head, None)
+        self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
+        self.make_unknown_deploy_claim("deploy-unknown")
+        with self.assertRaisesRegex(ConflictError, "deploy-unknown"):
+            self.deploy("deploy-blocked", self.head, self.head)
+
+        reconciled = self.reconcile("deploy-reconcile", "deploy-unknown")
+        self.assertEqual(Outcome.APPLIED, reconciled.outcome, reconciled.as_dict())
+        self.assertEqual(
+            "deploy-unknown", reconciled.evidence["reconciled_operation_id"]
+        )
+        after = self.deploy("deploy-after-reconcile", self.head, self.head)
+        self.assertEqual(Outcome.APPLIED, after.outcome, after.as_dict())
+
+    def test_reconciliation_mismatch_keeps_original_claim(self):
+        deployed = self.deploy("deploy-before-mismatch", self.head, None)
+        self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
+        receipt_path = self.make_unknown_deploy_claim("deploy-unknown-mismatch")
+        receipt = read_json(receipt_path)
+        atomic_json(receipt_path, {**receipt, "manifest_sha256": "0" * 64})
+
+        rejected = self.reconcile("deploy-reconcile-mismatch", "deploy-unknown-mismatch")
+        self.assertEqual(Outcome.NOT_APPLIED, rejected.outcome, rejected.as_dict())
+        with self.assertRaisesRegex(ConflictError, "deploy-unknown-mismatch"):
+            self.deploy("deploy-still-blocked", self.head, self.head)
+
+    def test_runtime_server_has_bounded_graceful_shutdown(self):
+        config = build_server_config(Mock(), port=self.port)
+        self.assertEqual(5, GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
+        self.assertEqual(5, config.timeout_graceful_shutdown)
 
     def test_start_retries_once_only_after_confirmed_no_effect(self):
         release = {"source_head": self.head}

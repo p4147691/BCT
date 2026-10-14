@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from .models import (
@@ -80,6 +81,35 @@ class OperationCoordinator:
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
         )
+        if capability == "deploy" and request.arguments.get("operation") == "reconcile":
+            original_id = request.arguments["original_operation_id"]
+            original = self.store.get_operation_for(
+                operation_id=original_id,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+            )
+            if self.store.get_operation_target_for(
+                operation_id=original_id,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+            ) != request.target:
+                raise PreconditionError("DEPLOYMENT_RECONCILE_TARGET_MISMATCH")
+            error_prefix = "DEPLOYMENT_ROLLBACK_UNVERIFIED:"
+            original_error = str(original.error or "")
+            receipt_matches = False
+            if original_error.startswith(error_prefix):
+                try:
+                    receipt_matches = Path(original_error[len(error_prefix):]).samefile(
+                        request.preconditions["reconciliation_receipt"]
+                    )
+                except OSError:
+                    receipt_matches = False
+            if (
+                original.state is not OperationState.FINISHED
+                or original.outcome is not Outcome.UNKNOWN
+                or not receipt_matches
+            ):
+                raise PreconditionError("DEPLOYMENT_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
         if not request.resources:
             raise ValueError("FEATURE_RESOURCE_REQUIRED")
         digest = hashlib.sha256(json.dumps({
