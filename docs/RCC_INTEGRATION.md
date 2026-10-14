@@ -180,3 +180,9 @@ conversation still match. It also compares contenteditable drafts using their
 direct paragraph structure, so ProseMirror's visual blank line does not turn an
 unchanged inserted newline into a false editor mismatch. Neither path weakens
 the pre-submit binding or exact-draft fences.
+
+RCC 1.0.13 applies that exact durable-receipt cleanup when the content record
+is still `submitted` as well as `completed`. This covers background-side exact
+DOM recovery finishing before the original content collector. Without an exact
+persisted receipt for the same tab and durable conversation, the old submitted
+record remains in place and a new relay stays blocked.

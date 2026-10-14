@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v5';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v6';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -2940,16 +2940,17 @@ async function recoverRelayExecutionAfterReload() {
 
 
 
+    const durableStatus = await relayPendingStatus(record.relayId);
+    if (durableStatus?.completed === true) {
+      // Background-side exact DOM recovery can persist a terminal receipt
+      // while this tab still says submitted or completed. The exact receipt
+      // proves the old prompt is done, so clear only local execution state.
+      clearRelayExecution(record.relayId);
+      try { await drainDeferredRelayQueue(); } catch (_) {}
+      return;
+    }
+
     if (record.phase === 'completed') {
-      const status = await relayPendingStatus(record.relayId);
-      if (status?.completed === true) {
-        // The background already has the exact durable receipt. A stale
-        // content-side completion record is therefore safe to clear without
-        // replaying the result or the original prompt.
-        clearRelayExecution(record.relayId);
-        try { await drainDeferredRelayQueue(); } catch (_) {}
-        return;
-      }
       if (record.result) await deliverTrackedRelayResultWithRetry(record, record.result);
       return;
     }
@@ -2960,7 +2961,7 @@ async function recoverRelayExecutionAfterReload() {
 
 
 
-      const status = await relayPendingStatus(record.relayId);
+      const status = durableStatus;
 
 
 
@@ -3044,7 +3045,7 @@ async function recoverRelayExecutionAfterReload() {
 
 
 
-    const status = await relayPendingStatus(record.relayId);
+    const status = durableStatus;
 
 
 

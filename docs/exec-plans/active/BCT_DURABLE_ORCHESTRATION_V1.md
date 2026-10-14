@@ -205,6 +205,13 @@ held its exact durable result (`ORCHESTRATION_TARGET_BUSY`). RCC 1.0.12 adds
 paragraph-aware draft comparison and exact durable-receipt cleanup. Both paths
 remain fail-closed when the text, tab, conversation, or receipt does not match.
 
+The first fresh 1.0.12 bootstrap returned `APPLIED`, but direct read-only UI
+evidence showed its content record still at `submitted` even though the
+background already held the exact terminal result. The next chain was not
+started. RCC 1.0.13 therefore applies the same exact receipt, tab, and durable
+conversation proof before clearing either a `submitted` or `completed` local
+record. No prompt or result is replayed.
+
 The original implementation acceptance proved 174 Python tests, all 15 RCC
 JavaScript test programs, Python compileall, JavaScript syntax, and
 `git diff --check`. Independent API, SQLite/recovery, and RCC audits all
