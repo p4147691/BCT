@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "a6518a52f17c10ec463454506fefb8daf8035b85a84ddd7c7206311d415536e4",
-            "content.js": "82067236285442ca1c38685027e750736cb787bb674b13fa6452eecd63fcdcb2",
-            "manifest.json": "2338ae089c439c1915c8b10bc5c90e5df00789176d108be187db129c6e047dc1",
+            "background.js": "d43b210d35cc2fe84213bcd8987bfd897920c278da373de619508e773e36deae",
+            "content.js": "0b3fcf472654c0bfd8309606d1bb22edec88a80d911bdd3cd90b5ab2f6d65954",
+            "manifest.json": "e417486dedb41a0f3c53c871c7441f46bccf13f2f613190a32c3cc62f211625c",
             "relay_core.js": "b74d8d5528eb7eaf60600ca3a046da351295c99f7bec1dfebf9b8f21192b2a31",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.7", manifest["version"])
-        self.assertEqual("1.0.7 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.8", manifest["version"])
+        self.assertEqual("1.0.8 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -51,8 +51,23 @@ class RccSourceBaselineTests(unittest.TestCase):
             "runIdempotentOperation", "create-chat-window", "send-to-created-tab",
             "PENDING_CREATE_RECEIPT_REQUIRED", "SUBMIT_UNKNOWN", "move-tab",
             "recover-created-result", "recoverCreatedResult",
+            "TARGET_BINDING_RECEIPT_MISMATCH",
         ):
             self.assertIn(marker, background)
+
+    def test_existing_conversation_send_fences_exact_binding_before_submit(self):
+        background = (self.extension / "background.js").read_text(encoding="utf-8")
+        dispatch = background.split(
+            "async function dispatchRelayOnce(", 1
+        )[1].split("async function deliverResult(", 1)[0]
+        self.assertIn("TARGET_BINDING_RECEIPT_MISMATCH", dispatch)
+        self.assertIn("TARGET_BINDING_CHANGED_BEFORE_DISPATCH", dispatch)
+        self.assertIn("String(targetBindingReceipt || '')", dispatch)
+        self.assertIn("String(messageHash || '')", dispatch)
+        self.assertLess(
+            dispatch.index("TARGET_BINDING_RECEIPT_MISMATCH"),
+            dispatch.index("sendToChatTab("),
+        )
 
     def test_recovery_requires_exact_turn_terminal_evidence_before_ignoring_stale_stop(self):
         content = (self.extension / "content.js").read_text(encoding="utf-8")
@@ -134,6 +149,19 @@ class RccSourceBaselineTests(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
         self.assertIn("4 tests PASS", completed.stdout)
+
+    def test_orchestration_exact_binding_runtime_fences(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is unavailable")
+        completed = subprocess.run(
+            [node, "test_orchestration_binding.js"],
+            cwd=str(self.extension),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+        self.assertIn("4 orchestration binding fences PASS", completed.stdout)
 
     def test_runtime_javascript_has_valid_syntax(self):
         node = shutil.which("node")

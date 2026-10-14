@@ -9,13 +9,16 @@ from typing import Any
 
 from . import BCT
 from .core.models import OperationState, Outcome, Principal
-from .service_runtime import atomic_json
+from .service_runtime import atomic_json, current_process_identity
 
 
 def _claim(path: Path) -> None:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        os.write(descriptor, (json.dumps({"pid": os.getpid(), "claimed_at": time.time()}) + "\n").encode("utf-8"))
+        identity = current_process_identity()
+        os.write(descriptor, (json.dumps({
+            **identity.as_dict(), "claimed_at": time.time(),
+        }, sort_keys=True) + "\n").encode("utf-8"))
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
@@ -35,12 +38,18 @@ def main() -> int:
     job_path = Path(arguments.job).resolve(strict=True)
     job = _load(job_path)
     result_path = Path(str(job["result_path"])).resolve()
-    _claim(Path(str(job["claim_path"])).resolve())
     not_before = float(job.get("not_before") or 0.0)
     if not_before > time.time():
         time.sleep(not_before - time.time())
 
     bct = BCT(state_path=job["state_path"], policy_path=job["policy_path"])
+    identity = current_process_identity()
+    if not bct.store.acquire_background_executor(
+        operation_id=str(job["operation_id"]), pid=identity.pid,
+        fingerprint=identity.fingerprint,
+    ):
+        return 2
+    _claim(Path(str(job["claim_path"])).resolve())
     principal_value = job["principal"]
     principal = Principal(
         str(principal_value["principal_id"]),

@@ -10,7 +10,9 @@ from unittest.mock import Mock, patch
 from bct import BCT
 from bct.core.models import AuthorizationError, ConflictError, FeatureResult, Outcome, PreconditionError, Principal
 from bct.features.github import _check_evidence
-from bct.background_operations import launch_background_operation
+from bct.background_operations import (
+    launch_background_operation, recover_orphaned_orchestration_operations,
+)
 
 
 class VerificationTests(unittest.TestCase):
@@ -281,6 +283,199 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(1, len(jobs))
         job = json.loads(jobs[0].read_text())
         self.assertLess(job["not_before"] - job["created_at"], 0.1)
+
+    def test_confirmed_process_creation_failure_releases_claim(self):
+        with patch(
+            "bct.background_operations._runtime_root",
+            return_value=self.root / "runtime",
+        ), patch(
+            "bct.background_operations.subprocess.Popen",
+            side_effect=OSError("process creation rejected"),
+        ):
+            result = launch_background_operation(
+                self.bct, principal=self.principal, work_id="work",
+                operation_id="spawn-not-started", capability="verify",
+                arguments={"steps": self.steps}, approval_ref=None,
+            )
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        self.assertFalse(any(
+            item["operation_id"] == "spawn-not-started"
+            for item in self.bct.store.monitor_snapshot()["unresolved_claims"]
+        ))
+
+    def test_core_startup_relaunches_exact_orphaned_orchestration_job(self):
+        runtime = self.root / "orphan-runtime"
+        state = runtime / "state" / "state.sqlite"
+        policy = self.root / "orphan-policy.toml"
+        policy.write_text(
+            '[policy]\nnormal_actions=["orchestrate"]\napproval_actions=[]\n',
+            encoding="utf-8",
+        )
+        bct = BCT(state_path=state, policy_path=policy)
+        principal = Principal("orphan-owner", "test", frozenset({"orchestrate"}))
+        bct.create_work(
+            work_id="orphan-work", request_summary="restart exact resolver",
+            roots=[str(self.root)], actions=["orchestrate"], principal=principal,
+        )
+        arguments = {
+            "operation": "chain-resume", "session_id": "durable-session",
+            "manager_epoch": 1, "original_operation_id": "original-chain",
+        }
+        jobs = runtime / "background-operations"
+        import hashlib
+        key = hashlib.sha256(b"orphan-resolver").hexdigest()
+        claim = jobs / f"{key}.claim"
+        with patch("bct.background_operations._spawn_worker"):
+            current = launch_background_operation(
+                bct, principal=principal, work_id="orphan-work",
+                operation_id="orphan-resolver", capability="orchestrate",
+                arguments=arguments, approval_ref=None,
+            )
+        self.assertEqual("RUNNING", current.state.value)
+        # Simulate a crash after O_EXCL created the claim but before JSON/fsync.
+        claim.write_bytes(b"")
+        (jobs / f"{key}.launch.json").write_text(json.dumps({
+            "schema_version": 1, "worker": {
+                "pid": 999999, "fingerprint": "gone",
+            },
+        }), encoding="utf-8")
+        with patch("bct.background_operations.process_identity", return_value=None), \
+             patch("bct.background_operations._spawn_worker") as spawn:
+            recovered = recover_orphaned_orchestration_operations(bct)
+        self.assertEqual("RESTARTED_EXACT_JOB", recovered[0]["status"])
+        spawn.assert_called_once()
+        self.assertFalse(claim.exists())
+        self.assertEqual(1, len(list(jobs.glob(f"{key}.claim.stale.*"))))
+        still_running = bct.store.get_operation_for(
+            operation_id="orphan-resolver", work_id="orphan-work",
+            principal_id="orphan-owner",
+        )
+        self.assertEqual("RUNNING", still_running.state.value)
+
+    def test_durable_job_row_repairs_begin_to_file_crash(self):
+        runtime = self.root / "gap-runtime"
+        policy = self.root / "gap-policy.toml"
+        policy.write_text(
+            '[policy]\nnormal_actions=["orchestrate"]\napproval_actions=[]\n',
+            encoding="utf-8",
+        )
+        bct = BCT(
+            state_path=runtime / "state" / "state.sqlite", policy_path=policy
+        )
+        principal = Principal("gap-owner", "test", frozenset({"orchestrate"}))
+        bct.create_work(
+            work_id="gap-work", request_summary="atomic background intent",
+            roots=[str(self.root)], actions=["orchestrate"], principal=principal,
+        )
+        arguments = {
+            "operation": "recover-not-dispatched", "session_id": "gap-session",
+            "original_operation_id": "gap-original",
+        }
+        with patch(
+            "bct.background_operations.atomic_json",
+            side_effect=OSError("crash before job file"),
+        ):
+            with self.assertRaises(OSError):
+                launch_background_operation(
+                    bct, principal=principal, work_id="gap-work",
+                    operation_id="gap-resolver", capability="orchestrate",
+                    arguments=arguments, approval_ref=None,
+                )
+        pending = bct.store.get_operation_for(
+            operation_id="gap-resolver", work_id="gap-work",
+            principal_id="gap-owner",
+        )
+        self.assertEqual("RUNNING", pending.state.value)
+        self.assertIsNotNone(bct.store.background_job("gap-resolver"))
+        with patch("bct.background_operations._spawn_worker") as spawn:
+            recovered = recover_orphaned_orchestration_operations(bct)
+        self.assertEqual("RESTARTED_EXACT_JOB", recovered[0]["status"])
+        spawn.assert_called_once()
+
+    def test_orphan_recovery_rebinds_to_current_release_policy(self):
+        runtime = self.root / "policy-runtime"
+        old_policy = self.root / "old-release" / "bct.toml"
+        current_policy = self.root / "current-release" / "bct.toml"
+        old_policy.parent.mkdir()
+        current_policy.parent.mkdir()
+        policy_text = (
+            '[policy]\nnormal_actions=["orchestrate"]\napproval_actions=[]\n'
+        )
+        old_policy.write_text(policy_text, encoding="utf-8")
+        current_policy.write_text(policy_text, encoding="utf-8")
+        original = BCT(
+            state_path=runtime / "state" / "state.sqlite",
+            policy_path=old_policy,
+        )
+        principal = Principal("policy-owner", "test", frozenset({"orchestrate"}))
+        original.create_work(
+            work_id="policy-work", request_summary="current policy recovery",
+            roots=[str(self.root)], actions=["orchestrate"], principal=principal,
+        )
+        arguments = {
+            "operation": "chain-resume", "session_id": "policy-session",
+            "manager_epoch": 1, "original_operation_id": "policy-original",
+        }
+        with patch("bct.background_operations._spawn_worker"):
+            launch_background_operation(
+                original, principal=principal, work_id="policy-work",
+                operation_id="policy-resolver", capability="orchestrate",
+                arguments=arguments, approval_ref=None,
+            )
+        current = BCT(
+            state_path=runtime / "state" / "state.sqlite",
+            policy_path=current_policy,
+        )
+        captured = {}
+        def capture_spawn(_bct, **values):
+            captured.update(json.loads(values["job_path"].read_text(encoding="utf-8")))
+            return {}
+        with patch(
+            "bct.background_operations._spawn_worker", side_effect=capture_spawn
+        ):
+            duplicate = launch_background_operation(
+                current, principal=principal, work_id="policy-work",
+                operation_id="policy-resolver", capability="orchestrate",
+                arguments=arguments, approval_ref=None,
+            )
+        self.assertEqual("RUNNING", duplicate.state.value)
+        self.assertEqual(str(current_policy.resolve()), captured["policy_path"])
+        self.assertNotEqual(str(old_policy.resolve()), captured["policy_path"])
+
+    def test_background_executor_lease_allows_only_one_fingerprint(self):
+        runtime = self.root / "lease-runtime"
+        policy = self.root / "lease-policy.toml"
+        policy.write_text(
+            '[policy]\nnormal_actions=["orchestrate"]\napproval_actions=[]\n',
+            encoding="utf-8",
+        )
+        bct = BCT(
+            state_path=runtime / "state" / "state.sqlite", policy_path=policy
+        )
+        principal = Principal("lease-owner", "test", frozenset({"orchestrate"}))
+        bct.create_work(
+            work_id="lease-work", request_summary="single executor",
+            roots=[str(self.root)], actions=["orchestrate"], principal=principal,
+        )
+        arguments = {
+            "operation": "recover-not-dispatched", "session_id": "lease-session",
+            "original_operation_id": "lease-original",
+        }
+        with patch("bct.background_operations._spawn_worker"):
+            launch_background_operation(
+                bct, principal=principal, work_id="lease-work",
+                operation_id="lease-resolver", capability="orchestrate",
+                arguments=arguments, approval_ref=None,
+            )
+        self.assertTrue(bct.store.acquire_background_executor(
+            operation_id="lease-resolver", pid=1001, fingerprint="a" * 64,
+        ))
+        self.assertFalse(bct.store.acquire_background_executor(
+            operation_id="lease-resolver", pid=1002, fingerprint="b" * 64,
+        ))
+        self.assertTrue(bct.store.acquire_background_executor(
+            operation_id="lease-resolver", pid=1001, fingerprint="a" * 64,
+        ))
 
 
 if __name__ == "__main__":

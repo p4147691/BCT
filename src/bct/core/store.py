@@ -83,6 +83,112 @@ class Store:
                     UNIQUE(operation_id, ordinal),
                     FOREIGN KEY(operation_id) REFERENCES operations(operation_id)
                 );
+                CREATE TABLE IF NOT EXISTS background_jobs (
+                    operation_id TEXT PRIMARY KEY, job_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(operation_id) REFERENCES operations(operation_id)
+                );
+                CREATE TABLE IF NOT EXISTS background_job_executors (
+                    operation_id TEXT PRIMARY KEY, pid INTEGER NOT NULL,
+                    fingerprint TEXT NOT NULL, claimed_at REAL NOT NULL,
+                    FOREIGN KEY(operation_id) REFERENCES background_jobs(operation_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_sessions (
+                    session_id TEXT PRIMARY KEY, work_id TEXT NOT NULL,
+                    work_assignment_epoch INTEGER NOT NULL, objective TEXT NOT NULL,
+                    roots_json TEXT NOT NULL, actions_json TEXT NOT NULL,
+                    acceptance_json TEXT NOT NULL, plan_revision INTEGER NOT NULL,
+                    manager_node_id TEXT, manager_epoch INTEGER NOT NULL,
+                    state TEXT NOT NULL, terminal_summary_json TEXT NOT NULL,
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    FOREIGN KEY(work_id) REFERENCES works(work_id),
+                    FOREIGN KEY(manager_node_id) REFERENCES nodes(node_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_manager_epochs (
+                    session_id TEXT NOT NULL, epoch INTEGER NOT NULL,
+                    manager_node_id TEXT NOT NULL, reason TEXT NOT NULL,
+                    evidence_json TEXT NOT NULL, started_at REAL NOT NULL,
+                    ended_at REAL,
+                    PRIMARY KEY(session_id, epoch),
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
+                    FOREIGN KEY(manager_node_id) REFERENCES nodes(node_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_session_nodes (
+                    session_id TEXT NOT NULL, node_id TEXT NOT NULL,
+                    session_role TEXT NOT NULL, active INTEGER NOT NULL,
+                    PRIMARY KEY(session_id,node_id),
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
+                    FOREIGN KEY(node_id) REFERENCES nodes(node_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_attachments (
+                    attachment_id TEXT NOT NULL, generation INTEGER NOT NULL,
+                    node_id TEXT NOT NULL, kind TEXT NOT NULL,
+                    instance_id TEXT NOT NULL, external_session_id TEXT NOT NULL,
+                    tab_id INTEGER NOT NULL, window_id INTEGER NOT NULL,
+                    conversation_key TEXT NOT NULL, endpoint TEXT NOT NULL,
+                    relay_role TEXT, binding_receipt_id TEXT,
+                    active INTEGER NOT NULL, observed_at REAL NOT NULL,
+                    PRIMARY KEY(attachment_id, generation),
+                    FOREIGN KEY(node_id) REFERENCES nodes(node_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_assignments (
+                    assignment_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                    created_manager_epoch INTEGER NOT NULL,
+                    request_digest TEXT NOT NULL, request_json TEXT NOT NULL,
+                    roots_json TEXT NOT NULL, actions_json TEXT NOT NULL,
+                    acceptance_json TEXT NOT NULL, state TEXT NOT NULL,
+                    current_generation INTEGER NOT NULL,
+                    terminal_result_json TEXT NOT NULL,
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_dependencies (
+                    assignment_id TEXT NOT NULL, depends_on_assignment_id TEXT NOT NULL,
+                    PRIMARY KEY(assignment_id, depends_on_assignment_id),
+                    FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id),
+                    FOREIGN KEY(depends_on_assignment_id) REFERENCES orchestration_assignments(assignment_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_assignment_attempts (
+                    assignment_id TEXT NOT NULL, generation INTEGER NOT NULL,
+                    manager_epoch INTEGER NOT NULL, worker_node_id TEXT NOT NULL,
+                    attachment_id TEXT NOT NULL, attachment_generation INTEGER NOT NULL,
+                    state TEXT NOT NULL, dispatch_message_id TEXT,
+                    dispatch_operation_id TEXT, created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY(assignment_id, generation),
+                    FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id),
+                    FOREIGN KEY(worker_node_id) REFERENCES nodes(node_id),
+                    FOREIGN KEY(attachment_id,attachment_generation)
+                        REFERENCES orchestration_attachments(attachment_id,generation)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_mailbox (
+                    message_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                    assignment_id TEXT, assignment_generation INTEGER,
+                    kind TEXT NOT NULL, sender_node_id TEXT, recipient_node_id TEXT,
+                    message_digest TEXT NOT NULL, payload_json TEXT NOT NULL,
+                    created_at REAL NOT NULL, delivered_at REAL, consumed_at REAL,
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
+                    FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_reconciliations (
+                    decision_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                    assignment_id TEXT NOT NULL, generation INTEGER NOT NULL,
+                    manager_epoch INTEGER NOT NULL, decision TEXT NOT NULL,
+                    evidence_json TEXT NOT NULL, created_at REAL NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
+                    FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS orchestration_attachment_active_role
+                    ON orchestration_attachments(instance_id,relay_role)
+                    WHERE active=1 AND relay_role IS NOT NULL AND relay_role!='';
+                CREATE INDEX IF NOT EXISTS orchestration_attachment_conversation
+                    ON orchestration_attachments(instance_id,conversation_key,active);
+                CREATE UNIQUE INDEX IF NOT EXISTS orchestration_attachment_current_slot
+                    ON orchestration_attachments(instance_id,tab_id)
+                    WHERE active=1;
+                CREATE UNIQUE INDEX IF NOT EXISTS orchestration_attempt_dispatch
+                    ON orchestration_assignment_attempts(dispatch_operation_id)
+                    WHERE dispatch_operation_id IS NOT NULL;
                 """
             )
 
@@ -222,6 +328,14 @@ class Store:
                 "SELECT event_id,kind,subject_id,created_at FROM events "
                 "ORDER BY event_id DESC LIMIT ?", (limit,)
             ).fetchall()]
+            orchestration_sessions = [dict(row) for row in db.execute(
+                "SELECT session_id,work_id,manager_node_id,manager_epoch,state,plan_revision,updated_at "
+                "FROM orchestration_sessions ORDER BY updated_at DESC LIMIT 50"
+            ).fetchall()]
+            orchestration_assignments = [dict(row) for row in db.execute(
+                "SELECT assignment_id,session_id,created_manager_epoch,state,current_generation,updated_at "
+                "FROM orchestration_assignments ORDER BY updated_at DESC LIMIT 100"
+            ).fetchall()]
         finally:
             db.close()
         for node in nodes:
@@ -236,6 +350,8 @@ class Store:
             "operations": operations,
             "unresolved_claims": claims,
             "events": events,
+            "orchestration_sessions": orchestration_sessions,
+            "orchestration_assignments": orchestration_assignments,
         }
 
     def handoff_work(self, *, work_id: str, old_principal_id: str, new_principal_id: str,
@@ -266,7 +382,9 @@ class Store:
 
     def begin_operation(self, *, operation_id: str, work: Work, principal_id: str,
                         request_digest: str, capability: str, target: str,
-                        resources: tuple[str, ...], policy_revision: str) -> tuple[bool, OperationResult]:
+                        resources: tuple[str, ...], policy_revision: str,
+                        background_job: dict[str, Any] | None = None,
+                        ) -> tuple[bool, OperationResult]:
         now = time.time()
         with self.transaction() as db:
             current = db.execute("SELECT * FROM works WHERE work_id=?", (work.work_id,)).fetchone()
@@ -278,6 +396,11 @@ class Store:
                     raise ConflictError("OPERATION_RESULT_ACCESS_DENIED")
                 if existing["request_digest"] != request_digest:
                     raise ConflictError("OPERATION_ID_REQUEST_MISMATCH")
+                if background_job is not None:
+                    self._record_background_job(
+                        db, operation_id=operation_id, job=background_job,
+                        operation_created_at=float(existing["created_at"]),
+                    )
                 return False, self._row_result(existing, duplicate=True)
             db.execute(
                 "INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -310,9 +433,120 @@ class Store:
                 )
             db.execute("UPDATE operations SET state=?,updated_at=? WHERE operation_id=?",
                        (OperationState.RUNNING.value, now, operation_id))
+            if background_job is not None:
+                self._record_background_job(
+                    db, operation_id=operation_id, job=background_job,
+                    operation_created_at=now,
+                )
             self._event(db, "OPERATION_STARTED", operation_id, {"capability": capability, "resources": resources})
             row = db.execute("SELECT * FROM operations WHERE operation_id=?", (operation_id,)).fetchone()
             return True, self._row_result(row)
+
+    def _record_background_job(
+        self, db, *, operation_id: str, job: dict[str, Any],
+        operation_created_at: float,
+    ) -> None:
+        value = dict(job)
+        delay = float(value.pop("_not_before_delay", 0.0))
+        value["created_at"] = operation_created_at
+        value["not_before"] = operation_created_at + max(0.0, delay)
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"))
+        existing = db.execute(
+            "SELECT job_json FROM background_jobs WHERE operation_id=?",
+            (operation_id,),
+        ).fetchone()
+        if existing is None:
+            db.execute(
+                "INSERT INTO background_jobs VALUES(?,?,?)",
+                (operation_id, payload, operation_created_at),
+            )
+        else:
+            prior = json.loads(existing["job_json"])
+            for key in ("operation_id", "work_id", "capability"):
+                if str(prior.get(key) or "") != str(value.get(key) or ""):
+                    raise ConflictError("BACKGROUND_JOB_REQUEST_MISMATCH")
+            if str((prior.get("principal") or {}).get("principal_id") or "") != str(
+                (value.get("principal") or {}).get("principal_id") or ""
+            ):
+                raise ConflictError("BACKGROUND_JOB_REQUEST_MISMATCH")
+
+    def acquire_background_executor(
+        self, *, operation_id: str, pid: int, fingerprint: str,
+    ) -> bool:
+        with self.transaction() as db:
+            operation = db.execute(
+                "SELECT state FROM operations WHERE operation_id=?",
+                (operation_id,),
+            ).fetchone()
+            job = db.execute(
+                "SELECT 1 FROM background_jobs WHERE operation_id=?",
+                (operation_id,),
+            ).fetchone()
+            if operation is None or job is None \
+                    or operation["state"] != OperationState.RUNNING.value:
+                return False
+            current = db.execute(
+                "SELECT * FROM background_job_executors WHERE operation_id=?",
+                (operation_id,),
+            ).fetchone()
+            if current is not None:
+                return current["fingerprint"] == fingerprint and current["pid"] == pid
+            db.execute(
+                "INSERT INTO background_job_executors VALUES(?,?,?,?)",
+                (operation_id, pid, fingerprint, time.time()),
+            )
+            return True
+
+    def background_executor(self, operation_id: str) -> dict[str, Any] | None:
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT * FROM background_job_executors WHERE operation_id=?",
+                (operation_id,),
+            ).fetchone()
+            return None if row is None else dict(row)
+        finally:
+            db.close()
+
+    def clear_background_executor(
+        self, *, operation_id: str, fingerprint: str,
+    ) -> bool:
+        with self.transaction() as db:
+            cursor = db.execute(
+                "DELETE FROM background_job_executors WHERE operation_id=? "
+                "AND fingerprint=?",
+                (operation_id, fingerprint),
+            )
+            return cursor.rowcount == 1
+
+    def running_background_jobs(self, *, capability: str | None = None) -> list[dict[str, Any]]:
+        db = self._connect()
+        try:
+            query = (
+                "SELECT b.job_json FROM background_jobs b JOIN operations o "
+                "ON o.operation_id=b.operation_id WHERE o.state=?"
+            )
+            params: list[Any] = [OperationState.RUNNING.value]
+            if capability is not None:
+                query += " AND o.capability=?"
+                params.append(capability)
+            query += " ORDER BY b.created_at,b.operation_id"
+            return [json.loads(row["job_json"]) for row in db.execute(
+                query, tuple(params)
+            ).fetchall()]
+        finally:
+            db.close()
+
+    def background_job(self, operation_id: str) -> dict[str, Any] | None:
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT job_json FROM background_jobs WHERE operation_id=?",
+                (operation_id,),
+            ).fetchone()
+            return None if row is None else json.loads(row["job_json"])
+        finally:
+            db.close()
 
     def finish_operation(self, *, operation_id: str, outcome: Outcome,
                          evidence: dict[str, Any], error: str | None,
@@ -325,15 +559,29 @@ class Store:
             if resolver is None or resolver["state"] != OperationState.RUNNING.value:
                 raise ConflictError("OPERATION_NOT_RUNNING")
             reconciled = tuple(sorted(set(reconciled_operation_ids)))
+            running_reconciled: list[str] = []
             for original_id in reconciled:
                 original = db.execute(
                     "SELECT * FROM operations WHERE operation_id=?", (original_id,)
                 ).fetchone()
                 if original is None or original["work_id"] != resolver["work_id"]:
                     raise ConflictError("RECONCILIATION_OPERATION_ACCESS_DENIED")
-                if (original["state"] != OperationState.FINISHED.value
-                        or original["outcome"] != Outcome.UNKNOWN.value):
+                finished_unknown = (
+                    original["state"] == OperationState.FINISHED.value
+                    and original["outcome"] == Outcome.UNKNOWN.value
+                )
+                recoverable_running = (
+                    original["state"] == OperationState.RUNNING.value
+                    and original["capability"] == "orchestrate"
+                    and resolver["capability"] == "orchestrate"
+                    and evidence.get("operation") in {
+                        "reconcile", "chain-resume", "recover-not-dispatched"
+                    }
+                )
+                if not finished_unknown and not recoverable_running:
                     raise ConflictError("RECONCILIATION_ORIGINAL_NOT_UNKNOWN")
+                if recoverable_running:
+                    running_reconciled.append(original_id)
                 unresolved = db.execute(
                     "SELECT COUNT(*) FROM resource_claims WHERE operation_id=? AND unresolved=1",
                     (original_id,),
@@ -351,19 +599,127 @@ class Store:
             if release_claims:
                 db.execute("UPDATE resource_claims SET unresolved=0 WHERE operation_id=?", (operation_id,))
             for original_id in reconciled:
+                if original_id in running_reconciled:
+                    recovered_outcome = (
+                        Outcome.NOT_APPLIED
+                        if evidence.get("operation") == "recover-not-dispatched"
+                        else outcome
+                    )
+                    db.execute(
+                        "UPDATE operations SET state=?,outcome=?,evidence_json=?,error=?,"
+                        "updated_at=? WHERE operation_id=? AND state=?",
+                        (
+                            OperationState.FINISHED.value, recovered_outcome.value,
+                            json.dumps({
+                                "phase": "RECONCILED_RUNNING",
+                                "resolver_operation_id": operation_id,
+                                "recovered_outcome": recovered_outcome.value,
+                            }, sort_keys=True),
+                            None,
+                            time.time(), original_id, OperationState.RUNNING.value,
+                        ),
+                    )
                 db.execute(
                     "UPDATE resource_claims SET unresolved=0 WHERE operation_id=?",
                     (original_id,),
                 )
                 self._event(db, "OPERATION_RECONCILED", original_id, {
                     "resolver_operation_id": operation_id,
-                    "original_outcome": Outcome.UNKNOWN.value,
+                    "original_outcome": (
+                        (Outcome.NOT_APPLIED if evidence.get("operation")
+                         == "recover-not-dispatched" else outcome).value
+                        if original_id in running_reconciled
+                        else Outcome.UNKNOWN.value
+                    ),
                 })
             self._event(db, "OPERATION_FINISHED", operation_id,
                         {"outcome": outcome.value, "claims_released": release_claims,
                          "reconciled_operation_ids": list(reconciled)})
             row = db.execute("SELECT * FROM operations WHERE operation_id=?", (operation_id,)).fetchone()
         return self._row_result(row)
+
+    def finish_orchestration_recovery_in_transaction(
+        self, db, *, resolver_operation_id: str, original_operation_id: str,
+        resolver_outcome: Outcome, original_outcome: Outcome | None,
+        evidence: dict[str, Any], release_original: bool,
+    ) -> None:
+        """Atomically close a result-only orchestration resolver and its original.
+
+        The caller already owns ``db``'s IMMEDIATE transaction together with the
+        assignment/session evidence that proves the outcome.  Keeping these writes
+        together removes the crash window between durable reconciliation and the
+        outer operation receipts.
+        """
+        resolver = db.execute(
+            "SELECT * FROM operations WHERE operation_id=? AND capability='orchestrate'",
+            (resolver_operation_id,),
+        ).fetchone()
+        original = db.execute(
+            "SELECT * FROM operations WHERE operation_id=? AND capability='orchestrate'",
+            (original_operation_id,),
+        ).fetchone()
+        if (
+            resolver is None or resolver["state"] != OperationState.RUNNING.value
+            or original is None or original["work_id"] != resolver["work_id"]
+        ):
+            raise ConflictError("ORCHESTRATION_RECOVERY_OPERATION_STATE_INVALID")
+        now = time.time()
+        db.execute(
+            "UPDATE operations SET state=?,outcome=?,evidence_json=?,error=NULL,updated_at=? "
+            "WHERE operation_id=? AND state=?",
+            (
+                OperationState.FINISHED.value, resolver_outcome.value,
+                json.dumps(evidence, sort_keys=True), now, resolver_operation_id,
+                OperationState.RUNNING.value,
+            ),
+        )
+        db.execute(
+            "UPDATE resource_claims SET unresolved=0 WHERE operation_id=?",
+            (resolver_operation_id,),
+        )
+        original_persisted_outcome = str(original["outcome"] or "UNRESOLVED")
+        takeover_unknown = (
+            original["state"] == OperationState.FINISHED.value
+            and original["outcome"] == Outcome.UNKNOWN.value
+            and original["error"] == "ORCHESTRATION_RECOVERY_TAKEOVER"
+        )
+        if original_outcome is not None and (
+            original["state"] == OperationState.RUNNING.value or takeover_unknown
+        ):
+            db.execute(
+                "UPDATE operations SET state=?,outcome=?,evidence_json=?,error=NULL,updated_at=? "
+                "WHERE operation_id=?",
+                (
+                    OperationState.FINISHED.value, original_outcome.value,
+                    json.dumps({
+                        "phase": "ORCHESTRATION_RECOVERED",
+                        "resolver_operation_id": resolver_operation_id,
+                        "recovered_outcome": original_outcome.value,
+                    }, sort_keys=True),
+                    now, original_operation_id,
+                ),
+            )
+            original_persisted_outcome = original_outcome.value
+        elif original["state"] != OperationState.FINISHED.value:
+            raise ConflictError("ORCHESTRATION_RECOVERY_ORIGINAL_INVALID")
+        if release_original:
+            db.execute(
+                "UPDATE resource_claims SET unresolved=0 WHERE operation_id=?",
+                (original_operation_id,),
+            )
+        self._event(db, "OPERATION_FINISHED", resolver_operation_id, {
+            "outcome": resolver_outcome.value,
+            "claims_released": True,
+            "atomic_orchestration_recovery": True,
+        })
+        self._event(db, "OPERATION_RECONCILED", original_operation_id, {
+            "resolver_operation_id": resolver_operation_id,
+            "original_outcome": original_persisted_outcome,
+            "resolved_outcome": (
+                original_outcome.value if original_outcome is not None else None
+            ),
+            "claims_released": release_original,
+        })
 
     def initialize_operation_steps(self, *, operation_id: str,
                                    steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
