@@ -20,7 +20,7 @@ BACKGROUND_CAPABILITIES = frozenset({
 
 _ORCHESTRATION_RESTARTABLE = frozenset({
     "dispatch", "worker-replace", "chain-run", "chain-resume", "reconcile",
-    "recover-not-dispatched",
+    "recover-not-dispatched", "recover-node-sync",
 })
 
 

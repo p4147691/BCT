@@ -178,7 +178,7 @@ def build_mcp(
                     and str(arguments.get("operation") or "")
                     in {
                         "dispatch", "worker-replace", "chain-run", "chain-resume",
-                        "reconcile", "recover-not-dispatched",
+                        "reconcile", "recover-not-dispatched", "recover-node-sync",
                     }
                 )
                 or (selected == "github_pr_status" and float(arguments.get("wait_seconds", 0)) > 0)

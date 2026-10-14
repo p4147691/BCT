@@ -642,6 +642,7 @@ class Store:
         self, db, *, resolver_operation_id: str, original_operation_id: str,
         resolver_outcome: Outcome, original_outcome: Outcome | None,
         evidence: dict[str, Any], release_original: bool,
+        expected_original_error: str | None = None,
     ) -> None:
         """Atomically close a result-only orchestration resolver and its original.
 
@@ -683,8 +684,15 @@ class Store:
             and original["outcome"] == Outcome.UNKNOWN.value
             and original["error"] == "ORCHESTRATION_RECOVERY_TAKEOVER"
         )
+        exact_unknown = (
+            expected_original_error is not None
+            and original["state"] == OperationState.FINISHED.value
+            and original["outcome"] == Outcome.UNKNOWN.value
+            and original["error"] == expected_original_error
+        )
         if original_outcome is not None and (
-            original["state"] == OperationState.RUNNING.value or takeover_unknown
+            original["state"] == OperationState.RUNNING.value
+            or takeover_unknown or exact_unknown
         ):
             db.execute(
                 "UPDATE operations SET state=?,outcome=?,evidence_json=?,error=NULL,updated_at=? "

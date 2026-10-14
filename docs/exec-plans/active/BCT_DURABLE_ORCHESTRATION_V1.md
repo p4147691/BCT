@@ -224,6 +224,19 @@ The RCC 1.0.12 candidate acceptance proves 180 Python tests, all 15 RCC
 JavaScript test programs, Python compile checks, JavaScript syntax, and
 `git diff --check` before GitHub integration.
 
+After the RCC 1.0.17 route-capture correction, a fresh single-manager gate
+exposed a separate Core ordering defect: `node-sync` could update an RCC role
+binding before detecting that the conversation already belonged to another
+active logical node. The deterministic ownership conflict then became UNKNOWN
+and retained the global RCC-instance claim. The bounded correction prevalidates
+all requested conversation owners before any RCC call. A dedicated
+`recover-node-sync` operation is limited to the exact legacy UNKNOWN error,
+exact claim, assignment-free session, and the persisted active binding set; it
+restores only matching open tab/conversation registrations, verifies readback,
+then atomically marks the original FAILED and releases its claim. It never sends
+a ChatGPT message. Candidate acceptance proves 184 Python tests and all 17 RCC
+JavaScript test programs before GitHub integration.
+
 ## Failure policy
 
 | Failure | Automatic action |

@@ -173,6 +173,157 @@ class OrchestrationService:
             row = self._session_row(db, session_id)
             return True, self._session_value(row)
 
+    def validate_sync_targets(
+        self, *, work: Work, session_id: str, instance_id: str,
+        targets: list[dict[str, str]],
+    ) -> None:
+        """Reject conversation ownership conflicts before any RCC mutation."""
+        instance_id = _bounded_text(
+            instance_id, code="ORCHESTRATION_INSTANCE_ID_INVALID", limit=64
+        )
+        normalized: list[tuple[str, str]] = []
+        for target in targets:
+            normalized.append((
+                _bounded_text(
+                    target.get("conversation_key"),
+                    code="ORCHESTRATION_CONVERSATION_INVALID", limit=96,
+                ),
+                _identifier(
+                    target.get("node_id"), "ORCHESTRATION_NODE_ID_INVALID"
+                ),
+            ))
+        db = self.store._connect()
+        try:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            for conversation_key, node_id in normalized:
+                other = db.execute(
+                    "SELECT node_id FROM orchestration_attachments "
+                    "WHERE instance_id=? AND conversation_key=? AND active=1",
+                    (instance_id, conversation_key),
+                ).fetchone()
+                if other is not None and other["node_id"] != node_id:
+                    raise ConflictError(
+                        "ORCHESTRATION_CONVERSATION_ALREADY_ATTACHED"
+                    )
+        finally:
+            db.close()
+
+    @staticmethod
+    def _node_sync_expected_bindings(db, *, instance_id: str) -> list[dict[str, Any]]:
+        rows = db.execute(
+            "SELECT attachment_id,generation,node_id,tab_id,conversation_key,"
+            "relay_role,binding_receipt_id FROM orchestration_attachments "
+            "WHERE instance_id=? AND active=1 AND relay_role IS NOT NULL "
+            "AND relay_role!='' AND binding_receipt_id IS NOT NULL "
+            "AND binding_receipt_id!='' ORDER BY relay_role",
+            (instance_id,),
+        ).fetchall()
+        if not rows:
+            raise ConflictError("ORCHESTRATION_NODE_SYNC_BINDINGS_MISSING")
+        return [dict(row) for row in rows]
+
+    def _validate_node_sync_recovery(
+        self, db, *, work: Work, session_id: str,
+        original_operation_id: str, instance_id: str,
+    ) -> list[dict[str, Any]]:
+        session = self._session_row(db, session_id)
+        self._assert_work(session, work)
+        original = db.execute(
+            "SELECT * FROM operations WHERE operation_id=? AND work_id=? "
+            "AND capability='orchestrate'",
+            (original_operation_id, work.work_id),
+        ).fetchone()
+        if original is None or not (
+            original["target"] == session_id
+            and original["state"] == "FINISHED"
+            and original["outcome"] == "UNKNOWN"
+            and original["error"] == "ORCHESTRATION_CONVERSATION_ALREADY_ATTACHED"
+        ):
+            raise ConflictError("ORCHESTRATION_NODE_SYNC_ORIGINAL_INVALID")
+        claims = [row[0] for row in db.execute(
+            "SELECT resource_key FROM resource_claims WHERE operation_id=? "
+            "AND unresolved=1 ORDER BY resource_key",
+            (original_operation_id,),
+        ).fetchall()]
+        if claims != ["rcc-instance:" + instance_id]:
+            raise ConflictError("ORCHESTRATION_NODE_SYNC_CLAIM_MISMATCH")
+        if db.execute(
+            "SELECT 1 FROM orchestration_assignments WHERE session_id=? LIMIT 1",
+            (session_id,),
+        ).fetchone() is not None or db.execute(
+            "SELECT 1 FROM orchestration_mailbox WHERE session_id=? LIMIT 1",
+            (session_id,),
+        ).fetchone() is not None:
+            raise ConflictError("ORCHESTRATION_NODE_SYNC_EXTERNAL_EFFECT_NOT_EXCLUDED")
+        return self._node_sync_expected_bindings(db, instance_id=instance_id)
+
+    def node_sync_recovery_plan(
+        self, *, work: Work, session_id: str,
+        original_operation_id: str, instance_id: str,
+    ) -> dict[str, Any]:
+        db = self.store._connect()
+        try:
+            expected = self._validate_node_sync_recovery(
+                db, work=work, session_id=session_id,
+                original_operation_id=original_operation_id,
+                instance_id=instance_id,
+            )
+            return {
+                "instance_id": instance_id,
+                "bindings": expected,
+                "bindings_digest": _digest(expected),
+            }
+        finally:
+            db.close()
+
+    def finish_node_sync_recovery(
+        self, *, work: Work, session_id: str,
+        original_operation_id: str, resolver_operation_id: str,
+        instance_id: str, bindings_digest: str,
+        external_session_id: str, verified_bindings: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        with self.store.transaction() as db:
+            expected = self._validate_node_sync_recovery(
+                db, work=work, session_id=session_id,
+                original_operation_id=original_operation_id,
+                instance_id=instance_id,
+            )
+            if _digest(expected) != bindings_digest:
+                raise ConflictError("ORCHESTRATION_NODE_SYNC_BINDINGS_CHANGED")
+            expected_verified = [{
+                "relay_role": row["relay_role"],
+                "tab_id": row["tab_id"],
+                "conversation_key": row["conversation_key"],
+                "binding_receipt_id": row["binding_receipt_id"],
+                "external_session_id": external_session_id,
+            } for row in expected]
+            normalized_verified = sorted(
+                verified_bindings, key=lambda item: str(item.get("relay_role") or "")
+            )
+            if normalized_verified != expected_verified:
+                raise ConflictError("ORCHESTRATION_NODE_SYNC_RESTORE_UNVERIFIED")
+            evidence = {
+                "operation": "recover-node-sync",
+                "session_id": session_id,
+                "original_operation_id": original_operation_id,
+                "instance_id": instance_id,
+                "external_session_id": external_session_id,
+                "bindings_digest": bindings_digest,
+                "restored_roles": [row["relay_role"] for row in expected],
+                "message_effect_excluded": True,
+                "binding_effect_reconciled": True,
+            }
+            self.store.finish_orchestration_recovery_in_transaction(
+                db, resolver_operation_id=resolver_operation_id,
+                original_operation_id=original_operation_id,
+                resolver_outcome=Outcome.APPLIED,
+                original_outcome=Outcome.FAILED,
+                evidence=evidence, release_original=True,
+                expected_original_error="ORCHESTRATION_CONVERSATION_ALREADY_ATTACHED",
+            )
+            return evidence
+
     def sync_attachment(
         self, *, work: Work, session_id: str, node_id: str, name: str,
         role: str, attachment_id: str, instance_id: str,
