@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 if os.name == "nt":
     from ctypes import wintypes
 
@@ -21,6 +23,24 @@ from bct.core.models import ConfirmedFailure, PreconditionError, UnknownEffectEr
 
 
 _LIVE_CHILDREN: dict[int, subprocess.Popen[bytes]] = {}
+
+
+def _loopback_listener_state(port: int) -> bool | None:
+    """Return whether a local TCP listener exists, or None when inspection is unavailable."""
+    try:
+        connections = psutil.net_connections(kind="tcp4")
+    except (psutil.Error, OSError, PermissionError):
+        return None
+    for connection in connections:
+        address = connection.laddr
+        if (
+            connection.status == psutil.CONN_LISTEN
+            and address
+            and int(address.port) == port
+            and str(address.ip) in {"127.0.0.1", "0.0.0.0"}
+        ):
+            return True
+    return False
 
 
 def atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -170,6 +190,9 @@ class RuntimeServiceController:
         return self._secret_at(self.mcp_secret_path)
 
     def _health(self) -> dict[str, Any] | None:
+        listener_state = _loopback_listener_state(self.port)
+        if listener_state is False:
+            return None
         request = urllib.request.Request(f"http://127.0.0.1:{self.port}/health", method="GET")
         try:
             with urllib.request.urlopen(request, timeout=1) as response:
