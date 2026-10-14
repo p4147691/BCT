@@ -2217,53 +2217,61 @@ function preparedRenameResult(operationId, fingerprint) {
 }
 
 async function reserveRenameReceipt(operationId, fingerprint) {
-  const state = await loadState();
-  const existing = state.renameReceipts?.[operationId];
-  if (existing) {
-    if (existing.command !== 'rename-conversation' || existing.fingerprint !== fingerprint) {
-      throw new Error('OPERATION_ID_REUSE_MISMATCH');
+  return withRelayReceiptMutation(async () => {
+    const state = await loadState();
+    const existing = state.renameReceipts?.[operationId];
+    if (existing) {
+      if (existing.command !== 'rename-conversation' || existing.fingerprint !== fingerprint) {
+        throw new Error('OPERATION_ID_REUSE_MISMATCH');
+      }
+      if (existing.terminal !== true) throw new Error('RENAME_RECEIPT_PREPARED_OUTCOME_UNKNOWN');
+      return;
     }
-    if (existing.terminal !== true) throw new Error('RENAME_RECEIPT_PREPARED_OUTCOME_UNKNOWN');
-    return;
-  }
-  // Reserve the full terminal-shaped value before the UI effect.  A storage
-  // capacity failure is therefore confirmed before dispatch; after dispatch
-  // only the fixed-size terminal marker changes.
-  await chrome.storage.local.set({
-    [RENAME_RECEIPTS_KEY]: {
-      ...(state.renameReceipts || {}),
-      [operationId]: {
-        command: 'rename-conversation', fingerprint,
-        result: preparedRenameResult(operationId, fingerprint),
-        terminal: false, at: Date.now(),
+    // Reserve the full terminal-shaped value before the UI effect.  A storage
+    // capacity failure is therefore confirmed before dispatch; after dispatch
+    // only the fixed-size terminal marker changes.
+    await chrome.storage.local.set({
+      [RENAME_RECEIPTS_KEY]: {
+        ...(state.renameReceipts || {}),
+        [operationId]: {
+          command: 'rename-conversation', fingerprint,
+          result: preparedRenameResult(operationId, fingerprint),
+          terminal: false, at: Date.now(),
+        },
       },
-    },
+    });
   });
 }
 
 async function saveCompletedOperation(operationId, command, fingerprint, result) {
 
-  const state = await loadState();
+  const save = async () => {
+    const state = await loadState();
 
-  const operations = { ...(state.operations || {}) };
+    const operations = { ...(state.operations || {}) };
 
-  operations[operationId] = { command, fingerprint, result, at: Date.now() };
+    operations[operationId] = { command, fingerprint, result, at: Date.now() };
 
-  const keys = Object.keys(operations).sort((a,b)=>Number(operations[b]?.at||0)-Number(operations[a]?.at||0));
+    const keys = Object.keys(operations).sort((a,b)=>Number(operations[b]?.at||0)-Number(operations[a]?.at||0));
 
-  for (const key of keys.slice(100)) delete operations[key];
+    for (const key of keys.slice(100)) delete operations[key];
 
-  const update = { operations };
-  if (command === 'rename-conversation') {
-    // Store only the exact terminal proof needed to fence a duplicate and to
-    // reconcile a response lost after the UI effect.  Do not fold this into
-    // the bounded generic cache; losing it would make an UNKNOWN permanent.
-    update[RENAME_RECEIPTS_KEY] = {
-      ...(state.renameReceipts || {}),
-      [operationId]: { command, fingerprint, result, terminal: true, at: Date.now() },
-    };
-  }
-  await chrome.storage.local.set(update);
+    const update = { operations };
+    if (command === 'rename-conversation') {
+      // Store only the exact terminal proof needed to fence a duplicate and to
+      // reconcile a response lost after the UI effect.  Do not fold this into
+      // the bounded generic cache; losing it would make an UNKNOWN permanent.
+      update[RENAME_RECEIPTS_KEY] = {
+        ...(state.renameReceipts || {}),
+        [operationId]: { command, fingerprint, result, terminal: true, at: Date.now() },
+      };
+    }
+    await chrome.storage.local.set(update);
+  };
+  // The dedicated ledger is a whole-object storage value.  Serialize its
+  // read-modify-write cycle with the durable relay receipt ledger so two
+  // distinct rename operations cannot erase each other's proof.
+  return command === 'rename-conversation' ? withRelayReceiptMutation(save) : save();
 
 }
 

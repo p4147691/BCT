@@ -9,6 +9,7 @@ const store = {
   registrations: {}, settings: { token: 't', armed: false, budget: 0, instanceId: 'instance1234' },
   pending: {}, results: [], processed: [], operations: {},
 };
+let raceSnapshots = false;
 const nativeMessages = [];
 const port = { onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, postMessage: (message) => nativeMessages.push(message) };
 const context = {
@@ -16,7 +17,16 @@ const context = {
   crypto: { randomUUID },
   RelayCore: { conversationKey: () => '', normalizeRole: (v) => String(v || '').toUpperCase() },
   chrome: {
-    storage: { local: { get: async () => store, set: async (patch) => Object.assign(store, patch) }, session: { get: async () => ({}), set: async () => {} } },
+    storage: { local: {
+      get: async (keys) => {
+        const snapshot = JSON.parse(JSON.stringify(store));
+        if (raceSnapshots && Array.isArray(keys) && keys.includes('renameReceiptsV1')) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        return snapshot;
+      },
+      set: async (patch) => Object.assign(store, patch),
+    }, session: { get: async () => ({}), set: async () => {} } },
     tabs: { query: async () => [], get: async () => { throw Error('not used'); } },
     windows: { get: async () => ({}) }, scripting: { executeScript: async () => [] },
     runtime: { id: 'x', onMessage: { addListener() {} }, connectNative: () => port, onStartup: { addListener() {} }, onInstalled: { addListener() {} } },
@@ -52,5 +62,23 @@ vm.runInContext(source, context, { filename: 'background.js' });
     () => getCompletedOperation('rename-1', 'rename-conversation', '["conv-1",7,"session-1","Different"]'),
     /OPERATION_ID_REUSE_MISMATCH/,
   );
+  const firstFingerprint = '["conv-2",8,"session-2","Second"]';
+  const secondFingerprint = '["conv-3",9,"session-3","Third"]';
+  raceSnapshots = true;
+  await Promise.all([
+    reserveRenameReceipt('rename-2', firstFingerprint),
+    reserveRenameReceipt('rename-3', secondFingerprint),
+  ]);
+  assert(store.renameReceiptsV1['rename-2'] && store.renameReceiptsV1['rename-3'],
+    'concurrent reservations must retain both operation IDs');
+  await Promise.all([
+    saveCompletedOperation('rename-2', 'rename-conversation', firstFingerprint,
+      { ok: true, operationId: 'rename-2', savedTitle: 'Second', tabId: 8, conversationKey: 'conv-2' }),
+    saveCompletedOperation('rename-3', 'rename-conversation', secondFingerprint,
+      { ok: true, operationId: 'rename-3', savedTitle: 'Third', tabId: 9, conversationKey: 'conv-3' }),
+  ]);
+  raceSnapshots = false;
+  assert.strictEqual(store.renameReceiptsV1['rename-2'].terminal, true);
+  assert.strictEqual(store.renameReceiptsV1['rename-3'].terminal, true);
   console.log('rename receipt retention tests: PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

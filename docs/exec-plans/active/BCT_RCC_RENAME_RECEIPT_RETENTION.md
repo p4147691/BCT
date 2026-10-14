@@ -56,6 +56,8 @@ not touch historical receipt-missing UNKNOWN claims.
   duplicate rename after a service-worker restart.
 - Verify a same-ID/same-fingerprint duplicate is answered from the ledger and
   a different fingerprint is rejected.
+- Verify concurrent reservations and terminal writes for distinct rename IDs
+  retain both entries; the shared storage object must not lose either receipt.
 - Preserve the existing owner, digest, tab and conversation fences in Core;
   this extension change does not alter an existing operation or claim.
 
