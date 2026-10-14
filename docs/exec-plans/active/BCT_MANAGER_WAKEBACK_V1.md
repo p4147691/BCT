@@ -1,6 +1,6 @@
 # BCT Manager Wakeback V1
 
-Status: LIVE_DEPLOYED / HOSTED_E2E_BLOCKED
+Status: LIVE_DEPLOYED / HOSTED_E2E_ACCEPTED
 
 ## Objective
 
@@ -51,13 +51,23 @@ must fail closed when the manager epoch or attachment changes.
   same release SHA, `mcp_ready: true`, and 22 MCP tools.  After a BCT Control
   refresh, hosted ChatGPT confirmed that `bct_orchestrate` is callable.
 
-The remaining gate is one fresh staged hosted E2E.  The first post-refresh
-attempt intentionally created no assignment or browser delivery: it found an
+The fresh staged hosted E2E is accepted.  After the legacy cosmetic rename was
+quarantined to its exact tab/conversation (without deciding or retrying its
+UNKNOWN effect), a new session `issue111-wake-e2e-86ea3a2-01` bound the exact
+current manager and worker attachments.  Its one bounded worker assignment
+finished `APPLIED` with a signed terminal result; it produced exactly one
+manager-wake event, delivered to the active manager attachment at epoch 1.
+The manager-wake receipt is `DELIVERED` and acknowledges the same result
+message/digest.  No historical operation was retried.
+
+The first post-refresh attempt intentionally created no assignment or browser
+delivery: it found an
 ACTIVE `BCT-ISSUE111-LIVE-20261015` work item and the existing UNKNOWN operation
 `rcc-localbridge-rename-tab594833023-20261015-02` holding the shared resource
 `rcc-instance:6174664e1c1b4e6db1d4729c841db3c9`.  `node-sync` for a new E2E
 would conflict with that instance-wide claim, so the attempt stopped
 `HOSTED_E2E_BLOCKED` without touching either record.  Historical UNKNOWN work
 and claims remain outside this plan: do not re-run, release, take over, or
-reuse them.  Resume only after read-only evidence and the canonical workflow
-establish that the active work and shared claim no longer fence a fresh target.
+reuse them.  The claim is now narrowly quarantined only to its exact rename
+target; it must remain so unless a future terminal receipt supports canonical
+reconciliation.

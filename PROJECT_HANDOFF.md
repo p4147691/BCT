@@ -1,6 +1,6 @@
 # BCT 인수인계
 
-## 현재 작업 — Issue #111 manager wakeback (LIVE_DEPLOYED, hosted E2E BLOCKED)
+## 현재 작업 — Issue #111 manager wakeback (LIVE_DEPLOYED, hosted E2E ACCEPTED)
 
 Manager wakeback V1은 PR #112로 main에 병합되어 exact-SHA LIVE 배포까지 완료했다.
 이후 BCT Control을 새로고침해 hosted `bct_orchestrate` 가용성도 확인했다. 첫 신규
@@ -25,9 +25,10 @@ manager→worker→manager wake E2E는 기존 LIVE나 기존 UNKNOWN/claim을 �
   identity through `origin/main`, local `HEAD`, `current.json.source_head`, and
   `/health.release_sha`; do not treat this handoff as a live SHA authority.
 
-Hosted E2E의 남은 단계는 새 무해한 target에서 단일 wake → durable receipt →
-independently authorized next bounded task를 한 번 검증하는 것이다. 다만 최초
-post-refresh preflight는 ACTIVE `BCT-ISSUE111-LIVE-20261015`와 UNKNOWN
+새 무해한 target에서의 단일 worker 결과 → durable manager wake는 검증됐다.
+`issue111-wake-e2e-86ea3a2-01`은 fresh exact attachments에서 worker
+`APPLIED`, manager wake `DELIVERED`를 기록했다. 기존 UNKNOWN은 재전송하지
+않았다. 다만 최초 post-refresh preflight는 ACTIVE `BCT-ISSUE111-LIVE-20261015`와 UNKNOWN
 `rcc-localbridge-rename-tab594833023-20261015-02`가 같은
 `rcc-instance:6174664e1c1b4e6db1d4729c841db3c9` resource를 점유한 것을 확인했다.
 새 E2E의 node-sync도 이 shared resource를 claim하므로, 충돌 상태에서 실행하지
