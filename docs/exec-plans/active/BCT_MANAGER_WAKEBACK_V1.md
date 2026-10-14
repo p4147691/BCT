@@ -1,6 +1,6 @@
 # BCT Manager Wakeback V1
 
-Status: LOCAL_VALIDATED / PR_PENDING
+Status: LIVE_DEPLOYED / HOSTED_E2E_BLOCKED
 
 ## Objective
 
@@ -38,14 +38,26 @@ must fail closed when the manager epoch or attachment changes.
 4. Fresh harmless manager-worker-manager E2E with one persisted result, one
    manager wake receipt, and one independently authorized next bounded task.
 
-## Local evidence
+## Delivery evidence
 
 - `python -m unittest discover -s tests -v`: 193 PASS.
 - `python -m compileall -q src tests`: PASS.
 - `git diff --check`: PASS.
 - RCC Node/contract tests: PASS, including native wakeback exact-manager-role
   fence and release-payload hash baseline.
+- PR #112 exact head `f3f7f0953988b94f12119142c5525621fa9ea53c` passed BCT CI
+  run `38616742752` and merged as `cc42b70cfa00abb86d5651ed82cb79fdd8fea549`.
+- That merge is the LIVE Core release at generation 85; `/health` reports the
+  same release SHA, `mcp_ready: true`, and 22 MCP tools.  After a BCT Control
+  refresh, hosted ChatGPT confirmed that `bct_orchestrate` is callable.
 
-The remaining gates are exact-head PR CI, exact-SHA LIVE deployment/RCC reload,
-and one fresh staged hosted E2E. Historical UNKNOWN work and claims are outside
-this plan and must not be re-run or released.
+The remaining gate is one fresh staged hosted E2E.  The first post-refresh
+attempt intentionally created no assignment or browser delivery: it found an
+ACTIVE `BCT-ISSUE111-LIVE-20261015` work item and the existing UNKNOWN operation
+`rcc-localbridge-rename-tab594833023-20261015-02` holding the shared resource
+`rcc-instance:6174664e1c1b4e6db1d4729c841db3c9`.  `node-sync` for a new E2E
+would conflict with that instance-wide claim, so the attempt stopped
+`HOSTED_E2E_BLOCKED` without touching either record.  Historical UNKNOWN work
+and claims remain outside this plan: do not re-run, release, take over, or
+reuse them.  Resume only after read-only evidence and the canonical workflow
+establish that the active work and shared claim no longer fence a fresh target.

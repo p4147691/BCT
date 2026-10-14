@@ -1,9 +1,12 @@
 # BCT 인수인계
 
-## 현재 작업 — Issue #111 manager wakeback (IMPLEMENTING, 미배포)
+## 현재 작업 — Issue #111 manager wakeback (LIVE_DEPLOYED, hosted E2E BLOCKED)
 
-`codex/issue111-manager-wakeback` worktree에서 manager wakeback V1을 구현하고
-로컬 검증을 마쳤다. 기존 LIVE나 기존 UNKNOWN/claim은 변경하지 않았다.
+Manager wakeback V1은 PR #112로 main에 병합되어 exact-SHA LIVE 배포까지 완료했다.
+이후 BCT Control을 새로고침해 hosted `bct_orchestrate` 가용성도 확인했다. 첫 신규
+manager→worker→manager wake E2E는 기존 LIVE나 기존 UNKNOWN/claim을 변경하지 않고
+시도했으나, 공유 RCC instance fence 때문에 새 assignment나 browser delivery 전에
+안전하게 중단했다.
 
 - 알려진 terminal worker result와 같은 SQLite transaction에 immutable manager-wake
   intent를 저장한다. RCC 전송 실패가 worker result를 재실행하거나 지우지 않는다.
@@ -17,13 +20,20 @@
   `2026-10-15-rcc-manager-wakeback-v13`이다.
 - Local gates: `python -m unittest discover -s tests -v` **193 PASS**,
   `python -m compileall -q src tests`, `git diff --check`, RCC source/Node
-  regression all PASS. 아직 PR/CI/main/LIVE/E2E는 수행하지 않았다.
+  regression all PASS. PR #112 head
+  `f3f7f0953988b94f12119142c5525621fa9ea53c` passed BCT CI run `38616742752`
+  and merged as `cc42b70cfa00abb86d5651ed82cb79fdd8fea549`, which is the
+  generation-85 LIVE Core release.
 
-다음 단계는 변경을 한 PR로 올리고 exact-head CI를 확인한 뒤에만 main 동기화와
-exact-SHA LIVE deployment/RCC reload를 수행하는 것이다. 그 뒤 새로 만든 무해한
-manager-worker-manager target에서 단일 wake → durable receipt → independently
-authorized next bounded task를 한 번 검증한다. 기존 quarantine/UNKNOWN/claim을
-재전송·해제·재사용하지 않는다.
+Hosted E2E의 남은 단계는 새 무해한 target에서 단일 wake → durable receipt →
+independently authorized next bounded task를 한 번 검증하는 것이다. 다만 최초
+post-refresh preflight는 ACTIVE `BCT-ISSUE111-LIVE-20261015`와 UNKNOWN
+`rcc-localbridge-rename-tab594833023-20261015-02`가 같은
+`rcc-instance:6174664e1c1b4e6db1d4729c841db3c9` resource를 점유한 것을 확인했다.
+새 E2E의 node-sync도 이 shared resource를 claim하므로, 충돌 상태에서 실행하지
+않았다. 이 UNKNOWN/claim 또는 ACTIVE work를 재전송·해제·takeover·재사용하지 말고,
+read-only evidence와 canonical reconciliation이 안전한 fresh target을 허용할 때만
+재개한다.
 
 ## 현재 검증 상태
 
