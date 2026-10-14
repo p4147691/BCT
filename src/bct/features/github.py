@@ -309,17 +309,22 @@ class GitHubPullRequestFeature:
 
 
 def _check_evidence(runs: list[dict[str, Any]], required: list[str]) -> tuple[bool, list[dict[str, str]]]:
-    by_name = {}
+    by_name: dict[str, dict[str, Any]] = {}
+    providers: dict[str, set[str]] = {}
     for run in runs:
         name = str(run.get("name") or "")
+        app = run.get("app")
+        provider = str(app.get("slug") or app.get("id") or "") if isinstance(app, dict) else ""
+        providers.setdefault(name, set()).add(provider)
         if name not in by_name or int(run.get("id", 0)) > int(by_name[name].get("id", 0)):
             by_name[name] = run
     evidence: list[dict[str, str]] = []
     ready = True
     for name in required:
         run = by_name.get(name)
-        status = str(run.get("status") or "MISSING") if run else "MISSING"
-        conclusion = str(run.get("conclusion") or "") if run else ""
+        ambiguous = len(providers.get(name, set())) > 1
+        status = "AMBIGUOUS_PROVIDER" if ambiguous else (str(run.get("status") or "MISSING") if run else "MISSING")
+        conclusion = "" if ambiguous else (str(run.get("conclusion") or "") if run else "")
         if status != "completed" or conclusion != "success":
             ready = False
         evidence.append({"name": name, "status": status, "conclusion": conclusion})

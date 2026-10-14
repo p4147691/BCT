@@ -87,10 +87,30 @@ class GhCliClient:
         value = self._api(
             f"repos/{repository}/commits/{sha}/check-runs",
             "-H", "Accept: application/vnd.github+json",
+            "-f", "per_page=100", "--paginate", "--slurp",
         )
-        runs = value.get("check_runs") if isinstance(value, dict) else None
-        if not isinstance(runs, list):
+        if not isinstance(value, list) or not value:
             raise RuntimeError("GITHUB_CHECK_RUNS_INVALID")
+        runs: list[dict[str, Any]] = []
+        expected_total: int | None = None
+        for page in value:
+            if not isinstance(page, dict) or not isinstance(page.get("check_runs"), list):
+                raise RuntimeError("GITHUB_CHECK_RUNS_INVALID")
+            count = page.get("total_count")
+            if not isinstance(count, int) or count < 0:
+                raise RuntimeError("GITHUB_CHECK_RUNS_INVALID")
+            if expected_total is None:
+                expected_total = count
+            elif count != expected_total:
+                raise RuntimeError("GITHUB_CHECK_RUNS_CHANGED_DURING_PAGINATION")
+            for run in page["check_runs"]:
+                if not isinstance(run, dict):
+                    raise RuntimeError("GITHUB_CHECK_RUNS_INVALID")
+                runs.append(run)
+        if len({run.get("id") for run in runs}) != len(runs):
+            raise RuntimeError("GITHUB_CHECK_RUNS_DUPLICATE")
+        if len(runs) != expected_total:
+            raise RuntimeError("GITHUB_CHECK_RUNS_INCOMPLETE")
         return runs
 
     def merge_pull_request(
