@@ -156,3 +156,13 @@ long result collection. Final-response capture is scoped to the exact routed
 turn, so a later user turn in the same conversation cannot keep an already
 completed assignment falsely marked as generating. Generic RCC sends keep their
 existing wait-for-terminal-result behavior.
+
+RCC 1.0.10 also handles a completed content-side record whose result was
+already recovered and persisted by the background after the content script's
+bounded delivery retries ended. A later exact relay first retries only that
+idempotent result receipt. If the stale record remains or the target is still
+generating, the new exact relay returns confirmed `NOT_APPLIED` and is not
+queued. Pre-1.0.10 orchestration queue entries did not retain the complete
+binding tuple; RCC drops those local entries before submit and leaves the
+background evidence available for explicit reconciliation. This prevents an
+old queued prompt from firing after Core has timed out.

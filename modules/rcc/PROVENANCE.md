@@ -228,6 +228,34 @@ Candidate extension payload SHA-256 for 1.0.9:
 Loaded-build acceptance requires `backgroundBuildId` exactly
 `2026-10-14-rcc-orchestration-recovery-v2` before a fresh orchestration E2E.
 
+## BCT RCC 1.0.10 stale-completion drain candidate
+
+Version 1.0.10 preserves the 1.0.9 activation and exact-turn fences and closes
+one result-return recovery gap found by the first fresh-node chain. A bootstrap
+reply can be recovered and durably persisted by the background while the
+content script has already exhausted its bounded result-delivery retries. In
+that case the content script retained a `completed` execution record, so the
+next exact assignment was safely deferred but could not drain. A new exact
+relay now first retries only the idempotent prior result receipt. If that clears
+the record, normal exact submission continues; otherwise the new relay returns
+confirmed `NOT_APPLIED` and is never queued. Exact orchestration also returns
+`NOT_APPLIED` while the target is generating. Pre-1.0.10 orchestration queue
+entries lack their binding tuple, so drain drops those local entries before
+submit and leaves the background evidence for explicit reconciliation. Generic
+deferred entries preserve any supplied binding tuple.
+
+Candidate extension payload SHA-256 for 1.0.10:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `75a1189b0a00a974e4183e65e49b9adb3ed755ad3151fec4dcca7884f284bf23` |
+| `extension/content.js` | `fc2c365ebf44a023c36a6522540c6e03e86eebb0e9997e00dfec38cdf6451c2a` |
+| `extension/manifest.json` | `64e462c602842d888f6ddd959dab555dcb06f85e4634162e83ad1cada2f7312b` |
+| `extension/relay_core.js` | `b74d8d5528eb7eaf60600ca3a046da351295c99f7bec1dfebf9b8f21192b2a31` |
+
+Loaded-build acceptance requires `backgroundBuildId` exactly
+`2026-10-14-rcc-orchestration-recovery-v3` before resuming the queued chain.
+
 ## BCT RCC 1.0.3 bootstrap conversation identity acceptance candidate
 
 The first 1.0.2 LIVE E2E proved that ChatGPT can replace the blank route with a

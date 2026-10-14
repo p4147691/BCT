@@ -170,6 +170,21 @@ closed by `recover-not-dispatched`, whose receipt proves
 `external_effect_excluded=true`; no worker message was sent. The script now
 derives all worker and synthesis assignment IDs from the fresh run ID.
 
+The next run-scoped chain then exposed a distinct RCC queue-drain gap. Its first
+assignment `live-latency-review-8559977-v3` was durably reserved and RCC stored
+it as `deferred=true`, `submittedAt=null`; browser and probe evidence proved the
+prompt had not been submitted. The target tab was idle but retained the prior
+bootstrap relay as `phase=completed`, while that bootstrap's exact result was
+already durable in the background. The deferred queue therefore remained at
+depth one. RCC 1.0.10 retries only idempotent delivery of that completed result
+receipt before a new exact submit. If the stale record remains, or the target
+is generating, the new exact assignment returns confirmed `NOT_APPLIED` and is
+not queued. The pre-1.0.10 queued item lacks its exact-binding tuple and is
+dropped before submit after reload, while its background evidence remains for
+explicit reconciliation. This prevents a late send after the Core timeout. The
+current chain identity and claims remain preserved for post-deployment
+reconciliation.
+
 The original implementation acceptance proved 174 Python tests, all 15 RCC
 JavaScript test programs, Python compileall, JavaScript syntax, and
 `git diff --check`. Independent API, SQLite/recovery, and RCC audits all

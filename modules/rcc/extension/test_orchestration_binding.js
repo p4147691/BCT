@@ -318,6 +318,101 @@ function executeContextForPhase(phase) {
   console.log('2 content submission outcome fences PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 
+const beginStart = content.indexOf('async function beginRelayExecution(');
+const beginEnd = content.indexOf('async function executeRelayMessage(', beginStart);
+if (beginStart < 0 || beginEnd <= beginStart) {
+  throw new Error('content beginRelayExecution helper missing');
+}
+let queuedRelays = 0;
+let staleResultRecoveries = 0;
+const completedPrior = {
+  relayId: 'bootstrap-completed', phase: 'completed',
+  result: { ok: true, reply: '{"ready":true}' }
+};
+const staleDrainContext = vm.createContext({
+  result: null,
+  RelayCore: { normalizeMessageText: (value) => String(value).trim() },
+  requireExactRelayAuthorization: async (_message) => ({ ...expected }),
+  relayChatInjectionEnabled: async () => true,
+  connectionProblem: () => ({ disconnected: false }),
+  loadRelayExecution: () => completedPrior,
+  deferRelayExecution: () => {
+    queuedRelays += 1;
+    return { ok: true, deferred: true, replayed: false, queueDepth: 1 };
+  },
+  recoverRelayExecutionAfterReload: () => {
+    staleResultRecoveries += 1;
+    return Promise.resolve();
+  },
+});
+vm.runInContext(content.slice(beginStart, beginEnd)
+  + ';result=beginRelayExecution;', staleDrainContext);
+(async () => {
+  const deferred = await staleDrainContext.result({
+    relayId: 'next-assignment', text: 'bounded task', exactBinding: expected
+  });
+  if (deferred.effectState !== 'NOT_APPLIED' || deferred.submitted !== false
+      || queuedRelays !== 0 || staleResultRecoveries !== 1) {
+    throw new Error('completed stale result did not recover then fail exact dispatch closed');
+  }
+  console.log('1 completed-result exact-dispatch recovery fence PASS');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+
+const deferStart = content.indexOf('function deferRelayExecution(');
+const deferEnd = content.indexOf('async function drainDeferredRelayQueue(', deferStart);
+if (deferStart < 0 || deferEnd <= deferStart) {
+  throw new Error('content deferRelayExecution helper missing');
+}
+let deferredItems = [];
+const deferredBindingContext = vm.createContext({
+  result: null,
+  loadDeferredRelayQueue: () => deferredItems,
+  saveDeferredRelayQueue: (items) => { deferredItems = items; },
+  scheduleDeferredRelayDrain() {},
+});
+vm.runInContext(content.slice(deferStart, deferEnd)
+  + ';result=deferRelayExecution;', deferredBindingContext);
+const queuedBinding = {
+  instanceId: 'instance123', sessionId: 'session123', tabId: 201,
+  conversationKey: 'conversation-b', bindingReceiptId: 'RCB-AAAAAAAAAAAA',
+  attachmentGeneration: 3
+};
+const queued = deferredBindingContext.result({
+  relayId: 'queued-exact', text: 'bounded task', exactBinding: queuedBinding
+});
+if (!queued.ok || deferredItems.length !== 1
+    || JSON.stringify(deferredItems[0].exactBinding) !== JSON.stringify(queuedBinding)) {
+  throw new Error('deferred relay lost its exact binding tuple');
+}
+console.log('1 deferred exact-binding preservation fence PASS');
+
+const drainStart = content.indexOf('async function drainDeferredRelayQueue(');
+const drainEnd = content.indexOf('const relayNetworkStartWaiters', drainStart);
+if (drainStart < 0 || drainEnd <= drainStart) {
+  throw new Error('content drainDeferredRelayQueue helper missing');
+}
+let legacyDeferredItems = [{ relayId: 'orch.send.legacy-no-binding', text: 'old task' }];
+let legacyDrainSubmits = 0;
+const legacyDrainContext = vm.createContext({
+  result: null,
+  loadRelayExecution: () => null,
+  isGenerating: () => false,
+  loadDeferredRelayQueue: () => legacyDeferredItems,
+  saveDeferredRelayQueue: (items) => { legacyDeferredItems = items; },
+  beginRelayExecution: async () => { legacyDrainSubmits += 1; return { ok: true }; },
+  scheduleDeferredRelayDrain() {},
+});
+vm.runInContext(content.slice(drainStart, drainEnd)
+  + ';result=drainDeferredRelayQueue;', legacyDrainContext);
+(async () => {
+  const dropped = await legacyDrainContext.result();
+  if (dropped.dropped !== true || dropped.reason !== 'ORCHESTRATION_DEFERRED_BINDING_MISSING'
+      || legacyDrainSubmits !== 0 || legacyDeferredItems.length !== 0) {
+    throw new Error('legacy unbound orchestration queue item was eligible for late submit');
+  }
+  console.log('1 legacy unbound deferred relay late-submit fence PASS');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+
 const submitStart = content.indexOf('async function submitEditor(');
 const submitEnd = content.indexOf('async function waitForReply(', submitStart);
 if (submitStart < 0 || submitEnd <= submitStart) throw new Error('content submitEditor helper missing');
