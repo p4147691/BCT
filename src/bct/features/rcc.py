@@ -103,9 +103,11 @@ class RelayBrowserFeature:
     def __init__(
         self, client: RelayClient | None = None,
         *, result_readback_timeout_s: float = _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S,
+        recovery_retry_interval_s: float = 0.5,
     ):
         self.client = client or NamedPipeRelayClient()
         self.result_readback_timeout_s = result_readback_timeout_s
+        self.recovery_retry_interval_s = max(0.01, recovery_retry_interval_s)
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         command = str(arguments.get("command") or "").strip().lower()
@@ -292,7 +294,8 @@ class RelayBrowserFeature:
         proof_at=time.monotonic()
         deadline=began+float(values["timeout_s"])
         proof={"instance_id":instance_id,"extra":identity,"text":values["text"]}
-        recovery_attempted = False
+        recovery_attempts = 0
+        next_recovery_at = 0.0
         while time.monotonic()<deadline:
             remaining=deadline-time.monotonic()
             try:
@@ -307,13 +310,21 @@ class RelayBrowserFeature:
             if (
                 done.get("pending") is True
                 and pending_status.get("networkCompletedAt")
-                and not recovery_attempted
+                and recovery_attempts < 6
+                and time.monotonic() >= next_recovery_at
             ):
-                recovery_attempted = True
+                recovery_attempts += 1
+                next_recovery_at = time.monotonic() + min(
+                    4.0,
+                    self.recovery_retry_interval_s * (2 ** (recovery_attempts - 1)),
+                )
                 try:
                     done = self.client.request(
                         instance_id=instance_id,
-                        request_id=_readback_request_id(send_id) + ".recover",
+                        request_id=(
+                            _readback_request_id(send_id)
+                            + f".recover.{recovery_attempts}"
+                        ),
                         command="recover-created-result", text=send_id,
                         timeout_s=max(0.1, min(10.0, deadline-time.monotonic())),
                     )
@@ -327,6 +338,7 @@ class RelayBrowserFeature:
                     "conversation_key":str(done["result"]["conversationKey"]),
                     "host_state":("SUBMITTED" if initial_confirmed else "SUBMIT_UNKNOWN"),
                     "result_state":"RESULT_PERSISTED",
+                    "recovery_attempts":recovery_attempts,
                     "create_ms":create_ms,"send_ms":send_ms,
                     "readback_ms":round((time.monotonic()-proof_at)*1000,2),
                     "total_ms":round((time.monotonic()-began)*1000,2)},

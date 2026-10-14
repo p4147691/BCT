@@ -49,15 +49,25 @@ async def run(args: argparse.Namespace) -> None:
     work_id = f"BCT-DURABLE-ORCHESTRATION-LIVE-E2E-{run_id}"
     session_id = f"durable-orch-live-{run_id}"
     chain_operation_id = f"durable-orch-live-chain-{run_id}"
-    nodes = json.loads(Path(args.nodes_json).read_text(encoding="utf-8"))
-    expected_node_ids = {
+    node_payload = json.loads(Path(args.nodes_json).read_text(encoding="utf-8"))
+    expected_roles = {
         "manager-primary", "worker-latency",
         "worker-recovery", "manager-backup",
     }
-    if not isinstance(nodes, list) or {
-        str(item.get("node_id")) for item in nodes
-    } != expected_node_ids:
-        raise ValueError("nodes-json must define exactly four fresh E2E nodes")
+    if not isinstance(node_payload, dict) or set(node_payload) != expected_roles:
+        raise ValueError("nodes-json must map exactly four E2E roles to fresh nodes")
+    nodes = list(node_payload.values())
+    node_ids = [str(item.get("node_id") or "") for item in nodes]
+    conversations = [str(item.get("conversation_key") or "") for item in nodes]
+    if (
+        any(not value for value in node_ids + conversations)
+        or len(set(node_ids)) != 4
+        or len(set(conversations)) != 4
+    ):
+        raise ValueError("nodes-json node IDs and conversations must be nonempty and unique")
+
+    def node_id(role: str) -> str:
+        return str(node_payload[role]["node_id"])
 
     async with connect() as session:
         catalogue = await session.list_tools()
@@ -125,17 +135,17 @@ async def run(args: argparse.Namespace) -> None:
             assert len(matches) == 1, (node_id, matches)
             return matches[0]
 
-        primary = attachment("manager-primary")
-        latency = attachment("worker-latency")
-        recovery = attachment("worker-recovery")
-        backup = attachment("manager-backup")
+        primary = attachment(node_id("manager-primary"))
+        latency = attachment(node_id("worker-latency"))
+        recovery = attachment(node_id("worker-recovery"))
+        backup = attachment(node_id("manager-backup"))
         manager = await call(session, "bct_orchestrate", {
             "work_id": work_id,
             "operation_id": f"durable-orch-live-manager-select-{run_id}",
             "arguments": {
                 "operation": "manager-takeover", "session_id": session_id,
                 "expected_manager_epoch": 0,
-                "manager_node_id": "manager-primary",
+                "manager_node_id": node_id("manager-primary"),
                 "reason": "Select the user-facing manager before delegation",
                 "evidence": {"attachment_id": primary["attachment_id"]},
             },
@@ -147,7 +157,7 @@ async def run(args: argparse.Namespace) -> None:
             "tasks": [
                 {
                     "assignment_id": "live-latency-review",
-                    "worker_node_id": "worker-latency",
+                    "worker_node_id": node_id("worker-latency"),
                     "attachment_id": latency["attachment_id"],
                     "instruction": (
                         "Analyze this verified evidence only: Core main/LIVE SHA is "
@@ -163,7 +173,7 @@ async def run(args: argparse.Namespace) -> None:
                 },
                 {
                     "assignment_id": "live-recovery-review",
-                    "worker_node_id": "worker-recovery",
+                    "worker_node_id": node_id("worker-recovery"),
                     "attachment_id": recovery["attachment_id"],
                     "instruction": (
                         "Review these verified invariants: operation-ID idempotency, "
@@ -179,13 +189,13 @@ async def run(args: argparse.Namespace) -> None:
                 },
             ],
             "takeover": {
-                "manager_node_id": "manager-backup",
+                "manager_node_id": node_id("manager-backup"),
                 "reason": "Planned manager failover acceptance after worker results",
                 "evidence": {"planned": True, "prior_manager_epoch": 1},
             },
             "synthesis": {
                 "assignment_id": "live-manager-synthesis",
-                "manager_node_id": "manager-backup",
+                "manager_node_id": node_id("manager-backup"),
                 "attachment_id": backup["attachment_id"],
                 "instruction": (
                     "Act as the replacement manager. Combine the two exact worker "
@@ -230,7 +240,7 @@ async def run(args: argparse.Namespace) -> None:
             for item in snapshot["assignments"]
         }
         assert current["state"] == "FINISHED", current
-        assert current["manager_node_id"] == "manager-backup", current
+        assert current["manager_node_id"] == node_id("manager-backup"), current
         assert current["manager_epoch"] == 2, current
         assert assignment_states == {
             "live-latency-review": "APPLIED",
@@ -261,7 +271,7 @@ async def run(args: argparse.Namespace) -> None:
         "work_id": work_id,
         "session_id": session_id,
         "chain_operation_id": chain_operation_id,
-        "manager_before": "manager-primary",
+        "manager_before": node_id("manager-primary"),
         "manager_after": current["manager_node_id"],
         "manager_epoch": current["manager_epoch"],
         "assignment_states": assignment_states,
