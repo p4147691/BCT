@@ -1,8 +1,25 @@
 # BCT RCC Rename Claim Recovery
 
-Status: LIVE_INSPECTION_BLOCKED / NO_RECONCILIATION
+Status: OPERATOR_QUARANTINED / NO_RECONCILIATION
 
 ## Latest verified live state (2026-10-15)
+
+- PR #119 added the exceptional, audited operator-quarantine path for a
+  historical rename whose terminal RCC receipt has already been evicted.  Its
+  exact-head CI passed, it merged as `86ea3a2b9351f1aa22fbf36ed327aafec624ef55`,
+  and that SHA is LIVE (Core generation 89).
+- The original owner reconstructed the canonical rename request and matched
+  its stored SHA-256 request digest.  A fresh `inspect-rename-receipt` then
+  again proved the exact tab/conversation OPEN while `receipt=null` and
+  `receiptState=MISSING`.
+- The canonical quarantine operation atomically changed only the original
+  legacy broad claim to
+  `rcc-instance:6174664e1c1b4e6db1d4729c841db3c9:rename:594833023:6acf6b7c-3624-83e8-ac15-edf282278501`.
+  It recorded `RCC_RENAME_CLAIM_OPERATOR_QUARANTINED`; the original operation
+  remains `FINISHED/UNKNOWN` with its original error.  This is containment,
+  not a conclusion that the historical rename applied or failed.
+- Total unresolved claims remain 27.  No rename was resent, deleted, released,
+  or directly edited.
 
 - PR #115 (scoped rename claims and reconciliation) and PR #116 (owner-scoped,
   read-only receipt inspection before digest reconstruction) are merged.
