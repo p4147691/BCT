@@ -244,6 +244,97 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual({101, 102}, {item["tab_id"] for item in manager})
         self.assertEqual(1, sum(bool(item["relay_role"]) for item in manager))
 
+    def test_node_sync_conflict_is_rejected_before_rcc_binding(self):
+        self.call("preflight-start", {
+            "operation": "session-start", "session_id": "preflight-session",
+            "objective": "prove node-sync ownership before RCC mutation",
+            "acceptance": {"no_partial_binding": True},
+        })
+        before = len([
+            item for item in self.relay.calls
+            if item["command"] == "conversation-bind"
+        ])
+        result = self.call("preflight-conflict", {
+            "operation": "node-sync", "session_id": "preflight-session",
+            "instance_id": self.relay.instance_id,
+            "nodes": [{
+                "conversation_key": "conversation-b",
+                "node_id": "different-worker",
+                "name": "Different worker",
+                "role": "WORKER",
+                "relay_role": "BCT_W1",
+            }],
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        after = len([
+            item for item in self.relay.calls
+            if item["command"] == "conversation-bind"
+        ])
+        self.assertEqual(before, after)
+        self.assertFalse(any(
+            claim["operation_id"] == "preflight-conflict"
+            for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
+        ))
+
+    def test_legacy_node_sync_unknown_restores_binding_before_claim_release(self):
+        self.call("legacy-sync-start", {
+            "operation": "session-start", "session_id": "legacy-sync-session",
+            "objective": "recover one proven partial node-sync binding",
+            "acceptance": {"exact_binding_restored": True},
+        })
+        expected = self.attachment("worker-b")
+        validate = self.bct.orchestration.validate_sync_targets
+        self.bct.orchestration.validate_sync_targets = lambda **_kwargs: None
+        try:
+            unknown = self.call("legacy-node-sync-unknown", {
+                "operation": "node-sync", "session_id": "legacy-sync-session",
+                "instance_id": self.relay.instance_id,
+                "nodes": [{
+                    "conversation_key": "conversation-b",
+                    "node_id": "legacy-different-worker",
+                    "name": "Legacy different worker",
+                    "role": "WORKER",
+                    "relay_role": "BCT_W1",
+                }],
+            })
+        finally:
+            self.bct.orchestration.validate_sync_targets = validate
+        self.assertEqual(Outcome.UNKNOWN, unknown.outcome)
+        self.assertNotEqual(
+            expected["binding_receipt_id"],
+            self.relay.bindings["BCT_W1"]["bindingReceiptId"],
+        )
+        self.assertTrue(any(
+            claim["operation_id"] == "legacy-node-sync-unknown"
+            for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
+        ))
+
+        recovered = self.call("legacy-node-sync-recovery", {
+            "operation": "recover-node-sync",
+            "session_id": "legacy-sync-session",
+            "original_operation_id": "legacy-node-sync-unknown",
+            "instance_id": self.relay.instance_id,
+            "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.APPLIED, recovered.outcome)
+        self.assertEqual(
+            expected["binding_receipt_id"],
+            self.relay.bindings["BCT_W1"]["bindingReceiptId"],
+        )
+        original = self.bct.store.get_operation_for(
+            operation_id="legacy-node-sync-unknown",
+            work_id="work", principal_id=self.owner.principal_id,
+        )
+        self.assertEqual(Outcome.FAILED, original.outcome)
+        self.assertFalse(any(
+            claim["operation_id"] == "legacy-node-sync-unknown"
+            for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
+        ))
+        self.assertFalse(any(
+            item["command"] == "send" and "legacy" in item["text"]
+            for item in self.relay.calls
+        ))
+
     def test_scope_can_narrow_but_not_widen(self):
         worker = self.attachment("worker-b")
         result = self.call("dispatch-narrow", {

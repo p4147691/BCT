@@ -28,8 +28,8 @@ from bct.integrations.rcc import (
 
 _OPERATIONS = {
     "session-start", "node-sync", "manager-takeover", "dispatch",
-    "worker-replace", "reconcile", "recover-not-dispatched", "chain-run",
-    "chain-resume", "status", "cancel",
+    "worker-replace", "reconcile", "recover-not-dispatched",
+    "recover-node-sync", "chain-run", "chain-resume", "status", "cancel",
 }
 _RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 _RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
@@ -146,6 +146,12 @@ class OrchestrationFeature:
             _exact_keys(
                 arguments, common | {"original_operation_id"}, set()
             )
+        elif operation == "recover-node-sync":
+            _exact_keys(
+                arguments,
+                common | {"original_operation_id", "instance_id"},
+                {"timeout_s"},
+            )
         elif operation == "chain-run":
             _exact_keys(
                 arguments,
@@ -195,7 +201,9 @@ class OrchestrationFeature:
                 + str(arguments.get("assignment_id")),
                 "orchestration-attachment:" + str(arguments.get("attachment_id")),
             )
-        elif operation in {"reconcile", "recover-not-dispatched"}:
+        elif operation in {
+            "reconcile", "recover-not-dispatched", "recover-node-sync"
+        }:
             resources = (
                 "orchestration-recovery:"
                 + str(arguments.get("original_operation_id")),
@@ -272,6 +280,35 @@ class OrchestrationFeature:
         selections = values["nodes"]
         if not isinstance(selections, list) or not 1 <= len(selections) <= 12:
             raise PreconditionError("ORCHESTRATION_NODES_INVALID")
+        validated: list[dict[str, Any]] = []
+        requested_keys: set[str] = set()
+        for raw in selections:
+            if not isinstance(raw, dict):
+                raise PreconditionError("ORCHESTRATION_NODE_INVALID")
+            _exact_keys(
+                raw,
+                {"conversation_key", "node_id", "name", "role", "relay_role"},
+                set(),
+            )
+            key = str(raw["conversation_key"]).strip()
+            if not key or key in requested_keys:
+                raise PreconditionError("ORCHESTRATION_CONVERSATION_NOT_OBSERVED")
+            requested_keys.add(key)
+            validated.append(dict(raw))
+        try:
+            self.service.validate_sync_targets(
+                work=work, session_id=str(values["session_id"]),
+                instance_id=instance_id,
+                targets=[
+                    {
+                        "conversation_key": str(item["conversation_key"]).strip(),
+                        "node_id": str(item["node_id"]).strip(),
+                    }
+                    for item in validated
+                ],
+            )
+        except ConflictError as exc:
+            raise PreconditionError(str(exc)) from exc
         state = self._state(instance_id, timeout_s)
         external_session_id = str(state["sessionId"])
         endpoints: dict[str, list[dict[str, Any]]] = {}
@@ -292,20 +329,11 @@ class OrchestrationFeature:
                 continue
             seen_tabs.add(tab_id)
             endpoints.setdefault(key, []).append(endpoint)
+        if any(str(item["conversation_key"]).strip() not in endpoints for item in validated):
+            raise PreconditionError("ORCHESTRATION_CONVERSATION_NOT_OBSERVED")
         mapped: list[dict[str, Any]] = []
-        requested_keys: set[str] = set()
-        for raw in selections:
-            if not isinstance(raw, dict):
-                raise PreconditionError("ORCHESTRATION_NODE_INVALID")
-            _exact_keys(
-                raw,
-                {"conversation_key", "node_id", "name", "role", "relay_role"},
-                set(),
-            )
+        for raw in validated:
             key = str(raw["conversation_key"]).strip()
-            if key in requested_keys or key not in endpoints:
-                raise PreconditionError("ORCHESTRATION_CONVERSATION_NOT_OBSERVED")
-            requested_keys.add(key)
             node_id = str(raw["node_id"]).strip()
             relay_role = str(raw["relay_role"]).strip().upper()
             candidates = sorted(endpoints[key], key=lambda item: int(item["tabId"]))
@@ -374,6 +402,192 @@ class OrchestrationFeature:
             "attachments": mapped,
             "deactivated_attachments": deactivated,
         }
+
+    def _recover_node_sync(
+        self, request: FeatureRequest, work: Work
+    ) -> FeatureResult:
+        values = request.arguments
+        instance_id = validate_instance_id(values["instance_id"])
+        timeout_s = float(values.get("timeout_s", 5.0))
+        if timeout_s <= 0 or timeout_s > 30:
+            raise PreconditionError("ORCHESTRATION_TIMEOUT_INVALID")
+        try:
+            plan = self.service.node_sync_recovery_plan(
+                work=work, session_id=str(values["session_id"]),
+                original_operation_id=str(values["original_operation_id"]),
+                instance_id=instance_id,
+            )
+        except (KeyError, ConflictError) as exc:
+            raise PreconditionError(str(exc)) from exc
+
+        mutated = False
+        try:
+            state = self._state(instance_id, timeout_s)
+            external_session_id = str(state["sessionId"])
+            endpoints = {
+                (int(item["tabId"]), str(item.get("conversationKey") or ""))
+                for item in state.get("endpoints", [])
+                if isinstance(item, dict)
+                and isinstance(item.get("tabId"), int)
+                and str(item.get("presence") or "") == "OPEN"
+            }
+            registrations = state.get("registrations")
+            if not isinstance(registrations, dict):
+                raise PreconditionError("ORCHESTRATION_RCC_STATE_INVALID")
+            expected_targets = {
+                (int(item["tab_id"]), str(item["conversation_key"])):
+                    str(item["relay_role"])
+                for item in plan["bindings"]
+            }
+            for observed_role, observed in registrations.items():
+                if not isinstance(observed, dict):
+                    continue
+                target = (
+                    observed.get("tabId"),
+                    str(observed.get("conversationKey") or ""),
+                )
+                expected_role = expected_targets.get(target)
+                if (
+                    observed.get("instanceId") == instance_id
+                    and expected_role is not None
+                    and str(observed_role) != expected_role
+                ):
+                    raise PreconditionError(
+                        "ORCHESTRATION_NODE_SYNC_UNEXPECTED_ROLE"
+                    )
+            pending_binds: list[tuple[str, int, str, str]] = []
+            for expected in plan["bindings"]:
+                role = str(expected["relay_role"])
+                tab_id = int(expected["tab_id"])
+                conversation_key = str(expected["conversation_key"])
+                receipt_id = str(expected["binding_receipt_id"])
+                if (tab_id, conversation_key) not in endpoints:
+                    raise PreconditionError(
+                        "ORCHESTRATION_NODE_SYNC_ENDPOINT_NOT_OPEN"
+                    )
+                current = registrations.get(role)
+                if current is not None and not isinstance(current, dict):
+                    raise PreconditionError("ORCHESTRATION_RCC_STATE_INVALID")
+                if current is not None and (
+                    current.get("tabId") != tab_id
+                    or current.get("conversationKey") != conversation_key
+                    or current.get("instanceId") != instance_id
+                ):
+                    raise PreconditionError(
+                        "ORCHESTRATION_NODE_SYNC_ROLE_TARGET_CHANGED"
+                    )
+                exact = bool(
+                    current is not None
+                    and current.get("sessionId") == external_session_id
+                    and current.get("bindingReceiptId") == receipt_id
+                )
+                if exact:
+                    continue
+                pending_binds.append(
+                    (role, tab_id, conversation_key, receipt_id)
+                )
+            for role, tab_id, conversation_key, receipt_id in pending_binds:
+                bound = self.client.request(
+                    instance_id=instance_id,
+                    request_id="orch.restore-bind." + _hash(_canonical([
+                        request.operation_id, role, tab_id,
+                        conversation_key, receipt_id,
+                    ])),
+                    command="conversation-bind", to=role,
+                    extra={
+                        "instanceId": instance_id,
+                        "sessionId": external_session_id,
+                        "tabId": tab_id,
+                        "conversationKey": conversation_key,
+                        "bindingReceiptId": receipt_id,
+                    },
+                    timeout_s=timeout_s,
+                )
+                mutated = True
+                binding = (
+                    bound.get("binding")
+                    if isinstance(bound.get("binding"), dict) else {}
+                )
+                if not (
+                    bound.get("ok") is True
+                    and binding.get("instanceId") == instance_id
+                    and binding.get("sessionId") == external_session_id
+                    and binding.get("tabId") == tab_id
+                    and binding.get("conversationKey") == conversation_key
+                    and binding.get("bindingReceiptId") == receipt_id
+                ):
+                    raise UnknownEffectError(
+                        "ORCHESTRATION_NODE_SYNC_RESTORE_UNVERIFIED"
+                    )
+
+            verified_state = self._state(instance_id, timeout_s)
+            verified_session_id = str(verified_state["sessionId"])
+            verified_registrations = verified_state.get("registrations")
+            if not isinstance(verified_registrations, dict):
+                raise UnknownEffectError(
+                    "ORCHESTRATION_NODE_SYNC_RESTORE_UNVERIFIED"
+                )
+            verified: list[dict[str, Any]] = []
+            for expected in plan["bindings"]:
+                role = str(expected["relay_role"])
+                current = verified_registrations.get(role)
+                exact = bool(
+                    isinstance(current, dict)
+                    and current.get("instanceId") == instance_id
+                    and current.get("sessionId") == verified_session_id
+                    and current.get("tabId") == expected["tab_id"]
+                    and current.get("conversationKey")
+                        == expected["conversation_key"]
+                    and current.get("bindingReceiptId")
+                        == expected["binding_receipt_id"]
+                )
+                if not exact:
+                    if mutated:
+                        raise UnknownEffectError(
+                            "ORCHESTRATION_NODE_SYNC_RESTORE_UNVERIFIED"
+                        )
+                    raise PreconditionError(
+                        "ORCHESTRATION_NODE_SYNC_RESTORE_UNVERIFIED"
+                    )
+                verified.append({
+                    "relay_role": role,
+                    "tab_id": int(expected["tab_id"]),
+                    "conversation_key": str(expected["conversation_key"]),
+                    "binding_receipt_id": str(expected["binding_receipt_id"]),
+                    "external_session_id": verified_session_id,
+                })
+            try:
+                proof = self.service.finish_node_sync_recovery(
+                    work=work, session_id=str(values["session_id"]),
+                    original_operation_id=str(values["original_operation_id"]),
+                    resolver_operation_id=request.operation_id,
+                    instance_id=instance_id,
+                    bindings_digest=str(plan["bindings_digest"]),
+                    external_session_id=verified_session_id,
+                    verified_bindings=verified,
+                )
+            except (KeyError, ConflictError) as exc:
+                if mutated:
+                    raise UnknownEffectError(str(exc)) from exc
+                raise PreconditionError(str(exc)) from exc
+        except (RelayEffectUnknown, RelayUnavailable) as exc:
+            raise UnknownEffectError(
+                "ORCHESTRATION_NODE_SYNC_RESTORE_UNVERIFIED"
+            ) from exc
+        except ConfirmedFailure as exc:
+            if mutated:
+                raise UnknownEffectError(
+                    "ORCHESTRATION_NODE_SYNC_RESTORE_UNVERIFIED"
+                ) from exc
+            raise
+        return FeatureResult(
+            Outcome.APPLIED,
+            {"operation": "recover-node-sync",
+             "session_id": values["session_id"],
+             "original_operation_id": values["original_operation_id"],
+             "restored_roles": proof["restored_roles"]},
+            output={"proof": proof},
+        )
 
     @staticmethod
     def _result_envelope(
@@ -1397,6 +1611,8 @@ class OrchestrationFeature:
                  "nodes": result["nodes"], "attachments": len(result["attachments"])},
                 output=result,
             )
+        if operation == "recover-node-sync":
+            return self._recover_node_sync(request, work)
         if operation == "manager-takeover":
             try:
                 session = self.service.takeover_manager(
