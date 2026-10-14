@@ -1,6 +1,35 @@
 # BCT Durable Orchestration V1
 
-Status: ACTIVE / FIRST_LIVE_E2E_QUARANTINED / RECOVERY_FIX_LOCAL_ACCEPTED / GITHUB_AND_LIVE_PENDING.
+Status: ACTIVE / STAGED_LIVE_ACCEPTANCE / SUBMITTED_RECORD_RETIREMENT_FIX_PENDING.
+
+## Current gate (supersedes historical checkpoints below)
+
+Feature scope is frozen. Single roundtrip and durable receipt retrieval passed
+on the earlier payload; the single manager/worker gate is not accepted. Do not
+run the multi-worker or manager-takeover chain until the preceding gates pass.
+
+PRs #103/#104 corrected node-sync prevalidation and the real RCC registration
+wire field. The exact, message-free run04 resolver succeeded and released only
+that node-sync claim. All other historical UNKNOWN operations stay quarantined.
+
+The subsequent fresh bootstrap succeeded with RESULT_PERSISTED, but run06
+returned ORCHESTRATION_TARGET_BUSY before dispatch. Its worker retained the
+bootstrap content record at submitted. The existing reload-recovery helper
+could retire that state, but beginRelayExecution only invoked it for completed
+records. The previous isolated test exercised the helper, not this entry path.
+
+RCC 1.0.18 adds receipt-only retirement at the actual begin entry. Exact relay,
+sender tab, durable conversation, terminal receipt/hash, unchanged local record
+and unchanged route are required. A page-local retired-ID fence prevents late
+collectors from resurrecting the old record. No prompt/result replay, queue
+drain or claim release is performed by this path. The new entry-path regression
+failed before the fix and passes after it, with missing/mismatched receipt,
+route/record races and late-collector negative cases.
+
+Promotion still requires exact-head CI and exact-main deployment, followed by
+one dedicated-node roundtrip, durable recovery, then one manager/worker. On a
+failure, inspect receipts/DOM without resend; repeated identical failure stops
+speculative patch/deploy loops. Monitor grouping remains out of scope.
 
 ## Objective
 

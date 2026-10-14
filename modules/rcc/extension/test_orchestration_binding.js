@@ -336,6 +336,7 @@ const staleDrainContext = vm.createContext({
   relayChatInjectionEnabled: async () => true,
   connectionProblem: () => ({ disconnected: false }),
   loadRelayExecution: () => completedPrior,
+  retirePersistedRelayExecution: async () => false,
   deferRelayExecution: () => {
     queuedRelays += 1;
     return { ok: true, deferred: true, replayed: false, queueDepth: 1 };

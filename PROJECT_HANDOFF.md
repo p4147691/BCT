@@ -2,6 +2,14 @@
 
 ## 현재 검증 상태
 
+Durable Orchestration is not yet LIVE accepted. Follow the current-gate section
+of `docs/exec-plans/active/BCT_DURABLE_ORCHESTRATION_V1.md`: freeze features;
+single roundtrip -> durable recovery -> one manager/worker -> multi-worker and
+manager takeover. Preserve historical UNKNOWN/claims. The current bounded fix
+addresses a submitted bootstrap record left behind after background result
+persistence; earlier successful unit tests did not cover the real next-dispatch
+entry path. Do not infer full-chain completion from component acceptance.
+
 왕복 절감 후속 구현은 `docs/exec-plans/completed/BCT_BOUNDED_VERIFICATION_20261014.md`에서
 추적한다. verify, bounded CI wait, compact status와 durable result wait는 PR #81과
 Windows 129개 테스트, main CI 및 LIVE/hosted connector E2E를 통과했다. 같은 7개 작업의

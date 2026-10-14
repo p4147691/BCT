@@ -361,6 +361,25 @@ Candidate extension payload SHA-256 for 1.0.17:
 | `extension/manifest.json` | `9fe7855146f17ff2119781054b7a780e194db557d74c551c1740588e82175119` |
 | `extension/relay_core.js` | `b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd` |
 
+## BCT RCC 1.0.18 exact durable execution retirement candidate
+
+The next-dispatch entry now checks the background's exact persisted receipt for
+both submitted and completed local executions. Cleanup requires an unchanged
+local record/route and an exact terminal relay/hash proof. It neither resends
+the prompt/result nor drains a deferred queue. Retired IDs cannot be resurrected
+by late collectors in the same document. Unknown or changed evidence remains
+fail-closed. The entry-path regression fails on 1.0.17 and passes on this payload.
+
+Loaded build: `2026-10-14-rcc-orchestration-recovery-v11`. LIVE acceptance remains
+staged: single roundtrip, durable recovery, single manager/worker, then chain.
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `d3c478f92c6e67170fad4c0281a89c59143763616c1e8660a13bdf0adb378b73` |
+| `extension/content.js` | `72bd513f7b1e9eaec35b5fca2b29498495f5a5f5c9abc022b6037b5601c1053b` |
+| `extension/manifest.json` | `27b828a695a2447cf248bf89c19e5d334e213fa8d341f5342a12885e2ac9b69b` |
+| `extension/relay_core.js` | `b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd` |
+
 ## BCT RCC 1.0.12 durable result and composer candidate
 
 Version 1.0.12 closes two fail-closed conditions found by the first 1.0.11
