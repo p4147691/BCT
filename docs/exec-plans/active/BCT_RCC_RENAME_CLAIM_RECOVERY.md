@@ -1,6 +1,26 @@
 # BCT RCC Rename Claim Recovery
 
-Status: HANDOFF_READY / IMPLEMENTATION_OWNED_ELSEWHERE
+Status: LIVE_INSPECTION_BLOCKED / NO_RECONCILIATION
+
+## Latest verified live state (2026-10-15)
+
+- PR #115 (scoped rename claims and reconciliation) and PR #116 (owner-scoped,
+  read-only receipt inspection before digest reconstruction) are merged.
+- Core release `7f67d126de917808896e06d7a24d774a8643d5f4` is LIVE and healthy
+  (generation 87).  The installed RCC payload was updated to the matching
+  `rename-receipt` implementation and Chrome was explicitly reloaded.
+- The original work owner ran exactly one `inspect-rename-receipt` operation
+  against `rcc-localbridge-rename-tab594833023-20261015-02`.  It confirmed the
+  exact instance, tab `594833023`, and conversation
+  `6acf6b7c-3624-83e8-ac15-edf282278501` are OPEN, but returned
+  `receipt_found=false`.
+- No historical RCC `operations` receipt remains from which the original
+  session/title fingerprint can be proven.  The current title alone is not
+  proof of either application or non-application.
+- Result: `BLOCKED`.  The original operation remains `FINISHED/UNKNOWN`; its
+  legacy broad `rcc-instance:6174664e1c1b4e6db1d4729c841db3c9` claim remains
+  unresolved.  The total unresolved-claim count remains 27.  No reconciliation,
+  reclassification, resend, RCC reload, or Issue #111 E2E occurred.
 
 ## Problem
 
