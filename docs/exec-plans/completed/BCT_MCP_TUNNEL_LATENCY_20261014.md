@@ -85,3 +85,10 @@ fence after the drain phase. Exact-main deployment, a restart with the tunnel co
 readiness, and a final local MCP read then passed. Durable evidence is in
 `docs/exec-plans/completed/BCT_DEPLOY_SHUTDOWN_RECONCILIATION_20261014.md` and
 `docs/exec-plans/completed/BCT_DEPLOY_FORCE_EXIT_20261014.md`.
+# Follow-up correction
+
+The later bounded-verification review found official tunnel-client v0.0.16, published
+2026-10-06, with resp_timing and opt-in trace forwarding. The earlier claim that v0.0.15
+was the latest public release was incomplete. Track compatible installation and matched
+hosted remeasurement in GitHub issue #82. The measured local spans below remain evidence;
+the approximately 1.395-second residual is not proven to be approval/model processing.

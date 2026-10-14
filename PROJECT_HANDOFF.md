@@ -2,9 +2,12 @@
 
 ## 현재 검증 상태
 
-왕복 절감 후속 구현은 `docs/exec-plans/active/BCT_BOUNDED_VERIFICATION_20261014.md`에서
-추적한다. verify, bounded CI wait, compact status와 durable result wait는 구현 검증 중이며
-LIVE acceptance 전까지 운영 완료로 해석하지 않는다. 별도 개선 원장 대신 기존 GitHub Issues를 사용한다.
+왕복 절감 후속 구현은 `docs/exec-plans/completed/BCT_BOUNDED_VERIFICATION_20261014.md`에서
+추적한다. verify, bounded CI wait, compact status와 durable result wait는 PR #81과
+Windows 129개 테스트, main CI 및 LIVE/hosted connector E2E를 통과했다. 같은 7개 작업의
+호스팅 호출을 2회로 줄인 연속 비교에서 7.692초 → 2.097초였다. 작은 표본이며 로컬 자체의
+처리속도 향상이나 모델 추론시간 개선으로 해석하지 않는다. 사용 계약은 `docs/VERIFICATION.md`다.
+별도 개선 원장 대신 기존 GitHub Issues를 사용하며 비차단 후속 병목은 #82에 기록했다.
 
 `BCT_PLATFORM_PACKAGE_V1=LIVE_ACCEPTED`; `BCT_CORE_RELEASE_BOUNDARY=LIVE_ACCEPTED`.
 
@@ -191,8 +194,9 @@ Hosted ChatGPT의 단일 `bct_read` E2E는 1.816초였지만, 같은 exact reque
 유지한다. 상세 근거는 `docs/exec-plans/completed/BCT_MCP_TUNNEL_LATENCY_20261014.md`다.
 
 후속 최신 확인: 공식 tunnel-client v0.0.16 release는 `resp_timing`과 opt-in trace context를
-제공한다. 위 v0.0.15까지의 설명은 당시 조사 범위에 대한 기록이다. 설치 버전 업그레이드 및
-hosted 구간 재계측은 별도 GitHub 후속 이슈에서 추적하며, 기능 존재를 지연 해소로 간주하지 않는다.
+제공한다(공식 게시일 2026-10-06). 앞선 최신 릴리스 확인은 불완전했고 v0.0.15가 최신이라는
+판단을 정정한다. 설치 버전 업그레이드 및 hosted 구간 재계측은 GitHub #82에서 추적하며,
+기능 존재를 지연 해소로 간주하지 않는다.
 
 ## Deploy shutdown 및 UNKNOWN reconciliation 완료
 
