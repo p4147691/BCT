@@ -33,4 +33,20 @@ assert.strictEqual(oversized.failureEvidence.phase.length, 80);
 assert.strictEqual(oversized.failureEvidence.networkError.length, 300);
 assert.strictEqual(oversized.failureEvidence.domError.length, 300);
 assert.strictEqual(oversized.failureEvidence.networkSignal.length, 40);
+const recoverableStart = background.indexOf('function isRecoverableCaptureResult(');
+const recoverableEnd = background.indexOf('async function replaceRecoverableResultReceipt', recoverableStart);
+assert(recoverableStart >= 0 && recoverableEnd > recoverableStart);
+const recoverableFn = new Function(
+  background.slice(recoverableStart, recoverableEnd) + '\nreturn isRecoverableCaptureResult;'
+)();
+assert.strictEqual(recoverableFn({
+  ok: false,
+  error: 'net::ERR_ABORTED',
+  failureEvidence: {
+    phase: 'FINAL_DOM_VALIDATION',
+    networkError: 'net::ERR_ABORTED',
+    domError: 'RELAY_FINAL_DOM_NOT_READY:ROUTE_TURN_NOT_RESOLVED',
+    networkSignal: 'FAILED'
+  }
+}), true);
 console.log('Issue57 failure evidence tests PASS');

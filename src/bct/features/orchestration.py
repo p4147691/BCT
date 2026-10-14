@@ -705,7 +705,11 @@ class OrchestrationFeature:
                 },
                 result_message_id="result." + _hash(delivery_id + ":unknown", 32),
             )
-        receipt = terminal["result"]
+        receipt = self._recover_capture_receipt(
+            attachment=attachment,
+            delivery_id=delivery_id,
+            receipt=terminal["result"],
+        )
         reply = str(receipt.get("reply") or "")
         if not delivery_acknowledged:
             self.service.record_delivery(
@@ -781,6 +785,66 @@ class OrchestrationFeature:
             },
             result_message_id="result." + _hash(delivery_id + ":terminal", 32),
         )
+
+    @staticmethod
+    def _capture_failure_is_recoverable(receipt: dict[str, Any]) -> bool:
+        failure = (
+            receipt.get("failureEvidence")
+            if isinstance(receipt.get("failureEvidence"), dict)
+            else {}
+        )
+        evidence = "\n".join(str(value or "") for value in (
+            receipt.get("error"), failure.get("networkError"),
+            failure.get("domError"),
+        ))
+        return (
+            receipt.get("ok") is False
+            and receipt.get("ambiguous") is False
+            and str(receipt.get("resultState") or "") == "RESULT_PERSISTED"
+            and re.search(
+                r"RELAY_NETWORK_SIGNAL_TIMEOUT|"
+                r"RELAY_FINAL_DOM_UNKNOWN:ASSISTANT_RESPONSE_AMBIGUOUS|"
+                r"net::ERR_(?:FAILED|ABORTED)|RELAY_FINAL_DOM_NOT_READY",
+                evidence,
+                flags=re.I,
+            ) is not None
+        )
+
+    def _recover_capture_receipt(
+        self, *, attachment: dict[str, Any], delivery_id: str,
+        receipt: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Recover an exact final DOM result once; this path never resends."""
+        if not self._capture_failure_is_recoverable(receipt):
+            return receipt
+        try:
+            recovered = self.client.request(
+                instance_id=attachment["instance_id"],
+                request_id="orch.capture.recover." + _hash(delivery_id, 24),
+                command="recover-pending", to=attachment["relay_role"],
+                text=delivery_id, timeout_s=5.0,
+            )
+            if not (
+                recovered.get("ok") is True
+                and recovered.get("recovered") is True
+                and recovered.get("persistedResult") is True
+            ):
+                return receipt
+            readback = self.client.request(
+                instance_id=attachment["instance_id"],
+                request_id="orch.capture.read." + _hash(delivery_id, 24),
+                command="result", text=delivery_id, timeout_s=3.0,
+            )
+        except (RelayUnavailable, RelayEffectUnknown):
+            return receipt
+        if (
+            readback.get("found") is True
+            and readback.get("completed") is True
+            and readback.get("pending") is False
+            and isinstance(readback.get("result"), dict)
+        ):
+            return readback["result"]
+        return receipt
 
     def _reconcile(
         self, *, work: Work, values: dict[str, Any],
@@ -858,6 +922,11 @@ class OrchestrationFeature:
             time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
         if receipt is None:
             return None
+        receipt = self._recover_capture_receipt(
+            attachment=attachment,
+            delivery_id=delivery_id,
+            receipt=receipt,
+        )
         expected_fingerprint = _canonical([
             attachment["relay_role"], prompt, False, "",
             attachment["binding_receipt_id"], assignment["request_digest"],
