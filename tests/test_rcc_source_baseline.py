@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "97067a9621a55874be6674e20d8d61641a58feaff6ae97d284deb853e7044ca6",
-            "content.js": "5de54c3a5c142241cf09e478f8b93a2a5cd8d26d788eaaeed38711b090b69569",
-            "manifest.json": "8c3aa22004320c1c847128a84f61b442b2c3ccd78a2d5a2d5bd216946d588b31",
+            "background.js": "75a1189b0a00a974e4183e65e49b9adb3ed755ad3151fec4dcca7884f284bf23",
+            "content.js": "fc2c365ebf44a023c36a6522540c6e03e86eebb0e9997e00dfec38cdf6451c2a",
+            "manifest.json": "64e462c602842d888f6ddd959dab555dcb06f85e4634162e83ad1cada2f7312b",
             "relay_core.js": "b74d8d5528eb7eaf60600ca3a046da351295c99f7bec1dfebf9b8f21192b2a31",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.9", manifest["version"])
-        self.assertEqual("1.0.9 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.10", manifest["version"])
+        self.assertEqual("1.0.10 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)

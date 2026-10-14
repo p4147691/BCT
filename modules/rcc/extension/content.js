@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v2';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v3';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -1555,7 +1555,20 @@ function deferRelayExecution(message) {
 
 
 
-  queue.push({ relayId, text:String(message?.text || ''), queuedAt:Date.now() }); saveDeferredRelayQueue(queue); scheduleDeferredRelayDrain();
+  const suppliedBinding = message?.exactBinding;
+  const exactBinding = suppliedBinding && typeof suppliedBinding === 'object'
+    ? {
+        instanceId: String(suppliedBinding.instanceId || ''),
+        sessionId: String(suppliedBinding.sessionId || ''),
+        tabId: Number(suppliedBinding.tabId) || 0,
+        conversationKey: String(suppliedBinding.conversationKey || ''),
+        bindingReceiptId: String(suppliedBinding.bindingReceiptId || ''),
+        attachmentGeneration: Number(suppliedBinding.attachmentGeneration) || 0
+      }
+    : null;
+  queue.push({ relayId, text:String(message?.text || ''), queuedAt:Date.now(),
+    ...(exactBinding ? { exactBinding } : {}) });
+  saveDeferredRelayQueue(queue); scheduleDeferredRelayDrain();
 
 
 
@@ -1579,7 +1592,22 @@ async function drainDeferredRelayQueue() {
 
 
 
-  const next=queue.shift(); saveDeferredRelayQueue(queue); const result=await beginRelayExecution(next);
+  const next=queue.shift(); saveDeferredRelayQueue(queue);
+
+
+
+  // Builds before 1.0.10 did not persist the exact binding tuple in the
+  // content-side queue. Such an orchestration entry is proven pre-submit but
+  // cannot be authorized safely after reload. Drop only that local queue item;
+  // its background receipt remains available for explicit reconciliation.
+  if (String(next?.relayId || '').startsWith('orch.send.') && !next?.exactBinding) {
+    return { ok:true, drained:false, dropped:true,
+      relayId:String(next.relayId), reason:'ORCHESTRATION_DEFERRED_BINDING_MISSING' };
+  }
+
+
+
+  const result=await beginRelayExecution(next);
 
 
 
@@ -2345,15 +2373,48 @@ async function beginRelayExecution(message) {
 
 
 
-  const prior = loadRelayExecution();
+  let prior = loadRelayExecution();
 
 
 
-  if (prior?.relayId && prior.relayId !== message.relayId) { const deferred=deferRelayExecution(message); return deferred.ok ? { ok:true, submitted:false, deferred:true, relayId:message.relayId, queueDepth:deferred.queueDepth, replayed:deferred.replayed } : { ok:false, submitted:false, error:deferred.error }; }
+  if (prior?.relayId && prior.relayId !== message.relayId
+      && prior.phase === 'completed' && prior.result) {
+    // A result that the background recovered and persisted directly can leave
+    // the content-side completion record behind when its original delivery
+    // retries were exhausted. The prompt is already complete, so retry only
+    // the idempotent result receipt before deciding whether this new prompt is
+    // eligible to submit.
+    try { await recoverRelayExecutionAfterReload(); } catch (_) {}
+    prior = loadRelayExecution();
+  }
 
 
 
-  if (isGenerating()) { const deferred=deferRelayExecution(message); return deferred.ok ? { ok:true, submitted:false, deferred:true, relayId:message.relayId, queueDepth:deferred.queueDepth, replayed:deferred.replayed } : { ok:false, submitted:false, error:deferred.error }; }
+  if (prior?.relayId && prior.relayId !== message.relayId) {
+    if (exactBindingRequested) {
+      return { ok:false, submitted:false, effectState:'NOT_APPLIED',
+        error:'ORCHESTRATION_TARGET_BUSY' };
+    }
+    const deferred = deferRelayExecution(message);
+    return deferred.ok
+      ? { ok:true, submitted:false, deferred:true, relayId:message.relayId,
+          queueDepth:deferred.queueDepth, replayed:deferred.replayed }
+      : { ok:false, submitted:false, error:deferred.error };
+  }
+
+
+
+  if (isGenerating()) {
+    if (exactBindingRequested) {
+      return { ok:false, submitted:false, effectState:'NOT_APPLIED',
+        error:'ORCHESTRATION_TARGET_GENERATING' };
+    }
+    const deferred=deferRelayExecution(message);
+    return deferred.ok
+      ? { ok:true, submitted:false, deferred:true, relayId:message.relayId,
+          queueDepth:deferred.queueDepth, replayed:deferred.replayed }
+      : { ok:false, submitted:false, error:deferred.error };
+  }
 
 
 
