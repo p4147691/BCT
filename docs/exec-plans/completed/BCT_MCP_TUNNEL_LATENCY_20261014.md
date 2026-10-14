@@ -79,7 +79,9 @@ The only temporary runtime change, log level `debug`, was restored to `info`.
 The documentation-only closeout deployment exposed a separate service lifecycle defect, not a
 latency defect: a persistent tunnel Streamable HTTP connection could keep Uvicorn alive beyond the
 controller's verified shutdown window. The first operation ended UNKNOWN and was never replayed.
-PR #76 bounded graceful shutdown and added an exact LIVE reconciliation path; main CI, exact-main
-deployment, a restart with the tunnel connected, tunnel readiness, and a final local MCP read all
-passed. The durable incident and acceptance evidence is in
-`docs/exec-plans/completed/BCT_DEPLOY_SHUTDOWN_RECONCILIATION_20261014.md`.
+PR #76 bounded request draining and added an exact LIVE reconciliation path. A later deployment
+proved that FastMCP lifespan shutdown also needed a bound, so PR #79 added the Uvicorn `force_exit`
+fence after the drain phase. Exact-main deployment, a restart with the tunnel connected, tunnel
+readiness, and a final local MCP read then passed. Durable evidence is in
+`docs/exec-plans/completed/BCT_DEPLOY_SHUTDOWN_RECONCILIATION_20261014.md` and
+`docs/exec-plans/completed/BCT_DEPLOY_FORCE_EXIT_20261014.md`.

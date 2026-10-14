@@ -199,9 +199,15 @@ rollback receipt 파일·immutable release manifest·current pointer·running se
 검증 성공 시 store transaction 안에서만 원본 claim을 해제한다. Windows short/long path 차이는
 문자열이 아니라 파일 identity로 비교한다.
 
-로컬 focused 11개와 전체 116개 테스트, Windows PR CI와 main CI run `38493017422`가 통과했다.
-원본 UNKNOWN은 별도 operation으로 LIVE 증거에 따라 종결됐고, merge
-`aeccdd175eabee2d834cc20feed3295a480bd958`가 exact LIVE에 배포됐다. persistent tunnel이 실제
-연결된 상태의 Core restart도 APPLIED였으며 tunnel은 다시 `healthy/ready`, runtime `ready`,
-non-stale 상태가 됐다. 이후 local MCP read도 예상 SHA로 통과했다. 상세 증거는
-`docs/exec-plans/completed/BCT_DEPLOY_SHUTDOWN_RECONCILIATION_20261014.md`를 따른다.
+PR #76의 request-drain timeout만으로는 FastMCP lifespan shutdown이 제한되지 않는다는 후속
+LIVE 증거가 나왔다. 두 번째 배포도 UNKNOWN으로 보존했고 exact LIVE 복구 후 별도 reconciliation로
+claim만 원자적으로 해제했다. PR #79는 authenticated shutdown에서 `should_exit`와 `force_exit`를
+함께 설정해 5초 request drain 뒤 무기한 lifespan 대기를 건너뛴다.
+
+로컬 focused 11개와 전체 116개 테스트, PR #79 Windows CI run `38494897550`, merge
+`84a65e9dd0c85f0441e024f002f717ddccbcb0cb`, main CI run `38495142459`가 통과했다. 해당 release를
+bootstrap한 뒤 persistent tunnel이 실제 `ready`인 상태에서 Core restart가 APPLIED였고 같은 tunnel
+process가 다시 `healthy/ready`, runtime `ready`, non-stale 상태가 됐다. 후속 local MCP read도 예상
+SHA로 통과했다. 상세 증거는
+`docs/exec-plans/completed/BCT_DEPLOY_SHUTDOWN_RECONCILIATION_20261014.md`와
+`docs/exec-plans/completed/BCT_DEPLOY_FORCE_EXIT_20261014.md`를 따른다.
