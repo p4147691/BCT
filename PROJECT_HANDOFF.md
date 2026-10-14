@@ -20,10 +20,10 @@ manager→worker→manager wake E2E는 기존 LIVE나 기존 UNKNOWN/claim을 �
   `2026-10-15-rcc-manager-wakeback-v13`이다.
 - Local gates: `python -m unittest discover -s tests -v` **193 PASS**,
   `python -m compileall -q src tests`, `git diff --check`, RCC source/Node
-  regression all PASS. PR #112 head
-  `f3f7f0953988b94f12119142c5525621fa9ea53c` passed BCT CI run `38616742752`
-  and merged as `cc42b70cfa00abb86d5651ed82cb79fdd8fea549`, which is the
-  generation-85 LIVE Core release.
+  regression all PASS. PR #112 passed BCT CI run `38616742752` and its merged
+  source is the generation-85 LIVE Core release.  Verify current source/runtime
+  identity through `origin/main`, local `HEAD`, `current.json.source_head`, and
+  `/health.release_sha`; do not treat this handoff as a live SHA authority.
 
 Hosted E2E의 남은 단계는 새 무해한 target에서 단일 wake → durable receipt →
 independently authorized next bounded task를 한 번 검증하는 것이다. 다만 최초
