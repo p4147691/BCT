@@ -418,6 +418,40 @@ class RccIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(1, commands.count("send-to-created-tab"))
 
+    def test_create_and_send_retries_read_only_dom_recovery_without_resend(self):
+        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(
+            self.client,
+            result_readback_timeout_s=0.5,
+            recovery_retry_interval_s=0.01,
+        )
+        _, send, created, sent, terminal = self._compose_receipts(
+            "compose-dom-recovery-retry"
+        )
+        pending = {
+            "type": "host:result", "ok": True, "relayId": send,
+            "found": False, "completed": False, "pending": True,
+            "pendingStatus": {"networkStartedAt": 100, "networkCompletedAt": 200},
+        }
+        self.client.results = [
+            created, sent, pending,
+            RelayEffectUnknown("DOM_NOT_STABLE_YET"),
+            pending, terminal,
+        ]
+        result = self.call("compose-dom-recovery-retry", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "text": "hello",
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        commands = [call["command"] for call in self.client.calls]
+        self.assertEqual(2, commands.count("recover-created-result"))
+        self.assertEqual(1, commands.count("send-to-created-tab"))
+        recover_ids = [
+            call["request_id"] for call in self.client.calls
+            if call["command"] == "recover-created-result"
+        ]
+        self.assertEqual(2, len(set(recover_ids)))
+        self.assertEqual(2, result.evidence["recovery_attempts"])
+
     def test_create_and_send_unknown_parent_reconciles_from_exact_child_receipt(self):
         create, send, created, _, terminal = self._compose_receipts("compose-reconcile")
         self.client.results = [created, {"ok": False, "state": "SUBMIT_UNKNOWN"}, {

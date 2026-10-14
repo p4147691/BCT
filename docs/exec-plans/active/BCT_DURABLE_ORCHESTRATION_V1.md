@@ -148,6 +148,20 @@ before result polling; and completion state is read from the exact routed turn,
 not a later user turn. A fresh E2E must use new operation/session/assignment IDs
 and fresh conversation attachments.
 
+The first fresh-node bootstrap after 1.0.9 exposed a separate bounded recovery
+timing defect. `create-and-send` attempted read-only DOM recovery only once as
+soon as the network completed; if the exact turn was not yet stable, later
+polling observed only the pending receipt and eventually returned UNKNOWN. The
+message was not resent. A distinct reconciliation operation recovered the exact
+persisted reply for conversation `6acf2829-a8f0-83ec-87b4-fa8cb99f5787` and
+released only that new bootstrap claim. The follow-up fix retries only the
+read-only recovery probe with distinct request IDs, bounded exponential spacing,
+and no submit path.
+
+Follow-up local acceptance proves 179 Python tests, including a first recovery
+probe that fails before a later exact terminal receipt is collected; the test
+also proves one submit and two distinct recovery request IDs.
+
 The original implementation acceptance proved 174 Python tests, all 15 RCC
 JavaScript test programs, Python compileall, JavaScript syntax, and
 `git diff --check`. Independent API, SQLite/recovery, and RCC audits all
