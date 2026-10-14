@@ -17,7 +17,7 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "f4925197dbc89b7cf9d0903da1da1bf1b0096a3d44a07d38ac1c5829508a24ec",
+            "background.js": "2b3c8392d6d4d475487ec82802c411bfa7291db894439938927311374e6a1045",
             "content.js": "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe",
             "manifest.json": "ded68ea4bc4793fb25e72722b8ff1458db68e6d98f53f1990003947d3b8b551e",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
@@ -207,6 +207,18 @@ class RccSourceBaselineTests(unittest.TestCase):
             )
             self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
             self.assertIn(marker, completed.stdout)
+
+    def test_rename_receipt_survives_generic_operation_cache_eviction(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is unavailable")
+        completed = subprocess.run(
+            [node, "test_rename_receipt_retention.js"], cwd=str(self.extension),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+        self.assertIn("rename receipt retention tests: PASS", completed.stdout)
 
     def test_runtime_javascript_has_valid_syntax(self):
         node = shutil.which("node")
