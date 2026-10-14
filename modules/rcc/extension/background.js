@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v11';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v12';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
@@ -994,6 +994,10 @@ async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, subm
         const content = unit.querySelector('[data-user-message-bubble="true"],[data-message-author-role="user"]') || unit;
         const clone = content.cloneNode(true);
         clone.querySelectorAll('button,[role="button"],[contenteditable="true"]').forEach((item) => item.remove());
+        // Keep this exact UI-decoration rule aligned with messageUnitText.
+        clone.querySelectorAll('[data-search-result-target] + span[aria-hidden="true"]').forEach((item) => {
+          if (item.textContent === '…') item.remove();
+        });
         return normalize(clone.textContent || '');
       };
       const matches = turns.filter((turn) => {

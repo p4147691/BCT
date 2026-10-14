@@ -5,10 +5,38 @@
 Durable Orchestration is not yet LIVE accepted. Follow the current-gate section
 of `docs/exec-plans/active/BCT_DURABLE_ORCHESTRATION_V1.md`: freeze features;
 single roundtrip -> durable recovery -> one manager/worker -> multi-worker and
-manager takeover. Preserve historical UNKNOWN/claims. The current bounded fix
-addresses a submitted bootstrap record left behind after background result
-persistence; earlier successful unit tests did not cover the real next-dispatch
-entry path. Do not infer full-chain completion from component acceptance.
+manager takeover. Preserve historical UNKNOWN/claims. PR #105 fixed retirement
+of an already-persisted submitted bootstrap record at the real next-dispatch
+entry path. Exact-head/main CI, deployment, one existing-tab roundtrip and
+post-reload durable receipt retrieval passed. The next single manager/worker
+attempt submitted once but ended UNKNOWN during response capture.
+
+READ-only DOM evidence identifies a concrete routed-turn matching defect:
+the collapsed long user-message wrapper adds an aria-hidden ellipsis outside
+the actual message body. RCC includes it in textContent, so the exact 1,244-char
+prompt becomes 1,245 chars and ROUTE_TURN_NOT_RESOLVED follows. The worker's
+matching result is visible, but is not promoted to an accepted receipt. The
+separate net::ERR_ABORTED signal's origin is not established. Repeated-failure
+policy stopped speculative patches, deployment and chained E2E. On explicit
+continuation, an isolated tree/selector fixture reproduced the failure in both
+real normal and injected direct-recovery entry paths. RCC 1.0.19 excludes only
+the exact hidden ellipsis sibling of data-search-result-target; literal text
+and unknown shapes stay unchanged. Regression coverage includes collapsed and
+expanded messages, Unicode/newlines/code, nested wrappers, ambiguous/wrong
+turns and conversation identity. Promotion and a fresh single-manager gate are
+still pending. Do not resend/release the quarantined attempt or rerun successful
+earlier gates. CLI #106 and monitor follow-ups remain outside this correction.
+
+Latest user clarification authorizes this correction through PR/CI/main and
+exact-SHA deployment plus RCC reload. This supersedes the brief LIVE hold.
+It does not authorize CLI updates, Chrome restart or historical UNKNOWN/claim
+changes. Resume staged acceptance only on fresh, unclaimed targets after the
+exact payload/build checks; stop another repeated failure for evidence review.
+
+Aggregate RCC status versus direct state, presence freshness, and stale
+GENERATING/probe fallback are separate follow-ups in GitHub #82, not proven
+causes of this response-capture failure. Do not infer full-chain completion
+from component acceptance.
 
 왕복 절감 후속 구현은 `docs/exec-plans/completed/BCT_BOUNDED_VERIFICATION_20261014.md`에서
 추적한다. verify, bounded CI wait, compact status와 durable result wait는 PR #81과

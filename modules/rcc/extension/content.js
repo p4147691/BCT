@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v10';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v12';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -273,6 +273,11 @@ function messageUnitText(node, role) {
     // UI chrome is not part of the submitted prompt identity.
     const clone = content.cloneNode(true);
     clone.querySelectorAll('button,[role="button"],[contenteditable="true"]').forEach((item) => item.remove());
+    // Collapsed-message decoration is a sibling of the full text container,
+    // not user text. Preserve literal ellipses and all unknown DOM shapes.
+    clone.querySelectorAll('[data-search-result-target] + span[aria-hidden="true"]').forEach((item) => {
+      if (item.textContent === '…') item.remove();
+    });
     return RelayCore.normalizeMessageText(clone.textContent || '');
   }
   return RelayCore.normalizeMessageText(content.innerText || content.textContent || '');
