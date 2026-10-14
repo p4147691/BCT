@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "9cba648243a0301369529bdff7cdcdab1cbb36c693fd6b187dff1040630eb76c",
-            "content.js": "878c740df9c768915b1dd2e73f9ce2d23859f3a13703bc2d20d5adc5788393ae",
-            "manifest.json": "68b63efcb3da7e104eaf0d155b0db13b8406967b54e6477d75960464644b20c8",
+            "background.js": "7945812ed5a143cd8a76e1980e836646918fb7b9914bcc8cbd2030fe7ef1efe4",
+            "content.js": "28fd0e85087f786b83ee64fbcb5239e3fb65f108f5955ad540fe7afe26a741f3",
+            "manifest.json": "e0f794f04e96b6e1056ce77e9802d64446564b91eae4943e75b7bb82cd05b490",
             "relay_core.js": "74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.14", manifest["version"])
-        self.assertEqual("1.0.14 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.15", manifest["version"])
+        self.assertEqual("1.0.15 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -119,7 +119,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
-        self.assertIn("10 tests PASS", completed.stdout)
+        self.assertIn("12 tests PASS", completed.stdout)
 
     def test_first_message_navigation_ack_recovery(self):
         node = shutil.which("node")

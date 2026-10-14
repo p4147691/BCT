@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v7';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v8';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -1346,6 +1346,31 @@ function reacquireExactDraftEditor(expectedText) {
     ? current : null;
 }
 
+function waitForExactDraftEditor(expectedText, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let observer = null;
+    let timer = null;
+    const finish = (editor) => {
+      if (settled) return;
+      settled = true;
+      try { observer?.disconnect(); } catch (_) {}
+      if (timer) clearTimeout(timer);
+      resolve(editor || null);
+    };
+    const check = () => {
+      const editor = reacquireExactDraftEditor(expectedText);
+      if (editor) finish(editor);
+    };
+    observer = new MutationObserver(check);
+    observer.observe(document.documentElement, {
+      childList: true, subtree: true, characterData: true, attributes: true
+    });
+    timer = setTimeout(() => finish(null), timeoutMs);
+    check();
+  });
+}
+
 
 
 function waitForExactUserSubmission(expectedText, beforeUserCount, timeoutMs = 8000) {
@@ -2497,7 +2522,7 @@ async function beginRelayExecution(message) {
   // event. Reacquire the canonical composer, but accept it only when the exact
   // draft is visible. submitEditor and the binding lease still fence any later
   // node, route, tab, or conversation change before activation.
-  editor = reacquireExactDraftEditor(requestedText);
+  editor = await waitForExactDraftEditor(requestedText);
   if (!editor) {
     throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
   }
