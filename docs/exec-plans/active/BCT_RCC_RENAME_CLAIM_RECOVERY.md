@@ -1,0 +1,81 @@
+# BCT RCC Rename Claim Recovery
+
+Status: HANDOFF_READY / IMPLEMENTATION_OWNED_ELSEWHERE
+
+## Problem
+
+An UNKNOWN `rename-conversation` operation currently retains the broad resource
+claim `rcc-instance:<instance_id>`.  A fresh durable-orchestration `node-sync`
+also claims that exact instance-wide resource.  Consequently, one unproven
+cosmetic rename blocks an unrelated manager-worker-manager E2E before any new
+assignment or browser delivery starts.
+
+This is not an acceptable recovery boundary.  UNKNOWN must prevent duplicate
+rename effects; it must not quarantine unrelated conversations or the whole RCC
+instance solely because their operations share a transport process.
+
+## Verified cause
+
+- `src/bct/features/rcc.py` derives `rcc-instance:<instance_id>` for every
+  mutating RCC command, including `rename-conversation`.
+- `src/bct/features/orchestration.py` intentionally claims the same resource
+  for `node-sync`, which can alter registered bindings across an instance.
+- BCT has fenced `recover-node-sync`, but no equivalent inspection and
+  reconciliation path for an uncertain conversation rename.
+- The observed blocker is operation
+  `rcc-localbridge-rename-tab594833023-20261015-02`, work
+  `BCT-RCC-LOCALBRIDGE-TITLE-RENAME-20261015`, with the unresolved resource
+  `rcc-instance:6174664e1c1b4e6db1d4729c841db3c9`.
+
+## Required implementation
+
+1. Give `rename-conversation` a canonical resource key scoped to its exact
+   `instance_id`, `tab_id`, and `conversation_key`.  Do not reduce claims for
+   commands that really mutate instance-wide state.
+2. Add an authenticated, read-first rename reconciliation operation.  It must
+   observe the exact tab/conversation identity and current title before making
+   a terminal decision; it must not resend the rename.
+3. If the observed title exactly proves the original requested effect, record
+   `APPLIED`.  If it exactly proves no effect, record `NOT_APPLIED`.  If the
+   identity, title, or observation is ambiguous, preserve `UNKNOWN` and the
+   narrow claim.
+4. Provide a fenced migration/reconciliation path for legacy broad rename
+   claims.  It may narrow or release the old claim only after the original
+   operation, exact target identity, and external state are verified in one
+   transaction.  No direct DB edits, blind release, takeover, or resend.
+5. Verify that a rename UNKNOWN on one conversation does not block node-sync
+   or a fresh E2E for a different, unclaimed target.  It must still block a
+   duplicate rename of its own exact target.
+
+## Required tests and acceptance
+
+- Unit tests for canonical claim keys: same target conflicts; distinct tabs or
+  conversations do not conflict; genuinely instance-wide commands remain
+  fenced.
+- Reconciliation tests: confirmed applied, confirmed not-applied, missing or
+  mismatched conversation identity, ambiguous title, lost response, and
+  duplicate reconciliation invocation.
+- Legacy broad-claim tests: no release on incomplete evidence; atomic
+  reclassification only on exact evidence; historical unrelated UNKNOWN claims
+  unchanged.
+- Full suite, compile, diff check, exact-head CI, exact-SHA deployment, then a
+  fresh manager-worker-manager E2E on a new target.  The E2E is not evidence of
+  this fix until it records one durable worker result, one wake, and one
+  independently authorized next bounded task.
+
+## Non-negotiable guards
+
+- Do not resend `rcc-localbridge-rename-tab594833023-20261015-02`.
+- Do not directly delete, release, take over, or edit the existing UNKNOWN
+  operation, its claim, or `BCT-ISSUE111-LIVE-20261015` ACTIVE work.
+- Do not alter existing RCC tabs, conversations, bindings, drafts, or Chrome
+  state while diagnosing.
+- Do not claim E2E success from polling, a status read, or a broad-lock bypass.
+
+## Handoff order
+
+First inspect the original durable receipt and exact RCC state read-only.  Then
+implement the scoped key and reconciliation in an isolated worktree, prove the
+guards above locally and in CI, and deploy only the exact tested SHA.  Resume
+Issue #111 E2E only after the stale broad fence is safely reconciled or
+reclassified by that canonical path.
