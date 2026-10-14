@@ -14,7 +14,11 @@
       const u = new URL(url);
       if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(u.hostname)) return '';
       const match = u.pathname.match(/^\/c\/([a-z0-9-]{8,64})(?:\/|$)/i);
-      return match ? match[1] : '';
+      const key = match ? match[1] : '';
+      // ChatGPT can briefly expose this optimistic route while the server is
+      // allocating the durable conversation UUID. It is a navigation marker,
+      // not a stable conversation identity.
+      return key.toLowerCase() === 'local-chatgpt' ? '' : key;
     } catch {
       return '';
     }

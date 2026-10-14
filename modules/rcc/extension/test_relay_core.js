@@ -37,6 +37,11 @@ assert.strictEqual(
   'provider launch root must not be an identity'
 );
 assert.strictEqual(
+  core.conversationKey('https://chatgpt.com/c/local-chatgpt'),
+  '',
+  'optimistic local-chatgpt route must not become a durable identity'
+);
+assert.strictEqual(
   core.conversationKey('https://chatgpt.com/c/6ab16231-988c-83ee-81e7-6c18eab5a3b3'),
   '6ab16231-988c-83ee-81e7-6c18eab5a3b3',
   'real /c/ conversation must keep its key'

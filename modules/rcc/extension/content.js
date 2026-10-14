@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v3';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v4';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -1439,7 +1439,7 @@ function currentConversationKey() {
 
 
 
-  return location.pathname.match(/^\/c\/([a-z0-9-]{8,64})/i)?.[1] || '';
+  return RelayCore.conversationKey(location.href);
 
 
 
