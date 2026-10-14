@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from .models import (
@@ -93,14 +94,20 @@ class OperationCoordinator:
                 principal_id=principal.principal_id,
             ) != request.target:
                 raise PreconditionError("DEPLOYMENT_RECONCILE_TARGET_MISMATCH")
-            expected_error = (
-                "DEPLOYMENT_ROLLBACK_UNVERIFIED:"
-                + request.preconditions["reconciliation_receipt"]
-            )
+            error_prefix = "DEPLOYMENT_ROLLBACK_UNVERIFIED:"
+            original_error = str(original.error or "")
+            receipt_matches = False
+            if original_error.startswith(error_prefix):
+                try:
+                    receipt_matches = Path(original_error[len(error_prefix):]).samefile(
+                        request.preconditions["reconciliation_receipt"]
+                    )
+                except OSError:
+                    receipt_matches = False
             if (
                 original.state is not OperationState.FINISHED
                 or original.outcome is not Outcome.UNKNOWN
-                or str(original.error or "") != expected_error
+                or not receipt_matches
             ):
                 raise PreconditionError("DEPLOYMENT_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
         if not request.resources:
