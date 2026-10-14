@@ -38,6 +38,12 @@ def build_server_config(app: Any, *, port: int) -> uvicorn.Config:
     )
 
 
+def request_server_shutdown(server: uvicorn.Server) -> None:
+    """Drain active requests, then skip an unbounded application lifespan shutdown."""
+    server.should_exit = True
+    server.force_exit = True
+
+
 def monitor_extension_origin_allowed(value: str) -> bool:
     return str(value or "").rstrip("/") == MONITOR_EXTENSION_ORIGIN
 
@@ -217,7 +223,7 @@ def main() -> int:
         supplied = request.headers.get("X-BCT-Control-Token", "")
         if not hmac.compare_digest(supplied, control_token):
             return JSONResponse({"error": "CONTROL_TOKEN_INVALID"}, status_code=403)
-        holder["server"].should_exit = True
+        request_server_shutdown(holder["server"])
         return JSONResponse({"accepted": True})
 
     app = LocalBearerMiddleware(mcp.streamable_http_app(), mcp_token)
