@@ -80,6 +80,29 @@ class OperationCoordinator:
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
         )
+        if capability == "deploy" and request.arguments.get("operation") == "reconcile":
+            original_id = request.arguments["original_operation_id"]
+            original = self.store.get_operation_for(
+                operation_id=original_id,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+            )
+            if self.store.get_operation_target_for(
+                operation_id=original_id,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+            ) != request.target:
+                raise PreconditionError("DEPLOYMENT_RECONCILE_TARGET_MISMATCH")
+            expected_error = (
+                "DEPLOYMENT_ROLLBACK_UNVERIFIED:"
+                + request.preconditions["reconciliation_receipt"]
+            )
+            if (
+                original.state is not OperationState.FINISHED
+                or original.outcome is not Outcome.UNKNOWN
+                or str(original.error or "") != expected_error
+            ):
+                raise PreconditionError("DEPLOYMENT_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
         if not request.resources:
             raise ValueError("FEATURE_RESOURCE_REQUIRED")
         digest = hashlib.sha256(json.dumps({

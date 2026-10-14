@@ -24,6 +24,18 @@ MONITOR_EXTENSION_ORIGIN = "chrome-extension://kaigandfpieiogfbfaemoimenmipedck"
 MONITOR_PRINCIPAL_ID = "bct-monitor-extension"
 MONITOR_WORK_ID = "bct-monitor-extension-control"
 _OPERATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 5
+
+
+def build_server_config(app: Any, *, port: int) -> uvicorn.Config:
+    """Bound shutdown even while a Streamable HTTP client keeps a session open."""
+    return uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+    )
 
 
 def monitor_extension_origin_allowed(value: str) -> bool:
@@ -209,7 +221,7 @@ def main() -> int:
         return JSONResponse({"accepted": True})
 
     app = LocalBearerMiddleware(mcp.streamable_http_app(), mcp_token)
-    config = uvicorn.Config(app, host="127.0.0.1", port=arguments.port, log_level="warning")
+    config = build_server_config(app, port=arguments.port)
     server = uvicorn.Server(config)
     holder["server"] = server
     server.run()
