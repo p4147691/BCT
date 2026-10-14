@@ -24,8 +24,8 @@ The service was recovered without replaying the UNKNOWN operation: the official 
 - Main CI run `38493017422` passed.
 - Reconciliation operation `bct-mcp-latency-closeout-live-reconcile-02` finished `APPLIED` against the exact running release without replaying the original deployment effect; the original historical UNKNOWN receipt was not rewritten.
 - Exact-main deployment `bct-deploy-shutdown-reconcile-live-deploy-01` finished `APPLIED` and installed `aeccdd175eabee2d834cc20feed3295a480bd958`.
-- With the persistent tunnel connected and ready, service operation `bct-deploy-shutdown-live-restart-01` finished `APPLIED`, changed the exact Core process identity, and returned the same release and manifest. This is the production regression proof for the shutdown deadlock.
-- After the restart, tunnel status returned `healthy=true`, `ready=true`, `runtime_state=ready`, `stale=false`; local MCP read `bct-mcp-latency-final-local-read-01` finished `APPLIED` with the expected `pyproject.toml` SHA-256.
+- An initial restart operation finished `APPLIED`, but a later exact deployment proved that the five-second request timeout alone did not bound FastMCP lifespan shutdown. That second operation also remained UNKNOWN and was reconciled without replay after exact LIVE recovery.
+- PR #79 added the required `force_exit` fence. With its release live and the persistent tunnel connected, `bct-deploy-force-exit-live-restart-02` finished `APPLIED`; the same tunnel returned to `healthy/ready`, and `bct-mcp-latency-final-local-read-02` returned the expected `pyproject.toml` SHA-256.
 - The earlier one-call Hosted ChatGPT E2E remains recorded in `BCT_MCP_TUNNEL_LATENCY_20261014.md`; no extra browser message was sent merely to repeat an already accepted representational effect.
 
 ## Rollback
@@ -37,3 +37,10 @@ The code rollback is the ordinary exact-SHA deployment of a reviewed earlier `ma
 Reconciliation is not a retry mode and does not call staging, current-pointer write, stop, start, or restart. It has its own resource key so the resolver can be recorded while the original deployment and service claims remain fenced. The coordinator requires the same work owner, exact original operation ID, target profile, terminal UNKNOWN outcome, and rollback receipt file identity before execution. The feature then proves that the receipt is `ROLLBACK_FAILED`, the current immutable release has the expected complete file set and hashes, and the owned service is running that exact release and manifest. Only `Store.finish_operation()` releases the original claims in the same transaction that records the resolver result and `OPERATION_RECONCILED` event.
 
 The original receipt and deployment failure remain audit evidence. A missing file, changed manifest, stopped or different service, wrong work, wrong target, non-UNKNOWN outcome, or already released claim fails closed. Operators must fix or inspect the external state and run a new exact resolver operation; they must not reuse the original deployment operation ID or edit SQLite state directly.
+
+## Lifespan follow-up
+
+The final shutdown mechanism and LIVE proof are recorded in
+`docs/exec-plans/completed/BCT_DEPLOY_FORCE_EXIT_20261014.md`. The request-drain timeout and deploy
+reconciliation remain necessary; `force_exit` complements them by preventing an unbounded MCP
+application lifespan shutdown after the bounded drain phase.
