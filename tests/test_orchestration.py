@@ -32,6 +32,8 @@ class FakeRelay:
         self.return_submit_ack = False
         self.confirmed_not_applied = set()
         self.result_mutator = None
+        self.recover_pending_enabled = False
+        self.recover_pending_calls = 0
         self.endpoints = [
             self.endpoint(101, 10, "conversation-a", "Manager"),
             self.endpoint(102, 10, "conversation-a", "Manager duplicate"),
@@ -139,6 +141,16 @@ class FakeRelay:
             return {
                 "ok": True, "reply": reply,
                 "resultHash": "a" * 64,
+            }
+        if command == "recover-pending":
+            self.recover_pending_calls += 1
+            if not self.recover_pending_enabled or text not in self.results:
+                return {"ok": False, "error": "RELAY_RECOVERY_RESULT_NOT_CAPTURE_ERROR"}
+            self.result_mutator = None
+            return {
+                "ok": True, "relayId": text, "recovered": True,
+                "persistedResult": True, "returnState": "NOT_REQUESTED",
+                "receiverAckState": "NOT_REQUESTED",
             }
         if command == "result":
             stored = None if self.hide_results else self.results.get(text)
@@ -589,6 +601,40 @@ class OrchestrationTests(unittest.TestCase):
             claim["operation_id"] == "bad-receipt"
             for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
         ))
+
+    def test_recoverable_rcc_capture_failure_uses_result_only_recovery(self):
+        worker = self.attachment("worker-b")
+        self.relay.return_submit_ack = True
+        self.relay.recover_pending_enabled = True
+        self.relay.result_mutator = lambda value: {
+            **value,
+            "ok": False,
+            "reply": "",
+            "error": "net::ERR_ABORTED",
+            "failureEvidence": {
+                "phase": "FINAL_DOM_VALIDATION",
+                "networkError": "net::ERR_ABORTED",
+                "domError": "RELAY_FINAL_DOM_NOT_READY:ROUTE_TURN_NOT_RESOLVED",
+                "networkSignal": "FAILED",
+            },
+        }
+        result = self.call("recover-capture", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "recover-capture-task",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "recover an exact final DOM result without resending",
+            "acceptance": {"result_only_recovery": True},
+        })
+        self.assertEqual(
+            Outcome.APPLIED, result.outcome,
+            (result, self.relay.recover_pending_calls, self.relay.calls),
+        )
+        self.assertEqual(1, self.relay.recover_pending_calls)
+        self.assertEqual(
+            1,
+            len([call for call in self.relay.calls if call["command"] == "send"]),
+        )
 
     def test_ambiguous_receipt_must_be_explicit_boolean_false(self):
         worker = self.attachment("worker-b")

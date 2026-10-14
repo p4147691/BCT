@@ -301,6 +301,37 @@ Candidate extension payload SHA-256 for 1.0.15:
 Loaded-build acceptance requires `backgroundBuildId` exactly
 `2026-10-14-rcc-orchestration-recovery-v4` before a fresh bootstrap/E2E.
 
+## BCT RCC 1.0.16 result-only orchestration recovery candidate
+
+The first bounded manager/worker acceptance on 1.0.15 submitted exactly once,
+received a submit ACK, and rendered the exact final response, but ChatGPT's
+conversation request ended with `net::ERR_ABORTED` while the turn router had
+not yet resolved the new DOM turn. The durable failure receipt preserved
+`RELAY_FINAL_DOM_NOT_READY:ROUTE_TURN_NOT_RESOLVED` in `failureEvidence`, but
+the existing result-only recovery classifier inspected only the top-level
+error and orchestration never invoked that recovery path.
+
+Version 1.0.16 recognizes the bounded failure-evidence fields and
+`net::ERR_ABORTED` as recovery candidates. Orchestration may then invoke one
+exact `recover-pending` lookup and re-read the same durable relay ID. This path
+requires the original persisted receipt and exact role, tab, conversation,
+binding receipt, instance/session, attachment generation, prompt fingerprint,
+and result hash. It never calls the send command and leaves insufficient or
+non-matching evidence UNKNOWN.
+
+The runtime build identifier is
+`2026-10-14-rcc-orchestration-recovery-v9`. Promotion requires the full Python
+and RCC JavaScript suites plus the staged single manager/worker LIVE gate.
+
+Candidate extension payload SHA-256 for 1.0.16:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `0cb5bb5443fbb3075cbadc23e09efb5320e441f9dbe40fc32a2c8d48e205de0b` |
+| `extension/content.js` | `ed000c5658777b3df538c5a8ae1e5e31ddca20c4fe215509f744170dc20d4cc3` |
+| `extension/manifest.json` | `924ecc447798007dc9afb4ed03fa7dc5361216f7168afd04d5f0cfc4fef815be` |
+| `extension/relay_core.js` | `74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc` |
+
 ## BCT RCC 1.0.12 durable result and composer candidate
 
 Version 1.0.12 closes two fail-closed conditions found by the first 1.0.11

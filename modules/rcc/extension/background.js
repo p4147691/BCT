@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v8';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v9';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
@@ -267,8 +267,14 @@ async function persistDurableResultReceipt(relayId, pending, result) {
 
 function isRecoverableCaptureResult(payload) {
   if (!payload || payload.ok === true) return false;
-  const error = String(payload.error || '');
-  return /RELAY_NETWORK_SIGNAL_TIMEOUT|RELAY_FINAL_DOM_UNKNOWN:ASSISTANT_RESPONSE_AMBIGUOUS|net::ERR_FAILED|RELAY_FINAL_DOM_NOT_READY/i.test(error);
+  const failureEvidence = payload.failureEvidence && typeof payload.failureEvidence === 'object'
+    ? payload.failureEvidence : {};
+  const evidence = [
+    payload.error,
+    failureEvidence.networkError,
+    failureEvidence.domError
+  ].map((value) => String(value || '')).join('\n');
+  return /RELAY_NETWORK_SIGNAL_TIMEOUT|RELAY_FINAL_DOM_UNKNOWN:ASSISTANT_RESPONSE_AMBIGUOUS|net::ERR_(?:FAILED|ABORTED)|RELAY_FINAL_DOM_NOT_READY/i.test(evidence);
 }
 
 async function replaceRecoverableResultReceipt(relayId, recoveredResult) {
