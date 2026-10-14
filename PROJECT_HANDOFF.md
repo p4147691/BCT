@@ -5,10 +5,27 @@
 Durable Orchestration is not yet LIVE accepted. Follow the current-gate section
 of `docs/exec-plans/active/BCT_DURABLE_ORCHESTRATION_V1.md`: freeze features;
 single roundtrip -> durable recovery -> one manager/worker -> multi-worker and
-manager takeover. Preserve historical UNKNOWN/claims. The current bounded fix
-addresses a submitted bootstrap record left behind after background result
-persistence; earlier successful unit tests did not cover the real next-dispatch
-entry path. Do not infer full-chain completion from component acceptance.
+manager takeover. Preserve historical UNKNOWN/claims. PR #105 fixed retirement
+of an already-persisted submitted bootstrap record at the real next-dispatch
+entry path. Exact-head/main CI, deployment, one existing-tab roundtrip and
+post-reload durable receipt retrieval passed. The next single manager/worker
+attempt submitted once but ended UNKNOWN during response capture.
+
+READ-only DOM evidence identifies a concrete routed-turn matching defect:
+the collapsed long user-message wrapper adds an aria-hidden ellipsis outside
+the actual message body. RCC includes it in textContent, so the exact 1,244-char
+prompt becomes 1,245 chars and ROUTE_TURN_NOT_RESOLVED follows. The worker's
+matching result is visible, but is not promoted to an accepted receipt. The
+separate net::ERR_ABORTED signal's origin is not established. Repeated-failure
+policy has stopped further patches, deployment and chained E2E; record/evidence
+updates only. Next: isolated DOM regressions for canonical user text in both
+normal and direct-recovery paths, preserving exact prompt/turn identity. Do not
+trim arbitrary literal ellipses or resend/release the quarantined attempt.
+
+Aggregate RCC status versus direct state, presence freshness, and stale
+GENERATING/probe fallback are separate follow-ups in GitHub #82, not proven
+causes of this response-capture failure. Do not infer full-chain completion
+from component acceptance.
 
 왕복 절감 후속 구현은 `docs/exec-plans/completed/BCT_BOUNDED_VERIFICATION_20261014.md`에서
 추적한다. verify, bounded CI wait, compact status와 durable result wait는 PR #81과

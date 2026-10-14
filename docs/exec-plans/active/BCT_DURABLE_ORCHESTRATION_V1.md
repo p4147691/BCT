@@ -1,11 +1,11 @@
 # BCT Durable Orchestration V1
 
-Status: ACTIVE / STAGED_LIVE_ACCEPTANCE / SUBMITTED_RECORD_RETIREMENT_FIX_PENDING.
+Status: ACTIVE / STAGED_LIVE_ACCEPTANCE / ROUTED_TURN_CANONICAL_TEXT_BLOCKED.
 
 ## Current gate (supersedes historical checkpoints below)
 
 Feature scope is frozen. Single roundtrip and durable receipt retrieval passed
-on the earlier payload; the single manager/worker gate is not accepted. Do not
+on the PR #105 payload; the single manager/worker gate is not accepted. Do not
 run the multi-worker or manager-takeover chain until the preceding gates pass.
 
 PRs #103/#104 corrected node-sync prevalidation and the real RCC registration
@@ -26,10 +26,98 @@ drain or claim release is performed by this path. The new entry-path regression
 failed before the fix and passes after it, with missing/mismatched receipt,
 route/record races and late-collector negative cases.
 
-Promotion still requires exact-head CI and exact-main deployment, followed by
-one dedicated-node roundtrip, durable recovery, then one manager/worker. On a
-failure, inspect receipts/DOM without resend; repeated identical failure stops
-speculative patch/deploy loops. Monitor grouping remains out of scope.
+PR #105 promotion and the first two gates passed. The fresh single-manager
+attempt again failed during response capture. Only READ-only diagnosis and
+evidence documentation followed; speculative patch/deploy loops are stopped.
+Monitor grouping remains out of scope.
+
+### PR #105 staged acceptance evidence (2026-10-14)
+
+- Exact head `8f0baba944a654923c4d81d0065eb33e21494681`: PR CI
+  `38556925764` PASS. Merge `6a6d4182950455f505534779bf24edc3f02a51bf`:
+  main CI `38557517486` PASS. Local acceptance: 184 Python tests, compileall,
+  all 18 RCC JavaScript test programs, and diff checks PASS.
+- Core deploy `rcc-v11-deploy-core-6a6d418` was APPLIED at that exact SHA.
+  RCC 1.0.18 source/payload hashes were checked; deployment backup is
+  `D:\BCT\data\deployments\BCT-RCC-V11-6A6D418\backup`.
+- Existing-tab send `rcc-v11-single-roundtrip-send-01` was submitted exactly
+  once, FINISHED/APPLIED, SUBMITTED_CONFIRMED, RESULT_PERSISTED. Reply was
+  `{"ok":true,"nonce":"RCC-V11-SRT-01"}`; result SHA256 was
+  `9e829d7394872933f8e427d19b07bf95ec004797ea7f80762502421792f7dd14`.
+  Repeated BCT and RCC reads agreed. `ackState=UNACKED` is result-consumption
+  ACK, not a missing submit ACK; submit had consumed-lease/delivery evidence.
+- `rcc-v11-single-roundtrip-receipt-reload-01` performed one controlled RCC
+  reload. The same persisted reply/hash/identities were recovered after the
+  new session without a resend. This proves post-reload receipt recovery,
+  not interruption at every possible in-flight crash point.
+- Target: tab `594833020`, conversation
+  `6acf5db0-38ec-83e8-920b-a6fdb7357fda`, node `worker-capture-v10b`.
+- Single-manager operation `single-manager-worker-dispatch-6a6d418-07`
+  (work `BCT-SINGLE-MANAGER-WORKER-LIVE-6A6D418-07`) is FINISHED/UNKNOWN;
+  assignment `single-worker-acceptance-6a6d418-07` is UNKNOWN. RCC relay
+  `orch.send.40e780fac604b3bc2b76ac3c595c7cb8` confirmed submission, then
+  persisted a failure: FINAL_DOM_VALIDATION,
+  `RELAY_FINAL_DOM_NOT_READY:ROUTE_TURN_NOT_RESOLVED`, `net::ERR_ABORTED`.
+  The screen contains a matching result envelope, but no accepted result is
+  inferred from screen visibility alone.
+
+### Confirmed canonical-text mismatch and remaining uncertainty
+
+The exact durable prompt is 1,244 characters. Both nested diagnostic user-unit
+wrappers produce 1,245 characters, with the first difference at index 1,244.
+The message ends in `[/BCT_ORCHESTRATION_ASSIGNMENT_V1]`; the wrapper adds `…`.
+READ-only DOM inspection locates the extra character in a sibling
+`<span aria-hidden="true" class="block">…</span>` outside the actual message
+body, next to a collapsed `aria-expanded="false"` more button. The original
+1,244-character message body is intact. These nested wrappers are not evidence
+of two sends.
+
+`content.js::messageUnitText` / `turnUserText` includes this UI decoration;
+`submittedPromptMatchesTurn` then fails exact equality and `resolveRoutedTurn`
+cannot select the submitted turn. Direct background recovery also uses cloned
+user-wrapper text and needs the same regression coverage. This is a confirmed
+explanation of the final DOM matching failure, not proof of what originally
+caused the separate network abort signal.
+
+The persisted timing proves exact draft validation before click. Later
+READ-only inspection found an empty composer, no send/stop button, terminal
+pending=false, and activeExecution=null. The historical editor replacement
+instant was not captured and must not be invented. No failed message was
+resent, and no screen result was imported through an ad-hoc reconciliation.
+
+At this checkpoint, all 24 protected preexisting claims were unchanged. The
+two new claims are retained:
+
+- `orchestration-attachment:att-e752ccb1ddda49ab9ea49f6a`
+- `orchestration-run:single-manager-worker-live-6a6d418-07:single-worker-acceptance-6a6d418-07`
+
+No multi-worker/manager-takeover chain ran. Do not rerun either successful gate.
+The next bounded correction must first reproduce collapsed/expanded long
+messages in isolation, distinguish UI ellipsis from literal user text, preserve
+inline code/newlines/Unicode, reject wrong or ambiguous turns, and cover both
+normal and direct-recovery entry paths. Do not simply strip a trailing `…` or
+relax exact turn identity. Only a proven correction may be proposed as one PR.
+
+Metadata follow-up: background reports recovery-v11, but content.js still has
+the recovery-v10 build string. Source and installed content SHA agree, so this
+is a stale marker, not evidence of a different installed file. Include marker
+consistency in the next bounded regression; no separate deployment was done.
+
+### Separate READ-only status follow-ups
+
+GitHub #82 remains the improvement ledger. Its RCC projection note records the
+full-state/1-second monitor budget, existing cached Native Host `presence`
+command, and stale global stop-selector/probe-fallback paths. Routine presence
+would require exact instance/session and observation-age checks, with explicit
+STALE/UNKNOWN rather than fail-open IDLE. User-reported multi-second full-state
+wall times include MCP overhead and are not internal RCC timings. These are
+separate candidates, not the confirmed routed-turn mismatch above. No monitor,
+presence or generation-state implementation changed in this checkpoint.
+
+The supplemental report's Core transition from generation 80 to 81 is accounted
+for by PR #105 deployment; RCC session changes occurred during the controlled
+deployment reload and persisted-receipt recovery test. No unrelated task was
+interrupted and no rollback was performed.
 
 ## Objective
 
