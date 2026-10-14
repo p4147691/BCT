@@ -564,6 +564,37 @@ class OrchestrationService:
             ).rowcount
             if changed != 1:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            # A pending notification belongs to the old manager attachment and
+            # must never be redirected.  Once takeover has atomically proved
+            # the replacement manager, preserve the old record as STALE and
+            # create a separately fenced event for the same immutable result.
+            # DELIVERING/UNKNOWN remain untouched: their external effect is not
+            # known and therefore cannot safely be re-notified automatically.
+            pending_wakes = db.execute(
+                "SELECT w.*,a.* FROM orchestration_manager_wakes w "
+                "JOIN orchestration_assignments a ON a.assignment_id=w.assignment_id "
+                "WHERE w.session_id=? AND w.manager_epoch=? AND w.state='PENDING' "
+                "AND a.session_id=? AND a.state IN ('APPLIED','FAILED') "
+                "ORDER BY w.created_at,w.event_id",
+                (session_id, expected_epoch, session_id),
+            ).fetchall()
+            requeued_wakes = 0
+            for wake in pending_wakes:
+                db.execute(
+                    "UPDATE orchestration_manager_wakes SET state='STALE',updated_at=? "
+                    "WHERE event_id=? AND state='PENDING'", (now, wake["event_id"]),
+                )
+                self.store._event(db, "ORCHESTRATION_MANAGER_WAKE_STALE", wake["event_id"], {
+                    "manager_epoch": expected_epoch,
+                    "reason": "MANAGER_TAKEOVER",
+                })
+                self._record_manager_wake(
+                    db, session_id=session_id, assignment=wake,
+                    generation=int(wake["assignment_generation"]),
+                    result_message_id=str(wake["result_message_id"]),
+                    result_digest=str(wake["result_digest"]), now=now,
+                )
+                requeued_wakes += 1
             queued = db.execute(
                 "SELECT a.assignment_id,a.current_generation FROM orchestration_assignments a "
                 "JOIN orchestration_assignment_attempts t ON "
@@ -600,6 +631,7 @@ class OrchestrationService:
                 "manager_node_id": manager_node_id, "manager_epoch": next_epoch,
                 "prior_epoch": expected_epoch,
                 "adopted_queued_assignments": len(queued),
+                "requeued_manager_wakes": requeued_wakes,
             })
             return self._session_value(self._session_row(db, session_id))
 
@@ -1352,6 +1384,16 @@ class OrchestrationService:
                     digest, bounded, now, now, None,
                 ),
             )
+            # A known terminal worker result is durable before any manager
+            # notification is attempted.  The event snapshots the *current*
+            # manager attachment; a later manager epoch or attachment change
+            # makes that event stale rather than redirecting it.
+            if outcome in {"APPLIED", "FAILED"}:
+                self._record_manager_wake(
+                    db, session_id=assignment["session_id"], assignment=assignment,
+                    generation=generation, result_message_id=result_message_id,
+                    result_digest=digest, now=now,
+                )
             self.store._event(db, "ORCHESTRATION_ASSIGNMENT_FINISHED", assignment_id, {
                 "generation": generation, "outcome": terminal,
                 "result_message_id": result_message_id,
@@ -1361,6 +1403,163 @@ class OrchestrationService:
                 (assignment_id,),
             ).fetchone()
             return self._assignment_value(db, updated)
+
+    @staticmethod
+    def _manager_attachment_row(db, *, session_id: str, manager_node_id: str):
+        return db.execute(
+            "SELECT a.* FROM orchestration_attachments a "
+            "WHERE a.node_id=? AND a.active=1 AND a.relay_role IS NOT NULL "
+            "AND a.relay_role!='' AND EXISTS (SELECT 1 FROM "
+            "orchestration_session_nodes sn WHERE sn.session_id=? "
+            "AND sn.node_id=a.node_id AND sn.active=1) AND EXISTS "
+            "(SELECT 1 FROM connections c WHERE c.connection_id='orch:' || a.attachment_id "
+            "AND c.node_id=a.node_id AND c.generation=a.generation "
+            "AND c.active=1) ORDER BY a.generation DESC LIMIT 1",
+            (manager_node_id, session_id),
+        ).fetchone()
+
+    def _record_manager_wake(
+        self, db, *, session_id: str, assignment, generation: int,
+        result_message_id: str, result_digest: str, now: float,
+    ) -> dict[str, Any]:
+        session = self._session_row(db, session_id)
+        manager_epoch = int(session["manager_epoch"])
+        manager_node_id = str(session["manager_node_id"] or "")
+        attachment = (
+            self._manager_attachment_row(
+                db, session_id=session_id, manager_node_id=manager_node_id,
+            ) if manager_node_id else None
+        )
+        event_id = "wake." + hashlib.sha256(
+            f"{session_id}:{manager_epoch}:{assignment['assignment_id']}:"
+            f"{generation}:{result_message_id}".encode("utf-8")
+        ).hexdigest()[:32]
+        state = "PENDING" if attachment is not None else "BLOCKED"
+        values = (
+            event_id, session_id, manager_epoch, assignment["assignment_id"],
+            generation, result_message_id, result_digest, manager_node_id or None,
+            attachment["attachment_id"] if attachment is not None else None,
+            int(attachment["generation"]) if attachment is not None else None,
+            attachment["instance_id"] if attachment is not None else None,
+            attachment["external_session_id"] if attachment is not None else None,
+            int(attachment["tab_id"]) if attachment is not None else None,
+            attachment["conversation_key"] if attachment is not None else None,
+            attachment["relay_role"] if attachment is not None else None,
+            attachment["binding_receipt_id"] if attachment is not None else None,
+            state, None, now, now, None, None,
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO orchestration_manager_wakes VALUES(?,?,?,?,?,?,?,?,"
+            "?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            values,
+        )
+        row = db.execute(
+            "SELECT * FROM orchestration_manager_wakes WHERE event_id=?", (event_id,)
+        ).fetchone()
+        self.store._event(db, "ORCHESTRATION_MANAGER_WAKE_RECORDED", event_id, {
+            "assignment_id": assignment["assignment_id"],
+            "generation": generation, "manager_epoch": manager_epoch,
+            "state": row["state"],
+        })
+        return dict(row)
+
+    def claim_manager_wake(
+        self, *, work: Work, session_id: str, event_id: str,
+        manager_epoch: int, delivery_id: str,
+    ) -> dict[str, Any] | None:
+        event_id = _identifier(event_id, "ORCHESTRATION_WAKE_EVENT_ID_INVALID")
+        delivery_id = _identifier(delivery_id, "ORCHESTRATION_WAKE_DELIVERY_ID_INVALID")
+        now = time.time()
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            event = db.execute(
+                "SELECT * FROM orchestration_manager_wakes WHERE event_id=? AND session_id=?",
+                (event_id, session_id),
+            ).fetchone()
+            if event is None:
+                raise KeyError("ORCHESTRATION_WAKE_EVENT_NOT_FOUND")
+            if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            if event["state"] == "DELIVERED":
+                return dict(event)
+            if event["state"] != "PENDING":
+                return None
+            attachment = self._manager_attachment_row(
+                db, session_id=session_id, manager_node_id=str(session["manager_node_id"] or ""),
+            )
+            exact = attachment is not None and all((
+                str(attachment["attachment_id"]) == str(event["attachment_id"]),
+                int(attachment["generation"]) == int(event["attachment_generation"]),
+                str(attachment["instance_id"]) == str(event["instance_id"]),
+                str(attachment["external_session_id"]) == str(event["external_session_id"]),
+                int(attachment["tab_id"]) == int(event["tab_id"]),
+                str(attachment["conversation_key"]) == str(event["conversation_key"]),
+                str(attachment["relay_role"]) == str(event["relay_role"]),
+                str(attachment["binding_receipt_id"]) == str(event["binding_receipt_id"]),
+            ))
+            if not exact:
+                db.execute(
+                    "UPDATE orchestration_manager_wakes SET state='STALE',updated_at=? "
+                    "WHERE event_id=? AND state='PENDING'", (now, event_id),
+                )
+                self.store._event(db, "ORCHESTRATION_MANAGER_WAKE_STALE", event_id, {
+                    "manager_epoch": manager_epoch,
+                })
+                return None
+            changed = db.execute(
+                "UPDATE orchestration_manager_wakes SET state='DELIVERING',delivery_id=?,"
+                "updated_at=? WHERE event_id=? AND state='PENDING'",
+                (delivery_id, now, event_id),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("ORCHESTRATION_WAKE_STATE_CHANGED")
+            claimed = db.execute(
+                "SELECT * FROM orchestration_manager_wakes WHERE event_id=?", (event_id,)
+            ).fetchone()
+            self.store._event(db, "ORCHESTRATION_MANAGER_WAKE_DISPATCHING", event_id, {
+                "delivery_id": delivery_id, "manager_epoch": manager_epoch,
+            })
+            return dict(claimed)
+
+    def complete_manager_wake(
+        self, *, work: Work, session_id: str, event_id: str,
+        manager_epoch: int, delivery_id: str, outcome: str,
+    ) -> dict[str, Any]:
+        if outcome not in {"DELIVERED", "PENDING", "UNKNOWN"}:
+            raise ValueError("ORCHESTRATION_WAKE_OUTCOME_INVALID")
+        now = time.time()
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            event = db.execute(
+                "SELECT * FROM orchestration_manager_wakes WHERE event_id=? AND session_id=?",
+                (event_id, session_id),
+            ).fetchone()
+            if event is None:
+                raise KeyError("ORCHESTRATION_WAKE_EVENT_NOT_FOUND")
+            if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            if str(event["delivery_id"] or "") != delivery_id:
+                raise ConflictError("ORCHESTRATION_WAKE_DELIVERY_MISMATCH")
+            if event["state"] == "DELIVERED":
+                return dict(event)
+            if event["state"] != "DELIVERING":
+                raise ConflictError("ORCHESTRATION_WAKE_STATE_CHANGED")
+            delivered_at = now if outcome == "DELIVERED" else None
+            acknowledged_at = now if outcome == "DELIVERED" else None
+            db.execute(
+                "UPDATE orchestration_manager_wakes SET state=?,updated_at=?,"
+                "delivered_at=?,acknowledged_at=? WHERE event_id=?",
+                (outcome, now, delivered_at, acknowledged_at, event_id),
+            )
+            updated = db.execute(
+                "SELECT * FROM orchestration_manager_wakes WHERE event_id=?", (event_id,)
+            ).fetchone()
+            self.store._event(db, "ORCHESTRATION_MANAGER_WAKE_" + outcome, event_id, {
+                "delivery_id": delivery_id, "manager_epoch": manager_epoch,
+            })
+            return dict(updated)
 
     def consume_results(
         self, *, work: Work, session_id: str, manager_epoch: int,
@@ -1933,6 +2132,15 @@ class OrchestrationService:
                 "WHERE session_id=? ORDER BY created_at,message_id LIMIT 200",
                 (session_id,),
             ).fetchall()]
+            wakes = [dict(row) for row in db.execute(
+                "SELECT event_id,manager_epoch,assignment_id,assignment_generation,"
+                "result_message_id,result_digest,manager_node_id,attachment_id,"
+                "attachment_generation,instance_id,external_session_id,tab_id,"
+                "conversation_key,relay_role,state,delivery_id,created_at,updated_at,"
+                "delivered_at,acknowledged_at FROM orchestration_manager_wakes "
+                "WHERE session_id=? ORDER BY created_at,event_id LIMIT 200",
+                (session_id,),
+            ).fetchall()]
             epochs = [dict(row) for row in db.execute(
                 "SELECT session_id,epoch,manager_node_id,reason,started_at,ended_at "
                 "FROM orchestration_manager_epochs WHERE session_id=? "
@@ -1957,6 +2165,7 @@ class OrchestrationService:
                     "SELECT COUNT(*) FROM orchestration_manager_epochs WHERE session_id=?",
                     (session_id,),
                 ).fetchone()[0],
+                "manager_wakes": len(wakes),
             }
         finally:
             db.close()
@@ -1965,6 +2174,7 @@ class OrchestrationService:
             "assignments": assignments,
             "attachments": attachments,
             "mailbox": mailbox,
+            "manager_wakes": wakes,
             "manager_epochs": epochs,
             "counts": counts,
         }

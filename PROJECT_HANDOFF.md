@@ -1,5 +1,30 @@
 # BCT 인수인계
 
+## 현재 작업 — Issue #111 manager wakeback (IMPLEMENTING, 미배포)
+
+`codex/issue111-manager-wakeback` worktree에서 manager wakeback V1을 구현하고
+로컬 검증을 마쳤다. 기존 LIVE나 기존 UNKNOWN/claim은 변경하지 않았다.
+
+- 알려진 terminal worker result와 같은 SQLite transaction에 immutable manager-wake
+  intent를 저장한다. RCC 전송 실패가 worker result를 재실행하거나 지우지 않는다.
+- wake는 manager epoch, exact attachment generation, RCC instance/session, tab,
+  conversation, relay role, binding receipt 및 deterministic delivery ID로 fence한다.
+- manager takeover 시 이전 `PENDING` wake는 `STALE`로 남고, 새 manager attachment로
+  별도 epoch event만 생성한다. `DELIVERING`/`UNKNOWN`은 외부 효과가 불명확하므로
+  자동 재통지하지 않는다.
+- RCC `send-wakeback`은 더 이상 `returnTo`를 `WORKER`로 바꾸지 않고 호출자가 준
+  exact manager role을 보존한다. RCC candidate는 1.0.20 / build
+  `2026-10-15-rcc-manager-wakeback-v13`이다.
+- Local gates: `python -m unittest discover -s tests -v` **193 PASS**,
+  `python -m compileall -q src tests`, `git diff --check`, RCC source/Node
+  regression all PASS. 아직 PR/CI/main/LIVE/E2E는 수행하지 않았다.
+
+다음 단계는 변경을 한 PR로 올리고 exact-head CI를 확인한 뒤에만 main 동기화와
+exact-SHA LIVE deployment/RCC reload를 수행하는 것이다. 그 뒤 새로 만든 무해한
+manager-worker-manager target에서 단일 wake → durable receipt → independently
+authorized next bounded task를 한 번 검증한다. 기존 quarantine/UNKNOWN/claim을
+재전송·해제·재사용하지 않는다.
+
 ## 현재 검증 상태
 
 Durable Orchestration is not yet LIVE accepted. Follow the current-gate section

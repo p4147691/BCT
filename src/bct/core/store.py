@@ -170,6 +170,24 @@ class Store:
                     FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
                     FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id)
                 );
+                CREATE TABLE IF NOT EXISTS orchestration_manager_wakes (
+                    event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                    manager_epoch INTEGER NOT NULL, assignment_id TEXT NOT NULL,
+                    assignment_generation INTEGER NOT NULL,
+                    result_message_id TEXT NOT NULL, result_digest TEXT NOT NULL,
+                    manager_node_id TEXT, attachment_id TEXT,
+                    attachment_generation INTEGER, instance_id TEXT,
+                    external_session_id TEXT, tab_id INTEGER,
+                    conversation_key TEXT, relay_role TEXT,
+                    binding_receipt_id TEXT, state TEXT NOT NULL,
+                    delivery_id TEXT, created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL, delivered_at REAL,
+                    acknowledged_at REAL,
+                    UNIQUE(session_id, assignment_id, assignment_generation,
+                           result_message_id, manager_epoch),
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
+                    FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id)
+                );
                 CREATE TABLE IF NOT EXISTS orchestration_reconciliations (
                     decision_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
                     assignment_id TEXT NOT NULL, generation INTEGER NOT NULL,
@@ -189,6 +207,8 @@ class Store:
                 CREATE UNIQUE INDEX IF NOT EXISTS orchestration_attempt_dispatch
                     ON orchestration_assignment_attempts(dispatch_operation_id)
                     WHERE dispatch_operation_id IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS orchestration_manager_wakes_pending
+                    ON orchestration_manager_wakes(session_id,manager_epoch,state,created_at);
                 """
             )
 

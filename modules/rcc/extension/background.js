@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v12';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-15-rcc-manager-wakeback-v13';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
@@ -3300,7 +3300,10 @@ async function handleNativeCommand(message) {
         attachmentGeneration: message.attachmentGeneration,
         returnToControl: false,
 
-        returnToRole: message.command === 'send-wakeback' ? 'WORKER' : String(message.returnTo || '').trim(), hostRequestId: requestId });
+        // A wakeback may target any exact registered role.  Never replace the
+        // caller-provided return target with a generic WORKER role: that can
+        // redirect a durable result after manager takeover.
+        returnToRole: String(message.returnTo || '').trim(), hostRequestId: requestId });
     } catch (error) {
       const latest = await loadState();
       const effectState = latest.resultReceipts?.[requestId]
