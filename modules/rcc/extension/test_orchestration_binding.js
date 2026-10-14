@@ -386,6 +386,38 @@ if (!queued.ok || deferredItems.length !== 1
 }
 console.log('1 deferred exact-binding preservation fence PASS');
 
+const recoveryStart = content.indexOf('let relayExecutionRecoveryPromise = null;');
+const recoveryEnd = content.indexOf('chrome.runtime.onMessage.addListener(', recoveryStart);
+if (recoveryStart < 0 || recoveryEnd <= recoveryStart) {
+  throw new Error('content reload recovery helper missing');
+}
+let durableClears = 0;
+let durableDrains = 0;
+const durableRecoveryContext = vm.createContext({
+  result: null,
+  loadRelayExecution: () => ({
+    relayId: 'bootstrap-completed', phase: 'completed',
+    conversationKey: 'conversation-b'
+  }),
+  currentConversationKey: () => 'conversation-b',
+  relayPendingStatus: async () => ({ ok:true, found:false, completed:true,
+    resultHash:'durable-hash' }),
+  clearRelayExecution: () => { durableClears += 1; },
+  drainDeferredRelayQueue: async () => { durableDrains += 1; },
+  deliverTrackedRelayResultWithRetry: async () => {
+    throw new Error('durable receipt must not be replayed');
+  },
+});
+vm.runInContext(content.slice(recoveryStart, recoveryEnd)
+  + ';result=recoverRelayExecutionAfterReload;', durableRecoveryContext);
+(async () => {
+  await durableRecoveryContext.result();
+  if (durableClears !== 1 || durableDrains !== 1) {
+    throw new Error('durable background receipt did not clear stale content completion');
+  }
+  console.log('1 durable completed-receipt recovery PASS');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+
 const drainStart = content.indexOf('async function drainDeferredRelayQueue(');
 const drainEnd = content.indexOf('const relayNetworkStartWaiters', drainStart);
 if (drainStart < 0 || drainEnd <= drainStart) {

@@ -172,3 +172,11 @@ than a conversation identity. A newly created tab must reach its durable
 server-assigned conversation key before bootstrap state is bound. The content
 and background paths share the same parser so later exact sends cannot inherit
 a completed record tied to the optimistic route.
+
+RCC 1.0.12 distinguishes a stale content-side completion from an unproven
+effect by asking the background for the exact durable result receipt. It clears
+the local record only when the receipt is `RESULT_PERSISTED` and its tab and
+conversation still match. It also compares contenteditable drafts using their
+direct paragraph structure, so ProseMirror's visual blank line does not turn an
+unchanged inserted newline into a false editor mismatch. Neither path weakens
+the pre-submit binding or exact-draft fences.

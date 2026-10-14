@@ -278,6 +278,29 @@ Candidate extension payload SHA-256 for 1.0.11:
 Loaded-build acceptance requires `backgroundBuildId` exactly
 `2026-10-14-rcc-orchestration-recovery-v4` before a fresh bootstrap/E2E.
 
+## BCT RCC 1.0.12 durable result and composer candidate
+
+Version 1.0.12 closes two fail-closed conditions found by the first 1.0.11
+chain attempt. The content script can now discard a stale completed execution
+record only after the background proves an exact, tab- and
+conversation-matched `RESULT_PERSISTED` receipt. It does not replay the prompt
+or the result. The composer verifier also reconstructs adjacent ProseMirror
+paragraphs with their inserted newline, avoiding a false
+`RELAY_EDITOR_TEXT_MISMATCH` caused solely by browser `innerText` layout
+spacing. Actual draft differences still fail before submit.
+
+Candidate extension payload SHA-256 for 1.0.12:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `749900bcbd09ea6b6f443322b68a0d25e019a210d495b6bb174f06912edea442` |
+| `extension/content.js` | `f06975504b6dcd23d6c4860e351b9ee80c3b2b4a2213f5f960358ae3239c9670` |
+| `extension/manifest.json` | `6ff255c6d17944b962693f096ae31cb1ab1a0da3ed137de86f30e84ecf59055b` |
+| `extension/relay_core.js` | `74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc` |
+
+Loaded-build acceptance requires `backgroundBuildId` exactly
+`2026-10-14-rcc-orchestration-recovery-v5` before the next fresh-run E2E.
+
 ## BCT RCC 1.0.3 bootstrap conversation identity acceptance candidate
 
 The first 1.0.2 LIVE E2E proved that ChatGPT can replace the blank route with a

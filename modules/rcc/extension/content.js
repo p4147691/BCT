@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v4';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v5';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -1322,7 +1322,20 @@ function waitForRelaySubmissionAccepted(beforeUserCount, timeoutMs = 5000) {
 
 function editorDraftText(editor) {
   if (!editor) return '';
-  const raw = editor.tagName === 'TEXTAREA' ? editor.value : (editor.innerText || editor.textContent || '');
+  let raw = '';
+  if (editor.tagName === 'TEXTAREA') raw = editor.value;
+  else {
+    // ProseMirror renders one inserted newline as adjacent paragraphs, while
+    // innerText exposes a blank line between those blocks. Reconstruct the
+    // draft from its direct paragraph blocks so the exact pre-submit fence
+    // compares the text that was inserted rather than browser layout spacing.
+    const children = Array.from(editor.children || []);
+    const paragraphDraft = children.length > 0
+      && children.every((node) => ['P', 'DIV'].includes(String(node.tagName || '').toUpperCase()));
+    raw = paragraphDraft
+      ? children.map((node) => node.innerText || node.textContent || '').join('\n')
+      : (editor.innerText || editor.textContent || '');
+  }
   return RelayCore.normalizeMessageText(raw);
 }
 
@@ -2927,7 +2940,19 @@ async function recoverRelayExecutionAfterReload() {
 
 
 
-    if (record.phase === 'completed' && record.result) { await deliverTrackedRelayResultWithRetry(record, record.result); return; }
+    if (record.phase === 'completed') {
+      const status = await relayPendingStatus(record.relayId);
+      if (status?.completed === true) {
+        // The background already has the exact durable receipt. A stale
+        // content-side completion record is therefore safe to clear without
+        // replaying the result or the original prompt.
+        clearRelayExecution(record.relayId);
+        try { await drainDeferredRelayQueue(); } catch (_) {}
+        return;
+      }
+      if (record.result) await deliverTrackedRelayResultWithRetry(record, record.result);
+      return;
+    }
 
 
 
