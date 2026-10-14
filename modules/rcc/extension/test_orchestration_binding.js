@@ -396,7 +396,7 @@ let durableDrains = 0;
 const durableRecoveryContext = vm.createContext({
   result: null,
   loadRelayExecution: () => ({
-    relayId: 'bootstrap-completed', phase: 'completed',
+    relayId: 'bootstrap-completed', phase: 'submitted',
     conversationKey: 'conversation-b'
   }),
   currentConversationKey: () => 'conversation-b',
@@ -415,7 +415,7 @@ vm.runInContext(content.slice(recoveryStart, recoveryEnd)
   if (durableClears !== 1 || durableDrains !== 1) {
     throw new Error('durable background receipt did not clear stale content completion');
   }
-  console.log('1 durable completed-receipt recovery PASS');
+  console.log('1 durable submitted/completed receipt recovery PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 
 const drainStart = content.indexOf('async function drainDeferredRelayQueue(');

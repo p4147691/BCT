@@ -301,6 +301,27 @@ Candidate extension payload SHA-256 for 1.0.12:
 Loaded-build acceptance requires `backgroundBuildId` exactly
 `2026-10-14-rcc-orchestration-recovery-v5` before the next fresh-run E2E.
 
+## BCT RCC 1.0.13 background-recovered submit candidate
+
+Version 1.0.13 generalizes the exact durable-receipt cleanup from 1.0.12 to a
+content record still marked `submitted`. This state occurs when the background
+recovers the completed exact DOM result and persists it before the original
+content-side collector finishes. The cleanup still requires the exact
+`RESULT_PERSISTED` receipt, tab, and durable conversation key; absent that
+proof, the submitted record remains fail-closed and blocks a new prompt.
+
+Candidate extension payload SHA-256 for 1.0.13:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `c77b26418e4070223531b04446a1a403dbc1444fce6d400945fc87771c51a0e7` |
+| `extension/content.js` | `fa8bd0590540b0b413ae525873556fe369c3f3aafc8502153512852ab47629ef` |
+| `extension/manifest.json` | `5a8df5b6b2fb9d2cb095c0969acac08ecb98f5a5c82c17baeb4a454d7376a0e6` |
+| `extension/relay_core.js` | `74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc` |
+
+Loaded-build acceptance requires `backgroundBuildId` exactly
+`2026-10-14-rcc-orchestration-recovery-v6` before the next fresh-run E2E.
+
 ## BCT RCC 1.0.3 bootstrap conversation identity acceptance candidate
 
 The first 1.0.2 LIVE E2E proved that ChatGPT can replace the blank route with a
