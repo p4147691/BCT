@@ -34,3 +34,12 @@ Run:
     git diff --check
 
 Use isolated disposable repositories for mutation acceptance. Never point a new BCT test at ACT live state or a protected user project.
+
+## Default delivery flow
+
+Unless a request explicitly narrows the scope, use the durable delivery flow in
+`.cursor/rules/bct-delivery-flow.mdc`: set the scope and protected operations
+first; run local checks as one recipe; use one coherent PR and exact-head CI;
+deploy the exact SHA; then advance E2E in ordered gates. Preserve UNKNOWN
+effects and protected claims, diagnose failed external effects before retrying,
+and parallelize only read-only or independently prepared work.
