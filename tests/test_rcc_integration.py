@@ -599,6 +599,51 @@ class RccIntegrationTests(unittest.TestCase):
             db.close()
         self.assertEqual(0, unresolved)
 
+    def test_rename_inspection_reads_receipt_before_session_and_title_are_known(self):
+        self._rename_recovery_fixture("inspect")
+        proof = self._rename_success_proof()
+        proof["relayId"] = "original-inspect"
+        proof["receipt"]["result"]["operationId"] = "original-inspect"
+        self.client.result = proof
+        inspected = self.call("rename-inspect-receipt", {
+            "command": "inspect-rename-receipt", "instance_id": "instance123",
+            "relay_id": "original-inspect", "tab_id": 114,
+            "conversation_key": "conv-abc",
+        })
+        self.assertEqual(Outcome.APPLIED, inspected.outcome)
+        self.assertEqual("rename-receipt", self.client.calls[-1]["command"])
+        self.assertTrue(inspected.evidence["receipt_found"])
+        db = self.bct.store._connect()
+        try:
+            claim = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                ("original-inspect",)).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, claim)
+
+    def test_rename_inspection_rejects_wrong_target_without_changing_original_claim(self):
+        self._rename_recovery_fixture("inspect-wrong")
+        proof = self._rename_success_proof()
+        proof["relayId"] = "original-inspect-wrong"
+        proof["receipt"]["result"]["operationId"] = "original-inspect-wrong"
+        proof["observed"]["conversationKey"] = "different-conversation"
+        self.client.result = proof
+        result = self.call("rename-inspect-wrong", {
+            "command": "inspect-rename-receipt", "instance_id": "instance123",
+            "relay_id": "original-inspect-wrong", "tab_id": 114,
+            "conversation_key": "conv-abc",
+        })
+        self.assertNotEqual(Outcome.APPLIED, result.outcome)
+        db = self.bct.store._connect()
+        try:
+            claim = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                ("original-inspect-wrong",)).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, claim)
+
     def test_rename_reconcile_missing_receipt_or_wrong_identity_stays_unknown(self):
         for case in ("missing", "tab", "conversation", "title", "fingerprint", "host"):
             with self.subTest(case=case):

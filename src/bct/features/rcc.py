@@ -28,11 +28,14 @@ _RECONCILE_COMMANDS = {
     "reconcile-send-to-created-tab", "reconcile-create-and-send",
     "reconcile-rename-conversation", "reclassify-rename-claim",
 }
+_RENAME_INSPECTION_COMMAND = "inspect-rename-receipt"
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "rename-conversation", "reload-extension", "send", "create-and-send",
 }
-_COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS
+_COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
+    _RENAME_INSPECTION_COMMAND,
+}
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
@@ -130,12 +133,25 @@ class RelayBrowserFeature:
             "command": command, "instance_id": instance_id,
             "timeout_s": timeout_s, "to": "", "text": "", "extra": {},
         }
-        if command in {"result", "result-of-create-and-send"} or command in _RECONCILE_COMMANDS:
+        if (command in {"result", "result-of-create-and-send", _RENAME_INSPECTION_COMMAND}
+                or command in _RECONCILE_COMMANDS):
             allowed.add("relay_id")
             relay_id = str(arguments.get("relay_id") or "").strip()
             if not relay_id or len(relay_id) > 80:
                 raise PreconditionError("RCC_RESULT_OPERATION_ID_REQUIRED")
             prepared["text"] = relay_id
+            if command == _RENAME_INSPECTION_COMMAND:
+                # This is the first, read-only step for historical rename recovery.
+                # The receipt is the durable source of the original session and title,
+                # so neither may be required before it is read.
+                allowed.update({"tab_id", "conversation_key"})
+                conversation_key = str(arguments.get("conversation_key") or "").strip()
+                if not conversation_key:
+                    raise PreconditionError("RCC_RENAME_INSPECTION_IDENTITY_REQUIRED")
+                prepared["extra"].update({
+                    "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                    "conversationKey": conversation_key,
+                })
             if command in {"reconcile-rename-conversation", "reclassify-rename-claim"}:
                 allowed.update({"relay_id", "session_id", "tab_id", "conversation_key", "title", "original_timeout_s"})
                 relay_id = str(arguments.get("relay_id") or "").strip()
@@ -240,7 +256,7 @@ class RelayBrowserFeature:
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
                 prepared["extra"]["conversationKey"])
-        elif command in _READ_COMMANDS or command in _RECONCILE_COMMANDS:
+        elif command in _READ_COMMANDS or command in _RECONCILE_COMMANDS or command == _RENAME_INSPECTION_COMMAND:
             resource += ":read:" + command
         return FeatureRequest(
             self.capability, instance_id, prepared, (resource,),
@@ -392,7 +408,10 @@ class RelayBrowserFeature:
                 extra["instanceId"] = values["instance_id"]
         try:
             host_command = (
-                "rename-receipt" if values["command"] in {"reconcile-rename-conversation", "reclassify-rename-claim"}
+                "rename-receipt" if values["command"] in {
+                    _RENAME_INSPECTION_COMMAND, "reconcile-rename-conversation",
+                    "reclassify-rename-claim",
+                }
                 else "recover-created-result"
                 if values["command"] == "reconcile-create-and-send"
                 else "result"
@@ -409,6 +428,25 @@ class RelayBrowserFeature:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
         except RelayEffectUnknown as exc:
             raise UnknownEffectError(str(exc)) from exc
+        if values["command"] == _RENAME_INSPECTION_COMMAND:
+            observed = result.get("observed") if isinstance(result.get("observed"), dict) else {}
+            if not (
+                result.get("ok") is True
+                and result.get("relayId") == values["text"]
+                and result.get("instanceId") == values["instance_id"]
+                and observed.get("tabId") == extra["tabId"]
+                and observed.get("conversationKey") == extra["conversationKey"]
+            ):
+                raise ConfirmedFailure("RCC_RENAME_INSPECTION_IDENTITY_MISMATCH",
+                                       release_claims=True)
+            return FeatureResult(Outcome.APPLIED, {
+                "command": _RENAME_INSPECTION_COMMAND,
+                "original_operation_id": values["text"],
+                "instance_id": values["instance_id"],
+                "tab_id": extra["tabId"],
+                "conversation_key": extra["conversationKey"],
+                "receipt_found": isinstance(result.get("receipt"), dict),
+            }, output={"result": _sanitize(result)})
         if values["command"] in {"reconcile-rename-conversation", "reclassify-rename-claim"}:
             expected = extra
             observed = result.get("observed") if isinstance(result.get("observed"), dict) else {}

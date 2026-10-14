@@ -44,7 +44,8 @@ class OperationCoordinator:
         if capability == "relay_browser" and rcc_command in {
             "result", "reconcile-send-to-created-tab",
             "result-of-create-and-send", "reconcile-create-and-send",
-            "reconcile-rename-conversation", "reclassify-rename-claim",
+            "inspect-rename-receipt", "reconcile-rename-conversation",
+            "reclassify-rename-claim",
         }:
             # The RCC result endpoint is scoped to an operation owned by this exact work.
             # It must never be a cross-work arbitrary relay receipt lookup.
@@ -58,33 +59,37 @@ class OperationCoordinator:
                 operation_id=relay_id, work_id=work_id, principal_id=principal.principal_id,
             ) != str(arguments.get("instance_id") or "").strip():
                 raise PreconditionError("RCC_RESULT_INSTANCE_MISMATCH")
-            if rcc_command in {"reconcile-rename-conversation", "reclassify-rename-claim"}:
+            if rcc_command in {
+                "inspect-rename-receipt", "reconcile-rename-conversation",
+                "reclassify-rename-claim",
+            }:
                 if (original.state is not OperationState.FINISHED
                         or original.outcome is not Outcome.UNKNOWN
                         or not str(original.error or "").startswith("RCC_HOST_OUTCOME_UNVERIFIED:")):
                     raise PreconditionError("RCC_RENAME_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
-                original_args = {
-                    "command": "rename-conversation",
-                    "instance_id": arguments.get("instance_id"),
-                    "session_id": arguments.get("session_id"),
-                    "tab_id": arguments.get("tab_id"),
-                    "conversation_key": arguments.get("conversation_key"),
-                    "title": arguments.get("title"),
-                    "timeout_s": arguments.get("original_timeout_s", 30.0),
-                }
-                original_request = feature.prepare(work=work, arguments=original_args)
-                original_digest = hashlib.sha256(json.dumps({
-                    "work_id": work_id, "capability": capability,
-                    "target": original_request.target,
-                    "arguments": original_request.arguments,
-                    "preconditions": original_request.preconditions,
-                }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-                if self.store.get_operation_request_digest_for(
-                    operation_id=relay_id, work_id=work_id,
-                    principal_id=principal.principal_id) != original_digest:
-                    raise PreconditionError("RCC_RENAME_ORIGINAL_REQUEST_DIGEST_MISMATCH")
+                if rcc_command != "inspect-rename-receipt":
+                    original_args = {
+                        "command": "rename-conversation",
+                        "instance_id": arguments.get("instance_id"),
+                        "session_id": arguments.get("session_id"),
+                        "tab_id": arguments.get("tab_id"),
+                        "conversation_key": arguments.get("conversation_key"),
+                        "title": arguments.get("title"),
+                        "timeout_s": arguments.get("original_timeout_s", 30.0),
+                    }
+                    original_request = feature.prepare(work=work, arguments=original_args)
+                    original_digest = hashlib.sha256(json.dumps({
+                        "work_id": work_id, "capability": capability,
+                        "target": original_request.target,
+                        "arguments": original_request.arguments,
+                        "preconditions": original_request.preconditions,
+                    }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+                    if self.store.get_operation_request_digest_for(
+                        operation_id=relay_id, work_id=work_id,
+                        principal_id=principal.principal_id) != original_digest:
+                        raise PreconditionError("RCC_RENAME_ORIGINAL_REQUEST_DIGEST_MISMATCH")
             if original.state is not OperationState.FINISHED or not (
-                (rcc_command in {"reconcile-rename-conversation", "reclassify-rename-claim"})
+                (rcc_command in {"inspect-rename-receipt", "reconcile-rename-conversation", "reclassify-rename-claim"})
                 or (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
                  and (original.evidence.get("command") == "create-and-send"
                       or str(original.error or "").startswith("RCC_COMPOSE_")))
