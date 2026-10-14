@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "95523761698dde4c2f35d6c147cae0ab9a875a77d6c008958bdff988a1b2c2da",
-            "content.js": "4d78084524018b634e3cda2d302953a6825afd9d50f4957957e535d19c05eb32",
-            "manifest.json": "9fe7855146f17ff2119781054b7a780e194db557d74c551c1740588e82175119",
+            "background.js": "d3c478f92c6e67170fad4c0281a89c59143763616c1e8660a13bdf0adb378b73",
+            "content.js": "72bd513f7b1e9eaec35b5fca2b29498495f5a5f5c9abc022b6037b5601c1053b",
+            "manifest.json": "27b828a695a2447cf248bf89c19e5d334e213fa8d341f5342a12885e2ac9b69b",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.17", manifest["version"])
-        self.assertEqual("1.0.17 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.18", manifest["version"])
+        self.assertEqual("1.0.18 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -180,6 +180,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         for name, marker in (
             ("test_route_turn_deduplication.js", "route turn deduplication tests: PASS"),
             ("test_capture_recovery_contract.js", "capture recovery contract tests: PASS"),
+            ("test_durable_execution_retirement.js", "durable execution retirement tests: PASS"),
         ):
             completed = subprocess.run(
                 [node, name], cwd=str(self.extension),

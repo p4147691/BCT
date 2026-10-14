@@ -1515,6 +1515,9 @@ async function waitForConversationKey(timeoutMs = 5000) {
 
 
 const RELAY_EXECUTION_KEY = 'relayActiveExecutionV1';
+// Only exact durable-receipt retirement adds an ID. Late collectors in this
+// document must not resurrect it after a new relay has entered the composer.
+const retiredRelayExecutions = new Set();
 
 
 
@@ -1522,7 +1525,7 @@ function loadRelayExecution() { try { return JSON.parse(sessionStorage.getItem(R
 
 
 
-function saveRelayExecution(value) { try { sessionStorage.setItem(RELAY_EXECUTION_KEY, JSON.stringify(value)); } catch (_) {} }
+function saveRelayExecution(value) { if (retiredRelayExecutions.has(value?.relayId)) return; try { sessionStorage.setItem(RELAY_EXECUTION_KEY, JSON.stringify(value)); } catch (_) {} }
 
 
 
@@ -2405,6 +2408,22 @@ async function continueCreatedTabRelayExecution(record, networkCompletePromise =
   await continueRelayExecution(record, networkCompletePromise);
 }
 
+async function retirePersistedRelayExecution(record) {
+  if (!record?.relayId || !['submitted', 'completed'].includes(record.phase)
+      || !record.conversationKey || record.conversationKey !== currentConversationKey()) return false;
+  const snapshot = JSON.stringify(record);
+  const status = await relayPendingStatus(record.relayId);
+  if (status?.ok !== true || status.found !== false || status.completed !== true
+      || status.relayId !== record.relayId || !status.resultHash
+      || record.conversationKey !== currentConversationKey()
+      || JSON.stringify(loadRelayExecution()) !== snapshot) return false;
+  // The background checks sender tab + durable conversation against the exact
+  // receipt. This path neither collects/replays a result nor drains a queue.
+  retiredRelayExecutions.add(record.relayId);
+  clearRelayExecution(record.relayId);
+  return true;
+}
+
 async function beginRelayExecution(message) {
 
   const commandReceivedAt = Date.now();
@@ -2429,6 +2448,11 @@ async function beginRelayExecution(message) {
 
 
   let prior = loadRelayExecution();
+
+  if (prior?.relayId && prior.relayId !== message.relayId) {
+    try { await retirePersistedRelayExecution(prior); } catch (_) {}
+    prior = loadRelayExecution();
+  }
 
 
 
