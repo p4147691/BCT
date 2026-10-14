@@ -221,8 +221,27 @@ const tests = String.raw`
     throw new Error('pre-submit rebind race was not fenced');
   }
 
-  console.log('4 orchestration binding fences PASS; 3 content authorization fences PASS; 7 lease interleaving fences PASS');
+  state = makeState();
+  loadState = async () => state;
+  sendToChatTab = async () => ({ ok: false, submitted: false,
+    effectState: 'NOT_APPLIED', error: 'RCC_PRE_SUBMIT_LEASE_CONFLICT' });
+  const notApplied = await dispatchRelay({ ...exact, id: 'relay-not-applied' });
+  if (notApplied.effectState !== 'NOT_APPLIED' || state.pending['relay-not-applied']) {
+    throw new Error('confirmed pre-submit failure was not released as NOT_APPLIED');
+  }
+
+  state = makeState();
+  sendToChatTab = async () => ({ ok: false, submitted: false,
+    error: 'LEGACY_RESULT_WITHOUT_EFFECT_STATE' });
+  const unknown = await dispatchRelay({ ...exact, id: 'relay-unknown' });
+  if (unknown.effectState !== 'UNKNOWN'
+      || state.pending['relay-unknown']?.submitUnknown !== true) {
+    throw new Error('unclassified post-dispatch failure was not quarantined as UNKNOWN');
+  }
+
+  console.log('4 orchestration binding fences PASS; 3 content authorization fences PASS; 7 lease interleaving fences PASS; 2 dispatch outcome fences PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
+
 `;
 vm.runInContext(background + tests, context);
 
@@ -262,11 +281,49 @@ vm.runInContext(content.slice(matchStart, authorizationEnd)
   console.log('1 content post-authorization location fence PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 
+const executeStart = content.indexOf('async function executeRelayMessage(');
+const executeEnd = content.indexOf('async function deliverToControl(', executeStart);
+if (executeStart < 0 || executeEnd <= executeStart) {
+  throw new Error('content executeRelayMessage helper missing');
+}
+function executeContextForPhase(phase) {
+  let draft = 'bounded task';
+  let cleared = 0;
+  const record = { relayId: 'relay-outcome', phase, submittedText: 'bounded task' };
+  const ctx = vm.createContext({
+    result: null,
+    beginRelayExecution: async () => { throw new Error('SUBMIT_PATH_FAILED'); },
+    loadRelayExecution: () => record,
+    getEditor: () => ({}),
+    editorDraftText: () => draft,
+    setEditorText: (_editor, value) => { draft = String(value); },
+    clearRelayExecution: () => { cleared += 1; },
+    RelayCore: { normalizeMessageText: (value) => String(value).trim() },
+  });
+  vm.runInContext(content.slice(executeStart, executeEnd)
+    + ';result=executeRelayMessage;', ctx);
+  return { ctx, get cleared() { return cleared; }, get draft() { return draft; } };
+}
+(async () => {
+  const before = executeContextForPhase('submit-intent');
+  const notApplied = await before.ctx.result({ relayId: 'relay-outcome' });
+  if (notApplied.effectState !== 'NOT_APPLIED' || before.cleared !== 1 || before.draft !== '') {
+    throw new Error('pre-activation failure did not clear the exact draft as NOT_APPLIED');
+  }
+  const after = executeContextForPhase('submit-attempted');
+  const unknown = await after.ctx.result({ relayId: 'relay-outcome' });
+  if (unknown.effectState !== 'UNKNOWN' || after.cleared !== 0 || after.draft !== 'bounded task') {
+    throw new Error('post-activation failure did not preserve evidence as UNKNOWN');
+  }
+  console.log('2 content submission outcome fences PASS');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+
 const submitStart = content.indexOf('async function submitEditor(');
 const submitEnd = content.indexOf('async function waitForReply(', submitStart);
 if (submitStart < 0 || submitEnd <= submitStart) throw new Error('content submitEditor helper missing');
 let clicked = 0;
 let fenced = 0;
+let activated = 0;
 const editor = { focus() {}, dispatchEvent() {} };
 const button = { click() { clicked += 1; } };
 const submitContext = vm.createContext({
@@ -283,8 +340,11 @@ vm.runInContext(content.slice(submitStart, submitEnd) + ';result=submitEditor;',
   await submitContext.result(editor, {
     expectedText: 'bounded task',
     beforeSubmit: async () => { fenced += 1; return { ...expected }; },
+    beforeActivation: async (attestation) => { activated += 1; return attestation; },
   });
-  if (fenced !== 1 || clicked !== 1) throw new Error('pre-click exact fence did not run once');
+  if (fenced !== 1 || activated !== 1 || clicked !== 1) {
+    throw new Error('pre-click exact fence and activation checkpoint did not run once');
+  }
   try {
     await submitContext.result(editor, {
       expectedText: 'bounded task',
@@ -293,6 +353,8 @@ vm.runInContext(content.slice(submitStart, submitEnd) + ';result=submitEditor;',
   } catch (error) {
     if (String(error.message || error) !== 'TARGET_BINDING_CHANGED_BEFORE_SUBMIT') throw error;
   }
-  if (clicked !== 1) throw new Error('binding mismatch still clicked the send button');
-  console.log('2 content pre-click binding fences PASS');
+  if (clicked !== 1 || activated !== 1) {
+    throw new Error('binding mismatch reached the activation checkpoint or send button');
+  }
+  console.log('2 content pre-click binding/activation fences PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

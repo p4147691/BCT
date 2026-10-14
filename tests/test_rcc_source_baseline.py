@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "d43b210d35cc2fe84213bcd8987bfd897920c278da373de619508e773e36deae",
-            "content.js": "0b3fcf472654c0bfd8309606d1bb22edec88a80d911bdd3cd90b5ab2f6d65954",
-            "manifest.json": "e417486dedb41a0f3c53c871c7441f46bccf13f2f613190a32c3cc62f211625c",
+            "background.js": "97067a9621a55874be6674e20d8d61641a58feaff6ae97d284deb853e7044ca6",
+            "content.js": "5de54c3a5c142241cf09e478f8b93a2a5cd8d26d788eaaeed38711b090b69569",
+            "manifest.json": "8c3aa22004320c1c847128a84f61b442b2c3ccd78a2d5a2d5bd216946d588b31",
             "relay_core.js": "b74d8d5528eb7eaf60600ca3a046da351295c99f7bec1dfebf9b8f21192b2a31",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.8", manifest["version"])
-        self.assertEqual("1.0.8 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.9", manifest["version"])
+        self.assertEqual("1.0.9 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -76,7 +76,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         )[0]
         self.assertIn("const exactTurnTerminal = completeState && completionUiReady;", recovery)
         self.assertIn(
-            "if (!exactTurnTerminal && (turnHasStopAction(routed.turn) || isGenerating()))",
+            "if (!exactTurnTerminal && turnIsGenerating(routed.turn))",
             recovery,
         )
         self.assertLess(recovery.index("exactTurnTerminal"), recovery.index("assistantCandidatesForTurn"))

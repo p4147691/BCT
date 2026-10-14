@@ -130,7 +130,16 @@ class NamedPipeRelayClient:
                     if not raw:
                         raise RelayEffectUnknown("RCC_PIPE_CLOSED_AFTER_DISPATCH")
                     message = json.loads(raw.decode("utf-8"))
-                    if message.get("type") != "host:result":
+                    message_type = message.get("type")
+                    if (
+                        message_type == "host:ack"
+                        and command in {"send", "send-wakeback"}
+                        and payload.get("returnOnAck") is True
+                    ):
+                        if message.get("requestId") != request_id:
+                            continue
+                        return message
+                    if message_type != "host:result":
                         continue
                     if message.get("requestId") != request_id:
                         continue

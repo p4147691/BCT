@@ -206,6 +206,28 @@ Candidate extension payload SHA-256 for 1.0.8:
 Loaded-build acceptance requires `backgroundBuildId` exactly
 `2026-10-14-rcc-orchestration-v1` before any orchestration E2E.
 
+## BCT RCC 1.0.9 orchestration recovery candidate
+
+Version 1.0.9 records the activation boundary immediately before the exact
+click/Enter transition, returns an opt-in submit ACK before response collection,
+and scopes completion detection to the exact routed turn. Confirmed failures
+before activation are `NOT_APPLIED`; outcomes at or after activation remain
+`UNKNOWN` and retain their durable evidence. This prevents a later manual user
+turn from blocking collection of an already completed assignment without making
+an ambiguous external effect retryable.
+
+Candidate extension payload SHA-256 for 1.0.9:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `97067a9621a55874be6674e20d8d61641a58feaff6ae97d284deb853e7044ca6` |
+| `extension/content.js` | `5de54c3a5c142241cf09e478f8b93a2a5cd8d26d788eaaeed38711b090b69569` |
+| `extension/manifest.json` | `8c3aa22004320c1c847128a84f61b442b2c3ccd78a2d5a2d5bd216946d588b31` |
+| `extension/relay_core.js` | `b74d8d5528eb7eaf60600ca3a046da351295c99f7bec1dfebf9b8f21192b2a31` |
+
+Loaded-build acceptance requires `backgroundBuildId` exactly
+`2026-10-14-rcc-orchestration-recovery-v2` before a fresh orchestration E2E.
+
 ## BCT RCC 1.0.3 bootstrap conversation identity acceptance candidate
 
 The first 1.0.2 LIVE E2E proved that ChatGPT can replace the blank route with a

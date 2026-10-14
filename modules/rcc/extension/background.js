@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-v1';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v2';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
@@ -3247,21 +3247,39 @@ async function handleNativeCommand(message) {
 
     if (message.command !== 'send' && message.command !== 'send-wakeback') throw new Error(`Unknown native command: ${message.command}`);
 
-    const result = await dispatchRelay({ to: message.to, text: message.text, id: requestId,
+    let result;
+    try {
+      result = await dispatchRelay({ to: message.to, text: message.text, id: requestId,
 
-      source: 'native', fromNode: message.fromNode, messageHash: message.messageHash,
+        source: 'native', fromNode: message.fromNode, messageHash: message.messageHash,
 
-      targetBindingReceipt: message.bindingReceiptId,
-      expectedInstanceId: message.expectedInstanceId,
-      expectedSessionId: message.expectedSessionId,
-      expectedTabId: message.expectedTabId,
-      expectedConversationKey: message.expectedConversationKey,
-      attachmentGeneration: message.attachmentGeneration,
-      returnToControl: false,
+        targetBindingReceipt: message.bindingReceiptId,
+        expectedInstanceId: message.expectedInstanceId,
+        expectedSessionId: message.expectedSessionId,
+        expectedTabId: message.expectedTabId,
+        expectedConversationKey: message.expectedConversationKey,
+        attachmentGeneration: message.attachmentGeneration,
+        returnToControl: false,
 
-      returnToRole: message.command === 'send-wakeback' ? 'WORKER' : String(message.returnTo || '').trim(), hostRequestId: requestId });
+        returnToRole: message.command === 'send-wakeback' ? 'WORKER' : String(message.returnTo || '').trim(), hostRequestId: requestId });
+    } catch (error) {
+      const latest = await loadState();
+      const effectState = latest.resultReceipts?.[requestId]
+        ? 'UNKNOWN' : (latest.pending?.[requestId] ? 'UNKNOWN' : 'NOT_APPLIED');
+      postNative({ type: 'host:result', requestId, ok: false, effectState,
+        ambiguous: effectState === 'UNKNOWN',
+        error: String(error?.message || error || 'RELAY_DISPATCH_FAILED') });
+      return;
+    }
 
-    if (result.completed && result.completedResult) {
+    if (result.ok === false) {
+
+      postNative({ type: 'host:result', requestId, relayId: result.relayId,
+        ok: false, effectState: String(result.effectState || 'UNKNOWN'),
+        ambiguous: result.effectState !== 'NOT_APPLIED',
+        error: String(result.error || 'RELAY_DISPATCH_FAILED') });
+
+    } else if (result.completed && result.completedResult) {
 
       const done = result.completedResult;
 
@@ -3275,7 +3293,10 @@ async function handleNativeCommand(message) {
 
     } else {
 
-      postNative({ type: 'host:ack', requestId, relayId: result.relayId, ok: true, submitted: result.deferred === true ? false : true, deferred: result.deferred === true, replayed: !!result.duplicate });
+      postNative({ type: 'host:ack', requestId, relayId: result.relayId, ok: true,
+        submitted: result.deferred === true ? false : true, deferred: result.deferred === true,
+        effectState: result.deferred === true ? 'QUEUED' : 'SUBMITTED',
+        replayed: !!result.duplicate });
 
     }
 
@@ -4037,12 +4058,26 @@ async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode 
   }
 
   if (!ack || !ack.ok || (ack.submitted !== true && ack.deferred !== true)) {
-
-    delete state.pending[relayId];
-
-    await chrome.storage.local.set({ pending: state.pending });
-
-    throw new Error(ack?.error || 'Worker did not accept relay');
+    const effectState = String(ack?.effectState || '').toUpperCase();
+    if (effectState === 'NOT_APPLIED' && ack?.submitted === false) {
+      const latest = await loadState();
+      if (latest.pending?.[relayId]) delete latest.pending[relayId];
+      await chrome.storage.local.set({ pending: latest.pending });
+      return { ok: false, relayId, to: role, effectState: 'NOT_APPLIED',
+        error: String(ack?.error || 'Worker did not accept relay') };
+    }
+    const latest = await loadState();
+    const latestPending = latest.pending?.[relayId];
+    if (latestPending) {
+      latestPending.submitUnknown = true;
+      latestPending.lastTransportError = String(
+        ack?.error || 'RELAY_SUBMIT_OUTCOME_UNKNOWN'
+      ).slice(0, 200);
+      latest.pending[relayId] = latestPending;
+      await chrome.storage.local.set({ pending: latest.pending });
+    }
+    return { ok: false, relayId, to: role, effectState: 'UNKNOWN', ambiguous: true,
+      error: String(ack?.error || 'Worker did not accept relay') };
 
   }
 

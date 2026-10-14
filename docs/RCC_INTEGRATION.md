@@ -145,3 +145,14 @@ before editor mutation and immediately before the click/Enter submit transition.
 The acknowledgement and durable result receipt contain the tuple attested by the
 content script; caller-supplied expected values are not echoed as proof. A rebind
 between background validation and submission therefore fails closed without a click.
+
+RCC 1.0.9 separates confirmed pre-activation rejection from an ambiguous
+post-activation outcome. The content script persists `submit-attempted`
+immediately before click or Enter; a failure before that checkpoint clears only
+the exact unchanged relay draft and reports `NOT_APPLIED`, while any failure at
+or after it preserves durable evidence as `UNKNOWN`. Opted-in orchestration
+sends return a submit ACK to BCT immediately so SQLite records delivery before
+long result collection. Final-response capture is scoped to the exact routed
+turn, so a later user turn in the same conversation cannot keep an already
+completed assignment falsely marked as generating. Generic RCC sends keep their
+existing wait-for-terminal-result behavior.

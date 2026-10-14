@@ -1,6 +1,6 @@
 # BCT Durable Orchestration V1
 
-Status: ACTIVE / LOCAL_ACCEPTANCE_PASSED / GITHUB_AND_LIVE_PENDING.
+Status: ACTIVE / FIRST_LIVE_E2E_QUARANTINED / RECOVERY_FIX_LOCAL_ACCEPTED / GITHUB_AND_LIVE_PENDING.
 
 ## Objective
 
@@ -31,10 +31,11 @@ additional confirmation.
 
 ## Current verified baseline
 
-- GitHub main, local source, and LIVE Core release:
-  `cdc9f323120767725e49069063c14d9292d47df4`.
-- Core ready, generation 67, MCP catalogue 23 tools.
-- Existing node/connection tables are empty although RCC observes five open tabs.
+- GitHub main, local source, and LIVE Core release before this recovery patch:
+  `548e78669db72d4989562ea1bcd9aa4f35f0c88e`.
+- Core was ready and the MCP catalogue exposed 24 tools.
+- The first LIVE orchestration session and its seven unresolved claims are
+  retained as quarantined historical evidence.
 - All MCP calls currently use principal `bct-mcp-local`.
 - Existing whole-work handoff refuses any work with an active operation or
   unresolved resource claim.
@@ -130,9 +131,29 @@ post-click lease consumption attestation, persisted ACK/result identity, and a
 global conversation quarantine across RCC instances. It preserves existing ACT
 bootstrap and full-result capture contracts.
 
-Local acceptance proves 174 Python tests, all 15 RCC JavaScript test programs,
-Python compileall, JavaScript syntax, and `git diff --check`. Independent API,
-SQLite/recovery, and RCC audits all concluded `BLOCKER_NONE` before GitHub
+The first LIVE chain at main/LIVE `548e78669db72d4989562ea1bcd9aa4f35f0c88e`
+ended `FINISHED / UNKNOWN` after both worker deliveries exhausted their 900-second
+result windows. The historical operation, session, seven claims, two delivery
+identities, and exact worker attachments remain quarantined and must not be
+retried, released, or reused. Read-only SQLite, RCC, and browser evidence showed
+two distinct cases: one worker had produced its assignment result before later
+ordinary user turns, while the other worker still had the relay text as an
+unsent draft. RCC returned neither exact terminal receipt, so Core could not
+distinguish the cases and correctly retained UNKNOWN.
+
+RCC 1.0.9 and the Core adapter address the observed gaps without rewriting that
+history. An activation checkpoint separates confirmed `NOT_APPLIED` from
+post-activation `UNKNOWN`; opted-in orchestration sends persist ACK in SQLite
+before result polling; and completion state is read from the exact routed turn,
+not a later user turn. A fresh E2E must use new operation/session/assignment IDs
+and fresh conversation attachments.
+
+The original implementation acceptance proved 174 Python tests, all 15 RCC
+JavaScript test programs, Python compileall, JavaScript syntax, and
+`git diff --check`. Independent API, SQLite/recovery, and RCC audits all
+concluded `BLOCKER_NONE` before the first GitHub integration. Recovery-fix
+acceptance proves 178 Python tests, all 15 RCC JavaScript test programs, Python
+compile checks, JavaScript syntax, and `git diff --check` before GitHub
 integration.
 
 ## Failure policy
