@@ -31,6 +31,8 @@ class FakeRelay:
         self.lose_send_response = False
         self.return_submit_ack = False
         self.confirmed_not_applied = set()
+        self.defer_wake_once = set()
+        self.unknown_wake_once = set()
         self.result_mutator = None
         self.recover_pending_enabled = False
         self.recover_pending_calls = 0
@@ -88,6 +90,19 @@ class FakeRelay:
             }
             self.bindings[to] = dict(binding)
             return {"ok": True, "binding": binding}
+        if command == "send-wakeback":
+            binding = self.bindings[to]
+            if extra.get("bindingReceiptId") != binding["bindingReceiptId"]:
+                return {"ok": False, "effectState": "NOT_APPLIED"}
+            if to in self.unknown_wake_once:
+                self.unknown_wake_once.remove(to)
+                raise RelayEffectUnknown("wake acknowledgement was lost")
+            if to in self.defer_wake_once:
+                self.defer_wake_once.remove(to)
+                return {"type": "host:ack", "ok": True, "submitted": False,
+                        "deferred": True, "effectState": "QUEUED"}
+            return {"type": "host:ack", "ok": True, "submitted": True,
+                    "deferred": False, "effectState": "SUBMITTED"}
         if command == "send":
             if to in self.fail_send_once:
                 self.fail_send_once.remove(to)
@@ -588,6 +603,122 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(duplicate.duplicate)
         self.assertEqual(before, after)
+
+    def test_manager_wake_is_durable_exact_and_not_duplicated(self):
+        worker = self.attachment("worker-b")
+        dispatched = self.call("wake-source", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "wake-source-assignment",
+            "worker_node_id": "worker-b", "attachment_id": worker["attachment_id"],
+            "instruction": "produce the durable result", "acceptance": {"ok": True},
+        })
+        self.assertEqual(Outcome.APPLIED, dispatched.outcome)
+        snapshot = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session"
+        )
+        self.assertEqual(1, len(snapshot["manager_wakes"]))
+        wake = snapshot["manager_wakes"][0]
+        self.assertEqual("DELIVERED", wake["state"])
+        self.assertEqual(1, wake["manager_epoch"])
+        woke = self.call("wake-manager", {
+            "operation": "manager-wake", "session_id": "session",
+            "manager_epoch": 1, "event_id": wake["event_id"],
+        })
+        self.assertEqual(Outcome.APPLIED, woke.outcome)
+        self.assertEqual("DELIVERED", woke.output["event"]["state"])
+        sent = [call for call in self.relay.calls if call["command"] == "send-wakeback"]
+        self.assertEqual(1, len(sent))
+        self.assertEqual("BCT_MGR", sent[0]["to"])
+        self.assertEqual("BCT_MGR", sent[0]["extra"]["returnTo"])
+        duplicate = self.call("wake-manager", {
+            "operation": "manager-wake", "session_id": "session",
+            "manager_epoch": 1, "event_id": wake["event_id"],
+        })
+        self.assertEqual(Outcome.APPLIED, duplicate.outcome)
+        self.assertEqual(1, len([call for call in self.relay.calls if call["command"] == "send-wakeback"]))
+
+    def test_manager_wake_fails_closed_after_manager_takeover(self):
+        worker = self.attachment("worker-b")
+        self.relay.defer_wake_once.add("BCT_MGR")
+        self.call("stale-wake-source", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "stale-wake-source-assignment",
+            "worker_node_id": "worker-b", "attachment_id": worker["attachment_id"],
+            "instruction": "produce the durable result", "acceptance": {"ok": True},
+        })
+        wake = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session"
+        )["manager_wakes"][0]
+        self.assertEqual("PENDING", wake["state"])
+        self.call("takeover-before-wake", {
+            "operation": "manager-takeover", "session_id": "session",
+            "expected_manager_epoch": 1, "manager_node_id": "backup",
+            "reason": "prove old wake cannot redirect",
+        })
+        wakes = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session"
+        )["manager_wakes"]
+        self.assertEqual(["STALE", "PENDING"], [item["state"] for item in wakes])
+        fresh = wakes[1]
+        self.assertEqual(2, fresh["manager_epoch"])
+        resumed = self.call("wake-backup-manager", {
+            "operation": "manager-wake", "session_id": "session",
+            "manager_epoch": 2, "event_id": fresh["event_id"],
+        })
+        self.assertEqual(Outcome.APPLIED, resumed.outcome)
+        self.assertEqual("DELIVERED", resumed.output["event"]["state"])
+        stale = self.call("stale-wake", {
+            "operation": "manager-wake", "session_id": "session",
+            "manager_epoch": 1, "event_id": wake["event_id"],
+        })
+        self.assertNotEqual(Outcome.APPLIED, stale.outcome)
+        sent = [call for call in self.relay.calls if call["command"] == "send-wakeback"]
+        self.assertEqual(2, len(sent))
+        self.assertEqual(["BCT_MGR", "BCT_MGR2"], [item["to"] for item in sent])
+        self.assertEqual(["BCT_MGR", "BCT_MGR2"], [item["extra"]["returnTo"] for item in sent])
+
+    def test_deferred_manager_wake_stays_pending_for_exact_retry(self):
+        worker = self.attachment("worker-b")
+        self.relay.defer_wake_once.add("BCT_MGR")
+        self.call("deferred-wake-source", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "deferred-wake-source-assignment",
+            "worker_node_id": "worker-b", "attachment_id": worker["attachment_id"],
+            "instruction": "produce the durable result", "acceptance": {"ok": True},
+        })
+        wake = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session"
+        )["manager_wakes"][0]
+        self.assertEqual("PENDING", wake["state"])
+        retry = self.call("deferred-wake-retry", {
+            "operation": "manager-wake", "session_id": "session",
+            "manager_epoch": 1, "event_id": wake["event_id"],
+        })
+        self.assertEqual(Outcome.APPLIED, retry.outcome)
+        self.assertEqual("DELIVERED", retry.output["event"]["state"])
+        sent = [call for call in self.relay.calls if call["command"] == "send-wakeback"]
+        self.assertEqual(2, len(sent))
+        self.assertEqual(sent[0]["request_id"], sent[1]["request_id"])
+
+    def test_ambiguous_manager_wake_is_quarantined_without_resend(self):
+        worker = self.attachment("worker-b")
+        self.relay.unknown_wake_once.add("BCT_MGR")
+        self.call("unknown-wake-source", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "unknown-wake-source-assignment",
+            "worker_node_id": "worker-b", "attachment_id": worker["attachment_id"],
+            "instruction": "produce the durable result", "acceptance": {"ok": True},
+        })
+        wake = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session"
+        )["manager_wakes"][0]
+        self.assertEqual("UNKNOWN", wake["state"])
+        retry = self.call("unknown-wake-retry", {
+            "operation": "manager-wake", "session_id": "session",
+            "manager_epoch": 1, "event_id": wake["event_id"],
+        })
+        self.assertNotEqual(Outcome.APPLIED, retry.outcome)
+        self.assertEqual(1, len([call for call in self.relay.calls if call["command"] == "send-wakeback"]))
 
     def test_exact_result_reconciles_unknown_without_resend(self):
         worker = self.attachment("worker-b")

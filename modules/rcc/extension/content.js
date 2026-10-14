@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v12';
+const RCC_BUILD_VERSION = '2026-10-15-rcc-manager-wakeback-v13';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;

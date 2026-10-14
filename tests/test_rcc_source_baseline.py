@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "19f873a5d12b02515c7dac8fef64e9a5a94fd64ff35e91aa9241a2c359ae0c88",
-            "content.js": "b3bd9cbba1257711dd1b4c7f1985dedbc026925bf880403cbc8e71ef88f32eae",
-            "manifest.json": "3d343be722d45774e230527ac90a827f43473c1ae38c93ee78d96946d966da01",
+            "background.js": "0286ea6aab35fd961d612edf451956f30ce79b13e8e145792bc6e09748581187",
+            "content.js": "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe",
+            "manifest.json": "ded68ea4bc4793fb25e72722b8ff1458db68e6d98f53f1990003947d3b8b551e",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.19", manifest["version"])
-        self.assertEqual("1.0.19 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.20", manifest["version"])
+        self.assertEqual("1.0.20 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -56,7 +56,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             self.assertIn(marker, background)
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-14-rcc-orchestration-recovery-v12"
+        marker = "2026-10-15-rcc-manager-wakeback-v13"
         for name in ("content.js", "background.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
@@ -177,6 +177,18 @@ class RccSourceBaselineTests(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
         self.assertIn("4 orchestration binding fences PASS", completed.stdout)
+
+    def test_native_wakeback_preserves_exact_manager_return_role(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is unavailable")
+        completed = subprocess.run(
+            [node, "test_manager_wakeback_native.js"], cwd=str(self.extension),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+        self.assertIn("exact-manager routing fence PASS", completed.stdout)
 
     def test_nested_turn_capture_and_recovery_contract(self):
         node = shutil.which("node")

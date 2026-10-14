@@ -361,6 +361,23 @@ Candidate extension payload SHA-256 for 1.0.17:
 | `extension/manifest.json` | `9fe7855146f17ff2119781054b7a780e194db557d74c551c1740588e82175119` |
 | `extension/relay_core.js` | `b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd` |
 
+## BCT RCC 1.0.20 manager wakeback candidate
+
+Native `send-wakeback` now preserves the exact caller-supplied manager role;
+it no longer rewrites it to `WORKER`.  The orchestration core fences every
+wake by manager epoch and immutable attachment identity, so a takeover leaves
+the old notification stale and creates a separately fenced notification for
+the proved replacement manager.  Queued busy/draft delivery remains pending;
+ambiguous delivery remains UNKNOWN.  Build markers both report
+`2026-10-15-rcc-manager-wakeback-v13`.
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `0286ea6aab35fd961d612edf451956f30ce79b13e8e145792bc6e09748581187` |
+| `extension/content.js` | `4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe` |
+| `extension/manifest.json` | `ded68ea4bc4793fb25e72722b8ff1458db68e6d98f53f1990003947d3b8b551e` |
+| `extension/relay_core.js` | `b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd` |
+
 ## BCT RCC 1.0.19 collapsed prompt identity candidate
 
 The exact hidden ellipsis sibling of the full user-text container is excluded
