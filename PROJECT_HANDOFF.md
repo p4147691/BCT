@@ -167,7 +167,21 @@ ChatGPT가 관찰한 batch tool call은 4.930초였다. 서로 다른 경로의 
 배포, 서비스 제어, 브라우저 mutation의 승인 경계나 operation ID 멱등성, atomic claim,
 UNKNOWN no-retry, exact-SHA 배포 조건은 완화하지 않는다.
 
-추가 관측으로, 실제 tunnel dispatcher는 ChatGPT 명령을 정상 전달했지만 health URL 파일 부재로
-`runtimes status`가 `healthy=false / starting`을 반환했고 supervisor가 reconnect를 반복 시도했다.
-현재 tunnel을 재시작하지 말고, 별도 작업에서 supervisor의 readiness 판정을 실제 dispatcher
-생존 및 전달 증거와 정합화한다.
+## Tunnel health 및 MCP 지연 종결
+
+Tunnel health metadata 복구는 PR #74로 완료됐다. merge
+`3418bfa9b6eee46d488682bc34fad431e883a8a2`와 main CI가 통과했고 동일 SHA가 LIVE Core에
+배포됐다. supervisor는 exact tunnel process가 살아 있을 때 중복 connect하지 않으며, 누락된
+health URL 파일은 exact PID 소유의 유일한 live/ready loopback listener로만 복구한다. 현재 tunnel
+PID와 시작시각은 유지됐고 `runtimes status`는 `healthy=true`, `ready=true`, `runtime_state=ready`,
+`stale=false`다. 완료 증거는
+`docs/exec-plans/completed/BCT_TUNNEL_HEALTH_RECONCILIATION_20261014.md`를 따른다.
+
+Hosted ChatGPT의 단일 `bct_read` E2E는 1.816초였지만, 같은 exact request의 BCT tool handler는
+15.517 ms, BCT ASGI 전체는 21.706 ms였다. tunnel poll 수신부터 local MCP 응답은 23.057 ms,
+그 뒤 OpenAI control-plane response POST 완료까지 397.753 ms였다. 로컬 poll-to-post 합계는
+420.810 ms이며 나머지 약 1.395초는 로컬 tunnel span 밖이어서 현재 설치된 tunnel-client
+0.0.14로 더 분할할 수 없다. 공개 최신 v0.0.15에도 `resp_timing`/`trace_context`가 없으므로
+미출시 master 기능을 위해 운영 binary를 교체하지 않는다. BCT Core 결함은 재현되지 않았고
+추가 코드·LIVE 변경 대신 기존 bounded batch read를 같은 안전 경계의 read 왕복 절감 수단으로
+유지한다. 상세 근거는 `docs/exec-plans/completed/BCT_MCP_TUNNEL_LATENCY_20261014.md`다.
