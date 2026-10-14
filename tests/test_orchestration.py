@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from bct import BCT
@@ -261,10 +263,13 @@ class OrchestrationTests(unittest.TestCase):
 
     def fast_timeout_clock(self):
         clock = AdvancingClock()
-        return (
-            patch("bct.features.orchestration.time.monotonic", clock.monotonic),
-            patch("bct.features.orchestration.time.sleep", clock.sleep),
+        isolated_time = SimpleNamespace(
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            time=time.time,
+            time_ns=time.time_ns,
         )
+        return patch("bct.features.orchestration.time", isolated_time)
 
     def attachment(self, node_id):
         snapshot = self.bct.orchestration.snapshot(
@@ -745,8 +750,8 @@ class OrchestrationTests(unittest.TestCase):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
         self.relay.lose_send_response = True
-        monotonic, sleep = self.fast_timeout_clock()
-        with monotonic, sleep:
+        clock_patch = self.fast_timeout_clock()
+        with clock_patch:
             unknown = self.call("lost-dispatch", {
                 "operation": "dispatch", "session_id": "session",
                 "manager_epoch": 1, "assignment_id": "lost-result",
@@ -796,8 +801,8 @@ class OrchestrationTests(unittest.TestCase):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
         self.relay.lose_send_response = True
-        monotonic, sleep = self.fast_timeout_clock()
-        with monotonic, sleep:
+        clock_patch = self.fast_timeout_clock()
+        with clock_patch:
             unknown = self.call("cross-instance-unknown", {
                 "operation": "dispatch", "session_id": "session",
                 "manager_epoch": 1, "assignment_id": "cross-instance-first",
@@ -938,8 +943,8 @@ class OrchestrationTests(unittest.TestCase):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
         self.relay.lose_send_response = True
-        monotonic, sleep = self.fast_timeout_clock()
-        with monotonic, sleep:
+        clock_patch = self.fast_timeout_clock()
+        with clock_patch:
             dispatched = self.call("untrusted-reconcile-original", {
                 "operation": "dispatch", "session_id": "session",
                 "manager_epoch": 1, "assignment_id": "untrusted-reconcile-task",
@@ -1593,8 +1598,8 @@ class OrchestrationTests(unittest.TestCase):
         }
         self.relay.lose_send_response = True
         self.relay.hide_results = True
-        monotonic, sleep = self.fast_timeout_clock()
-        with monotonic, sleep:
+        clock_patch = self.fast_timeout_clock()
+        with clock_patch:
             unknown = self.call("restart-late-dispatch", arguments)
         self.assertEqual(Outcome.UNKNOWN, unknown.outcome)
         sends_before = len([
