@@ -58,7 +58,9 @@ def launch_background_operation(
     job = {
         "schema_version": 1,
         "created_at": time.time(),
-        "not_before": time.time() + 1.0,
+        # Only self-replacing operations need to let the accepting server respond
+        # before stopping it. Verification and CI reads do not replace Core.
+        "not_before": time.time() + (1.0 if capability in {"deploy", "service_control"} else 0.0),
         "state_path": str(Path(bct.store.path).resolve()),
         "policy_path": str(bct.policy.path.resolve()),
         "principal": {

@@ -133,6 +133,10 @@ class VerificationTests(unittest.TestCase):
         process.terminate.assert_not_called()
         with self.assertRaises(ConflictError):
             self.call(operation="cannot-repeat")
+        jobs = list((self.root / "runtime" / "background-operations").glob("*.job.json"))
+        self.assertEqual(1, len(jobs))
+        job = json.loads(jobs[0].read_text())
+        self.assertLess(job["not_before"] - job["created_at"], 0.1)
 
 
 if __name__ == "__main__":
