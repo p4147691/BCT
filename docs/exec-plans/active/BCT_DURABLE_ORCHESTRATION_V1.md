@@ -162,6 +162,14 @@ Follow-up local acceptance proves 179 Python tests, including a first recovery
 probe that fails before a later exact terminal receipt is collected; the test
 also proves one submit and two distinct recovery request IDs.
 
+The next fresh chain preflight exposed an acceptance-script identity error, not
+a runtime delivery failure: its new session reused the first chain's globally
+unique assignment IDs, so Core rejected it before dispatch with
+`ORCHESTRATION_ASSIGNMENT_REQUEST_MISMATCH`. The distinct failed chain was
+closed by `recover-not-dispatched`, whose receipt proves
+`external_effect_excluded=true`; no worker message was sent. The script now
+derives all worker and synthesis assignment IDs from the fresh run ID.
+
 The original implementation acceptance proved 174 Python tests, all 15 RCC
 JavaScript test programs, Python compileall, JavaScript syntax, and
 `git diff --check`. Independent API, SQLite/recovery, and RCC audits all

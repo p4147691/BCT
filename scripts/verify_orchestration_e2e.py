@@ -49,6 +49,11 @@ async def run(args: argparse.Namespace) -> None:
     work_id = f"BCT-DURABLE-ORCHESTRATION-LIVE-E2E-{run_id}"
     session_id = f"durable-orch-live-{run_id}"
     chain_operation_id = f"durable-orch-live-chain-{run_id}"
+    assignment_ids = {
+        "worker-latency": f"live-latency-review-{run_id}",
+        "worker-recovery": f"live-recovery-review-{run_id}",
+        "manager-synthesis": f"live-manager-synthesis-{run_id}",
+    }
     node_payload = json.loads(Path(args.nodes_json).read_text(encoding="utf-8"))
     expected_roles = {
         "manager-primary", "worker-latency",
@@ -156,7 +161,7 @@ async def run(args: argparse.Namespace) -> None:
             "manager_epoch": 1, "timeout_s": 900,
             "tasks": [
                 {
-                    "assignment_id": "live-latency-review",
+                    "assignment_id": assignment_ids["worker-latency"],
                     "worker_node_id": node_id("worker-latency"),
                     "attachment_id": latency["attachment_id"],
                     "instruction": (
@@ -172,7 +177,7 @@ async def run(args: argparse.Namespace) -> None:
                     },
                 },
                 {
-                    "assignment_id": "live-recovery-review",
+                    "assignment_id": assignment_ids["worker-recovery"],
                     "worker_node_id": node_id("worker-recovery"),
                     "attachment_id": recovery["attachment_id"],
                     "instruction": (
@@ -194,7 +199,7 @@ async def run(args: argparse.Namespace) -> None:
                 "evidence": {"planned": True, "prior_manager_epoch": 1},
             },
             "synthesis": {
-                "assignment_id": "live-manager-synthesis",
+                "assignment_id": assignment_ids["manager-synthesis"],
                 "manager_node_id": node_id("manager-backup"),
                 "attachment_id": backup["attachment_id"],
                 "instruction": (
@@ -243,16 +248,17 @@ async def run(args: argparse.Namespace) -> None:
         assert current["manager_node_id"] == node_id("manager-backup"), current
         assert current["manager_epoch"] == 2, current
         assert assignment_states == {
-            "live-latency-review": "APPLIED",
-            "live-recovery-review": "APPLIED",
-            "live-manager-synthesis": "APPLIED",
+            assignment_ids["worker-latency"]: "APPLIED",
+            assignment_ids["worker-recovery"]: "APPLIED",
+            assignment_ids["manager-synthesis"]: "APPLIED",
         }, assignment_states
         dispatches = [m for m in snapshot["mailbox"] if m["kind"] == "DISPATCH"]
         results = [m for m in snapshot["mailbox"] if m["kind"] == "RESULT"]
         consumed = [
             m for m in results
             if m["assignment_id"] in {
-                "live-latency-review", "live-recovery-review"
+                assignment_ids["worker-latency"],
+                assignment_ids["worker-recovery"],
             } and m["consumed_at"] is not None
         ]
         assert len(dispatches) == 3 and len({m["message_id"] for m in dispatches}) == 3
