@@ -361,6 +361,22 @@ Candidate extension payload SHA-256 for 1.0.17:
 | `extension/manifest.json` | `9fe7855146f17ff2119781054b7a780e194db557d74c551c1740588e82175119` |
 | `extension/relay_core.js` | `b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd` |
 
+## BCT RCC 1.0.19 collapsed prompt identity candidate
+
+The exact hidden ellipsis sibling of the full user-text container is excluded
+from cloned text in both normal capture and injected direct recovery. Literal
+ellipsis, other hidden text and unfamiliar layouts are preserved. Existing
+exact prompt, conversation and ambiguity fences remain unchanged. The isolated
+tree/selector regression fails on 1.0.18 in both real entry paths and passes on
+this candidate. Content/background build markers both report recovery-v12.
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `19f873a5d12b02515c7dac8fef64e9a5a94fd64ff35e91aa9241a2c359ae0c88` |
+| `extension/content.js` | `b3bd9cbba1257711dd1b4c7f1985dedbc026925bf880403cbc8e71ef88f32eae` |
+| `extension/manifest.json` | `3d343be722d45774e230527ac90a827f43473c1ae38c93ee78d96946d966da01` |
+| `extension/relay_core.js` | `b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd` |
+
 ## BCT RCC 1.0.18 exact durable execution retirement candidate
 
 The next-dispatch entry now checks the background's exact persisted receipt for

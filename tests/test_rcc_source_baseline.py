@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "d3c478f92c6e67170fad4c0281a89c59143763616c1e8660a13bdf0adb378b73",
-            "content.js": "72bd513f7b1e9eaec35b5fca2b29498495f5a5f5c9abc022b6037b5601c1053b",
-            "manifest.json": "27b828a695a2447cf248bf89c19e5d334e213fa8d341f5342a12885e2ac9b69b",
+            "background.js": "19f873a5d12b02515c7dac8fef64e9a5a94fd64ff35e91aa9241a2c359ae0c88",
+            "content.js": "b3bd9cbba1257711dd1b4c7f1985dedbc026925bf880403cbc8e71ef88f32eae",
+            "manifest.json": "3d343be722d45774e230527ac90a827f43473c1ae38c93ee78d96946d966da01",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.18", manifest["version"])
-        self.assertEqual("1.0.18 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.19", manifest["version"])
+        self.assertEqual("1.0.19 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -54,6 +54,11 @@ class RccSourceBaselineTests(unittest.TestCase):
             "TARGET_BINDING_RECEIPT_MISMATCH",
         ):
             self.assertIn(marker, background)
+
+    def test_content_and_background_build_markers_match(self):
+        marker = "2026-10-14-rcc-orchestration-recovery-v12"
+        for name in ("content.js", "background.js"):
+            self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
     def test_existing_conversation_send_fences_exact_binding_before_submit(self):
         background = (self.extension / "background.js").read_text(encoding="utf-8")
@@ -181,6 +186,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_route_turn_deduplication.js", "route turn deduplication tests: PASS"),
             ("test_capture_recovery_contract.js", "capture recovery contract tests: PASS"),
             ("test_durable_execution_retirement.js", "durable execution retirement tests: PASS"),
+            ("test_collapsed_prompt_identity.js", "collapsed prompt identity tests: PASS"),
         ):
             completed = subprocess.run(
                 [node, name], cwd=str(self.extension),

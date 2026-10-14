@@ -17,10 +17,21 @@ the actual message body. RCC includes it in textContent, so the exact 1,244-char
 prompt becomes 1,245 chars and ROUTE_TURN_NOT_RESOLVED follows. The worker's
 matching result is visible, but is not promoted to an accepted receipt. The
 separate net::ERR_ABORTED signal's origin is not established. Repeated-failure
-policy has stopped further patches, deployment and chained E2E; record/evidence
-updates only. Next: isolated DOM regressions for canonical user text in both
-normal and direct-recovery paths, preserving exact prompt/turn identity. Do not
-trim arbitrary literal ellipses or resend/release the quarantined attempt.
+policy stopped speculative patches, deployment and chained E2E. On explicit
+continuation, an isolated tree/selector fixture reproduced the failure in both
+real normal and injected direct-recovery entry paths. RCC 1.0.19 excludes only
+the exact hidden ellipsis sibling of data-search-result-target; literal text
+and unknown shapes stay unchanged. Regression coverage includes collapsed and
+expanded messages, Unicode/newlines/code, nested wrappers, ambiguous/wrong
+turns and conversation identity. Promotion and a fresh single-manager gate are
+still pending. Do not resend/release the quarantined attempt or rerun successful
+earlier gates. CLI #106 and monitor follow-ups remain outside this correction.
+
+Latest user clarification authorizes this correction through PR/CI/main and
+exact-SHA deployment plus RCC reload. This supersedes the brief LIVE hold.
+It does not authorize CLI updates, Chrome restart or historical UNKNOWN/claim
+changes. Resume staged acceptance only on fresh, unclaimed targets after the
+exact payload/build checks; stop another repeated failure for evidence review.
 
 Aggregate RCC status versus direct state, presence freshness, and stale
 GENERATING/probe fallback are separate follow-ups in GitHub #82, not proven

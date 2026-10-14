@@ -1,8 +1,14 @@
 # BCT Durable Orchestration V1
 
-Status: ACTIVE / STAGED_LIVE_ACCEPTANCE / ROUTED_TURN_CANONICAL_TEXT_BLOCKED.
+Status: ACTIVE / STAGED_LIVE_ACCEPTANCE / CANONICAL_TEXT_FIX_CANDIDATE.
 
 ## Current gate (supersedes historical checkpoints below)
+
+Latest explicit user clarification authorizes verified PR/CI/main, exact-SHA
+deployment and RCC reload for this correction, superseding the brief LIVE hold.
+It does not authorize CLI updates or Chrome restart. Preserve all UNKNOWN/claims
+and resume only staged acceptance on fresh unclaimed targets. Issue #106 remains
+deferred; no broader monitor work is added.
 
 Feature scope is frozen. Single roundtrip and durable receipt retrieval passed
 on the PR #105 payload; the single manager/worker gate is not accepted. Do not
@@ -30,6 +36,19 @@ PR #105 promotion and the first two gates passed. The fresh single-manager
 attempt again failed during response capture. Only READ-only diagnosis and
 evidence documentation followed; speculative patch/deploy loops are stopped.
 Monitor grouping remains out of scope.
+
+Explicit continuation checkpoint: RCC 1.0.19 now has an isolated tree/selector
+fixture exercising the real routed-turn entry and actual injected direct
+recovery function. Both fail on 1.0.18 and pass with the bounded correction:
+remove only a span[aria-hidden=true] containing exactly the ellipsis character
+immediately following a data-search-result-target sibling. No submitted-text
+trimming or equality relaxation is added. Literal ellipses, unknown decoration,
+changed text, wrong conversation and ambiguous turns remain fail-closed.
+The v12 content/background markers are aligned and regression-checked. This
+candidate still requires full local/CI/main validation and exact RCC deployment
+before one fresh manager/worker gate on an unclaimed target. Prior successful
+roundtrip/recovery tests are reused as evidence, never resent. Historical
+UNKNOWN resources stay quarantined. No CLI upgrade or monitor implementation.
 
 ### PR #105 staged acceptance evidence (2026-10-14)
 
