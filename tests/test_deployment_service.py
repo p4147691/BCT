@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -10,7 +11,9 @@ import time
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
+
+import uvicorn
 
 from bct import BCT
 from bct.core.models import (
@@ -24,6 +27,7 @@ from bct.features.deploy import DeploymentProfiles, _start_with_one_safe_retry
 from bct.runtime_server import (
     GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
     build_server_config,
+    request_server_shutdown,
 )
 from bct.service_runtime import RuntimeServiceController, atomic_json, process_identity, read_json
 
@@ -264,6 +268,15 @@ class DeploymentServiceTests(unittest.TestCase):
         config = build_server_config(Mock(), port=self.port)
         self.assertEqual(5, GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
         self.assertEqual(5, config.timeout_graceful_shutdown)
+
+        server = uvicorn.Server(config)
+        server.servers = []
+        server.lifespan = Mock(shutdown=AsyncMock())
+        request_server_shutdown(server)
+        self.assertTrue(server.should_exit)
+        self.assertTrue(server.force_exit)
+        asyncio.run(server.shutdown())
+        server.lifespan.shutdown.assert_not_awaited()
 
     def test_start_retries_once_only_after_confirmed_no_effect(self):
         release = {"source_head": self.head}
