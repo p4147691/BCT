@@ -34,6 +34,7 @@ def _trace_stage(stage: str, **durations_ms: float) -> None:
 
 _GENERAL_TOOLS = ("bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get")
 _CAPABILITY_USAGE = {
+    "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; this requires verify and every child capability in work scope.",
     "verify": "Run up to 8 read metadata, test, or github_pr_status steps using id/capability/arguments. Requires each child action in work scope. Background operation; retrieve durable summary with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
     "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",
     "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use operation=directory_tree; combine related reads with operation=batch and items containing unique id, path, and optional directory_tree bounds.",
@@ -153,11 +154,15 @@ def build_mcp(
             arguments: dict[str, Any],
             approval_ref: str | None = None,
         ) -> dict[str, Any]:
+            selected = capability
+            if capability == "test" and arguments.get("operation") == "verify":
+                selected = "verify"
+                arguments = {key: value for key, value in arguments.items() if key != "operation"}
             background = (
-                capability == "deploy"
-                or capability == "verify"
-                or (capability == "github_pr_status" and float(arguments.get("wait_seconds", 0)) > 0)
-                or (capability == "service_control" and str(arguments.get("action") or "") != "status")
+                selected == "deploy"
+                or selected == "verify"
+                or (selected == "github_pr_status" and float(arguments.get("wait_seconds", 0)) > 0)
+                or (selected == "service_control" and str(arguments.get("action") or "") != "status")
             )
             started_ns = time.perf_counter_ns()
             if background:
@@ -167,7 +172,7 @@ def build_mcp(
                     principal=principal,
                     work_id=work_id,
                     operation_id=operation_id,
-                    capability=capability,
+                    capability=selected,
                     arguments=arguments,
                     approval_ref=approval_ref,
                 )
@@ -178,7 +183,7 @@ def build_mcp(
                 principal=principal,
                 work_id=work_id,
                 operation_id=operation_id,
-                capability=capability,
+                capability=selected,
                 arguments=arguments,
                 approval_ref=approval_ref,
             )

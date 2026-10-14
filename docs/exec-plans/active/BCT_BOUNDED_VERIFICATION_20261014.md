@@ -2,6 +2,9 @@
 
 Status: IMPLEMENTING; LIVE acceptance pending.
 
+Deferred independent bottlenecks: https://github.com/p4147691/BCT/issues/82 .
+PR: https://github.com/p4147691/BCT/pull/81 .
+
 ## Scope
 
 Finish the short/medium-term latency roadmap: bounded verification, server-side CI wait,

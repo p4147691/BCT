@@ -1,5 +1,10 @@
 # Bounded verification
 
+If an existing connector still caches the old tool list, call `bct_test` with
+`arguments.operation="verify"` and the same steps. This routes to exactly the same
+verify capability, permissions, digest and receipt; it does not grant verification
+through test-only scope. New catalogues expose `bct_verify` directly.
+
 Create one work allowing `verify` and each requested child (`read`, `test`,
 `github_pr_status`). Submit `bct_verify` with a unique operation ID and this shape:
 
