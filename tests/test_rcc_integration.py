@@ -514,6 +514,213 @@ class RccIntegrationTests(unittest.TestCase):
             "operationId": "rename-1",
         }, self.client.calls[0]["extra"])
 
+    def _rename_recovery_fixture(self, tag="legacy", title="새 제목"):
+        original = {
+            "command": "rename-conversation", "instance_id": "instance123",
+            "session_id": "session-original", "tab_id": 114,
+            "conversation_key": "conv-abc", "title": title,
+        }
+        self.client.result = {"type": "host:result", "ok": False}
+        first = self.call("original-" + tag, original)
+        self.assertEqual(Outcome.UNKNOWN, first.outcome)
+        recovery = dict(original)
+        recovery.update({"command": "reconcile-rename-conversation",
+                         "relay_id": "original-" + tag})
+        return first, recovery
+
+    def _rename_success_proof(self, title="새 제목"):
+        return {
+            "type": "host:result", "ok": True,
+            "relayId": "original-legacy", "instanceId": "instance123",
+            "receipt": {
+                "command": "rename-conversation",
+                "fingerprint": json.dumps(["conv-abc", 114, "session-original", title],
+                                          ensure_ascii=False, separators=(",", ":")),
+                "result": {"ok": True, "operationId": "original-legacy",
+                           "savedTitle": title, "tabId": 114,
+                           "conversationKey": "conv-abc"},
+            },
+            "observed": {"tabId": 114, "conversationKey": "conv-abc",
+                         "title": title, "presence": "OPEN",
+                         "currentSessionId": "session-after-reload"},
+        }
+
+    def test_rename_unknown_fences_exact_conversation_not_entire_instance(self):
+        self.client.result = {"type": "host:result", "ok": False}
+        first = self.call("unknown-first", {
+            "command": "rename-conversation", "instance_id": "instance123",
+            "session_id": "original-session", "tab_id": 114,
+            "conversation_key": "conv-abc", "title": "새 제목",
+        })
+        second = self.call("unknown-other", {
+            "command": "rename-conversation", "instance_id": "instance123",
+            "session_id": "original-session", "tab_id": 115,
+            "conversation_key": "conv-def", "title": "다른 제목",
+        })
+        self.assertEqual(Outcome.UNKNOWN, first.outcome)
+        self.assertEqual(Outcome.UNKNOWN, second.outcome)
+        with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED"):
+            self.call("unknown-duplicate-target", {
+                "command": "rename-conversation", "instance_id": "instance123",
+                "session_id": "original-session", "tab_id": 114,
+                "conversation_key": "conv-abc", "title": "다시 변경",
+            })
+        db = self.bct.store._connect()
+        try:
+            keys = [x[0] for x in db.execute(
+                "SELECT resource_key FROM resource_claims WHERE unresolved=1")]
+        finally:
+            db.close()
+        self.assertEqual(2, len(keys))
+        self.assertTrue(all(":rename:" in x for x in keys))
+
+    def test_rename_reconcile_exact_terminal_and_rotated_session(self):
+        self._rename_recovery_fixture()
+        self.client.result = self._rename_success_proof()
+        recovered = self.call("rename-reconcile-applied", {
+            "command": "reconcile-rename-conversation", "instance_id": "instance123",
+            "relay_id": "original-legacy", "session_id": "session-original",
+            "tab_id": 114, "conversation_key": "conv-abc", "title": "새 제목",
+        })
+        self.assertEqual(Outcome.APPLIED, recovered.outcome)
+        self.assertEqual("rename-receipt", self.client.calls[-1]["command"])
+        again = self.call("rename-reconcile-applied", {
+            "command": "reconcile-rename-conversation", "instance_id": "instance123",
+            "relay_id": "original-legacy", "session_id": "session-original",
+            "tab_id": 114, "conversation_key": "conv-abc", "title": "새 제목",
+        })
+        self.assertTrue(again.duplicate)
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id='original-legacy'"
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(0, unresolved)
+
+    def test_rename_reconcile_missing_receipt_or_wrong_identity_stays_unknown(self):
+        for case in ("missing", "tab", "conversation", "title", "fingerprint", "host"):
+            with self.subTest(case=case):
+                self.tearDown()
+                self.setUp()
+                _, recovery = self._rename_recovery_fixture(case)
+                proof = self._rename_success_proof()
+                proof["relayId"] = "original-" + case
+                proof["receipt"]["result"]["operationId"] = "original-" + case
+                if case == "missing":
+                    proof["receipt"] = None
+                elif case == "tab":
+                    proof["observed"]["tabId"] = 115
+                elif case == "conversation":
+                    proof["observed"]["conversationKey"] = "other"
+                elif case == "title":
+                    proof["observed"]["title"] = "이전 제목"
+                elif case == "fingerprint":
+                    proof["receipt"]["fingerprint"] = "[]"
+                else:
+                    proof["instanceId"] = "wrong-instance"
+                self.client.result = proof
+                failed = self.call("attempt-" + case, recovery)
+                self.assertNotEqual(Outcome.APPLIED, failed.outcome)
+                old = self.bct.store.get_operation_for(
+                    operation_id="original-" + case, work_id="rcc-work",
+                    principal_id="codex")
+                self.assertEqual(Outcome.UNKNOWN, old.outcome)
+                db = self.bct.store._connect()
+                try:
+                    claim = db.execute(
+                        "SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                        ("original-" + case,)).fetchone()[0]
+                finally:
+                    db.close()
+                self.assertEqual(1, claim)
+
+    def test_rename_reconcile_wrong_original_digest_prevents_external_read(self):
+        self._rename_recovery_fixture("digest")
+        prior = len(self.client.calls)
+        with self.assertRaisesRegex(PreconditionError, "ORIGINAL_REQUEST_DIGEST_MISMATCH"):
+            self.call("rename-reconcile-wrong-digest", {
+                "command": "reconcile-rename-conversation", "instance_id": "instance123",
+                "relay_id": "original-digest", "session_id": "session-original",
+                "tab_id": 114, "conversation_key": "conv-abc", "title": "다른 제목",
+            })
+        self.assertEqual(prior, len(self.client.calls))
+
+    def test_legacy_broad_claim_atomic_reclassification_preserves_original_unknown(self):
+        first, recovery = self._rename_recovery_fixture("legacy-broad")
+        db = self.bct.store._connect()
+        try:
+            db.execute(
+                "UPDATE resource_claims SET resource_key=? WHERE operation_id=?",
+                ("rcc-instance:instance123", "original-legacy-broad"))
+            db.commit()
+        finally:
+            db.close()
+        self.client.result = {
+            "type": "host:result", "ok": True,
+            "instanceId": "instance123", "relayId": "original-legacy-broad",
+            "receipt": None,
+            "observed": {
+                "tabId": 114, "conversationKey": "conv-abc", "title": "이전 제목",
+                "presence": "OPEN", "currentSessionId": "session-after-reload",
+            },
+        }
+        recovery["command"] = "reclassify-rename-claim"
+        migrated = self.call("reclass-legacy", recovery)
+        self.assertEqual(Outcome.APPLIED, migrated.outcome)
+        original = self.bct.store.get_operation_for(
+            operation_id="original-legacy-broad", work_id="rcc-work", principal_id="codex")
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_HOST_OUTCOME_UNVERIFIED:MISSING", original.error)
+        db = self.bct.store._connect()
+        try:
+            claim = db.execute(
+                "SELECT resource_key,unresolved FROM resource_claims WHERE operation_id=?",
+                ("original-legacy-broad",)).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(("rcc-instance:instance123:rename:114:conv-abc", 1), tuple(claim))
+        duplicate = self.call("reclass-legacy", recovery)
+        self.assertTrue(duplicate.duplicate)
+        self.client.result = {"type": "host:result", "ok": False}
+        other = self.call("unrelated-rename-after-narrow", {
+            "command": "rename-conversation", "instance_id": "instance123",
+            "session_id": "session-elsewhere", "tab_id": 115,
+            "conversation_key": "different-conversation", "title": "이름",
+        })
+        self.assertEqual(Outcome.UNKNOWN, other.outcome)
+
+    def test_legacy_broad_claim_identity_mismatch_preserves_instance_fence(self):
+        _, recovery = self._rename_recovery_fixture("legacy-mismatch")
+        db = self.bct.store._connect()
+        try:
+            db.execute("UPDATE resource_claims SET resource_key=? WHERE operation_id=?",
+                       ("rcc-instance:instance123", "original-legacy-mismatch"))
+            db.commit()
+        finally:
+            db.close()
+        recovery["command"] = "reclassify-rename-claim"
+        self.client.result = {
+            "type": "host:result", "ok": True, "instanceId": "instance123",
+            "relayId": "original-legacy-mismatch", "receipt": None,
+            "observed": {
+                "tabId": 114, "conversationKey": "WRONG",
+                "title": "이전", "presence": "OPEN",
+                "currentSessionId": "session-after-reload",
+            },
+        }
+        result = self.call("reclass-invalid", recovery)
+        self.assertNotEqual(Outcome.APPLIED, result.outcome)
+        db = self.bct.store._connect()
+        try:
+            claim = db.execute(
+                "SELECT resource_key,unresolved FROM resource_claims WHERE operation_id=?",
+                ("original-legacy-mismatch",)).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(("rcc-instance:instance123", 1), tuple(claim))
+
     def test_conversation_rename_rejects_missing_or_oversized_title(self):
         with self.assertRaisesRegex(PreconditionError, "RCC_RENAME_IDENTITY_REQUIRED"):
             self.call("rename-session-missing", {

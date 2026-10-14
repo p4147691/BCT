@@ -568,6 +568,75 @@ class Store:
         finally:
             db.close()
 
+    def finish_rename_claim_reclassification(
+        self, *, resolver_operation_id: str, original_operation_id: str,
+        expected_original_digest: str, expected_work_id: str,
+        instance_id: str, new_resource_key: str,
+        evidence: dict[str, Any],
+    ) -> OperationResult:
+        """Atomically narrow a legacy broad rename claim; preserve its UNKNOWN."""
+        broad_key = "rcc-instance:" + instance_id
+        if (not new_resource_key.startswith(broad_key + ":rename:")
+                or not expected_original_digest):
+            raise ConflictError("RCC_RENAME_RECLASSIFICATION_INVALID_TARGET")
+        with self.transaction() as db:
+            resolver = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?",
+                (resolver_operation_id,)).fetchone()
+            original = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?",
+                (original_operation_id,)).fetchone()
+            if (resolver is None or resolver["state"] != OperationState.RUNNING.value
+                    or resolver["work_id"] != expected_work_id
+                    or original is None or original["work_id"] != expected_work_id
+                    or original["principal_id"] != resolver["principal_id"]
+                    or original["capability"] != "relay_browser"
+                    or original["target"] != instance_id
+                    or original["state"] != OperationState.FINISHED.value
+                    or original["outcome"] != Outcome.UNKNOWN.value
+                    or not str(original["error"] or "").startswith(
+                        "RCC_HOST_OUTCOME_UNVERIFIED:")
+                    or original["request_digest"] != expected_original_digest):
+                raise ConflictError("RCC_RENAME_RECLASSIFICATION_ORIGINAL_FENCE")
+            old = db.execute(
+                "SELECT * FROM resource_claims WHERE operation_id=? AND resource_key=?"
+                " AND unresolved=1",
+                (original_operation_id, broad_key)).fetchone()
+            if old is None:
+                raise ConflictError("RCC_RENAME_LEGACY_BROAD_CLAIM_NOT_FOUND")
+            conflict = db.execute(
+                "SELECT operation_id FROM resource_claims "
+                "WHERE resource_key=? AND unresolved=1",
+                (new_resource_key,)).fetchone()
+            if conflict is not None:
+                raise ConflictError("RCC_RENAME_TARGET_ALREADY_CLAIMED")
+            db.execute(
+                "UPDATE resource_claims SET resource_key=? WHERE "
+                "operation_id=? AND resource_key=? AND unresolved=1",
+                (new_resource_key, original_operation_id, broad_key))
+            db.execute(
+                "UPDATE operations SET state=?, outcome=?, evidence_json=?,error=?,updated_at=? "
+                "WHERE operation_id=? AND state=?",
+                (OperationState.FINISHED.value, Outcome.APPLIED.value,
+                 json.dumps(evidence, sort_keys=True), None, time.time(),
+                 resolver_operation_id, OperationState.RUNNING.value))
+            db.execute(
+                "UPDATE resource_claims SET unresolved=0 WHERE operation_id=?",
+                (resolver_operation_id,))
+            self._event(db, "RCC_RENAME_CLAIM_RECLASSIFIED", original_operation_id, {
+                "resolver_operation_id": resolver_operation_id,
+                "original_outcome_preserved": "UNKNOWN",
+                "new_resource_key": new_resource_key,
+            })
+            self._event(db, "OPERATION_FINISHED", resolver_operation_id, {
+                "outcome": "APPLIED", "claims_released": True,
+                "reconciled_operation_ids": [],
+            })
+            row = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?",
+                (resolver_operation_id,)).fetchone()
+        return self._row_result(row)
+
     def finish_operation(self, *, operation_id: str, outcome: Outcome,
                          evidence: dict[str, Any], error: str | None,
                          release_claims: bool,
@@ -881,6 +950,21 @@ class Store:
         if row["principal_id"] != principal_id and work.owner_principal_id != principal_id:
             raise ConflictError("OPERATION_RESULT_ACCESS_DENIED")
         return self._row_result(row)
+
+    def get_operation_request_digest_for(self, *, operation_id: str,
+                                         work_id: str, principal_id: str) -> str:
+        self.get_operation_for(operation_id=operation_id, work_id=work_id,
+                               principal_id=principal_id)
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT request_digest FROM operations WHERE operation_id=? AND work_id=?",
+                (operation_id, work_id)).fetchone()
+        finally:
+            db.close()
+        if row is None:
+            raise KeyError("OPERATION_NOT_FOUND")
+        return str(row["request_digest"])
 
     def get_operation_target_for(self, *, operation_id: str, work_id: str, principal_id: str) -> str:
         # Reuse the exact work/principal authorization check before revealing target.

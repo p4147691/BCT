@@ -17,7 +17,7 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "0286ea6aab35fd961d612edf451956f30ce79b13e8e145792bc6e09748581187",
+            "background.js": "f4925197dbc89b7cf9d0903da1da1bf1b0096a3d44a07d38ac1c5829508a24ec",
             "content.js": "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe",
             "manifest.json": "ded68ea4bc4793fb25e72722b8ff1458db68e6d98f53f1990003947d3b8b551e",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",

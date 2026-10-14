@@ -2283,6 +2283,31 @@ async function handleNativeCommand(message) {
 
     }
 
+    if (message.command === 'rename-receipt') {
+      // Inspection only: never perform or repeat an effect here.
+      const relayId = String(message.text || '').trim();
+      const tabId = Number(message.tabId);
+      const conversationKey = String(message.conversationKey || '');
+      if (!relayId || !Number.isSafeInteger(tabId) || tabId <= 0 || !conversationKey) {
+        throw new Error('RENAME_RECEIPT_IDENTITY_REQUIRED');
+      }
+      const state = await loadState();
+      const record = state.operations?.[relayId] || null;
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      const observed = tab ? {
+        tabId: tab.id,
+        conversationKey: RelayCore.conversationKey(String(tab.url || '')),
+        title: String(tab.title || ''),
+        presence: isChatTab(tab) ? 'OPEN' : 'UNKNOWN',
+        currentSessionId: endpointSessionId,
+      } : null;
+      postNative({ type: 'host:result', requestId, ok: true,
+        instanceId: state.settings.instanceId, relayId,
+        receipt: record ? { command: record.command,
+          fingerprint: record.fingerprint, result: record.result } : null,
+        observed });
+      return;
+    }
     if (message.command === 'result') {
 
       const relayId = String(message.text || message.relayId || '').trim();
