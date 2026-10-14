@@ -23,12 +23,14 @@ _MCP_TRACE_ID: ContextVar[str | None] = ContextVar("bct_mcp_trace_id", default=N
 _MCP_TRACE_LOG = logging.getLogger("bct.mcp.trace")
 
 
-def _trace_stage(stage: str, **durations_ms: float) -> None:
+def _trace_stage(stage: str, *, tool_kind: str | None = None, **durations_ms: float) -> None:
     """Only synthetic trace ID and bounded durations; never headers or bodies."""
     trace_id = _MCP_TRACE_ID.get()
     if trace_id is None:
         return
     payload = {"trace_id": trace_id, "stage": stage}
+    if tool_kind is not None:
+        payload["tool_kind"] = tool_kind
     payload.update({key: round(value, 3) for key, value in durations_ms.items()})
     _MCP_TRACE_LOG.info("MCP_TIMING %s", json.dumps(payload, separators=(",", ":")))
 
@@ -143,6 +145,8 @@ def build_mcp(
     async def bct_operation_get(work_id: str, operation_id: str, wait_seconds: float = 0) -> dict[str, Any]:
         if not math.isfinite(wait_seconds) or not 0 <= wait_seconds <= 25:
             raise ValueError("OPERATION_WAIT_INVALID")
+        started_ns = time.perf_counter_ns()
+        wait_ms = 0.0
         deadline = time.monotonic() + wait_seconds
         while True:
             result = await asyncio.to_thread(bct.store.get_operation_for,
@@ -156,8 +160,12 @@ def build_mcp(
                 )
                 if steps:
                     value["step_journal"] = steps
+                handler_ms = (time.perf_counter_ns()-started_ns)/1e6
+                _trace_stage("handler_done", tool_kind="operation_get", handler_ms=handler_ms, wait_ms=wait_ms, execution_ms=max(0.0, handler_ms-wait_ms))
                 return value
+            sleep_start = time.perf_counter_ns()
             await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
+            wait_ms += (time.perf_counter_ns()-sleep_start)/1e6
 
     def make_executor(capability: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
         async def execute(
@@ -196,7 +204,8 @@ def build_mcp(
                     arguments=arguments,
                     approval_ref=approval_ref,
                 )
-                _trace_stage("handler_done", handler_ms=(time.perf_counter_ns()-started_ns)/1e6)
+                handler_ms = (time.perf_counter_ns()-started_ns)/1e6
+                _trace_stage("handler_done", tool_kind=selected, handler_ms=handler_ms, wait_ms=0.0, execution_ms=handler_ms)
                 return result.as_dict()
             result = await asyncio.to_thread(
                 bct.operations.run,
@@ -207,7 +216,8 @@ def build_mcp(
                 arguments=arguments,
                 approval_ref=approval_ref,
             )
-            _trace_stage("handler_done", handler_ms=(time.perf_counter_ns()-started_ns)/1e6)
+            handler_ms = (time.perf_counter_ns()-started_ns)/1e6
+            _trace_stage("handler_done", tool_kind=selected, handler_ms=handler_ms, wait_ms=0.0, execution_ms=handler_ms)
             return result.as_dict()
 
         execute.__name__ = "bct_" + capability
