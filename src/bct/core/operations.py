@@ -81,6 +81,14 @@ class OperationCoordinator:
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
         )
+        if capability == "verify":
+            for step in request.arguments["steps"]:
+                child_decision = self.policy.decide(
+                    principal=principal, work=work,
+                    action=step["request"]["capability"], approval_ref=approval_ref,
+                )
+                if child_decision.kind is not DecisionKind.ALLOW:
+                    raise AuthorizationError(child_decision.reason_code)
         if capability == "deploy" and request.arguments.get("operation") == "reconcile":
             original_id = request.arguments["original_operation_id"]
             original = self.store.get_operation_for(
@@ -160,7 +168,8 @@ class OperationCoordinator:
             )
         if current.state is OperationState.FINISHED:
             return current
-        return self._execute(feature=feature, request=request)
+        return self._execute(feature=feature, request=request, principal=principal,
+                             work_id=work_id, approval_ref=approval_ref)
 
     def run(self, *, principal: Principal, work_id: str, operation_id: str,
             capability: str, arguments: dict[str, Any], approval_ref: str | None = None) -> OperationResult:
@@ -170,12 +179,28 @@ class OperationCoordinator:
         )
         if not created:
             return current
-        return self._execute(feature=feature, request=request)
+        return self._execute(feature=feature, request=request, principal=principal,
+                             work_id=work_id, approval_ref=approval_ref)
 
-    def _execute(self, *, feature: Feature, request) -> OperationResult:
+    def _execute(self, *, feature: Feature, request, principal=None, work_id=None,
+                 approval_ref=None) -> OperationResult:
         operation_id = request.operation_id
         try:
-            result = feature.execute(request)
+            if request.capability == "verify":
+                initial_work = self.store.get_work(work_id)
+
+                def authorize(action):
+                    work = self.store.get_work(work_id)
+                    if work.assignment_epoch != initial_work.assignment_epoch:
+                        raise PreconditionError("VERIFY_OWNERSHIP_CHANGED")
+                    decision = self.policy.decide(principal=principal, work=work,
+                                                  action=action, approval_ref=approval_ref)
+                    if decision.kind is not DecisionKind.ALLOW:
+                        raise PreconditionError(decision.reason_code)
+
+                result = feature.execute_authorized(request, authorize)
+            else:
+                result = feature.execute(request)
             if not isinstance(result, FeatureResult):
                 raise TypeError("FEATURE_RESULT_REQUIRED")
             stored = self.store.finish_operation(

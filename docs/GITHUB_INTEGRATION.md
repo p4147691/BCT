@@ -33,6 +33,8 @@ repository permission 변경, token 발급, repository 생성은 이 기능의 �
 
 ## Deliberate boundaries
 
-- 자동 polling daemon은 없다. CI 상태는 새 read operation으로 조회한다.
+- 자동 polling daemon은 없다. CI 상태는 새 read operation으로 조회한다. 선택적인
+  `wait_seconds`(최대 300초)는 해당 operation 안에서만 5초 간격으로 대기하며, MCP에서는
+  기존 one-shot worker가 처리한다. 완료 영수증은 재실행 없이 회수한다.
 - 필수 check 이름은 작업이 명시한다. GitHub plan상 branch protection을 사용할 수 없더라도 merge 전 동일 gate를 적용한다.
 - deployment/service/MCP/RCC는 이 통합에 포함하지 않는다.
