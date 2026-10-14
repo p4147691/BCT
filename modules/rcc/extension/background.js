@@ -7,6 +7,13 @@ const NATIVE_HOST = 'com.ai_workspace_relay.host';
 const RCC_BACKGROUND_BUILD_ID = '2026-10-15-rcc-manager-wakeback-v13';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
+// Generic completed operations are an idempotency cache and are intentionally
+// bounded.  Rename recovery is different: an UNKNOWN rename must be
+// inspectable long after unrelated operations have displaced that cache.
+// These compact, terminal records are therefore never pruned automatically.
+// They may only be removed by a future explicit, authenticated retention
+// protocol after BCT has durably established a terminal outcome.
+const RENAME_RECEIPTS_KEY = 'renameReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
 const BINDING_SUBMIT_LEASE_TTL_MS = 15000;
 
@@ -76,7 +83,7 @@ async function findPendingRelayForNetwork(tabId) {
 
 async function loadState() {
 
-  const data = await chrome.storage.local.get(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY]);
+  const data = await chrome.storage.local.get(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, RENAME_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY]);
 
   const settings = data.settings || {};
 
@@ -119,6 +126,8 @@ async function loadState() {
     operations: data.operations || {},
 
     resultReceipts: data[RELAY_RESULT_RECEIPTS_KEY] || {},
+
+    renameReceipts: data[RENAME_RECEIPTS_KEY] || {},
 
     bindingSubmitLeases: data[BINDING_SUBMIT_LEASES_KEY] || {}
 
@@ -2170,29 +2179,99 @@ async function getCompletedOperation(operationId, command, fingerprint) {
 
   const state = await loadState();
 
-  const record = state.operations?.[operationId];
+  // A rename receipt is deliberately not subject to the generic 100-record
+  // operation cache.  It remains an idempotency answer as well as the
+  // recovery receipt used by the read-only native command below.
+  const dedicatedRenameReceipt = command === 'rename-conversation'
+    ? state.renameReceipts?.[operationId] : null;
+  const record = dedicatedRenameReceipt || state.operations?.[operationId];
 
   if (!record) return null;
 
   if (record.command !== command || record.fingerprint !== fingerprint) throw new Error('OPERATION_ID_REUSE_MISMATCH');
 
+  // A service-worker restart after durable reservation but before a terminal
+  // host answer leaves the external UI outcome unknown.  Do not treat that
+  // reservation as success and, critically, do not resend the rename.
+  if (command === 'rename-conversation' && dedicatedRenameReceipt && record.terminal !== true) {
+    throw new Error('RENAME_RECEIPT_PREPARED_OUTCOME_UNKNOWN');
+  }
+
   return record.result || null;
 
 }
 
+function preparedRenameResult(operationId, fingerprint) {
+  let parts;
+  try { parts = JSON.parse(fingerprint); }
+  catch (_) { throw new Error('RENAME_RECEIPT_FINGERPRINT_INVALID'); }
+  if (!Array.isArray(parts) || parts.length !== 4
+      || !Number.isSafeInteger(Number(parts[1])) || Number(parts[1]) <= 0
+      || !String(parts[0] || '').trim() || !String(parts[3] || '').trim()) {
+    throw new Error('RENAME_RECEIPT_FINGERPRINT_INVALID');
+  }
+  return {
+    ok: true, operationId, savedTitle: String(parts[3]),
+    tabId: Number(parts[1]), conversationKey: String(parts[0]),
+  };
+}
+
+async function reserveRenameReceipt(operationId, fingerprint) {
+  return withRelayReceiptMutation(async () => {
+    const state = await loadState();
+    const existing = state.renameReceipts?.[operationId];
+    if (existing) {
+      if (existing.command !== 'rename-conversation' || existing.fingerprint !== fingerprint) {
+        throw new Error('OPERATION_ID_REUSE_MISMATCH');
+      }
+      if (existing.terminal !== true) throw new Error('RENAME_RECEIPT_PREPARED_OUTCOME_UNKNOWN');
+      return;
+    }
+    // Reserve the full terminal-shaped value before the UI effect.  A storage
+    // capacity failure is therefore confirmed before dispatch; after dispatch
+    // only the fixed-size terminal marker changes.
+    await chrome.storage.local.set({
+      [RENAME_RECEIPTS_KEY]: {
+        ...(state.renameReceipts || {}),
+        [operationId]: {
+          command: 'rename-conversation', fingerprint,
+          result: preparedRenameResult(operationId, fingerprint),
+          terminal: false, at: Date.now(),
+        },
+      },
+    });
+  });
+}
+
 async function saveCompletedOperation(operationId, command, fingerprint, result) {
 
-  const state = await loadState();
+  const save = async () => {
+    const state = await loadState();
 
-  const operations = { ...(state.operations || {}) };
+    const operations = { ...(state.operations || {}) };
 
-  operations[operationId] = { command, fingerprint, result, at: Date.now() };
+    operations[operationId] = { command, fingerprint, result, at: Date.now() };
 
-  const keys = Object.keys(operations).sort((a,b)=>Number(operations[b]?.at||0)-Number(operations[a]?.at||0));
+    const keys = Object.keys(operations).sort((a,b)=>Number(operations[b]?.at||0)-Number(operations[a]?.at||0));
 
-  for (const key of keys.slice(100)) delete operations[key];
+    for (const key of keys.slice(100)) delete operations[key];
 
-  await chrome.storage.local.set({ operations });
+    const update = { operations };
+    if (command === 'rename-conversation') {
+      // Store only the exact terminal proof needed to fence a duplicate and to
+      // reconcile a response lost after the UI effect.  Do not fold this into
+      // the bounded generic cache; losing it would make an UNKNOWN permanent.
+      update[RENAME_RECEIPTS_KEY] = {
+        ...(state.renameReceipts || {}),
+        [operationId]: { command, fingerprint, result, terminal: true, at: Date.now() },
+      };
+    }
+    await chrome.storage.local.set(update);
+  };
+  // The dedicated ledger is a whole-object storage value.  Serialize its
+  // read-modify-write cycle with the durable relay receipt ledger so two
+  // distinct rename operations cannot erase each other's proof.
+  return command === 'rename-conversation' ? withRelayReceiptMutation(save) : save();
 
 }
 
@@ -2215,6 +2294,10 @@ async function runIdempotentOperation(operationId, command, fingerprint, work) {
   }
 
   const promise = (async () => {
+
+    if (command === 'rename-conversation') {
+      await reserveRenameReceipt(operationId, fingerprint);
+    }
 
     const result = await work();
 
@@ -2292,7 +2375,17 @@ async function handleNativeCommand(message) {
         throw new Error('RENAME_RECEIPT_IDENTITY_REQUIRED');
       }
       const state = await loadState();
-      const record = state.operations?.[relayId] || null;
+      // `operations` is a short generic idempotency cache.  Prefer the
+      // dedicated rename ledger so unrelated traffic cannot erase recovery
+      // evidence, while preserving compatibility with receipts recorded by
+      // earlier builds.
+      const dedicatedRenameReceipt = state.renameReceipts?.[relayId] || null;
+      const record = dedicatedRenameReceipt || state.operations?.[relayId] || null;
+      // A reservation contains caller-controlled expected fields so it can
+      // reserve storage before UI dispatch.  It is not a terminal receipt and
+      // must never be exposed as proof to Core reconciliation.
+      const terminal = dedicatedRenameReceipt
+        ? dedicatedRenameReceipt.terminal === true : Boolean(record);
       const tab = await chrome.tabs.get(tabId).catch(() => null);
       const observed = tab ? {
         tabId: tab.id,
@@ -2303,8 +2396,9 @@ async function handleNativeCommand(message) {
       } : null;
       postNative({ type: 'host:result', requestId, ok: true,
         instanceId: state.settings.instanceId, relayId,
-        receipt: record ? { command: record.command,
+        receipt: terminal && record ? { command: record.command,
           fingerprint: record.fingerprint, result: record.result } : null,
+        receiptState: terminal ? 'TERMINAL' : (record ? 'PREPARED' : 'MISSING'),
         observed });
       return;
     }
