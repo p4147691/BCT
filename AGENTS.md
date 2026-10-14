@@ -14,7 +14,7 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
 
 - `BCT_PLATFORM_PACKAGE_V1` is live accepted. The BCT repository owns core identity/policy/receipt,
   file and Git workflows, GitHub integration, deployment/service control, MCP, RCC control,
-  Python/PowerShell/argv execution and persistent sessions, Laya runtime integration, and the BCT Monitor.
+  Python/PowerShell/argv execution, persistent sessions, and the BCT Monitor.
 - Runtime is `D:\BCT\runtime`, data is `D:\BCT\data`, and the same BCT process serves health,
   MCP (`http://127.0.0.1:18790/mcp`) and Monitor (`http://127.0.0.1:18790/monitor`).
 - The DesktopWindow Monitor Chrome component remains installed at its existing live location; BCT owns

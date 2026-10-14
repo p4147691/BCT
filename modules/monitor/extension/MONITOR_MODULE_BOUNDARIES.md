@@ -8,7 +8,7 @@
 ### BCT status shell — READY / EXTRACTED
 - 구현: `monitor-bct-shell.js`; public `MonitorBctShell.create()`.
 - 입력: exact BCT Core health/status endpoint and Chrome window API.
-- 출력: BCT/Laya status windows와 exact RCC instance/session/tab/conversation에 묶인
+- 출력: BCT status windows와 exact RCC instance/session/tab/conversation에 묶인
   ChatGPT 대화 제목 변경. 제목 변경은 BCT `relay_browser` operation receipt를 사용하고
   응답 불명확 시 자동 재시도하지 않는다. Service mutation and deployment are not exposed.
 - 검증: `..\tools\check_monitor_bct_shell.js`.

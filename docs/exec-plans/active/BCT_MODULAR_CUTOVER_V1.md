@@ -15,7 +15,6 @@ replaceable capabilities are modules.
 - `modules/bdc`: desktop/native UI control.
 - `modules/rcc`: browser conversation control. RCC is the product name; Relay is its transport.
 - `modules/monitor`: window observation and simple node/status UI.
-- `modules/decision`: optional Laya lifecycle and recommendation.
 - `modules/github`: GitHub and runner operating contract.
 - `modules/mcp`: existing ChatGPT App/tunnel ingress retargeted to BCT.
 - `modules/status-ui`: read-only Core status page.

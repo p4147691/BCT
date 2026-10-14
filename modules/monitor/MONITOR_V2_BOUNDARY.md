@@ -10,7 +10,7 @@
   Chrome window ID, tab ID and current OPEN/active/generating state. This projection is read-only
   and does not assign roles, permissions or physical HWND identity.
 - BCT health/status is read from the exact Core endpoint on port 18790.
-- Laya is shown through BCT status. The retired port-7865 UI is not a current dependency.
+- The retired port-7865 UI is not a current dependency.
 - Installed-extension reload only reloads the installed payload. GitHub merge, source checkout and
   deployment remain separate, visible steps.
 

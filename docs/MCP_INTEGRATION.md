@@ -91,9 +91,9 @@ Codex approval configuration follows the user's operating policy:
 
 - automatic: capability discovery, work creation/recovery, operation receipt, file read,
   system inspection, one-shot Python/PowerShell/argv execution, persistent process sessions,
-  decision-model recommendation, monitor state, and GitHub PR status;
+  monitor state and GitHub PR status;
 - prompt: file write, tests that can execute project code, Git commit, GitHub mutations,
-  deployment, service control, RCC browser mutation, and decision-service lifecycle changes.
+  deployment, service control, and RCC browser mutation.
 
 Python and PowerShell are normal BCT development tools, not privileged escape hatches. They may
 run without an extra Codex prompt, but BCT still records the exact work, operation, working root,

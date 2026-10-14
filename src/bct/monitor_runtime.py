@@ -6,36 +6,7 @@ from typing import Any
 
 from bct.integrations.rcc import NamedPipeRelayClient, discover_instance_ids
 from bct.integrations.native_process import process_matches
-from bct.service_runtime import process_identity, read_json
-
-
-def _decision_state(endpoint_path: Path) -> dict[str, Any]:
-    value = read_json(endpoint_path)
-    if not isinstance(value, dict):
-        return {"state": "UNCONFIGURED"}
-    process = value.get("process") if isinstance(value.get("process"), dict) else {}
-    try:
-        current = process_identity(int(process.get("pid") or 0))
-    except (TypeError, ValueError):
-        current = None
-    owned = bool(
-        current is not None
-        and current.pid == process.get("pid")
-        and current.executable == process.get("executable")
-        and current.creation_marker == process.get("creation_marker")
-        and current.fingerprint == process.get("fingerprint")
-    )
-    return {
-        "state": "RUNNING" if owned else "STALE",
-        "owner": str(value.get("owner") or ""),
-        "runtime": str(value.get("runtime") or ""),
-        "mode": str(value.get("mode") or ""),
-        "model_name": str(value.get("model_name") or ""),
-        "generation": value.get("generation"),
-        "pid": process.get("pid"),
-        "owned": owned,
-        "warmed_up": bool(value.get("warmed_up")),
-    }
+from bct.service_runtime import read_json
 
 
 def _session_states(root: Path) -> list[dict[str, Any]]:
@@ -134,7 +105,6 @@ def build_monitor_state(
             "orchestration_sessions": len(snapshot["orchestration_sessions"]),
             "orchestration_assignments": len(snapshot["orchestration_assignments"]),
         },
-        "decision": _decision_state(data_root / "decision-endpoint.json"),
         "rcc": {"instances": rcc},
         "process_sessions": sessions,
         **snapshot,

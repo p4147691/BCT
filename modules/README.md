@@ -9,7 +9,6 @@ kernel.
 | `bdc` | BCT Desktop Control: desktop, window and native UI automation | BCT-owned native processes; never a second policy authority |
 | `rcc` | Browser conversation creation and exact-once relay control | Chrome extension + Native Messaging host |
 | `monitor` | Window observation and simple window/node status | Chrome extension + Native Messaging host |
-| `decision` | Optional local decision-model recommendation | Local model endpoint; deterministic policy remains in Core |
 | `github` | GitHub integration and runner operations | GitHub API/Actions and bounded runner services |
 | `mcp` | ChatGPT/Codex control ingress | Existing App/tunnel identity retargeted to BCT MCP |
 | `status-ui` | Read-only BCT operational page | Served by the BCT runtime |

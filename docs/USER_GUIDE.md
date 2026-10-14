@@ -15,7 +15,7 @@ Codex는 BCT work와 operation을 만들고 읽기, 수정, 실행, 테스트, c
 - 시스템과 프로세스 상태 확인
 - Python, PowerShell, 일반 프로그램 실행
 - 장시간 Python/PowerShell/프로그램 세션 시작과 상태 확인
-- Laya 추천 조회와 Monitor 상태 확인
+- Monitor 상태 확인
 - 기존 operation 결과와 GitHub PR 상태 조회
 
 폴더 내용은 파일 읽기와 구분해 `bct_read`의 `operation: "directory_tree"`로 조회한다.

@@ -25,7 +25,7 @@ Windows 129개 테스트, main CI 및 LIVE/hosted connector E2E를 통과했다.
   `release_sha`가 모두 같은지 기계적으로 비교해 판정한다.
 - 운영 release는 `D:\BCT\runtime`, receipt와 session 상태는 `D:\BCT\data`에 있다.
 - BCT core, MCP, health와 BCT Monitor가 한 서비스/한 release에서 실행된다.
-- 파일·Git·GitHub·배포·서비스·RCC·Laya·Python/PowerShell/argv 실행과 지속 세션은
+- 파일·Git·GitHub·배포·서비스·RCC·Python/PowerShell/argv 실행과 지속 세션은
   BCT 구현과 공통 operation receipt를 사용한다.
 - Python과 PowerShell은 일반 개발 실행으로 사용할 수 있다. 지속 mutation, 배포, 서비스 및
   브라우저 변경은 별도의 주의 경계를 유지한다.
@@ -46,7 +46,7 @@ Windows 129개 테스트, main CI 및 LIVE/hosted connector E2E를 통과했다.
   `D:\ChromeExtensions`에서 실행된다. Proxy helper/wireproxy의 실행 backend는
   `D:\BCT\runtime\modules\chrome-auto-proxy`이며 더 이상 ACT runtime을 사용하지 않는다.
 - 구형 ACT MCP(18769)와 ADC agent(18766)는 exact PID·시작시각·명령줄 fence와 durable
-  receipt로 퇴역했다. BCT Core(18790), Laya(18771), RCC, Monitor Native Host와 Proxy는
+  receipt로 퇴역했다. BCT Core(18790), RCC, Monitor Native Host와 Proxy는
   전환 후에도 정상이다.
 - 과거 staging/verify 사본은 `docs/LOCAL_LAYOUT.md`에 기록한 SHA-manifested Archive로 이동했다.
   실행 중인 도구와 project 후보는 이동하지 않았다.
