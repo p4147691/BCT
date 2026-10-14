@@ -13,8 +13,9 @@ class ModuleLayoutTests(unittest.TestCase):
         cls.config = tomllib.loads((cls.root / "bct.toml").read_text(encoding="utf-8"))
 
     def test_product_modules_are_outside_core(self):
-        for name in ("bdc", "rcc", "monitor", "decision", "github", "mcp", "status-ui"):
+        for name in ("bdc", "rcc", "monitor", "github", "mcp", "status-ui"):
             self.assertTrue((self.root / "modules" / name).is_dir(), name)
+        self.assertFalse((self.root / "modules" / "decision").exists())
         self.assertFalse((self.root / "components").exists())
         self.assertFalse((self.root / "rcc").exists())
 

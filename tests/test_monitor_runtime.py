@@ -8,7 +8,6 @@ from unittest.mock import patch
 from bct.core.models import Principal, Work
 from bct.core.store import Store
 from bct.monitor_runtime import _rcc_states, build_monitor_state
-from bct.service_runtime import ProcessIdentity, atomic_json
 
 
 class MonitorRuntimeTests(unittest.TestCase):
@@ -27,35 +26,8 @@ class MonitorRuntimeTests(unittest.TestCase):
                 )
             self.assertEqual(1, state["schema"])
             self.assertEqual(1, state["counts"]["works"])
-            self.assertEqual("UNCONFIGURED", state["decision"]["state"])
             self.assertNotIn("roots", state["works"][0])
             self.assertEqual([], state["operations"])
-
-    def test_decision_ownership_uses_service_creation_identity(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            data = root / "data"
-            data.mkdir()
-            identity = ProcessIdentity(42, r"C:\Python\python.exe", "creation-1", "f" * 64)
-            atomic_json(data / "decision-endpoint.json", {
-                "owner": "BCT",
-                "runtime": "laya",
-                "mode": "recommend_shadow",
-                "model_name": "model",
-                "generation": 3,
-                "warmed_up": True,
-                "process": identity.as_dict(),
-            })
-            with patch("bct.monitor_runtime.process_identity", return_value=identity), patch(
-                "bct.monitor_runtime.discover_instance_ids", return_value=[]
-            ):
-                state = build_monitor_state(
-                    store=Store(root / "state.sqlite"),
-                    service_state={"ready": True, "release_sha": "1" * 40, "pid": 7},
-                    data_root=data,
-                )
-            self.assertEqual("RUNNING", state["decision"]["state"])
-            self.assertTrue(state["decision"]["owned"])
 
     def test_rcc_state_exposes_only_window_tab_and_presence_fields(self):
         class Client:

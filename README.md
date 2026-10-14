@@ -9,7 +9,7 @@ BCT는 사용자 지시에 따라 개발·로컬 실행·브라우저·데스크
 `BCT_PLATFORM_PACKAGE_V1=LIVE_ACCEPTED`.
 
 BCT는 현재 파일 읽기·쓰기, 테스트, Git/GitHub, exact 배포·서비스 제어, MCP, RCC,
-로컬 Python·PowerShell·argv 실행과 지속 세션, Laya 결정 모델, BCT Monitor를 자체 소스와
+로컬 Python·PowerShell·argv 실행과 지속 세션, BCT Monitor를 자체 소스와
 공통 operation receipt로 제공한다. 새 파일을 포함한 구조화 Git commit과 deployment profile의
 안전한 파일 목록 진화도 실제 수용 검증을 마쳤다.
 
@@ -74,8 +74,6 @@ operation ID는 두 번째 프로세스나 입력을 만들지 않는다.
 - DesktopWindow Monitor의 활성 baseline은 `modules/monitor/`에 있다.
 - BDC(BCT Desktop Control)는 `modules/bdc/`가 소유하며, Core 밖의 데스크톱 자동화 기능이다.
 - 읽기 전용 운영 화면은 `modules/status-ui/`에 있다.
-- Laya 모델 파일은 Git 밖의 `D:\BCT\models`에, 전용 실행 dependency는
-  `D:\BCT\local-llm`에 둔다.
 - BCT는 모델 endpoint health, advisory inference, PID/fingerprint service receipt와
   deterministic fallback을 소유한다. 모델 추천은 인증·권한·중복 방지 결정을 대체하지 않는다.
 

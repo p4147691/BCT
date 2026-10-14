@@ -14,7 +14,7 @@ The imported baseline still contains a frozen compatibility UI for the former AC
 model. No new BCT feature may depend on it. The BCT 2.0 surface hides that compatibility UI and
 keeps physical window/desktop/thumbnail behavior independent of node or organization metadata.
 
-The primary Monitor header exposes only live, explicit boundaries: BCT health/status, Laya status
+The primary Monitor header exposes only live, explicit boundaries: BCT health/status
 through the BCT status view, and installed-extension reload. Its main panel shows a read-only,
 BCT-native summary of RCC-observed ChatGPT windows/tabs using exact Chrome window and tab IDs; it
 does not revive the former ACT organization authority. Reload reads the installed payload again;

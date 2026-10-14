@@ -23,9 +23,7 @@ from .features.verification import VerificationFeature
 from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
-from .features.decision import DecisionModelFeature
 from .features.monitor import MonitorFeature
-from .features.decision_service import DecisionServiceFeature
 from .features.orchestration import OrchestrationFeature
 from .integrations.github import GhCliClient, GitHubClient
 
@@ -50,9 +48,7 @@ class BCT:
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             RelayBrowserFeature(),
             SystemInspectFeature(), ExecuteFeature(), ProcessSessionFeature(policy_path),
-            DecisionModelFeature(policy_path),
             MonitorFeature(policy_path),
-            DecisionServiceFeature(policy_path),
             OrchestrationFeature(self.orchestration),
         ):
             self.operations.register(feature)

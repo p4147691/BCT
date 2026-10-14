@@ -24,8 +24,6 @@ GitHub `main`이고, 아래 경로는 로컬 작업·설치·운영 자산의 �
 - `worktrees`: 수정·테스트용 격리 checkout. 병합 후 제거한다.
 - `runtime`: exact main SHA로 만든 불변 Core release와 실행 receipt.
 - `data`: operation, session, migration receipt 등 변경 가능한 운영 상태.
-- `models`: BCT가 운영하는 Laya weight.
-- `local-llm`: Laya 실행에 필요한 버전 고정 dependency.
 
 Core release는 `src/bct` 실행 코드와 읽기 전용 `modules/status-ui`만 포함한다. RCC,
 DesktopWindow Monitor, BDC처럼 설치·교체 가능한 기능은 Git 저장소의 `modules/`에서
@@ -71,7 +69,6 @@ Archive 이동 증거는 `D:\BCT\data\migrations`에 둔다. 기존 archive의 t
 ## 현재 실행 기준
 
 - BCT Core/MCP: `D:\BCT\runtime`, port 18790.
-- BCT Laya: `D:\BCT\models` + `D:\BCT\local-llm`, port 18771.
 - BCT RCC 설치본: `D:\ChromeExtensions\RCC`, Native Host는 BCT 고정 extension origin만 허용.
 - BCT Monitor: Core의 `http://127.0.0.1:18790/monitor`.
 - DesktopWindow Monitor: `D:\ChromeExtensions\DesktopWindow-Monitor`; 현재는 별도 호환 모듈.

@@ -16,33 +16,14 @@ normal_actions = [
   "system_inspect",
   "execute",
   "process_session",
-  "decision_model",
   "monitor",
   "orchestrate",
-  "decision_service",
 ]
 approval_actions = ["delete", "credential_change"]
 
 [execution.sessions]
 state_root = "D:\\BCT\\data\\process-sessions"
 
-[decision]
-endpoint_file = "D:\\BCT\\data\\decision-endpoint.json"
-timeout_s = 1.0
-
-[decision.service]
-state_root = "D:\\BCT\\data"
-model_path = "D:\\BCT\\models\\act-laya-v2"
-model_name = "act-laya-v2"
-model_sha256 = "0B34911A3D48C38AEB7B6A0C9AB972DF8EEE50C567AEDD907F3115F2D5079280"
-port = 18771
-python = "C:\\Users\\시우세영\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
-python_paths = [
-  "D:\\BCT\\local-llm\\laya-0.4.3",
-  "D:\\BCT\\local-llm\\deps",
-]
-module = "laya.serve"
-readiness_timeout = 60.0
 
 [monitor]
 source_root = "modules/monitor"
@@ -82,17 +63,13 @@ files = [
   "src/bct/features/rcc.py",
   "src/bct/features/execution.py",
   "src/bct/features/process_session.py",
-  "src/bct/features/decision.py",
   "src/bct/features/monitor.py",
   "src/bct/features/orchestration.py",
-  "src/bct/features/decision_service.py",
   "src/bct/features/tests.py",
   "src/bct/features/verification.py",
   "src/bct/integrations/__init__.py",
   "src/bct/integrations/github.py",
   "src/bct/integrations/rcc.py",
   "src/bct/integrations/native_process.py",
-  "src/bct/integrations/decision.py",
-  "src/bct/decision_service.py",
   "modules/status-ui/index.html",
 ]
