@@ -107,6 +107,45 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual("APPLIED", journal[0]["outcome"])
         self.assertIsNone(journal[1]["outcome"])
 
+    def test_worker_loss_after_plan_checkpoint_keeps_all_steps_pending(self):
+        original = self.bct.store.initialize_operation_steps
+
+        def stop_after_checkpoint(**values):
+            original(**values)
+            raise KeyboardInterrupt("lost after plan checkpoint")
+
+        with patch.object(self.bct.store, "initialize_operation_steps",
+                          side_effect=stop_after_checkpoint):
+            with self.assertRaises(KeyboardInterrupt):
+                self.call(operation="plan-checkpoint")
+        operation = self.bct.store.get_operation_for(
+            operation_id="plan-checkpoint", work_id="work", principal_id="owner",
+        )
+        self.assertEqual("RUNNING", operation.state.value)
+        journal = self.bct.store.get_operation_steps(operation_id="plan-checkpoint")
+        self.assertEqual(["PENDING", "PENDING"], [step["state"] for step in journal])
+        with self.assertRaises(ConflictError):
+            self.call(operation="plan-checkpoint-bypass")
+
+    def test_worker_loss_after_running_checkpoint_does_not_dispatch_child(self):
+        original = self.bct.store.start_operation_step
+
+        def stop_after_checkpoint(**values):
+            result = original(**values)
+            raise KeyboardInterrupt("lost before child dispatch")
+
+        reader = self.bct.operations._features["read"]
+        with patch.object(self.bct.store, "start_operation_step",
+                          side_effect=stop_after_checkpoint), \
+             patch.object(reader, "execute") as execute:
+            with self.assertRaises(KeyboardInterrupt):
+                self.call(operation="running-checkpoint")
+        execute.assert_not_called()
+        journal = self.bct.store.get_operation_steps(operation_id="running-checkpoint")
+        self.assertEqual(["RUNNING", "PENDING"], [step["state"] for step in journal])
+        with self.assertRaises(ConflictError):
+            self.call(operation="running-checkpoint-bypass")
+
     def test_fixed_local_recipe_and_versioned_digest(self):
         arguments = {
             "recipe_id": "local-python-validation",
@@ -158,6 +197,30 @@ class VerificationTests(unittest.TestCase):
         for index, value in enumerate(invalid):
             with self.assertRaises(PreconditionError):
                 self.call(operation=f"invalid-recipe-{index}", arguments=value)
+
+    def test_pr_recipe_receipt_is_historical_and_new_operation_reads_current_head(self):
+        arguments = {
+            "recipe_id": "pr-readiness", "recipe_version": 1,
+            "inputs": {
+                "repository": "owner/repo", "number": 1,
+                "expected_head": self.sha, "required_checks": ["test"],
+                "wait_seconds": 0,
+            },
+        }
+        historical = self.call(operation="ci-history", arguments=arguments)
+        self.assertEqual(Outcome.APPLIED, historical.outcome)
+        self.github.get_pull_request.return_value = {
+            **self.pull, "head": {"sha": "b" * 40},
+        }
+        duplicate = self.call(operation="ci-history", arguments=arguments)
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(Outcome.APPLIED, duplicate.outcome)
+        current = self.call(operation="ci-current", arguments=arguments)
+        self.assertEqual(Outcome.FAILED, current.outcome)
+        self.assertEqual(
+            "GITHUB_PR_HEAD_MISMATCH",
+            current.evidence["steps"][0]["evidence"]["code"],
+        )
 
     def test_policy_change_between_steps_stops(self):
         reader = self.bct.operations._features["read"]
