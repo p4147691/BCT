@@ -45,7 +45,7 @@ class OperationCoordinator:
             "result", "reconcile-send-to-created-tab",
             "result-of-create-and-send", "reconcile-create-and-send",
             "inspect-rename-receipt", "reconcile-rename-conversation",
-            "reclassify-rename-claim",
+            "reclassify-rename-claim", "quarantine-legacy-rename-claim",
         }:
             # The RCC result endpoint is scoped to an operation owned by this exact work.
             # It must never be a cross-work arbitrary relay receipt lookup.
@@ -61,7 +61,7 @@ class OperationCoordinator:
                 raise PreconditionError("RCC_RESULT_INSTANCE_MISMATCH")
             if rcc_command in {
                 "inspect-rename-receipt", "reconcile-rename-conversation",
-                "reclassify-rename-claim",
+                "reclassify-rename-claim", "quarantine-legacy-rename-claim",
             }:
                 if (original.state is not OperationState.FINISHED
                         or original.outcome is not Outcome.UNKNOWN
@@ -89,7 +89,7 @@ class OperationCoordinator:
                         principal_id=principal.principal_id) != original_digest:
                         raise PreconditionError("RCC_RENAME_ORIGINAL_REQUEST_DIGEST_MISMATCH")
             if original.state is not OperationState.FINISHED or not (
-                (rcc_command in {"inspect-rename-receipt", "reconcile-rename-conversation", "reclassify-rename-claim"})
+                (rcc_command in {"inspect-rename-receipt", "reconcile-rename-conversation", "reclassify-rename-claim", "quarantine-legacy-rename-claim"})
                 or (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
                  and (original.evidence.get("command") == "create-and-send"
                       or str(original.error or "").startswith("RCC_COMPOSE_")))
@@ -113,7 +113,9 @@ class OperationCoordinator:
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
         )
-        if capability == "relay_browser" and rcc_command == "reclassify-rename-claim":
+        if capability == "relay_browser" and rcc_command in {
+            "reclassify-rename-claim", "quarantine-legacy-rename-claim",
+        }:
             request = replace(request, preconditions={
                 **request.preconditions, "original_request_digest": original_digest,
             })
@@ -273,6 +275,18 @@ class OperationCoordinator:
                     and request.arguments["command"] == "reclassify-rename-claim"
                     and result.outcome is Outcome.APPLIED):
                 stored = self.store.finish_rename_claim_reclassification(
+                    resolver_operation_id=operation_id,
+                    original_operation_id=result.evidence["original_operation_id"],
+                    expected_original_digest=result.evidence["expected_original_digest"],
+                    expected_work_id=work_id,
+                    instance_id=result.evidence["instance_id"],
+                    new_resource_key=result.evidence["new_resource_key"],
+                    evidence=result.evidence,
+                )
+            elif (request.capability == "relay_browser"
+                    and request.arguments["command"] == "quarantine-legacy-rename-claim"
+                    and result.outcome is Outcome.APPLIED):
+                stored = self.store.finish_rename_claim_operator_quarantine(
                     resolver_operation_id=operation_id,
                     original_operation_id=result.evidence["original_operation_id"],
                     expected_original_digest=result.evidence["expected_original_digest"],
