@@ -2,7 +2,17 @@
 
 ## 현재 검증 상태
 
-Durable Orchestration is not yet LIVE accepted. Follow the current-gate section
+Durable Orchestration bounded V1 staged LIVE acceptance is complete at PR #107.
+See `docs/exec-plans/completed/BCT_RCC_CANONICAL_TEXT_AND_ORCHESTRATION_ACCEPTANCE_20261014.md`
+for exact CI/release/receipt evidence and limits. Single manager/worker and the
+two-worker -> manager epoch takeover -> dependent synthesis chain passed; all
+26 historical claims were preserved and new acceptance claims were released
+normally. No old UNKNOWN was replayed or reconciled. Worker analysis is not
+automatically trusted: historical timing samples must not be relabeled as v12
+measurements, and aggregate status still exposes the exception class in error.
+
+The following is the prior blocker context, retained for recovery history.
+Follow the current-gate section
 of `docs/exec-plans/active/BCT_DURABLE_ORCHESTRATION_V1.md`: freeze features;
 single roundtrip -> durable recovery -> one manager/worker -> multi-worker and
 manager takeover. Preserve historical UNKNOWN/claims. PR #105 fixed retirement
@@ -23,8 +33,8 @@ real normal and injected direct-recovery entry paths. RCC 1.0.19 excludes only
 the exact hidden ellipsis sibling of data-search-result-target; literal text
 and unknown shapes stay unchanged. Regression coverage includes collapsed and
 expanded messages, Unicode/newlines/code, nested wrappers, ambiguous/wrong
-turns and conversation identity. Promotion and a fresh single-manager gate are
-still pending. Do not resend/release the quarantined attempt or rerun successful
+turns and conversation identity. Promotion and the fresh single-manager gate
+were pending at that checkpoint and are now accepted above. Do not resend/release the quarantined attempt or rerun successful
 earlier gates. CLI #106 and monitor follow-ups remain outside this correction.
 
 Latest user clarification authorizes this correction through PR/CI/main and

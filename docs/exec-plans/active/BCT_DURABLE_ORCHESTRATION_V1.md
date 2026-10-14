@@ -1,8 +1,19 @@
 # BCT Durable Orchestration V1
 
-Status: ACTIVE / STAGED_LIVE_ACCEPTANCE / CANONICAL_TEXT_FIX_CANDIDATE.
+Status: COMPLETE / BOUNDED_V1_LIVE_ACCEPTED.
 
 ## Current gate (supersedes historical checkpoints below)
+
+PR #107 exact-head/main CI and exact-SHA Core/RCC deployment passed, followed by
+one fresh manager/worker gate and one two-worker/manager-takeover/synthesis chain.
+The chain session is FINISHED/APPLIED, with 3 dispatches, 3 results, two consumed
+worker results and zero new unresolved claims. All 26 historical claims remain
+unchanged. Full evidence and limitations are in
+`../completed/BCT_RCC_CANONICAL_TEXT_AND_ORCHESTRATION_ACCEPTANCE_20261014.md`.
+The remainder of this plan is historical design/recovery context, not a request
+to rerun acceptance. Existing references to this path are preserved.
+
+### Historical promotion checkpoint (superseded by acceptance above)
 
 Latest explicit user clarification authorizes verified PR/CI/main, exact-SHA
 deployment and RCC reload for this correction, superseding the brief LIVE hold.
