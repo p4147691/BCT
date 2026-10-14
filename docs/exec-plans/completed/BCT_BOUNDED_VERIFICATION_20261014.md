@@ -1,6 +1,6 @@
 # Bounded verification and round-trip reduction
 
-Status: IMPLEMENTING; LIVE acceptance pending.
+Status: COMPLETE / LIVE_ACCEPTED / HOSTED_CONNECTOR_E2E_ACCEPTED.
 
 Deferred independent bottlenecks: https://github.com/p4147691/BCT/issues/82 .
 PR: https://github.com/p4147691/BCT/pull/81 .
@@ -39,12 +39,39 @@ create a second improvement ledger.
 - `bct_status` defaults to five recent rows per history category; `compact=false` preserves
   the full previous view. Current health and unresolved claims remain visible.
 
-## Acceptance plan
+## Acceptance evidence
 
-Focused adversarial tests; full Python regression; authenticated isolated MCP disconnect/
-reconnect and duplicate request; Windows PR/main CI; exact-SHA Core deploy; fresh LIVE MCP
-verify/receipt retrieval and CI wait; compare equivalent separate and combined observations.
-Report direct and hosted transport measurements separately. No guaranteed speedup ratio.
+- Local full regression: 128 PASS before the last focused refinement. Final focused
+  verification suite: 9 PASS. Authenticated MCP disconnect/reconnect, duplicate and cached
+  catalogue alias acceptance: PASS. Compile and diff checks: PASS.
+- Final Windows PR CI run `38499116087`: 129 PASS in 111.713 seconds; overall job 2m38s.
+- PR #81 merged as `0502d783f7fdd8d6fd7003eb95e9c3bc354a5097`; main CI `38499382225`
+  passed. Deployment `bounded-verification-deploy-01` finished APPLIED with manifest
+  `418655ab3a14656abda01c91eb55b3fc2e60242b19eca7bbf85d633b6caa56c4`.
+- LIVE direct MCP: seven separate read/test operations and one verification plan plus
+  receipt. All six hashes matched; compile PASS; disconnect/reconnect and duplicate
+  evidence preserved. `bounded-direct-e2e-01-combined` finished APPLIED.
+- Direct loopback timings: separate 503.211 ms, combined 859.676 ms. Worker startup and
+  reconnect cost more locally; the benefit is fewer hosted round trips, not faster file IO.
+- Hosted BCT Control connector: `bounded-hosted-combined-01` and `-02` both finished
+  APPLIED with six matching file hashes and compile PASS. Existing cached `bct_test`
+  tool routes `operation=verify` to the same verification capability and permissions.
+- First sample sums tool-call boundaries: separate 7,755 ms versus combined 2,161 ms.
+  There was an additional orchestration gap between exec cells; the combined wall span
+  was 12,254 ms, so this sample is not a whole-agent latency comparison.
+- Reverse-order contiguous sample in one execution: combined 2,097 ms versus separate
+  7,692 ms. Calls reduced from seven to two; the measured tool-sequence time fell about
+  72.7%. Two small samples are evidence of this path, not a latency guarantee or model
+  reasoning-time measurement.
+- Compact status was 8,545 bytes versus 65,494 bytes for full history in the LIVE sample;
+  current state and unresolved claims remain present. Standalone background exact-head
+  CI wait returned READY for merged PR #81; pending-to-ready and stale-head behavior
+  have deterministic regression coverage.
+- Reproducible driver: `scripts/verify_mcp_acceptance.py`. Local acceptance summaries are
+  under `D:\BCT\data\acceptance\bounded-*-e2e-*.json`; no token/body/stdout is recorded.
+
+The final documentation-only closeout follows normal CI and exact-main deployment;
+use current HEAD/current.json/health equality and durable receipts for final state.
 
 ## Rollback
 

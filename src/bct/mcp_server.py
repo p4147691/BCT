@@ -85,7 +85,7 @@ def build_mcp(
     @server.tool(
         description=(
             "Return the current read-only BCT summary: Core release/health, Monitor projection, "
-            "RCC instances, and active process sessions. Takes no arguments and creates no work or mutation."
+            "RCC instances, and active process sessions. Optional compact defaults true; creates no work or mutation."
         ),
         structured_output=True,
     )
