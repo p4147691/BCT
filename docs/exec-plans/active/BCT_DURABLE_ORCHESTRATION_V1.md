@@ -185,6 +185,16 @@ explicit reconciliation. This prevents a late send after the Core timeout. The
 current chain identity and claims remain preserved for post-deployment
 reconciliation.
 
+After RCC 1.0.10 deployment, four new bootstrap operations all returned
+`APPLIED`, but the next chain immediately and safely returned both assignments
+as `NOT_APPLIED / ORCHESTRATION_TARGET_BUSY`; it sent no worker message and
+released its claims. Probe evidence showed each new tab retained a completed
+bootstrap record whose conversation key was the transient `local-chatgpt`
+route while the final tab URL already had a durable UUID. RCC 1.0.11 excludes
+that provisional route in the shared identity parser and makes fresh-tab
+bootstrap wait for the durable key. This addresses the source of the stale
+record rather than weakening the 1.0.10 busy-target fence.
+
 The original implementation acceptance proved 174 Python tests, all 15 RCC
 JavaScript test programs, Python compileall, JavaScript syntax, and
 `git diff --check`. Independent API, SQLite/recovery, and RCC audits all

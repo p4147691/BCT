@@ -256,6 +256,28 @@ Candidate extension payload SHA-256 for 1.0.10:
 Loaded-build acceptance requires `backgroundBuildId` exactly
 `2026-10-14-rcc-orchestration-recovery-v3` before resuming the queued chain.
 
+## BCT RCC 1.0.11 durable conversation identity candidate
+
+Version 1.0.11 excludes ChatGPT's transient `/c/local-chatgpt` optimistic route
+from the conversation identity contract. Fresh-tab submission now waits for the
+durable server-assigned conversation key before it records or attests the
+bootstrap execution. Content and background both use the same `RelayCore`
+parser, preventing a provisional route from leaving a completed execution
+record bound to a different final conversation. The 1.0.10 busy-target and
+late-submit fences remain unchanged.
+
+Candidate extension payload SHA-256 for 1.0.11:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `9d9e698a38ee725e0cc81ba55b33386ee14bb71e7abefa1cac5b9b31b1c0fa8a` |
+| `extension/content.js` | `7d07a34f03cc81dd6622bc455f3ec9c6d85fcdb542668af37d1ebd2484c9c6bc` |
+| `extension/manifest.json` | `9c227fa92cce5e416afe9b49983158296bcb23b14c943a85d7caa033a4acbd73` |
+| `extension/relay_core.js` | `74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc` |
+
+Loaded-build acceptance requires `backgroundBuildId` exactly
+`2026-10-14-rcc-orchestration-recovery-v4` before a fresh bootstrap/E2E.
+
 ## BCT RCC 1.0.3 bootstrap conversation identity acceptance candidate
 
 The first 1.0.2 LIVE E2E proved that ChatGPT can replace the blank route with a

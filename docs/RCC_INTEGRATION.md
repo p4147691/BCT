@@ -166,3 +166,9 @@ queued. Pre-1.0.10 orchestration queue entries did not retain the complete
 binding tuple; RCC drops those local entries before submit and leaves the
 background evidence available for explicit reconciliation. This prevents an
 old queued prompt from firing after Core has timed out.
+
+RCC 1.0.11 treats `/c/local-chatgpt` as a provisional navigation marker rather
+than a conversation identity. A newly created tab must reach its durable
+server-assigned conversation key before bootstrap state is bound. The content
+and background paths share the same parser so later exact sends cannot inherit
+a completed record tied to the optimistic route.
