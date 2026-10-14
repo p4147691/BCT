@@ -1,0 +1,7 @@
+{
+  "name": "com.bct.browser_bridge.prototype",
+  "description": "BCT Browser Bridge isolated prototype",
+  "path": "SET_ABSOLUTE_HOST_EXE_PATH_ONLY_AFTER_APPROVAL",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/"]
+}
