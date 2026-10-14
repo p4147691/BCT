@@ -275,6 +275,29 @@ Candidate extension payload SHA-256 for 1.0.11:
 | `extension/manifest.json` | `9c227fa92cce5e416afe9b49983158296bcb23b14c943a85d7caa033a4acbd73` |
 | `extension/relay_core.js` | `74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc` |
 
+## BCT RCC 1.0.15 exact draft stabilization candidate
+
+Version 1.0.15 retains the 1.0.14 canonical-editor reacquisition and adds a
+bounded 1.2-second observation window for ChatGPT's asynchronous ProseMirror
+normalization after the input event. Submission remains impossible unless the
+current canonical editor reaches the exact normalized requested draft. A
+missing, different, or subsequently replaced editor still fails closed, and
+the exact binding authorization and single-use pre-submit lease remain
+mandatory.
+
+The runtime build identifier is
+`2026-10-14-rcc-orchestration-recovery-v8`. The candidate requires the full RCC
+JavaScript suite plus an isolated fresh-run orchestration E2E before acceptance.
+
+Candidate extension payload SHA-256 for 1.0.15:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `7945812ed5a143cd8a76e1980e836646918fb7b9914bcc8cbd2030fe7ef1efe4` |
+| `extension/content.js` | `28fd0e85087f786b83ee64fbcb5239e3fb65f108f5955ad540fe7afe26a741f3` |
+| `extension/manifest.json` | `e0f794f04e96b6e1056ce77e9802d64446564b91eae4943e75b7bb82cd05b490` |
+| `extension/relay_core.js` | `74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc` |
+
 Loaded-build acceptance requires `backgroundBuildId` exactly
 `2026-10-14-rcc-orchestration-recovery-v4` before a fresh bootstrap/E2E.
 

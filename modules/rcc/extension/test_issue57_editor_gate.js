@@ -12,7 +12,7 @@ function sliceBetween(startText, endText) {
 const gateSource = sliceBetween('function findReadySendButton(', 'async function waitForReply(');
 const draftSource = sliceBetween('function editorDraftText(', 'function waitForExactUserSubmission(');
 assert(source.indexOf('setEditorText(editor, requestedText);') < source.indexOf('await submitEditor(editor, {'));
-assert(source.includes('editor = reacquireExactDraftEditor(requestedText);'));
+assert(source.includes('editor = await waitForExactDraftEditor(requestedText);'));
 assert(source.includes('allowKeyboardFallback: message.bootstrapCreatedTab !== true'));
 
 function makeHarness() {
@@ -49,13 +49,13 @@ function makeHarness() {
   };
   vm.createContext(context);
   vm.runInContext(gateSource + '\n' + draftSource +
-    '\nglobalThis.testing = {submitEditor, findReadySendButton, waitForReadySendButton, editorDraftText, reacquireExactDraftEditor};', context);
+    '\nglobalThis.testing = {submitEditor, findReadySendButton, waitForReadySendButton, editorDraftText, reacquireExactDraftEditor, waitForExactDraftEditor};', context);
   return {
     editor, button, testing: context.testing,
     setMode(value) { mode = value; observers.forEach(o=>o.callback()); },
     setDisabled(value) { disabled = value; observers.forEach(o=>o.callback()); },
     setAriaDisabled(value) { ariaDisabled = value; observers.forEach(o=>o.callback()); },
-    setCurrentEditor(value) { currentEditor = value; },
+    setCurrentEditor(value) { currentEditor = value; observers.forEach(o=>o.callback()); },
     clicks() { return clickCount; }
   };
 }
@@ -143,6 +143,19 @@ async function main() {
   replacement.value='changed task';
   assert.equal(i.testing.reacquireExactDraftEditor('bounded task'),null,
     'a replacement with changed draft text must remain blocked');
-  console.log('Issue57 editor/send-arrow readiness: 10 tests PASS');
+
+  const j=makeHarness();
+  const settling={tagName:'TEXTAREA',value:'partial',children:[]};
+  j.setCurrentEditor(settling);
+  const stable=j.testing.waitForExactDraftEditor('bounded task',250);
+  setTimeout(()=>{ settling.value='bounded task'; j.setCurrentEditor(settling); },15);
+  assert.equal(await stable,settling,
+    'the exact asynchronously stabilized draft must be accepted');
+
+  const k=makeHarness();
+  k.setCurrentEditor({tagName:'TEXTAREA',value:'different task',children:[]});
+  assert.equal(await k.testing.waitForExactDraftEditor('bounded task',20),null,
+    'a draft that never becomes exact must remain blocked');
+  console.log('Issue57 editor/send-arrow readiness: 12 tests PASS');
 }
 main().catch(e=>{console.error(e); process.exitCode=1;});
