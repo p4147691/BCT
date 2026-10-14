@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "c77b26418e4070223531b04446a1a403dbc1444fce6d400945fc87771c51a0e7",
-            "content.js": "fa8bd0590540b0b413ae525873556fe369c3f3aafc8502153512852ab47629ef",
-            "manifest.json": "5a8df5b6b2fb9d2cb095c0969acac08ecb98f5a5c82c17baeb4a454d7376a0e6",
+            "background.js": "9cba648243a0301369529bdff7cdcdab1cbb36c693fd6b187dff1040630eb76c",
+            "content.js": "878c740df9c768915b1dd2e73f9ce2d23859f3a13703bc2d20d5adc5788393ae",
+            "manifest.json": "68b63efcb3da7e104eaf0d155b0db13b8406967b54e6477d75960464644b20c8",
             "relay_core.js": "74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.13", manifest["version"])
-        self.assertEqual("1.0.13 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.14", manifest["version"])
+        self.assertEqual("1.0.14 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -119,7 +119,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
-        self.assertIn("8 tests PASS", completed.stdout)
+        self.assertIn("10 tests PASS", completed.stdout)
 
     def test_first_message_navigation_ack_recovery(self):
         node = shutil.which("node")

@@ -322,6 +322,28 @@ Candidate extension payload SHA-256 for 1.0.13:
 Loaded-build acceptance requires `backgroundBuildId` exactly
 `2026-10-14-rcc-orchestration-recovery-v6` before the next fresh-run E2E.
 
+## BCT RCC 1.0.14 ProseMirror editor replacement candidate
+
+Version 1.0.14 keeps the exact draft, tab, conversation, binding receipt,
+attachment generation, and pre-submit lease fences while allowing ChatGPT's
+ProseMirror composer to replace its contenteditable DOM node after the input
+event. RCC reacquires the canonical composer and proceeds only when that live
+editor contains the exact normalized draft. A changed or missing draft remains
+`RELAY_EDITOR_TEXT_MISMATCH` and no submit activation occurs.
+
+The runtime build identifier is
+`2026-10-14-rcc-orchestration-recovery-v7`. The candidate requires the full RCC
+JavaScript suite plus an isolated fresh-run orchestration E2E before acceptance.
+
+Candidate extension payload SHA-256 for 1.0.14:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `9cba648243a0301369529bdff7cdcdab1cbb36c693fd6b187dff1040630eb76c` |
+| `extension/content.js` | `878c740df9c768915b1dd2e73f9ce2d23859f3a13703bc2d20d5adc5788393ae` |
+| `extension/manifest.json` | `68b63efcb3da7e104eaf0d155b0db13b8406967b54e6477d75960464644b20c8` |
+| `extension/relay_core.js` | `74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc` |
+
 ## BCT RCC 1.0.3 bootstrap conversation identity acceptance candidate
 
 The first 1.0.2 LIVE E2E proved that ChatGPT can replace the blank route with a
