@@ -44,6 +44,7 @@ class OperationCoordinator:
         if capability == "relay_browser" and rcc_command in {
             "result", "reconcile-send-to-created-tab",
             "result-of-create-and-send", "reconcile-create-and-send",
+            "reconcile-rename-conversation", "reclassify-rename-claim",
         }:
             # The RCC result endpoint is scoped to an operation owned by this exact work.
             # It must never be a cross-work arbitrary relay receipt lookup.
@@ -57,8 +58,34 @@ class OperationCoordinator:
                 operation_id=relay_id, work_id=work_id, principal_id=principal.principal_id,
             ) != str(arguments.get("instance_id") or "").strip():
                 raise PreconditionError("RCC_RESULT_INSTANCE_MISMATCH")
+            if rcc_command in {"reconcile-rename-conversation", "reclassify-rename-claim"}:
+                if (original.state is not OperationState.FINISHED
+                        or original.outcome is not Outcome.UNKNOWN
+                        or not str(original.error or "").startswith("RCC_HOST_OUTCOME_UNVERIFIED:")):
+                    raise PreconditionError("RCC_RENAME_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
+                original_args = {
+                    "command": "rename-conversation",
+                    "instance_id": arguments.get("instance_id"),
+                    "session_id": arguments.get("session_id"),
+                    "tab_id": arguments.get("tab_id"),
+                    "conversation_key": arguments.get("conversation_key"),
+                    "title": arguments.get("title"),
+                    "timeout_s": arguments.get("original_timeout_s", 30.0),
+                }
+                original_request = feature.prepare(work=work, arguments=original_args)
+                original_digest = hashlib.sha256(json.dumps({
+                    "work_id": work_id, "capability": capability,
+                    "target": original_request.target,
+                    "arguments": original_request.arguments,
+                    "preconditions": original_request.preconditions,
+                }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+                if self.store.get_operation_request_digest_for(
+                    operation_id=relay_id, work_id=work_id,
+                    principal_id=principal.principal_id) != original_digest:
+                    raise PreconditionError("RCC_RENAME_ORIGINAL_REQUEST_DIGEST_MISMATCH")
             if original.state is not OperationState.FINISHED or not (
-                (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
+                (rcc_command in {"reconcile-rename-conversation", "reclassify-rename-claim"})
+                or (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
                  and (original.evidence.get("command") == "create-and-send"
                       or str(original.error or "").startswith("RCC_COMPOSE_")))
                 or (rcc_command not in {"result-of-create-and-send", "reconcile-create-and-send"}
@@ -81,6 +108,10 @@ class OperationCoordinator:
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
         )
+        if capability == "relay_browser" and rcc_command == "reclassify-rename-claim":
+            request = replace(request, preconditions={
+                **request.preconditions, "original_request_digest": original_digest,
+            })
         if capability == "verify":
             for step in request.arguments["steps"]:
                 child_decision = self.policy.decide(
@@ -233,11 +264,24 @@ class OperationCoordinator:
                 # SQLite transaction.  Do not attempt a second finish across that
                 # deliberately closed crash boundary.
                 return replace(current, output=result.output)
-            stored = self.store.finish_operation(
-                operation_id=operation_id, outcome=result.outcome, evidence=result.evidence,
-                error=None, release_claims=result.release_claims,
-                reconciled_operation_ids=result.reconciled_operation_ids,
-            )
+            if (request.capability == "relay_browser"
+                    and request.arguments["command"] == "reclassify-rename-claim"
+                    and result.outcome is Outcome.APPLIED):
+                stored = self.store.finish_rename_claim_reclassification(
+                    resolver_operation_id=operation_id,
+                    original_operation_id=result.evidence["original_operation_id"],
+                    expected_original_digest=result.evidence["expected_original_digest"],
+                    expected_work_id=work_id,
+                    instance_id=result.evidence["instance_id"],
+                    new_resource_key=result.evidence["new_resource_key"],
+                    evidence=result.evidence,
+                )
+            else:
+                stored = self.store.finish_operation(
+                    operation_id=operation_id, outcome=result.outcome, evidence=result.evidence,
+                    error=None, release_claims=result.release_claims,
+                    reconciled_operation_ids=result.reconciled_operation_ids,
+                )
             return replace(stored, output=result.output)
         except PreconditionError as exc:
             return self.store.finish_operation(
