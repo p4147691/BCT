@@ -1,0 +1,32 @@
+---
+description: Default BCT delivery flow for bounded, evidence-backed changes
+alwaysApply: true
+---
+
+# BCT Delivery Flow
+
+Use this as the default for BCT changes unless the user explicitly narrows or
+overrides the scope.
+
+1. Before changing anything, record the intended files, permitted deployment
+   boundary, E2E success criteria, and protected UNKNOWN operations/claims.
+2. Complete the focused regression, full test suite, static checks, and diff
+   check locally as one verification recipe before opening CI.
+3. Keep a coherent correction and its regression coverage in one PR. While CI
+   runs, prepare the exact-SHA deployment, rollback, and E2E inputs without
+   changing LIVE.
+4. After an exact-head CI pass, verify the exact SHA through deployment and
+   advance E2E only in order: deployment health, one round trip, durable
+   receipt/recovery, then the larger orchestration scenario.
+5. Use compact status or presence for routine health. Request full DOM or RCC
+   state only for a diagnosis, and label stale or uncertain observations rather
+   than treating them as IDLE.
+6. On a failed external effect, preserve the receipt and collect evidence
+   (canonical text, DOM, ACK, active execution, pending receipt) before any
+   retry. Never replay an UNKNOWN effect or release a protected claim merely
+   to make progress.
+7. Parallelize read-only inspection, test preparation, and GitHub observation.
+   Keep shared worktree writes, browser sends, and LIVE mutations serialized.
+
+Report the final state with the exact tested SHA, test/CI evidence, LIVE
+evidence, E2E result, and any deferred follow-ups.
