@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v4';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v5';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
@@ -4478,9 +4478,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       const tabId = Number(sender.tab?.id);
 
-      if (!pending || Number(pending.tabId) !== tabId) return { ok: false, found: false };
-
       const key = RelayCore.conversationKey(sender.tab?.url || '');
+
+      if (!pending) {
+        const receipt = state.resultReceipts?.[relayId] || null;
+        const exactDurableResult = receipt?.resultState === 'RESULT_PERSISTED'
+          && Number(receipt.tabId) === tabId
+          && !!String(receipt.conversationKey || '')
+          && String(receipt.conversationKey) === key;
+        if (exactDurableResult) return { ok: true, found: false, completed: true,
+          relayId, resultHash: String(receipt.resultHash || '') };
+        return { ok: false, found: false };
+      }
+
+      if (Number(pending.tabId) !== tabId) return { ok: false, found: false };
 
       if (pending.conversationKey && key !== pending.conversationKey) return { ok: false, found: false, error: 'PENDING_IDENTITY_MISMATCH' };
 

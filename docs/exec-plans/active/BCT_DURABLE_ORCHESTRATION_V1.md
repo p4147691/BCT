@@ -195,6 +195,16 @@ that provisional route in the shared identity parser and makes fresh-tab
 bootstrap wait for the durable key. This addresses the source of the stale
 record rather than weakening the 1.0.10 busy-target fence.
 
+The first 1.0.11 chain attempt (`durable-orch-live-chain-e25a451-v5`) ended
+`FINISHED / FAILED` with every claim released and no submitted worker turn.
+SQLite receipts distinguish two pre-dispatch causes: the latency worker's
+exact draft was present but ProseMirror exposed its single inserted newline as
+paragraph layout spacing (`RELAY_EDITOR_TEXT_MISMATCH`), and the recovery
+worker retained a completed bootstrap record although the background already
+held its exact durable result (`ORCHESTRATION_TARGET_BUSY`). RCC 1.0.12 adds
+paragraph-aware draft comparison and exact durable-receipt cleanup. Both paths
+remain fail-closed when the text, tab, conversation, or receipt does not match.
+
 The original implementation acceptance proved 174 Python tests, all 15 RCC
 JavaScript test programs, Python compileall, JavaScript syntax, and
 `git diff --check`. Independent API, SQLite/recovery, and RCC audits all
@@ -202,6 +212,10 @@ concluded `BLOCKER_NONE` before the first GitHub integration. Recovery-fix
 acceptance proves 178 Python tests, all 15 RCC JavaScript test programs, Python
 compile checks, JavaScript syntax, and `git diff --check` before GitHub
 integration.
+
+The RCC 1.0.12 candidate acceptance proves 180 Python tests, all 15 RCC
+JavaScript test programs, Python compile checks, JavaScript syntax, and
+`git diff --check` before GitHub integration.
 
 ## Failure policy
 

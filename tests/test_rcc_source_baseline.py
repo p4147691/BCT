@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "9d9e698a38ee725e0cc81ba55b33386ee14bb71e7abefa1cac5b9b31b1c0fa8a",
-            "content.js": "7d07a34f03cc81dd6622bc455f3ec9c6d85fcdb542668af37d1ebd2484c9c6bc",
-            "manifest.json": "9c227fa92cce5e416afe9b49983158296bcb23b14c943a85d7caa033a4acbd73",
+            "background.js": "749900bcbd09ea6b6f443322b68a0d25e019a210d495b6bb174f06912edea442",
+            "content.js": "f06975504b6dcd23d6c4860e351b9ee80c3b2b4a2213f5f960358ae3239c9670",
+            "manifest.json": "6ff255c6d17944b962693f096ae31cb1ab1a0da3ed137de86f30e84ecf59055b",
             "relay_core.js": "74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc",
         }
         for name, digest in expected.items():
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.11", manifest["version"])
-        self.assertEqual("1.0.11 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.12", manifest["version"])
+        self.assertEqual("1.0.12 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -68,6 +68,16 @@ class RccSourceBaselineTests(unittest.TestCase):
             dispatch.index("TARGET_BINDING_RECEIPT_MISMATCH"),
             dispatch.index("sendToChatTab("),
         )
+
+    def test_stale_content_completion_requires_exact_durable_receipt(self):
+        background = (self.extension / "background.js").read_text(encoding="utf-8")
+        handler = background.split(
+            "if (message.type === 'relay:getPendingStatus') {", 1
+        )[1].split("if (message.type === 'relay:getState') {", 1)[0]
+        self.assertIn("receipt?.resultState === 'RESULT_PERSISTED'", handler)
+        self.assertIn("Number(receipt.tabId) === tabId", handler)
+        self.assertIn("String(receipt.conversationKey) === key", handler)
+        self.assertIn("completed: true", handler)
 
     def test_recovery_requires_exact_turn_terminal_evidence_before_ignoring_stale_stop(self):
         content = (self.extension / "content.js").read_text(encoding="utf-8")
@@ -109,7 +119,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
-        self.assertIn("7 tests PASS", completed.stdout)
+        self.assertIn("8 tests PASS", completed.stdout)
 
     def test_first_message_navigation_ack_recovery(self):
         node = shutil.which("node")

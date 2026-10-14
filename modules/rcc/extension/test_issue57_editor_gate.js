@@ -47,7 +47,7 @@ function makeHarness() {
   };
   vm.createContext(context);
   vm.runInContext(gateSource + '\n' + draftSource +
-    '\nglobalThis.testing = {submitEditor, findReadySendButton, waitForReadySendButton};', context);
+    '\nglobalThis.testing = {submitEditor, findReadySendButton, waitForReadySendButton, editorDraftText};', context);
   return {
     editor, button, testing: context.testing,
     setMode(value) { mode = value; observers.forEach(o=>o.callback()); },
@@ -118,6 +118,19 @@ async function main() {
   g.setMode('foreign-send');
   await mustReject(g.testing.submitEditor(g.editor,options('확인',30)), 'RELAY_SEND_BUTTON_NOT_READY');
   assert.equal(g.clicks(),0,'out-of-composer send button must not click');
-  console.log('Issue57 editor/send-arrow readiness: 7 tests PASS');
+
+  const h=makeHarness();
+  const paragraphEditor={
+    tagName:'DIV',
+    innerText:'header\n\npayload',
+    textContent:'headerpayload',
+    children:[
+      {tagName:'P',innerText:'header',textContent:'header'},
+      {tagName:'P',innerText:'payload',textContent:'payload'}
+    ]
+  };
+  assert.equal(h.testing.editorDraftText(paragraphEditor),'header\npayload',
+    'ProseMirror paragraph spacing must preserve the inserted newline');
+  console.log('Issue57 editor/send-arrow readiness: 8 tests PASS');
 }
 main().catch(e=>{console.error(e); process.exitCode=1;});
