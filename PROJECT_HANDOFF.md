@@ -185,3 +185,23 @@ Hosted ChatGPT의 단일 `bct_read` E2E는 1.816초였지만, 같은 exact reque
 미출시 master 기능을 위해 운영 binary를 교체하지 않는다. BCT Core 결함은 재현되지 않았고
 추가 코드·LIVE 변경 대신 기존 bounded batch read를 같은 안전 경계의 read 왕복 절감 수단으로
 유지한다. 상세 근거는 `docs/exec-plans/completed/BCT_MCP_TUNNEL_LATENCY_20261014.md`다.
+
+## Deploy shutdown 및 UNKNOWN reconciliation 완료
+
+터널의 지속 Streamable HTTP 연결이 열린 상태에서 Core shutdown listener는 닫혔지만 Uvicorn
+process가 controller의 10초 검증 창 안에 종료되지 않는 운영 결함을 확인했다. 최초 배포
+operation은 `DEPLOYMENT_ROLLBACK_UNVERIFIED` UNKNOWN으로 보존했고 재실행하거나 DB에서 claim을
+직접 지우지 않았다.
+
+PR #76은 Uvicorn graceful shutdown을 5초로 제한하고, 정확한 원본 UNKNOWN operation과 동일한
+rollback receipt 파일·immutable release manifest·current pointer·running service release/manifest를
+모두 확인하는 deploy reconciliation을 추가했다. reconciliation은 별도 resource에서 실행되고
+검증 성공 시 store transaction 안에서만 원본 claim을 해제한다. Windows short/long path 차이는
+문자열이 아니라 파일 identity로 비교한다.
+
+로컬 focused 11개와 전체 116개 테스트, Windows PR CI와 main CI run `38493017422`가 통과했다.
+원본 UNKNOWN은 별도 operation으로 LIVE 증거에 따라 종결됐고, merge
+`aeccdd175eabee2d834cc20feed3295a480bd958`가 exact LIVE에 배포됐다. persistent tunnel이 실제
+연결된 상태의 Core restart도 APPLIED였으며 tunnel은 다시 `healthy/ready`, runtime `ready`,
+non-stale 상태가 됐다. 이후 local MCP read도 예상 SHA로 통과했다. 상세 증거는
+`docs/exec-plans/completed/BCT_DEPLOY_SHUTDOWN_RECONCILIATION_20261014.md`를 따른다.
