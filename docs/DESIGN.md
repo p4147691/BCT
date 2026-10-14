@@ -235,12 +235,41 @@ RCC 이전 acceptance:
 이 첫 단계는 구현과 CI까지 완료했다. MCP/RCC 전환과 LIVE acceptance는 후속 상태로 각각 보고한다.
 상세 검토 결과는 CORE_DESIGN_REVIEW.md, 완료 증거는 exec-plans/completed/BCT_FOUNDATION.md를 따른다.
 
+## 11. Durable orchestration V1
+
+Durable orchestration은 범용 workflow 언어나 별도 권한 서버가 아니다. 기존 Work,
+OperationCoordinator, SQLite receipt, resource claim과 RCC exact-conversation 계약 위에
+작은 영속 제어 계층을 둔다.
+
+- session: 목표, 완료 조건, 위임 가능한 root/action, plan revision, manager epoch
+- attachment: 정확한 RCC instance/session/tab/conversation 세대와 binding receipt
+- assignment: 변경되지 않는 요청 digest, 의존성, 허용 범위, 현재 attempt generation
+- mailbox: dispatch/ack/result/late-result의 immutable identity와 bounded evidence
+- reconciliation: 재실행이 아니라 관측 증거에 따른 교체 또는 격리 결정
+
+manager epoch와 Work assignment epoch는 서로 다른 fence다. 전자는 한 session에서 누가 새
+assignment를 만들 수 있는지 제한하고, 후자는 BCT 전체 work 소유권을 보호한다. manager takeover는
+unrelated UNKNOWN claim을 해제하지 않는다. worker replacement는 이전 attempt가 pre-dispatch
+NOT_APPLIED임이 입증된 경우에만 generation을 증가시킨다. 외부 응답 내용은 신뢰할 수 없는
+evidence이며 session 권한이나 정책을 변경하지 못한다. V1 worker assignment는 `read` 증거
+작업만 허용하고, 노드 자체에 별도 MCP principal이나 실행 권한을 위임하지 않는다. 실제 변경은
+항상 매니저가 기존 BCT operation 경계에서 별도로 실행한다.
+
+외부 전송 뒤 receipt identity가 하나라도 맞지 않거나 결과 envelope가 파싱되지 않으면 assignment는
+FAILED로 풀리지 않고 UNKNOWN으로 격리된다. 체인은 모든 worker가 APPLIED가 되기 전 synthesis를
+생성하지 않는다. 단일 reconcile은 chain plan이 있는 original operation을 처리할 수 없고,
+chain-resume만 전체 plan과 sibling claim을 함께 종결할 수 있다. 외부 전송 전 crash는 dispatch
+reservation과 mailbox가 전혀 없다는 증명을 거친 `recover-not-dispatched`만 NOT_APPLIED로 종결한다.
+
+상세 실행·장애·E2E 기준은
+`docs/exec-plans/active/BCT_DURABLE_ORCHESTRATION_V1.md`를 따른다.
+
 GitHub integration V1도 후속으로 완료했다. BCT operation/claim 위에서 exact-SHA push,
 idempotent PR creation, required-check gated merge, verified-main fast-forward를 제공한다.
 그 구현 계약과 실제 PR/CI/main 수용 증거는 `docs/GITHUB_INTEGRATION.md`와
 `docs/exec-plans/completed/BCT_GITHUB_INTEGRATION.md`를 따른다.
 
-## 11. 근거와 남은 검증
+## 12. 근거와 남은 검증
 
 이전 조사에서 BOOTSTRAP.md blob a3218f316ca67b754ba370cf8670880949d6c0fe는 tab+conversation을,
 ACT AGENTS.md blob 2b73bacad77bc3789bacc126f72f05305c7c0e54는 physical window continuity를 강조했다.

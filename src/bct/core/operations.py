@@ -130,7 +130,8 @@ class OperationCoordinator:
         return feature, work, decision, request, digest
 
     def _begin(self, *, principal: Principal, work_id: str, operation_id: str,
-               capability: str, arguments: dict[str, Any], approval_ref: str | None):
+               capability: str, arguments: dict[str, Any], approval_ref: str | None,
+               background_job: dict[str, Any] | None = None):
         feature, work, decision, request, digest = self._prepare(
             principal=principal, work_id=work_id, operation_id=operation_id,
             capability=capability, arguments=arguments, approval_ref=approval_ref,
@@ -139,16 +140,20 @@ class OperationCoordinator:
             operation_id=operation_id, work=work, principal_id=principal.principal_id,
             request_digest=digest, capability=capability, target=request.target,
             resources=request.resources, policy_revision=decision.policy_revision,
+            background_job=background_job,
         )
         return feature, request, created, current
 
     def begin(self, *, principal: Principal, work_id: str, operation_id: str,
               capability: str, arguments: dict[str, Any],
-              approval_ref: str | None = None) -> tuple[bool, OperationResult]:
+              approval_ref: str | None = None,
+              background_job: dict[str, Any] | None = None,
+              ) -> tuple[bool, OperationResult]:
         """Durably fence an operation before an external one-shot worker starts."""
         _, _, created, current = self._begin(
             principal=principal, work_id=work_id, operation_id=operation_id,
             capability=capability, arguments=arguments, approval_ref=approval_ref,
+            background_job=background_job,
         )
         return created, current
 
@@ -199,10 +204,35 @@ class OperationCoordinator:
                         raise PreconditionError(decision.reason_code)
 
                 result = feature.execute_authorized(request, authorize)
+            elif request.capability == "orchestrate":
+                initial_work = self.store.get_work(work_id)
+
+                def authorize(_action="orchestrate"):
+                    work = self.store.get_work(work_id)
+                    if work.assignment_epoch != initial_work.assignment_epoch:
+                        raise PreconditionError("ORCHESTRATION_OWNERSHIP_CHANGED")
+                    decision = self.policy.decide(
+                        principal=principal, work=work,
+                        action="orchestrate", approval_ref=approval_ref,
+                    )
+                    if decision.kind is not DecisionKind.ALLOW:
+                        raise PreconditionError(decision.reason_code)
+
+                result = feature.execute_authorized(request, authorize)
             else:
                 result = feature.execute(request)
             if not isinstance(result, FeatureResult):
                 raise TypeError("FEATURE_RESULT_REQUIRED")
+            current = self.store.get_operation_for(
+                operation_id=operation_id, work_id=work_id,
+                principal_id=principal.principal_id,
+            )
+            if current.state is OperationState.FINISHED:
+                # Some orchestration recovery paths atomically persist their
+                # assignment/session evidence and both operation receipts in one
+                # SQLite transaction.  Do not attempt a second finish across that
+                # deliberately closed crash boundary.
+                return replace(current, output=result.output)
             stored = self.store.finish_operation(
                 operation_id=operation_id, outcome=result.outcome, evidence=result.evidence,
                 error=None, release_claims=result.release_claims,

@@ -31,6 +31,23 @@ Every prepared child is checkpointed in SQLite before dispatch and exposed by
 `bct_operation_get.step_journal`; an in-flight step after worker loss remains unresolved and
 is never treated as safe to replay merely because earlier steps are complete.
 
+`bct_orchestrate` is the bounded durable manager/worker entry point. It stores a
+session objective and acceptance contract under one existing work, maps exact RCC
+conversation attachments to logical nodes, dispatches immutable assignment envelopes,
+and persists acknowledgements and terminal result envelopes in SQLite. A manager
+takeover uses its own compare-and-swap epoch and therefore does not require whole-work
+handoff or release unrelated claims. A worker replacement creates a new assignment
+generation only when the prior receipt proves the message was not dispatched/applied;
+late results from the old generation are retained as evidence but cannot become current.
+`chain-run` performs two to six bounded worker assignments and one synthesis assignment
+inside one background operation. Delivered or UNKNOWN messages are never replayed.
+If a worker result is unresolved, synthesis is withheld until `chain-resume` has reconciled
+every planned worker. `reconcile` is restricted to a single-assignment operation so it cannot
+release a chain's sibling claims. `recover-not-dispatched` closes a crashed outer operation
+only when SQLite proves that no dispatch reservation or message exists; otherwise the claim
+remains quarantined. A terminal assignment/session may be adopted after an outer receipt loss
+without sending to RCC again.
+
 Verification and positive `github_pr_status.wait_seconds` use the existing one-shot worker
 and survive MCP disconnect. Polling CI is local to that bounded operation, never a daemon.
 Recover results with `bct_operation_get`; do not create a new operation to retry UNKNOWN.

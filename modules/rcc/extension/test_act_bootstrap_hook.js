@@ -141,8 +141,10 @@ function testCurrentFileOwnershipAndContentHook() {
   assert.ok(bridge.includes('async function requestActBootstrapResync(tab)'));
   assert.ok(bridge.includes("actNativeRequest('bootstrap', caller)"));
 
-  const content = fs.readFileSync('content.js', 'utf8');
-  assert.ok(content.includes("type:'relay:actBootstrapResync'") || content.includes("type: 'relay:actBootstrapResync'"));
+  const scripts = manifest.content_scripts.flatMap((entry) => entry.js || []);
+  assert.ok(scripts.includes('act_content.js'), 'manifest must load the ACT bootstrap content hook');
+  const actContent = fs.readFileSync('act_content.js', 'utf8');
+  assert.ok(actContent.includes("type:'relay:actBootstrapResync'") || actContent.includes("type: 'relay:actBootstrapResync'"));
 }
 
 (async () => {

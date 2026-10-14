@@ -41,6 +41,7 @@ _CAPABILITY_USAGE = {
     "system_inspect": "Use arguments.operation as process_list, process, or port. process_list accepts optional query and limit; process requires pid; port requires port.",
     "monitor": "Use arguments.operation as status or validate.",
     "relay_browser": "For read-only RCC inspection use arguments={\"command\": \"state\", \"instance_id\": \"exact instance id\"}. Prefer bct_status for routine status.",
+    "orchestrate": "Durable read-evidence manager/worker sessions. Start a session, sync exact RCC conversations, select a manager epoch, then use dispatch or chain-run. Browser mutations run in background; recover with bct_operation_get. Use reconcile only for one exact non-chain assignment, chain-resume for a persisted chain, and recover-not-dispatched only when BCT can prove no dispatch reservation exists. Recovery never resends an UNKNOWN effect.",
 }
 
 
@@ -95,7 +96,10 @@ def build_mcp(
         snapshot = await asyncio.to_thread(status_provider)
         if compact and isinstance(snapshot.get("monitor"), dict):
             monitor = dict(snapshot["monitor"])
-            for key in ("works", "operations", "events", "nodes", "connections"):
+            for key in (
+                "works", "operations", "events", "nodes", "connections",
+                "orchestration_sessions", "orchestration_assignments",
+            ):
                 rows = monitor.get(key)
                 if isinstance(rows, list):
                     monitor[key] = rows[:5]
@@ -169,6 +173,14 @@ def build_mcp(
             background = (
                 selected == "deploy"
                 or selected == "verify"
+                or (
+                    selected == "orchestrate"
+                    and str(arguments.get("operation") or "")
+                    in {
+                        "dispatch", "worker-replace", "chain-run", "chain-resume",
+                        "reconcile", "recover-not-dispatched",
+                    }
+                )
                 or (selected == "github_pr_status" and float(arguments.get("wait_seconds", 0)) > 0)
                 or (selected == "service_control" and str(arguments.get("action") or "") != "status")
             )

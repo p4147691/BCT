@@ -4,7 +4,7 @@ const path = require('path');
 const core = require('./relay_core.js');
 
 const source = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
-assert(source.includes("const scope = node.closest('[data-testid^=\"conversation-turn-\"]') || node.parentElement || node;"));
+assert(source.includes("const scope = node.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^=\"conversation-turn-\"]') || node.parentElement || node;"));
 assert(source.includes('const completionUiReady = hasCompletionAction();'));
 assert(!source.includes('const completionUiReady = hasCompletionAction() || isSendReady();'));
 

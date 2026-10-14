@@ -7,6 +7,7 @@ from .core.models import Principal, Work
 from .core.operations import OperationCoordinator
 from .core.policy import Policy
 from .core.store import Store
+from .core.orchestration import OrchestrationService
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
@@ -25,6 +26,7 @@ from .features.process_session import ProcessSessionFeature
 from .features.decision import DecisionModelFeature
 from .features.monitor import MonitorFeature
 from .features.decision_service import DecisionServiceFeature
+from .features.orchestration import OrchestrationFeature
 from .integrations.github import GhCliClient, GitHubClient
 
 
@@ -36,6 +38,7 @@ class BCT:
         self.store = Store(state_path)
         self.policy = Policy(policy_path)
         self.identity = IdentityService(self.store)
+        self.orchestration = OrchestrationService(self.store)
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)
         github = github_client or GhCliClient()
         deployment_profiles = DeploymentProfiles(policy_path)
@@ -50,6 +53,7 @@ class BCT:
             DecisionModelFeature(policy_path),
             MonitorFeature(policy_path),
             DecisionServiceFeature(policy_path),
+            OrchestrationFeature(self.orchestration),
         ):
             self.operations.register(feature)
         self.operations.register(VerificationFeature(self.operations._features, self.store))

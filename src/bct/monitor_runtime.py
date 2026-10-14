@@ -131,6 +131,8 @@ def build_monitor_state(
             "connections": len(snapshot["connections"]),
             "rcc_instances": len(instance_ids),
             "process_sessions": len(sessions),
+            "orchestration_sessions": len(snapshot["orchestration_sessions"]),
+            "orchestration_assignments": len(snapshot["orchestration_assignments"]),
         },
         "decision": _decision_state(data_root / "decision-endpoint.json"),
         "rcc": {"instances": rcc},

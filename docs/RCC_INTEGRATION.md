@@ -132,3 +132,16 @@ RCC 1.0.7 applies the same dual-signal rule to the normal final-response
 classifier. This removes the equivalent false negative before recovery while
 preserving the stricter streaming result whenever either exact-turn signal is
 missing.
+
+RCC 1.0.8 adds an exact-binding fence for durable orchestration sends. The
+caller supplies the immutable conversation binding receipt and message digest;
+both are included in the duplicate fingerprint. Immediately before submission,
+the extension verifies the current role registration still has the same
+instance, session, tab, conversation, and binding receipt. A changed attachment
+is rejected before clicking. The existing generic send contract remains
+backward compatible when these optional fence fields are absent.
+The exact tuple is carried into the content script and checked again immediately
+before editor mutation and immediately before the click/Enter submit transition.
+The acknowledgement and durable result receipt contain the tuple attested by the
+content script; caller-supplied expected values are not echoed as proof. A rebind
+between background validation and submission therefore fails closed without a click.

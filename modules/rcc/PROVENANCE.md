@@ -181,6 +181,31 @@ It also requires the background-observed conversation POST request identity
 before returning `SUBMITTED_RECOVERED_AFTER_NAVIGATION`; otherwise the original
 `SUBMIT_UNKNOWN` fence remains.
 
+## BCT RCC 1.0.8 durable orchestration binding candidate
+
+Version 1.0.8 adds an exact attachment fence to existing-conversation sends.
+The immutable dispatch fingerprint includes the binding receipt, message digest,
+RCC instance/session, tab, conversation, and attachment generation. The current
+registration is checked before durable pending persistence, immediately before
+editor mutation, and synchronously immediately before the send click. Final
+authorization atomically issues a bounded 15-second pre-submit lease; binding,
+role relocation, and session/tab rebind mutations fail closed until the exact
+content sender consumes that lease immediately after its one click. The submit
+ACK, worker result, and durable receipt carry the consumed lease attestation, and
+expired leases are removed without authorizing a retry.
+
+Candidate extension payload SHA-256 for 1.0.8:
+
+| File | SHA-256 |
+| --- | --- |
+| `extension/background.js` | `d43b210d35cc2fe84213bcd8987bfd897920c278da373de619508e773e36deae` |
+| `extension/content.js` | `0b3fcf472654c0bfd8309606d1bb22edec88a80d911bdd3cd90b5ab2f6d65954` |
+| `extension/manifest.json` | `e417486dedb41a0f3c53c871c7441f46bccf13f2f613190a32c3cc62f211625c` |
+| `extension/relay_core.js` | `b74d8d5528eb7eaf60600ca3a046da351295c99f7bec1dfebf9b8f21192b2a31` |
+
+Loaded-build acceptance requires `backgroundBuildId` exactly
+`2026-10-14-rcc-orchestration-v1` before any orchestration E2E.
+
 ## BCT RCC 1.0.3 bootstrap conversation identity acceptance candidate
 
 The first 1.0.2 LIVE E2E proved that ChatGPT can replace the blank route with a

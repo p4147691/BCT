@@ -1,19 +1,75 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-compose-v4';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-v1';
 
-async function relayChatInjectionEnabled() {
-  const match = location.pathname.match(/^\/c\/([a-z0-9-]{8,64})/i);
+function exactBindingAttestationMatches(expected, attestation) {
+  if (!expected || typeof expected !== 'object') return true;
+  if (!attestation || typeof attestation !== 'object') return false;
+  return String(attestation.instanceId || '') === String(expected.instanceId || '')
+    && String(attestation.sessionId || '') === String(expected.sessionId || '')
+    && Number(attestation.tabId || 0) === Number(expected.tabId || 0)
+    && String(attestation.conversationKey || '') === String(expected.conversationKey || '')
+    && String(attestation.bindingReceiptId || '') === String(expected.bindingReceiptId || '')
+    && Number(attestation.attachmentGeneration || 0) === Number(expected.attachmentGeneration || 0);
+}
+
+async function relayChatInjectionAuthorization(exactBinding = null, relayId = '', authorizationPhase = 'PROBE') {
+  const pathname = String(location.pathname || '');
+  const match = pathname.match(/^\/c\/([a-z0-9-]{8,64})/i);
   const conversationKey = match ? match[1] : '';
-  if (!match && !/^\/?$/.test(location.pathname)) return false;
+  if (!match && !/^\/?$/.test(pathname)) return null;
   try {
     const result = await chrome.runtime.sendMessage({
       type: 'relay:authorizeInjection',
-      conversationKey
+      conversationKey,
+      relayId: String(relayId || ''),
+      authorizationPhase,
+      exactBinding: exactBinding && typeof exactBinding === 'object' ? { ...exactBinding } : null
     });
-    return result?.ok === true && result?.authorized === true
-      && result?.conversationKey === conversationKey;
+    const currentPathname = String(location.pathname || '');
+    const currentMatch = currentPathname.match(/^\/c\/([a-z0-9-]{8,64})/i);
+    const currentConversationKey = currentMatch ? currentMatch[1] : '';
+    if (currentPathname !== pathname || currentConversationKey !== conversationKey) return null;
+    if (result?.ok !== true || result?.authorized !== true
+        || result?.conversationKey !== conversationKey) return null;
+    if (exactBinding && !exactBindingAttestationMatches(exactBinding, result.bindingAttestation)) {
+      return null;
+    }
+    return result;
   } catch (_) {
-    return false;
+    return null;
   }
+}
+
+async function relayChatInjectionEnabled() {
+  return !!(await relayChatInjectionAuthorization());
+}
+
+async function requireExactRelayAuthorization(message, authorizationPhase = 'PROBE') {
+  const expected = message?.exactBinding && typeof message.exactBinding === 'object'
+    ? message.exactBinding : null;
+  const authorization = await relayChatInjectionAuthorization(
+    expected, message?.relayId, authorizationPhase
+  );
+  if (!authorization) throw new Error('TARGET_BINDING_CHANGED_BEFORE_SUBMIT');
+  return authorization.bindingAttestation || null;
+}
+
+async function consumeExactBindingLease(message, bindingAttestation) {
+  const expected = message?.exactBinding;
+  if (!expected || currentConversationKey() !== String(expected.conversationKey || '')) {
+    throw new Error('TARGET_BINDING_CHANGED_AFTER_SUBMIT');
+  }
+  const response = await chrome.runtime.sendMessage({
+    type: 'relay:consumeBindingLease', relayId: String(message?.relayId || ''),
+    bindingAttestation: bindingAttestation && typeof bindingAttestation === 'object'
+      ? { ...bindingAttestation } : null
+  });
+  if (response?.ok !== true || response?.consumed !== true
+      || !exactBindingAttestationMatches(expected, response.bindingAttestation)
+      || !response.bindingAttestation?.leaseId
+      || Number(response.bindingAttestation?.leaseConsumedAt || 0) <= 0) {
+    throw new Error(response?.error || 'RCC_PRE_SUBMIT_LEASE_CONSUME_FAILED');
+  }
+  return response.bindingAttestation;
 }
 
 
@@ -845,9 +901,13 @@ async function submitEditor(editor, options = {}) {
     if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
     // A React render may replace or disable the button after the observer resolved.
     if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
+    const bindingAttestation = typeof options?.beforeSubmit === 'function'
+      ? await options.beforeSubmit() : null;
+    if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+    if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     const readyAt = Date.now();
     button.click();
-    return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now() };
+    return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now(), bindingAttestation };
   }
   if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
 
@@ -858,6 +918,9 @@ async function submitEditor(editor, options = {}) {
   // Existing-conversation relay keeps a bounded keyboard fallback. Provider
   // bootstrap must disable it because synthetic Enter on ChatGPT's new-chat
   // route can become ?prompt-textarea=... instead of sending a user turn.
+  const bindingAttestation = typeof options?.beforeSubmit === 'function'
+    ? await options.beforeSubmit() : null;
+  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
   editor.focus();
   for (const type of ['keydown', 'keypress', 'keyup']) {
     editor.dispatchEvent(new KeyboardEvent(type, {
@@ -865,7 +928,7 @@ async function submitEditor(editor, options = {}) {
       bubbles: true, cancelable: true
     }));
   }
-  return { ok: true, method: 'enter-fallback' };
+  return { ok: true, method: 'enter-fallback', bindingAttestation };
 }
 
 
@@ -1708,7 +1771,8 @@ async function deliverTrackedRelayResult(record, result) {
 
 
 
-  const response=await chrome.runtime.sendMessage({type:'relay:workerResult',relayId:record.relayId,result});
+  const response=await chrome.runtime.sendMessage({type:'relay:workerResult',relayId:record.relayId,
+    bindingAttestation: record.bindingAttestation || null, result});
 
 
 
@@ -2245,7 +2309,15 @@ async function beginRelayExecution(message) {
 
 
 
-  if (!(await relayChatInjectionEnabled())) return { ok: false, submitted: false, error: 'CHAT_INJECTION_DISABLED' };
+  const exactBindingRequested = !!(message?.exactBinding
+    && typeof message.exactBinding === 'object');
+  let bindingAttestation = null;
+  if (exactBindingRequested) {
+    try { bindingAttestation = await requireExactRelayAuthorization(message); }
+    catch (error) { return { ok: false, submitted: false, error: error.message }; }
+  } else if (!(await relayChatInjectionEnabled())) {
+    return { ok: false, submitted: false, error: 'CHAT_INJECTION_DISABLED' };
+  }
 
   const connection = connectionProblem();
   if (connection.disconnected) {
@@ -2306,7 +2378,7 @@ async function beginRelayExecution(message) {
 
     phase: 'submit-intent', submittedAt: null, completionMarker, completionSource: 'pending',
 
-    bootstrapCreatedTab: message.bootstrapCreatedTab === true };
+    bootstrapCreatedTab: message.bootstrapCreatedTab === true, bindingAttestation };
 
 
 
@@ -2315,6 +2387,10 @@ async function beginRelayExecution(message) {
 
 
   const requestedText = String(message.text || '');
+  if (exactBindingRequested) {
+    bindingAttestation = await requireExactRelayAuthorization(message);
+    record.bindingAttestation = bindingAttestation;
+  }
   setEditorText(editor, requestedText);
 
   // The draft must be visible in the exact editor before sending. Do not assume
@@ -2329,8 +2405,17 @@ async function beginRelayExecution(message) {
   const submission = await submitEditor(editor, {
     expectedText: requestedText,
     allowKeyboardFallback: message.bootstrapCreatedTab !== true,
-    allowDocumentFallback: message.bootstrapCreatedTab !== true
+    allowDocumentFallback: message.bootstrapCreatedTab !== true,
+    beforeSubmit: exactBindingRequested ? async () => {
+      bindingAttestation = await requireExactRelayAuthorization(message, 'PRE_SUBMIT');
+      return bindingAttestation;
+    } : null
   });
+  if (exactBindingRequested) {
+    bindingAttestation = submission?.bindingAttestation || bindingAttestation;
+    bindingAttestation = await consumeExactBindingLease(message, bindingAttestation);
+    record.bindingAttestation = bindingAttestation;
+  }
 
 
 
@@ -2420,7 +2505,7 @@ async function beginRelayExecution(message) {
     completionSource: record.completionSource, conversationKey: String(record.conversationKey || ''),
 
     conversationPending: record.bootstrapCreatedTab && !record.conversationKey,
-    stageTiming: record.stageTiming };
+    stageTiming: record.stageTiming, bindingAttestation };
 
 
 

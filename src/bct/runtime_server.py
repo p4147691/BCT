@@ -130,6 +130,8 @@ def main() -> int:
     if not policy_path.is_file():
         raise RuntimeError("RUNTIME_POLICY_MISSING")
     bct = BCT(state_path=runtime_root / "state" / "state.sqlite", policy_path=policy_path)
+    from .background_operations import recover_orphaned_orchestration_operations
+    orphan_recoveries = recover_orphaned_orchestration_operations(bct)
     monitor_principal = ensure_monitor_work(bct, runtime_root=runtime_root)
     identity = current_process_identity()
     control_token = os.environ.get("BCT_CONTROL_TOKEN", "")
@@ -153,6 +155,7 @@ def main() -> int:
         "mcp_endpoint": f"http://127.0.0.1:{arguments.port}/mcp",
         "mcp_tool_count": len(bct.operations.capabilities) + 4,
         "started_at": time.time(),
+        "orphan_recoveries": orphan_recoveries,
     }
 
     def status_snapshot() -> dict[str, Any]:

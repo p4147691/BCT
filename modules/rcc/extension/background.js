@@ -4,11 +4,14 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-compose-v4';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-v1';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
+const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
+const BINDING_SUBMIT_LEASE_TTL_MS = 15000;
 
 let relayReceiptMutationChain = Promise.resolve();
+let bindingLeaseMutationChain = Promise.resolve();
 
 let nativePort = null;
 
@@ -73,7 +76,7 @@ async function findPendingRelayForNetwork(tabId) {
 
 async function loadState() {
 
-  const data = await chrome.storage.local.get(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY]);
+  const data = await chrome.storage.local.get(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY]);
 
   const settings = data.settings || {};
 
@@ -115,7 +118,9 @@ async function loadState() {
 
     operations: data.operations || {},
 
-    resultReceipts: data[RELAY_RESULT_RECEIPTS_KEY] || {}
+    resultReceipts: data[RELAY_RESULT_RECEIPTS_KEY] || {},
+
+    bindingSubmitLeases: data[BINDING_SUBMIT_LEASES_KEY] || {}
 
   };
 
@@ -159,6 +164,12 @@ function publicResultFromReceipt(receipt) {
     fingerprint: String(receipt.dispatchFingerprint || ''),
 
     messageHash: String(receipt.messageHash || ''),
+    targetBindingReceipt: String(receipt.targetBindingReceipt || ''),
+    instanceId: String(receipt.instanceId || ''),
+    sessionId: String(receipt.sessionId || ''),
+    attachmentGeneration: Number(receipt.attachmentGeneration) || null,
+    bindingLeaseId: String(receipt.bindingLeaseId || ''),
+    bindingLeaseConsumedAt: Number(receipt.bindingLeaseConsumedAt) || null,
     tabId: Number(receipt.tabId) || null,
     conversationKey: String(receipt.conversationKey || ''),
     resultHash: String(receipt.resultHash || ''),
@@ -209,6 +220,8 @@ async function persistDurableResultReceipt(relayId, pending, result) {
       returnMs: networkCompletedAt ? Math.max(0, completedAt - networkCompletedAt) : null,
       totalMs: createdAt ? Math.max(0, completedAt - createdAt) : null
     };
+    const attestation = pending.bindingAttestation && typeof pending.bindingAttestation === 'object'
+      ? pending.bindingAttestation : null;
     const receipt = {
       version: 1,
       routeId,
@@ -217,14 +230,19 @@ async function persistDurableResultReceipt(relayId, pending, result) {
       dispatchFingerprint: String(pending.fingerprint || ''),
       from: String(pending.fromNode || pending.source || ''),
       to: String(pending.to || ''),
-      targetBindingReceipt: String(pending.targetBindingReceipt || ''),
+      targetBindingReceipt: String(attestation?.bindingReceiptId || pending.targetBindingReceipt || ''),
+      instanceId: String(attestation?.instanceId || pending.expectedInstanceId || ''),
+      sessionId: String(attestation?.sessionId || pending.expectedSessionId || ''),
+      attachmentGeneration: Number(attestation?.attachmentGeneration || pending.attachmentGeneration) || null,
+      bindingLeaseId: String(attestation?.leaseId || ''),
+      bindingLeaseConsumedAt: Number(attestation?.leaseConsumedAt || 0) || null,
       submitState: pending.submitUnknown === true ? 'SUBMIT_UNKNOWN' :
         pending.deliveryConfirmed === true ? 'SUBMITTED_CONFIRMED' : 'SUBMIT_NOT_STARTED',
       resultState: 'RESULT_PERSISTED',
       resultHash,
       resultPayload,
-      tabId: Number(pending.tabId) || null,
-      conversationKey: String(pending.conversationKey || ''),
+      tabId: Number(attestation?.tabId || pending.tabId) || null,
+      conversationKey: String(attestation?.conversationKey || pending.conversationKey || ''),
       stageTiming: pending.stageTiming || null,
       timing,
       createdAt: Number(pending.createdAt || 0) || null,
@@ -1023,6 +1041,61 @@ async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, subm
     throw new Error(String(result?.error || 'RELAY_RECOVERY_DIRECT_FAILED'));
   }
   return { ok: true, recovered: true, recoveredReply: String(result.reply || ''), directDom: true };
+}
+
+function bindingLeaseTargetsConflict(lease, target) {
+  if (!lease || !target) return false;
+  return (!!target.role && String(lease.role || '') === String(target.role || ''))
+    || (Number(target.tabId || 0) > 0 && Number(lease.tabId || 0) === Number(target.tabId || 0))
+    || (!!target.conversationKey
+      && String(lease.conversationKey || '') === String(target.conversationKey || ''));
+}
+
+function pruneExpiredBindingSubmitLeases(state, now = Date.now()) {
+  const leases = state.bindingSubmitLeases || {};
+  let changed = false;
+  for (const [leaseId, lease] of Object.entries(leases)) {
+    if (Number(lease?.expiresAt || 0) <= now) {
+      delete leases[leaseId];
+      changed = true;
+    }
+  }
+  state.bindingSubmitLeases = leases;
+  return changed;
+}
+
+function withBindingLeaseMutation(work) {
+  const next = bindingLeaseMutationChain.catch(() => {}).then(work);
+  bindingLeaseMutationChain = next.catch(() => {});
+  return next;
+}
+
+async function mutateRegistrationsWithLeaseFence(targets, mutation) {
+  return withBindingLeaseMutation(async () => {
+    const state = await loadState();
+    pruneExpiredBindingSubmitLeases(state);
+    const targetList = (Array.isArray(targets) ? targets : [targets]).filter(Boolean);
+    const conflict = Object.values(state.bindingSubmitLeases || {}).some((lease) =>
+      targetList.some((target) => bindingLeaseTargetsConflict(lease, target)));
+    if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
+    const result = await mutation(state);
+    await chrome.storage.local.set({
+      registrations: state.registrations,
+      [BINDING_SUBMIT_LEASES_KEY]: state.bindingSubmitLeases || {}
+    });
+    return result;
+  });
+}
+
+async function expireBindingSubmitLease(leaseId) {
+  return withBindingLeaseMutation(async () => {
+    const state = await loadState();
+    const lease = state.bindingSubmitLeases?.[leaseId];
+    if (!lease || Number(lease.expiresAt || 0) > Date.now()) return false;
+    delete state.bindingSubmitLeases[leaseId];
+    await chrome.storage.local.set({ [BINDING_SUBMIT_LEASES_KEY]: state.bindingSubmitLeases });
+    return true;
+  });
 }
 
 async function recoverCreatedResult(relayId) {
@@ -1980,14 +2053,24 @@ async function promoteManagerBinding(message) {
         throw new Error('CONVERSATION_ALREADY_BOUND');
       }
     }
-    const registrations = { ...(state.registrations || {}) };
-    delete registrations[managerNode];
-    delete registrations[backupNode];
-    registrations[managerNode] = {
-      ...backup, role: managerNode, bindingReceiptId: newManagerReceiptId,
-      authorization: 'ACT_CONVERSATION_BIND', updatedAt: Date.now(),
-    };
-    await chrome.storage.local.set({ registrations });
+    await mutateRegistrationsWithLeaseFence(
+      [{ role: managerNode }, { role: backupNode }, previous, backup],
+      async (latest) => {
+        const latestPrevious = latest.registrations?.[managerNode];
+        const latestBackup = latest.registrations?.[backupNode];
+        if (!latestPrevious || !latestBackup
+            || String(latestPrevious.bindingReceiptId || '') !== priorManagerReceiptId
+            || String(latestBackup.bindingReceiptId || '') !== priorBackupReceiptId) {
+          throw new Error('MANAGER_PROMOTION_BINDING_CHANGED');
+        }
+        delete latest.registrations[managerNode];
+        delete latest.registrations[backupNode];
+        latest.registrations[managerNode] = {
+          ...latestBackup, role: managerNode, bindingReceiptId: newManagerReceiptId,
+          authorization: 'ACT_CONVERSATION_BIND', updatedAt: Date.now(),
+        };
+      }
+    );
     return { ok: true, mutationState: 'APPLIED', managerNode, retiredBackupNode: backupNode,
       priorManagerConversationKey, conversationKey: String(backup.conversationKey || ''),
       sessionId: String(backup.sessionId || ''), tabId: Number(backup.tabId),
@@ -2324,46 +2407,54 @@ async function handleNativeCommand(message) {
     if (message.command === 'conversation-bind') {
       const role = RelayCore.normalizeRole(message.to);
       const tab = await resolveExactConversationCommand(message);
-      const state = await loadState();
-      const current = state.registrations?.[role] || null;
       const conversationKey = String(message.conversationKey || '').trim();
-      const promotingBootstrap = !!current
-
-        && current.authorization === 'ACT_CONVERSATION_BOOTSTRAP'
-
-        && !String(current.conversationKey || '')
-
-        && Number(current.tabId) === Number(tab.id)
-
-        && String(current.transportInstanceId || '') === String(state.settings.instanceId || '')
-
-        && String(current.sessionId || '') === String(endpointSessionId || '');
-
-      const changingEndpoint = !!current
-        && (String(current.conversationKey || '') !== conversationKey || Number(current.tabId) !== Number(tab.id));
-      if (changingEndpoint && !promotingBootstrap) {
-        if (message.replaceStale !== true) throw new Error('LOGICAL_NODE_BINDING_CONFLICT');
-        if (String(message.expectedCurrentConversationKey || '') !== String(current.conversationKey || '')
-          || String(message.expectedCurrentBindingReceiptId || '') !== String(current.bindingReceiptId || '')) {
-          throw new Error('LOGICAL_NODE_BINDING_REPLACEMENT_FENCE_MISMATCH');
-        }
-      }
-      for (const [otherRole, registration] of Object.entries(state.registrations || {})) {
-        if (otherRole !== role && (String(registration?.conversationKey || '') === conversationKey || Number(registration?.tabId) === Number(tab.id))) throw new Error('CONVERSATION_ALREADY_BOUND');
-      }
-      const registration = changingEndpoint ? await registerRole(role, tab.id) : (current || await registerRole(role, tab.id));
-      if (String(registration?.conversationKey || '') !== conversationKey || Number(registration?.tabId) !== Number(tab.id)) throw new Error('CONVERSATION_BIND_RECEIPT_MISMATCH');
       const bindingReceiptId = String(message.bindingReceiptId || '').trim();
       if (!/^RCB-[A-Z0-9]{12,40}$/.test(bindingReceiptId)) throw new Error('CONVERSATION_BINDING_RECEIPT_REQUIRED');
-      registration.transportInstanceId = String(state.settings.instanceId || '');
-      registration.sessionId = String(endpointSessionId || '');
-      registration.bindingReceiptId = bindingReceiptId;
-      registration.authorization = 'ACT_CONVERSATION_BIND';
-      registration.updatedAt = Date.now();
-      state.registrations[role] = registration;
-      await chrome.storage.local.set({ registrations: state.registrations });
+      const registration = await mutateRegistrationsWithLeaseFence(
+        [{ role }, { tabId: tab.id, conversationKey }],
+        async (state) => {
+          const current = state.registrations?.[role] || null;
+          if (current) {
+            const conflict = Object.values(state.bindingSubmitLeases || {}).some((lease) =>
+              bindingLeaseTargetsConflict(lease, current));
+            if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
+          }
+          const promotingBootstrap = !!current
+            && current.authorization === 'ACT_CONVERSATION_BOOTSTRAP'
+            && !String(current.conversationKey || '')
+            && Number(current.tabId) === Number(tab.id)
+            && String(current.transportInstanceId || '') === String(state.settings.instanceId || '')
+            && String(current.sessionId || '') === String(endpointSessionId || '');
+          const changingEndpoint = !!current
+            && (String(current.conversationKey || '') !== conversationKey
+              || Number(current.tabId) !== Number(tab.id));
+          if (changingEndpoint && !promotingBootstrap) {
+            if (message.replaceStale !== true) throw new Error('LOGICAL_NODE_BINDING_CONFLICT');
+            if (String(message.expectedCurrentConversationKey || '') !== String(current.conversationKey || '')
+              || String(message.expectedCurrentBindingReceiptId || '') !== String(current.bindingReceiptId || '')) {
+              throw new Error('LOGICAL_NODE_BINDING_REPLACEMENT_FENCE_MISMATCH');
+            }
+          }
+          for (const [otherRole, other] of Object.entries(state.registrations || {})) {
+            if (otherRole !== role
+                && (String(other?.conversationKey || '') === conversationKey
+                  || Number(other?.tabId) === Number(tab.id))) {
+              throw new Error('CONVERSATION_ALREADY_BOUND');
+            }
+          }
+          const next = {
+            ...(current || {}), role, tabId: Number(tab.id), conversationKey,
+            title: tab.title || current?.title || '',
+            transportInstanceId: String(state.settings.instanceId || ''),
+            sessionId: String(endpointSessionId || ''), bindingReceiptId,
+            authorization: 'ACT_CONVERSATION_BIND', updatedAt: Date.now()
+          };
+          state.registrations[role] = next;
+          return { ...next };
+        }
+      );
       postNative({ type: 'host:result', requestId, ok: true, registration,
-        binding: { logicalNode: role, conversationKey, instanceId: state.settings.instanceId,
+        binding: { logicalNode: role, conversationKey, instanceId: registration.transportInstanceId,
           sessionId: endpointSessionId, tabId: tab.id, bindingReceiptId } });
       return;
     }
@@ -2389,47 +2480,32 @@ async function handleNativeCommand(message) {
       const outcome = await runIdempotentOperation(operationId, 'conversation-bootstrap-bind', fingerprint, async () => {
 
         const resolved = await resolveExactPendingCreatedTab(message);
-
-        const state = await loadState();
-
-        const current = state.registrations?.[role] || null;
-
-        if (current && (Number(current.tabId) !== Number(resolved.tab.id)
-
-            || String(current.authorization || '') !== 'ACT_CONVERSATION_BOOTSTRAP')) {
-
-          throw new Error('LOGICAL_NODE_BINDING_CONFLICT');
-
-        }
-
-        for (const [otherRole, registration] of Object.entries(state.registrations || {})) {
-
-          if (otherRole !== role && Number(registration?.tabId) === Number(resolved.tab.id)) {
-
-            throw new Error('CONVERSATION_ALREADY_BOUND');
-
+        const registration = await mutateRegistrationsWithLeaseFence(
+          [{ role }, { tabId: resolved.tab.id }],
+          async (state) => {
+            const current = state.registrations?.[role] || null;
+            if (current && (Number(current.tabId) !== Number(resolved.tab.id)
+                || String(current.authorization || '') !== 'ACT_CONVERSATION_BOOTSTRAP')) {
+              throw new Error('LOGICAL_NODE_BINDING_CONFLICT');
+            }
+            for (const [otherRole, other] of Object.entries(state.registrations || {})) {
+              if (otherRole !== role && Number(other?.tabId) === Number(resolved.tab.id)) {
+                throw new Error('CONVERSATION_ALREADY_BOUND');
+              }
+            }
+            const next = {
+              role, tabId: Number(resolved.tab.id), conversationKey: '',
+              title: resolved.tab.title || '',
+              transportInstanceId: String(state.settings.instanceId || ''),
+              sessionId: endpointSessionId,
+              authorization: 'ACT_CONVERSATION_BOOTSTRAP', bootstrapReceiptId, operationId,
+              createOperationId: resolved.createOperationId,
+              expiresAt: Date.now() + (10 * 60 * 1000), updatedAt: Date.now()
+            };
+            state.registrations[role] = next;
+            return { ...next };
           }
-
-        }
-
-        const registration = {
-
-          role, tabId: Number(resolved.tab.id), conversationKey: '', title: resolved.tab.title || '',
-
-          transportInstanceId: String(state.settings.instanceId || ''), sessionId: endpointSessionId,
-
-          authorization: 'ACT_CONVERSATION_BOOTSTRAP', bootstrapReceiptId, operationId,
-
-          createOperationId: resolved.createOperationId, expiresAt: Date.now() + (10 * 60 * 1000),
-
-          updatedAt: Date.now()
-
-        };
-
-        state.registrations[role] = registration;
-
-        await chrome.storage.local.set({ registrations: state.registrations });
-
+        );
         return { ok: true, registration, bootstrap: true };
 
       });
@@ -3175,7 +3251,13 @@ async function handleNativeCommand(message) {
 
       source: 'native', fromNode: message.fromNode, messageHash: message.messageHash,
 
-      targetBindingReceipt: message.bindingReceiptId, returnToControl: false,
+      targetBindingReceipt: message.bindingReceiptId,
+      expectedInstanceId: message.expectedInstanceId,
+      expectedSessionId: message.expectedSessionId,
+      expectedTabId: message.expectedTabId,
+      expectedConversationKey: message.expectedConversationKey,
+      attachmentGeneration: message.attachmentGeneration,
+      returnToControl: false,
 
       returnToRole: message.command === 'send-wakeback' ? 'WORKER' : String(message.returnTo || '').trim(), hostRequestId: requestId });
 
@@ -3254,43 +3336,31 @@ async function notifyRelayLocalState(tabsValue = null) {
 async function reconcileRegistrationsWithTabs(tabsValue = null) {
 
   await endpointSessionReady;
-
-  const state = await loadState();
-
   const tabs = (Array.isArray(tabsValue) ? tabsValue : await getChatTabs()).filter(isChatTab);
-
-  let changed = false;
-
-  for (const reg of Object.values(state.registrations || {})) {
-
-    if (!reg?.conversationKey) continue;
-
-    const match = tabs.find((tab) => RelayCore.conversationKey(tab.url || '') === reg.conversationKey);
-
-    if (!match) continue;
-
-    // A Chrome extension reload rotates the ephemeral endpoint session while
-    // preserving the extension instance, the durable binding receipt, and the
-    // live conversation URL. Reconnect only that same exact binding.
-    const reconnectableDynamicBinding = reg.authorization === 'ACT_CONVERSATION_BIND'
-      && /^RCB-[A-Z0-9]{12,40}$/.test(String(reg.bindingReceiptId || ''))
-      && String(reg.transportInstanceId || '') === String(state.settings.instanceId || '');
-    const needsTabRefresh = Number(reg.tabId) !== Number(match.id);
-    const needsSessionRefresh = reconnectableDynamicBinding
-      && String(reg.sessionId || '') !== String(endpointSessionId || '');
-    if (needsTabRefresh || needsSessionRefresh) {
+  return mutateRegistrationsWithLeaseFence([], async (state) => {
+    for (const reg of Object.values(state.registrations || {})) {
+      if (!reg?.conversationKey) continue;
+      const match = tabs.find((tab) => RelayCore.conversationKey(tab.url || '') === reg.conversationKey);
+      if (!match) continue;
+      const reconnectableDynamicBinding = reg.authorization === 'ACT_CONVERSATION_BIND'
+        && /^RCB-[A-Z0-9]{12,40}$/.test(String(reg.bindingReceiptId || ''))
+        && String(reg.transportInstanceId || '') === String(state.settings.instanceId || '');
+      const needsTabRefresh = Number(reg.tabId) !== Number(match.id);
+      const needsSessionRefresh = reconnectableDynamicBinding
+        && String(reg.sessionId || '') !== String(endpointSessionId || '');
+      if (!needsTabRefresh && !needsSessionRefresh) continue;
+      const conflict = Object.values(state.bindingSubmitLeases || {}).some((lease) =>
+        bindingLeaseTargetsConflict(lease, reg)
+        || bindingLeaseTargetsConflict(lease, { role: reg.role, tabId: match.id,
+          conversationKey: reg.conversationKey }));
+      if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
       reg.tabId = match.id;
       reg.title = match.title || reg.title;
       if (needsSessionRefresh) reg.sessionId = String(endpointSessionId || '');
       reg.updatedAt = Date.now();
-      changed = true;
     }
-
-  }
-
-  if (changed) await chrome.storage.local.set({ registrations: state.registrations });
-
-  return state.registrations;
+    return state.registrations;
+  });
 
 }
 
@@ -3448,33 +3518,33 @@ async function registerRole(roleValue, tabId) {
 
   }
 
-  const state = await loadState();
-
-  for (const [name, item] of Object.entries(state.registrations)) {
-
-    if (name !== role && item.tabId === tab.id) delete state.registrations[name];
-
-  }
-
-  state.registrations[role] = {
-
-    role,
-
-    tabId: tab.id,
-
-    conversationKey: RelayCore.conversationKey(tab.url),
-
-    title: tab.title || '',
-
-    updatedAt: Date.now()
-
-  };
-
-  await chrome.storage.local.set({ registrations: state.registrations });
+  const conversationKey = RelayCore.conversationKey(tab.url);
+  const registration = await mutateRegistrationsWithLeaseFence(
+    [{ role }, { tabId: tab.id, conversationKey }],
+    async (state) => {
+      const previous = state.registrations?.[role] || null;
+      if (previous) {
+        const conflict = Object.values(state.bindingSubmitLeases || {}).some((lease) =>
+          bindingLeaseTargetsConflict(lease, previous));
+        if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
+      }
+      for (const [name, item] of Object.entries(state.registrations)) {
+        if (name !== role && item.tabId === tab.id) delete state.registrations[name];
+      }
+      state.registrations[role] = {
+        role,
+        tabId: tab.id,
+        conversationKey,
+        title: tab.title || '',
+        updatedAt: Date.now()
+      };
+      return { ...state.registrations[role] };
+    }
+  );
 
   await notifyRelayLocalState();
 
-  return state.registrations[role];
+  return registration;
 
 }
 
@@ -3550,17 +3620,20 @@ async function resolveRegistration(roleValue) {
 
   if (!match) throw new Error(`Registered tab is not open: ${role}`);
 
-  reg.tabId = match.id;
-
-  reg.title = match.title || reg.title;
-
-  reg.updatedAt = Date.now();
-
-  state.registrations[role] = reg;
-
-  await chrome.storage.local.set({ registrations: state.registrations });
-
-  return reg;
+  return mutateRegistrationsWithLeaseFence(
+    [{ role }, reg, { tabId: match.id, conversationKey: reg.conversationKey }],
+    async (latest) => {
+      const current = latest.registrations?.[role];
+      if (!current || String(current.conversationKey || '') !== String(reg.conversationKey || '')) {
+        throw new Error(`Registered conversation changed for ${role}`);
+      }
+      current.tabId = match.id;
+      current.title = match.title || current.title;
+      current.updatedAt = Date.now();
+      latest.registrations[role] = current;
+      return { ...current };
+    }
+  );
 
 }
 
@@ -3590,7 +3663,73 @@ function registrationHasBootstrapAuthorization(registration, state) {
 
 }
 
-async function authorizeInjectionSender(sender, requestedConversationKey) {
+function orchestrationBindingAttestationMatches(expected, actual) {
+  if (!expected || typeof expected !== 'object' || !actual || typeof actual !== 'object') return false;
+  return String(actual.instanceId || '') === String(expected.instanceId || '')
+    && String(actual.sessionId || '') === String(expected.sessionId || '')
+    && Number(actual.tabId || 0) === Number(expected.tabId || 0)
+    && String(actual.conversationKey || '') === String(expected.conversationKey || '')
+    && String(actual.bindingReceiptId || '') === String(expected.bindingReceiptId || '')
+    && Number(actual.attachmentGeneration || 0) === Number(expected.attachmentGeneration || 0)
+    && (!expected.leaseId || String(actual.leaseId || '') === String(expected.leaseId || ''))
+    && (!expected.leaseConsumedAt
+      || Number(actual.leaseConsumedAt || 0) === Number(expected.leaseConsumedAt || 0));
+}
+
+async function authorizeInjectionSender(sender, requestedConversationKey, exactBinding = null,
+  relayIdValue = '', authorizationPhase = 'PROBE') {
+  if (exactBinding && authorizationPhase === 'PRE_SUBMIT') {
+    return withBindingLeaseMutation(async () => {
+      const probe = await authorizeInjectionSender(
+        sender, requestedConversationKey, exactBinding, relayIdValue, 'PROBE'
+      );
+      if (probe?.authorized !== true) return probe;
+      const state = await loadState();
+      pruneExpiredBindingSubmitLeases(state);
+      const relayId = String(relayIdValue || '').trim();
+      const registration = state.registrations?.[probe.logicalNode] || null;
+      const pending = state.pending?.[relayId] || null;
+      const attestation = {
+        instanceId: String(registration?.transportInstanceId || ''),
+        sessionId: String(registration?.sessionId || ''),
+        tabId: Number(registration?.tabId || 0),
+        conversationKey: String(registration?.conversationKey || ''),
+        bindingReceiptId: String(registration?.bindingReceiptId || ''),
+        attachmentGeneration: Number(pending?.attachmentGeneration || 0)
+      };
+      if (!relayId || !pending
+          || !orchestrationBindingAttestationMatches(exactBinding, attestation)) {
+        return { ok: true, authorized: false, reason: 'RCC_INJECTION_EXACT_BINDING_MISMATCH' };
+      }
+      if (Number(pending.bindingLeaseConsumedAt || 0) > 0
+          || Number(pending.bindingAttestation?.leaseConsumedAt || 0) > 0) {
+        return { ok: true, authorized: false, reason: 'RCC_PRE_SUBMIT_LEASE_ALREADY_CONSUMED' };
+      }
+      const existing = Object.values(state.bindingSubmitLeases || {}).find((lease) =>
+        String(lease?.relayId || '') === relayId);
+      if (existing && !orchestrationBindingAttestationMatches(attestation, existing)) {
+        return { ok: true, authorized: false, reason: 'RCC_PRE_SUBMIT_LEASE_CONFLICT' };
+      }
+      const conflicting = Object.values(state.bindingSubmitLeases || {}).find((lease) =>
+        String(lease?.relayId || '') !== relayId
+        && bindingLeaseTargetsConflict(lease, { role: probe.logicalNode, ...attestation }));
+      if (conflicting) {
+        return { ok: true, authorized: false, reason: 'RCC_PRE_SUBMIT_LEASE_CONFLICT' };
+      }
+      const issuedAt = Date.now();
+      const lease = existing || {
+        ...attestation, leaseId: `RCL-${crypto.randomUUID().replaceAll('-', '').toUpperCase()}`,
+        relayId, role: probe.logicalNode, issuedAt,
+        expiresAt: issuedAt + BINDING_SUBMIT_LEASE_TTL_MS
+      };
+      state.bindingSubmitLeases[lease.leaseId] = lease;
+      await chrome.storage.local.set({ [BINDING_SUBMIT_LEASES_KEY]: state.bindingSubmitLeases });
+      setTimeout(() => { expireBindingSubmitLease(lease.leaseId).catch(() => {}); },
+        Math.max(1, Number(lease.expiresAt) - Date.now() + 25));
+      return { ...probe, bindingAttestation: { ...attestation,
+        leaseId: lease.leaseId, leaseExpiresAt: Number(lease.expiresAt) } };
+    });
+  }
   await endpointSessionReady;
   if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !isChatTab(sender.tab)) {
     return { ok: true, authorized: false, reason: 'RCC_UNTRUSTED_INJECTION_SENDER' };
@@ -3658,9 +3797,77 @@ async function authorizeInjectionSender(sender, requestedConversationKey) {
     return { ok: true, authorized: false, reason: matches.length ? 'RCC_INJECTION_BINDING_AMBIGUOUS' : 'RCC_INJECTION_BINDING_REQUIRED' };
   }
   const registration = matches[0];
+  let bindingAttestation = null;
+  if (exactBinding && typeof exactBinding === 'object') {
+    const relayId = String(relayIdValue || '').trim();
+    const pending = relayId ? state.pending?.[relayId] : null;
+    bindingAttestation = {
+      instanceId: String(registration.transportInstanceId || ''),
+      sessionId: String(registration.sessionId || ''),
+      tabId,
+      conversationKey: liveKey,
+      bindingReceiptId: String(registration.bindingReceiptId || ''),
+      attachmentGeneration: Number(pending?.attachmentGeneration || 0)
+    };
+    const pendingExpected = pending ? {
+      instanceId: String(pending.expectedInstanceId || ''),
+      sessionId: String(pending.expectedSessionId || ''),
+      tabId: Number(pending.tabId || 0),
+      conversationKey: String(pending.conversationKey || ''),
+      bindingReceiptId: String(pending.targetBindingReceipt || ''),
+      attachmentGeneration: Number(pending.attachmentGeneration || 0)
+    } : null;
+    if (!pendingExpected
+        || !orchestrationBindingAttestationMatches(exactBinding, bindingAttestation)
+        || !orchestrationBindingAttestationMatches(pendingExpected, bindingAttestation)) {
+      return { ok: true, authorized: false, reason: 'RCC_INJECTION_EXACT_BINDING_MISMATCH' };
+    }
+  }
   return { ok: true, authorized: true, logicalNode: registration.role,
     conversationKey: liveKey, instanceId: registration.transportInstanceId,
-    sessionId: registration.sessionId, tabId, bindingReceiptId: registration.bindingReceiptId };
+    sessionId: registration.sessionId, tabId, bindingReceiptId: registration.bindingReceiptId,
+    bindingAttestation };
+}
+
+async function consumeBindingSubmitLease(sender, relayIdValue, bindingAttestation) {
+  await endpointSessionReady;
+  return withBindingLeaseMutation(async () => {
+    if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !isChatTab(sender.tab)) {
+      throw new Error('RCC_UNTRUSTED_INJECTION_SENDER');
+    }
+    const state = await loadState();
+    pruneExpiredBindingSubmitLeases(state);
+    const relayId = String(relayIdValue || '').trim();
+    const leaseId = String(bindingAttestation?.leaseId || '').trim();
+    const lease = state.bindingSubmitLeases?.[leaseId] || null;
+    const pending = state.pending?.[relayId] || null;
+    if (!lease || !pending || String(lease.relayId || '') !== relayId) {
+      throw new Error('RCC_PRE_SUBMIT_LEASE_MISSING_OR_EXPIRED');
+    }
+    const liveKey = RelayCore.conversationKey(sender.tab?.url || '');
+    const registration = state.registrations?.[lease.role] || null;
+    const current = {
+      instanceId: String(registration?.transportInstanceId || ''),
+      sessionId: String(registration?.sessionId || ''),
+      tabId: Number(sender.tab?.id || 0), conversationKey: liveKey,
+      bindingReceiptId: String(registration?.bindingReceiptId || ''),
+      attachmentGeneration: Number(pending.attachmentGeneration || 0)
+    };
+    if (!registration || Number(registration.tabId) !== Number(sender.tab?.id)
+        || !orchestrationBindingAttestationMatches(lease, bindingAttestation)
+        || !orchestrationBindingAttestationMatches(current, lease)) {
+      throw new Error('RCC_PRE_SUBMIT_LEASE_ATTESTATION_MISMATCH');
+    }
+    delete state.bindingSubmitLeases[leaseId];
+    const consumed = { ...current, leaseId, leaseExpiresAt: Number(lease.expiresAt),
+      leaseConsumedAt: Date.now() };
+    pending.bindingAttestation = consumed;
+    pending.bindingLeaseConsumedAt = consumed.leaseConsumedAt;
+    state.pending[relayId] = pending;
+    await chrome.storage.local.set({ pending: state.pending,
+      [BINDING_SUBMIT_LEASES_KEY]: state.bindingSubmitLeases });
+    return { ok: true, consumed: true, bindingAttestation: consumed };
+  });
 }
 
 
@@ -3669,7 +3876,9 @@ const nativeRelayInflight = new Map();
 
 async function dispatchRelay({ to, text, id, source, fromNode = '', messageHash = '',
 
-  targetBindingReceipt = '', returnToControl, returnToRole = '', hostRequestId }) {
+  targetBindingReceipt = '', expectedInstanceId = '', expectedSessionId = '',
+  expectedTabId = 0, expectedConversationKey = '', attachmentGeneration = 0,
+  returnToControl, returnToRole = '', hostRequestId }) {
 
   const role = RelayCore.normalizeRole(to);
 
@@ -3679,7 +3888,11 @@ async function dispatchRelay({ to, text, id, source, fromNode = '', messageHash 
 
   const payloadText = String(text || '').slice(0, 12000);
 
-  const fingerprint = JSON.stringify([role, payloadText, !!returnToControl, String(returnToRole || '')]);
+  const fingerprint = JSON.stringify([role, payloadText, !!returnToControl,
+    String(returnToRole || ''), String(targetBindingReceipt || ''),
+    String(messageHash || ''), String(expectedInstanceId || ''),
+    String(expectedSessionId || ''), Number(expectedTabId) || 0,
+    String(expectedConversationKey || ''), Number(attachmentGeneration) || 0]);
 
   const running = nativeRelayInflight.get(relayId);
 
@@ -3693,7 +3906,9 @@ async function dispatchRelay({ to, text, id, source, fromNode = '', messageHash 
 
   const promise = dispatchRelayOnce({ role, payloadText, relayId, source, fromNode,
 
-    messageHash, targetBindingReceipt, returnToControl, returnToRole, hostRequestId, fingerprint });
+    messageHash, targetBindingReceipt, expectedInstanceId, expectedSessionId,
+    expectedTabId, expectedConversationKey, attachmentGeneration,
+    returnToControl, returnToRole, hostRequestId, fingerprint });
 
   nativeRelayInflight.set(relayId, { fingerprint, promise });
 
@@ -3705,11 +3920,31 @@ async function dispatchRelay({ to, text, id, source, fromNode = '', messageHash 
 
 async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode = '',
 
-  messageHash = '', targetBindingReceipt = '', returnToControl, returnToRole = '', hostRequestId, fingerprint }) {
+  messageHash = '', targetBindingReceipt = '', expectedInstanceId = '',
+  expectedSessionId = '', expectedTabId = 0, expectedConversationKey = '',
+  attachmentGeneration = 0, returnToControl, returnToRole = '', hostRequestId, fingerprint }) {
 
   const reg = await resolveRegistration(role);
 
   const state = await loadState();
+
+  if (targetBindingReceipt
+      && String(reg.bindingReceiptId || '') !== String(targetBindingReceipt)) {
+    throw new Error('TARGET_BINDING_RECEIPT_MISMATCH');
+  }
+
+  const exactRegistration = state.registrations?.[role] || null;
+  if (!exactRegistration
+      || Number(exactRegistration.tabId) !== Number(reg.tabId)
+      || String(exactRegistration.conversationKey || '') !== String(reg.conversationKey || '')
+      || String(exactRegistration.sessionId || '') !== String(reg.sessionId || '')
+      || (targetBindingReceipt && String(exactRegistration.bindingReceiptId || '') !== String(targetBindingReceipt))
+      || (expectedInstanceId && String(exactRegistration.transportInstanceId || '') !== String(expectedInstanceId))
+      || (expectedSessionId && String(exactRegistration.sessionId || '') !== String(expectedSessionId))
+      || (Number(expectedTabId) > 0 && Number(exactRegistration.tabId) !== Number(expectedTabId))
+      || (expectedConversationKey && String(exactRegistration.conversationKey || '') !== String(expectedConversationKey))) {
+    throw new Error('TARGET_BINDING_CHANGED_BEFORE_DISPATCH');
+  }
 
   const bootstrapAuthorized = registrationHasBootstrapAuthorization(reg, state);
 
@@ -3747,15 +3982,47 @@ async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode 
 
     targetBindingReceipt: String(targetBindingReceipt || ''), returnToControl: !!returnToControl,
 
+    expectedInstanceId: String(expectedInstanceId || ''),
+    expectedSessionId: String(expectedSessionId || ''),
+    attachmentGeneration: Number(attachmentGeneration) || 0,
+
     returnToRole: String(returnToRole || ''), hostRequestId: hostRequestId || '', fingerprint,
 
     createdAt: Date.now(), deliveryConfirmed: false };
 
   await chrome.storage.local.set({ pending: state.pending });
 
+  const exactFenceRequested = !!(targetBindingReceipt || expectedInstanceId
+    || expectedSessionId || Number(expectedTabId) > 0 || expectedConversationKey);
+  if (exactFenceRequested) {
+    const preDispatchState = await loadState();
+    const preDispatchRegistration = preDispatchState.registrations?.[role] || null;
+    if (!preDispatchRegistration
+        || String(preDispatchRegistration.bindingReceiptId || '') !== String(targetBindingReceipt || '')
+        || String(preDispatchRegistration.transportInstanceId || '') !== String(expectedInstanceId || '')
+        || String(preDispatchRegistration.sessionId || '') !== String(expectedSessionId || '')
+        || Number(preDispatchRegistration.tabId) !== Number(expectedTabId)
+        || String(preDispatchRegistration.conversationKey || '') !== String(expectedConversationKey || '')) {
+      delete preDispatchState.pending[relayId];
+      await chrome.storage.local.set({ pending: preDispatchState.pending });
+      throw new Error('TARGET_BINDING_CHANGED_BEFORE_SUBMIT');
+    }
+  }
+
   let ack;
 
-  try { ack = await sendToChatTab(reg.tabId, { type: 'relay:execute', relayId, text: payloadText }); }
+  const exactBinding = exactFenceRequested ? {
+    instanceId: String(expectedInstanceId || ''),
+    sessionId: String(expectedSessionId || ''),
+    tabId: Number(expectedTabId) || 0,
+    conversationKey: String(expectedConversationKey || ''),
+    bindingReceiptId: String(targetBindingReceipt || ''),
+    attachmentGeneration: Number(attachmentGeneration) || 0
+  } : null;
+
+  try { ack = await sendToChatTab(reg.tabId, {
+    type: 'relay:execute', relayId, text: payloadText, exactBinding
+  }); }
 
   catch (error) {
 
@@ -3785,6 +4052,20 @@ async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode 
 
   if (!latestPending) throw new Error('RELAY_PENDING_LOST_AFTER_ACCEPT');
 
+  if (exactFenceRequested && ack.submitted === true
+      && (!orchestrationBindingAttestationMatches(exactBinding, ack.bindingAttestation)
+        || !ack.bindingAttestation?.leaseId
+        || Number(ack.bindingAttestation?.leaseConsumedAt || 0) <= 0
+        || !orchestrationBindingAttestationMatches(
+          latestPending.bindingAttestation, ack.bindingAttestation
+        ))) {
+    latestPending.submitUnknown = true;
+    latestPending.lastTransportError = 'RELAY_SUBMIT_ATTESTATION_MISMATCH';
+    latestState.pending[relayId] = latestPending;
+    await chrome.storage.local.set({ pending: latestState.pending });
+    throw new Error('RELAY_SUBMIT_ATTESTATION_MISMATCH');
+  }
+
   latestPending.deliveryConfirmed = ack.submitted === true;
 
   latestPending.deferred = ack.deferred === true;
@@ -3793,6 +4074,10 @@ async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode 
 
   latestPending.stageTiming = ack.stageTiming && typeof ack.stageTiming === 'object'
     ? { ...ack.stageTiming } : null;
+
+  if (ack.bindingAttestation && typeof ack.bindingAttestation === 'object') {
+    latestPending.bindingAttestation = { ...ack.bindingAttestation };
+  }
 
   if (ack.submitted === true) latestPending.submittedAt = Date.now();
 
@@ -3822,7 +4107,7 @@ async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode 
 
 
 
-async function deliverResult(relayId, result, senderTabId) {
+async function deliverResult(relayId, result, senderTabId, bindingAttestation = null) {
 
   const state = await loadState();
 
@@ -3866,6 +4151,30 @@ async function deliverResult(relayId, result, senderTabId) {
   }
 
   if (pending.tabId !== senderTabId) throw new Error('Relay result came from wrong tab');
+
+  const exactFenceRequested = !!(pending.targetBindingReceipt || pending.expectedInstanceId
+    || pending.expectedSessionId || Number(pending.attachmentGeneration) > 0);
+  if (exactFenceRequested) {
+    const pendingExpected = {
+      instanceId: String(pending.expectedInstanceId || ''),
+      sessionId: String(pending.expectedSessionId || ''),
+      tabId: Number(pending.tabId || 0),
+      conversationKey: String(pending.conversationKey || ''),
+      bindingReceiptId: String(pending.targetBindingReceipt || ''),
+      attachmentGeneration: Number(pending.attachmentGeneration || 0)
+    };
+    if (!orchestrationBindingAttestationMatches(pendingExpected, bindingAttestation)) {
+      throw new Error('RELAY_RESULT_BINDING_ATTESTATION_MISMATCH');
+    }
+    if (!pending.bindingAttestation?.leaseId
+        || Number(pending.bindingAttestation?.leaseConsumedAt || 0) <= 0
+        || !orchestrationBindingAttestationMatches(
+          pending.bindingAttestation, bindingAttestation
+        )) {
+      throw new Error('RELAY_RESULT_LEASE_ATTESTATION_MISMATCH');
+    }
+    pending.bindingAttestation = { ...bindingAttestation };
+  }
 
   if (pending.bootstrapCreatedTab === true) {
 
@@ -4112,7 +4421,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'relay:forceRefresh') return forceRelayRefresh('manual-refresh');
 
     if (message.type === 'relay:authorizeInjection') {
-      return authorizeInjectionSender(sender, message.conversationKey);
+      return authorizeInjectionSender(
+        sender, message.conversationKey, message.exactBinding, message.relayId,
+        message.authorizationPhase
+      );
+    }
+
+    if (message.type === 'relay:consumeBindingLease') {
+      return consumeBindingSubmitLease(
+        sender, message.relayId, message.bindingAttestation
+      );
     }
 
     if (message.type === 'relay:getPendingStatus') {
@@ -4214,29 +4532,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (keyMatches || legacyTabMatches) {
 
           role = name;
-
-          if (key && !reg.conversationKey && reg.authorization === 'ACT_CONVERSATION_BOOTSTRAP') {
-
-            reg.bootstrapConversationKey = key;
-
-            reg.updatedAt = Date.now();
-
-            state.registrations[name] = reg;
-
-            await chrome.storage.local.set({ registrations: state.registrations });
-
-          }
-
-          if (tabId && reg.tabId !== tabId) {
-
-            reg.tabId = tabId;
-
-            reg.updatedAt = Date.now();
-
-            state.registrations[name] = reg;
-
-            await chrome.storage.local.set({ registrations: state.registrations });
-
+          const capturesBootstrapKey = !!(key && !reg.conversationKey
+            && reg.authorization === 'ACT_CONVERSATION_BOOTSTRAP');
+          const rebindsTab = !!(tabId && reg.tabId !== tabId);
+          if (capturesBootstrapKey || rebindsTab) {
+            await mutateRegistrationsWithLeaseFence(
+              [{ role: name }, reg, { tabId, conversationKey: key }],
+              async (latest) => {
+                const current = latest.registrations?.[name];
+                if (!current) throw new Error('LOGICAL_NODE_BINDING_MISSING');
+                if (capturesBootstrapKey) current.bootstrapConversationKey = key;
+                if (rebindsTab) current.tabId = tabId;
+                current.updatedAt = Date.now();
+                latest.registrations[name] = current;
+              }
+            );
           }
 
           break;
@@ -4334,7 +4644,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.type === 'relay:workerResult') {
 
-      return deliverResult(message.relayId, message.result || {}, sender.tab?.id);
+      return deliverResult(
+        message.relayId, message.result || {}, sender.tab?.id, message.bindingAttestation
+      );
 
     }
 
