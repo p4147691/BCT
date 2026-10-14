@@ -237,6 +237,14 @@ then atomically marks the original FAILED and releases its claim. It never sends
 a ChatGPT message. Candidate acceptance proves 184 Python tests and all 17 RCC
 JavaScript test programs before GitHub integration.
 
+The first LIVE recovery attempt stopped before mutation because the isolated
+relay double represented state registrations with the bind-ACK field
+`instanceId`; real RCC state uses `transportInstanceId` while bind ACKs use
+`instanceId`. READ-only comparison proved every tab, conversation, role, and
+stored receipt otherwise matched. The state-side validator and test double now
+use the real wire contract; the failed resolver released only its own recovery
+claim and left the original UNKNOWN claim intact.
+
 ## Failure policy
 
 | Failure | Automatic action |

@@ -60,6 +60,13 @@ class FakeRelay:
             "command": command, "to": to, "text": text, "extra": extra,
         })
         if command == "state":
+            registrations = {
+                role: {
+                    key: value for key, value in binding.items()
+                    if key != "instanceId"
+                } | {"transportInstanceId": binding["instanceId"]}
+                for role, binding in self.bindings.items()
+            }
             return {
                 "ok": True,
                 "state": {
@@ -67,7 +74,7 @@ class FakeRelay:
                     "sessionId": self.session_id,
                     "endpoints": self.endpoints,
                     "tabs": [],
-                    "registrations": dict(self.bindings),
+                    "registrations": registrations,
                 },
             }
         if command == "conversation-bind":
