@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v6';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v7';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -1339,6 +1339,13 @@ function editorDraftText(editor) {
   return RelayCore.normalizeMessageText(raw);
 }
 
+function reacquireExactDraftEditor(expectedText) {
+  const current = getEditor();
+  if (!current) return null;
+  return editorDraftText(current) === RelayCore.normalizeMessageText(expectedText)
+    ? current : null;
+}
+
 
 
 function waitForExactUserSubmission(expectedText, beforeUserCount, timeoutMs = 8000) {
@@ -2431,7 +2438,7 @@ async function beginRelayExecution(message) {
 
 
 
-  const editor = await waitForEditor();
+  let editor = await waitForEditor();
 
   const editorReadyAt = Date.now();
 
@@ -2486,10 +2493,12 @@ async function beginRelayExecution(message) {
   }
   setEditorText(editor, requestedText);
 
-  // The draft must be visible in the exact editor before sending. Do not assume
-  // an input event has already changed ChatGPT's composer button.
-  if (getEditor() !== editor ||
-      editorDraftText(editor) !== RelayCore.normalizeMessageText(requestedText)) {
+  // ProseMirror may replace its contenteditable node while applying the input
+  // event. Reacquire the canonical composer, but accept it only when the exact
+  // draft is visible. submitEditor and the binding lease still fence any later
+  // node, route, tab, or conversation change before activation.
+  editor = reacquireExactDraftEditor(requestedText);
+  if (!editor) {
     throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
   }
 

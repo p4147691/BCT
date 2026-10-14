@@ -12,6 +12,7 @@ function sliceBetween(startText, endText) {
 const gateSource = sliceBetween('function findReadySendButton(', 'async function waitForReply(');
 const draftSource = sliceBetween('function editorDraftText(', 'function waitForExactUserSubmission(');
 assert(source.indexOf('setEditorText(editor, requestedText);') < source.indexOf('await submitEditor(editor, {'));
+assert(source.includes('editor = reacquireExactDraftEditor(requestedText);'));
 assert(source.includes('allowKeyboardFallback: message.bootstrapCreatedTab !== true'));
 
 function makeHarness() {
@@ -40,19 +41,21 @@ function makeHarness() {
     observe() {}
     disconnect() {}
   }
+  let currentEditor = editor;
   const context = {
-    document, MutationObserver, setTimeout, clearTimeout, getEditor: () => editor,
+    document, MutationObserver, setTimeout, clearTimeout, getEditor: () => currentEditor,
     RelayCore: { normalizeMessageText: value => String(value || '').trim() },
     console
   };
   vm.createContext(context);
   vm.runInContext(gateSource + '\n' + draftSource +
-    '\nglobalThis.testing = {submitEditor, findReadySendButton, waitForReadySendButton, editorDraftText};', context);
+    '\nglobalThis.testing = {submitEditor, findReadySendButton, waitForReadySendButton, editorDraftText, reacquireExactDraftEditor};', context);
   return {
     editor, button, testing: context.testing,
     setMode(value) { mode = value; observers.forEach(o=>o.callback()); },
     setDisabled(value) { disabled = value; observers.forEach(o=>o.callback()); },
     setAriaDisabled(value) { ariaDisabled = value; observers.forEach(o=>o.callback()); },
+    setCurrentEditor(value) { currentEditor = value; },
     clicks() { return clickCount; }
   };
 }
@@ -131,6 +134,15 @@ async function main() {
   };
   assert.equal(h.testing.editorDraftText(paragraphEditor),'header\npayload',
     'ProseMirror paragraph spacing must preserve the inserted newline');
-  console.log('Issue57 editor/send-arrow readiness: 8 tests PASS');
+
+  const i=makeHarness();
+  const replacement={tagName:'TEXTAREA',value:'bounded task',children:[]};
+  i.setCurrentEditor(replacement);
+  assert.equal(i.testing.reacquireExactDraftEditor('bounded task'),replacement,
+    'an exact ProseMirror replacement must become the fenced submission editor');
+  replacement.value='changed task';
+  assert.equal(i.testing.reacquireExactDraftEditor('bounded task'),null,
+    'a replacement with changed draft text must remain blocked');
+  console.log('Issue57 editor/send-arrow readiness: 10 tests PASS');
 }
 main().catch(e=>{console.error(e); process.exitCode=1;});
