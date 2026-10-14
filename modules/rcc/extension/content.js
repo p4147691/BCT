@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-v1';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v2';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -487,6 +487,14 @@ function turnGenerationInterrupted(turn) {
   ].filter(Boolean).join(' ')));
 }
 
+function turnIsGenerating(turn) {
+  if (!turn) return false;
+  if (turnHasStopAction(turn)) return true;
+  const state = turnCompletionState(turn);
+  if (/^(streaming|generating|in_progress|in-progress|running)$/.test(state)) return true;
+  return !!turn.querySelector?.('.result-streaming, [data-message-status="streaming"]');
+}
+
 
 
 function submittedPromptMatchesTurn(record, turn) {
@@ -905,9 +913,13 @@ async function submitEditor(editor, options = {}) {
       ? await options.beforeSubmit() : null;
     if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
     if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
+    const activationAttestation = typeof options?.beforeActivation === 'function'
+      ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
+      : bindingAttestation;
     const readyAt = Date.now();
     button.click();
-    return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now(), bindingAttestation };
+    return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now(),
+      bindingAttestation: activationAttestation };
   }
   if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
 
@@ -921,6 +933,9 @@ async function submitEditor(editor, options = {}) {
   const bindingAttestation = typeof options?.beforeSubmit === 'function'
     ? await options.beforeSubmit() : null;
   if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  const activationAttestation = typeof options?.beforeActivation === 'function'
+    ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
+    : bindingAttestation;
   editor.focus();
   for (const type of ['keydown', 'keypress', 'keyup']) {
     editor.dispatchEvent(new KeyboardEvent(type, {
@@ -928,7 +943,8 @@ async function submitEditor(editor, options = {}) {
       bubbles: true, cancelable: true
     }));
   }
-  return { ok: true, method: 'enter-fallback', bindingAttestation };
+  return { ok: true, method: 'enter-fallback',
+    bindingAttestation: activationAttestation };
 }
 
 
@@ -1665,7 +1681,7 @@ function recoverCompletedReplyFromDom(record) {
   // background turn.  Treat it as stale only when the exact routed turn has
   // both independent terminal signals.  Otherwise recovery remains fail-closed.
   const exactTurnTerminal = completeState && completionUiReady;
-  if (!exactTurnTerminal && (turnHasStopAction(routed.turn) || isGenerating())) {
+  if (!exactTurnTerminal && turnIsGenerating(routed.turn)) {
     throw new Error('RELAY_RECOVERY_ASSISTANT_STILL_STREAMING');
   }
 
@@ -1716,17 +1732,20 @@ function collectReplyAfterNetworkComplete(record, timeoutMs = 60000) {
       }
       const generationStartedAt = Number(telemetry?.generationStartedAt || 0);
       const generationFinishedAt = Number(telemetry?.generationFinishedAt || 0);
+      const turns = getConversationTurns();
+      const routedTurnIsLatest = turns.length > 0 && turns[turns.length - 1] === routed.turn;
       const decision = RelayCore.classifyFinalResponse({
         conversationMatches: currentConversationKey() === record.conversationKey,
         routeTurnMatches: true,
         userTextMatches: submittedPromptMatchesTurn(record, routed.turn),
         assistantCandidates: candidates,
         turnState: turnCompletionState(routed.turn),
-        generating: isGenerating(),
+        generating: turnIsGenerating(routed.turn),
         hasStopAction: turnHasStopAction(routed.turn),
         interrupted: turnGenerationInterrupted(routed.turn),
         completionUiReady: !!routed.turn.querySelector('button[data-testid="copy-turn-action-button"],button[data-testid*="copy"],button[aria-label="Copy"],button[aria-label="\uBCF5\uC0AC"],button[aria-label="\uBCF5\uC0AC\uD558\uAE30"]'),
-        generationLifecycleComplete: !!(telemetry?.generationState === 'IDLE' && telemetry?.readiness === 'READY'
+        generationLifecycleComplete: !!(routedTurnIsLatest
+          && telemetry?.generationState === 'IDLE' && telemetry?.readiness === 'READY'
           && generationStartedAt >= (Number(record.submittedAt) - 1000) && generationFinishedAt >= generationStartedAt),
         stableForMs: Date.now() - stableSince,
         requiredStableMs
@@ -2409,7 +2428,16 @@ async function beginRelayExecution(message) {
     beforeSubmit: exactBindingRequested ? async () => {
       bindingAttestation = await requireExactRelayAuthorization(message, 'PRE_SUBMIT');
       return bindingAttestation;
-    } : null
+    } : null,
+    beforeActivation: async (attestation) => {
+      record.phase = 'submit-attempted';
+      record.submitAttemptedAt = Date.now();
+      if (attestation && typeof attestation === 'object') {
+        record.bindingAttestation = { ...attestation };
+      }
+      saveRelayExecution(record);
+      return attestation;
+    }
   });
   if (exactBindingRequested) {
     bindingAttestation = submission?.bindingAttestation || bindingAttestation;
@@ -2516,6 +2544,41 @@ async function beginRelayExecution(message) {
 
 
 
+
+async function executeRelayMessage(message) {
+  try {
+    const result = await beginRelayExecution(message);
+    if (result?.ok === false && result?.submitted !== true && result?.deferred !== true) {
+      return { ...result, effectState: String(result.effectState || 'NOT_APPLIED') };
+    }
+    return result;
+  } catch (error) {
+    const record = loadRelayExecution();
+    const exactRecord = !!record?.relayId && record.relayId === message?.relayId;
+    const phase = exactRecord ? String(record.phase || '') : '';
+    const mayHaveSubmitted = exactRecord
+      && ['submit-attempted', 'submitted', 'completed'].includes(phase);
+    let draftCleared = false;
+    if (exactRecord && !mayHaveSubmitted) {
+      const editor = getEditor();
+      const expected = RelayCore.normalizeMessageText(record.submittedText || '');
+      if (editor && expected && editorDraftText(editor) === expected) {
+        try {
+          setEditorText(editor, '');
+          draftCleared = editorDraftText(editor) === '';
+        } catch (_) {}
+      }
+      clearRelayExecution(record.relayId);
+    }
+    return {
+      ok: false,
+      submitted: false,
+      effectState: mayHaveSubmitted ? 'UNKNOWN' : 'NOT_APPLIED',
+      draftCleared,
+      error: String(error?.message || error || 'RELAY_SUBMIT_FAILED')
+    };
+  }
+}
 
 async function deliverToControl(message) {
 
@@ -3347,7 +3410,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
 
-    beginRelayExecution(message).then(sendResponse).catch((error) => sendResponse({ ok: false, submitted: false, error: error.message }));
+    executeRelayMessage(message).then(sendResponse).catch((error) => sendResponse({
+      ok: false, submitted: false, effectState: 'UNKNOWN', error: error.message
+    }));
 
 
 

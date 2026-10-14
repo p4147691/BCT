@@ -588,6 +588,7 @@ class OrchestrationFeature:
         )
         began = time.monotonic()
         send_result: dict[str, Any] = {}
+        delivery_acknowledged = False
         try:
             send_result = self.client.request(
                 instance_id=attachment["instance_id"],
@@ -604,6 +605,7 @@ class OrchestrationFeature:
                     "expectedTabId": attachment["tab_id"],
                     "expectedConversationKey": attachment["conversation_key"],
                     "attachmentGeneration": attachment["generation"],
+                    "returnOnAck": True,
                 },
                 timeout_s=timeout_s,
             )
@@ -620,6 +622,34 @@ class OrchestrationFeature:
             # The exact delivery identity may already be persisted by RCC. Only
             # result lookup is allowed from this point.
             pass
+        effect_state = str(send_result.get("effectState") or "").upper()
+        if send_result.get("ok") is False and effect_state == "NOT_APPLIED":
+            return self.service.complete_assignment(
+                assignment_id=assignment_id, generation=generation,
+                outcome="NOT_APPLIED", result={
+                    "delivery_id": delivery_id,
+                    "error": str(send_result.get("error") or "RCC_SUBMIT_NOT_APPLIED"),
+                    "pre_dispatch": True,
+                },
+                result_message_id="result." + _hash(
+                    delivery_id + ":confirmed-not-applied", 32
+                ),
+            )
+        if (
+            send_result.get("type") == "host:ack"
+            and send_result.get("ok") is True
+            and send_result.get("submitted") is True
+        ):
+            self.service.record_delivery(
+                assignment_id=assignment_id, generation=generation,
+                state="ACKNOWLEDGED",
+                evidence={
+                    "delivery_id": delivery_id,
+                    "terminal_result_available": False,
+                    "rcc_submit_ack": True,
+                },
+            )
+            delivery_acknowledged = True
         deadline = began + timeout_s
         terminal: dict[str, Any] | None = None
         immediate_terminal: dict[str, Any] | None = None
@@ -677,11 +707,12 @@ class OrchestrationFeature:
             )
         receipt = terminal["result"]
         reply = str(receipt.get("reply") or "")
-        self.service.record_delivery(
-            assignment_id=assignment_id, generation=generation,
-            state="ACKNOWLEDGED",
-            evidence={"delivery_id": delivery_id, "terminal_result_available": True},
-        )
+        if not delivery_acknowledged:
+            self.service.record_delivery(
+                assignment_id=assignment_id, generation=generation,
+                state="ACKNOWLEDGED",
+                evidence={"delivery_id": delivery_id, "terminal_result_available": True},
+            )
         expected_fingerprint = _canonical([
             attachment["relay_role"], prompt, False, "",
             attachment["binding_receipt_id"], assignment["request_digest"],

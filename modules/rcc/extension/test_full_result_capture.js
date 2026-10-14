@@ -7,6 +7,10 @@ const source = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
 assert(source.includes("const scope = node.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^=\"conversation-turn-\"]') || node.parentElement || node;"));
 assert(source.includes('const completionUiReady = hasCompletionAction();'));
 assert(!source.includes('const completionUiReady = hasCompletionAction() || isSendReady();'));
+assert(source.includes('generating: turnIsGenerating(routed.turn)'),
+  'exact routed turn, not a later user turn, must own generation state');
+assert(source.includes('const routedTurnIsLatest = turns.length > 0 && turns[turns.length - 1] === routed.turn;'),
+  'global lifecycle evidence must be restricted to the latest routed turn');
 
 const partial = { sawNewAssistant: true, sawGeneration: false, generating: false, completionUiReady: false, textChanged: true, stableForMs: 5000 };
 assert.strictEqual(core.shouldPromoteReply(partial), false, 'partial first token must not promote');
@@ -28,5 +32,22 @@ assert.strictEqual(core.shouldPromoteReply(tooSoon), false, 'completion action s
 
 const stillStreaming = { ...completed, sawGeneration: true, generating: true, stableForMs: 20000 };
 assert.strictEqual(core.shouldPromoteReply(stillStreaming), false, 'streaming text must never promote');
+
+const interleaved = core.classifyFinalResponse({
+  conversationMatches: true,
+  routeTurnMatches: true,
+  userTextMatches: true,
+  assistantCandidates: [{ messageId: 'assignment-result', text: 'bounded JSON', roleEvidenceCount: 1 }],
+  turnState: 'complete',
+  generating: false,
+  hasStopAction: false,
+  interrupted: false,
+  completionUiReady: true,
+  generationLifecycleComplete: false,
+  stableForMs: 1000,
+  requiredStableMs: 1000,
+});
+assert.strictEqual(interleaved.ready, true,
+  'a later user turn must not block a completed exact assignment turn');
 
 console.log('full result capture relay tests: PASS');

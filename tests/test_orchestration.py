@@ -29,6 +29,8 @@ class FakeRelay:
         self.fail_send_once = set()
         self.hide_results = False
         self.lose_send_response = False
+        self.return_submit_ack = False
+        self.confirmed_not_applied = set()
         self.result_mutator = None
         self.endpoints = [
             self.endpoint(101, 10, "conversation-a", "Manager"),
@@ -81,6 +83,13 @@ class FakeRelay:
             if to in self.fail_send_once:
                 self.fail_send_once.remove(to)
                 raise RelayUnavailable("relay unavailable before dispatch")
+            if to in self.confirmed_not_applied:
+                self.confirmed_not_applied.remove(to)
+                return {
+                    "type": "host:result", "ok": False,
+                    "effectState": "NOT_APPLIED",
+                    "error": "RCC_PRE_SUBMIT_LEASE_CONFLICT",
+                }
             binding = self.bindings[to]
             if extra.get("bindingReceiptId") != binding["bindingReceiptId"]:
                 return {"ok": False, "error": "TARGET_BINDING_RECEIPT_MISMATCH"}
@@ -121,6 +130,12 @@ class FakeRelay:
             self.results[request_id] = stored
             if self.lose_send_response:
                 raise RelayEffectUnknown("response lost after dispatch")
+            if self.return_submit_ack:
+                return {
+                    "type": "host:ack", "ok": True,
+                    "submitted": True, "deferred": False,
+                    "effectState": "SUBMITTED",
+                }
             return {
                 "ok": True, "reply": reply,
                 "resultHash": "a" * 64,
@@ -1429,6 +1444,51 @@ class OrchestrationTests(unittest.TestCase):
             call["command"] == "send" and "must not dispatch" in call["text"]
             for call in self.relay.calls
         ))
+
+
+    def test_confirmed_pre_submit_failure_is_not_unknown(self):
+        worker = self.attachment("worker-b")
+        self.relay.confirmed_not_applied.add("BCT_W1")
+        result = self.call("confirmed-not-applied", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "confirmed-not-applied-task",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "inspect one bounded input",
+            "acceptance": {"read_only": True},
+            "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        current = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session"
+        )["assignments"][0]
+        self.assertEqual("NOT_APPLIED", current["state"])
+        self.assertTrue(current["terminal_result"]["pre_dispatch"])
+        self.assertFalse(any(
+            call["command"] == "result" for call in self.relay.calls
+        ))
+
+    def test_submit_ack_is_persisted_before_result_readback(self):
+        worker = self.attachment("worker-b")
+        self.relay.return_submit_ack = True
+        result = self.call("ack-then-result", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "ack-task",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "return one exact result",
+            "acceptance": {"read_only": True},
+            "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        send = next(call for call in self.relay.calls if call["command"] == "send")
+        self.assertIs(True, send["extra"]["returnOnAck"])
+        snapshot = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session"
+        )
+        ack = [item for item in snapshot["mailbox"] if item["kind"] == "ACK"]
+        self.assertEqual(1, len(ack))
+        self.assertIsNotNone(ack[0]["delivered_at"])
 
 
 if __name__ == "__main__":
