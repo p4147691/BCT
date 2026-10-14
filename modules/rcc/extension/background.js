@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v9';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-14-rcc-orchestration-recovery-v10';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
@@ -972,7 +972,11 @@ async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, subm
       const turns = [];
       const seen = new Set();
       for (const node of nodes) {
-        const turn = node.matches('[data-turn-key]') ? node : (node.closest('[data-turn-key]') || node);
+        const keyedDescendants = Array.from(node.querySelectorAll?.('[data-turn-key]') || []);
+        const turn = node.matches('[data-turn-key]')
+          ? node
+          : (node.closest('[data-turn-key]')
+            || (keyedDescendants.length === 1 ? keyedDescendants[0] : node));
         if (seen.has(turn)) continue;
         seen.add(turn);
         turns.push(turn);
@@ -2605,6 +2609,14 @@ async function handleNativeCommand(message) {
             const fingerprintParts = JSON.parse(String(receipt.dispatchFingerprint || ''));
             if (Array.isArray(fingerprintParts) && typeof fingerprintParts[1] === 'string') submittedText = fingerprintParts[1];
           } catch (_) {}
+          if (!submittedText) {
+            postNative({
+              type: 'host:result', requestId, ok: true, relayId,
+              recovered: false, persistedResult: true, resultUnchanged: true,
+              captureRecoveryError: 'RELAY_RECOVERY_SUBMITTED_TEXT_MISSING'
+            });
+            return;
+          }
           if (submittedText) {
             const recoveryMessage = {
               type: 'relay:recoverExecution',
@@ -2621,18 +2633,27 @@ async function handleNativeCommand(message) {
                 completionMarker: ''
               }
             };
-            let recovered;
+            let recovered = null;
+            let captureRecoveryError = '';
             try {
               recovered = await Promise.race([
                 sendToChatTab(reg.tabId, recoveryMessage),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('RELAY_RECOVERY_CONTENT_RPC_TIMEOUT')), 2000))
               ]);
-            } catch (_) {
-              recovered = await recoverCompletedReplyDirectlyFromTab(
-                reg.tabId, reg.conversationKey, submittedText
-              );
+            } catch (error) {
+              captureRecoveryError = String(error?.message || error || 'RELAY_RECOVERY_CONTENT_RPC_FAILED');
             }
-            if (recovered?.ok && recovered.recovered === true && String(recovered.recoveredReply || '').trim()) {
+            if (RelayCore.needsDirectCaptureRecovery(recovered)) {
+              try {
+                recovered = await recoverCompletedReplyDirectlyFromTab(
+                  reg.tabId, reg.conversationKey, submittedText
+                );
+                captureRecoveryError = '';
+              } catch (error) {
+                captureRecoveryError = String(error?.message || error || 'RELAY_RECOVERY_DIRECT_FAILED');
+              }
+            }
+            if (!RelayCore.needsDirectCaptureRecovery(recovered)) {
               const recoveredReply = String(recovered.recoveredReply || '');
               if (receipt.ackState === 'ACKED' || receipt.returnState === 'DELIVERED') {
                 postNative({
@@ -2654,6 +2675,14 @@ async function handleNativeCommand(message) {
                 reply: recoveredReply,
                 recovered: 'route-scoped-final-dom'
               });
+            }
+            if (isRecoverableCaptureResult(activeReceipt.resultPayload)) {
+              postNative({
+                type: 'host:result', requestId, ok: true, relayId,
+                recovered: false, persistedResult: true, resultUnchanged: true,
+                captureRecoveryError: String(captureRecoveryError || 'RELAY_RECOVERY_FINAL_RESULT_NOT_CONFIRMED').slice(0, 300)
+              });
+              return;
             }
           }
         }

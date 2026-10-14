@@ -17,10 +17,10 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "0cb5bb5443fbb3075cbadc23e09efb5320e441f9dbe40fc32a2c8d48e205de0b",
-            "content.js": "ed000c5658777b3df538c5a8ae1e5e31ddca20c4fe215509f744170dc20d4cc3",
-            "manifest.json": "924ecc447798007dc9afb4ed03fa7dc5361216f7168afd04d5f0cfc4fef815be",
-            "relay_core.js": "74c26a834b47743876262c33a5bea03bc809070235642513ca42b860b52581fc",
+            "background.js": "95523761698dde4c2f35d6c147cae0ab9a875a77d6c008958bdff988a1b2c2da",
+            "content.js": "4d78084524018b634e3cda2d302953a6825afd9d50f4957957e535d19c05eb32",
+            "manifest.json": "9fe7855146f17ff2119781054b7a780e194db557d74c551c1740588e82175119",
+            "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
@@ -32,8 +32,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.16", manifest["version"])
-        self.assertEqual("1.0.16 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.17", manifest["version"])
+        self.assertEqual("1.0.17 · BCT", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -172,6 +172,22 @@ class RccSourceBaselineTests(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
         self.assertIn("4 orchestration binding fences PASS", completed.stdout)
+
+    def test_nested_turn_capture_and_recovery_contract(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is unavailable")
+        for name, marker in (
+            ("test_route_turn_deduplication.js", "route turn deduplication tests: PASS"),
+            ("test_capture_recovery_contract.js", "capture recovery contract tests: PASS"),
+        ):
+            completed = subprocess.run(
+                [node, name], cwd=str(self.extension),
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=30,
+            )
+            self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+            self.assertIn(marker, completed.stdout)
 
     def test_runtime_javascript_has_valid_syntax(self):
         node = shutil.which("node")

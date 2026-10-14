@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v9';
+const RCC_BUILD_VERSION = '2026-10-14-rcc-orchestration-recovery-v10';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -186,7 +186,13 @@ function conversationObserveRoot() {
 
 function canonicalMessageUnit(node, role) {
   if (!(node instanceof Element)) return null;
-  if (node.matches(`[data-message-author-role="${role}"]`)) return node;
+  if (node.matches(`[data-message-author-role="${role}"]`)) {
+    const semanticUnits = Array.from(node.querySelectorAll(
+      `[data-content-search-unit-key$=":${role}"],[data-chatgpt-search-unit-key$=":${role}"]`
+    ));
+    if (semanticUnits.length === 1) return semanticUnits[0];
+    return node;
+  }
   const unit = node.matches('[data-content-search-unit-key]') ? node : node.closest('[data-content-search-unit-key]');
   if (unit) return unit;
   if (role === 'assistant') return node.closest('[data-chatgpt-search-unit-key]') || node;
@@ -233,7 +239,11 @@ function getConversationTurns() {
   const seen = new Set();
   const turns = [];
   for (const node of document.querySelectorAll('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]')) {
-    const turn = node.matches('[data-turn-key]') ? node : node.closest('[data-turn-key]') || node;
+    const keyedDescendants = Array.from(node.querySelectorAll?.('[data-turn-key]') || []);
+    const turn = node.matches('[data-turn-key]')
+      ? node
+      : node.closest('[data-turn-key]')
+        || (keyedDescendants.length === 1 ? keyedDescendants[0] : node);
     if (seen.has(turn)) continue;
     seen.add(turn);
     turns.push(turn);
