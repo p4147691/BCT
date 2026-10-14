@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-import time
+from time import time as _current_time
 from collections.abc import Sequence
 from typing import Any
 
@@ -86,7 +86,7 @@ def commit_consumption_decision(
                 raise ConflictError("DECISION_RESULT_SET_CONFLICT")
             return {"decision_id": decision_id, "idempotent": True, "results": count}
 
-        now = time.time()
+        now = _current_time()
         db.execute(
             "INSERT INTO orchestration_consumption_decisions "
             "(decision_id,session_id,consumer_assignment_id,manager_epoch,"

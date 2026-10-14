@@ -78,10 +78,8 @@ class ConsumptionTest(unittest.TestCase):
             ("r1", "hash-r1"), ("r2", "hash-r2")])["results"])
 
     def test_exception_rolls_back(self):
-        # Force failure after the decision insert and before the first receipt insert.
-        import bct.core.consumption as consumption
-        original = consumption.time.time
-        with patch.object(consumption.time, "time", side_effect=RuntimeError("fault")):
+        # Patch only the PR1-owned clock binding, never the global time module.
+        with patch("bct.core.consumption._current_time", side_effect=RuntimeError("fault")):
             with self.assertRaises(RuntimeError):
                 self.run_commit()
         self.assertEqual(0, self.count("orchestration_consumption_decisions"))
@@ -112,6 +110,55 @@ class ConsumptionTest(unittest.TestCase):
             self.run_commit()
         self.assertEqual(0, self.count("orchestration_consumption_decisions"))
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
+
+    def test_restart_restores_saved_result_and_next_action_intent(self):
+        # This fixture simulates a manager restart, not browser delivery.
+        persisted = Store(self.store.path)
+        receipt = commit_consumption_decision(
+            persisted, session_id="s", consumer_assignment_id="c1",
+            manager_epoch=2, decision_id="next-action-1", request_digest="request-1",
+            decision={"next_assignment": "c2", "action": "prepare"},
+            results=[("r1", "hash-r1")],
+        )
+        self.assertFalse(receipt["idempotent"])
+        del persisted
+        recovered = Store(self.store.path)
+        with recovered.transaction() as db:
+            result = db.execute("SELECT message_digest,consumed_at FROM orchestration_mailbox "
+                                "WHERE message_id='r1'").fetchone()
+            decision = db.execute("SELECT decision_json FROM orchestration_consumption_decisions "
+                                  "WHERE decision_id='next-action-1'").fetchone()
+            receipts = db.execute("SELECT COUNT(*) FROM orchestration_consumption_receipts "
+                                  "WHERE decision_id='next-action-1'").fetchone()[0]
+        self.assertEqual("hash-r1", result["message_digest"])
+        self.assertIsNone(result["consumed_at"])
+        self.assertEqual('{"action":"prepare","next_assignment":"c2"}', decision["decision_json"])
+        self.assertEqual(1, receipts)
+        replay = commit_consumption_decision(
+            recovered, session_id="s", consumer_assignment_id="c1",
+            manager_epoch=2, decision_id="next-action-1", request_digest="request-1",
+            decision={"next_assignment": "c2", "action": "prepare"},
+            results=[("r1", "hash-r1")],
+        )
+        self.assertTrue(replay["idempotent"])
+        self.assertEqual(1, self.count("orchestration_consumption_decisions"))
+
+    def test_manager_takeover_fences_old_epoch_without_losing_result(self):
+        with self.store.transaction() as db:
+            db.execute("UPDATE orchestration_sessions SET manager_epoch=3 WHERE session_id='s'")
+        recovered = Store(self.store.path)
+        with self.assertRaises(ConflictError):
+            commit_consumption_decision(
+                recovered, session_id="s", consumer_assignment_id="c1",
+                manager_epoch=2, decision_id="old-manager", request_digest="request",
+                decision={"action": "prepare"}, results=[("r1", "hash-r1")])
+        self.assertEqual(0, self.count("orchestration_consumption_receipts"))
+        fresh = commit_consumption_decision(
+            recovered, session_id="s", consumer_assignment_id="c1",
+            manager_epoch=3, decision_id="new-manager", request_digest="request",
+            decision={"action": "prepare"}, results=[("r1", "hash-r1")])
+        self.assertFalse(fresh["idempotent"])
+        self.assertEqual(1, self.count("orchestration_consumption_receipts"))
 
     def test_new_schema_does_not_backfill_legacy(self):
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
