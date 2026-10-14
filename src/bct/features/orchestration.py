@@ -448,7 +448,7 @@ class OrchestrationFeature:
                 )
                 expected_role = expected_targets.get(target)
                 if (
-                    observed.get("instanceId") == instance_id
+                    observed.get("transportInstanceId") == instance_id
                     and expected_role is not None
                     and str(observed_role) != expected_role
                 ):
@@ -471,7 +471,7 @@ class OrchestrationFeature:
                 if current is not None and (
                     current.get("tabId") != tab_id
                     or current.get("conversationKey") != conversation_key
-                    or current.get("instanceId") != instance_id
+                    or current.get("transportInstanceId") != instance_id
                 ):
                     raise PreconditionError(
                         "ORCHESTRATION_NODE_SYNC_ROLE_TARGET_CHANGED"
@@ -533,7 +533,7 @@ class OrchestrationFeature:
                 current = verified_registrations.get(role)
                 exact = bool(
                     isinstance(current, dict)
-                    and current.get("instanceId") == instance_id
+                    and current.get("transportInstanceId") == instance_id
                     and current.get("sessionId") == verified_session_id
                     and current.get("tabId") == expected["tab_id"]
                     and current.get("conversationKey")
