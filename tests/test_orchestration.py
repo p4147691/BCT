@@ -887,7 +887,10 @@ class OrchestrationTests(unittest.TestCase):
             assignment_id="queued-before-takeover", manager_epoch=1,
             worker_node_id="worker-b", attachment_id=worker["attachment_id"],
             request={"instruction": "continue after manager replacement"},
-            roots=[str(self.root)], actions=["read"], acceptance={"done": True},
+            # Exercise equivalent Windows path spellings (hosted runners can
+            # expose temp roots through an 8.3 alias while Work stores long form).
+            roots=[str(self.root / "scope-alias" / "..")],
+            actions=["read"], acceptance={"done": True},
             dependencies=[],
         )
         self.call("takeover-queued", {

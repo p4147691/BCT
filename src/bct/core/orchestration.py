@@ -497,18 +497,26 @@ class OrchestrationService:
             key: value for key, value in request.items()
             if key != "_outer_operation_id"
         }
-        digest_value = {
-            "session_id": session_id, "request": public_request, "roots": roots,
-            "actions": sorted(actions), "acceptance": acceptance,
-            "dependencies": dependencies, "worker_node_id": worker_node_id,
-            "attachment_id": attachment_id,
-        }
-        request_digest = _digest(digest_value)
         now = time.time()
         with self.store.transaction() as db:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
             self._assert_outer_operation_running(db, work=work, request=request)
+            # Identity must be derived from the same canonical scope persisted
+            # below.  Windows runner temp roots can use an 8.3 alias while
+            # ``Work.roots`` contains the resolved long path; hashing the raw
+            # spelling made an otherwise exact queued assignment look different.
+            normalized_roots, normalized_actions = self._scope(
+                session, roots, actions
+            )
+            digest_value = {
+                "session_id": session_id, "request": public_request,
+                "roots": normalized_roots, "actions": normalized_actions,
+                "acceptance": acceptance, "dependencies": dependencies,
+                "worker_node_id": worker_node_id,
+                "attachment_id": attachment_id,
+            }
+            request_digest = _digest(digest_value)
             existing = db.execute(
                 "SELECT * FROM orchestration_assignments WHERE assignment_id=?",
                 (assignment_id,),
@@ -522,9 +530,6 @@ class OrchestrationService:
                 return False, self._assignment_value(db, existing)
             if session["manager_epoch"] != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
-            normalized_roots, normalized_actions = self._scope(
-                session, roots, actions
-            )
             attachment = db.execute(
                 "SELECT * FROM orchestration_attachments "
                 "WHERE attachment_id=? AND node_id=? AND active=1 "
