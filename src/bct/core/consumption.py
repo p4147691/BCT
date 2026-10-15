@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from time import time as _current_time
 from collections.abc import Sequence
 from typing import Any
@@ -14,7 +15,7 @@ from .store import Store
 def commit_consumption_decision(
     store: Store, *, session_id: str, consumer_assignment_id: str,
     manager_epoch: int, decision_id: str, request_digest: str,
-    decision: dict[str, Any], results: Sequence[tuple[str, str]],
+    decision: dict[str, Any], results: Sequence[tuple[str, str]], _db=None,
 ) -> dict[str, Any]:
     """Commit an immutable consumer-scoped receipt set and its decision together.
 
@@ -28,7 +29,7 @@ def commit_consumption_decision(
     if not all((session_id, consumer_assignment_id, decision_id, request_digest)):
         raise ValueError("IDENTIFIERS_REQUIRED")
     payload = json.dumps(decision, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    with store.transaction() as db:
+    with (store.transaction() if _db is None else nullcontext(_db)) as db:
         session = db.execute(
             "SELECT manager_epoch FROM orchestration_sessions WHERE session_id=?",
             (session_id,),

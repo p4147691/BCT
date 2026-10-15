@@ -206,6 +206,49 @@ class Store:
                     FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
                     FOREIGN KEY(consumer_assignment_id) REFERENCES orchestration_assignments(assignment_id)
                 );
+                CREATE TABLE IF NOT EXISTS orchestration_durable_leases (
+                    session_id TEXT PRIMARY KEY REFERENCES orchestration_sessions(session_id),
+                    manager_node_id TEXT NOT NULL REFERENCES nodes(node_id),
+                    epoch INTEGER NOT NULL, token TEXT NOT NULL,
+                    expires_at REAL NOT NULL, updated_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_durable_lease_revocations (
+                    session_id TEXT NOT NULL REFERENCES orchestration_sessions(session_id),
+                    revoked_epoch INTEGER NOT NULL, owner_node_id TEXT NOT NULL,
+                    token_digest TEXT NOT NULL, successor_epoch INTEGER NOT NULL,
+                    reason TEXT NOT NULL, created_at REAL NOT NULL,
+                    PRIMARY KEY(session_id,revoked_epoch)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_durable_wakes (
+                    wake_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES orchestration_sessions(session_id),
+                    assignment_id TEXT NOT NULL REFERENCES orchestration_assignments(assignment_id),
+                    generation INTEGER NOT NULL, result_message_id TEXT NOT NULL REFERENCES orchestration_mailbox(message_id),
+                    result_digest TEXT NOT NULL, state TEXT NOT NULL, created_at REAL NOT NULL,
+                    UNIQUE(session_id,assignment_id,generation,result_message_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_dispatch_outbox (
+                    delivery_id TEXT PRIMARY KEY, decision_id TEXT NOT NULL REFERENCES orchestration_consumption_decisions(decision_id),
+                    action_index INTEGER NOT NULL, session_id TEXT NOT NULL REFERENCES orchestration_sessions(session_id),
+                    manager_epoch INTEGER NOT NULL, target_node_id TEXT NOT NULL REFERENCES nodes(node_id),
+                    attachment_id TEXT NOT NULL, attachment_generation INTEGER NOT NULL,
+                    assignment_id TEXT NOT NULL REFERENCES orchestration_assignments(assignment_id),
+                    assignment_generation INTEGER NOT NULL, payload_json TEXT NOT NULL,
+                    state TEXT NOT NULL, reservation_token TEXT, ack_digest TEXT,
+                    created_at REAL NOT NULL, completed_at REAL,
+                    UNIQUE(decision_id,action_index),
+                    FOREIGN KEY(attachment_id,attachment_generation) REFERENCES orchestration_attachments(attachment_id,generation)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_durable_wake_attempts (
+                    wake_id TEXT PRIMARY KEY REFERENCES orchestration_durable_wakes(wake_id),
+                    epoch INTEGER NOT NULL, token TEXT NOT NULL,
+                    state TEXT NOT NULL, created_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_dispatch_attempts (
+                    attempt_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    delivery_id TEXT NOT NULL REFERENCES orchestration_dispatch_outbox(delivery_id),
+                    phase TEXT NOT NULL, epoch INTEGER NOT NULL, created_at REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS orchestration_reconciliations (
                     decision_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
                     assignment_id TEXT NOT NULL, generation INTEGER NOT NULL,
