@@ -55,7 +55,7 @@ def result_get(store, *, event_id):
         identity=[row[k] for k in ("session_id","assignment_id","generation","source_node_id","result_id","result_digest")]
         if row["event_digest"]!=_digest(identity): raise ConflictError("EVENT_DIGEST_MISMATCH")
         result=_source(db,*identity)
-        return {"event_id":event_id,"source_node_id":row["source_node_id"],
+        return {"event_id":event_id,"session_id":row["session_id"],"source_node_id":row["source_node_id"],
                 "result_id":row["result_id"],"digest":row["result_digest"],
                 "payload":json.loads(result["payload_json"])}
     finally:db.close()

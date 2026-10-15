@@ -8,6 +8,10 @@ import hashlib
 import hmac
 import json
 import secrets
+import math
+import tempfile
+import time
+from pathlib import Path
 
 from .models import ConflictError
 from .bridge_pr3a_safe import completion_report, result_get, delivery_receipt_get, recipient_ack
@@ -39,12 +43,17 @@ def install_schema(store):
 
 def issue_fake_grant(store, *, session_id, node_id, attachment_id, generation,
                      operation, expires_at, origin=ORIGIN, audience=AUDIENCE):
-    """Testing fixture only: never call in a live service or with a production Store."""
+    """Fail closed unless running against an isolated temporary fixture."""
+    path=Path(store.path).resolve()
+    tmp=Path(tempfile.gettempdir()).resolve()
+    if (path.name != "fixture.db" or path.parent.parent != tmp
+        or not path.parent.name.startswith("tmp") or not path.is_file()):
+        raise ConflictError("FIXTURE_ONLY")
     if not all(_valid(v) for v in (session_id, node_id, attachment_id)):
         raise ValueError("GRANT_ARGUMENT_INVALID")
     if type(generation) is not int or generation < 1 or operation not in OPERATIONS:
         raise ValueError("GRANT_ARGUMENT_INVALID")
-    if origin != ORIGIN or audience != AUDIENCE or type(expires_at) not in (int, float):
+    if origin != ORIGIN or audience != AUDIENCE or type(expires_at) not in (int, float) or not math.isfinite(expires_at):
         raise ValueError("GRANT_ARGUMENT_INVALID")
     credential = secrets.token_hex(32)
     with store.transaction() as db:
@@ -75,12 +84,15 @@ def authorize(store, *, credential, request_id, operation, session_id, node_id,
                                          sort_keys=True,separators=(",",":"),allow_nan=False))
     except (TypeError, ValueError):
         raise ConflictError("CAPABILITY_DENIED") from None
+    trusted_now=time.time()
+    if not math.isfinite(trusted_now):
+        raise ConflictError("CAPABILITY_DENIED")
     credential_digest=_hash(credential)
     with store.transaction() as db:
         row=db.execute("SELECT * FROM bridge_auth_grants WHERE credential_digest=?",
                        (credential_digest,)).fetchone()
         if (row is None or not hmac.compare_digest(row["credential_digest"],credential_digest)
-            or row["revoked"] or row["expires_at"] <= now
+            or row["revoked"] or row["expires_at"] <= trusted_now
             or row["operation"] != operation or row["session_id"] != session_id
             or row["node_id"] != node_id or row["attachment_id"] != attachment_id
             or row["attachment_generation"] != generation
@@ -113,7 +125,7 @@ def call(store, *, credential, request_id, operation, session_id, node_id, attac
         return completion_report(store,**arguments)
     if operation == "result_get":
         row=result_get(store,**arguments)
-        if row["source_node_id"]!=node_id:
+        if row["source_node_id"]!=node_id or row["session_id"]!=session_id:
             raise ConflictError("CAPABILITY_SCOPE_DENIED")
         return row
     if operation == "delivery_receipt_get":
