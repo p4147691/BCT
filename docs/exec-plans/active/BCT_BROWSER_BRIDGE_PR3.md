@@ -33,6 +33,12 @@ PR3-c bytes and the peer binding, binding generation, launcher metadata and
 strictly increasing sequence. Sequence reservation occurs before inner ingress
 and no secret is persisted in SQLite.
 
+The same PR now includes a disconnected Native Host-side canonical frame
+encoder. It takes explicit bounded arguments and an already provisioned secret,
+but cannot read a secret, make a Core request, or alter the existing read-only
+Host. Cross-boundary tests prove its exact bytes are accepted by the Core
+adapter; this prevents a future duplicated wire format from silently drifting.
+
 Focused inherited bridge tests, local full unittest, `compileall`, and
 `git diff --check` passed in the isolated worktree. No runtime resource was
 created or changed.

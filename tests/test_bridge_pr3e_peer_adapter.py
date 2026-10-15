@@ -2,8 +2,10 @@ import base64
 import hashlib
 import json
 import secrets
+import sys
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 
 from bct.core.models import ConflictError
 from bct.core.bridge_pr3b_auth import ORIGIN, create_fake_issuer_fixture
@@ -14,6 +16,10 @@ from bct.core.bridge_pr3e_peer_adapter import (PeerAdapter, PeerBinding, ingress
 from test_bridge_pr3b_auth import PR3BAuthTests
 from test_bridge_pr3c_ingress import IngressTests
 from test_durable_pr2 import PR2Tests
+
+NATIVE = Path(__file__).resolve().parents[1] / "modules" / "browser-bridge" / "native"
+sys.path.insert(0, str(NATIVE))
+import peer_frame
 
 
 class _Bindings:
@@ -79,6 +85,24 @@ class PeerAdapterTests(unittest.TestCase):
         self.assertFalse(self.adapter.ingress(self.s, request)["duplicate"])
         with self.assertRaises(ConflictError):
             self.adapter.ingress(self.s, request)
+
+    def test_native_host_codec_matches_core_peer_adapter(self):
+        envelope = self.frame(self.grant())
+        request = peer_frame.build_peer_frame(
+            secret=self.binding.secret, peer_id=self.binding.peer_id,
+            binding_generation=self.binding.binding_generation,
+            launcher_sha256=self.binding.launcher_sha256, origin=self.binding.origin,
+            sequence=1, envelope=envelope,
+        )
+        self.assertFalse(self.adapter.ingress(self.s, request)["duplicate"])
+
+    def test_native_host_codec_requires_explicit_bounded_arguments(self):
+        with self.assertRaisesRegex(ValueError, "PEER_FRAME_ARGUMENT_DENIED"):
+            peer_frame.build_peer_frame(
+                secret=b"x", peer_id=self.binding.peer_id,
+                binding_generation=1, launcher_sha256=self.LAUNCHER,
+                origin=self.binding.origin, sequence=1, envelope=b"{}",
+            )
 
     def test_default_entrypoint_is_disabled(self):
         with self.assertRaisesRegex(ConflictError, "PEER_ENDPOINT_DISABLED"):
