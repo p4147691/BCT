@@ -146,7 +146,12 @@ class PeerAdapter:
         envelope is therefore not replayable through this outer frame.
         """
         peer_frame = parse_peer_frame(frame)
-        binding = self._binding_provider.resolve_peer_binding(peer_frame.peer_id)
+        try:
+            binding = self._binding_provider.resolve_peer_binding(peer_frame.peer_id)
+        except Exception:
+            # A future OS-backed provider must not turn local credential-store
+            # details into a peer-visible error or a fail-open path.
+            raise ConflictError("PEER_ADAPTER_DENIED") from None
         if not _binding_matches(binding, peer_frame):
             raise ConflictError("PEER_ADAPTER_DENIED")
         expected = make_peer_proof(

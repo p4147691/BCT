@@ -24,6 +24,14 @@ class _Bindings:
         return self.binding if peer_id == self.binding.peer_id else None
 
 
+class _BrokenBindings:
+    def __init__(self, secret):
+        self.secret = secret
+
+    def resolve_peer_binding(self, peer_id):
+        raise RuntimeError(self.secret.hex())
+
+
 class PeerAdapterTests(unittest.TestCase):
     LAUNCHER = hashlib.sha256(b"adapter-fixture-launcher").hexdigest()
     grant = PR3BAuthTests.grant
@@ -103,6 +111,12 @@ class PeerAdapterTests(unittest.TestCase):
         request["envelope_b64"] += "="
         with self.assertRaisesRegex(ConflictError, "PEER_ADAPTER_DENIED") as caught:
             self.adapter.ingress(self.s, json.dumps(request).encode())
+        self.assertNotIn(self.binding.secret.hex(), str(caught.exception))
+
+    def test_provider_failure_is_denied_without_leaking_provider_detail(self):
+        request = self.signed(self.frame(self.grant()))
+        with self.assertRaisesRegex(ConflictError, "PEER_ADAPTER_DENIED") as caught:
+            PeerAdapter(_BrokenBindings(self.binding.secret)).ingress(self.s, request)
         self.assertNotIn(self.binding.secret.hex(), str(caught.exception))
 
 
