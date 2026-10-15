@@ -6,6 +6,14 @@ from pathlib import Path
 
 
 class CoreRecoveryTaskTests(unittest.TestCase):
+    def test_supervisor_resolves_python_without_a_profile_literal(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "modules" / "mcp" / "ops" / "run_bct_core_supervisor.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)", script)
+        self.assertNotIn(r"C:\\Users\\", script)
+
     def test_task_is_bounded_to_the_bct_supervisor_and_restarts_on_failure(self):
         root = Path(__file__).resolve().parents[1]
         document = (root / "modules" / "mcp" / "ops" / "BCT-Core-Supervisor.task.xml").read_text(
