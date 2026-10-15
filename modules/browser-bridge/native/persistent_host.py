@@ -15,14 +15,37 @@ def error_reply(request_id, error, outcome):
     return {"ok": False, "request_id": request_id, "outcome": outcome, "error": error}
 
 
-def core_reply(result, request_id):
-    content = result.structuredContent
-    if result.isError:
+def core_reply(result, request_id, operation_type="bridge_read"):
+    """Accept only a complete, exact Core operation receipt; never infer success."""
+    content = getattr(result, "structuredContent", None)
+    if getattr(result, "isError", True):
         return {"ok": False, "request_id": request_id, "outcome": "RECEIPT_ERROR", "result": content}
-    if isinstance(content, dict) and content.get("outcome") in ("UNKNOWN", "FAILED", "BLOCKED", "DENIED"):
-        return {"ok": False, "request_id": request_id, "outcome": content["outcome"], "result": content}
+    if not isinstance(content, dict) or not content:
+        return error_reply(request_id, "CORE_RECEIPT_SCHEMA_INVALID", "RECEIPT_ERROR")
+    if (content.get("operation_id") != request_id or
+            content.get("state") not in ("RECORDED", "RUNNING", "FINISHED") or
+            not isinstance(content.get("evidence"), dict) or
+            not isinstance(content.get("duplicate"), bool)):
+        return error_reply(request_id, "CORE_RECEIPT_SCHEMA_INVALID", "RECEIPT_ERROR")
+    outcome = content.get("outcome")
+    if outcome not in ("APPLIED", "NOT_APPLIED", "FAILED", "UNKNOWN", None):
+        return error_reply(request_id, "CORE_RECEIPT_OUTCOME_INVALID", "RECEIPT_ERROR")
+    state = content["state"]
+    if state != "FINISHED":
+        if outcome is not None:
+            return error_reply(request_id, "CORE_RECEIPT_STATE_CONFLICT", "RECEIPT_ERROR")
+        return {"ok": False, "request_id": request_id, "outcome": "PENDING", "result": content}
+    if outcome is None:
+        return error_reply(request_id, "CORE_RECEIPT_OUTCOME_MISSING", "RECEIPT_ERROR")
+    if outcome != "APPLIED":
+        return {"ok": False, "request_id": request_id, "outcome": outcome, "result": content}
+    if (operation_type == "bridge_read" and
+            (not isinstance(content.get("output"), dict) or
+             not isinstance(content["output"].get("text"), str))):
+        return error_reply(request_id, "CORE_READ_OUTPUT_INVALID", "RECEIPT_ERROR")
+    if operation_type not in ("bridge_read", "receipt_lookup"):
+        return error_reply(request_id, "CORE_REQUEST_TYPE_INVALID", "RECEIPT_ERROR")
     return {"ok": True, "request_id": request_id, "result": content}
-
 
 
 async def serve(inp, out):
@@ -67,7 +90,7 @@ async def serve(inp, out):
                             # The request may have been committed before transport failed.
                             reply = error_reply(request_id, "DISPATCH_RESULT_AMBIGUOUS_NO_RETRY", "UNKNOWN")
                         else:
-                            reply = core_reply(result, request_id)
+                            reply = core_reply(result, request_id, message["type"])
                     except (ValueError, TypeError) as exc:
                         reply = error_reply(message.get("request_id") if isinstance(message, dict) else None, str(exc), "INPUT_DENIED")
                     except OSError:

@@ -28,7 +28,7 @@ class BridgeBoundaryContractTests(unittest.TestCase):
         r = persistent_host.core_reply(SimpleNamespace(isError=True, structuredContent={"error": "not_found"}), "a"*32)
         self.assertFalse(r["ok"])
         self.assertEqual("RECEIPT_ERROR", r["outcome"])
-        r = persistent_host.core_reply(SimpleNamespace(isError=False, structuredContent={"outcome": "UNKNOWN"}), "a"*32)
+        r = persistent_host.core_reply(SimpleNamespace(isError=False, structuredContent={"operation_id":"a"*32,"state":"FINISHED","outcome":"UNKNOWN","evidence":{},"duplicate":False}), "a"*32)
         self.assertFalse(r["ok"])
         self.assertEqual("UNKNOWN", r["outcome"])
 
