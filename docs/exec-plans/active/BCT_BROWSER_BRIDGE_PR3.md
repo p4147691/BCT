@@ -98,3 +98,22 @@ following:
 - Hosted timing/runner performance follow-up remains issue #82. The current
   Actions account gate is an external billing condition, not measured runner
   contention or a BCT code bottleneck.
+
+## Flow policy: remove avoidable waits
+
+Within this project, use the fastest safe route rather than adding ceremony:
+
+- Run independent read-only investigation, fixture preparation, focused tests,
+  documentation, and review preparation in parallel when they do not write the
+  same worktree, database, browser, credential, or release target.
+- Run the full local suite once per meaningful implementation head. Do not
+  repeat it merely because a remote CI observation is delayed or unavailable.
+- A remote CI account/runner outage receives one confirmation attempt and a
+  durable record. Continue independent local work, but do not repeatedly poll
+  or rerun an unchanged head, and do not merge or deploy without exact-head CI.
+- Do not create a new authentication layer, approval, worktree, or PR unless it
+  closes a named production gate or isolates a real concurrent file/resource
+  conflict. A review finding gets the smallest correction and its negative test.
+- Keep irreversible boundaries serialized: credential lifecycle changes,
+  registry/ACL changes, Chrome installation or profile mutation, `main` merge,
+  runtime deployment, and any UNKNOWN/Claim reconciliation.
