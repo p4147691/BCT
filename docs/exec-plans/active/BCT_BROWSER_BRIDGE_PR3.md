@@ -66,6 +66,27 @@ failure. Do not merge PR #132 until its current exact head has a completed CI ru
    loading with `--load-extension`; use Chrome for Testing or an explicit
    isolated-profile Load-unpacked workflow.
 
+## Read-only Windows credential feasibility
+
+The currently running Core process and a representative user Chrome process
+were observed under the same Windows user principal. User-scope DPAPI is
+therefore a technically viable candidate for a future per-user peer binding;
+this is not an approval to create, read, migrate, or deploy a credential.
+
+Existing BCT runtime control/MCP tokens are unrelated authority and must never
+be reused as a Bridge peer secret. No reusable BCT credential lifecycle
+(provision, rotation, revocation, recovery and restrictive storage ACL proof)
+was found. Before implementation, the design must establish all of the
+following:
+
+1. a Bridge-only credential target and a stable binding generation;
+2. mutually consistent Host/Core access without putting plaintext in command
+   lines, environment, SQLite, receipts, or logs;
+3. rotation/revocation behavior for in-flight frames and persisted sequence
+   rows; and
+4. a failure and removal procedure that deletes only newly created Bridge
+   resources and never alters the existing BCT or RCC credentials.
+
 ## Separate tracks — do not conflate
 
 - Issue #111 and existing RCC UNKNOWN/Claim handling remain governed by their
