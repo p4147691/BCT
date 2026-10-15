@@ -11,6 +11,20 @@ from native_host import APPROVED_ORIGIN, MCP_URL, TOKEN_PATH, WORK_ID, read_fram
 LAST_REQUEST_ID = None
 
 
+def error_reply(request_id, error, outcome):
+    return {"ok": False, "request_id": request_id, "outcome": outcome, "error": error}
+
+
+def core_reply(result, request_id):
+    content = result.structuredContent
+    if result.isError:
+        return {"ok": False, "request_id": request_id, "outcome": "RECEIPT_ERROR", "result": content}
+    if isinstance(content, dict) and content.get("outcome") in ("UNKNOWN", "FAILED", "BLOCKED", "DENIED"):
+        return {"ok": False, "request_id": request_id, "outcome": content["outcome"], "result": content}
+    return {"ok": True, "request_id": request_id, "result": content}
+
+
+
 async def serve(inp, out):
     global LAST_REQUEST_ID
     first = await asyncio.to_thread(read_frame, inp, True)
@@ -18,9 +32,11 @@ async def serve(inp, out):
         return 0
     LAST_REQUEST_ID = first.get("request_id") if isinstance(first, dict) else None
     if not WORK_ID or not TOKEN_PATH.is_file():
+        write_frame(out, error_reply(LAST_REQUEST_ID, "HOST_AUTH_NOT_CONFIGURED", "AUTH_DENIED"))
         return 4
     token = TOKEN_PATH.read_text(encoding="utf-8").strip()
     if not token:
+        write_frame(out, error_reply(LAST_REQUEST_ID, "HOST_AUTH_NOT_CONFIGURED", "AUTH_DENIED"))
         return 4
     pending_first = first
     async with httpx.AsyncClient(headers={"Authorization": "Bearer " + token}, timeout=12) as client:
@@ -40,15 +56,22 @@ async def serve(inp, out):
                     try:
                         request_id, arguments = validate(message)
                         if TOKEN_PATH.read_text(encoding="utf-8").strip() != token:
-                            write_frame(out, {"ok": False, "request_id": request_id, "outcome": "UNKNOWN", "error": "HOST_TOKEN_CHANGED_RECONNECT_REQUIRED"})
+                            write_frame(out, error_reply(request_id, "HOST_TOKEN_CHANGED_RECONNECT_REQUIRED", "AUTH_DENIED"))
                             return 0
-                        if message["type"] == "receipt_lookup":
-                            result = await session.call_tool("bct_operation_get", {"work_id": WORK_ID, "operation_id": request_id})
+                        try:
+                            if message["type"] == "receipt_lookup":
+                                result = await session.call_tool("bct_operation_get", {"work_id": WORK_ID, "operation_id": request_id})
+                            else:
+                                result = await session.call_tool("bct_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
+                        except Exception:
+                            # The request may have been committed before transport failed.
+                            reply = error_reply(request_id, "DISPATCH_RESULT_AMBIGUOUS_NO_RETRY", "UNKNOWN")
                         else:
-                            result = await session.call_tool("bct_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
-                        reply = {"ok": not result.isError, "request_id": request_id, "result": result.structuredContent}
-                    except Exception as exc:
-                        reply = {"ok": False, "request_id": message.get("request_id") if isinstance(message, dict) else None, "outcome": "UNKNOWN", "error": type(exc).__name__}
+                            reply = core_reply(result, request_id)
+                    except (ValueError, TypeError) as exc:
+                        reply = error_reply(message.get("request_id") if isinstance(message, dict) else None, str(exc), "INPUT_DENIED")
+                    except OSError:
+                        reply = error_reply(message.get("request_id") if isinstance(message, dict) else None, "LOCAL_AUTH_IO_ERROR", "AUTH_DENIED")
                     write_frame(out, reply)
 
 
@@ -60,7 +83,7 @@ def main():
         return asyncio.run(serve(sys.stdin.buffer, sys.stdout.buffer))
     except Exception:
         try:
-            write_frame(sys.stdout.buffer, {"ok": False, "request_id": LAST_REQUEST_ID, "outcome": "UNKNOWN", "error": "HOST_AUTH_OR_CONNECT_FAILED"})
+            write_frame(sys.stdout.buffer, error_reply(LAST_REQUEST_ID, "HOST_AUTH_OR_CONNECT_FAILED", "CONNECTION_FAILED"))
             return 0
         except Exception:
             return 5

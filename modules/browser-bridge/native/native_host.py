@@ -102,8 +102,12 @@ def main(argv=None, inp=None, out=None):
                 return 0
             try:
                 response = asyncio.run(dispatch(message))
-            except Exception as exc:
-                response = {"ok": False, "outcome": "UNKNOWN", "error": type(exc).__name__}
+            except (ValueError, TypeError) as exc:
+                response = {"ok": False, "request_id": message.get("request_id") if isinstance(message, dict) else None, "outcome": "INPUT_DENIED", "error": str(exc)}
+            except OSError:
+                response = {"ok": False, "request_id": message.get("request_id") if isinstance(message, dict) else None, "outcome": "UNKNOWN", "error": "DISPATCH_IO_AMBIGUOUS_NO_RETRY"}
+            except Exception:
+                response = {"ok": False, "request_id": message.get("request_id") if isinstance(message, dict) else None, "outcome": "UNKNOWN", "error": "DISPATCH_RESULT_AMBIGUOUS_NO_RETRY"}
             write_frame(out, response)
     except Exception:
         return 5
