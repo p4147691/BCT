@@ -1,6 +1,6 @@
 # BCT Browser Bridge PR3 — peer adapter checkpoint
 
-Status: `PR3M_DISPOSABLE_WINDOWS_RELAY_E2E / PRODUCT_GATE_BLOCKED`.
+Status: `PR3M_WINDOWS_RELAY_E2E_ACCEPTED / PRODUCT_GATE_BLOCKED`.
 
 This plan is a source and review checkpoint for the independent Browser Bridge.
 It is not part of RCC, does not use the RCC Native Host, and does not authorize
@@ -64,24 +64,13 @@ location, a registry entry, an extension installation, or a connection to
 BCT LIVE.  PR3-j proves a Windows primitive only; it does not carry a peer
 frame, load a binding, invoke Core ingress, or prove logon-session isolation.
 
-## Next gate: PR3-k framed-pipe relay design
+## Accepted PR3-k framed-pipe codec
 
-The next safe artifact is the production-disabled contract and test plan in
-`modules/browser-bridge/docs/PR3K_PIPE_RELAY_DESIGN.md`.  It defines how a
-future disposable relay would preserve the existing canonical peer frame and
-fail-closed boundaries without selecting an operational credential location or
-enabling Chrome.
-
-Implementation remains blocked until that design is independently reviewed.
-In particular, an implementation must not reuse `BCT_BRIDGE_*` read-only-MCP
-environment values, the existing `persistent_host.py` route, any BCT control
-token, or any RCC resource.  A later activation still requires an explicitly
-approved Bridge-only Windows credential and logon-session/peer-process policy.
-
-The first restricted implementation checkpoint is a pure Python codec and its
-isolated tests. It may only length-prefix and strictly decode one canonical
-peer frame; it must not create a pipe, call `PeerAdapter`, resolve a binding,
-load a secret, or alter the launcher or legacy Native Messaging host.
+PR3-k's production-disabled codec and isolated tests are merged. It strictly
+length-prefixes and decodes one canonical peer frame without creating a pipe,
+calling `PeerAdapter`, resolving a binding, loading a secret, or enabling a
+runtime path. The later PR3-l and PR3-m checkpoints reuse this exact codec; do
+not reimplement or fork the wire format.
 
 ## Current isolated checkpoint: PR3-l verified relay composition
 
@@ -109,6 +98,43 @@ dispose the pipe.
 The commands remain unreachable from the normal Native Messaging origin path
 and have no runtime registration.  They do not establish the final
 logon-session/DACL policy or authorize a real credential/listener deployment.
+
+PR #146 exact head `663cb89dec789f8ab4287ce1697af96e60e26922`
+and merge commit `26ace7abc082be8da2484c76bf612738043dfef1` passed
+their Windows CI runs. The accepted test covers C# Host DPAPI unprotect,
+canonical proof/frame creation, a random same-user named pipe, connected PID
+and executable-digest verification, authenticated PR3-l ingress, wrong-digest
+denial, revocation and temporary-resource cleanup.
+
+## Remaining product path, in order
+
+PR3-m completes the reusable Core, credential-lifecycle, framing and disposable
+Windows transport prerequisites. It does **not** complete the user-facing
+product. Continue in bounded checkpoints:
+
+1. Finalize and independently review the activation contract: Bridge-owned
+   persistent credential root, restrictive directory/file ACL evidence,
+   logon-session SID/DACL policy, provision/rotate/revoke/recovery semantics and
+   exact cleanup ownership. Do not create operational resources in this step.
+2. Add a production-disabled listener composition that injects the accepted
+   binding lifecycle, DPAPI store, process verifier and PR3-l relay through
+   explicit configuration. It needs bounded startup/shutdown, restart and
+   tamper tests and must remain disabled by default.
+3. Replace fixture-only authority with a real, narrowly scoped capability
+   issuer and independently authenticated recipient-processing evidence. Bind
+   session, node, attachment, origin, expiry, revocation and replay state; a
+   deterministic command ID or caller-supplied proof is not an ACK authority.
+4. Integrate the independent extension/Native Host route: real ChatGPT
+   completion observation, completion report/result retrieval, delivery and
+   recipient ACK, and durable manager wake/outbox continuation. Preserve
+   user-created tab ownership and do not close a tab merely because work ended.
+5. Run the approved isolated Chrome acceptance with a fresh profile, test-only
+   HKCU registration, temporary Core/token/port and exact cleanup receipts.
+   Cover disconnect, restart, duplicate, wrong identity, rotation/revocation,
+   post-send UNKNOWN no-retry and result-to-follow-up continuation.
+6. Only after the isolated acceptance passes, prepare a separately approved
+   packaging/deployment checkpoint with verifiable artifacts, rollback and
+   operational observability. CI success alone never enables the listener.
 
 ## Read-only Windows credential feasibility
 
@@ -165,3 +191,12 @@ evidence, affected scope, and a proposed safe relaxation here or in the
 appropriate backlog issue. It must not interrupt the current implementation,
 create a side task, or weaken any current protection. Review these observations
 together during the later cross-project rule review.
+
+The PR3-m implementation exposed four non-blocking flow items now recorded in
+GitHub issue #82: fail-fast ordering should run import/compile, C# build and the
+changed focused E2E before the full suite; exact-head and merge-main full-suite
+duplication needs a safe reuse or merge-queue study; local worktree tests must
+prove that imports resolve inside the current checkout rather than an older
+installed package; and the current machine's missing .NET SDK delays C#
+feedback until Windows CI. These are optimization candidates, not permission
+to skip coverage, trust another SHA's result or install tooling implicitly.
