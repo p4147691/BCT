@@ -1,6 +1,6 @@
 # BCT Browser Bridge PR3 — peer adapter checkpoint
 
-Status: `PR3I_LIFECYCLE_STORE_INTEGRATION_IMPLEMENTING / PRODUCT_GATE_BLOCKED`.
+Status: `PR3K_PIPE_RELAY_DESIGN_READY / PRODUCT_GATE_BLOCKED`.
 
 This plan is a source and review checkpoint for the independent Browser Bridge.
 It is not part of RCC, does not use the RCC Native Host, and does not authorize
@@ -47,28 +47,36 @@ Independent source review and a local inherited bridge regression run (59
 tests) found no merge-blocking issue. No runtime resource was created or
 changed, and the merged code remains disabled without an injected provider.
 
-## Required rechecks, in order
+## Accepted isolated checkpoints after PR #132
 
-1. PR3-f implements and isolates a transport-neutral Bridge-only binding
-   lifecycle: provision, next-generation rotation, fail-closed revocation and
-   injected secret-store recovery. It creates no OS artifact and does not
-   select a Windows credential or IPC implementation.
-2. PR3-g provides a Windows DPAPI in-memory codec bound to non-secret binding
-   context. It persists nothing and does not prove same-user process identity.
-3. PR3-h supplies a create-only, explicitly injected DPAPI file store. It has
-   no default directory and requires an activation caller to verify the chosen
-   directory's Windows ownership/ACL; it does not create an operational file.
-4. PR3-i validates the PR3-f lifecycle with the explicit PR3-h store only in
-   a disposable test directory, including reopen, rotation cleanup and
-   revocation cleanup.  It supplies no runtime location or activation.
-5. Before a real listener, separately design and approve an OS-backed peer
-   credential lifecycle (provision/rotate/revoke/recovery) plus protected local
-   IPC/process identity. There is no safe existing credential-store component
-   to reuse as of this checkpoint.
-6. Only then integrate a real Host transport and validate it in isolated
-   Chrome. Current regular Google Chrome cannot automate unpacked extension
-   loading with `--load-extension`; use Chrome for Testing or an explicit
-   isolated-profile Load-unpacked workflow.
+- PR #133 (PR3-f) added the disabled, injected binding lifecycle.
+- PR #134 (PR3-g) added an in-memory Windows DPAPI codec boundary.
+- PR #135 (PR3-h) added a create-only, explicitly injected DPAPI file store.
+- PR #136 (PR3-i) exercised lifecycle/store integration only in a disposable
+  directory.
+- PR #139 (PR3-j) added a disposable named-pipe probe.  It checks
+  `CurrentUserOnly`, obtains the connected client PID and accepts only the
+  expected executable SHA-256.  Its exact head and the merge commit
+  `a644df62fd20514261bd43b7e5bb587ff4db62e7` passed CI.
+
+None of these checkpoints creates an operational listener, a default secret
+location, a registry entry, an extension installation, or a connection to
+BCT LIVE.  PR3-j proves a Windows primitive only; it does not carry a peer
+frame, load a binding, invoke Core ingress, or prove logon-session isolation.
+
+## Next gate: PR3-k framed-pipe relay design
+
+The next safe artifact is the production-disabled contract and test plan in
+`modules/browser-bridge/docs/PR3K_PIPE_RELAY_DESIGN.md`.  It defines how a
+future disposable relay would preserve the existing canonical peer frame and
+fail-closed boundaries without selecting an operational credential location or
+enabling Chrome.
+
+Implementation remains blocked until that design is independently reviewed.
+In particular, an implementation must not reuse `BCT_BRIDGE_*` read-only-MCP
+environment values, the existing `persistent_host.py` route, any BCT control
+token, or any RCC resource.  A later activation still requires an explicitly
+approved Bridge-only Windows credential and logon-session/peer-process policy.
 
 ## Read-only Windows credential feasibility
 
