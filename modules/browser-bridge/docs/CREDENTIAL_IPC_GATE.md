@@ -87,6 +87,14 @@ BCT/RCC native host does not satisfy this contract.  The transport choice
 (for example a Windows named pipe with restricted ACL plus peer-process
 inspection) remains a separately reviewed implementation decision.
 
+PR3-n records the first disposable proof of that decision: the intended
+logon SID is placed on a protected pipe DACL, the connected client session is
+queried and compared before payload read, and separately protected temporary
+credential root/file ACLs are revalidated after connect. This does not create
+or enable a production listener. `CurrentUserOnly` remains insufficient as the
+sole activation evidence, and a same-account malicious-process boundary still
+requires the independent executable proof and peer/capability checks.
+
 ## Activation acceptance
 
 Before production code is enabled, an isolated test must prove:

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE = ROOT / "native"
 LAUNCHER = NATIVE / "launcher" / "Program.cs"
+ACTIVATION_POLICY = NATIVE / "launcher" / "BridgeActivationPolicyFixture.cs"
 sys.path.insert(0, str(NATIVE))
 os.environ.setdefault("BCT_BRIDGE_MCP_URL", "http://127.0.0.1:19991/mcp")
 import persistent_host
@@ -23,6 +24,29 @@ class BridgeBoundaryContractTests(unittest.TestCase):
         self.assertIn('Path.IsPathFullyQualified(python)', source)
         self.assertIn('string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)', source)
         self.assertNotIn('StartsWith("chrome-extension://"', source)
+
+    def test_activation_policy_is_explicit_fixture_only_and_denies_before_read(self):
+        launcher = LAUNCHER.read_text(encoding="utf-8")
+        policy = ACTIVATION_POLICY.read_text(encoding="utf-8")
+        self.assertIn('args[0] == "--bridge-activation-policy-server"', launcher)
+        self.assertIn('args[0] == "--bridge-activation-policy-client"', launcher)
+        self.assertIn("GetNamedPipeClientSessionId", policy)
+        server_read = policy.index("pipe.ReadAsync(request.AsMemory()")
+        self.assertLess(policy.index("!GetNamedPipeClientSessionId("), server_read)
+        self.assertLess(policy.index("DENIED_BEFORE_READ"), server_read)
+        self.assertLess(policy.index("pipe.WriteAsync(new byte[] { Verified }"),
+                        server_read)
+        client_start = policy.index("internal static async Task<int> RunClient")
+        client_gate_read = policy.index("pipe.ReadAsync(policyGate.AsMemory()",
+                                        client_start)
+        client_payload_write = policy.index(
+            "pipe.WriteAsync(new byte[] { Request }", client_start)
+        self.assertLess(client_gate_read, client_payload_write)
+        for runtime_dependency in (
+            "PeerAdapter", "BindingLifecycle", "DpapiFileSecretStore",
+            "peer_frame", "persistent_host.py",
+        ):
+            self.assertNotIn(runtime_dependency, policy)
 
     def test_core_receipt_error_does_not_become_success(self):
         r = persistent_host.core_reply(SimpleNamespace(isError=True, structuredContent={"error": "not_found"}), "a"*32)

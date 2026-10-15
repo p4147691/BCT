@@ -43,6 +43,26 @@ jobs:
           cache-dependency-path: pyproject.toml
       - run: python -m pip install -e .
         if: steps.scope.outputs.run_tests == 'true'
+      # Prove the changed Windows activation boundary before the long suite.
+      - run: dotnet build modules/browser-bridge/native/launcher/BctBridgeHost.csproj -c Release
+        if: steps.scope.outputs.run_tests == 'true'
+      - run: python -m unittest discover -s modules/browser-bridge/tests -p activation_policy_windows_e2e.py -v
+        if: steps.scope.outputs.run_tests == 'true'
+      - name: Remove only launcher artifacts created by the fail-fast build
+        if: steps.scope.outputs.run_tests == 'true'
+        shell: pwsh
+        run: |
+          $launcherRoot = (Resolve-Path -LiteralPath "modules/browser-bridge/native/launcher").Path
+          foreach ($leaf in @("bin", "obj")) {
+            $candidate = Join-Path $launcherRoot $leaf
+            if (-not (Test-Path -LiteralPath $candidate)) { continue }
+            $resolved = (Resolve-Path -LiteralPath $candidate).Path
+            $prefix = $launcherRoot + [IO.Path]::DirectorySeparatorChar
+            if (-not $resolved.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "Refusing to remove path outside launcher root."
+            }
+            Remove-Item -LiteralPath $resolved -Recurse -Force
+          }
       - run: python -m unittest discover -s tests -v --durations 20
         if: steps.scope.outputs.run_tests == 'true'
       - run: python -m unittest discover -s modules/browser-bridge/tests -v
