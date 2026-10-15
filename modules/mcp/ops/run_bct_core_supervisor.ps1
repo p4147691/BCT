@@ -1,7 +1,10 @@
 param(
     [int]$CheckIntervalSeconds = 20,
     [string]$RuntimeDir = 'D:\BCT\runtime',
-    [string]$PythonPath = 'C:\Users\시우세영\AppData\Local\Programs\Python\Python312\python.exe'
+    # Do not embed a user-profile literal here. Windows PowerShell 5.1 treats
+    # UTF-8 files without a BOM as an ANSI code page, which corrupts a Korean
+    # profile name before this supervisor can write its own diagnostics.
+    [string]$PythonPath = (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'Programs\Python\Python312\python.exe')
 )
 
 $ErrorActionPreference = 'Stop'
