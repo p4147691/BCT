@@ -33,6 +33,7 @@ internal static class BridgeActivationPolicyFixture {
   private const uint FileAttributeReparsePoint = 0x00000400;
   private const int ErrorSuccess = 0;
   private const int ErrorAlreadyExists = 183;
+  private const int TokenLogonSid = 28;
   private const string CredentialName = "fixture-binding.dpapi";
   private static readonly HashSet<string> Modes = new(StringComparer.Ordinal) {
     "valid", "session-mismatch", "root-acl", "file-acl", "pipe-acl",
@@ -99,6 +100,12 @@ internal static class BridgeActivationPolicyFixture {
   [DllImport("advapi32.dll")]
   private static extern uint GetSecurityDescriptorLength(IntPtr descriptor);
 
+  [DllImport("advapi32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool GetTokenInformation(
+    SafeAccessTokenHandle token, int informationClass, IntPtr information,
+    uint informationLength, out uint returnLength);
+
   [DllImport("kernel32.dll")]
   private static extern IntPtr LocalFree(IntPtr memory);
 
@@ -130,7 +137,7 @@ internal static class BridgeActivationPolicyFixture {
     try {
       using WindowsIdentity identity = WindowsIdentity.GetCurrent();
       string userSid = identity.User?.Value ?? throw new InvalidOperationException();
-      string logonSid = LogonSid(identity) ?? throw new InvalidOperationException();
+      string logonSid = LogonSid(identity);
       string exactSddl = $"O:{userSid}D:P(A;;FA;;;{logonSid})(A;;FA;;;SY)";
       string looseSddl = exactSddl + "(A;;FA;;;WD)";
       using var exact = new NativeDescriptor(exactSddl);
@@ -266,14 +273,26 @@ internal static class BridgeActivationPolicyFixture {
     InheritHandle = false,
   };
 
-  private static string? LogonSid(WindowsIdentity identity) {
-    if (identity.Groups is null) return null;
-    foreach (IdentityReference group in identity.Groups) {
-      SecurityIdentifier? sid = group as SecurityIdentifier;
-      if (sid is not null && sid.Value.StartsWith("S-1-5-5-", StringComparison.Ordinal))
-        return sid.Value;
+  private static string LogonSid(WindowsIdentity identity) {
+    GetTokenInformation(identity.AccessToken, TokenLogonSid, IntPtr.Zero, 0,
+                        out uint size);
+    if (size == 0 || size > 65536) throw new InvalidOperationException();
+    IntPtr information = Marshal.AllocHGlobal(checked((int)size));
+    try {
+      if (!GetTokenInformation(identity.AccessToken, TokenLogonSid, information,
+                               size, out uint written) || written > size)
+        throw new InvalidOperationException();
+      if (Marshal.ReadInt32(information) != 1) throw new InvalidOperationException();
+      int firstGroupOffset = IntPtr.Size == 8 ? 8 : 4;
+      IntPtr sidPointer = Marshal.ReadIntPtr(information, firstGroupOffset);
+      if (sidPointer == IntPtr.Zero) throw new InvalidOperationException();
+      string value = new SecurityIdentifier(sidPointer).Value;
+      if (!value.StartsWith("S-1-5-5-", StringComparison.Ordinal))
+        throw new InvalidOperationException();
+      return value;
+    } finally {
+      Marshal.FreeHGlobal(information);
     }
-    return null;
   }
 
   private static bool NamedSecurityMatches(
@@ -305,10 +324,18 @@ internal static class BridgeActivationPolicyFixture {
     byte[] raw = new byte[checked((int)nativeLength)];
     Marshal.Copy(descriptor, raw, 0, raw.Length);
     var security = new RawSecurityDescriptor(raw, 0);
-    if (!string.Equals(security.Owner?.Value, expectedOwner, StringComparison.Ordinal) ||
-        (security.ControlFlags & ControlFlags.DiscretionaryAclProtected) == 0 ||
-        security.DiscretionaryAcl is null || security.DiscretionaryAcl.Count != 2)
+    if (!string.Equals(security.Owner?.Value, expectedOwner, StringComparison.Ordinal)) {
+      Console.Error.WriteLine("POLICY_MISMATCH:owner");
       return false;
+    }
+    if ((security.ControlFlags & ControlFlags.DiscretionaryAclProtected) == 0) {
+      Console.Error.WriteLine("POLICY_MISMATCH:unprotected-dacl");
+      return false;
+    }
+    if (security.DiscretionaryAcl is null || security.DiscretionaryAcl.Count != 2) {
+      Console.Error.WriteLine("POLICY_MISMATCH:ace-count");
+      return false;
+    }
     var logon = new SecurityIdentifier(expectedLogonSid);
     var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
     bool sawLogon = false;
@@ -316,11 +343,16 @@ internal static class BridgeActivationPolicyFixture {
     foreach (GenericAce ace in security.DiscretionaryAcl) {
       if (ace is not CommonAce common ||
           common.AceQualifier != AceQualifier.AccessAllowed ||
-          common.AceFlags != AceFlags.None || common.AccessMask != FileAllAccess)
+          common.AceFlags != AceFlags.None || common.AccessMask != FileAllAccess) {
+        Console.Error.WriteLine("POLICY_MISMATCH:ace-contract");
         return false;
+      }
       if (common.SecurityIdentifier.Equals(logon) && !sawLogon) sawLogon = true;
       else if (common.SecurityIdentifier.Equals(system) && !sawSystem) sawSystem = true;
-      else return false;
+      else {
+        Console.Error.WriteLine("POLICY_MISMATCH:ace-principal");
+        return false;
+      }
     }
     return sawLogon && sawSystem;
   }

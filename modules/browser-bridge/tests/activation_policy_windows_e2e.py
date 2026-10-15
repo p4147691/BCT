@@ -32,7 +32,9 @@ class BridgeActivationPolicyWindowsTests(unittest.TestCase):
         )
         try:
             ready = server.stdout.readline()
-            self.assertRegex(ready, r"^READY:\d+\n$")
+            if not ready.startswith("READY:") or not ready[6:].strip().isdigit():
+                server.wait(timeout=5)
+                self.fail(f"ready={ready!r}; stderr={server.stderr.read()!r}")
             client = subprocess.run(
                 [str(self.executable), "--bridge-activation-policy-client", pipe_name],
                 capture_output=True, text=True, timeout=20,
@@ -117,7 +119,10 @@ class BridgeActivationPolicyWindowsTests(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         try:
-            self.assertRegex(first.stdout.readline(), r"^READY:\d+\n$")
+            ready = first.stdout.readline()
+            if not ready.startswith("READY:") or not ready[6:].strip().isdigit():
+                first.wait(timeout=5)
+                self.fail(f"ready={ready!r}; stderr={first.stderr.read()!r}")
             collision = subprocess.run(
                 [str(self.executable), "--bridge-activation-policy-server",
                  str(second_root), pipe_name, "valid"],
