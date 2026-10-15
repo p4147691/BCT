@@ -13,7 +13,7 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROJECT = ROOT.parents[2]
+PROJECT = ROOT.parents[1]
 BUILT = ROOT / "native" / "launcher" / "bin" / "Release" / "net8.0"
 sys.path.insert(0, str(PROJECT / "tests"))
 
