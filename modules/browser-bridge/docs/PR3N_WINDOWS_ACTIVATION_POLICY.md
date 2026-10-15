@@ -6,7 +6,9 @@ a non-secret placeholder file and a random named pipe whose owner and
 protected DACL are checked against the current user and logon SID. The pipe
 also reports its connected client session through
 `GetNamedPipeClientSessionId`; a lookup failure or mismatch is rejected before
-the first payload byte is read.
+the first payload byte is read. The disposable client waits for an explicit
+policy-verified byte before it is permitted to write the request; a denied
+client records that it exited without writing.
 
 The owner/DACL is re-read after the pipe connects. Unexpected ACEs, inherited
 ACLs, a pre-existing target, a reparse target and modified root, file or pipe

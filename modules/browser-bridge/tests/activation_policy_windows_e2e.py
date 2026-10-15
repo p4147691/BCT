@@ -55,6 +55,7 @@ class BridgeActivationPolicyWindowsTests(unittest.TestCase):
     def test_session_mismatch_is_denied_before_payload_read(self):
         client, server, lines, server_error, root = self._connected_case("session-mismatch")
         self.assertNotEqual(0, client.returncode, client.stderr)
+        self.assertEqual(["DENIED_WITHOUT_WRITE"], client.stdout.splitlines())
         self.assertNotEqual(0, server, server_error)
         self.assertEqual(["DENIED_BEFORE_READ", "CLEANED"], lines)
         self.assertFalse(root.exists())
@@ -64,6 +65,7 @@ class BridgeActivationPolicyWindowsTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 client, server, lines, server_error, root = self._connected_case(mode)
                 self.assertNotEqual(0, client.returncode, client.stderr)
+                self.assertEqual(["DENIED_WITHOUT_WRITE"], client.stdout.splitlines())
                 self.assertNotEqual(0, server, server_error)
                 self.assertEqual(["DENIED_BEFORE_READ", "CLEANED"], lines)
                 self.assertFalse(root.exists())
@@ -104,6 +106,40 @@ class BridgeActivationPolicyWindowsTests(unittest.TestCase):
             self.assertEqual("preserve", target_sentinel.read_text(encoding="utf-8"))
         finally:
             junction.rmdir()
+
+    def test_pipe_collision_cleans_only_the_rejected_fixture(self):
+        pipe_name = "bct-bridge-policy-" + uuid.uuid4().hex
+        first_root = self._root("first")
+        second_root = self._root("second")
+        first = subprocess.Popen(
+            [str(self.executable), "--bridge-activation-policy-server",
+             str(first_root), pipe_name, "valid"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            self.assertRegex(first.stdout.readline(), r"^READY:\d+\n$")
+            collision = subprocess.run(
+                [str(self.executable), "--bridge-activation-policy-server",
+                 str(second_root), pipe_name, "valid"],
+                capture_output=True, text=True, timeout=20,
+            )
+            self.assertNotEqual(0, collision.returncode, collision.stderr)
+            self.assertEqual(["CLEANED"], collision.stdout.splitlines())
+            self.assertFalse(second_root.exists())
+
+            client = subprocess.run(
+                [str(self.executable), "--bridge-activation-policy-client", pipe_name],
+                capture_output=True, text=True, timeout=20,
+            )
+            self.assertEqual(0, client.returncode, client.stderr)
+            first.wait(timeout=20)
+            self.assertEqual(0, first.returncode, first.stderr.read())
+            self.assertEqual(["CLEANED"], first.stdout.read().splitlines())
+            self.assertFalse(first_root.exists())
+        finally:
+            if first.poll() is None:
+                first.kill()
+                first.wait(timeout=5)
 
 
 if __name__ == "__main__":

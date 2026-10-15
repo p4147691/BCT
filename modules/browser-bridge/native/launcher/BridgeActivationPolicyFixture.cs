@@ -2,6 +2,7 @@ using Microsoft.Win32.SafeHandles;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Security.Principal;
 
 // PR3-n fixture only. It proves the Windows owner/DACL and logon-session
@@ -10,6 +11,7 @@ using System.Security.Principal;
 // frame, resolves a binding, loads a secret, or invokes Core ingress.
 internal static class BridgeActivationPolicyFixture {
   private const byte Request = 0x42;
+  private const byte Verified = 0x56;
   private const byte Accepted = 0x4f;
   private const byte Denied = 0x15;
   private const uint SecurityInformation = 0x00000001 | 0x00000004;
@@ -17,6 +19,7 @@ internal static class BridgeActivationPolicyFixture {
   private const uint FileObject = 1;
   private const uint KernelObject = 6;
   private const uint SecurityDescriptorRevision = 1;
+  private const int FileAllAccess = 0x001f01ff;
   private const uint GenericRead = 0x80000000;
   private const uint GenericWrite = 0x40000000;
   private const uint FileShareRead = 0x00000001;
@@ -46,12 +49,6 @@ internal static class BridgeActivationPolicyFixture {
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(
     string text, uint revision, out IntPtr descriptor, out uint size);
-
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool ConvertSecurityDescriptorToStringSecurityDescriptorW(
-    IntPtr descriptor, uint revision, uint information,
-    out IntPtr text, out uint length);
 
   [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
   private static extern uint GetNamedSecurityInfoW(
@@ -99,19 +96,20 @@ internal static class BridgeActivationPolicyFixture {
   private static extern bool GetNamedPipeClientSessionId(
     SafePipeHandle pipe, out uint clientSessionId);
 
+  [DllImport("advapi32.dll")]
+  private static extern uint GetSecurityDescriptorLength(IntPtr descriptor);
+
   [DllImport("kernel32.dll")]
   private static extern IntPtr LocalFree(IntPtr memory);
 
   private sealed class NativeDescriptor : IDisposable {
     internal IntPtr Value { get; private set; }
-    internal string Canonical { get; }
 
     internal NativeDescriptor(string sddl) {
       if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
             sddl, SecurityDescriptorRevision, out IntPtr value, out _) ||
           value == IntPtr.Zero) throw new InvalidOperationException();
       Value = value;
-      Canonical = DescriptorText(value);
     }
 
     public void Dispose() {
@@ -127,6 +125,7 @@ internal static class BridgeActivationPolicyFixture {
     bool rootCreated = false;
     bool fileCreated = false;
     int result = 7;
+    string stage = "identity";
     string credentialPath = Path.Combine(rootPath, CredentialName);
     try {
       using WindowsIdentity identity = WindowsIdentity.GetCurrent();
@@ -138,14 +137,17 @@ internal static class BridgeActivationPolicyFixture {
       using var loose = new NativeDescriptor(looseSddl);
       SecurityAttributes attributes = Attributes(exact);
 
+      stage = "create-root";
       if (!CreateDirectoryW(rootPath, ref attributes)) {
         if (Marshal.GetLastWin32Error() == ErrorAlreadyExists) return 7;
         throw new InvalidOperationException();
       }
       rootCreated = true;
-      if (!NamedSecurityMatches(rootPath, exact.Canonical))
+      stage = "verify-root";
+      if (!NamedSecurityMatches(rootPath, userSid, logonSid))
         throw new InvalidOperationException();
 
+      stage = "create-file";
       SafeFileHandle file = CreateFileW(
         credentialPath, GenericRead | GenericWrite, FileShareRead,
         ref attributes, CreateNew, FileAttributeNormal, IntPtr.Zero);
@@ -158,9 +160,11 @@ internal static class BridgeActivationPolicyFixture {
         stream.WriteByte(Request);
         stream.Flush(true);
       }
-      if (!NamedSecurityMatches(credentialPath, exact.Canonical))
+      stage = "verify-file";
+      if (!NamedSecurityMatches(credentialPath, userSid, logonSid))
         throw new InvalidOperationException();
 
+      stage = "create-pipe";
       SafePipeHandle pipeHandle = CreateNamedPipeW(
         @"\\.\pipe\" + pipeName,
         PipeAccessDuplex | FileFlagOverlapped | FileFlagFirstPipeInstance,
@@ -171,7 +175,8 @@ internal static class BridgeActivationPolicyFixture {
       }
       using var pipe = new NamedPipeServerStream(
         PipeDirection.InOut, true, false, pipeHandle);
-      if (!KernelSecurityMatches(pipe.SafePipeHandle, exact.Canonical))
+      stage = "verify-pipe";
+      if (!KernelSecurityMatches(pipe.SafePipeHandle, userSid, logonSid))
         throw new InvalidOperationException();
 
       uint serverSession = checked((uint)Process.GetCurrentProcess().SessionId);
@@ -182,6 +187,7 @@ internal static class BridgeActivationPolicyFixture {
         System.Globalization.CultureInfo.InvariantCulture));
       Console.Out.Flush();
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+      stage = "wait-client";
       await pipe.WaitForConnectionAsync(timeout.Token);
 
       // Deliberately mutate one policy object only after connection so the
@@ -200,9 +206,10 @@ internal static class BridgeActivationPolicyFixture {
 
       // Recheck every mutable policy object after connect and before touching
       // attacker-controlled bytes.
-      if (!NamedSecurityMatches(rootPath, exact.Canonical) ||
-          !NamedSecurityMatches(credentialPath, exact.Canonical) ||
-          !KernelSecurityMatches(pipe.SafePipeHandle, exact.Canonical) ||
+      stage = "pre-read-policy";
+      if (!NamedSecurityMatches(rootPath, userSid, logonSid) ||
+          !NamedSecurityMatches(credentialPath, userSid, logonSid) ||
+          !KernelSecurityMatches(pipe.SafePipeHandle, userSid, logonSid) ||
           !GetNamedPipeClientSessionId(pipe.SafePipeHandle, out uint clientSession) ||
           clientSession != expectedClientSession) {
         Console.Out.WriteLine("DENIED_BEFORE_READ");
@@ -211,12 +218,17 @@ internal static class BridgeActivationPolicyFixture {
         throw new InvalidOperationException();
       }
 
+      // The client cannot send its request until this policy gate arrives.
+      // Denied clients receive Denied above and never enter the payload phase.
+      await pipe.WriteAsync(new byte[] { Verified }.AsMemory(), timeout.Token);
+      stage = "payload";
       byte[] request = new byte[1];
       if (await pipe.ReadAsync(request.AsMemory(), timeout.Token) != 1 ||
           request[0] != Request) throw new InvalidOperationException();
       await pipe.WriteAsync(new byte[] { Accepted }.AsMemory(), timeout.Token);
       result = 0;
     } catch {
+      Console.Error.WriteLine("FIXTURE_DENIED:" + stage);
       result = 7;
     }
 
@@ -233,6 +245,12 @@ internal static class BridgeActivationPolicyFixture {
         ".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
       await pipe.ConnectAsync(timeout.Token);
+      byte[] policyGate = new byte[1];
+      if (await pipe.ReadAsync(policyGate.AsMemory(), timeout.Token) != 1 ||
+          policyGate[0] != Verified) {
+        if (policyGate[0] == Denied) Console.Out.WriteLine("DENIED_WITHOUT_WRITE");
+        return 7;
+      }
       await pipe.WriteAsync(new byte[] { Request }.AsMemory(), timeout.Token);
       byte[] response = new byte[1];
       return await pipe.ReadAsync(response.AsMemory(), timeout.Token) == 1 &&
@@ -258,33 +276,53 @@ internal static class BridgeActivationPolicyFixture {
     return null;
   }
 
-  private static bool NamedSecurityMatches(string path, string expected) {
+  private static bool NamedSecurityMatches(
+      string path, string expectedOwner, string expectedLogonSid) {
     uint error = GetNamedSecurityInfoW(
       path, FileObject, SecurityInformation,
       out _, out _, out _, out _, out IntPtr descriptor);
     if (error != ErrorSuccess || descriptor == IntPtr.Zero) return false;
-    try { return string.Equals(DescriptorText(descriptor), expected, StringComparison.Ordinal); }
+    try { return DescriptorMatches(descriptor, expectedOwner, expectedLogonSid); }
     catch { return false; }
     finally { LocalFree(descriptor); }
   }
 
-  private static bool KernelSecurityMatches(SafePipeHandle handle, string expected) {
+  private static bool KernelSecurityMatches(
+      SafePipeHandle handle, string expectedOwner, string expectedLogonSid) {
     uint error = GetSecurityInfo(
       handle, KernelObject, SecurityInformation,
       out _, out _, out _, out _, out IntPtr descriptor);
     if (error != ErrorSuccess || descriptor == IntPtr.Zero) return false;
-    try { return string.Equals(DescriptorText(descriptor), expected, StringComparison.Ordinal); }
+    try { return DescriptorMatches(descriptor, expectedOwner, expectedLogonSid); }
     catch { return false; }
     finally { LocalFree(descriptor); }
   }
 
-  private static string DescriptorText(IntPtr descriptor) {
-    if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(
-          descriptor, SecurityDescriptorRevision, SecurityInformation,
-          out IntPtr text, out _) || text == IntPtr.Zero)
-      throw new InvalidOperationException();
-    try { return Marshal.PtrToStringUni(text) ?? throw new InvalidOperationException(); }
-    finally { LocalFree(text); }
+  private static bool DescriptorMatches(
+      IntPtr descriptor, string expectedOwner, string expectedLogonSid) {
+    uint nativeLength = GetSecurityDescriptorLength(descriptor);
+    if (nativeLength == 0 || nativeLength > 65536) return false;
+    byte[] raw = new byte[checked((int)nativeLength)];
+    Marshal.Copy(descriptor, raw, 0, raw.Length);
+    var security = new RawSecurityDescriptor(raw, 0);
+    if (!string.Equals(security.Owner?.Value, expectedOwner, StringComparison.Ordinal) ||
+        (security.ControlFlags & ControlFlags.DiscretionaryAclProtected) == 0 ||
+        security.DiscretionaryAcl is null || security.DiscretionaryAcl.Count != 2)
+      return false;
+    var logon = new SecurityIdentifier(expectedLogonSid);
+    var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+    bool sawLogon = false;
+    bool sawSystem = false;
+    foreach (GenericAce ace in security.DiscretionaryAcl) {
+      if (ace is not CommonAce common ||
+          common.AceQualifier != AceQualifier.AccessAllowed ||
+          common.AceFlags != AceFlags.None || common.AccessMask != FileAllAccess)
+        return false;
+      if (common.SecurityIdentifier.Equals(logon) && !sawLogon) sawLogon = true;
+      else if (common.SecurityIdentifier.Equals(system) && !sawSystem) sawSystem = true;
+      else return false;
+    }
+    return sawLogon && sawSystem;
   }
 
   private static bool StrictNewRoot(string path) {

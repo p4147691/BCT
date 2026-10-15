@@ -31,10 +31,17 @@ class BridgeBoundaryContractTests(unittest.TestCase):
         self.assertIn('args[0] == "--bridge-activation-policy-server"', launcher)
         self.assertIn('args[0] == "--bridge-activation-policy-client"', launcher)
         self.assertIn("GetNamedPipeClientSessionId", policy)
-        self.assertLess(policy.index("GetNamedPipeClientSessionId"),
-                        policy.index("pipe.ReadAsync"))
-        self.assertLess(policy.index("DENIED_BEFORE_READ"),
-                        policy.index("pipe.ReadAsync"))
+        server_read = policy.index("pipe.ReadAsync(request.AsMemory()")
+        self.assertLess(policy.index("!GetNamedPipeClientSessionId("), server_read)
+        self.assertLess(policy.index("DENIED_BEFORE_READ"), server_read)
+        self.assertLess(policy.index("pipe.WriteAsync(new byte[] { Verified }"),
+                        server_read)
+        client_start = policy.index("internal static async Task<int> RunClient")
+        client_gate_read = policy.index("pipe.ReadAsync(policyGate.AsMemory()",
+                                        client_start)
+        client_payload_write = policy.index(
+            "pipe.WriteAsync(new byte[] { Request }", client_start)
+        self.assertLess(client_gate_read, client_payload_write)
         for runtime_dependency in (
             "PeerAdapter", "BindingLifecycle", "DpapiFileSecretStore",
             "peer_frame", "persistent_host.py",
