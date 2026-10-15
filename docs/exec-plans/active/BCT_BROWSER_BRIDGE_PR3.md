@@ -1,6 +1,6 @@
 # BCT Browser Bridge PR3 — peer adapter checkpoint
 
-Status: `PR3L_VERIFIED_PIPE_RELAY_IMPLEMENTATION / PRODUCT_GATE_BLOCKED`.
+Status: `PR3M_DISPOSABLE_WINDOWS_RELAY_E2E / PRODUCT_GATE_BLOCKED`.
 
 This plan is a source and review checkpoint for the independent Browser Bridge.
 It is not part of RCC, does not use the RCC Native Host, and does not authorize
@@ -96,6 +96,19 @@ This checkpoint has no listener, real process verifier, default credential
 path or runtime entry point.  It uses only an in-memory binding and a fixture
 verifier in tests.  Product activation remains blocked on the Bridge-only
 Windows credential and final logon-session/DACL policy.
+
+## Current Windows checkpoint: PR3-m disposable relay E2E
+
+PR3-m adds a CI-only C# fixture path.  It loads a newly created temporary
+Bridge secret from DPAPI, builds the canonical signed peer and pipe frames,
+crosses a random same-user named pipe whose server verifies client PID and
+executable SHA-256, and reaches PR3-l authenticated ingress.  Revocation and
+temporary-directory cleanup remove the protected secret and the processes
+dispose the pipe.
+
+The commands remain unreachable from the normal Native Messaging origin path
+and have no runtime registration.  They do not establish the final
+logon-session/DACL policy or authorize a real credential/listener deployment.
 
 ## Read-only Windows credential feasibility
 
