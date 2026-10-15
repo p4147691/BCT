@@ -188,6 +188,25 @@ class Store:
                     FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
                     FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id)
                 );
+                CREATE TABLE IF NOT EXISTS orchestration_manager_wake_capabilities (
+                    event_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    manager_epoch INTEGER NOT NULL,
+                    attachment_id TEXT NOT NULL,
+                    attachment_generation INTEGER NOT NULL,
+                    envelope_schema INTEGER NOT NULL,
+                    capability_token TEXT NOT NULL,
+                    token_digest TEXT NOT NULL UNIQUE,
+                    state TEXT NOT NULL,
+                    issued_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    spent_for_decision_id TEXT,
+                    spent_at REAL,
+                    FOREIGN KEY(event_id) REFERENCES orchestration_manager_wakes(event_id),
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
+                    FOREIGN KEY(attachment_id,attachment_generation)
+                        REFERENCES orchestration_attachments(attachment_id,generation)
+                );
                 CREATE TABLE IF NOT EXISTS orchestration_consumption_receipts (
                     session_id TEXT NOT NULL, consumer_assignment_id TEXT NOT NULL,
                     result_message_id TEXT NOT NULL, result_digest TEXT NOT NULL,

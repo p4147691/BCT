@@ -2,6 +2,22 @@
 
 Status: LIVE_DEPLOYED / HOSTED_E2E_ACCEPTED
 
+## ACK contract correction candidate (PR A, not live)
+
+The hosted acceptance below proves one exact RCC wake submission. Its historical
+`DELIVERED` row also contains `acknowledged_at`, but that column is preserved as
+historical data and is not evidence that the Manager read the RESULT or committed
+a decision. PR A separates future RCC `host:ack + submitted=true` from actual
+Manager consumption: new submit confirmations write only `DELIVERED` and
+`delivered_at`, while an additive one-time capability provides the transaction
+boundary for PR B. No historical row is rewritten or backfilled.
+
+The candidate contract, threat model and exact PR B interface are in
+`BCT_MANAGER_WAKE_ACK_CONTRACT_PR_A_20261016.md`. Until PR B atomically commits
+the capability spend, RESULT consumption, decision and follow-up outbox, neither
+the candidate nor the historical hosted receipt is a full Manager-consumption
+E2E PASS.
+
 ## Objective
 
 Turn an already durable, terminal worker result into one fenced notification to
