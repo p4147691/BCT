@@ -154,6 +154,19 @@ def commit_and_enqueue(store: Store, *, session_id: str, consumer_assignment_id:
         return {**receipt, "deliveries": count}
 
 
+def _target_current(db, row):
+    target = db.execute(
+        "SELECT active,node_id FROM orchestration_attachments WHERE attachment_id=? AND generation=?",
+        (row["attachment_id"], row["attachment_generation"])).fetchone()
+    assignment = db.execute(
+        "SELECT session_id,current_generation FROM orchestration_assignments WHERE assignment_id=?",
+        (row["assignment_id"],)).fetchone()
+    if (target is None or not target["active"] or target["node_id"] != row["target_node_id"]
+        or assignment is None or assignment["session_id"] != row["session_id"]
+        or assignment["current_generation"] != row["assignment_generation"]):
+        raise ConflictError("TARGET_FENCED")
+
+
 def reserve_delivery(store: Store, *, delivery_id: str, epoch: int, token: str,
                      now: float | None = None) -> dict[str, Any]:
     now = time.time() if now is None else now
@@ -164,6 +177,7 @@ def reserve_delivery(store: Store, *, delivery_id: str, epoch: int, token: str,
         _lease(db,row["session_id"],epoch,token,now)
         if row["manager_epoch"] > epoch or row["state"] != "PENDING":
             raise ConflictError("DELIVERY_NOT_RESERVABLE")
+        _target_current(db, row)
         reservation = secrets.token_hex(32)
         db.execute("UPDATE orchestration_dispatch_outbox SET state='RESERVED',reservation_token=? WHERE delivery_id=? AND state='PENDING'",
                    (reservation, delivery_id))
@@ -187,6 +201,8 @@ def record_attempt(store: Store, *, delivery_id: str, epoch: int, token: str,
         state = allowed.get(row["state"],{}).get(phase)
         if state is None:
             raise ConflictError("INVALID_ATTEMPT_TRANSITION")
+        if phase == "SEND_STARTED":
+            _target_current(db, row)
         db.execute("UPDATE orchestration_dispatch_outbox SET state=?,reservation_token=? WHERE delivery_id=?",
                    (state,None if state == "PENDING" else reservation_token,delivery_id))
         db.execute("INSERT INTO orchestration_dispatch_attempts(delivery_id,phase,epoch,created_at) VALUES(?,?,?,?)",

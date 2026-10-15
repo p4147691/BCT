@@ -71,6 +71,24 @@ class PR2Tests(unittest.TestCase):
         with self.assertRaises(ConflictError):
             reserve_delivery(self.s,delivery_id="stable-id",epoch=2,token=self.lease["token"],now=105.)
         self.assertEqual([],recovery_snapshot(Store(self.s.path),session_id="s")["resendable"])
+    def test_target_rotation_before_reserve_and_send_fails_closed(self):
+        commit_and_enqueue(self.s,**self.args())
+        with self.s.transaction() as db:
+            db.execute("UPDATE orchestration_attachments SET active=0 WHERE attachment_id='att'")
+        with self.assertRaises(ConflictError):
+            reserve_delivery(self.s,delivery_id="stable-id",epoch=2,
+                             token=self.lease["token"],now=102.)
+        with self.s.transaction() as db:
+            db.execute("UPDATE orchestration_attachments SET active=1 WHERE attachment_id='att'")
+        reservation=reserve_delivery(self.s,delivery_id="stable-id",epoch=2,
+                                     token=self.lease["token"],now=103.)
+        with self.s.transaction() as db:
+            db.execute("UPDATE orchestration_attachments SET active=0 WHERE attachment_id='att'")
+        with self.assertRaises(ConflictError):
+            record_attempt(self.s,delivery_id="stable-id",epoch=2,
+                           token=self.lease["token"],reservation_token=reservation["reservation_token"],
+                           phase="SEND_STARTED",now=104.)
+
     def test_pre_send_abort_can_requeue(self):
         commit_and_enqueue(self.s,**self.args())
         r=reserve_delivery(self.s,delivery_id="stable-id",epoch=2,token=self.lease["token"],now=102.)
