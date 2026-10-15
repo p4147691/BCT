@@ -41,7 +41,7 @@ def acquire_lease(store: Store, *, session_id: str, manager_node_id: str,
         raise ValueError("INVALID_TTL")
     now = time.time() if now is None else now
     with store.transaction() as db:
-        session = db.execute("SELECT manager_epoch FROM orchestration_sessions WHERE session_id=?", (session_id,)).fetchone()
+        session = db.execute("SELECT manager_epoch,manager_node_id FROM orchestration_sessions WHERE session_id=?", (session_id,)).fetchone()
         if session is None or session["manager_epoch"] != expected_epoch:
             raise ConflictError("STALE_EPOCH")
         node = db.execute("SELECT active,role FROM nodes WHERE node_id=?", (manager_node_id,)).fetchone()
@@ -50,7 +50,18 @@ def acquire_lease(store: Store, *, session_id: str, manager_node_id: str,
         old = db.execute("SELECT * FROM orchestration_durable_leases WHERE session_id=?", (session_id,)).fetchone()
         if old is not None and old["expires_at"] > now:
             raise ConflictError("LEASE_ALREADY_ACTIVE")
-        epoch = expected_epoch + (1 if old is not None else 0)
+        # Contract B: lease ownership NEVER changes the session epoch.
+        # A replacement owner must first complete Orchestrator.takeover_manager(),
+        # which atomically records epoch history, fences old wakes, adopts proven
+        # unsent assignments and emits its existing takeover event receipts.
+        # An expired lease at the SAME epoch is not evidence of a safe takeover.
+        if old is not None and expected_epoch <= old["epoch"]:
+            raise ConflictError("TAKEOVER_REQUIRED")
+        if old is None and session["manager_node_id"] != manager_node_id:
+            raise ConflictError("SESSION_MANAGER_MISMATCH")
+        if old is not None and session["manager_node_id"] != manager_node_id:
+            raise ConflictError("SESSION_MANAGER_MISMATCH")
+        epoch = expected_epoch
         token = secrets.token_hex(32)
         if old is None:
             db.execute("INSERT INTO orchestration_durable_leases VALUES(?,?,?,?,?,?)",
@@ -58,11 +69,6 @@ def acquire_lease(store: Store, *, session_id: str, manager_node_id: str,
         else:
             db.execute("UPDATE orchestration_durable_leases SET manager_node_id=?,epoch=?,token=?,expires_at=?,updated_at=? WHERE session_id=? AND epoch=?",
                        (manager_node_id, epoch, token, now + ttl_s, now, session_id, old["epoch"]))
-        if epoch != expected_epoch:
-            changed = db.execute("UPDATE orchestration_sessions SET manager_epoch=?,manager_node_id=?,updated_at=? WHERE session_id=? AND manager_epoch=?",
-                                 (epoch, manager_node_id, now, session_id, expected_epoch)).rowcount
-            if changed != 1:
-                raise ConflictError("STALE_EPOCH")
         return {"session_id": session_id, "epoch": epoch, "token": token, "expires_at": now + ttl_s}
 
 
@@ -211,7 +217,8 @@ def record_attempt(store: Store, *, delivery_id: str, epoch: int, token: str,
 
 def acknowledge_delivery(store: Store, *, delivery_id: str, target_node_id: str,
                          attachment_id: str, attachment_generation: int,
-                         ack_digest: str, now: float | None = None) -> bool:
+                         ack_digest: str, epoch: int, token: str,
+                         now: float | None = None) -> bool:
     for item in (delivery_id,target_node_id,attachment_id,ack_digest):
         _require_id(item)
     now = time.time() if now is None else now
@@ -219,6 +226,9 @@ def acknowledge_delivery(store: Store, *, delivery_id: str, target_node_id: str,
         row = db.execute("SELECT * FROM orchestration_dispatch_outbox WHERE delivery_id=?", (delivery_id,)).fetchone()
         if row is None or (row["target_node_id"],row["attachment_id"],row["attachment_generation"]) != (target_node_id,attachment_id,attachment_generation):
             raise ConflictError("ACK_TARGET_MISMATCH")
+        _lease(db, row["session_id"], epoch, token, now)
+        if row["manager_epoch"] > epoch:
+            raise ConflictError("STALE_DELIVERY_EPOCH")
         if row["state"] == "ACKNOWLEDGED":
             if row["ack_digest"] != ack_digest:
                 raise ConflictError("ACK_CONFLICT")
