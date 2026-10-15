@@ -55,5 +55,7 @@ jobs:
         if: steps.scope.outputs.run_tests == 'true'
       - run: python -m unittest discover -s modules/browser-bridge/tests -p relay_windows_e2e.py -v
         if: steps.scope.outputs.run_tests == 'true'
+      - run: python -m unittest discover -s modules/browser-bridge/tests -p activation_policy_windows_e2e.py -v
+        if: steps.scope.outputs.run_tests == 'true'
       - run: python -m compileall -q src tests modules/browser-bridge
         if: steps.scope.outputs.run_tests == 'true'

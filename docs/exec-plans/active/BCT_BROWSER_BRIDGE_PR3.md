@@ -136,6 +136,21 @@ product. Continue in bounded checkpoints:
    packaging/deployment checkpoint with verifiable artifacts, rollback and
    operational observability. CI success alone never enables the listener.
 
+## In-progress checkpoint: PR3-n Windows activation policy
+
+PR3-n is limited to a disposable, production-disabled proof of the first
+remaining gate. It creates only a fresh temporary credential root, a
+non-secret placeholder file and a random named pipe. Their owner and protected
+DACL are verified against the current user and logon SID, and the connected
+pipe session is checked before request bytes are read. ACL changes, session
+mismatch, pre-existing targets and reparse targets fail closed; cleanup removes
+only fixture-owned resources.
+
+The fixture is not a runtime listener or credential provider. It carries no
+PR3-k frame and invokes neither PR3-l nor Core. The ordinary Native Messaging
+origin path, Chrome/HKCU, LIVE/RCC, operational credentials, Issue #111 and
+existing UNKNOWN/Claim/consumption records remain outside this checkpoint.
+
 ## Read-only Windows credential feasibility
 
 The currently running Core process and a representative user Chrome process
