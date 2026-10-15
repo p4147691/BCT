@@ -10,11 +10,28 @@ import json
 import secrets
 import math
 import tempfile
+import weakref
 import time
 from pathlib import Path
+from .store import Store
 
 from .models import ConflictError
 from .bridge_pr3a_safe import completion_report, result_get, delivery_receipt_get, recipient_ack
+
+class _FixtureIssuer:
+    __slots__ = ("__weakref__",)
+
+
+_FIXTURE_ISSUERS = weakref.WeakKeyDictionary()
+
+def create_fake_issuer_fixture():
+    """Build an isolated test DB and opaque issuer bound to this exact Store object."""
+    directory=tempfile.TemporaryDirectory(prefix="bridge-auth-fixture-")
+    store=Store(Path(directory.name) / "fixture.db")
+    issuer=_FixtureIssuer()
+    _FIXTURE_ISSUERS[issuer]=(store,directory)
+    return store, issuer
+
 
 OPERATIONS = frozenset({"completion_report", "result_get", "delivery_receipt_get", "recipient_ack"})
 ORIGIN = "chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/"
@@ -42,12 +59,10 @@ def install_schema(store):
 
 
 def issue_fake_grant(store, *, session_id, node_id, attachment_id, generation,
-                     operation, expires_at, origin=ORIGIN, audience=AUDIENCE):
-    """Fail closed unless running against an isolated temporary fixture."""
-    path=Path(store.path).resolve()
-    tmp=Path(tempfile.gettempdir()).resolve()
-    if (path.name != "fixture.db" or path.parent.parent != tmp
-        or not path.parent.name.startswith("tmp") or not path.is_file()):
+                     operation, expires_at, issuer=None, origin=ORIGIN, audience=AUDIENCE):
+    """Requires the unforgeable in-process issuer for the exact fixture Store."""
+    binding=_FIXTURE_ISSUERS.get(issuer) if isinstance(issuer,_FixtureIssuer) else None
+    if binding is None or binding[0] is not store:
         raise ConflictError("FIXTURE_ONLY")
     if not all(_valid(v) for v in (session_id, node_id, attachment_id)):
         raise ValueError("GRANT_ARGUMENT_INVALID")

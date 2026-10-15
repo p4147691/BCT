@@ -1,11 +1,12 @@
 import unittest
+import sqlite3
 from unittest.mock import patch
 from bct.core.models import ConflictError
 from bct.core.store import Store
 from bct.core.orchestration import _digest
 from bct.core.durable_pr2 import commit_and_enqueue
 from bct.core.bridge_pr3a_safe import install_schema as install_pr3a, completion_report
-from bct.core.bridge_pr3b_auth import (install_schema,issue_fake_grant,revoke,call,ORIGIN,AUDIENCE)
+from bct.core.bridge_pr3b_auth import (install_schema,issue_fake_grant,revoke,call,ORIGIN,AUDIENCE,create_fake_issuer_fixture)
 from test_durable_pr2 import PR2Tests
 
 class PR3BAuthTests(unittest.TestCase):
@@ -13,12 +14,21 @@ class PR3BAuthTests(unittest.TestCase):
         self.clock=patch("bct.core.bridge_pr3b_auth.time.time",return_value=100.)
         self.clock.start();self.addCleanup(self.clock.stop)
         PR2Tests.setUp(self)
+        # Copy the fixture database into a newly minted, authority-bound Store.
+        fixture, self.issuer = create_fake_issuer_fixture()
+        source=self.s._connect()
+        target=fixture._connect()
+        try:
+            source.backup(target)
+        finally:
+            target.close(); source.close()
+        self.s=fixture
         install_pr3a(self.s); install_schema(self.s)
         self.kw=dict(session_id="s",node_id="worker",attachment_id="att",generation=1,
                      origin=ORIGIN,audience=AUDIENCE,now=102.)
     def grant(self,operation="completion_report"):
         return issue_fake_grant(self.s,session_id="s",node_id="worker",attachment_id="att",
-                                generation=1,operation=operation,expires_at=200.)
+                                generation=1,operation=operation,expires_at=200.,issuer=self.issuer)
     def completion(self):
         return dict(event_id="evt",session_id="s",assignment_id="result",generation=1,
                     source_node_id="worker",result_id="r",result_digest=_digest({"message":"result"}))
@@ -76,6 +86,16 @@ class PR3BAuthTests(unittest.TestCase):
                 with self.assertRaises(ConflictError):self.invoke(token,request_id='clock',now=-1e12)
         with patch('bct.core.bridge_pr3b_auth.time.time',return_value=199.999):
             self.assertFalse(self.invoke(token,request_id='preexpiry',now=float('nan'))['duplicate'])
+
+    def test_same_path_name_cannot_forge_fixture_authority(self):
+        # An identical Store path is insufficient: issuer binds to Store identity.
+        lookalike=Store(self.s.path)
+        with self.assertRaisesRegex(ConflictError,'FIXTURE_ONLY'):
+            issue_fake_grant(lookalike,session_id='s',node_id='worker',attachment_id='att',
+                             generation=1,operation='result_get',expires_at=200.,issuer=self.issuer)
+        with self.assertRaisesRegex(ConflictError,'FIXTURE_ONLY'):
+            issue_fake_grant(self.s,session_id='s',node_id='worker',attachment_id='att',
+                             generation=1,operation='result_get',expires_at=200.,issuer=object())
 
     def test_fake_issuance_rejects_operational_store(self):
         from tempfile import TemporaryDirectory
