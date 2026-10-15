@@ -7,6 +7,7 @@ from unittest.mock import patch
 from bct.core.consumption import commit_consumption_decision
 from bct.core.models import ConflictError
 from bct.core.store import Store
+from bct.core.orchestration import _canonical, _digest
 
 
 class ConsumptionTest(unittest.TestCase):
@@ -24,10 +25,22 @@ class ConsumptionTest(unittest.TestCase):
                 db.execute("INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                            (name, "s", 2, "r", "{}", "[]", "[]", "{}", "PENDING",
                             1, "{}", 1.0, 1.0))
+            db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",
+                       ("worker", "worker", "WORKER", "ORCHESTRATION", 1, 1))
+            db.execute("INSERT INTO orchestration_attachments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       ("attach", 1, "worker", "rcc", "test-instance", "test-session",
+                        12, 11, "conversation", "endpoint", "WORKER", None, 1, 1.0))
             for message_id in ("r1", "r2"):
+                db.execute("INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (message_id, "s", 2, "request", "{}", "[]", "[]", "{}",
+                            "APPLIED", 1, _canonical({"message": message_id}), 1.0, 1.0))
+                db.execute("INSERT INTO orchestration_assignment_attempts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                           (message_id, 1, 2, "worker", "attach", 1, "APPLIED",
+                            None, None, 1.0, 1.0))
                 db.execute("INSERT INTO orchestration_mailbox VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (message_id, "s", None, None, "RESULT", None, None,
-                            "hash-" + message_id, "{}", 1.0, None, None))
+                           (message_id, "s", message_id, 1, "RESULT", "worker", None,
+                            _digest({"message": message_id}),
+                            _canonical({"message": message_id}), 1.0, None, None))
 
     def run_commit(self, *, consumer="c1", decision_id="d1", digest="request",
                    epoch=2, results=None, decision=None):
@@ -35,7 +48,7 @@ class ConsumptionTest(unittest.TestCase):
             self.store, session_id="s", consumer_assignment_id=consumer,
             manager_epoch=epoch, decision_id=decision_id, request_digest=digest,
             decision={"action": "continue"} if decision is None else decision,
-            results=[("r1", "hash-r1")] if results is None else results,
+            results=[("r1", _digest({"message": "r1"}))] if results is None else results,
         )
 
     def count(self, table):
@@ -71,11 +84,11 @@ class ConsumptionTest(unittest.TestCase):
 
     def test_multiple_results_all_or_nothing(self):
         with self.assertRaises(ConflictError):
-            self.run_commit(results=[("r1", "hash-r1"), ("r2", "wrong")])
+            self.run_commit(results=[("r1", _digest({"message": "r1"})), ("r2", "wrong")])
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
         self.assertEqual(0, self.count("orchestration_consumption_decisions"))
         self.assertEqual(2, self.run_commit(results=[
-            ("r1", "hash-r1"), ("r2", "hash-r2")])["results"])
+            ("r1", _digest({"message": "r1"})), ("r2", _digest({"message": "r2"}))])["results"])
 
     def test_exception_rolls_back(self):
         # Patch only the PR1-owned clock binding, never the global time module.
@@ -118,7 +131,7 @@ class ConsumptionTest(unittest.TestCase):
             persisted, session_id="s", consumer_assignment_id="c1",
             manager_epoch=2, decision_id="next-action-1", request_digest="request-1",
             decision={"next_assignment": "c2", "action": "prepare"},
-            results=[("r1", "hash-r1")],
+            results=[("r1", _digest({"message": "r1"}))],
         )
         self.assertFalse(receipt["idempotent"])
         del persisted
@@ -130,7 +143,7 @@ class ConsumptionTest(unittest.TestCase):
                                   "WHERE decision_id='next-action-1'").fetchone()
             receipts = db.execute("SELECT COUNT(*) FROM orchestration_consumption_receipts "
                                   "WHERE decision_id='next-action-1'").fetchone()[0]
-        self.assertEqual("hash-r1", result["message_digest"])
+        self.assertEqual(_digest({"message": "r1"}), result["message_digest"])
         self.assertIsNone(result["consumed_at"])
         self.assertEqual('{"action":"prepare","next_assignment":"c2"}', decision["decision_json"])
         self.assertEqual(1, receipts)
@@ -138,7 +151,7 @@ class ConsumptionTest(unittest.TestCase):
             recovered, session_id="s", consumer_assignment_id="c1",
             manager_epoch=2, decision_id="next-action-1", request_digest="request-1",
             decision={"next_assignment": "c2", "action": "prepare"},
-            results=[("r1", "hash-r1")],
+            results=[("r1", _digest({"message": "r1"}))],
         )
         self.assertTrue(replay["idempotent"])
         self.assertEqual(1, self.count("orchestration_consumption_decisions"))
@@ -151,14 +164,71 @@ class ConsumptionTest(unittest.TestCase):
             commit_consumption_decision(
                 recovered, session_id="s", consumer_assignment_id="c1",
                 manager_epoch=2, decision_id="old-manager", request_digest="request",
-                decision={"action": "prepare"}, results=[("r1", "hash-r1")])
+                decision={"action": "prepare"}, results=[("r1", _digest({"message": "r1"}))])
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
         fresh = commit_consumption_decision(
             recovered, session_id="s", consumer_assignment_id="c1",
             manager_epoch=3, decision_id="new-manager", request_digest="request",
-            decision={"action": "prepare"}, results=[("r1", "hash-r1")])
+            decision={"action": "prepare"}, results=[("r1", _digest({"message": "r1"}))])
         self.assertFalse(fresh["idempotent"])
         self.assertEqual(1, self.count("orchestration_consumption_receipts"))
+
+    def test_source_provenance_missing_mismatched_and_late_fails_closed(self):
+        cases = [
+            ("assignment_id", None),
+            ("assignment_id", "c1"),
+            ("assignment_generation", None),
+            ("assignment_generation", 2),
+            ("sender_node_id", None),
+            ("sender_node_id", "other-worker"),
+            ("kind", "LATE_RESULT"),
+        ]
+        for field, altered in cases:
+            with self.subTest(field=field, altered=altered):
+                with self.store.transaction() as db:
+                    previous = db.execute(
+                        "SELECT " + field + " FROM orchestration_mailbox WHERE message_id='r1'"
+                    ).fetchone()[0]
+                    db.execute("UPDATE orchestration_mailbox SET " + field + "=? "
+                               "WHERE message_id='r1'", (altered,))
+                try:
+                    with self.assertRaises(ConflictError):
+                        self.run_commit()
+                    self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+                finally:
+                    with self.store.transaction() as db:
+                        db.execute("UPDATE orchestration_mailbox SET " + field + "=? "
+                                   "WHERE message_id='r1'", (previous,))
+
+    def test_corrupted_result_payload_or_digest_fails_closed(self):
+        cases = [("payload_json", "{invalid"),
+                 ("payload_json", _canonical({"message": "different"})),
+                 ("message_digest", "0" * 64)]
+        for field, altered in cases:
+            with self.subTest(field=field):
+                with self.store.transaction() as db:
+                    previous = db.execute("SELECT " + field + " FROM orchestration_mailbox "
+                                          "WHERE message_id='r1'").fetchone()[0]
+                    db.execute("UPDATE orchestration_mailbox SET " + field + "=? "
+                               "WHERE message_id='r1'", (altered,))
+                try:
+                    with self.assertRaises(ConflictError):
+                        self.run_commit()
+                    self.assertEqual(0, self.count("orchestration_consumption_receipts"))
+                finally:
+                    with self.store.transaction() as db:
+                        db.execute("UPDATE orchestration_mailbox SET " + field + "=? "
+                                   "WHERE message_id='r1'", (previous,))
+
+    def test_canonical_digest_compatibility(self):
+        payload = {"한글": "값", "nested": {"b": 2, "a": 1}}
+        with self.store.transaction() as db:
+            db.execute("UPDATE orchestration_mailbox SET payload_json=?,message_digest=? "
+                       "WHERE message_id='r1'", (_canonical(payload), _digest(payload)))
+            db.execute("UPDATE orchestration_assignments SET terminal_result_json=? "
+                       "WHERE assignment_id='r1'", (_canonical(payload),))
+        result = self.run_commit(results=[("r1", _digest(payload))])
+        self.assertFalse(result["idempotent"])
 
     def test_new_schema_does_not_backfill_legacy(self):
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from .models import ConflictError
+from .orchestration import _canonical, _digest
 from .store import Store
 
 
@@ -58,12 +59,42 @@ def commit_consumption_decision(
 
         for message_id, digest in results:
             source = db.execute(
-                "SELECT session_id,kind,message_digest FROM orchestration_mailbox WHERE message_id=?",
+                "SELECT session_id,kind,message_digest,assignment_id,assignment_generation,"
+                "sender_node_id,payload_json FROM orchestration_mailbox WHERE message_id=?",
                 (message_id,),
             ).fetchone()
             if (source is None or source["session_id"] != session_id
                     or source["kind"] != "RESULT" or source["message_digest"] != digest):
                 raise ConflictError("RESULT_NOT_VERIFIED")
+            source_id = source["assignment_id"]
+            generation = source["assignment_generation"]
+            sender = source["sender_node_id"]
+            if (not source_id or type(generation) is not int or generation < 1
+                    or not sender):
+                raise ConflictError("RESULT_PROVENANCE_MISSING")
+            origin = db.execute(
+                "SELECT session_id,current_generation,state,terminal_result_json "
+                "FROM orchestration_assignments WHERE assignment_id=?", (source_id,),
+            ).fetchone()
+            attempt = db.execute(
+                "SELECT worker_node_id,state FROM orchestration_assignment_attempts "
+                "WHERE assignment_id=? AND generation=?", (source_id, generation),
+            ).fetchone()
+            if (origin is None or origin["session_id"] != session_id
+                    or origin["current_generation"] != generation
+                    or attempt is None or attempt["worker_node_id"] != sender
+                    or attempt["state"] not in {"APPLIED", "FAILED", "UNKNOWN", "NOT_APPLIED"}
+                    or origin["state"] not in {"APPLIED", "FAILED", "UNKNOWN", "NOT_APPLIED"}):
+                raise ConflictError("RESULT_PROVENANCE_MISMATCH")
+            try:
+                source_payload = json.loads(source["payload_json"])
+                valid_digest = _digest(source_payload) == digest
+                valid_terminal = _canonical(source_payload) == _canonical(
+                    json.loads(origin["terminal_result_json"]))
+            except (TypeError, ValueError, OverflowError):
+                raise ConflictError("RESULT_PAYLOAD_INVALID") from None
+            if not valid_digest or not valid_terminal:
+                raise ConflictError("RESULT_INTEGRITY_MISMATCH")
             prior = db.execute(
                 "SELECT * FROM orchestration_consumption_receipts "
                 "WHERE session_id=? AND consumer_assignment_id=? AND result_message_id=?",
