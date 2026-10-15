@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 
 from bct.core.store import Store
-from bct.core.models import ConflictError
-from bct.core.orchestration import _digest,_canonical
+from bct.core.models import ConflictError, Work
+from bct.core.orchestration import _digest,_canonical,OrchestrationService
 from bct.core.durable_pr2 import (acquire_lease,renew_lease,create_wake,commit_and_enqueue,
                                   reserve_delivery,record_attempt,acknowledge_delivery,recovery_snapshot,reserve_wake,record_wake)
 
@@ -223,6 +223,88 @@ class PR2Tests(unittest.TestCase):
         x=threading.Thread(target=work);y=threading.Thread(target=work)
         x.start();y.start();x.join();y.join()
         self.assertCountEqual(["won","lost"],outcome)
+    def _real_takeover(self, *, current_time):
+        # Construct a genuine orchestration history, manager attachments,
+        # old pending wake and a proven-unsent queued assignment in temp SQLite.
+        with self.s.transaction() as db:
+            db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",
+                       ("new-manager","new","MANAGER","G",1,1))
+            for node,att,instance in (("m","manager-old","manager-instance-old"),
+                                      ("new-manager","manager-new","manager-instance-new")):
+                db.execute("INSERT INTO orchestration_session_nodes VALUES(?,?,?,?)",
+                           ("s",node,"MANAGER",1))
+                db.execute("INSERT INTO orchestration_attachments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (att,1,node,"rcc",instance,"manager-session",17,18,
+                            "manager-conversation","endpoint","MANAGER",None,1,1.))
+                db.execute("INSERT INTO connections VALUES(?,?,?,?,?,?,?)",
+                           ("orch:"+att,node,"rcc","{}", "endpoint",1,1))
+            db.execute("INSERT INTO orchestration_manager_epochs VALUES(?,?,?,?,?,?,?)",
+                       ("s",2,"m","ORIGINAL","{}",1.,None))
+            db.execute("INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       ("queued","s",2,"request","{}","[]","[]","{}","QUEUED",
+                        1,"{}",1.,1.))
+            db.execute("INSERT INTO orchestration_assignment_attempts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                       ("queued",1,2,"worker","att",1,"QUEUED",None,None,1.,1.))
+            row=db.execute("SELECT * FROM orchestration_assignments WHERE assignment_id='result'").fetchone()
+            old=OrchestrationService(self.s)._record_manager_wake(
+                db,session_id="s",assignment=row,generation=1,result_message_id="r",
+                result_digest=_digest({"message":"result"}),now=1.)
+            self.assertEqual("PENDING",old["state"])
+            old_event=old["event_id"]
+        create_wake(self.s,wake_id="durable-wake",session_id="s",assignment_id="result",
+                    generation=1,result_message_id="r",result_digest=_digest({"message":"result"}))
+        commit_and_enqueue(self.s,**self.args())
+        work=Work("w","test",tuple(),frozenset(),"o",1,"ACTIVE")
+        session=OrchestrationService(self.s).takeover_manager(
+            work=work,session_id="s",expected_epoch=2,manager_node_id="new-manager",
+            reason="isolated fixture takeover")
+        self.assertEqual(3,session["manager_epoch"])
+        self.assertEqual(2,session["plan_revision"])
+        new=acquire_lease(Store(self.s.path),session_id="s",manager_node_id="new-manager",
+                          expected_epoch=3,ttl_s=100,now=current_time)
+        self.assertEqual(3,new["epoch"])
+        self.assertNotEqual(self.lease["token"],new["token"])
+        with self.s.transaction() as db:
+            history=db.execute("SELECT epoch,manager_node_id,ended_at FROM orchestration_manager_epochs WHERE session_id='s' ORDER BY epoch").fetchall()
+            self.assertEqual([2,3],[x["epoch"] for x in history])
+            self.assertIsNotNone(history[0]["ended_at"])
+            self.assertEqual("new-manager",history[1]["manager_node_id"])
+            self.assertIsNone(history[1]["ended_at"])
+            wakes=db.execute("SELECT manager_epoch,state,manager_node_id FROM orchestration_manager_wakes WHERE session_id='s' ORDER BY manager_epoch").fetchall()
+            self.assertEqual([(2,"STALE","m"),(3,"PENDING","new-manager")],
+                             [(x["manager_epoch"],x["state"],x["manager_node_id"]) for x in wakes])
+            attempt=db.execute("SELECT manager_epoch,state,dispatch_operation_id FROM orchestration_assignment_attempts WHERE assignment_id='queued'").fetchone()
+            self.assertEqual((3,"QUEUED",None),tuple(attempt))
+            reconciliation=db.execute("SELECT decision,manager_epoch FROM orchestration_reconciliations WHERE assignment_id='queued'").fetchone()
+            self.assertEqual(("ADOPT_QUEUED_NOT_DISPATCHED",3),tuple(reconciliation))
+            events={x[0] for x in db.execute("SELECT kind FROM events")}
+            self.assertTrue({"ORCHESTRATION_MANAGER_WAKE_STALE","ORCHESTRATION_MANAGER_WAKE_RECORDED",
+                             "ORCHESTRATION_MANAGER_TAKEOVER"}.issubset(events))
+            receipt=db.execute("SELECT revoked_epoch,successor_epoch,reason,token_digest FROM orchestration_durable_lease_revocations WHERE session_id='s'").fetchone()
+            self.assertEqual((2,3,"SUPERSEDED_BY_SESSION_EPOCH"),tuple(receipt)[:3])
+            self.assertNotEqual(self.lease["token"],receipt["token_digest"])
+        with self.assertRaises(ConflictError):
+            renew_lease(self.s,session_id="s",epoch=2,token=self.lease["token"],ttl_s=20,now=current_time+1)
+        with self.assertRaises(ConflictError):
+            reserve_wake(self.s,wake_id="durable-wake",epoch=2,token=self.lease["token"],now=current_time+1)
+        with self.assertRaises(ConflictError):
+            reserve_delivery(self.s,delivery_id="stable-id",epoch=2,
+                             token=self.lease["token"],now=current_time+1)
+        with self.assertRaises(ConflictError):
+            acknowledge_delivery(self.s,delivery_id="stable-id",target_node_id="worker",
+                         attachment_id="att",attachment_generation=1,ack_digest="ack",
+                         epoch=2,token=self.lease["token"],now=current_time+1)
+        return new
+
+    def test_real_takeover_supersedes_active_lease(self):
+        # Existing lease expires_at=1100; takeover at 200 is before expiry.
+        self._real_takeover(current_time=200.)
+        self.assertEqual(1,self.count("orchestration_durable_lease_revocations"))
+
+    def test_real_takeover_supersedes_expired_lease(self):
+        self._real_takeover(current_time=1200.)
+        self.assertEqual(1,self.count("orchestration_durable_lease_revocations"))
+
     def test_legacy_consumed_unchanged(self):
         commit_and_enqueue(self.s,**self.args())
         db=self.s._connect()

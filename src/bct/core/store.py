@@ -212,6 +212,13 @@ class Store:
                     epoch INTEGER NOT NULL, token TEXT NOT NULL,
                     expires_at REAL NOT NULL, updated_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS orchestration_durable_lease_revocations (
+                    session_id TEXT NOT NULL REFERENCES orchestration_sessions(session_id),
+                    revoked_epoch INTEGER NOT NULL, owner_node_id TEXT NOT NULL,
+                    token_digest TEXT NOT NULL, successor_epoch INTEGER NOT NULL,
+                    reason TEXT NOT NULL, created_at REAL NOT NULL,
+                    PRIMARY KEY(session_id,revoked_epoch)
+                );
                 CREATE TABLE IF NOT EXISTS orchestration_durable_wakes (
                     wake_id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL REFERENCES orchestration_sessions(session_id),

@@ -48,7 +48,10 @@ def acquire_lease(store: Store, *, session_id: str, manager_node_id: str,
         if node is None or not node["active"] or node["role"] != "MANAGER":
             raise ConflictError("INVALID_MANAGER")
         old = db.execute("SELECT * FROM orchestration_durable_leases WHERE session_id=?", (session_id,)).fetchone()
-        if old is not None and old["expires_at"] > now:
+        # Session epoch is authoritative. A higher epoch is proof that the
+        # existing OrchestrationService takeover already committed; its lease
+        # must not block the new owner even if it has not expired.
+        if old is not None and old["epoch"] >= expected_epoch and old["expires_at"] > now:
             raise ConflictError("LEASE_ALREADY_ACTIVE")
         # Contract B: lease ownership NEVER changes the session epoch.
         # A replacement owner must first complete Orchestrator.takeover_manager(),
@@ -67,8 +70,23 @@ def acquire_lease(store: Store, *, session_id: str, manager_node_id: str,
             db.execute("INSERT INTO orchestration_durable_leases VALUES(?,?,?,?,?,?)",
                        (session_id, manager_node_id, epoch, token, now + ttl_s, now))
         else:
-            db.execute("UPDATE orchestration_durable_leases SET manager_node_id=?,epoch=?,token=?,expires_at=?,updated_at=? WHERE session_id=? AND epoch=?",
-                       (manager_node_id, epoch, token, now + ttl_s, now, session_id, old["epoch"]))
+            if old["epoch"] >= expected_epoch:
+                raise ConflictError("TAKEOVER_REQUIRED")
+            # Append immutable revocation evidence and replace active lease in
+            # the same BEGIN IMMEDIATE transaction. No session epoch mutation.
+            db.execute(
+                "INSERT INTO orchestration_durable_lease_revocations "
+                "(session_id,revoked_epoch,owner_node_id,token_digest,successor_epoch,reason,created_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (session_id, old["epoch"], old["manager_node_id"],
+                 hashlib.sha256(old["token"].encode("utf-8")).hexdigest(),
+                 expected_epoch, "SUPERSEDED_BY_SESSION_EPOCH", now))
+            changed = db.execute(
+                "UPDATE orchestration_durable_leases SET manager_node_id=?,epoch=?,token=?,expires_at=?,updated_at=? "
+                "WHERE session_id=? AND epoch=? AND token=?",
+                (manager_node_id, epoch, token, now+ttl_s, now, session_id, old["epoch"], old["token"])).rowcount
+            if changed != 1:
+                raise ConflictError("LEASE_SUPERSEDE_RACE")
         return {"session_id": session_id, "epoch": epoch, "token": token, "expires_at": now + ttl_s}
 
 
