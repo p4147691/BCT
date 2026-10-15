@@ -46,6 +46,8 @@ class BridgeActivationPolicyWindowsTests(unittest.TestCase):
             if server.poll() is None:
                 server.kill()
                 server.wait(timeout=5)
+            server.stdout.close()
+            server.stderr.close()
 
     def test_exact_owner_dacl_and_same_logon_session_are_accepted(self):
         client, server, lines, server_error, root = self._connected_case("valid")
@@ -145,6 +147,8 @@ class BridgeActivationPolicyWindowsTests(unittest.TestCase):
             if first.poll() is None:
                 first.kill()
                 first.wait(timeout=5)
+            first.stdout.close()
+            first.stderr.close()
 
 
 if __name__ == "__main__":
