@@ -67,6 +67,8 @@ def protect(secret: bytes, *, context: bytes) -> bytes:
     if not crypt32.CryptProtectData(ctypes.byref(plain), "BCT Browser Bridge",
                                     ctypes.byref(entropy), None, None, _UI_FORBIDDEN,
                                     ctypes.byref(encrypted)):
+        if encrypted.pbData:
+            kernel32.LocalFree(encrypted.pbData)
         raise RuntimeError("DPAPI_DENIED")
     return _copy_and_free(kernel32, encrypted)
 
@@ -82,6 +84,10 @@ def unprotect(protected: bytes, *, context: bytes) -> bytes:
     plain = _DataBlob()
     if not crypt32.CryptUnprotectData(ctypes.byref(encrypted), None, ctypes.byref(entropy),
                                       None, None, _UI_FORBIDDEN, ctypes.byref(plain)):
+        # The API normally leaves no output on failure, but defensively free
+        # any reported allocation before returning the generic denial.
+        if plain.pbData:
+            kernel32.LocalFree(plain.pbData)
         raise RuntimeError("DPAPI_DENIED")
     result = _copy_and_free(kernel32, plain)
     if len(result) != 32:
