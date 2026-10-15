@@ -1,6 +1,6 @@
 # BCT Browser Bridge PR3 — peer adapter checkpoint
 
-Status: `PR3E_CI_ACCOUNT_BLOCKED`.
+Status: `PR3E_ACCEPTED / PRODUCT_GATE_BLOCKED`.
 
 This plan is a source and review checkpoint for the independent Browser Bridge.
 It is not part of RCC, does not use the RCC Native Host, and does not authorize
@@ -23,9 +23,9 @@ These foundations are Core-side contracts and fake-transport tests. They do
 not prove Chrome completion observation, browser delivery, real receiver ACK,
 or a usable normal-ChatGPT manager loop.
 
-## Current checkpoint: PR #132
+## Accepted checkpoint: PR #132
 
-PR #132 (implementation commit `17d08f41067ed6832e31fb71d757fbd30d758d48`) adds the transport-neutral
+PR #132 (merge commit `6fc0a3af6106ec80200f1399144e245629309f41`) adds the transport-neutral
 PR3-e outer peer adapter. It is disabled unless a caller explicitly supplies a
 `PeerBindingProvider`; it never accepts the existing Browser Bridge read-only
 MCP bearer. The adapter validates a canonical outer frame, an HMAC over exact
@@ -40,28 +40,20 @@ Host. Cross-boundary tests prove its exact bytes are accepted by the Core
 adapter; this prevents a future duplicated wire format from silently drifting.
 
 Focused inherited bridge tests, local full unittest, `compileall`, and
-`git diff --check` passed in the isolated worktree. No runtime resource was
-created or changed.
-
-GitHub Actions run `38696516437` did not execute any workflow step. GitHub
-reported an account payment/spending-limit gate; a rerun failed identically
-before runner setup. This is external CI evidence missing, not a source-test
-failure. Do not merge PR #132 until its current exact head has a completed CI run.
+`git diff --check` passed in the isolated worktree. The exact PR head
+`d0a1abab47753b3cc411e2fdf74fb3105eaa1dec` later passed GitHub Actions run
+`38701545681` after the account's included Actions capacity was restored.
+Independent source review and a local inherited bridge regression run (59
+tests) found no merge-blocking issue. No runtime resource was created or
+changed, and the merged code remains disabled without an injected provider.
 
 ## Required rechecks, in order
 
-1. Restore GitHub Actions account eligibility, rerun CI for the unchanged
-   exact PR #132 head, and distinguish runner startup from test failure.
-2. Perform an independent read-only review of PR #132: outer canonical parsing,
-   binding generation rotation, replay reservation, provider failure behavior,
-   secret/error non-disclosure, and the PR3-c handoff.
-3. Merge only after review and exact-head CI pass. Deployment is explicitly not
-   part of this checkpoint.
-4. Before a real listener, separately design and approve an OS-backed peer
+1. Before a real listener, separately design and approve an OS-backed peer
    credential lifecycle (provision/rotate/revoke/recovery) plus protected local
    IPC/process identity. There is no safe existing credential-store component
    to reuse as of this checkpoint.
-5. Only then integrate a real Host transport and validate it in isolated
+2. Only then integrate a real Host transport and validate it in isolated
    Chrome. Current regular Google Chrome cannot automate unpacked extension
    loading with `--load-extension`; use Chrome for Testing or an explicit
    isolated-profile Load-unpacked workflow.
@@ -74,10 +66,19 @@ therefore a technically viable candidate for a future per-user peer binding;
 this is not an approval to create, read, migrate, or deploy a credential.
 
 Existing BCT runtime control/MCP tokens are unrelated authority and must never
-be reused as a Bridge peer secret. No reusable BCT credential lifecycle
-(provision, rotation, revocation, recovery and restrictive storage ACL proof)
-was found. Before implementation, the design must establish all of the
-following:
+be reused as a Bridge peer secret. The RCC Native Host pipe is also not a
+candidate: it is a different product boundary and its current server does not
+provide the Bridge-specific credential lifecycle or peer-process verification.
+
+User-scope DPAPI can protect a stored value at rest, but it does not by itself
+prove that a request came from the approved Host process: another process under
+the same Windows user can normally invoke user-scope protection APIs. Therefore
+user-scope DPAPI plus a user-ACL named pipe is not sufficient activation
+evidence for this product path.
+
+No reusable BCT credential lifecycle (provision, rotation, revocation, recovery
+and restrictive storage ACL proof) was found. Before implementation, the design
+must establish all of the following:
 
 1. a Bridge-only credential target and a stable binding generation;
 2. mutually consistent Host/Core access without putting plaintext in command
