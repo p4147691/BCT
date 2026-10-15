@@ -16,6 +16,15 @@ The current components deliberately stop short of a connected path:
 - the existing launcher starts `persistent_host.py` with `BCT_BRIDGE_*`
   read-only-MCP configuration. That legacy route is not a peer relay.
 
+## First source checkpoint
+
+`src/bct/core/bridge_pr3k_pipe_frame.py` is the initial, disconnected
+implementation of this design. It provides only a length-prefixed strict
+envelope around one canonical peer-frame byte string. It does not create a
+pipe, resolve a binding, load a secret, invoke `PeerAdapter` or Core ingress,
+or change the C# launcher and legacy Native Messaging host. Its tests cover
+only frame acceptance and rejection cases.
+
 ## Required future boundary
 
 A future test-only relay must be an explicit, disabled entry point separate

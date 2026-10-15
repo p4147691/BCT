@@ -1,6 +1,6 @@
 # BCT Browser Bridge PR3 — peer adapter checkpoint
 
-Status: `PR3K_PIPE_RELAY_DESIGN_READY / PRODUCT_GATE_BLOCKED`.
+Status: `PR3K_PIPE_FRAME_CODEC_REVIEW / PRODUCT_GATE_BLOCKED`.
 
 This plan is a source and review checkpoint for the independent Browser Bridge.
 It is not part of RCC, does not use the RCC Native Host, and does not authorize
@@ -77,6 +77,11 @@ In particular, an implementation must not reuse `BCT_BRIDGE_*` read-only-MCP
 environment values, the existing `persistent_host.py` route, any BCT control
 token, or any RCC resource.  A later activation still requires an explicitly
 approved Bridge-only Windows credential and logon-session/peer-process policy.
+
+The first restricted implementation checkpoint is a pure Python codec and its
+isolated tests. It may only length-prefix and strictly decode one canonical
+peer frame; it must not create a pipe, call `PeerAdapter`, resolve a binding,
+load a secret, or alter the launcher or legacy Native Messaging host.
 
 ## Read-only Windows credential feasibility
 
