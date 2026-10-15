@@ -23,6 +23,8 @@ The manifest's public key pins the extension ID.  Do not replace it, reuse RCC i
 - `native/host-manifest.template.json`: deliberately non-installable template.
 - `tests/`: deterministic framing and fail-closed host tests.
 - `docs/CHROME_E2E.md`: gated real-browser procedure and rollback.
+- `docs/CREDENTIAL_IPC_GATE.md`: the non-implementing activation contract for
+  Bridge-only credentials and protected Host/Core IPC.
 
 No compiled executable, native-host registration, browser profile, token, test runtime, or private key is committed.
 

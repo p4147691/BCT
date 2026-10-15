@@ -87,6 +87,11 @@ following:
 4. a failure and removal procedure that deletes only newly created Bridge
    resources and never alters the existing BCT or RCC credentials.
 
+`modules/browser-bridge/docs/CREDENTIAL_IPC_GATE.md` now records the required
+Bridge-only metadata, lifecycle transitions, IPC properties and isolated
+acceptance cases. It deliberately selects no Windows secret store or IPC
+implementation and creates no OS artifact.
+
 ## Separate tracks — do not conflate
 
 - Issue #111 and existing RCC UNKNOWN/Claim handling remain governed by their
