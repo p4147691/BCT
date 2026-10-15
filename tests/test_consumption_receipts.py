@@ -200,6 +200,17 @@ class ConsumptionTest(unittest.TestCase):
                         db.execute("UPDATE orchestration_mailbox SET " + field + "=? "
                                    "WHERE message_id='r1'", (previous,))
 
+    def test_foreign_session_source_assignment_fails_closed(self):
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       ("foreign", "w", 1, "test", "[]", "[]", "{}", 1,
+                        None, 2, "ACTIVE", "{}", 1.0, 1.0))
+            db.execute("UPDATE orchestration_assignments SET session_id='foreign' "
+                       "WHERE assignment_id='r1'")
+        with self.assertRaises(ConflictError):
+            self.run_commit()
+        self.assertEqual(0, self.count("orchestration_consumption_receipts"))
+
     def test_corrupted_result_payload_or_digest_fails_closed(self):
         cases = [("payload_json", "{invalid"),
                  ("payload_json", _canonical({"message": "different"})),
