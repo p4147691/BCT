@@ -9,6 +9,7 @@ from pathlib import Path
 from bct.core.bridge_pr3b_auth import ORIGIN
 from bct.core.bridge_pr3e_peer_adapter import PeerAdapter, make_peer_proof
 from bct.core.bridge_pr3f_binding_lifecycle import BindingLifecycle
+from bct.core.bridge_pr3h_dpapi_file_store import DpapiFileSecretStore
 from bct.core.models import ConflictError
 from bct.core.store import Store
 
@@ -65,7 +66,8 @@ class BindingLifecycleTests(unittest.TestCase):
         current = self.lifecycle.resolve_peer_binding(self.peer_id)
         self.assertEqual(2, current.binding_generation)
         self.assertEqual(new_secret, current.secret)
-        self.assertIn((self.peer_id, 1), self.secrets.values)
+        self.assertNotIn((self.peer_id, 1), self.secrets.values)
+        self.assertEqual(new_secret, self.secrets.values[(self.peer_id, 2)])
         with self.assertRaisesRegex(ConflictError, "PEER_BINDING_DENIED"):
             self.lifecycle.rotate(self.peer_id, binding_generation=4, launcher_sha256=self.launcher,
                                   secret=secrets.token_bytes(32))
@@ -121,6 +123,30 @@ class BindingLifecycleTests(unittest.TestCase):
         self.lifecycle.revoke(self.peer_id)
         with self.assertRaisesRegex(ConflictError, "PEER_ADAPTER_DENIED"):
             PeerAdapter(self.lifecycle).ingress(self.lifecycle._store, frame)
+
+    def test_dpapi_store_survives_reopen_and_rotation_removes_retired_secret(self):
+        directory = Path(self.temp.name) / "bridge-owned"; directory.mkdir()
+        secret_store = DpapiFileSecretStore(directory)
+        lifecycle = BindingLifecycle(Store(self.path), secret_store)
+        first = secrets.token_bytes(32)
+        lifecycle.provision(self.peer_id, binding_generation=1,
+                            launcher_sha256=self.launcher, secret=first)
+        self.assertEqual(first, lifecycle.resolve_peer_binding(self.peer_id).secret)
+
+        # Reopening reconstructs metadata from SQLite and bytes from the
+        # explicitly injected DPAPI store; neither is a runtime default.
+        reopened = BindingLifecycle(Store(self.path), DpapiFileSecretStore(directory))
+        self.assertEqual(first, reopened.resolve_peer_binding(self.peer_id).secret)
+        second = secrets.token_bytes(32)
+        reopened.rotate(self.peer_id, binding_generation=2,
+                        launcher_sha256=self.launcher, secret=second)
+        self.assertIsNone(secret_store.get_secret(self.peer_id, 1))
+        self.assertEqual(second, secret_store.get_secret(self.peer_id, 2))
+        self.assertEqual(1, len(list(directory.iterdir())))
+
+        reopened.revoke(self.peer_id)
+        self.assertIsNone(reopened.resolve_peer_binding(self.peer_id))
+        self.assertEqual([], list(directory.iterdir()))
 
 
 if __name__ == "__main__":

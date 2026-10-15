@@ -1,6 +1,6 @@
 # BCT Browser Bridge PR3 — peer adapter checkpoint
 
-Status: `PR3H_DPAPI_FILE_STORE_IMPLEMENTING / PRODUCT_GATE_BLOCKED`.
+Status: `PR3I_LIFECYCLE_STORE_INTEGRATION_IMPLEMENTING / PRODUCT_GATE_BLOCKED`.
 
 This plan is a source and review checkpoint for the independent Browser Bridge.
 It is not part of RCC, does not use the RCC Native Host, and does not authorize
@@ -58,11 +58,14 @@ changed, and the merged code remains disabled without an injected provider.
 3. PR3-h supplies a create-only, explicitly injected DPAPI file store. It has
    no default directory and requires an activation caller to verify the chosen
    directory's Windows ownership/ACL; it does not create an operational file.
-4. Before a real listener, separately design and approve an OS-backed peer
+4. PR3-i validates the PR3-f lifecycle with the explicit PR3-h store only in
+   a disposable test directory, including reopen, rotation cleanup and
+   revocation cleanup.  It supplies no runtime location or activation.
+5. Before a real listener, separately design and approve an OS-backed peer
    credential lifecycle (provision/rotate/revoke/recovery) plus protected local
    IPC/process identity. There is no safe existing credential-store component
    to reuse as of this checkpoint.
-5. Only then integrate a real Host transport and validate it in isolated
+6. Only then integrate a real Host transport and validate it in isolated
    Chrome. Current regular Google Chrome cannot automate unpacked extension
    loading with `--load-extension`; use Chrome for Testing or an explicit
    isolated-profile Load-unpacked workflow.
