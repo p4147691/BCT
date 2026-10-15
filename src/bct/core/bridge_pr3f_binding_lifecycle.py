@@ -133,6 +133,12 @@ class BindingLifecycle:
         except Exception:
             self._delete_quietly(peer_id, binding_generation)
             raise ConflictError("PEER_BINDING_DENIED") from None
+        # A retired generation is never accepted by ``resolve_peer_binding``.
+        # Remove its external secret after the metadata commit as well, so a
+        # successful rotation does not leave an otherwise unreachable secret
+        # behind.  Cleanup failure cannot roll back the active new generation;
+        # the retired metadata still fails closed.
+        self._delete_quietly(peer_id, active["binding_generation"])
         return BindingRecord(peer_id, binding_generation, launcher_sha256, ORIGIN, "ACTIVE")
 
     def revoke(self, peer_id: str) -> BindingRecord:
@@ -146,8 +152,9 @@ class BindingLifecycle:
             if changed != 1:
                 raise ConflictError("PEER_BINDING_DENIED")
         # Deletion is intentionally after fail-closed metadata revocation.  A
-        # failed external delete cannot reactivate a peer.
-        self._delete_quietly(peer_id, active["binding_generation"])
+        # failed external delete cannot reactivate a peer.  Retired generations
+        # are included for recovery from releases that predate rotation cleanup.
+        self._delete_peer_generations_quietly(peer_id)
         return BindingRecord(peer_id, active["binding_generation"], active["launcher_sha256"],
                              ORIGIN, "REVOKED")
 
@@ -189,3 +196,13 @@ class BindingLifecycle:
             self._secret_store.delete_secret(peer_id, binding_generation)
         except Exception:
             pass
+
+    def _delete_peer_generations_quietly(self, peer_id: str) -> None:
+        connection = self._store._connect()
+        try:
+            rows = connection.execute("SELECT binding_generation FROM bridge_peer_bindings "
+                                      "WHERE peer_id=?", (peer_id,)).fetchall()
+        finally:
+            connection.close()
+        for row in rows:
+            self._delete_quietly(peer_id, row["binding_generation"])
