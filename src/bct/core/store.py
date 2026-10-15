@@ -188,6 +188,24 @@ class Store:
                     FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
                     FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id)
                 );
+                CREATE TABLE IF NOT EXISTS orchestration_consumption_receipts (
+                    session_id TEXT NOT NULL, consumer_assignment_id TEXT NOT NULL,
+                    result_message_id TEXT NOT NULL, result_digest TEXT NOT NULL,
+                    manager_epoch INTEGER NOT NULL, decision_id TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY(session_id, consumer_assignment_id, result_message_id),
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
+                    FOREIGN KEY(consumer_assignment_id) REFERENCES orchestration_assignments(assignment_id),
+                    FOREIGN KEY(result_message_id) REFERENCES orchestration_mailbox(message_id)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_consumption_decisions (
+                    decision_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                    consumer_assignment_id TEXT NOT NULL, manager_epoch INTEGER NOT NULL,
+                    request_digest TEXT NOT NULL, decision_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
+                    FOREIGN KEY(consumer_assignment_id) REFERENCES orchestration_assignments(assignment_id)
+                );
                 CREATE TABLE IF NOT EXISTS orchestration_reconciliations (
                     decision_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
                     assignment_id TEXT NOT NULL, generation INTEGER NOT NULL,
