@@ -1,9 +1,10 @@
 import hashlib
 import unittest
+from unittest.mock import patch
 from bct.core.models import ConflictError
 from bct.core.store import Store
 from bct.core.orchestration import _digest
-from bct.core.durable_pr2 import commit_and_enqueue,create_wake,reserve_wake,record_wake,recovery_snapshot
+from bct.core.durable_pr2 import commit_and_enqueue,create_wake,reserve_wake,record_wake,recovery_snapshot,reserve_delivery,record_attempt,acknowledge_delivery
 from bct.core.bridge_pr3a_safe import (install_schema,completion_report,result_get,delivery_request,
                                        delivery_receipt_get,fake_send,recipient_ack)
 from test_durable_pr2 import PR2Tests
@@ -80,6 +81,39 @@ class BridgeSafeTests(unittest.TestCase):
                                                          transport=fake,now=104.)
         self.assertEqual(1,fake.calls)
         self.assertEqual([],recovery_snapshot(Store(self.s.path),session_id="s")["resendable"])
+    def test_ack_atomic_fence_after_validation_invalidation(self):
+        for kind in ("attachment", "assignment"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                commit_and_enqueue(self.s,**PR2Tests.args(self))
+                reservation=reserve_delivery(self.s,delivery_id="stable-id",epoch=2,
+                    token=self.lease["token"],now=102.)
+                kw=dict(delivery_id="stable-id",epoch=2,token=self.lease["token"],
+                        reservation_token=reservation["reservation_token"])
+                record_attempt(self.s,**kw,phase="SEND_STARTED",now=103.)
+                record_attempt(self.s,**kw,phase="DELIVERED",now=104.)
+                receipt=delivery_receipt_get(self.s,session_id="s",delivery_id="stable-id")
+                digest=hashlib.sha256(receipt["payload_json"].encode()).hexdigest()
+                command=hashlib.sha256(("stable-id:"+digest).encode()).hexdigest()
+                proof=dict(recipient_node_id="worker",attachment_id="att",generation=1,
+                    processed_command_id=command,ack_digest="ack",verified_by="isolated_fake_transport")
+                args=dict(delivery_id="stable-id",command_id=command,target_node_id="worker",
+                    attachment_id="att",attachment_generation=1,assignment_id="next",
+                    assignment_generation=1,payload_digest=digest,ack_digest="ack",
+                    recipient_proof=proof,epoch=2,token=self.lease["token"],now=105.)
+                def injected(store, **kwargs):
+                    db=kwargs["_db"]
+                    if kind=="attachment":
+                        db.execute("UPDATE orchestration_attachments SET active=0 WHERE attachment_id='att'")
+                    else:
+                        db.execute("UPDATE orchestration_assignments SET current_generation=2 WHERE assignment_id='next'")
+                    return acknowledge_delivery(store,**kwargs)
+                with patch("bct.core.bridge_pr3a_safe.acknowledge_delivery",side_effect=injected):
+                    with self.assertRaises(ConflictError):
+                        recipient_ack(self.s,**args)
+                state=delivery_receipt_get(Store(self.s.path),session_id="s",delivery_id="stable-id")
+                self.assertEqual("DELIVERED",state["state"])
+                self.assertIsNone(state["ack_digest"])
     def test_foreign_ack_proof_denied(self):
         commit_and_enqueue(self.s,**PR2Tests.args(self))
         rec=delivery_receipt_get(self.s,session_id="s",delivery_id="stable-id")

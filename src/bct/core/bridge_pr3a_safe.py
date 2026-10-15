@@ -102,8 +102,7 @@ def recipient_ack(store, *, delivery_id, command_id, target_node_id, attachment_
                   attachment_generation, assignment_id, assignment_generation,
                   payload_digest, ack_digest, recipient_proof, epoch, token, now):
     """Internal fake recipient only. Proof is an explicit validated test-scoped grant, NOT browser authentication."""
-    db=store._connect()
-    try:
+    with store.transaction() as db:
         row=db.execute("SELECT * FROM orchestration_dispatch_outbox WHERE delivery_id=?",(delivery_id,)).fetchone()
         if not row or tuple(row[k] for k in ("target_node_id","attachment_id","attachment_generation",
                                              "assignment_id","assignment_generation")) != (
@@ -124,8 +123,7 @@ def recipient_ack(store, *, delivery_id, command_id, target_node_id, attachment_
         digest=hashlib.sha256(row["payload_json"].encode()).hexdigest()
         if digest!=payload_digest or hashlib.sha256((delivery_id+":"+digest).encode()).hexdigest()!=command_id:
             raise ConflictError("COMMAND_MISMATCH")
-    finally:db.close()
-    changed=acknowledge_delivery(store,delivery_id=delivery_id,target_node_id=target_node_id,
+        changed=acknowledge_delivery(store,delivery_id=delivery_id,target_node_id=target_node_id,
           attachment_id=attachment_id,attachment_generation=attachment_generation,
-          ack_digest=ack_digest,epoch=epoch,token=token,now=now)
+          ack_digest=ack_digest,epoch=epoch,token=token,now=now,_db=db)
     return {"command_id":command_id,"duplicate":not changed}
