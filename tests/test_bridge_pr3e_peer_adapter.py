@@ -8,7 +8,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 from bct.core.models import ConflictError
-from bct.core.bridge_pr3b_auth import ORIGIN, create_fake_issuer_fixture
+from bct.core.bridge_pr3b_auth import ORIGIN, close_fake_issuer_fixture, create_fake_issuer_fixture
 from bct.core.bridge_pr3a_safe import install_schema as install_pr3a
 from bct.core.bridge_pr3b_auth import install_schema as install_pr3b
 from bct.core.bridge_pr3e_peer_adapter import (PeerAdapter, PeerBinding, ingress,
@@ -51,6 +51,7 @@ class PeerAdapterTests(unittest.TestCase):
         # Copy the durable fixture into the opaque Store bound to the fake
         # PR3-b grant issuer. The issuer must never target the original Store.
         fixture, self.issuer = create_fake_issuer_fixture()
+        self.addCleanup(close_fake_issuer_fixture, self.issuer)
         source = self.s._connect()
         target = fixture._connect()
         try:

@@ -6,7 +6,8 @@ from bct.core.store import Store
 from bct.core.orchestration import _digest
 from bct.core.durable_pr2 import commit_and_enqueue
 from bct.core.bridge_pr3a_safe import install_schema as install_pr3a, completion_report
-from bct.core.bridge_pr3b_auth import (install_schema,issue_fake_grant,revoke,call,ORIGIN,AUDIENCE,create_fake_issuer_fixture)
+from bct.core.bridge_pr3b_auth import (install_schema,issue_fake_grant,revoke,call,ORIGIN,AUDIENCE,
+                                       create_fake_issuer_fixture,close_fake_issuer_fixture)
 from test_durable_pr2 import PR2Tests
 
 class PR3BAuthTests(unittest.TestCase):
@@ -16,6 +17,7 @@ class PR3BAuthTests(unittest.TestCase):
         PR2Tests.setUp(self)
         # Copy the fixture database into a newly minted, authority-bound Store.
         fixture, self.issuer = create_fake_issuer_fixture()
+        self.addCleanup(close_fake_issuer_fixture, self.issuer)
         source=self.s._connect()
         target=fixture._connect()
         try:
@@ -106,6 +108,13 @@ class PR3BAuthTests(unittest.TestCase):
             with self.assertRaisesRegex(ConflictError,'FIXTURE_ONLY'):
                 issue_fake_grant(operational,session_id='s',node_id='worker',attachment_id='att',
                                  generation=1,operation='result_get',expires_at=200.)
+
+    def test_closed_fixture_issuer_cannot_issue_again(self):
+        fixture, issuer = create_fake_issuer_fixture()
+        close_fake_issuer_fixture(issuer)
+        with self.assertRaisesRegex(ConflictError, 'FIXTURE_ONLY'):
+            issue_fake_grant(fixture, session_id='s', node_id='worker', attachment_id='att',
+                             generation=1, operation='result_get', expires_at=200., issuer=issuer)
 
     def test_ack_authorized_path_and_replay(self):
         from bct.core.durable_pr2 import reserve_delivery,record_attempt

@@ -12,7 +12,7 @@ import json
 import secrets
 import weakref
 
-from .bridge_pr3b_auth import ORIGIN, create_fake_issuer_fixture
+from .bridge_pr3b_auth import ORIGIN, close_fake_issuer_fixture, create_fake_issuer_fixture
 from .bridge_pr3c_ingress import ingress as strict_ingress
 from .models import ConflictError
 
@@ -36,6 +36,17 @@ def create_fake_peer_fixture():
     _FIXTURE_ISSUERS[issuer] = (store, grant_issuer)
     _FIXTURE_SECRETS.setdefault(store, {})
     return store, grant_issuer, issuer
+
+
+def close_fake_peer_fixture(issuer):
+    """Remove peer fixture state before closing its nested grant fixture."""
+    if not isinstance(issuer, _FixtureIssuer):
+        return
+    binding = _FIXTURE_ISSUERS.pop(issuer, None)
+    if binding is not None:
+        store, grant_issuer = binding
+        _FIXTURE_SECRETS.pop(store, None)
+        close_fake_issuer_fixture(grant_issuer)
 
 
 def install_schema(store):

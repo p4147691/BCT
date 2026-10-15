@@ -33,6 +33,19 @@ def create_fake_issuer_fixture():
     return store, issuer
 
 
+def close_fake_issuer_fixture(issuer):
+    """Drop fixture-only authority and remove its test directory immediately.
+
+    This exists only for deterministic test cleanup.  It never accepts an
+    operational Store and a closed issuer cannot issue another fake grant.
+    """
+    if not isinstance(issuer, _FixtureIssuer):
+        return
+    binding = _FIXTURE_ISSUERS.pop(issuer, None)
+    if binding is not None:
+        binding[1].cleanup()
+
+
 OPERATIONS = frozenset({"completion_report", "result_get", "delivery_receipt_get", "recipient_ack"})
 ORIGIN = "chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/"
 AUDIENCE = "bct-bridge-core-internal-v1"

@@ -7,8 +7,8 @@ from bct.core.bridge_pr3b_auth import ORIGIN
 from bct.core.bridge_pr3a_safe import install_schema as install_pr3a
 from bct.core.bridge_pr3b_auth import install_schema as install_pr3b
 from bct.core.bridge_pr3c_ingress import ingress as pr3c_ingress
-from bct.core.bridge_pr3d_peer import (create_fake_peer_fixture, ingress, install_schema,
-                                       issue_fake_peer, make_fake_proof, revoke_peer)
+from bct.core.bridge_pr3d_peer import (close_fake_peer_fixture, create_fake_peer_fixture, ingress,
+                                       install_schema, issue_fake_peer, make_fake_proof, revoke_peer)
 from test_bridge_pr3c_ingress import IngressTests
 from test_bridge_pr3b_auth import PR3BAuthTests
 from test_durable_pr2 import PR2Tests
@@ -27,6 +27,7 @@ class PeerTests(unittest.TestCase):
         PR2Tests.setUp(self)
         source = self.s._connect()
         fixture, self.issuer, self.peer_issuer = create_fake_peer_fixture()
+        self.addCleanup(close_fake_peer_fixture, self.peer_issuer)
         target = fixture._connect()
         try:
             source.backup(target)
