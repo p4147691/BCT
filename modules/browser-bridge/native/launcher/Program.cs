@@ -11,6 +11,10 @@ class Program {
       return await BridgePipeProbe.RunServer(args[1], args[2]);
     if (args.Length == 2 && args[0] == "--bridge-pipe-probe-client")
       return await BridgePipeProbe.RunClient(args[1]);
+    if (args.Length == 3 && args[0] == "--bridge-pipe-relay-server")
+      return await BridgePipeRelayFixture.RunServer(args[1], args[2]);
+    if (args.Length == 4 && args[0] == "--bridge-pipe-relay-client")
+      return await BridgePipeRelayFixture.RunClient(args[1], args[2], args[3]);
     // Neither a PATH search nor a caller-supplied origin may choose the host runtime.
     if (args.Length != 1 || !string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)) return 4;
     if (!string.Equals(Environment.GetEnvironmentVariable("BCT_BRIDGE_EXTENSION_ORIGIN"), ApprovedOrigin, StringComparison.Ordinal)) return 4;
