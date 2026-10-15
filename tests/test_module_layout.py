@@ -49,6 +49,9 @@ class ModuleLayoutTests(unittest.TestCase):
         self.assertIn("BCT_TUNNEL_DEGRADED", script)
         self.assertIn("Get-NetTCPConnection -State Listen -OwningProcess", script)
         self.assertIn("$healthy.Count -ne 1", script)
+        self.assertIn("[Environment+SpecialFolder]::ApplicationData", script)
+        self.assertIn("[Environment+SpecialFolder]::UserProfile", script)
+        self.assertNotIn("C:\\Users\\", script)
         self.assertNotIn("D:\\ACT", script)
 
     def test_handoff_current_state_uses_live_proof_not_self_referential_sha(self):

@@ -3,11 +3,14 @@ param(
     [int]$RestartDelaySeconds = 5,
     [string]$Alias = 'act-control',
     [string]$TunnelId = 'tunnel_6ac39655c25c8191a3f96f37c9fc2525',
-    [string]$ProfileDir = 'C:\Users\시우세영\AppData\Roaming\tunnel-client',
+    # Windows PowerShell 5.1 can parse a UTF-8 script without a BOM through an
+    # ANSI code page. Resolve the account-specific paths at runtime so a
+    # non-ASCII Windows profile cannot prevent the supervisor from starting.
+    [string]$ProfileDir = (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)) 'tunnel-client'),
     [string]$McpServerUrl = 'http://127.0.0.1:18790/mcp',
     [string]$TunnelClientPath = 'D:\TOOLS\OpenAI\tunnel-client\0.0.14\tunnel-client.exe',
     [string]$RuntimeDir = 'D:\BCT\runtime',
-    [string]$HealthUrlFile = 'C:\Users\시우세영\.local\state\tunnel-client\health\act-control.url',
+    [string]$HealthUrlFile = (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)) '.local\state\tunnel-client\health\act-control.url'),
     [switch]$RepairHealthOnly,
     [int]$RepairProcessId = 0
 )
