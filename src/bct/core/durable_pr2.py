@@ -1,5 +1,6 @@
 """Isolated PR2 durable manager orchestration. No live dispatch or existing chain wiring."""
 from __future__ import annotations
+from contextlib import nullcontext
 
 import hashlib
 import json
@@ -236,15 +237,16 @@ def record_attempt(store: Store, *, delivery_id: str, epoch: int, token: str,
 def acknowledge_delivery(store: Store, *, delivery_id: str, target_node_id: str,
                          attachment_id: str, attachment_generation: int,
                          ack_digest: str, epoch: int, token: str,
-                         now: float | None = None) -> bool:
+                         now: float | None = None, _db=None) -> bool:
     for item in (delivery_id,target_node_id,attachment_id,ack_digest):
         _require_id(item)
     now = time.time() if now is None else now
-    with store.transaction() as db:
+    with (store.transaction() if _db is None else nullcontext(_db)) as db:
         row = db.execute("SELECT * FROM orchestration_dispatch_outbox WHERE delivery_id=?", (delivery_id,)).fetchone()
         if row is None or (row["target_node_id"],row["attachment_id"],row["attachment_generation"]) != (target_node_id,attachment_id,attachment_generation):
             raise ConflictError("ACK_TARGET_MISMATCH")
         _lease(db, row["session_id"], epoch, token, now)
+        _target_current(db, row)
         if row["manager_epoch"] > epoch:
             raise ConflictError("STALE_DELIVERY_EPOCH")
         if row["state"] == "ACKNOWLEDGED":
