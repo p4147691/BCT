@@ -1,6 +1,6 @@
 # BCT Browser Bridge PR3 — peer adapter checkpoint
 
-Status: `PR3K_PIPE_FRAME_CODEC_REVIEW / PRODUCT_GATE_BLOCKED`.
+Status: `PR3L_VERIFIED_PIPE_RELAY_IMPLEMENTATION / PRODUCT_GATE_BLOCKED`.
 
 This plan is a source and review checkpoint for the independent Browser Bridge.
 It is not part of RCC, does not use the RCC Native Host, and does not authorize
@@ -82,6 +82,20 @@ The first restricted implementation checkpoint is a pure Python codec and its
 isolated tests. It may only length-prefix and strictly decode one canonical
 peer frame; it must not create a pipe, call `PeerAdapter`, resolve a binding,
 load a secret, or alter the launcher or legacy Native Messaging host.
+
+## Current isolated checkpoint: PR3-l verified relay composition
+
+PR3-l composes the accepted boundaries behind mandatory injection.  A client
+verifier runs before request bytes are read, the verified executable digest is
+matched to the canonical peer frame, and PR3-e remains responsible for active
+binding, proof and sequence validation before PR3-c ingress.  A transport
+failure while publishing the result is surfaced as an unknown effect and the
+relay performs no resend.
+
+This checkpoint has no listener, real process verifier, default credential
+path or runtime entry point.  It uses only an in-memory binding and a fixture
+verifier in tests.  Product activation remains blocked on the Bridge-only
+Windows credential and final logon-session/DACL policy.
 
 ## Read-only Windows credential feasibility
 
