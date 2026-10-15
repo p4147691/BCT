@@ -14,7 +14,8 @@ internal static class BridgeActivationPolicyFixture {
   private const byte Verified = 0x56;
   private const byte Accepted = 0x4f;
   private const byte Denied = 0x15;
-  private const uint SecurityInformation = 0x00000001 | 0x00000004;
+  private const uint DaclSecurityInformation = 0x00000004;
+  private const uint SecurityInformation = 0x00000001 | DaclSecurityInformation;
   private const uint ProtectedDaclSecurityInformation = 0x80000000;
   private const uint FileObject = 1;
   private const uint KernelObject = 6;
@@ -29,6 +30,7 @@ internal static class BridgeActivationPolicyFixture {
   private const uint FileFlagFirstPipeInstance = 0x00080000;
   private const uint PipeAccessDuplex = 0x00000003;
   private const uint PipeRejectRemoteClients = 0x00000008;
+  private const uint WriteDac = 0x00040000;
   private const uint InvalidFileAttributes = 0xffffffff;
   private const uint FileAttributeReparsePoint = 0x00000400;
   private const int ErrorSuccess = 0;
@@ -174,7 +176,7 @@ internal static class BridgeActivationPolicyFixture {
       stage = "create-pipe";
       SafePipeHandle pipeHandle = CreateNamedPipeW(
         @"\\.\pipe\" + pipeName,
-        PipeAccessDuplex | FileFlagOverlapped | FileFlagFirstPipeInstance,
+        PipeAccessDuplex | WriteDac | FileFlagOverlapped | FileFlagFirstPipeInstance,
         PipeRejectRemoteClients, 1, 4096, 4096, 0, ref attributes);
       if (pipeHandle.IsInvalid) {
         pipeHandle.Dispose();
@@ -200,15 +202,16 @@ internal static class BridgeActivationPolicyFixture {
       // Deliberately mutate one policy object only after connection so the
       // fixture proves that the pre-read revalidation, rather than only the
       // creation-time check, rejects a changed boundary.
+      stage = "tamper-policy";
       if (mode == "root-acl" && !SetFileSecurityW(
-            rootPath, SecurityInformation | ProtectedDaclSecurityInformation,
+            rootPath, DaclSecurityInformation | ProtectedDaclSecurityInformation,
             loose.Value)) throw new InvalidOperationException();
       if (mode == "file-acl" && !SetFileSecurityW(
-            credentialPath, SecurityInformation | ProtectedDaclSecurityInformation,
+            credentialPath, DaclSecurityInformation | ProtectedDaclSecurityInformation,
             loose.Value)) throw new InvalidOperationException();
       if (mode == "pipe-acl" && !SetKernelObjectSecurity(
             pipe.SafePipeHandle,
-            SecurityInformation | ProtectedDaclSecurityInformation,
+            DaclSecurityInformation | ProtectedDaclSecurityInformation,
             loose.Value)) throw new InvalidOperationException();
 
       // Recheck every mutable policy object after connect and before touching
