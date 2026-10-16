@@ -32,7 +32,9 @@ from .integrations.github import GhCliClient, GitHubClient
 from .integrations.rcc import NamedPipeRelayClient
 
 
-def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
+def _manager_wake_receipt_v2_settings(
+    policy_path: str | Path,
+) -> tuple[bool, tuple[str, ...]]:
     data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
     orchestration = data.get("orchestration", {})
     if not isinstance(orchestration, dict):
@@ -40,7 +42,20 @@ def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
     enabled = orchestration.get("manager_wake_receipt_v2_enabled", False)
     if not isinstance(enabled, bool):
         raise ValueError("MANAGER_WAKE_RECEIPT_V2_ENABLED_INVALID")
-    return enabled
+    allowed = orchestration.get("manager_wake_receipt_v2_allowed_work_ids", [])
+    if (not isinstance(allowed, list)
+            or any(not isinstance(item, str) for item in allowed)):
+        raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_INVALID")
+    if len(allowed) != len(set(allowed)):
+        raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_DUPLICATE")
+    if len(allowed) > 32:
+        raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_TOO_MANY")
+    return enabled, tuple(allowed)
+
+
+def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
+    """Compatibility helper retained for callers that need only the gate."""
+    return _manager_wake_receipt_v2_settings(policy_path)[0]
 
 
 class BCT:
@@ -51,17 +66,19 @@ class BCT:
         self.store = Store(state_path)
         self.policy = Policy(policy_path)
         self.identity = IdentityService(self.store)
+        v2_enabled, v2_allowed_work_ids = _manager_wake_receipt_v2_settings(
+            policy_path
+        )
         self.orchestration = OrchestrationService(
             self.store,
             policy=self.policy,
-            manager_wake_receipt_v2_enabled=(
-                _manager_wake_receipt_v2_enabled(policy_path)
-            ),
+            manager_wake_receipt_v2_enabled=v2_enabled,
+            manager_wake_receipt_v2_allowed_work_ids=v2_allowed_work_ids,
         )
         relay = NamedPipeRelayClient()
         self.worker_dispatch_recovery = (
             WorkerDispatchRecovery(self.orchestration, relay)
-            if self.orchestration.manager_wake_receipt_v2_enabled else None
+            if self.orchestration.manager_wake_receipt_v2_active else None
         )
         self.manager_decision_recovery = (
             ManagerDecisionRecovery(
@@ -71,7 +88,7 @@ class BCT:
                     if self.worker_dispatch_recovery is not None else None
                 ),
             )
-            if self.orchestration.manager_wake_receipt_v2_enabled else None
+            if self.orchestration.manager_wake_receipt_v2_active else None
         )
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)
         github = github_client or GhCliClient()

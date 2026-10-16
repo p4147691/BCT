@@ -23,6 +23,7 @@ class FakeRelay:
         self.calls = []
         self.send_count = 0
         self.wake_send_count = 0
+        self.wake_write_count = 0
         self.wake_unknown = False
         self.write_count = 0
         self.receipt = None
@@ -59,6 +60,7 @@ class FakeRelay:
             callback = kwargs.get("before_write")
             if callback:
                 callback()
+            self.wake_write_count += 1
             if self.wake_unknown:
                 raise RelayEffectUnknown("wake response lost after submit")
             return {"type": "host:ack", "ok": True, "submitted": True}
@@ -92,6 +94,7 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         self.store.create_work(self.work)
         self.service = OrchestrationService(
             self.store, manager_wake_receipt_v2_enabled=True,
+            manager_wake_receipt_v2_allowed_work_ids=("work",),
             policy=Policy(self.policy_path),
         )
         self.now = time.time()
@@ -358,6 +361,18 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         wake = self.row("orchestration_manager_wakes", "assignment_id", self.assignment_id)
         self.assertEqual("STALE", wake["state"])
 
+    def test_allowlist_change_at_pipe_write_fences_manager_wake(self):
+        self.dispatcher.run_once(now=self.now + 2)
+        self.relay.receipt = self.worker_receipt()
+        self.relay.before_wake_callback = lambda: setattr(
+            self.service, "manager_wake_receipt_v2_allowed_work_ids", frozenset()
+        )
+        result = self.dispatcher.run_once(now=self.now + 3)
+        self.assertEqual(1, result["rejected"])
+        self.assertEqual(0, self.relay.wake_write_count)
+        wake = self.row("orchestration_manager_wakes", "assignment_id", self.assignment_id)
+        self.assertEqual("PENDING", wake["state"])
+
     def test_manager_wake_pipe_unavailable_remains_recoverable_pending(self):
         self.dispatcher.run_once(now=self.now + 2)
         self.relay.receipt = self.worker_receipt()
@@ -439,6 +454,24 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         )["state"])
         self.assertEqual("NOT_APPLIED", self.row(
             "orchestration_assignments", "assignment_id", self.assignment_id
+        )["state"])
+
+    def test_allowlist_removal_stops_dispatcher_without_rcc_io(self):
+        self.service.manager_wake_receipt_v2_allowed_work_ids = frozenset()
+        summary = self.dispatcher.run_once(now=self.now + 2)
+        self.assertFalse(summary["lease_owned"])
+        self.assertEqual(0, summary["checked"])
+        self.assertEqual([], self.relay.calls)
+
+    def test_allowlist_change_at_pipe_write_fences_worker_send(self):
+        self.relay.before_callback = lambda: setattr(
+            self.service, "manager_wake_receipt_v2_allowed_work_ids", frozenset()
+        )
+        summary = self.dispatcher.run_once(now=self.now + 2)
+        self.assertEqual(1, summary["rejected"])
+        self.assertEqual(0, self.relay.write_count)
+        self.assertEqual("RESERVED", self.row(
+            "orchestration_dispatch_outbox", "delivery_id", self.outbox["delivery_id"]
         )["state"])
 
     def test_policy_change_and_work_handoff_fail_before_send(self):
@@ -613,6 +646,7 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         restarted = WorkerDispatchRecovery(
             OrchestrationService(
                 Store(self.store.path), manager_wake_receipt_v2_enabled=True,
+                manager_wake_receipt_v2_allowed_work_ids=("work",),
                 policy=Policy(self.policy_path),
             ), self.relay,
         )

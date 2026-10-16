@@ -294,6 +294,7 @@ class ManagerDecisionConsumer:
             session = self.service._session_row(tx, str(current["session_id"]))
             self.service._assert_work(session, work)
             self.service._assert_current_work_assignment(tx, work)
+            self.service.assert_manager_wake_receipt_v2_allowed(work.work_id)
             if int(session["manager_epoch"]) != manager_epoch or int(current["manager_epoch"]) != manager_epoch:
                 raise ConflictError("STALE_MANAGER_EPOCH")
             lease = _lease(

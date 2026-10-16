@@ -27,6 +27,10 @@ class ModuleLayoutTests(unittest.TestCase):
             False,
             self.config["orchestration"]["manager_wake_receipt_v2_enabled"],
         )
+        self.assertEqual(
+            [],
+            self.config["orchestration"]["manager_wake_receipt_v2_allowed_work_ids"],
+        )
 
     def test_runtime_profile_has_no_legacy_source_paths(self):
         files = self.config["deployment"]["profiles"]["bct_runtime_v1"]["files"]

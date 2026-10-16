@@ -8,7 +8,7 @@ from pathlib import Path
 
 from bct import BCT
 from bct.core.manager_decision import DECISION_END, DECISION_SCHEMA, DECISION_START
-from bct.core.models import ConflictError, Outcome, Principal
+from bct.core.models import ConflictError, Outcome, PreconditionError, Principal
 from bct.features.orchestration import OrchestrationFeature
 from bct.integrations.rcc import RelayEffectUnknown
 
@@ -182,11 +182,17 @@ class ManagerWakeAckContractTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def write_policy(self, enabled: bool | None) -> None:
+    def write_policy(
+        self, enabled: bool | None, *, allowed_work_ids: list[str] | None = None,
+    ) -> None:
+        if allowed_work_ids is None:
+            allowed_work_ids = ["work"] if enabled is True else []
         value = (
             "" if enabled is None else
             "[orchestration]\nmanager_wake_receipt_v2_enabled="
             + ("true" if enabled else "false") + "\n"
+            + "manager_wake_receipt_v2_allowed_work_ids="
+            + json.dumps(allowed_work_ids) + "\n"
         )
         self.policy.write_text(
             '[policy]\nnormal_actions=["read","write","orchestrate"]\n'
@@ -194,8 +200,10 @@ class ManagerWakeAckContractTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def reload_bct(self, enabled: bool | None) -> None:
-        self.write_policy(enabled)
+    def reload_bct(
+        self, enabled: bool | None, *, allowed_work_ids: list[str] | None = None,
+    ) -> None:
+        self.write_policy(enabled, allowed_work_ids=allowed_work_ids)
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=self.policy)
         self.bct.operations._features["orchestrate"] = OrchestrationFeature(
             self.bct.orchestration, self.relay
@@ -279,6 +287,35 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertEqual(1, wake["envelope_schema"])
         self.assertEqual("LEGACY_RETURN_V1", wake["receipt_mode"])
 
+    def test_global_on_with_empty_or_mismatched_allowlist_stays_schema_one(self):
+        for allowed in ([], ["different-work"]):
+            with self.subTest(allowed=allowed):
+                self.reload_bct(True, allowed_work_ids=allowed)
+                self.assertFalse(
+                    self.bct.orchestration.manager_wake_receipt_v2_allowed("work")
+                )
+                if not allowed:
+                    self.assertIsNone(self.bct.manager_decision_recovery)
+                    self.assertIsNone(self.bct.worker_dispatch_recovery)
+                self.dispatch("not-allowed-" + str(len(allowed)))
+                wake = self.first_wake()
+                self.assertEqual(1, wake["envelope_schema"])
+                self.assertEqual("LEGACY_RETURN_V1", wake["receipt_mode"])
+
+    def test_invalid_allowlist_configuration_fails_closed(self):
+        invalid_values = ('"work"', '["work", 1]', '["work", "work"]', '["bad id"]')
+        for value in invalid_values:
+            with self.subTest(value=value):
+                self.policy.write_text(
+                    '[policy]\nnormal_actions=["read","write","orchestrate"]\n'
+                    'approval_actions=[]\n[orchestration]\n'
+                    'manager_wake_receipt_v2_enabled=true\n'
+                    f'manager_wake_receipt_v2_allowed_work_ids={value}\n',
+                    encoding="utf-8",
+                )
+                with self.assertRaises((ValueError, PreconditionError)):
+                    BCT(state_path=self.root / "invalid.sqlite", policy_path=self.policy)
+
     def test_confirmed_non_submit_reuses_exact_delivery_and_envelope(self):
         self.relay.wake_outcomes.extend(["PENDING", "DELIVERED"])
         self.dispatch()
@@ -320,7 +357,7 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         ).hexdigest()[:32]
         self.assertEqual(expected_id, call["request_id"])
 
-    def test_pending_schema_two_is_not_reinterpreted_after_disabling_v2(self):
+    def test_pending_schema_two_is_frozen_but_blocked_after_disabling_v2(self):
         self.relay.wake_outcomes.append("PENDING")
         self.dispatch("v2-pending")
         first = self.wake_calls()[0]
@@ -328,15 +365,30 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertEqual(2, wake["envelope_schema"])
         self.reload_bct(False)
         self.relay.wake_outcomes.append("DELIVERED")
-        self.call("v2-retry", {
+        result = self.call("v2-retry", {
             "operation": "manager-wake", "session_id": "session",
             "manager_epoch": 1, "event_id": wake["event_id"],
         })
-        second = self.wake_calls()[-1]
-        self.assertEqual(first["request_id"], second["request_id"])
-        self.assertEqual(first["text"], second["text"])
-        self.assertEqual("", second["extra"]["returnTo"])
-        self.assertEqual(2, self.envelope(second)["schema"])
+        self.assertNotEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(1, len(self.wake_calls()))
+        persisted = self.first_wake()
+        self.assertEqual(2, persisted["envelope_schema"])
+        self.assertEqual("RCC_RESULT_POLL_V1", persisted["receipt_mode"])
+        self.assertEqual(first["request_id"], self.wake_calls()[0]["request_id"])
+
+    def test_allowlist_removal_after_restart_blocks_existing_schema_two(self):
+        self.relay.wake_outcomes.append("PENDING")
+        self.dispatch("allowlist-pending")
+        wake = self.first_wake()
+        self.reload_bct(True, allowed_work_ids=["different-work"])
+        self.relay.wake_outcomes.append("DELIVERED")
+        result = self.call("allowlist-removed", {
+            "operation": "manager-wake", "session_id": "session",
+            "manager_epoch": 1, "event_id": wake["event_id"],
+        })
+        self.assertNotEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(1, len(self.wake_calls()))
+        self.assertEqual("PENDING", self.first_wake()["state"])
 
     def test_unknown_wake_is_never_resent(self):
         self.relay.wake_outcomes.append("UNKNOWN")
