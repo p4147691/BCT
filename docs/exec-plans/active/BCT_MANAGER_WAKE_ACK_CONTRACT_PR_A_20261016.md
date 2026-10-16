@@ -38,9 +38,11 @@ return role. Unknown schema/mode pairs fail closed. Existing Issue #111 rows,
 historical `acknowledged_at`, mailbox `consumed_at`, UNKNOWN effects and Claims
 are neither backfilled nor reinterpreted. A post-send `UNKNOWN` is never resent.
 
-Wake claim and completion re-read the current SQLite Work owner and assignment
-epoch, current Manager epoch and exact active attachment. A stale caller-owned
-Work object, takeover or attachment rotation cannot authorize a new dispatch.
+Wake claim re-reads the current SQLite Work owner and assignment epoch, current
+Manager epoch and exact active attachment. Completion re-reads the current Work
+owner/epoch, Manager epoch, versioned wake contract and exact claimed delivery.
+A stale caller-owned Work object, takeover or attachment rotation cannot
+authorize a new dispatch, and handoff cannot let a stale caller finalize it.
 
 ## RCC resultHash contract
 

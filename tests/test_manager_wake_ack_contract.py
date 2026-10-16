@@ -331,6 +331,51 @@ class ManagerWakeAckContractTests(unittest.TestCase):
                 manager_epoch=1, delivery_id=wake["delivery_id"],
             )
 
+    def test_stale_work_object_after_handoff_cannot_complete(self):
+        self.relay.wake_outcomes.append("PENDING")
+        self.dispatch()
+        wake = self.first_wake()
+        stale = self.bct.store.get_work("work")
+        claimed = self.bct.orchestration.claim_manager_wake(
+            work=stale, session_id="session", event_id=wake["event_id"],
+            manager_epoch=1, delivery_id=wake["delivery_id"],
+        )
+        self.assertEqual("DELIVERING", claimed["state"])
+        self.bct.store.handoff_work(
+            work_id="work", old_principal_id="owner",
+            new_principal_id="next-owner", expected_epoch=1,
+        )
+        with self.assertRaises(ConflictError):
+            self.bct.orchestration.complete_manager_wake(
+                work=stale, session_id="session", event_id=wake["event_id"],
+                manager_epoch=1, delivery_id=wake["delivery_id"],
+                outcome="DELIVERED",
+            )
+        self.assertEqual("DELIVERING", self.first_wake()["state"])
+
+    def test_contract_change_after_claim_cannot_complete(self):
+        self.relay.wake_outcomes.append("PENDING")
+        self.dispatch()
+        wake = self.first_wake()
+        current = self.bct.store.get_work("work")
+        claimed = self.bct.orchestration.claim_manager_wake(
+            work=current, session_id="session", event_id=wake["event_id"],
+            manager_epoch=1, delivery_id=wake["delivery_id"],
+        )
+        self.assertEqual("DELIVERING", claimed["state"])
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_manager_wakes SET receipt_mode='UNKNOWN' "
+                "WHERE event_id=?", (wake["event_id"],),
+            )
+        with self.assertRaises(ConflictError):
+            self.bct.orchestration.complete_manager_wake(
+                work=current, session_id="session", event_id=wake["event_id"],
+                manager_epoch=1, delivery_id=wake["delivery_id"],
+                outcome="DELIVERED",
+            )
+        self.assertEqual("DELIVERING", self.first_wake()["state"])
+
     def test_upgrade_defaults_existing_wakes_to_schema_one_without_backfill(self):
         db = self.bct.store._connect()
         try:

@@ -1565,12 +1565,21 @@ class OrchestrationService:
         with self.store.transaction() as db:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
+            self._assert_current_work_assignment(db, work)
             event = db.execute(
                 "SELECT * FROM orchestration_manager_wakes WHERE event_id=? AND session_id=?",
                 (event_id, session_id),
             ).fetchone()
             if event is None:
                 raise KeyError("ORCHESTRATION_WAKE_EVENT_NOT_FOUND")
+            envelope_schema = event["envelope_schema"]
+            receipt_mode = str(event["receipt_mode"] or "")
+            if isinstance(envelope_schema, bool) or not isinstance(envelope_schema, int):
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_INVALID")
+            if (envelope_schema, receipt_mode) not in {
+                (1, "LEGACY_RETURN_V1"), (2, "RCC_RESULT_POLL_V1"),
+            }:
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
             if str(event["delivery_id"] or "") != delivery_id:
