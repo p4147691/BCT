@@ -82,6 +82,18 @@ class OrchestrationService:
         except (OSError, ValueError) as exc:
             raise PreconditionError("MANAGER_DECISION_POLICY_DENIED") from exc
 
+    def assert_current_unattended_orchestration_policy(self, work: Work) -> str:
+        """Revalidate the outer orchestration grant before autonomous I/O.
+
+        Production orchestration work is user-scoped to ``orchestrate`` before
+        it can create a durable session. Direct service-level compatibility
+        helpers predate that outer operation and deliberately have no such
+        scope, so they retain their existing bounded behavior.
+        """
+        if "orchestrate" not in work.actions:
+            return ""
+        return self.assert_current_unattended_policy(["orchestrate"])
+
     @staticmethod
     def _assert_outer_operation_running(db, *, work: Work,
                                         request: dict[str, Any]) -> None:

@@ -26,6 +26,7 @@ class FakeRelay:
         self.wake_unknown = False
         self.write_count = 0
         self.receipt = None
+        self.result_response_updates = {}
         self.send_unknown = False
         self.unavailable = False
         self.ack_unknown_once = False
@@ -66,7 +67,8 @@ class FakeRelay:
                 return {"ok": True, "relayId": kwargs["text"], "found": False,
                         "completed": False, "pending": True, "result": None}
             return {"ok": True, "relayId": kwargs["text"], "found": True,
-                    "completed": True, "pending": False, "result": self.receipt}
+                    "completed": True, "pending": False, "result": self.receipt,
+                    **self.result_response_updates}
         if command == "result-ack":
             if self.ack_unknown_once:
                 self.ack_unknown_once = False
@@ -84,9 +86,9 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         self.store = Store(Path(self.temp.name) / "state.sqlite")
         self.policy_path = Path(self.temp.name) / "bct.toml"
         self.policy_path.write_text(
-            '[policy]\nnormal_actions=["read"]\napproval_actions=[]\n', encoding="utf-8",
+            '[policy]\nnormal_actions=["read","orchestrate"]\napproval_actions=[]\n', encoding="utf-8",
         )
-        self.work = Work("work", "fixture", (root,), frozenset({"read"}), "owner")
+        self.work = Work("work", "fixture", (root,), frozenset({"read", "orchestrate"}), "owner")
         self.store.create_work(self.work)
         self.service = OrchestrationService(
             self.store, manager_wake_receipt_v2_enabled=True,
@@ -220,7 +222,7 @@ class WorkerDispatchPRCTests(unittest.TestCase):
             "next-conversation", 1,
         ])
         return {
-            "id": self.outbox["delivery_id"], "fingerprint": fingerprint,
+            "id": self.outbox["delivery_id"], "from": "NEXT", "fingerprint": fingerprint,
             "messageHash": assignment["request_digest"],
             "targetBindingReceipt": "next-binding", "instanceId": "next-instance",
             "sessionId": "next-session", "tabId": 13,
@@ -447,13 +449,61 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         self.assertEqual(1, denied["rejected"])
         self.assertEqual(0, self.relay.send_count)
         self.policy_path.write_text(
-            '[policy]\nnormal_actions=["read"]\napproval_actions=[]\n', encoding="utf-8",
+            '[policy]\nnormal_actions=["read","orchestrate"]\napproval_actions=[]\n', encoding="utf-8",
         )
         with self.store.transaction() as db:
             db.execute("UPDATE works SET assignment_epoch=2 WHERE work_id='work'")
         handed = self.dispatcher.run_once(now=self.now + 3)
         self.assertEqual(0, self.relay.send_count)
         self.assertIn(handed["rejected"], {0, 1})
+
+    def test_withdrawn_outer_orchestration_policy_blocks_new_sends_not_readback(self):
+        self.policy_path.write_text(
+            '[policy]\nnormal_actions=["read"]\napproval_actions=[]\n', encoding="utf-8",
+        )
+        denied = self.dispatcher.run_once(now=self.now + 2)
+        self.assertEqual(1, denied["rejected"])
+        self.assertEqual(0, self.relay.send_count)
+        self.policy_path.write_text(
+            '[policy]\nnormal_actions=["read","orchestrate"]\napproval_actions=[]\n', encoding="utf-8",
+        )
+        self.dispatcher.run_once(now=self.now + 3)
+        self.assertEqual(1, self.relay.send_count)
+        self.relay.receipt = self.worker_receipt()
+        self.policy_path.write_text(
+            '[policy]\nnormal_actions=["read"]\napproval_actions=[]\n', encoding="utf-8",
+        )
+        recovered = self.dispatcher.run_once(now=self.now + 4)
+        self.assertEqual(1, recovered["acked"])
+        self.assertEqual(1, self.relay.send_count)
+        self.assertEqual(0, self.relay.wake_send_count)
+
+    def test_worker_lookup_requires_exact_outer_and_public_receipt_bindings(self):
+        self.dispatcher.run_once(now=self.now + 2)
+        base = self.worker_receipt()
+        for response_updates, receipt_updates in (
+            ({"ok": False}, {}),
+            ({"relayId": "wrong-delivery"}, {}),
+            ({}, {"from": "WRONG"}),
+            ({}, {"tabId": "13"}),
+            ({}, {"tabId": True}),
+            ({}, {"attachmentGeneration": "1"}),
+            ({}, {"attachmentGeneration": True}),
+            ({}, {"targetBindingReceipt": "wrong-binding"}),
+            ({}, {"resultHash": "0" * 64}),
+        ):
+            self.relay.result_response_updates = response_updates
+            self.relay.receipt = {**base, **receipt_updates}
+            result = self.dispatcher.run_once(now=self.now + 3)
+            if response_updates:
+                self.assertEqual(1, result["deferred"])
+            else:
+                self.assertEqual(1, result["rejected"])
+            row = self.row("orchestration_dispatch_outbox", "delivery_id", self.outbox["delivery_id"])
+            self.assertEqual("DELIVERED", row["state"])
+            self.assertEqual("DISPATCHING", self.row(
+                "orchestration_assignments", "assignment_id", self.assignment_id,
+            )["state"])
 
     def test_authority_change_at_write_fence_does_not_terminalize_assignment(self):
         def handoff():

@@ -322,6 +322,9 @@ class ManagerDecisionConsumer:
                 raise ConflictError("MANAGER_WAKE_RESULT_CONFLICT")
             if policy_actions and current["decision_id"] is None:
                 self.service.assert_current_unattended_policy(policy_actions)
+                # A Manager receipt has no Principal of its own. Recheck the
+                # current outer grant before it can enqueue autonomous work.
+                self.service.assert_current_unattended_orchestration_policy(work)
 
             for index, successor in enumerate(decision["successors"]):
                 assignment_id = successor_ids[index]

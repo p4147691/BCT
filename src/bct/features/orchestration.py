@@ -323,10 +323,11 @@ class OrchestrationFeature:
         )
 
     def _wake_manager(self, *, work: Work, session_id: str,
-                      manager_epoch: int, event_id: str,
-                      manager_lease_token: str | None = None,
-                      recovery_fence: tuple[str, str] | None = None,
-                      claim_at_write: bool = False) -> dict[str, Any]:
+                       manager_epoch: int, event_id: str,
+                       manager_lease_token: str | None = None,
+                       recovery_fence: tuple[str, str] | None = None,
+                       claim_at_write: bool = False,
+                       before_write_fence=None) -> dict[str, Any]:
         def public_event(value: dict[str, Any] | None) -> dict[str, Any] | None:
             if value is None:
                 return None
@@ -363,6 +364,8 @@ class OrchestrationFeature:
         try:
             def claim_immediately_before_write() -> None:
                 nonlocal claimed
+                if before_write_fence is not None:
+                    before_write_fence()
                 current = self.service.claim_manager_wake(
                     work=work, session_id=session_id, event_id=event_id,
                     manager_epoch=manager_epoch, delivery_id=delivery_id,

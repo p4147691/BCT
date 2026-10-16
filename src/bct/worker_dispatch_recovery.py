@@ -350,18 +350,25 @@ class WorkerDispatchRecovery:
             ).rowcount == 1
 
     def _deliver_manager_wake(self, candidate: ManagerWakeCandidate) -> str:
+        work = self.store.get_work(candidate.work_id)
+        self.service.assert_current_unattended_orchestration_policy(work)
         result = self.feature._wake_manager(
-            work=self.store.get_work(candidate.work_id),
+            work=work,
             session_id=candidate.session_id,
             manager_epoch=candidate.manager_epoch,
             event_id=candidate.event_id,
             manager_lease_token=candidate.lease_token,
             recovery_fence=(self.owner_id, self.lease_token),
             claim_at_write=True,
+            before_write_fence=lambda: self.service.assert_current_unattended_orchestration_policy(
+                self.store.get_work(candidate.work_id)
+            ),
         )
         return "DELIVERED" if result["delivered"] else "DEFERRED"
 
-    def _context(self, candidate: DispatchCandidate) -> tuple[Any, dict[str, Any], dict[str, Any], str, str]:
+    def _context(
+        self, candidate: DispatchCandidate, *, check_unattended_policy: bool = True,
+    ) -> tuple[Any, dict[str, Any], dict[str, Any], str, str]:
         work = self.store.get_work(candidate.work_id)
         assignment = self.service.assignment(
             work=work, session_id=candidate.session_id,
@@ -374,7 +381,9 @@ class WorkerDispatchRecovery:
                 or str(attempt["attachment_id"]) != candidate.attachment_id
                 or int(attempt["attachment_generation"]) != candidate.attachment_generation):
             raise ConflictError("WORKER_DISPATCH_TARGET_FENCED")
-        self.service.assert_current_unattended_policy(list(assignment["actions"]))
+        if check_unattended_policy:
+            self.service.assert_current_unattended_policy(list(assignment["actions"]))
+            self.service.assert_current_unattended_orchestration_policy(work)
         attachment = self.service.attachment(
             work=work, session_id=candidate.session_id,
             attachment_id=candidate.attachment_id,
@@ -406,6 +415,9 @@ class WorkerDispatchRecovery:
             # DB fence is rechecked before bytes are written; Policy has no
             # duplicated cached authority in the dispatcher.
             self.service.assert_current_unattended_policy(actions)
+            self.service.assert_current_unattended_orchestration_policy(
+                self.store.get_work(candidate.work_id)
+            )
             record_attempt(
                 self.store, delivery_id=candidate.delivery_id,
                 epoch=candidate.manager_epoch, token=candidate.lease_token,
@@ -418,8 +430,7 @@ class WorkerDispatchRecovery:
         now = time.time()
         with self.store.transaction() as db:
             self._assert_fence(db, now)
-            actions = self._assert_authority(db, candidate)
-            self.service.assert_current_unattended_policy(actions)
+            self._assert_authority(db, candidate)
             record_attempt(
                 self.store, delivery_id=candidate.delivery_id,
                 epoch=candidate.manager_epoch, token=candidate.lease_token,
@@ -448,6 +459,7 @@ class WorkerDispatchRecovery:
             self._assert_fence(db, now)
             actions = self._assert_authority(db, candidate)
             self.service.assert_current_unattended_policy(actions)
+            self.service.assert_current_unattended_orchestration_policy(work)
             reserved = reserve_delivery(
                 self.store, delivery_id=candidate.delivery_id,
                 epoch=candidate.manager_epoch, token=candidate.lease_token,
@@ -533,23 +545,29 @@ class WorkerDispatchRecovery:
             and str(receipt.get("fingerprint") or "") == expected_fingerprint
             and receipt.get("ok") is True and receipt.get("ambiguous") is False
             and str(receipt.get("resultState") or "") == "RESULT_PERSISTED"
+            and str(receipt.get("from") or "") == attachment["relay_role"]
             and str(receipt.get("messageHash") or "") == assignment["request_digest"]
             and str(receipt.get("targetBindingReceipt") or "")
                 == str(attachment["binding_receipt_id"])
             and str(receipt.get("instanceId") or "") == attachment["instance_id"]
             and str(receipt.get("sessionId") or "") == attachment["external_session_id"]
-            and int(receipt.get("tabId") or 0) == int(attachment["tab_id"])
+            and isinstance(receipt.get("tabId"), int)
+            and not isinstance(receipt.get("tabId"), bool)
+            and receipt["tabId"] == attachment["tab_id"]
             and str(receipt.get("conversationKey") or "")
                 == attachment["conversation_key"]
-            and int(receipt.get("attachmentGeneration") or 0)
-                == int(attachment["generation"])
+            and isinstance(receipt.get("attachmentGeneration"), int)
+            and not isinstance(receipt.get("attachmentGeneration"), bool)
+            and receipt["attachmentGeneration"] == attachment["generation"]
             and supplied_hash == rcc_result_hash(receipt)
         ):
             raise ConflictError("WORKER_RCC_RECEIPT_MISMATCH")
         return supplied_hash
 
     def _lookup_result(self, candidate: DispatchCandidate) -> str:
-        work, assignment, attachment, result_nonce, prompt = self._context(candidate)
+        work, assignment, attachment, result_nonce, prompt = self._context(
+            candidate, check_unattended_policy=False,
+        )
         response = self.client.request(
             instance_id=candidate.instance_id,
             request_id="worker.poll." + hashlib.sha256(
@@ -558,7 +576,8 @@ class WorkerDispatchRecovery:
             command="result", text=candidate.delivery_id, timeout_s=10.0,
         )
         if not (response.get("found") is True and response.get("completed") is True
-                and response.get("pending") is False
+                and response.get("pending") is False and response.get("ok") is True
+                and response.get("relayId") == candidate.delivery_id
                 and isinstance(response.get("result"), dict)):
             return "DEFERRED"
         receipt = response["result"]
@@ -575,8 +594,7 @@ class WorkerDispatchRecovery:
         now = time.time()
         with self.store.transaction() as db:
             self._assert_fence(db, now)
-            actions = self._assert_authority(db, candidate)
-            self.service.assert_current_unattended_policy(actions)
+            self._assert_authority(db, candidate)
             row = db.execute(
                 "SELECT * FROM orchestration_dispatch_outbox WHERE delivery_id=?",
                 (candidate.delivery_id,),
