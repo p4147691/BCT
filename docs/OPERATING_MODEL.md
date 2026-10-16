@@ -59,6 +59,21 @@ group과 connection은 독립적으로 변경할 수 있으며 표시 역할이 
 operation ID를 제시한 단계별 승인을 사용한다. 승인 여부와 무관하게 precondition,
 duplicate guard, effect evidence는 유지한다.
 
+### 개인 PC 내부 신뢰 경계와 외부 ChatGPT 진입
+
+현재 본류는 PC/스마트폰 ChatGPT → 기존 private App·MCP 터널 → BCT Core → 기존 RCC → PC 브라우저다.
+인증은 디바이스 IP나 브라우저 UI가 아니라 기존 BCT MCP 토큰 및 Work/Principal/Policy 경계로 처리한다.
+외부 웹페이지의 지시문은 권한이 아닌 데이터로 취급한다. 현재 개인 PC 구성에서 이미 동일 Windows
+사용자·로그온 세션으로 악성 코드를 실행하는 공격자는 필수 Core↔RCC 상호 인증 범위에서 제외하며,
+이 선택은 잔여 위험 수용이지 보호가 완성됐다는 증명이 아니다. 스마트폰 채팅과 BCT 읽기 경로는
+접속 기기의 IP·User-Agent 때문에 차단하지 않는다.
+
+**실행 안전성 주의:** 정상 `execute`·`process_session` 권한은 임의 Python·PowerShell·argv를
+실행할 수 있다. 현재 Work cwd 검사나 별도 `delete` 승인 정책만으로 하위 프로세스의 삭제·설정
+변경을 운영체제 수준에서 차단하지는 못한다. 파괴 작업은 범위와 승인·복구 증빙을 별도로 확인해야 하며,
+임의 명령을 자동으로 안전하다고 분류하지 않는다. 별도 위험 실행 게이트의 구현·수락 전에는 완전한
+명령 차단을 주장하지 않는다. 상세 경계: `docs/BCT_MAINLINE_TRUST_BOUNDARY.md`.
+
 ## Drift 처리
 
 공식 소스, local checkout과 Runtime이 다르면 한쪽을 조용히 덮어쓰지 않는다.

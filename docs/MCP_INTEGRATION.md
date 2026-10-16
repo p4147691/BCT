@@ -83,6 +83,20 @@ worker crash leaves the operation and claim unresolved and therefore fails close
 - Codex obtains the token from the `BCT_MCP_TOKEN` user environment variable; it is not
   stored in Git, `bct.toml`, the Codex TOML file, SQLite receipts, or logs.
 
+### Desktop and smartphone ChatGPT ingress
+
+The existing private ChatGPT App and OpenAI tunnel reuse this one authenticated MCP endpoint.
+A connected ChatGPT conversation on a desktop or smartphone must reach the same Work/Policy
+and token checks: **do not gate by phone IP, mobile carrier, LAN membership, User-Agent,
+or browser tab**. A ChatGPT account sign-in alone is not BCT authority; the configured
+App connection and exact BCT bearer token are required. All authenticated connections
+currently map to the shared MCP Principal (`bct-mcp-local`); device, chat UI, and
+ChatGPT account details are not independently verified BCT identities. A normal smartphone ChatGPT
+conversation does not depend on RCC. A phone-side BCT tool call must still be proved by
+an actual read-only mobile `bct_status` smoke test before claiming mobile E2E accepted.
+No direct smartphone-to-PC listener, new token, second tunnel, or RCC path is added.
+See `docs/BCT_MAINLINE_TRUST_BOUNDARY.md` for the accepted personal-desktop threat model.
+
 The service health endpoint reports MCP readiness, endpoint, and tool count. The normal
 deployment process verifies those fields together with the exact service PID/fingerprint,
 release, manifest, generation, and instance.
