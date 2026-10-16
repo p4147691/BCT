@@ -185,6 +185,10 @@ class Store:
                     acknowledged_at REAL,
                     envelope_schema INTEGER NOT NULL DEFAULT 1,
                     receipt_mode TEXT NOT NULL DEFAULT 'LEGACY_RETURN_V1',
+                    decision_id TEXT,
+                    result_hash TEXT,
+                    result_ack_state TEXT NOT NULL DEFAULT 'NOT_REQUESTED',
+                    result_acknowledged_at REAL,
                     UNIQUE(session_id, assignment_id, assignment_generation,
                            result_message_id, manager_epoch),
                     FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
@@ -220,6 +224,13 @@ class Store:
                     token_digest TEXT NOT NULL, successor_epoch INTEGER NOT NULL,
                     reason TEXT NOT NULL, created_at REAL NOT NULL,
                     PRIMARY KEY(session_id,revoked_epoch)
+                );
+                CREATE TABLE IF NOT EXISTS orchestration_manager_recovery_leases (
+                    lease_name TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL,
+                    token TEXT NOT NULL,
+                    expires_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS orchestration_durable_wakes (
                     wake_id TEXT PRIMARY KEY,
@@ -288,6 +299,24 @@ class Store:
                 db.execute(
                     "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
                     "receipt_mode TEXT NOT NULL DEFAULT 'LEGACY_RETURN_V1'"
+                )
+            if "decision_id" not in wake_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_wakes ADD COLUMN decision_id TEXT"
+                )
+            if "result_hash" not in wake_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_wakes ADD COLUMN result_hash TEXT"
+                )
+            if "result_ack_state" not in wake_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
+                    "result_ack_state TEXT NOT NULL DEFAULT 'NOT_REQUESTED'"
+                )
+            if "result_acknowledged_at" not in wake_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
+                    "result_acknowledged_at REAL"
                 )
 
     @staticmethod

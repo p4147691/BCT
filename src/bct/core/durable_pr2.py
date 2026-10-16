@@ -133,11 +133,11 @@ def commit_and_enqueue(store: Store, *, session_id: str, consumer_assignment_id:
                        manager_epoch: int, lease_token: str, decision_id: str,
                        request_digest: str, decision: dict[str, Any],
                        results: list[tuple[str, str]], actions: list[dict[str, Any]],
-                       now: float | None = None) -> dict[str, Any]:
-    if not isinstance(actions, list) or not actions:
-        raise ValueError("ACTIONS_REQUIRED")
+                       now: float | None = None, _db=None) -> dict[str, Any]:
+    if not isinstance(actions, list):
+        raise ValueError("ACTIONS_INVALID")
     now = time.time() if now is None else now
-    with store.transaction() as db:
+    with (store.transaction() if _db is None else nullcontext(_db)) as db:
         _lease(db, session_id, manager_epoch, lease_token, now)
         receipt = commit_consumption_decision(store, session_id=session_id,
                    consumer_assignment_id=consumer_assignment_id, manager_epoch=manager_epoch,
