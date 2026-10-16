@@ -180,9 +180,10 @@ public class RelayNativeHostV2
         StreamWriter writer = null;
         try
         {
-            // This is a connection gate, not a BCT-Core authentication claim.
-            // Same-user, same-logon processes can satisfy it; a capability or
-            // trusted process binding is still required before activation.
+            // This is a connection gate, not exact BCT-Core authentication.
+            // The Core reciprocally verifies this Host's process token and
+            // Pipe descriptor. Same-user, same-logon code remains an accepted
+            // personal-desktop residual risk under the mainline trust model.
             if (!IsConnectedClientInServerSession(pipe.SafePipeHandle, Process.GetCurrentProcess().SessionId))
                 return;
             var utf8 = new UTF8Encoding(false);

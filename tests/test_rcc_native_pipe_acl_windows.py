@@ -14,6 +14,8 @@ import unittest
 import uuid
 from pathlib import Path
 
+from bct.integrations.rcc import NamedPipeRelayClient, RelayUnavailable
+
 
 @unittest.skipUnless(os.name == "nt", "Windows named-pipe proof")
 class RccNativePipeAclWindowsTests(unittest.TestCase):
@@ -103,6 +105,18 @@ class RccNativePipeAclWindowsTests(unittest.TestCase):
         self.assertEqual("host:ready-ack", ack["type"])
         self.assertEqual(instance, ack["instanceId"])
 
+        # Exercise the production Core-side verifier against the real
+        # source-built Host before any request bytes are written.
+        result = NamedPipeRelayClient().request(
+            instance_id=instance,
+            request_id="python-verified-presence",
+            command="presence",
+            timeout_s=10,
+        )
+        self.assertEqual("host:result", result["type"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(instance, result["presence"]["instanceId"])
+
         client_source = self.temp / "PipePresenceClient.cs"
         client_source.write_text(r'''
 using System;
@@ -151,6 +165,54 @@ class PipePresenceClient {
         self.assertTrue(response["ok"])
         self.assertEqual("proof-presence", response["requestId"])
         self.assertEqual(instance, response["presence"]["instanceId"])
+
+    def test_broad_fake_server_is_rejected_before_it_receives_request_bytes(self):
+        fake_source = self.temp / "BroadFakePipeServer.cs"
+        fake_source.write_text(r'''
+using System;
+using System.IO.Pipes;
+class BroadFakePipeServer {
+  static int Main(string[] args) {
+    using (var pipe = new NamedPipeServerStream(
+        args[0], PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+        PipeOptions.Asynchronous)) {
+      Console.WriteLine("READY");
+      Console.Out.Flush();
+      pipe.WaitForConnection();
+      Console.WriteLine("READ:" + pipe.ReadByte());
+      Console.Out.Flush();
+    }
+    return 0;
+  }
+}
+''', encoding="utf-8")
+        fake_exe = self.temp / "BroadFakePipeServer.exe"
+        self._compile(fake_source, fake_exe)
+        instance = f"fake_{uuid.uuid4().hex}"
+        fake = subprocess.Popen(
+            [str(fake_exe), "ai_workspace_relay_" + instance],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            assert fake.stdout is not None
+            self.assertEqual(b"READY", fake.stdout.readline().strip())
+            with self.assertRaises(RelayUnavailable):
+                NamedPipeRelayClient().request(
+                    instance_id=instance,
+                    request_id="must-not-arrive",
+                    command="presence",
+                    timeout_s=5,
+                )
+            self.assertEqual(b"READ:-1", fake.stdout.readline().strip())
+            self.assertEqual(0, fake.wait(timeout=10))
+        finally:
+            if fake.poll() is None:
+                fake.terminate()
+                fake.wait(timeout=10)
+            if fake.stdout is not None:
+                fake.stdout.close()
+            if fake.stderr is not None:
+                fake.stderr.close()
 
     def test_first_protected_listener_exists_before_ready_ack(self):
         """Immediately consume the actual ACK, then connect within a bounded interval."""
