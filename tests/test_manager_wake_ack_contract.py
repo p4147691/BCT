@@ -141,10 +141,7 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.policy = self.root / "bct.toml"
-        self.policy.write_text(
-            '[policy]\nnormal_actions=["read","write","orchestrate"]\n'
-            'approval_actions=[]\n', encoding="utf-8",
-        )
+        self.write_policy(True)
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=self.policy)
         self.owner = Principal(
             "owner", "test", frozenset({"read", "write", "orchestrate"})
@@ -183,6 +180,25 @@ class ManagerWakeAckContractTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def write_policy(self, enabled: bool | None) -> None:
+        value = (
+            "" if enabled is None else
+            "[orchestration]\nmanager_wake_receipt_v2_enabled="
+            + ("true" if enabled else "false") + "\n"
+        )
+        self.policy.write_text(
+            '[policy]\nnormal_actions=["read","write","orchestrate"]\n'
+            'approval_actions=[]\n' + value,
+            encoding="utf-8",
+        )
+
+    def reload_bct(self, enabled: bool | None) -> None:
+        self.write_policy(enabled)
+        self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=self.policy)
+        self.bct.operations._features["orchestrate"] = OrchestrationFeature(
+            self.bct.orchestration, self.relay
+        )
 
     def call(self, operation_id: str, arguments: dict):
         return self.bct.operations.run(
@@ -243,6 +259,18 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertIsNone(wake["acknowledged_at"])
         self.assertNotIn("consume_capability", json.dumps(result.output))
 
+    def test_default_off_uses_legacy_schema_one_contract(self):
+        self.reload_bct(None)
+        self.dispatch("default-off")
+        call = self.wake_calls()[0]
+        envelope = self.envelope(call)
+        wake = self.first_wake()
+        self.assertFalse(self.bct.orchestration.manager_wake_receipt_v2_enabled)
+        self.assertEqual(1, envelope["schema"])
+        self.assertEqual("BCT_MGR", call["extra"]["returnTo"])
+        self.assertEqual(1, wake["envelope_schema"])
+        self.assertEqual("LEGACY_RETURN_V1", wake["receipt_mode"])
+
     def test_confirmed_non_submit_reuses_exact_delivery_and_envelope(self):
         self.relay.wake_outcomes.extend(["PENDING", "DELIVERED"])
         self.dispatch()
@@ -259,16 +287,14 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertEqual(first["text"], second["text"])
         self.assertEqual("", second["extra"]["returnTo"])
 
-    def test_legacy_schema_one_retry_keeps_original_return_path(self):
+    def test_pending_schema_one_is_not_reinterpreted_after_enabling_v2(self):
+        self.reload_bct(None)
         self.relay.wake_outcomes.append("PENDING")
-        self.dispatch()
+        self.dispatch("legacy-pending")
+        first = self.wake_calls()[0]
         wake = self.first_wake()
-        with self.bct.store.transaction() as db:
-            db.execute(
-                "UPDATE orchestration_manager_wakes SET envelope_schema=1,"
-                "receipt_mode='LEGACY_RETURN_V1' WHERE event_id=?",
-                (wake["event_id"],),
-            )
+        self.assertEqual(1, wake["envelope_schema"])
+        self.reload_bct(True)
         self.relay.wake_outcomes.append("DELIVERED")
         self.call("legacy-retry", {
             "operation": "manager-wake", "session_id": "session",
@@ -276,6 +302,8 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         })
         call = self.wake_calls()[-1]
         envelope = self.envelope(call)
+        self.assertEqual(first["request_id"], call["request_id"])
+        self.assertEqual(first["text"], call["text"])
         self.assertEqual(1, envelope["schema"])
         self.assertNotIn("attachment_id", envelope)
         self.assertEqual("BCT_MGR", call["extra"]["returnTo"])
@@ -284,11 +312,30 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         ).hexdigest()[:32]
         self.assertEqual(expected_id, call["request_id"])
 
+    def test_pending_schema_two_is_not_reinterpreted_after_disabling_v2(self):
+        self.relay.wake_outcomes.append("PENDING")
+        self.dispatch("v2-pending")
+        first = self.wake_calls()[0]
+        wake = self.first_wake()
+        self.assertEqual(2, wake["envelope_schema"])
+        self.reload_bct(False)
+        self.relay.wake_outcomes.append("DELIVERED")
+        self.call("v2-retry", {
+            "operation": "manager-wake", "session_id": "session",
+            "manager_epoch": 1, "event_id": wake["event_id"],
+        })
+        second = self.wake_calls()[-1]
+        self.assertEqual(first["request_id"], second["request_id"])
+        self.assertEqual(first["text"], second["text"])
+        self.assertEqual("", second["extra"]["returnTo"])
+        self.assertEqual(2, self.envelope(second)["schema"])
+
     def test_unknown_wake_is_never_resent(self):
         self.relay.wake_outcomes.append("UNKNOWN")
         self.dispatch()
         wake = self.first_wake()
         self.assertEqual("UNKNOWN", wake["state"])
+        self.reload_bct(False)
         retried = self.call("unknown-retry", {
             "operation": "manager-wake", "session_id": "session",
             "manager_epoch": 1, "event_id": wake["event_id"],

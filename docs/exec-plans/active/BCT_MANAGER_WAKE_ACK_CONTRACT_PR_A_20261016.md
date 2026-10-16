@@ -25,13 +25,22 @@ RCC fingerprint, SQLite row or MCP response.
 - `envelope_schema`, default `1` for every pre-existing row;
 - `receipt_mode`, default `LEGACY_RETURN_V1` for every pre-existing row.
 
-New rows are created with `envelope_schema=2` and
+Schema 2 is production-disabled by default. The reviewed setting
+`orchestration.manager_wake_receipt_v2_enabled` defaults to `false`; while it is
+disabled, every new row uses the existing schema 1 and `LEGACY_RETURN_V1`
+contract. It may be enabled only after PR B's result consumer and isolated E2E
+are reviewed and approved for deployment.
+
+When explicitly enabled, new rows are created with `envelope_schema=2` and
 `receipt_mode=RCC_RESULT_POLL_V1`. The schema-2 envelope contains only exact
 event, session, Manager epoch, attachment generation, assignment generation and
 RESULT identity. Its RCC `returnToRole` is empty, so RCC persists the Manager
 response but does not send a second Manager message. `returnOnAck` remains true
 only so BCT can distinguish confirmed submission from an unknown external
-effect.
+effect. Schema and receipt mode are fixed on the SQLite row at creation. A
+later setting change or restart must render and retry that row from its stored
+version; it must not reinterpret its message, request ID, fingerprint or return
+role.
 
 Schema 1 retains its existing bytes, deterministic relay ID, fingerprint and
 return role. Unknown schema/mode pairs fail closed. Existing Issue #111 rows,
@@ -60,20 +69,28 @@ Python must not use sorted keys. The shared fixture
 production JavaScript helper and the Python recomputation helper. Unsupported
 types and oversized replies fail closed.
 
-The PR-B decision parser must accept one bounded
-`BCT_ORCHESTRATION_MANAGER_DECISION_V1` object only. It must bind schema,
-event/session/Manager epoch, source result message/digest and a decision kind of
-either `COMPLETE` or `FOLLOW_UP`. `FOLLOW_UP` carries a bounded list of successor
-assignment specifications; `COMPLETE` carries none. Missing, duplicate,
-conflicting or additional authority-bearing fields fail closed. This response
-schema is not an authorization token: authority still comes from current
+PR A intentionally does not freeze or parse
+`BCT_ORCHESTRATION_MANAGER_DECISION_V1`. Before schema 2 can be enabled, PR B
+must define the exact start/end markers, JSON field names and types, bounds and
+canonicalization; bind event/session/Manager epoch and source result identity;
+define `COMPLETE` with no successor and `FOLLOW_UP` with a bounded successor
+list; and prove that the Wake instruction, parser and shared fixtures use the
+same bytes and rules. Missing, duplicate, conflicting or additional
+authority-bearing fields must fail closed. This response schema is not an
+authorization token: authority still comes from current
 Work/Policy/epoch/lease/attachment checks at commit time.
 
-## PR B internal poll contract
+## PR B shared result-consumption and trigger contract
 
-PR B may add one bounded recovery loop inside the existing BCT runtime. It must
-not add an HTTP receiver, signing key, authentication server or public Manager
-consume MCP operation.
+The final architecture is event-first with bounded periodic recovery. A trusted
+event should wake processing promptly when RCC persists a new result. Polling
+recovers event loss, Core restart, temporary RCC unavailability and delayed
+receipts. Both are triggers only: they must call the same idempotent BCT Core
+result-consumption boundary. The poller must not contain a second decision
+engine, task manager or state ledger. `RCC_RESULT_POLL_V1` remains the persisted
+receipt compatibility identifier; its name does not prohibit a future event
+trigger. PR B must not add an HTTP receiver, signing key, authentication server
+or public Manager consume MCP operation merely to implement this trigger.
 
 The implementation must satisfy all of the following:
 
@@ -82,9 +99,11 @@ The implementation must satisfy all of the following:
    is still fenced by the current durable Manager epoch/lease. A restart may
    resume an unexpired exact lease or acquire an explicitly defined recovery
    lease, but may not silently revive an expired or revoked Manager lease.
-2. **Bounded scope.** Select only schema-2 `RCC_RESULT_POLL_V1` wakes in a
-   bounded batch. A missing result, RCC outage or delayed receipt causes backoff
-   without changing Wake state or resending the wake. Schema-1 rows are excluded.
+2. **Bounded recovery scope.** Poll only schema-2 `RCC_RESULT_POLL_V1` wakes in
+   a bounded batch. A missing result, RCC outage or delayed receipt causes
+   backoff without changing Wake state or resending the wake. Schema-1 rows are
+   excluded. The event trigger and poll recovery must converge on the same
+   durable claim and consumer, so duplicate or lost triggers are harmless.
 3. **Authoritative source.** Obtain decision text only from the exact RCC
    `RESULT_PERSISTED` receipt. Caller-supplied decision text, tab ID or
    conversation ID is not authoritative.
@@ -111,6 +130,12 @@ The implementation must satisfy all of the following:
     pipe is restricted to the intended Windows user/service identity or add an
     explicit ACL. Exact logical instance validation alone is not an OS access
     control proof.
+11. **Exact runtime payload gate.** Before PR B deployment, the explicit
+    `bct_runtime_v1` file manifest must include every imported runtime dependency,
+    including `src/bct/core/rcc_result.py`, `src/bct/core/consumption.py` and
+    `src/bct/core/durable_pr2.py`, plus any new consumer/trigger module. A source
+    test pass is not deployment evidence when a required file is absent from the
+    immutable release manifest.
 
 ## Non-goals and protected state
 

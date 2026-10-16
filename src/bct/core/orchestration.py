@@ -58,8 +58,11 @@ def _within(root: str, candidate: str) -> bool:
 class OrchestrationService:
     """Durable manager/worker metadata with independent failover fencing."""
 
-    def __init__(self, store: Store):
+    def __init__(
+        self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
+    ):
         self.store = store
+        self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
 
     @staticmethod
     def _assert_outer_operation_running(db, *, work: Work,
@@ -1449,6 +1452,11 @@ class OrchestrationService:
             f"{generation}:{result_message_id}".encode("utf-8")
         ).hexdigest()[:32]
         state = "PENDING" if attachment is not None else "BLOCKED"
+        envelope_schema, receipt_mode = (
+            (2, "RCC_RESULT_POLL_V1")
+            if self.manager_wake_receipt_v2_enabled
+            else (1, "LEGACY_RETURN_V1")
+        )
         values = (
             event_id, session_id, manager_epoch, assignment["assignment_id"],
             generation, result_message_id, result_digest, manager_node_id or None,
@@ -1460,7 +1468,7 @@ class OrchestrationService:
             attachment["conversation_key"] if attachment is not None else None,
             attachment["relay_role"] if attachment is not None else None,
             attachment["binding_receipt_id"] if attachment is not None else None,
-            state, None, now, now, None, None, 2, "RCC_RESULT_POLL_V1",
+            state, None, now, now, None, None, envelope_schema, receipt_mode,
         )
         db.execute(
             "INSERT OR IGNORE INTO orchestration_manager_wakes "
