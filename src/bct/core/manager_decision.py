@@ -46,6 +46,19 @@ def _exact_keys(value: dict[str, Any], expected: set[str], code: str) -> None:
         raise PreconditionError(code)
 
 
+def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("DUPLICATE_JSON_KEY")
+        value[key] = item
+    return value
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError("NON_FINITE_JSON_NUMBER:" + value)
+
+
 def parse_manager_decision(reply: Any, *, expected: dict[str, Any]) -> dict[str, Any]:
     """Parse one exact, authority-free Manager decision envelope."""
     if not isinstance(reply, str) or len(reply) > 65_536:
@@ -57,7 +70,10 @@ def parse_manager_decision(reply: Any, *, expected: dict[str, Any]) -> dict[str,
         raise PreconditionError("MANAGER_DECISION_MARKER_DUPLICATE")
     raw = stripped[len(DECISION_START):-len(DECISION_END)]
     try:
-        value = json.loads(raw)
+        value = json.loads(
+            raw, object_pairs_hook=_strict_object,
+            parse_constant=_reject_json_constant,
+        )
     except (TypeError, ValueError):
         raise PreconditionError("MANAGER_DECISION_JSON_INVALID") from None
     if not isinstance(value, dict):
@@ -217,6 +233,11 @@ class ManagerDecisionConsumer:
             "result_digest": str(event["result_digest"]),
         }
         decision = parse_manager_decision(receipt["reply"], expected=expected)
+        policy_actions = [
+            action
+            for successor in decision["successors"]
+            for action in successor["actions"]
+        ]
         decision_id = "mgr.decision." + hashlib.sha256(
             f"{event_id}:{result_hash}".encode("utf-8")
         ).hexdigest()[:40]
@@ -229,6 +250,10 @@ class ManagerDecisionConsumer:
         ]
         actions: list[dict[str, Any]] = []
         with self.store.transaction() as tx:
+            # Do not carry the pre-I/O timestamp into the authoritative write.
+            # A supplied future time remains useful for deterministic recovery
+            # tests, while wall time always wins after a long RCC lookup.
+            commit_now = max(now, time.time())
             if recovery_fence is not None:
                 recovery_owner, recovery_token = recovery_fence
                 recovery_lease = tx.execute(
@@ -239,7 +264,7 @@ class ManagerDecisionConsumer:
                 if (recovery_lease is None
                         or str(recovery_lease["owner_id"]) != recovery_owner
                         or str(recovery_lease["token"]) != recovery_token
-                        or float(recovery_lease["expires_at"]) <= now):
+                        or float(recovery_lease["expires_at"]) <= commit_now):
                     raise ConflictError("MANAGER_RECOVERY_POLLER_FENCED")
             current = tx.execute(
                 "SELECT * FROM orchestration_manager_wakes WHERE event_id=?",
@@ -272,7 +297,7 @@ class ManagerDecisionConsumer:
             if int(session["manager_epoch"]) != manager_epoch or int(current["manager_epoch"]) != manager_epoch:
                 raise ConflictError("STALE_MANAGER_EPOCH")
             lease = _lease(
-                tx, str(current["session_id"]), manager_epoch, lease_token, now,
+                tx, str(current["session_id"]), manager_epoch, lease_token, commit_now,
             )
             if str(lease["manager_node_id"]) != str(session["manager_node_id"] or ""):
                 raise ConflictError("MANAGER_LEASE_OWNER_MISMATCH")
@@ -295,6 +320,8 @@ class ManagerDecisionConsumer:
                 raise ConflictError("MANAGER_WAKE_DECISION_CONFLICT")
             if current["result_hash"] not in {None, result_hash}:
                 raise ConflictError("MANAGER_WAKE_RESULT_CONFLICT")
+            if policy_actions and current["decision_id"] is None:
+                self.service.assert_current_unattended_policy(policy_actions)
 
             for index, successor in enumerate(decision["successors"]):
                 assignment_id = successor_ids[index]
@@ -351,7 +378,7 @@ class ManagerDecisionConsumer:
                 decision_id=decision_id, request_digest=request_digest,
                 decision=persisted_decision,
                 results=[(str(current["result_message_id"]), str(current["result_digest"]))],
-                actions=actions, now=now, _db=tx,
+                actions=actions, now=commit_now, _db=tx,
             )
             if result["idempotent"]:
                 if (current["decision_id"] != decision_id
@@ -364,7 +391,7 @@ class ManagerDecisionConsumer:
                     "UPDATE orchestration_manager_wakes SET decision_id=?,result_hash=?,"
                     "acknowledged_at=?,result_ack_state='PENDING',updated_at=? "
                     "WHERE event_id=? AND decision_id IS NULL AND result_hash IS NULL",
-                    (decision_id, result_hash, now, now, event_id),
+                    (decision_id, result_hash, commit_now, commit_now, event_id),
                 ).rowcount
                 if changed != 1:
                     raise ConflictError("MANAGER_WAKE_COMMIT_CONFLICT")

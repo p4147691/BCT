@@ -17,6 +17,7 @@ from bct.core.manager_decision import (
 from bct.manager_decision_recovery import ManagerDecisionRecovery
 from bct.core.models import ConflictError, PreconditionError, Work
 from bct.core.orchestration import OrchestrationService, _canonical, _digest
+from bct.core.policy import Policy
 from bct.core.rcc_result import rcc_result_hash
 from bct.core.store import Store
 from bct.integrations.rcc import RelayEffectUnknown, RelayUnavailable
@@ -29,23 +30,30 @@ class FakeRelay:
         self.result_missing = False
         self.unavailable = False
         self.ack_unknown_once = False
+        self.result_missing_ids = set()
+        self.on_result = None
+        self.receipts = {}
 
     def request(self, **kwargs):
         self.calls.append(kwargs)
         if self.unavailable:
             raise RelayUnavailable("offline")
         if kwargs["command"] == "result":
-            if self.result_missing:
+            if self.on_result is not None:
+                self.on_result(kwargs)
+            if self.result_missing or kwargs["text"] in self.result_missing_ids:
                 return {"ok": True, "relayId": kwargs["text"], "found": False,
                         "completed": False, "result": None}
             return {"ok": True, "relayId": kwargs["text"], "found": True,
-                    "completed": True, "result": self.receipt}
+                    "completed": True,
+                    "result": self.receipts.get(kwargs["text"], self.receipt)}
         if kwargs["command"] == "result-ack":
             if self.ack_unknown_once:
                 self.ack_unknown_once = False
                 raise RelayEffectUnknown("lost ack response")
+            receipt = self.receipts.get(kwargs["text"], self.receipt)
             return {"ok": True, "relayId": kwargs["text"], "ackState": "ACKED",
-                    "resultHash": self.receipt["resultHash"], "duplicate": False}
+                    "resultHash": receipt["resultHash"], "duplicate": False}
         raise AssertionError(kwargs["command"])
 
 
@@ -55,10 +63,16 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = str(Path(self.temp.name).resolve())
         self.store = Store(Path(self.temp.name) / "state.sqlite")
+        self.policy_path = Path(self.temp.name) / "bct.toml"
+        self.policy_path.write_text(
+            '[policy]\nnormal_actions=["read"]\napproval_actions=[]\n',
+            encoding="utf-8",
+        )
+        self.policy = Policy(self.policy_path)
         self.work = Work("work", "fixture", (self.root,), frozenset({"read"}), "owner")
         self.store.create_work(self.work)
         self.service = OrchestrationService(
-            self.store, manager_wake_receipt_v2_enabled=True,
+            self.store, manager_wake_receipt_v2_enabled=True, policy=self.policy,
         )
         payload = {"status": "done"}
         with self.store.transaction() as db:
@@ -192,6 +206,31 @@ class ManagerDecisionPRBTests(unittest.TestCase):
             parse_manager_decision(DECISION_START + _canonical(bad) + DECISION_END,
                                    expected=expected)
 
+    def test_parser_rejects_duplicate_nonfinite_and_wrong_types(self):
+        expected = {key: self.decision()[key] for key in (
+            "event_id", "session_id", "manager_epoch", "result_message_id",
+            "result_digest",
+        )}
+        raw = _canonical(self.decision()).replace(
+            '"schema":', f'"schema":"{DECISION_SCHEMA}","schema":', 1,
+        )
+        invalid = [
+            raw,
+            _canonical(self.decision()).replace(
+                '"summary":"Fixture decision."', '"summary":NaN', 1,
+            ),
+            _canonical(self.decision()).replace(
+                '"summary":"Fixture decision."', '"summary":Infinity', 1,
+            ),
+            _canonical(dict(self.decision(), manager_epoch=1.0)),
+        ]
+        for payload in invalid:
+            with self.subTest(payload=payload[:80]):
+                with self.assertRaises(PreconditionError):
+                    parse_manager_decision(
+                        DECISION_START + payload + DECISION_END, expected=expected,
+                    )
+
     def test_complete_commits_without_successor_and_is_idempotent(self):
         first = self.consume()
         second = self.consume()
@@ -208,9 +247,24 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.assertEqual(2, self.count("orchestration_assignments"))
         self.assertEqual(1, self.count("orchestration_consumption_decisions"))
         self.assertEqual(1, self.count("orchestration_dispatch_outbox"))
+        self.policy_path.write_text(
+            '[policy]\nnormal_actions=[]\napproval_actions=["read"]\n',
+            encoding="utf-8",
+        )
         replay = self.consume(self.receipt("FOLLOW_UP"))
         self.assertTrue(replay["idempotent"])
         self.assertEqual(1, self.count("orchestration_dispatch_outbox"))
+
+    def test_follow_up_revalidates_current_policy(self):
+        self.policy_path.write_text(
+            '[policy]\nnormal_actions=[]\napproval_actions=["read"]\n',
+            encoding="utf-8",
+        )
+        with self.assertRaises(PreconditionError):
+            self.consume(self.receipt("FOLLOW_UP"))
+        self.assertEqual(1, self.count("orchestration_assignments"))
+        self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+        self.assertEqual(0, self.count("orchestration_dispatch_outbox"))
 
     def test_outbox_failure_rolls_back_successor_and_decision(self):
         with self.store.transaction() as db:
@@ -299,6 +353,153 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         result = ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
         self.assertEqual(1, result["deferred"])
         self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+
+    def test_result_lookup_cannot_commit_after_poller_replacement(self):
+        relay = FakeRelay(self.receipt())
+        recovery = ManagerDecisionRecovery(self.service, relay)
+
+        def replace_poller(_request):
+            with self.store.transaction() as db:
+                db.execute(
+                    "UPDATE orchestration_manager_recovery_leases SET "
+                    "owner_id='replacement',token='replacement-token',expires_at=?",
+                    (time.time() + 60.0,),
+                )
+
+        relay.on_result = replace_poller
+        result = recovery.run_once(now=self.now + 1)
+        self.assertEqual(1, result["rejected"])
+        self.assertEqual(0, result["committed"])
+        self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+
+    def test_result_lookup_cannot_commit_after_manager_lease_expiry(self):
+        relay = FakeRelay(self.receipt())
+        recovery = ManagerDecisionRecovery(self.service, relay)
+
+        def expire_manager_lease(_request):
+            with self.store.transaction() as db:
+                db.execute(
+                    "UPDATE orchestration_durable_leases SET expires_at=? "
+                    "WHERE session_id='session'", (time.time() - 1.0,),
+                )
+
+        relay.on_result = expire_manager_lease
+        result = recovery.run_once(now=self.now + 1)
+        self.assertEqual(1, result["rejected"])
+        self.assertEqual(0, result["committed"])
+        self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+
+    def test_keyset_cursor_prevents_missing_result_starvation_after_restart(self):
+        with self.store.transaction() as db:
+            original = dict(db.execute(
+                "SELECT * FROM orchestration_manager_wakes WHERE event_id=?",
+                (self.event["event_id"],),
+            ).fetchone())
+            db.execute(
+                "UPDATE orchestration_manager_wakes SET state='STALE' WHERE event_id=?",
+                (self.event["event_id"],),
+            )
+            columns = list(original)
+            mailbox = dict(db.execute(
+                "SELECT * FROM orchestration_mailbox WHERE message_id='result-message'"
+            ).fetchone())
+            mailbox_columns = list(mailbox)
+            for index in range(10):
+                message = dict(mailbox)
+                message["message_id"] = f"result-message-{index:02d}"
+                db.execute(
+                    f"INSERT INTO orchestration_mailbox "
+                    f"({','.join(mailbox_columns)}) VALUES("
+                    f"{','.join('?' for _ in mailbox_columns)})",
+                    tuple(message[column] for column in mailbox_columns),
+                )
+                clone = dict(original)
+                clone.update({
+                    "event_id": f"wake.{index:02d}",
+                    "result_message_id": f"result-message-{index:02d}",
+                    "delivery_id": f"relay.{index:02d}",
+                    "state": "DELIVERED",
+                    "decision_id": None,
+                    "result_hash": None,
+                    "result_ack_state": "NOT_REQUESTED",
+                    "acknowledged_at": None,
+                    "result_acknowledged_at": None,
+                })
+                placeholders = ",".join("?" for _ in columns)
+                db.execute(
+                    f"INSERT INTO orchestration_manager_wakes "
+                    f"({','.join(columns)}) VALUES({placeholders})",
+                    tuple(clone[column] for column in columns),
+                )
+        relay = FakeRelay(self.receipt())
+        relay.result_missing_ids = {f"relay.{index:02d}" for index in range(9)}
+        final_decision = self.decision()
+        final_decision.update({
+            "event_id": "wake.09", "result_message_id": "result-message-09",
+        })
+        reply = DECISION_START + _canonical(final_decision) + DECISION_END
+        payload = {"failureEvidence": None, "ok": True, "reply": reply,
+                   "error": "", "ambiguous": False}
+        final_receipt = dict(self.receipt())
+        final_receipt.update({
+            "id": "relay.09", "reply": reply,
+            "resultHash": rcc_result_hash(payload),
+        })
+        relay.receipts["relay.09"] = final_receipt
+        first = ManagerDecisionRecovery(self.service, relay)
+        one = first.run_once(limit=8, now=self.now + 1)
+        self.assertEqual(8, one["checked"])
+        self.assertNotIn("relay.09", [call["text"] for call in relay.calls])
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_manager_recovery_leases SET expires_at=?",
+                (self.now + 2,),
+            )
+        second = ManagerDecisionRecovery(self.service, relay)
+        two = second.run_once(limit=8, now=self.now + 40)
+        self.assertTrue(two["lease_owned"])
+        self.assertIn("relay.09", [call["text"] for call in relay.calls])
+        self.assertEqual(1, two["committed"])
+        self.assertEqual(1, two["acked"])
+
+    def test_lease_renewal_is_relevant_and_rate_limited(self):
+        unrelated = Work("other-work", "fixture", (self.root,),
+                         frozenset({"read"}), "owner")
+        self.store.create_work(unrelated)
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",
+                       ("other-manager", "other", "MANAGER", "fixture", 1, 1))
+            db.execute("INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                "other-session", "other-work", 1, "fixture", _canonical([self.root]),
+                _canonical(["read"]), "{}", 1, "other-manager", 1, "ACTIVE", "{}",
+                1.0, 1.0,
+            ))
+            db.execute(
+                "INSERT INTO orchestration_durable_leases VALUES(?,?,?,?,?,?)",
+                ("other-session", "other-manager", 1, "other-token", self.now + 5,
+                 self.now),
+            )
+            db.execute(
+                "UPDATE orchestration_durable_leases SET expires_at=?,updated_at=? "
+                "WHERE session_id='session'", (self.now + 50, self.now),
+            )
+        relay = FakeRelay(self.receipt())
+        relay.result_missing = True
+        ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
+        db = self.store._connect()
+        try:
+            relevant = db.execute(
+                "SELECT expires_at FROM orchestration_durable_leases "
+                "WHERE session_id='session'",
+            ).fetchone()[0]
+            unrelated_expiry = db.execute(
+                "SELECT expires_at FROM orchestration_durable_leases "
+                "WHERE session_id='other-session'",
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(self.now + 50, relevant)
+        self.assertEqual(self.now + 5, unrelated_expiry)
 
     def test_live_lease_renews_but_stale_epoch_is_not_revived(self):
         relay = FakeRelay(self.receipt())

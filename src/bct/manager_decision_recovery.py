@@ -52,7 +52,8 @@ class ManagerDecisionRecovery:
             if row is None:
                 db.execute(
                     "INSERT INTO orchestration_manager_recovery_leases "
-                    "VALUES('manager-decision-poller',?,?,?,?)",
+                    "(lease_name,owner_id,token,expires_at,updated_at,scan_cursor) "
+                    "VALUES('manager-decision-poller',?,?,?,?, '')",
                     (self.owner_id, self.lease_token, expires_at, now),
                 )
             elif (str(row["owner_id"]) == self.owner_id
@@ -121,7 +122,15 @@ class ManagerDecisionRecovery:
             raise ValueError("MANAGER_POLL_LIMIT_INVALID")
         db = self.store._connect()
         try:
-            rows = db.execute(
+            owner = db.execute(
+                "SELECT scan_cursor FROM orchestration_manager_recovery_leases "
+                "WHERE lease_name='manager-decision-poller' AND owner_id=? "
+                "AND token=? AND expires_at>?",
+                (self.owner_id, self.lease_token, now),
+            ).fetchone()
+            if owner is None:
+                return []
+            common = (
                 "SELECT w.event_id,w.session_id,w.manager_epoch,w.instance_id,"
                 "w.delivery_id,s.work_id,l.token,w.result_hash,w.result_ack_state "
                 "FROM orchestration_manager_wakes w "
@@ -132,10 +141,20 @@ class ManagerDecisionRecovery:
                 "AND w.delivery_id IS NOT NULL AND s.manager_epoch=w.manager_epoch "
                 "AND l.epoch=w.manager_epoch AND l.manager_node_id=s.manager_node_id "
                 "AND l.expires_at>? "
-                "AND (w.decision_id IS NULL OR w.result_ack_state='PENDING') "
-                "ORDER BY CASE WHEN w.result_ack_state='PENDING' THEN 0 ELSE 1 END,"
-                "w.updated_at,w.event_id LIMIT ?", (now, limit),
-            ).fetchall()
+            )
+            cursor = str(owner["scan_cursor"] or "")
+            rows = list(db.execute(
+                common + "AND (w.decision_id IS NULL OR "
+                "w.result_ack_state='PENDING') AND w.event_id>? "
+                "ORDER BY w.event_id LIMIT ?", (now, cursor, limit),
+            ).fetchall())
+            remaining = limit - len(rows)
+            if remaining:
+                rows.extend(db.execute(
+                    common + "AND (w.decision_id IS NULL OR "
+                    "w.result_ack_state='PENDING') AND w.event_id<=? "
+                    "ORDER BY w.event_id LIMIT ?", (now, cursor, remaining),
+                ).fetchall())
             return [PollCandidate(
                 str(row["event_id"]), str(row["session_id"]),
                 int(row["manager_epoch"]), str(row["instance_id"]),
@@ -146,15 +165,31 @@ class ManagerDecisionRecovery:
         finally:
             db.close()
 
+    def _advance_cursor(self, *, event_id: str, now: float) -> bool:
+        with self.store.transaction() as db:
+            changed = db.execute(
+                "UPDATE orchestration_manager_recovery_leases SET scan_cursor=? "
+                "WHERE lease_name='manager-decision-poller' AND owner_id=? "
+                "AND token=? AND expires_at>?",
+                (event_id, self.owner_id, self.lease_token, now),
+            ).rowcount
+            return changed == 1
+
     def _renew_live_recovery_leases(self, *, now: float) -> None:
-        """Keep only already-live exact-epoch leases alive; never revive expiry."""
+        """Renew only near-expiry leases that have relevant receipt work."""
         with self.store.transaction() as db:
             rows = db.execute(
                 "SELECT l.session_id,l.epoch,l.token FROM "
                 "orchestration_durable_leases l JOIN orchestration_sessions s "
                 "ON s.session_id=l.session_id WHERE s.state IN ('ACTIVE','PARTIAL') "
                 "AND l.epoch=s.manager_epoch AND l.manager_node_id=s.manager_node_id "
-                "AND l.expires_at>?", (now,),
+                "AND l.expires_at>? AND l.expires_at<=? AND EXISTS ("
+                "SELECT 1 FROM orchestration_manager_wakes w "
+                "WHERE w.session_id=l.session_id AND w.manager_epoch=l.epoch "
+                "AND w.envelope_schema=2 AND w.receipt_mode='RCC_RESULT_POLL_V1' "
+                "AND w.state IN ('DELIVERING','DELIVERED','UNKNOWN') "
+                "AND (w.decision_id IS NULL OR w.result_ack_state='PENDING'))",
+                (now, now + 20.0),
             ).fetchall()
             for row in rows:
                 db.execute(
@@ -187,7 +222,7 @@ class ManagerDecisionRecovery:
         self, *, event_id: str, receipt: dict[str, Any], now: float | None = None,
     ) -> dict[str, Any]:
         """Shared entry point for polling and a future trusted event trigger."""
-        now = time.time() if now is None else now
+        now = time.time() if now is None else max(now, time.time())
         db = self.store._connect()
         try:
             row = db.execute(
@@ -216,12 +251,19 @@ class ManagerDecisionRecovery:
             "checked": 0, "committed": 0, "acked": 0,
             "deferred": 0, "rejected": 0, "lease_owned": False,
         }
-        if not self._acquire_recovery_lease(now=now):
+        phase_now = max(now, time.time())
+        if not self._acquire_recovery_lease(now=phase_now):
             return summary
         summary["lease_owned"] = True
-        self._renew_live_recovery_leases(now=now)
-        for candidate in self._candidates(limit=limit, now=now):
-            if not self._acquire_recovery_lease(now=now):
+        self._renew_live_recovery_leases(now=phase_now)
+        for candidate in self._candidates(limit=limit, now=phase_now):
+            phase_now = max(now, time.time())
+            if not self._acquire_recovery_lease(now=phase_now):
+                summary["lease_owned"] = False
+                break
+            if not self._advance_cursor(
+                event_id=candidate.event_id, now=phase_now,
+            ):
                 summary["lease_owned"] = False
                 break
             summary["checked"] += 1
@@ -246,7 +288,8 @@ class ManagerDecisionRecovery:
                     summary["deferred"] += 1
                     continue
                 committed = self.handle_receipt(
-                    event_id=candidate.event_id, receipt=receipt, now=now,
+                    event_id=candidate.event_id, receipt=receipt,
+                    now=max(now, time.time()),
                 )
                 summary["committed"] += 1
                 self._ack(PollCandidate(

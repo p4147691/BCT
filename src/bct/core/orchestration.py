@@ -7,10 +7,13 @@ import secrets
 import time
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .models import ConflictError, Outcome, PreconditionError, Work
 from .store import Store
+
+if TYPE_CHECKING:
+    from .policy import Policy
 
 
 _ID = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
@@ -62,9 +65,22 @@ class OrchestrationService:
 
     def __init__(
         self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
+        policy: "Policy | None" = None,
     ):
         self.store = store
         self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
+        self.policy = policy
+
+    def assert_current_unattended_policy(self, actions: list[str]) -> str:
+        """Re-read Policy for authority-free successor assignment actions."""
+        if not actions:
+            return ""
+        if self.policy is None:
+            raise PreconditionError("MANAGER_DECISION_POLICY_UNAVAILABLE")
+        try:
+            return self.policy.validate_unattended_actions(actions)
+        except (OSError, ValueError) as exc:
+            raise PreconditionError("MANAGER_DECISION_POLICY_DENIED") from exc
 
     @staticmethod
     def _assert_outer_operation_running(db, *, work: Work,

@@ -230,7 +230,8 @@ class Store:
                     owner_id TEXT NOT NULL,
                     token TEXT NOT NULL,
                     expires_at REAL NOT NULL,
-                    updated_at REAL NOT NULL
+                    updated_at REAL NOT NULL,
+                    scan_cursor TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS orchestration_durable_wakes (
                     wake_id TEXT PRIMARY KEY,
@@ -317,6 +318,16 @@ class Store:
                 db.execute(
                     "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
                     "result_acknowledged_at REAL"
+                )
+            recovery_columns = {
+                row["name"] for row in db.execute(
+                    "PRAGMA table_info(orchestration_manager_recovery_leases)"
+                ).fetchall()
+            }
+            if "scan_cursor" not in recovery_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_recovery_leases ADD COLUMN "
+                    "scan_cursor TEXT NOT NULL DEFAULT ''"
                 )
 
     @staticmethod

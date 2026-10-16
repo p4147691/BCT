@@ -52,6 +52,7 @@ class BCT:
         self.identity = IdentityService(self.store)
         self.orchestration = OrchestrationService(
             self.store,
+            policy=self.policy,
             manager_wake_receipt_v2_enabled=(
                 _manager_wake_receipt_v2_enabled(policy_path)
             ),

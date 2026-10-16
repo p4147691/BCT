@@ -31,9 +31,12 @@ fields are:
 Each successor has exactly `target_node_id`, `attachment_id`, `instruction`,
 `roots`, `actions`, `acceptance` and `dependencies`. IDs, collection sizes,
 instruction size, acceptance size, roots and actions are bounded and validated
-fail-closed. The response never carries authority. Exact current Work owner and
+fail-closed. Duplicate JSON keys, non-finite numbers and type substitutions are
+rejected. The response never carries authority. Exact current Work owner and
 assignment epoch, session scope, Manager epoch, durable lease and Manager and
-worker attachments are re-read at commit time.
+worker attachments are re-read at commit time. Successor actions are also
+rechecked against the current BCT Policy; a prior session's action scope cannot
+override a later policy restriction.
 
 The RCC `resultHash` is not embedded in the response because that would create
 a circular hash. BCT recomputes it over RCC's ordered bounded payload and binds
@@ -62,8 +65,10 @@ expired lease fails closed.
 The bounded recovery loop reads only schema-2 `RCC_RESULT_POLL_V1` rows in
 `DELIVERING`, `DELIVERED` or `UNKNOWN`. It never calls `send` or
 `send-wakeback`; UNKNOWN is evidence lookup only. An already-live exact-epoch
-lease is renewed while Core is running. RCC outage or delayed results leave
-decision and outbox state unchanged.
+lease is renewed only when relevant receipt work is near expiry. A persisted
+keyset cursor advances across every bounded candidate, so missing RCC results
+cannot permanently hide later completed results and restart resumes the fair
+scan. RCC outage or delayed results leave decision and outbox state unchanged.
 
 A separate singleton recovery lease elects one Core poller. Its owner/token is
 revalidated inside the same decision transaction, so an expired poller cannot
@@ -76,6 +81,20 @@ revived, which preserves takeover fencing while allowing restart recovery.
 After the SQLite commit, BCT sends the deterministic `result-ack`. A lost ACK
 response leaves `result_ack_state=PENDING`; restart retries only that ACK. The
 same RCC ACK is idempotent. No second decision or outbox row is created.
+
+## Dispatcher follow-up boundary
+
+PR B creates the existing immutable PR2 outbox rows, but it does **not** wire a
+runtime Dispatcher that sends those rows to the next Worker. Consequently a
+successful FOLLOW_UP in this PR proves durable assignment/decision/outbox
+creation only, not successor delivery or an end-to-end autonomous chain.
+
+The follow-up Dispatcher must reserve the existing outbox with the current
+Manager epoch and lease, send through the approved transport, preserve the
+existing deterministic delivery identity, and record DELIVERED/UNKNOWN and the
+recipient ACK through the PR2 state machine. It must never reinterpret or
+automatically resend UNKNOWN, and it must not introduce a second scheduler,
+decision engine or state ledger.
 
 ## Event-first boundary and security gate
 
