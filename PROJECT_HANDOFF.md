@@ -1,5 +1,34 @@
 # BCT 인수인계
 
+## 현재 작업 — Durable Orchestration PR C (DRAFT 준비, 운영 비활성)
+
+PR A #149와 PR B #150이 병합된 최신 검증 main에서 독립 worktree로 PR C를 구현했다.
+PR B의 영속 `orchestration_dispatch_outbox`를 기존 RCC Worker 전송·PR2 상태
+계약에 연결하고, 결과 커밋 뒤 생성되는 Manager Wake도 같은 단일 dispatcher가
+이벤트 우선/2초 bounded polling으로 전달한다.
+
+- Worker 전송은 exact attachment/epoch/generation/Policy/lease를 실제 pipe write
+  직전에 재검증한다. write 호출이 시작된 뒤 오류는 항상 UNKNOWN이며 재전송하지 않는다.
+- RCC 제출 ACK, Worker `RESULT_PERSISTED`, PR2 최종 ACK, RCC result-ack은 서로
+  다른 상태다. exact receipt와 JS/Python resultHash 일치 뒤에만 Assignment 완료,
+  Manager Wake, PR2 ACK를 한 SQLite transaction으로 확정한다.
+- Manager Wake는 pipe-open 전에는 PENDING이다. 실제 write 직전 callback에서만
+  Work/Manager epoch/lease/attachment/dispatcher fence를 검증하고 DELIVERING으로
+  claim한다. UNKNOWN Wake는 결과 조회만 하며 재전송하지 않는다.
+- Outbox와 Wake는 한 dispatcher lease의 독립 keyset cursor로 공정하게 순환한다.
+  앞선 8개 RCC 장애가 9번째 Wake를 굶기지 않는 회귀를 포함한다.
+- 격리 focused 82 PASS, 전체 558 PASS, compileall/diff check PASS,
+  pre-commit 독립 감사 P0/P1/P2 없음. 정확한 Draft PR/CI는 push 후 기록한다.
+- RCC RESULT_PERSISTED의 신뢰된 즉시 push는 아직 없다. 이벤트는 Core 내부 commit
+  signal이고, RCC 결과 발견은 bounded polling 복구 경계다.
+- RCC Named Pipe의 실제 Windows DACL/서비스 주체 제한은 아직 실증되지 않았다.
+  따라서 `DEPLOYMENT_BLOCKED`; Schema 2 기본 OFF, LIVE/서비스/RCC/Chrome 변경 금지다.
+- 공유 `D:\BCT\source`, PR3-o 미커밋 작업, stash, Issue #111,
+  기존 UNKNOWN/Claim/consumed_at과 과거 영수증은 건드리지 않았다.
+
+상세 계약과 테스트 행렬은
+`docs/exec-plans/active/BCT_DURABLE_ORCHESTRATION_PR_C_20261016.md`를 따른다.
+
 ## 현재 작업 — Issue #111 manager wakeback (LIVE_DEPLOYED, hosted E2E ACCEPTED)
 
 Manager wakeback V1은 PR #112로 main에 병합되어 exact-SHA LIVE 배포까지 완료했다.

@@ -9,7 +9,7 @@ import hashlib
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from .core.manager_decision import ManagerDecisionConsumer
 from .core.models import ConflictError, PreconditionError
@@ -33,13 +33,17 @@ class PollCandidate:
 class ManagerDecisionRecovery:
     """Bounded receipt recovery; it never sends or retries a Manager wake."""
 
-    def __init__(self, service: OrchestrationService, client: RelayClient):
+    def __init__(
+        self, service: OrchestrationService, client: RelayClient,
+        *, on_deliveries: Callable[[], None] | None = None,
+    ):
         self.service = service
         self.store = service.store
         self.client = client
         self.consumer = ManagerDecisionConsumer(service)
         self.owner_id = "mgr.recovery." + secrets.token_hex(16)
         self.lease_token = secrets.token_hex(32)
+        self.on_deliveries = on_deliveries
 
     def _acquire_recovery_lease(self, *, now: float) -> bool:
         """Own one fenced poller and recover only its current Manager leases."""
@@ -246,12 +250,18 @@ class ManagerDecisionRecovery:
             db.close()
         if row is None or float(row["expires_at"]) <= now:
             raise ConflictError("MANAGER_RESULT_TRIGGER_NOT_CURRENT")
-        return self.consumer.consume_receipt(
+        result = self.consumer.consume_receipt(
             work=self.store.get_work(str(row["work_id"])), event_id=event_id,
             manager_epoch=int(row["manager_epoch"]), lease_token=str(row["token"]),
             receipt=receipt, now=now,
             recovery_fence=(self.owner_id, self.lease_token),
         )
+        if int(result.get("deliveries", 0)) > 0 and self.on_deliveries is not None:
+            # The consumer has returned only after its SQLite transaction
+            # committed. A lost signal is harmless because bounded polling
+            # reads the same durable outbox.
+            self.on_deliveries()
+        return result
 
     def run_once(self, *, limit: int = 8, now: float | None = None) -> dict[str, Any]:
         now = time.time() if now is None else now
