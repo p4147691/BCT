@@ -4,7 +4,16 @@ import json
 import unittest
 from unittest.mock import patch
 
-from bct.integrations.rcc import NamedPipeRelayClient, RelayEffectUnknown
+from bct.integrations.rcc import (
+    LOCAL_SYSTEM_SID,
+    PIPE_FULL_CONTROL,
+    NamedPipeRelayClient,
+    PipeAccessEntry,
+    PipeServerIdentity,
+    RelayEffectUnknown,
+    RelayUnavailable,
+    validate_pipe_server_identity,
+)
 
 
 class _Pipe:
@@ -35,6 +44,7 @@ class NamedPipeRelayClientTests(unittest.TestCase):
         with (
             patch("bct.integrations.rcc.resolve_instance_id", return_value="instance123"),
             patch("builtins.open", return_value=pipe),
+            patch("bct.integrations.rcc.verify_connected_pipe_server"),
         ):
             result = NamedPipeRelayClient().request(
                 instance_id="instance123", request_id="send-1",
@@ -85,12 +95,55 @@ class NamedPipeRelayClientTests(unittest.TestCase):
         with (
             patch("bct.integrations.rcc.resolve_instance_id", return_value="instance123"),
             patch("builtins.open", side_effect=lambda *_args, **_kwargs: (events.append("open") or pipe)),
+            patch("bct.integrations.rcc.verify_connected_pipe_server", side_effect=lambda _pipe: events.append("verify")),
         ):
             NamedPipeRelayClient().request(
                 instance_id="instance123", request_id="send-1", command="send",
                 before_write=lambda: events.append("before_write"), timeout_s=1,
             )
-        self.assertEqual(["open", "before_write", "write"], events)
+        self.assertEqual(["open", "verify", "before_write", "write"], events)
+
+    def test_server_rejection_precedes_before_write_and_request_write(self):
+        events: list[str] = []
+        pipe = _Pipe([])
+
+        def reject(_pipe):
+            events.append("verify")
+            raise RelayUnavailable("RCC_PIPE_SERVER_REJECTED:DACL_NOT_PROTECTED")
+
+        with (
+            patch("bct.integrations.rcc.resolve_instance_id", return_value="instance123"),
+            patch("builtins.open", side_effect=lambda *_args, **_kwargs: (events.append("open") or pipe)),
+            patch("bct.integrations.rcc.verify_connected_pipe_server", side_effect=reject),
+            self.assertRaises(RelayUnavailable),
+        ):
+            NamedPipeRelayClient().request(
+                instance_id="instance123", request_id="send-1", command="send",
+                before_write=lambda: events.append("before_write"), timeout_s=1,
+            )
+        self.assertEqual(["open", "verify"], events)
+        self.assertEqual(b"", pipe.written)
+
+    def test_server_identity_api_failure_is_prewrite_unavailable(self):
+        events: list[str] = []
+        pipe = _Pipe([])
+
+        def unavailable(_pipe):
+            events.append("verify")
+            raise OSError("GetNamedPipeServerProcessId failed")
+
+        with (
+            patch("bct.integrations.rcc.resolve_instance_id", return_value="instance123"),
+            patch("builtins.open", side_effect=lambda *_args, **_kwargs: (events.append("open") or pipe)),
+            patch("bct.integrations.rcc.verify_connected_pipe_server", side_effect=unavailable),
+            self.assertRaisesRegex(RelayUnavailable, "RCC_TRANSPORT_NOT_STARTED"),
+        ):
+            NamedPipeRelayClient().request(
+                instance_id="instance123", request_id="send-1", command="send",
+                before_write=lambda: events.append("before_write"), timeout_s=1,
+            )
+        self.assertEqual(["open", "verify"], events)
+        self.assertEqual(b"", pipe.written)
 
     def test_before_write_exception_is_propagated_without_writing(self):
         pipe = _Pipe([])
@@ -102,6 +155,7 @@ class NamedPipeRelayClientTests(unittest.TestCase):
         with (
             patch("bct.integrations.rcc.resolve_instance_id", return_value="instance123"),
             patch("builtins.open", return_value=pipe),
+            patch("bct.integrations.rcc.verify_connected_pipe_server"),
             self.assertRaises(OSError) as caught,
         ):
             NamedPipeRelayClient().request(
@@ -122,6 +176,7 @@ class NamedPipeRelayClientTests(unittest.TestCase):
         with (
             patch("bct.integrations.rcc.resolve_instance_id", return_value="instance123"),
             patch("builtins.open", return_value=pipe),
+            patch("bct.integrations.rcc.verify_connected_pipe_server"),
             self.assertRaises(RelayEffectUnknown),
         ):
             NamedPipeRelayClient().request(
@@ -129,6 +184,61 @@ class NamedPipeRelayClientTests(unittest.TestCase):
                 timeout_s=1,
             )
         self.assertNotEqual(b"", pipe.written)
+
+
+class PipeServerIdentityValidationTests(unittest.TestCase):
+    @staticmethod
+    def _valid_identity(**changes):
+        values = {
+            "server_pid": 1234,
+            "pipe_server_session_id": 3,
+            "process_session_id": 3,
+            "current_session_id": 3,
+            "server_user_sid": "S-1-5-21-1-1001",
+            "current_user_sid": "S-1-5-21-1-1001",
+            "server_logon_sid": "S-1-5-5-0-12345",
+            "current_logon_sid": "S-1-5-5-0-12345",
+            "pipe_owner_sid": "S-1-5-21-1-1001",
+            "dacl_protected": True,
+            "dacl_entries": (
+                PipeAccessEntry(0, 0, PIPE_FULL_CONTROL, "S-1-5-5-0-12345"),
+                PipeAccessEntry(0, 0, PIPE_FULL_CONTROL, LOCAL_SYSTEM_SID),
+            ),
+        }
+        values.update(changes)
+        return PipeServerIdentity(**values)
+
+    def test_exact_personal_desktop_boundary_is_accepted(self):
+        validate_pipe_server_identity(self._valid_identity())
+
+    def test_user_logon_session_and_owner_mismatches_fail_closed(self):
+        cases = (
+            {"server_user_sid": "S-1-5-21-9-1002"},
+            {"server_logon_sid": "S-1-5-5-0-999"},
+            {"pipe_server_session_id": 4},
+            {"process_session_id": 4},
+            {"pipe_owner_sid": "S-1-5-21-9-1002"},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes), self.assertRaises(RelayUnavailable):
+                validate_pipe_server_identity(self._valid_identity(**changes))
+
+    def test_unprotected_or_broad_or_inherited_dacl_fails_closed(self):
+        cases = (
+            {"dacl_protected": False},
+            {"dacl_entries": (
+                PipeAccessEntry(0, 0, PIPE_FULL_CONTROL, "S-1-5-5-0-12345"),
+                PipeAccessEntry(0, 0, PIPE_FULL_CONTROL, LOCAL_SYSTEM_SID),
+                PipeAccessEntry(0, 0, PIPE_FULL_CONTROL, "S-1-1-0"),
+            )},
+            {"dacl_entries": (
+                PipeAccessEntry(0, 0x10, PIPE_FULL_CONTROL, "S-1-5-5-0-12345"),
+                PipeAccessEntry(0, 0, PIPE_FULL_CONTROL, LOCAL_SYSTEM_SID),
+            )},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes), self.assertRaises(RelayUnavailable):
+                validate_pipe_server_identity(self._valid_identity(**changes))
 
 
 if __name__ == "__main__":
