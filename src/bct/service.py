@@ -10,6 +10,7 @@ from .core.policy import Policy
 from .core.store import Store
 from .core.orchestration import OrchestrationService
 from .manager_decision_recovery import ManagerDecisionRecovery
+from .worker_dispatch_recovery import WorkerDispatchRecovery
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
@@ -57,8 +58,19 @@ class BCT:
                 _manager_wake_receipt_v2_enabled(policy_path)
             ),
         )
+        relay = NamedPipeRelayClient()
+        self.worker_dispatch_recovery = (
+            WorkerDispatchRecovery(self.orchestration, relay)
+            if self.orchestration.manager_wake_receipt_v2_enabled else None
+        )
         self.manager_decision_recovery = (
-            ManagerDecisionRecovery(self.orchestration, NamedPipeRelayClient())
+            ManagerDecisionRecovery(
+                self.orchestration, relay,
+                on_deliveries=(
+                    self.worker_dispatch_recovery.notify
+                    if self.worker_dispatch_recovery is not None else None
+                ),
+            )
             if self.orchestration.manager_wake_receipt_v2_enabled else None
         )
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)

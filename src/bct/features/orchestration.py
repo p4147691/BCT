@@ -323,7 +323,10 @@ class OrchestrationFeature:
         )
 
     def _wake_manager(self, *, work: Work, session_id: str,
-                      manager_epoch: int, event_id: str) -> dict[str, Any]:
+                      manager_epoch: int, event_id: str,
+                      manager_lease_token: str | None = None,
+                      recovery_fence: tuple[str, str] | None = None,
+                      claim_at_write: bool = False) -> dict[str, Any]:
         def public_event(value: dict[str, Any] | None) -> dict[str, Any] | None:
             if value is None:
                 return None
@@ -332,10 +335,25 @@ class OrchestrationFeature:
             return cleaned
 
         delivery_id = "orch.wake." + _hash(event_id, 32)
-        event = self.service.claim_manager_wake(
-            work=work, session_id=session_id, event_id=event_id,
-            manager_epoch=manager_epoch, delivery_id=delivery_id,
-        )
+        claimed = not claim_at_write
+        if claim_at_write:
+            event = self.service.manager_wake_dispatch_candidate(
+                work=work, session_id=session_id, event_id=event_id,
+                manager_epoch=manager_epoch,
+            )
+            if event is not None and event["state"] == "DELIVERED":
+                return {"event": public_event(event), "delivered": True,
+                        "manager_acknowledged": False}
+            if event is None:
+                return {"event": public_event(event), "delivered": False,
+                        "manager_acknowledged": False}
+        else:
+            event = self.service.claim_manager_wake(
+                work=work, session_id=session_id, event_id=event_id,
+                manager_epoch=manager_epoch, delivery_id=delivery_id,
+                manager_lease_token=manager_lease_token,
+                recovery_fence=recovery_fence,
+            )
         if event is None or event["state"] == "DELIVERED":
             return {
                 "event": public_event(event),
@@ -343,7 +361,19 @@ class OrchestrationFeature:
                 "manager_acknowledged": False,
             }
         try:
-            result = self.client.request(
+            def claim_immediately_before_write() -> None:
+                nonlocal claimed
+                current = self.service.claim_manager_wake(
+                    work=work, session_id=session_id, event_id=event_id,
+                    manager_epoch=manager_epoch, delivery_id=delivery_id,
+                    manager_lease_token=manager_lease_token,
+                    recovery_fence=recovery_fence,
+                )
+                if current is None or current["state"] != "DELIVERING":
+                    raise ConflictError("ORCHESTRATION_WAKE_WRITE_FENCED")
+                claimed = True
+
+            request_kwargs = dict(
                 instance_id=str(event["instance_id"]), request_id=delivery_id,
                 command="send-wakeback", to=str(event["relay_role"]),
                 text=self._manager_wake_envelope(event), timeout_s=15.0,
@@ -362,7 +392,13 @@ class OrchestrationFeature:
                     "returnOnAck": True,
                 },
             )
+            if claim_at_write:
+                request_kwargs["before_write"] = claim_immediately_before_write
+            result = self.client.request(**request_kwargs)
         except RelayUnavailable:
+            if not claimed:
+                return {"event": public_event(event), "delivered": False,
+                        "manager_acknowledged": False}
             event = self.service.complete_manager_wake(
                 work=work, session_id=session_id, event_id=event_id,
                 manager_epoch=manager_epoch, delivery_id=delivery_id, outcome="PENDING",

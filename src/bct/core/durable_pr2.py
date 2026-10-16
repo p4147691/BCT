@@ -193,9 +193,9 @@ def _target_current(db, row):
 
 
 def reserve_delivery(store: Store, *, delivery_id: str, epoch: int, token: str,
-                     now: float | None = None) -> dict[str, Any]:
+                     now: float | None = None, _db=None) -> dict[str, Any]:
     now = time.time() if now is None else now
-    with store.transaction() as db:
+    with (store.transaction() if _db is None else nullcontext(_db)) as db:
         row = db.execute("SELECT * FROM orchestration_dispatch_outbox WHERE delivery_id=?", (delivery_id,)).fetchone()
         if row is None:
             raise KeyError("DELIVERY_NOT_FOUND")
@@ -210,19 +210,23 @@ def reserve_delivery(store: Store, *, delivery_id: str, epoch: int, token: str,
 
 
 def record_attempt(store: Store, *, delivery_id: str, epoch: int, token: str,
-                   reservation_token: str, phase: str, now: float | None = None) -> None:
-    if phase not in {"PRE_SEND_ABORT","SEND_STARTED","DELIVERED","UNKNOWN"}:
+                   reservation_token: str, phase: str, now: float | None = None,
+                   _db=None) -> None:
+    if phase not in {"PRE_SEND_ABORT","SEND_STARTED","DELIVERED","UNKNOWN",
+                     "CONFIRMED_NOT_APPLIED"}:
         raise ValueError("ATTEMPT_PHASE_INVALID")
     now = time.time() if now is None else now
-    with store.transaction() as db:
+    with (store.transaction() if _db is None else nullcontext(_db)) as db:
         row = db.execute("SELECT * FROM orchestration_dispatch_outbox WHERE delivery_id=?", (delivery_id,)).fetchone()
         if row is None:
             raise KeyError("DELIVERY_NOT_FOUND")
         _lease(db,row["session_id"],epoch,token,now)
         if row["manager_epoch"] > epoch or row["reservation_token"] != reservation_token:
             raise ConflictError("RESERVATION_FENCED")
-        allowed = {"RESERVED":{"PRE_SEND_ABORT":"PENDING","SEND_STARTED":"DISPATCHING"},
-                   "DISPATCHING":{"DELIVERED":"DELIVERED","UNKNOWN":"UNKNOWN"}}
+        allowed = {"RESERVED":{"PRE_SEND_ABORT":"PENDING","SEND_STARTED":"DISPATCHING",
+                               "CONFIRMED_NOT_APPLIED":"NOT_APPLIED"},
+                   "DISPATCHING":{"DELIVERED":"DELIVERED","UNKNOWN":"UNKNOWN",
+                                  "CONFIRMED_NOT_APPLIED":"NOT_APPLIED"}}
         state = allowed.get(row["state"],{}).get(phase)
         if state is None:
             raise ConflictError("INVALID_ATTEMPT_TRANSITION")

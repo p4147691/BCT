@@ -4,7 +4,7 @@ import json
 import os
 import re
 import time
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 
 PIPE_ROOT = r"\\.\pipe" + "\\"
@@ -23,7 +23,7 @@ class RelayClient(Protocol):
     def request(
         self, *, instance_id: str, request_id: str, command: str,
         to: str = "", text: str = "", extra: dict[str, Any] | None = None,
-        timeout_s: float = 30.0,
+        timeout_s: float = 30.0, before_write: Callable[[], None] | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -98,7 +98,7 @@ class NamedPipeRelayClient:
     def request(
         self, *, instance_id: str, request_id: str, command: str,
         to: str = "", text: str = "", extra: dict[str, Any] | None = None,
-        timeout_s: float = 30.0,
+        timeout_s: float = 30.0, before_write: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         resolved = resolve_instance_id(instance_id)
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", request_id):
@@ -111,16 +111,25 @@ class NamedPipeRelayClient:
             if overlap:
                 raise ValueError("RCC_RESERVED_FIELD_OVERRIDE")
             payload.update(extra)
+        encoded = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
         path = PIPE_ROOT + PIPE_PREFIX + resolved
         try:
             pipe = open(path, "r+b", buffering=0)
         except OSError as exc:
             raise RelayUnavailable("RCC_PIPE_UNAVAILABLE") from exc
-        written = False
+        write_started = False
+        invoking_before_write = False
         try:
             with pipe:
-                pipe.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
-                written = True
+                if before_write is not None:
+                    invoking_before_write = True
+                    before_write()
+                    invoking_before_write = False
+                # Once the write call begins, an exception cannot prove that
+                # the OS accepted zero bytes. Treat every such failure as an
+                # ambiguous external effect and recover by exact receipt lookup.
+                write_started = True
+                pipe.write(encoded)
                 deadline = time.monotonic() + timeout_s
                 pending = bytearray()
                 while time.monotonic() < deadline:
@@ -155,7 +164,9 @@ class NamedPipeRelayClient:
         except (RelayUnavailable, RelayEffectUnknown):
             raise
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            if written:
+            if invoking_before_write:
+                raise
+            if write_started:
                 raise RelayEffectUnknown("RCC_TRANSPORT_UNKNOWN_AFTER_DISPATCH") from exc
             raise RelayUnavailable("RCC_TRANSPORT_NOT_STARTED") from exc
         raise RelayEffectUnknown("RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH")

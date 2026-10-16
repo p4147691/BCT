@@ -161,6 +161,10 @@ def main() -> int:
             "enabled": bct.manager_decision_recovery is not None,
             "runs": 0,
         },
+        "worker_dispatch_recovery": {
+            "enabled": bct.worker_dispatch_recovery is not None,
+            "runs": 0,
+        },
     }
 
     recovery_stop = threading.Event()
@@ -187,6 +191,30 @@ def main() -> int:
                     "last_run_at": time.time(),
                 }
             recovery_stop.wait(2.0)
+
+    def worker_dispatch_recovery_loop() -> None:
+        recovery = bct.worker_dispatch_recovery
+        if recovery is None:
+            return
+        while not recovery_stop.is_set():
+            try:
+                outcome = recovery.run_once(limit=8)
+                state["worker_dispatch_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["worker_dispatch_recovery"].get("runs", 0)) + 1,
+                    "last_outcome": outcome,
+                    "last_error": None,
+                    "last_run_at": time.time(),
+                }
+            except Exception as exc:  # durable rows remain authoritative
+                state["worker_dispatch_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["worker_dispatch_recovery"].get("runs", 0)) + 1,
+                    "last_error": type(exc).__name__ + ":" + str(exc),
+                    "last_run_at": time.time(),
+                }
+            # Event-first latency with bounded polling as the recovery safety net.
+            recovery.wait(2.0)
 
     def status_snapshot() -> dict[str, Any]:
         """Expose one no-argument, read-only operator view for MCP clients."""
@@ -264,18 +292,27 @@ def main() -> int:
     server = uvicorn.Server(config)
     holder["server"] = server
     recovery_thread = None
+    dispatch_thread = None
     if bct.manager_decision_recovery is not None:
         recovery_thread = threading.Thread(
             target=manager_decision_recovery_loop,
             name="bct-manager-decision-recovery", daemon=True,
         )
         recovery_thread.start()
+    if bct.worker_dispatch_recovery is not None:
+        dispatch_thread = threading.Thread(
+            target=worker_dispatch_recovery_loop,
+            name="bct-worker-dispatch-recovery", daemon=True,
+        )
+        dispatch_thread.start()
     try:
         server.run()
     finally:
         recovery_stop.set()
         if recovery_thread is not None:
             recovery_thread.join(timeout=3.0)
+        if dispatch_thread is not None:
+            dispatch_thread.join(timeout=3.0)
     return 0 if server.started else 1
 
 

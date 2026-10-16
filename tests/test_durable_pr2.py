@@ -95,6 +95,48 @@ class PR2Tests(unittest.TestCase):
         record_attempt(self.s,delivery_id="stable-id",epoch=2,token=self.lease["token"],
                        reservation_token=r["reservation_token"],phase="PRE_SEND_ABORT",now=103.)
         self.assertEqual(["stable-id"],recovery_snapshot(self.s,session_id="s")["resendable"])
+
+    def test_confirmed_not_applied_is_terminal_from_reserved_and_dispatching(self):
+        arguments=self.args()
+        arguments["actions"]=[
+            {**arguments["actions"][0],"delivery_id":"not-applied-reserved"},
+            {**arguments["actions"][0],"delivery_id":"not-applied-dispatching"},
+        ]
+        commit_and_enqueue(self.s,**arguments)
+        for send_started in (False, True):
+            with self.subTest(send_started=send_started):
+                delivery_id=("not-applied-dispatching" if send_started
+                             else "not-applied-reserved")
+                reservation=reserve_delivery(self.s,delivery_id=delivery_id,epoch=2,
+                                             token=self.lease["token"],now=102.)
+                values=dict(delivery_id=delivery_id,epoch=2,token=self.lease["token"],
+                            reservation_token=reservation["reservation_token"])
+                if send_started:
+                    record_attempt(self.s,**values,phase="SEND_STARTED",now=103.)
+                record_attempt(self.s,**values,phase="CONFIRMED_NOT_APPLIED",now=104.)
+                rows={row["delivery_id"]:row for row in
+                      recovery_snapshot(self.s,session_id="s")["deliveries"]}
+                self.assertEqual("NOT_APPLIED",rows[delivery_id]["state"])
+                self.assertNotIn(delivery_id,recovery_snapshot(
+                    self.s,session_id="s")["resendable"])
+
+    def test_delivery_operations_join_caller_transaction(self):
+        commit_and_enqueue(self.s,**self.args())
+        with self.assertRaises(RuntimeError):
+            with self.s.transaction() as db:
+                reservation=reserve_delivery(
+                    self.s,delivery_id="stable-id",epoch=2,token=self.lease["token"],
+                    now=102.,_db=db,
+                )
+                record_attempt(
+                    self.s,delivery_id="stable-id",epoch=2,token=self.lease["token"],
+                    reservation_token=reservation["reservation_token"],
+                    phase="SEND_STARTED",now=103.,_db=db,
+                )
+                raise RuntimeError("rollback")
+        snapshot=recovery_snapshot(self.s,session_id="s")
+        self.assertEqual("PENDING",snapshot["deliveries"][0]["state"])
+
     def test_stale_foreign_token_and_ack(self):
         commit_and_enqueue(self.s,**self.args())
         for token in ("wrong","",None):

@@ -1027,7 +1027,7 @@ class OrchestrationService:
     def reserve_dispatch(
         self, *, work: Work, session_id: str, assignment_id: str,
         manager_epoch: int, message_id: str, dispatch_operation_id: str,
-        payload: dict[str, Any],
+        payload: dict[str, Any], _db=None,
     ) -> dict[str, Any]:
         message_id = _identifier(message_id, "ORCHESTRATION_MESSAGE_ID_INVALID")
         dispatch_operation_id = _identifier(
@@ -1036,7 +1036,7 @@ class OrchestrationService:
         payload_digest = _digest(payload)
         now = time.time()
         pre_dispatch_failed = False
-        with self.store.transaction() as db:
+        with (self.store.transaction() if _db is None else nullcontext(_db)) as db:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
             assignment = db.execute(
@@ -1338,7 +1338,7 @@ class OrchestrationService:
 
     def complete_assignment(
         self, *, assignment_id: str, generation: int, outcome: str,
-        result: dict[str, Any], result_message_id: str,
+        result: dict[str, Any], result_message_id: str, _db=None,
     ) -> dict[str, Any]:
         if outcome not in {"APPLIED", "FAILED", "UNKNOWN", "NOT_APPLIED"}:
             raise ValueError("ORCHESTRATION_OUTCOME_INVALID")
@@ -1354,7 +1354,7 @@ class OrchestrationService:
             }
             bounded = _canonical(result)
         now = time.time()
-        with self.store.transaction() as db:
+        with (self.store.transaction() if _db is None else nullcontext(_db)) as db:
             assignment = db.execute(
                 "SELECT * FROM orchestration_assignments WHERE assignment_id=?",
                 (assignment_id,),
@@ -1544,9 +1544,66 @@ class OrchestrationService:
         })
         return dict(row)
 
+    def manager_wake_dispatch_candidate(
+        self, *, work: Work, session_id: str, event_id: str,
+        manager_epoch: int,
+    ) -> dict[str, Any] | None:
+        """Read the immutable Wake envelope without claiming external effect.
+
+        PR-C uses this only to open the exact RCC pipe. The authoritative
+        claim and all current lease/attachment checks still happen in the
+        transport's immediate-before-write callback.
+        """
+        event_id = _identifier(event_id, "ORCHESTRATION_WAKE_EVENT_ID_INVALID")
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            self._assert_current_work_assignment(db, work)
+            event = db.execute(
+                "SELECT * FROM orchestration_manager_wakes WHERE event_id=? "
+                "AND session_id=?", (event_id, session_id),
+            ).fetchone()
+            if event is None:
+                raise KeyError("ORCHESTRATION_WAKE_EVENT_NOT_FOUND")
+            if int(session["manager_epoch"]) != manager_epoch \
+                    or int(event["manager_epoch"]) != manager_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            envelope_schema = event["envelope_schema"]
+            receipt_mode = str(event["receipt_mode"] or "")
+            if isinstance(envelope_schema, bool) or not isinstance(envelope_schema, int):
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_INVALID")
+            if (envelope_schema, receipt_mode) not in {
+                (1, "LEGACY_RETURN_V1"), (2, "RCC_RESULT_POLL_V1"),
+            }:
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
+            if event["state"] == "DELIVERED":
+                return dict(event)
+            if event["state"] != "PENDING":
+                return None
+            attachment = self._manager_attachment_row(
+                db, session_id=session_id,
+                manager_node_id=str(session["manager_node_id"] or ""),
+            )
+            if attachment is None or any((
+                str(attachment["attachment_id"]) != str(event["attachment_id"]),
+                int(attachment["generation"]) != int(event["attachment_generation"]),
+                str(attachment["instance_id"]) != str(event["instance_id"]),
+                str(attachment["external_session_id"]) != str(event["external_session_id"]),
+                int(attachment["tab_id"]) != int(event["tab_id"]),
+                str(attachment["conversation_key"]) != str(event["conversation_key"]),
+                str(attachment["relay_role"]) != str(event["relay_role"]),
+                str(attachment["binding_receipt_id"]) != str(event["binding_receipt_id"]),
+            )):
+                raise ConflictError("ORCHESTRATION_MANAGER_WAKE_ATTACHMENT_FENCED")
+            result = dict(event)
+            result["wake_envelope_schema"] = envelope_schema
+            return result
+
     def claim_manager_wake(
         self, *, work: Work, session_id: str, event_id: str,
         manager_epoch: int, delivery_id: str,
+        manager_lease_token: str | None = None,
+        recovery_fence: tuple[str, str] | None = None,
     ) -> dict[str, Any] | None:
         event_id = _identifier(event_id, "ORCHESTRATION_WAKE_EVENT_ID_INVALID")
         delivery_id = _identifier(delivery_id, "ORCHESTRATION_WAKE_DELIVERY_ID_INVALID")
@@ -1571,6 +1628,27 @@ class OrchestrationService:
                 raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            if manager_lease_token is not None:
+                lease = db.execute(
+                    "SELECT manager_node_id,epoch,token,expires_at FROM "
+                    "orchestration_durable_leases WHERE session_id=?",
+                    (session_id,),
+                ).fetchone()
+                if (lease is None
+                        or str(lease["manager_node_id"]) != str(session["manager_node_id"])
+                        or int(lease["epoch"]) != manager_epoch
+                        or str(lease["token"]) != manager_lease_token
+                        or float(lease["expires_at"]) <= now):
+                    raise ConflictError("ORCHESTRATION_MANAGER_WAKE_LEASE_FENCED")
+            if recovery_fence is not None:
+                owner_id, token = recovery_fence
+                fence = db.execute(
+                    "SELECT expires_at FROM orchestration_manager_recovery_leases "
+                    "WHERE lease_name='worker-dispatcher' AND owner_id=? AND token=?",
+                    (owner_id, token),
+                ).fetchone()
+                if fence is None or float(fence["expires_at"]) <= now:
+                    raise ConflictError("ORCHESTRATION_MANAGER_WAKE_RECOVERY_FENCED")
             if event["state"] == "DELIVERED":
                 return dict(event)
             if event["state"] != "PENDING":
