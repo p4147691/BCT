@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import re
-import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -64,10 +62,6 @@ class OrchestrationService:
         self.store = store
 
     @staticmethod
-    def _consume_capability_digest(token: str) -> str:
-        return hashlib.sha256(token.encode("ascii")).hexdigest()
-
-    @staticmethod
     def _assert_outer_operation_running(db, *, work: Work,
                                         request: dict[str, Any]) -> None:
         outer_id = str(request.get("_outer_operation_id") or "").strip()
@@ -119,6 +113,20 @@ class OrchestrationService:
             raise ConflictError("ORCHESTRATION_WORK_ASSIGNMENT_CHANGED")
         if row["state"] not in {"ACTIVE", "PARTIAL"}:
             raise PreconditionError("ORCHESTRATION_SESSION_NOT_ACTIVE")
+
+    @staticmethod
+    def _assert_current_work_assignment(db, work: Work) -> None:
+        current = db.execute(
+            "SELECT owner_principal_id,assignment_epoch,state FROM works "
+            "WHERE work_id=?", (work.work_id,),
+        ).fetchone()
+        if current is None or (
+            str(current["owner_principal_id"]) != work.owner_principal_id
+            or int(current["assignment_epoch"]) != int(work.assignment_epoch)
+        ):
+            raise ConflictError("ORCHESTRATION_WORK_ASSIGNMENT_CHANGED")
+        if current["state"] != "ACTIVE" or work.state != "ACTIVE":
+            raise PreconditionError("ORCHESTRATION_WORK_NOT_ACTIVE")
 
     def start_session(
         self, *, work: Work, session_id: str, objective: str,
@@ -570,16 +578,6 @@ class OrchestrationService:
             ).rowcount
             if changed != 1:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
-            # A consume capability is a one-epoch bearer proof.  Revocation is
-            # atomic with takeover so a token delivered to the deposed manager
-            # cannot be spent against the successor epoch.  Historical wakes
-            # have no capability row and are deliberately not backfilled.
-            revoked_capabilities = db.execute(
-                "UPDATE orchestration_manager_wake_capabilities SET "
-                "state='REVOKED',updated_at=? WHERE session_id=? "
-                "AND manager_epoch=? AND state='ISSUED'",
-                (now, session_id, expected_epoch),
-            ).rowcount
             # A pending notification belongs to the old manager attachment and
             # must never be redirected.  Once takeover has atomically proved
             # the replacement manager, preserve the old record as STALE and
@@ -648,7 +646,6 @@ class OrchestrationService:
                 "prior_epoch": expected_epoch,
                 "adopted_queued_assignments": len(queued),
                 "requeued_manager_wakes": requeued_wakes,
-                "revoked_manager_wake_capabilities": revoked_capabilities,
             })
             return self._session_value(self._session_row(db, session_id))
 
@@ -1463,31 +1460,18 @@ class OrchestrationService:
             attachment["conversation_key"] if attachment is not None else None,
             attachment["relay_role"] if attachment is not None else None,
             attachment["binding_receipt_id"] if attachment is not None else None,
-            state, None, now, now, None, None,
+            state, None, now, now, None, None, 2, "RCC_RESULT_POLL_V1",
         )
-        inserted = db.execute(
-            "INSERT OR IGNORE INTO orchestration_manager_wakes VALUES(?,?,?,?,?,?,?,?,"
-            "?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        db.execute(
+            "INSERT OR IGNORE INTO orchestration_manager_wakes "
+            "(event_id,session_id,manager_epoch,assignment_id,"
+            "assignment_generation,result_message_id,result_digest,manager_node_id,"
+            "attachment_id,attachment_generation,instance_id,external_session_id,"
+            "tab_id,conversation_key,relay_role,binding_receipt_id,state,delivery_id,"
+            "created_at,updated_at,delivered_at,acknowledged_at,envelope_schema,"
+            "receipt_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             values,
-        ).rowcount == 1
-        if inserted and state == "PENDING":
-            consume_capability = secrets.token_urlsafe(32)
-            db.execute(
-                "INSERT INTO orchestration_manager_wake_capabilities "
-                "(event_id,session_id,manager_epoch,attachment_id,"
-                "attachment_generation,envelope_schema,capability_token,"
-                "token_digest,state,issued_at,updated_at,"
-                "spent_for_decision_id,spent_at) "
-                "VALUES(?,?,?,?,?,2,?,?,'ISSUED',?,?,NULL,NULL)",
-                (
-                    event_id, session_id, manager_epoch,
-                    str(attachment["attachment_id"]),
-                    int(attachment["generation"]),
-                    consume_capability,
-                    self._consume_capability_digest(consume_capability),
-                    now, now,
-                ),
-            )
+        )
         row = db.execute(
             "SELECT * FROM orchestration_manager_wakes WHERE event_id=?", (event_id,)
         ).fetchone()
@@ -1508,12 +1492,21 @@ class OrchestrationService:
         with self.store.transaction() as db:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
+            self._assert_current_work_assignment(db, work)
             event = db.execute(
                 "SELECT * FROM orchestration_manager_wakes WHERE event_id=? AND session_id=?",
                 (event_id, session_id),
             ).fetchone()
             if event is None:
                 raise KeyError("ORCHESTRATION_WAKE_EVENT_NOT_FOUND")
+            envelope_schema = event["envelope_schema"]
+            receipt_mode = str(event["receipt_mode"] or "")
+            if isinstance(envelope_schema, bool) or not isinstance(envelope_schema, int):
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_INVALID")
+            if (envelope_schema, receipt_mode) not in {
+                (1, "LEGACY_RETURN_V1"), (2, "RCC_RESULT_POLL_V1"),
+            }:
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
             if event["state"] == "DELIVERED":
@@ -1538,33 +1531,10 @@ class OrchestrationService:
                     "UPDATE orchestration_manager_wakes SET state='STALE',updated_at=? "
                     "WHERE event_id=? AND state='PENDING'", (now, event_id),
                 )
-                db.execute(
-                    "UPDATE orchestration_manager_wake_capabilities SET "
-                    "state='REVOKED',updated_at=? WHERE event_id=? AND state='ISSUED'",
-                    (now, event_id),
-                )
                 self.store._event(db, "ORCHESTRATION_MANAGER_WAKE_STALE", event_id, {
                     "manager_epoch": manager_epoch,
                 })
                 return None
-            capability = db.execute(
-                "SELECT * FROM orchestration_manager_wake_capabilities "
-                "WHERE event_id=?", (event_id,),
-            ).fetchone()
-            if capability is not None:
-                if capability["state"] != "ISSUED":
-                    raise ConflictError("ORCHESTRATION_WAKE_CAPABILITY_UNAVAILABLE")
-                exact_capability = all((
-                    int(capability["envelope_schema"]) == 2,
-                    str(capability["session_id"]) == session_id,
-                    int(capability["manager_epoch"]) == manager_epoch,
-                    str(capability["attachment_id"]) == str(event["attachment_id"]),
-                    int(capability["attachment_generation"])
-                    == int(event["attachment_generation"]),
-                ))
-                if not exact_capability:
-                    raise ConflictError("ORCHESTRATION_WAKE_CAPABILITY_BINDING_MISMATCH")
-                consume_capability = str(capability["capability_token"])
             changed = db.execute(
                 "UPDATE orchestration_manager_wakes SET state='DELIVERING',delivery_id=?,"
                 "updated_at=? WHERE event_id=? AND state='PENDING'",
@@ -1577,24 +1547,12 @@ class OrchestrationService:
             ).fetchone()
             self.store._event(db, "ORCHESTRATION_MANAGER_WAKE_DISPATCHING", event_id, {
                 "delivery_id": delivery_id, "manager_epoch": manager_epoch,
-                "wake_envelope_schema": (
-                    int(capability["envelope_schema"])
-                    if capability is not None else 1
-                ),
+                "wake_envelope_schema": envelope_schema,
+                "receipt_mode": receipt_mode,
             })
             result = dict(claimed)
-            # A capability row is created only with a new wake.  A historical
-            # capability-less PENDING wake must retain its exact schema-1
-            # envelope so the deterministic RCC request ID keeps its original
-            # fingerprint across an upgrade.
-            result["wake_envelope_schema"] = (
-                int(capability["envelope_schema"])
-                if capability is not None else 1
-            )
-            if capability is not None:
-                # This secret is transient.  Callers must place it only in the
-                # exact manager wake envelope and remove it from outputs/receipts.
-                result["consume_capability"] = consume_capability
+            result["wake_envelope_schema"] = envelope_schema
+            result["receipt_mode"] = receipt_mode
             return result
 
     def complete_manager_wake(
@@ -1634,130 +1592,6 @@ class OrchestrationService:
                 "delivery_id": delivery_id, "manager_epoch": manager_epoch,
             })
             return dict(updated)
-
-    def spend_manager_wake_consume_capability(
-        self, db, *, work: Work, session_id: str, event_id: str,
-        manager_epoch: int, attachment_id: str, attachment_generation: int,
-        consume_capability: str, decision_id: str,
-    ) -> dict[str, Any]:
-        """Atomically spend a wake capability inside the caller's transaction.
-
-        This is a PR-A persistence primitive, not a Manager ACK.  PR B must call
-        it in the same transaction that creates the authenticated consumption
-        decision and receipts.  Spending it alone never updates
-        ``acknowledged_at`` or legacy mailbox ``consumed_at``.
-        """
-        if not getattr(db, "in_transaction", False):
-            raise RuntimeError("ORCHESTRATION_WAKE_CAPABILITY_TRANSACTION_REQUIRED")
-        event_id = _identifier(event_id, "ORCHESTRATION_WAKE_EVENT_ID_INVALID")
-        attachment_id = _identifier(
-            attachment_id, "ORCHESTRATION_ATTACHMENT_ID_INVALID"
-        )
-        decision_id = _identifier(
-            decision_id, "ORCHESTRATION_DECISION_ID_INVALID"
-        )
-        if (
-            isinstance(manager_epoch, bool)
-            or not isinstance(manager_epoch, int)
-            or manager_epoch < 0
-        ):
-            raise PreconditionError("ORCHESTRATION_MANAGER_EPOCH_INVALID")
-        if (
-            isinstance(attachment_generation, bool)
-            or not isinstance(attachment_generation, int)
-            or attachment_generation <= 0
-        ):
-            raise PreconditionError("ORCHESTRATION_ATTACHMENT_GENERATION_INVALID")
-        token = str(consume_capability or "")
-        if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", token):
-            raise PreconditionError("ORCHESTRATION_WAKE_CAPABILITY_INVALID")
-
-        session = self._session_row(db, session_id)
-        self._assert_work(session, work)
-        event = db.execute(
-            "SELECT * FROM orchestration_manager_wakes "
-            "WHERE event_id=? AND session_id=?",
-            (event_id, session_id),
-        ).fetchone()
-        if event is None:
-            raise ConflictError("ORCHESTRATION_WAKE_CAPABILITY_REJECTED")
-        if (
-            int(session["manager_epoch"]) != int(manager_epoch)
-            or int(event["manager_epoch"]) != int(manager_epoch)
-            or str(event["attachment_id"] or "") != attachment_id
-            or int(event["attachment_generation"] or 0)
-            != int(attachment_generation)
-            or event["state"] not in {"DELIVERING", "DELIVERED", "UNKNOWN"}
-        ):
-            raise ConflictError("ORCHESTRATION_WAKE_CAPABILITY_REJECTED")
-
-        attachment = self._manager_attachment_row(
-            db, session_id=session_id,
-            manager_node_id=str(session["manager_node_id"] or ""),
-        )
-        exact_attachment = attachment is not None and all((
-            str(attachment["attachment_id"]) == attachment_id,
-            int(attachment["generation"]) == int(attachment_generation),
-            str(attachment["instance_id"]) == str(event["instance_id"]),
-            str(attachment["external_session_id"])
-            == str(event["external_session_id"]),
-            int(attachment["tab_id"]) == int(event["tab_id"]),
-            str(attachment["conversation_key"])
-            == str(event["conversation_key"]),
-            str(attachment["relay_role"]) == str(event["relay_role"]),
-            str(attachment["binding_receipt_id"])
-            == str(event["binding_receipt_id"]),
-        ))
-        if not exact_attachment:
-            raise ConflictError("ORCHESTRATION_WAKE_CAPABILITY_REJECTED")
-
-        capability = db.execute(
-            "SELECT * FROM orchestration_manager_wake_capabilities "
-            "WHERE event_id=?", (event_id,),
-        ).fetchone()
-        supplied_digest = self._consume_capability_digest(token)
-        if capability is None or not all((
-            capability["state"] == "ISSUED",
-            str(capability["session_id"]) == session_id,
-            int(capability["manager_epoch"]) == int(manager_epoch),
-            str(capability["attachment_id"]) == attachment_id,
-            int(capability["attachment_generation"])
-            == int(attachment_generation),
-            hmac.compare_digest(str(capability["token_digest"]), supplied_digest),
-            hmac.compare_digest(str(capability["capability_token"]), token),
-        )):
-            raise ConflictError("ORCHESTRATION_WAKE_CAPABILITY_REJECTED")
-
-        now = time.time()
-        changed = db.execute(
-            "UPDATE orchestration_manager_wake_capabilities SET "
-            "state='SPENT',updated_at=?,spent_for_decision_id=?,spent_at=? "
-            "WHERE event_id=? AND state='ISSUED' AND token_digest=?",
-            (now, decision_id, now, event_id, supplied_digest),
-        ).rowcount
-        if changed != 1:
-            raise ConflictError("ORCHESTRATION_WAKE_CAPABILITY_REJECTED")
-        self.store._event(
-            db, "ORCHESTRATION_MANAGER_WAKE_CAPABILITY_SPENT", event_id,
-            {
-                "session_id": session_id,
-                "manager_epoch": int(manager_epoch),
-                "attachment_id": attachment_id,
-                "attachment_generation": int(attachment_generation),
-                "decision_id": decision_id,
-                "manager_ack_recorded": False,
-            },
-        )
-        return {
-            "event_id": event_id,
-            "session_id": session_id,
-            "manager_epoch": int(manager_epoch),
-            "attachment_id": attachment_id,
-            "attachment_generation": int(attachment_generation),
-            "decision_id": decision_id,
-            "capability_state": "SPENT",
-            "manager_ack_recorded": False,
-        }
 
     def consume_results(
         self, *, work: Work, session_id: str, manager_epoch: int,
@@ -2335,7 +2169,8 @@ class OrchestrationService:
                 "result_message_id,result_digest,manager_node_id,attachment_id,"
                 "attachment_generation,instance_id,external_session_id,tab_id,"
                 "conversation_key,relay_role,state,delivery_id,created_at,updated_at,"
-                "delivered_at,acknowledged_at FROM orchestration_manager_wakes "
+                "delivered_at,acknowledged_at,envelope_schema,receipt_mode "
+                "FROM orchestration_manager_wakes "
                 "WHERE session_id=? ORDER BY created_at,event_id LIMIT 200",
                 (session_id,),
             ).fetchall()]

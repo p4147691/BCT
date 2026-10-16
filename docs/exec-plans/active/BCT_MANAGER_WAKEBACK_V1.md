@@ -9,12 +9,14 @@ The hosted acceptance below proves one exact RCC wake submission. Its historical
 historical data and is not evidence that the Manager read the RESULT or committed
 a decision. PR A separates future RCC `host:ack + submitted=true` from actual
 Manager consumption: new submit confirmations write only `DELIVERED` and
-`delivered_at`, while an additive one-time capability provides the transaction
-boundary for PR B. No historical row is rewritten or backfilled.
+`delivered_at`. New wakes use a persisted receipt-only envelope and leave the
+RCC return role empty; BCT will later recover the durable RCC RESULT through
+bounded internal polling. No bearer capability is issued, and no historical
+row is rewritten or backfilled.
 
 The candidate contract, threat model and exact PR B interface are in
 `BCT_MANAGER_WAKE_ACK_CONTRACT_PR_A_20261016.md`. Until PR B atomically commits
-the capability spend, RESULT consumption, decision and follow-up outbox, neither
+RESULT consumption, decision and follow-up outbox, neither
 the candidate nor the historical hosted receipt is a full Manager-consumption
 E2E PASS.
 

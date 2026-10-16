@@ -1,6 +1,9 @@
 const fs = require('fs');
 const vm = require('vm');
 const { webcrypto } = require('crypto');
+const resultHashFixture = JSON.parse(
+  fs.readFileSync('fixtures/result_hash_v1.json', 'utf8')
+);
 
 const noopEvent = { addListener() {}, removeListener() {} };
 const nativePort = {
@@ -36,7 +39,7 @@ const chrome = {
   },
 };
 const context = vm.createContext({
-  chrome, crypto: webcrypto, URL, console, process, liveTabs,
+  chrome, crypto: webcrypto, URL, console, process, liveTabs, resultHashFixture,
   setTimeout() { return 1; }, clearTimeout() {},
   TextEncoder, TextDecoder,
 });
@@ -45,6 +48,16 @@ const background = fs.readFileSync('background.js', 'utf8');
 const tests = String.raw`
 ;(async () => {
   await endpointSessionReady;
+  if (resultHashFixture.schema !== 1) {
+    throw new Error('unsupported result hash fixture schema');
+  }
+  for (const vector of resultHashFixture.vectors) {
+    const serialized = JSON.stringify(boundedRelayResultPayload(vector.input));
+    const digest = await relaySha256(serialized);
+    if (serialized !== vector.bounded_json || digest !== vector.sha256) {
+      throw new Error('result hash fixture mismatch: ' + vector.name);
+    }
+  }
   endpointSessionId = 'session123';
   const baseRegistration = {
     role: 'BCT_W1', bindingReceiptId: 'RCB-AAAAAAAAAAAA',
@@ -239,7 +252,7 @@ const tests = String.raw`
     throw new Error('unclassified post-dispatch failure was not quarantined as UNKNOWN');
   }
 
-  console.log('4 orchestration binding fences PASS; 3 content authorization fences PASS; 7 lease interleaving fences PASS; 2 dispatch outcome fences PASS');
+  console.log('4 orchestration binding fences PASS; 3 content authorization fences PASS; 7 lease interleaving fences PASS; 2 dispatch outcome fences PASS; result hash fixture PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 
 `;

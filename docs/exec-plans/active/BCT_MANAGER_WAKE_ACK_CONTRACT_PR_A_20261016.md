@@ -1,82 +1,118 @@
-# BCT Manager Wake ACK contract — PR A
+# BCT Manager Wake receipt contract — PR A
 
 Status: PR A implementation candidate. **Not merged, not deployed, and not an end-to-end acceptance.**
 
 ## Purpose and boundary
 
-PR A separates three facts that were previously collapsed in the live manager-wake path:
+PR A separates three facts:
 
-1. RCC accepted and submitted the wake text (`host:ack`, `submitted=true`).
-2. A holder of the exact one-time consume capability reached the BCT persistence boundary.
-3. A current Manager atomically consumed the RESULT, committed one decision, and created follow-up outbox intent.
+1. RCC accepted and submitted the Manager wake (`host:ack`, `submitted=true`).
+2. RCC later persisted the Manager response as an exact `RESULT_PERSISTED` receipt.
+3. BCT atomically consumed that receipt, committed one decision and created any follow-up outbox intent.
 
-Only the first fact is produced by the existing RCC call. PR A adds the persistence primitive needed to prove the second fact during PR B. It does not implement the third fact, add a public MCP consume operation, create assignments/outbox rows, or claim a complete browser E2E.
+Only the first fact is completed by PR A. Submission writes `DELIVERED` and
+`delivered_at`; it never writes or reinterprets Manager-consumption evidence.
+PR B owns facts 2 and 3.
 
-The existing `orchestration_manager_wakes.acknowledged_at` values and Issue #111 receipts retain their historical bytes and historical meaning. They are not changed, reinterpreted as new Manager-consumption proof, or backfilled. New `host:ack + submitted=true` transitions write `DELIVERED` and `delivered_at` only.
+The abandoned bearer capability, HTTP event, Challenge and MCP caller-identity
+designs are not part of this contract. No secret is placed in a ChatGPT message,
+RCC fingerprint, SQLite row or MCP response.
 
-## Additive persistence contract
+## Versioned wake contract
 
-`orchestration_manager_wake_capabilities` is empty on upgrade and has no startup backfill. One row is keyed by the existing canonical manager-wake `event_id` and binds:
+`orchestration_manager_wakes` gains two additive columns:
 
-- exact `session_id` and `manager_epoch`;
-- exact `attachment_id` and `attachment_generation`;
-- an immutable wake-envelope schema version (schema 2 for new rows);
-- a high-entropy bearer token plus its digest;
-- lifecycle `ISSUED -> SPENT` or `ISSUED -> REVOKED`;
-- the future deterministic `decision_id` for which it was spent.
+- `envelope_schema`, default `1` for every pre-existing row;
+- `receipt_mode`, default `LEGACY_RETURN_V1` for every pre-existing row.
 
-The token and immutable envelope schema are created in the same SQLite transaction that first creates a new `PENDING` wake, before its first delivery claim. A confirmed non-submit retry reuses the same token, schema and deterministic delivery identity so the immutable RCC request does not change. A capability-less historical `PENDING` wake is never backfilled: its retry reproduces the byte-exact schema-1 wake envelope already associated with its deterministic RCC request ID. Such a legacy wake cannot prove Manager consumption through this PR-A boundary; PR B must require a new current-epoch event or a separately audited migration rather than silently upgrading it. A future renderer must add a new persisted schema value rather than changing schema-2 bytes in place. `DELIVERED` means only submit confirmation. A post-send `UNKNOWN` is never retransmitted; if the original Manager actually received the wake, that exact token remains eligible for PR B. Manager takeover atomically revokes all still-issued capabilities from the prior epoch before any successor wake is created. Attachment staleness also revokes the event's still-issued capability in the same transaction.
+New rows are created with `envelope_schema=2` and
+`receipt_mode=RCC_RESULT_POLL_V1`. The schema-2 envelope contains only exact
+event, session, Manager epoch, attachment generation, assignment generation and
+RESULT identity. Its RCC `returnToRole` is empty, so RCC persists the Manager
+response but does not send a second Manager message. `returnOnAck` remains true
+only so BCT can distinguish confirmed submission from an unknown external
+effect.
 
-The raw token is persisted only because an exact confirmed-non-submit retry must reproduce the identical wake payload. It is never returned in operation output, snapshot, event data, or ordinary receipt evidence. This makes the SQLite file and its backups a credential-bearing boundary that requires independent ACL, backup, redaction, and log review before deployment.
+Schema 1 retains its existing bytes, deterministic relay ID, fingerprint and
+return role. Unknown schema/mode pairs fail closed. Existing Issue #111 rows,
+historical `acknowledged_at`, mailbox `consumed_at`, UNKNOWN effects and Claims
+are neither backfilled nor reinterpreted. A post-send `UNKNOWN` is never resent.
 
-## Transaction-only PR B interface
+Wake claim and completion re-read the current SQLite Work owner and assignment
+epoch, current Manager epoch and exact active attachment. A stale caller-owned
+Work object, takeover or attachment rotation cannot authorize a new dispatch.
 
-PR A exposes no new MCP operation. Its sole handoff is:
+## RCC resultHash contract
 
-```python
-OrchestrationService.spend_manager_wake_consume_capability(
-    db,
-    *,
-    work,
-    session_id,
-    event_id,
-    manager_epoch,
-    attachment_id,
-    attachment_generation,
-    consume_capability,
-    decision_id,
-)
-```
+RCC hashes the UTF-8 bytes of `JSON.stringify(boundedRelayResultPayload(result))`.
+Property order is part of the contract:
 
-The caller must already hold the single SQLite write transaction. The method revalidates current Work ownership, session epoch, canonical wake, live exact manager attachment and token, then performs one conditional `ISSUED -> SPENT` update. Reuse, including reuse for the same `decision_id`, stale epoch, takeover, wrong attachment, wrong generation and wrong token fail closed. A rollback leaves the capability unspent. PR B must therefore check for and return an already committed deterministic decision before attempting to spend the token; after a commit/response-loss replay it must not invoke this primitive a second time. That replay ordering and a response-loss test are mandatory PR-B gates.
+1. `failureEvidence` (`phase`, `networkError`, `domError`, `networkSignal`) or null;
+2. `ok`;
+3. `reply`;
+4. `error`;
+5. `ambiguous`.
 
-Spending the capability alone is deliberately **not** Manager ACK evidence. It does not update manager-wake `acknowledged_at`, legacy mailbox `consumed_at`, PR1 consumption receipts, a decision, assignment, or outbox.
+Python must not use sorted keys. The shared fixture
+`modules/rcc/extension/fixtures/result_hash_v1.json` is executed by both the
+production JavaScript helper and the Python recomputation helper. Unsupported
+types and oversized replies fail closed.
 
-## Threat model and known limitation
+The PR-B decision parser must accept one bounded
+`BCT_ORCHESTRATION_MANAGER_DECISION_V1` object only. It must bind schema,
+event/session/Manager epoch, source result message/digest and a decision kind of
+either `COMPLETE` or `FOLLOW_UP`. `FOLLOW_UP` carries a bounded list of successor
+assignment specifications; `COMPLETE` carries none. Missing, duplicate,
+conflicting or additional authority-bearing fields fail closed. This response
+schema is not an authorization token: authority still comes from current
+Work/Policy/epoch/lease/attachment checks at commit time.
 
-- Capability possession under the common MCP principal proves possession of the delivered bearer value; it does not independently authenticate a particular Manager browser tab.
-- A token exposed through the chat DOM, extension, process memory, SQLite file, backup, screenshot, log, or compromised same-principal caller can be stolen and raced.
-- Exact event/epoch/attachment/generation fences prevent a token from being redirected to a different durable identity, but they do not prove the human/model identity behind the tab.
-- Takeover revokes the old epoch atomically, but a capability legitimately spent before takeover remains historical evidence and must be reconciled by the PR B decision transaction.
-- A wrong recipient that obtains the exact token before takeover is within this bearer-token limitation. Independent tab authentication or a browser-held signing key is a separate security boundary and is not claimed here.
-- Tokens have no wall-clock expiry in PR A. Database ACLs, backups and logs must be treated as credential-bearing, and expiry or caller-bound proof must be resolved before exposing the PR-B operation beyond the current internal boundary.
+## PR B internal poll contract
 
-These limitations require independent security review before merge and again before exposing the PR B MCP operation.
+PR B may add one bounded recovery loop inside the existing BCT runtime. It must
+not add an HTTP receiver, signing key, authentication server or public Manager
+consume MCP operation.
 
-## PR B exact responsibility
+The implementation must satisfy all of the following:
 
-PR B must use one SQLite write transaction to:
+1. **Single ownership and restart lease.** At most one active poll owner may
+   schedule reads. Poll ownership is operational only; the authoritative commit
+   is still fenced by the current durable Manager epoch/lease. A restart may
+   resume an unexpired exact lease or acquire an explicitly defined recovery
+   lease, but may not silently revive an expired or revoked Manager lease.
+2. **Bounded scope.** Select only schema-2 `RCC_RESULT_POLL_V1` wakes in a
+   bounded batch. A missing result, RCC outage or delayed receipt causes backoff
+   without changing Wake state or resending the wake. Schema-1 rows are excluded.
+3. **Authoritative source.** Obtain decision text only from the exact RCC
+   `RESULT_PERSISTED` receipt. Caller-supplied decision text, tab ID or
+   conversation ID is not authoritative.
+4. **Receipt verification.** Recompute `resultHash` using the versioned contract
+   and compare relay ID, message/result digest, binding receipt, instance,
+   external session, tab, conversation and attachment generation with the
+   persisted Wake.
+5. **Current fencing.** Before committing, re-read Work owner/state/assignment
+   epoch, Policy authorization, Manager epoch/lease and active exact attachment.
+6. **Replay first.** Derive the decision request digest and deterministic IDs,
+   then return an exact already-committed decision before attempting new writes.
+   A conflicting replay fails closed.
+7. **One SQLite transaction.** Any successor assignment, consumption receipt,
+   decision and immutable outbox rows commit together or not at all. A valid
+   terminal decision with no successor creates no assignment or outbox and is
+   still a successful atomic decision.
+8. **Commit before ACK.** Call RCC `result-ack` only after SQLite commit. Lost
+   ACK responses retry the same relay ID/resultHash ACK; they never recompute the
+   decision or enqueue another outbox item.
+9. **UNKNOWN discipline.** Polling may read an existing UNKNOWN wake's exact RCC
+   result, but it never resets or retransmits the wake. External-effect UNKNOWN
+   outbox attempts retain the existing no-auto-resend rule.
+10. **Named Pipe security gate.** Before deployment, verify that the installed
+    pipe is restricted to the intended Windows user/service identity or add an
+    explicit ACL. Exact logical instance validation alone is not an OS access
+    control proof.
 
-1. verify/acquire the current lease and current Manager epoch;
-2. validate the exact source RESULT and current consumer assignment;
-3. derive deterministic `decision_id`, request digest, follow-up assignment IDs and delivery IDs from the immutable request;
-4. return the exact already-committed decision before spending on an identical replay; otherwise spend the PR A capability through the transaction-only interface;
-5. commit PR1 consumption receipts and the decision;
-6. create the follow-up assignment attempt and PR2 outbox intent;
-7. commit all of the above together or none of it.
+## Non-goals and protected state
 
-The current PR1 helper opens its own transaction, so PR B must extract or add a transaction-aware inner helper rather than nesting transactions. It must retain exact replay idempotency, lease/epoch fencing, and the PR2 rule that a send with an unknown external effect is never automatically resent. Only a committed transaction containing capability spend plus consumption decision/receipts may become Manager consumption evidence. Browser submission, capability issuance, or capability spend in isolation must not become `ACKNOWLEDGED` or full E2E PASS.
-
-## Protected state
-
-This PR must not modify RCC, Browser Bridge, LIVE, Chrome, HKCU, Issue #111 rows, historical UNKNOWN/Claim records, or legacy mailbox `consumed_at`. The shared source checkout and the PR3-o uncommitted worktree remain outside this worktree.
+PR A does not implement the poller, dispatcher, decision parser, successor
+assignment transaction or `result-ack` recovery. It does not install/reload RCC,
+operate Chrome, change LIVE/HKCU, merge the PR, restart services or touch PR3-o,
+Issue #111, UNKNOWN/Claim records or existing `consumed_at` values.

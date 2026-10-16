@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "vectors": [
+    {
+      "name": "success-unicode",
+      "input": {
+        "ok": true,
+        "reply": "완료 ✅",
+        "error": "",
+        "ambiguous": false
+      },
+      "bounded_json": "{\"failureEvidence\":null,\"ok\":true,\"reply\":\"완료 ✅\",\"error\":\"\",\"ambiguous\":false}",
+      "sha256": "b15829dde237440a6d9327b018eedd93667b6a038486a883db59bfbdeb6ef1a7"
+    },
+    {
+      "name": "failure-evidence",
+      "input": {
+        "failureEvidence": {
+          "phase": "CAPTURE",
+          "networkError": "net::ERR_FAILED",
+          "domError": "응답 없음",
+          "networkSignal": "FAILED"
+        },
+        "ok": false,
+        "reply": "",
+        "error": "RELAY_FINAL_DOM_UNKNOWN",
+        "ambiguous": true
+      },
+      "bounded_json": "{\"failureEvidence\":{\"phase\":\"CAPTURE\",\"networkError\":\"net::ERR_FAILED\",\"domError\":\"응답 없음\",\"networkSignal\":\"FAILED\"},\"ok\":false,\"reply\":\"\",\"error\":\"RELAY_FINAL_DOM_UNKNOWN\",\"ambiguous\":true}",
+      "sha256": "10365b2d3b3f36033c56ee5628cc8d4c9fff0b30c137384afaf6368ea32bf390"
+    }
+  ]
+}

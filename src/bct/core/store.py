@@ -183,29 +183,12 @@ class Store:
                     delivery_id TEXT, created_at REAL NOT NULL,
                     updated_at REAL NOT NULL, delivered_at REAL,
                     acknowledged_at REAL,
+                    envelope_schema INTEGER NOT NULL DEFAULT 1,
+                    receipt_mode TEXT NOT NULL DEFAULT 'LEGACY_RETURN_V1',
                     UNIQUE(session_id, assignment_id, assignment_generation,
                            result_message_id, manager_epoch),
                     FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
                     FOREIGN KEY(assignment_id) REFERENCES orchestration_assignments(assignment_id)
-                );
-                CREATE TABLE IF NOT EXISTS orchestration_manager_wake_capabilities (
-                    event_id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    manager_epoch INTEGER NOT NULL,
-                    attachment_id TEXT NOT NULL,
-                    attachment_generation INTEGER NOT NULL,
-                    envelope_schema INTEGER NOT NULL,
-                    capability_token TEXT NOT NULL,
-                    token_digest TEXT NOT NULL UNIQUE,
-                    state TEXT NOT NULL,
-                    issued_at REAL NOT NULL,
-                    updated_at REAL NOT NULL,
-                    spent_for_decision_id TEXT,
-                    spent_at REAL,
-                    FOREIGN KEY(event_id) REFERENCES orchestration_manager_wakes(event_id),
-                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
-                    FOREIGN KEY(attachment_id,attachment_generation)
-                        REFERENCES orchestration_attachments(attachment_id,generation)
                 );
                 CREATE TABLE IF NOT EXISTS orchestration_consumption_receipts (
                     session_id TEXT NOT NULL, consumer_assignment_id TEXT NOT NULL,
@@ -291,6 +274,21 @@ class Store:
                     ON orchestration_manager_wakes(session_id,manager_epoch,state,created_at);
                 """
             )
+            wake_columns = {
+                row["name"] for row in db.execute(
+                    "PRAGMA table_info(orchestration_manager_wakes)"
+                ).fetchall()
+            }
+            if "envelope_schema" not in wake_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
+                    "envelope_schema INTEGER NOT NULL DEFAULT 1"
+                )
+            if "receipt_mode" not in wake_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
+                    "receipt_mode TEXT NOT NULL DEFAULT 'LEGACY_RETURN_V1'"
+                )
 
     @staticmethod
     def _event(db: sqlite3.Connection, kind: str, subject_id: str, data: dict[str, Any]) -> None:
