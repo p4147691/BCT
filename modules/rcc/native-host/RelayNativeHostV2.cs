@@ -2,13 +2,18 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Net;
+using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
+using Microsoft.Win32.SafeHandles;
 
 public class RelayNativeHostV2
 {
@@ -31,8 +36,10 @@ public class RelayNativeHostV2
     static object LastPresenceObservedAt = null;
     static string LastPresenceSessionId = "";
     static string InstanceId = "";
-    static bool PipeStarted = false;
+    static volatile bool PipeStarted = false;
+    static bool PipeFailed = false; // fail-closed latch; requires a new Host process
     static bool ActOriginAllowed = false;
+    static PipeSecurity ProtectedPipeSecurity;
 
     public static void Main(string[] args)
     {
@@ -42,28 +49,130 @@ public class RelayNativeHostV2
         catch (Exception ex) { Console.Error.WriteLine("native loop: " + ex.Message); }
     }
 
-    static void StartPipe(string instanceId)
+    static bool StartPipe(string instanceId)
     {
         lock (PipeStartLock)
         {
-            if (PipeStarted) return;
-            InstanceId = ValidateInstanceId(instanceId);
-            PipeStarted = true;
-            var thread = new Thread(PipeAcceptLoop) { IsBackground = true };
-            thread.Start();
+            if (PipeFailed) return false;
+            if (PipeStarted)
+            {
+                // Preserve repeated host:ready acknowledgments, including
+                // the original exact pipe identity, without a second listener.
+                SendNative(new Dictionary<string, object> {
+                    { "type", "host:ready-ack" },
+                    { "instanceId", InstanceId },
+                    { "pipeName", PipePrefix + InstanceId }
+                });
+                return true;
+            }
+            string validatedInstanceId = ValidateInstanceId(instanceId);
+            // There is deliberately no default-DACL fallback.  If the current
+            // logon SID cannot be resolved or a protected DACL cannot be built,
+            // no listener is started.
+            NamedPipeServerStream firstPipe = null;
+            try
+            {
+                PipeSecurity security = CreateProtectedPipeSecurity();
+                // This is the synchronous startup gate: the exact first
+                // protected listener exists before Native Messaging can claim
+                // readiness.  Do not move this construction into the thread.
+                firstPipe = CreateProtectedPipeServerStream(PipePrefix + validatedInstanceId, security);
+                InstanceId = validatedInstanceId;
+                ProtectedPipeSecurity = security;
+                PipeStarted = true;
+                var thread = new Thread(() => PipeAcceptLoop(firstPipe)) { IsBackground = true };
+                thread.Start();
+                // Keep the startup lock through the ACK.  If the new thread
+                // immediately observes a listener failure, it cannot clear
+                // readiness and be followed by a stale ready ACK.
+                SendNative(new Dictionary<string, object> {
+                    { "type", "host:ready-ack" },
+                    { "instanceId", InstanceId },
+                    { "pipeName", PipePrefix + InstanceId }
+                });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                PipeStarted = false;
+                PipeFailed = true;
+                ProtectedPipeSecurity = null;
+                try { if (firstPipe != null) firstPipe.Dispose(); } catch { }
+                Console.Error.WriteLine("pipe startup failed: " + ex.GetType().Name);
+                return false;
+            }
         }
     }
-    static void PipeAcceptLoop()
+    static NamedPipeServerStream CreateProtectedPipeServerStream(string pipeName, PipeSecurity security)
     {
-        var pipeName = PipePrefix + InstanceId;
-        while (true)
+        return new NamedPipeServerStream(
+            pipeName, PipeDirection.InOut, 8,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
+            4096, 4096, security);
+    }
+
+    static void PipeAcceptLoop(NamedPipeServerStream firstPipe)
+    {
+        NamedPipeServerStream pipe = firstPipe;
+        try
         {
-            var pipe = new NamedPipeServerStream(
-                pipeName, PipeDirection.InOut, 8,
-                PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-            pipe.WaitForConnection();
-            ThreadPool.QueueUserWorkItem(_ => HandlePipeClient(pipe));
+            string pipeName = PipePrefix + InstanceId;
+            while (true)
+            {
+                pipe.WaitForConnection();
+                NamedPipeServerStream connectedPipe = pipe;
+                // Ownership of this already-connected pipe passes to its handler.
+                // Failure to create the next listener must not dispose an
+                // in-flight connection or make an UNKNOWN effect retriable.
+                pipe = null;
+                try
+                {
+                    if (!ThreadPool.QueueUserWorkItem(_ => HandlePipeClient(connectedPipe)))
+                        throw new InvalidOperationException("PIPE_HANDLER_QUEUE_FAILED");
+                }
+                catch
+                {
+                    connectedPipe.Dispose();
+                    throw;
+                }
+                pipe = CreateProtectedPipeServerStream(pipeName, ProtectedPipeSecurity);
+            }
         }
+        catch (Exception ex)
+        {
+            try { if (pipe != null) pipe.Dispose(); } catch { }
+            FailPipeListener(ex);
+        }
+    }
+
+    static void FailPipeListener(Exception ex)
+    {
+        string failedInstanceId;
+        lock (PipeStartLock)
+        {
+            if (!PipeStarted) return;
+            PipeStarted = false;
+            PipeFailed = true;
+            ProtectedPipeSecurity = null;
+            failedInstanceId = InstanceId;
+            Console.Error.WriteLine("pipe listener failed: " + ex.GetType().Name);
+            // ACK and failure events share PipeStartLock -> OutputLock ordering.
+            // Do not permit later host:ready to overtake this failure.
+            SendPipeFailure(failedInstanceId, "PIPE_LISTENER_FAILED");
+        }
+    }
+
+    static void SendPipeFailure(string instanceId, string reason)
+    {
+        try
+        {
+            SendNative(new Dictionary<string, object> {
+                { "type", "host:pipe-failure" },
+                { "instanceId", instanceId },
+                { "reason", reason }
+            });
+        }
+        catch (Exception ex) { Console.Error.WriteLine("pipe failure notification dropped: " + ex.GetType().Name); }
     }
 
     static void HandlePipeClient(NamedPipeServerStream pipe)
@@ -71,6 +180,11 @@ public class RelayNativeHostV2
         StreamWriter writer = null;
         try
         {
+            // This is a connection gate, not a BCT-Core authentication claim.
+            // Same-user, same-logon processes can satisfy it; a capability or
+            // trusted process binding is still required before activation.
+            if (!IsConnectedClientInServerSession(pipe.SafePipeHandle, Process.GetCurrentProcess().SessionId))
+                return;
             var utf8 = new UTF8Encoding(false);
             var reader = new StreamReader(pipe, utf8, false, 4096, true);
             writer = new StreamWriter(pipe, utf8, 4096, true) { AutoFlush = true };
@@ -103,6 +217,69 @@ public class RelayNativeHostV2
             try { pipe.Dispose(); } catch { }
         }
     }
+
+    static PipeSecurity CreateProtectedPipeSecurity()
+    {
+        WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        if (identity == null || identity.User == null)
+            throw new InvalidOperationException("PIPE_OWNER_SID_UNAVAILABLE");
+        SecurityIdentifier logonSid = GetCurrentLogonSid(identity);
+        var security = new PipeSecurity();
+        security.SetOwner(identity.User);
+        security.SetAccessRuleProtection(true, false);
+        security.AddAccessRule(new PipeAccessRule(logonSid, PipeAccessRights.FullControl, AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            PipeAccessRights.FullControl, AccessControlType.Allow));
+        return security;
+    }
+
+    static SecurityIdentifier GetCurrentLogonSid(WindowsIdentity identity)
+    {
+        const int TokenLogonSid = 28;
+        uint required;
+        GetTokenInformation(identity.Token, TokenLogonSid, IntPtr.Zero, 0, out required);
+        if (required == 0 || required > 65536)
+            throw new InvalidOperationException("PIPE_LOGON_SID_UNAVAILABLE");
+        IntPtr buffer = Marshal.AllocHGlobal(checked((int)required));
+        try
+        {
+            uint written;
+            if (!GetTokenInformation(identity.Token, TokenLogonSid, buffer, required, out written) ||
+                written == 0 || written > required || Marshal.ReadInt32(buffer) != 1)
+                throw new InvalidOperationException("PIPE_LOGON_SID_UNAVAILABLE");
+            IntPtr sid = Marshal.ReadIntPtr(buffer, IntPtr.Size == 8 ? 8 : 4);
+            if (sid == IntPtr.Zero)
+                throw new InvalidOperationException("PIPE_LOGON_SID_UNAVAILABLE");
+            var result = new SecurityIdentifier(sid);
+            if (!result.Value.StartsWith("S-1-5-5-", StringComparison.Ordinal))
+                throw new InvalidOperationException("PIPE_LOGON_SID_INVALID");
+            return result;
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
+
+    static bool IsConnectedClientInServerSession(SafePipeHandle pipeHandle, int serverSessionId)
+    {
+        uint clientSessionId;
+        uint clientProcessId;
+        if (pipeHandle == null || pipeHandle.IsInvalid ||
+            !GetNamedPipeClientSessionId(pipeHandle, out clientSessionId) ||
+            !GetNamedPipeClientProcessId(pipeHandle, out clientProcessId))
+            return false;
+        return clientProcessId != 0 && clientSessionId == checked((uint)serverSessionId);
+    }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool GetTokenInformation(
+        IntPtr tokenHandle, int tokenInformationClass, IntPtr tokenInformation,
+        uint tokenInformationLength, out uint returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetNamedPipeClientSessionId(SafePipeHandle pipe, out uint clientSessionId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetNamedPipeClientProcessId(SafePipeHandle pipe, out uint clientProcessId);
     static void NativeReadLoop()
     {
         var header = new byte[4];
@@ -124,12 +301,8 @@ public class RelayNativeHostV2
                     LastPresenceObservedAt = null;
                     LastPresenceSessionId = "";
                 }
-                StartPipe(instanceId);
-                SendNative(new Dictionary<string, object> {
-                    { "type", "host:ready-ack" },
-                    { "instanceId", InstanceId },
-                    { "pipeName", PipePrefix + InstanceId }
-                });
+                if (!StartPipe(instanceId))
+                    SendPipeFailure(instanceId, "PIPE_STARTUP_FAILED");
                 continue;
             }
             if (type == "host:endpoints")
