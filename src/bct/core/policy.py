@@ -38,6 +38,19 @@ class Policy:
         self._approval = frozenset(approval)
         self._revision = hashlib.sha256(raw).hexdigest()
 
+    def validate_unattended_actions(self, actions: list[str]) -> str:
+        """Fail closed unless every action is currently a normal action.
+
+        Manager decisions do not carry an authenticated Principal or an
+        approval.  They may therefore create successor assignments only for
+        actions that the *current* policy classifies as normal.
+        """
+        self.reload()
+        denied = sorted(set(actions) - self._normal)
+        if denied:
+            raise ValueError("POLICY_ACTION_NOT_UNATTENDED:" + ",".join(denied))
+        return self.revision
+
     def decide(self, *, principal: Principal, work: Work, action: str,
                approval_ref: str | None = None) -> Decision:
         self.reload()

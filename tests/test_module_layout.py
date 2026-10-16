@@ -35,6 +35,14 @@ class ModuleLayoutTests(unittest.TestCase):
         self.assertFalse(any(item.startswith("modules/rcc/") for item in files))
         self.assertFalse(any(item.startswith("modules/bdc/") for item in files))
         self.assertFalse(any(item.startswith("components/") for item in files))
+        for required in (
+            "src/bct/core/consumption.py",
+            "src/bct/core/durable_pr2.py",
+            "src/bct/core/manager_decision.py",
+            "src/bct/core/rcc_result.py",
+            "src/bct/manager_decision_recovery.py",
+        ):
+            self.assertIn(required, files)
 
     def test_tunnel_profile_uses_file_referenced_header_map(self):
         profile = (self.root / "modules" / "mcp" / "bct-control.profile.example.yaml").read_text(

@@ -5,6 +5,7 @@ import asyncio
 import hmac
 import os
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -156,7 +157,36 @@ def main() -> int:
         "mcp_tool_count": len(bct.operations.capabilities) + 4,
         "started_at": time.time(),
         "orphan_recoveries": orphan_recoveries,
+        "manager_decision_recovery": {
+            "enabled": bct.manager_decision_recovery is not None,
+            "runs": 0,
+        },
     }
+
+    recovery_stop = threading.Event()
+
+    def manager_decision_recovery_loop() -> None:
+        recovery = bct.manager_decision_recovery
+        if recovery is None:
+            return
+        while not recovery_stop.is_set():
+            try:
+                outcome = recovery.run_once(limit=8)
+                state["manager_decision_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["manager_decision_recovery"].get("runs", 0)) + 1,
+                    "last_outcome": outcome,
+                    "last_error": None,
+                    "last_run_at": time.time(),
+                }
+            except Exception as exc:  # fail closed; the durable rows remain authoritative
+                state["manager_decision_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["manager_decision_recovery"].get("runs", 0)) + 1,
+                    "last_error": type(exc).__name__ + ":" + str(exc),
+                    "last_run_at": time.time(),
+                }
+            recovery_stop.wait(2.0)
 
     def status_snapshot() -> dict[str, Any]:
         """Expose one no-argument, read-only operator view for MCP clients."""
@@ -233,7 +263,19 @@ def main() -> int:
     config = build_server_config(app, port=arguments.port)
     server = uvicorn.Server(config)
     holder["server"] = server
-    server.run()
+    recovery_thread = None
+    if bct.manager_decision_recovery is not None:
+        recovery_thread = threading.Thread(
+            target=manager_decision_recovery_loop,
+            name="bct-manager-decision-recovery", daemon=True,
+        )
+        recovery_thread.start()
+    try:
+        server.run()
+    finally:
+        recovery_stop.set()
+        if recovery_thread is not None:
+            recovery_thread.join(timeout=3.0)
     return 0 if server.started else 1
 
 

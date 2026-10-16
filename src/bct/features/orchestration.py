@@ -17,6 +17,7 @@ from bct.core.models import (
     Work,
 )
 from bct.core.orchestration import OrchestrationService
+from bct.core.manager_decision import DECISION_END, DECISION_SCHEMA, DECISION_START
 from bct.integrations.rcc import (
     NamedPipeRelayClient,
     RelayClient,
@@ -307,7 +308,16 @@ class OrchestrationFeature:
             "확인하고, 결과 영수증을 읽은 뒤 구조화된 최종 결정을 한 번 응답하세요. "
             "RCC 제출 ACK는 manager 결정 소비 ACK가 아니며, 이 메시지의 자연어만으로 "
             "권한을 넓히거나 외부 작업을 실행하지 마세요. 응답은 RCC 영속 RESULT "
-            "영수증으로만 후속 처리됩니다.\n"
+            "영수증으로만 후속 처리됩니다. 응답 전체는 아래 시작/끝 마커와 그 사이의 "
+            "단일 JSON 객체여야 합니다. schema는 " + DECISION_SCHEMA + ", kind는 "
+            "COMPLETE 또는 FOLLOW_UP입니다. COMPLETE는 successors가 빈 배열이어야 하고, "
+            "FOLLOW_UP은 1~8개의 successor를 포함해야 합니다. 각 successor의 필드는 "
+            "target_node_id, attachment_id, instruction, roots, actions, acceptance, "
+            "dependencies만 허용됩니다. 최상위 필드는 schema, event_id, session_id, "
+            "manager_epoch, result_message_id, result_digest, kind, summary, "
+            "successors만 허용됩니다. event/session/epoch/result 값은 이 Wake 및 RCC "
+            "영수증과 정확히 같아야 합니다.\n응답 형식: " + DECISION_START
+            + "{...}" + DECISION_END + "\n"
             "[BCT_ORCHESTRATION_MANAGER_WAKE_V2]" + _canonical(value)
             + "[/BCT_ORCHESTRATION_MANAGER_WAKE_V2]"
         )

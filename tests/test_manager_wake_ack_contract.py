@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from bct import BCT
+from bct.core.manager_decision import DECISION_END, DECISION_SCHEMA, DECISION_START
 from bct.core.models import ConflictError, Outcome, Principal
 from bct.features.orchestration import OrchestrationFeature
 from bct.integrations.rcc import RelayEffectUnknown
@@ -250,6 +251,13 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         wake = self.first_wake()
         self.assertEqual(2, envelope["schema"])
         self.assertEqual("RCC_RESULT_POLL_V1", envelope["receipt_mode"])
+        self.assertIn(DECISION_SCHEMA, call["text"])
+        self.assertIn(DECISION_START + "{...}" + DECISION_END, call["text"])
+        for field in (
+            "target_node_id", "attachment_id", "instruction", "roots",
+            "actions", "acceptance", "dependencies", "COMPLETE", "FOLLOW_UP",
+        ):
+            self.assertIn(field, call["text"])
         self.assertNotIn("consume_capability", envelope)
         self.assertEqual("", call["extra"]["returnTo"])
         self.assertTrue(call["extra"]["returnOnAck"])

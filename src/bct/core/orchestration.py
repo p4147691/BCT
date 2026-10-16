@@ -3,12 +3,17 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import secrets
 import time
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .models import ConflictError, Outcome, PreconditionError, Work
 from .store import Store
+
+if TYPE_CHECKING:
+    from .policy import Policy
 
 
 _ID = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
@@ -60,9 +65,22 @@ class OrchestrationService:
 
     def __init__(
         self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
+        policy: "Policy | None" = None,
     ):
         self.store = store
         self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
+        self.policy = policy
+
+    def assert_current_unattended_policy(self, actions: list[str]) -> str:
+        """Re-read Policy for authority-free successor assignment actions."""
+        if not actions:
+            return ""
+        if self.policy is None:
+            raise PreconditionError("MANAGER_DECISION_POLICY_UNAVAILABLE")
+        try:
+            return self.policy.validate_unattended_actions(actions)
+        except (OSError, ValueError) as exc:
+            raise PreconditionError("MANAGER_DECISION_POLICY_DENIED") from exc
 
     @staticmethod
     def _assert_outer_operation_running(db, *, work: Work,
@@ -672,7 +690,7 @@ class OrchestrationService:
         self, *, work: Work, session_id: str, assignment_id: str,
         manager_epoch: int, worker_node_id: str, attachment_id: str,
         request: dict[str, Any], roots: list[str], actions: list[str],
-        acceptance: dict[str, Any], dependencies: list[str],
+        acceptance: dict[str, Any], dependencies: list[str], _db=None,
     ) -> tuple[bool, dict[str, Any]]:
         assignment_id = _identifier(
             assignment_id, "ORCHESTRATION_ASSIGNMENT_ID_INVALID"
@@ -698,7 +716,7 @@ class OrchestrationService:
             if key != "_outer_operation_id"
         }
         now = time.time()
-        with self.store.transaction() as db:
+        with (self.store.transaction() if _db is None else nullcontext(_db)) as db:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
             self._assert_outer_operation_running(db, work=work, request=request)
@@ -1457,6 +1475,39 @@ class OrchestrationService:
             if self.manager_wake_receipt_v2_enabled
             else (1, "LEGACY_RETURN_V1")
         )
+        if envelope_schema == 2 and manager_node_id:
+            lease = db.execute(
+                "SELECT * FROM orchestration_durable_leases WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            lease_token = secrets.token_hex(32)
+            if lease is None:
+                db.execute(
+                    "INSERT INTO orchestration_durable_leases VALUES(?,?,?,?,?,?)",
+                    (session_id, manager_node_id, manager_epoch, lease_token,
+                     now + 60.0, now),
+                )
+            elif int(lease["epoch"]) < manager_epoch:
+                db.execute(
+                    "INSERT INTO orchestration_durable_lease_revocations "
+                    "(session_id,revoked_epoch,owner_node_id,token_digest,"
+                    "successor_epoch,reason,created_at) VALUES(?,?,?,?,?,?,?)",
+                    (session_id, int(lease["epoch"]), str(lease["manager_node_id"]),
+                     hashlib.sha256(str(lease["token"]).encode("utf-8")).hexdigest(),
+                     manager_epoch, "SUPERSEDED_BY_MANAGER_WAKE_EPOCH", now),
+                )
+                changed = db.execute(
+                    "UPDATE orchestration_durable_leases SET manager_node_id=?,"
+                    "epoch=?,token=?,expires_at=?,updated_at=? WHERE session_id=? "
+                    "AND epoch=? AND token=?",
+                    (manager_node_id, manager_epoch, lease_token, now + 60.0, now,
+                     session_id, int(lease["epoch"]), str(lease["token"])),
+                ).rowcount
+                if changed != 1:
+                    raise ConflictError("ORCHESTRATION_MANAGER_LEASE_RACE")
+            elif (int(lease["epoch"]) == manager_epoch
+                  and str(lease["manager_node_id"]) != manager_node_id):
+                raise ConflictError("ORCHESTRATION_MANAGER_LEASE_OWNER_MISMATCH")
         values = (
             event_id, session_id, manager_epoch, assignment["assignment_id"],
             generation, result_message_id, result_digest, manager_node_id or None,
@@ -1469,6 +1520,7 @@ class OrchestrationService:
             attachment["relay_role"] if attachment is not None else None,
             attachment["binding_receipt_id"] if attachment is not None else None,
             state, None, now, now, None, None, envelope_schema, receipt_mode,
+            None, None, "NOT_REQUESTED", None,
         )
         db.execute(
             "INSERT OR IGNORE INTO orchestration_manager_wakes "
@@ -1477,7 +1529,8 @@ class OrchestrationService:
             "attachment_id,attachment_generation,instance_id,external_session_id,"
             "tab_id,conversation_key,relay_role,binding_receipt_id,state,delivery_id,"
             "created_at,updated_at,delivered_at,acknowledged_at,envelope_schema,"
-            "receipt_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "receipt_mode,decision_id,result_hash,result_ack_state,"
+            "result_acknowledged_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             values,
         )
         row = db.execute(
@@ -1487,6 +1540,7 @@ class OrchestrationService:
             "assignment_id": assignment["assignment_id"],
             "generation": generation, "manager_epoch": manager_epoch,
             "state": row["state"],
+            "receipt_mode": receipt_mode,
         })
         return dict(row)
 
@@ -2186,7 +2240,8 @@ class OrchestrationService:
                 "result_message_id,result_digest,manager_node_id,attachment_id,"
                 "attachment_generation,instance_id,external_session_id,tab_id,"
                 "conversation_key,relay_role,state,delivery_id,created_at,updated_at,"
-                "delivered_at,acknowledged_at,envelope_schema,receipt_mode "
+                "delivered_at,acknowledged_at,envelope_schema,receipt_mode,"
+                "decision_id,result_hash,result_ack_state,result_acknowledged_at "
                 "FROM orchestration_manager_wakes "
                 "WHERE session_id=? ORDER BY created_at,event_id LIMIT 200",
                 (session_id,),

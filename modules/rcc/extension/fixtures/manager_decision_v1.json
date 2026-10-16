@@ -1,0 +1,37 @@
+{
+  "schema": "BCT_ORCHESTRATION_MANAGER_DECISION_V1",
+  "startMarker": "[BCT_ORCHESTRATION_MANAGER_DECISION_V1]",
+  "endMarker": "[/BCT_ORCHESTRATION_MANAGER_DECISION_V1]",
+  "complete": {
+    "schema": "BCT_ORCHESTRATION_MANAGER_DECISION_V1",
+    "event_id": "wake.fixture",
+    "session_id": "session.fixture",
+    "manager_epoch": 1,
+    "result_message_id": "result.fixture",
+    "result_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "kind": "COMPLETE",
+    "summary": "All acceptance criteria are satisfied.",
+    "successors": []
+  },
+  "followUp": {
+    "schema": "BCT_ORCHESTRATION_MANAGER_DECISION_V1",
+    "event_id": "wake.fixture",
+    "session_id": "session.fixture",
+    "manager_epoch": 1,
+    "result_message_id": "result.fixture",
+    "result_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "kind": "FOLLOW_UP",
+    "summary": "One bounded read-only follow-up is required.",
+    "successors": [
+      {
+        "target_node_id": "worker.fixture",
+        "attachment_id": "attachment.fixture",
+        "instruction": "Read the exact result and report the remaining evidence.",
+        "roots": ["D:\\BCT"],
+        "actions": ["read"],
+        "acceptance": {"evidence": "reported"},
+        "dependencies": ["producer.fixture"]
+      }
+    ]
+  }
+}

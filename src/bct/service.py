@@ -9,6 +9,7 @@ from .core.operations import OperationCoordinator
 from .core.policy import Policy
 from .core.store import Store
 from .core.orchestration import OrchestrationService
+from .manager_decision_recovery import ManagerDecisionRecovery
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
@@ -27,6 +28,7 @@ from .features.process_session import ProcessSessionFeature
 from .features.monitor import MonitorFeature
 from .features.orchestration import OrchestrationFeature
 from .integrations.github import GhCliClient, GitHubClient
+from .integrations.rcc import NamedPipeRelayClient
 
 
 def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
@@ -50,9 +52,14 @@ class BCT:
         self.identity = IdentityService(self.store)
         self.orchestration = OrchestrationService(
             self.store,
+            policy=self.policy,
             manager_wake_receipt_v2_enabled=(
                 _manager_wake_receipt_v2_enabled(policy_path)
             ),
+        )
+        self.manager_decision_recovery = (
+            ManagerDecisionRecovery(self.orchestration, NamedPipeRelayClient())
+            if self.orchestration.manager_wake_receipt_v2_enabled else None
         )
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)
         github = github_client or GhCliClient()
