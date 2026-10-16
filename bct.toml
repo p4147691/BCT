@@ -21,6 +21,11 @@ normal_actions = [
 ]
 approval_actions = ["delete", "credential_change"]
 
+[orchestration]
+# PR A safety gate. Keep disabled until PR B result consumption and isolated
+# event + recovery-poll E2E have been reviewed and approved for deployment.
+manager_wake_receipt_v2_enabled = false
+
 [execution.sessions]
 state_root = "D:\\BCT\\data\\process-sessions"
 

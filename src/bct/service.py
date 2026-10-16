@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 from .core.identity import IdentityService
@@ -28,6 +29,17 @@ from .features.orchestration import OrchestrationFeature
 from .integrations.github import GhCliClient, GitHubClient
 
 
+def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
+    data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
+    orchestration = data.get("orchestration", {})
+    if not isinstance(orchestration, dict):
+        raise ValueError("ORCHESTRATION_SECTION_INVALID")
+    enabled = orchestration.get("manager_wake_receipt_v2_enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("MANAGER_WAKE_RECEIPT_V2_ENABLED_INVALID")
+    return enabled
+
+
 class BCT:
     """Small local entry point shared by direct and future MCP calls."""
 
@@ -36,7 +48,12 @@ class BCT:
         self.store = Store(state_path)
         self.policy = Policy(policy_path)
         self.identity = IdentityService(self.store)
-        self.orchestration = OrchestrationService(self.store)
+        self.orchestration = OrchestrationService(
+            self.store,
+            manager_wake_receipt_v2_enabled=(
+                _manager_wake_receipt_v2_enabled(policy_path)
+            ),
+        )
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)
         github = github_client or GhCliClient()
         deployment_profiles = DeploymentProfiles(policy_path)

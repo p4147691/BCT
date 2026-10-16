@@ -675,7 +675,10 @@ class OrchestrationTests(unittest.TestCase):
         sent = [call for call in self.relay.calls if call["command"] == "send-wakeback"]
         self.assertEqual(2, len(sent))
         self.assertEqual(["BCT_MGR", "BCT_MGR2"], [item["to"] for item in sent])
-        self.assertEqual(["BCT_MGR", "BCT_MGR2"], [item["extra"]["returnTo"] for item in sent])
+        self.assertEqual(
+            ["BCT_MGR", "BCT_MGR2"],
+            [item["extra"]["returnTo"] for item in sent],
+        )
 
     def test_deferred_manager_wake_stays_pending_for_exact_retry(self):
         worker = self.attachment("worker-b")

@@ -58,8 +58,11 @@ def _within(root: str, candidate: str) -> bool:
 class OrchestrationService:
     """Durable manager/worker metadata with independent failover fencing."""
 
-    def __init__(self, store: Store):
+    def __init__(
+        self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
+    ):
         self.store = store
+        self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
 
     @staticmethod
     def _assert_outer_operation_running(db, *, work: Work,
@@ -113,6 +116,20 @@ class OrchestrationService:
             raise ConflictError("ORCHESTRATION_WORK_ASSIGNMENT_CHANGED")
         if row["state"] not in {"ACTIVE", "PARTIAL"}:
             raise PreconditionError("ORCHESTRATION_SESSION_NOT_ACTIVE")
+
+    @staticmethod
+    def _assert_current_work_assignment(db, work: Work) -> None:
+        current = db.execute(
+            "SELECT owner_principal_id,assignment_epoch,state FROM works "
+            "WHERE work_id=?", (work.work_id,),
+        ).fetchone()
+        if current is None or (
+            str(current["owner_principal_id"]) != work.owner_principal_id
+            or int(current["assignment_epoch"]) != int(work.assignment_epoch)
+        ):
+            raise ConflictError("ORCHESTRATION_WORK_ASSIGNMENT_CHANGED")
+        if current["state"] != "ACTIVE" or work.state != "ACTIVE":
+            raise PreconditionError("ORCHESTRATION_WORK_NOT_ACTIVE")
 
     def start_session(
         self, *, work: Work, session_id: str, objective: str,
@@ -1435,6 +1452,11 @@ class OrchestrationService:
             f"{generation}:{result_message_id}".encode("utf-8")
         ).hexdigest()[:32]
         state = "PENDING" if attachment is not None else "BLOCKED"
+        envelope_schema, receipt_mode = (
+            (2, "RCC_RESULT_POLL_V1")
+            if self.manager_wake_receipt_v2_enabled
+            else (1, "LEGACY_RETURN_V1")
+        )
         values = (
             event_id, session_id, manager_epoch, assignment["assignment_id"],
             generation, result_message_id, result_digest, manager_node_id or None,
@@ -1446,11 +1468,16 @@ class OrchestrationService:
             attachment["conversation_key"] if attachment is not None else None,
             attachment["relay_role"] if attachment is not None else None,
             attachment["binding_receipt_id"] if attachment is not None else None,
-            state, None, now, now, None, None,
+            state, None, now, now, None, None, envelope_schema, receipt_mode,
         )
         db.execute(
-            "INSERT OR IGNORE INTO orchestration_manager_wakes VALUES(?,?,?,?,?,?,?,?,"
-            "?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO orchestration_manager_wakes "
+            "(event_id,session_id,manager_epoch,assignment_id,"
+            "assignment_generation,result_message_id,result_digest,manager_node_id,"
+            "attachment_id,attachment_generation,instance_id,external_session_id,"
+            "tab_id,conversation_key,relay_role,binding_receipt_id,state,delivery_id,"
+            "created_at,updated_at,delivered_at,acknowledged_at,envelope_schema,"
+            "receipt_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             values,
         )
         row = db.execute(
@@ -1473,12 +1500,21 @@ class OrchestrationService:
         with self.store.transaction() as db:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
+            self._assert_current_work_assignment(db, work)
             event = db.execute(
                 "SELECT * FROM orchestration_manager_wakes WHERE event_id=? AND session_id=?",
                 (event_id, session_id),
             ).fetchone()
             if event is None:
                 raise KeyError("ORCHESTRATION_WAKE_EVENT_NOT_FOUND")
+            envelope_schema = event["envelope_schema"]
+            receipt_mode = str(event["receipt_mode"] or "")
+            if isinstance(envelope_schema, bool) or not isinstance(envelope_schema, int):
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_INVALID")
+            if (envelope_schema, receipt_mode) not in {
+                (1, "LEGACY_RETURN_V1"), (2, "RCC_RESULT_POLL_V1"),
+            }:
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
             if event["state"] == "DELIVERED":
@@ -1519,8 +1555,13 @@ class OrchestrationService:
             ).fetchone()
             self.store._event(db, "ORCHESTRATION_MANAGER_WAKE_DISPATCHING", event_id, {
                 "delivery_id": delivery_id, "manager_epoch": manager_epoch,
+                "wake_envelope_schema": envelope_schema,
+                "receipt_mode": receipt_mode,
             })
-            return dict(claimed)
+            result = dict(claimed)
+            result["wake_envelope_schema"] = envelope_schema
+            result["receipt_mode"] = receipt_mode
+            return result
 
     def complete_manager_wake(
         self, *, work: Work, session_id: str, event_id: str,
@@ -1532,12 +1573,21 @@ class OrchestrationService:
         with self.store.transaction() as db:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
+            self._assert_current_work_assignment(db, work)
             event = db.execute(
                 "SELECT * FROM orchestration_manager_wakes WHERE event_id=? AND session_id=?",
                 (event_id, session_id),
             ).fetchone()
             if event is None:
                 raise KeyError("ORCHESTRATION_WAKE_EVENT_NOT_FOUND")
+            envelope_schema = event["envelope_schema"]
+            receipt_mode = str(event["receipt_mode"] or "")
+            if isinstance(envelope_schema, bool) or not isinstance(envelope_schema, int):
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_INVALID")
+            if (envelope_schema, receipt_mode) not in {
+                (1, "LEGACY_RETURN_V1"), (2, "RCC_RESULT_POLL_V1"),
+            }:
+                raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
             if str(event["delivery_id"] or "") != delivery_id:
@@ -1547,11 +1597,10 @@ class OrchestrationService:
             if event["state"] != "DELIVERING":
                 raise ConflictError("ORCHESTRATION_WAKE_STATE_CHANGED")
             delivered_at = now if outcome == "DELIVERED" else None
-            acknowledged_at = now if outcome == "DELIVERED" else None
             db.execute(
                 "UPDATE orchestration_manager_wakes SET state=?,updated_at=?,"
-                "delivered_at=?,acknowledged_at=? WHERE event_id=?",
-                (outcome, now, delivered_at, acknowledged_at, event_id),
+                "delivered_at=? WHERE event_id=?",
+                (outcome, now, delivered_at, event_id),
             )
             updated = db.execute(
                 "SELECT * FROM orchestration_manager_wakes WHERE event_id=?", (event_id,)
@@ -2137,7 +2186,8 @@ class OrchestrationService:
                 "result_message_id,result_digest,manager_node_id,attachment_id,"
                 "attachment_generation,instance_id,external_session_id,tab_id,"
                 "conversation_key,relay_role,state,delivery_id,created_at,updated_at,"
-                "delivered_at,acknowledged_at FROM orchestration_manager_wakes "
+                "delivered_at,acknowledged_at,envelope_schema,receipt_mode "
+                "FROM orchestration_manager_wakes "
                 "WHERE session_id=? ORDER BY created_at,event_id LIMIT 200",
                 (session_id,),
             ).fetchall()]

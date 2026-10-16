@@ -2,6 +2,28 @@
 
 Status: LIVE_DEPLOYED / HOSTED_E2E_ACCEPTED
 
+## ACK contract correction candidate (PR A, not live)
+
+The hosted acceptance below proves one exact RCC wake submission. Its historical
+`DELIVERED` row also contains `acknowledged_at`, but that column is preserved as
+historical data and is not evidence that the Manager read the RESULT or committed
+a decision. PR A separates future RCC `host:ack + submitted=true` from actual
+Manager consumption: new submit confirmations write only `DELIVERED` and
+`delivered_at`. Schema 2 is default-disabled, so new wakes continue to use the
+existing schema 1 contract unless the reviewed PR-B gate is explicitly enabled.
+Once enabled, receipt-only wakes leave the RCC return role empty. A trusted
+event will trigger the shared BCT Core consumer first, while bounded internal
+polling recovers event loss, restart and RCC outages through that same consumer.
+No bearer capability is issued, and no historical row is rewritten or
+backfilled. `RCC_RESULT_POLL_V1` is a receipt compatibility identifier, not a
+restriction against the event trigger.
+
+The candidate contract, threat model and exact PR B interface are in
+`BCT_MANAGER_WAKE_ACK_CONTRACT_PR_A_20261016.md`. Until PR B atomically commits
+RESULT consumption, decision and follow-up outbox, neither
+the candidate nor the historical hosted receipt is a full Manager-consumption
+E2E PASS.
+
 ## Objective
 
 Turn an already durable, terminal worker result into one fenced notification to

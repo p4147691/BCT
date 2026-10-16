@@ -183,6 +183,8 @@ class Store:
                     delivery_id TEXT, created_at REAL NOT NULL,
                     updated_at REAL NOT NULL, delivered_at REAL,
                     acknowledged_at REAL,
+                    envelope_schema INTEGER NOT NULL DEFAULT 1,
+                    receipt_mode TEXT NOT NULL DEFAULT 'LEGACY_RETURN_V1',
                     UNIQUE(session_id, assignment_id, assignment_generation,
                            result_message_id, manager_epoch),
                     FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
@@ -272,6 +274,21 @@ class Store:
                     ON orchestration_manager_wakes(session_id,manager_epoch,state,created_at);
                 """
             )
+            wake_columns = {
+                row["name"] for row in db.execute(
+                    "PRAGMA table_info(orchestration_manager_wakes)"
+                ).fetchall()
+            }
+            if "envelope_schema" not in wake_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
+                    "envelope_schema INTEGER NOT NULL DEFAULT 1"
+                )
+            if "receipt_mode" not in wake_columns:
+                db.execute(
+                    "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
+                    "receipt_mode TEXT NOT NULL DEFAULT 'LEGACY_RETURN_V1'"
+                )
 
     @staticmethod
     def _event(db: sqlite3.Connection, kind: str, subject_id: str, data: dict[str, Any]) -> None:

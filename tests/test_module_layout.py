@@ -22,6 +22,12 @@ class ModuleLayoutTests(unittest.TestCase):
     def test_monitor_source_is_the_bct_module(self):
         self.assertEqual("modules/monitor", self.config["monitor"]["source_root"])
 
+    def test_manager_wake_receipt_v2_is_disabled_by_default(self):
+        self.assertIs(
+            False,
+            self.config["orchestration"]["manager_wake_receipt_v2_enabled"],
+        )
+
     def test_runtime_profile_has_no_legacy_source_paths(self):
         files = self.config["deployment"]["profiles"]["bct_runtime_v1"]["files"]
         self.assertIn("modules/status-ui/index.html", files)
