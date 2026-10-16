@@ -45,8 +45,15 @@ class ManagerDecisionRecovery:
         self.lease_token = secrets.token_hex(32)
         self.on_deliveries = on_deliveries
 
+    def _allowed_work_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self.service.manager_wake_receipt_v2_allowed_work_ids))
+
     def _acquire_recovery_lease(self, *, now: float) -> bool:
         """Own one fenced poller and recover only its current Manager leases."""
+        allowed = self._allowed_work_ids()
+        if not self.service.manager_wake_receipt_v2_enabled or not allowed:
+            return False
+        allowed_sql = ",".join("?" for _ in allowed)
         expires_at = now + 30.0
         with self.store.transaction() as db:
             row = db.execute(
@@ -100,8 +107,9 @@ class ManagerDecisionRecovery:
                 "AND s.state IN ('ACTIVE','PARTIAL') AND k.state='ACTIVE' "
                 "AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND s.manager_epoch=w.manager_epoch AND l.epoch=s.manager_epoch "
-                "AND l.manager_node_id=s.manager_node_id AND l.expires_at<=?",
-                (now,),
+                "AND l.manager_node_id=s.manager_node_id AND l.expires_at<=? "
+                f"AND s.work_id IN ({allowed_sql})",
+                (now, *allowed),
             ).fetchall()
             for lease in expired:
                 successor_token = secrets.token_hex(32)
@@ -127,6 +135,10 @@ class ManagerDecisionRecovery:
     def _candidates(self, *, limit: int, now: float) -> list[PollCandidate]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 32:
             raise ValueError("MANAGER_POLL_LIMIT_INVALID")
+        allowed = self._allowed_work_ids()
+        if not self.service.manager_wake_receipt_v2_enabled or not allowed:
+            return []
+        allowed_sql = ",".join("?" for _ in allowed)
         db = self.store._connect()
         try:
             owner = db.execute(
@@ -151,19 +163,20 @@ class ManagerDecisionRecovery:
                 "AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND l.epoch=w.manager_epoch AND l.manager_node_id=s.manager_node_id "
                 "AND l.expires_at>? "
+                f"AND s.work_id IN ({allowed_sql}) "
             )
             cursor = str(owner["scan_cursor"] or "")
             rows = list(db.execute(
                 common + "AND (w.decision_id IS NULL OR "
                 "w.result_ack_state='PENDING') AND w.event_id>? "
-                "ORDER BY w.event_id LIMIT ?", (now, cursor, limit),
+                "ORDER BY w.event_id LIMIT ?", (now, *allowed, cursor, limit),
             ).fetchall())
             remaining = limit - len(rows)
             if remaining:
                 rows.extend(db.execute(
                     common + "AND (w.decision_id IS NULL OR "
                     "w.result_ack_state='PENDING') AND w.event_id<=? "
-                    "ORDER BY w.event_id LIMIT ?", (now, cursor, remaining),
+                    "ORDER BY w.event_id LIMIT ?", (now, *allowed, cursor, remaining),
                 ).fetchall())
             return [PollCandidate(
                 str(row["event_id"]), str(row["session_id"]),
@@ -187,6 +200,10 @@ class ManagerDecisionRecovery:
 
     def _renew_live_recovery_leases(self, *, now: float) -> None:
         """Renew only near-expiry leases that have relevant receipt work."""
+        allowed = self._allowed_work_ids()
+        if not self.service.manager_wake_receipt_v2_enabled or not allowed:
+            return
+        allowed_sql = ",".join("?" for _ in allowed)
         with self.store.transaction() as db:
             rows = db.execute(
                 "SELECT l.session_id,l.epoch,l.token FROM "
@@ -194,6 +211,7 @@ class ManagerDecisionRecovery:
                 "ON s.session_id=l.session_id JOIN works k ON k.work_id=s.work_id "
                 "WHERE s.state IN ('ACTIVE','PARTIAL') AND k.state='ACTIVE' "
                 "AND k.assignment_epoch=s.work_assignment_epoch "
+                f"AND s.work_id IN ({allowed_sql}) "
                 "AND l.epoch=s.manager_epoch AND l.manager_node_id=s.manager_node_id "
                 "AND l.expires_at>? AND l.expires_at<=? AND EXISTS ("
                 "SELECT 1 FROM orchestration_manager_wakes w "
@@ -201,7 +219,7 @@ class ManagerDecisionRecovery:
                 "AND w.envelope_schema=2 AND w.receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.state IN ('DELIVERING','DELIVERED','UNKNOWN') "
                 "AND (w.decision_id IS NULL OR w.result_ack_state='PENDING'))",
-                (now, now + 20.0),
+                (*allowed, now, now + 20.0),
             ).fetchall()
             for row in rows:
                 db.execute(
@@ -213,6 +231,7 @@ class ManagerDecisionRecovery:
 
     def _ack(self, candidate: PollCandidate) -> str:
         assert candidate.result_hash is not None
+        self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id)
         response = self.client.request(
             instance_id=candidate.instance_id,
             request_id="mgr.ack." + hashlib.sha256(
@@ -250,6 +269,7 @@ class ManagerDecisionRecovery:
             db.close()
         if row is None or float(row["expires_at"]) <= now:
             raise ConflictError("MANAGER_RESULT_TRIGGER_NOT_CURRENT")
+        self.service.assert_manager_wake_receipt_v2_allowed(str(row["work_id"]))
         result = self.consumer.consume_receipt(
             work=self.store.get_work(str(row["work_id"])), event_id=event_id,
             manager_epoch=int(row["manager_epoch"]), lease_token=str(row["token"]),
@@ -290,6 +310,7 @@ class ManagerDecisionRecovery:
                     self._ack(candidate)
                     summary["acked"] += 1
                     continue
+                self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id)
                 response = self.client.request(
                     instance_id=candidate.instance_id,
                     request_id="mgr.poll." + hashlib.sha256(

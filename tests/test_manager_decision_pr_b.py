@@ -72,7 +72,8 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.work = Work("work", "fixture", (self.root,), frozenset({"read"}), "owner")
         self.store.create_work(self.work)
         self.service = OrchestrationService(
-            self.store, manager_wake_receipt_v2_enabled=True, policy=self.policy,
+            self.store, manager_wake_receipt_v2_enabled=True,
+            manager_wake_receipt_v2_allowed_work_ids=("work",), policy=self.policy,
         )
         payload = {"status": "done"}
         with self.store.transaction() as db:
@@ -241,6 +242,26 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.assertEqual(1, self.count("orchestration_consumption_receipts"))
         self.assertEqual(0, self.count("orchestration_dispatch_outbox"))
 
+    def test_allowlist_removal_blocks_decision_and_poller_without_commit(self):
+        blocked = OrchestrationService(
+            Store(self.store.path), manager_wake_receipt_v2_enabled=True,
+            manager_wake_receipt_v2_allowed_work_ids=("different-work",),
+            policy=self.policy,
+        )
+        with self.assertRaisesRegex(
+            ConflictError, "MANAGER_WAKE_RECEIPT_V2_WORK_NOT_ALLOWED",
+        ):
+            ManagerDecisionConsumer(blocked).consume_receipt(
+                work=self.work, event_id=self.event["event_id"], manager_epoch=1,
+                lease_token=self.lease["token"], receipt=self.receipt(), now=self.now + 1,
+            )
+        recovery = ManagerDecisionRecovery(blocked, FakeRelay())
+        summary = recovery.run_once(now=self.now + 1)
+        self.assertTrue(summary["lease_owned"])
+        self.assertEqual(0, summary["checked"])
+        self.assertEqual(0, self.count("orchestration_consumption_receipts"))
+        self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+
     def test_follow_up_assignment_receipt_decision_and_outbox_are_atomic(self):
         result = self.consume(self.receipt("FOLLOW_UP"))
         self.assertEqual(1, len(result["successor_assignment_ids"]))
@@ -330,7 +351,10 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         first = recovery.run_once(now=self.now + 2)
         self.assertEqual(1, first["committed"])
         self.assertEqual(1, first["deferred"])
-        restarted = ManagerDecisionRecovery(OrchestrationService(Store(self.store.path)), relay)
+        restarted = ManagerDecisionRecovery(OrchestrationService(
+            Store(self.store.path), manager_wake_receipt_v2_enabled=True,
+            manager_wake_receipt_v2_allowed_work_ids=("work",), policy=self.policy,
+        ), relay)
         # A crash-safe replacement waits for the short singleton poller lease
         # instead of assuming the old Core process is gone immediately.
         second = restarted.run_once(now=self.now + 40)

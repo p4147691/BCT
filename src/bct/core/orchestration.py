@@ -65,11 +65,44 @@ class OrchestrationService:
 
     def __init__(
         self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
+        manager_wake_receipt_v2_allowed_work_ids: tuple[str, ...] | list[str] = (),
         policy: "Policy | None" = None,
     ):
+        if not isinstance(manager_wake_receipt_v2_enabled, bool):
+            raise ValueError("MANAGER_WAKE_RECEIPT_V2_ENABLED_INVALID")
+        if (not isinstance(manager_wake_receipt_v2_allowed_work_ids, (tuple, list))
+                or any(not isinstance(item, str)
+                       for item in manager_wake_receipt_v2_allowed_work_ids)):
+            raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_INVALID")
+        allowed = tuple(
+            _identifier(item, "MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_ID_INVALID")
+            for item in manager_wake_receipt_v2_allowed_work_ids
+        )
+        if len(allowed) != len(set(allowed)):
+            raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_DUPLICATE")
+        if len(allowed) > 32:
+            raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_TOO_MANY")
         self.store = store
         self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
+        self.manager_wake_receipt_v2_allowed_work_ids = frozenset(allowed)
         self.policy = policy
+
+    @property
+    def manager_wake_receipt_v2_active(self) -> bool:
+        return (
+            self.manager_wake_receipt_v2_enabled
+            and bool(self.manager_wake_receipt_v2_allowed_work_ids)
+        )
+
+    def manager_wake_receipt_v2_allowed(self, work_id: str) -> bool:
+        return (
+            self.manager_wake_receipt_v2_enabled
+            and work_id in self.manager_wake_receipt_v2_allowed_work_ids
+        )
+
+    def assert_manager_wake_receipt_v2_allowed(self, work_id: str) -> None:
+        if not self.manager_wake_receipt_v2_allowed(work_id):
+            raise ConflictError("MANAGER_WAKE_RECEIPT_V2_WORK_NOT_ALLOWED")
 
     def assert_current_unattended_policy(self, actions: list[str]) -> str:
         """Re-read Policy for authority-free successor assignment actions."""
@@ -1484,7 +1517,7 @@ class OrchestrationService:
         state = "PENDING" if attachment is not None else "BLOCKED"
         envelope_schema, receipt_mode = (
             (2, "RCC_RESULT_POLL_V1")
-            if self.manager_wake_receipt_v2_enabled
+            if self.manager_wake_receipt_v2_allowed(str(session["work_id"]))
             else (1, "LEGACY_RETURN_V1")
         )
         if envelope_schema == 2 and manager_node_id:
@@ -1588,6 +1621,8 @@ class OrchestrationService:
                 (1, "LEGACY_RETURN_V1"), (2, "RCC_RESULT_POLL_V1"),
             }:
                 raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
+            if envelope_schema == 2:
+                self.assert_manager_wake_receipt_v2_allowed(str(session["work_id"]))
             if event["state"] == "DELIVERED":
                 return dict(event)
             if event["state"] != "PENDING":
@@ -1638,6 +1673,8 @@ class OrchestrationService:
                 (1, "LEGACY_RETURN_V1"), (2, "RCC_RESULT_POLL_V1"),
             }:
                 raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
+            if envelope_schema == 2:
+                self.assert_manager_wake_receipt_v2_allowed(str(session["work_id"]))
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
             if manager_lease_token is not None:
@@ -1732,6 +1769,8 @@ class OrchestrationService:
                 (1, "LEGACY_RETURN_V1"), (2, "RCC_RESULT_POLL_V1"),
             }:
                 raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
+            if envelope_schema == 2:
+                self.assert_manager_wake_receipt_v2_allowed(str(session["work_id"]))
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
             if str(event["delivery_id"] or "") != delivery_id:
