@@ -2,8 +2,7 @@
 
 ## 현재 작업 — Durable Orchestration PR C (DRAFT 준비, 운영 비활성)
 
-PR A #149와 PR B #150이 병합된 main
-`7be27a4216198b256939e5a6666861d3a16190ce`에서 독립 worktree로 PR C를 구현했다.
+PR A #149와 PR B #150이 병합된 최신 검증 main에서 독립 worktree로 PR C를 구현했다.
 PR B의 영속 `orchestration_dispatch_outbox`를 기존 RCC Worker 전송·PR2 상태
 계약에 연결하고, 결과 커밋 뒤 생성되는 Manager Wake도 같은 단일 dispatcher가
 이벤트 우선/2초 bounded polling으로 전달한다.
