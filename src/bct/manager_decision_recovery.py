@@ -88,10 +88,13 @@ class ManagerDecisionRecovery:
                 "SELECT DISTINCT l.session_id,l.manager_node_id,l.epoch,l.token "
                 "FROM orchestration_durable_leases l "
                 "JOIN orchestration_sessions s ON s.session_id=l.session_id "
+                "JOIN works k ON k.work_id=s.work_id "
                 "JOIN orchestration_manager_wakes w ON w.session_id=l.session_id "
                 "WHERE w.envelope_schema=2 AND w.receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.state IN ('DELIVERING','DELIVERED','UNKNOWN') "
                 "AND (w.decision_id IS NULL OR w.result_ack_state='PENDING') "
+                "AND s.state IN ('ACTIVE','PARTIAL') AND k.state='ACTIVE' "
+                "AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND s.manager_epoch=w.manager_epoch AND l.epoch=s.manager_epoch "
                 "AND l.manager_node_id=s.manager_node_id AND l.expires_at<=?",
                 (now,),
@@ -135,10 +138,13 @@ class ManagerDecisionRecovery:
                 "w.delivery_id,s.work_id,l.token,w.result_hash,w.result_ack_state "
                 "FROM orchestration_manager_wakes w "
                 "JOIN orchestration_sessions s ON s.session_id=w.session_id "
+                "JOIN works k ON k.work_id=s.work_id "
                 "JOIN orchestration_durable_leases l ON l.session_id=w.session_id "
                 "WHERE w.envelope_schema=2 AND w.receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.state IN ('DELIVERING','DELIVERED','UNKNOWN') "
                 "AND w.delivery_id IS NOT NULL AND s.manager_epoch=w.manager_epoch "
+                "AND s.state IN ('ACTIVE','PARTIAL') AND k.state='ACTIVE' "
+                "AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND l.epoch=w.manager_epoch AND l.manager_node_id=s.manager_node_id "
                 "AND l.expires_at>? "
             )
@@ -181,7 +187,9 @@ class ManagerDecisionRecovery:
             rows = db.execute(
                 "SELECT l.session_id,l.epoch,l.token FROM "
                 "orchestration_durable_leases l JOIN orchestration_sessions s "
-                "ON s.session_id=l.session_id WHERE s.state IN ('ACTIVE','PARTIAL') "
+                "ON s.session_id=l.session_id JOIN works k ON k.work_id=s.work_id "
+                "WHERE s.state IN ('ACTIVE','PARTIAL') AND k.state='ACTIVE' "
+                "AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND l.epoch=s.manager_epoch AND l.manager_node_id=s.manager_node_id "
                 "AND l.expires_at>? AND l.expires_at<=? AND EXISTS ("
                 "SELECT 1 FROM orchestration_manager_wakes w "

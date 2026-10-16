@@ -501,6 +501,32 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.assertEqual(self.now + 50, relevant)
         self.assertEqual(self.now + 5, unrelated_expiry)
 
+    def test_handed_off_work_is_not_polled_or_renewed(self):
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE works SET assignment_epoch=2 WHERE work_id='work'"
+            )
+            db.execute(
+                "UPDATE orchestration_durable_leases SET expires_at=? "
+                "WHERE session_id='session'", (self.now + 0.5,),
+            )
+        relay = FakeRelay(self.receipt())
+        result = ManagerDecisionRecovery(self.service, relay).run_once(
+            now=self.now + 0.25,
+        )
+        self.assertTrue(result["lease_owned"])
+        self.assertEqual(0, result["checked"])
+        self.assertEqual([], relay.calls)
+        db = self.store._connect()
+        try:
+            expires_at = db.execute(
+                "SELECT expires_at FROM orchestration_durable_leases "
+                "WHERE session_id='session'",
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(self.now + 0.5, expires_at)
+
     def test_live_lease_renews_but_stale_epoch_is_not_revived(self):
         relay = FakeRelay(self.receipt())
         relay.result_missing = True
