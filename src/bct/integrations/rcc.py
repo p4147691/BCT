@@ -157,6 +157,12 @@ def _collect_windows_pipe_server_identity(pipe) -> PipeServerIdentity:
         convert_sid = advapi32.ConvertSidToStringSidW
         convert_sid.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
         convert_sid.restype = wintypes.BOOL
+        is_valid_sid = advapi32.IsValidSid
+        is_valid_sid.argtypes = [ctypes.c_void_p]
+        is_valid_sid.restype = wintypes.BOOL
+        get_length_sid = advapi32.GetLengthSid
+        get_length_sid.argtypes = [ctypes.c_void_p]
+        get_length_sid.restype = wintypes.DWORD
         local_free = kernel32.LocalFree
         local_free.argtypes = [ctypes.c_void_p]
         local_free.restype = ctypes.c_void_p
@@ -182,7 +188,7 @@ def _collect_windows_pipe_server_identity(pipe) -> PipeServerIdentity:
             return OSError(ctypes.get_last_error(), label)
 
         def sid_string(sid_ptr: ctypes.c_void_p) -> str:
-            if not sid_ptr:
+            if not sid_ptr or not is_valid_sid(sid_ptr):
                 raise failed("SID unavailable")
             text_ptr = wintypes.LPWSTR()
             if not convert_sid(sid_ptr, ctypes.byref(text_ptr)):
@@ -261,20 +267,27 @@ def _collect_windows_pipe_server_identity(pipe) -> PipeServerIdentity:
             acl_info = AclSizeInformation()
             if not get_acl_information(dacl, ctypes.byref(acl_info), ctypes.sizeof(acl_info), 2):
                 raise failed("GetAclInformation failed")
+            if acl_info.AceCount != 2:
+                _reject_server("DACL_ACE_COUNT")
             entries: list[PipeAccessEntry] = []
             for index in range(int(acl_info.AceCount)):
                 ace_ptr = ctypes.c_void_p()
                 if not get_ace(dacl, index, ctypes.byref(ace_ptr)) or not ace_ptr:
                     raise failed("GetAce failed")
                 header = ctypes.cast(ace_ptr, ctypes.POINTER(AceHeader)).contents
-                if header.AceSize < 12:
+                if header.AceType != 0 or header.AceFlags != 0:
+                    _reject_server("DACL_ACE_TYPE")
+                if header.AceSize < 20:
                     raise failed("ACE size invalid")
                 mask = wintypes.DWORD.from_address(ace_ptr.value + 4).value
+                ace_sid = ctypes.c_void_p(ace_ptr.value + 8)
+                if not is_valid_sid(ace_sid) or 8 + int(get_length_sid(ace_sid)) > header.AceSize:
+                    raise failed("ACE SID invalid")
                 entries.append(PipeAccessEntry(
                     ace_type=int(header.AceType),
                     ace_flags=int(header.AceFlags),
                     access_mask=int(mask),
-                    sid=sid_string(ctypes.c_void_p(ace_ptr.value + 8)),
+                    sid=sid_string(ace_sid),
                 ))
             pipe_owner_sid = sid_string(owner_sid)
             dacl_protected = bool(control.value & 0x1000)
