@@ -170,6 +170,7 @@ class PipePresenceClient {
         fake_source = self.temp / "BroadFakePipeServer.cs"
         fake_source.write_text(r'''
 using System;
+using System.IO;
 using System.IO.Pipes;
 class BroadFakePipeServer {
   static int Main(string[] args) {
@@ -179,7 +180,13 @@ class BroadFakePipeServer {
       Console.WriteLine("READY");
       Console.Out.Flush();
       pipe.WaitForConnection();
-      Console.WriteLine("READ:" + pipe.ReadByte());
+      try {
+        Console.WriteLine("READ:" + pipe.ReadByte());
+      } catch (IOException) {
+        // Windows may report an orderly client close either as EOF (-1) or
+        // ERROR_BROKEN_PIPE.  Both prove that no request byte arrived.
+        Console.WriteLine("READ:CLOSED");
+      }
       Console.Out.Flush();
     }
     return 0;
@@ -203,11 +210,14 @@ class BroadFakePipeServer {
                     command="presence",
                     timeout_s=5,
                 )
-            self.assertEqual(b"READ:-1", fake.stdout.readline().strip())
+            self.assertIn(fake.stdout.readline().strip(), {b"READ:-1", b"READ:CLOSED"})
             self.assertEqual(0, fake.wait(timeout=10))
         finally:
             if fake.poll() is None:
                 fake.terminate()
+                fake.wait(timeout=10)
+            else:
+                # Reap the process handle before deleting the temporary EXE.
                 fake.wait(timeout=10)
             if fake.stdout is not None:
                 fake.stdout.close()
