@@ -31,6 +31,14 @@ class RccResultHashContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "RCC_RESULT_REPLY_TYPE_INVALID"):
             rcc_result_hash({"ok": True, "reply": 7})
 
+    def test_utf16_slice_matches_well_formed_json_stringify(self):
+        serialized = rcc_result_payload_json({
+            "failureEvidence": {"phase": "a" * 79 + "😀" + "z"},
+            "ok": False, "reply": "", "error": "", "ambiguous": False,
+        })
+        self.assertIn("a" * 79 + r"\ud83d", serialized)
+        self.assertNotIn("z", serialized)
+
 
 if __name__ == "__main__":
     unittest.main()

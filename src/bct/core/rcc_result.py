@@ -5,6 +5,15 @@ import json
 from typing import Any
 
 
+def _utf16_length(value: str) -> int:
+    return len(value.encode("utf-16-le", errors="surrogatepass")) // 2
+
+
+def _utf16_slice(value: str, limit: int) -> str:
+    encoded = value.encode("utf-16-le", errors="surrogatepass")[: limit * 2]
+    return encoded.decode("utf-16-le", errors="surrogatepass")
+
+
 def _text(value: Any, *, field: str, limit: int | None = None) -> str:
     if value is None:
         result = ""
@@ -12,7 +21,7 @@ def _text(value: Any, *, field: str, limit: int | None = None) -> str:
         result = value
     else:
         raise ValueError(f"RCC_RESULT_{field.upper()}_TYPE_INVALID")
-    return result if limit is None else result[:limit]
+    return result if limit is None else _utf16_slice(result, limit)
 
 
 def bounded_rcc_result_payload(result: dict[str, Any]) -> dict[str, Any]:
@@ -20,7 +29,7 @@ def bounded_rcc_result_payload(result: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(result, dict):
         raise ValueError("RCC_RESULT_PAYLOAD_INVALID")
     reply = _text(result.get("reply"), field="reply")
-    if len(reply) > 1_048_576:
+    if _utf16_length(reply) > 1_048_576:
         raise ValueError("RCC_RESULT_TOO_LARGE")
     raw_failure = result.get("failureEvidence")
     if raw_failure is not None and not isinstance(raw_failure, dict):
@@ -47,10 +56,17 @@ def bounded_rcc_result_payload(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def rcc_result_payload_json(result: dict[str, Any]) -> str:
-    return json.dumps(
+    encoded = json.dumps(
         bounded_rcc_result_payload(result),
         ensure_ascii=False,
         separators=(",", ":"),
+    )
+    # Well-formed JSON.stringify escapes any lone surrogate produced by a
+    # UTF-16 code-unit slice. Python otherwise leaves it as an unencodable
+    # surrogate when ensure_ascii is disabled.
+    return "".join(
+        f"\\u{ord(char):04x}" if 0xD800 <= ord(char) <= 0xDFFF else char
+        for char in encoded
     )
 
 
