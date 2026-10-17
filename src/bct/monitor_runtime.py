@@ -86,11 +86,26 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
 def build_monitor_state(
     *, store: Any, service_state: dict[str, Any], data_root: Path
 ) -> dict[str, Any]:
+    started = time.perf_counter()
     snapshot = store.monitor_snapshot()
+    after_snapshot = time.perf_counter()
     sessions = _session_states(data_root / "process-sessions")
+    after_sessions = time.perf_counter()
     instance_ids = discover_instance_ids()
+    after_discovery = time.perf_counter()
     rcc = _rcc_states(instance_ids)
+    after_rcc = time.perf_counter()
+    # Passive timing of the existing read-only monitor stages. Do not persist,
+    # probe additional endpoints, or expose operation payloads and credentials.
+    timings = {
+        "store_snapshot_ms": round((after_snapshot - started) * 1000, 3),
+        "process_sessions_ms": round((after_sessions - after_snapshot) * 1000, 3),
+        "rcc_discovery_ms": round((after_discovery - after_sessions) * 1000, 3),
+        "rcc_state_ms": round((after_rcc - after_discovery) * 1000, 3),
+        "total_ms": round((after_rcc - started) * 1000, 3),
+    }
     return {
+        "observability": {"schema": 1, "read_only": True, "timings": timings},
         "schema": 1,
         "generated_at": time.time(),
         "service": dict(service_state),

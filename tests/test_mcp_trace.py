@@ -44,6 +44,44 @@ class TraceTests(unittest.TestCase):
             logger.removeHandler(capture)
             logger.setLevel(previous)
 
+    def test_stage_metadata_is_request_local_and_redacted(self):
+        import concurrent.futures
+        from contextvars import copy_context
+        from bct.trace_timing import TRACE_ID, trace_stage
+
+        events = []
+        class Capture(logging.Handler):
+            def emit(self, record):
+                events.append(record.getMessage())
+
+        logger = logging.getLogger("bct.mcp.trace")
+        capture = Capture()
+        previous = logger.level
+        logger.addHandler(capture)
+        logger.setLevel(logging.INFO)
+        try:
+            token = TRACE_ID.set("synthetic-trace-id")
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    copy_context().run(
+                        lambda: pool.submit(copy_context().run, trace_stage,
+                                            "authorization_prepare",
+                                            tool_kind="read", elapsed_ms=0.125).result()
+                    )
+                trace_stage("claim_reservation", tool_kind="read", elapsed_ms=0.25)
+            finally:
+                TRACE_ID.reset(token)
+            self.assertEqual(2, len(events))
+            payloads = [json.loads(x.split("MCP_TIMING ", 1)[1]) for x in events]
+            self.assertEqual(["authorization_prepare", "claim_reservation"],
+                             [x["stage"] for x in payloads])
+            self.assertTrue(all(x["trace_id"] == "synthetic-trace-id" for x in payloads))
+            self.assertTrue(all(set(x) == {"trace_id", "stage", "tool_kind", "elapsed_ms"} for x in payloads))
+            self.assertIsNone(TRACE_ID.get())
+        finally:
+            logger.removeHandler(capture)
+            logger.setLevel(previous)
+
     def test_mcp_auth_is_device_agnostic_but_not_token_optional(self):
         """Synthetic desktop/phone metadata never overrides the exact MCP bearer."""
         entered = []
