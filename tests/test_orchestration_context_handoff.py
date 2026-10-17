@@ -9,13 +9,13 @@ import json
 import unittest
 
 from bct.core.models import Outcome
-from test_orchestration import OrchestrationTests, ASSIGNMENT_START, ASSIGNMENT_END
+import test_orchestration as _existing_orchestration_test
 
 
 class OrchestrationContextHandoffContractTests(unittest.TestCase):
     def setUp(self):
         # Reuse the existing isolated fake-RCC and temporary SQLite fixtures.
-        self.fixture = OrchestrationTests(
+        self.fixture = _existing_orchestration_test.OrchestrationTests(
             "test_trusted_worker_can_receive_project_scoped_write_work"
         )
         self.fixture.setUp()
@@ -42,8 +42,8 @@ class OrchestrationContextHandoffContractTests(unittest.TestCase):
             call for call in self.fixture.relay.calls
             if call["command"] == "send" and call["to"] == role
         )
-        start = sent["text"].index(ASSIGNMENT_START) + len(ASSIGNMENT_START)
-        end = sent["text"].index(ASSIGNMENT_END, start)
+        start = sent["text"].index(_existing_orchestration_test.ASSIGNMENT_START) + len(ASSIGNMENT_START)
+        end = sent["text"].index(_existing_orchestration_test.ASSIGNMENT_END, start)
         return result.output["assignment"], json.loads(sent["text"][start:end])
 
     def test_result_is_preserved_and_manager_curated_context_reaches_next_worker(self):
