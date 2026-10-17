@@ -348,6 +348,125 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.assertEqual(0, self.count("orchestration_consumption_decisions"))
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
 
+    def use_finished_chain_reconciliation(self):
+        self.use_proven_reconciled_result()
+        origin = "manager-original-dispatch"
+        plan = {
+            "tasks": [
+                {"assignment_id": "producer", "worker_node_id": "worker",
+                 "attachment_id": "worker-att", "instruction": "Read source",
+                 "acceptance": {"verified": True}, "roots": [self.root],
+                 "actions": ["read"], "dependencies": []},
+                {"assignment_id": "next-check", "worker_node_id": "next-worker",
+                 "attachment_id": "next-att", "instruction": "Check independently",
+                 "acceptance": {"verified": True}, "roots": [self.root],
+                 "actions": ["read"], "dependencies": []},
+            ],
+            "synthesis": {"assignment_id": "final-manager",
+                          "manager_node_id": "manager",
+                          "attachment_id": "manager-att",
+                          "instruction": "Summarize", "acceptance": {},
+                          "roots": [self.root], "actions": ["read"]},
+            "takeover": None, "timeout_s": 600.0,
+        }
+        plan_id = "plan." + hashlib.sha256(
+            f"session:{origin}".encode("utf-8")
+        ).hexdigest()[:32]
+        resolver_id = "manager-chain-resume-proven"
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO resource_claims "
+                       "(resource_key,operation_id,work_id,assignment_epoch,unresolved) "
+                       "VALUES(?,?,?,?,?)",
+                       ("orchestration-run:session:next-check", origin, "work", 1, 0))
+            db.execute("INSERT INTO orchestration_mailbox "
+                       "(message_id,session_id,kind,message_digest,payload_json,created_at) "
+                       "VALUES(?,?,?,?,?,?)",
+                       (plan_id, "session", "PLAN", _digest(plan), _canonical(plan), 1.0))
+            db.execute("INSERT INTO events (kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("ORCHESTRATION_CHAIN_PLAN_RECORDED","session",
+                        _canonical({"operation_id":origin,"plan_digest":_digest(plan)}), 1.0))
+            db.execute("UPDATE operations SET outcome='APPLIED',error=NULL,"
+                       "evidence_json=? WHERE operation_id=?", (
+                _canonical({"phase":"ORCHESTRATION_RECOVERED",
+                            "resolver_operation_id":resolver_id,
+                            "recovered_outcome":"APPLIED"}), origin))
+            db.execute("INSERT INTO operations "
+                       "(operation_id,work_id,principal_id,request_digest,capability,"
+                       "target,state,outcome,evidence_json,error,assignment_epoch,"
+                       "policy_revision,created_at,updated_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (resolver_id,"work","owner","existing","orchestrate","session",
+                        "FINISHED","APPLIED",_canonical({
+                            "operation":"chain-resume","session_id":"session",
+                            "session_state":"FINISHED"
+                        }),None,1,"fixture",1.0,1.0))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("OPERATION_RECONCILED",origin,_canonical({
+                           "resolver_operation_id":resolver_id,
+                           "original_outcome":"APPLIED",
+                           "resolved_outcome":"APPLIED",
+                           "claims_released":True,
+                       }),1.0))
+            db.execute("UPDATE orchestration_sessions SET state='FINISHED' "
+                       "WHERE session_id='session'")
+        return plan_id
+
+    def test_finished_chain_is_polled_once_and_result_acked(self):
+        self.use_finished_chain_reconciliation()
+        relay = FakeRelay(self.receipt())
+        recovery = ManagerDecisionRecovery(self.service, relay)
+        summary = recovery.run_once(now=self.now+1)
+        self.assertEqual(1, summary["committed"])
+        self.assertEqual(1, summary["acked"])
+        self.assertEqual(0, summary["rejected"])
+        self.assertEqual(1,self.count("orchestration_consumption_decisions"))
+        self.assertEqual(1,self.count("orchestration_consumption_receipts"))
+        self.assertEqual(["result","result-ack"],
+                         [call["command"] for call in relay.calls])
+        db=self.store._connect()
+        try:
+            row=db.execute("SELECT result_ack_state,decision_id FROM "
+                           "orchestration_manager_wakes WHERE event_id=?",
+                           (self.event["event_id"],)).fetchone()
+            self.assertEqual("ACKED",row["result_ack_state"])
+            self.assertIsNotNone(row["decision_id"])
+        finally: db.close()
+
+    def test_finished_chain_missing_plan_is_not_polled_or_consumed(self):
+        plan_id = self.use_finished_chain_reconciliation()
+        with self.store.transaction() as db:
+            db.execute("DELETE FROM orchestration_mailbox WHERE message_id=?", (plan_id,))
+        relay=FakeRelay(self.receipt())
+        result=ManagerDecisionRecovery(self.service,relay).run_once(now=self.now+1)
+        self.assertEqual(0,result["committed"])
+        self.assertEqual(0,result["acked"])
+        self.assertEqual(0,self.count("orchestration_consumption_decisions"))
+        self.assertEqual([],relay.calls)
+        with self.assertRaises(ConflictError):
+            self.consume()
+
+    def test_finished_non_chain_and_inactive_work_are_fenced(self):
+        self.use_proven_reconciled_result()
+        with self.store.transaction() as db:
+            db.execute("UPDATE orchestration_sessions SET state='FINISHED' "
+                       "WHERE session_id='session'")
+        with self.assertRaises(ConflictError):
+            self.consume()
+        self.assertEqual(0,self.count("orchestration_consumption_decisions"))
+
+    def test_finished_chain_stale_epoch_is_not_revived(self):
+        self.use_finished_chain_reconciliation()
+        with self.store.transaction() as db:
+            db.execute("UPDATE orchestration_sessions SET manager_epoch=2 "
+                       "WHERE session_id='session'")
+        relay=FakeRelay(self.receipt())
+        summary=ManagerDecisionRecovery(self.service,relay).run_once(now=self.now+1)
+        self.assertEqual(0,summary["committed"])
+        self.assertEqual([],relay.calls)
+        self.assertEqual(0,self.count("orchestration_consumption_receipts"))
+
     def test_complete_commits_without_successor_and_is_idempotent(self):
         first = self.consume()
         second = self.consume()

@@ -602,6 +602,11 @@ class ConsumptionTest(unittest.TestCase):
                        "created_at,delivered_at,consumed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                        (plan_id,"s",None,None,"PLAN",None,None,_digest(plan),
                         _canonical(plan),1.0,1.0,None))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("ORCHESTRATION_CHAIN_PLAN_RECORDED", "s",
+                        _canonical({"operation_id": "original-dispatch-r1",
+                                    "plan_digest": _digest(plan)}), 1.0))
         return result, plan_id, plan
 
     def test_chain_proven_plan_and_claim_required(self):
@@ -693,6 +698,92 @@ class ConsumptionTest(unittest.TestCase):
         with self.assertRaisesRegex(ConflictError, "CHAIN_RESUME_MISMATCH"):
             self.run_commit(results=[result])
         self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+
+    def test_chain_plan_worker_attachment_and_missing_plan_fences(self):
+        result, plan_id, plan = self.make_chain_plan()
+        cases = [
+            ("wrong_worker", {**plan, "tasks": [{**plan["tasks"][0],
+                                                "worker_node_id": "other"}]}),
+            ("wrong_attachment", {**plan, "tasks": [{**plan["tasks"][0],
+                                                    "attachment_id": "wrong"}]}),
+        ]
+        for label, changed in cases:
+            with self.subTest(label=label):
+                with self.store.transaction() as db:
+                    db.execute("UPDATE orchestration_mailbox SET payload_json=?,message_digest=? "
+                               "WHERE message_id=?",(_canonical(changed),_digest(changed),plan_id))
+                    db.execute("UPDATE events SET data_json=? "
+                               "WHERE kind='ORCHESTRATION_CHAIN_PLAN_RECORDED' "
+                               "AND subject_id='s'",
+                               (_canonical({"operation_id":"original-dispatch-r1",
+                                            "plan_digest":_digest(changed)}),))
+                with self.assertRaisesRegex(ConflictError,"CHAIN_TARGET_MISMATCH"):
+                    self.run_commit(results=[result])
+                self.assertEqual(0,self.count("orchestration_consumption_decisions"))
+        with self.store.transaction() as db:
+            db.execute("DELETE FROM orchestration_mailbox WHERE message_id=?",(plan_id,))
+        with self.assertRaisesRegex(ConflictError,"CHAIN_PLAN_MISSING"):
+            self.run_commit(results=[result])
+        self.assertEqual(0,self.count("orchestration_consumption_decisions"))
+
+    def test_proven_chain_replacement_event_permits_new_generation(self):
+        result, plan_id, plan = self.make_chain_plan()
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO orchestration_attachments "
+                       "(attachment_id,generation,node_id,kind,instance_id,"
+                       "external_session_id,tab_id,window_id,conversation_key,"
+                       "endpoint,relay_role,binding_receipt_id,active,observed_at) "
+                       "SELECT 'other-attach',1,'other',kind,'other-instance',"
+                       "external_session_id,14,window_id,'other-conversation',"
+
+                       "endpoint,relay_role,binding_receipt_id,active,observed_at "
+                       "FROM orchestration_attachments WHERE attachment_id='attach'")
+            db.execute("UPDATE orchestration_assignment_attempts SET state='NOT_APPLIED' "
+                       "WHERE assignment_id='r1' AND generation=1")
+            db.execute("INSERT INTO orchestration_assignment_attempts "
+                       "(assignment_id,generation,manager_epoch,worker_node_id,"
+                       "attachment_id,attachment_generation,state,created_at,updated_at) "
+                       "VALUES('r1',2,2,'other','other-attach',1,'APPLIED',1.0,1.0)")
+            db.execute("UPDATE orchestration_assignments SET current_generation=2 "
+                       "WHERE assignment_id='r1'")
+            db.execute("UPDATE orchestration_mailbox SET assignment_generation=2,"
+                       "sender_node_id='other' WHERE message_id='r1'")
+            rec=db.execute("SELECT * FROM orchestration_reconciliations "
+                           "WHERE assignment_id='r1' AND decision='IMPORT_EXACT_RCC_RESULT'").fetchone()
+            replacement_id = "replace." + hashlib.sha256(b"r1:2").hexdigest()[:32]
+            replacement={"reason":"not sent","evidence":{},"prior_generation":1,
+                         "prior_result_digest":"a"*64,
+                         "replacement_worker_node_id":"other",
+                         "replacement_attachment_id":"other-attach"}
+            db.execute("INSERT INTO orchestration_reconciliations "
+                       "(decision_id,session_id,assignment_id,generation,manager_epoch,"
+                       "decision,evidence_json,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                       (replacement_id,"s","r1",1,2,"REPLACE_PROVEN_NOT_APPLIED",
+                        _canonical(replacement),1.0))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at)"
+                       " VALUES(?,?,?,?)",
+                       ("ORCHESTRATION_WORKER_REPLACED","r1",_canonical({
+                           "prior_generation":1,"generation":2,"worker_node_id":"other",
+                           "decision_id":replacement_id}),1.0))
+            new_id="result."+hashlib.sha256(b"original-dispatch-r1:r1:2").hexdigest()[:32]
+            db.execute("UPDATE orchestration_reconciliations SET generation=2,"
+                       "decision_id=? WHERE decision_id=?",(new_id,rec["decision_id"]))
+        self.assertFalse(self.run_commit(results=[result])["idempotent"])
+        self.assertTrue(self.run_commit(results=[result])["idempotent"])
+        self.assertEqual(1,self.count("orchestration_consumption_receipts"))
+        # Mutation of the replacement event invalidates even a prior exact
+        # consumer replay: the new provenance must still be verified.
+        with self.store.transaction() as db:
+            db.execute("DELETE FROM orchestration_consumption_receipts")
+            db.execute("DELETE FROM orchestration_consumption_decisions")
+            db.execute("UPDATE events SET data_json=? "
+                       "WHERE kind='ORCHESTRATION_WORKER_REPLACED' "
+                       "AND subject_id='r1'",
+                       (_canonical({"prior_generation":1,"generation":2,
+                                    "worker_node_id":"worker","decision_id":replacement_id}),))
+        with self.assertRaisesRegex(ConflictError, "CHAIN_REPLACEMENT_MISMATCH"):
+            self.run_commit(results=[result])
+        self.assertEqual(0,self.count("orchestration_consumption_receipts"))
 
     def test_new_schema_does_not_backfill_legacy(self):
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
