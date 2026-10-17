@@ -22,7 +22,12 @@ from bct.core.models import (
     UnknownEffectError,
     Work,
 )
-from bct.service_runtime import RuntimeServiceController, atomic_json, read_json
+from bct.service_runtime import (
+    RuntimeServiceController,
+    RuntimeWriterLock,
+    atomic_json,
+    read_json,
+)
 
 
 _SHA = re.compile(r"[0-9a-f]{40}")
@@ -44,6 +49,21 @@ def _git(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _git_filtered_oid(root: Path, relative: str, data: bytes) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(root), "hash-object", "--stdin", "--path", relative],
+        input=data,
+        capture_output=True,
+        text=False,
+        shell=False,
+        timeout=60,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if result.returncode != 0:
+        raise PreconditionError("DEPLOYMENT_SOURCE_GIT_FILTER_FAILED:" + relative)
+    return result.stdout.decode("ascii").strip()
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -60,6 +80,8 @@ class DeploymentProfile:
     service_name: str
     port: int
     files: tuple[str, ...]
+    protected_activation_required: bool = False
+    migration_source_profile: str | None = None
 
 
 class DeploymentProfiles:
@@ -137,6 +159,15 @@ class DeploymentProfiles:
         port = value.get("port")
         if not _NAME.fullmatch(service_name) or not isinstance(port, int) or not 1024 <= port <= 65535:
             raise PreconditionError("DEPLOYMENT_PROFILE_SERVICE_INVALID")
+        protected_activation_required = value.get("protected_activation_required", False)
+        if not isinstance(protected_activation_required, bool):
+            raise PreconditionError("DEPLOYMENT_PROFILE_ACTIVATION_GATE_INVALID")
+        migration_source_profile = value.get("migration_source_profile")
+        if migration_source_profile is not None:
+            if not isinstance(migration_source_profile, str) or not _NAME.fullmatch(migration_source_profile):
+                raise PreconditionError("DEPLOYMENT_PROFILE_MIGRATION_SOURCE_INVALID")
+        if protected_activation_required and not migration_source_profile:
+            raise PreconditionError("DEPLOYMENT_PROFILE_MIGRATION_SOURCE_REQUIRED")
         return DeploymentProfile(
             name,
             source_root,
@@ -144,6 +175,8 @@ class DeploymentProfiles:
             service_name,
             port,
             files,
+            protected_activation_required,
+            migration_source_profile,
         )
 
 
@@ -182,6 +215,8 @@ def _target_profile(profile: DeploymentProfile, expected_head: str) -> Deploymen
         ("RUNTIME_ROOT", target.runtime_root, profile.runtime_root),
         ("SERVICE_NAME", target.service_name, profile.service_name),
         ("PORT", target.port, profile.port),
+        ("ACTIVATION_GATE", target.protected_activation_required, profile.protected_activation_required),
+        ("MIGRATION_SOURCE", target.migration_source_profile, profile.migration_source_profile),
     )
     for label, actual, expected in invariant_values:
         if actual != expected:
@@ -204,15 +239,14 @@ def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str
             raise PreconditionError("DEPLOYMENT_SOURCE_ESCAPE:" + relative) from exc
         if not path.is_file() or path.is_symlink() or resolved != path.absolute():
             raise PreconditionError("DEPLOYMENT_SOURCE_FILE_INVALID:" + relative)
+        working_bytes = path.read_bytes()
         committed = _git(root, "rev-parse", f"{expected_head}:{relative}")
-        working = _git(root, "hash-object", "--", relative)
         if (
             committed.returncode != 0
-            or working.returncode != 0
-            or committed.stdout.strip() != working.stdout.strip()
+            or _git_filtered_oid(root, relative, working_bytes) != committed.stdout.strip()
         ):
             raise PreconditionError("DEPLOYMENT_SOURCE_GIT_BLOB_MISMATCH:" + relative)
-        hashes[relative] = _sha256(path)
+        hashes[relative] = hashlib.sha256(working_bytes).hexdigest()
     payload = json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {
         "profile": profile.name,
@@ -221,6 +255,56 @@ def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str
         "manifest_sha256": hashlib.sha256(payload).hexdigest(),
         "files": hashes,
     }
+
+
+def _validate_protected_activation(
+    profiles: DeploymentProfiles,
+    profile: DeploymentProfile,
+    expected_head: str,
+) -> None:
+    if not profile.protected_activation_required:
+        return
+    source = profiles.get(str(profile.migration_source_profile))
+    activation_path = profile.runtime_root.parent / "migration" / "activation.json"
+    receipt = read_json(activation_path)
+    exact = {
+        "schema": "BCT_PROTECTED_ACTIVATION_V1",
+        "state": "APPROVED",
+        "source_profile": source.name,
+        "target_profile": profile.name,
+        "source_head": expected_head,
+        "source_runtime": str(source.runtime_root),
+        "target_runtime": str(profile.runtime_root),
+        "source_supervisor_disabled": True,
+        "cross_account_denial_verified": True,
+        "rcc_canary_verified": True,
+    }
+    if receipt is None or any(receipt.get(key) != value for key, value in exact.items()):
+        raise PreconditionError("PROTECTED_ACTIVATION_RECEIPT_INVALID")
+    operation_id = str(receipt.get("operation_id") or "")
+    acl_digest = str(receipt.get("acl_evidence_sha256") or "")
+    migration = read_json(profile.runtime_root.parent / "migration" / f"{operation_id}.json")
+    if (
+        not _NAME.fullmatch(operation_id)
+        or not _SHA256.fullmatch(acl_digest)
+        or migration is None
+        or migration.get("state") != "PUBLISHED"
+        or migration.get("source_head") != expected_head
+        or migration.get("source_runtime") != str(source.runtime_root)
+    ):
+        raise PreconditionError("PROTECTED_ACTIVATION_MIGRATION_INVALID")
+    if not (source.runtime_root / "BCT_CORE_SUPERVISOR.STOP").is_file():
+        raise PreconditionError("PROTECTED_SOURCE_SUPERVISOR_NOT_DISABLED")
+    source_state = RuntimeServiceController(
+        runtime_root=source.runtime_root,
+        service_name=source.service_name,
+        port=source.port,
+    ).inspect()
+    if source_state.get("state") not in {"STOPPED", "STOPPED_STALE_RECEIPT"}:
+        raise PreconditionError("PROTECTED_SOURCE_CORE_NOT_QUIESCED")
+    lock = RuntimeWriterLock(source.runtime_root / "state" / "core-writer.lock")
+    lock.acquire()
+    lock.close()
 
 
 def _validate_release(
@@ -419,6 +503,9 @@ class DeployFeature:
             return self._reconcile(request)
         trusted_profile = self.profiles.get(request.arguments["profile"])
         profile = _target_profile(trusted_profile, request.arguments["expected_source_head"])
+        _validate_protected_activation(
+            self.profiles, profile, request.arguments["expected_source_head"]
+        )
         manifest = _validate_source(profile, request.arguments["expected_source_head"])
         current = _read_current(profile)
         current_head = current.get("source_head") if current else None
@@ -439,6 +526,9 @@ class DeployFeature:
                         "manifest_sha256": manifest["manifest_sha256"],
                         "service": service_before, "already_current": True,
                     })
+                _validate_protected_activation(
+                    self.profiles, profile, request.arguments["expected_source_head"]
+                )
                 service = _start_with_one_safe_retry(controller, current)
             else:
                 service = service_before
@@ -468,6 +558,9 @@ class DeployFeature:
             if current_after is None or current_after.get("source_head") != manifest["source_head"]:
                 raise RuntimeError("DEPLOYMENT_CURRENT_POST_STATE_INVALID")
             if request.arguments["restart"]:
+                _validate_protected_activation(
+                    self.profiles, profile, request.arguments["expected_source_head"]
+                )
                 if service_before.get("state") == "RUNNING":
                     controller.stop()
                 service = _start_with_one_safe_retry(controller, release)

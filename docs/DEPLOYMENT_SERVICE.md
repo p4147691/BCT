@@ -68,11 +68,18 @@ Before hashing a deployment file BCT compares the worktree blob with the blob
 recorded by the requested Git commit. This binds the SHA-256 release manifest
 to that exact Git tree in addition to the existing clean-main check.
 
-Protected-path preparation uses SQLite Online Backup and `quick_check`, copies
-only the active immutable Core release, Core tokens, Core receipts/logs and BCT
-data, and writes no active `service.json`. Both old and target Core states must
-be stopped. Preparation leaves `activation_allowed=false`; starting the target
-requires a later ACL/identity acceptance and explicit cutover approval.
+Protected-path preparation uses SQLite Online Backup, `quick_check`, and logical
+digests for operations, unresolved claims and manager wakes. It copies only an
+active release whose files normalize to the exact Git blobs, Core tokens,
+receipts/logs, BCT data and exact Supervisor payload, and writes no active
+`service.json`. The old Core must be stopped, its Supervisor explicitly disabled,
+and its runtime writer lock held for the whole backup/publish window.
+
+`bct_runtime_protected_v1` cannot be used as a normal deployment shortcut. The
+deploy path requires a `PUBLISHED` migration and a separate exact activation
+receipt recording ACL, distinct-account denial and RCC canary acceptance. It
+revalidates the old Core stop state and writer fence immediately before start.
+Staging failures are durable and must be moved to quarantine before a retry.
 - Health: `http://127.0.0.1:18790/health`
 
 The runtime directory contains generated state and is never a source-of-truth checkout.

@@ -41,11 +41,16 @@ def _read(path: Path) -> dict[str, Any] | None:
 class ProcessSessionFeature:
     capability = "process_session"
 
-    def __init__(self, policy_path: str | Path):
+    def __init__(self, policy_path: str | Path, *, data_root: str | Path | None = None):
         data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
         execution = data.get("execution") or {}
         sessions = execution.get("sessions") or {}
-        self.state_root = Path(str(sessions.get("state_root") or r"D:\BCT\data\process-sessions")).resolve()
+        configured = sessions.get("state_root") or r"D:\BCT\data\process-sessions"
+        self.state_root = (
+            Path(data_root).resolve() / "process-sessions"
+            if data_root is not None
+            else Path(str(configured)).resolve()
+        )
 
     def _session_dir(self, session_id: str) -> Path:
         return self.state_root / session_id

@@ -10,12 +10,15 @@ UNKNOWN/Claim/Issue #111은 변경하지 않는다.
 - 기존 `bct_runtime_v1`은 그대로 유지하고 명시적인
   `bct_runtime_protected_v1`만 추가한다. `%LOCALAPPDATA%` 외 환경 변수나 탈출
   경로는 거부하고 두 프로필의 배포 파일 집합은 같아야 한다.
-- 이전 준비는 old/target Core가 모두 정지했을 때만 active release, token,
-  receipts/logs, BCT data와 SQLite Online Backup을 새 경로에 stage한다. 새
-  `service.json`을 활성화하지 않고 `activation_allowed=false` 영수증을 남긴다.
-- ACL owner/inheritance/ACE, 상위 DeleteChild와 reparse point를 fail-closed로
-  검증하며, RCC는 고정 extension ID와 sole origin을 검증한 뒤 비활성 staging만
-  허용한다. Chrome unpacked path와 HKCU Host 등록 변경은 별도 운영 승인이다.
+- 보호 프로필은 published migration + 별도 activation 영수증, old Supervisor
+  stop flag, 실제 stopped Core, free writer lock 없이는 배포 자체가 거부된다.
+  이전 준비는 writer lock을 독점한 상태에서 exact-Git release, token,
+  receipts/logs, process-session data, Supervisor payload와 SQLite Online
+  Backup을 operation staging에 만들고 durable 상태 영수증 뒤에만 publish한다.
+- ACL은 raw access mask와 exact SID allowlist로 owner/inheritance/foreign access,
+  상위 DeleteChild와 lexical reparse point를 fail-closed 검증한다. RCC extension은
+  exact Git tree, Host는 별도 build receipt SHA에 묶은 비활성 staging만 허용한다.
+  Chrome loaded path/storage/instance/tab과 HKCU 변경은 별도 운영 승인이다.
 - Git exact HEAD/clean 검사에 더해 각 배포 파일의 worktree blob이 요청 commit의
   blob과 같은지 검증한다. Supervisor와 tunnel token reference는 선택한 runtime
   root/profile을 사용한다.

@@ -62,6 +62,7 @@ class BCT:
     """Small local entry point shared by direct and future MCP calls."""
 
     def __init__(self, *, state_path: str | Path, policy_path: str | Path,
+                 data_root: str | Path | None = None,
                  github_client: GitHubClient | None = None):
         self.store = Store(state_path)
         self.policy = Policy(policy_path)
@@ -100,7 +101,8 @@ class BCT:
             GitHubSyncMainFeature(),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             RelayBrowserFeature(),
-            SystemInspectFeature(), ExecuteFeature(), ProcessSessionFeature(policy_path),
+            SystemInspectFeature(), ExecuteFeature(),
+            ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
             OrchestrationFeature(self.orchestration),
         ):

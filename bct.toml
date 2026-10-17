@@ -86,6 +86,10 @@ files = [
   "src/bct/integrations/rcc.py",
   "src/bct/integrations/native_process.py",
   "src/bct/operating_paths.py",
+  "modules/mcp/ops/run_bct_core_supervisor.ps1",
+  "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
+  "modules/mcp/ops/BCT-Core-Supervisor.protected.task.xml.template",
+  "modules/mcp/ops/BCT-Tunnel-Supervisor.protected.task.xml.template",
   "modules/status-ui/index.html",
 ]
 
@@ -97,6 +101,8 @@ source_root = "D:\\BCT\\source"
 runtime_root = "%LOCALAPPDATA%\\BCT\\runtime"
 service_name = "bct-core"
 port = 18790
+protected_activation_required = true
+migration_source_profile = "bct_runtime_v1"
 files = [
   "bct.toml",
   "src/bct/__init__.py",
@@ -140,5 +146,9 @@ files = [
   "src/bct/integrations/rcc.py",
   "src/bct/integrations/native_process.py",
   "src/bct/operating_paths.py",
+  "modules/mcp/ops/run_bct_core_supervisor.ps1",
+  "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
+  "modules/mcp/ops/BCT-Core-Supervisor.protected.task.xml.template",
+  "modules/mcp/ops/BCT-Tunnel-Supervisor.protected.task.xml.template",
   "modules/status-ui/index.html",
 ]

@@ -11,10 +11,19 @@ needed while Core and RCC remain in the same interactive logon boundary.
 
 Source support is deliberately non-activating. The existing
 `bct_runtime_v1` remains authoritative. `bct_runtime_protected_v1` resolves only
-the exact `%LOCALAPPDATA%` prefix, and `prepare_core_migration()` refuses a
-running source or target Core. It stages an immutable release, SQLite Online
-Backup, tokens, receipts/logs and `D:\BCT\data`, archives the old service
-receipt, and writes a migration receipt with `activation_allowed=false`.
+the exact `%LOCALAPPDATA%` prefix and is itself deployment-gated. A protected
+deploy requires a published migration plus a separately approved activation
+receipt, old Supervisor stop flag, stopped old Core and a free old-runtime
+writer lock. `prepare_core_migration()` obtains that same exclusive writer
+fence, rechecks the real service state, and stages an exact-Git release, SQLite
+Online Backup, tokens, receipts/logs, process-session data and both Supervisor
+scripts. It never trusts caller-supplied RUNNING/STOPPED strings.
+
+Core and RCC staging use operation-scoped directories and durable
+`PREPARING`/`PREPARED`/`PUBLISHED` or `FAILED` receipts. A partial target cannot
+be retried implicitly; the receipt-owned files must first be moved to the
+protected quarantine by the bounded rollback helper. No partial copy is ever
+eligible for activation.
 
 ## Exact operating targets
 
@@ -40,14 +49,19 @@ is verified again after copy.
 3. Create only `%LOCALAPPDATA%\BCT`, disable inheritance there, and grant full
    control only to the exact interactive user SID, SYSTEM and Administrators.
    Collect owner, inheritance, all ACEs and every ancestor through
-   `%LOCALAPPDATA%`; reject reparse points or broad write/DeleteChild.
+   `%LOCALAPPDATA%`; validate raw access masks, reject every foreign ACE on the
+   protected root, foreign ancestor write/DeleteChild, and lexical reparse
+   points before any canonical-path resolution.
 4. Stop the old Core and its Core supervisor once. Recheck PID/creation marker,
    port, service receipt, background executor and both old/target stopped state.
    Tunnel and RCC may remain connected but no browser command is sent.
-5. Run the source migration preparation once with a new deterministic operation
+5. Deploy this source to the old path first so the Core writer lock and exact
+   Supervisor payload are present. Then run migration preparation once with a new deterministic operation
    ID. Verify release hashes, database `quick_check`, preserved receipt counts
    and hashes, target tokens and the non-activating migration receipt.
-6. Stage the exact protected RCC Host and manifest. Verify source SHA, Host name,
+6. Stage the exact protected RCC Host and manifest. Extension bytes come from
+   the exact Git tree; the Host EXE must match a separately verified build
+   receipt SHA-256. Verify source SHA, Host name,
    sole allowed origin and fixed extension ID
    `ocbidbaplechjjdacmokhnfbdmgjkphf`. A different ID is an immediate stop.
 7. The unpacked extension path cannot be changed merely by copying files. In an
@@ -55,10 +69,12 @@ is verified again after copy.
    protected payload only if Chrome reports the same fixed ID and existing
    storage/instance/conversation/tab identities remain available. Otherwise
    roll back the path and stop; never create a second RCC identity.
-8. Change the exact HKCU NativeMessagingHosts manifest value and scheduled Core
+8. Render the separate Core and tunnel protected Task templates with the exact
+   `%LOCALAPPDATA%\BCT\runtime` path. Change the exact HKCU NativeMessagingHosts
+   manifest value and scheduled tasks only in the approved maintenance window,
    supervisor arguments to the protected paths, with exported registry/task XML
    as rollback evidence. Start one protected Core using
-   `bct_runtime_protected_v1`, then prove exact release, generation increment,
+   then start `bct_runtime_protected_v1` and prove exact release, generation increment,
    one listener, MCP 22-tool readiness, RCC benign presence and unchanged
    durable receipt hashes.
 9. Keep Schema 2 OFF and the allowlist empty. Only after the protected-path and
@@ -67,8 +83,8 @@ is verified again after copy.
 
 ## Rollback and mandatory stops
 
-Before target Core start, rollback is removal/quarantine of only the newly
-created protected staging root after identity checks, then restart of the exact
+Before target Core start, rollback is a receipt-owned atomic move to the
+protected quarantine; it never deletes ambiguous paths. Then restart the exact
 old release. After target start, stop the target first, restore the exact
 registry/task references and old `current.json`/release, prove only one database
 writer, then start the old Core. Never merge two databases.
