@@ -788,6 +788,12 @@ class OrchestrationTests(unittest.TestCase):
             if item["assignment_id"] == "lost-result"
         )
         self.assertEqual("APPLIED", assignment["state"])
+        # This original fixture is LEGACY_RETURN_V1; its reconciliation
+        # must not silently create new Schema 2-style Manager notifications.
+        self.assertFalse([
+            wake for wake in snapshot["manager_wakes"]
+            if wake["assignment_id"] == "lost-result"
+        ])
 
     def _prepare_schema2_lost_worker_result(self, suffix: str):
         # This fixture turns the already-created test session into Schema 2

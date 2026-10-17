@@ -2263,11 +2263,14 @@ class OrchestrationService:
             # A reconciled terminal RESULT is durable before any Manager Wake.
             # Use the same deterministic event identity as normal completion.
             # The transaction also fences the original UNKNOWN operation/claim.
-            self._record_manager_wake(
-                db, session_id=session_id, assignment=assignment,
-                generation=generation, result_message_id=result_message_id,
-                result_digest=digest, now=now,
-            )
+            # Legacy sessions keep their original reconciliation semantics.
+            # Only Schema 2 requires an automatic receipt-driven Manager Wake.
+            if str(session["wake_receipt_mode"]) == _DURABLE_WAKE_RECEIPT_MODE:
+                self._record_manager_wake(
+                    db, session_id=session_id, assignment=assignment,
+                    generation=generation, result_message_id=result_message_id,
+                    result_digest=digest, now=now,
+                )
             self.store._event(db, "ORCHESTRATION_ASSIGNMENT_RECONCILED", assignment_id, {
                 "generation": generation, "outcome": outcome,
                 "original_operation_id": original_operation_id,
@@ -2360,12 +2363,22 @@ class OrchestrationService:
                 "AND manager_epoch=?",
                 (session_id, assignment_id, generation, message_id, manager_epoch),
             ).fetchone()
+            if prior is not None:
+                # Exactly one Wake: an idempotent recovery must not append an
+                # extra event or mutate its existing lease/receipt.
+                current = db.execute(
+                    "SELECT * FROM orchestration_manager_wakes WHERE event_id=?",
+                    (prior["event_id"],),
+                ).fetchone()
+                if current is None:
+                    raise ConflictError("ORCHESTRATION_RECONCILED_WAKE_NOT_FOUND")
+                return False, dict(current)
             wake = self._record_manager_wake(
                 db, session_id=session_id, assignment=row,
                 generation=generation, result_message_id=message_id,
                 result_digest=message["message_digest"], now=time.time(),
             )
-            return prior is None, wake
+            return True, wake
 
     def finish_session(
         self, *, work: Work, session_id: str, manager_epoch: int,
