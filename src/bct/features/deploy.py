@@ -543,6 +543,31 @@ def _validate_protected_activation(
     return lock
 
 
+def _validate_protected_deploy_gate(
+    profiles: DeploymentProfiles,
+    profile: DeploymentProfile,
+    expected_head: str,
+    *,
+    acquire_lock: bool,
+) -> RuntimeWriterLock | None:
+    """Separate first cutover/recovery evidence from later target upgrades."""
+    if not profile.protected_activation_required:
+        return None
+    marker_path = profile.runtime_root.parent / "migration" / "cutover.json"
+    if marker_path.exists():
+        marker = read_json(marker_path)
+        _validate_profile_start_allowed(profiles, profile)
+        if marker is None:
+            raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
+        if marker.get("state") == "ACTIVATED":
+            return None
+        if marker.get("state") != "ACTIVATING" or marker.get("source_head") != expected_head:
+            raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
+    return _validate_protected_activation(
+        profiles, profile, expected_head, acquire_lock=acquire_lock
+    )
+
+
 def _validate_release(
     profile: DeploymentProfile,
     release: dict[str, Any],
@@ -741,8 +766,9 @@ class DeployFeature:
         profile = _target_profile(trusted_profile, request.arguments["expected_source_head"])
         if not profile.protected_activation_required:
             _validate_profile_start_allowed(self.profiles, profile)
-        source_lock = _validate_protected_activation(
-            self.profiles, profile, request.arguments["expected_source_head"]
+        source_lock = _validate_protected_deploy_gate(
+            self.profiles, profile, request.arguments["expected_source_head"],
+            acquire_lock=True,
         )
         try:
             return self._execute_apply(request, profile)
@@ -778,7 +804,7 @@ class DeployFeature:
                         "manifest_sha256": manifest["manifest_sha256"],
                         "service": service_before, "already_current": True,
                     })
-                _validate_protected_activation(
+                _validate_protected_deploy_gate(
                     self.profiles, profile, request.arguments["expected_source_head"],
                     acquire_lock=False,
                 )
@@ -821,7 +847,7 @@ class DeployFeature:
             if current_after is None or current_after.get("source_head") != manifest["source_head"]:
                 raise RuntimeError("DEPLOYMENT_CURRENT_POST_STATE_INVALID")
             if request.arguments["restart"]:
-                _validate_protected_activation(
+                _validate_protected_deploy_gate(
                     self.profiles, profile, request.arguments["expected_source_head"],
                     acquire_lock=False,
                 )

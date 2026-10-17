@@ -86,7 +86,9 @@ the old writer fence is held, an `ACTIVATING` cutover authority is made durable
 before the target Core starts. Source starts are then denied even if the deploy
 process exits between target health and the final `ACTIVATED` update. Target
 starts require `ACTIVATING` or `ACTIVATED`; after a separately approved
-`ROLLED_BACK` marker only the source may start.
+`ROLLED_BACK` marker only the source may start. Once `ACTIVATED`, later exact-main
+target upgrades validate that current authority instead of incorrectly requiring
+the first migration and activation receipts to name every future release SHA.
 - Health: `http://127.0.0.1:18790/health`
 
 The runtime directory contains generated state and is never a source-of-truth checkout.

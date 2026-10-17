@@ -554,6 +554,78 @@ class ProtectedOperatingPathTests(unittest.TestCase):
             feature._execute_apply(request, profile)
         self.assertEqual(["begin", "start", "complete"], order)
 
+    def test_top_level_deploy_distinguishes_cutover_recovery_from_upgrade(self):
+        source = DeploymentProfile(
+            "legacy", self.base / "source", self.base / "legacy-runtime",
+            "bct-core", 19879, ("bct.toml",), False, None, "protected",
+        )
+        target = DeploymentProfile(
+            "protected", self.base / "source", self.base / "protected" / "runtime",
+            "bct-core", 19879, ("bct.toml",), True, "legacy", None,
+        )
+        profiles = Mock()
+        profiles.get.side_effect = lambda name: target if name == "protected" else source
+        feature = DeployFeature(profiles)
+        marker_path = target.runtime_root.parent / "migration" / "cutover.json"
+        marker = {
+            "schema": "BCT_PROTECTED_CUTOVER_V1",
+            "state": "ACTIVATED",
+            "operation_id": "cutover-a",
+            "source_profile": "legacy",
+            "target_profile": "protected",
+            "source_runtime": str(source.runtime_root),
+            "target_runtime": str(target.runtime_root),
+            "source_head": "a" * 40,
+        }
+
+        def request(head: str) -> FeatureRequest:
+            return FeatureRequest(
+                "deploy", "protected",
+                {"profile": "protected", "expected_source_head": head,
+                 "expected_current_source_head": "a" * 40, "restart": True},
+                (), {},
+            )
+
+        atomic_json(marker_path, marker)
+        with patch("bct.features.deploy._target_profile", return_value=target), patch(
+            "bct.features.deploy._validate_protected_activation"
+        ) as legacy_activation, patch.object(
+            feature, "_execute_apply", return_value="upgraded"
+        ) as apply:
+            self.assertEqual("upgraded", feature.execute(request("b" * 40)))
+        legacy_activation.assert_not_called()
+        apply.assert_called_once()
+
+        atomic_json(marker_path, {**marker, "state": "ACTIVATING"})
+        held = Mock()
+        with patch("bct.features.deploy._target_profile", return_value=target), patch(
+            "bct.features.deploy._validate_protected_activation", return_value=held
+        ) as first_activation, patch.object(feature, "_execute_apply", return_value="recovered"):
+            self.assertEqual("recovered", feature.execute(request("a" * 40)))
+        first_activation.assert_called_once()
+        held.close.assert_called_once()
+
+        with patch("bct.features.deploy._target_profile", return_value=target), patch(
+            "bct.features.deploy._validate_protected_activation"
+        ) as wrong_activation, patch.object(feature, "_execute_apply") as apply:
+            with self.assertRaisesRegex(PreconditionError, "CUTOVER_AUTHORITY_CONFLICT"):
+                feature.execute(request("b" * 40))
+        wrong_activation.assert_not_called()
+        apply.assert_not_called()
+
+        atomic_json(marker_path, {
+            **marker,
+            "state": "ROLLED_BACK",
+            "rollback_approved": True,
+            "rollback_operation_id": "rollback-a",
+        })
+        with patch("bct.features.deploy._target_profile", return_value=target), patch.object(
+            feature, "_execute_apply"
+        ) as apply:
+            with self.assertRaisesRegex(PreconditionError, "TARGET_PROFILE_RETIRED"):
+                feature.execute(request("b" * 40))
+        apply.assert_not_called()
+
     def test_service_control_and_runtime_server_deny_target_without_authority(self):
         local = self.base / "LocalAppData"
         runtime = local / "BCT" / "runtime"

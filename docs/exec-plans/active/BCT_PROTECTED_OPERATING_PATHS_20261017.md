@@ -99,7 +99,9 @@ if target start or finalization is interrupted. Stop the target first, restore t
 registry/task references and old `current.json`/release, prove only one database
 writer, atomically record an approved `ROLLED_BACK` authority, then start the old Core.
 The target is fenced after rollback; it may start only under exact `ACTIVATING`
-or `ACTIVATED` authority.
+or `ACTIVATED` authority. The initial migration/activation SHA remains cutover
+evidence; later protected-target upgrades use the durable `ACTIVATED` authority
+and their own exact-main deployment contract rather than rewriting that evidence.
 Never merge two databases. RCC pre-publish staging and exact-head Host build
 staging are operation-owned and are quarantined before a retry.
 
