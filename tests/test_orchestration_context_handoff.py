@@ -42,7 +42,7 @@ class OrchestrationContextHandoffContractTests(unittest.TestCase):
             call for call in self.fixture.relay.calls
             if call["command"] == "send" and call["to"] == role
         )
-        start = sent["text"].index(_existing_orchestration_test.ASSIGNMENT_START) + len(ASSIGNMENT_START)
+        start = sent["text"].index(_existing_orchestration_test.ASSIGNMENT_START) + len(_existing_orchestration_test.ASSIGNMENT_START)
         end = sent["text"].index(_existing_orchestration_test.ASSIGNMENT_END, start)
         return result.output["assignment"], json.loads(sent["text"][start:end])
 
