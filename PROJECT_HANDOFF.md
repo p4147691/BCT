@@ -1,36 +1,37 @@
 # BCT 인수인계
 
-## 현재 작업 — 보호된 운영 경로 이전 (소스 준비, 운영 미적용)
+## 현재 작업 — 신뢰된 다중 ChatGPT 협업 정상화
 
-`D:\` 상위의 광범위한 Modify/DeleteChild 위험을 피하기 위해 기존
-Core/RCC 아키텍처를 유지한 채 `%LOCALAPPDATA%\BCT`로 제한된 운영 자산만
-이전하는 소스 경계를 준비한다. 현재 LIVE, ACL, Registry, RCC/Chrome, Schema 2,
-UNKNOWN/Claim/Issue #111은 변경하지 않는다.
+보호 경로 이전보다 실제 Manager → Worker 협업을 우선한다. 운영 기준은 계속
+`D:\BCT`이며 `%LOCALAPPDATA%` 또는 `BCT-Protected` 이전은 협업의 선행 조건이
+아니다. 기존 보호 경로 소스와 영수증은 보존하지만 현재 본류에서는 보류한다.
 
-- 기존 `bct_runtime_v1`은 그대로 유지하고 명시적인
-  `bct_runtime_protected_v1`만 추가한다. `%LOCALAPPDATA%` 외 환경 변수나 탈출
-  경로는 거부하고 두 프로필의 배포 파일 집합은 같아야 한다.
-- 보호 프로필은 published migration + 별도 activation 영수증, old Supervisor
-  stop flag, 실제 stopped Core, free writer lock 없이는 배포 자체가 거부된다.
-  이전 준비는 writer lock을 독점한 상태에서 exact-Git release, token,
-  receipts/logs, process-session data, Supervisor payload와 SQLite Online
-  Backup을 operation staging에 만들고 durable 상태 영수증 뒤에만 publish한다.
-- old runtime lock을 유지한 채 target 시작 전에 `ACTIVATING` cutover authority를
-  먼저 영속화하고, target health 뒤 `ACTIVATED`로 확정한다. Source는 두 상태에서,
-  target은 승인된 `ROLLED_BACK` 상태에서 deploy/service-control/Supervisor/runtime-server의
-  모든 start 경계가 fail-closed한다.
-- ACL은 raw access mask와 exact SID allowlist로 owner/inheritance/foreign access,
-  상위 DeleteChild와 lexical reparse point를 fail-closed 검증한다. RCC extension은
-  exact Git tree를 재구성하고 Host는 보호 경계 안에서 exact Git C# blob을 시스템
-  compiler로 빌드해 source/compiler/artifact 영수증에 묶은 비활성 staging만 허용한다.
-  Chrome loaded path/storage/instance/tab과 HKCU 변경은 별도 운영 승인이다.
-- Git exact HEAD/clean 검사에 더해 각 배포 파일의 worktree blob이 요청 commit의
-  blob과 같은지 검증한다. Supervisor와 tunnel token reference는 선택한 runtime
-  root/profile을 사용한다.
-- 정확한 단계·백업·롤백·다른 계정 시험·브라우저 identity 보존 조건은
-  `docs/exec-plans/active/BCT_PROTECTED_OPERATING_PATHS_20261017.md`에 있다.
-- 구형 경로의 token/DB 폐기와 token 회전은 파괴적 운영 변경이므로 이번 소스
-  작업에 포함하지 않는다.
+- 기존 Principal/Work/Policy는 프로젝트 범위와 사용자 목표를 한 번 묶는 경계로
+  유지한다. 현재 Policy의 일반 개발 작업은 이미 반복 승인 대상이 아니다.
+- epoch/lease/Claim, exact attachment, ACK/receipt, UNKNOWN 무재전송은 충돌·중복·
+  잘못된 대화 전달을 막는 정합성 계약이므로 유지한다.
+- 정적 Schema 2 Work allowlist는 새 Work마다 설정·배포를 요구하는 실제 병목이라
+  제거한다. 전역 스위치는 비상 정지용으로 유지하고, ON 이후 새로 시작한 세션만
+  `RCC_RESULT_POLL_V1`로 SQLite에 고정한다. 기존 세션은 migration 기본값
+  `LEGACY_RETURN_V1`을 유지하여 과거 Wake/UNKNOWN을 재해석하지 않는다.
+- Worker assignment는 `read` 전용에서 프로젝트 범위의 일반 개발 작업으로 넓힌다.
+  deploy/service control/credential/delete/브라우저 제어 같은 고위험 작업은 자동
+  Worker 범위에 포함하지 않는다.
+- 최종 완료 판정은 PR/CI가 아니라 새 격리 Work에서 Manager 1 + Worker 2의 실제
+  결과 영속화, 종합, FOLLOW_UP, COMPLETE, ACK, 중복 방지 및 Manager 교체 복구가
+  성공한 뒤에만 내린다. LIVE 변경과 Chrome 메시지 전송은 묶은 운영 승인 후 한다.
+
+세부 계약은
+`docs/exec-plans/active/BCT_TRUSTED_COLLABORATION_NORMALIZATION_20261017.md`를 따른다.
+
+## 중단 작업 — 보호된 운영 경로 이전
+
+사용자 결정으로 `%LOCALAPPDATA%\BCT`/`BCT-Protected` 이전과 추가 ACL 강화는
+중단했다. 운영 정본은 `D:\BCT` 하나이며 `bct.toml`에서도 보호 runtime을 활성
+배포 프로필로 제공하지 않는다. 이미 만든 일반화된 보호 경로 코드·격리 테스트,
+독립 worktree와 기존 영수증은 감사 자료로 보존하지만 협업 활성화의 선행 조건이나
+현재 실행 계획으로 사용하지 않는다. LIVE·Registry·ACL·RCC/Chrome에는 역이전이나
+추가 변경을 수행하지 않는다.
 
 ## 현재 작업 — Durable Orchestration PR C (DRAFT 준비, 운영 비활성)
 

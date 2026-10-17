@@ -192,7 +192,7 @@ class OrchestrationTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.policy = self.root / "bct.toml"
         self.policy.write_text(
-            '[policy]\nnormal_actions=["read","write","orchestrate"]\n'
+            '[policy]\nnormal_actions=["read","write","test","orchestrate"]\n'
             'approval_actions=[]\n',
             encoding="utf-8",
         )
@@ -200,11 +200,11 @@ class OrchestrationTests(unittest.TestCase):
             state_path=self.root / "state.sqlite", policy_path=self.policy
         )
         self.owner = Principal(
-            "owner", "test", frozenset({"read", "write", "orchestrate"})
+            "owner", "test", frozenset({"read", "write", "test", "orchestrate"})
         )
         self.bct.create_work(
             work_id="work", request_summary="orchestration tests",
-            roots=[str(self.root)], actions=["read", "write", "orchestrate"],
+            roots=[str(self.root)], actions=["read", "write", "test", "orchestrate"],
             principal=self.owner,
         )
         self.relay = FakeRelay()
@@ -252,6 +252,23 @@ class OrchestrationTests(unittest.TestCase):
         return next(
             item for item in snapshot["attachments"]
             if item["node_id"] == node_id and item["active"] and item["relay_role"]
+        )
+
+    def test_trusted_worker_can_receive_project_scoped_write_work(self):
+        worker = self.attachment("worker-b")
+        result = self.call("write-assignment", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "write-assignment",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "edit one project file and report the test result",
+            "actions": ["read", "write", "test"],
+            "acceptance": {"tested": True},
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(
+            ["read", "test", "write"],
+            result.output["assignment"]["actions"],
         )
 
     def test_duplicate_tabs_map_to_one_node_and_immutable_attachments(self):

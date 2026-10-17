@@ -94,7 +94,6 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         self.store.create_work(self.work)
         self.service = OrchestrationService(
             self.store, manager_wake_receipt_v2_enabled=True,
-            manager_wake_receipt_v2_allowed_work_ids=("work",),
             policy=Policy(self.policy_path),
         )
         self.now = time.time()
@@ -104,10 +103,14 @@ class WorkerDispatchPRCTests(unittest.TestCase):
                                ("next-worker", "WORKER")):
                 db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",
                            (node, node, role, "fixture", 1, 1))
-            db.execute("INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            db.execute("INSERT INTO orchestration_sessions "
+                       "(session_id,work_id,work_assignment_epoch,objective,roots_json,actions_json,"
+                       "acceptance_json,plan_revision,manager_node_id,manager_epoch,state,"
+                       "terminal_summary_json,wake_receipt_mode,created_at,updated_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 "session", "work", 1, "fixture", _canonical([root]),
                 _canonical(["read"]), "{}", 1, "manager", 1, "ACTIVE", "{}",
-                self.now, self.now,
+                "RCC_RESULT_POLL_V1", self.now, self.now,
             ))
             for node, role in (("manager", "MANAGER"), ("worker", "WORKER"),
                                ("next-worker", "WORKER")):
@@ -361,11 +364,11 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         wake = self.row("orchestration_manager_wakes", "assignment_id", self.assignment_id)
         self.assertEqual("STALE", wake["state"])
 
-    def test_allowlist_change_at_pipe_write_fences_manager_wake(self):
+    def test_global_disable_at_pipe_write_fences_manager_wake(self):
         self.dispatcher.run_once(now=self.now + 2)
         self.relay.receipt = self.worker_receipt()
         self.relay.before_wake_callback = lambda: setattr(
-            self.service, "manager_wake_receipt_v2_allowed_work_ids", frozenset()
+            self.service, "manager_wake_receipt_v2_enabled", False
         )
         result = self.dispatcher.run_once(now=self.now + 3)
         self.assertEqual(1, result["rejected"])
@@ -456,16 +459,16 @@ class WorkerDispatchPRCTests(unittest.TestCase):
             "orchestration_assignments", "assignment_id", self.assignment_id
         )["state"])
 
-    def test_allowlist_removal_stops_dispatcher_without_rcc_io(self):
-        self.service.manager_wake_receipt_v2_allowed_work_ids = frozenset()
+    def test_global_disable_stops_dispatcher_without_rcc_io(self):
+        self.service.manager_wake_receipt_v2_enabled = False
         summary = self.dispatcher.run_once(now=self.now + 2)
         self.assertFalse(summary["lease_owned"])
         self.assertEqual(0, summary["checked"])
         self.assertEqual([], self.relay.calls)
 
-    def test_allowlist_change_at_pipe_write_fences_worker_send(self):
+    def test_global_disable_at_pipe_write_fences_worker_send(self):
         self.relay.before_callback = lambda: setattr(
-            self.service, "manager_wake_receipt_v2_allowed_work_ids", frozenset()
+            self.service, "manager_wake_receipt_v2_enabled", False
         )
         summary = self.dispatcher.run_once(now=self.now + 2)
         self.assertEqual(1, summary["rejected"])
@@ -646,7 +649,6 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         restarted = WorkerDispatchRecovery(
             OrchestrationService(
                 Store(self.store.path), manager_wake_receipt_v2_enabled=True,
-                manager_wake_receipt_v2_allowed_work_ids=("work",),
                 policy=Policy(self.policy_path),
             ), self.relay,
         )

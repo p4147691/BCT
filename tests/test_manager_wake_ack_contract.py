@@ -182,17 +182,11 @@ class ManagerWakeAckContractTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def write_policy(
-        self, enabled: bool | None, *, allowed_work_ids: list[str] | None = None,
-    ) -> None:
-        if allowed_work_ids is None:
-            allowed_work_ids = ["work"] if enabled is True else []
+    def write_policy(self, enabled: bool | None) -> None:
         value = (
             "" if enabled is None else
             "[orchestration]\nmanager_wake_receipt_v2_enabled="
             + ("true" if enabled else "false") + "\n"
-            + "manager_wake_receipt_v2_allowed_work_ids="
-            + json.dumps(allowed_work_ids) + "\n"
         )
         self.policy.write_text(
             '[policy]\nnormal_actions=["read","write","orchestrate"]\n'
@@ -200,10 +194,8 @@ class ManagerWakeAckContractTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def reload_bct(
-        self, enabled: bool | None, *, allowed_work_ids: list[str] | None = None,
-    ) -> None:
-        self.write_policy(enabled, allowed_work_ids=allowed_work_ids)
+    def reload_bct(self, enabled: bool | None) -> None:
+        self.write_policy(enabled)
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=self.policy)
         self.bct.operations._features["orchestrate"] = OrchestrationFeature(
             self.bct.orchestration, self.relay
@@ -276,6 +268,11 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertNotIn("consume_capability", json.dumps(result.output))
 
     def test_default_off_uses_legacy_schema_one_contract(self):
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode="
+                "'LEGACY_RETURN_V1' WHERE session_id='session'"
+            )
         self.reload_bct(None)
         self.dispatch("default-off")
         call = self.wake_calls()[0]
@@ -287,34 +284,36 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertEqual(1, wake["envelope_schema"])
         self.assertEqual("LEGACY_RETURN_V1", wake["receipt_mode"])
 
-    def test_global_on_with_empty_or_mismatched_allowlist_stays_schema_one(self):
-        for allowed in ([], ["different-work"]):
-            with self.subTest(allowed=allowed):
-                self.reload_bct(True, allowed_work_ids=allowed)
-                self.assertFalse(
-                    self.bct.orchestration.manager_wake_receipt_v2_allowed("work")
-                )
-                if not allowed:
-                    self.assertIsNone(self.bct.manager_decision_recovery)
-                    self.assertIsNone(self.bct.worker_dispatch_recovery)
-                self.dispatch("not-allowed-" + str(len(allowed)))
-                wake = self.first_wake()
-                self.assertEqual(1, wake["envelope_schema"])
-                self.assertEqual("LEGACY_RETURN_V1", wake["receipt_mode"])
+    def test_global_on_starts_recovery_and_session_is_durably_pinned(self):
+        self.assertIsNotNone(self.bct.manager_decision_recovery)
+        self.assertIsNotNone(self.bct.worker_dispatch_recovery)
+        session = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session",
+        )["session"]
+        self.assertEqual("RCC_RESULT_POLL_V1", session["wake_receipt_mode"])
 
-    def test_invalid_allowlist_configuration_fails_closed(self):
-        invalid_values = ('"work"', '["work", 1]', '["work", "work"]', '["bad id"]')
-        for value in invalid_values:
-            with self.subTest(value=value):
-                self.policy.write_text(
-                    '[policy]\nnormal_actions=["read","write","orchestrate"]\n'
-                    'approval_actions=[]\n[orchestration]\n'
-                    'manager_wake_receipt_v2_enabled=true\n'
-                    f'manager_wake_receipt_v2_allowed_work_ids={value}\n',
-                    encoding="utf-8",
-                )
-                with self.assertRaises((ValueError, PreconditionError)):
-                    BCT(state_path=self.root / "invalid.sqlite", policy_path=self.policy)
+    def test_setting_change_affects_only_sessions_created_after_change(self):
+        self.reload_bct(False)
+        self.call("legacy-session-start", {
+            "operation": "session-start", "session_id": "legacy-session",
+            "objective": "remain on legacy wake receipts",
+            "acceptance": {"pinned": True},
+        })
+        self.reload_bct(True)
+        self.call("durable-session-start", {
+            "operation": "session-start", "session_id": "durable-session",
+            "objective": "use durable result receipts",
+            "acceptance": {"pinned": True},
+        })
+        work = self.bct.store.get_work("work")
+        legacy = self.bct.orchestration.snapshot(
+            work=work, session_id="legacy-session",
+        )["session"]
+        durable = self.bct.orchestration.snapshot(
+            work=work, session_id="durable-session",
+        )["session"]
+        self.assertEqual("LEGACY_RETURN_V1", legacy["wake_receipt_mode"])
+        self.assertEqual("RCC_RESULT_POLL_V1", durable["wake_receipt_mode"])
 
     def test_confirmed_non_submit_reuses_exact_delivery_and_envelope(self):
         self.relay.wake_outcomes.extend(["PENDING", "DELIVERED"])
@@ -333,6 +332,11 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertEqual("", second["extra"]["returnTo"])
 
     def test_pending_schema_one_is_not_reinterpreted_after_enabling_v2(self):
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode="
+                "'LEGACY_RETURN_V1' WHERE session_id='session'"
+            )
         self.reload_bct(None)
         self.relay.wake_outcomes.append("PENDING")
         self.dispatch("legacy-pending")
@@ -376,11 +380,11 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertEqual("RCC_RESULT_POLL_V1", persisted["receipt_mode"])
         self.assertEqual(first["request_id"], self.wake_calls()[0]["request_id"])
 
-    def test_allowlist_removal_after_restart_blocks_existing_schema_two(self):
+    def test_global_disable_after_restart_blocks_existing_schema_two(self):
         self.relay.wake_outcomes.append("PENDING")
         self.dispatch("allowlist-pending")
         wake = self.first_wake()
-        self.reload_bct(True, allowed_work_ids=["different-work"])
+        self.reload_bct(False)
         self.relay.wake_outcomes.append("DELIVERED")
         result = self.call("allowlist-removed", {
             "operation": "manager-wake", "session_id": "session",
@@ -422,6 +426,26 @@ class ManagerWakeAckContractTests(unittest.TestCase):
                         delivery_id=wake["delivery_id"],
                     )
         self.assertEqual(1, len(self.wake_calls()))
+
+    def test_tampered_session_receipt_mode_fails_before_worker_send(self):
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode='UNKNOWN' "
+                "WHERE session_id='session'"
+            )
+        sends_before = len([
+            call for call in self.relay.calls if call["command"] == "send"
+        ])
+        result = self.call("tampered-session-mode", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "tampered-mode-assignment",
+            "worker_node_id": "worker", "attachment_id": "unused",
+            "instruction": "must not be delivered", "acceptance": {"ok": True},
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        self.assertEqual(sends_before, len([
+            call for call in self.relay.calls if call["command"] == "send"
+        ]))
 
     def test_stale_work_object_after_handoff_cannot_claim(self):
         self.relay.wake_outcomes.append("PENDING")
@@ -484,6 +508,14 @@ class ManagerWakeAckContractTests(unittest.TestCase):
         self.assertEqual("DELIVERING", self.first_wake()["state"])
 
     def test_upgrade_defaults_existing_wakes_to_schema_one_without_backfill(self):
+        # Simulate an exact pre-normalization database.  Reopening it while the
+        # global switch is enabled must still pin every existing session to the
+        # legacy path instead of silently activating durable processing.
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "ALTER TABLE orchestration_sessions DROP COLUMN wake_receipt_mode"
+            )
+        self.reload_bct(True)
         db = self.bct.store._connect()
         try:
             self.assertEqual([], db.execute(
@@ -495,10 +527,15 @@ class ManagerWakeAckContractTests(unittest.TestCase):
                     "PRAGMA table_info(orchestration_manager_wakes)"
                 ).fetchall()
             }
+            session = db.execute(
+                "SELECT wake_receipt_mode FROM orchestration_sessions "
+                "WHERE session_id='session'"
+            ).fetchone()
         finally:
             db.close()
         self.assertEqual("1", str(columns["envelope_schema"]["dflt_value"]))
         self.assertIn("LEGACY_RETURN_V1", columns["receipt_mode"]["dflt_value"])
+        self.assertEqual("LEGACY_RETURN_V1", session["wake_receipt_mode"])
 
     def test_legacy_schema_migration_preserves_acknowledged_at(self):
         self.dispatch()

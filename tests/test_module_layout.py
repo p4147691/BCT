@@ -27,9 +27,9 @@ class ModuleLayoutTests(unittest.TestCase):
             False,
             self.config["orchestration"]["manager_wake_receipt_v2_enabled"],
         )
-        self.assertEqual(
-            [],
-            self.config["orchestration"]["manager_wake_receipt_v2_allowed_work_ids"],
+        self.assertNotIn(
+            "manager_wake_receipt_v2_allowed_work_ids",
+            self.config["orchestration"],
         )
 
     def test_runtime_profile_has_no_legacy_source_paths(self):
@@ -49,12 +49,11 @@ class ModuleLayoutTests(unittest.TestCase):
         ):
             self.assertIn(required, files)
 
-    def test_protected_runtime_profile_is_distinct_and_local_app_data_bounded(self):
+    def test_deployment_config_keeps_d_drive_runtime_as_the_only_active_profile(self):
         profiles = self.config["deployment"]["profiles"]
-        protected = profiles["bct_runtime_protected_v1"]
-        self.assertEqual(r"%LOCALAPPDATA%\BCT\runtime", protected["runtime_root"])
-        self.assertEqual(profiles["bct_runtime_v1"]["source_root"], protected["source_root"])
-        self.assertEqual(profiles["bct_runtime_v1"]["files"], protected["files"])
+        self.assertEqual({"bct_runtime_v1"}, set(profiles))
+        self.assertEqual(r"D:\BCT\runtime", profiles["bct_runtime_v1"]["runtime_root"])
+        self.assertNotIn("cutover_successor_profile", profiles["bct_runtime_v1"])
 
     def test_tunnel_profile_uses_file_referenced_header_map(self):
         profile = (self.root / "modules" / "mcp" / "bct-control.profile.example.yaml").read_text(

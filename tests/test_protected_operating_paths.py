@@ -149,7 +149,10 @@ class ProtectedOperatingPathTests(unittest.TestCase):
                 ("manager", "manager", "manager", "fixture", 1, 1),
             )
             database.execute(
-                "INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO orchestration_sessions "
+                "(session_id,work_id,work_assignment_epoch,objective,roots_json,actions_json,"
+                "acceptance_json,plan_revision,manager_node_id,manager_epoch,state,"
+                "terminal_summary_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 ("session", "work", 1, "fixture", "[]", "[]", "[]", 1,
                  "manager", 1, "ACTIVE", "{}", 1.0, 1.0),
             )

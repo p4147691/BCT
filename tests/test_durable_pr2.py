@@ -17,7 +17,10 @@ class PR2Tests(unittest.TestCase):
             db.execute("INSERT INTO works VALUES(?,?,?,?,?,?,?)",("w","test","[]","[]","o",1,"ACTIVE"))
             db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",("m","manager","MANAGER","G",1,1))
             db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",("worker","worker","WORKER","G",1,1))
-            db.execute("INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            db.execute("INSERT INTO orchestration_sessions "
+                       "(session_id,work_id,work_assignment_epoch,objective,roots_json,actions_json,"
+                       "acceptance_json,plan_revision,manager_node_id,manager_epoch,state,"
+                       "terminal_summary_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        ("s","w",1,"test","[]","[]","{}",1,"m",2,"ACTIVE","{}",1.,1.))
             db.execute("INSERT INTO orchestration_attachments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        ("att",1,"worker","test","inst","ext",1,1,"conv","endpoint","WORKER",None,1,1.))
