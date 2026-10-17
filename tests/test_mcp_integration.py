@@ -56,13 +56,19 @@ class MCPIntegrationTests(unittest.TestCase):
             "relay_browser", "system_inspect", "execute", "monitor",
             "process_session", "verify", "orchestrate",
         ]
+        self.port = free_port()
         (self.release / "bct.toml").write_text(
             "[policy]\n"
             f"normal_actions={json.dumps(capabilities)}\n"
-            "approval_actions=[]\n",
+            "approval_actions=[]\n\n"
+            "[deployment.profiles.mcp_test]\n"
+            f"source_root={json.dumps(str(source))}\n"
+            f"runtime_root={json.dumps(str(self.runtime))}\n"
+            'service_name="bct-mcp-test"\n'
+            f"port={self.port}\n"
+            'files=["bct.toml"]\n',
             encoding="utf-8",
         )
-        self.port = free_port()
         self.controller = RuntimeServiceController(
             runtime_root=self.runtime,
             service_name="bct-mcp-test",
