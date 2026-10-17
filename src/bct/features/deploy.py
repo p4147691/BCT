@@ -550,7 +550,12 @@ def _validate_protected_deploy_gate(
     *,
     acquire_lock: bool,
 ) -> RuntimeWriterLock | None:
-    """Separate first cutover/recovery evidence from later target upgrades."""
+    """Separate first cutover/recovery evidence from later target upgrades.
+
+    The migration source writer lock is also the durable cutover-authority
+    lock.  Holding it for an activated target upgrade prevents an approved
+    rollback from changing authority between this gate and target health.
+    """
     if not profile.protected_activation_required:
         return None
     marker_path = profile.runtime_root.parent / "migration" / "cutover.json"
@@ -560,12 +565,42 @@ def _validate_protected_deploy_gate(
         if marker is None:
             raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
         if marker.get("state") == "ACTIVATED":
-            return None
+            if not acquire_lock:
+                return None
+            source = profiles.get(str(profile.migration_source_profile))
+            lock = RuntimeWriterLock(source.runtime_root / "state" / "core-writer.lock")
+            lock.acquire()
+            try:
+                # Rollback may have won immediately before lock acquisition.
+                # Re-read the durable authority while exclusion is held.
+                _validate_profile_start_allowed(profiles, profile)
+                current = read_json(marker_path)
+                if current is None or current.get("state") != "ACTIVATED":
+                    raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
+            except Exception:
+                lock.close()
+                raise
+            return lock
         if marker.get("state") != "ACTIVATING" or marker.get("source_head") != expected_head:
             raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
-    return _validate_protected_activation(
+    lock = _validate_protected_activation(
         profiles, profile, expected_head, acquire_lock=acquire_lock
     )
+    if marker_path.exists() and lock is not None:
+        try:
+            # An approved rollback can race the pre-lock ACTIVATING read.
+            _validate_profile_start_allowed(profiles, profile)
+            current = read_json(marker_path)
+            if (
+                current is None
+                or current.get("state") != "ACTIVATING"
+                or current.get("source_head") != expected_head
+            ):
+                raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
+        except Exception:
+            lock.close()
+            raise
+    return lock
 
 
 def _validate_release(

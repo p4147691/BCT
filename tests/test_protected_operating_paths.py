@@ -626,6 +626,73 @@ class ProtectedOperatingPathTests(unittest.TestCase):
                 feature.execute(request("b" * 40))
         apply.assert_not_called()
 
+    def test_activated_upgrade_holds_cutover_authority_lock_through_apply(self):
+        source = DeploymentProfile(
+            "legacy", self.base / "source", self.base / "legacy-runtime",
+            "bct-core", 19879, ("bct.toml",), False, None, "protected",
+        )
+        target = DeploymentProfile(
+            "protected", self.base / "source", self.base / "protected" / "runtime",
+            "bct-core", 19879, ("bct.toml",), True, "legacy", None,
+        )
+        profiles = Mock()
+        profiles.get.side_effect = lambda name: target if name == "protected" else source
+        marker_path = target.runtime_root.parent / "migration" / "cutover.json"
+        marker = {
+            "schema": "BCT_PROTECTED_CUTOVER_V1",
+            "state": "ACTIVATED",
+            "operation_id": "cutover-a",
+            "source_profile": "legacy",
+            "target_profile": "protected",
+            "source_runtime": str(source.runtime_root),
+            "target_runtime": str(target.runtime_root),
+            "source_head": "a" * 40,
+        }
+        atomic_json(marker_path, marker)
+        request = FeatureRequest(
+            "deploy", "protected",
+            {"profile": "protected", "expected_source_head": "b" * 40,
+             "expected_current_source_head": "a" * 40, "restart": True},
+            (), {},
+        )
+        feature = DeployFeature(profiles)
+
+        def apply_while_locked(*args):
+            with patch(
+                "bct.features.deploy.RuntimeServiceController.inspect",
+                return_value={"state": "STOPPED"},
+            ):
+                with self.assertRaisesRegex(PreconditionError, "RUNTIME_WRITER_LOCK_HELD"):
+                    write_protected_cutover_rollback(
+                        profiles=profiles,
+                        source_profile_name="legacy",
+                        operation_id="rollback-race",
+                        target_references_restored=True,
+                    )
+            self.assertEqual(
+                "ACTIVATED", read_json(marker_path).get("state")
+            )
+            return "upgraded"
+
+        with patch("bct.features.deploy._target_profile", return_value=target), patch.object(
+            feature, "_execute_apply", side_effect=apply_while_locked
+        ):
+            self.assertEqual("upgraded", feature.execute(request))
+
+        # The deployment finally block releases the shared authority lock;
+        # rollback can only proceed after the upgrade critical section ends.
+        with patch(
+            "bct.features.deploy.RuntimeServiceController.inspect",
+            return_value={"state": "STOPPED"},
+        ):
+            rollback = write_protected_cutover_rollback(
+                profiles=profiles,
+                source_profile_name="legacy",
+                operation_id="rollback-after-upgrade",
+                target_references_restored=True,
+            )
+        self.assertEqual("ROLLED_BACK", rollback["state"])
+
     def test_service_control_and_runtime_server_deny_target_without_authority(self):
         local = self.base / "LocalAppData"
         runtime = local / "BCT" / "runtime"
