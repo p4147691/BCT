@@ -1,6 +1,7 @@
 """PR1-only atomic result consumption; not wired into existing chain."""
 from __future__ import annotations
 
+import hashlib
 import json
 from contextlib import nullcontext
 from time import time as _current_time
@@ -10,6 +11,70 @@ from typing import Any
 from .models import ConflictError
 from .orchestration import _canonical, _digest
 from .store import Store
+
+
+def _verify_reconciled_result(db, *, session, session_id: str, manager_epoch: int,
+                              source_id: str, generation: int, message_id: str,
+                              digest: str, payload: Any, origin, attempt) -> None:
+    """Authorize only an exact, immutable Schema 2 RCC reconciliation.
+
+    A mailbox kind alone is not authority to promote an UNKNOWN delivery:
+    the single persisted reconciliation, its original operation, worker
+    provenance, terminal state and canonical payload must all agree.
+    """
+    if (session["wake_receipt_mode"] != "RCC_RESULT_POLL_V1"
+            or not isinstance(payload, dict) or payload.get("reconciled") is not True
+            or origin["state"] not in {"APPLIED", "FAILED"}
+            or attempt["state"] != origin["state"]
+            or attempt["manager_epoch"] != manager_epoch):
+        raise ConflictError("RECONCILED_RESULT_PROVENANCE_MISMATCH")
+    proofs = db.execute(
+        "SELECT decision_id,evidence_json FROM orchestration_reconciliations "
+        "WHERE session_id=? AND assignment_id=? AND generation=? "
+        "AND manager_epoch=? AND decision='IMPORT_EXACT_RCC_RESULT'",
+        (session_id, source_id, generation, manager_epoch),
+    ).fetchall()
+    if len(proofs) != 1:
+        raise ConflictError("RECONCILED_RESULT_PROOF_NOT_UNIQUE")
+    try:
+        evidence = json.loads(proofs[0]["evidence_json"])
+    except (TypeError, ValueError, OverflowError):
+        raise ConflictError("RECONCILED_RESULT_PROOF_INVALID") from None
+    if not isinstance(evidence, dict) or set(evidence) != {
+            "original_operation_id", "result_message_id", "result_digest",
+    }:
+        raise ConflictError("RECONCILED_RESULT_PROOF_INVALID")
+    original_id = evidence["original_operation_id"]
+    if not isinstance(original_id, str) or not 1 <= len(original_id) <= 96:
+        raise ConflictError("RECONCILED_RESULT_ORIGINAL_INVALID")
+    expected_proof_id = "result." + hashlib.sha256(
+        f"{original_id}:{source_id}:{generation}".encode("utf-8")
+    ).hexdigest()[:32]
+    if (proofs[0]["decision_id"] != expected_proof_id
+            or evidence["result_message_id"] != message_id
+            or evidence["result_digest"] != digest):
+        raise ConflictError("RECONCILED_RESULT_PROOF_MISMATCH")
+    original = db.execute(
+        "SELECT work_id,assignment_epoch,capability,target,state,outcome,evidence_json "
+        "FROM operations WHERE operation_id=?", (original_id,),
+    ).fetchone()
+    if (original is None or original["work_id"] != session["work_id"]
+            or original["assignment_epoch"] != session["work_assignment_epoch"]
+            or original["capability"] != "orchestrate"
+            or original["target"] != session_id
+            or original["state"] != "FINISHED" or original["outcome"] != "UNKNOWN"):
+        raise ConflictError("RECONCILED_RESULT_ORIGINAL_FENCED")
+    try:
+        original_evidence = json.loads(original["evidence_json"])
+    except (TypeError, ValueError, OverflowError):
+        raise ConflictError("RECONCILED_RESULT_ORIGINAL_INVALID") from None
+    if (not isinstance(original_evidence, dict)
+            or original_evidence.get("session_id") != session_id
+            or original_evidence.get("assignment_id", source_id) != source_id
+            or original_evidence.get("operation") not in {
+                "dispatch", "chain-run", "chain-resume",
+            }):
+        raise ConflictError("RECONCILED_RESULT_ORIGINAL_FENCED")
 
 
 def commit_consumption_decision(
@@ -31,7 +96,8 @@ def commit_consumption_decision(
     payload = json.dumps(decision, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     with (store.transaction() if _db is None else nullcontext(_db)) as db:
         session = db.execute(
-            "SELECT manager_epoch FROM orchestration_sessions WHERE session_id=?",
+            "SELECT manager_epoch,work_id,work_assignment_epoch,wake_receipt_mode "
+            "FROM orchestration_sessions WHERE session_id=?",
             (session_id,),
         ).fetchone()
         if session is None:
@@ -65,7 +131,8 @@ def commit_consumption_decision(
                 (message_id,),
             ).fetchone()
             if (source is None or source["session_id"] != session_id
-                    or source["kind"] != "RESULT" or source["message_digest"] != digest):
+                    or source["kind"] not in {"RESULT", "RECONCILED_RESULT"}
+                    or source["message_digest"] != digest):
                 raise ConflictError("RESULT_NOT_VERIFIED")
             source_id = source["assignment_id"]
             generation = source["assignment_generation"]
@@ -78,7 +145,7 @@ def commit_consumption_decision(
                 "FROM orchestration_assignments WHERE assignment_id=?", (source_id,),
             ).fetchone()
             attempt = db.execute(
-                "SELECT worker_node_id,state FROM orchestration_assignment_attempts "
+                "SELECT worker_node_id,state,manager_epoch FROM orchestration_assignment_attempts "
                 "WHERE assignment_id=? AND generation=?", (source_id, generation),
             ).fetchone()
             if (origin is None or origin["session_id"] != session_id
@@ -96,6 +163,14 @@ def commit_consumption_decision(
                 raise ConflictError("RESULT_PAYLOAD_INVALID") from None
             if not valid_digest or not valid_terminal:
                 raise ConflictError("RESULT_INTEGRITY_MISMATCH")
+            if source["kind"] == "RECONCILED_RESULT":
+                _verify_reconciled_result(
+                    db, session=session, session_id=session_id,
+                    manager_epoch=manager_epoch, source_id=source_id,
+                    generation=generation, message_id=message_id,
+                    digest=digest, payload=source_payload, origin=origin,
+                    attempt=attempt,
+                )
             prior = db.execute(
                 "SELECT * FROM orchestration_consumption_receipts "
                 "WHERE session_id=? AND consumer_assignment_id=? AND result_message_id=?",

@@ -1,4 +1,6 @@
 """Isolated PR1 consumption tests; all data lives in temporary SQLite files."""
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -60,6 +62,51 @@ class ConsumptionTest(unittest.TestCase):
             return db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
         finally:
             db.close()
+
+
+    def make_reconciled_result(self, message_id="r1"):
+        # Versioned Schema 2 receipt from one already reconciled UNKNOWN dispatch.
+        result = {"message": message_id, "reconciled": True}
+        digest = _digest(result)
+        original_id = "original-dispatch-" + message_id
+        proof_id = "result." + hashlib.sha256(
+            f"{original_id}:{message_id}:1".encode("utf-8")
+        ).hexdigest()[:32]
+        evidence = {
+            "original_operation_id": original_id,
+            "result_message_id": message_id,
+            "result_digest": digest,
+        }
+        with self.store.transaction() as db:
+            # Valid fixture foreign keys make the tampering reach the BCT
+            # provenance checks instead of aborting inside SQLite.
+            db.execute("INSERT INTO works VALUES(?,?,?,?,?,?,?)",
+                       ("foreign", "other work", "[]", "[]", "owner", 1, "ACTIVE"))
+            db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",
+                       ("other", "other", "WORKER", "ORCHESTRATION", 1, 1))
+            db.execute("UPDATE orchestration_sessions SET wake_receipt_mode="
+                       "'RCC_RESULT_POLL_V1' WHERE session_id='s'")
+            db.execute("UPDATE orchestration_mailbox SET kind='RECONCILED_RESULT',"
+                       "message_digest=?,payload_json=? WHERE message_id=?",
+                       (digest, _canonical(result), message_id))
+            db.execute("UPDATE orchestration_assignments SET terminal_result_json=? "
+                       "WHERE assignment_id=?", (_canonical(result), message_id))
+            db.execute("INSERT INTO operations "
+                       "(operation_id,work_id,principal_id,request_digest,capability,"
+                       "target,state,outcome,evidence_json,error,assignment_epoch,"
+                       "policy_revision,created_at,updated_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (original_id, "w", "owner", "original-request", "orchestrate",
+                        "s", "FINISHED", "UNKNOWN",
+                        _canonical({"operation": "dispatch", "session_id": "s",
+                                    "assignment_id": message_id}), None, 1,
+                        "fixture", 1.0, 1.0))
+            db.execute("INSERT INTO orchestration_reconciliations "
+                       "(decision_id,session_id,assignment_id,generation,manager_epoch,"
+                       "decision,evidence_json,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                       (proof_id, "s", message_id, 1, 2,
+                        "IMPORT_EXACT_RCC_RESULT", _canonical(evidence), 1.0))
+        return message_id, digest
 
     def test_first_commit_and_exact_idempotency(self):
         self.assertFalse(self.run_commit()["idempotent"])
@@ -246,6 +293,145 @@ class ConsumptionTest(unittest.TestCase):
                        "WHERE assignment_id='r1'", (_canonical(payload),))
         result = self.run_commit(results=[("r1", _digest(payload))])
         self.assertFalse(result["idempotent"])
+
+
+    def test_reconciled_result_exact_receipt_and_independent_consumers(self):
+        result = self.make_reconciled_result()
+        first = self.run_commit(results=[result])
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(self.run_commit(results=[result])["idempotent"])
+        self.assertFalse(self.run_commit(
+            consumer="c2", decision_id="d2", results=[result],
+        )["idempotent"])
+        self.assertEqual(2, self.count("orchestration_consumption_receipts"))
+        self.assertEqual(2, self.count("orchestration_consumption_decisions"))
+        with self.store.transaction() as db:
+            self.assertIsNone(db.execute(
+                "SELECT consumed_at FROM orchestration_mailbox WHERE message_id='r1'"
+            ).fetchone()[0])
+
+    def test_reconciled_and_normal_results_commit_atomically(self):
+        reconciled = self.make_reconciled_result("r1")
+        normal = ("r2", _digest({"message": "r2"}))
+        results = [reconciled, normal]
+        self.assertEqual(2, self.run_commit(results=results)["results"])
+        self.assertTrue(self.run_commit(results=results)["idempotent"])
+        self.assertEqual(2, self.count("orchestration_consumption_receipts"))
+        self.assertEqual(1, self.count("orchestration_consumption_decisions"))
+
+    def test_reconciled_without_original_proof_is_not_promoted(self):
+        with self.store.transaction() as db:
+            db.execute("UPDATE orchestration_mailbox SET kind='RECONCILED_RESULT' "
+                       "WHERE message_id='r1'")
+        with self.assertRaises(ConflictError):
+            self.run_commit()
+        self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+
+    def test_reconciled_proof_tampering_fails_closed(self):
+        result = self.make_reconciled_result()
+        with self.store.transaction() as db:
+            original = dict(db.execute(
+                "SELECT * FROM orchestration_reconciliations WHERE assignment_id='r1'"
+            ).fetchone())
+        evidence = json.loads(original["evidence_json"])
+        cases = [
+            ("decision", "NOT_VERIFIED"),
+            ("manager_epoch", 1),
+            ("generation", 2),
+            ("assignment_id", "r2"),
+            ("decision_id", "result.wrong"),
+            ("evidence_json", "{bad"),
+            ("evidence_json", _canonical({**evidence, "result_digest": "0" * 64})),
+            ("evidence_json", _canonical({**evidence, "result_message_id": "r2"})),
+            ("evidence_json", _canonical({**evidence, "original_operation_id": "foreign"})),
+            ("evidence_json", _canonical({**evidence, "extra": "unexpected"})),
+        ]
+        for field, invalid in cases:
+            with self.subTest(field=field, invalid=invalid):
+                with self.store.transaction() as db:
+                    db.execute("UPDATE orchestration_reconciliations SET "
+                               + field + "=? WHERE decision_id=?",
+                               (invalid, original["decision_id"]))
+                try:
+                    with self.assertRaises(ConflictError):
+                        self.run_commit(results=[result])
+                    self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+                    self.assertEqual(0, self.count("orchestration_consumption_receipts"))
+                finally:
+                    with self.store.transaction() as db:
+                        db.execute("UPDATE orchestration_reconciliations SET "
+                                   + field + "=? WHERE assignment_id='r1'",
+                                   (original[field],))
+
+    def test_reconciled_duplicate_proof_and_original_fencing(self):
+        result = self.make_reconciled_result()
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO orchestration_reconciliations "
+                       "(decision_id,session_id,assignment_id,generation,manager_epoch,"
+                       "decision,evidence_json,created_at) "
+                       "SELECT 'extra-proof',session_id,assignment_id,generation,"
+                       "manager_epoch,decision,evidence_json,created_at "
+                       "FROM orchestration_reconciliations WHERE assignment_id='r1'")
+        with self.assertRaisesRegex(ConflictError, "PROOF_NOT_UNIQUE"):
+            self.run_commit(results=[result])
+        with self.store.transaction() as db:
+            db.execute("DELETE FROM orchestration_reconciliations WHERE decision_id='extra-proof'")
+        for field, wrong in (
+                ("work_id", "foreign"), ("target", "other-session"),
+                ("outcome", "APPLIED"), ("state", "RUNNING"),
+                ("assignment_epoch", 9), ("capability", "read"),
+                ("evidence_json", _canonical({"operation": "dispatch",
+                                               "session_id": "s", "assignment_id": "r2"}))):
+            with self.subTest(field=field):
+                with self.store.transaction() as db:
+                    old = db.execute("SELECT " + field + " FROM operations "
+                                     "WHERE operation_id='original-dispatch-r1'").fetchone()[0]
+                    db.execute("UPDATE operations SET " + field + "=? "
+                               "WHERE operation_id='original-dispatch-r1'", (wrong,))
+                try:
+                    with self.assertRaises(ConflictError):
+                        self.run_commit(results=[result])
+                    self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+                finally:
+                    with self.store.transaction() as db:
+                        db.execute("UPDATE operations SET " + field + "=? "
+                                   "WHERE operation_id='original-dispatch-r1'", (old,))
+
+    def test_reconciled_worker_and_terminal_mismatch_rejected(self):
+        result = self.make_reconciled_result()
+        for table, field, filter_sql, changed in (
+            ("orchestration_assignment_attempts", "worker_node_id", "assignment_id='r1'", "other"),
+            ("orchestration_assignment_attempts", "manager_epoch", "assignment_id='r1'", 3),
+            ("orchestration_assignment_attempts", "state", "assignment_id='r1'", "FAILED"),
+            ("orchestration_assignments", "state", "assignment_id='r1'", "UNKNOWN"),
+            ("orchestration_mailbox", "sender_node_id", "message_id='r1'", "other"),
+            ("orchestration_mailbox", "message_digest", "message_id='r1'", "0" * 64),
+            ("orchestration_mailbox", "payload_json", "message_id='r1'", "{bad"),
+        ):
+            with self.subTest(table=table, field=field):
+                with self.store.transaction() as db:
+                    old = db.execute(f"SELECT {field} FROM {table} WHERE {filter_sql}").fetchone()[0]
+                    db.execute(f"UPDATE {table} SET {field}=? WHERE {filter_sql}", (changed,))
+                try:
+                    with self.assertRaises(ConflictError):
+                        self.run_commit(results=[result])
+                    self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+                finally:
+                    with self.store.transaction() as db:
+                        db.execute(f"UPDATE {table} SET {field}=? WHERE {filter_sql}", (old,))
+
+    def test_reconciled_stale_epoch_and_transaction_rollback(self):
+        result = self.make_reconciled_result()
+        with self.assertRaisesRegex(ConflictError, "STALE_MANAGER_EPOCH"):
+            self.run_commit(epoch=1, results=[result])
+        with self.store.transaction() as db:
+            db.execute("CREATE TRIGGER reject_reconciled_receipt BEFORE INSERT ON "
+                       "orchestration_consumption_receipts BEGIN "
+                       "SELECT RAISE(ABORT,'injected'); END")
+        with self.assertRaises(Exception):
+            self.run_commit(results=[result])
+        self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+        self.assertEqual(0, self.count("orchestration_consumption_receipts"))
 
     def test_new_schema_does_not_backfill_legacy(self):
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
