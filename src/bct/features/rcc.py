@@ -441,6 +441,11 @@ class RelayBrowserFeature:
             return self._execute_create_and_send(request)
         values = request.arguments
         extra = dict(values["extra"])
+        if values["command"] == "send":
+            # Transport-only option: do not change the persisted request digest.
+            # Legacy UNKNOWN sends must retain their exact original fingerprint
+            # for read-only receipt reconciliation after this code upgrade.
+            extra["returnOnAck"] = True
         compose_parent_id = ""
         if values["command"] in {
             "result-of-create-and-send", "reconcile-create-and-send",
@@ -716,6 +721,12 @@ class RelayBrowserFeature:
             )
         raw_state = result.get("state")
         state = str(raw_state or "").upper() if not isinstance(raw_state, dict) else "STATE_RETURNED"
+        # RCC native send failures use effectState, not state. Missing this field
+        # erased the original failure (MISSING) and quarantined proven pre-submit
+        # NOT_APPLIED failures as UNKNOWN. Never infer NOT_APPLIED from a draft.
+        effect_state = str(result.get("effectState") or "").upper()
+        if values["command"] == "send" and effect_state:
+            state = effect_state
         if values["command"] == "send-to-created-tab" and state == "SUBMIT_UNKNOWN":
             deadline = time.monotonic() + min(
                 self.result_readback_timeout_s, float(values["timeout_s"])
@@ -751,14 +762,23 @@ class RelayBrowserFeature:
                     break
                 time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
         if result.get("ok") is True:
+            if values["command"] == "send" and result.get("type") == "host:ack":
+                if result.get("submitted") is not True or state != "SUBMITTED":
+                    raise UnknownEffectError("RCC_SEND_ACK_NOT_SUBMITTED")
             return FeatureResult(Outcome.APPLIED, {
                 "instance_id": values["instance_id"], "command": values["command"],
                 "host_request_id": request.operation_id, "host_state": state or None,
             }, output={"result": _sanitize(result)})
-        if state in {"NOT_APPLIED", "NOT_SENT", "FAILED_CONFIRMED"}:
+        host_error = str(result.get("error") or "")
+        # Persist only a bounded symbolic error code, never host paths or secrets.
+        error_code = host_error if re.fullmatch(r"[A-Z0-9_:-]{1,128}", host_error) else ""
+        if state in {"NOT_APPLIED", "NOT_SENT", "FAILED_CONFIRMED"} and result.get("ambiguous") is not True:
             return FeatureResult(Outcome.NOT_APPLIED, {
                 "instance_id": values["instance_id"], "command": values["command"],
                 "host_request_id": request.operation_id, "host_state": state,
-                "error": str(result.get("error") or "RCC_NOT_APPLIED"),
+                "error": error_code or "RCC_NOT_APPLIED",
             })
-        raise UnknownEffectError("RCC_HOST_OUTCOME_UNVERIFIED:" + (state or "MISSING"))
+        label = state or "MISSING"
+        if error_code:
+            label += ":" + error_code
+        raise UnknownEffectError("RCC_HOST_OUTCOME_UNVERIFIED:" + label)
