@@ -226,6 +226,11 @@ class ManagerDecisionPRBTests(unittest.TestCase):
                         _canonical({"operation": "dispatch", "session_id": "session",
                                     "assignment_id": "producer"}), None, 1,
                         "fixture", 1.0, 1.0))
+            db.execute("INSERT INTO resource_claims "
+                       "(resource_key,operation_id,work_id,assignment_epoch,unresolved) "
+                       "VALUES(?,?,?,?,?)",
+                       ("orchestration-run:session:producer", original_id,
+                        "work", 1, 0))
             db.execute("INSERT INTO orchestration_reconciliations "
                        "(decision_id,session_id,assignment_id,generation,manager_epoch,"
                        "decision,evidence_json,created_at) VALUES(?,?,?,?,?,?,?,?)",

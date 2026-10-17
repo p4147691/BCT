@@ -55,25 +55,167 @@ def _verify_reconciled_result(db, *, session, session_id: str, manager_epoch: in
             or evidence["result_digest"] != digest):
         raise ConflictError("RECONCILED_RESULT_PROOF_MISMATCH")
     original = db.execute(
-        "SELECT work_id,assignment_epoch,capability,target,state,outcome,evidence_json "
-        "FROM operations WHERE operation_id=?", (original_id,),
+        "SELECT work_id,assignment_epoch,capability,target,state,outcome,"
+        "evidence_json,error FROM operations WHERE operation_id=?", (original_id,),
     ).fetchone()
     if (original is None or original["work_id"] != session["work_id"]
             or original["assignment_epoch"] != session["work_assignment_epoch"]
             or original["capability"] != "orchestrate"
             or original["target"] != session_id
-            or original["state"] != "FINISHED" or original["outcome"] != "UNKNOWN"):
+            or original["state"] != "FINISHED"):
         raise ConflictError("RECONCILED_RESULT_ORIGINAL_FENCED")
+
+    # The exact claim remains in the store even after a proven recovery
+    # releases it; do not require unresolved=1 for a historical receipt.
+    claim = db.execute(
+        "SELECT operation_id,work_id,assignment_epoch FROM resource_claims "
+        "WHERE resource_key=?",
+        ("orchestration-run:" + session_id + ":" + source_id,),
+    ).fetchone()
+    if (claim is None or claim["operation_id"] != original_id
+            or claim["work_id"] != session["work_id"]
+            or claim["assignment_epoch"] != session["work_assignment_epoch"]):
+        raise ConflictError("RECONCILED_RESULT_ORIGINAL_CLAIM_MISMATCH")
+
+    # Chains cannot borrow an arbitrary same-session Assignment: the original
+    # chain's immutable PLAN must bind that Assignment, even after a resume.
+    plan_id = "plan." + hashlib.sha256(
+        f"{session_id}:{original_id}".encode("utf-8")
+    ).hexdigest()[:32]
+    plan_row = db.execute(
+        "SELECT message_digest,payload_json FROM orchestration_mailbox "
+        "WHERE message_id=? AND session_id=? AND kind='PLAN'",
+        (plan_id, session_id),
+    ).fetchone()
+    if plan_row is not None:
+        try:
+            plan = json.loads(plan_row["payload_json"])
+            included = (
+                [task.get("assignment_id") for task in plan["tasks"]]
+                + [plan["synthesis"]["assignment_id"]]
+            )
+        except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
+            raise ConflictError("RECONCILED_RESULT_CHAIN_PLAN_INVALID") from None
+        if (not isinstance(plan, dict) or not isinstance(plan.get("tasks"), list)
+                or not isinstance(plan.get("synthesis"), dict)
+                or _digest(plan) != plan_row["message_digest"]
+                or included.count(source_id) != 1):
+            raise ConflictError("RECONCILED_RESULT_CHAIN_PLAN_MISMATCH")
+
     try:
         original_evidence = json.loads(original["evidence_json"])
     except (TypeError, ValueError, OverflowError):
         raise ConflictError("RECONCILED_RESULT_ORIGINAL_INVALID") from None
-    if (not isinstance(original_evidence, dict)
-            or original_evidence.get("session_id") != session_id
-            or original_evidence.get("assignment_id", source_id) != source_id
-            or original_evidence.get("operation") not in {
-                "dispatch", "chain-run", "chain-resume",
-            }):
+    if not isinstance(original_evidence, dict):
+        raise ConflictError("RECONCILED_RESULT_ORIGINAL_INVALID")
+
+    if original_evidence.get("phase") == "ORCHESTRATION_RECOVERED":
+        # The atomic resolver legitimately changes an UNKNOWN original to
+        # APPLIED/FAILED. Verify the exact resolver and its immutable event,
+        # rather than rejecting the successful persisted recovery.
+        resolver_id = original_evidence.get("resolver_operation_id")
+        recovered = original_evidence.get("recovered_outcome")
+        if (not isinstance(resolver_id, str) or not resolver_id
+                or recovered not in {"APPLIED", "FAILED"}
+                or original["outcome"] != recovered):
+            raise ConflictError("RECONCILED_RESULT_RECOVERY_OUTCOME_MISMATCH")
+        resolver = db.execute(
+            "SELECT work_id,assignment_epoch,capability,target,state,outcome,"
+            "evidence_json FROM operations WHERE operation_id=?", (resolver_id,),
+        ).fetchone()
+        if (resolver is None or resolver["work_id"] != original["work_id"]
+                or resolver["assignment_epoch"] != original["assignment_epoch"]
+                or resolver["capability"] != "orchestrate"
+                or resolver["target"] != session_id
+                or resolver["state"] != "FINISHED"
+                or resolver["outcome"] != recovered):
+            raise ConflictError("RECONCILED_RESULT_RESOLVER_FENCED")
+        try:
+            resolved = json.loads(resolver["evidence_json"])
+        except (TypeError, ValueError, OverflowError):
+            raise ConflictError("RECONCILED_RESULT_RESOLVER_INVALID") from None
+        if not isinstance(resolved, dict) or resolved.get("session_id") != session_id:
+            raise ConflictError("RECONCILED_RESULT_RESOLVER_BINDING_MISMATCH")
+        if resolved.get("operation") == "reconcile":
+            if (recovered != origin["state"]
+                    or resolved.get("assignment_id") != source_id
+                    or resolved.get("result_message_id") != message_id
+                    or plan_row is not None):
+                raise ConflictError("RECONCILED_RESULT_RESOLVER_BINDING_MISMATCH")
+        elif resolved.get("operation") == "chain-resume":
+            # The chain's aggregate outcome is not necessarily the terminal
+            # state of this Worker. The exact PLAN+claim bind the producer.
+            # Require the final session state and aggregate verdict as well.
+            if (plan_row is None
+                    or resolved.get("session_state") not in {"FINISHED", "PARTIAL"}
+                    or session["state"] != resolved["session_state"]
+                    or recovered != (
+                        "APPLIED" if resolved["session_state"] == "FINISHED"
+                        else "FAILED"
+                    )):
+                raise ConflictError("RECONCILED_RESULT_CHAIN_RESUME_MISMATCH")
+        else:
+            raise ConflictError("RECONCILED_RESULT_RESOLVER_BINDING_MISMATCH")
+        events = db.execute(
+            "SELECT data_json FROM events WHERE kind='OPERATION_RECONCILED' "
+            "AND subject_id=?", (original_id,),
+        ).fetchall()
+        matched = 0
+        for event in events:
+            try:
+                data = json.loads(event["data_json"])
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if (isinstance(data, dict)
+                    and data.get("resolver_operation_id") == resolver_id
+                    and data.get("original_outcome") == recovered
+                    and data.get("resolved_outcome") == recovered):
+                matched += 1
+        if matched != 1:
+            raise ConflictError("RECONCILED_RESULT_RESOLVER_EVENT_MISMATCH")
+        return
+
+    if original["outcome"] != "UNKNOWN":
+        raise ConflictError("RECONCILED_RESULT_ORIGINAL_FENCED")
+    if original_evidence.get("phase") == "ORCHESTRATION_RECOVERY_TAKEOVER":
+        assignments = original_evidence.get("assignment_ids")
+        if (original["error"] != "ORCHESTRATION_RECOVERY_TAKEOVER"
+                or original_evidence.get("session_id") != session_id
+                or not isinstance(assignments, list)
+                or any(not isinstance(item, str) for item in assignments)
+                or assignments.count(source_id) != 1):
+            raise ConflictError("RECONCILED_RESULT_TAKEOVER_MISMATCH")
+        takeover_events = db.execute(
+            "SELECT data_json FROM events "
+            "WHERE kind='ORCHESTRATION_RECOVERY_TAKEOVER' AND subject_id=?",
+            (original_id,),
+        ).fetchall()
+        if len(takeover_events) != 1:
+            raise ConflictError("RECONCILED_RESULT_TAKEOVER_EVENT_MISSING")
+        try:
+            recorded = json.loads(takeover_events[0]["data_json"])
+        except (TypeError, ValueError, OverflowError):
+            raise ConflictError("RECONCILED_RESULT_TAKEOVER_EVENT_INVALID") from None
+        if recorded != {"session_id": session_id, "assignment_ids": assignments}:
+            raise ConflictError("RECONCILED_RESULT_TAKEOVER_EVENT_MISMATCH")
+        # A takeover does not erase the original PLAN; it still must fence
+        # the exact chain membership whenever a chain plan exists.
+        return
+    operation = original_evidence.get("operation")
+    if original_evidence.get("session_id") != session_id:
+        raise ConflictError("RECONCILED_RESULT_ORIGINAL_FENCED")
+    if operation == "dispatch":
+        if original_evidence.get("assignment_id") != source_id:
+            raise ConflictError("RECONCILED_RESULT_DISPATCH_ASSIGNMENT_MISMATCH")
+        if plan_row is not None:
+            raise ConflictError("RECONCILED_RESULT_DISPATCH_PLAN_CONFLICT")
+    elif operation in {"chain-run", "chain-resume"}:
+        if plan_row is None:
+            raise ConflictError("RECONCILED_RESULT_CHAIN_PLAN_MISSING")
+        if ("assignment_id" in original_evidence
+                and original_evidence["assignment_id"] != source_id):
+            raise ConflictError("RECONCILED_RESULT_CHAIN_ASSIGNMENT_MISMATCH")
+    else:
         raise ConflictError("RECONCILED_RESULT_ORIGINAL_FENCED")
 
 
@@ -96,7 +238,7 @@ def commit_consumption_decision(
     payload = json.dumps(decision, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     with (store.transaction() if _db is None else nullcontext(_db)) as db:
         session = db.execute(
-            "SELECT manager_epoch,work_id,work_assignment_epoch,wake_receipt_mode "
+            "SELECT manager_epoch,work_id,work_assignment_epoch,wake_receipt_mode,state "
             "FROM orchestration_sessions WHERE session_id=?",
             (session_id,),
         ).fetchone()

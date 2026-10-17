@@ -101,6 +101,11 @@ class ConsumptionTest(unittest.TestCase):
                         _canonical({"operation": "dispatch", "session_id": "s",
                                     "assignment_id": message_id}), None, 1,
                         "fixture", 1.0, 1.0))
+            db.execute("INSERT INTO resource_claims "
+                       "(resource_key,operation_id,work_id,assignment_epoch,unresolved) "
+                       "VALUES(?,?,?,?,?)",
+                       ("orchestration-run:s:" + message_id,
+                        original_id, "w", 1, 0))
             db.execute("INSERT INTO orchestration_reconciliations "
                        "(decision_id,session_id,assignment_id,generation,manager_epoch,"
                        "decision,evidence_json,created_at) VALUES(?,?,?,?,?,?,?,?)",
@@ -432,6 +437,262 @@ class ConsumptionTest(unittest.TestCase):
             self.run_commit(results=[result])
         self.assertEqual(0, self.count("orchestration_consumption_decisions"))
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
+
+    def test_dispatch_requires_explicit_original_assignment_id(self):
+        result = self.make_reconciled_result()
+        with self.store.transaction() as db:
+            db.execute("UPDATE operations SET evidence_json=? WHERE operation_id=?",
+                       (_canonical({"operation": "dispatch", "session_id": "s"}),
+                        "original-dispatch-r1"))
+        with self.assertRaisesRegex(ConflictError, "DISPATCH_ASSIGNMENT_MISMATCH"):
+            self.run_commit(results=[result])
+        self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+
+    def test_takeover_unknown_exact_worker_scope_and_fail_closed(self):
+        result = self.make_reconciled_result()
+        takeover = {"phase": "ORCHESTRATION_RECOVERY_TAKEOVER",
+                    "session_id": "s", "assignment_ids": ["r1"]}
+        with self.store.transaction() as db:
+            db.execute("UPDATE operations SET evidence_json=?,error=? "
+                       "WHERE operation_id='original-dispatch-r1'",
+                       (_canonical(takeover), "ORCHESTRATION_RECOVERY_TAKEOVER"))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("ORCHESTRATION_RECOVERY_TAKEOVER","original-dispatch-r1",
+                        _canonical({"session_id":"s","assignment_ids":["r1"]}),1.0))
+        self.assertFalse(self.run_commit(results=[result])["idempotent"])
+        self.assertTrue(self.run_commit(results=[result])["idempotent"])
+        with self.store.transaction() as db:
+            db.execute("DELETE FROM orchestration_consumption_receipts")
+            db.execute("DELETE FROM orchestration_consumption_decisions")
+        altered_cases = [
+            ({"phase": "ORCHESTRATION_RECOVERY_TAKEOVER",
+              "session_id": "s", "assignment_ids": []}, "ORCHESTRATION_RECOVERY_TAKEOVER"),
+            ({"phase": "ORCHESTRATION_RECOVERY_TAKEOVER",
+              "session_id": "foreign", "assignment_ids": ["r1"]}, "ORCHESTRATION_RECOVERY_TAKEOVER"),
+            ({"phase": "ORCHESTRATION_RECOVERY_TAKEOVER",
+              "session_id": "s", "assignment_ids": ["r1", "r1"]}, "ORCHESTRATION_RECOVERY_TAKEOVER"),
+            (takeover, None),
+        ]
+        for evidence, error in altered_cases:
+            with self.subTest(evidence=evidence, error=error):
+                with self.store.transaction() as db:
+                    db.execute("UPDATE operations SET evidence_json=?,error=? "
+                               "WHERE operation_id='original-dispatch-r1'",
+                               (_canonical(evidence), error))
+                with self.assertRaises(ConflictError):
+                    self.run_commit(results=[result])
+                self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+
+    def test_takeover_event_must_match_exact_assignment(self):
+        result = self.make_reconciled_result()
+        with self.store.transaction() as db:
+            db.execute("UPDATE operations SET evidence_json=?,error=? "
+                       "WHERE operation_id='original-dispatch-r1'",
+                       (_canonical({"phase":"ORCHESTRATION_RECOVERY_TAKEOVER",
+                                    "session_id":"s","assignment_ids":["r1"]}),
+                        "ORCHESTRATION_RECOVERY_TAKEOVER"))
+        with self.assertRaisesRegex(ConflictError,"TAKEOVER_EVENT_MISSING"):
+            self.run_commit(results=[result])
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("ORCHESTRATION_RECOVERY_TAKEOVER","original-dispatch-r1",
+                        _canonical({"session_id":"s","assignment_ids":["r2"]}),1.0))
+        with self.assertRaisesRegex(ConflictError,"TAKEOVER_EVENT_MISMATCH"):
+            self.run_commit(results=[result])
+        self.assertEqual(0,self.count("orchestration_consumption_decisions"))
+
+    def make_atomic_resolver(self, *, source_id="r1", recovered="APPLIED"):
+        original_id = "original-dispatch-" + source_id
+        resolver_id = "resolver-" + source_id
+        with self.store.transaction() as db:
+            db.execute("UPDATE operations SET outcome=?,error=NULL,evidence_json=? "
+                       "WHERE operation_id=?",
+                       (recovered, _canonical({
+                           "phase": "ORCHESTRATION_RECOVERED",
+                           "resolver_operation_id": resolver_id,
+                           "recovered_outcome": recovered,
+                       }), original_id))
+            db.execute("INSERT INTO operations "
+                       "(operation_id,work_id,principal_id,request_digest,capability,"
+                       "target,state,outcome,evidence_json,error,assignment_epoch,"
+                       "policy_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (resolver_id, "w", "owner", "resolver-request", "orchestrate",
+                        "s", "FINISHED", recovered, _canonical({
+                            "operation": "reconcile", "session_id": "s",
+                            "assignment_id": source_id,
+                            "result_message_id": source_id,
+                        }), None, 1, "fixture", 1.0, 1.0))
+            db.execute("INSERT INTO events (kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("OPERATION_RECONCILED", original_id, _canonical({
+                           "resolver_operation_id": resolver_id,
+                           "original_outcome": recovered,
+                           "resolved_outcome": recovered,
+                           "claims_released": True,
+                       }), 1.0))
+
+    def test_atomic_recovery_receipt_matches_exact_resolver(self):
+        result = self.make_reconciled_result()
+        self.make_atomic_resolver()
+        first = self.run_commit(results=[result])
+        second = self.run_commit(results=[result])
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(1, self.count("orchestration_consumption_receipts"))
+        self.assertEqual(1, self.count("orchestration_consumption_decisions"))
+
+    def test_atomic_recovery_wrong_resolver_or_event_fails_closed(self):
+        result = self.make_reconciled_result()
+        self.make_atomic_resolver()
+        cases = [
+            ("operations", "target", "operation_id='resolver-r1'", "foreign-session"),
+            ("operations", "work_id", "operation_id='resolver-r1'", "foreign"),
+            ("operations", "outcome", "operation_id='resolver-r1'", "FAILED"),
+            ("operations", "assignment_epoch", "operation_id='resolver-r1'", 3),
+            ("operations", "evidence_json", "operation_id='resolver-r1'",
+             _canonical({"operation":"reconcile","session_id":"s",
+                         "assignment_id":"r2","result_message_id":"r1"})),
+            ("operations", "evidence_json", "operation_id='resolver-r1'",
+             _canonical({"operation":"reconcile","session_id":"s",
+                         "assignment_id":"r1","result_message_id":"other"})),
+            ("events", "data_json", "subject_id='original-dispatch-r1'",
+             _canonical({"resolver_operation_id":"resolver-r1",
+                         "original_outcome":"UNKNOWN","resolved_outcome":"APPLIED"})),
+            ("operations", "evidence_json", "operation_id='original-dispatch-r1'",
+             _canonical({"phase":"ORCHESTRATION_RECOVERED",
+                         "resolver_operation_id":"resolver-r1",
+                         "recovered_outcome":"FAILED"})),
+        ]
+        for table, field, condition, changed in cases:
+            with self.subTest(table=table, field=field, changed=changed):
+                with self.store.transaction() as db:
+                    previous = db.execute(
+                        f"SELECT {field} FROM {table} WHERE {condition}"
+                    ).fetchone()[0]
+                    db.execute(f"UPDATE {table} SET {field}=? WHERE {condition}",
+                               (changed,))
+                try:
+                    with self.assertRaises(ConflictError):
+                        self.run_commit(results=[result])
+                    self.assertEqual(0, self.count("orchestration_consumption_decisions"))
+                finally:
+                    with self.store.transaction() as db:
+                        db.execute(f"UPDATE {table} SET {field}=? WHERE {condition}",
+                                   (previous,))
+
+    def make_chain_plan(self):
+        result = self.make_reconciled_result()
+        plan = {"tasks":[{"assignment_id":"r1", "worker_node_id":"worker",
+                          "attachment_id":"attach", "instruction":"read",
+                          "acceptance":{}}],
+                "synthesis":{"assignment_id":"c1"},
+                "takeover":None,"timeout_s":30.0}
+        plan_id = "plan." + hashlib.sha256(
+            b"s:original-dispatch-r1"
+        ).hexdigest()[:32]
+        with self.store.transaction() as db:
+            db.execute("UPDATE operations SET evidence_json=? WHERE operation_id=?",
+                       (_canonical({"operation": "chain-run", "session_id": "s"}),
+                        "original-dispatch-r1"))
+            db.execute("INSERT INTO orchestration_mailbox "
+                       "(message_id,session_id,assignment_id,assignment_generation,"
+                       "kind,sender_node_id,recipient_node_id,message_digest,payload_json,"
+                       "created_at,delivered_at,consumed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (plan_id,"s",None,None,"PLAN",None,None,_digest(plan),
+                        _canonical(plan),1.0,1.0,None))
+        return result, plan_id, plan
+
+    def test_chain_proven_plan_and_claim_required(self):
+        result, plan_id, plan = self.make_chain_plan()
+        self.assertFalse(self.run_commit(results=[result])["idempotent"])
+        self.assertTrue(self.run_commit(results=[result])["idempotent"])
+        self.assertEqual(1, self.count("orchestration_consumption_decisions"))
+
+    def test_chain_plan_tampering_and_claim_fencing(self):
+        result, plan_id, plan = self.make_chain_plan()
+        tamper = [
+            ("orchestration_mailbox","message_digest","message_id='"+plan_id+"'","0"*64),
+            ("orchestration_mailbox","payload_json","message_id='"+plan_id+"'",
+             _canonical({**plan,"tasks":[{"assignment_id":"r2"}]})),
+            ("resource_claims","work_id",
+             "resource_key='orchestration-run:s:r1'","foreign"),
+            ("operations","evidence_json","operation_id='original-dispatch-r1'",
+             _canonical({"operation":"chain-run","session_id":"foreign"})),
+            ("operations","evidence_json","operation_id='original-dispatch-r1'",
+             _canonical({"operation":"chain-run","session_id":"s",
+                         "assignment_id":"r2"})),
+        ]
+        for table,field,condition,changed in tamper:
+            with self.subTest(table=table,field=field):
+                with self.store.transaction() as db:
+                    old=db.execute(f"SELECT {field} FROM {table} WHERE {condition}").fetchone()[0]
+                    db.execute(f"UPDATE {table} SET {field}=? WHERE {condition}",
+                               (changed,))
+                try:
+                    with self.assertRaises(ConflictError):
+                        self.run_commit(results=[result])
+                    self.assertEqual(0,self.count("orchestration_consumption_decisions"))
+                finally:
+                    with self.store.transaction() as db:
+                        db.execute(f"UPDATE {table} SET {field}=? WHERE {condition}",(old,))
+
+    def test_chain_resume_atomic_original_and_worker_result_proven(self):
+        for aggregate, state in (("APPLIED", "FINISHED"), ("FAILED", "PARTIAL")):
+            with self.subTest(aggregate=aggregate):
+                # Each subcase resets only its own isolated fixture rows.
+                if self.count("orchestration_reconciliations") == 0:
+                    result, plan_id, plan = self.make_chain_plan()
+                    self.make_atomic_resolver()
+                with self.store.transaction() as db:
+                    db.execute("UPDATE operations SET outcome=?,evidence_json=? "
+                               "WHERE operation_id='original-dispatch-r1'",
+                               (aggregate, _canonical({
+                                   "phase": "ORCHESTRATION_RECOVERED",
+                                   "resolver_operation_id": "resolver-r1",
+                                   "recovered_outcome": aggregate,
+                               })))
+                    db.execute("UPDATE operations SET outcome=?,evidence_json=? "
+                               "WHERE operation_id='resolver-r1'",
+                               (aggregate, _canonical({
+                                   "operation": "chain-resume",
+                                   "session_id": "s", "session_state": state,
+                               })))
+                    db.execute("UPDATE orchestration_sessions SET state=? "
+                               "WHERE session_id='s'", (state,))
+                    db.execute("UPDATE events SET data_json=? WHERE "
+                               "kind='OPERATION_RECONCILED' "
+                               "AND subject_id='original-dispatch-r1'",
+                               (_canonical({
+                                   "resolver_operation_id": "resolver-r1",
+                                   "original_outcome": aggregate,
+                                   "resolved_outcome": aggregate,
+                                   "claims_released": True,
+                               }),))
+                first = self.run_commit(results=[("r1", _digest({
+                    "message": "r1", "reconciled": True,
+                }))], decision_id="chain-"+aggregate)
+                self.assertFalse(first["idempotent"])
+                self.assertTrue(self.run_commit(results=[("r1", _digest({
+                    "message": "r1", "reconciled": True,
+                }))], decision_id="chain-"+aggregate)["idempotent"])
+                with self.store.transaction() as db:
+                    db.execute("DELETE FROM orchestration_consumption_receipts")
+                    db.execute("DELETE FROM orchestration_consumption_decisions")
+
+    def test_chain_resume_session_fence_rejects_mismatch(self):
+        result, plan_id, plan = self.make_chain_plan()
+        self.make_atomic_resolver()
+        with self.store.transaction() as db:
+            db.execute("UPDATE operations SET evidence_json=? "
+                       "WHERE operation_id='resolver-r1'", (_canonical({
+                           "operation": "chain-resume", "session_id": "s",
+                           "session_state": "FINISHED",
+                       }),))
+        with self.assertRaisesRegex(ConflictError, "CHAIN_RESUME_MISMATCH"):
+            self.run_commit(results=[result])
+        self.assertEqual(0, self.count("orchestration_consumption_decisions"))
 
     def test_new_schema_does_not_backfill_legacy(self):
         self.assertEqual(0, self.count("orchestration_consumption_receipts"))
