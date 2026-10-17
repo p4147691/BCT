@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-import json
-import logging
 import math
 import time
 import uuid
-from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
@@ -18,21 +15,9 @@ from .background_operations import BACKGROUND_CAPABILITIES, launch_background_op
 from .core.models import Principal, Work
 
 
+from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
+
 MCP_PRINCIPAL_ID = "bct-mcp-local"
-_MCP_TRACE_ID: ContextVar[str | None] = ContextVar("bct_mcp_trace_id", default=None)
-_MCP_TRACE_LOG = logging.getLogger("bct.mcp.trace")
-
-
-def _trace_stage(stage: str, *, tool_kind: str | None = None, **durations_ms: float) -> None:
-    """Only synthetic trace ID and bounded durations; never headers or bodies."""
-    trace_id = _MCP_TRACE_ID.get()
-    if trace_id is None:
-        return
-    payload = {"trace_id": trace_id, "stage": stage}
-    if tool_kind is not None:
-        payload["tool_kind"] = tool_kind
-    payload.update({key: round(value, 3) for key, value in durations_ms.items()})
-    _MCP_TRACE_LOG.info("MCP_TIMING %s", json.dumps(payload, separators=(",", ":")))
 
 _GENERAL_TOOLS = ("bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get")
 _CAPABILITY_USAGE = {

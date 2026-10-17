@@ -25,6 +25,17 @@ class MonitorRuntimeTests(unittest.TestCase):
                     data_root=root / "data",
                 )
             self.assertEqual(1, state["schema"])
+            self.assertTrue(state["observability"]["read_only"])
+            self.assertIsInstance(state["observability"]["mcp_recent"], list)
+            timings = state["observability"]["timings"]
+            self.assertEqual(
+                {"store_snapshot_ms", "process_sessions_ms", "rcc_discovery_ms", "rcc_state_ms", "total_ms"},
+                set(timings),
+            )
+            self.assertTrue(all(isinstance(value, (float, int)) and value >= 0 for value in timings.values()))
+            self.assertGreaterEqual(timings["total_ms"] + 0.01, sum(
+                timings[key] for key in ("store_snapshot_ms", "process_sessions_ms", "rcc_discovery_ms", "rcc_state_ms")
+            ))
             self.assertEqual(1, state["counts"]["works"])
             self.assertNotIn("roots", state["works"][0])
             self.assertEqual([], state["operations"])

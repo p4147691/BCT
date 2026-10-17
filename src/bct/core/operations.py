@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
+import time
 from typing import Any
 
 from .models import (
@@ -12,6 +13,7 @@ from .models import (
     UnknownEffectError,
 )
 from .policy import Policy
+from bct.trace_timing import trace_stage
 from .store import Store
 
 
@@ -197,16 +199,26 @@ class OperationCoordinator:
     def _begin(self, *, principal: Principal, work_id: str, operation_id: str,
                capability: str, arguments: dict[str, Any], approval_ref: str | None,
                background_job: dict[str, Any] | None = None):
-        feature, work, decision, request, digest = self._prepare(
-            principal=principal, work_id=work_id, operation_id=operation_id,
-            capability=capability, arguments=arguments, approval_ref=approval_ref,
-        )
-        created, current = self.store.begin_operation(
-            operation_id=operation_id, work=work, principal_id=principal.principal_id,
-            request_digest=digest, capability=capability, target=request.target,
-            resources=request.resources, policy_revision=decision.policy_revision,
-            background_job=background_job,
-        )
+        prepare_started = time.perf_counter_ns()
+        try:
+            feature, work, decision, request, digest = self._prepare(
+                principal=principal, work_id=work_id, operation_id=operation_id,
+                capability=capability, arguments=arguments, approval_ref=approval_ref,
+            )
+        finally:
+            trace_stage("authorization_prepare", tool_kind=capability,
+                        elapsed_ms=(time.perf_counter_ns() - prepare_started) / 1e6)
+        claim_started = time.perf_counter_ns()
+        try:
+            created, current = self.store.begin_operation(
+                operation_id=operation_id, work=work, principal_id=principal.principal_id,
+                request_digest=digest, capability=capability, target=request.target,
+                resources=request.resources, policy_revision=decision.policy_revision,
+                background_job=background_job,
+            )
+        finally:
+            trace_stage("claim_reservation", tool_kind=capability,
+                        elapsed_ms=(time.perf_counter_ns() - claim_started) / 1e6)
         return feature, request, created, current
 
     def begin(self, *, principal: Principal, work_id: str, operation_id: str,
@@ -249,12 +261,18 @@ class OperationCoordinator:
         )
         if not created:
             return current
-        return self._execute(feature=feature, request=request, principal=principal,
-                             work_id=work_id, approval_ref=approval_ref)
+        execute_started = time.perf_counter_ns()
+        try:
+            return self._execute(feature=feature, request=request, principal=principal,
+                                 work_id=work_id, approval_ref=approval_ref)
+        finally:
+            trace_stage("execution_and_receipt", tool_kind=capability,
+                        elapsed_ms=(time.perf_counter_ns() - execute_started) / 1e6)
 
     def _execute(self, *, feature: Feature, request, principal=None, work_id=None,
                  approval_ref=None) -> OperationResult:
         operation_id = request.operation_id
+        feature_started = time.perf_counter_ns()
         try:
             if request.capability == "verify":
                 initial_work = self.store.get_work(work_id)
@@ -288,6 +306,9 @@ class OperationCoordinator:
                 result = feature.execute(request)
             if not isinstance(result, FeatureResult):
                 raise TypeError("FEATURE_RESULT_REQUIRED")
+            trace_stage("feature_execution", tool_kind=request.capability,
+                        elapsed_ms=(time.perf_counter_ns() - feature_started) / 1e6)
+            receipt_started = time.perf_counter_ns()
             current = self.store.get_operation_for(
                 operation_id=operation_id, work_id=work_id,
                 principal_id=principal.principal_id,
@@ -297,6 +318,8 @@ class OperationCoordinator:
                 # assignment/session evidence and both operation receipts in one
                 # SQLite transaction.  Do not attempt a second finish across that
                 # deliberately closed crash boundary.
+                trace_stage("receipt_persistence", tool_kind=request.capability,
+                            elapsed_ms=(time.perf_counter_ns() - receipt_started) / 1e6)
                 return replace(current, output=result.output)
             if (request.capability == "relay_browser"
                     and request.arguments["command"] == "reclassify-rename-claim"
@@ -328,6 +351,8 @@ class OperationCoordinator:
                     error=None, release_claims=result.release_claims,
                     reconciled_operation_ids=result.reconciled_operation_ids,
                 )
+            trace_stage("receipt_persistence", tool_kind=request.capability,
+                        elapsed_ms=(time.perf_counter_ns() - receipt_started) / 1e6)
             return replace(stored, output=result.output)
         except PreconditionError as exc:
             return self.store.finish_operation(
