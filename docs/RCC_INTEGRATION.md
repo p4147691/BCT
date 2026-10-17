@@ -199,7 +199,10 @@ record remains in place and a new relay stays blocked.
 Protected-path staging does not trust the writable installed RCC directory as a
 source authority. Extension bytes are reconstructed from the exact clean Git
 commit, the installed manifest must normalize to that commit, and the Native
-Host binary must match a separately verified build-receipt SHA-256. The staging
+Host binary is built inside the protected boundary from the exact Git source
+blob. Its operation-scoped receipt binds the Git head/tree/blob, system compiler
+path/hash and produced artifact hash; a hash supplied for the writable installed
+Host is not accepted as authority. The staging
 receipt is operation-scoped and non-activating. Chrome's loaded unpacked path,
 extension storage, RCC instance and all tab/conversation identities remain an
 operating acceptance gate; copying files alone never claims they were preserved.

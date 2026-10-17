@@ -69,7 +69,8 @@ recorded by the requested Git commit. This binds the SHA-256 release manifest
 to that exact Git tree in addition to the existing clean-main check.
 
 Protected-path preparation uses SQLite Online Backup, `quick_check`, and logical
-digests for operations, unresolved claims and manager wakes. It copies only an
+digests for operations, unresolved claims, mailbox `consumed_at`, manager wakes,
+consumption receipts/decisions, dispatch outbox and reconciliation receipts. It copies only an
 active release whose files normalize to the exact Git blobs, Core tokens,
 receipts/logs, BCT data and exact Supervisor payload, and writes no active
 `service.json`. The old Core must be stopped, its Supervisor explicitly disabled,
@@ -80,6 +81,9 @@ deploy path requires a `PUBLISHED` migration and a separate exact activation
 receipt recording ACL, distinct-account denial and RCC canary acceptance. It
 revalidates the old Core stop state and writer fence immediately before start.
 Staging failures are durable and must be moved to quarantine before a retry.
+The writer fence remains held until target health succeeds and the protected
+cutover authority marker is durable. Thereafter all supported legacy start
+paths fail closed until a separately approved rollback changes that authority.
 - Health: `http://127.0.0.1:18790/health`
 
 The runtime directory contains generated state and is never a source-of-truth checkout.

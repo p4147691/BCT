@@ -5,7 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from bct.features.deploy import DeploymentProfiles, _start_with_one_safe_retry, _validate_release
+from bct.features.deploy import (
+    DeploymentProfiles,
+    _start_with_one_safe_retry,
+    _validate_profile_start_allowed,
+    _validate_release,
+)
 from bct.service_runtime import RuntimeServiceController, read_json
 
 
@@ -19,9 +24,11 @@ def ensure_service(*, runtime_root: Path, profile_name: str) -> dict[str, Any]:
     if release_path != expected.resolve():
         raise RuntimeError("BCT_CURRENT_RELEASE_PATH_MISMATCH")
     policy_path = release_path / "bct.toml"
-    profile = DeploymentProfiles(policy_path).get(profile_name)
+    profiles = DeploymentProfiles(policy_path)
+    profile = profiles.get(profile_name)
     if profile.runtime_root != root:
         raise RuntimeError("BCT_SUPERVISOR_RUNTIME_ROOT_MISMATCH")
+    _validate_profile_start_allowed(profiles, profile)
     _validate_release(profile, current)
     controller = RuntimeServiceController(
         runtime_root=root,

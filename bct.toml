@@ -43,6 +43,7 @@ source_root = "D:\\BCT\\source"
 runtime_root = "D:\\BCT\\runtime"
 service_name = "bct-core"
 port = 18790
+cutover_successor_profile = "bct_runtime_protected_v1"
 files = [
   "bct.toml",
   "src/bct/__init__.py",

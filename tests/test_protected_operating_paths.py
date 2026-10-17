@@ -13,11 +13,19 @@ from contextlib import closing
 from pathlib import Path
 
 from bct.core.models import PreconditionError
-from bct.features.deploy import DeploymentProfiles, _validate_protected_activation
+from bct.core.store import Store
+from bct.features.deploy import (
+    DeploymentProfiles,
+    _record_protected_cutover,
+    _validate_profile_start_allowed,
+    _validate_protected_activation,
+    write_protected_cutover_rollback,
+)
 from bct.features.process_session import ProcessSessionFeature
 from bct.operating_paths import (
     AclEvidence,
     OperatingPathLayout,
+    build_rcc_host_from_trusted_source,
     extension_id_from_key,
     prepare_core_migration,
     prepare_rcc_migration,
@@ -112,31 +120,70 @@ class ProtectedOperatingPathTests(unittest.TestCase):
 
     def test_sqlite_online_backup_includes_committed_wal_state(self):
         source = self.base / "source.sqlite"
-        database = sqlite3.connect(source)
+        store = Store(source)
+        database = store._connect()
         try:
-            database.execute("PRAGMA journal_mode=WAL")
-            database.execute("CREATE TABLE receipt(id TEXT PRIMARY KEY, value TEXT NOT NULL)")
-            database.execute("INSERT INTO receipt VALUES('issue-111', 'preserved')")
-            database.execute("CREATE TABLE operations(operation_id TEXT, outcome TEXT)")
-            database.execute("INSERT INTO operations VALUES('issue-111-op', 'UNKNOWN')")
-            database.execute("CREATE TABLE resource_claims(resource_key TEXT, unresolved INTEGER)")
-            database.execute("INSERT INTO resource_claims VALUES('issue-111-claim', 1)")
-            database.execute("CREATE TABLE orchestration_manager_wakes(wake_id TEXT, consumed_at REAL)")
-            database.execute("INSERT INTO orchestration_manager_wakes VALUES('issue-111-wake', 123.5)")
+            database.execute(
+                "INSERT INTO works VALUES(?,?,?,?,?,?,?)",
+                ("work", "fixture", "[]", "[]", "owner", 1, "ACTIVE"),
+            )
+            database.execute(
+                "INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("issue-111-op", "work", "owner", "d", "deploy", "core", "COMPLETED",
+                 "UNKNOWN", "{}", None, 1, "policy", 1.0, 1.0),
+            )
+            database.execute(
+                "INSERT INTO resource_claims VALUES(?,?,?,?,?)",
+                ("issue-111-claim", "issue-111-op", "work", 1, 1),
+            )
+            database.execute(
+                "INSERT INTO nodes VALUES(?,?,?,?,?,?)",
+                ("manager", "manager", "manager", "fixture", 1, 1),
+            )
+            database.execute(
+                "INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("session", "work", 1, "fixture", "[]", "[]", "[]", 1,
+                 "manager", 1, "ACTIVE", "{}", 1.0, 1.0),
+            )
+            database.execute(
+                "INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("assignment", "session", 1, "r", "{}", "[]", "[]", "[]",
+                 "COMPLETED", 1, "{}", 1.0, 1.0),
+            )
+            database.execute(
+                "INSERT INTO orchestration_mailbox VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("result", "session", "assignment", 1, "RESULT", "manager", "manager",
+                 "digest", "{}", 1.0, 2.0, 123.5),
+            )
+            database.execute(
+                "INSERT INTO orchestration_manager_wakes"
+                "(event_id,session_id,manager_epoch,assignment_id,assignment_generation,"
+                "result_message_id,result_digest,state,created_at,updated_at,envelope_schema,receipt_mode)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("issue-111-wake", "session", 1, "assignment", 1, "result", "digest",
+                 "UNKNOWN", 1.0, 1.0, 1, "LEGACY_RETURN_V1"),
+            )
+            database.execute(
+                "INSERT INTO orchestration_consumption_decisions VALUES(?,?,?,?,?,?,?)",
+                ("decision", "session", "assignment", 1, "request", "{}", 3.0),
+            )
+            database.execute(
+                "INSERT INTO orchestration_consumption_receipts VALUES(?,?,?,?,?,?,?)",
+                ("session", "assignment", "result", "digest", 1, "decision", 3.0),
+            )
             database.commit()
             self.assertTrue(source.with_name(source.name + "-wal").is_file())
             destination = self.base / "backup" / "state.sqlite"
             receipt = sqlite_online_backup(source, destination)
             self.assertEqual("ok", receipt["quick_check"])
-            self.assertEqual(
-                {"operations", "resource_claims", "orchestration_manager_wakes"},
-                set(receipt["logical_invariants"]),
-            )
+            self.assertEqual(1, receipt["logical_invariants"]["orchestration_mailbox"]["rows"])
+            self.assertEqual(1, receipt["logical_invariants"]["orchestration_consumption_receipts"]["rows"])
+            self.assertEqual(1, receipt["logical_invariants"]["orchestration_consumption_decisions"]["rows"])
         finally:
             database.close()
         with closing(sqlite3.connect(destination)) as database:
-            self.assertEqual(("preserved",), database.execute(
-                "SELECT value FROM receipt WHERE id='issue-111'"
+            self.assertEqual((123.5,), database.execute(
+                "SELECT consumed_at FROM orchestration_mailbox WHERE message_id='result'"
             ).fetchone())
 
     def _source_runtime(self) -> tuple[Path, Path, str, Path]:
@@ -282,6 +329,7 @@ class ProtectedOperatingPathTests(unittest.TestCase):
             f"source_root={json.dumps(str(source))}\n"
             f"runtime_root={json.dumps(str(self.base / 'legacy-runtime'))}\n"
             'service_name="bct-core"\nport=19879\nfiles=["bct.toml"]\n'
+            'cutover_successor_profile="protected"\n'
             "[deployment.profiles.protected]\n"
             f"source_root={json.dumps(str(source))}\n"
             'runtime_root="%LOCALAPPDATA%\\\\BCT\\\\runtime"\n'
@@ -315,6 +363,21 @@ class ProtectedOperatingPathTests(unittest.TestCase):
             lock = _validate_protected_activation(profiles, protected, "a" * 40)
         self.assertIsNotNone(lock)
         lock.close()
+        with patch.dict("os.environ", {"LOCALAPPDATA": str(local)}):
+            _record_protected_cutover(
+                profiles, protected, "a" * 40,
+                {"generation": 93, "instance_id": "protected-instance"},
+            )
+            with self.assertRaisesRegex(PreconditionError, "SOURCE_PROFILE_RETIRED"):
+                _validate_profile_start_allowed(profiles, legacy)
+            rollback = write_protected_cutover_rollback(
+                profiles=profiles,
+                source_profile_name="legacy",
+                operation_id="rollback-01",
+                target_references_restored=True,
+            )
+            self.assertEqual("ROLLED_BACK", rollback["state"])
+            _validate_profile_start_allowed(profiles, legacy)
 
     def test_runtime_data_root_overrides_legacy_process_session_path(self):
         policy = self.base / "policy.toml"
@@ -376,6 +439,12 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         extension_id = extension_id_from_key(key)
         (extension / "manifest.json").write_text(json.dumps({"key": key}), encoding="utf-8")
         (extension / "background.js").write_text("// exact\n", encoding="utf-8")
+        host_source = source / "modules" / "rcc" / "native-host" / "RelayNativeHostV2.cs"
+        host_source.parent.mkdir(parents=True)
+        host_source.write_text(
+            "using System; public class RelayNativeHostV2 { public static void Main() {} }\n",
+            encoding="utf-8",
+        )
         host = native / "RelayNativeHostV2.exe"
         host.write_bytes(b"fixture-host")
         host_manifest = native / "com.ai_workspace_relay.host.json"
@@ -400,13 +469,22 @@ class ProtectedOperatingPathTests(unittest.TestCase):
             AclEvidence(str(target.root.parent), user, False, False, ((user, 0x1F01FF, True, "FullControl"),)),
             AclEvidence(str(target.root), user, True, False, ((user, 0x1F01FF, True, "FullControl"),)),
         )
+        build_receipt = build_rcc_host_from_trusted_source(
+            target=target,
+            trusted_source_root=source,
+            expected_source_head=head,
+            operation_id="fixture-build-01",
+            acl_evidence=acl,
+            current_user_sid=user,
+        )
+        host = Path(build_receipt["artifact_path"])
         receipt = prepare_rcc_migration(
             source_extension=extension,
             source_host_executable=host,
             source_native_manifest=host_manifest,
             trusted_source_root=source,
             expected_source_head=head,
-            expected_host_sha256=hashlib.sha256(host.read_bytes()).hexdigest(),
+            host_build_operation_id="fixture-build-01",
             operation_id="rcc-migration-01",
             target=target,
             expected_extension_id=extension_id,
@@ -424,6 +502,50 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         )
         self.assertEqual(
             [f"chrome-extension://{extension_id}/"], staged_manifest["allowed_origins"]
+        )
+        duplicate = prepare_rcc_migration(
+            source_extension=extension,
+            source_host_executable=host,
+            source_native_manifest=host_manifest,
+            trusted_source_root=source,
+            expected_source_head=head,
+            host_build_operation_id="fixture-build-01",
+            operation_id="rcc-migration-01",
+            target=target,
+            expected_extension_id=extension_id,
+            acl_evidence=acl,
+            current_user_sid=user,
+        )
+        self.assertEqual(receipt, duplicate)
+
+        failed_target = OperatingPathLayout.from_local_app_data(self.base / "FailedLocalAppData")
+        failed_target.root.mkdir(parents=True)
+        failed_acl = self._acl(failed_target.root, user)
+        failed_build = build_rcc_host_from_trusted_source(
+            target=failed_target,
+            trusted_source_root=source,
+            expected_source_head=head,
+            operation_id="fixture-build-02",
+            acl_evidence=failed_acl,
+            current_user_sid=user,
+        )
+        failed_host = Path(failed_build["artifact_path"])
+        with patch("bct.operating_paths._copy_git_tree", side_effect=RuntimeError("fixture")):
+            with self.assertRaisesRegex(RuntimeError, "fixture"):
+                prepare_rcc_migration(
+                    source_extension=extension, source_host_executable=failed_host,
+                    source_native_manifest=host_manifest, trusted_source_root=source,
+                    expected_source_head=head, host_build_operation_id="fixture-build-02",
+                    operation_id="rcc-migration-failure",
+                    target=failed_target, expected_extension_id=extension_id,
+                    acl_evidence=failed_acl, current_user_sid=user,
+                )
+        recovery = quarantine_failed_migration(
+            target=failed_target, operation_id="rcc-migration-failure", component="rcc"
+        )
+        self.assertIn("staging-rcc", recovery["quarantine"])
+        self.assertFalse(
+            (failed_target.root / "staging" / "rcc-migration-failure" / "rcc").exists()
         )
 
 

@@ -131,6 +131,11 @@ def main() -> int:
     policy_path = release_root / "bct.toml"
     if not policy_path.is_file():
         raise RuntimeError("RUNTIME_POLICY_MISSING")
+    from .features.deploy import DeploymentProfiles, _validate_profile_start_allowed
+    runtime_profiles = DeploymentProfiles(policy_path)
+    _validate_profile_start_allowed(
+        runtime_profiles, runtime_profiles.for_runtime_root(runtime_root)
+    )
     bct = BCT(
         state_path=runtime_root / "state" / "state.sqlite",
         policy_path=policy_path,

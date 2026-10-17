@@ -115,7 +115,17 @@ def _copy_git_tree(root: Path, head: str, prefix: str, destination: Path) -> dic
 
 
 def _logical_database_snapshot(path: Path) -> dict[str, Any]:
-    names = ("operations", "resource_claims", "orchestration_manager_wakes")
+    names = (
+        "operations",
+        "resource_claims",
+        "events",
+        "orchestration_mailbox",
+        "orchestration_manager_wakes",
+        "orchestration_consumption_receipts",
+        "orchestration_consumption_decisions",
+        "orchestration_dispatch_outbox",
+        "orchestration_reconciliations",
+    )
     result: dict[str, Any] = {}
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as database:
         for name in names:
@@ -441,7 +451,13 @@ def prepare_core_migration(
     receipt_path = receipt_dir / f"{operation_id}.json"
     existing = read_json(receipt_path)
     if existing is not None and existing.get("state") == "PUBLISHED":
-        if existing.get("source_head") != expected_source_head:
+        exact = {
+            "source_head": expected_source_head,
+            "source_runtime": str(source_runtime),
+            "source_data": str(source_data),
+            "target_root": str(target.root),
+        }
+        if any(existing.get(key) != value for key, value in exact.items()):
             raise PreconditionError("PROTECTED_OPERATION_CONFLICT")
         return existing
     if target.runtime.exists() or target.data.exists():
@@ -462,6 +478,7 @@ def prepare_core_migration(
         "state": "PREPARING",
         "operation_id": operation_id,
         "source_runtime": str(source_runtime),
+        "source_data": str(source_data),
         "target_root": str(target.root),
         "source_head": expected_source_head,
         "staging_root": str(staging_root),
@@ -602,6 +619,7 @@ def quarantine_failed_migration(
     quarantine.mkdir(parents=True, exist_ok=False)
     candidates = (
         ((target.root / "rcc"), "rcc"),
+        ((target.root / "staging" / operation_id / "rcc"), "staging-rcc"),
     ) if component == "rcc" else (
         (target.runtime, "runtime"),
         (target.data, "data"),
@@ -659,6 +677,160 @@ def validate_rcc_relocation(
     }
 
 
+def build_rcc_host_from_trusted_source(
+    *,
+    target: OperatingPathLayout,
+    trusted_source_root: Path,
+    expected_source_head: str,
+    operation_id: str,
+    acl_evidence: Iterable[AclEvidence],
+    current_user_sid: str,
+) -> dict[str, Any]:
+    """Build the Host from the exact Git blob into the protected boundary."""
+    root = _validate_trusted_source(trusted_source_root, expected_source_head)
+    if not _OPERATION_ID.fullmatch(operation_id):
+        raise PreconditionError("PROTECTED_RCC_HOST_BUILD_EVIDENCE_INVALID")
+    validate_acl_evidence(
+        acl_evidence,
+        protected_root=target.root,
+        boundary_root=target.root.parent,
+        current_user_sid=current_user_sid,
+    )
+    source_relative = "modules/rcc/native-host/RelayNativeHostV2.cs"
+    source_blob = _git_blob(root, expected_source_head, source_relative)
+    source_oid = _git_blob_oid(root, expected_source_head, source_relative)
+    tree = _git(root, "rev-parse", f"{expected_source_head}:modules/rcc/native-host")
+    if tree.returncode or not re.fullmatch(r"[0-9a-f]{40}", tree.stdout.strip()):
+        raise PreconditionError("PROTECTED_RCC_HOST_SOURCE_TREE_INVALID")
+    path = target.root / "migration" / f"rcc-host-build-{operation_id}.json"
+    existing = read_json(path)
+    if existing is not None and existing.get("state") == "PUBLISHED":
+        artifact = Path(str(existing.get("artifact_path") or ""))
+        exact = {
+            "source_head": expected_source_head,
+            "source_tree_oid": tree.stdout.strip(),
+            "source_blob_oid": source_oid,
+        }
+        if (
+            any(existing.get(key) != value for key, value in exact.items())
+            or not artifact.is_file()
+            or _is_reparse(artifact)
+            or _sha256(artifact) != existing.get("artifact_sha256")
+        ):
+            raise PreconditionError("PROTECTED_RCC_HOST_BUILD_RECEIPT_CONFLICT")
+        return existing
+    staging = target.root / "staging" / operation_id / "rcc-host-build"
+    prior_artifacts = target.root / "builds" / "rcc" / operation_id
+    if staging.exists() or prior_artifacts.exists():
+        if existing is None or existing.get("state") not in {"PREPARING", "FAILED"}:
+            raise PreconditionError("PROTECTED_RCC_HOST_BUILD_STAGING_EXISTS")
+        quarantine = target.root / "quarantine" / f"rcc-host-build-{operation_id}-{time.time_ns()}"
+        quarantine.mkdir(parents=True, exist_ok=False)
+        if staging.exists():
+            os.replace(staging, quarantine / "staging")
+        if prior_artifacts.exists():
+            os.replace(prior_artifacts, quarantine / "artifacts")
+        atomic_json(quarantine / "receipt.json", existing)
+    staging.mkdir(parents=True)
+    source_path = staging / "RelayNativeHostV2.cs"
+    output_path = staging / "RelayNativeHostV2.exe"
+    source_path.write_bytes(source_blob)
+    compiler_candidates = (
+        Path(os.environ.get("WINDIR", r"C:\Windows"))
+        / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe",
+        Path(os.environ.get("WINDIR", r"C:\Windows"))
+        / "Microsoft.NET" / "Framework" / "v4.0.30319" / "csc.exe",
+    )
+    compiler = next((item for item in compiler_candidates if item.is_file()), None)
+    if compiler is None or _is_reparse(compiler):
+        raise PreconditionError("PROTECTED_RCC_HOST_COMPILER_UNAVAILABLE")
+    preparing = {
+        "schema": "BCT_RCC_HOST_BUILD_RECEIPT_V2",
+        "state": "PREPARING",
+        "operation_id": operation_id,
+        "source_head": expected_source_head,
+        "source_tree_oid": tree.stdout.strip(),
+        "source_blob_oid": source_oid,
+        "compiler_path": str(compiler.resolve()),
+        "compiler_sha256": _sha256(compiler),
+    }
+    atomic_json(path, preparing)
+    try:
+        result = subprocess.run(
+            [str(compiler), "/nologo", "/target:exe", f"/out:{output_path}", str(source_path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=120, shell=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if result.returncode or not output_path.is_file():
+            raise PreconditionError("PROTECTED_RCC_HOST_BUILD_FAILED")
+        artifact_sha256 = _sha256(output_path)
+        artifact = (
+            target.root / "builds" / "rcc" / operation_id
+            / expected_source_head / artifact_sha256 / output_path.name
+        )
+        artifact.parent.mkdir(parents=True, exist_ok=False)
+        os.replace(output_path, artifact)
+        published = {
+            **preparing,
+            "state": "PUBLISHED",
+            "artifact_path": str(artifact.resolve()),
+            "artifact_sha256": artifact_sha256,
+        }
+        atomic_json(path, published)
+        return published
+    except Exception as exc:
+        atomic_json(path, {
+            **preparing,
+            "state": "FAILED",
+            "error": type(exc).__name__ + ":" + str(exc),
+        })
+        raise
+
+
+def _validate_rcc_host_build_receipt(
+    *,
+    target: OperatingPathLayout,
+    trusted_source_root: Path,
+    expected_source_head: str,
+    source_host_executable: Path,
+    host_build_operation_id: str,
+) -> tuple[dict[str, Any], str]:
+    path = target.root / "migration" / f"rcc-host-build-{host_build_operation_id}.json"
+    if not path.is_file() or _is_reparse(path):
+        raise PreconditionError("PROTECTED_RCC_HOST_BUILD_RECEIPT_REQUIRED")
+    receipt_bytes = path.read_bytes()
+    receipt = read_json(path)
+    tree = _git(trusted_source_root, "rev-parse", f"{expected_source_head}:modules/rcc/native-host")
+    source_blob = _git_blob_oid(
+        trusted_source_root, expected_source_head,
+        "modules/rcc/native-host/RelayNativeHostV2.cs",
+    )
+    compiler = Path(str(receipt.get("compiler_path") if receipt else ""))
+    artifact = source_host_executable.resolve()
+    try:
+        artifact.relative_to((target.root / "builds" / "rcc" / host_build_operation_id).resolve())
+    except ValueError as exc:
+        raise PreconditionError("PROTECTED_RCC_HOST_BUILD_ARTIFACT_ESCAPE") from exc
+    exact = {
+        "schema": "BCT_RCC_HOST_BUILD_RECEIPT_V2",
+        "state": "PUBLISHED",
+        "source_head": expected_source_head,
+        "source_tree_oid": tree.stdout.strip() if tree.returncode == 0 else "",
+        "source_blob_oid": source_blob,
+        "artifact_path": str(artifact),
+        "artifact_sha256": _sha256(source_host_executable),
+        "operation_id": host_build_operation_id,
+    }
+    if receipt is None or any(receipt.get(key) != value for key, value in exact.items()):
+        raise PreconditionError("PROTECTED_RCC_HOST_BUILD_RECEIPT_MISMATCH")
+    if not _OPERATION_ID.fullmatch(host_build_operation_id):
+        raise PreconditionError("PROTECTED_RCC_HOST_BUILD_RECEIPT_MISMATCH")
+    if not compiler.is_file() or _is_reparse(compiler) or _sha256(compiler) != receipt.get("compiler_sha256"):
+        raise PreconditionError("PROTECTED_RCC_HOST_BUILD_COMPILER_MISMATCH")
+    return receipt, hashlib.sha256(receipt_bytes).hexdigest()
+
+
 def prepare_rcc_migration(
     *,
     source_extension: Path,
@@ -666,7 +838,7 @@ def prepare_rcc_migration(
     source_native_manifest: Path,
     trusted_source_root: Path,
     expected_source_head: str,
-    expected_host_sha256: str,
+    host_build_operation_id: str,
     operation_id: str,
     target: OperatingPathLayout,
     expected_extension_id: str,
@@ -683,8 +855,6 @@ def prepare_rcc_migration(
         boundary_root=target.root.parent,
         current_user_sid=current_user_sid,
     )
-    if target.rcc_native.exists() or target.rcc_extension.exists():
-        raise PreconditionError("PROTECTED_RCC_TARGET_EXISTS")
     source_identity = validate_rcc_relocation(
         extension_manifest=source_extension / "manifest.json",
         native_manifest=source_native_manifest,
@@ -693,8 +863,14 @@ def prepare_rcc_migration(
     )
     if not source_host_executable.is_file() or _is_reparse(source_host_executable):
         raise PreconditionError("PROTECTED_RCC_HOST_SOURCE_INVALID")
-    if not re.fullmatch(r"[0-9a-f]{64}", expected_host_sha256) or _sha256(source_host_executable) != expected_host_sha256:
-        raise PreconditionError("PROTECTED_RCC_HOST_BUILD_RECEIPT_MISMATCH")
+    build_receipt, build_receipt_sha256 = _validate_rcc_host_build_receipt(
+        target=target,
+        trusted_source_root=trusted_source_root,
+        expected_source_head=expected_source_head,
+        source_host_executable=source_host_executable,
+        host_build_operation_id=host_build_operation_id,
+    )
+    expected_host_sha256 = str(build_receipt["artifact_sha256"])
     live_manifest = (source_extension / "manifest.json").read_bytes()
     manifest_relative = "modules/rcc/extension/manifest.json"
     if _git_filtered_oid(trusted_source_root, manifest_relative, live_manifest) != _git_blob_oid(
@@ -705,7 +881,18 @@ def prepare_rcc_migration(
     staging = target.root / "staging" / operation_id / "rcc"
     existing = read_json(receipt_path)
     if existing is not None and existing.get("state") == "PUBLISHED":
+        exact = {
+            "source_head": expected_source_head,
+            "extension_id": expected_extension_id,
+            "host_sha256": expected_host_sha256,
+            "host_build_receipt_sha256": build_receipt_sha256,
+            "target_root": str(target.root),
+        }
+        if any(existing.get(key) != value for key, value in exact.items()):
+            raise PreconditionError("PROTECTED_RCC_OPERATION_CONFLICT")
         return existing
+    if target.rcc_native.exists() or target.rcc_extension.exists():
+        raise PreconditionError("PROTECTED_RCC_TARGET_EXISTS")
     if staging.exists():
         if existing is None or existing.get("state") not in {"PREPARING", "FAILED"}:
             raise PreconditionError("PROTECTED_RCC_STAGING_OWNERSHIP_UNKNOWN")
@@ -720,6 +907,10 @@ def prepare_rcc_migration(
         "state": "PREPARING",
         "operation_id": operation_id,
         "source_head": expected_source_head,
+        "target_root": str(target.root),
+        "extension_id": expected_extension_id,
+        "host_sha256": expected_host_sha256,
+        "host_build_receipt_sha256": build_receipt_sha256,
         "activation_allowed": False,
         "registry_changed": False,
         "chrome_changed": False,

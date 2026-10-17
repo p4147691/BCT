@@ -14,7 +14,13 @@ Source support is deliberately non-activating. The existing
 the exact `%LOCALAPPDATA%` prefix and is itself deployment-gated. A protected
 deploy requires a published migration plus a separately approved activation
 receipt, old Supervisor stop flag, stopped old Core and a free old-runtime
-writer lock. `prepare_core_migration()` obtains that same exclusive writer
+writer lock. The protected start holds that source lock until the new Core is
+healthy and a durable `BCT_PROTECTED_CUTOVER_V1` authority marker is published.
+The legacy deploy, service-control, Supervisor, and direct runtime-server entry
+paths all reject start/restart while that marker is active. An explicit rollback
+must stop the target and replace the authority receipt before the old Core can
+be started; deleting or ignoring the marker is not a rollback.
+`prepare_core_migration()` obtains that same exclusive writer
 fence, rechecks the real service state, and stages an exact-Git release, SQLite
 Online Backup, tokens, receipts/logs, process-session data and both Supervisor
 scripts. It never trusts caller-supplied RUNNING/STOPPED strings.
@@ -60,8 +66,10 @@ is verified again after copy.
    ID. Verify release hashes, database `quick_check`, preserved receipt counts
    and hashes, target tokens and the non-activating migration receipt.
 6. Stage the exact protected RCC Host and manifest. Extension bytes come from
-   the exact Git tree; the Host EXE must match a separately verified build
-   receipt SHA-256. Verify source SHA, Host name,
+   the exact Git tree. The Host EXE is compiled inside the protected boundary
+   from the exact Git C# blob using the system compiler, then bound to a durable
+   operation-scoped source-tree/compiler/artifact receipt; an installed Host
+   supplied by the caller is not accepted as build authority. Verify source SHA, Host name,
    sole allowed origin and fixed extension ID
    `ocbidbaplechjjdacmokhnfbdmgjkphf`. A different ID is an immediate stop.
 7. The unpacked extension path cannot be changed merely by copying files. In an
@@ -74,7 +82,7 @@ is verified again after copy.
    manifest value and scheduled tasks only in the approved maintenance window,
    supervisor arguments to the protected paths, with exported registry/task XML
    as rollback evidence. Start one protected Core using
-   then start `bct_runtime_protected_v1` and prove exact release, generation increment,
+   `bct_runtime_protected_v1` and prove exact release, generation increment,
    one listener, MCP 22-tool readiness, RCC benign presence and unchanged
    durable receipt hashes.
 9. Keep Schema 2 OFF and the allowlist empty. Only after the protected-path and
@@ -87,7 +95,9 @@ Before target Core start, rollback is a receipt-owned atomic move to the
 protected quarantine; it never deletes ambiguous paths. Then restart the exact
 old release. After target start, stop the target first, restore the exact
 registry/task references and old `current.json`/release, prove only one database
-writer, then start the old Core. Never merge two databases.
+writer, atomically record an approved cutover rollback, then start the old Core.
+Never merge two databases. RCC pre-publish staging and exact-head Host build
+staging are operation-owned and are quarantined before a retry.
 
 Stop on any unknown process identity, ACL/SDDL mismatch, reparse point, source
 or manifest hash mismatch, failed SQLite backup/quick-check, receipt-count or

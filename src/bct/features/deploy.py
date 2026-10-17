@@ -82,6 +82,7 @@ class DeploymentProfile:
     files: tuple[str, ...]
     protected_activation_required: bool = False
     migration_source_profile: str | None = None
+    cutover_successor_profile: str | None = None
 
 
 class DeploymentProfiles:
@@ -168,6 +169,12 @@ class DeploymentProfiles:
                 raise PreconditionError("DEPLOYMENT_PROFILE_MIGRATION_SOURCE_INVALID")
         if protected_activation_required and not migration_source_profile:
             raise PreconditionError("DEPLOYMENT_PROFILE_MIGRATION_SOURCE_REQUIRED")
+        cutover_successor_profile = value.get("cutover_successor_profile")
+        if cutover_successor_profile is not None:
+            if not isinstance(cutover_successor_profile, str) or not _NAME.fullmatch(
+                cutover_successor_profile
+            ):
+                raise PreconditionError("DEPLOYMENT_PROFILE_CUTOVER_SUCCESSOR_INVALID")
         return DeploymentProfile(
             name,
             source_root,
@@ -177,7 +184,22 @@ class DeploymentProfiles:
             files,
             protected_activation_required,
             migration_source_profile,
+            cutover_successor_profile,
         )
+
+    def for_runtime_root(self, runtime_root: Path) -> DeploymentProfile:
+        data = tomllib.loads(self.path.read_text(encoding="utf-8"))
+        values = data.get("deployment", {}).get("profiles", {})
+        if not isinstance(values, dict):
+            raise PreconditionError("DEPLOYMENT_PROFILE_NOT_FOUND_FOR_RUNTIME")
+        matches: list[DeploymentProfile] = []
+        for name in values:
+            profile = self.get(str(name))
+            if profile.runtime_root == runtime_root.resolve():
+                matches.append(profile)
+        if len(matches) != 1:
+            raise PreconditionError("DEPLOYMENT_PROFILE_NOT_FOUND_FOR_RUNTIME")
+        return matches[0]
 
 
 def _validate_source_repository(profile: DeploymentProfile, expected_head: str) -> Path:
@@ -217,6 +239,7 @@ def _target_profile(profile: DeploymentProfile, expected_head: str) -> Deploymen
         ("PORT", target.port, profile.port),
         ("ACTIVATION_GATE", target.protected_activation_required, profile.protected_activation_required),
         ("MIGRATION_SOURCE", target.migration_source_profile, profile.migration_source_profile),
+        ("CUTOVER_SUCCESSOR", target.cutover_successor_profile, profile.cutover_successor_profile),
     )
     for label, actual, expected in invariant_values:
         if actual != expected:
@@ -224,6 +247,133 @@ def _target_profile(profile: DeploymentProfile, expected_head: str) -> Deploymen
     if "bct.toml" not in target.files:
         raise PreconditionError("DEPLOYMENT_TARGET_PROFILE_POLICY_FILE_REQUIRED")
     return target
+
+
+def _cutover_authority_path(profiles: DeploymentProfiles, profile: DeploymentProfile) -> Path | None:
+    if profile.cutover_successor_profile is None:
+        return None
+    successor = profiles.get(profile.cutover_successor_profile)
+    return successor.runtime_root.parent / "migration" / "cutover.json"
+
+
+def _validate_profile_start_allowed(
+    profiles: DeploymentProfiles, profile: DeploymentProfile
+) -> None:
+    """Fail closed after a protected successor has become the durable authority."""
+    marker_path = _cutover_authority_path(profiles, profile)
+    if marker_path is None or not marker_path.exists():
+        return
+    marker = read_json(marker_path)
+    successor = profiles.get(str(profile.cutover_successor_profile))
+    exact = {
+        "schema": "BCT_PROTECTED_CUTOVER_V1",
+        "source_profile": profile.name,
+        "target_profile": successor.name,
+        "source_runtime": str(profile.runtime_root),
+        "target_runtime": str(successor.runtime_root),
+    }
+    if marker is None or any(marker.get(key) != value for key, value in exact.items()):
+        raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
+    if marker.get("state") == "ACTIVATED":
+        raise PreconditionError("PROTECTED_SOURCE_PROFILE_RETIRED")
+    if (
+        marker.get("state") != "ROLLED_BACK"
+        or marker.get("rollback_approved") is not True
+        or not _NAME.fullmatch(str(marker.get("rollback_operation_id") or ""))
+    ):
+        raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
+
+
+def write_protected_cutover_rollback(
+    *,
+    profiles: DeploymentProfiles,
+    source_profile_name: str,
+    operation_id: str,
+    target_references_restored: bool,
+) -> dict[str, Any]:
+    """Record a quiesced, separately approved rollback; starts no service."""
+    if not _NAME.fullmatch(operation_id) or target_references_restored is not True:
+        raise PreconditionError("PROTECTED_CUTOVER_ROLLBACK_EVIDENCE_INVALID")
+    source = profiles.get(source_profile_name)
+    marker_path = _cutover_authority_path(profiles, source)
+    if marker_path is None:
+        raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_MISSING")
+    marker = read_json(marker_path)
+    successor = profiles.get(str(source.cutover_successor_profile))
+    if (
+        marker is None
+        or marker.get("schema") != "BCT_PROTECTED_CUTOVER_V1"
+        or marker.get("state") != "ACTIVATED"
+        or marker.get("source_profile") != source.name
+        or marker.get("target_profile") != successor.name
+    ):
+        raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
+    locks = (
+        RuntimeWriterLock(source.runtime_root / "state" / "core-writer.lock"),
+        RuntimeWriterLock(successor.runtime_root / "state" / "core-writer.lock"),
+    )
+    acquired: list[RuntimeWriterLock] = []
+    try:
+        for item in locks:
+            item.acquire()
+            acquired.append(item)
+        for profile in (source, successor):
+            state = RuntimeServiceController(
+                runtime_root=profile.runtime_root,
+                service_name=profile.service_name,
+                port=profile.port,
+            ).inspect()
+            if state.get("state") not in {"STOPPED", "STOPPED_STALE_RECEIPT"}:
+                raise PreconditionError("PROTECTED_CUTOVER_ROLLBACK_CORE_NOT_QUIESCED")
+        rolled_back = {
+            **marker,
+            "state": "ROLLED_BACK",
+            "rollback_operation_id": operation_id,
+            "rollback_approved": True,
+            "target_references_restored": True,
+        }
+        atomic_json(marker_path, rolled_back)
+        return rolled_back
+    finally:
+        for item in reversed(acquired):
+            item.close()
+
+
+def _record_protected_cutover(
+    profiles: DeploymentProfiles,
+    profile: DeploymentProfile,
+    expected_head: str,
+    service: dict[str, Any],
+) -> None:
+    if not profile.protected_activation_required:
+        return
+    source = profiles.get(str(profile.migration_source_profile))
+    activation = read_json(profile.runtime_root.parent / "migration" / "activation.json")
+    if activation is None:
+        raise PreconditionError("PROTECTED_ACTIVATION_RECEIPT_INVALID")
+    marker = {
+        "schema": "BCT_PROTECTED_CUTOVER_V1",
+        "state": "ACTIVATED",
+        "operation_id": activation.get("operation_id"),
+        "source_profile": source.name,
+        "target_profile": profile.name,
+        "source_runtime": str(source.runtime_root),
+        "target_runtime": str(profile.runtime_root),
+        "source_head": expected_head,
+        "service_generation": service.get("generation"),
+        "service_instance_id": service.get("instance_id"),
+    }
+    marker_path = profile.runtime_root.parent / "migration" / "cutover.json"
+    existing = read_json(marker_path)
+    if existing is not None:
+        stable_keys = (
+            "schema", "state", "source_profile", "target_profile",
+            "source_runtime", "target_runtime",
+        )
+        if any(existing.get(key) != marker.get(key) for key in stable_keys):
+            raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
+        return
+    atomic_json(marker_path, marker)
 
 
 def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str, Any]:
@@ -506,6 +656,7 @@ class DeployFeature:
         if request.arguments.get("operation") == "reconcile":
             return self._reconcile(request)
         trusted_profile = self.profiles.get(request.arguments["profile"])
+        _validate_profile_start_allowed(self.profiles, trusted_profile)
         profile = _target_profile(trusted_profile, request.arguments["expected_source_head"])
         source_lock = _validate_protected_activation(
             self.profiles, profile, request.arguments["expected_source_head"]
@@ -534,6 +685,9 @@ class DeployFeature:
             _validate_release(profile, current, require_profile_files=True)
             if request.arguments["restart"]:
                 if service_before.get("state") == "RUNNING" and service_before.get("release_sha") == current_head:
+                    _record_protected_cutover(
+                        self.profiles, profile, manifest["source_head"], service_before
+                    )
                     return FeatureResult(Outcome.APPLIED, {
                         "profile": profile.name, "source_head": current_head,
                         "manifest_sha256": manifest["manifest_sha256"],
@@ -544,6 +698,13 @@ class DeployFeature:
                     acquire_lock=False,
                 )
                 service = _start_with_one_safe_retry(controller, current)
+                try:
+                    _record_protected_cutover(
+                        self.profiles, profile, manifest["source_head"], service
+                    )
+                except Exception:
+                    controller.stop()
+                    raise
             else:
                 service = service_before
             return FeatureResult(Outcome.APPLIED, {
@@ -579,6 +740,13 @@ class DeployFeature:
                 if service_before.get("state") == "RUNNING":
                     controller.stop()
                 service = _start_with_one_safe_retry(controller, release)
+                try:
+                    _record_protected_cutover(
+                        self.profiles, profile, manifest["source_head"], service
+                    )
+                except Exception:
+                    controller.stop()
+                    raise
             else:
                 service = controller.inspect()
             completed = {
@@ -714,6 +882,8 @@ class ServiceControlFeature:
             port=profile.port,
         )
         action = request.arguments["action"]
+        if action in {"start", "restart"}:
+            _validate_profile_start_allowed(self.profiles, profile)
         if action == "status":
             result = controller.inspect()
         elif action == "start":
