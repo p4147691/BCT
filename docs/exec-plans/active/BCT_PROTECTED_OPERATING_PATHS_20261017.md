@@ -81,7 +81,8 @@ is verified again after copy.
    `%LOCALAPPDATA%\BCT\runtime` path. Change the exact HKCU NativeMessagingHosts
    manifest value and scheduled tasks only in the approved maintenance window,
    supervisor arguments to the protected paths, with exported registry/task XML
-   as rollback evidence. Start one protected Core using
+   as rollback evidence. With the source writer lock still held, first write
+   the durable `ACTIVATING` authority and then start one protected Core using
    `bct_runtime_protected_v1` and prove exact release, generation increment,
    one listener, MCP 22-tool readiness, RCC benign presence and unchanged
    durable receipt hashes.
@@ -91,11 +92,14 @@ is verified again after copy.
 
 ## Rollback and mandatory stops
 
-Before target Core start, rollback is a receipt-owned atomic move to the
+Before cutover authority is assigned, rollback is a receipt-owned atomic move to the
 protected quarantine; it never deletes ambiguous paths. Then restart the exact
-old release. After target start, stop the target first, restore the exact
+old release. After `ACTIVATING` is recorded, source starts remain fenced even
+if target start or finalization is interrupted. Stop the target first, restore the exact
 registry/task references and old `current.json`/release, prove only one database
-writer, atomically record an approved cutover rollback, then start the old Core.
+writer, atomically record an approved `ROLLED_BACK` authority, then start the old Core.
+The target is fenced after rollback; it may start only under exact `ACTIVATING`
+or `ACTIVATED` authority.
 Never merge two databases. RCC pre-publish staging and exact-head Host build
 staging are operation-owned and are quarantined before a retry.
 

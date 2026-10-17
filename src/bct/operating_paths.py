@@ -116,14 +116,33 @@ def _copy_git_tree(root: Path, head: str, prefix: str, destination: Path) -> dic
 
 def _logical_database_snapshot(path: Path) -> dict[str, Any]:
     names = (
+        "nodes",
+        "connections",
+        "works",
         "operations",
         "resource_claims",
         "events",
+        "operation_steps",
+        "background_jobs",
+        "background_job_executors",
+        "orchestration_sessions",
+        "orchestration_manager_epochs",
+        "orchestration_session_nodes",
+        "orchestration_attachments",
+        "orchestration_assignments",
+        "orchestration_dependencies",
+        "orchestration_assignment_attempts",
         "orchestration_mailbox",
         "orchestration_manager_wakes",
         "orchestration_consumption_receipts",
         "orchestration_consumption_decisions",
+        "orchestration_durable_leases",
+        "orchestration_durable_lease_revocations",
+        "orchestration_manager_recovery_leases",
+        "orchestration_durable_wakes",
         "orchestration_dispatch_outbox",
+        "orchestration_durable_wake_attempts",
+        "orchestration_dispatch_attempts",
         "orchestration_reconciliations",
     )
     result: dict[str, Any] = {}
@@ -133,7 +152,7 @@ def _logical_database_snapshot(path: Path) -> dict[str, Any]:
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
             ).fetchone()
             if not exists:
-                continue
+                raise PreconditionError("PROTECTED_DATABASE_SCHEMA_MISSING:" + name)
             columns = [str(row[1]) for row in database.execute(f"PRAGMA table_info({name})")]
             rows = database.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
             serializable = [
@@ -469,10 +488,6 @@ def prepare_core_migration(
         quarantine = target.root / "quarantine" / f"{operation_id}-{time.time_ns()}"
         quarantine.parent.mkdir(parents=True, exist_ok=True)
         os.replace(staging_root, quarantine)
-    stage_runtime = staging_root / "runtime"
-    stage_data = staging_root / "data"
-    stage_runtime.mkdir(parents=True)
-    stage_data.mkdir(parents=True)
     base_receipt = {
         "schema": "BCT_PROTECTED_OPERATING_PATHS_V2",
         "state": "PREPARING",
@@ -485,9 +500,13 @@ def prepare_core_migration(
         "activation_allowed": False,
     }
     atomic_json(receipt_path, base_receipt)
+    stage_runtime = staging_root / "runtime"
+    stage_data = staging_root / "data"
     writer_lock = RuntimeWriterLock(source_runtime / "state" / "core-writer.lock")
     lock_acquired = False
     try:
+        stage_runtime.mkdir(parents=True)
+        stage_data.mkdir(parents=True)
         current = read_json(source_runtime / "current.json")
         if current is None or current.get("source_head") != expected_source_head:
             raise PreconditionError("PROTECTED_CURRENT_HEAD_MISMATCH")
@@ -705,7 +724,14 @@ def build_rcc_host_from_trusted_source(
     path = target.root / "migration" / f"rcc-host-build-{operation_id}.json"
     existing = read_json(path)
     if existing is not None and existing.get("state") == "PUBLISHED":
-        artifact = Path(str(existing.get("artifact_path") or ""))
+        artifact = Path(str(existing.get("artifact_path") or "")).resolve()
+        expected_artifact_root = (
+            target.root / "builds" / "rcc" / operation_id
+        ).resolve()
+        try:
+            artifact.relative_to(expected_artifact_root)
+        except ValueError as exc:
+            raise PreconditionError("PROTECTED_RCC_HOST_BUILD_ARTIFACT_ESCAPE") from exc
         exact = {
             "source_head": expected_source_head,
             "source_tree_oid": tree.stdout.strip(),
@@ -731,10 +757,6 @@ def build_rcc_host_from_trusted_source(
         if prior_artifacts.exists():
             os.replace(prior_artifacts, quarantine / "artifacts")
         atomic_json(quarantine / "receipt.json", existing)
-    staging.mkdir(parents=True)
-    source_path = staging / "RelayNativeHostV2.cs"
-    output_path = staging / "RelayNativeHostV2.exe"
-    source_path.write_bytes(source_blob)
     compiler_candidates = (
         Path(os.environ.get("WINDIR", r"C:\Windows"))
         / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe",
@@ -756,6 +778,10 @@ def build_rcc_host_from_trusted_source(
     }
     atomic_json(path, preparing)
     try:
+        staging.mkdir(parents=True)
+        source_path = staging / "RelayNativeHostV2.cs"
+        output_path = staging / "RelayNativeHostV2.exe"
+        source_path.write_bytes(source_blob)
         result = subprocess.run(
             [str(compiler), "/nologo", "/target:exe", f"/out:{output_path}", str(source_path)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -899,9 +925,6 @@ def prepare_rcc_migration(
         quarantine = target.root / "quarantine" / f"rcc-{operation_id}-{time.time_ns()}"
         quarantine.parent.mkdir(parents=True, exist_ok=True)
         os.replace(staging, quarantine)
-    stage_native = staging / "native"
-    stage_extension = staging / "extension"
-    stage_native.mkdir(parents=True)
     preparing = {
         "schema": "BCT_PROTECTED_RCC_PATHS_V2",
         "state": "PREPARING",
@@ -916,7 +939,10 @@ def prepare_rcc_migration(
         "chrome_changed": False,
     }
     atomic_json(receipt_path, preparing)
+    stage_native = staging / "native"
+    stage_extension = staging / "extension"
     try:
+        stage_native.mkdir(parents=True)
         extension_hashes = _copy_git_tree(
             trusted_source_root, expected_source_head, "modules/rcc/extension", stage_extension
         )

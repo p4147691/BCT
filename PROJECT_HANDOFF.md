@@ -15,9 +15,10 @@ UNKNOWN/Claim/Issue #111은 변경하지 않는다.
   이전 준비는 writer lock을 독점한 상태에서 exact-Git release, token,
   receipts/logs, process-session data, Supervisor payload와 SQLite Online
   Backup을 operation staging에 만들고 durable 상태 영수증 뒤에만 publish한다.
-- target health 뒤 보호된 cutover authority를 영속화하기 전까지 old runtime lock을
-  유지한다. 그 뒤 legacy deploy/service-control/Supervisor/runtime-server의 모든
-  start 경계가 fail-closed하며, 승인된 rollback authority 없이는 구 Core를 재기동하지 않는다.
+- old runtime lock을 유지한 채 target 시작 전에 `ACTIVATING` cutover authority를
+  먼저 영속화하고, target health 뒤 `ACTIVATED`로 확정한다. Source는 두 상태에서,
+  target은 승인된 `ROLLED_BACK` 상태에서 deploy/service-control/Supervisor/runtime-server의
+  모든 start 경계가 fail-closed한다.
 - ACL은 raw access mask와 exact SID allowlist로 owner/inheritance/foreign access,
   상위 DeleteChild와 lexical reparse point를 fail-closed 검증한다. RCC extension은
   exact Git tree를 재구성하고 Host는 보호 경계 안에서 exact Git C# blob을 시스템

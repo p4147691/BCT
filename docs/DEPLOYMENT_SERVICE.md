@@ -80,10 +80,13 @@ and its runtime writer lock held for the whole backup/publish window.
 deploy path requires a `PUBLISHED` migration and a separate exact activation
 receipt recording ACL, distinct-account denial and RCC canary acceptance. It
 revalidates the old Core stop state and writer fence immediately before start.
-Staging failures are durable and must be moved to quarantine before a retry.
-The writer fence remains held until target health succeeds and the protected
-cutover authority marker is durable. Thereafter all supported legacy start
-paths fail closed until a separately approved rollback changes that authority.
+The operation-owned `PREPARING` receipt is durable before any staging directory
+is created; staging failures must be moved to quarantine before a retry. While
+the old writer fence is held, an `ACTIVATING` cutover authority is made durable
+before the target Core starts. Source starts are then denied even if the deploy
+process exits between target health and the final `ACTIVATED` update. Target
+starts require `ACTIVATING` or `ACTIVATED`; after a separately approved
+`ROLLED_BACK` marker only the source may start.
 - Health: `http://127.0.0.1:18790/health`
 
 The runtime directory contains generated state and is never a source-of-truth checkout.

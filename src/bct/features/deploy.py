@@ -249,39 +249,70 @@ def _target_profile(profile: DeploymentProfile, expected_head: str) -> Deploymen
     return target
 
 
-def _cutover_authority_path(profiles: DeploymentProfiles, profile: DeploymentProfile) -> Path | None:
-    if profile.cutover_successor_profile is None:
+def _cutover_authority(
+    profiles: DeploymentProfiles, profile: DeploymentProfile
+) -> tuple[str, DeploymentProfile, DeploymentProfile, Path] | None:
+    """Return this profile's role and the single durable cutover authority."""
+    successor_name = getattr(profile, "cutover_successor_profile", None)
+    source_name = getattr(profile, "migration_source_profile", None)
+    if successor_name is not None:
+        source = profile
+        target = profiles.get(successor_name)
+        role = "source"
+    elif source_name is not None:
+        source = profiles.get(source_name)
+        target = profile
+        role = "target"
+    else:
         return None
-    successor = profiles.get(profile.cutover_successor_profile)
-    return successor.runtime_root.parent / "migration" / "cutover.json"
+    return role, source, target, target.runtime_root.parent / "migration" / "cutover.json"
+
+
+def _cutover_authority_path(
+    profiles: DeploymentProfiles, profile: DeploymentProfile
+) -> Path | None:
+    authority = _cutover_authority(profiles, profile)
+    return authority[3] if authority is not None else None
 
 
 def _validate_profile_start_allowed(
     profiles: DeploymentProfiles, profile: DeploymentProfile
 ) -> None:
     """Fail closed after a protected successor has become the durable authority."""
-    marker_path = _cutover_authority_path(profiles, profile)
-    if marker_path is None or not marker_path.exists():
+    authority = _cutover_authority(profiles, profile)
+    if authority is None:
+        return
+    role, source, target, marker_path = authority
+    if not marker_path.exists():
+        if role == "target":
+            raise PreconditionError("PROTECTED_TARGET_CUTOVER_AUTHORITY_MISSING")
         return
     marker = read_json(marker_path)
-    successor = profiles.get(str(profile.cutover_successor_profile))
     exact = {
         "schema": "BCT_PROTECTED_CUTOVER_V1",
-        "source_profile": profile.name,
-        "target_profile": successor.name,
-        "source_runtime": str(profile.runtime_root),
-        "target_runtime": str(successor.runtime_root),
+        "source_profile": source.name,
+        "target_profile": target.name,
+        "source_runtime": str(source.runtime_root),
+        "target_runtime": str(target.runtime_root),
     }
     if marker is None or any(marker.get(key) != value for key, value in exact.items()):
         raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
-    if marker.get("state") == "ACTIVATED":
-        raise PreconditionError("PROTECTED_SOURCE_PROFILE_RETIRED")
-    if (
-        marker.get("state") != "ROLLED_BACK"
-        or marker.get("rollback_approved") is not True
-        or not _NAME.fullmatch(str(marker.get("rollback_operation_id") or ""))
+    state = marker.get("state")
+    if state in {"ACTIVATING", "ACTIVATED"}:
+        if (
+            not _NAME.fullmatch(str(marker.get("operation_id") or ""))
+            or not _SHA.fullmatch(str(marker.get("source_head") or ""))
+        ):
+            raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
+        if role == "source":
+            raise PreconditionError("PROTECTED_SOURCE_PROFILE_RETIRED")
+        return
+    if state != "ROLLED_BACK" or marker.get("rollback_approved") is not True or not _NAME.fullmatch(
+        str(marker.get("rollback_operation_id") or "")
     ):
         raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
+    if role == "target":
+        raise PreconditionError("PROTECTED_TARGET_PROFILE_RETIRED")
 
 
 def write_protected_cutover_rollback(
@@ -303,9 +334,11 @@ def write_protected_cutover_rollback(
     if (
         marker is None
         or marker.get("schema") != "BCT_PROTECTED_CUTOVER_V1"
-        or marker.get("state") != "ACTIVATED"
+        or marker.get("state") not in {"ACTIVATING", "ACTIVATED"}
         or marker.get("source_profile") != source.name
         or marker.get("target_profile") != successor.name
+        or marker.get("source_runtime") != str(source.runtime_root)
+        or marker.get("target_runtime") != str(successor.runtime_root)
     ):
         raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
     locks = (
@@ -339,41 +372,90 @@ def write_protected_cutover_rollback(
             item.close()
 
 
-def _record_protected_cutover(
+def _begin_protected_cutover(
     profiles: DeploymentProfiles,
     profile: DeploymentProfile,
     expected_head: str,
-    service: dict[str, Any],
-) -> None:
+) -> dict[str, Any] | None:
     if not profile.protected_activation_required:
-        return
+        return None
     source = profiles.get(str(profile.migration_source_profile))
     activation = read_json(profile.runtime_root.parent / "migration" / "activation.json")
     if activation is None:
         raise PreconditionError("PROTECTED_ACTIVATION_RECEIPT_INVALID")
     marker = {
         "schema": "BCT_PROTECTED_CUTOVER_V1",
-        "state": "ACTIVATED",
+        "state": "ACTIVATING",
         "operation_id": activation.get("operation_id"),
         "source_profile": source.name,
         "target_profile": profile.name,
         "source_runtime": str(source.runtime_root),
         "target_runtime": str(profile.runtime_root),
         "source_head": expected_head,
-        "service_generation": service.get("generation"),
-        "service_instance_id": service.get("instance_id"),
     }
     marker_path = profile.runtime_root.parent / "migration" / "cutover.json"
     existing = read_json(marker_path)
     if existing is not None:
         stable_keys = (
-            "schema", "state", "source_profile", "target_profile",
+            "schema", "operation_id", "source_profile", "target_profile",
             "source_runtime", "target_runtime",
         )
         if any(existing.get(key) != marker.get(key) for key in stable_keys):
             raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
-        return
+        if existing.get("state") not in {"ACTIVATING", "ACTIVATED"}:
+            raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
+        if (
+            not _SHA.fullmatch(str(existing.get("source_head") or ""))
+            or (
+                existing.get("state") == "ACTIVATING"
+                and existing.get("source_head") != expected_head
+            )
+        ):
+            raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
+        return existing
     atomic_json(marker_path, marker)
+    return marker
+
+
+def _record_protected_cutover(
+    profiles: DeploymentProfiles,
+    profile: DeploymentProfile,
+    expected_head: str,
+    service: dict[str, Any],
+) -> None:
+    """Complete an authority transfer that was durably begun before target start."""
+    if not profile.protected_activation_required:
+        return
+    marker_path = profile.runtime_root.parent / "migration" / "cutover.json"
+    existing = read_json(marker_path)
+    source = profiles.get(str(profile.migration_source_profile))
+    activation = read_json(profile.runtime_root.parent / "migration" / "activation.json")
+    exact = {
+        "schema": "BCT_PROTECTED_CUTOVER_V1",
+        "operation_id": activation.get("operation_id") if activation is not None else None,
+        "source_profile": source.name,
+        "target_profile": profile.name,
+        "source_runtime": str(source.runtime_root),
+        "target_runtime": str(profile.runtime_root),
+    }
+    if (
+        existing is None
+        or existing.get("state") not in {"ACTIVATING", "ACTIVATED"}
+        or any(existing.get(key) != value for key, value in exact.items())
+        or not _SHA.fullmatch(str(existing.get("source_head") or ""))
+    ):
+        raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_INVALID")
+    if existing.get("state") == "ACTIVATED":
+        return
+    if existing.get("source_head") != expected_head:
+        raise PreconditionError("PROTECTED_CUTOVER_AUTHORITY_CONFLICT")
+    completed = {
+        **existing,
+        "state": "ACTIVATED",
+        "service_generation": service.get("generation"),
+        "service_instance_id": service.get("instance_id"),
+    }
+    atomic_json(marker_path, completed)
 
 
 def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str, Any]:
@@ -656,8 +738,9 @@ class DeployFeature:
         if request.arguments.get("operation") == "reconcile":
             return self._reconcile(request)
         trusted_profile = self.profiles.get(request.arguments["profile"])
-        _validate_profile_start_allowed(self.profiles, trusted_profile)
         profile = _target_profile(trusted_profile, request.arguments["expected_source_head"])
+        if not profile.protected_activation_required:
+            _validate_profile_start_allowed(self.profiles, profile)
         source_lock = _validate_protected_activation(
             self.profiles, profile, request.arguments["expected_source_head"]
         )
@@ -681,6 +764,8 @@ class DeployFeature:
             port=profile.port,
         )
         service_before = controller.inspect()
+        if profile.protected_activation_required and service_before.get("state") == "RUNNING":
+            _validate_profile_start_allowed(self.profiles, profile)
         if current_head == manifest["source_head"]:
             _validate_release(profile, current, require_profile_files=True)
             if request.arguments["restart"]:
@@ -696,6 +781,9 @@ class DeployFeature:
                 _validate_protected_activation(
                     self.profiles, profile, request.arguments["expected_source_head"],
                     acquire_lock=False,
+                )
+                _begin_protected_cutover(
+                    self.profiles, profile, request.arguments["expected_source_head"]
                 )
                 service = _start_with_one_safe_retry(controller, current)
                 try:
@@ -739,6 +827,9 @@ class DeployFeature:
                 )
                 if service_before.get("state") == "RUNNING":
                     controller.stop()
+                _begin_protected_cutover(
+                    self.profiles, profile, request.arguments["expected_source_head"]
+                )
                 service = _start_with_one_safe_retry(controller, release)
                 try:
                     _record_protected_cutover(

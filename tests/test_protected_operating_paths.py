@@ -9,14 +9,19 @@ import tempfile
 import unittest
 import subprocess
 import xml.etree.ElementTree as ET
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 from contextlib import closing
 from pathlib import Path
 
-from bct.core.models import PreconditionError
+from bct.core.models import FeatureRequest, PreconditionError
 from bct.core.store import Store
 from bct.features.deploy import (
+    DeployFeature,
+    DeploymentProfile,
     DeploymentProfiles,
+    ServiceControlFeature,
+    _begin_protected_cutover,
     _record_protected_cutover,
     _validate_profile_start_allowed,
     _validate_protected_activation,
@@ -189,6 +194,13 @@ class ProtectedOperatingPathTests(unittest.TestCase):
                 "SELECT consumed_at FROM orchestration_mailbox WHERE message_id='result'"
             ).fetchone())
 
+    def test_sqlite_backup_rejects_missing_required_core_schema(self):
+        source = self.base / "incomplete.sqlite"
+        with closing(sqlite3.connect(source)) as database:
+            database.execute("CREATE TABLE operations(id TEXT)")
+        with self.assertRaisesRegex(PreconditionError, "DATABASE_SCHEMA_MISSING"):
+            sqlite_online_backup(source, self.base / "backup" / "state.sqlite")
+
     def _source_runtime(self) -> tuple[Path, Path, str, Path]:
         runtime = self.base / "old-runtime"
         data = self.base / "old-data"
@@ -239,6 +251,7 @@ class ProtectedOperatingPathTests(unittest.TestCase):
             (runtime / name).write_text("1" * 64 + "\n", encoding="ascii")
         state = runtime / "state" / "state.sqlite"
         state.parent.mkdir()
+        Store(state)
         with closing(sqlite3.connect(state)) as database:
             database.execute("CREATE TABLE durable_receipt(id TEXT PRIMARY KEY)")
             database.execute("INSERT INTO durable_receipt VALUES('issue-111')")
@@ -322,6 +335,82 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         self.assertEqual("QUARANTINED", recovery["state"])
         self.assertIn("staging", recovery["quarantine"])
 
+    def test_preparing_receipt_precedes_all_owned_staging(self):
+        runtime, data, head, source = self._source_runtime()
+        target = OperatingPathLayout.from_local_app_data(self.base / "LocalAppData")
+        target.root.mkdir(parents=True)
+        user = "S-1-5-21-1000"
+        with patch("bct.operating_paths.atomic_json", side_effect=RuntimeError("receipt-failure")):
+            with self.assertRaisesRegex(RuntimeError, "receipt-failure"):
+                prepare_core_migration(
+                    source_runtime=runtime, source_data=data, trusted_source_root=source,
+                    target=target, operation_id="core-receipt-first", expected_source_head=head,
+                    service_name="bct-core", service_port=19879,
+                    acl_evidence=self._acl(target.root, user), current_user_sid=user,
+                )
+        self.assertFalse((target.root / "staging" / "core-receipt-first").exists())
+
+        rcc_source = self.base / "rcc-receipt-source"
+        extension = rcc_source / "modules" / "rcc" / "extension"
+        host_source = rcc_source / "modules" / "rcc" / "native-host" / "RelayNativeHostV2.cs"
+        extension.mkdir(parents=True)
+        host_source.parent.mkdir(parents=True)
+        key = base64.b64encode(b"receipt-first-key").decode("ascii")
+        extension_id = extension_id_from_key(key)
+        (extension / "manifest.json").write_text(json.dumps({"key": key}), encoding="utf-8")
+        (extension / "background.js").write_text("// exact\n", encoding="utf-8")
+        host_source.write_text(
+            "using System; public class RelayNativeHostV2 { public static void Main() {} }\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init", "-b", "main", str(rcc_source)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(rcc_source), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(rcc_source), "config", "user.name", "BCT Test"], check=True)
+        subprocess.run(["git", "-C", str(rcc_source), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(rcc_source), "commit", "-m", "fixture"], check=True, capture_output=True)
+        rcc_head = subprocess.run(
+            ["git", "-C", str(rcc_source), "rev-parse", "HEAD"], check=True,
+            capture_output=True, text=True,
+        ).stdout.strip()
+        with patch("bct.operating_paths.atomic_json", side_effect=RuntimeError("receipt-failure")):
+            with self.assertRaisesRegex(RuntimeError, "receipt-failure"):
+                build_rcc_host_from_trusted_source(
+                    target=target, trusted_source_root=rcc_source,
+                    expected_source_head=rcc_head, operation_id="host-receipt-first",
+                    acl_evidence=self._acl(target.root, user), current_user_sid=user,
+                )
+        self.assertFalse(
+            (target.root / "staging" / "host-receipt-first" / "rcc-host-build").exists()
+        )
+
+        build = build_rcc_host_from_trusted_source(
+            target=target, trusted_source_root=rcc_source,
+            expected_source_head=rcc_head, operation_id="host-build-real",
+            acl_evidence=self._acl(target.root, user), current_user_sid=user,
+        )
+        native_manifest = self.base / "source-native-manifest.json"
+        native_manifest.write_text(json.dumps({
+            "name": "com.ai_workspace_relay.host",
+            "path": str(Path(build["artifact_path"])),
+            "allowed_origins": [f"chrome-extension://{extension_id}/"],
+        }), encoding="utf-8")
+        with patch("bct.operating_paths.atomic_json", side_effect=RuntimeError("receipt-failure")):
+            with self.assertRaisesRegex(RuntimeError, "receipt-failure"):
+                prepare_rcc_migration(
+                    source_extension=extension,
+                    source_host_executable=Path(build["artifact_path"]),
+                    source_native_manifest=native_manifest,
+                    trusted_source_root=rcc_source,
+                    expected_source_head=rcc_head,
+                    host_build_operation_id="host-build-real",
+                    operation_id="rcc-receipt-first",
+                    target=target,
+                    expected_extension_id=extension_id,
+                    acl_evidence=self._acl(target.root, user),
+                    current_user_sid=user,
+                )
+        self.assertFalse((target.root / "staging" / "rcc-receipt-first" / "rcc").exists())
+
     def test_protected_activation_requires_published_migration_and_operating_evidence(self):
         local = self.base / "LocalAppData"
         source = self.base / "source"
@@ -367,12 +456,60 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         self.assertIsNotNone(lock)
         lock.close()
         with patch.dict("os.environ", {"LOCALAPPDATA": str(local)}):
+            with self.assertRaisesRegex(PreconditionError, "TARGET_CUTOVER_AUTHORITY_MISSING"):
+                _validate_profile_start_allowed(profiles, protected)
+            _begin_protected_cutover(profiles, protected, "a" * 40)
+            with self.assertRaisesRegex(PreconditionError, "SOURCE_PROFILE_RETIRED"):
+                _validate_profile_start_allowed(profiles, legacy)
+            _validate_profile_start_allowed(profiles, protected)
             _record_protected_cutover(
                 profiles, protected, "a" * 40,
                 {"generation": 93, "instance_id": "protected-instance"},
             )
+            activated = read_json(protected.runtime_root.parent / "migration" / "cutover.json")
+            _begin_protected_cutover(profiles, protected, "b" * 40)
+            _record_protected_cutover(
+                profiles, protected, "b" * 40,
+                {"generation": 94, "instance_id": "protected-upgrade"},
+            )
+            self.assertEqual(
+                activated,
+                read_json(protected.runtime_root.parent / "migration" / "cutover.json"),
+            )
             with self.assertRaisesRegex(PreconditionError, "SOURCE_PROFILE_RETIRED"):
                 _validate_profile_start_allowed(profiles, legacy)
+            marker_before = read_json(protected.runtime_root.parent / "migration" / "cutover.json")
+            for runtime in (legacy.runtime_root, protected.runtime_root):
+                held = RuntimeWriterLock(runtime / "state" / "core-writer.lock").acquire()
+                try:
+                    with self.assertRaisesRegex(PreconditionError, "RUNTIME_WRITER_LOCK_HELD"):
+                        write_protected_cutover_rollback(
+                            profiles=profiles,
+                            source_profile_name="legacy",
+                            operation_id="rollback-lock-test",
+                            target_references_restored=True,
+                        )
+                    self.assertEqual(
+                        marker_before,
+                        read_json(protected.runtime_root.parent / "migration" / "cutover.json"),
+                    )
+                finally:
+                    held.close()
+            with patch(
+                "bct.features.deploy.RuntimeServiceController.inspect",
+                return_value={"state": "RUNNING"},
+            ):
+                with self.assertRaisesRegex(PreconditionError, "CORE_NOT_QUIESCED"):
+                    write_protected_cutover_rollback(
+                        profiles=profiles,
+                        source_profile_name="legacy",
+                        operation_id="rollback-running-test",
+                        target_references_restored=True,
+                    )
+            self.assertEqual(
+                marker_before,
+                read_json(protected.runtime_root.parent / "migration" / "cutover.json"),
+            )
             rollback = write_protected_cutover_rollback(
                 profiles=profiles,
                 source_profile_name="legacy",
@@ -381,6 +518,87 @@ class ProtectedOperatingPathTests(unittest.TestCase):
             )
             self.assertEqual("ROLLED_BACK", rollback["state"])
             _validate_profile_start_allowed(profiles, legacy)
+            with self.assertRaisesRegex(PreconditionError, "TARGET_PROFILE_RETIRED"):
+                _validate_profile_start_allowed(profiles, protected)
+
+    def test_deploy_records_activating_before_target_start(self):
+        head = "a" * 40
+        profile = DeploymentProfile(
+            "protected", self.base / "source", self.base / "protected-runtime",
+            "bct-core", 19879, ("bct.toml",), True, "legacy", None,
+        )
+        request = FeatureRequest(
+            "deploy", "protected",
+            {"expected_source_head": head, "expected_current_source_head": head, "restart": True},
+            (), {},
+        )
+        controller = Mock()
+        controller.inspect.return_value = {"state": "STOPPED"}
+        order: list[str] = []
+        current = {"source_head": head, "manifest_sha256": "b" * 64}
+        feature = DeployFeature(Mock())
+        with patch("bct.features.deploy._validate_source", return_value=current), patch(
+            "bct.features.deploy._read_current", return_value=current
+        ), patch("bct.features.deploy._validate_release"), patch(
+            "bct.features.deploy.RuntimeServiceController", return_value=controller
+        ), patch("bct.features.deploy._validate_protected_activation"), patch(
+            "bct.features.deploy._begin_protected_cutover",
+            side_effect=lambda *args: order.append("begin"),
+        ), patch(
+            "bct.features.deploy._start_with_one_safe_retry",
+            side_effect=lambda *args: order.append("start") or {"state": "RUNNING"},
+        ), patch(
+            "bct.features.deploy._record_protected_cutover",
+            side_effect=lambda *args: order.append("complete"),
+        ):
+            feature._execute_apply(request, profile)
+        self.assertEqual(["begin", "start", "complete"], order)
+
+    def test_service_control_and_runtime_server_deny_target_without_authority(self):
+        local = self.base / "LocalAppData"
+        runtime = local / "BCT" / "runtime"
+        source = self.base / "source"
+        source.mkdir()
+        policy = self.base / "profiles.toml"
+        policy_text = (
+            "[deployment.profiles.legacy]\n"
+            f"source_root={json.dumps(str(source))}\n"
+            f"runtime_root={json.dumps(str(self.base / 'legacy-runtime'))}\n"
+            'service_name="bct-core"\nport=19879\nfiles=["bct.toml"]\n'
+            'cutover_successor_profile="protected"\n'
+            "[deployment.profiles.protected]\n"
+            f"source_root={json.dumps(str(source))}\n"
+            'runtime_root="%LOCALAPPDATA%\\\\BCT\\\\runtime"\n'
+            'service_name="bct-core"\nport=19879\nfiles=["bct.toml"]\n'
+            'protected_activation_required=true\nmigration_source_profile="legacy"\n'
+        )
+        policy.write_text(policy_text, encoding="utf-8")
+        with patch.dict("os.environ", {"LOCALAPPDATA": str(local)}):
+            profiles = DeploymentProfiles(policy)
+            feature = ServiceControlFeature(profiles)
+            request = FeatureRequest(
+                "service_control", "bct-core",
+                {"profile": "protected", "action": "start", "expected_release_sha": "a" * 40},
+                (), {},
+            )
+            with patch("bct.features.deploy._read_current", return_value={"source_head": "a" * 40}):
+                with self.assertRaisesRegex(PreconditionError, "TARGET_CUTOVER_AUTHORITY_MISSING"):
+                    feature.execute(request)
+
+            release = runtime / "releases" / ("a" * 40)
+            release.mkdir(parents=True)
+            (release / "bct.toml").write_text(policy_text, encoding="utf-8")
+            from bct import runtime_server
+            arguments = SimpleNamespace(
+                runtime_root=str(runtime), service_name="bct-core", release_sha="a" * 40,
+                manifest_sha256="b" * 64, generation=1, instance_id="fixture", port=19879,
+            )
+            writer_lock = Mock()
+            with patch.object(runtime_server, "parse_arguments", return_value=arguments), patch.object(
+                runtime_server, "acquire_runtime_writer_lock", return_value=writer_lock
+            ):
+                with self.assertRaisesRegex(PreconditionError, "TARGET_CUTOVER_AUTHORITY_MISSING"):
+                    runtime_server.main()
 
     def test_runtime_data_root_overrides_legacy_process_session_path(self):
         policy = self.base / "policy.toml"
