@@ -90,15 +90,42 @@ class OperationCoordinator:
                         raise PreconditionError("RCC_RENAME_ORIGINAL_REQUEST_DIGEST_MISMATCH")
             if original.state is not OperationState.FINISHED or not (
                 (rcc_command in {"inspect-rename-receipt", "reconcile-rename-conversation", "reclassify-rename-claim", "quarantine-legacy-rename-claim"})
+                or (rcc_command == "reconcile-send"
+                    and original.outcome is Outcome.UNKNOWN
+                    and str(original.error or "") in {
+                        "RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH",
+                        "RCC_TRANSPORT_UNKNOWN_AFTER_DISPATCH",
+                    })
                 or (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
                  and (original.evidence.get("command") == "create-and-send"
                       or str(original.error or "").startswith("RCC_COMPOSE_")))
-                or (rcc_command not in {"result-of-create-and-send", "reconcile-create-and-send"}
+                or (rcc_command not in {"result-of-create-and-send", "reconcile-create-and-send", "reconcile-send"}
                     and (original.evidence.get("command") == "send-to-created-tab"
                          or str(original.error or "").startswith(
                              "RCC_HOST_OUTCOME_UNVERIFIED:")))
             ):
                 raise PreconditionError("RCC_RESULT_ORIGINAL_SEND_REQUIRED")
+            if rcc_command == "reconcile-send":
+                # Verify the IMMUTABLE original send request BEFORE any RCC I/O.
+                # The caller cannot substitute another chat, text or timeout.
+                original_request = feature.prepare(work=work, arguments={
+                    "command": "send",
+                    "instance_id": arguments.get("instance_id"),
+                    "to": arguments.get("original_to"),
+                    "text": arguments.get("original_text"),
+                    "timeout_s": arguments.get("original_timeout_s"),
+                })
+                original_digest = hashlib.sha256(json.dumps({
+                    "work_id": work_id, "capability": capability,
+                    "target": original_request.target,
+                    "arguments": original_request.arguments,
+                    "preconditions": original_request.preconditions,
+                }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+                if self.store.get_operation_request_digest_for(
+                    operation_id=relay_id, work_id=work_id,
+                    principal_id=principal.principal_id,
+                ) != original_digest:
+                    raise PreconditionError("RCC_GENERIC_SEND_ORIGINAL_DIGEST_MISMATCH")
             if rcc_command == "reconcile-send-to-created-tab" and (
                 original.outcome is not Outcome.UNKNOWN
                 or str(original.error or "") != "RCC_HOST_OUTCOME_UNVERIFIED:SUBMIT_UNKNOWN"

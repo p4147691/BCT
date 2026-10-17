@@ -789,6 +789,121 @@ class OrchestrationTests(unittest.TestCase):
         )
         self.assertEqual("APPLIED", assignment["state"])
 
+    def _prepare_schema2_lost_worker_result(self, suffix: str):
+        # This fixture turns the already-created test session into Schema 2
+        # without changing any LIVE/legacy session.
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET "
+                "wake_receipt_mode='RCC_RESULT_POLL_V1' "
+                "WHERE session_id='session'"
+            )
+        self.bct.orchestration.manager_wake_receipt_v2_enabled = True
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        self.relay.lose_send_response = True
+        original_id = "lost-" + suffix
+        assignment_id = "recovered-" + suffix
+        original = self.call(original_id, {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": assignment_id,
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "return one isolated durable result",
+            "acceptance": {"test": suffix}, "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.relay.hide_results = False
+        self.relay.lose_send_response = False
+        return original_id, assignment_id
+
+    def test_schema2_reconciliation_records_single_manager_wake(self):
+        original_id, assignment_id = self._prepare_schema2_lost_worker_result(
+            "wake-on-reconcile"
+        )
+        sends_before = len([
+            c for c in self.relay.calls if c["command"] == "send"
+        ])
+        reconciled = self.call("resolve-schema2", {
+            "operation": "reconcile", "session_id": "session",
+            "assignment_id": assignment_id,
+            "manager_epoch": 1,
+            "original_operation_id": original_id, "timeout_s": 3,
+        })
+        self.assertEqual(Outcome.APPLIED, reconciled.outcome)
+        snap = self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session",
+        )
+        self.assertEqual(1, len([
+            x for x in snap["manager_wakes"]
+            if x["assignment_id"] == assignment_id
+        ]))
+        self.assertEqual("DELIVERED", snap["manager_wakes"][0]["state"])
+        self.assertEqual("RCC_RESULT_POLL_V1",
+                         snap["manager_wakes"][0]["receipt_mode"])
+        self.assertEqual(sends_before, len([
+            c for c in self.relay.calls if c["command"] == "send"
+        ]))
+        # Re-read existing terminal proof: no new Wake and no second send.
+        again = self.call("backfill-already-present", {
+            "operation": "recover-reconciled-wake",
+            "session_id": "session", "manager_epoch": 1,
+            "assignment_id": assignment_id,
+        })
+        self.assertEqual(Outcome.APPLIED, again.outcome)
+        self.assertFalse(again.evidence["wake_created"])
+        self.assertEqual(1, len([
+            x for x in self.bct.orchestration.snapshot(
+                work=self.bct.store.get_work("work"), session_id="session",
+            )["manager_wakes"] if x["assignment_id"] == assignment_id
+        ]))
+
+    def test_schema2_backfill_existing_reconciliation_without_worker_resend(self):
+        original_id, assignment_id = self._prepare_schema2_lost_worker_result(
+            "old-reconciled-missing-wake"
+        )
+        # Simulate the OLD implementation: exact RESULT imported, but no Wake.
+        original_method = self.bct.orchestration._record_manager_wake
+        self.bct.orchestration._record_manager_wake = lambda *args, **kw: None
+        try:
+            reconciled = self.call("old-import", {
+                "operation": "reconcile", "session_id": "session",
+                "manager_epoch": 1, "assignment_id": assignment_id,
+                "original_operation_id": original_id, "timeout_s": 3,
+            })
+        finally:
+            self.bct.orchestration._record_manager_wake = original_method
+        self.assertEqual(Outcome.APPLIED, reconciled.outcome)
+        self.assertFalse(self.bct.orchestration.snapshot(
+            work=self.bct.store.get_work("work"), session_id="session",
+        )["manager_wakes"])
+        sends_before = len([
+            c for c in self.relay.calls if c["command"] == "send"
+        ])
+        recovered = self.call("recover-old-wake", {
+            "operation": "recover-reconciled-wake",
+            "session_id": "session", "manager_epoch": 1,
+            "assignment_id": assignment_id,
+        })
+        self.assertEqual(Outcome.APPLIED, recovered.outcome)
+        self.assertTrue(recovered.evidence["wake_created"])
+        self.assertEqual("DELIVERED", recovered.evidence["wake_state"])
+        self.assertEqual(sends_before, len([
+            c for c in self.relay.calls if c["command"] == "send"
+        ]))
+        retried = self.call("recover-old-wake-again", {
+            "operation": "recover-reconciled-wake",
+            "session_id": "session", "manager_epoch": 1,
+            "assignment_id": assignment_id,
+        })
+        self.assertEqual(Outcome.APPLIED, retried.outcome)
+        self.assertFalse(retried.evidence["wake_created"])
+        self.assertEqual(1, len([
+            x for x in self.bct.orchestration.snapshot(
+                work=self.bct.store.get_work("work"), session_id="session",
+            )["manager_wakes"] if x["assignment_id"] == assignment_id
+        ]))
+
     def test_unknown_conversation_quarantine_is_global_across_rcc_instances(self):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True

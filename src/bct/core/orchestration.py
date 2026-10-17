@@ -2260,6 +2260,14 @@ class OrchestrationService:
                     }), now,
                 ),
             )
+            # A reconciled terminal RESULT is durable before any Manager Wake.
+            # Use the same deterministic event identity as normal completion.
+            # The transaction also fences the original UNKNOWN operation/claim.
+            self._record_manager_wake(
+                db, session_id=session_id, assignment=assignment,
+                generation=generation, result_message_id=result_message_id,
+                result_digest=digest, now=now,
+            )
             self.store._event(db, "ORCHESTRATION_ASSIGNMENT_RECONCILED", assignment_id, {
                 "generation": generation, "outcome": outcome,
                 "original_operation_id": original_operation_id,
@@ -2282,6 +2290,82 @@ class OrchestrationService:
                     release_original=True,
                 )
             return self._assignment_value(db, updated)
+
+    def recover_reconciled_manager_wake(
+        self, *, work: Work, session_id: str, assignment_id: str,
+        manager_epoch: int,
+    ) -> tuple[bool, dict[str, Any]]:
+        """Re-create ONLY a missing Wake for an already proven reconciled RESULT.
+
+        Existing Schema 2 receipts are immutable.  There is no Worker send or
+        guessed result: the reconciliation, terminal payload and exact mailbox
+        digest must all agree before a deterministic Wake is inserted.
+        """
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            self._assert_current_work_assignment(db, work)
+            self.assert_manager_wake_receipt_v2_session(session_id, _db=db)
+            if int(session["manager_epoch"]) != manager_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            row = db.execute(
+                "SELECT * FROM orchestration_assignments "
+                "WHERE session_id=? AND assignment_id=?",
+                (session_id, assignment_id),
+            ).fetchone()
+            if row is None or row["state"] not in {"APPLIED", "FAILED"}:
+                raise ConflictError("ORCHESTRATION_RECONCILED_RESULT_NOT_TERMINAL")
+            generation = int(row["current_generation"])
+            payload = _load(row["terminal_result_json"])
+            if not isinstance(payload, dict) or payload.get("reconciled") is not True:
+                raise ConflictError("ORCHESTRATION_RECONCILED_RESULT_PROOF_MISSING")
+            proofs = db.execute(
+                "SELECT * FROM orchestration_reconciliations "
+                "WHERE session_id=? AND assignment_id=? AND generation=? "
+                "AND manager_epoch=? AND decision='IMPORT_EXACT_RCC_RESULT'",
+                (session_id, assignment_id, generation, manager_epoch),
+            ).fetchall()
+            if len(proofs) != 1:
+                raise ConflictError("ORCHESTRATION_RECONCILIATION_PROOF_MISSING")
+            try:
+                evidence = _load(proofs[0]["evidence_json"])
+            except (TypeError, ValueError):
+                raise ConflictError("ORCHESTRATION_RECONCILIATION_PROOF_INVALID") from None
+            if not isinstance(evidence, dict) or evidence.get("result_digest") != _digest(payload):
+                raise ConflictError("ORCHESTRATION_RECONCILIATION_DIGEST_MISMATCH")
+            message_id = _identifier(
+                evidence.get("result_message_id"),
+                "ORCHESTRATION_RECONCILED_MESSAGE_ID_INVALID",
+            )
+            message = db.execute(
+                "SELECT * FROM orchestration_mailbox WHERE message_id=? "
+                "AND session_id=? AND assignment_id=? "
+                "AND assignment_generation=? AND kind='RECONCILED_RESULT'",
+                (message_id, session_id, assignment_id, generation),
+            ).fetchone()
+            attempt = db.execute(
+                "SELECT worker_node_id FROM orchestration_assignment_attempts "
+                "WHERE assignment_id=? AND generation=?",
+                (assignment_id, generation),
+            ).fetchone()
+            if (message is None or attempt is None
+                    or message["sender_node_id"] != attempt["worker_node_id"]
+                    or message["message_digest"] != _digest(payload)
+                    or _load(message["payload_json"]) != payload):
+                raise ConflictError("ORCHESTRATION_RECONCILED_MESSAGE_MISMATCH")
+            prior = db.execute(
+                "SELECT event_id FROM orchestration_manager_wakes "
+                "WHERE session_id=? AND assignment_id=? "
+                "AND assignment_generation=? AND result_message_id=? "
+                "AND manager_epoch=?",
+                (session_id, assignment_id, generation, message_id, manager_epoch),
+            ).fetchone()
+            wake = self._record_manager_wake(
+                db, session_id=session_id, assignment=row,
+                generation=generation, result_message_id=message_id,
+                result_digest=message["message_digest"], now=time.time(),
+            )
+            return prior is None, wake
 
     def finish_session(
         self, *, work: Work, session_id: str, manager_epoch: int,

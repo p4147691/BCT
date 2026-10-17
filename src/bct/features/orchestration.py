@@ -30,7 +30,8 @@ from bct.integrations.rcc import (
 _OPERATIONS = {
     "session-start", "node-sync", "manager-takeover", "dispatch",
     "worker-replace", "reconcile", "recover-not-dispatched",
-    "recover-node-sync", "chain-run", "chain-resume", "manager-wake", "status", "cancel",
+    "recover-node-sync", "recover-reconciled-wake",
+    "chain-run", "chain-resume", "manager-wake", "status", "cancel",
 }
 _RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 _RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
@@ -147,6 +148,10 @@ class OrchestrationFeature:
             _exact_keys(
                 arguments, common | {"original_operation_id"}, set()
             )
+        elif operation == "recover-reconciled-wake":
+            _exact_keys(
+                arguments, common | {"manager_epoch", "assignment_id"}, set()
+            )
         elif operation == "recover-node-sync":
             _exact_keys(
                 arguments,
@@ -244,6 +249,11 @@ class OrchestrationFeature:
         elif operation == "manager-wake":
             resources = (
                 "orchestration-wake:" + str(arguments.get("event_id") or ""),
+            )
+        elif operation == "recover-reconciled-wake":
+            resources = (
+                "orchestration-wake-recovery:" + session_id + ":"
+                + str(arguments.get("assignment_id") or ""),
             )
         else:
             resources = ("orchestration-command:" + session_id + ":" + operation,)
@@ -1420,7 +1430,7 @@ class OrchestrationFeature:
                 ),
             )
         outcome = "APPLIED" if parsed["status"] == "SUCCEEDED" else "FAILED"
-        return self.service.reconcile_assignment(
+        recovered = self.service.reconcile_assignment(
             work=work, session_id=session_id,
             assignment_id=assignment["assignment_id"],
             manager_epoch=int(values["manager_epoch"]), generation=generation,
@@ -1439,6 +1449,12 @@ class OrchestrationFeature:
             allow_chain=allow_chain,
             resolver_operation_id=resolver_operation_id,
         )
+        # Only the persisted Wake may be sent.  Never re-dispatch the Worker.
+        if recovered["state"] in {"APPLIED", "FAILED"}:
+            self._wake_manager_for_terminal_assignment(
+                work=work, session_id=session_id, assignment=recovered,
+            )
+        return recovered
 
     def _chain(
         self, request: FeatureRequest, work: Work,
@@ -1959,6 +1975,32 @@ class OrchestrationFeature:
                  "assignment_state": result["state"]},
                 release_claims=outcome is not Outcome.UNKNOWN,
                 output={"assignment": result},
+            )
+        if operation == "recover-reconciled-wake":
+            authorize("orchestrate")
+            try:
+                created, wake = self.service.recover_reconciled_manager_wake(
+                    work=work, session_id=str(values["session_id"]),
+                    assignment_id=str(values["assignment_id"]),
+                    manager_epoch=int(values["manager_epoch"]),
+                )
+            except (KeyError, ConflictError, PreconditionError) as exc:
+                raise PreconditionError(str(exc)) from exc
+            # A previously DELIVERED/UNKNOWN Wake is never submitted again.
+            delivery = None
+            if wake["state"] == "PENDING":
+                delivery = self._wake_manager(
+                    work=work, session_id=str(values["session_id"]),
+                    manager_epoch=int(values["manager_epoch"]),
+                    event_id=str(wake["event_id"]),
+                )
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": operation, "session_id": values["session_id"],
+                 "assignment_id": values["assignment_id"],
+                 "event_id": wake["event_id"], "wake_created": created,
+                 "wake_state": (delivery or {}).get("event", wake).get("state")},
+                output={"wake": wake, "delivery": delivery},
             )
         if operation == "recover-not-dispatched":
             try:
