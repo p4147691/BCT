@@ -149,6 +149,12 @@ class OrchestrationService:
         ).fetchone()
         if row is None:
             raise KeyError("ORCHESTRATION_SESSION_NOT_FOUND")
+        if str(row["wake_receipt_mode"]) not in {
+            _LEGACY_WAKE_RECEIPT_MODE, _DURABLE_WAKE_RECEIPT_MODE,
+        }:
+            raise PreconditionError(
+                "ORCHESTRATION_SESSION_WAKE_RECEIPT_MODE_UNSUPPORTED"
+            )
         return row
 
     @staticmethod

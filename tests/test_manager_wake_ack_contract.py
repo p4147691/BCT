@@ -427,6 +427,26 @@ class ManagerWakeAckContractTests(unittest.TestCase):
                     )
         self.assertEqual(1, len(self.wake_calls()))
 
+    def test_tampered_session_receipt_mode_fails_before_worker_send(self):
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode='UNKNOWN' "
+                "WHERE session_id='session'"
+            )
+        sends_before = len([
+            call for call in self.relay.calls if call["command"] == "send"
+        ])
+        result = self.call("tampered-session-mode", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "tampered-mode-assignment",
+            "worker_node_id": "worker", "attachment_id": "unused",
+            "instruction": "must not be delivered", "acceptance": {"ok": True},
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        self.assertEqual(sends_before, len([
+            call for call in self.relay.calls if call["command"] == "send"
+        ]))
+
     def test_stale_work_object_after_handoff_cannot_claim(self):
         self.relay.wake_outcomes.append("PENDING")
         self.dispatch()
