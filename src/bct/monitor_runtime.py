@@ -7,6 +7,7 @@ from typing import Any
 from bct.integrations.rcc import NamedPipeRelayClient, discover_instance_ids
 from bct.integrations.native_process import process_matches
 from bct.service_runtime import read_json
+from bct.trace_timing import recent_stages
 
 
 def _session_states(root: Path) -> list[dict[str, Any]]:
@@ -105,7 +106,7 @@ def build_monitor_state(
         "total_ms": round((after_rcc - started) * 1000, 3),
     }
     return {
-        "observability": {"schema": 1, "read_only": True, "timings": timings},
+        "observability": {"schema": 1, "read_only": True, "timings": timings, "mcp_recent": recent_stages()},
         "schema": 1,
         "generated_at": time.time(),
         "service": dict(service_state),

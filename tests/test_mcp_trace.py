@@ -44,6 +44,25 @@ class TraceTests(unittest.TestCase):
             logger.removeHandler(capture)
             logger.setLevel(previous)
 
+    def test_recent_stages_are_bounded_copy_only_and_redacted(self):
+        from bct.trace_timing import TRACE_ID, recent_stages, trace_stage
+        token = TRACE_ID.set("synthetic-monitor-trace")
+        try:
+            trace_stage("authorization_prepare", tool_kind="read", elapsed_ms=2.5)
+        finally:
+            TRACE_ID.reset(token)
+        recent = recent_stages(limit=1)
+        self.assertEqual(1, len(recent))
+        self.assertEqual(
+            {"trace_id", "stage", "tool_kind", "elapsed_ms"}, set(recent[0])
+        )
+        self.assertEqual("synthetic-monitor-trace", recent[0]["trace_id"])
+        recent[0]["stage"] = "mutated-view"
+        self.assertEqual("authorization_prepare", recent_stages(limit=1)[0]["stage"])
+        self.assertEqual([], recent_stages(limit=0))
+        self.assertLessEqual(len(recent_stages(limit=1000)), 128)
+        self.assertNotIn("token", repr(recent_stages()))
+
     def test_trace_module_is_part_of_exact_live_deployment(self):
         import tomllib
         from pathlib import Path

@@ -26,6 +26,7 @@ class MonitorRuntimeTests(unittest.TestCase):
                 )
             self.assertEqual(1, state["schema"])
             self.assertTrue(state["observability"]["read_only"])
+            self.assertIsInstance(state["observability"]["mcp_recent"], list)
             timings = state["observability"]["timings"]
             self.assertEqual(
                 {"store_snapshot_ms", "process_sessions_ms", "rcc_discovery_ms", "rcc_state_ms", "total_ms"},
