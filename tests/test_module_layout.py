@@ -22,9 +22,10 @@ class ModuleLayoutTests(unittest.TestCase):
     def test_monitor_source_is_the_bct_module(self):
         self.assertEqual("modules/monitor", self.config["monitor"]["source_root"])
 
-    def test_manager_wake_receipt_v2_is_disabled_by_default(self):
+    def test_manager_wake_receipt_v2_is_enabled_for_rollout(self):
+        # Only newly created sessions enter the durable Schema 2 path.
         self.assertIs(
-            False,
+            True,
             self.config["orchestration"]["manager_wake_receipt_v2_enabled"],
         )
         self.assertNotIn(
