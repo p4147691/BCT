@@ -42,7 +42,7 @@ class OperationCoordinator:
             raise AuthorizationError(decision.reason_code + ":" + decision.next_action)
         rcc_command = str(arguments.get("command") or "").strip().lower()
         if capability == "relay_browser" and rcc_command in {
-            "result", "reconcile-send-to-created-tab",
+            "result", "reconcile-send-to-created-tab", "reconcile-send",
             "result-of-create-and-send", "reconcile-create-and-send",
             "inspect-rename-receipt", "reconcile-rename-conversation",
             "reclassify-rename-claim", "quarantine-legacy-rename-claim",

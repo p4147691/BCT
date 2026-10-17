@@ -471,7 +471,8 @@ class RelayBrowserFeature:
             result = self.client.request(
                 instance_id=values["instance_id"], request_id=request.operation_id,
                 command=host_command, to=values["to"], text=values["text"],
-                extra=extra, timeout_s=values["timeout_s"],
+                extra=({} if values["command"] == "reconcile-send" else extra),
+                timeout_s=values["timeout_s"],
             )
         except RelayUnavailable as exc:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
