@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -54,7 +55,9 @@ class ProtectedOperatingPathTests(unittest.TestCase):
 
     def test_layout_is_bounded_below_local_app_data(self):
         layout = OperatingPathLayout.from_local_app_data(self.base / "LocalAppData")
-        self.assertEqual((self.base / "LocalAppData" / "BCT").resolve(), layout.root)
+        self.assertEqual(
+            Path(os.path.abspath(str(self.base / "LocalAppData" / "BCT"))), layout.root
+        )
         self.assertEqual(layout.root / "runtime", layout.runtime)
         self.assertEqual(layout.root / "data", layout.data)
         self.assertEqual(layout.root / "rcc" / "extension", layout.rcc_extension)
