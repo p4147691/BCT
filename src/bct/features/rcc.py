@@ -246,9 +246,6 @@ class RelayBrowserFeature:
             prepared["text"] = str(arguments.get("text") or "")
             if not prepared["to"] or not prepared["text"]:
                 raise PreconditionError("RCC_SEND_TARGET_AND_TEXT_REQUIRED")
-            # Match durable orchestration: observe the exact submitted turn ACK,
-            # not an eventual Worker reply. The ACK does not prove job completion.
-            prepared["extra"]["returnOnAck"] = True
         elif command == "send-to-created-tab":
             allowed.update({
                 "session_id", "tab_id", "window_id", "create_operation_id", "text",
@@ -444,6 +441,11 @@ class RelayBrowserFeature:
             return self._execute_create_and_send(request)
         values = request.arguments
         extra = dict(values["extra"])
+        if values["command"] == "send":
+            # Transport-only option: do not change the persisted request digest.
+            # Legacy UNKNOWN sends must retain their exact original fingerprint
+            # for read-only receipt reconciliation after this code upgrade.
+            extra["returnOnAck"] = True
         compose_parent_id = ""
         if values["command"] in {
             "result-of-create-and-send", "reconcile-create-and-send",

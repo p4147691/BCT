@@ -165,6 +165,17 @@ class RccIntegrationTests(unittest.TestCase):
             db.close()
         self.assertEqual(1, unresolved)
 
+    def test_direct_send_request_digest_preserves_legacy_fingerprint(self):
+        work = self.bct.store.get_work("rcc-work")
+        feature = self.bct.operations._features["relay_browser"]
+        prepared = feature.prepare(work=work, arguments={
+            "command": "send", "instance_id": "instance123",
+            "to": "BCT_ROSTER", "text": "benign task", "timeout_s": 30,
+        })
+        self.assertEqual({}, prepared.arguments["extra"])
+        # Transport dispatch still sets returnOnAck in the neighboring test.
+        # The stored request remains compatible with old UNKNOWN receipts.
+
     def test_direct_send_requests_submission_ack_like_orchestrate(self):
         self.client.result = {
             "type": "host:ack", "ok": True, "submitted": True,
