@@ -49,6 +49,13 @@ class ModuleLayoutTests(unittest.TestCase):
         ):
             self.assertIn(required, files)
 
+    def test_protected_runtime_profile_is_distinct_and_local_app_data_bounded(self):
+        profiles = self.config["deployment"]["profiles"]
+        protected = profiles["bct_runtime_protected_v1"]
+        self.assertEqual(r"%LOCALAPPDATA%\BCT\runtime", protected["runtime_root"])
+        self.assertEqual(profiles["bct_runtime_v1"]["source_root"], protected["source_root"])
+        self.assertEqual(profiles["bct_runtime_v1"]["files"], protected["files"])
+
     def test_tunnel_profile_uses_file_referenced_header_map(self):
         profile = (self.root / "modules" / "mcp" / "bct-control.profile.example.yaml").read_text(
             encoding="utf-8"
@@ -62,7 +69,7 @@ class ModuleLayoutTests(unittest.TestCase):
         )
         self.assertIn("D:\\TOOLS\\OpenAI\\tunnel-client\\0.0.14\\tunnel-client.exe", script)
         self.assertIn("http://127.0.0.1:18790/mcp", script)
-        self.assertIn("file:D:\\BCT\\runtime\\mcp.token", script)
+        self.assertIn("'file:' + (Join-Path $RuntimeDir 'mcp.token')", script)
         self.assertIn("BCT_TUNNEL_TARGET_MISMATCH", script)
         self.assertIn("BCT_TUNNEL_HEALTH_RECOVERED", script)
         self.assertIn("BCT_TUNNEL_DEGRADED", script)

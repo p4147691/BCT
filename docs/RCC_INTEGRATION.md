@@ -46,6 +46,15 @@ into BCT receipts.
 Only the two Python integration files are loaded into the BCT Core runtime. RCC itself is an
 installable module and is deployed separately to `D:\ChromeExtensions\RCC`.
 
+The protected operating-path plan stages the Native Host and unpacked extension
+under `%LOCALAPPDATA%\BCT\rcc`, but copying does not change Chrome's active
+unpacked path or the HKCU Native Messaging registration. Any later switch is a
+separately approved operating step. It must preserve the manifest public key,
+the fixed extension ID `ocbidbaplechjjdacmokhnfbdmgjkphf`, the sole allowed
+origin, extension storage, RCC instance and existing tab/conversation identity.
+A different ID or lost identity blocks activation and rolls the path references
+back; the process must never load a second RCC identity as a shortcut.
+
 The first installed-path migration keeps the running legacy instance available while a second,
 fixed-identity BCT instance is loaded.  The old instance is read exactly once, registrations are
 recreated only against matching open tab/conversation identities, and no pending/result operation is

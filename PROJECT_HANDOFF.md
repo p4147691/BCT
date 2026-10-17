@@ -1,5 +1,29 @@
 # BCT 인수인계
 
+## 현재 작업 — 보호된 운영 경로 이전 (소스 준비, 운영 미적용)
+
+`D:\` 상위의 광범위한 Modify/DeleteChild 위험을 피하기 위해 기존
+Core/RCC 아키텍처를 유지한 채 `%LOCALAPPDATA%\BCT`로 제한된 운영 자산만
+이전하는 소스 경계를 준비한다. 현재 LIVE, ACL, Registry, RCC/Chrome, Schema 2,
+UNKNOWN/Claim/Issue #111은 변경하지 않는다.
+
+- 기존 `bct_runtime_v1`은 그대로 유지하고 명시적인
+  `bct_runtime_protected_v1`만 추가한다. `%LOCALAPPDATA%` 외 환경 변수나 탈출
+  경로는 거부하고 두 프로필의 배포 파일 집합은 같아야 한다.
+- 이전 준비는 old/target Core가 모두 정지했을 때만 active release, token,
+  receipts/logs, BCT data와 SQLite Online Backup을 새 경로에 stage한다. 새
+  `service.json`을 활성화하지 않고 `activation_allowed=false` 영수증을 남긴다.
+- ACL owner/inheritance/ACE, 상위 DeleteChild와 reparse point를 fail-closed로
+  검증하며, RCC는 고정 extension ID와 sole origin을 검증한 뒤 비활성 staging만
+  허용한다. Chrome unpacked path와 HKCU Host 등록 변경은 별도 운영 승인이다.
+- Git exact HEAD/clean 검사에 더해 각 배포 파일의 worktree blob이 요청 commit의
+  blob과 같은지 검증한다. Supervisor와 tunnel token reference는 선택한 runtime
+  root/profile을 사용한다.
+- 정확한 단계·백업·롤백·다른 계정 시험·브라우저 identity 보존 조건은
+  `docs/exec-plans/active/BCT_PROTECTED_OPERATING_PATHS_20261017.md`에 있다.
+- 구형 경로의 token/DB 폐기와 token 회전은 파괴적 운영 변경이므로 이번 소스
+  작업에 포함하지 않는다.
+
 ## 현재 작업 — Durable Orchestration PR C (DRAFT 준비, 운영 비활성)
 
 PR A #149와 PR B #150이 병합된 최신 검증 main에서 독립 worktree로 PR C를 구현했다.

@@ -1,6 +1,7 @@
 param(
     [int]$CheckIntervalSeconds = 20,
     [string]$RuntimeDir = 'D:\BCT\runtime',
+    [string]$Profile = 'bct_runtime_v1',
     # Do not embed a user-profile literal here. Windows PowerShell 5.1 treats
     # UTF-8 files without a BOM as an ANSI code page, which corrupts a Korean
     # profile name before this supervisor can write its own diagnostics.
@@ -30,7 +31,7 @@ function Invoke-Ensure {
     $module = Join-Path $releaseRoot 'src\bct\supervisor.py'
     if (-not (Test-Path -LiteralPath $module -PathType Leaf)) { throw 'BCT_SUPERVISOR_MODULE_MISSING' }
     $env:PYTHONPATH = Join-Path $releaseRoot 'src'
-    $output = & $PythonPath -m bct.supervisor --runtime-root $RuntimeDir --profile bct_runtime_v1 2>&1
+    $output = & $PythonPath -m bct.supervisor --runtime-root $RuntimeDir --profile $Profile 2>&1
     if ($LASTEXITCODE -ne 0) { throw ('BCT_CORE_ENSURE_FAILED ' + ($output -join ' ')) }
     Write-Event 'BCT_CORE_READY' ($output -join ' ')
 }

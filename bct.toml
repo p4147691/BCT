@@ -85,5 +85,60 @@ files = [
   "src/bct/integrations/github.py",
   "src/bct/integrations/rcc.py",
   "src/bct/integrations/native_process.py",
+  "src/bct/operating_paths.py",
+  "modules/status-ui/index.html",
+]
+
+# Source-only protected-path deployment target. This profile is intentionally
+# separate from bct_runtime_v1 so the current D:\ deployment remains an exact,
+# rollback-capable authority until a separately approved cutover completes.
+[deployment.profiles.bct_runtime_protected_v1]
+source_root = "D:\\BCT\\source"
+runtime_root = "%LOCALAPPDATA%\\BCT\\runtime"
+service_name = "bct-core"
+port = 18790
+files = [
+  "bct.toml",
+  "src/bct/__init__.py",
+  "src/bct/service.py",
+  "src/bct/service_runtime.py",
+  "src/bct/runtime_server.py",
+  "src/bct/supervisor.py",
+  "src/bct/mcp_server.py",
+  "src/bct/monitor_runtime.py",
+  "src/bct/manager_decision_recovery.py",
+  "src/bct/worker_dispatch_recovery.py",
+  "src/bct/background_operations.py",
+  "src/bct/operation_worker.py",
+  "src/bct/process_session_worker.py",
+  "src/bct/core/__init__.py",
+  "src/bct/core/identity.py",
+  "src/bct/core/models.py",
+  "src/bct/core/operations.py",
+  "src/bct/core/orchestration.py",
+  "src/bct/core/consumption.py",
+  "src/bct/core/durable_pr2.py",
+  "src/bct/core/manager_decision.py",
+  "src/bct/core/policy.py",
+  "src/bct/core/rcc_result.py",
+  "src/bct/core/store.py",
+  "src/bct/features/__init__.py",
+  "src/bct/features/common.py",
+  "src/bct/features/deploy.py",
+  "src/bct/features/files.py",
+  "src/bct/features/git.py",
+  "src/bct/features/github.py",
+  "src/bct/features/rcc.py",
+  "src/bct/features/execution.py",
+  "src/bct/features/process_session.py",
+  "src/bct/features/monitor.py",
+  "src/bct/features/orchestration.py",
+  "src/bct/features/tests.py",
+  "src/bct/features/verification.py",
+  "src/bct/integrations/__init__.py",
+  "src/bct/integrations/github.py",
+  "src/bct/integrations/rcc.py",
+  "src/bct/integrations/native_process.py",
+  "src/bct/operating_paths.py",
   "modules/status-ui/index.html",
 ]

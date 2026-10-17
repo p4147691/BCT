@@ -4,7 +4,11 @@
 
 BCT deploys only a named profile stored in `bct.toml`. A caller cannot supply a source
 path, destination path, file list, service name, executable, command, or port. The
-`bct_runtime_v1` profile is the sole production profile and lists every copied file.
+`bct_runtime_v1` remains the production profile and lists every copied file.
+`bct_runtime_protected_v1` is a separately activated migration target rooted at
+`%LOCALAPPDATA%\BCT\runtime`. It is never selected implicitly. Its file set must
+remain byte-for-byte equal to the production profile, and a cutover requires a
+separate operating approval and a quiesced old Core.
 Wildcards, directories, path traversal, symlinks, and uncommitted source are rejected.
 
 ## Deployment lifecycle
@@ -52,6 +56,23 @@ original result without repeating deployment, start, stop, or restart.
 - Active pointer: `D:\BCT\runtime\current.json`
 - Service ownership: `D:\BCT\runtime\service.json`
 - Operation state: `D:\BCT\runtime\state\state.sqlite`
+
+For the protected profile those paths are respectively
+`%LOCALAPPDATA%\BCT\runtime\current.json` and
+`%LOCALAPPDATA%\BCT\runtime\state\state.sqlite`. The literal
+`%LOCALAPPDATA%` token is the only supported deployment-path variable. BCT
+resolves it itself and rejects missing, relative, escaping, or other variable
+forms. Source remains the exact clean `D:\BCT\source` main checkout.
+
+Before hashing a deployment file BCT compares the worktree blob with the blob
+recorded by the requested Git commit. This binds the SHA-256 release manifest
+to that exact Git tree in addition to the existing clean-main check.
+
+Protected-path preparation uses SQLite Online Backup and `quick_check`, copies
+only the active immutable Core release, Core tokens, Core receipts/logs and BCT
+data, and writes no active `service.json`. Both old and target Core states must
+be stopped. Preparation leaves `activation_allowed=false`; starting the target
+requires a later ACL/identity acceptance and explicit cutover approval.
 - Health: `http://127.0.0.1:18790/health`
 
 The runtime directory contains generated state and is never a source-of-truth checkout.

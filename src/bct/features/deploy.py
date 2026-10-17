@@ -28,6 +28,7 @@ from bct.service_runtime import RuntimeServiceController, atomic_json, read_json
 _SHA = re.compile(r"[0-9a-f]{40}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _NAME = re.compile(r"[A-Za-z0-9_.-]+")
+_LOCAL_APP_DATA_PREFIX = "%LOCALAPPDATA%"
 
 
 def _git(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -81,6 +82,34 @@ class DeploymentProfiles:
             raise ValueError("DEPLOYMENT_FILE_INVALID:" + value)
         return normalized
 
+    def _path(self, value: str, *, allow_local_app_data: bool) -> Path:
+        candidate_value = value
+        if value.upper().startswith(_LOCAL_APP_DATA_PREFIX):
+            if not allow_local_app_data:
+                raise PreconditionError("DEPLOYMENT_PROFILE_PATH_VARIABLE_FORBIDDEN")
+            suffix = value[len(_LOCAL_APP_DATA_PREFIX):].replace("/", "\\")
+            if not suffix.startswith("\\"):
+                raise PreconditionError("DEPLOYMENT_PROFILE_PATH_VARIABLE_INVALID")
+            parts = tuple(part for part in suffix.split("\\") if part)
+            if not parts or any(part in {".", ".."} or any(ch in part for ch in "*?[]:%") for part in parts):
+                raise PreconditionError("DEPLOYMENT_PROFILE_PATH_VARIABLE_INVALID")
+            local_app_data = os.environ.get("LOCALAPPDATA", "")
+            local_root = Path(local_app_data)
+            if not local_app_data or not local_root.is_absolute():
+                raise PreconditionError("DEPLOYMENT_LOCALAPPDATA_UNAVAILABLE")
+            candidate = local_root.joinpath(*parts)
+            try:
+                candidate.resolve().relative_to(local_root.resolve())
+            except ValueError as exc:
+                raise PreconditionError("DEPLOYMENT_PROFILE_PATH_ESCAPE") from exc
+            return candidate.resolve()
+        if "%" in candidate_value:
+            raise PreconditionError("DEPLOYMENT_PROFILE_PATH_VARIABLE_INVALID")
+        candidate = Path(candidate_value)
+        if not candidate.is_absolute():
+            candidate = self.path.parent / candidate
+        return candidate.resolve()
+
     def get(self, name: str) -> DeploymentProfile:
         if not _NAME.fullmatch(name):
             raise PreconditionError("DEPLOYMENT_PROFILE_INVALID")
@@ -94,12 +123,8 @@ class DeploymentProfiles:
         files_value = value.get("files")
         if not isinstance(source_value, str) or not isinstance(runtime_value, str):
             raise PreconditionError("DEPLOYMENT_PROFILE_PATH_INVALID")
-        source_root = Path(source_value)
-        if not source_root.is_absolute():
-            source_root = self.path.parent / source_root
-        runtime_root = Path(runtime_value)
-        if not runtime_root.is_absolute():
-            runtime_root = self.path.parent / runtime_root
+        source_root = self._path(source_value, allow_local_app_data=False)
+        runtime_root = self._path(runtime_value, allow_local_app_data=True)
         if not isinstance(files_value, list) or not files_value:
             raise PreconditionError("DEPLOYMENT_PROFILE_FILES_INVALID")
         try:
@@ -114,8 +139,8 @@ class DeploymentProfiles:
             raise PreconditionError("DEPLOYMENT_PROFILE_SERVICE_INVALID")
         return DeploymentProfile(
             name,
-            source_root.resolve(),
-            runtime_root.resolve(),
+            source_root,
+            runtime_root,
             service_name,
             port,
             files,
@@ -179,6 +204,14 @@ def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str
             raise PreconditionError("DEPLOYMENT_SOURCE_ESCAPE:" + relative) from exc
         if not path.is_file() or path.is_symlink() or resolved != path.absolute():
             raise PreconditionError("DEPLOYMENT_SOURCE_FILE_INVALID:" + relative)
+        committed = _git(root, "rev-parse", f"{expected_head}:{relative}")
+        working = _git(root, "hash-object", "--", relative)
+        if (
+            committed.returncode != 0
+            or working.returncode != 0
+            or committed.stdout.strip() != working.stdout.strip()
+        ):
+            raise PreconditionError("DEPLOYMENT_SOURCE_GIT_BLOB_MISMATCH:" + relative)
         hashes[relative] = _sha256(path)
     payload = json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {
