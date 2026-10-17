@@ -25,7 +25,7 @@ approval_actions = ["delete", "credential_change"]
 # Emergency stop for durable Manager/Worker collaboration. When enabled, only
 # sessions created afterwards use Schema 2; existing sessions stay pinned to
 # their stored legacy receipt mode.
-manager_wake_receipt_v2_enabled = false
+manager_wake_receipt_v2_enabled = true
 
 [execution.sessions]
 state_root = "D:\\BCT\\data\\process-sessions"
