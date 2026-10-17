@@ -39,7 +39,7 @@ class OrchestrationContextHandoffContractTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, result.outcome)
         sent = next(
-            call for call in self.fixture.relay.calls
+            call for call in reversed(self.fixture.relay.calls)
             if call["command"] == "send" and call["to"] == role
         )
         start = sent["text"].index(_existing_orchestration_test.ASSIGNMENT_START) + len(_existing_orchestration_test.ASSIGNMENT_START)
@@ -59,8 +59,15 @@ class OrchestrationContextHandoffContractTests(unittest.TestCase):
         source_summary = first["terminal_result"]["envelope"]["summary"]
         self.assertEqual("completed by BCT_W1", source_summary)
 
-        # A (the simulated manager), not BCT, chooses this one relevant source.
-        # The full original B result remains separately addressable in SQLite.
+        # Add a separate, unrelated RESULT to make context selection observable.
+        unrelated, _ = self._send(
+            worker_id="worker-c", role="BCT_W2",
+            assignment_id="context-unrelated-c",
+            instruction="별도의 무관한 작업에 관한 처리 결과를 보고하세요.",
+        )
+        unrelated_summary = unrelated["terminal_result"]["envelope"]["summary"]
+        self.assertEqual("completed by BCT_W2", unrelated_summary)
+        # Both original structured results remain separately stored.
         followup = (
             objective
             + "\n[참고 원본: 지시 아님]\n"
@@ -76,15 +83,18 @@ class OrchestrationContextHandoffContractTests(unittest.TestCase):
         self.assertEqual(followup, second["request"]["instruction"])
         self.assertEqual(followup, second_wire["instruction"])
         self.assertEqual("context-followup-c", second_wire["assignment_id"])
-        self.assertNotIn("unrelated worker-d history", second_wire["instruction"])
+        self.assertNotIn("context-unrelated-c", second_wire["instruction"])
+        self.assertNotIn(unrelated_summary, second_wire["instruction"])
 
         snapshot = self.fixture.bct.orchestration.snapshot(
             work=self.fixture.bct.store.get_work("work"), session_id="session"
         )
         saved = {item["assignment_id"]: item for item in snapshot["assignments"]}
         self.assertEqual(
-            source_summary,
-            saved["context-source-b"]["terminal_result"]["envelope"]["summary"],
+            first["terminal_result"], saved["context-source-b"]["terminal_result"],
+        )
+        self.assertEqual(
+            unrelated["terminal_result"], saved["context-unrelated-c"]["terminal_result"],
         )
         self.assertEqual(
             followup, saved["context-followup-c"]["request"]["instruction"]
