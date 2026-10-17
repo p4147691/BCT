@@ -21,7 +21,14 @@ _ROLE = re.compile(r"^[A-Z0-9_-]{1,24}$")
 _TERMINAL = frozenset({
     "APPLIED", "NOT_APPLIED", "FAILED", "UNKNOWN", "CANCELLED", "SKIPPED"
 })
-_NODE_EVIDENCE_ACTIONS = frozenset({"read"})
+_TRUSTED_COLLABORATION_ACTIONS = frozenset({
+    "read", "write", "test", "verify", "git_commit", "github_push",
+    "github_pr_create", "github_pr_status", "github_pr_merge",
+    "github_sync_main", "system_inspect", "execute", "process_session",
+    "monitor",
+})
+_LEGACY_WAKE_RECEIPT_MODE = "LEGACY_RETURN_V1"
+_DURABLE_WAKE_RECEIPT_MODE = "RCC_RESULT_POLL_V1"
 
 
 def _canonical(value: Any) -> str:
@@ -65,44 +72,36 @@ class OrchestrationService:
 
     def __init__(
         self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
-        manager_wake_receipt_v2_allowed_work_ids: tuple[str, ...] | list[str] = (),
         policy: "Policy | None" = None,
     ):
         if not isinstance(manager_wake_receipt_v2_enabled, bool):
             raise ValueError("MANAGER_WAKE_RECEIPT_V2_ENABLED_INVALID")
-        if (not isinstance(manager_wake_receipt_v2_allowed_work_ids, (tuple, list))
-                or any(not isinstance(item, str)
-                       for item in manager_wake_receipt_v2_allowed_work_ids)):
-            raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_INVALID")
-        allowed = tuple(
-            _identifier(item, "MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_ID_INVALID")
-            for item in manager_wake_receipt_v2_allowed_work_ids
-        )
-        if len(allowed) != len(set(allowed)):
-            raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_DUPLICATE")
-        if len(allowed) > 32:
-            raise ValueError("MANAGER_WAKE_RECEIPT_V2_ALLOWED_WORK_IDS_TOO_MANY")
         self.store = store
         self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
-        self.manager_wake_receipt_v2_allowed_work_ids = frozenset(allowed)
         self.policy = policy
 
     @property
     def manager_wake_receipt_v2_active(self) -> bool:
-        return (
-            self.manager_wake_receipt_v2_enabled
-            and bool(self.manager_wake_receipt_v2_allowed_work_ids)
-        )
+        return self.manager_wake_receipt_v2_enabled
 
-    def manager_wake_receipt_v2_allowed(self, work_id: str) -> bool:
-        return (
-            self.manager_wake_receipt_v2_enabled
-            and work_id in self.manager_wake_receipt_v2_allowed_work_ids
-        )
-
-    def assert_manager_wake_receipt_v2_allowed(self, work_id: str) -> None:
-        if not self.manager_wake_receipt_v2_allowed(work_id):
-            raise ConflictError("MANAGER_WAKE_RECEIPT_V2_WORK_NOT_ALLOWED")
+    def assert_manager_wake_receipt_v2_session(self, session_id: str, *, _db=None) -> None:
+        """Fail closed unless this exact session was born on the durable path."""
+        if not self.manager_wake_receipt_v2_enabled:
+            raise ConflictError("MANAGER_WAKE_RECEIPT_V2_DISABLED")
+        close = _db is None
+        db = self.store._connect() if close else _db
+        try:
+            row = db.execute(
+                "SELECT wake_receipt_mode FROM orchestration_sessions "
+                "WHERE session_id=?", (session_id,),
+            ).fetchone()
+        finally:
+            if close:
+                db.close()
+        if row is None:
+            raise KeyError("ORCHESTRATION_SESSION_NOT_FOUND")
+        if str(row["wake_receipt_mode"]) != _DURABLE_WAKE_RECEIPT_MODE:
+            raise ConflictError("MANAGER_WAKE_RECEIPT_V2_SESSION_NOT_ALLOWED")
 
     def assert_current_unattended_policy(self, actions: list[str]) -> str:
         """Re-read Policy for authority-free successor assignment actions."""
@@ -167,6 +166,7 @@ class OrchestrationService:
             "manager_epoch": row["manager_epoch"],
             "state": row["state"],
             "terminal_summary": _load(row["terminal_summary_json"]),
+            "wake_receipt_mode": row["wake_receipt_mode"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -222,6 +222,11 @@ class OrchestrationService:
             "actions": delegated_actions,
             "acceptance": acceptance,
         }
+        wake_receipt_mode = (
+            _DURABLE_WAKE_RECEIPT_MODE
+            if self.manager_wake_receipt_v2_enabled
+            else _LEGACY_WAKE_RECEIPT_MODE
+        )
         now = time.time()
         with self.store.transaction() as db:
             current = db.execute(
@@ -240,11 +245,16 @@ class OrchestrationService:
                     raise ConflictError("ORCHESTRATION_SESSION_REQUEST_MISMATCH")
                 return False, value
             db.execute(
-                "INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO orchestration_sessions "
+                "(session_id,work_id,work_assignment_epoch,objective,roots_json,"
+                "actions_json,acceptance_json,plan_revision,manager_node_id,"
+                "manager_epoch,state,terminal_summary_json,wake_receipt_mode,"
+                "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     session_id, work.work_id, work.assignment_epoch, objective,
                     _canonical(delegated_roots), _canonical(delegated_actions),
-                    _canonical(acceptance), 1, None, 0, "ACTIVE", "{}", now, now,
+                    _canonical(acceptance), 1, None, 0, "ACTIVE", "{}",
+                    wake_receipt_mode, now, now,
                 ),
             )
             self.store._event(db, "ORCHESTRATION_SESSION_STARTED", session_id, {
@@ -727,7 +737,7 @@ class OrchestrationService:
             raise PreconditionError("ORCHESTRATION_ASSIGNMENT_ROOT_OUTSIDE_SESSION")
         if not set(normalized_actions).issubset(session_actions):
             raise PreconditionError("ORCHESTRATION_ASSIGNMENT_ACTION_OUTSIDE_SESSION")
-        if not set(normalized_actions).issubset(_NODE_EVIDENCE_ACTIONS):
+        if not set(normalized_actions).issubset(_TRUSTED_COLLABORATION_ACTIONS):
             raise PreconditionError("ORCHESTRATION_NODE_SIDE_EFFECT_ACTION_FORBIDDEN")
         return normalized_roots, normalized_actions
 
@@ -1515,11 +1525,8 @@ class OrchestrationService:
             f"{generation}:{result_message_id}".encode("utf-8")
         ).hexdigest()[:32]
         state = "PENDING" if attachment is not None else "BLOCKED"
-        envelope_schema, receipt_mode = (
-            (2, "RCC_RESULT_POLL_V1")
-            if self.manager_wake_receipt_v2_allowed(str(session["work_id"]))
-            else (1, "LEGACY_RETURN_V1")
-        )
+        receipt_mode = str(session["wake_receipt_mode"])
+        envelope_schema = 2 if receipt_mode == _DURABLE_WAKE_RECEIPT_MODE else 1
         if envelope_schema == 2 and manager_node_id:
             lease = db.execute(
                 "SELECT * FROM orchestration_durable_leases WHERE session_id=?",
@@ -1622,7 +1629,9 @@ class OrchestrationService:
             }:
                 raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
             if envelope_schema == 2:
-                self.assert_manager_wake_receipt_v2_allowed(str(session["work_id"]))
+                self.assert_manager_wake_receipt_v2_session(
+                    str(session["session_id"]), _db=db,
+                )
             if event["state"] == "DELIVERED":
                 return dict(event)
             if event["state"] != "PENDING":
@@ -1674,7 +1683,9 @@ class OrchestrationService:
             }:
                 raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
             if envelope_schema == 2:
-                self.assert_manager_wake_receipt_v2_allowed(str(session["work_id"]))
+                self.assert_manager_wake_receipt_v2_session(
+                    str(session["session_id"]), _db=db,
+                )
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
             if manager_lease_token is not None:
@@ -1770,7 +1781,9 @@ class OrchestrationService:
             }:
                 raise ConflictError("ORCHESTRATION_WAKE_ENVELOPE_SCHEMA_UNSUPPORTED")
             if envelope_schema == 2:
-                self.assert_manager_wake_receipt_v2_allowed(str(session["work_id"]))
+                self.assert_manager_wake_receipt_v2_session(
+                    str(session["session_id"]), _db=db,
+                )
             if int(session["manager_epoch"]) != manager_epoch or int(event["manager_epoch"]) != manager_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
             if str(event["delivery_id"] or "") != delivery_id:

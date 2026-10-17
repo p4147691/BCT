@@ -69,9 +69,6 @@ class WorkerDispatchRecovery:
         self._signal.clear()
         return signalled
 
-    def _allowed_work_ids(self) -> tuple[str, ...]:
-        return tuple(sorted(self.service.manager_wake_receipt_v2_allowed_work_ids))
-
     @staticmethod
     def _scan_cursors(value: Any) -> dict[str, str]:
         raw = str(value or "")
@@ -89,10 +86,8 @@ class WorkerDispatchRecovery:
         return {"outbox": raw, "wake": ""}
 
     def _acquire(self, now: float) -> bool:
-        allowed = self._allowed_work_ids()
-        if not self.service.manager_wake_receipt_v2_enabled or not allowed:
+        if not self.service.manager_wake_receipt_v2_enabled:
             return False
-        allowed_sql = ",".join("?" for _ in allowed)
         expires = now + 30.0
         with self.store.transaction() as db:
             row = db.execute(
@@ -137,8 +132,8 @@ class WorkerDispatchRecovery:
                 "FROM orchestration_durable_leases l JOIN orchestration_sessions s "
                 "ON s.session_id=l.session_id JOIN works w ON w.work_id=s.work_id "
                 "WHERE s.state IN ('ACTIVE','PARTIAL') AND w.state='ACTIVE' "
+                "AND s.wake_receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.assignment_epoch=s.work_assignment_epoch "
-                f"AND s.work_id IN ({allowed_sql}) "
                 "AND l.epoch=s.manager_epoch AND l.manager_node_id=s.manager_node_id "
                 "AND l.expires_at<=? AND (EXISTS (SELECT 1 FROM "
                 "orchestration_dispatch_outbox o WHERE o.session_id=l.session_id "
@@ -148,7 +143,7 @@ class WorkerDispatchRecovery:
                 "WHERE mw.session_id=l.session_id AND mw.manager_epoch=l.epoch "
                 "AND mw.envelope_schema=2 AND mw.receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND mw.state='PENDING'))",
-                (*allowed, now),
+                (now,),
             ).fetchall()
             for lease in expired:
                 replacement = secrets.token_hex(32)
@@ -167,7 +162,7 @@ class WorkerDispatchRecovery:
                 "orchestration_sessions s JOIN works w ON w.work_id=s.work_id "
                 "WHERE s.session_id=orchestration_durable_leases.session_id "
                 "AND s.state IN ('ACTIVE','PARTIAL') AND w.state='ACTIVE' "
-                f"AND s.work_id IN ({allowed_sql}) "
+                "AND s.wake_receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.assignment_epoch=s.work_assignment_epoch "
                 "AND s.manager_epoch=orchestration_durable_leases.epoch "
                 "AND s.manager_node_id=orchestration_durable_leases.manager_node_id) "
@@ -181,7 +176,7 @@ class WorkerDispatchRecovery:
                 "orchestration_durable_leases.session_id AND mw.manager_epoch="
                 "orchestration_durable_leases.epoch AND mw.envelope_schema=2 AND "
                 "mw.receipt_mode='RCC_RESULT_POLL_V1' AND mw.state='PENDING'))",
-                (now + 60.0, now, now, now + 20.0, *allowed),
+                (now + 60.0, now, now, now + 20.0),
             )
             return True
 
@@ -236,10 +231,8 @@ class WorkerDispatchRecovery:
     def _candidates(self, limit: int, now: float) -> list[DispatchCandidate]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 32:
             raise ValueError("WORKER_DISPATCH_LIMIT_INVALID")
-        allowed = self._allowed_work_ids()
-        if not self.service.manager_wake_receipt_v2_enabled or not allowed:
+        if not self.service.manager_wake_receipt_v2_enabled:
             return []
-        allowed_sql = ",".join("?" for _ in allowed)
         db = self.store._connect()
         try:
             owner = db.execute(
@@ -258,20 +251,20 @@ class WorkerDispatchRecovery:
                 "AND a.generation=o.attachment_generation WHERE o.state IN "
                 "('PENDING','RESERVED','DISPATCHING','DELIVERED','UNKNOWN','ACKNOWLEDGED') "
                 "AND o.completed_at IS NULL AND s.state IN ('ACTIVE','PARTIAL') "
+                "AND s.wake_receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.state='ACTIVE' AND w.assignment_epoch=s.work_assignment_epoch "
                 "AND s.manager_epoch=o.manager_epoch AND l.epoch=o.manager_epoch "
                 "AND l.manager_node_id=s.manager_node_id AND l.expires_at>? "
-                f"AND s.work_id IN ({allowed_sql}) "
             )
             cursor = self._scan_cursors(owner["scan_cursor"])["outbox"]
             rows = list(db.execute(
                 common + "AND o.delivery_id>? ORDER BY o.delivery_id LIMIT ?",
-                (now, *allowed, cursor, limit),
+                (now, cursor, limit),
             ).fetchall())
             if len(rows) < limit:
                 rows += list(db.execute(
                     common + "AND o.delivery_id<=? ORDER BY o.delivery_id LIMIT ?",
-                    (now, *allowed, cursor, limit - len(rows)),
+                    (now, cursor, limit - len(rows)),
                 ).fetchall())
             return [DispatchCandidate(
                 str(r["delivery_id"]), str(r["session_id"]), int(r["manager_epoch"]),
@@ -307,10 +300,8 @@ class WorkerDispatchRecovery:
         self, limit: int, now: float,
     ) -> list[ManagerWakeCandidate]:
         """Return a bounded, fair batch of persisted schema-2 wake work."""
-        allowed = self._allowed_work_ids()
-        if not self.service.manager_wake_receipt_v2_enabled or not allowed:
+        if not self.service.manager_wake_receipt_v2_enabled:
             return []
-        allowed_sql = ",".join("?" for _ in allowed)
         db = self.store._connect()
         try:
             owner = db.execute(
@@ -326,21 +317,21 @@ class WorkerDispatchRecovery:
                 "ON s.session_id=w.session_id JOIN works k ON k.work_id=s.work_id "
                 "JOIN orchestration_durable_leases l ON l.session_id=w.session_id "
                 "WHERE w.envelope_schema=2 AND w.receipt_mode='RCC_RESULT_POLL_V1' "
+                "AND s.wake_receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.state='PENDING' AND s.state IN ('ACTIVE','PARTIAL') "
                 "AND k.state='ACTIVE' AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND s.manager_epoch=w.manager_epoch AND l.epoch=w.manager_epoch "
                 "AND l.manager_node_id=s.manager_node_id AND l.expires_at>? "
-                f"AND s.work_id IN ({allowed_sql}) "
             )
             cursor = self._scan_cursors(owner["scan_cursor"])["wake"]
             rows = list(db.execute(
                 common + "AND w.event_id>? ORDER BY w.event_id LIMIT ?",
-                (now, *allowed, cursor, limit),
+                (now, cursor, limit),
             ).fetchall())
             if len(rows) < limit:
                 rows += list(db.execute(
                     common + "AND w.event_id<=? ORDER BY w.event_id LIMIT ?",
-                    (now, *allowed, cursor, limit - len(rows)),
+                    (now, cursor, limit - len(rows)),
                 ).fetchall())
             return [ManagerWakeCandidate(
                 str(row["event_id"]), str(row["session_id"]),
@@ -370,7 +361,7 @@ class WorkerDispatchRecovery:
 
     def _deliver_manager_wake(self, candidate: ManagerWakeCandidate) -> str:
         work = self.store.get_work(candidate.work_id)
-        self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id)
+        self.service.assert_manager_wake_receipt_v2_session(candidate.session_id)
         self.service.assert_current_unattended_orchestration_policy(work)
         result = self.feature._wake_manager(
             work=work,
@@ -381,7 +372,9 @@ class WorkerDispatchRecovery:
             recovery_fence=(self.owner_id, self.lease_token),
             claim_at_write=True,
             before_write_fence=lambda: (
-                self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id),
+                self.service.assert_manager_wake_receipt_v2_session(
+                    candidate.session_id
+                ),
                 self.service.assert_current_unattended_orchestration_policy(
                     self.store.get_work(candidate.work_id)
                 ),
@@ -393,7 +386,7 @@ class WorkerDispatchRecovery:
         self, candidate: DispatchCandidate, *, check_unattended_policy: bool = True,
     ) -> tuple[Any, dict[str, Any], dict[str, Any], str, str]:
         work = self.store.get_work(candidate.work_id)
-        self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id)
+        self.service.assert_manager_wake_receipt_v2_session(candidate.session_id)
         assignment = self.service.assignment(
             work=work, session_id=candidate.session_id,
             assignment_id=candidate.assignment_id,
@@ -433,7 +426,9 @@ class WorkerDispatchRecovery:
     def _before_write(self, candidate: DispatchCandidate, reservation: str) -> None:
         now = time.time()
         with self.store.transaction() as db:
-            self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id)
+            self.service.assert_manager_wake_receipt_v2_session(
+                candidate.session_id, _db=db,
+            )
             self._assert_fence(db, now)
             actions = self._assert_authority(db, candidate)
             # Policy is intentionally re-read at the last local boundary.  The
@@ -593,7 +588,7 @@ class WorkerDispatchRecovery:
         work, assignment, attachment, result_nonce, prompt = self._context(
             candidate, check_unattended_policy=False,
         )
-        self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id)
+        self.service.assert_manager_wake_receipt_v2_session(candidate.session_id)
         response = self.client.request(
             instance_id=candidate.instance_id,
             request_id="worker.poll." + hashlib.sha256(
@@ -619,7 +614,9 @@ class WorkerDispatchRecovery:
         outcome = "APPLIED" if parsed["status"] == "SUCCEEDED" else "FAILED"
         now = time.time()
         with self.store.transaction() as db:
-            self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id)
+            self.service.assert_manager_wake_receipt_v2_session(
+                candidate.session_id, _db=db,
+            )
             self._assert_fence(db, now)
             self._assert_authority(db, candidate)
             row = db.execute(
@@ -661,7 +658,7 @@ class WorkerDispatchRecovery:
         return self._ack_result(candidate, result_hash)
 
     def _ack_result(self, candidate: DispatchCandidate, result_hash: str) -> str:
-        self.service.assert_manager_wake_receipt_v2_allowed(candidate.work_id)
+        self.service.assert_manager_wake_receipt_v2_session(candidate.session_id)
         before_ack = time.time()
         with self.store.transaction() as db:
             self._assert_fence(db, before_ack)

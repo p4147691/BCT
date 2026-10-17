@@ -18,7 +18,10 @@ class ConsumptionTest(unittest.TestCase):
         with self.store.transaction() as db:
             db.execute("INSERT INTO works VALUES(?,?,?,?,?,?,?)",
                        ("w", "test", "[]", "[]", "owner", 1, "ACTIVE"))
-            db.execute("INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            db.execute("INSERT INTO orchestration_sessions "
+                       "(session_id,work_id,work_assignment_epoch,objective,roots_json,actions_json,"
+                       "acceptance_json,plan_revision,manager_node_id,manager_epoch,state,"
+                       "terminal_summary_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        ("s", "w", 1, "test", "[]", "[]", "{}", 1, None, 2,
                         "ACTIVE", "{}", 1.0, 1.0))
             for name in ("c1", "c2"):
@@ -202,7 +205,10 @@ class ConsumptionTest(unittest.TestCase):
 
     def test_foreign_session_source_assignment_fails_closed(self):
         with self.store.transaction() as db:
-            db.execute("INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            db.execute("INSERT INTO orchestration_sessions "
+                       "(session_id,work_id,work_assignment_epoch,objective,roots_json,actions_json,"
+                       "acceptance_json,plan_revision,manager_node_id,manager_epoch,state,"
+                       "terminal_summary_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        ("foreign", "w", 1, "test", "[]", "[]", "{}", 1,
                         None, 2, "ACTIVE", "{}", 1.0, 1.0))
             db.execute("UPDATE orchestration_assignments SET session_id='foreign' "

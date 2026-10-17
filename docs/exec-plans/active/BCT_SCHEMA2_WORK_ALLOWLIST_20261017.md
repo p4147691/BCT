@@ -1,4 +1,10 @@
-# BCT Schema 2 Work allowlist
+# BCT Schema 2 Work allowlist (superseded)
+
+This rollout design is preserved as history but is no longer the active
+collaboration contract.  Requiring every fresh Work ID in deployed static
+configuration created the repeated approval/deploy bottleneck that the final
+normalization removes.  See
+`BCT_TRUSTED_COLLABORATION_NORMALIZATION_20261017.md`.
 
 ## Purpose
 

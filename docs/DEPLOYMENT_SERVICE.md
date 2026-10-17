@@ -5,8 +5,11 @@
 BCT deploys only a named profile stored in `bct.toml`. A caller cannot supply a source
 path, destination path, file list, service name, executable, command, or port. The
 `bct_runtime_v1` remains the production profile and lists every copied file.
-`bct_runtime_protected_v1` is a separately activated migration target rooted at
-`%LOCALAPPDATA%\BCT\runtime`. It is never selected implicitly. Its file set must
+The deployment module retains tested support for a separately activated migration
+target rooted at `%LOCALAPPDATA%\BCT\runtime`, but the shipped `bct.toml` no longer
+declares such a target. `D:\BCT` is the only configured operating root. Historical
+protected-path fixtures must not be selected for collaboration activation. If a
+future, separately reviewed configuration declares one, its file set must
 remain byte-for-byte equal to the production profile, and a cutover requires a
 separate operating approval and a quiesced old Core.
 Wildcards, directories, path traversal, symlinks, and uncommitted source are rejected.

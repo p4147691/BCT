@@ -1,4 +1,9 @@
-# BCT protected operating paths
+# BCT protected operating paths (stopped)
+
+> Superseded on 2026-10-17 by the trusted-collaboration normalization plan.
+> `D:\BCT` remains the sole configured operating root. This document and its
+> receipts are retained only as historical/audit evidence; do not execute this
+> migration or treat it as a collaboration prerequisite.
 
 ## Purpose and fixed boundary
 

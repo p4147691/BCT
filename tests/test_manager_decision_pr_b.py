@@ -73,7 +73,7 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.store.create_work(self.work)
         self.service = OrchestrationService(
             self.store, manager_wake_receipt_v2_enabled=True,
-            manager_wake_receipt_v2_allowed_work_ids=("work",), policy=self.policy,
+            policy=self.policy,
         )
         payload = {"status": "done"}
         with self.store.transaction() as db:
@@ -81,9 +81,14 @@ class ManagerDecisionPRBTests(unittest.TestCase):
                                ("next-worker", "WORKER")):
                 db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",
                            (node, node, role, "fixture", 1, 1))
-            db.execute("INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            db.execute("INSERT INTO orchestration_sessions "
+                       "(session_id,work_id,work_assignment_epoch,objective,roots_json,actions_json,"
+                       "acceptance_json,plan_revision,manager_node_id,manager_epoch,state,"
+                       "terminal_summary_json,wake_receipt_mode,created_at,updated_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 "session", "work", 1, "fixture", _canonical([self.root]),
-                _canonical(["read"]), "{}", 1, "manager", 1, "ACTIVE", "{}", 1.0, 1.0,
+                _canonical(["read"]), "{}", 1, "manager", 1, "ACTIVE", "{}",
+                "RCC_RESULT_POLL_V1", 1.0, 1.0,
             ))
             for node, role in (("manager", "MANAGER"), ("worker", "WORKER"),
                                ("next-worker", "WORKER")):
@@ -242,14 +247,18 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.assertEqual(1, self.count("orchestration_consumption_receipts"))
         self.assertEqual(0, self.count("orchestration_dispatch_outbox"))
 
-    def test_allowlist_removal_blocks_decision_and_poller_without_commit(self):
+    def test_legacy_session_pin_blocks_decision_and_poller_without_commit(self):
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode="
+                "'LEGACY_RETURN_V1' WHERE session_id='session'"
+            )
         blocked = OrchestrationService(
             Store(self.store.path), manager_wake_receipt_v2_enabled=True,
-            manager_wake_receipt_v2_allowed_work_ids=("different-work",),
             policy=self.policy,
         )
         with self.assertRaisesRegex(
-            ConflictError, "MANAGER_WAKE_RECEIPT_V2_WORK_NOT_ALLOWED",
+            ConflictError, "MANAGER_WAKE_RECEIPT_V2_SESSION_NOT_ALLOWED",
         ):
             ManagerDecisionConsumer(blocked).consume_receipt(
                 work=self.work, event_id=self.event["event_id"], manager_epoch=1,
@@ -353,7 +362,7 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.assertEqual(1, first["deferred"])
         restarted = ManagerDecisionRecovery(OrchestrationService(
             Store(self.store.path), manager_wake_receipt_v2_enabled=True,
-            manager_wake_receipt_v2_allowed_work_ids=("work",), policy=self.policy,
+            policy=self.policy,
         ), relay)
         # A crash-safe replacement waits for the short singleton poller lease
         # instead of assuming the old Core process is gone immediately.
@@ -493,10 +502,14 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         with self.store.transaction() as db:
             db.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?)",
                        ("other-manager", "other", "MANAGER", "fixture", 1, 1))
-            db.execute("INSERT INTO orchestration_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            db.execute("INSERT INTO orchestration_sessions "
+                       "(session_id,work_id,work_assignment_epoch,objective,roots_json,actions_json,"
+                       "acceptance_json,plan_revision,manager_node_id,manager_epoch,state,"
+                       "terminal_summary_json,wake_receipt_mode,created_at,updated_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 "other-session", "other-work", 1, "fixture", _canonical([self.root]),
                 _canonical(["read"]), "{}", 1, "other-manager", 1, "ACTIVE", "{}",
-                1.0, 1.0,
+                "RCC_RESULT_POLL_V1", 1.0, 1.0,
             ))
             db.execute(
                 "INSERT INTO orchestration_durable_leases VALUES(?,?,?,?,?,?)",

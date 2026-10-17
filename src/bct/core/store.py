@@ -100,6 +100,7 @@ class Store:
                     acceptance_json TEXT NOT NULL, plan_revision INTEGER NOT NULL,
                     manager_node_id TEXT, manager_epoch INTEGER NOT NULL,
                     state TEXT NOT NULL, terminal_summary_json TEXT NOT NULL,
+                    wake_receipt_mode TEXT NOT NULL DEFAULT 'LEGACY_RETURN_V1',
                     created_at REAL NOT NULL, updated_at REAL NOT NULL,
                     FOREIGN KEY(work_id) REFERENCES works(work_id),
                     FOREIGN KEY(manager_node_id) REFERENCES nodes(node_id)
@@ -318,6 +319,19 @@ class Store:
                 db.execute(
                     "ALTER TABLE orchestration_manager_wakes ADD COLUMN "
                     "result_acknowledged_at REAL"
+                )
+            session_columns = {
+                row["name"] for row in db.execute(
+                    "PRAGMA table_info(orchestration_sessions)"
+                ).fetchall()
+            }
+            if "wake_receipt_mode" not in session_columns:
+                # Existing sessions are deliberately pinned to the legacy path.
+                # Enabling trusted collaboration must never reinterpret an old
+                # session or wake after a restart.
+                db.execute(
+                    "ALTER TABLE orchestration_sessions ADD COLUMN "
+                    "wake_receipt_mode TEXT NOT NULL DEFAULT 'LEGACY_RETURN_V1'"
                 )
             recovery_columns = {
                 row["name"] for row in db.execute(
