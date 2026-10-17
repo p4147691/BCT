@@ -165,6 +165,62 @@ class RccIntegrationTests(unittest.TestCase):
             db.close()
         self.assertEqual(1, unresolved)
 
+    def test_direct_send_requests_submission_ack_like_orchestrate(self):
+        self.client.result = {
+            "type": "host:ack", "ok": True, "submitted": True,
+            "effectState": "SUBMITTED",
+        }
+        result = self.call("direct-submit-ack", {
+            "command": "send", "instance_id": "instance123",
+            "to": "BCT_ROSTER", "text": "benign task",
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("SUBMITTED", result.evidence["host_state"])
+        self.assertIs(self.client.calls[0]["extra"]["returnOnAck"], True)
+
+    def test_direct_send_proven_pre_submit_failure_keeps_exact_error(self):
+        self.client.result = {
+            "type": "host:result", "ok": False, "submitted": False,
+            "effectState": "NOT_APPLIED", "ambiguous": False,
+            "error": "RELAY_EDITOR_TEXT_MISMATCH",
+        }
+        result = self.call("direct-pre-submit-error", {
+            "command": "send", "instance_id": "instance123",
+            "to": "BCT_ROSTER", "text": "benign task",
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        self.assertEqual("NOT_APPLIED", result.evidence["host_state"])
+        self.assertEqual("RELAY_EDITOR_TEXT_MISMATCH", result.evidence["error"])
+
+    def test_direct_send_ambiguous_host_failure_does_not_release_claim(self):
+        self.client.result = {
+            "type": "host:result", "ok": False,
+            "effectState": "UNKNOWN", "ambiguous": True,
+            "error": "RELAY_SEND_BUTTON_CHANGED",
+        }
+        result = self.call("direct-ambiguous-error", {
+            "command": "send", "instance_id": "instance123",
+            "to": "BCT_ROSTER", "text": "benign task",
+        })
+        self.assertEqual(Outcome.UNKNOWN, result.outcome)
+        self.assertIn("RELAY_SEND_BUTTON_CHANGED", result.error)
+        db = self.bct.store._connect()
+        try:
+            claim = db.execute("SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                               ("direct-ambiguous-error",)).fetchone()
+            self.assertEqual(1, claim["unresolved"])
+        finally:
+            db.close()
+
+    def test_direct_send_ack_without_submission_is_not_success(self):
+        self.client.result = {"type": "host:ack", "ok": True,
+                              "submitted": False, "effectState": "QUEUED"}
+        result = self.call("direct-queued-ack", {
+            "command": "send", "instance_id": "instance123",
+            "to": "BCT_ROSTER", "text": "benign task",
+        })
+        self.assertEqual(Outcome.UNKNOWN, result.outcome)
+
     def test_read_state_and_duplicate_do_not_call_twice(self):
         self.client.result = {
             "type": "host:result", "requestId": "state-1", "ok": True,
