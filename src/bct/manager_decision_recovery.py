@@ -12,9 +12,21 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .core.manager_decision import ManagerDecisionConsumer
+from .core.consumption import verified_finished_chain_wake
 from .core.models import ConflictError, PreconditionError
 from .core.orchestration import OrchestrationService
 from .integrations.rcc import RelayClient, RelayEffectUnknown, RelayUnavailable
+
+
+_WAKE_SESSION_FILTER = (
+    "s.state IN ('ACTIVE','PARTIAL') OR "
+    "(s.state='FINISHED' AND EXISTS (SELECT 1 FROM orchestration_mailbox evidence "
+    "WHERE evidence.message_id=w.result_message_id AND evidence.session_id=s.session_id "
+    "AND evidence.assignment_id=w.assignment_id "
+    "AND evidence.assignment_generation=w.assignment_generation "
+    "AND evidence.kind='RECONCILED_RESULT' "
+    "AND evidence.message_digest=w.result_digest))"
+)
 
 
 @dataclass(frozen=True)
@@ -91,7 +103,7 @@ class ManagerDecisionRecovery:
             # session owner/epoch may then receive a rotated token.  This is not
             # a Manager takeover and cannot revive a stale epoch.
             expired = db.execute(
-                "SELECT DISTINCT l.session_id,l.manager_node_id,l.epoch,l.token "
+                "SELECT DISTINCT l.session_id,l.manager_node_id,l.epoch,l.token,s.state AS session_state "
                 "FROM orchestration_durable_leases l "
                 "JOIN orchestration_sessions s ON s.session_id=l.session_id "
                 "JOIN works k ON k.work_id=s.work_id "
@@ -100,13 +112,15 @@ class ManagerDecisionRecovery:
                 "AND s.wake_receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.state IN ('DELIVERING','DELIVERED','UNKNOWN') "
                 "AND (w.decision_id IS NULL OR w.result_ack_state='PENDING') "
-                "AND s.state IN ('ACTIVE','PARTIAL') AND k.state='ACTIVE' "
+                "AND (" + _WAKE_SESSION_FILTER + ") AND k.state='ACTIVE' "
                 "AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND s.manager_epoch=w.manager_epoch AND l.epoch=s.manager_epoch "
                 "AND l.manager_node_id=s.manager_node_id AND l.expires_at<=?",
                 (now,),
             ).fetchall()
             for lease in expired:
+                if lease["session_state"] == "FINISHED" and not self._has_finished_wake(db, lease["session_id"]):
+                    continue
                 successor_token = secrets.token_hex(32)
                 changed = db.execute(
                     "UPDATE orchestration_durable_leases SET token=?,expires_at=?,"
@@ -127,6 +141,23 @@ class ManagerDecisionRecovery:
                     })
             return True
 
+    @staticmethod
+    def _verified_finished_candidate(db, event_id: str) -> bool:
+        wake = db.execute("SELECT * FROM orchestration_manager_wakes WHERE event_id=?",
+                          (event_id,)).fetchone()
+        return bool(wake is not None and verified_finished_chain_wake(db, wake))
+
+    @classmethod
+    def _has_finished_wake(cls, db, session_id: str) -> bool:
+        wakes = db.execute(
+            "SELECT event_id FROM orchestration_manager_wakes "
+            "WHERE session_id=? AND state IN ('DELIVERING','DELIVERED','UNKNOWN') "
+            "AND (decision_id IS NULL OR result_ack_state='PENDING')",
+            (session_id,),
+        ).fetchall()
+        return any(cls._verified_finished_candidate(db, wake["event_id"])
+                   for wake in wakes)
+
     def _candidates(self, *, limit: int, now: float) -> list[PollCandidate]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 32:
             raise ValueError("MANAGER_POLL_LIMIT_INVALID")
@@ -144,7 +175,7 @@ class ManagerDecisionRecovery:
                 return []
             common = (
                 "SELECT w.event_id,w.session_id,w.manager_epoch,w.instance_id,"
-                "w.delivery_id,s.work_id,l.token,w.result_hash,w.result_ack_state "
+                "w.delivery_id,s.work_id,l.token,w.result_hash,w.result_ack_state,s.state AS session_state "
                 "FROM orchestration_manager_wakes w "
                 "JOIN orchestration_sessions s ON s.session_id=w.session_id "
                 "JOIN works k ON k.work_id=s.work_id "
@@ -153,7 +184,7 @@ class ManagerDecisionRecovery:
                 "AND s.wake_receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.state IN ('DELIVERING','DELIVERED','UNKNOWN') "
                 "AND w.delivery_id IS NOT NULL AND s.manager_epoch=w.manager_epoch "
-                "AND s.state IN ('ACTIVE','PARTIAL') AND k.state='ACTIVE' "
+                "AND (" + _WAKE_SESSION_FILTER + ") AND k.state='ACTIVE' "
                 "AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND l.epoch=w.manager_epoch AND l.manager_node_id=s.manager_node_id "
                 "AND l.expires_at>? "
@@ -177,7 +208,8 @@ class ManagerDecisionRecovery:
                 str(row["delivery_id"]), str(row["work_id"]), str(row["token"]),
                 None if row["result_hash"] is None else str(row["result_hash"]),
                 str(row["result_ack_state"]) == "PENDING",
-            ) for row in rows]
+            ) for row in rows if row["session_state"] != "FINISHED"
+               or self._verified_finished_candidate(db, row["event_id"])]
         finally:
             db.close()
 
@@ -197,10 +229,10 @@ class ManagerDecisionRecovery:
             return
         with self.store.transaction() as db:
             rows = db.execute(
-                "SELECT l.session_id,l.epoch,l.token FROM "
+                "SELECT l.session_id,l.epoch,l.token,s.state AS session_state FROM "
                 "orchestration_durable_leases l JOIN orchestration_sessions s "
                 "ON s.session_id=l.session_id JOIN works k ON k.work_id=s.work_id "
-                "WHERE s.state IN ('ACTIVE','PARTIAL') AND k.state='ACTIVE' "
+                "WHERE k.state='ACTIVE' "
                 "AND s.wake_receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND k.assignment_epoch=s.work_assignment_epoch "
                 "AND l.epoch=s.manager_epoch AND l.manager_node_id=s.manager_node_id "
@@ -209,10 +241,13 @@ class ManagerDecisionRecovery:
                 "WHERE w.session_id=l.session_id AND w.manager_epoch=l.epoch "
                 "AND w.envelope_schema=2 AND w.receipt_mode='RCC_RESULT_POLL_V1' "
                 "AND w.state IN ('DELIVERING','DELIVERED','UNKNOWN') "
-                "AND (w.decision_id IS NULL OR w.result_ack_state='PENDING'))",
+                "AND (w.decision_id IS NULL OR w.result_ack_state='PENDING') "
+                "AND (" + _WAKE_SESSION_FILTER + "))",
                 (now, now + 20.0),
             ).fetchall()
             for row in rows:
+                if row["session_state"] == "FINISHED" and not self._has_finished_wake(db, row["session_id"]):
+                    continue
                 db.execute(
                     "UPDATE orchestration_durable_leases SET expires_at=?,updated_at=? "
                     "WHERE session_id=? AND epoch=? AND token=? AND expires_at>?",
