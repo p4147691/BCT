@@ -44,6 +44,13 @@ class TraceTests(unittest.TestCase):
             logger.removeHandler(capture)
             logger.setLevel(previous)
 
+    def test_trace_module_is_part_of_exact_live_deployment(self):
+        import tomllib
+        from pathlib import Path
+        policy = tomllib.loads((Path(__file__).resolve().parent.parent / "bct.toml").read_text(encoding="utf-8"))
+        files = policy["deployment"]["profiles"]["bct_runtime_v1"]["files"]
+        self.assertEqual(1, files.count("src/bct/trace_timing.py"))
+
     def test_stage_metadata_is_request_local_and_redacted(self):
         import concurrent.futures
         from contextvars import copy_context
