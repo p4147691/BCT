@@ -1,5 +1,37 @@
 # BCT 인수인계
 
+## 현재 작업 — 보호된 운영 경로 이전 (소스 준비, 운영 미적용)
+
+`D:\` 상위의 광범위한 Modify/DeleteChild 위험을 피하기 위해 기존
+Core/RCC 아키텍처를 유지한 채 `%LOCALAPPDATA%\BCT`로 제한된 운영 자산만
+이전하는 소스 경계를 준비한다. 현재 LIVE, ACL, Registry, RCC/Chrome, Schema 2,
+UNKNOWN/Claim/Issue #111은 변경하지 않는다.
+
+- 기존 `bct_runtime_v1`은 그대로 유지하고 명시적인
+  `bct_runtime_protected_v1`만 추가한다. `%LOCALAPPDATA%` 외 환경 변수나 탈출
+  경로는 거부하고 두 프로필의 배포 파일 집합은 같아야 한다.
+- 보호 프로필은 published migration + 별도 activation 영수증, old Supervisor
+  stop flag, 실제 stopped Core, free writer lock 없이는 배포 자체가 거부된다.
+  이전 준비는 writer lock을 독점한 상태에서 exact-Git release, token,
+  receipts/logs, process-session data, Supervisor payload와 SQLite Online
+  Backup을 operation staging에 만들고 durable 상태 영수증 뒤에만 publish한다.
+- old runtime lock을 유지한 채 target 시작 전에 `ACTIVATING` cutover authority를
+  먼저 영속화하고, target health 뒤 `ACTIVATED`로 확정한다. Source는 두 상태에서,
+  target은 승인된 `ROLLED_BACK` 상태에서 deploy/service-control/Supervisor/runtime-server의
+  모든 start 경계가 fail-closed한다.
+- ACL은 raw access mask와 exact SID allowlist로 owner/inheritance/foreign access,
+  상위 DeleteChild와 lexical reparse point를 fail-closed 검증한다. RCC extension은
+  exact Git tree를 재구성하고 Host는 보호 경계 안에서 exact Git C# blob을 시스템
+  compiler로 빌드해 source/compiler/artifact 영수증에 묶은 비활성 staging만 허용한다.
+  Chrome loaded path/storage/instance/tab과 HKCU 변경은 별도 운영 승인이다.
+- Git exact HEAD/clean 검사에 더해 각 배포 파일의 worktree blob이 요청 commit의
+  blob과 같은지 검증한다. Supervisor와 tunnel token reference는 선택한 runtime
+  root/profile을 사용한다.
+- 정확한 단계·백업·롤백·다른 계정 시험·브라우저 identity 보존 조건은
+  `docs/exec-plans/active/BCT_PROTECTED_OPERATING_PATHS_20261017.md`에 있다.
+- 구형 경로의 token/DB 폐기와 token 회전은 파괴적 운영 변경이므로 이번 소스
+  작업에 포함하지 않는다.
+
 ## 현재 작업 — Durable Orchestration PR C (DRAFT 준비, 운영 비활성)
 
 PR A #149와 PR B #150이 병합된 최신 검증 main에서 독립 worktree로 PR C를 구현했다.

@@ -46,6 +46,15 @@ into BCT receipts.
 Only the two Python integration files are loaded into the BCT Core runtime. RCC itself is an
 installable module and is deployed separately to `D:\ChromeExtensions\RCC`.
 
+The protected operating-path plan stages the Native Host and unpacked extension
+under `%LOCALAPPDATA%\BCT\rcc`, but copying does not change Chrome's active
+unpacked path or the HKCU Native Messaging registration. Any later switch is a
+separately approved operating step. It must preserve the manifest public key,
+the fixed extension ID `ocbidbaplechjjdacmokhnfbdmgjkphf`, the sole allowed
+origin, extension storage, RCC instance and existing tab/conversation identity.
+A different ID or lost identity blocks activation and rolls the path references
+back; the process must never load a second RCC identity as a shortcut.
+
 The first installed-path migration keeps the running legacy instance available while a second,
 fixed-identity BCT instance is loaded.  The old instance is read exactly once, registrations are
 recreated only against matching open tab/conversation identities, and no pending/result operation is
@@ -186,3 +195,14 @@ is still `submitted` as well as `completed`. This covers background-side exact
 DOM recovery finishing before the original content collector. Without an exact
 persisted receipt for the same tab and durable conversation, the old submitted
 record remains in place and a new relay stays blocked.
+
+Protected-path staging does not trust the writable installed RCC directory as a
+source authority. Extension bytes are reconstructed from the exact clean Git
+commit, the installed manifest must normalize to that commit, and the Native
+Host binary is built inside the protected boundary from the exact Git source
+blob. Its operation-scoped receipt binds the Git head/tree/blob, system compiler
+path/hash and produced artifact hash; a hash supplied for the writable installed
+Host is not accepted as authority. The staging
+receipt is operation-scoped and non-activating. Chrome's loaded unpacked path,
+extension storage, RCC instance and all tab/conversation identities remain an
+operating acceptance gate; copying files alone never claims they were preserved.

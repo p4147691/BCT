@@ -1,0 +1,11 @@
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>BCT protected-path MCP tunnel recovery supervisor.</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>
+  <Principals><Principal id="BCTUser"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><StartWhenAvailable>true</StartWhenAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>true</Hidden><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings>
+  <Actions Context="BCTUser"><Exec>
+    <Command>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Command>
+    <Arguments>-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File &quot;__RUNTIME_DIR__\ops\run_bct_tunnel_supervisor.ps1&quot; -RuntimeDir &quot;__RUNTIME_DIR__&quot;</Arguments>
+    <WorkingDirectory>__RUNTIME_DIR__</WorkingDirectory>
+  </Exec></Actions>
+</Task>

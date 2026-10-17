@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from bct.core.models import PreconditionError
 from bct.service_runtime import atomic_json
 from bct.supervisor import ensure_service
 
@@ -71,6 +72,20 @@ class SupervisorTests(unittest.TestCase):
             ), patch("bct.supervisor.RuntimeServiceController", return_value=controller):
                 with self.assertRaisesRegex(RuntimeError, "BCT_DIFFERENT_RELEASE_RUNNING"):
                     ensure_service(runtime_root=root, profile_name="test")
+
+    def test_cutover_authority_is_checked_before_service_inspection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._current(root)
+            profile = SimpleNamespace(runtime_root=root.resolve(), service_name="bct-core", port=18790)
+            controller = Mock()
+            with patch("bct.supervisor.DeploymentProfiles.get", return_value=profile), patch(
+                "bct.supervisor._validate_profile_start_allowed",
+                side_effect=PreconditionError("PROTECTED_TARGET_PROFILE_RETIRED"),
+            ), patch("bct.supervisor.RuntimeServiceController", return_value=controller):
+                with self.assertRaisesRegex(PreconditionError, "TARGET_PROFILE_RETIRED"):
+                    ensure_service(runtime_root=root, profile_name="test")
+            controller.inspect.assert_not_called()
 
 
 if __name__ == "__main__":

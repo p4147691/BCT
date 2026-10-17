@@ -18,7 +18,7 @@ from bct import BCT
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
-from bct.service_runtime import current_process_identity
+from bct.service_runtime import acquire_runtime_writer_lock, current_process_identity
 
 
 MONITOR_EXTENSION_ORIGIN = "chrome-extension://kaigandfpieiogfbfaemoimenmipedck"
@@ -126,11 +126,21 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> int:
     arguments = parse_arguments()
     runtime_root = Path(arguments.runtime_root).resolve()
+    writer_lock = acquire_runtime_writer_lock(runtime_root)
     release_root = runtime_root / "releases" / arguments.release_sha
     policy_path = release_root / "bct.toml"
     if not policy_path.is_file():
         raise RuntimeError("RUNTIME_POLICY_MISSING")
-    bct = BCT(state_path=runtime_root / "state" / "state.sqlite", policy_path=policy_path)
+    from .features.deploy import DeploymentProfiles, _validate_profile_start_allowed
+    runtime_profiles = DeploymentProfiles(policy_path)
+    _validate_profile_start_allowed(
+        runtime_profiles, runtime_profiles.for_runtime_root(runtime_root)
+    )
+    bct = BCT(
+        state_path=runtime_root / "state" / "state.sqlite",
+        policy_path=policy_path,
+        data_root=runtime_root.parent / "data",
+    )
     from .background_operations import recover_orphaned_orchestration_operations
     orphan_recoveries = recover_orphaned_orchestration_operations(bct)
     monitor_principal = ensure_monitor_work(bct, runtime_root=runtime_root)
@@ -313,6 +323,7 @@ def main() -> int:
             recovery_thread.join(timeout=3.0)
         if dispatch_thread is not None:
             dispatch_thread.join(timeout=3.0)
+        writer_lock.close()
     return 0 if server.started else 1
 
 

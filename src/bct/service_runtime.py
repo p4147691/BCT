@@ -10,6 +10,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import atexit
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,63 @@ from bct.core.models import ConfirmedFailure, PreconditionError, UnknownEffectEr
 
 
 _LIVE_CHILDREN: dict[int, subprocess.Popen[bytes]] = {}
+
+
+class RuntimeWriterLock:
+    """One-process filesystem fence for the SQLite writer rooted at a runtime."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._stream = None
+
+    def acquire(self) -> "RuntimeWriterLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        stream = self.path.open("a+b")
+        stream.seek(0, os.SEEK_END)
+        if stream.tell() == 0:
+            stream.write(b"0")
+            stream.flush()
+        stream.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (OSError, PermissionError) as exc:
+            stream.close()
+            raise PreconditionError("RUNTIME_WRITER_LOCK_HELD:" + str(self.path)) from exc
+        self._stream = stream
+        return self
+
+    def close(self) -> None:
+        stream = self._stream
+        if stream is None:
+            return
+        try:
+            stream.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        finally:
+            stream.close()
+            self._stream = None
+
+    def __enter__(self) -> "RuntimeWriterLock":
+        return self.acquire()
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self.close()
+
+
+def acquire_runtime_writer_lock(runtime_root: Path) -> RuntimeWriterLock:
+    lock = RuntimeWriterLock(runtime_root.resolve() / "state" / "core-writer.lock").acquire()
+    atexit.register(lock.close)
+    return lock
 
 
 def _loopback_listener_state(port: int) -> bool | None:
