@@ -108,6 +108,17 @@ async function main() {
   await mustReject(e.testing.submitEditor(e.editor,options('확인',30)), 'RELAY_SEND_BUTTON_NOT_READY');
   assert.equal(e.clicks(),0,'mic-only mode must never Enter-submit');
 
+  // Direct relay used to allow Enter fallback in existing conversations.
+  // Synthetic key events can be received without any browser default submit:
+  // a missing send arrow must never yield {ok:true,method:'enter-fallback'}.
+  const legacy=makeHarness();
+  legacy.editor.value='기존 대화 직접 전송';
+  await mustReject(legacy.testing.submitEditor(legacy.editor, {
+    expectedText:'기존 대화 직접 전송',
+    waitMs:30, allowKeyboardFallback:true, allowDocumentFallback:false
+  }), 'RELAY_SEND_BUTTON_NOT_READY');
+  assert.equal(legacy.clicks(),0,'no send arrow must never report a send');
+
   const f=makeHarness();
   f.editor.value='확인';
   const stale=f.testing.submitEditor(f.editor,options('확인',150));
