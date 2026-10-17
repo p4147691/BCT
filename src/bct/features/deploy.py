@@ -261,9 +261,11 @@ def _validate_protected_activation(
     profiles: DeploymentProfiles,
     profile: DeploymentProfile,
     expected_head: str,
-) -> None:
+    *,
+    acquire_lock: bool = True,
+) -> RuntimeWriterLock | None:
     if not profile.protected_activation_required:
-        return
+        return None
     source = profiles.get(str(profile.migration_source_profile))
     activation_path = profile.runtime_root.parent / "migration" / "activation.json"
     receipt = read_json(activation_path)
@@ -302,9 +304,11 @@ def _validate_protected_activation(
     ).inspect()
     if source_state.get("state") not in {"STOPPED", "STOPPED_STALE_RECEIPT"}:
         raise PreconditionError("PROTECTED_SOURCE_CORE_NOT_QUIESCED")
+    if not acquire_lock:
+        return None
     lock = RuntimeWriterLock(source.runtime_root / "state" / "core-writer.lock")
     lock.acquire()
-    lock.close()
+    return lock
 
 
 def _validate_release(
@@ -503,9 +507,18 @@ class DeployFeature:
             return self._reconcile(request)
         trusted_profile = self.profiles.get(request.arguments["profile"])
         profile = _target_profile(trusted_profile, request.arguments["expected_source_head"])
-        _validate_protected_activation(
+        source_lock = _validate_protected_activation(
             self.profiles, profile, request.arguments["expected_source_head"]
         )
+        try:
+            return self._execute_apply(request, profile)
+        finally:
+            if source_lock is not None:
+                source_lock.close()
+
+    def _execute_apply(
+        self, request: FeatureRequest, profile: DeploymentProfile
+    ) -> FeatureResult:
         manifest = _validate_source(profile, request.arguments["expected_source_head"])
         current = _read_current(profile)
         current_head = current.get("source_head") if current else None
@@ -527,7 +540,8 @@ class DeployFeature:
                         "service": service_before, "already_current": True,
                     })
                 _validate_protected_activation(
-                    self.profiles, profile, request.arguments["expected_source_head"]
+                    self.profiles, profile, request.arguments["expected_source_head"],
+                    acquire_lock=False,
                 )
                 service = _start_with_one_safe_retry(controller, current)
             else:
@@ -559,7 +573,8 @@ class DeployFeature:
                 raise RuntimeError("DEPLOYMENT_CURRENT_POST_STATE_INVALID")
             if request.arguments["restart"]:
                 _validate_protected_activation(
-                    self.profiles, profile, request.arguments["expected_source_head"]
+                    self.profiles, profile, request.arguments["expected_source_head"],
+                    acquire_lock=False,
                 )
                 if service_before.get("state") == "RUNNING":
                     controller.stop()

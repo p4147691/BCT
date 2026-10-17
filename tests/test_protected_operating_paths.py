@@ -312,7 +312,9 @@ class ProtectedOperatingPathTests(unittest.TestCase):
             "cross_account_denial_verified": True, "rcc_canary_verified": True,
         })
         with patch.dict("os.environ", {"LOCALAPPDATA": str(local)}):
-            _validate_protected_activation(profiles, protected, "a" * 40)
+            lock = _validate_protected_activation(profiles, protected, "a" * 40)
+        self.assertIsNotNone(lock)
+        lock.close()
 
     def test_runtime_data_root_overrides_legacy_process_session_path(self):
         policy = self.base / "policy.toml"
