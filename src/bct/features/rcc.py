@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from typing import Any
 
+from bct.core.rcc_result import rcc_result_hash
 from bct.core.models import (
     ConfirmedFailure,
     FeatureRequest,
@@ -26,6 +28,7 @@ from bct.integrations.rcc import (
 _READ_COMMANDS = {"state", "presence", "result", "result-of-create-and-send"}
 _RECONCILE_COMMANDS = {
     "reconcile-send-to-created-tab", "reconcile-create-and-send",
+    "reconcile-send",
     "reconcile-rename-conversation", "reclassify-rename-claim",
 }
 _RENAME_INSPECTION_COMMAND = "inspect-rename-receipt"
@@ -142,6 +145,23 @@ class RelayBrowserFeature:
             if not relay_id or len(relay_id) > 80:
                 raise PreconditionError("RCC_RESULT_OPERATION_ID_REQUIRED")
             prepared["text"] = relay_id
+            if command == "reconcile-send":
+                allowed.update({"original_to", "original_text", "original_timeout_s"})
+                original_to = arguments.get("original_to")
+                original_text = arguments.get("original_text")
+                try:
+                    original_timeout = float(arguments.get("original_timeout_s"))
+                except (ValueError, TypeError):
+                    raise PreconditionError("RCC_RECONCILE_SEND_ORIGINAL_TIMEOUT_INVALID") from None
+                if (not isinstance(original_to, str) or not original_to.strip()
+                        or not isinstance(original_text, str) or not original_text
+                        or not 0.1 <= original_timeout <= 360.0):
+                    raise PreconditionError("RCC_RECONCILE_SEND_ORIGINAL_INVALID")
+                prepared["extra"] = {
+                    "originalTo": original_to.strip(),
+                    "originalText": original_text,
+                    "originalTimeoutS": original_timeout,
+                }
             if command == _RENAME_INSPECTION_COMMAND:
                 # This is the first, read-only step for historical rename recovery.
                 # The receipt is the durable source of the original session and title,
@@ -451,7 +471,8 @@ class RelayBrowserFeature:
             result = self.client.request(
                 instance_id=values["instance_id"], request_id=request.operation_id,
                 command=host_command, to=values["to"], text=values["text"],
-                extra=extra, timeout_s=values["timeout_s"],
+                extra=({} if values["command"] == "reconcile-send" else extra),
+                timeout_s=values["timeout_s"],
             )
         except RelayUnavailable as exc:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
@@ -569,6 +590,65 @@ class RelayBrowserFeature:
                  "tab_id": expected["tabId"], "conversation_key": expected["conversationKey"],
                  "saved_title": expected["title"]},
                 output={"result": _sanitize(result)},
+                reconciled_operation_ids=(values["text"],),
+            )
+        if values["command"] == "reconcile-send":
+            # Result-only recovery of a generic RCC send whose BCT response was
+            # lost. The coordinator has already fenced the exact original
+            # request digest, owner, instance and UNKNOWN error BEFORE this read.
+            receipt = result.get("result") if isinstance(result.get("result"), dict) else {}
+            try:
+                fingerprint = json.loads(str(receipt.get("fingerprint") or ""))
+                verified_hash = rcc_result_hash(receipt)
+            except (ValueError, TypeError, UnicodeError):
+                fingerprint, verified_hash = None, ""
+            expected_fingerprint = [
+                extra["originalTo"], extra["originalText"], False,
+                "", "", "", "", "", 0, "", 0,
+            ]
+            terminal = (
+                result.get("ok") is True
+                and result.get("relayId") == values["text"]
+                and result.get("found") is True
+                and result.get("completed") is True
+                and result.get("pending") is False
+                and receipt.get("id") == values["text"]
+                and receipt.get("ok") is True
+                and receipt.get("ambiguous") is False
+                and receipt.get("resultState") == "RESULT_PERSISTED"
+                and receipt.get("submitState") in {
+                    "SUBMITTED_CONFIRMED", "SUBMITTED",
+                }
+                and isinstance(receipt.get("reply"), str)
+                and bool(receipt["reply"].strip())
+                and fingerprint == expected_fingerprint
+                and receipt.get("messageHash") in {
+                    "", receipt.get("fingerprint"),
+                }
+                and isinstance(receipt.get("tabId"), int)
+                and not isinstance(receipt.get("tabId"), bool)
+                and receipt["tabId"] > 0
+                and isinstance(receipt.get("conversationKey"), str)
+                and bool(receipt["conversationKey"])
+                and isinstance(receipt.get("resultHash"), str)
+                and re.fullmatch(r"[a-f0-9]{64}", receipt["resultHash"]) is not None
+                and receipt["resultHash"] == verified_hash
+            )
+            if not terminal:
+                raise ConfirmedFailure(
+                    "RCC_GENERIC_SEND_RECEIPT_NOT_PROVEN", release_claims=True,
+                )
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"command": "reconcile-send",
+                 "original_operation_id": values["text"],
+                 "instance_id": values["instance_id"],
+                 "result_state": "RESULT_PERSISTED",
+                 "result_hash": verified_hash,
+                 "tab_id": receipt["tabId"],
+                 "conversation_key": receipt["conversationKey"],
+                 "original_outcome_preserved": "UNKNOWN",
+                 "no_resend": True},
                 reconciled_operation_ids=(values["text"],),
             )
         if values["command"] in _RECONCILE_COMMANDS:

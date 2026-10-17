@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from bct.core.models import AuthorizationError, Outcome, PreconditionError, Principal
+from bct.core.rcc_result import rcc_result_hash
 from bct.features.rcc import RelayBrowserFeature
 from bct.integrations.rcc import RelayEffectUnknown, RelayUnavailable
 from bct.service import BCT
@@ -58,6 +59,111 @@ class RccIntegrationTests(unittest.TestCase):
             principal=self.principal, work_id="rcc-work", operation_id=operation_id,
             capability="relay_browser", arguments=arguments,
         )
+
+    def _generic_unknown_send(self):
+        request = {
+            "command": "send", "instance_id": "instance123",
+            "to": "BCT_ROSTER", "text": "benign roster result",
+            "timeout_s": 30,
+        }
+        self.client.error = RelayEffectUnknown("RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH")
+        original = self.call("generic-roster-original", request)
+        self.client.error = None
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        fingerprint = json.dumps(
+            ["BCT_ROSTER", "benign roster result", False,
+             "", "", "", "", "", 0, "", 0],
+            ensure_ascii=False, separators=(",", ":"),
+        )
+        receipt = {
+            "id": "generic-roster-original", "ok": True,
+            "reply": "BCT_ROSTER_ACK", "error": "",
+            "failureEvidence": None, "ambiguous": False,
+            "resultState": "RESULT_PERSISTED",
+            "submitState": "SUBMITTED_CONFIRMED",
+            "tabId": 701, "conversationKey": "conversation-fresh",
+            "fingerprint": fingerprint, "messageHash": fingerprint,
+        }
+        receipt["resultHash"] = rcc_result_hash(receipt)
+        self.client.result = {
+            "ok": True, "relayId": "generic-roster-original",
+            "found": True, "completed": True, "pending": False,
+            "result": receipt,
+        }
+        recover = {
+            "command": "reconcile-send", "instance_id": "instance123",
+            "relay_id": "generic-roster-original",
+            "original_to": "BCT_ROSTER",
+            "original_text": "benign roster result",
+            "original_timeout_s": 30,
+        }
+        return receipt, recover
+
+    def test_generic_send_timeout_reconciles_exact_persisted_result_once(self):
+        receipt, recover = self._generic_unknown_send()
+        result = self.call("generic-roster-recover", recover)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(receipt["resultHash"], result.evidence["result_hash"])
+        self.assertTrue(result.evidence["no_resend"])
+        self.assertTrue(self.call("generic-roster-recover", recover).duplicate)
+        self.assertEqual(1, len([
+            c for c in self.client.calls if c["command"] == "send"
+        ]))
+        self.assertEqual(1, len([
+            c for c in self.client.calls if c["command"] == "result"
+        ]))
+        db = self.bct.store._connect()
+        try:
+            claimed = db.execute(
+                "SELECT unresolved FROM resource_claims "
+                "WHERE operation_id='generic-roster-original'"
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(0, claimed)
+        original = self.bct.store.get_operation_for(
+            operation_id="generic-roster-original", work_id="rcc-work",
+            principal_id="codex",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+
+    def test_generic_send_wrong_original_digest_rejected_before_result_read(self):
+        _, recover = self._generic_unknown_send()
+        initial_calls = len(self.client.calls)
+        recover["original_text"] = "different text"
+        with self.assertRaisesRegex(
+            PreconditionError, "RCC_GENERIC_SEND_ORIGINAL_DIGEST_MISMATCH"
+        ):
+            self.call("generic-mismatched-original", recover)
+        self.assertEqual(initial_calls, len(self.client.calls))
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims "
+                "WHERE operation_id='generic-roster-original'"
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
+
+    def test_generic_send_tampered_receipt_never_releases_unknown_claim(self):
+        _, recover = self._generic_unknown_send()
+        self.client.result["result"]["resultHash"] = "0" * 64
+        rejected = self.call("generic-roster-bad-receipt", recover)
+        self.assertEqual(Outcome.FAILED, rejected.outcome)
+        self.assertEqual("RCC_GENERIC_SEND_RECEIPT_NOT_PROVEN", rejected.error)
+        self.assertEqual(1, len([
+            c for c in self.client.calls if c["command"] == "send"
+        ]))
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims "
+                "WHERE operation_id='generic-roster-original'"
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
 
     def test_read_state_and_duplicate_do_not_call_twice(self):
         self.client.result = {
