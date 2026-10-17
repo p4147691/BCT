@@ -12,6 +12,7 @@ import re
 import time
 from typing import Any
 
+from .consumption import verified_finished_chain_wake
 from .durable_pr2 import _lease, commit_and_enqueue
 from .models import ConflictError, PreconditionError, Work
 from .orchestration import OrchestrationService, _canonical, _digest
@@ -292,7 +293,13 @@ class ManagerDecisionConsumer:
             if current_hash != result_hash or _canonical(current_decision) != _canonical(decision):
                 raise ConflictError("MANAGER_RESULT_CHANGED_DURING_COMMIT")
             session = self.service._session_row(tx, str(current["session_id"]))
-            self.service._assert_work(session, work)
+            if session["state"] == "FINISHED":
+                if (session["work_id"] != work.work_id
+                        or session["work_assignment_epoch"] != work.assignment_epoch
+                        or not verified_finished_chain_wake(tx, current)):
+                    raise ConflictError("MANAGER_FINISHED_CHAIN_WAKE_NOT_PROVEN")
+            else:
+                self.service._assert_work(session, work)
             self.service._assert_current_work_assignment(tx, work)
             self.service.assert_manager_wake_receipt_v2_session(
                 str(current["session_id"]), _db=tx,
