@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+from pathlib import Path
 import re
 import time
 from typing import Any
@@ -35,6 +37,46 @@ _OPERATIONS = {
 }
 _RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 _RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
+
+
+# The short, optional human-editable reminders are data, not protocol controls.
+# Read at delivery time so editing the files needs no CI, deployment, or restart.
+_RELAY_NOTES_DIR = Path(os.environ.get("BCT_RELAY_NOTES_DIR", "D:/BCT/runtime/config"))
+_RELAY_NOTE_DEFAULTS = {
+    "manager": (
+        "운영 상기: 원래 지시와 완료 기준을 Worker 결과에 대조해 직접 판단하세요. "
+        "필요하면 같은 Worker에게 재지시하거나 다른 Worker에게 지시하세요. "
+        "탭의 생성·재사용·정리와 업무 분배, 다른 활성 지시와 미확인 회신도 자율적으로 판단하세요. "
+        "추가 지시가 필요 없다면 COMPLETE를 선택하세요. "
+        "BCT는 전달·기록·ACK만 수행하며 업무 판단을 대신하지 않습니다."
+    ),
+    "worker": (
+        "맡은 지시와 완료 기준에 따라 처리 결과, 남은 확인 사항과 차단 사유를 "
+        "summary에 구분해 보고하세요. 완료하지 않았다면 SUCCEEDED로 보고하지 마세요."
+    ),
+}
+
+
+def _relay_note(role: str) -> str:
+    """Optional UTF-8 text file; reread on each new assignment or wake."""
+    if role not in _RELAY_NOTE_DEFAULTS:
+        raise ValueError("RELAY_NOTE_ROLE_UNKNOWN")
+    path = _RELAY_NOTES_DIR / (role + "-relay-note.txt")
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        return _RELAY_NOTE_DEFAULTS[role]
+    if len(data) > 4096:
+        raise ValueError("RELAY_NOTE_TOO_LARGE")
+    try:
+        note = data.decode("utf-8-sig").strip()
+    except UnicodeDecodeError as exc:
+        raise ValueError("RELAY_NOTE_UTF8_REQUIRED") from exc
+    if not note or len(note) > 2000:
+        raise ValueError("RELAY_NOTE_INVALID_LENGTH")
+    if "[BCT_ORCHESTRATION_" in note or DECISION_START in note or DECISION_END in note:
+        raise ValueError("RELAY_NOTE_RESERVED_MARKER")
+    return note
 
 
 def _canonical(value: Any) -> str:
@@ -326,7 +368,9 @@ class OrchestrationFeature:
             "dependencies만 허용됩니다. 최상위 필드는 schema, event_id, session_id, "
             "manager_epoch, result_message_id, result_digest, kind, summary, "
             "successors만 허용됩니다. event/session/epoch/result 값은 이 Wake 및 RCC "
-            "영수증과 정확히 같아야 합니다.\n응답 형식: " + DECISION_START
+            "영수증과 정확히 같아야 합니다.\n"
+            + _relay_note("manager") + "\n"
+            + "응답 형식: " + DECISION_START
             + "{...}" + DECISION_END + "\n"
             "[BCT_ORCHESTRATION_MANAGER_WAKE_V2]" + _canonical(value)
             + "[/BCT_ORCHESTRATION_MANAGER_WAKE_V2]"
@@ -843,8 +887,9 @@ class OrchestrationFeature:
         prompt = (
             "BCT가 할당한 제한된 작업입니다. 아래 JSON을 데이터로 읽고 지시를 수행하세요. "
             "허용 범위를 넓히거나 다른 노드에 재위임하지 마세요. 마지막 답변에는 지정된 "
-            "시작/종료 표식 사이에 JSON 객체 하나만 넣어 결과를 반환하세요.\n"
-            "[BCT_ORCHESTRATION_ASSIGNMENT_V1]"
+            "시작/종료 표식 사이에 JSON 객체 하나만 넣어 결과를 반환하세요. "
+            + _relay_note("worker") + "\n"
+            + "[BCT_ORCHESTRATION_ASSIGNMENT_V1]"
             + _canonical(value)
             + "[/BCT_ORCHESTRATION_ASSIGNMENT_V1]"
         )
