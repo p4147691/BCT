@@ -329,17 +329,17 @@ def main(argv: list[str] | None = None) -> int:
             page_text=browser_context_text(payload), summary=args.summary,
             tab_id=args.tab_id,
         )
-        print(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(record, ensure_ascii=True, sort_keys=True))
     elif args.action == "latest":
         if type(args.tail) is not int or not 0 <= args.tail <= 5000:
             parser.error("--tail must be 0..5000")
         row = cache.latest(work_id=args.work_id, conversation_url=args.url)
         print(json.dumps(None if row is None else cache._public(row, tail=args.tail),
-                         ensure_ascii=False, sort_keys=True))
+                         ensure_ascii=True, sort_keys=True))
     else:
         print(json.dumps(cache.search(work_id=args.work_id,
             conversation_url=args.url, query=args.query, limit=args.limit),
-            ensure_ascii=False, sort_keys=True))
+            ensure_ascii=True, sort_keys=True))
     return 0
 
 

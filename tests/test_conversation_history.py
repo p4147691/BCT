@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -196,18 +197,23 @@ class ConversationEvidenceTests(unittest.TestCase):
                              encoding="utf-8")
         program=[sys.executable,"-m","bct.conversation_history",
                  "--root",str(self.root)]
+        # Windows CI may use cp1252 even when the source and cache are UTF-8.
+        child_env={**os.environ, "PYTHONIOENCODING":"cp1252:strict"}
         first=subprocess.run(program+["capture","--work-id",WORK,"--url",URL,
             "--title","BCT conversation","--input",str(inputfile)],
-            capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=20)
+            capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=20,
+            env=child_env)
         self.assertEqual(0,first.returncode,first.stderr)
         recorded=json.loads(first.stdout)
         self.assertEqual(1,recorded["revision"])
         second=subprocess.run(program+["latest","--work-id",WORK,
-            "--url",URL,"--tail","120"],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=20)
+            "--url",URL,"--tail","120"],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=20,
+            env=child_env)
         self.assertEqual(0,second.returncode,second.stderr)
         self.assertIn("CI PASS",json.loads(second.stdout)["loaded_text_tail"])
         found=subprocess.run(program+["search","--work-id",WORK,
-            "--url",URL,"--query","Project #175"],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=20)
+            "--url",URL,"--query","Project #175"],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=20,
+            env=child_env)
         self.assertEqual(0,found.returncode,found.stderr)
         self.assertEqual(1,len(json.loads(found.stdout)))
 
