@@ -79,7 +79,7 @@ class ProjectContinuityTests(unittest.TestCase):
             for i in range(5):
                 db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
                            "VALUES(?,?,?,?)",
-                           ("FIXTURE_CHANGED","pm-v2-assignment-a","{}",float(i+1)))
+                           ("ORCHESTRATION_ASSIGNMENT_CREATED","pm-v2-assignment-a","{}",float(i+1)))
             db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
                        "VALUES(?,?,?,?)",
                        ("UNRELATED","no-authorized-link","{}",6.0))
@@ -124,6 +124,11 @@ class ProjectContinuityTests(unittest.TestCase):
         previous=self.ledger.get("fixture-project")
         r=deepcopy(previous["record"]);r["summary"]="after manager manually reviewed"
         r["checkpoints"]["bct_event_id"]=3
+        r["checkpoints"]["external"]["bct_source_links_sha256"] = (
+            contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                 session_id=self.SESSION,work_id=self.WORK)[0]
+            ["delta"]["source_links_sha256"]
+        )
         self.ledger.save("fixture-project",expected_revision=1,author="fixture-manager",record=r)
         ctx=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
                                  session_id=self.SESSION,work_id=self.WORK)[0]
@@ -162,6 +167,113 @@ class ProjectContinuityTests(unittest.TestCase):
         self.assertEqual(len(ctx["delta"]["events"]),5)
         self.assertFalse(any(x["kind"].startswith("FOREIGN_") for x in ctx["delta"]["events"]))
         self.assertEqual(ctx["delta"]["highwater"],8)
+
+    def test_same_subject_string_with_different_kind_or_owner_is_excluded(self):
+        # The subject string equals a valid assignment, but operation belongs
+        # to a DIFFERENT Work. A subject-only JOIN would disclose it.
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO operations("
+                "operation_id,work_id,principal_id,request_digest,capability,target,"
+                "state,outcome,evidence_json,error,assignment_epoch,policy_revision,"
+                "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("pm-v2-assignment-a", self.OTHER_WORK, "fixture-principal", "digest",
+                 "execute","fixture","FINISHED","APPLIED","{}",None,1,"fixture",15.,15.))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("OPERATION_STARTED","pm-v2-assignment-a","{}",15.0))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("WORK_CREATED","pm-v2-assignment-a","{}",16.0))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("ORCHESTRATION_ASSIGNMENT_CREATED",self.OTHER_WORK,"{}",17.0))
+        ctx=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                 session_id=self.SESSION,work_id=self.WORK)[0]
+        self.assertEqual(len(ctx["delta"]["events"]),5)
+        self.assertTrue(all(e["kind"]=="ORCHESTRATION_ASSIGNMENT_CREATED"
+                            for e in ctx["delta"]["events"]))
+        self.assertEqual(ctx["delta"]["evidence_scope"],
+                         "PROVEN_EVENT_KIND_AND_ORIGINAL_ENTITY")
+
+    def test_unbound_old_global_cursor_rescans_without_silent_ack(self):
+        prior=self.ledger.get("fixture-project")
+        record_new=deepcopy(prior["record"])
+        record_new["summary"]="old cursor without source link set anchor"
+        record_new["checkpoints"]["bct_event_id"]=5
+        self.ledger.save("fixture-project",expected_revision=1,
+                         author="fixture-manager",record=record_new)
+        result=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                    session_id=self.SESSION,work_id=self.WORK)[0]["delta"]
+        self.assertTrue(result["rescan_required"])
+        self.assertFalse(result["source_complete"])
+        self.assertEqual(result["reason"],"SOURCE_LINK_SET_RESCAN_REQUIRED")
+        self.assertEqual([e["event_id"] for e in result["events"]],[1,2,3,4,5])
+        self.assertEqual(self.ledger.get("fixture-project")["record"]["checkpoints"]
+                         ["bct_event_id"],5)
+
+    def test_adding_older_work_link_forces_rescan_and_foreign_boundary(self):
+        initial=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                     session_id=self.SESSION,work_id=self.WORK)[0]
+        old_fingerprint=initial["delta"]["source_links_sha256"]
+        old=deepcopy(self.ledger.get("fixture-project")["record"])
+        old["summary"]="previous full review"
+        old["checkpoints"]["bct_event_id"]=5
+        old["checkpoints"]["external"]["bct_source_links_sha256"]=old_fingerprint
+        self.ledger.save("fixture-project",expected_revision=1,
+                         author="fixture-manager",record=old)
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("WORK_CREATED",self.OTHER_WORK,"{}",7.0))
+        changed=deepcopy(old)
+        changed["summary"]="added older Work to project membership"
+        changed["links"].append({"type":"bct_work","id":self.OTHER_WORK})
+        self.ledger.save("fixture-project",expected_revision=2,
+                         author="fixture-manager",record=changed)
+        ctx=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                 session_id=self.SESSION,work_id=self.WORK)[0]["delta"]
+        self.assertTrue(ctx["rescan_required"])
+        self.assertFalse(ctx["source_complete"])
+        self.assertNotEqual(ctx["source_links_sha256"],old_fingerprint)
+        self.assertEqual(ctx["checkpoint_links_sha256"],old_fingerprint)
+        self.assertEqual(ctx["reason"],"SOURCE_LINK_SET_RESCAN_REQUIRED")
+        self.assertEqual(len(ctx["events"]),5)
+        self.assertFalse(any(e["subject_id"]==self.OTHER_WORK for e in ctx["events"]))
+        self.assertEqual(self.ledger.get("fixture-project")["record"]["checkpoints"]
+                         ["bct_event_id"],5)
+
+    def test_multiple_work_links_without_cursor_are_explicitly_incomplete(self):
+        old=deepcopy(self.ledger.get("fixture-project")["record"])
+        old["summary"]="cross-work project context"
+        old["links"].append({"type":"bct_work","id":self.OTHER_WORK})
+        self.ledger.save("fixture-project",expected_revision=1,
+                         author="fixture-manager",record=old)
+        ctx=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                 session_id=self.SESSION,work_id=self.WORK)[0]["delta"]
+        self.assertFalse(ctx["source_complete"])
+        self.assertEqual(ctx["reason"],"CROSS_WORK_SOURCE_COVERAGE_REQUIRED")
+
+    def test_sqlite_connection_failure_is_bounded_project_error(self):
+        from unittest.mock import patch
+        with patch("bct.core.project_memory_context.sqlite3.connect",
+                   side_effect=sqlite3.OperationalError("unable to open database")):
+            with self.assertRaisesRegex(ProjectContextError,
+                                        "PROJECT_CONTEXT_SQLITE_CONNECT_FAILED"):
+                contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                     session_id=self.SESSION,work_id=self.WORK)
+
+    def test_sqlite_connect_failure_does_not_break_existing_status(self):
+        from unittest.mock import patch
+        feature=OrchestrationFeature(OrchestrationService(self.store),
+                                     client=NoRelay(),project_memory_root=self.ledger_root)
+        with patch("bct.features.orchestration.contexts_for_session",
+                   side_effect=ProjectContextError("PROJECT_CONTEXT_SQLITE_CONNECT_FAILED")):
+            result=feature.execute(feature.prepare(
+                work=self.store.get_work(self.WORK),
+                arguments={"operation":"status","session_id":self.SESSION}))
+        self.assertEqual(result.output["project_memory"]["status"],"UNVERIFIED")
+        self.assertEqual(result.output["session"]["session_id"],self.SESSION)
 
     def test_stale_work_assignment_epoch_disables_context(self):
         with self.store.transaction() as db:

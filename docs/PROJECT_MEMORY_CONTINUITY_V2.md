@@ -33,10 +33,15 @@ decision ACK.
 
 - Source truth: existing Work, Session, Assignment, Mailbox, Manager Decision,
   outbox, and Event records; this code does not duplicate their payloads.
-- Related events: event_id, kind, subject_id, created_at only. The source
-  selectors are verified using original SQLite Work and Session bindings,
-  never untrusted IDs from ledger links.
-- BCT SQLite is opened read-only with query_only=ON.
+- Related events: event_id, kind, subject_id, created_at only. Each query
+  selector must pair an explicitly supported BCT event kind with an exact
+  original Work, Session, Assignment, Wake, Decision or Operation ID
+  proven under the current Work/Session. A subject string alone is NOT
+  provenance; unknown or unscoped kinds are never promoted as evidence.
+  Completeness is relative to these proven event kinds, not all BCT events.
+- BCT SQLite is opened read-only with query_only=ON. A connection-level
+  failure is converted to ProjectContextError; operational status remains
+  available, with Project Memory marked UNVERIFIED.
 - Maximum four linked projects and at most 50 related events per project by
   default, with a 100-event cap per explicit reader call.
 - Maximum 1000 source IDs; incomplete coverage is explicitly indicated by
@@ -46,6 +51,12 @@ decision ACK.
 - delta.observed_through is an advisory proposal, not an automatic cursor
   commit. The Manager may advance the V1 ledger cursor ONLY after reviewing
   evidence. A source event highwater does not imply all BCT events were read.
+  The cursor must be linked to the Work/Session membership fingerprint saved
+  in checkpoints.external.bct_source_links_sha256. An unanchored old cursor
+  or a changed link set forces a scan from event 0, returns rescan_required
+  and source_complete=false, and never advances a stored checkpoint.
+  A project linked to other Works cannot claim project-wide complete
+  coverage from a single Work status; that status reports incomplete.
 - External links such as GitHub and ChatGPT remain unverified until their
   corresponding original sources are read. They are never an authority grant.
 - Source Work assignment epoch and current manager epoch are checked.
