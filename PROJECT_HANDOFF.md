@@ -1,5 +1,19 @@
 # BCT 인수인계
 
+## 완료 — 일반 ChatGPT/Codex의 VTL Desktop Session 공동 사용 계약
+
+일반 ChatGPT 대화도 BCT Control 연결과 현재 MCP catalogue가 실제로 제공되면
+VTL Desktop Session Agent를 사용할 수 있다. 실시간 데스크톱 진입점은 BCT Control
+MCP이며, GitHub Actions의 VTL workflow는 exact-SHA 검증을 남기는 별도 경로다.
+
+읽기 전용 status/capture/window list는 병행 가능하다. 입력·창 활성화·프로그램
+실행은 기존 세션당 단일 Lease가 직렬화하며, 각 대화는 고유 work ID와 짧은 Lease를
+사용하고 완료 즉시 반납한다. Lease 충돌 시 대기·보고하고 타 owner의 Lease를
+빼앗거나 emergency reset으로 우회하지 않는다. Emergency stop은 전역 중지이고,
+UNKNOWN 효과는 무재시도 후 receipt와 화면으로 화해한다. 일반 대화에 전달할 전체
+운영 절차는 `docs/USER_GUIDE.md`의 "일반 ChatGPT와 Codex가 데스크톱을 함께
+사용할 때" 절에 기록했다.
+
 ## 완료 — Adaptive CI와 VTL exact-SHA 데스크톱 스모크
 
 BCT PR #199는 보수적 변경 범위 판정, 정확 중복 unittest 제거, 네 개의 결정적
