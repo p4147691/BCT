@@ -870,6 +870,10 @@ class DeployFeature:
             _validate_profile_start_allowed(self.profiles, profile)
         if current_head == manifest["source_head"]:
             _validate_release(profile, current, require_profile_files=True)
+            # The running Core may predate recovery-entrypoint publication.
+            # Re-applying this exact release repairs the stable Task Scheduler
+            # entrypoints without changing the immutable release pointer.
+            _publish_runtime_recovery_scripts(profile, current)
             if request.arguments["restart"]:
                 if service_before.get("state") == "RUNNING" and service_before.get("release_sha") == current_head:
                     _record_protected_cutover(
