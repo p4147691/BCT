@@ -89,10 +89,40 @@ controller:
    extension reload, tab repurposing and retry after an ambiguous effect.
    Keep exact URL matching and byte-budget assertions in tests.
 
-This is a design contract, **not yet an installed RCC command**. Its isolated
-implementation needs a separately authorized authenticated browser/control
-environment to validate real loading, without CDP injection or private
-ChatGPT APIs. A static/CI pass is not physical acceptance.
+**Implementation status (Draft PR #191):** the existing RCC `background_loader.js`
+now loads `history_commands.js`, whose two native command handlers are
+registered in the existing `background.js` host-command dispatcher. The
+existing BCT `relay_browser` feature validates and routes both commands;
+the BCT coordinator requires the original same-work, same-principal
+`history-open` APPLIED receipt before permitting any `history-read`.
+
+Example BCT requests for the **isolated build only**:
+
+```json
+{"command":"history-open","instance_id":"EXACT_RCC_INSTANCE_ID","conversation_key":"6ad365ef-159c-83ee-8fe9-08742f99a24c"}
+```
+
+The `history-open` result supplies `open_operation_id`, `session_id`,
+`tab_id`, and `window_id`. The caller must reuse all of them unchanged:
+
+```json
+{"command":"history-read","instance_id":"EXACT_RCC_INSTANCE_ID","conversation_key":"6ad365ef-159c-83ee-8fe9-08742f99a24c","open_operation_id":"EXACT_OPEN_OPERATION_ID","session_id":"EXACT_SESSION_ID","tab_id":801,"window_id":51,"max_steps":10,"max_turns":40,"max_bytes":16000}
+```
+
+`history-read` operates solely on the original inactive dedicated tab,
+refuses tabs that have become active or navigated, rejects a mismatched
+receipt, and always returns `status=PARTIAL`,
+`fullHistoryVerified=false`, `gapsVerifiable=false` with bounded UTF-8
+body fragments, explicit truncation and omitted-turn counters. It sends
+no ChatGPT messages and cannot infer unseen turns from their opaque IDs.
+A maximum of 16 creation receipts can be retained by this isolated helper;
+a future dedicated-tab close/expiry operation would require its own review.
+
+The CLI/extension/RCC changes are **only in the Draft PR** and have not
+been deployed or installed. A successful CI fixture does not imply
+authenticated live ChatGPT paging was verified. Physical E2E must use an
+independently authorized dedicated test tab, not the previously blocked CDP
+route or an existing Manager/Worker tab.
 
 ## Acceptance gates
 
