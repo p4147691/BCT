@@ -11,6 +11,54 @@ from typing import Any, Iterator
 from .models import ConflictError, OperationResult, OperationState, Outcome, Work
 
 
+# Read-only cause hints. These describe where evidence was lost, never whether
+# a remote effect occurred or whether a resource claim may be released.
+_CLAIM_UNKNOWN_STAGE = {
+    "RCC_COMPOSE_CREATE_UNKNOWN": "CREATE_TRANSPORT",
+    "RCC_COMPOSE_CREATE_RECEIPT_UNVERIFIED": "CREATE_RECEIPT",
+    "RCC_COMPOSE_CREATED_IDENTITY_UNVERIFIED": "CREATE_IDENTITY",
+    "RCC_COMPOSE_SEND_UNKNOWN": "SEND_TRANSPORT",
+    "RCC_COMPOSE_SEND_ACK_UNVERIFIED": "SEND_ACK",
+    "RCC_COMPOSE_TERMINAL_EVIDENCE_MISMATCH": "RESULT_MISMATCH",
+    "RCC_COMPOSE_TERMINAL_NOT_CONFIRMED": "RESULT_UNVERIFIED",
+}
+
+
+def _claim_unknown_detail(error: str | None, outcome: str | None,
+                          capability: str | None) -> dict[str, str | None]:
+    if outcome != "UNKNOWN":
+        return {"stage": None, "error_code": None, "evidence": None}
+    if capability != "relay_browser":
+        return {"stage": "UNCLASSIFIED", "error_code": None, "evidence": "INSUFFICIENT"}
+    # Prefix-only decoding, with an explicit allowlist: no raw exception, user
+    # prompt, tab content, path, token, or internal transport details are exposed.
+    code = str(error or "").split(":", 1)[0]
+    if code not in _CLAIM_UNKNOWN_STAGE:
+        return {"stage": "UNCLASSIFIED", "error_code": None, "evidence": "INSUFFICIENT"}
+    return {"stage": _CLAIM_UNKNOWN_STAGE[code], "error_code": code,
+            "evidence": "RECORDED_ERROR_CODE_ONLY"}
+
+
+def _claim_executor_identity(pid: int | None, fingerprint: str | None) -> tuple[str, bool]:
+    if pid is None:
+        return "NOT_RECORDED", False
+    if not fingerprint:
+        return "FINGERPRINT_MISSING", False
+    try:
+        # Uses the existing PID + executable + creation-time fingerprint helper.
+        # Failure to observe a process is not proof that the worker is dead.
+        from bct.service_runtime import process_identity
+        observed = process_identity(int(pid))
+    except Exception:
+        # A PID probe must never fail the entire read-only Monitor snapshot.
+        observed = None
+    if observed is None:
+        return "NOT_OBSERVABLE", False
+    if observed.fingerprint != fingerprint:
+        return "PID_IDENTITY_MISMATCH", False
+    return "MATCHES_RUNNING_PROCESS", True
+
+
 class Store:
     def __init__(self, path: str | Path):
         self.path = str(path)
@@ -540,6 +588,9 @@ class Store:
         output = []
         for row in rows:
             state, outcome = row["operation_state"], row["outcome"]
+            detail = _claim_unknown_detail(row["error"], outcome, row["capability"])
+            identity_status, identity_verified = _claim_executor_identity(
+                row["executor_pid"], row["executor_fingerprint"])
             # Unknown external effects must retain their protection, even if
             # the operation is FINISHED or its executor has exited.
             if outcome == "UNKNOWN":
@@ -562,8 +613,10 @@ class Store:
                     "pid": row["executor_pid"],
                     "claimed_at": row["executor_claimed_at"],
                     "fingerprint_present": bool(row["executor_fingerprint"]),
-                    "identity_verified": False,
+                    "identity_verified": identity_verified,
+                    "identity_status": identity_status,
                 },
+                "effect_detail": detail,
                 "last_event": None if row["latest_event_kind"] is None else {
                     "kind": row["latest_event_kind"],
                     "at": row["latest_event_at"],
