@@ -138,6 +138,30 @@ class OperationCoordinator:
                 or not str(original.error or "").startswith("RCC_COMPOSE_")
             ):
                 raise PreconditionError("RCC_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
+        if capability == "relay_browser" and rcc_command == "history-read":
+            # A read cannot attach to an arbitrary ChatGPT tab. The original
+            # history-open receipt must belong to the same work, principal,
+            # instance and exact conversation, and must have applied.
+            open_id = str(arguments.get("open_operation_id") or "")
+            if not open_id:
+                raise PreconditionError("RCC_HISTORY_OPEN_OPERATION_REQUIRED")
+            source = self.store.get_operation_for(
+                operation_id=open_id, work_id=work_id,
+                principal_id=principal.principal_id,
+            )
+            evidence = source.evidence
+            if (source.state is not OperationState.FINISHED
+                    or source.outcome is not Outcome.APPLIED
+                    or evidence.get("command") != "history-open"
+                    or evidence.get("open_operation_id") != open_id
+                    or evidence.get("instance_id") != str(arguments.get("instance_id") or "")
+                    or evidence.get("conversation_key") != str(arguments.get("conversation_key") or "").lower()
+                    or evidence.get("tab_id") != arguments.get("tab_id")
+                    or evidence.get("window_id") != arguments.get("window_id")
+                    or evidence.get("session_id") != arguments.get("session_id")
+                    or evidence.get("inactive") is not True
+                    or evidence.get("no_message_sent") is not True):
+                raise PreconditionError("RCC_HISTORY_OPEN_RECEIPT_MISMATCH")
         request = replace(
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
