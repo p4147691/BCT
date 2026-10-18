@@ -1,5 +1,15 @@
 # BCT 인수인계
 
+## 완료 — 현재 세션 정확한 창 목록·활성화
+
+BCT LIVE는 현재 가상 데스크톱의 보이는 최상위 창을 exact fingerprint로
+조회하고, 활성 `window` Lease에 묶인 숨김/최소화되지 않은 정확한 창만
+foreground로 활성화할 수 있다. owner/lease, HWND/PID/process start, Session,
+virtual desktop, 긴급정지를 효과 직전에 재검증하며 UNKNOWN은 재시도하지
+않는다. 프로그램 실행과 창 복원·이동·크기 변경은 아직 별도 경계다.
+완료 증거는
+`docs/exec-plans/completed/BCT_DESKTOP_WINDOW_CONTROL_20261019.md`에 있다.
+
 ## 현재 작업 — 신뢰된 다중 ChatGPT 협업 정상화
 
 보호 경로 이전보다 실제 Manager → Worker 협업을 우선한다. 운영 기준은 계속
