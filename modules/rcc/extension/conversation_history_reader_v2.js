@@ -1,13 +1,24 @@
 /* Isolated, read-only older-turn collector. Never submits messages. */
 (function (root) {
   "use strict";
-  const ID_SELECTOR = "[data-message-id], [data-testid^='conversation-turn-']";
-  const ANONYMOUS_SELECTOR = "[data-message-author-role], [data-testid='conversation-turn']";
+  const ID_SELECTOR = "[data-turn-key], [data-content-search-turn-key], [data-message-id], [data-testid^='conversation-turn-']";
+  const ANONYMOUS_SELECTOR = "[data-message-author-role], [data-content-search-unit-key], [data-chatgpt-search-unit-key], [data-testid='conversation-turn']";
+  // Reuse the RCC turn identity priority: keyed conversation turns win over
+  // generic message or test selectors, so nested DOM wrappers cannot split a turn.
   function identify(el) {
-    const explicit = el.getAttribute("data-message-id");
-    if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+    for (const attr of ["data-turn-key", "data-content-search-turn-key", "data-message-id"]) {
+      const value = el.getAttribute(attr);
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
     const testid = el.getAttribute("data-testid");
     return typeof testid === "string" && /^conversation-turn-.+/.test(testid) ? testid.trim() : "";
+  }
+  function canonicalTurn(node) {
+    const keyedParent = typeof node.closest === "function" ? node.closest("[data-turn-key]") : null;
+    if (keyedParent) return keyedParent;
+    const keyedChildren = typeof node.querySelectorAll === "function"
+      ? node.querySelectorAll("[data-turn-key]") : [];
+    return keyedChildren.length === 1 ? keyedChildren[0] : node;
   }
   function conversationId(url) {
     try {
@@ -20,7 +31,8 @@
   function scan(doc) {
     const seen = new Map();
     let duplicates = 0, unidentified = 0;
-    for (const el of doc.querySelectorAll(ID_SELECTOR)) {
+    for (const candidate of doc.querySelectorAll(ID_SELECTOR)) {
+      const el = canonicalTurn(candidate);
       const id = identify(el);
       if (!id) { unidentified++; continue; }
       const text = (el.innerText || el.textContent || "").trim();
