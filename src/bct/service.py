@@ -86,7 +86,11 @@ class BCT:
             SystemInspectFeature(), ExecuteFeature(),
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
-            OrchestrationFeature(self.orchestration),
+            OrchestrationFeature(
+                self.orchestration,
+                project_memory_root=(Path(data_root) / "project-memory"
+                                     if data_root is not None else None),
+            ),
         ):
             self.operations.register(feature)
         self.operations.register(VerificationFeature(self.operations._features, self.store))
