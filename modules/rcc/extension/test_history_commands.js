@@ -64,6 +64,10 @@ async function main() {
   await assert.rejects(()=>History.open({conversationKey:"not-a-uuid",operationId:"history-open-01"},deps),
     /HISTORY_CONVERSATION_KEY_INVALID/);
   assert.equal(created,0);
+  await assert.rejects(()=>History.open({
+    conversationKey:KEY,operationId:"history-open-01",instanceId:"spoofed"
+  },deps),/HISTORY_OPEN_INSTANCE_MISMATCH/);
+  assert.equal(created,0);
   const open=await History.open({conversationKey:KEY,operationId:"history-open-01",instanceId:"instance123"},deps);
   assert.equal(open.result.state,"HISTORY_TAB_READY");
   assert.equal(open.result.tabId,801);
