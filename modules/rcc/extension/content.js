@@ -975,8 +975,11 @@ function sendControlFailureReason(editor) {
   // a submit-attempt or host ACK is generated. Never retry a prior UNKNOWN.
   // Diagnostic metadata only. Failed direct sends remain unsubmitted;
   // do not retry an UNKNOWN operation.
-  console.warn('RELAY_SEND_BUTTON_NOT_READY', sendControlFailureReason(editor));
-  throw new Error('RELAY_SEND_BUTTON_NOT_READY');
+  const reason = sendControlFailureReason(editor);
+  console.warn('RELAY_SEND_BUTTON_NOT_READY', reason);
+  // Stable, content-free error survives RCC host -> BCT receipt propagation.
+  // Only explicit pre-submit NOT_APPLIED may release a new request Claim.
+  throw new Error('RELAY_SEND_BUTTON_NOT_READY:' + reason);
 }
 
 
