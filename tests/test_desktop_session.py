@@ -5,10 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bct.core.models import Outcome, PreconditionError, Work
-from bct.features.desktop_session import DesktopCaptureFeature, DesktopSessionStatusFeature
+from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
+from bct.features.desktop_session import (
+    DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
+    DesktopSessionStatusFeature,
+)
 from bct.integrations.desktop_session import (
-    DesktopSessionClient, DesktopSessionRequestFailed, DesktopSessionUnavailable,
+    DesktopSessionClient, DesktopSessionEffectUnknown, DesktopSessionRequestFailed,
+    DesktopSessionUnavailable,
 )
 
 
@@ -17,6 +21,7 @@ class FakeDesktopSessionClient:
         self.root = root
         self.status_calls = 0
         self.capture_calls = 0
+        self.control_calls = []
 
     @staticmethod
     def _base(command: str):
@@ -51,6 +56,23 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def control(self, *, request_id: str, command: str, arguments=None):
+        self.control_calls.append((request_id, command, arguments or {}))
+        value = self._base(command)
+        value["requestId"] = request_id
+        value["control"] = {
+            "lease": ({
+                "leaseId": "b" * 32, "ownerId": (arguments or {}).get("ownerId"),
+                "ttlSeconds": (arguments or {}).get("ttlSeconds", 30),
+                "target": {"type": (arguments or {}).get("targetType", "session")},
+            } if command in {"lease_acquire", "lease_renew"} else None),
+            "emergencyStop": {
+                "active": command == "emergency_stop", "generation": 1,
+                "reason": (arguments or {}).get("reason", ""),
+            },
+        }
+        return value
+
 
 class DesktopSessionFeatureTests(unittest.TestCase):
     def setUp(self):
@@ -58,7 +80,10 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.client = FakeDesktopSessionClient(self.root)
         self.work = Work("desktop", "observe desktop", (str(self.root),),
-                         frozenset({"desktop_session_status", "desktop_capture"}), "owner")
+                         frozenset({
+                             "desktop_session_status", "desktop_capture",
+                             "desktop_control_lease", "desktop_emergency_stop",
+                         }), "owner")
 
     def tearDown(self):
         self.temp.cleanup()
@@ -105,6 +130,50 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(DesktopSessionUnavailable, "ENDPOINT_UNAVAILABLE"):
             client.status(request_id="status-missing")
+
+    def test_control_lease_derives_owner_and_normalizes_session_acquire(self):
+        feature = DesktopControlLeaseFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "acquire", "ttl_seconds": 45, "target_type": "session",
+        })
+        self.assertEqual("desktop", request.arguments["owner_id"])
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        request = request.__class__(**{**request.__dict__, "operation_id": "lease-acquire-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("b" * 32, result.evidence["control"]["lease"]["leaseId"])
+        self.assertEqual("lease_acquire", self.client.control_calls[-1][1])
+
+    def test_control_lease_validates_id_ttl_and_reset_generation(self):
+        feature = DesktopControlLeaseFeature(self.client)
+        with self.assertRaisesRegex(PreconditionError, "TTL_INVALID"):
+            feature.prepare(work=self.work, arguments={"operation": "acquire", "ttl_seconds": 1})
+        with self.assertRaisesRegex(PreconditionError, "LEASE_ID_INVALID"):
+            feature.prepare(work=self.work, arguments={"operation": "renew", "lease_id": "bad"})
+        with self.assertRaisesRegex(PreconditionError, "GENERATION_INVALID"):
+            feature.prepare(work=self.work, arguments={
+                "operation": "reset_emergency", "expected_stop_generation": 0,
+            })
+
+    def test_control_mutation_transport_loss_is_unknown(self):
+        class UnknownClient(FakeDesktopSessionClient):
+            def control(self, **_arguments):
+                raise DesktopSessionEffectUnknown("DESKTOP_SESSION_TRANSPORT_UNKNOWN")
+
+        feature = DesktopControlLeaseFeature(UnknownClient(self.root))
+        request = feature.prepare(work=self.work, arguments={"operation": "acquire"})
+        request = request.__class__(**{**request.__dict__, "operation_id": "lease-unknown"})
+        with self.assertRaisesRegex(UnknownEffectError, "TRANSPORT_UNKNOWN"):
+            feature.execute(request)
+
+    def test_emergency_stop_uses_independent_claim_and_returns_latched_state(self):
+        feature = DesktopEmergencyStopFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={"reason": "operator"})
+        self.assertEqual(("desktop-emergency-stop:interactive-session",), request.resources)
+        request = request.__class__(**{**request.__dict__, "operation_id": "emergency-stop-1"})
+        result = feature.execute(request)
+        self.assertTrue(result.evidence["control"]["emergencyStop"]["active"])
+        self.assertIsNone(result.evidence["control"]["lease"])
 
 
 if __name__ == "__main__":

@@ -18,7 +18,11 @@ class ManagerNodeContextPromptTests(unittest.TestCase):
             "assignment_id": "assignment.a", "assignment_generation": 1,
             "result_message_id": "result.r", "result_digest": "digest.d",
         }
-        prompt = OrchestrationFeature._manager_wake_envelope(event)
+        # The default-prompt contract must not depend on an operator's live,
+        # editable relay note under D:/BCT/runtime/config.
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(orchestration_module, "_RELAY_NOTES_DIR", Path(directory)):
+                prompt = OrchestrationFeature._manager_wake_envelope(event)
         self.assertIn("원래 지시와 완료 기준", prompt)
         self.assertIn("같은 Worker", prompt)
         self.assertIn("다른 Worker", prompt)

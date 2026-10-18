@@ -31,6 +31,8 @@ _CAPABILITY_USAGE = {
     "orchestrate": "Durable read-evidence manager/worker sessions. Start a session, sync exact RCC conversations, select a manager epoch, then use dispatch or chain-run. Browser mutations run in background; recover with bct_operation_get. Use reconcile only for one exact non-chain assignment, chain-resume for a persisted chain, and recover-not-dispatched only when BCT can prove no dispatch reservation exists. Recovery never resends an UNKNOWN effect.",
     "desktop_session_status": "Return the exact current interactive user-session Agent identity, foreground window, monitor geometry, and capture readiness.",
     "desktop_capture": "Capture the current virtual screen, one monitor, or one exact HWND. The MCP result contains both metadata and an image content block.",
+    "desktop_control_lease": "Status, acquire, renew, release, or generation-fenced reset of the one current-session control lease. This does not inject input.",
+    "desktop_emergency_stop": "Latch the current-session emergency stop and immediately revoke its active control lease. This remains callable independently of normal control claims.",
 }
 _SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 

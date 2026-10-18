@@ -44,8 +44,17 @@ UNKNOWN 처리와 정확한 SHA 확인은 각각의 안전 경계를 유지한�
 
 이 첫 구현은 현재 로그인되어 있고 잠기지 않은 사용자 세션에서 수동 실행한 VTL Desktop
 Session Agent를 필요로 한다. Agent가 없거나 다른 세션이거나 Pipe 소유자/DACL이 일치하지
-않으면 요청은 화면을 추측하지 않고 실패한다. 아직 자동 로그인, Scheduled Task, 입력 또는
-창 변경 기능은 제공하지 않는다.
+않으면 요청은 화면을 추측하지 않고 실패한다.
+
+후속 제어 기능을 위한 조정 경계는 `desktop_control_lease`와
+`desktop_emergency_stop` action으로 제공한다. Lease는 현재 Session 또는 정확한 HWND/PID/프로세스
+생성 시점에 묶이고, 한 세션에 하나만 존재하며 2~120초 안에서 자동 만료된다. 획득한 work만 정확한
+lease ID로 갱신·반납할 수 있다. 긴급정지는 일반 Lease claim과 독립적으로 호출되어 현재 Lease를
+즉시 폐기하고 래치되며, 반환된 stop generation과 정확히 일치하는 명시적 reset 전에는 새 Lease를
+거부한다. 이 단계 자체는 입력, 포커스 또는 창을 변경하지 않는다.
+
+아직 자동 로그인, Scheduled Task, 마우스·키보드 입력, 프로그램 실행 또는 창 변경 기능은
+제공하지 않는다.
 
 ## 여러 노드로 이어서 작업하기
 
