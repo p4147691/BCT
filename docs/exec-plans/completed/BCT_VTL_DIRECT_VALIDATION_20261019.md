@@ -105,6 +105,23 @@ loop. GitHub required checks remain the final independent candidate check.
 - Child Python tools receive process-local UTF-8 environment variables. No
   registry, system locale, language pack, reboot or global shell profile is
   changed.
-- Focused decoder tests cover UTF-8, CP949, UTF-16 and UTF-32 streams. Final
-  exact-head CI, deployment and authenticated LIVE VTL evidence are recorded
-  with the delivery PR.
+- Focused decoder tests cover UTF-8, CP949, UTF-16 and UTF-32 streams. The first
+  hosted run exposed that a US CP1252 host can permissively turn CP949 bytes
+  into mojibake; CP949 was therefore moved ahead of the current ACP/OEM
+  fallback. The exact failing revision was not retried.
+- BCT PR #206 exact head `85f120c186fd2a71238c7bbd2168ba439166f096`
+  passed CI run `39177425436` (four core shards, browser bridge and preflight),
+  then merged as `c70f6d2ec7f346baeef10c83ffa29d039613f3b5`.
+  Merged-main CI run `39177781086` also passed.
+- Durable deployment operation `bct-vtl-direct-deploy-c70f6d2ec7f3-op`
+  installed that exact release with manifest
+  `51580b99aae7f696dd6f4b7f0a71d776b7ac46bc2678f829c47ca148b476c608`;
+  Core became READY at generation 122.
+- VTL docs closeout PR #22 merged as
+  `37536df2b7f41b18b4efdb2601dd6191236b010b`. Its merged-main validation and
+  runtime sync passed, the installed manifest re-hash matched, and prewarm was
+  PASS. Authenticated operation
+  `bct-vtl-direct-live-c70f6d2e-37536df2-browser-fast` returned
+  `FINISHED / APPLIED / PASS` in 2.046 seconds; duplicate submission preserved
+  the original receipt. Evidence is under
+  `D:\BCT\data\vtl-evidence\7b805a587e0a5131c2af6458a039a0264af2198c2ec52c6b9db80e0118a30d1c`.

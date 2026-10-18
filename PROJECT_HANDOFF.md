@@ -1,14 +1,16 @@
 # BCT 인수인계
 
-## 진행 — Windows UTF-8 설정 독립 VTL 실행
+## 완료 — Windows UTF-8 설정 독립 VTL 실행
 
 Windows의 **유니코드 UTF-8 사용** 시스템 로캘은 게임/프로그램 호환을 위해 켜거나
 꺼도 된다. BCT/VTL은 이 전역 설정을 바꾸거나 재부팅을 요구하지 않는다. VTL의
 기계 판정은 명시적 UTF-8 JSON 파일을 사용하고, BCT는 자식 stdout/stderr를 bytes로
 받은 뒤 UTF BOM, strict UTF-8, CP949, 현재 Windows ANSI/OEM 순으로 진단 로그만
 해석한다. 자식 Python에는 process-local UTF-8 환경만 준다. 구현·focused test는
-완료됐고, 정확한 PR CI → VTL runtime sync/prewarm → BCT exact-SHA 배포 → 인증된
-LIVE `bct_vtl_validate` 순서로 종결한다. 상세는
+통과했다. VTL PR #21/#22와 BCT PR #206이 병합됐고, exact main runtime
+sync/prewarm와 BCT exact-SHA 배포가 완료됐다. source `origin/main`, 로컬 source,
+runtime `current.json`과 health `release_sha`는 최종 점검 때 기계적으로 비교한다.
+인증된 LIVE `bct_vtl_validate`와 duplicate receipt도 PASS했다. 상세는
 `docs/exec-plans/completed/BCT_VTL_DIRECT_VALIDATION_20261019.md`를 따른다.
 
 ## 완료 — 일반 ChatGPT의 직접 VTL-first 검증
