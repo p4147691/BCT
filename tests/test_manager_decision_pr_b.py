@@ -315,6 +315,153 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.assertEqual(["result", "result-ack"], commands)
         self.assertNotIn("send-wakeback", commands)
 
+    def test_manager_complete_ack_finalizes_idle_session(self):
+        relay = FakeRelay(self.receipt("COMPLETE"))
+        summary = ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
+        self.assertEqual(1, summary["acked"])
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT state,terminal_summary_json FROM orchestration_sessions "
+                "WHERE session_id='session'"
+            ).fetchone()
+            self.assertEqual("FINISHED", row["state"])
+            self.assertEqual("COMPLETE", json.loads(row["terminal_summary_json"])["manager_decision"])
+        self.assertTrue(self.consume()["idempotent"])
+
+    def test_deferred_complete_finishes_after_other_assignment_settles(self):
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("pending-extra", "session", 1, "extra", "{}",
+                 _canonical([self.root]), _canonical(["read"]), "{}",
+                 "QUEUED", 1, "{}", 1.0, 1.0),
+            )
+        relay = FakeRelay(self.receipt("COMPLETE"))
+        recovery = ManagerDecisionRecovery(self.service, relay)
+        result = recovery.run_once(now=self.now + 1)
+        self.assertEqual(1, result["acked"])
+        with self.store.transaction() as db:
+            self.assertEqual("ACTIVE", db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()[0])
+            db.execute(
+                "UPDATE orchestration_assignments SET state='APPLIED' "
+                "WHERE assignment_id='pending-extra'"
+            )
+        next_tick = recovery.run_once(now=self.now + 3)
+        with self.store.transaction() as db:
+            self.assertEqual("FINISHED", db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()[0])
+            self.assertEqual(1, db.execute(
+                "SELECT COUNT(*) FROM events WHERE kind='ORCHESTRATION_SESSION_FINISHED'"
+            ).fetchone()[0])
+        recovery.run_once(now=self.now + 5)
+        with self.store.transaction() as db:
+            self.assertEqual(1, db.execute(
+                "SELECT COUNT(*) FROM events WHERE kind='ORCHESTRATION_SESSION_FINISHED'"
+            ).fetchone()[0])
+
+    def test_completed_dispatch_outbox_acknowledged_allows_complete(self):
+        decision = self.consume()
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_dispatch_outbox VALUES"
+                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("finished-delivery", decision["decision_id"], 0, "session",
+                 1, "worker", "worker-att", 1, "producer", 1,
+                 "{}", "ACKNOWLEDGED", None, "ack", self.now, self.now),
+            )
+        self.assertTrue(self.consumer().mark_result_acknowledged(
+            event_id=self.event["event_id"],
+            result_hash=self.receipt()["resultHash"], now=self.now + 2))
+        with self.store.transaction() as db:
+            self.assertEqual("FINISHED", db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()[0])
+
+    def test_pending_dispatch_outbox_blocks_complete(self):
+        decision = self.consume()
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_dispatch_outbox VALUES"
+                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("pending-delivery", decision["decision_id"], 0, "session",
+                 1, "worker", "worker-att", 1, "producer", 1,
+                 "{}", "PENDING", None, None, self.now, None),
+            )
+        self.assertTrue(self.consumer().mark_result_acknowledged(
+            event_id=self.event["event_id"],
+            result_hash=self.receipt()["resultHash"], now=self.now + 2))
+        with self.store.transaction() as db:
+            self.assertEqual("ACTIVE", db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()[0])
+
+    def test_concurrent_deferred_complete_recovery_exactly_once(self):
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("concurrent-extra", "session", 1, "extra-concurrent", "{}",
+                 _canonical([self.root]), _canonical(["read"]), "{}",
+                 "QUEUED", 1, "{}", 1.0, 1.0),
+            )
+        relay = FakeRelay(self.receipt("COMPLETE"))
+        self.assertEqual(1, ManagerDecisionRecovery(
+            self.service, relay).run_once(now=self.now + 1)["acked"])
+        with self.store.transaction() as db:
+            db.execute("UPDATE orchestration_assignments SET state='APPLIED' "
+                       "WHERE assignment_id='concurrent-extra'")
+        results, failures = [], []
+        def attempt():
+            try:
+                results.append(self.consumer().reconcile_acked_completes(
+                    now=self.now + 5))
+            except Exception as exc:
+                failures.append(exc)
+        jobs = [threading.Thread(target=attempt) for _ in range(2)]
+        for job in jobs:
+            job.start()
+        for job in jobs:
+            job.join()
+        self.assertFalse(failures)
+        self.assertEqual([0, 1], sorted(results))
+        with self.store.transaction() as db:
+            self.assertEqual("FINISHED", db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()[0])
+            self.assertEqual(1, db.execute(
+                "SELECT COUNT(*) FROM events WHERE kind='ORCHESTRATION_SESSION_FINISHED'"
+            ).fetchone()[0])
+
+    def test_followup_ack_keeps_session_open(self):
+        relay = FakeRelay(self.receipt("FOLLOW_UP"))
+        summary = ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
+        self.assertEqual(1, summary["acked"])
+        with self.store.transaction() as db:
+            state = db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()["state"]
+        self.assertEqual("ACTIVE", state)
+        self.assertEqual(1, self.count("orchestration_dispatch_outbox"))
+
+    def test_complete_ack_keeps_session_open_with_other_active_assignment(self):
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("still-running", "session", 1, "request-extra", "{}",
+                 _canonical([self.root]), _canonical(["read"]), "{}",
+                 "QUEUED", 1, "{}", 1.0, 1.0),
+            )
+        relay = FakeRelay(self.receipt("COMPLETE"))
+        summary = ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
+        self.assertEqual(1, summary["acked"])
+        with self.store.transaction() as db:
+            state = db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()["state"]
+        self.assertEqual("ACTIVE", state)
+
     def test_reconciled_result_followup_atomic_and_exact_replay(self):
         self.use_proven_reconciled_result()
         with self.store.transaction() as db:

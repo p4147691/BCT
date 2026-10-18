@@ -322,6 +322,9 @@ class ManagerDecisionRecovery:
             return summary
         summary["lease_owned"] = True
         self._renew_live_recovery_leases(now=phase_now)
+        # A previously deferred COMPLETE can close once unrelated work settles.
+        # This only reads durable ACK receipts and writes a terminal state.
+        self.consumer.reconcile_acked_completes(limit=limit, now=phase_now)
         for candidate in self._candidates(limit=limit, now=phase_now):
             phase_now = max(now, time.time())
             if not self._acquire_recovery_lease(now=phase_now):

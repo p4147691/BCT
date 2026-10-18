@@ -294,9 +294,22 @@ class ManagerDecisionConsumer:
                 raise ConflictError("MANAGER_RESULT_CHANGED_DURING_COMMIT")
             session = self.service._session_row(tx, str(current["session_id"]))
             if session["state"] == "FINISHED":
+                completed_once = False
+                try:
+                    summary = json.loads(session["terminal_summary_json"] or "{}")
+                    completed_once = (
+                        summary.get("manager_decision") == "COMPLETE"
+                        and summary.get("manager_decision_id") == current["decision_id"]
+                        and current["result_ack_state"] == "ACKED"
+                        and current["result_hash"] == current_hash
+                        and current_decision.get("kind") == "COMPLETE"
+                        and not current_decision.get("successors")
+                    )
+                except (TypeError, ValueError):
+                    pass
                 if (session["work_id"] != work.work_id
                         or session["work_assignment_epoch"] != work.assignment_epoch
-                        or not verified_finished_chain_wake(tx, current)):
+                        or not (verified_finished_chain_wake(tx, current) or completed_once)):
                     raise ConflictError("MANAGER_FINISHED_CHAIN_WAKE_NOT_PROVEN")
             else:
                 self.service._assert_work(session, work)
@@ -424,6 +437,69 @@ class ManagerDecisionConsumer:
                 "result_ack_state": str(committed_wake["result_ack_state"]),
             }
 
+    def _finalize_acked_complete(self, db, *, event_id: str, now: float) -> bool:
+        """Finalize only a proven, ACKed Manager COMPLETE with no pending work."""
+        completed = db.execute(
+            "SELECT w.session_id,w.manager_epoch,w.decision_id,w.result_ack_state,"
+            "d.decision_json FROM orchestration_manager_wakes w "
+            "JOIN orchestration_consumption_decisions d ON d.decision_id=w.decision_id "
+            "WHERE w.event_id=?", (event_id,),
+        ).fetchone()
+        if completed is None or completed["result_ack_state"] != "ACKED":
+            return False
+        decision = json.loads(completed["decision_json"])
+        if decision.get("kind") != "COMPLETE" or decision.get("successors"):
+            return False
+        sid = str(completed["session_id"])
+        session = db.execute(
+            "SELECT state,manager_epoch,terminal_summary_json FROM orchestration_sessions "
+            "WHERE session_id=?", (sid,),
+        ).fetchone()
+        if (session is None or session["state"] != "ACTIVE"
+                or int(session["manager_epoch"]) != int(completed["manager_epoch"])):
+            return False
+        for table, clause in (
+            ("orchestration_assignments",
+             "state NOT IN ('APPLIED','FAILED','NOT_APPLIED')"),
+            ("orchestration_manager_wakes", "result_ack_state!='ACKED'"),
+            ("orchestration_dispatch_outbox", "state!='ACKNOWLEDGED'"),
+        ):
+            if db.execute(
+                f"SELECT 1 FROM {table} WHERE session_id=? AND {clause} LIMIT 1",
+                (sid,),
+            ).fetchone() is not None:
+                return False
+        summary = json.loads(session["terminal_summary_json"] or "{}")
+        summary.update({"manager_decision": "COMPLETE",
+                        "manager_decision_id": completed["decision_id"]})
+        changed = db.execute(
+            "UPDATE orchestration_sessions SET state='FINISHED',"
+            "terminal_summary_json=?,updated_at=? WHERE session_id=? AND state='ACTIVE'",
+            (json.dumps(summary, ensure_ascii=False, sort_keys=True,
+                        separators=(",", ":")), now, sid),
+        ).rowcount
+        if changed:
+            self.store._event(db, "ORCHESTRATION_SESSION_FINISHED", sid, {
+                "state": "FINISHED", "manager_epoch": int(completed["manager_epoch"]),
+            })
+        return bool(changed)
+
+    def reconcile_acked_completes(self, *, limit: int = 8,
+                                  now: float | None = None) -> int:
+        """Reuse the normal recovery tick; never sends a message or re-ACKs."""
+        now = time.time() if now is None else now
+        with self.store.transaction() as db:
+            events = db.execute(
+                "SELECT w.event_id FROM orchestration_manager_wakes w "
+                "JOIN orchestration_sessions s ON s.session_id=w.session_id "
+                "WHERE s.state='ACTIVE' AND w.result_ack_state='ACKED' "
+                "AND w.manager_epoch=s.manager_epoch "
+                "ORDER BY w.updated_at,w.event_id LIMIT ?", (limit,),
+            ).fetchall()
+            return sum(int(self._finalize_acked_complete(
+                db, event_id=str(e["event_id"]), now=now,
+            )) for e in events)
+
     def mark_result_acknowledged(
         self, *, event_id: str, result_hash: str, now: float | None = None,
     ) -> bool:
@@ -444,4 +520,5 @@ class ManagerDecisionConsumer:
                 "result_acknowledged_at=?,updated_at=? WHERE event_id=?",
                 (now, now, event_id),
             )
+            self._finalize_acked_complete(db, event_id=event_id, now=now)
             return True
