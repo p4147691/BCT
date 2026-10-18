@@ -33,6 +33,7 @@ _CAPABILITY_USAGE = {
     "desktop_capture": "Capture the current virtual screen, one monitor, or one exact HWND. The MCP result contains both metadata and an image content block.",
     "desktop_control_lease": "Status, acquire, renew, release, or generation-fenced reset of the one current-session control lease. This does not inject input.",
     "desktop_emergency_stop": "Latch the current-session emergency stop and immediately revoke its active control lease. This remains callable independently of normal control claims.",
+    "desktop_input": "Move/click the mouse or send one bounded key/text batch to an exact window lease. Every effect is fenced by the active lease and emergency stop.",
 }
 _SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 

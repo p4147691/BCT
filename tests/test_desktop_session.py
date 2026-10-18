@@ -8,7 +8,7 @@ from pathlib import Path
 from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
-    DesktopSessionStatusFeature,
+    DesktopInputFeature, DesktopSessionStatusFeature,
 )
 from bct.integrations.desktop_session import (
     DesktopSessionClient, DesktopSessionEffectUnknown, DesktopSessionRequestFailed,
@@ -22,6 +22,7 @@ class FakeDesktopSessionClient:
         self.status_calls = 0
         self.capture_calls = 0
         self.control_calls = []
+        self.input_calls = []
 
     @staticmethod
     def _base(command: str):
@@ -73,6 +74,16 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def input(self, *, request_id: str, command: str, arguments):
+        self.input_calls.append((request_id, command, arguments))
+        value = self._base(command)
+        value["requestId"] = request_id
+        value["input"] = {
+            "operation": command.removeprefix("input_mouse_").removeprefix("input_"),
+            "leaseId": arguments["leaseId"], "eventCount": 2,
+        }
+        return value
+
 
 class DesktopSessionFeatureTests(unittest.TestCase):
     def setUp(self):
@@ -83,6 +94,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                          frozenset({
                              "desktop_session_status", "desktop_capture",
                              "desktop_control_lease", "desktop_emergency_stop",
+                             "desktop_input",
                          }), "owner")
 
     def tearDown(self):
@@ -174,6 +186,54 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         result = feature.execute(request)
         self.assertTrue(result.evidence["control"]["emergencyStop"]["active"])
         self.assertIsNone(result.evidence["control"]["lease"])
+
+    def test_input_derives_owner_and_normalizes_unicode_text(self):
+        feature = DesktopInputFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "text", "lease_id": "b" * 32, "text": "한글 A9",
+        })
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        self.assertEqual("desktop", request.arguments["owner_id"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "input-text-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("input_text", self.client.input_calls[-1][1])
+        self.assertEqual("한글 A9", self.client.input_calls[-1][2]["text"])
+
+    def test_input_validates_conflicting_fields_keys_modifiers_and_coordinates(self):
+        feature = DesktopInputFeature(self.client)
+        invalid = (
+            {"operation": "move", "lease_id": "b" * 32, "x": 1, "y": 2, "text": "x"},
+            {"operation": "key", "lease_id": "b" * 32, "key": "POWER", "modifiers": []},
+            {"operation": "key", "lease_id": "b" * 32, "key": "A", "modifiers": ["ctrl", "CTRL"]},
+            {"operation": "click", "lease_id": "b" * 32, "x": True, "y": 2},
+            {"operation": "text", "lease_id": "b" * 32, "text": "line\n"},
+        )
+        for arguments in invalid:
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_input_transport_loss_is_unknown_and_terminal_rejection_is_failed(self):
+        feature = DesktopInputFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "key", "lease_id": "b" * 32, "key": "ENTER", "modifiers": [],
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "input-key-unknown"})
+
+        class UnknownClient(FakeDesktopSessionClient):
+            def input(self, **_arguments):
+                raise DesktopSessionEffectUnknown("DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN")
+
+        with self.assertRaises(UnknownEffectError):
+            DesktopInputFeature(UnknownClient(self.root)).execute(request)
+
+        class RejectingClient(FakeDesktopSessionClient):
+            def input(self, **_arguments):
+                raise DesktopSessionRequestFailed("INPUT_TARGET_NOT_FOREGROUND")
+
+        from bct.core.models import ConfirmedFailure
+        with self.assertRaises(ConfirmedFailure):
+            DesktopInputFeature(RejectingClient(self.root)).execute(request)
 
 
 if __name__ == "__main__":

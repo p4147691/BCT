@@ -113,6 +113,7 @@ class DesktopSessionClient:
         if command not in {
             "status", "capture", "control_status", "lease_acquire", "lease_renew",
             "lease_release", "emergency_stop", "emergency_reset",
+            "input_mouse_move", "input_mouse_click", "input_key", "input_text",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -152,6 +153,10 @@ class DesktopSessionClient:
                     raise DesktopSessionEffectUnknown("DESKTOP_SESSION_INSTANCE_MISMATCH")
                 if result.get("type") != "desktop-session:result":
                     raise DesktopSessionEffectUnknown("DESKTOP_SESSION_RESPONSE_INVALID")
+                if result.get("ok") is not True and result.get("effectState") == "UNKNOWN":
+                    raise DesktopSessionEffectUnknown(
+                        "DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN:" + str(result.get("error") or "UNKNOWN")[:200]
+                    )
                 if result.get("ok") is not True:
                     raise DesktopSessionRequestFailed(
                         "DESKTOP_SESSION_AGENT_ERROR:" + str(result.get("error") or "UNKNOWN")[:200]
@@ -216,4 +221,20 @@ class DesktopSessionClient:
         lease = control.get("lease")
         if lease is not None and not isinstance(lease, dict):
             raise DesktopSessionEffectUnknown("DESKTOP_CONTROL_STATE_INVALID")
+        return result
+
+    def input(self, *, request_id: str, command: str,
+              arguments: dict[str, Any]) -> dict[str, Any]:
+        if command not in {
+            "input_mouse_move", "input_mouse_click", "input_key", "input_text",
+        }:
+            raise ValueError("DESKTOP_INPUT_COMMAND_INVALID")
+        result = self.request(
+            request_id=request_id, command=command, arguments=arguments, timeout_s=10.0,
+        )
+        evidence = result.get("input")
+        if not isinstance(evidence, dict):
+            raise DesktopSessionEffectUnknown("DESKTOP_INPUT_EVIDENCE_MISSING")
+        if evidence.get("operation") not in {"move", "click", "key", "text"}:
+            raise DesktopSessionEffectUnknown("DESKTOP_INPUT_EVIDENCE_INVALID")
         return result
