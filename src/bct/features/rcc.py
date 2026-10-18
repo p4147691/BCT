@@ -35,7 +35,7 @@ _RENAME_INSPECTION_COMMAND = "inspect-rename-receipt"
 _OPERATOR_QUARANTINE_COMMAND = "quarantine-legacy-rename-claim"
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
-    "rename-conversation", "reload-extension", "send", "create-and-send",
+    "rename-conversation", "reload-extension", "send", "send-to-tab", "create-and-send",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
@@ -246,6 +246,25 @@ class RelayBrowserFeature:
             prepared["text"] = str(arguments.get("text") or "")
             if not prepared["to"] or not prepared["text"]:
                 raise PreconditionError("RCC_SEND_TARGET_AND_TEXT_REQUIRED")
+        elif command == "send-to-tab":
+            allowed.update({"session_id", "tab_id", "window_id", "conversation_key", "text"})
+            session = str(arguments.get("session_id") or "").strip()
+            key = str(arguments.get("conversation_key") or "").strip().lower()
+            body = str(arguments.get("text") or "")
+            if not session or not re.fullmatch(r"[a-f0-9]{32}", session):
+                raise PreconditionError("RCC_DIRECT_TAB_SESSION_ID_REQUIRED")
+            if (key and not re.fullmatch(
+                    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", key)):
+                raise PreconditionError("RCC_DIRECT_TAB_CONVERSATION_KEY_INVALID")
+            if not body or len(body) > 12000:
+                raise PreconditionError("RCC_DIRECT_TAB_TEXT_INVALID")
+            prepared["text"] = body
+            prepared["extra"].update({
+                "sessionId": session, "workId": work.work_id,
+                "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                "windowId": _positive_int(arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"),
+                "conversationKey": key, "instanceId": instance_id,
+            })
         elif command == "send-to-created-tab":
             allowed.update({
                 "session_id", "tab_id", "window_id", "create_operation_id", "text",
@@ -300,6 +319,8 @@ class RelayBrowserFeature:
         if unknown:
             raise PreconditionError("RCC_ARGUMENT_NOT_ALLOWED:" + ",".join(sorted(unknown)))
         resource = "rcc-instance:" + instance_id
+        if command == "send-to-tab":
+            resource += ":direct-tab:" + str(prepared["extra"]["tabId"])
         if command == "rename-conversation":
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
@@ -761,6 +782,18 @@ class RelayBrowserFeature:
                 ):
                     break
                 time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+        if values["command"] == "send-to-tab" and result.get("ok") is True:
+            correct = (
+                str(result.get("operationId") or "") == request.operation_id
+                and result.get("instanceId") == values["instance_id"]
+                and result.get("sessionId") == extra["sessionId"]
+                and result.get("tabId") == extra["tabId"]
+                and result.get("windowId") == extra["windowId"]
+                and result.get("state") == "SUBMITTED"
+                and result.get("submitted") is True
+            )
+            if not correct:
+                raise UnknownEffectError("RCC_DIRECT_TAB_ACK_UNVERIFIED")
         if result.get("ok") is True:
             if values["command"] == "send" and result.get("type") == "host:ack":
                 if result.get("submitted") is not True or state != "SUBMITTED":
