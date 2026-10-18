@@ -41,6 +41,7 @@ tunnel. It runs only `run_bct_tunnel_supervisor.ps1` at sign-in, keeps one super
 uses the same bounded restart policy. The script still owns the safety decision: it validates the
 exact tunnel executable, ID and MCP target before it reuses a live process or makes one connect
 attempt. It never starts a second tunnel just because the health metadata is stale or absent.
-The profile is always read explicitly as UTF-8 so Windows PowerShell 5.1 cannot corrupt a non-ASCII
-Windows user-profile path before comparing the configured health URL file.
+The profile reader accepts UTF-8 (with or without BOM), UTF-16, and a legacy Windows ANSI profile,
+then normalizes a changed profile to UTF-8. This prevents Windows PowerShell 5.1 from corrupting a
+non-ASCII Windows user-profile path before comparing the configured health URL file.
 

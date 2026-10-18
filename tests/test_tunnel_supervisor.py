@@ -127,12 +127,16 @@ class TunnelSupervisorTests(unittest.TestCase):
             for thread in threads:
                 thread.join(timeout=5)
 
-    def test_reads_the_utf8_profile_without_corrupting_non_ascii_paths(self) -> None:
+    def test_reads_utf8_and_legacy_windows_profiles_without_corrupting_paths(self) -> None:
         script = self._script().read_text(encoding="utf-8")
         self.assertIn(
-            "Get-Content -LiteralPath $profilePath -Raw -Encoding UTF8 -ErrorAction Stop",
+            "function Read-TunnelProfileText([string]$Path)",
             script,
         )
+        self.assertIn("[Text.UTF8Encoding]::new($false, $true)", script)
+        self.assertIn("[Text.Encoding]::Unicode", script)
+        self.assertIn("[Text.Encoding]::BigEndianUnicode", script)
+        self.assertIn("[Text.Encoding]::Default", script)
 
 
 if __name__ == "__main__":
