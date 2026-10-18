@@ -25,6 +25,25 @@ public class RelayNativeHostV2
     static readonly object PipeStartLock = new object();
     static readonly ConcurrentDictionary<string, StreamWriter> Clients =
         new ConcurrentDictionary<string, StreamWriter>();
+    // Transient correlation only: no request body, tab IDs, URLs or credentials.
+    sealed class StateTrace
+    {
+        internal readonly long Sequence;
+        internal readonly long Started;
+        internal StateTrace(long sequence, long started) { Sequence = sequence; Started = started; }
+    }
+    static long StateTraceSequence;
+    // Keys remain transient in memory; logs contain only an opaque sequence.
+    static readonly ConcurrentDictionary<string, StateTrace> StatePipeTraces =
+        new ConcurrentDictionary<string, StateTrace>();
+    static void RecordStateTiming(string stage, StateTrace trace, double? fixedMs = null)
+    {
+        if (trace == null) return;
+        double ms = fixedMs ?? ((Stopwatch.GetTimestamp() - trace.Started) * 1000.0 / Stopwatch.Frequency);
+        try { Console.Error.WriteLine("RCC_STATE_TIMING trace=" + trace.Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + " stage=" + stage + " ms=" + ms.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)); }
+        catch { /* diagnostic logging must never change relay semantics */ }
+    }
     static readonly ConcurrentDictionary<string, Dictionary<string, object>> Endpoints =
         new ConcurrentDictionary<string, Dictionary<string, object>>();
     static readonly object PresenceLock = new object();
@@ -120,6 +139,7 @@ public class RelayNativeHostV2
             while (true)
             {
                 pipe.WaitForConnection();
+                long acceptedAt = Stopwatch.GetTimestamp();
                 NamedPipeServerStream connectedPipe = pipe;
                 // Ownership of this already-connected pipe passes to its handler.
                 // Failure to create the next listener must not dispose an
@@ -127,7 +147,7 @@ public class RelayNativeHostV2
                 pipe = null;
                 try
                 {
-                    if (!ThreadPool.QueueUserWorkItem(_ => HandlePipeClient(connectedPipe)))
+                    if (!ThreadPool.QueueUserWorkItem(_ => HandlePipeClient(connectedPipe, acceptedAt)))
                         throw new InvalidOperationException("PIPE_HANDLER_QUEUE_FAILED");
                 }
                 catch
@@ -175,8 +195,11 @@ public class RelayNativeHostV2
         catch (Exception ex) { Console.Error.WriteLine("pipe failure notification dropped: " + ex.GetType().Name); }
     }
 
-    static void HandlePipeClient(NamedPipeServerStream pipe)
+    static void HandlePipeClient(NamedPipeServerStream pipe, long acceptedAt)
     {
+        // Covers accept -> ThreadPool scheduling, not Pipe connection wait.
+        double queueWaitMs = (Stopwatch.GetTimestamp() - acceptedAt) * 1000.0 / Stopwatch.Frequency;
+        bool firstRequest = true;
         StreamWriter writer = null;
         try
         {
@@ -201,11 +224,22 @@ public class RelayNativeHostV2
                     lock (writer) writer.WriteLine(Json.Serialize(BuildPresenceResult(requestId)));
                     continue;
                 }
+                bool stateOnly = String.Equals(GetString(msg, "command"), "state", StringComparison.Ordinal);
+                StateTrace trace = stateOnly
+                    ? new StateTrace(Interlocked.Increment(ref StateTraceSequence), Stopwatch.GetTimestamp())
+                    : null;
+                if (trace != null)
+                {
+                    StatePipeTraces[requestId] = trace;
+                    if (firstRequest) RecordStateTiming("threadpool_queue_wait", trace, queueWaitMs);
+                }
+                firstRequest = false;
                 Clients[requestId] = writer;
                 msg["type"] = "host:command";
                 msg["requestId"] = requestId;
                 msg["instanceId"] = InstanceId;
                 SendNative(msg);
+                if (trace != null) RecordStateTiming("pipe_receive_to_chrome_dispatch", trace);
             }
         }
         catch (Exception ex) { Console.Error.WriteLine("pipe client: " + ex.Message); }
@@ -214,7 +248,13 @@ public class RelayNativeHostV2
             if (writer != null)
                 foreach (var pair in Clients)
                     if (Object.ReferenceEquals(pair.Value, writer))
-                    { StreamWriter removed; Clients.TryRemove(pair.Key, out removed); }
+                    {
+                        StreamWriter removed;
+                        Clients.TryRemove(pair.Key, out removed);
+                        StateTrace discarded;
+                        if (StatePipeTraces.TryRemove(pair.Key, out discarded))
+                            RecordStateTiming("connection_closed_before_result", discarded);
+                    }
             try { pipe.Dispose(); } catch { }
         }
     }
@@ -323,12 +363,24 @@ public class RelayNativeHostV2
             if (!String.IsNullOrWhiteSpace(requestId) &&
                 Clients.TryGetValue(requestId, out writer))
             {
-                try { lock (writer) writer.WriteLine(Json.Serialize(msg)); }
+                StateTrace trace = null;
+                bool isStateResponse = type == "host:result" && StatePipeTraces.TryGetValue(requestId, out trace);
+                if (isStateResponse) RecordStateTiming("pipe_receive_to_chrome_result", trace);
+                try
+                {
+                    lock (writer) writer.WriteLine(Json.Serialize(msg));
+                    if (isStateResponse) RecordStateTiming("pipe_receive_to_pipe_reply", trace);
+                }
                 catch (Exception ex) { Console.Error.WriteLine("pipe result dropped: " + ex.GetType().Name); }
                 finally
                 {
                     if (type == "host:result")
-                    { StreamWriter removed; Clients.TryRemove(requestId, out removed); }
+                    {
+                        StreamWriter removed;
+                        Clients.TryRemove(requestId, out removed);
+                        StateTrace discarded;
+                        StatePipeTraces.TryRemove(requestId, out discarded);
+                    }
                 }
             }
         }
