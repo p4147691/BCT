@@ -25,10 +25,11 @@ One node, Work, or Session may participate in multiple project contexts.
   operation receipts. A file hash check is not itself a cross-process ledger
   transaction.
 
-Project Memory V1 adds a standalone Python library and CLI. It adds no new
-MCP tool, changes no runtime registration, emits no automatic Wake and sends
-no Worker message. It is not available to LIVE until a separately approved
-and exact SHA deployed change.
+Project Memory V1 adds a standalone Python library and CLI, and one
+file-list entry in bct.toml's deployment profile so a future approved release
+actually includes the module. It adds no new MCP tool, changes no runtime
+registration, emits no automatic Wake and sends no Worker message. It is not
+available to LIVE until a separately approved exact-SHA deployment.
 
 ## Proposed on-disk layout
 

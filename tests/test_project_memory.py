@@ -211,6 +211,14 @@ class ProjectMemoryTests(unittest.TestCase):
         self.assertEqual(sorted((output.get(timeout=5)[0], output.get(timeout=5)[0])),
                          ["CONFLICT", "OK"])
 
+    def test_deployment_manifest_includes_module_exactly_once(self):
+        import tomllib
+        config = Path(__file__).resolve().parents[1] / "bct.toml"
+        with config.open("rb") as handle:
+            parsed = tomllib.load(handle)
+        files = parsed["deployment"]["profiles"]["bct_runtime_v1"]["files"]
+        self.assertEqual(files.count("src/bct/core/project_memory.py"), 1)
+
     def test_cli_get_list_and_history(self):
         self._genesis()
         env = dict(os.environ)
