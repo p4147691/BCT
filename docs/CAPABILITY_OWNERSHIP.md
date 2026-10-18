@@ -17,8 +17,9 @@ BCT owns the implementation, policy boundary, operation receipt and live accepta
 - authenticated current-user desktop-session status and read-only screen/window
   capture through the external VTL-owned Desktop Session Agent.
 - durable BCT receipts for the VTL-owned current-session control lease and
-  emergency-stop coordination boundary; these coordination capabilities do not
-  inject input or mutate windows.
+  emergency-stop coordination boundary; and
+- policy validation, durable operation fencing and audited dispatch for
+  VTL-owned mouse and keyboard input against an exact active window lease.
 
 These capabilities live in the BCT repository and do not import ACT runtime modules.
 
@@ -52,9 +53,12 @@ The old ACT ADC MCP/controller and ACT-path Laya runtime have been retired.  The
 slice now owns the authenticated adapter, operation receipt and MCP image result for exact session
 status and read-only capture.  VTL owns the generic per-user Windows Agent and protected named-pipe
 implementation.  The second coordination slice adds a short-lived exact-target lease, automatic
-expiry and a generation-fenced emergency-stop latch.  It still does not claim input, window
-mutation, launch, Scheduled Task recovery or full RDC parity, and it does not expose a misleading
-ADC compatibility layer.
+expiry and a generation-fenced emergency-stop latch.  The next bounded slice adds real mouse
+move/click, key and Unicode text input through VTL.  BCT owns the authenticated policy, durable receipt and UNKNOWN-effect boundary;
+VTL owns the Windows `SendInput` execution.  Every effect requires the exact active window lease,
+revalidates the target and emergency-stop state immediately before injection, and never retries an
+ambiguous partial effect.  General window activation/mutation and program launch remain outside
+this slice, as do Scheduled Task recovery, full RDC parity and a misleading ADC compatibility layer.
 
 DesktopWindow Monitor and Chrome Auto Proxy are external compatibility modules, not Core. Their
 active installed paths stay fixed until their exact extension/native identities are migrated. Runner

@@ -299,3 +299,144 @@ class DesktopEmergencyStopFeature:
         except DesktopSessionRequestFailed as exc:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
         return _control_result(result)
+
+
+class DesktopInputFeature:
+    capability = "desktop_input"
+    _KEYS = frozenset({
+        "BACKSPACE", "TAB", "ENTER", "ESCAPE", "SPACE", "PAGEUP", "PAGEDOWN",
+        "END", "HOME", "LEFT", "UP", "RIGHT", "DOWN", "DELETE",
+        *(f"F{index}" for index in range(1, 13)),
+        *(chr(value) for value in range(ord("A"), ord("Z") + 1)),
+        *(str(value) for value in range(10)),
+    })
+    _MODIFIERS = frozenset({"ctrl", "shift", "alt", "win"})
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {
+            "operation", "lease_id", "x", "y", "button", "click_count",
+            "key", "modifiers", "text",
+        }
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError("DESKTOP_INPUT_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_INPUT_OWNER_INVALID")
+        lease_id = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_INPUT_LEASE_ID_INVALID")
+        operation = str(arguments.get("operation") or "").strip().casefold()
+        if operation not in {"move", "click", "key", "text"}:
+            raise PreconditionError("DESKTOP_INPUT_OPERATION_INVALID")
+        normalized: dict[str, Any] = {
+            "operation": operation, "owner_id": owner_id, "lease_id": lease_id,
+        }
+        if operation in {"move", "click"}:
+            normalized["x"] = self._coordinate(arguments, "x")
+            normalized["y"] = self._coordinate(arguments, "y")
+        if operation == "move":
+            if set(arguments) & {"button", "click_count", "key", "modifiers", "text"}:
+                raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
+        elif operation == "click":
+            if set(arguments) & {"key", "modifiers", "text"}:
+                raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
+            button = str(arguments.get("button") or "left").strip().casefold()
+            if button not in {"left", "right", "middle"}:
+                raise PreconditionError("DESKTOP_INPUT_BUTTON_INVALID")
+            try:
+                click_count = int(arguments.get("click_count", 1))
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PreconditionError("DESKTOP_INPUT_CLICK_COUNT_INVALID") from exc
+            if click_count not in {1, 2}:
+                raise PreconditionError("DESKTOP_INPUT_CLICK_COUNT_INVALID")
+            normalized.update({"button": button, "click_count": click_count})
+        elif operation == "key":
+            if set(arguments) & {"x", "y", "button", "click_count", "text"}:
+                raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
+            key = str(arguments.get("key") or "").strip().upper()
+            modifiers = arguments.get("modifiers", [])
+            if key not in self._KEYS:
+                raise PreconditionError("DESKTOP_INPUT_KEY_INVALID")
+            if (
+                not isinstance(modifiers, list) or len(modifiers) > 3
+                or any(not isinstance(item, str) for item in modifiers)
+            ):
+                raise PreconditionError("DESKTOP_INPUT_MODIFIERS_INVALID")
+            normalized_modifiers = [item.strip().casefold() for item in modifiers]
+            if (
+                len(set(normalized_modifiers)) != len(normalized_modifiers)
+                or not set(normalized_modifiers).issubset(self._MODIFIERS)
+            ):
+                raise PreconditionError("DESKTOP_INPUT_MODIFIERS_INVALID")
+            normalized.update({"key": key, "modifiers": normalized_modifiers})
+        else:
+            if set(arguments) & {"x", "y", "button", "click_count", "key", "modifiers"}:
+                raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
+            text = arguments.get("text")
+            if (
+                not isinstance(text, str) or not 1 <= len(text) <= 256
+                or any(ord(character) < 32 or ord(character) == 127 for character in text)
+            ):
+                raise PreconditionError("DESKTOP_INPUT_TEXT_INVALID")
+            normalized["text"] = text
+        return FeatureRequest(
+            self.capability, operation + ":interactive-session", normalized,
+            ("desktop-control:interactive-session",),
+        )
+
+    @staticmethod
+    def _coordinate(arguments: dict[str, Any], key: str) -> int:
+        value = arguments.get(key)
+        if isinstance(value, bool):
+            raise PreconditionError("DESKTOP_INPUT_COORDINATE_INVALID")
+        try:
+            result = int(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PreconditionError("DESKTOP_INPUT_COORDINATE_INVALID") from exc
+        if not -(2 ** 31) <= result < 2 ** 31:
+            raise PreconditionError("DESKTOP_INPUT_COORDINATE_INVALID")
+        return result
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        operation = request.arguments["operation"]
+        command = {
+            "move": "input_mouse_move", "click": "input_mouse_click",
+            "key": "input_key", "text": "input_text",
+        }[operation]
+        arguments: dict[str, Any] = {
+            "ownerId": request.arguments["owner_id"],
+            "leaseId": request.arguments["lease_id"],
+        }
+        if operation in {"move", "click"}:
+            arguments.update({"x": request.arguments["x"], "y": request.arguments["y"]})
+        if operation == "move":
+            arguments.update({"button": "", "clickCount": 0})
+        elif operation == "click":
+            arguments.update({
+                "button": request.arguments["button"],
+                "clickCount": request.arguments["click_count"],
+            })
+        elif operation == "key":
+            arguments.update({
+                "key": request.arguments["key"], "modifiers": request.arguments["modifiers"],
+            })
+        else:
+            arguments["text"] = request.arguments["text"]
+        try:
+            result = self.client.input(
+                request_id=request.operation_id, command=command, arguments=arguments,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        evidence = result.get("input") if isinstance(result.get("input"), dict) else {}
+        return FeatureResult(
+            Outcome.APPLIED, {**_session_evidence(result), "input": evidence}, output=result,
+        )

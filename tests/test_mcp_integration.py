@@ -56,7 +56,7 @@ class MCPIntegrationTests(unittest.TestCase):
             "relay_browser", "system_inspect", "execute", "monitor",
             "process_session", "verify", "orchestrate",
             "desktop_session_status", "desktop_capture",
-            "desktop_control_lease", "desktop_emergency_stop",
+            "desktop_control_lease", "desktop_emergency_stop", "desktop_input",
         ]
         self.port = free_port()
         (self.release / "bct.toml").write_text(
@@ -119,6 +119,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_test", "bct_write", "bct_verify", "bct_orchestrate",
                         "bct_desktop_session_status", "bct_desktop_capture",
                         "bct_desktop_control_lease", "bct_desktop_emergency_stop",
+                        "bct_desktop_input",
                     }
                     self.assertEqual(
                         expected_capability_tools | {
