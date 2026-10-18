@@ -18,6 +18,7 @@ Codex는 BCT work와 operation을 만들고 읽기, 수정, 실행, 테스트, c
 - Monitor 상태 확인
 - 현재 로그인 사용자 세션 상태와 모니터 구성을 확인
 - 현재 가상 화면, 한 모니터 또는 정확한 HWND를 읽기 전용으로 캡처
+- 활성 Session Lease 아래에서 정확한 EXE를 실행하고 새 PID/창에 Lease를 바인딩
 - 기존 operation 결과와 GitHub PR 상태 조회
 
 폴더 내용은 파일 읽기와 구분해 `bct_read`의 `operation: "directory_tree"`로 조회한다.
@@ -68,7 +69,17 @@ operation 기록에 남으므로 비밀번호·토큰 같은 민감정보 입력
 foreground로 활성화한다. 활성화 직전에 Lease와 전체 창 fingerprint 및 긴급정지를 다시 확인하며,
 Windows API 결과와 실제 foreground가 모순되면 `UNKNOWN`으로 남기고 자동 재시도하지 않는다.
 
-아직 자동 로그인, Scheduled Task, 프로그램 실행, 창 복원·이동·크기 변경 기능은 제공하지 않는다.
+프로그램을 새로 열 때는 먼저 `session` Lease를 획득하고 같은 work와 lease ID로
+`desktop_program_launch`를 호출한다. 실행 파일은 존재하는 절대 `.exe` 경로여야 하며,
+인수는 셸 문자열이 아닌 문자열 배열로 전달한다. Agent는 `UseShellExecute=false`로 정확한
+파일만 실행하고 새 PID, 프로세스 생성 시점과 Session ID를 기록한다. 그 PID가 제한 시간 안에
+현재 가상 데스크톱에 보이는 최상위 창을 만든 경우 같은 Lease가 해당 창 fingerprint로 원자적으로
+바뀌므로 곧바로 활성화와 입력에 사용할 수 있다. 이미 실행 중인 프로세스로 요청을 넘기는 Chrome
+같은 앱은 새 PID 소유 창을 입증할 수 없어 실행은 `APPLIED`이지만 `WINDOW_NOT_OBSERVED`로 남을 수
+있다. 이 경우 자동 재실행하지 않는다. 실행 인수는 operation 기록에 남으므로 비밀번호·토큰을
+전달하지 않는다.
+
+아직 자동 로그인, 창 복원·이동·크기 변경 기능은 제공하지 않는다.
 
 ## 여러 노드로 이어서 작업하기
 

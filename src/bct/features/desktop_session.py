@@ -533,3 +533,84 @@ class DesktopWindowActivateFeature:
         return FeatureResult(
             Outcome.APPLIED, {**_session_evidence(result), "window_action": action}, output=result,
         )
+
+
+class DesktopProgramLaunchFeature:
+    capability = "desktop_program_launch"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {
+            "lease_id", "executable", "arguments", "working_directory",
+            "window_timeout_ms",
+        }
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_OWNER_INVALID")
+        lease_id = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_LEASE_ID_INVALID")
+        executable_value = arguments.get("executable")
+        if not isinstance(executable_value, str) or "\0" in executable_value:
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_EXECUTABLE_INVALID")
+        executable = Path(executable_value)
+        if (
+            not executable.is_absolute() or executable.suffix.casefold() != ".exe"
+            or not executable.is_file() or executable.is_symlink()
+        ):
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_EXECUTABLE_INVALID")
+        directory_value = arguments.get("working_directory")
+        if not isinstance(directory_value, str) or "\0" in directory_value:
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_WORKING_DIRECTORY_INVALID")
+        working_directory = Path(directory_value)
+        if not working_directory.is_absolute() or not working_directory.is_dir() or working_directory.is_symlink():
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_WORKING_DIRECTORY_INVALID")
+        launch_arguments = arguments.get("arguments")
+        if (
+            not isinstance(launch_arguments, list) or len(launch_arguments) > 32
+            or any(
+                not isinstance(value, str) or len(value) > 1024 or "\0" in value
+                for value in launch_arguments
+            )
+            or sum(len(value) for value in launch_arguments) > 8192
+        ):
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_ARGUMENTS_INVALID")
+        timeout_value = arguments.get("window_timeout_ms", 5000)
+        if isinstance(timeout_value, bool):
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_TIMEOUT_INVALID")
+        try:
+            window_timeout_ms = int(timeout_value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_TIMEOUT_INVALID") from exc
+        if not 100 <= window_timeout_ms <= 10000:
+            raise PreconditionError("DESKTOP_PROGRAM_LAUNCH_TIMEOUT_INVALID")
+        normalized = {
+            "owner_id": owner_id, "lease_id": lease_id,
+            "executable": str(executable.resolve()),
+            "arguments": list(launch_arguments),
+            "working_directory": str(working_directory.resolve()),
+            "window_timeout_ms": window_timeout_ms,
+        }
+        return FeatureRequest(
+            self.capability, "launch:interactive-session", normalized,
+            ("desktop-control:interactive-session",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.launch(request_id=request.operation_id, **request.arguments)
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        launch = result["programLaunch"]
+        return FeatureResult(
+            Outcome.APPLIED, {**_session_evidence(result), "program_launch": launch}, output=result,
+        )

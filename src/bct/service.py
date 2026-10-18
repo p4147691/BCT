@@ -31,7 +31,8 @@ from .features.monitor import MonitorFeature
 from .features.orchestration import OrchestrationFeature
 from .features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
-    DesktopInputFeature, DesktopSessionStatusFeature, DesktopWindowActivateFeature,
+    DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
+    DesktopWindowActivateFeature,
     DesktopWindowListFeature, desktop_session_client,
 )
 from .integrations.github import GhCliClient, GitHubClient
@@ -116,6 +117,7 @@ class BCT:
             DesktopInputFeature(desktop_session),
             DesktopWindowListFeature(desktop_session),
             DesktopWindowActivateFeature(desktop_session),
+            DesktopProgramLaunchFeature(desktop_session),
         ):
             self.operations.register(feature)
         self.operations.register(VerificationFeature(self.operations._features, self.store))
