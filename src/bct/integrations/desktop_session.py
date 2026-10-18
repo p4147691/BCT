@@ -114,6 +114,7 @@ class DesktopSessionClient:
             "status", "capture", "control_status", "lease_acquire", "lease_renew",
             "lease_release", "emergency_stop", "emergency_reset",
             "input_mouse_move", "input_mouse_click", "input_key", "input_text",
+            "windows_list", "window_activate",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -237,4 +238,53 @@ class DesktopSessionClient:
             raise DesktopSessionEffectUnknown("DESKTOP_INPUT_EVIDENCE_MISSING")
         if evidence.get("operation") not in {"move", "click", "key", "text"}:
             raise DesktopSessionEffectUnknown("DESKTOP_INPUT_EVIDENCE_INVALID")
+        return result
+
+    def windows(self, *, request_id: str, include_minimized: bool,
+                title_query: str, limit: int) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="windows_list",
+            arguments={
+                "includeMinimized": include_minimized,
+                "titleQuery": title_query,
+                "limit": limit,
+            },
+            timeout_s=10.0,
+        )
+        windows = result.get("windows")
+        if not isinstance(windows, dict):
+            raise DesktopSessionEffectUnknown("DESKTOP_WINDOWS_MISSING")
+        items = windows.get("items")
+        count = windows.get("count")
+        if (
+            not isinstance(items, list) or isinstance(count, bool)
+            or not isinstance(count, int) or count != len(items)
+            or not isinstance(windows.get("truncated"), bool)
+            or not isinstance(windows.get("observedAtUtc"), str)
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_WINDOWS_INVALID")
+        for item in items:
+            if (
+                not isinstance(item, dict)
+                or not re.fullmatch(r"[1-9][0-9]{0,18}", str(item.get("hwnd") or ""))
+                or isinstance(item.get("pid"), bool) or not isinstance(item.get("pid"), int)
+                or item["pid"] <= 0 or not isinstance(item.get("title"), str)
+                or not isinstance(item.get("processStartTimeUtc"), str)
+                or not isinstance(item.get("virtualDesktopId"), str)
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_WINDOWS_INVALID")
+        return result
+
+    def activate(self, *, request_id: str, owner_id: str, lease_id: str) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="window_activate",
+            arguments={"ownerId": owner_id, "leaseId": lease_id}, timeout_s=10.0,
+        )
+        action = result.get("windowAction")
+        if (
+            not isinstance(action, dict) or action.get("operation") != "activate"
+            or action.get("leaseId") != lease_id
+            or not isinstance(action.get("alreadyForeground"), bool)
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_WINDOW_ACTION_INVALID")
         return result
