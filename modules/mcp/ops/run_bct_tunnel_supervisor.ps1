@@ -78,6 +78,26 @@ function Test-HealthEndpoint([string]$BaseUrl) {
     }
 }
 
+function Read-TunnelProfileText([string]$Path) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        return [Text.UTF8Encoding]::new($false, $true).GetString($bytes, 3, $bytes.Length - 3)
+    }
+    if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+        return [Text.Encoding]::Unicode.GetString($bytes, 2, $bytes.Length - 2)
+    }
+    if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF) {
+        return [Text.Encoding]::BigEndianUnicode.GetString($bytes, 2, $bytes.Length - 2)
+    }
+    try {
+        return [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+    } catch [Text.DecoderFallbackException] {
+        # Legacy Windows profiles can be ANSI-encoded.  Decode them using the
+        # current Windows code page, then normalize the next write to UTF-8.
+        return [Text.Encoding]::Default.GetString($bytes)
+    }
+}
+
 function Repair-HealthUrlFile([int]$ProcessId) {
     if ($ProcessId -le 0) { throw 'BCT_TUNNEL_HEALTH_REPAIR_PID_INVALID' }
     $listeners = @(
@@ -107,10 +127,9 @@ function Repair-HealthUrlFile([int]$ProcessId) {
 
 function Ensure-ProfileHeaders {
     $profilePath = Join-Path $ProfileDir ($Alias + '.yaml')
-    # The tunnel profile is written as UTF-8.  Windows PowerShell 5.1 otherwise
-    # reads a BOM-less profile using the active ANSI code page and corrupts a
-    # non-ASCII user-profile path before we can compare the health file.
-    $raw = Get-Content -LiteralPath $profilePath -Raw -Encoding UTF8 -ErrorAction Stop
+    # Prefer strict UTF-8, but accept legacy Windows profile encodings and
+    # normalize them to UTF-8 on the next atomic write.
+    $raw = Read-TunnelProfileText $profilePath
     try { $profile = $raw | ConvertFrom-Json } catch { throw "BCT_TUNNEL_PROFILE_NOT_JSON path=$profilePath" }
     if ($null -eq $profile.mcp) { throw "BCT_TUNNEL_PROFILE_MCP_MISSING path=$profilePath" }
     if ($null -eq $profile.health -or $profile.health.url_file -ne $HealthUrlFile) {
