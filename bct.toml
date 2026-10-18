@@ -23,6 +23,8 @@ normal_actions = [
   "desktop_control_lease",
   "desktop_emergency_stop",
   "desktop_input",
+  "desktop_window_list",
+  "desktop_window_activate",
 ]
 approval_actions = ["delete", "credential_change"]
 

@@ -34,6 +34,8 @@ _CAPABILITY_USAGE = {
     "desktop_control_lease": "Status, acquire, renew, release, or generation-fenced reset of the one current-session control lease. This does not inject input.",
     "desktop_emergency_stop": "Latch the current-session emergency stop and immediately revoke its active control lease. This remains callable independently of normal control claims.",
     "desktop_input": "Move/click the mouse or send one bounded key/text batch to an exact window lease. Every effect is fenced by the active lease and emergency stop.",
+    "desktop_window_list": "List bounded visible top-level windows on the current virtual desktop with exact HWND/process fingerprints.",
+    "desktop_window_activate": "Bring the exact non-minimized window bound to the active lease to the foreground. This does not launch, restore, move, or resize a window.",
 }
 _SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 

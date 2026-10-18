@@ -120,6 +120,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_desktop_session_status", "bct_desktop_capture",
                         "bct_desktop_control_lease", "bct_desktop_emergency_stop",
                         "bct_desktop_input",
+                        "bct_desktop_window_list", "bct_desktop_window_activate",
                     }
                     self.assertEqual(
                         expected_capability_tools | {

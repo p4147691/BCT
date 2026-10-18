@@ -440,3 +440,96 @@ class DesktopInputFeature:
         return FeatureResult(
             Outcome.APPLIED, {**_session_evidence(result), "input": evidence}, output=result,
         )
+
+
+class DesktopWindowListFeature:
+    capability = "desktop_window_list"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {"include_minimized", "title_query", "limit"}
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError("DESKTOP_WINDOW_LIST_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        include_minimized = arguments.get("include_minimized", True)
+        if not isinstance(include_minimized, bool):
+            raise PreconditionError("DESKTOP_WINDOW_LIST_MINIMIZED_INVALID")
+        title_query = arguments.get("title_query", "")
+        if not isinstance(title_query, str) or len(title_query.strip()) > 200:
+            raise PreconditionError("DESKTOP_WINDOW_LIST_QUERY_INVALID")
+        try:
+            limit = int(arguments.get("limit", 100))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PreconditionError("DESKTOP_WINDOW_LIST_LIMIT_INVALID") from exc
+        if isinstance(arguments.get("limit"), bool) or not 1 <= limit <= 256:
+            raise PreconditionError("DESKTOP_WINDOW_LIST_LIMIT_INVALID")
+        normalized = {
+            "include_minimized": include_minimized,
+            "title_query": title_query.strip(),
+            "limit": limit,
+        }
+        return FeatureRequest(
+            self.capability, "current-desktop", normalized,
+            ("desktop-session:observe",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.windows(request_id=request.operation_id, **request.arguments)
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        windows = result["windows"]
+        evidence = {
+            **_session_evidence(result),
+            "window_count": windows["count"],
+            "truncated": windows["truncated"],
+            "observed_at_utc": windows["observedAtUtc"],
+        }
+        return FeatureResult(Outcome.APPLIED, evidence, output=result)
+
+
+class DesktopWindowActivateFeature:
+    capability = "desktop_window_activate"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        unknown = set(arguments) - {"lease_id"}
+        if unknown:
+            raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_OWNER_INVALID")
+        lease_id = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_LEASE_ID_INVALID")
+        return FeatureRequest(
+            self.capability, "activate:interactive-session",
+            {"owner_id": owner_id, "lease_id": lease_id},
+            ("desktop-control:interactive-session",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.activate(
+                request_id=request.operation_id,
+                owner_id=request.arguments["owner_id"],
+                lease_id=request.arguments["lease_id"],
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        action = result["windowAction"]
+        return FeatureResult(
+            Outcome.APPLIED, {**_session_evidence(result), "window_action": action}, output=result,
+        )

@@ -61,8 +61,14 @@ Lease owner/ID, HWND/PID/프로세스 생성 시점, 입력 데스크톱과 긴�
 실행 여부가 불명확한 결과는 `UNKNOWN`으로 남기고 자동 재시도하지 않는다. 텍스트 인자는 감사용
 operation 기록에 남으므로 비밀번호·토큰 같은 민감정보 입력에는 사용하지 않는다.
 
-아직 자동 로그인, Scheduled Task, 프로그램 실행, 일반 창 활성화·이동·크기 변경 기능은 제공하지
-않는다.
+현재 가상 데스크톱의 창을 고를 때는 읽기 전용 `desktop_window_list`를 호출한다. 반환값은 보이는
+제목 있는 최상위 창만 포함하며 HWND, PID, 프로세스 생성 시점, Session ID, 가상 데스크톱 ID,
+제목, 클래스, 위치와 foreground/minimized 상태를 함께 준다. 선택한 HWND로 `window` Lease를 획득한
+뒤 같은 work와 lease ID로 `desktop_window_activate`를 호출하면 숨겨지거나 최소화되지 않은 그 창만
+foreground로 활성화한다. 활성화 직전에 Lease와 전체 창 fingerprint 및 긴급정지를 다시 확인하며,
+Windows API 결과와 실제 foreground가 모순되면 `UNKNOWN`으로 남기고 자동 재시도하지 않는다.
+
+아직 자동 로그인, Scheduled Task, 프로그램 실행, 창 복원·이동·크기 변경 기능은 제공하지 않는다.
 
 ## 여러 노드로 이어서 작업하기
 

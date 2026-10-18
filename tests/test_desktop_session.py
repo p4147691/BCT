@@ -8,7 +8,8 @@ from pathlib import Path
 from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
-    DesktopInputFeature, DesktopSessionStatusFeature,
+    DesktopInputFeature, DesktopSessionStatusFeature, DesktopWindowActivateFeature,
+    DesktopWindowListFeature,
 )
 from bct.integrations.desktop_session import (
     DesktopSessionClient, DesktopSessionEffectUnknown, DesktopSessionRequestFailed,
@@ -23,6 +24,7 @@ class FakeDesktopSessionClient:
         self.capture_calls = 0
         self.control_calls = []
         self.input_calls = []
+        self.window_calls = []
 
     @staticmethod
     def _base(command: str):
@@ -84,6 +86,36 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def windows(self, *, request_id: str, **arguments):
+        self.window_calls.append((request_id, "windows_list", arguments))
+        value = self._base("windows_list")
+        value["requestId"] = request_id
+        value["windows"] = {
+            "items": [{
+                "hwnd": "12345", "pid": 123, "processName": "probe",
+                "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
+                "sessionId": 1, "virtualDesktopId": "a" * 36,
+                "title": "Probe", "className": "ProbeWindow", "visible": True,
+                "minimized": False, "foreground": False, "zOrder": 1,
+                "rect": {"x": 10, "y": 10, "width": 100, "height": 100},
+            }],
+            "count": 1, "truncated": False,
+            "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
+        }
+        return value
+
+    def activate(self, *, request_id: str, owner_id: str, lease_id: str):
+        self.window_calls.append((request_id, "window_activate", {
+            "owner_id": owner_id, "lease_id": lease_id,
+        }))
+        value = self._base("window_activate")
+        value["requestId"] = request_id
+        value["windowAction"] = {
+            "operation": "activate", "leaseId": lease_id,
+            "alreadyForeground": False, "beforeHwnd": "22", "afterHwnd": "12345",
+        }
+        return value
+
 
 class DesktopSessionFeatureTests(unittest.TestCase):
     def setUp(self):
@@ -95,6 +127,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                              "desktop_session_status", "desktop_capture",
                              "desktop_control_lease", "desktop_emergency_stop",
                              "desktop_input",
+                             "desktop_window_list", "desktop_window_activate",
                          }), "owner")
 
     def tearDown(self):
@@ -234,6 +267,58 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         from bct.core.models import ConfirmedFailure
         with self.assertRaises(ConfirmedFailure):
             DesktopInputFeature(RejectingClient(self.root)).execute(request)
+
+    def test_window_list_is_bounded_and_returns_current_desktop_inventory(self):
+        feature = DesktopWindowListFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "include_minimized": False, "title_query": " Probe ", "limit": 12,
+        })
+        self.assertEqual(("desktop-session:observe",), request.resources)
+        self.assertEqual("Probe", request.arguments["title_query"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "windows-list-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(1, result.evidence["window_count"])
+        self.assertEqual("12345", result.output["windows"]["items"][0]["hwnd"])
+
+    def test_window_list_rejects_invalid_types_and_bounds(self):
+        feature = DesktopWindowListFeature(self.client)
+        for arguments in (
+            {"include_minimized": "yes"}, {"title_query": "x" * 201},
+            {"limit": True}, {"limit": 0}, {"limit": 257},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_window_activation_derives_owner_and_uses_control_claim(self):
+        feature = DesktopWindowActivateFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={"lease_id": "b" * 32})
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        self.assertEqual("desktop", request.arguments["owner_id"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "window-activate-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("window_activate", self.client.window_calls[-1][1])
+
+    def test_window_activation_unknown_and_terminal_failure_are_distinct(self):
+        feature = DesktopWindowActivateFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={"lease_id": "b" * 32})
+        request = request.__class__(**{**request.__dict__, "operation_id": "window-activate-fail"})
+
+        class UnknownClient(FakeDesktopSessionClient):
+            def activate(self, **_arguments):
+                raise DesktopSessionEffectUnknown("WINDOW_ACTIVATION_EFFECT_UNKNOWN")
+
+        with self.assertRaises(UnknownEffectError):
+            DesktopWindowActivateFeature(UnknownClient(self.root)).execute(request)
+
+        class RejectingClient(FakeDesktopSessionClient):
+            def activate(self, **_arguments):
+                raise DesktopSessionRequestFailed("WINDOW_TARGET_MINIMIZED")
+
+        from bct.core.models import ConfirmedFailure
+        with self.assertRaises(ConfirmedFailure):
+            DesktopWindowActivateFeature(RejectingClient(self.root)).execute(request)
 
 
 if __name__ == "__main__":

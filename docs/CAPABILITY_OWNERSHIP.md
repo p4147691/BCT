@@ -19,7 +19,9 @@ BCT owns the implementation, policy boundary, operation receipt and live accepta
 - durable BCT receipts for the VTL-owned current-session control lease and
   emergency-stop coordination boundary; and
 - policy validation, durable operation fencing and audited dispatch for
-  VTL-owned mouse and keyboard input against an exact active window lease.
+  VTL-owned mouse and keyboard input against an exact active window lease; and
+- authenticated current-virtual-desktop window inventory plus audited exact
+  activation of the non-hidden, non-minimized window bound to that lease.
 
 These capabilities live in the BCT repository and do not import ACT runtime modules.
 
@@ -54,11 +56,15 @@ slice now owns the authenticated adapter, operation receipt and MCP image result
 status and read-only capture.  VTL owns the generic per-user Windows Agent and protected named-pipe
 implementation.  The second coordination slice adds a short-lived exact-target lease, automatic
 expiry and a generation-fenced emergency-stop latch.  The next bounded slice adds real mouse
-move/click, key and Unicode text input through VTL.  BCT owns the authenticated policy, durable receipt and UNKNOWN-effect boundary;
+move/click, key and Unicode text input through VTL.  The next slice adds bounded
+current-virtual-desktop window inventory and exact leased-window activation.
+BCT owns the authenticated policy, durable receipt and UNKNOWN-effect boundary;
 VTL owns the Windows `SendInput` execution.  Every effect requires the exact active window lease,
 revalidates the target and emergency-stop state immediately before injection, and never retries an
-ambiguous partial effect.  General window activation/mutation and program launch remain outside
-this slice, as do Scheduled Task recovery, full RDC parity and a misleading ADC compatibility layer.
+ambiguous partial effect.  Activation additionally revalidates virtual-desktop
+identity and refuses hidden or minimized windows.  Window restore/move/resize,
+program launch, Scheduled Task recovery, full RDC parity and a misleading ADC
+compatibility layer remain outside this slice.
 
 DesktopWindow Monitor and Chrome Auto Proxy are external compatibility modules, not Core. Their
 active installed paths stay fixed until their exact extension/native identities are migrated. Runner
