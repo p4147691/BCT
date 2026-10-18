@@ -26,7 +26,10 @@ function makeHarness() {
     click() { ++clickCount; }
   };
   const scope = {querySelector(selector) {
-    return mode === 'send' && selector === 'button[data-testid="send-button"]' ? button : null;
+    if (mode === 'send' && selector === 'button[data-testid="send-button"]') return button;
+    if (mode === 'send-id' && selector === 'button#composer-submit-button') return button;
+    if (mode === 'send-composer-testid' && selector === 'button[data-testid="composer-send-button"]') return button;
+    return null;
   }};
   const editor = {
     tagName: 'TEXTAREA', value: '', focus() {},
@@ -35,17 +38,18 @@ function makeHarness() {
       return null;
     }
   };
-  const document = { documentElement: {}, querySelector() { return mode === 'foreign-send' ? button : null; } };
+  const document = { documentElement: {}, querySelector() { return ['foreign-send','foreign-id'].includes(mode) ? button : null; } };
   class MutationObserver {
     constructor(callback) { this.callback = callback; observers.push(this); }
     observe() {}
     disconnect() {}
   }
   let currentEditor = editor;
+  const diagnostics = [];
   const context = {
     document, MutationObserver, setTimeout, clearTimeout, getEditor: () => currentEditor,
     RelayCore: { normalizeMessageText: value => String(value || '').trim() },
-    console
+    console: { ...console, warn: (...args) => diagnostics.push(args) }
   };
   vm.createContext(context);
   vm.runInContext(gateSource + '\n' + draftSource +
@@ -56,7 +60,8 @@ function makeHarness() {
     setDisabled(value) { disabled = value; observers.forEach(o=>o.callback()); },
     setAriaDisabled(value) { ariaDisabled = value; observers.forEach(o=>o.callback()); },
     setCurrentEditor(value) { currentEditor = value; observers.forEach(o=>o.callback()); },
-    clicks() { return clickCount; }
+    clicks() { return clickCount; },
+    diagnostics() { return diagnostics; }
   };
 }
 const options = (text, timeout=80) => ({
@@ -77,6 +82,30 @@ async function main() {
   const result=await waiting;
   assert.equal(result.method,'send-button');
   assert.equal(a.clicks(),1,'exactly one send click after mode transition');
+
+  // Exact scoped composer IDs are accepted even when data-testid is absent.
+  const currentId=makeHarness();
+  currentId.editor.value='안전한 ID 기반 전송';
+  currentId.setMode('send-id');
+  const currentIdResult=await currentId.testing.submitEditor(currentId.editor, options('안전한 ID 기반 전송'));
+  assert.equal(currentIdResult.method,'send-button');
+  assert.equal(currentId.clicks(),1);
+
+  const currentTestid=makeHarness();
+  currentTestid.editor.value='현재 composer testid';
+  currentTestid.setMode('send-composer-testid');
+  await currentTestid.testing.submitEditor(currentTestid.editor,options('현재 composer testid'));
+  assert.equal(currentTestid.clicks(),1);
+
+  const foreignId=makeHarness();
+  foreignId.editor.value='외부 버튼 금지';
+  foreignId.setMode('foreign-id');
+  await mustReject(foreignId.testing.submitEditor(foreignId.editor,options('외부 버튼 금지',30)),
+    'RELAY_SEND_BUTTON_NOT_READY');
+  assert.equal(foreignId.clicks(),0);
+  assert(foreignId.diagnostics().some(entry =>
+    entry[0]==='RELAY_SEND_BUTTON_NOT_READY' &&
+    entry[1]==='SEND_CONTROL_OUTSIDE_EDITOR'));
 
   const b=makeHarness();
   b.editor.value='잘못된 글자';
