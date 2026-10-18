@@ -22,9 +22,8 @@ VTL browser/GUI scenario, Full/VM E2E 순으로 가장 싼 충분한 tier를 선
 검증하고, work scope 안의 browser 또는 profile scenario를 background operation으로 직접 실행한다.
 VTL SHA, 입력 SHA, PASS/FAIL/TIMEOUT, 외부 evidence/result 경로가 BCT receipt에 남으며 GitHub
 Actions를 dispatch하지 않는다. VTL runtime installer와 외부 evidence/run-ID 계약은 VTL 저장소가
-소유한다. VTL PR #18과 BCT PR #203의 exact-head/main CI가 통과했고, BCT merge
-`af1c4fd9b1ca172c58ca09ebe44185ddda0e14b8`가 LIVE generation 121로 배포됐다.
-최종 설치 VTL merge `6e75ab689c62731e98a50f2786ead92efac98d06`은 한글 사용자 경로를
+소유한다. VTL PR #18과 BCT PR #203의 exact-head/main CI가 통과했고 해당 BCT
+merge가 LIVE generation 121로 배포됐다. 최종 설치 VTL PR #20 main은 한글 사용자 경로를
 비대화형 Windows 코드페이지와 무관하게 처리하고, browser cold prepare/Fast selftest가
 PASS한 뒤에만 runtime pointer를 공개한다. 인증된 MCP operation
 `bct-vtl-direct-live-af1c4fd9-6e75ab68-browser-fast`는 이를 직접 실행해 `APPLIED / PASS`를
