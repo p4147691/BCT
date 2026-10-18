@@ -26,6 +26,8 @@ approval_actions = ["delete", "credential_change"]
 # sessions created afterwards use Schema 2; existing sessions stay pinned to
 # their stored legacy receipt mode.
 manager_wake_receipt_v2_enabled = true
+# Existing receipts and recovery remain readable; only new worker assignment is denied.
+excluded_new_assignment_instance_ids = ["6174664e1c1b4e6db1d4729c841db3c9"]
 
 [execution.sessions]
 state_root = "D:\\BCT\\data\\process-sessions"

@@ -40,6 +40,122 @@ class MonitorRuntimeTests(unittest.TestCase):
             self.assertNotIn("roots", state["works"][0])
             self.assertEqual([], state["operations"])
 
+    def test_unavailable_instance_is_cached_and_healthy_instance_remains_fresh(self):
+        from bct.monitor_runtime import _RCC_HEALTH
+        calls = []
+        class Client:
+            def request(self, **kwargs):
+                ident = kwargs["instance_id"]
+                calls.append(ident)
+                if ident == "bad-instance":
+                    raise TimeoutError("no response")
+                return {"state": {"sessionId": "live", "tabs": [], "endpoints": []}}
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+            _RCC_HEALTH.clear()
+            try:
+                first = _rcc_states(["bad-instance", "good-instance"])
+                second = _rcc_states(["bad-instance", "good-instance"])
+                self.assertEqual(["bad-instance", "good-instance", "good-instance"], calls)
+                self.assertEqual("UNAVAILABLE", second[0]["state"])
+                self.assertTrue(second[0]["cached"])
+                self.assertEqual("OPEN", second[1]["state"])
+                self.assertFalse("cached" in second[1])
+                self.assertEqual("TimeoutError", first[0]["error"])
+            finally:
+                _RCC_HEALTH.clear()
+
+    def test_four_instances_have_bounded_first_probes_and_stale_retry(self):
+        from bct.monitor_runtime import _RCC_HEALTH, _RCC_INFLIGHT
+        calls = []
+        class Client:
+            def request(self, **kwargs):
+                calls.append((kwargs["instance_id"], kwargs["timeout_s"]))
+                if kwargs["instance_id"].startswith("bad"):
+                    raise TimeoutError("down")
+                return {"state": {"sessionId": "healthy", "tabs": [], "endpoints": []}}
+        ids = ["bad-a", "bad-b", "good-c", "bad-d"]
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+            _RCC_HEALTH.clear()
+            _RCC_INFLIGHT.clear()
+            try:
+                first = _rcc_states(ids)
+                self.assertEqual(2, len(calls))
+                self.assertEqual("UNKNOWN", first[2]["state"])
+                self.assertTrue(all(t <= 0.25 for _, t in calls))
+                second = _rcc_states(ids)
+                self.assertEqual(4, len(calls))
+                self.assertEqual("OPEN", second[2]["state"])
+                self.assertEqual("UNAVAILABLE", second[0]["state"])
+                third = _rcc_states(ids)
+                self.assertEqual(5, len(calls))
+                for item in _RCC_HEALTH.values():
+                    if item.get("unavailable"):
+                        item["retry_at"] = 0
+                start = len(calls)
+                fourth = _rcc_states(ids)
+                self.assertEqual(2, len(calls) - start)  # healthy + just one retry
+                self.assertEqual("OPEN", fourth[2]["state"])
+                self.assertEqual(ids, [row["instance_id"] for row in fourth])
+                self.assertEqual([], list(_RCC_INFLIGHT))
+            finally:
+                _RCC_HEALTH.clear()
+                _RCC_INFLIGHT.clear()
+
+    def test_last_known_state_never_masquerades_as_live(self):
+        from bct.monitor_runtime import _RCC_HEALTH, _RCC_INFLIGHT
+        class Client:
+            calls = 0
+            def request(self, **kwargs):
+                self.calls += 1
+                if self.calls > 1:
+                    raise TimeoutError("down")
+                return {"state": {"sessionId": "healthy", "tabs": [], "endpoints": []}}
+        client = Client()
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=client):
+            _RCC_HEALTH.clear()
+            try:
+                self.assertEqual("OPEN", _rcc_states(["service-a"])[0]["state"])
+                self.assertEqual("UNAVAILABLE", _rcc_states(["service-a"])[0]["state"])
+                stale = _rcc_states(["service-a"])[0]
+                self.assertEqual("UNAVAILABLE", stale["state"])
+                self.assertEqual("OPEN", stale["last_known_state"])
+                self.assertTrue(stale["cached"])
+            finally:
+                _RCC_HEALTH.clear()
+                _RCC_INFLIGHT.clear()
+
+    def test_parallel_monitor_reads_do_not_duplicate_inflight_probe(self):
+        from bct.monitor_runtime import _RCC_HEALTH, _RCC_INFLIGHT
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        entered, release = Event(), Event()
+        calls = []
+        class Client:
+            def request(self, **kwargs):
+                calls.append(kwargs["instance_id"])
+                entered.set()
+                if not release.wait(timeout=2.0):
+                    raise TimeoutError("test timeout")
+                return {"state": {"sessionId": "live", "tabs": [], "endpoints": []}}
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+            _RCC_HEALTH.clear()
+            _RCC_INFLIGHT.clear()
+            try:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    future = executor.submit(_rcc_states, ["parallel-a"])
+                    self.assertTrue(entered.wait(1.0))
+                    duplicate = executor.submit(_rcc_states, ["parallel-a"]).result(1.0)
+                    self.assertEqual("UNKNOWN", duplicate[0]["state"])
+                    self.assertTrue(duplicate[0]["cached"])
+                    release.set()
+                    self.assertEqual("OPEN", future.result(2.0)[0]["state"])
+                self.assertEqual(["parallel-a"], calls)
+                self.assertFalse(_RCC_INFLIGHT)
+            finally:
+                release.set()
+                _RCC_HEALTH.clear()
+                _RCC_INFLIGHT.clear()
+
     def test_rcc_state_exposes_only_window_tab_and_presence_fields(self):
         class Client:
             def request(self, **kwargs):

@@ -374,6 +374,68 @@ class OrchestrationTests(unittest.TestCase):
             for item in self.relay.calls
         ))
 
+    def test_retired_rcc_blocks_only_new_assignment_and_replacement(self):
+        work = self.bct.store.get_work("work")
+        worker = self.attachment("worker-b")
+        other = self.attachment("worker-c")
+        kwargs = dict(
+            work=work, session_id="session", assignment_id="old-before-retire",
+            manager_epoch=1, worker_node_id="worker-b",
+            attachment_id=worker["attachment_id"],
+            request={"instruction": "existing task"}, roots=[str(self.root)],
+            actions=["read"], acceptance={"result": True}, dependencies=[],
+        )
+        created, original = self.bct.orchestration.create_assignment(**kwargs)
+        self.assertTrue(created)
+        self.bct.orchestration.excluded_new_assignment_instances = frozenset(
+            {self.relay.instance_id}
+        )
+        created_again, replay = self.bct.orchestration.create_assignment(**kwargs)
+        self.assertFalse(created_again)
+        self.assertEqual(original["assignment_id"], replay["assignment_id"])
+        with self.assertRaisesRegex(ConflictError, "RCC_RETIRED_FOR_NEW_ASSIGNMENTS"):
+            self.bct.orchestration.create_assignment(
+                **(kwargs | {"assignment_id": "new-after-retire"})
+            )
+        self.bct.orchestration.complete_assignment(
+            assignment_id="old-before-retire", generation=1, outcome="NOT_APPLIED",
+            result={"pre_dispatch": True, "reason": "not sent"},
+            result_message_id="result.retirement.test",
+        )
+        with self.assertRaisesRegex(ConflictError, "RCC_RETIRED_FOR_NEW_ASSIGNMENTS"):
+            self.bct.orchestration.replace_worker(
+                work=work, session_id="session",
+                assignment_id="old-before-retire", manager_epoch=1,
+                worker_node_id="worker-c", attachment_id=other["attachment_id"],
+                reason="replacement forbidden on retired instance",
+            )
+        self.assertEqual(
+            "NOT_APPLIED", self.bct.orchestration.snapshot(
+                work=work, session_id="session"
+            )["assignments"][0]["state"],
+        )
+
+    def test_retired_rcc_policy_loads_on_new_service_without_rewriting_existing(self):
+        with self.policy.open("a", encoding="utf-8") as handle:
+            handle.write(
+                "\n[orchestration]\n"
+                'excluded_new_assignment_instance_ids=["instance123"]\n'
+            )
+        restarted = BCT(
+            state_path=self.root / "state.sqlite", policy_path=self.policy
+        )
+        self.assertIn(
+            "instance123", restarted.orchestration.excluded_new_assignment_instances
+        )
+        self.assertEqual(
+            self.bct.orchestration.snapshot(
+                work=self.bct.store.get_work("work"), session_id="session"
+            )["session"]["session_id"],
+            restarted.orchestration.snapshot(
+                work=restarted.store.get_work("work"), session_id="session"
+            )["session"]["session_id"],
+        )
+
     def test_scope_can_narrow_but_not_widen(self):
         worker = self.attachment("worker-b")
         result = self.call("dispatch-narrow", {

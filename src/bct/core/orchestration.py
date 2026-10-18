@@ -73,12 +73,14 @@ class OrchestrationService:
     def __init__(
         self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
         policy: "Policy | None" = None,
+        excluded_new_assignment_instances: frozenset[str] = frozenset(),
     ):
         if not isinstance(manager_wake_receipt_v2_enabled, bool):
             raise ValueError("MANAGER_WAKE_RECEIPT_V2_ENABLED_INVALID")
         self.store = store
         self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
         self.policy = policy
+        self.excluded_new_assignment_instances = frozenset(excluded_new_assignment_instances)
 
     @property
     def manager_wake_receipt_v2_active(self) -> bool:
@@ -820,6 +822,8 @@ class OrchestrationService:
             ).fetchone()
             if attachment is None:
                 raise ConflictError("ORCHESTRATION_WORKER_ATTACHMENT_MISMATCH")
+            if attachment["instance_id"] in self.excluded_new_assignment_instances:
+                raise ConflictError("ORCHESTRATION_RCC_RETIRED_FOR_NEW_ASSIGNMENTS")
             busy = db.execute(
                 "SELECT a.assignment_id,a.state FROM orchestration_assignments a "
                 "JOIN orchestration_assignment_attempts t ON "
@@ -1344,6 +1348,8 @@ class OrchestrationService:
             ).fetchone()
             if attachment is None or not attachment["relay_role"]:
                 raise ConflictError("ORCHESTRATION_REPLACEMENT_ATTACHMENT_MISMATCH")
+            if attachment["instance_id"] in self.excluded_new_assignment_instances:
+                raise ConflictError("ORCHESTRATION_RCC_RETIRED_FOR_NEW_ASSIGNMENTS")
             next_generation = generation + 1
             decision_id = "replace." + hashlib.sha256(
                 f"{assignment_id}:{next_generation}".encode("utf-8")
