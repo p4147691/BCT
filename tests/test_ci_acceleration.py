@@ -37,6 +37,22 @@ class CIScopeTests(unittest.TestCase):
         self.assertTrue(plan.bridge)
         self.assertTrue(plan.vtl)
 
+    def test_browser_contract_runs_between_bounded_cleanup_and_rebuild(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        cleanup = workflow.index(
+            "Remove only launcher artifacts created by the fail-fast build"
+        )
+        contract = workflow.index(
+            "python -m unittest discover -s modules/browser-bridge/tests -v"
+        )
+        rebuild = workflow.index(
+            "Rebuild launcher for the remaining Windows E2E checks"
+        )
+        self.assertLess(cleanup, contract)
+        self.assertLess(contract, rebuild)
+
     def test_bridge_only_does_not_run_the_743_test_core(self):
         plan = scope.classify(["modules/browser-bridge/host.py"])
         self.assertFalse(plan.core)
