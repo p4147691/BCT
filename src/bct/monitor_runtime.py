@@ -123,5 +123,6 @@ def build_monitor_state(
         },
         "rcc": {"instances": rcc},
         "process_sessions": sessions,
+        "claim_diagnostics": store.claim_diagnostics(),
         **snapshot,
     }

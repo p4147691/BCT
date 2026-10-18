@@ -506,6 +506,68 @@ class Store:
             "orchestration_assignments": orchestration_assignments,
         }
 
+    def claim_diagnostics(self) -> list[dict[str, Any]]:
+        """Read-only, unbounded-by-recent-operations claim provenance projection.
+
+        Never infer process liveness or safe claim release from a stale record.
+        Excludes payloads, prompts, credentials, command lines and file contents.
+        """
+        db = self._connect()
+        try:
+            rows = db.execute(
+                "SELECT c.resource_key,c.operation_id,c.work_id,c.assignment_epoch,"
+                "o.capability,o.target,o.state AS operation_state,o.outcome,"
+                "o.created_at,o.updated_at,o.error,"
+                "x.pid AS executor_pid,x.claimed_at AS executor_claimed_at,"
+                "x.fingerprint AS executor_fingerprint,"
+                "e.kind AS latest_event_kind,e.created_at AS latest_event_at "
+                "FROM resource_claims c "
+                "LEFT JOIN operations o ON o.operation_id=c.operation_id "
+                "AND o.work_id=c.work_id "
+                "LEFT JOIN background_job_executors x ON x.operation_id=c.operation_id "
+                "LEFT JOIN events e ON e.event_id=("
+                "SELECT MAX(ev.event_id) FROM events ev "
+                "WHERE ev.subject_id=c.operation_id) "
+                "WHERE c.unresolved=1 ORDER BY c.resource_key"
+            ).fetchall()
+        finally:
+            db.close()
+        output = []
+        for row in rows:
+            state, outcome = row["operation_state"], row["outcome"]
+            # Unknown external effects must retain their protection, even if
+            # the operation is FINISHED or its executor has exited.
+            if outcome == "UNKNOWN":
+                diagnosis = "UNKNOWN_EFFECT"
+            elif state == "FINISHED":
+                diagnosis = "FINISHED_CLAIMED"
+            else:
+                diagnosis = "INSUFFICIENT_EVIDENCE"
+            output.append({
+                "resource_key": row["resource_key"],
+                "operation_id": row["operation_id"],
+                "work_id": row["work_id"],
+                "assignment_epoch": row["assignment_epoch"],
+                "capability": row["capability"],
+                "operation_state": state,
+                "outcome": outcome,
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "executor": None if row["executor_pid"] is None else {
+                    "pid": row["executor_pid"],
+                    "claimed_at": row["executor_claimed_at"],
+                    "fingerprint_present": bool(row["executor_fingerprint"]),
+                    "identity_verified": False,
+                },
+                "last_event": None if row["latest_event_kind"] is None else {
+                    "kind": row["latest_event_kind"],
+                    "at": row["latest_event_at"],
+                },
+                "diagnosis": diagnosis,
+                "can_auto_release": False,
+            })
+        return output
+
     def handoff_work(self, *, work_id: str, old_principal_id: str, new_principal_id: str,
                      expected_epoch: int) -> Work:
         with self.transaction() as db:
