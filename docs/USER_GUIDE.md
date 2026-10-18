@@ -38,6 +38,29 @@ UNKNOWN 처리와 정확한 SHA 확인은 각각의 안전 경계를 유지한�
 
 이 실행들도 BCT receipt, 정확한 작업 루트, PID/fingerprint, timeout과 중복 방지 기록을 남긴다.
 
+## 빠른 개발 검증: VTL 우선, GitHub 최종 확인
+
+일반 개발의 반복 확인은 매 후보마다 GitHub Actions를 시작하지 않는다. 먼저 현재 작업의 변경
+범위를 판정하고, 같은 소스에서 실행 가능한 가장 싼 검증부터 사용한다.
+
+1. 문법·정적 검사와 영향받은 unit test는 BCT의 `test`/`execute`로 로컬에서 실행한다.
+2. 브라우저·GUI·Windows 통합 동작이 필요하면 깨끗하고 정확한 VTL source/runtime와 프로젝트 소유
+   scenario를 사용해 VTL Fast mode로 실행하고 PASS/FAIL evidence를 작업 밖의 run 디렉터리에 남긴다.
+3. 실패 후보를 GitHub에 올려 원격 CI로 디버깅하지 않는다. 로컬/VTL에서 수정과 재검증을 반복한다.
+4. 로컬/VTL이 통과한 하나의 후보만 push하고, branch protection의 required check와 독립 환경 증명이
+   필요한 마지막 단계에서 GitHub CI를 한 번 실행한다.
+5. release/진단이나 Fast mode로 증명할 수 없는 경계에서만 VTL Full mode·전체 회귀·VM E2E를 선택한다.
+
+VTL의 self-hosted runner를 GitHub Actions workflow로 호출하는 방식은 hosted runner를 피할 수 있지만
+여전히 Actions 실행·큐·API를 사용한다. 따라서 VTL exact-SHA Actions smoke는 최종 교차 환경 증거이지
+일상적인 편집 반복 경로가 아니다. GitHub required check를 VTL 결과로 통과한 것처럼 표시하거나 생략하지
+않는다. required check 자체를 줄이려면 변경 범위 기반 CI와 저장소 보호 규칙을 별도로 검토한다.
+
+현재 BCT catalogue에는 전용 `bct_vtl_validate` 도구가 없다. 일반 ChatGPT가 BCT의 범용
+`test`/`execute`로 VTL을 직접 실행하려면 정확한 VTL source/runtime, 프로젝트 profile/scenario,
+evidence 경로를 먼저 검증해야 한다. 이 전제 없이 오래된 로컬 clone을 사용하거나 GitHub Actions를
+"VTL 직접 실행"이라고 부르지 않는다.
+
 데스크톱 조회는 먼저 `desktop_session_status` action의 work를 만들고
 `bct_desktop_session_status`를 호출한다. 화면 캡처는 같은 work에 `desktop_capture`를
 포함하고 `bct_desktop_capture`에서 `target_type`을 `virtual_screen`, `monitor`, `window`
@@ -88,6 +111,10 @@ Windows API 결과와 실제 foreground가 모순되면 `UNKNOWN`으로 남기�
 VTL 저장소나 GitHub Actions가 모든 대화에 직접 노출되는 것은 아니다. 대화 중 실제 화면을
 조회·제어하는 진입점은 BCT Control MCP이고, GitHub Actions의 VTL workflow는 exact-SHA 검증을
 남기는 별도 진입점이다.
+
+이 데스크톱 세션 경로는 화면 조작 기능이며, 위의 VTL 우선 개발 검증 방침을 대신하지 않는다.
+GUI 검증은 가능하면 격리된 VTL browser/VM scenario로 실행하고, 실제 로그인 데스크톱 제어는
+실사용 확인이나 격리 환경으로 증명할 수 없는 경계에만 사용한다.
 
 읽기 전용 `desktop_session_status`, `desktop_capture`, `desktop_window_list`는 여러 대화가
 동시에 호출해도 상태를 바꾸지 않는다. 다만 캡처 중 사용자나 다른 대화가 화면을 바꾸면 서로 다른
