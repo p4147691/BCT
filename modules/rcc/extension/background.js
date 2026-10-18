@@ -804,7 +804,21 @@ async function captureEndpointSnapshot(reason = 'snapshot', tabsValue = null) {
 
   endpointPresence.clear();
 
-  const endpoints = await Promise.all(tabs.filter(isChatTab).map((tab) => endpointFromTabWithActivity(tab, 'OPEN', reason)));
+  const probeDurationsMs = [];
+  const stateProbeClock = () => typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+  const endpoints = await Promise.all(tabs.filter(isChatTab).map(async (tab) => {
+    const started = reason === 'state' ? stateProbeClock() : 0;
+    const endpoint = await endpointFromTabWithActivity(tab, 'OPEN', reason);
+    if (reason === 'state') probeDurationsMs.push(+(stateProbeClock() - started).toFixed(3));
+    return endpoint;
+  }));
+  if (reason === 'state') {
+    // Sorted, bounded anonymous timings only; no tab order, tab ID, title or URL.
+    try { console.info('RCC_STATE_PROBE_TIMING', JSON.stringify({
+      slowest_tab_probe_ms: probeDurationsMs.sort((a, b) => b - a).slice(0, 32),
+      total_tabs: probeDurationsMs.length
+    })); } catch (_) {}
+  }
 
   for (const endpoint of endpoints) {
 
@@ -2341,17 +2355,26 @@ async function handleNativeCommand(message) {
     }
 
     if (message.command === 'state') {
-
+      const timingClock = () => typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+      const timingStarted = timingClock();
       await endpointSessionReady;
-
+      const loadStarted = timingClock();
       const state = await loadState();
-
+      const loadMs = timingClock() - loadStarted;
+      const tabsStarted = timingClock();
       const chatTabs = await getChatTabs();
-
+      const tabsMs = timingClock() - tabsStarted;
       const tabs = chatTabs.map(publicTab);
-
+      const probeStarted = timingClock();
       const endpoints = await captureEndpointSnapshot('state', chatTabs);
-
+      const probeMs = timingClock() - probeStarted;
+      // Aggregate durations only; no tab data, URL, message, IDs or credentials.
+      try { console.info('RCC_STATE_TIMING', JSON.stringify({
+        load_state_ms: +loadMs.toFixed(3),
+        tabs_query_ms: +tabsMs.toFixed(3),
+        activity_probe_ms: +probeMs.toFixed(3),
+        total_ms: +(timingClock() - timingStarted).toFixed(3)
+      })); } catch (_) {}
       postNative({ type: 'host:result', requestId, ok: true, state: {
 
         instanceId: state.settings.instanceId, sessionId: endpointSessionId, tabs, endpoints,
