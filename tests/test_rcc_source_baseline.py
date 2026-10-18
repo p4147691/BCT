@@ -19,14 +19,14 @@ class RccSourceBaselineTests(unittest.TestCase):
         expected = {
             "background.js": "57bf4e8715a630a1db4ce703a4afec7fede8d109a3a5104918e9eedae59d896e",
             # The historical 1.0.20 content payload remains in PROVENANCE.md.
-            # PR #168 is a separately reviewed, source-only candidate.
+            # PR #172 extends PR #168 with isolated send-button readiness tests.
             "manifest.json": "ded68ea4bc4793fb25e72722b8ff1458db68e6d98f53f1990003947d3b8b551e",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
         historical_content_sha = "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe"
-        candidate_content_sha = "af198caad82082216836442af3e51680cc3fc1e1183f4f7c9943d0e8deb21d15"
+        candidate_content_sha = "7ec100265f64e69678e41e560822a507218f829a6bcccd585d88714f86801783"
         provenance = (self.root / "modules" / "rcc" / "PROVENANCE.md").read_text(
             encoding="utf-8"
         )
@@ -136,7 +136,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
-        self.assertIn("12 tests PASS", completed.stdout)
+        self.assertIn("15 tests PASS", completed.stdout)
 
     def test_first_message_navigation_ack_recovery(self):
         node = shutil.which("node")
