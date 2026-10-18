@@ -57,6 +57,14 @@ decision ACK.
   and source_complete=false, and never advances a stored checkpoint.
   A project linked to other Works cannot claim project-wide complete
   coverage from a single Work status; that status reports incomplete.
+  Multi-Work projects NEVER reuse the single global event cursor. For each
+  independently authorized Work/Session, Manager may store a distinct
+  checkpoints.external.bct_scoped_cursors[delta.cursor_scope_key] object
+  with event_id and source_links_sha256, after reviewing the corresponding
+  bounded page. A missing scoped cursor starts from event zero even if the
+  global cursor is higher; a changed membership fingerprint forces rescan.
+  delta.work_scope_complete reports only coverage of the current Work,
+  not the combined project; no cursor is automatically written.
 - External links such as GitHub and ChatGPT remain unverified until their
   corresponding original sources are read. They are never an authority grant.
 - Source Work assignment epoch and current manager epoch are checked.

@@ -103,31 +103,57 @@ def _read_project_events(
     selected = sorted(selectors)[:_MAX_SELECTORS]
 
     record = project["record"]
-    cursor = record["checkpoints"].get("bct_event_id")
-    cursor = 0 if cursor is None else cursor
-    highwater = int(conn.execute(
-        "SELECT COALESCE(MAX(event_id),0) FROM events").fetchone()[0])
-    if cursor > highwater:
-        raise ProjectContextError("PROJECT_CONTEXT_CURSOR_AHEAD_OF_SOURCE")
-
-    # A project can acquire an older Work after the global checkpoint was
-    # saved. Without the previous link-set proof, that checkpoint must not
-    # hide older events for the newly included source. No cursor is persisted
-    # by this reader: the Manager must explicitly reconcile and save a new one.
     links = record["links"]
     fingerprint = _source_links_fingerprint(links)
-    checkpoint_fp = record["checkpoints"].get("external", {}).get(
-        "bct_source_links_sha256")
-    rescan_required = cursor > 0 and checkpoint_fp != fingerprint
-    effective_cursor = 0 if rescan_required else cursor
-
-    # An individual Work status never proves completeness of another Work
-    # merely because the project ledger links to both.
+    # An individual Work status never proves completeness of another Work.
     foreign_members = any(
         ((link["type"] == "bct_work" and link["id"] != work_id)
          or (link["type"] == "bct_session" and link["id"] != session_id))
         for link in links
     )
+    checkpoints = record["checkpoints"]
+    external = checkpoints.get("external", {})
+    global_cursor = checkpoints.get("bct_event_id") or 0
+    scope_key = _source_links_fingerprint([
+        {"type": "bct_work", "id": work_id},
+        {"type": "bct_session", "id": session_id},
+    ])
+    scoped_cursors = external.get("bct_scoped_cursors")
+    scope = (scoped_cursors.get(scope_key)
+             if isinstance(scoped_cursors, dict) else None)
+    valid_scope = (
+        isinstance(scope, dict)
+        and type(scope.get("event_id")) is int
+        and scope["event_id"] >= 0
+        and isinstance(scope.get("source_links_sha256"), str)
+    )
+    if valid_scope:
+        # Distinct Work/Session source sets never inherit a global cursor.
+        cursor = scope["event_id"]
+        checkpoint_fp = scope["source_links_sha256"]
+        cursor_scope_mode = "PER_WORK_SESSION"
+        forced_rescan = False
+    elif foreign_members:
+        # Legacy global bookmarks are UNSAFE for multiple Works, even if
+        # someone relabeled the global fingerprint to the new link set.
+        cursor = 0
+        checkpoint_fp = external.get("bct_source_links_sha256")
+        cursor_scope_mode = "UNBOUND_CROSS_WORK"
+        forced_rescan = global_cursor > 0 or scope is not None
+    else:
+        cursor = global_cursor
+        checkpoint_fp = external.get("bct_source_links_sha256")
+        cursor_scope_mode = "LEGACY_SINGLE_WORK"
+        forced_rescan = scope is not None
+
+    highwater = int(conn.execute(
+        "SELECT COALESCE(MAX(event_id),0) FROM events").fetchone()[0])
+    if cursor > highwater:
+        raise ProjectContextError("PROJECT_CONTEXT_CURSOR_AHEAD_OF_SOURCE")
+    rescan_required = forced_rescan or (
+        cursor > 0 and checkpoint_fp != fingerprint
+    )
+    effective_cursor = 0 if rescan_required else cursor
     placeholders = ",".join("(?,?)" for _ in selected)
     params = [component for selector in selected for component in selector]
     if not selected:
@@ -137,7 +163,10 @@ def _read_project_events(
             "source_complete": False, "reason": "NO_VERIFIED_SOURCE_SELECTORS",
             "source_links_sha256": fingerprint,
             "checkpoint_links_sha256": checkpoint_fp,
+            "cursor_scope_key": scope_key,
+            "cursor_scope_mode": cursor_scope_mode,
             "rescan_required": rescan_required,
+            "work_scope_complete": False,
             "evidence_scope": "PROVEN_EVENT_KIND_AND_ORIGINAL_ENTITY",
         }
     rows = conn.execute(
@@ -152,10 +181,10 @@ def _read_project_events(
     has_more = len(rows) > limit
     current = rows[:limit]
     next_position = int(current[-1]["event_id"]) if has_more else highwater
-    complete = not (
-        has_more or selectors_truncated or source_ids_truncated
-        or rescan_required or foreign_members
+    work_scope_complete = not (
+        has_more or selectors_truncated or source_ids_truncated or rescan_required
     )
+    complete = work_scope_complete and not foreign_members
     reason = (
         "SOURCE_LINK_SET_RESCAN_REQUIRED" if rescan_required else
         "MORE_EVENTS" if has_more else
@@ -171,7 +200,10 @@ def _read_project_events(
         "reason": reason,
         "source_links_sha256": fingerprint,
         "checkpoint_links_sha256": checkpoint_fp,
+        "cursor_scope_key": scope_key,
+        "cursor_scope_mode": cursor_scope_mode,
         "rescan_required": rescan_required,
+        "work_scope_complete": work_scope_complete,
         "evidence_scope": "PROVEN_EVENT_KIND_AND_ORIGINAL_ENTITY",
     }
 

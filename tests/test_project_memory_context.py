@@ -275,6 +275,77 @@ class ProjectContinuityTests(unittest.TestCase):
         self.assertEqual(result.output["project_memory"]["status"],"UNVERIFIED")
         self.assertEqual(result.output["session"]["session_id"],self.SESSION)
 
+    def test_multi_work_history_uses_independent_scoped_cursors(self):
+        # Foreign Work had older event 7, while global ledger cursor was 8.
+        # A's global checkpoint cannot skip B's source history.
+        other_session = "pm-v2-session-b"
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_sessions("
+                "session_id,work_id,work_assignment_epoch,objective,roots_json,"
+                "actions_json,acceptance_json,plan_revision,manager_node_id,"
+                "manager_epoch,state,terminal_summary_json,created_at,updated_at)"
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (other_session,self.OTHER_WORK,1,"foreign isolated fixture",
+                 "[]","[]","{}",1,None,0,"ACTIVE","{}",12.,12.))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("WORK_CREATED",self.OTHER_WORK,"{}",7.0))
+            db.execute("INSERT INTO events(kind,subject_id,data_json,created_at) "
+                       "VALUES(?,?,?,?)",
+                       ("ORCHESTRATION_ASSIGNMENT_CREATED","pm-v2-assignment-a","{}",8.0))
+        revised=deepcopy(self.ledger.get("fixture-project")["record"])
+        revised["summary"]="linked two Works with different event histories"
+        revised["links"].extend([
+            {"type":"bct_work","id":self.OTHER_WORK},
+            {"type":"bct_session","id":other_session},
+        ])
+        self.ledger.save("fixture-project",expected_revision=1,
+                         author="fixture-manager",record=revised)
+        current=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                     session_id=self.SESSION,work_id=self.WORK)[0]["delta"]
+        fingerprint=current["source_links_sha256"]
+        revised=deepcopy(self.ledger.get("fixture-project")["record"])
+        revised["summary"]="old shared global cursor from Work A reviewed through 8"
+        revised["checkpoints"]["bct_event_id"]=8
+        revised["checkpoints"]["external"]["bct_source_links_sha256"]=fingerprint
+        self.ledger.save("fixture-project",expected_revision=2,
+                         author="fixture-manager",record=revised)
+        foreign=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                     session_id=other_session,work_id=self.OTHER_WORK)[0]["delta"]
+        self.assertEqual(foreign["cursor_scope_mode"],"UNBOUND_CROSS_WORK")
+        self.assertTrue(foreign["rescan_required"])
+        self.assertIn(7,[event["event_id"] for event in foreign["events"]])
+        self.assertFalse(foreign["source_complete"])
+
+        # Explicit per-Work checkpoints allow independent next-page resumes.
+        a=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                               session_id=self.SESSION,work_id=self.WORK)[0]["delta"]
+        revised=deepcopy(self.ledger.get("fixture-project")["record"])
+        revised["summary"]="manager separately reviewed each Work"
+        revised["checkpoints"]["external"]["bct_scoped_cursors"]={
+            a["cursor_scope_key"]: {
+                "event_id": 5,"source_links_sha256":fingerprint,
+            },
+            foreign["cursor_scope_key"]: {
+                "event_id": 0,"source_links_sha256":fingerprint,
+            }
+        }
+        self.ledger.save("fixture-project",expected_revision=3,
+                         author="fixture-manager",record=revised)
+        result_a=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                      session_id=self.SESSION,work_id=self.WORK)[0]["delta"]
+        result_b=contexts_for_session(root=self.ledger_root,sqlite_path=self.state,
+                                      session_id=other_session,work_id=self.OTHER_WORK)[0]["delta"]
+        self.assertEqual(result_a["cursor_scope_mode"],"PER_WORK_SESSION")
+        self.assertEqual(result_b["cursor_scope_mode"],"PER_WORK_SESSION")
+        self.assertEqual([e["event_id"] for e in result_a["events"]],[8])
+        self.assertEqual([e["event_id"] for e in result_b["events"]],[7])
+        self.assertTrue(result_a["work_scope_complete"])
+        self.assertTrue(result_b["work_scope_complete"])
+        self.assertFalse(result_a["source_complete"])
+        self.assertFalse(result_b["source_complete"])
+
     def test_stale_work_assignment_epoch_disables_context(self):
         with self.store.transaction() as db:
             db.execute("UPDATE works SET assignment_epoch=2 WHERE work_id=?",
