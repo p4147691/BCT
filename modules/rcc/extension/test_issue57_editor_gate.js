@@ -26,7 +26,10 @@ function makeHarness() {
     click() { ++clickCount; }
   };
   const scope = {querySelector(selector) {
-    return mode === 'send' && selector === 'button[data-testid="send-button"]' ? button : null;
+    if (mode === 'send' && selector === 'button[data-testid="send-button"]') return button;
+    if (mode === 'send-id' && selector === 'button#composer-submit-button') return button;
+    if (mode === 'send-composer-testid' && selector === 'button[data-testid="composer-send-button"]') return button;
+    return null;
   }};
   const editor = {
     tagName: 'TEXTAREA', value: '', focus() {},
@@ -35,17 +38,18 @@ function makeHarness() {
       return null;
     }
   };
-  const document = { documentElement: {}, querySelector() { return mode === 'foreign-send' ? button : null; } };
+  const document = { documentElement: {}, querySelector() { return ['foreign-send','foreign-id'].includes(mode) ? button : null; } };
   class MutationObserver {
     constructor(callback) { this.callback = callback; observers.push(this); }
     observe() {}
     disconnect() {}
   }
   let currentEditor = editor;
+  const diagnostics = [];
   const context = {
     document, MutationObserver, setTimeout, clearTimeout, getEditor: () => currentEditor,
     RelayCore: { normalizeMessageText: value => String(value || '').trim() },
-    console
+    console: { ...console, warn: (...args) => diagnostics.push(args) }
   };
   vm.createContext(context);
   vm.runInContext(gateSource + '\n' + draftSource +
@@ -56,7 +60,8 @@ function makeHarness() {
     setDisabled(value) { disabled = value; observers.forEach(o=>o.callback()); },
     setAriaDisabled(value) { ariaDisabled = value; observers.forEach(o=>o.callback()); },
     setCurrentEditor(value) { currentEditor = value; observers.forEach(o=>o.callback()); },
-    clicks() { return clickCount; }
+    clicks() { return clickCount; },
+    diagnostics() { return diagnostics; }
   };
 }
 const options = (text, timeout=80) => ({
@@ -77,6 +82,35 @@ async function main() {
   const result=await waiting;
   assert.equal(result.method,'send-button');
   assert.equal(a.clicks(),1,'exactly one send click after mode transition');
+
+  // Exact scoped composer IDs are accepted even when data-testid is absent.
+  const currentId=makeHarness();
+  currentId.editor.value='안전한 ID 기반 전송';
+  currentId.setMode('send-id');
+  const currentIdResult=await currentId.testing.submitEditor(currentId.editor, options('안전한 ID 기반 전송'));
+  assert.equal(currentIdResult.method,'send-button');
+  assert.equal(currentId.clicks(),1);
+
+  const currentTestid=makeHarness();
+  currentTestid.editor.value='현재 composer testid';
+  currentTestid.setMode('send-composer-testid');
+  await currentTestid.testing.submitEditor(currentTestid.editor,options('현재 composer testid'));
+  assert.equal(currentTestid.clicks(),1);
+
+  const foreignId=makeHarness();
+  foreignId.editor.value='외부 버튼 금지';
+  foreignId.setMode('foreign-id');
+  await assert.rejects(
+    foreignId.testing.submitEditor(foreignId.editor,options('외부 버튼 금지',30)),
+    error => {
+      assert.equal(String(error.message),
+        'RELAY_SEND_BUTTON_NOT_READY:SEND_CONTROL_OUTSIDE_EDITOR');
+      return true;
+    });
+  assert.equal(foreignId.clicks(),0);
+  assert(foreignId.diagnostics().some(entry =>
+    entry[0]==='RELAY_SEND_BUTTON_NOT_READY' &&
+    entry[1]==='SEND_CONTROL_OUTSIDE_EDITOR'));
 
   const b=makeHarness();
   b.editor.value='잘못된 글자';
@@ -142,6 +176,25 @@ async function main() {
   }), 'RELAY_SEND_BUTTON_NOT_READY');
   assert.equal(outside.clicks(),0,'an unrelated document button must not be clicked');
 
+  // Guard asynchronous authorization against a stale React composer.
+  for (const changed of ['disabled', 'detached', 'draft', 'editor', 'voice']) {
+    const stale=makeHarness();
+    stale.editor.value='?? ??';
+    stale.setMode('send');
+    const original=stale.button;
+    await mustReject(stale.testing.submitEditor(stale.editor, {
+      expectedText:'?? ??', waitMs:80, allowDocumentFallback:false,
+      beforeActivation:async () => {
+        if (changed==='disabled') stale.setDisabled(true);
+        if (changed==='detached') original.isConnected=false;
+        if (changed==='draft') stale.editor.value='??';
+        if (changed==='editor') stale.setCurrentEditor({tagName:'TEXTAREA',value:'?? ??',children:[]});
+        if (changed==='voice') stale.setMode('voice');
+      }
+    }),changed==='draft'||changed==='editor'?'RELAY_EDITOR_TEXT_MISMATCH':'RELAY_SEND_BUTTON_CHANGED');
+    assert.equal(stale.clicks(),0,'pre-activation '+changed+' must never click');
+  }
+
   const h=makeHarness();
   const paragraphEditor={
     tagName:'DIV',
@@ -176,6 +229,6 @@ async function main() {
   k.setCurrentEditor({tagName:'TEXTAREA',value:'different task',children:[]});
   assert.equal(await k.testing.waitForExactDraftEditor('bounded task',20),null,
     'a draft that never becomes exact must remain blocked');
-  console.log('Issue57 editor/send-arrow readiness: 12 tests PASS');
+  console.log('Issue57 editor/send-arrow readiness: 15 tests PASS');
 }
 main().catch(e=>{console.error(e); process.exitCode=1;});
