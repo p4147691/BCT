@@ -111,6 +111,12 @@ class HistoryOnlyRccTests(unittest.TestCase):
         with self.assertRaisesRegex(PreconditionError,"RCC_HISTORY_OPEN_RECEIPT_MISMATCH"):
             self.call("unsafe-read",self.request())
         self.assertEqual(1,len(self.client.calls))
+        # Unknown creation is rejected before the bounds/dispatch stage too.
+        with self.assertRaisesRegex(PreconditionError,"RCC_HISTORY_OPEN_RECEIPT_MISMATCH"):
+            self.call("large-read",{**self.request(),"max_bytes":99999})
+        self.assertEqual(1,len(self.client.calls))
+    def test_opened_tab_still_has_bounded_history_reads(self):
+        self.opening()
         with self.assertRaisesRegex(PreconditionError,"RCC_HISTORY_READ_BOUNDS_INVALID"):
             self.call("large-read",{**self.request(),"max_bytes":99999})
         self.assertEqual(1,len(self.client.calls))
