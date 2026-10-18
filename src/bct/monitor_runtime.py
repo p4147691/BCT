@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from threading import Lock
 from pathlib import Path
 from typing import Any
 
@@ -36,18 +37,80 @@ def _session_states(root: Path) -> list[dict[str, Any]]:
     return rows
 
 
+# In-process monitor-only health hints. Never used for relay routing or ACK.
+_RCC_HEALTH_LOCK = Lock()
+_RCC_HEALTH: dict[str, dict[str, Any]] = {}
+_RCC_RETRY_SECONDS = 30.0
+_RCC_CACHE_LIMIT = 32
+_RCC_INFLIGHT: set[str] = set()
+_RCC_FIRST_PROBES_PER_PASS = 2
+_RCC_RETRIES_PER_PASS = 1
+_RCC_FRESH_TIMEOUT_S = 0.25
+_RCC_RETRY_TIMEOUT_S = 0.12
+
+def _rcc_cached_row(instance_id: str, hint: dict[str, Any], now: float) -> dict[str, Any]:
+    if not hint:
+        return {
+            "instance_id": instance_id, "state": "UNKNOWN",
+            "error": "PROBE_DEFERRED", "tabs": [], "cached": True,
+        }
+    result: dict[str, Any] = {
+        "instance_id": instance_id, "state": "UNAVAILABLE" if hint.get("unavailable") else "UNKNOWN",
+        "error": hint.get("error", "PROBE_IN_PROGRESS"),
+        "tabs": [], "cached": True,
+    }
+    if hint.get("last_known_state"):
+        result["last_known_state"] = hint["last_known_state"]
+        result["last_seen_at"] = hint.get("last_seen_at")
+    if hint.get("unavailable"):
+        result["retry_in_ms"] = max(0, round((hint.get("retry_at", now) - now) * 1000))
+    return result
+
+
 def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
     client = NamedPipeRelayClient()
-    for instance_id in instance_ids:
+    with _RCC_HEALTH_LOCK:
+        for stale in list(_RCC_HEALTH):
+            if stale not in instance_ids:
+                del _RCC_HEALTH[stale]
+        hints = {key: dict(value) for key, value in _RCC_HEALTH.items()}
+    # Healthy instances first. Preserve the returned instance order below.
+    ordered = sorted(instance_ids, key=lambda ident: bool(hints.get(ident, {}).get("unavailable")))
+    results: dict[str, dict[str, Any]] = {}
+    first_probes = 0
+    retry_probes = 0
+    for instance_id in ordered:
+        hint = hints.get(instance_id, {})
+        now = time.monotonic()
+        unavailable = bool(hint.get("unavailable"))
+        deferred = (
+            unavailable and (
+                now < hint.get("retry_at", 0)
+                or retry_probes >= _RCC_RETRIES_PER_PASS
+            )
+        ) or (not hint and first_probes >= _RCC_FIRST_PROBES_PER_PASS)
+        if deferred:
+            results[instance_id] = _rcc_cached_row(instance_id, hint, now)
+            continue
+        with _RCC_HEALTH_LOCK:
+            if instance_id in _RCC_INFLIGHT:
+                results[instance_id] = _rcc_cached_row(instance_id, hint, now)
+                continue
+            _RCC_INFLIGHT.add(instance_id)
+        if unavailable:
+            retry_probes += 1
+        elif not hint:
+            first_probes += 1
         try:
             result = client.request(
                 instance_id=instance_id,
                 request_id=f"monitor-{time.time_ns():x}",
                 command="state",
-                timeout_s=1.0,
+                timeout_s=(_RCC_RETRY_TIMEOUT_S if unavailable else _RCC_FRESH_TIMEOUT_S),
             )
-            state = result.get("state") if isinstance(result.get("state"), dict) else {}
+            if not isinstance(result.get("state"), dict):
+                raise ValueError("RCC_MONITOR_STATE_INVALID")
+            state = result["state"]
             endpoints = {
                 int(item["tabId"]): item
                 for item in state.get("endpoints", [])
@@ -67,21 +130,39 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                     "active": bool(endpoint.get("tabActive")),
                     "generating": bool(endpoint.get("generating")),
                 })
-            rows.append({
+            results[instance_id] = {
                 "instance_id": instance_id,
                 "session_id": str(state.get("sessionId") or ""),
                 "state": "OPEN",
                 "background_build_id": str(state.get("backgroundBuildId") or ""),
                 "tabs": tabs,
-            })
+            }
+            with _RCC_HEALTH_LOCK:
+                _RCC_HEALTH[instance_id] = {
+                    "unavailable": False, "last_known_state": "OPEN",
+                    "last_seen_at": time.time(),
+                }
         except Exception as exc:
-            rows.append({
-                "instance_id": instance_id,
-                "state": "UNAVAILABLE",
-                "error": type(exc).__name__,
-                "tabs": [],
-            })
-    return rows
+            error = type(exc).__name__
+            results[instance_id] = {
+                "instance_id": instance_id, "state": "UNAVAILABLE",
+                "error": error, "tabs": [],
+            }
+            with _RCC_HEALTH_LOCK:
+                _RCC_HEALTH[instance_id] = {
+                    "unavailable": True, "error": error,
+                    "retry_at": time.monotonic() + _RCC_RETRY_SECONDS,
+                    "last_known_state": hint.get("last_known_state"),
+                    "last_seen_at": hint.get("last_seen_at"),
+                }
+        finally:
+            with _RCC_HEALTH_LOCK:
+                _RCC_INFLIGHT.discard(instance_id)
+    with _RCC_HEALTH_LOCK:
+        if len(_RCC_HEALTH) > _RCC_CACHE_LIMIT:
+            for key in list(_RCC_HEALTH)[:len(_RCC_HEALTH) - _RCC_CACHE_LIMIT]:
+                del _RCC_HEALTH[key]
+    return [results[instance_id] for instance_id in instance_ids]
 
 
 def build_monitor_state(

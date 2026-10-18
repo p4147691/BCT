@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tomllib
+import re
 from pathlib import Path
 
 from .core.identity import IdentityService
@@ -43,6 +44,20 @@ def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
     return enabled
 
 
+
+def _excluded_new_assignment_instances(policy_path: str | Path) -> frozenset[str]:
+    data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
+    section = data.get("orchestration", {})
+    if not isinstance(section, dict):
+        raise ValueError("ORCHESTRATION_SECTION_INVALID")
+    values = section.get("excluded_new_assignment_instance_ids", [])
+    if not isinstance(values, list) or len(values) > 32 or any(
+        not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", value)
+        for value in values
+    ):
+        raise ValueError("ORCHESTRATION_EXCLUDED_INSTANCE_IDS_INVALID")
+    return frozenset(values)
+
 class BCT:
     """Small local entry point shared by direct and future MCP calls."""
 
@@ -57,6 +72,7 @@ class BCT:
             self.store,
             policy=self.policy,
             manager_wake_receipt_v2_enabled=v2_enabled,
+            excluded_new_assignment_instances=_excluded_new_assignment_instances(policy_path),
         )
         relay = NamedPipeRelayClient()
         self.worker_dispatch_recovery = (
