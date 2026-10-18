@@ -148,6 +148,54 @@ class OperationCoordinator:
             request = replace(request, preconditions={
                 **request.preconditions, "original_request_digest": original_digest,
             })
+        if capability == "execute" and request.arguments.get("operation") == "reconcile-not-started":
+            original_id = request.arguments["original_operation_id"]
+            # An exact duplicate of a finished resolver is read-only. The
+            # normal begin_operation digest fence still rejects changed inputs.
+            try:
+                previous = self.store.get_operation_for(
+                    operation_id=operation_id, work_id=work_id,
+                    principal_id=principal.principal_id,
+                )
+            except KeyError:
+                previous = None
+            if (previous is not None and previous.state is OperationState.FINISHED
+                    and previous.outcome is Outcome.APPLIED
+                    and previous.evidence.get("operation") == "reconcile-not-started"
+                    and previous.evidence.get("original_operation_id") == original_id
+                    and previous.evidence.get("original_request_digest")
+                    == request.arguments["original_request_digest"]):
+                pass
+            else:
+                original = self.store.get_operation_for(
+                    operation_id=original_id, work_id=work_id,
+                    principal_id=principal.principal_id,
+                )
+                if (original.state is not OperationState.FINISHED
+                        or original.outcome is not Outcome.UNKNOWN
+                        or original.evidence != {
+                            "phase": "UNEXPECTED", "type": "FileNotFoundError",
+                        }
+                        or str(original.error or "") not in {
+                            "[WinError 2] 지정된 파일을 찾을 수 없습니다",
+                            "[Errno 2] No such file or directory",
+                        }
+                        or self.store.get_operation_target_for(
+                            operation_id=original_id, work_id=work_id,
+                            principal_id=principal.principal_id,
+                        ) != request.target
+                        or self.store.get_operation_request_digest_for(
+                            operation_id=original_id, work_id=work_id,
+                            principal_id=principal.principal_id,
+                        ) != request.arguments["original_request_digest"]
+                        or self.store.background_executor(original_id) is not None
+                        or not self.store.exact_unresolved_claim_matches(
+                            operation_id=original_id, work_id=work_id,
+                            assignment_epoch=work.assignment_epoch,
+                            resource_key="execution:" + request.target.casefold(),
+                        )):
+                    raise PreconditionError("EXECUTE_RECOVERY_NOT_PROVEN_PREDISPATCH")
+
         if capability == "verify":
             for step in request.arguments["steps"]:
                 child_decision = self.policy.decide(

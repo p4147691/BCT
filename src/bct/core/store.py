@@ -859,6 +859,23 @@ class Store:
                 (resolver_operation_id,)).fetchone()
         return self._row_result(row)
 
+    def exact_unresolved_claim_matches(
+        self, *, operation_id: str, work_id: str, assignment_epoch: int,
+        resource_key: str,
+    ) -> bool:
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT operation_id,work_id,assignment_epoch,unresolved "
+                "FROM resource_claims WHERE resource_key=?", (resource_key,),
+            ).fetchone()
+            return bool(row is not None and row["operation_id"] == operation_id
+                        and row["work_id"] == work_id
+                        and row["assignment_epoch"] == assignment_epoch
+                        and row["unresolved"] == 1)
+        finally:
+            db.close()
+
     def finish_operation(self, *, operation_id: str, outcome: Outcome,
                          evidence: dict[str, Any], error: str | None,
                          release_claims: bool,
@@ -877,6 +894,31 @@ class Store:
                 ).fetchone()
                 if original is None or original["work_id"] != resolver["work_id"]:
                     raise ConflictError("RECONCILIATION_OPERATION_ACCESS_DENIED")
+                if resolver["capability"] == "execute":
+                    expected_resource = "execution:" + str(original["target"]).casefold()
+                    claim = db.execute(
+                        "SELECT operation_id,work_id,assignment_epoch,unresolved "
+                        "FROM resource_claims WHERE resource_key=?", (expected_resource,),
+                    ).fetchone()
+                    if (evidence.get("operation") != "reconcile-not-started"
+                            or evidence.get("original_operation_id") != original_id
+                            or evidence.get("original_request_digest") != original["request_digest"]
+                            or original["capability"] != "execute"
+                            or original["principal_id"] != resolver["principal_id"]
+                            or original["assignment_epoch"] != resolver["assignment_epoch"]
+                            or original["outcome"] != Outcome.UNKNOWN.value
+                            or original["error"] not in {
+                                "[WinError 2] 지정된 파일을 찾을 수 없습니다",
+                                "[Errno 2] No such file or directory",
+                            }
+                            or original["evidence_json"] != json.dumps({
+                                "phase": "UNEXPECTED", "type": "FileNotFoundError",
+                            }, sort_keys=True)
+                            or claim is None or claim["operation_id"] != original_id
+                            or claim["work_id"] != resolver["work_id"]
+                            or claim["assignment_epoch"] != resolver["assignment_epoch"]
+                            or claim["unresolved"] != 1):
+                        raise ConflictError("EXECUTE_RECOVERY_ATOMIC_FENCE_MISMATCH")
                 finished_unknown = (
                     original["state"] == OperationState.FINISHED.value
                     and original["outcome"] == Outcome.UNKNOWN.value
