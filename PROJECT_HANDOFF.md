@@ -13,9 +13,12 @@ VTL SHA, 입력 SHA, PASS/FAIL/TIMEOUT, 외부 evidence/result 경로가 BCT rec
 Actions를 dispatch하지 않는다. VTL runtime installer와 외부 evidence/run-ID 계약은 VTL 저장소가
 소유한다. VTL PR #18과 BCT PR #203의 exact-head/main CI가 통과했고, BCT merge
 `af1c4fd9b1ca172c58ca09ebe44185ddda0e14b8`가 LIVE generation 121로 배포됐다.
-인증된 MCP operation `bct-vtl-direct-live-af1c4fd9b1ca-browser-fast`는 설치된 VTL merge
-`2480d2bd70a420c5300071ad51a541a13407b99b`를 직접 실행해 `APPLIED / PASS`를 반환했다.
-같은 operation ID의 재호출은 원 영수증을 반환했고 VTL GitHub workflow는 새로 생성되지 않았다.
+최종 설치 VTL merge `6e75ab689c62731e98a50f2786ead92efac98d06`은 한글 사용자 경로를
+비대화형 Windows 코드페이지와 무관하게 처리하고, browser cold prepare/Fast selftest가
+PASS한 뒤에만 runtime pointer를 공개한다. 인증된 MCP operation
+`bct-vtl-direct-live-af1c4fd9-6e75ab68-browser-fast`는 이를 직접 실행해 `APPLIED / PASS`를
+반환했다. 같은 operation ID의 재호출은 원 영수증을 반환했고 VTL GitHub workflow는 새로
+생성되지 않았다.
 일반 ChatGPT는 BCT Control이 새 catalogue를 읽은 세션에서 이 진입점을 사용할 수 있다. 상세는
 `docs/exec-plans/completed/BCT_VTL_DIRECT_VALIDATION_20261019.md`를 따른다.
 
