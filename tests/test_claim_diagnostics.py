@@ -72,6 +72,78 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         self.assertIsNone(row["executor"])
         self.assertFalse(row["can_auto_release"])
 
+
+    def test_rcc_unknown_stage_is_scoped_and_redacted(self):
+        self.claim("rcc-ack")
+        with self.store.transaction() as db:
+            db.execute("UPDATE operations SET capability=?, error=? WHERE operation_id=?",
+                       ("relay_browser", "RCC_COMPOSE_SEND_ACK_UNVERIFIED:PRIVATE_MESSAGE", "rcc-ack"))
+        self.store.finish_operation(operation_id="rcc-ack", outcome=Outcome.UNKNOWN,
+                                    evidence={"private_payload": "PRIVATE"}, error="RCC_COMPOSE_SEND_ACK_UNVERIFIED:PRIVATE_MESSAGE",
+                                    release_claims=False)
+        item = self.store.claim_diagnostics()[0]
+        self.assertEqual("UNKNOWN_EFFECT", item["diagnosis"])
+        self.assertEqual({"stage": "SEND_ACK", "error_code": "RCC_COMPOSE_SEND_ACK_UNVERIFIED",
+                          "evidence": "RECORDED_ERROR_CODE_ONLY"}, item["effect_detail"])
+        self.assertFalse(item["can_auto_release"])
+        self.assertNotIn("PRIVATE", str(item))
+
+    def test_non_rcc_unknown_cannot_impersonate_rcc_error_code(self):
+        self.claim("not-rcc")
+        self.store.finish_operation(operation_id="not-rcc", outcome=Outcome.UNKNOWN,
+                                    evidence={}, error="RCC_COMPOSE_SEND_ACK_UNVERIFIED",
+                                    release_claims=False)
+        item = self.store.claim_diagnostics()[0]
+        self.assertEqual("UNCLASSIFIED", item["effect_detail"]["stage"])
+        self.assertFalse(item["can_auto_release"])
+
+    def test_unknown_error_not_in_allowlist_stays_unclassified(self):
+        self.claim("unknown-privacy")
+        self.store.finish_operation(operation_id="unknown-privacy", outcome=Outcome.UNKNOWN,
+                                    evidence={}, error="PRIVATE_SECRET_SOME_CUSTOM_ERROR",
+                                    release_claims=False)
+        item = self.store.claim_diagnostics()[0]
+        self.assertEqual("UNCLASSIFIED", item["effect_detail"]["stage"])
+        self.assertIsNone(item["effect_detail"]["error_code"])
+        self.assertNotIn("PRIVATE_SECRET", str(item))
+
+    def test_executor_status_is_projected_without_releasing_unknown(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        self.claim("owned-executor")
+        self.store.finish_operation(operation_id="owned-executor", outcome=Outcome.UNKNOWN,
+                                    evidence={}, error="worker transport timeout",
+                                    release_claims=False)
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO background_jobs(operation_id,job_json,created_at) VALUES(?,?,?)",
+                       ("owned-executor", "{}", 1.0))
+            db.execute("INSERT INTO background_job_executors(operation_id,pid,fingerprint,claimed_at)"
+                       " VALUES(?,?,?,?)", ("owned-executor", 25111, "recorded-fingerprint", 2.0))
+        with patch("bct.service_runtime.process_identity",
+                   return_value=SimpleNamespace(fingerprint="recorded-fingerprint")):
+            row = self.store.claim_diagnostics()[0]
+        self.assertEqual("MATCHES_RUNNING_PROCESS", row["executor"]["identity_status"])
+        self.assertTrue(row["executor"]["identity_verified"])
+        self.assertEqual("UNKNOWN_EFFECT", row["diagnosis"])
+        self.assertFalse(row["can_auto_release"])
+        self.assertNotIn("recorded-fingerprint", str(row))
+
+    def test_executor_fingerprint_not_observable_does_not_prove_exit(self):
+        from unittest.mock import patch
+        from bct.core.store import _claim_executor_identity
+        from types import SimpleNamespace
+        with patch("bct.service_runtime.process_identity", return_value=None):
+            self.assertEqual(("NOT_OBSERVABLE", False),
+                             _claim_executor_identity(14123, "recorded"))
+        with patch("bct.service_runtime.process_identity",
+                   return_value=SimpleNamespace(fingerprint="other")):
+            self.assertEqual(("PID_IDENTITY_MISMATCH", False),
+                             _claim_executor_identity(14123, "recorded"))
+        with patch("bct.service_runtime.process_identity",
+                   return_value=SimpleNamespace(fingerprint="recorded")):
+            self.assertEqual(("MATCHES_RUNNING_PROCESS", True),
+                             _claim_executor_identity(14123, "recorded"))
+
     def test_finished_claimed_not_auto_released(self):
         self.claim("finished")
         self.store.finish_operation(operation_id="finished",outcome=Outcome.APPLIED,
