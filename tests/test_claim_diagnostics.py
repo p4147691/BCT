@@ -39,6 +39,32 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("private_payload",str(rows))
         self.assertEqual("first",rows[0]["operation_id"])
 
+    def test_other_entity_event_with_same_subject_does_not_override_operation_event(self):
+        self.claim("shared-id")
+        self.store.finish_operation(operation_id="shared-id", outcome=Outcome.UNKNOWN,
+            evidence={"private_payload": "PRIVATE"}, error="timeout", release_claims=False)
+        with self.store.transaction() as db:
+            self.store._event(db, "NODE_UPDATED", "shared-id", {"secret": "NODE_PRIVATE"})
+            self.store._event(db, "WORK_CREATED", "shared-id", {"secret": "WORK_PRIVATE"})
+        row = self.store.claim_diagnostics()[0]
+        self.assertEqual("OPERATION_FINISHED", row["last_event"]["kind"])
+        self.assertEqual("UNKNOWN_EFFECT", row["diagnosis"])
+        self.assertNotIn("PRIVATE", str(row))
+        self.assertFalse(row["can_auto_release"])
+
+    def test_owner_assignment_epoch_mismatch_is_not_attributed(self):
+        self.claim("epoch-case")
+        with self.store.transaction() as db:
+            db.execute("UPDATE resource_claims SET assignment_epoch=assignment_epoch+1 "
+                       "WHERE operation_id=?", ("epoch-case",))
+            self.store._event(db, "NODE_UPDATED", "epoch-case", {"note": "unrelated"})
+        row = self.store.claim_diagnostics()[0]
+        self.assertIsNone(row["operation_state"])
+        self.assertIsNone(row["last_event"])
+        self.assertIsNone(row["executor"])
+        self.assertEqual("INSUFFICIENT_EVIDENCE", row["diagnosis"])
+        self.assertFalse(row["can_auto_release"])
+
     def test_running_without_executor_not_claimed_as_executing(self):
         self.claim("running")
         row=self.store.claim_diagnostics()[0]

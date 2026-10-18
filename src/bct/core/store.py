@@ -524,10 +524,15 @@ class Store:
                 "FROM resource_claims c "
                 "LEFT JOIN operations o ON o.operation_id=c.operation_id "
                 "AND o.work_id=c.work_id "
-                "LEFT JOIN background_job_executors x ON x.operation_id=c.operation_id "
+                "AND o.assignment_epoch=c.assignment_epoch "
+                "LEFT JOIN background_job_executors x ON x.operation_id=o.operation_id "
                 "LEFT JOIN events e ON e.event_id=("
                 "SELECT MAX(ev.event_id) FROM events ev "
-                "WHERE ev.subject_id=c.operation_id) "
+                "WHERE ev.subject_id=o.operation_id "
+                "AND ev.kind IN ("
+                "'OPERATION_STARTED','OPERATION_FINISHED','OPERATION_RECONCILED',"
+                "'OPERATION_STEPS_INITIALIZED','OPERATION_STEP_STARTED',"
+                "'OPERATION_STEP_FINISHED','OPERATION_STEP_SKIPPED')) "
                 "WHERE c.unresolved=1 ORDER BY c.resource_key"
             ).fetchall()
         finally:
