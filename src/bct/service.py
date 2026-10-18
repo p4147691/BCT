@@ -100,7 +100,7 @@ class BCT:
         for feature in (
             FileReadFeature(), FileWriteFeature(), TestFeature(), GitCommitFeature(),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
-            GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github),
+            GitHubPullRequestStatusFeature(github, self.store), GitHubPullRequestMergeFeature(github),
             GitHubSyncMainFeature(),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             RelayBrowserFeature(),
