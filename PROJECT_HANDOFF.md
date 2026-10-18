@@ -310,6 +310,21 @@ UNKNOWN no-retry, exact-SHA 배포 조건은 완화하지 않는다.
 
 ## Tunnel health 및 MCP 지연 종결
 
+### 2026-10-18 강제 재시작 후 복구 상태 — 외부 MCP ingress BLOCKED
+
+강제 Windows 재시작 뒤의 read-only 점검에서 Core는 자동 복구됐다. `BCT Core
+Supervisor`가 14:49 KST에 시작해 generation 104 / PID 16248로 `RUNNING`이며,
+인증된 `/health`와 `/monitor/state`는 `200 OK`, MCP 22개 도구 ready를 반환한다.
+AI-CODE-TEAM의 `ACT-GLOBAL-01`과 `ACT-WORKER-01` GitHub Runner도 online / idle이다.
+
+하지만 tunnel supervisor에는 boot/logon trigger가 없고 터널 프로세스는 재기동되지
+않았다. `runtimes status act-control`에는 재시작 전 PID 3424만 남아 있고, health
+URL의 loopback probe (`127.0.0.1:50293`)는 connection refused다. 따라서 Core local
+MCP (`127.0.0.1:18790/mcp`)는 정상이나 ChatGPT App의 private tunnel ingress는
+현재 사용할 수 없다. 이 상태에서 기존 operation/claim을 재실행·해제하거나 터널을
+중복 connect하지 않는다. 다음 작업은 exact tunnel supervisor의 안전한 boot/logon
+복구 경로를 구현·검증한 뒤 단일 connect 및 health/MCP E2E로 확인하는 것이다.
+
 Tunnel health metadata 복구는 PR #74로 완료됐다. merge
 `3418bfa9b6eee46d488682bc34fad431e883a8a2`와 main CI가 통과했고 동일 SHA가 LIVE Core에
 배포됐다. supervisor는 exact tunnel process가 살아 있을 때 중복 connect하지 않으며, 누락된
