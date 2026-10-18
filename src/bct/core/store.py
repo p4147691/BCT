@@ -907,13 +907,11 @@ class Store:
                             or original["principal_id"] != resolver["principal_id"]
                             or original["assignment_epoch"] != resolver["assignment_epoch"]
                             or original["outcome"] != Outcome.UNKNOWN.value
-                            or original["error"] not in {
-                                "[WinError 2] 지정된 파일을 찾을 수 없습니다",
-                                "[Errno 2] No such file or directory",
+                            or original["error"] is not None
+                            or json.loads(original["evidence_json"]) != {
+                                "phase": "PROCESS_NOT_CREATED",
+                                "reason": "EXECUTABLE_NOT_FOUND",
                             }
-                            or original["evidence_json"] != json.dumps({
-                                "phase": "UNEXPECTED", "type": "FileNotFoundError",
-                            }, sort_keys=True)
                             or claim is None or claim["operation_id"] != original_id
                             or claim["work_id"] != resolver["work_id"]
                             or claim["assignment_epoch"] != resolver["assignment_epoch"]

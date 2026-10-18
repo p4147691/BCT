@@ -174,12 +174,10 @@ class OperationCoordinator:
                 if (original.state is not OperationState.FINISHED
                         or original.outcome is not Outcome.UNKNOWN
                         or original.evidence != {
-                            "phase": "UNEXPECTED", "type": "FileNotFoundError",
-                        }
-                        or str(original.error or "") not in {
-                            "[WinError 2] 지정된 파일을 찾을 수 없습니다",
-                            "[Errno 2] No such file or directory",
-                        }
+                        "phase": "PROCESS_NOT_CREATED",
+                        "reason": "EXECUTABLE_NOT_FOUND",
+                    }
+                    or original.error is not None
                         or self.store.get_operation_target_for(
                             operation_id=original_id, work_id=work_id,
                             principal_id=principal.principal_id,

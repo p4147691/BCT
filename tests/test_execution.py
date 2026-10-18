@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 import uuid
 from pathlib import Path
 
@@ -103,8 +104,8 @@ class ExecutionFeatureTests(unittest.TestCase):
             db.execute(
                 "UPDATE operations SET outcome='UNKNOWN',error=?,evidence_json=? "
                 "WHERE operation_id=?", (
-                    "[WinError 2] 지정된 파일을 찾을 수 없습니다",
-                    json.dumps({"phase": "UNEXPECTED", "type": "FileNotFoundError"}),
+                    None,
+                    json.dumps({"phase": "PROCESS_NOT_CREATED", "reason": "EXECUTABLE_NOT_FOUND"}),
                     "original-unknown-execute",
                 ),
             )
@@ -161,8 +162,8 @@ class ExecutionFeatureTests(unittest.TestCase):
                     db.execute(
                         "UPDATE operations SET outcome='UNKNOWN',error=?,evidence_json=? "
                         "WHERE operation_id=?", (
-                            "[WinError 2] 지정된 파일을 찾을 수 없습니다",
-                            json.dumps({"phase": "UNEXPECTED", "type": "FileNotFoundError"}),
+                            None,
+                            json.dumps({"phase": "PROCESS_NOT_CREATED", "reason": "EXECUTABLE_NOT_FOUND"}),
                             original_id,
                         ),
                     )
@@ -187,6 +188,34 @@ class ExecutionFeatureTests(unittest.TestCase):
                         "SELECT COUNT(*) FROM events WHERE kind='OPERATION_RECONCILED' AND subject_id=?",
                         (original_id,),
                     ).fetchone()[0])
+
+    def test_post_spawn_fingerprint_file_not_found_never_reconciles(self):
+        class Spawned:
+            pid = 454545
+        with patch("bct.features.execution.subprocess.Popen", return_value=Spawned()) as pop:
+            with patch("bct.features.execution.process_fingerprint",
+                       side_effect=FileNotFoundError(2, "No such file or directory")):
+                original = self.call("postspawn-original", "execute", {
+                    "kind": "argv", "cwd": str(self.root),
+                    "argv": ["fixture-only.exe"], "timeout_s": 10,
+                })
+        self.assertEqual(1, pop.call_count)
+        self.assertEqual("UNKNOWN", original.outcome.value)
+        with self.bct.store.transaction() as db:
+            digest = db.execute(
+                "SELECT request_digest FROM operations WHERE operation_id='postspawn-original'"
+            ).fetchone()[0]
+        with self.assertRaisesRegex(PreconditionError, "EXECUTE_RECOVERY_NOT_PROVEN"):
+            self.call("postspawn-recover", "execute", {
+                "operation": "reconcile-not-started", "cwd": str(self.root),
+                "original_operation_id": "postspawn-original",
+                "original_request_digest": digest,
+            })
+        with self.bct.store.transaction() as db:
+            claim = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id='postspawn-original'"
+            ).fetchone()
+            self.assertEqual(1, claim["unresolved"])
 
     def test_system_process_inspection_returns_exact_current_pid(self):
         result = self.call("inspect-self", "system_inspect", {
