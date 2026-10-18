@@ -76,7 +76,9 @@ jobs:
     if: needs.scope.outputs.core == 'true'
     runs-on: windows-latest
     strategy:
-      fail-fast: true
+      # Keep every shard running so one failure yields a complete diagnosis and
+      # does not force another push merely to discover a second failure.
+      fail-fast: false
       matrix:
         shard: [0, 1, 2, 3]
     steps:

@@ -41,6 +41,7 @@ class CIScopeTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
+        self.assertIn("fail-fast: false", workflow)
         cleanup = workflow.index(
             "Remove only launcher artifacts created by the fail-fast build"
         )

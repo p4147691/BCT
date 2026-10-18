@@ -8,7 +8,7 @@ browser 전체 검사로 fail closed하며 문서-only 변경만 경량화한다
 인스턴스 중 같은 test ID·class·method·instance state인 import 재노출 184개만
 제거했고, 567개 고유 테스트를 정확히 한 번씩 실행한다.
 
-정확한 BCT source `f9b299da629bcea26c89043ec4c91733b73221cc`는 CI run
+검증된 BCT 구현 commit `f9b299d`는 CI run
 `39169773634`에서 scope/preflight/core 4-shard/browser Windows E2E를 모두
 통과했다. 전체 벽시계는 211초로 이전 직렬 workflow 약 674초보다 약 69%
 줄었다. VTL repo의 Session 1 runner는 같은 BCT SHA를 별도 checkout하여 run

@@ -82,5 +82,7 @@ BCT-specific runner registration or a least-privilege GitHub credential.
 - The first PR run exposed that the fail-fast launcher build must be removed
   before the package-purity test, then rebuilt before Windows E2E. The bounded
   cleanup order was restored and is protected by a planner regression test.
+- Matrix fail-fast is disabled so one shard failure does not cancel successful
+  or still-diagnostic sibling shards; normal successful runtime is unchanged.
 - No Core deployment, service restart, input injection, Lease acquisition,
   runner re-registration or credential change was performed.
