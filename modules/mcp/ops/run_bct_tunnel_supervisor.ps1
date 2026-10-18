@@ -107,7 +107,10 @@ function Repair-HealthUrlFile([int]$ProcessId) {
 
 function Ensure-ProfileHeaders {
     $profilePath = Join-Path $ProfileDir ($Alias + '.yaml')
-    $raw = Get-Content -LiteralPath $profilePath -Raw -ErrorAction Stop
+    # The tunnel profile is written as UTF-8.  Windows PowerShell 5.1 otherwise
+    # reads a BOM-less profile using the active ANSI code page and corrupts a
+    # non-ASCII user-profile path before we can compare the health file.
+    $raw = Get-Content -LiteralPath $profilePath -Raw -Encoding UTF8 -ErrorAction Stop
     try { $profile = $raw | ConvertFrom-Json } catch { throw "BCT_TUNNEL_PROFILE_NOT_JSON path=$profilePath" }
     if ($null -eq $profile.mcp) { throw "BCT_TUNNEL_PROFILE_MCP_MISSING path=$profilePath" }
     if ($null -eq $profile.health -or $profile.health.url_file -ne $HealthUrlFile) {
