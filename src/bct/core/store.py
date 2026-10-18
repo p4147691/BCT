@@ -1188,6 +1188,22 @@ class Store:
             raise KeyError("OPERATION_NOT_FOUND")
         return str(row["request_digest"])
 
+    def get_operation_capability_for(self, *, operation_id: str, work_id: str,
+                                     principal_id: str) -> str:
+        self.get_operation_for(operation_id=operation_id, work_id=work_id,
+                               principal_id=principal_id)
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT capability FROM operations WHERE operation_id=? AND work_id=?",
+                (operation_id, work_id),
+            ).fetchone()
+        finally:
+            db.close()
+        if row is None:
+            raise KeyError("OPERATION_NOT_FOUND")
+        return str(row["capability"])
+
     def get_operation_target_for(self, *, operation_id: str, work_id: str, principal_id: str) -> str:
         # Reuse the exact work/principal authorization check before revealing target.
         self.get_operation_for(operation_id=operation_id, work_id=work_id, principal_id=principal_id)

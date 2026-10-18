@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from bct.core.models import (
+    OperationState,
     ConfirmedFailure,
     FeatureRequest,
     FeatureResult,
@@ -19,6 +20,7 @@ from bct.core.models import (
     Work,
 )
 from bct.integrations.github import GitHubClient
+from bct.core.store import Store
 
 from .common import resolve_in_work
 
@@ -334,10 +336,15 @@ def _check_evidence(runs: list[dict[str, Any]], required: list[str]) -> tuple[bo
 class GitHubPullRequestStatusFeature:
     capability = "github_pr_status"
 
-    def __init__(self, client: GitHubClient):
+    def __init__(self, client: GitHubClient, store: Store | None = None):
         self.client = client
+        self.store = store
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        if arguments.get("operation") == "reconcile":
+            return self._prepare_reconcile(work=work, arguments=arguments)
+        if "operation" in arguments:
+            raise PreconditionError("GITHUB_STATUS_OPERATION_INVALID")
         repository = _validate_repository(arguments.get("repository"))
         try:
             number = int(arguments.get("number"))
@@ -365,8 +372,91 @@ class GitHubPullRequestStatusFeature:
             {"expected_head": expected_head},
         )
 
+    def _prepare_reconcile(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {"operation", "original_operation_id", "original_arguments"}
+        if set(arguments) != allowed:
+            raise PreconditionError("GITHUB_STATUS_RECONCILE_FIELDS_INVALID")
+        original_id = arguments.get("original_operation_id")
+        original_args = arguments.get("original_arguments")
+        if not isinstance(original_id, str) or not 1 <= len(original_id) <= 80:
+            raise PreconditionError("GITHUB_STATUS_RECONCILE_ID_INVALID")
+        if not isinstance(original_args, dict) or set(original_args) - {
+            "repository", "number", "expected_head", "required_checks", "wait_seconds"
+        }:
+            raise PreconditionError("GITHUB_STATUS_RECONCILE_ORIGINAL_ARGUMENTS_INVALID")
+        if self.store is None:
+            raise PreconditionError("GITHUB_STATUS_RECONCILE_STORE_REQUIRED")
+        original_request = self.prepare(work=work, arguments=original_args)
+        original = self.store.get_operation_for(
+            operation_id=original_id, work_id=work.work_id,
+            principal_id=work.owner_principal_id,
+        )
+        capability = self.store.get_operation_capability_for(
+            operation_id=original_id, work_id=work.work_id,
+            principal_id=work.owner_principal_id,
+        )
+        original_digest = hashlib.sha256(json.dumps({
+            "work_id": work.work_id, "capability": self.capability,
+            "target": original_request.target, "arguments": original_request.arguments,
+            "preconditions": original_request.preconditions,
+        }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        actual_digest = self.store.get_operation_request_digest_for(
+            operation_id=original_id, work_id=work.work_id,
+            principal_id=work.owner_principal_id,
+        )
+        target = self.store.get_operation_target_for(
+            operation_id=original_id, work_id=work.work_id,
+            principal_id=work.owner_principal_id,
+        )
+        if capability != self.capability or target != original_request.target or actual_digest != original_digest:
+            raise PreconditionError("GITHUB_STATUS_RECONCILE_PROVENANCE_MISMATCH")
+        if original.state is not OperationState.FINISHED or original.outcome is not Outcome.UNKNOWN:
+            raise PreconditionError("GITHUB_STATUS_RECONCILE_UNKNOWN_REQUIRED")
+        if not (original.evidence.get("phase") == "UNEXPECTED"
+                and original.evidence.get("type") == "TimeoutExpired"
+                and original.error and "timed out" in original.error
+                and "pulls/" + str(original_request.arguments["number"]) in original.error
+                and "gh" in original.error):
+            raise PreconditionError("GITHUB_STATUS_RECONCILE_READ_TIMEOUT_REQUIRED")
+        return FeatureRequest(
+            self.capability, original_request.target,
+            {"operation": "reconcile", "original_operation_id": original_id,
+             "original_arguments": original_request.arguments,
+             "original_request_digest": original_digest},
+            (f"github-pr-status-reconcile:{original_request.target.casefold()}:{original_id.casefold()}",),
+            {"original_request_digest": original_digest,
+             "expected_head": original_request.arguments["expected_head"]},
+        )
+
+    def _reconcile(self, request: FeatureRequest) -> FeatureResult:
+        values = request.arguments
+        original = values["original_arguments"]
+        # This endpoint is strictly read-only; do not call any merge or mutation API.
+        first = self.client.get_pull_request(original["repository"], original["number"])
+        second = self.client.get_pull_request(original["repository"], original["number"])
+        for pull in (first, second):
+            if (not isinstance(pull, dict)
+                    or not isinstance(pull.get("head"), dict)
+                    or not isinstance(pull.get("number"), int)
+                    or pull["number"] != original["number"]
+                    or str(pull.get("head", {}).get("sha") or "").lower() != original["expected_head"]
+                    or str(pull.get("state") or "").lower() != "open"
+                    or pull.get("merged") is not False
+                    or pull.get("merged_at") not in (None, "")):
+                raise PreconditionError("GITHUB_STATUS_RECONCILE_EXTERNAL_MISMATCH")
+        return FeatureResult(
+            Outcome.APPLIED,
+            {"operation": "reconcile", "read_only": True,
+             "original_request_digest": values["original_request_digest"],
+             "source_outcome_preserved": "UNKNOWN",
+             "pr_number": original["number"], "head_sha": original["expected_head"]},
+            reconciled_operation_ids=(values["original_operation_id"],),
+        )
+
     def execute(self, request: FeatureRequest) -> FeatureResult:
         values = request.arguments
+        if values.get("operation") == "reconcile":
+            return self._reconcile(request)
         started = time.monotonic()
         deadline = started + values.get("wait_seconds", 0)
         polls = 0
