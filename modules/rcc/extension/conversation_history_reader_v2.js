@@ -6,6 +6,14 @@
     const raw = el.getAttribute("data-message-id") || el.getAttribute("data-testid") || "";
     return raw.trim();
   }
+  function conversationId(url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "https:" || !["chatgpt.com", "chat.openai.com"].includes(parsed.hostname)) return null;
+      const match = parsed.pathname.match(/^\/(?:g\/[A-Za-z0-9_-]+\/)?c\/([a-f0-9-]{36})\/?$/i);
+      return match ? match[1].toLowerCase() : null;
+    } catch (_) { return null; }
+  }
   function scan(doc) {
     const seen = new Map();
     let duplicates = 0, unidentified = 0;
@@ -31,11 +39,20 @@
     const settle = config.settle || (async () => {});
     const collected = new Map();
     let duplicateObservations = 0, unidentified = 0, stagnant = 0, steps = 0;
+    const expected = config.expectedConversationUrl ? conversationId(config.expectedConversationUrl) : null;
+    if (config.expectedConversationUrl && !expected) {
+      return { status: "PARTIAL", reason: "EXPECTED_IDENTITY_INVALID", steps, messages: [], duplicates: 0, unidentified: 0, full_history_verified: false };
+    }
+    const currentIdentity = () => doc.location?.href ? conversationId(doc.location.href) : null;
+    if (expected && currentIdentity() !== expected) {
+      return { status: "PARTIAL", reason: "CONVERSATION_ID_MISMATCH", steps, messages: [], duplicates: 0, unidentified: 0, full_history_verified: false };
+    }
     const first = doc.querySelector(ID_SELECTOR);
     if (!first) return { status: "PARTIAL", reason: "NO_IDENTIFIED_TURNS", steps, messages: [], duplicates: 0, unidentified: 0 };
     const container = scrollContainer(first, doc);
     let reason = "STEP_LIMIT";
     for (let step = 0; step < maxSteps; step++) {
+      if (expected && currentIdentity() !== expected) { reason = "CONVERSATION_ID_CHANGED"; break; }
       const sample = scan(doc);
       steps++;
       duplicateObservations += sample.duplicates;
@@ -48,6 +65,7 @@
       const oldHeight = container.scrollHeight;
       container.scrollTop = Math.max(0, container.scrollTop - Math.max(container.clientHeight, 320));
       await settle();
+      if (expected && currentIdentity() !== expected) { reason = "CONVERSATION_ID_CHANGED"; break; }
       if (!added && wasAtTop && container.scrollHeight === oldHeight) stagnant++;
       else stagnant = 0;
       if (stagnant >= 3) { reason = "NO_MORE_VISIBLE_PROGRESS"; break; }
@@ -64,7 +82,7 @@
       note: "Scroll exhaustion cannot prove the server returned the entire conversation."
     };
   }
-  const api = { scan, loadOlder };
+  const api = { scan, loadOlder, conversationId };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.BCTConversationHistoryV2 = api;
 })(typeof globalThis === "object" ? globalThis : this);

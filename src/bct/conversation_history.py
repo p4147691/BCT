@@ -301,6 +301,28 @@ class ConversationEvidenceCache:
         return results
 
 
+METADATA_SCHEMA = "BCT_CONVERSATION_METADATA_V1"
+
+
+def metadata_from_json_file(path: str | Path) -> tuple[str, str | None]:
+    """Decode metadata strictly from UTF-8; do not re-encode via shell code pages."""
+    try:
+        raw = Path(path).read_bytes()
+        if len(raw) > 16 * 1024:
+            raise ConversationEvidenceError("CONVERSATION_METADATA_OVERSIZE")
+        obj = json.loads(raw.decode("utf-8-sig", errors="strict"))
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise ConversationEvidenceError("CONVERSATION_METADATA_UTF8_INVALID") from exc
+    if (not isinstance(obj, dict) or obj.get("schema") != METADATA_SCHEMA
+            or set(obj) not in ({"schema", "title"}, {"schema", "title", "summary"})
+            or not isinstance(obj.get("title"), str)
+            or not obj["title"].strip() or len(obj["title"]) > 256
+            or (obj.get("summary") is not None and
+                (not isinstance(obj["summary"], str) or len(obj["summary"]) > MAX_SUMMARY_CHARS))):
+        raise ConversationEvidenceError("CONVERSATION_METADATA_SCHEMA_INVALID")
+    return obj["title"], obj.get("summary")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="BCT selected conversation evidence cache")
     parser.add_argument("--root", default=r"D:\BCT\data\conversation-history")
@@ -310,7 +332,8 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_argument("--work-id", required=True)
         sub.add_argument("--url", required=True)
         if action == "capture":
-            sub.add_argument("--title", required=True)
+            sub.add_argument("--title", help="Exact title (legacy CLI argument)")
+            sub.add_argument("--metadata-input", help="Strict UTF-8 JSON metadata file; alternative to --title")
             sub.add_argument("--input", help="UTF-8 browser tool output file; otherwise stdin")
             sub.add_argument("--summary", default=None, help="Only an AI-curated summary")
             sub.add_argument("--tab-id", default=None)
@@ -324,9 +347,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.action == "capture":
         payload = (Path(args.input).read_text(encoding="utf-8-sig")
                    if args.input else sys.stdin.read())
+        if bool(args.title) == bool(args.metadata_input):
+            parser.error("provide exactly one of --title or --metadata-input")
+        if args.metadata_input and args.summary is not None:
+            parser.error("--summary cannot override --metadata-input")
+        title, summary = (metadata_from_json_file(args.metadata_input)
+                          if args.metadata_input else (args.title, args.summary))
         record = cache.capture(
-            work_id=args.work_id, conversation_url=args.url, title=args.title,
-            page_text=browser_context_text(payload), summary=args.summary,
+            work_id=args.work_id, conversation_url=args.url, title=title,
+            page_text=browser_context_text(payload), summary=summary,
             tab_id=args.tab_id,
         )
         print(json.dumps(record, ensure_ascii=True, sort_keys=True))
