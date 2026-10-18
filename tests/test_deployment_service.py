@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import shutil
@@ -23,7 +24,12 @@ from bct.core.models import (
     Principal,
     UnknownEffectError,
 )
-from bct.features.deploy import DeploymentProfiles, _start_with_one_safe_retry
+from bct.features.deploy import (
+    DeploymentProfile,
+    DeploymentProfiles,
+    _publish_runtime_recovery_scripts,
+    _start_with_one_safe_retry,
+)
 from bct.runtime_server import (
     GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
     build_server_config,
@@ -52,6 +58,33 @@ def free_port() -> int:
 
 
 class DeploymentServiceTests(unittest.TestCase):
+    def test_production_profile_publishes_hash_verified_recovery_entrypoints(self):
+        runtime = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, runtime, ignore_errors=True)
+        release_root = runtime / "releases" / ("a" * 40)
+        files: dict[str, str] = {}
+        payloads = {
+            "modules/mcp/ops/run_bct_core_supervisor.ps1": b"core-supervisor\n",
+            "modules/mcp/ops/run_bct_tunnel_supervisor.ps1": b"tunnel-supervisor\n",
+        }
+        for relative, payload in payloads.items():
+            path = release_root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+            files[relative] = hashlib.sha256(payload).hexdigest()
+        profile = DeploymentProfile(
+            "bct_runtime_v1", runtime, runtime, "bct-core", 18790, tuple(files)
+        )
+        _publish_runtime_recovery_scripts(profile, {
+            "release_path": str(release_root), "files": files,
+        })
+        self.assertEqual(payloads["modules/mcp/ops/run_bct_core_supervisor.ps1"], (
+            runtime / "ops" / "run_bct_core_supervisor.ps1"
+        ).read_bytes())
+        self.assertEqual(payloads["modules/mcp/ops/run_bct_tunnel_supervisor.ps1"], (
+            runtime / "ops" / "run_bct_tunnel_supervisor.ps1"
+        ).read_bytes())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.base = Path(self.temp.name)

@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 import tomllib
+import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -34,6 +35,10 @@ _SHA = re.compile(r"[0-9a-f]{40}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _NAME = re.compile(r"[A-Za-z0-9_.-]+")
 _LOCAL_APP_DATA_PREFIX = "%LOCALAPPDATA%"
+_RUNTIME_RECOVERY_SCRIPTS = (
+    "modules/mcp/ops/run_bct_core_supervisor.ps1",
+    "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
+)
 
 
 def _git(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -705,6 +710,42 @@ def _write_current(profile: DeploymentProfile, release: dict[str, Any] | None) -
     })
 
 
+def _publish_runtime_recovery_scripts(
+    profile: DeploymentProfile, release: dict[str, Any]
+) -> None:
+    """Atomically refresh the bounded sign-in supervisor entrypoints.
+
+    Task Scheduler intentionally invokes stable paths below ``runtime/ops``.
+    The scripts themselves are versioned and hash-verified inside the immutable
+    release, so publish only those exact release bytes after activation.
+    """
+    if profile.name != "bct_runtime_v1":
+        return
+    release_root = Path(str(release["release_path"])).resolve()
+    files = release.get("files")
+    if not isinstance(files, dict):
+        raise PreconditionError("DEPLOYMENT_RELEASE_MANIFEST_INVALID")
+    ops_root = profile.runtime_root / "ops"
+    ops_root.mkdir(parents=True, exist_ok=True)
+    for relative in _RUNTIME_RECOVERY_SCRIPTS:
+        expected = files.get(relative)
+        source = release_root / Path(relative)
+        if not isinstance(expected, str) or not _SHA256.fullmatch(expected):
+            raise PreconditionError("DEPLOYMENT_RECOVERY_SCRIPT_MANIFEST_INVALID:" + relative)
+        if not source.is_file() or source.is_symlink() or _sha256(source) != expected:
+            raise PreconditionError("DEPLOYMENT_RECOVERY_SCRIPT_INVALID:" + relative)
+        destination = ops_root / Path(relative).name
+        temporary = ops_root / (destination.name + ".tmp-" + uuid.uuid4().hex)
+        try:
+            shutil.copyfile(source, temporary)
+            if _sha256(temporary) != expected:
+                raise ConfirmedFailure("DEPLOYMENT_RECOVERY_SCRIPT_COPY_HASH_MISMATCH:" + relative, release_claims=True)
+            os.replace(temporary, destination)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
+
 def _read_current(profile: DeploymentProfile) -> dict[str, Any] | None:
     value = read_json(_current_path(profile))
     if value is not None:
@@ -881,6 +922,7 @@ class DeployFeature:
             current_after = _read_current(profile)
             if current_after is None or current_after.get("source_head") != manifest["source_head"]:
                 raise RuntimeError("DEPLOYMENT_CURRENT_POST_STATE_INVALID")
+            _publish_runtime_recovery_scripts(profile, release)
             if request.arguments["restart"]:
                 _validate_protected_deploy_gate(
                     self.profiles, profile, request.arguments["expected_source_head"],
@@ -926,6 +968,8 @@ class DeployFeature:
                 if target_state.get("state") == "RUNNING" and target_state.get("release_sha") == manifest["source_head"]:
                     controller.stop()
                 _write_current(profile, current)
+                if current is not None:
+                    _publish_runtime_recovery_scripts(profile, current)
                 if request.arguments["restart"] and service_before.get("state") == "RUNNING":
                     assert current is not None
                     restored = _start_with_one_safe_retry(controller, current)
