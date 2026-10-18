@@ -150,7 +150,14 @@ class VtlValidationTests(unittest.TestCase):
         }), operation_id="vtl-profile-pass")
         result = feature.execute(request)
         self.assertEqual("PASS", result.evidence["status"])
-        self.assertTrue(Path(result.evidence["result_path"]).is_relative_to(self.evidence))
+        # The feature canonicalizes configured paths.  GitHub's Windows runner can
+        # expose the temp directory through a short/long path alias, so compare
+        # canonical paths instead of their original spellings.
+        self.assertTrue(
+            Path(result.evidence["result_path"]).resolve().is_relative_to(
+                self.evidence.resolve()
+            )
+        )
 
 
 if __name__ == "__main__":
