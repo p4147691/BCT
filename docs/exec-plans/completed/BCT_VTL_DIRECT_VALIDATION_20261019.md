@@ -1,6 +1,6 @@
 # BCT direct VTL validation — 2026-10-19
 
-Status: `IMPLEMENTED / LOCAL_FULL_PASS / PR_AND_LIVE_PENDING`
+Status: `COMPLETE / MERGED / LIVE_ACCEPTED`
 
 ## Goal
 
@@ -49,3 +49,23 @@ loop. GitHub required checks remain the final independent candidate check.
   `D:\BCT\data\vtl-evidence\direct-pre-bct-2480d2bd`.
 - BCT focused feature/MCP/deployment/layout/CI tests passed. The complete local
   regression passed 757/757 in 347.814 seconds; compile and diff checks passed.
+- BCT PR #203 exact head `0b79e72ce0bb4f9c1dea487cdb3793fa0885ab4b`
+  passed CI run `39174274844` and merged as
+  `af1c4fd9b1ca172c58ca09ebe44185ddda0e14b8`. Merged-main CI run
+  `39174601320` also passed.
+- Exact merged BCT main was deployed through the durable deployment operation
+  `bct-vtl-direct-deploy-af1c4fd9b1ca-op`. LIVE is READY at generation 121,
+  exposes 31 MCP tools including `bct_vtl_validate`, and uses manifest
+  `aa0f6161d320f728f5ce647b93f34400a37c7db68ce24a1d57219078ed43052e`.
+- Authenticated LIVE operation
+  `bct-vtl-direct-live-af1c4fd9b1ca-browser-fast` ran the installed VTL release
+  `2480d2bd70a420c5300071ad51a541a13407b99b` directly and returned
+  `FINISHED / APPLIED / PASS`. VTL execution was 2.156 seconds and the external
+  acceptance path was 3.800 seconds. Duplicate submission returned the same
+  receipt without rerunning the scenario.
+- Evidence is under
+  `D:\BCT\data\vtl-evidence\7228e29fbe1e050704e1f7d87303af61c777b36902c625078b0f7a327b962ac9`.
+  The scenario SHA-256 is
+  `d94b9d8c1b6eb353fc050c33398958c27706a3695b3d0293bb58e9c8e8bd0373`.
+  No VTL Actions run was created by this acceptance; the latest VTL runs remain
+  the three merged-main runs created at `2026-10-18T22:39:08Z`.
