@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
@@ -29,7 +29,10 @@ _CAPABILITY_USAGE = {
     "monitor": "Use arguments.operation as status or validate.",
     "relay_browser": "For read-only RCC inspection use arguments={\"command\": \"state\", \"instance_id\": \"exact instance id\"}. Prefer bct_status for routine status.",
     "orchestrate": "Durable read-evidence manager/worker sessions. Start a session, sync exact RCC conversations, select a manager epoch, then use dispatch or chain-run. Browser mutations run in background; recover with bct_operation_get. Use reconcile only for one exact non-chain assignment, chain-resume for a persisted chain, and recover-not-dispatched only when BCT can prove no dispatch reservation exists. Recovery never resends an UNKNOWN effect.",
+    "desktop_session_status": "Return the exact current interactive user-session Agent identity, foreground window, monitor geometry, and capture readiness.",
+    "desktop_capture": "Capture the current virtual screen, one monitor, or one exact HWND. The MCP result contains both metadata and an image content block.",
 }
+_SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 
 
 def _work_dict(work: Work) -> dict[str, Any]:
@@ -152,6 +155,59 @@ def build_mcp(
             await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
             wait_ms += (time.perf_counter_ns()-sleep_start)/1e6
 
+    @server.tool(
+        description="Return the verified current Windows interactive-session Agent status.",
+        structured_output=True,
+    )
+    async def bct_desktop_session_status(work_id: str, operation_id: str) -> dict[str, Any]:
+        result = await asyncio.to_thread(
+            bct.operations.run,
+            principal=principal, work_id=work_id, operation_id=operation_id,
+            capability="desktop_session_status", arguments={}, approval_ref=None,
+        )
+        value = result.as_dict()
+        if result.duplicate and "output" not in value:
+            value["output"] = {
+                "instanceId": result.evidence.get("instance_id"),
+                "session": result.evidence.get("session"),
+                "monitors": result.evidence.get("monitors"),
+            }
+        return value
+
+    @server.tool(
+        description="Capture the verified current Windows virtual screen, monitor, or exact HWND and return the PNG as MCP image content.",
+        structured_output=False,
+    )
+    async def bct_desktop_capture(
+        work_id: str,
+        operation_id: str,
+        target_type: str = "virtual_screen",
+        monitor_index: int | None = None,
+        hwnd: str = "",
+        max_width: int = 1600,
+        max_height: int = 1200,
+    ) -> Any:
+        result = await asyncio.to_thread(
+            bct.operations.run,
+            principal=principal, work_id=work_id, operation_id=operation_id,
+            capability="desktop_capture",
+            arguments={
+                "target_type": target_type, "monitor_index": monitor_index,
+                "hwnd": hwnd, "max_width": max_width, "max_height": max_height,
+            },
+            approval_ref=None,
+        )
+        value = result.as_dict()
+        capture = result.output.get("capture") if isinstance(result.output, dict) else None
+        if not isinstance(capture, dict):
+            capture = result.evidence.get("capture")
+        if result.outcome is not None and result.outcome.value == "APPLIED" and isinstance(capture, dict):
+            path = Path(str(capture.get("path") or ""))
+            if path.is_file():
+                value.pop("output", None)
+                return value, Image(path=path, format="png")
+        return value
+
     def make_executor(capability: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
         async def execute(
             work_id: str,
@@ -210,6 +266,8 @@ def build_mcp(
         return execute
 
     for capability in capabilities:
+        if capability in _SPECIAL_CAPABILITIES:
+            continue
         server.tool(
             name="bct_" + capability,
             description=(

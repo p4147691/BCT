@@ -29,6 +29,9 @@ from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
 from .features.monitor import MonitorFeature
 from .features.orchestration import OrchestrationFeature
+from .features.desktop_session import (
+    DesktopCaptureFeature, DesktopSessionStatusFeature, desktop_session_client,
+)
 from .integrations.github import GhCliClient, GitHubClient
 from .integrations.rcc import NamedPipeRelayClient
 
@@ -92,6 +95,7 @@ class BCT:
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)
         github = github_client or GhCliClient()
         deployment_profiles = DeploymentProfiles(policy_path)
+        desktop_session = desktop_session_client(policy_path, data_root=data_root)
         for feature in (
             FileReadFeature(), FileWriteFeature(), TestFeature(), GitCommitFeature(),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
@@ -103,6 +107,8 @@ class BCT:
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
             OrchestrationFeature(self.orchestration),
+            DesktopSessionStatusFeature(desktop_session),
+            DesktopCaptureFeature(desktop_session),
         ):
             self.operations.register(feature)
         self.operations.register(VerificationFeature(self.operations._features, self.store))

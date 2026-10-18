@@ -46,6 +46,8 @@ class ModuleLayoutTests(unittest.TestCase):
             "src/bct/core/rcc_result.py",
             "src/bct/manager_decision_recovery.py",
             "src/bct/worker_dispatch_recovery.py",
+            "src/bct/features/desktop_session.py",
+            "src/bct/integrations/desktop_session.py",
         ):
             self.assertIn(required, files)
 

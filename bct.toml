@@ -18,6 +18,8 @@ normal_actions = [
   "process_session",
   "monitor",
   "orchestrate",
+  "desktop_session_status",
+  "desktop_capture",
 ]
 approval_actions = ["delete", "credential_change"]
 
@@ -31,6 +33,10 @@ excluded_new_assignment_instance_ids = ["6174664e1c1b4e6db1d4729c841db3c9"]
 
 [execution.sessions]
 state_root = "D:\\BCT\\data\\process-sessions"
+
+[desktop_session]
+state_root = "D:\\BCT\\runtime\\desktop-session"
+evidence_root = "D:\\BCT\\data\\desktop-session\\evidence"
 
 
 [monitor]
@@ -83,10 +89,12 @@ files = [
   "src/bct/features/orchestration.py",
   "src/bct/features/tests.py",
   "src/bct/features/verification.py",
+  "src/bct/features/desktop_session.py",
   "src/bct/integrations/__init__.py",
   "src/bct/integrations/github.py",
   "src/bct/integrations/rcc.py",
   "src/bct/integrations/native_process.py",
+  "src/bct/integrations/desktop_session.py",
   "src/bct/operating_paths.py",
   "src/bct/conversation_history.py",
   "modules/mcp/ops/run_bct_core_supervisor.ps1",

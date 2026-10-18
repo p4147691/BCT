@@ -14,6 +14,8 @@ BCT owns the implementation, policy boundary, operation receipt and live accepta
 - the authenticated BCT MCP catalogue generated from loaded executors;
 - exact-instance RCC inspection and bounded browser relay mutations;
 - BCT Monitor state and UI.
+- authenticated current-user desktop-session status and read-only screen/window
+  capture through the external VTL-owned Desktop Session Agent.
 
 These capabilities live in the BCT repository and do not import ACT runtime modules.
 
@@ -43,10 +45,12 @@ ACT remains installed as a rollback witness for older live components and protec
 BCT does not need ACT to run its core, MCP, Monitor, RCC boundary, or development
 workflow. No existing ACT task, Chrome tab, binding or ambiguous operation is replayed during BCT work.
 
-The old ACT ADC MCP/controller and ACT-path Laya runtime have been retired. This does not claim
-desktop-control parity: BDC remains the future home for the small set of desktop primitives that are
-actually retained. Until that contract is implemented and accepted, BCT uses its own development,
-MCP, RCC and status capabilities and does not expose a misleading ADC compatibility layer.
+The old ACT ADC MCP/controller and ACT-path Laya runtime have been retired.  The first BCT desktop
+slice now owns the authenticated adapter, operation receipt and MCP image result for exact session
+status and read-only capture.  VTL owns the generic per-user Windows Agent and protected named-pipe
+implementation.  This first slice does not claim input, window mutation, launch, lease, cancellation,
+Scheduled Task recovery or full RDC parity, and it does not expose a misleading ADC compatibility
+layer.
 
 DesktopWindow Monitor and Chrome Auto Proxy are external compatibility modules, not Core. Their
 active installed paths stay fixed until their exact extension/native identities are migrated. Runner

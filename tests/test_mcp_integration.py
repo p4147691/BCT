@@ -55,6 +55,7 @@ class MCPIntegrationTests(unittest.TestCase):
             "github_pr_status", "github_pr_merge", "github_sync_main", "deploy", "service_control",
             "relay_browser", "system_inspect", "execute", "monitor",
             "process_session", "verify", "orchestrate",
+            "desktop_session_status", "desktop_capture",
         ]
         self.port = free_port()
         (self.release / "bct.toml").write_text(
@@ -115,6 +116,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_system_inspect", "bct_execute", "bct_monitor",
                         "bct_process_session",
                         "bct_test", "bct_write", "bct_verify", "bct_orchestrate",
+                        "bct_desktop_session_status", "bct_desktop_capture",
                     }
                     self.assertEqual(
                         expected_capability_tools | {
