@@ -47,7 +47,11 @@ This candidate DOES NOT create or modify this LIVE location.
         ...
 
 Project ID is a stable lowercase slug ([a-z0-9][a-z0-9-]{0,63}),
-independent of display title and changing project scope.
+independent of display title and changing project scope. Windows reserved
+device names (such as con and com1) are rejected. Ancestor symlinks and
+Windows directory junctions and other reparse points are rejected before
+writing or following revision pointers, using a Python 3.11-compatible
+lstat() attribute check (no dependency on Path.is_junction()).
 
 current.json pointer fields:
 schema, project_id, revision, revision_file, sha256.
@@ -110,9 +114,9 @@ Corrupt pointer or committed revision produces an error rather than falling
 back or silently fixing it. Stale expected revision must re-read and let AI
 reconcile a new proposal.
 
-Source bookmark bct_event_id is monotonic by ledger update. This is only
-a Manager observation checkpoint, not a guarantee that ALL BCT events were
-retrieved. Advance only after actually reviewing included evidence.
+Source bookmark bct_event_id cannot be lowered or erased by a later
+ledger revision. This is only a Manager observation checkpoint, not a
+guarantee that ALL BCT events were retrieved. Advance only after actually reviewing included evidence.
 No event scanner/delta query/automatic Wake/GitHub polling is implemented V1.
 
 Project group labels do not restrict work capabilities. Existing BCT

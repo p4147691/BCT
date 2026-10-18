@@ -18,6 +18,8 @@ from typing import Any, Iterator
 
 SCHEMA = "BCT_PROJECT_MEMORY_V1"
 _PROJECT_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
+_RESERVED_WINDOWS_IDS = frozenset({"con", "prn", "aux", "nul"})
+_RESERVED_WINDOWS_DEVICE = re.compile(r"(?:com|lpt)[1-9]\Z")
 _MAX_RECORD_BYTES = 256 * 1024
 
 
@@ -46,13 +48,33 @@ def _digest(value: bytes) -> str:
 
 
 def _id(value: str) -> str:
-    if not isinstance(value, str) or not _PROJECT_ID.fullmatch(value):
+    if (not isinstance(value, str) or not _PROJECT_ID.fullmatch(value)
+            or value in _RESERVED_WINDOWS_IDS
+            or _RESERVED_WINDOWS_DEVICE.fullmatch(value)):
         raise ProjectMemoryError("PROJECT_MEMORY_ID_INVALID")
     return value
 
 
+def _is_redirect(path: Path) -> bool:
+    # Windows junctions/reparse points also exist on Python 3.11, before
+    # pathlib.Path.is_junction() was introduced. lstat preserves the link.
+    if path.is_symlink():
+        return True
+    try:
+        return bool(getattr(path.lstat(), "st_file_attributes", 0) & 0x400)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+
+
+def _assert_no_redirect(path: Path) -> None:
+    # A redirected ancestor also sends writes outside the intended ledger.
+    for component in (path, *path.parents):
+        if _is_redirect(component):
+            raise ProjectMemoryError("PROJECT_MEMORY_REDIRECT_FORBIDDEN")
+
+
 def _regular(path: Path) -> bool:
-    return path.is_file() and not path.is_symlink()
+    return path.is_file() and not _is_redirect(path)
 
 
 def _parse_json(raw: bytes) -> dict[str, Any]:
@@ -201,10 +223,10 @@ class ProjectMemoryStore:
     def _project_dir(self, project_id: str, *, create: bool) -> Path:
         project_id = _id(project_id)
         path = self.root / project_id
-        if self.root.is_symlink() or path.is_symlink():
-            raise ProjectMemoryError("PROJECT_MEMORY_SYMLINK_FORBIDDEN")
+        _assert_no_redirect(path)
         if create:
             path.mkdir(parents=True, exist_ok=True)
+            _assert_no_redirect(path)
         if path.exists() and not path.is_dir():
             raise ProjectMemoryError("PROJECT_MEMORY_PATH_INVALID")
         return path
@@ -228,6 +250,7 @@ class ProjectMemoryStore:
                 or pointer["revision_file"] != f"{revision:08d}-{digest}.json"):
             raise ProjectMemoryCorrupt("PROJECT_MEMORY_POINTER_INVALID")
         file = path / "revisions" / pointer["revision_file"]
+        _assert_no_redirect(file.parent)
         if not _regular(file):
             raise ProjectMemoryCorrupt("PROJECT_MEMORY_REVISION_MISSING")
         raw = file.read_bytes()
@@ -258,8 +281,7 @@ class ProjectMemoryStore:
         _validate_record(record)
         path = self._project_dir(project_id, create=True)
         lock_path = path / ".ledger.lock"
-        if lock_path.is_symlink():
-            raise ProjectMemoryError("PROJECT_MEMORY_SYMLINK_FORBIDDEN")
+        _assert_no_redirect(lock_path)
         with _writer_lock(lock_path):
             current = self.get(project_id)
             revision = current["revision"] if current else 0
@@ -269,8 +291,8 @@ class ProjectMemoryStore:
                 raise ProjectMemoryConflict("PROJECT_MEMORY_STALE_REVISION")
             previous_cursor = current["record"]["checkpoints"].get("bct_event_id") if current else None
             new_cursor = record["checkpoints"].get("bct_event_id")
-            if (previous_cursor is not None and new_cursor is not None
-                    and new_cursor < previous_cursor):
+            if (previous_cursor is not None and
+                    (new_cursor is None or new_cursor < previous_cursor)):
                 raise ProjectMemoryConflict("PROJECT_MEMORY_EVENT_CURSOR_REGRESSION")
             row = {
                 "schema": SCHEMA, "project_id": project_id,
@@ -282,9 +304,9 @@ class ProjectMemoryStore:
             digest = _digest(data)
             filename = f"{revision + 1:08d}-{digest}.json"
             folder = path / "revisions"
-            if folder.is_symlink():
-                raise ProjectMemoryError("PROJECT_MEMORY_SYMLINK_FORBIDDEN")
+            _assert_no_redirect(folder)
             folder.mkdir(exist_ok=True)
+            _assert_no_redirect(folder)
             revision_path = folder / filename
             _publish_revision(revision_path, data)
             pointer = {
@@ -301,6 +323,7 @@ class ProjectMemoryStore:
         if current is None:
             return []
         folder = self._project_dir(project_id, create=False) / "revisions"
+        _assert_no_redirect(folder)
         entries = []
         row = current
         while row is not None:
@@ -328,10 +351,11 @@ class ProjectMemoryStore:
     def projects(self) -> list[str]:
         if not self.root.exists():
             return []
-        if self.root.is_symlink() or not self.root.is_dir():
+        _assert_no_redirect(self.root)
+        if not self.root.is_dir():
             raise ProjectMemoryError("PROJECT_MEMORY_ROOT_INVALID")
         return [path.name for path in sorted(self.root.iterdir())
-                if path.is_dir() and not path.is_symlink()
+                if path.is_dir() and not _is_redirect(path)
                 and _PROJECT_ID.fullmatch(path.name)
                 and (path / "current.json").exists()]
 

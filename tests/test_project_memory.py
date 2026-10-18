@@ -219,6 +219,59 @@ class ProjectMemoryTests(unittest.TestCase):
         files = parsed["deployment"]["profiles"]["bct_runtime_v1"]["files"]
         self.assertEqual(files.count("src/bct/core/project_memory.py"), 1)
 
+    def test_event_checkpoint_cannot_be_erased(self):
+        first = self._genesis()
+        with self.assertRaisesRegex(ProjectMemoryConflict, "EVENT_CURSOR_REGRESSION"):
+            self.store.save("subtitle-auto", expected_revision=1,
+                            author="manager-b", record=record(summary="missing cursor",
+                                                              event_id=None))
+        self.assertEqual(self.store.get("subtitle-auto")["sha256"], first["sha256"])
+
+    def test_path_redirect_detection_works_without_pathlib_is_junction(self):
+        from bct.core.project_memory import _is_redirect
+        self.assertFalse(_is_redirect(self.root / "missing"))
+        self.assertNotIn("is_junction", _is_redirect.__code__.co_names)
+        self.assertFalse(_is_redirect(Path(self.temp.name)))
+
+    def test_windows_reserved_device_project_ids_rejected(self):
+        for project_id in ("con", "aux", "nul", "prn", "com1", "lpt9"):
+            with self.subTest(project_id=project_id):
+                with self.assertRaisesRegex(ProjectMemoryError, "ID_INVALID"):
+                    self.store.save(project_id, expected_revision=0,
+                                    author="manager-a", record=record())
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction safety")
+    def test_windows_junction_project_is_rejected(self):
+        self.root.mkdir()
+        destination = Path(self.temp.name) / "outside"
+        destination.mkdir()
+        junction = self.root / "subtitle-auto"
+        linked = subprocess.run(["cmd.exe", "/d", "/c", "mklink", "/J",
+                                 str(junction), str(destination)],
+                                capture_output=True, text=True, errors="replace")
+        if linked.returncode:
+            self.skipTest("Junction setup unavailable: " + linked.stderr[-100:])
+        with self.assertRaisesRegex(ProjectMemoryError, "REDIRECT_FORBIDDEN"):
+            self.store.save("subtitle-auto", expected_revision=0,
+                            author="manager-a", record=record())
+        self.assertFalse((destination / ".ledger.lock").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction safety")
+    def test_windows_junction_revisions_is_rejected(self):
+        parent = self.root / "subtitle-auto"
+        parent.mkdir(parents=True)
+        destination = Path(self.temp.name) / "outside-revisions"
+        destination.mkdir()
+        linked = subprocess.run(["cmd.exe", "/d", "/c", "mklink", "/J",
+                                 str(parent / "revisions"), str(destination)],
+                                capture_output=True, text=True, errors="replace")
+        if linked.returncode:
+            self.skipTest("Junction setup unavailable: " + linked.stderr[-100:])
+        with self.assertRaisesRegex(ProjectMemoryError, "REDIRECT_FORBIDDEN"):
+            self.store.save("subtitle-auto", expected_revision=0,
+                            author="manager-a", record=record())
+        self.assertFalse(list(destination.iterdir()))
+
     def test_cli_get_list_and_history(self):
         self._genesis()
         env = dict(os.environ)
