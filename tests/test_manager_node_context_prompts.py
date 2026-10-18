@@ -75,5 +75,37 @@ class ManagerNodeContextPromptTests(unittest.TestCase):
                     orchestration_module._relay_note("worker")
 
 
+    def test_windows_notepad_encoding_switches_without_restart(self):
+        sample = "업무 완료 기준 확인 후 Manager가 판단하세요."
+        variants = ("utf-8", "utf-8-sig", "utf-16", "utf-16-be", "utf-32", "cp949")
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(orchestration_module, "_RELAY_NOTES_DIR", Path(directory)):
+                file = Path(directory) / "manager-relay-note.txt"
+                for codec in variants:
+                    with self.subTest(codec=codec):
+                        raw = sample.encode(codec)
+                        if codec == "utf-16-be":
+                            raw = b"\xfe\xff" + raw
+                        file.write_bytes(raw)
+                        self.assertEqual(sample, orchestration_module._relay_note("manager"))
+                self.assertIn("SUCCEEDED", orchestration_module._relay_note("worker"))
+
+    def test_rejects_malformed_binary_and_preserves_unicode_length_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(orchestration_module, "_RELAY_NOTES_DIR", Path(directory)):
+                file = Path(directory) / "worker-relay-note.txt"
+                for raw in (b"\x00\x01", b"\x81", b"\xff\xfe\x00",
+                            b"valid\x00binary"):
+                    with self.subTest(raw=repr(raw)):
+                        file.write_bytes(raw)
+                        with self.assertRaises(ValueError):
+                            orchestration_module._relay_note("worker")
+                file.write_bytes(("한" * 2000).encode("utf-8"))
+                self.assertEqual(2000, len(orchestration_module._relay_note("worker")))
+                file.write_bytes(("한" * 2001).encode("utf-16"))
+                with self.assertRaisesRegex(ValueError, "RELAY_NOTE_INVALID_LENGTH"):
+                    orchestration_module._relay_note("worker")
+
+
 if __name__ == "__main__":
     unittest.main()
