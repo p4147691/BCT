@@ -100,8 +100,13 @@ async function main() {
   const foreignId=makeHarness();
   foreignId.editor.value='외부 버튼 금지';
   foreignId.setMode('foreign-id');
-  await mustReject(foreignId.testing.submitEditor(foreignId.editor,options('외부 버튼 금지',30)),
-    'RELAY_SEND_BUTTON_NOT_READY');
+  await assert.rejects(
+    foreignId.testing.submitEditor(foreignId.editor,options('외부 버튼 금지',30)),
+    error => {
+      assert.equal(String(error.message),
+        'RELAY_SEND_BUTTON_NOT_READY:SEND_CONTROL_OUTSIDE_EDITOR');
+      return true;
+    });
   assert.equal(foreignId.clicks(),0);
   assert(foreignId.diagnostics().some(entry =>
     entry[0]==='RELAY_SEND_BUTTON_NOT_READY' &&
