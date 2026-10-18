@@ -294,9 +294,22 @@ class ManagerDecisionConsumer:
                 raise ConflictError("MANAGER_RESULT_CHANGED_DURING_COMMIT")
             session = self.service._session_row(tx, str(current["session_id"]))
             if session["state"] == "FINISHED":
+                completed_once = False
+                try:
+                    summary = json.loads(session["terminal_summary_json"] or "{}")
+                    completed_once = (
+                        summary.get("manager_decision") == "COMPLETE"
+                        and summary.get("manager_decision_id") == current["decision_id"]
+                        and current["result_ack_state"] == "ACKED"
+                        and current["result_hash"] == current_hash
+                        and current_decision.get("kind") == "COMPLETE"
+                        and not current_decision.get("successors")
+                    )
+                except (TypeError, ValueError):
+                    pass
                 if (session["work_id"] != work.work_id
                         or session["work_assignment_epoch"] != work.assignment_epoch
-                        or not verified_finished_chain_wake(tx, current)):
+                        or not (verified_finished_chain_wake(tx, current) or completed_once)):
                     raise ConflictError("MANAGER_FINISHED_CHAIN_WAKE_NOT_PROVEN")
             else:
                 self.service._assert_work(session, work)
@@ -444,4 +457,50 @@ class ManagerDecisionConsumer:
                 "result_acknowledged_at=?,updated_at=? WHERE event_id=?",
                 (now, now, event_id),
             )
+            # COMPLETE is the Manager's decision, not a BCT judgement.
+            # Finalize only when the ledger proves every dispatch and result
+            # is settled. Keep all other/ambiguous sessions untouched.
+            completed = db.execute(
+                "SELECT w.session_id,w.manager_epoch,d.decision_json "
+                "FROM orchestration_manager_wakes w "
+                "JOIN orchestration_consumption_decisions d ON d.decision_id=w.decision_id "
+                "WHERE w.event_id=?", (event_id,),
+            ).fetchone()
+            if completed is not None:
+                decision = json.loads(completed["decision_json"])
+                sid = str(completed["session_id"])
+                if decision.get("kind") == "COMPLETE" and not decision.get("successors"):
+                    session = db.execute(
+                        "SELECT state,manager_epoch,terminal_summary_json FROM orchestration_sessions "
+                        "WHERE session_id=?", (sid,),
+                    ).fetchone()
+                    pending_assignments = db.execute(
+                        "SELECT COUNT(*) FROM orchestration_assignments "
+                        "WHERE session_id=? AND state NOT IN ('APPLIED','FAILED','NOT_APPLIED')",
+                        (sid,),
+                    ).fetchone()[0]
+                    pending_wakes = db.execute(
+                        "SELECT COUNT(*) FROM orchestration_manager_wakes "
+                        "WHERE session_id=? AND result_ack_state!='ACKED'",
+                        (sid,),
+                    ).fetchone()[0]
+                    pending_dispatch = db.execute(
+                        "SELECT COUNT(*) FROM orchestration_dispatch_outbox "
+                        "WHERE session_id=? AND state!='ACKED'", (sid,),
+                    ).fetchone()[0]
+                    if (session is not None and session["state"] == "ACTIVE"
+                            and int(session["manager_epoch"]) == int(completed["manager_epoch"])
+                            and not (pending_assignments or pending_wakes or pending_dispatch)):
+                        summary = json.loads(session["terminal_summary_json"] or "{}")
+                        summary.update({"manager_decision": "COMPLETE",
+                                        "manager_decision_id": row["decision_id"]})
+                        db.execute(
+                            "UPDATE orchestration_sessions SET state='FINISHED',"
+                            "terminal_summary_json=?,updated_at=? WHERE session_id=? AND state='ACTIVE'",
+                            (json.dumps(summary, ensure_ascii=False, sort_keys=True,
+                                        separators=(",", ":")), now, sid),
+                        )
+                        self.store._event(db, "ORCHESTRATION_SESSION_FINISHED", sid, {
+                            "state": "FINISHED", "manager_epoch": int(completed["manager_epoch"]),
+                        })
             return True

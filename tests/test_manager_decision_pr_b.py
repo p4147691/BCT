@@ -315,6 +315,47 @@ class ManagerDecisionPRBTests(unittest.TestCase):
         self.assertEqual(["result", "result-ack"], commands)
         self.assertNotIn("send-wakeback", commands)
 
+    def test_manager_complete_ack_finalizes_idle_session(self):
+        relay = FakeRelay(self.receipt("COMPLETE"))
+        summary = ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
+        self.assertEqual(1, summary["acked"])
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT state,terminal_summary_json FROM orchestration_sessions "
+                "WHERE session_id='session'"
+            ).fetchone()
+            self.assertEqual("FINISHED", row["state"])
+            self.assertEqual("COMPLETE", json.loads(row["terminal_summary_json"])["manager_decision"])
+        self.assertTrue(self.consume()["idempotent"])
+
+    def test_followup_ack_keeps_session_open(self):
+        relay = FakeRelay(self.receipt("FOLLOW_UP"))
+        summary = ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
+        self.assertEqual(1, summary["acked"])
+        with self.store.transaction() as db:
+            state = db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()["state"]
+        self.assertEqual("ACTIVE", state)
+        self.assertEqual(1, self.count("orchestration_dispatch_outbox"))
+
+    def test_complete_ack_keeps_session_open_with_other_active_assignment(self):
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("still-running", "session", 1, "request-extra", "{}",
+                 _canonical([self.root]), _canonical(["read"]), "{}",
+                 "QUEUED", 1, "{}", 1.0, 1.0),
+            )
+        relay = FakeRelay(self.receipt("COMPLETE"))
+        summary = ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
+        self.assertEqual(1, summary["acked"])
+        with self.store.transaction() as db:
+            state = db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()["state"]
+        self.assertEqual("ACTIVE", state)
+
     def test_reconciled_result_followup_atomic_and_exact_replay(self):
         self.use_proven_reconciled_result()
         with self.store.transaction() as db:
