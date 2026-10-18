@@ -1373,6 +1373,89 @@ async function resolveExactConversationCommand(message) {
 
 }
 
+// Exact operator-selected tab: one-call registration and first send.
+async function sendToExistingTab(message) {
+  await endpointSessionReady;
+  const operationId = String(message.operationId || '');
+  const instanceId = String(message.instanceId || '');
+  const sessionId = String(message.sessionId || '');
+  const workId = String(message.workId || '');
+  const tabId = Number(message.tabId);
+  const windowId = Number(message.windowId);
+  const requestedKey = String(message.conversationKey || '').toLowerCase();
+  const body = String(message.text || '');
+  if (!operationId || !workId || !sessionId || !instanceId || !body
+      || body.length > 12000 || !Number.isSafeInteger(tabId) || tabId < 1
+      || !Number.isSafeInteger(windowId) || windowId < 1)
+    throw new Error('DIRECT_TAB_ARGUMENT_INVALID');
+  const fingerprint = JSON.stringify([instanceId, sessionId, workId, tabId,
+    windowId, requestedKey, body]);
+  return runIdempotentOperation(operationId, 'send-to-tab', fingerprint, async () => {
+    const state = await loadState();
+    if (state.settings.instanceId !== instanceId || endpointSessionId !== sessionId)
+      throw new Error('DIRECT_TAB_ENDPOINT_SESSION_MISMATCH');
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || Number(tab.windowId) !== windowId || !isChatTab(tab))
+      throw new Error('DIRECT_TAB_IDENTITY_MISMATCH');
+    const liveKey = RelayCore.conversationKey(tab.url || '');
+    const blank = !requestedKey && !liveKey
+      && /^https:\/\/(chatgpt\.com|chat\.openai\.com)\/?$/.test(String(tab.url || ''));
+    if (!blank && (!requestedKey || liveKey !== requestedKey))
+      throw new Error('DIRECT_TAB_CONVERSATION_MISMATCH');
+    const role = RelayCore.normalizeRole('BCT_TAB_' + tabId);
+    const others = Object.entries(state.registrations || {}).filter(([name, reg]) =>
+      Number(reg?.tabId) === tabId && name !== role);
+    if (others.length) throw new Error('DIRECT_TAB_ALREADY_OWNED');
+    if (Object.values(state.pending || {}).some(p => Number(p?.tabId) === tabId))
+      throw new Error('DIRECT_TAB_HAS_PENDING_EFFECT');
+    const previous = state.registrations?.[role] || null;
+    if (previous && (previous.directTabWorkId !== workId
+        || Number(previous.tabId) !== tabId
+        || String(previous.conversationKey || '') !== liveKey))
+      throw new Error('DIRECT_TAB_ROLE_ALREADY_OWNED');
+    const receiptId = previous?.bindingReceiptId ||
+      'RCB-' + crypto.randomUUID().replaceAll('-', '').toUpperCase();
+    const bootstrapId = previous?.bootstrapReceiptId ||
+      'RCI-' + crypto.randomUUID().replaceAll('-', '').toUpperCase();
+    const registration = previous || {
+      role, tabId, conversationKey: liveKey, title: String(tab.title || ''),
+      transportInstanceId: instanceId, sessionId, directTabWorkId: workId,
+      authorization: blank ? 'ACT_CONVERSATION_BOOTSTRAP' : 'ACT_CONVERSATION_BIND',
+      bindingReceiptId: receiptId, bootstrapReceiptId: bootstrapId,
+      expiresAt: Date.now() + 600000, updatedAt: Date.now()
+    };
+    registration.directTabOperationId = operationId;
+    await mutateRegistrationsWithLeaseFence([{ role }, { tabId, conversationKey: liveKey }],
+      async (fresh) => {
+        if (Object.entries(fresh.registrations || {}).some(([name, reg]) =>
+            Number(reg?.tabId) === tabId && name !== role))
+          throw new Error('DIRECT_TAB_BINDING_CHANGED');
+        const existing = fresh.registrations?.[role];
+        if (existing && (existing.directTabWorkId !== workId
+            || Number(existing.tabId) !== tabId
+            || String(existing.conversationKey || '') !== liveKey))
+          throw new Error('DIRECT_TAB_BINDING_CHANGED');
+        fresh.registrations[role] = registration;
+        return registration;
+      });
+    const result = await dispatchRelay({
+      to: role, text: body, id: operationId, source: 'BCT_DIRECT_TAB',
+      fromNode: 'BCT_MANAGER', returnToControl: false, hostRequestId: operationId
+    });
+    const submitted = result?.ok === true && result.deliveryConfirmed === true;
+    const current = await chrome.tabs.get(tabId);
+    const currentKey = RelayCore.conversationKey(current.url || '');
+    return {
+      ok: submitted, state: submitted ? 'SUBMITTED' :
+        (result?.effectState === 'NOT_APPLIED' ? 'NOT_APPLIED' : 'SUBMIT_UNKNOWN'),
+      ambiguous: !submitted && result?.effectState !== 'NOT_APPLIED',
+      operationId, instanceId, sessionId, tabId, windowId,
+      submitted, role, conversationKey: currentKey || '',
+      error: submitted ? undefined : String(result?.error || 'DIRECT_TAB_ACK_NOT_CONFIRMED')
+    };
+  });
+}
+
 async function resolveExactPendingCreatedTab(message) {
 
   await endpointSessionReady;
@@ -2485,6 +2568,12 @@ async function handleNativeCommand(message) {
 
       return;
 
+    }
+
+    if (message.command === 'send-to-tab') {
+      const outcome = await sendToExistingTab(message);
+      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
+      return;
     }
 
     if (message.command === 'send-to-created-tab') {
@@ -4160,6 +4249,8 @@ async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode 
 
   state.pending[relayId] = { to: role, tabId: reg.tabId, conversationKey: String(reg.conversationKey || ''),
 
+    ...(bootstrapAuthorized ? { bootstrapCreatedTab: true, instanceId: state.settings.instanceId,
+      sessionId: endpointSessionId, submissionState: 'INTENT_RECORDED' } : {}),
     source, fromNode: String(fromNode || ''), messageHash: String(messageHash || ''),
 
     targetBindingReceipt: String(targetBindingReceipt || ''), returnToControl: !!returnToControl,
@@ -4203,7 +4294,7 @@ async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode 
   } : null;
 
   try { ack = await sendToChatTab(reg.tabId, {
-    type: 'relay:execute', relayId, text: payloadText, exactBinding
+    type: 'relay:execute', relayId, text: payloadText, exactBinding, bootstrapCreatedTab: bootstrapAuthorized
   }); }
 
   catch (error) {
@@ -4393,7 +4484,18 @@ async function deliverResult(relayId, result, senderTabId, bindingAttestation = 
   const durable = await persistDurableResultReceipt(relayId, pending, result);
 
   const latestState = await loadState();
-
+  if (pending.bootstrapCreatedTab === true && pending.source === 'BCT_DIRECT_TAB') {
+    const role = String(pending.to || '');
+    const bound = latestState.registrations?.[role];
+    if (bound?.directTabWorkId && bound.directTabOperationId === relayId
+        && Number(bound.tabId) === Number(senderTabId)
+        && bound.bootstrapConsumedAt && pending.conversationKey) {
+      bound.conversationKey = pending.conversationKey;
+      bound.authorization = 'ACT_CONVERSATION_BIND';
+      bound.updatedAt = Date.now();
+      latestState.registrations[role] = bound;
+    }
+  }
   const completedAt = Date.now();
 
   const createdAt = Number(pending.createdAt || 0) || null;
