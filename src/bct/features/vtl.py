@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import locale
 import os
 import re
 import shutil
@@ -39,11 +40,55 @@ def _bounded(value: str) -> tuple[str, bool]:
     return value[-_MAX_OUTPUT_CHARS:], len(value) > _MAX_OUTPUT_CHARS
 
 
+def _decode_process_output(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if not value:
+        return ""
+
+    # Machine-readable VTL results travel through UTF-8 JSON files. Captured
+    # stdout/stderr are diagnostic only and may come from Windows PowerShell or
+    # a native child using either the UTF-8 system locale or a legacy code page.
+    # Decode losslessly when possible without making the host locale a runtime
+    # prerequisite. UTF-32 must be checked before UTF-16 because their BOMs
+    # share a prefix.
+    bom_encodings = (
+        (b"\xff\xfe\x00\x00", "utf-32"),
+        (b"\x00\x00\xfe\xff", "utf-32"),
+        (b"\xff\xfe", "utf-16"),
+        (b"\xfe\xff", "utf-16"),
+    )
+    for marker, encoding in bom_encodings:
+        if value.startswith(marker):
+            return value.decode(encoding, errors="replace")
+
+    candidates = ["utf-8-sig"]
+    if os.name == "nt":
+        candidates.extend(("mbcs", "oem"))
+    candidates.extend((locale.getpreferredencoding(False), "cp949"))
+    attempted: set[str] = set()
+    for encoding in candidates:
+        normalized = encoding.casefold()
+        if normalized in attempted:
+            continue
+        attempted.add(normalized)
+        try:
+            return value.decode(encoding, errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return value.decode("utf-8", errors="replace")
+
+
 def _default_runner(argv: list[str], cwd: Path, timeout_s: float) -> dict[str, Any]:
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
         subprocess, "CREATE_NEW_PROCESS_GROUP", 0
     )
     started = time.monotonic()
+    child_env = os.environ.copy()
+    child_env["PYTHONUTF8"] = "1"
+    child_env["PYTHONIOENCODING"] = "utf-8"
     try:
         process = subprocess.Popen(
             argv,
@@ -51,10 +96,8 @@ def _default_runner(argv: list[str], cwd: Path, timeout_s: float) -> dict[str, A
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             shell=False,
+            env=child_env,
             creationflags=creationflags,
         )
     except OSError as exc:
@@ -87,8 +130,8 @@ def _default_runner(argv: list[str], cwd: Path, timeout_s: float) -> dict[str, A
         stdout, stderr = process.communicate(timeout=10)
     return {
         "returncode": process.returncode,
-        "stdout": stdout,
-        "stderr": stderr,
+        "stdout": _decode_process_output(stdout),
+        "stderr": _decode_process_output(stderr),
         "timed_out": timed_out,
         "duration_ms": int((time.monotonic() - started) * 1000),
     }

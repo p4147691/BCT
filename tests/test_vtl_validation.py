@@ -6,9 +6,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from bct.core.models import Outcome, PreconditionError, Work
-from bct.features.vtl import VtlValidateFeature
+from bct.features.vtl import VtlValidateFeature, _decode_process_output, _default_runner
 
 
 def _sha(path: Path) -> str:
@@ -70,6 +71,34 @@ class VtlValidationTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_process_output_decoder_accepts_utf8_and_korean_legacy_bytes(self):
+        value = "사용자\\게임"
+        self.assertEqual(value, _decode_process_output(value.encode("utf-8")))
+        self.assertEqual(value, _decode_process_output(value.encode("cp949")))
+
+    def test_process_output_decoder_accepts_unicode_bom_streams(self):
+        value = "사용자\\게임"
+        self.assertEqual(value, _decode_process_output(value.encode("utf-16")))
+        self.assertEqual(value, _decode_process_output(value.encode("utf-32")))
+
+    @patch("bct.features.vtl.subprocess.Popen")
+    def test_default_runner_captures_bytes_and_decodes_mixed_windows_output(self, popen):
+        process = popen.return_value
+        process.communicate.return_value = (
+            "UTF-8 사용자".encode("utf-8"),
+            "CP949 게임".encode("cp949"),
+        )
+        process.returncode = 0
+
+        result = _default_runner(["powershell.exe", "-File", "test.ps1"], self.root, 5)
+
+        self.assertEqual("UTF-8 사용자", result["stdout"])
+        self.assertEqual("CP949 게임", result["stderr"])
+        self.assertIsInstance(popen.call_args.kwargs["env"], dict)
+        self.assertEqual("1", popen.call_args.kwargs["env"]["PYTHONUTF8"])
+        self.assertEqual("utf-8", popen.call_args.kwargs["env"]["PYTHONIOENCODING"])
+        self.assertNotIn("text", popen.call_args.kwargs)
 
     @staticmethod
     def _result_runner(status: str):
