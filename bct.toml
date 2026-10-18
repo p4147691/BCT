@@ -59,6 +59,7 @@ files = [
   "src/bct/core/__init__.py",
   "src/bct/core/identity.py",
   "src/bct/core/models.py",
+  "src/bct/core/project_memory.py",
   "src/bct/core/operations.py",
   "src/bct/core/orchestration.py",
   "src/bct/core/consumption.py",
