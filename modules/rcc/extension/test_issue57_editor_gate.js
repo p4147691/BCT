@@ -133,6 +133,15 @@ async function main() {
   await mustReject(g.testing.submitEditor(g.editor,options('확인',30)), 'RELAY_SEND_BUTTON_NOT_READY');
   assert.equal(g.clicks(),0,'out-of-composer send button must not click');
 
+  const outside=makeHarness();
+  outside.editor.value='정확한 입력';
+  outside.setMode('foreign-send');
+  await mustReject(outside.testing.submitEditor(outside.editor, {
+    expectedText:'정확한 입력', waitMs:30,
+    allowKeyboardFallback:true, allowDocumentFallback:true
+  }), 'RELAY_SEND_BUTTON_NOT_READY');
+  assert.equal(outside.clicks(),0,'an unrelated document button must not be clicked');
+
   const h=makeHarness();
   const paragraphEditor={
     tagName:'DIV',

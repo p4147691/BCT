@@ -857,7 +857,9 @@ function findReadySendButton(editor = null, options = {}) {
   if (form) scopes.push(form);
   const composer = editor?.closest?.('[data-testid*="composer"], [data-testid="composer"]');
   if (composer && !scopes.includes(composer)) scopes.push(composer);
-  if (options?.allowDocumentFallback !== false) scopes.push(document);
+  // A document-wide send control may belong to another composer. Only a
+  // control inside the current editor's form or composer can be activated.
+  // No global fallback is safe even for existing conversations.
 
   for (const scope of scopes) {
     for (const selector of selectors) {
