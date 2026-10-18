@@ -462,7 +462,7 @@ class ManagerDecisionConsumer:
             ("orchestration_assignments",
              "state NOT IN ('APPLIED','FAILED','NOT_APPLIED')"),
             ("orchestration_manager_wakes", "result_ack_state!='ACKED'"),
-            ("orchestration_dispatch_outbox", "state!='ACKED'"),
+            ("orchestration_dispatch_outbox", "state!='ACKNOWLEDGED'"),
         ):
             if db.execute(
                 f"SELECT 1 FROM {table} WHERE session_id=? AND {clause} LIMIT 1",

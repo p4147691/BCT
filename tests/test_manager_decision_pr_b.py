@@ -362,6 +362,42 @@ class ManagerDecisionPRBTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM events WHERE kind='ORCHESTRATION_SESSION_FINISHED'"
             ).fetchone()[0])
 
+    def test_completed_dispatch_outbox_acknowledged_allows_complete(self):
+        decision = self.consume()
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_dispatch_outbox VALUES"
+                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("finished-delivery", decision["decision_id"], 0, "session",
+                 1, "worker", "worker-att", 1, "producer", 1,
+                 "{}", "ACKNOWLEDGED", None, "ack", self.now, self.now),
+            )
+        self.assertTrue(self.consumer().mark_result_acknowledged(
+            event_id=self.event["event_id"],
+            result_hash=self.receipt()["resultHash"], now=self.now + 2))
+        with self.store.transaction() as db:
+            self.assertEqual("FINISHED", db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()[0])
+
+    def test_pending_dispatch_outbox_blocks_complete(self):
+        decision = self.consume()
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_dispatch_outbox VALUES"
+                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("pending-delivery", decision["decision_id"], 0, "session",
+                 1, "worker", "worker-att", 1, "producer", 1,
+                 "{}", "PENDING", None, None, self.now, None),
+            )
+        self.assertTrue(self.consumer().mark_result_acknowledged(
+            event_id=self.event["event_id"],
+            result_hash=self.receipt()["resultHash"], now=self.now + 2))
+        with self.store.transaction() as db:
+            self.assertEqual("ACTIVE", db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()[0])
+
     def test_concurrent_deferred_complete_recovery_exactly_once(self):
         with self.store.transaction() as db:
             db.execute(
