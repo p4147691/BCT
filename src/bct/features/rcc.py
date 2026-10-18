@@ -25,7 +25,7 @@ from bct.integrations.rcc import (
 )
 
 
-_READ_COMMANDS = {"state", "presence", "result", "result-of-create-and-send"}
+_READ_COMMANDS = {"state", "presence", "result", "result-of-create-and-send", "history-read"}
 _RECONCILE_COMMANDS = {
     "reconcile-send-to-created-tab", "reconcile-create-and-send",
     "reconcile-send",
@@ -36,6 +36,7 @@ _OPERATOR_QUARANTINE_COMMAND = "quarantine-legacy-rename-claim"
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "rename-conversation", "reload-extension", "send", "create-and-send",
+    "history-open",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
@@ -217,8 +218,39 @@ class RelayBrowserFeature:
                     "title": title,
                     "originalTimeoutS": float(arguments.get("original_timeout_s", 30.0)),
                 })
+        elif command == "history-read":
+            allowed.update({"conversation_key", "open_operation_id", "session_id",
+                            "tab_id", "window_id", "max_steps", "max_turns", "max_bytes"})
+            key = str(arguments.get("conversation_key") or "").lower()
+            open_id = str(arguments.get("open_operation_id") or "")
+            session = str(arguments.get("session_id") or "")
+            if (not re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", key)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", open_id)
+                    or not session or len(session) > 128):
+                raise PreconditionError("RCC_HISTORY_READ_IDENTITY_INVALID")
+            try:
+                steps = int(arguments.get("max_steps", 10))
+                turns = int(arguments.get("max_turns", 40))
+                bytes_ = int(arguments.get("max_bytes", 16000))
+            except (ValueError, TypeError):
+                raise PreconditionError("RCC_HISTORY_READ_BOUNDS_INVALID") from None
+            if not (1 <= steps <= 20 and 1 <= turns <= 60 and 1024 <= bytes_ <= 24000):
+                raise PreconditionError("RCC_HISTORY_READ_BOUNDS_INVALID")
+            prepared["extra"].update({
+                "conversationKey": key, "openOperationId": open_id,
+                "sessionId": session, "instanceId": instance_id,
+                "tabId": _positive_int(arguments.get("tab_id"), "RCC_HISTORY_TAB_INVALID"),
+                "windowId": _positive_int(arguments.get("window_id"), "RCC_HISTORY_WINDOW_INVALID"),
+                "maxSteps": steps, "maxTurns": turns, "maxBytes": bytes_,
+            })
         elif command in _READ_COMMANDS:
             pass
+        elif command == "history-open":
+            allowed.add("conversation_key")
+            key = str(arguments.get("conversation_key") or "").lower()
+            if not re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", key):
+                raise PreconditionError("RCC_HISTORY_OPEN_CONVERSATION_KEY_INVALID")
+            prepared["extra"]["conversationKey"] = key
         elif command in {"create-chat-window", "reload-extension"}:
             pass
         elif command == "create-and-send":
@@ -300,7 +332,11 @@ class RelayBrowserFeature:
         if unknown:
             raise PreconditionError("RCC_ARGUMENT_NOT_ALLOWED:" + ",".join(sorted(unknown)))
         resource = "rcc-instance:" + instance_id
-        if command == "rename-conversation":
+        if command == "history-open":
+            resource += ":history-open:" + prepared["extra"]["conversationKey"]
+        elif command == "history-read":
+            resource += ":history-read:" + str(prepared["extra"]["tabId"])
+        elif command == "rename-conversation":
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
                 prepared["extra"]["conversationKey"])
@@ -458,7 +494,7 @@ class RelayBrowserFeature:
             values["text"] = "bct-compose-s-" + digest
         if request.preconditions["mutating"]:
             extra["operationId"] = request.operation_id
-            if values["command"] in {"create-chat-window", "create-chat-tab"}:
+            if values["command"] in {"create-chat-window", "create-chat-tab", "history-open"}:
                 extra["instanceId"] = values["instance_id"]
         try:
             host_command = (
@@ -483,6 +519,58 @@ class RelayBrowserFeature:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
         except RelayEffectUnknown as exc:
             raise UnknownEffectError(str(exc)) from exc
+        if values["command"] == "history-open":
+            desired = extra["conversationKey"]
+            proof = (
+                result.get("ok") is True and result.get("created") is True
+                and result.get("inactive") is True
+                and result.get("state") == "HISTORY_TAB_READY"
+                and result.get("operationId") == request.operation_id
+                and result.get("instanceId") == values["instance_id"]
+                and result.get("conversationKey") == desired
+                and result.get("exactUrl") == "https://chatgpt.com/c/" + desired
+                and isinstance(result.get("sessionId"), str) and bool(result["sessionId"])
+                and isinstance(result.get("tabId"), int) and result["tabId"] > 0
+                and isinstance(result.get("windowId"), int) and result["windowId"] > 0
+            )
+            if not proof:
+                raise UnknownEffectError("RCC_HISTORY_OPEN_RECEIPT_UNVERIFIED")
+            return FeatureResult(Outcome.APPLIED, {
+                "command": "history-open", "instance_id": values["instance_id"],
+                "conversation_key": desired,
+                "open_operation_id": request.operation_id,
+                "tab_id": result["tabId"], "window_id": result["windowId"],
+                "session_id": result["sessionId"],
+                "inactive": True, "no_message_sent": True,
+            }, output={"result": _sanitize(result)})
+        if values["command"] == "history-read":
+            proof = (
+                result.get("ok") is True and result.get("state") == "HISTORY_PARTIAL"
+                and result.get("status") == "PARTIAL"
+                and result.get("coverage") == "OBSERVED_VISIBLE_TURNS"
+                and result.get("fullHistoryVerified") is False
+                and result.get("gapsVerifiable") is False
+                and result.get("instanceId") == values["instance_id"]
+                and result.get("conversationKey") == extra["conversationKey"]
+                and result.get("sessionId") == extra["sessionId"]
+                and result.get("tabId") == extra["tabId"]
+                and result.get("windowId") == extra["windowId"]
+                and result.get("openOperationId") == extra["openOperationId"]
+                and isinstance(result.get("messages"), list)
+                and len(result["messages"]) <= extra["maxTurns"]
+            )
+            if not proof:
+                raise UnknownEffectError("RCC_HISTORY_READ_RECEIPT_UNVERIFIED")
+            return FeatureResult(Outcome.APPLIED, {
+                "command": "history-read", "instance_id": values["instance_id"],
+                "conversation_key": extra["conversationKey"],
+                "open_operation_id": extra["openOperationId"],
+                "tab_id": extra["tabId"], "status": "PARTIAL",
+                "full_history_verified": False,
+                "identified": int(result.get("identified") or 0),
+                "unidentified": int(result.get("unidentified") or 0),
+                "truncated": bool(result.get("truncated")),
+            }, output={"result": _sanitize(result)})
         if values["command"] == _RENAME_INSPECTION_COMMAND:
             observed = result.get("observed") if isinstance(result.get("observed"), dict) else {}
             if not (
