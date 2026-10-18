@@ -205,6 +205,6 @@ async function main() {
   k.setCurrentEditor({tagName:'TEXTAREA',value:'different task',children:[]});
   assert.equal(await k.testing.waitForExactDraftEditor('bounded task',20),null,
     'a draft that never becomes exact must remain blocked');
-  console.log('Issue57 editor/send-arrow readiness: 12 tests PASS');
+  console.log('Issue57 editor/send-arrow readiness: 15 tests PASS');
 }
 main().catch(e=>{console.error(e); process.exitCode=1;});
