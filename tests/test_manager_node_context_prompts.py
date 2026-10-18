@@ -1,6 +1,10 @@
 """Manager and worker own the decisions; BCT only reminds and relays."""
 import json
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+from bct.features import orchestration as orchestration_module
 
 from bct.features.orchestration import OrchestrationFeature
 
@@ -47,6 +51,28 @@ class ManagerNodeContextPromptTests(unittest.TestCase):
         self.assertEqual(envelope["acceptance"], {"must_check": True})
         self.assertEqual(envelope["response_contract"]["status"],
                          ["SUCCEEDED", "FAILED", "BLOCKED"])
+
+
+    def test_notes_are_editable_without_restart(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(orchestration_module, "_RELAY_NOTES_DIR", Path(temp)):
+                self.assertIn("운영 상기", orchestration_module._relay_note("manager"))
+                note = Path(temp) / "manager-relay-note.txt"
+                note.write_text("첫 안내", encoding="utf-8")
+                self.assertEqual("첫 안내", orchestration_module._relay_note("manager"))
+                note.write_text("수정된 안내", encoding="utf-8")
+                self.assertEqual("수정된 안내", orchestration_module._relay_note("manager"))
+
+    def test_notes_reject_protocol_marker_and_oversize(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(orchestration_module, "_RELAY_NOTES_DIR", Path(temp)):
+                note = Path(temp) / "worker-relay-note.txt"
+                note.write_text("[BCT_ORCHESTRATION_RESULT_V1]", encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    orchestration_module._relay_note("worker")
+                note.write_text("x" * 5000, encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    orchestration_module._relay_note("worker")
 
 
 if __name__ == "__main__":
