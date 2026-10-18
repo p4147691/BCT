@@ -362,6 +362,42 @@ class ManagerDecisionPRBTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM events WHERE kind='ORCHESTRATION_SESSION_FINISHED'"
             ).fetchone()[0])
 
+    def test_concurrent_deferred_complete_recovery_exactly_once(self):
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_assignments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("concurrent-extra", "session", 1, "extra-concurrent", "{}",
+                 _canonical([self.root]), _canonical(["read"]), "{}",
+                 "QUEUED", 1, "{}", 1.0, 1.0),
+            )
+        relay = FakeRelay(self.receipt("COMPLETE"))
+        self.assertEqual(1, ManagerDecisionRecovery(
+            self.service, relay).run_once(now=self.now + 1)["acked"])
+        with self.store.transaction() as db:
+            db.execute("UPDATE orchestration_assignments SET state='APPLIED' "
+                       "WHERE assignment_id='concurrent-extra'")
+        results, failures = [], []
+        def attempt():
+            try:
+                results.append(self.consumer().reconcile_acked_completes(
+                    now=self.now + 5))
+            except Exception as exc:
+                failures.append(exc)
+        jobs = [threading.Thread(target=attempt) for _ in range(2)]
+        for job in jobs:
+            job.start()
+        for job in jobs:
+            job.join()
+        self.assertFalse(failures)
+        self.assertEqual([0, 1], sorted(results))
+        with self.store.transaction() as db:
+            self.assertEqual("FINISHED", db.execute(
+                "SELECT state FROM orchestration_sessions WHERE session_id='session'"
+            ).fetchone()[0])
+            self.assertEqual(1, db.execute(
+                "SELECT COUNT(*) FROM events WHERE kind='ORCHESTRATION_SESSION_FINISHED'"
+            ).fetchone()[0])
+
     def test_followup_ack_keeps_session_open(self):
         relay = FakeRelay(self.receipt("FOLLOW_UP"))
         summary = ManagerDecisionRecovery(self.service, relay).run_once(now=self.now + 1)
