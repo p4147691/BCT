@@ -17,6 +17,10 @@ This is **not** an accepted ChatGPT history loader. The new module is a bounded,
 - Stop after a bounded number of scroll samples; no-progress is a diagnostic, never proof of completeness.
 - Always return `PARTIAL` with `full_history_verified: false`.
 - Reject empty views with `NO_IDENTIFIED_TURNS`.
+- The collector samples **after every scroll including the final scroll**, and retains observed turns that disappear from a virtualized DOM.
+- It records both duplicates *inside* one DOM snapshot (`duplicatesInSamples`) and the same IDs observed again after scrolling (`reobserved`); `duplicates` is their sum. A stable ID with changed text increments `conflictingTexts` but is not treated as a new message.
+- Potentially unmarked turn candidates with `data-message-author-role` or a bare `data-testid='conversation-turn'` are counted as `unidentified`, excluding nested elements already represented by identified turns. This is **only a bounded candidate heuristic**, not exhaustive coverage of every site layout.
+- `gaps_verifiable: false` is always returned: arbitrary/virtualized IDs cannot establish a contiguous complete transcript.
 - Missing IDs, mixed virtualized DOM, and page navigation remain unresolved until real authenticated isolated ChatGPT E2E validates selectors and identity.
 - No capture is silently persisted; an approved V1 cache call must separately save source text.
 
