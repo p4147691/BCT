@@ -18,12 +18,24 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
             "background.js": "57bf4e8715a630a1db4ce703a4afec7fede8d109a3a5104918e9eedae59d896e",
-            "content.js": "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe",
+            # The historical 1.0.20 content payload remains in PROVENANCE.md.
+            # PR #168 is a separately reviewed, source-only candidate.
             "manifest.json": "ded68ea4bc4793fb25e72722b8ff1458db68e6d98f53f1990003947d3b8b551e",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
+        historical_content_sha = "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe"
+        candidate_content_sha = "af198caad82082216836442af3e51680cc3fc1e1183f4f7c9943d0e8deb21d15"
+        provenance = (self.root / "modules" / "rcc" / "PROVENANCE.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(historical_content_sha, provenance)
+        self.assertNotEqual(historical_content_sha, candidate_content_sha)
+        self.assertEqual(
+            candidate_content_sha,
+            hashlib.sha256((self.extension / "content.js").read_bytes()).hexdigest(),
+        )
         native = self.root / "modules" / "rcc" / "native-host" / "RelayNativeHostV2.cs"
         native_text = native.read_text(encoding="utf-8-sig")
         self.assertNotIn("bhlcnmbodlhbephppahojbigleklpmhj", native_text)

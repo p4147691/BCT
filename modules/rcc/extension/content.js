@@ -857,7 +857,9 @@ function findReadySendButton(editor = null, options = {}) {
   if (form) scopes.push(form);
   const composer = editor?.closest?.('[data-testid*="composer"], [data-testid="composer"]');
   if (composer && !scopes.includes(composer)) scopes.push(composer);
-  if (options?.allowDocumentFallback !== false) scopes.push(document);
+  // A document-wide send control may belong to another composer. Only a
+  // control inside the current editor's form or composer can be activated.
+  // No global fallback is safe even for existing conversations.
 
   for (const scope of scopes) {
     for (const selector of selectors) {
@@ -911,7 +913,6 @@ function waitForReadySendButton(editor = null, timeoutMs = 8000, options = {}) {
 }
 
 async function submitEditor(editor, options = {}) {
-  const allowKeyboardFallback = options?.allowKeyboardFallback !== false;
   const waitMs = Number(options?.waitMs || 8000);
   const expected = typeof options?.expectedText === 'string'
     ? RelayCore.normalizeMessageText(options.expectedText) : null;
@@ -938,28 +939,12 @@ async function submitEditor(editor, options = {}) {
   }
   if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
 
-  if (!allowKeyboardFallback) {
-    throw new Error('RELAY_SEND_BUTTON_NOT_READY');
-  }
-
-  // Existing-conversation relay keeps a bounded keyboard fallback. Provider
-  // bootstrap must disable it because synthetic Enter on ChatGPT's new-chat
-  // route can become ?prompt-textarea=... instead of sending a user turn.
-  const bindingAttestation = typeof options?.beforeSubmit === 'function'
-    ? await options.beforeSubmit() : null;
-  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
-  const activationAttestation = typeof options?.beforeActivation === 'function'
-    ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
-    : bindingAttestation;
-  editor.focus();
-  for (const type of ['keydown', 'keypress', 'keyup']) {
-    editor.dispatchEvent(new KeyboardEvent(type, {
-      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-      bubbles: true, cancelable: true
-    }));
-  }
-  return { ok: true, method: 'enter-fallback',
-    bindingAttestation: activationAttestation };
+  // Synthetic KeyboardEvent('Enter') is untrusted and does not trigger the
+  // browser's default form submit. Reporting it as submitted silently left
+  // the draft unsent in existing conversations. Only a verified enabled
+  // ChatGPT send control may activate delivery; absent that, fail before
+  // a submit-attempt or host ACK is generated. Never retry a prior UNKNOWN.
+  throw new Error('RELAY_SEND_BUTTON_NOT_READY');
 }
 
 
