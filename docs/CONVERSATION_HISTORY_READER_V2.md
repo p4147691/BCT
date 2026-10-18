@@ -48,6 +48,52 @@ To prevent shell code-page conversions from silently corrupting future title and
 
 This reduces lossy transport risk but does not establish which original upstream boundary produced the earlier literal question marks. A successful UTF-8 capture proves text integrity only for that capture.
 
+## Existing RCC reuse and minimum missing bridge
+
+BCT LIVE currently advertises 29 tools, whereas this connected Chat client exposes 22.
+The exact seven missing client tool descriptors are
+`bct_desktop_capture`, `bct_desktop_control_lease`,
+`bct_desktop_emergency_stop`, `bct_desktop_input`,
+`bct_desktop_session_status`, `bct_desktop_window_activate` and
+`bct_desktop_window_list`. These operations are implemented server-side,
+not newly invented features. Client-side connector refresh is a separate step;
+do not modify or restart LIVE Core merely to change a client tool snapshot.
+
+Existing RCC already knows `chrome.tabs.create`, exact conversation-key
+matching, `chrome.scripting.executeScript`, and semantic DOM turn selectors.
+The isolated collector now reuses the RCC selector priority
+`data-turn-key` -> `data-content-search-turn-key` -> `data-message-id`
+-> `conversation-turn-*`. A wrapper with one descendant keyed turn is
+canonicalized to that turn before deduplication. This closes the previously
+missing primary RCC identifier, but real ChatGPT DOM behavior still requires
+physical acceptance.
+
+The smallest future RCC-to-BCT integration is **not** another generic browser
+controller:
+
+1. Add an **exact target conversation open** operation restricted to
+   `https://chatgpt.com/c/<uuid>`. Create exactly one **inactive isolated**
+   ChatGPT tab; do not repurpose a registered Manager/Worker tab and do not
+   send any chat content.
+2. Return exact tab ID, instance ID, window ID and normalized conversation ID.
+   Refuse a URL/identity mismatch or a different tab/profile.
+3. Expose a bounded **history-read** request that operates only against the
+   created tab, reusing existing RCC content-script turn identity and the V2
+   collector. Sequentially sample older turns by safe upward scrolling *in
+   that isolated tab*, with explicit work/operation receipts.
+4. Return bounded message ID + text chunks (never silently truncate a full
+   transcript), duplicate/reobserved/unidentified counters, the observed
+   oldest/newest identifiers and `PARTIAL` by default. The result cannot
+   declare complete history without an independent source proving it.
+5. Preserve original result/ACK/Claim boundaries, forbid implicit send,
+   extension reload, tab repurposing and retry after an ambiguous effect.
+   Keep exact URL matching and byte-budget assertions in tests.
+
+This is a design contract, **not yet an installed RCC command**. Its isolated
+implementation needs a separately authorized authenticated browser/control
+environment to validate real loading, without CDP injection or private
+ChatGPT APIs. A static/CI pass is not physical acceptance.
+
 ## Acceptance gates
 
 Actual authenticated isolated Chrome session; explicit target conversation; recorded scroll and observed turn IDs; boundary evidence for earliest loaded message and any gaps; cross-check with actual UI; no live tab changes; CI and later exact-SHA deployment checks. None of these physical gates may be declared PASS from this unit fixture.
