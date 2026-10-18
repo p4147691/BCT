@@ -81,6 +81,36 @@ Windows API 결과와 실제 foreground가 모순되면 `UNKNOWN`으로 남기�
 
 아직 자동 로그인, 창 복원·이동·크기 변경 기능은 제공하지 않는다.
 
+## 일반 ChatGPT와 Codex가 데스크톱을 함께 사용할 때
+
+일반 ChatGPT 대화도 해당 대화에 **BCT Control 연결이 실제로 활성화되어 있고**
+`bct_capabilities`에 데스크톱 도구가 보이면 같은 VTL Desktop Session Agent를 사용할 수 있다.
+VTL 저장소나 GitHub Actions가 모든 대화에 직접 노출되는 것은 아니다. 대화 중 실제 화면을
+조회·제어하는 진입점은 BCT Control MCP이고, GitHub Actions의 VTL workflow는 exact-SHA 검증을
+남기는 별도 진입점이다.
+
+읽기 전용 `desktop_session_status`, `desktop_capture`, `desktop_window_list`는 여러 대화가
+동시에 호출해도 상태를 바꾸지 않는다. 다만 캡처 중 사용자나 다른 대화가 화면을 바꾸면 서로 다른
+시점의 화면을 볼 수 있으므로, 캡처 결과를 제어 성공의 원자적 증거로 간주하지 않는다.
+
+입력·창 활성화·프로그램 실행은 다음 공용 규칙을 지킨다.
+
+1. 대화마다 충돌하지 않는 새 work ID를 만들고, 먼저 `desktop_control_lease`의 `status`를 조회한다.
+2. 실제 효과 직전에 필요한 정확한 Session 또는 HWND fingerprint로 짧은 Lease를 획득한다.
+3. 한 로그인 세션에는 활성 Lease가 하나뿐이다. 다른 owner의 Lease가 있으면 기다리거나 사용자에게
+   점유 상태를 알리고, 빼앗기·강제 reset·새 work ID를 이용한 우회를 하지 않는다.
+4. 작업이 끝나면 같은 work와 정확한 lease ID로 즉시 반납한다. 만료만으로 다른 실행이 끝났다고
+   추정하지 않는다.
+5. `UNKNOWN` 효과는 자동 재시도하지 않는다. 화면과 operation receipt를 읽어 실제 결과를 먼저
+   화해한다.
+6. 긴급정지는 세션 전체에 적용되어 다른 대화의 Lease도 폐기한다. 실제 중지 요청이나 안전 문제가
+   있을 때만 사용하며, 제어권 획득 수단으로 사용하지 않는다.
+7. 실행 인수와 입력 텍스트는 감사 기록에 남으므로 비밀번호·토큰을 넣지 않는다.
+
+사람이 같은 데스크톱을 직접 사용하는 동안에도 기술적으로 제어할 수 있지만 포커스와 입력이 서로
+간섭할 수 있다. 이 경우 짧은 Lease, 정확한 창 fingerprint, 효과 직전 상태 재확인으로 충돌 범위를
+최소화하고, 사람이 조작 중임을 알면 입력 전에 협의한다.
+
 ## 여러 노드로 이어서 작업하기
 
 Durable orchestration은 한 BCT work 안에서 하나의 목표와 완료 조건을 저장하고, 열려 있는
