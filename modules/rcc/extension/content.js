@@ -936,6 +936,10 @@ async function submitEditor(editor, options = {}) {
     const activationAttestation = typeof options?.beforeActivation === 'function'
       ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
       : bindingAttestation;
+    // Recheck the editor, exact draft, and scoped send button after the
+    // final awaited authorization; React may rerender during that callback.
+    if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+    if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     const readyAt = Date.now();
     button.click();
     return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now(),

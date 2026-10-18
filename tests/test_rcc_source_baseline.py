@@ -26,7 +26,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
         historical_content_sha = "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe"
-        candidate_content_sha = "4b438d4e605386b6a1d567fa12f138ddaa5998a9fc2d19661e98ed8b84d498a4"
+        candidate_content_sha = "275e8faabb9f06d9794c2c54a625f3839d26719d2315b5fa06b18244e6cf7a7a"
         provenance = (self.root / "modules" / "rcc" / "PROVENANCE.md").read_text(
             encoding="utf-8"
         )

@@ -176,6 +176,25 @@ async function main() {
   }), 'RELAY_SEND_BUTTON_NOT_READY');
   assert.equal(outside.clicks(),0,'an unrelated document button must not be clicked');
 
+  // Guard asynchronous authorization against a stale React composer.
+  for (const changed of ['disabled', 'detached', 'draft', 'editor', 'voice']) {
+    const stale=makeHarness();
+    stale.editor.value='?? ??';
+    stale.setMode('send');
+    const original=stale.button;
+    await mustReject(stale.testing.submitEditor(stale.editor, {
+      expectedText:'?? ??', waitMs:80, allowDocumentFallback:false,
+      beforeActivation:async () => {
+        if (changed==='disabled') stale.setDisabled(true);
+        if (changed==='detached') original.isConnected=false;
+        if (changed==='draft') stale.editor.value='??';
+        if (changed==='editor') stale.setCurrentEditor({tagName:'TEXTAREA',value:'?? ??',children:[]});
+        if (changed==='voice') stale.setMode('voice');
+      }
+    }),changed==='draft'||changed==='editor'?'RELAY_EDITOR_TEXT_MISMATCH':'RELAY_SEND_BUTTON_CHANGED');
+    assert.equal(stale.clicks(),0,'pre-activation '+changed+' must never click');
+  }
+
   const h=makeHarness();
   const paragraphEditor={
     tagName:'DIV',
