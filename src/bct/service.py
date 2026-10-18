@@ -30,7 +30,8 @@ from .features.process_session import ProcessSessionFeature
 from .features.monitor import MonitorFeature
 from .features.orchestration import OrchestrationFeature
 from .features.desktop_session import (
-    DesktopCaptureFeature, DesktopSessionStatusFeature, desktop_session_client,
+    DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
+    DesktopSessionStatusFeature, desktop_session_client,
 )
 from .integrations.github import GhCliClient, GitHubClient
 from .integrations.rcc import NamedPipeRelayClient
@@ -109,6 +110,8 @@ class BCT:
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),
             DesktopCaptureFeature(desktop_session),
+            DesktopControlLeaseFeature(desktop_session),
+            DesktopEmergencyStopFeature(desktop_session),
         ):
             self.operations.register(feature)
         self.operations.register(VerificationFeature(self.operations._features, self.store))

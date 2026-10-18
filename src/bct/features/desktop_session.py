@@ -138,3 +138,164 @@ class DesktopCaptureFeature:
             "capture": capture,
         }
         return FeatureResult(Outcome.APPLIED, evidence, output=result)
+
+
+def _control_result(result: dict[str, Any]) -> FeatureResult:
+    control = result.get("control") if isinstance(result.get("control"), dict) else {}
+    evidence = {
+        **_session_evidence(result),
+        "control": control,
+    }
+    return FeatureResult(Outcome.APPLIED, evidence, output=result)
+
+
+class DesktopControlLeaseFeature:
+    capability = "desktop_control_lease"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {
+            "operation", "ttl_seconds", "target_type", "hwnd", "lease_id",
+            "expected_stop_generation",
+        }
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError("DESKTOP_CONTROL_LEASE_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_CONTROL_OWNER_INVALID")
+        operation = str(arguments.get("operation") or "status").strip().casefold()
+        if operation not in {"status", "acquire", "renew", "release", "reset_emergency"}:
+            raise PreconditionError("DESKTOP_CONTROL_LEASE_OPERATION_INVALID")
+        normalized: dict[str, Any] = {"operation": operation, "owner_id": owner_id}
+        target = "interactive-session"
+        if operation == "acquire":
+            target_type = str(arguments.get("target_type") or "session").strip().casefold()
+            hwnd = str(arguments.get("hwnd") or "").strip()
+            if target_type not in {"session", "window"}:
+                raise PreconditionError("DESKTOP_CONTROL_TARGET_INVALID")
+            if target_type == "window" and not re.fullmatch(r"[1-9][0-9]{0,18}", hwnd):
+                raise PreconditionError("DESKTOP_CONTROL_HWND_INVALID")
+            if target_type == "session" and hwnd:
+                raise PreconditionError("DESKTOP_CONTROL_TARGET_INVALID")
+            normalized.update({
+                "ttl_seconds": self._ttl(arguments), "target_type": target_type,
+                "hwnd": hwnd if target_type == "window" else "",
+            })
+            target = target_type + ":" + (hwnd if hwnd else "current")
+        elif operation == "renew":
+            normalized.update({
+                "lease_id": self._lease_id(arguments),
+                "ttl_seconds": self._ttl(arguments),
+            })
+        elif operation == "release":
+            normalized["lease_id"] = self._lease_id(arguments)
+        elif operation == "reset_emergency":
+            try:
+                generation = int(arguments.get("expected_stop_generation"))
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PreconditionError("DESKTOP_EMERGENCY_GENERATION_INVALID") from exc
+            if generation <= 0:
+                raise PreconditionError("DESKTOP_EMERGENCY_GENERATION_INVALID")
+            normalized["expected_stop_generation"] = generation
+        resources = (
+            ("desktop-control:observe",) if operation == "status"
+            else ("desktop-control:interactive-session",)
+        )
+        return FeatureRequest(self.capability, operation + ":" + target, normalized, resources)
+
+    @staticmethod
+    def _ttl(arguments: dict[str, Any]) -> int:
+        try:
+            value = int(arguments.get("ttl_seconds", 30))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PreconditionError("DESKTOP_CONTROL_TTL_INVALID") from exc
+        if not 2 <= value <= 120:
+            raise PreconditionError("DESKTOP_CONTROL_TTL_INVALID")
+        return value
+
+    @staticmethod
+    def _lease_id(arguments: dict[str, Any]) -> str:
+        value = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", value):
+            raise PreconditionError("DESKTOP_CONTROL_LEASE_ID_INVALID")
+        return value
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        operation = request.arguments["operation"]
+        command = {
+            "status": "control_status", "acquire": "lease_acquire",
+            "renew": "lease_renew", "release": "lease_release",
+            "reset_emergency": "emergency_reset",
+        }[operation]
+        arguments: dict[str, Any] = {}
+        if operation == "acquire":
+            arguments = {
+                "ownerId": request.arguments["owner_id"],
+                "ttlSeconds": request.arguments["ttl_seconds"],
+                "targetType": request.arguments["target_type"],
+                "hwnd": request.arguments["hwnd"],
+            }
+        elif operation == "renew":
+            arguments = {
+                "ownerId": request.arguments["owner_id"],
+                "leaseId": request.arguments["lease_id"],
+                "ttlSeconds": request.arguments["ttl_seconds"],
+            }
+        elif operation == "release":
+            arguments = {
+                "ownerId": request.arguments["owner_id"],
+                "leaseId": request.arguments["lease_id"],
+            }
+        elif operation == "reset_emergency":
+            arguments = {"expectedStopGeneration": request.arguments["expected_stop_generation"]}
+        try:
+            result = self.client.control(
+                request_id=request.operation_id, command=command, arguments=arguments,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            if operation == "status":
+                raise ConfirmedFailure(str(exc), release_claims=True) from exc
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        return _control_result(result)
+
+
+class DesktopEmergencyStopFeature:
+    capability = "desktop_emergency_stop"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        unknown = set(arguments) - {"reason"}
+        if unknown:
+            raise PreconditionError("DESKTOP_EMERGENCY_STOP_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        reason = str(arguments.get("reason") or "operator-request").strip()
+        if not reason or len(reason) > 200:
+            raise PreconditionError("DESKTOP_EMERGENCY_STOP_REASON_INVALID")
+        # Deliberately separate from the normal control resource: an emergency stop
+        # must remain dispatchable even while a control operation is unresolved.
+        return FeatureRequest(
+            self.capability, "interactive-session", {"reason": reason},
+            ("desktop-emergency-stop:interactive-session",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.control(
+                request_id=request.operation_id, command="emergency_stop",
+                arguments={"reason": request.arguments["reason"]},
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        return _control_result(result)

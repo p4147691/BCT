@@ -110,7 +110,10 @@ class DesktopSessionClient:
                 arguments: dict[str, Any] | None = None, timeout_s: float = 20.0) -> dict[str, Any]:
         if not _REQUEST.fullmatch(request_id):
             raise ValueError("DESKTOP_SESSION_REQUEST_ID_INVALID")
-        if command not in {"status", "capture"}:
+        if command not in {
+            "status", "capture", "control_status", "lease_acquire", "lease_renew",
+            "lease_release", "emergency_stop", "emergency_reset",
+        }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
         payload: dict[str, Any] = {"requestId": request_id, "command": command}
@@ -192,4 +195,25 @@ class DesktopSessionClient:
         actual_sha = hashlib.sha256(path.read_bytes()).hexdigest()
         if not re.fullmatch(r"[0-9a-f]{64}", expected_sha) or actual_sha != expected_sha:
             raise DesktopSessionEffectUnknown("DESKTOP_SESSION_CAPTURE_HASH_MISMATCH")
+        return result
+
+    def control(self, *, request_id: str, command: str,
+                arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        if command not in {
+            "control_status", "lease_acquire", "lease_renew", "lease_release",
+            "emergency_stop", "emergency_reset",
+        }:
+            raise ValueError("DESKTOP_CONTROL_COMMAND_INVALID")
+        result = self.request(
+            request_id=request_id, command=command, arguments=arguments, timeout_s=10.0,
+        )
+        control = result.get("control")
+        if not isinstance(control, dict):
+            raise DesktopSessionEffectUnknown("DESKTOP_CONTROL_STATE_MISSING")
+        emergency = control.get("emergencyStop")
+        if not isinstance(emergency, dict) or not isinstance(emergency.get("active"), bool):
+            raise DesktopSessionEffectUnknown("DESKTOP_CONTROL_STATE_INVALID")
+        lease = control.get("lease")
+        if lease is not None and not isinstance(lease, dict):
+            raise DesktopSessionEffectUnknown("DESKTOP_CONTROL_STATE_INVALID")
         return result

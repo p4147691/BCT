@@ -20,6 +20,8 @@ normal_actions = [
   "orchestrate",
   "desktop_session_status",
   "desktop_capture",
+  "desktop_control_lease",
+  "desktop_emergency_stop",
 ]
 approval_actions = ["delete", "credential_change"]
 
