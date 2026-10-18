@@ -26,6 +26,7 @@ normal_actions = [
   "desktop_window_list",
   "desktop_window_activate",
   "desktop_program_launch",
+  "vtl_validate",
 ]
 approval_actions = ["delete", "credential_change"]
 
@@ -43,6 +44,10 @@ state_root = "D:\\BCT\\data\\process-sessions"
 [desktop_session]
 state_root = "D:\\BCT\\runtime\\desktop-session"
 evidence_root = "D:\\BCT\\data\\desktop-session\\evidence"
+
+[vtl]
+current_pointer = "D:\\TOOLS\\VTL\\current.json"
+evidence_root = "D:\\BCT\\data\\vtl-evidence"
 
 
 [monitor]
@@ -96,6 +101,7 @@ files = [
   "src/bct/features/tests.py",
   "src/bct/features/verification.py",
   "src/bct/features/desktop_session.py",
+  "src/bct/features/vtl.py",
   "src/bct/integrations/__init__.py",
   "src/bct/integrations/github.py",
   "src/bct/integrations/rcc.py",

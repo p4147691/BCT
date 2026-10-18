@@ -58,6 +58,7 @@ class MCPIntegrationTests(unittest.TestCase):
             "desktop_session_status", "desktop_capture",
             "desktop_control_lease", "desktop_emergency_stop", "desktop_input",
             "desktop_window_list", "desktop_window_activate", "desktop_program_launch",
+            "vtl_validate",
         ]
         self.port = free_port()
         (self.release / "bct.toml").write_text(
@@ -123,6 +124,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_desktop_input",
                         "bct_desktop_window_list", "bct_desktop_window_activate",
                         "bct_desktop_program_launch",
+                        "bct_vtl_validate",
                     }
                     self.assertEqual(
                         expected_capability_tools | {
