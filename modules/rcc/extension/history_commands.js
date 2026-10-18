@@ -36,6 +36,11 @@
     const instanceId = String(message.instanceId || "");
     const fingerprint = JSON.stringify([instanceId, conversationKey, "HISTORY_ONLY"]);
     return deps.runIdempotentOperation(op, "history-open", fingerprint, async () => {
+      const state = await deps.loadState();
+      const sessionId = deps.endpointSessionId();
+      if (String(state.settings.instanceId || "") !== instanceId || !sessionId) {
+        throw new Error("HISTORY_OPEN_INSTANCE_MISMATCH");
+      }
       const stored = (await deps.chrome.storage.local.get(STORAGE))[STORAGE] || {};
       if (Object.keys(stored).length >= 16) throw new Error("HISTORY_TAB_LIMIT");
       // The only window effect is creation of one inactive exact-target tab.
@@ -47,17 +52,13 @@
       if (!sameConversation(tab.url, conversationKey) || tab.active) {
         throw new Error("HISTORY_OPEN_IDENTITY_UNVERIFIED");
       }
-      const state = await deps.loadState();
       const receipt = {
-        instanceId: String(state.settings.instanceId || ""),
-        sessionId: deps.endpointSessionId(),
+        instanceId,
+        sessionId,
         conversationKey, operationId: op,
         tabId: positive(tab.id, "HISTORY_TAB_INVALID"),
         windowId: positive(tab.windowId, "HISTORY_WINDOW_INVALID")
       };
-      if (receipt.instanceId !== instanceId || !receipt.sessionId) {
-        throw new Error("HISTORY_OPEN_INSTANCE_MISMATCH");
-      }
       await deps.chrome.storage.local.set({[STORAGE]: {...stored, [op]: receipt}});
       return {
         ok: true, state: "HISTORY_TAB_READY", created: true,
