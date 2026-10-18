@@ -2,9 +2,12 @@
 (function (root) {
   "use strict";
   const ID_SELECTOR = "[data-message-id], [data-testid^='conversation-turn-']";
+  const ANONYMOUS_SELECTOR = "[data-message-author-role], [data-testid='conversation-turn']";
   function identify(el) {
-    const raw = el.getAttribute("data-message-id") || el.getAttribute("data-testid") || "";
-    return raw.trim();
+    const explicit = el.getAttribute("data-message-id");
+    if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+    const testid = el.getAttribute("data-testid");
+    return typeof testid === "string" && /^conversation-turn-.+/.test(testid) ? testid.trim() : "";
   }
   function conversationId(url) {
     try {
@@ -24,6 +27,14 @@
       if (seen.has(id)) { duplicates++; continue; }
       seen.set(id, { id, text });
     }
+    // Candidate messages without a reliable turn ID cannot be treated as captured.
+    // Exclude nested author nodes already covered by an identified ancestor/child.
+    for (const el of doc.querySelectorAll(ANONYMOUS_SELECTOR)) {
+      if (identify(el)) continue;
+      if (typeof el.closest === "function" && el.closest(ID_SELECTOR)) continue;
+      if (typeof el.querySelector === "function" && el.querySelector(ID_SELECTOR)) continue;
+      unidentified++;
+    }
     return { messages: [...seen.values()], duplicates, unidentified };
   }
   function scrollContainer(first, doc) {
@@ -38,49 +49,59 @@
     const maxSteps = Math.min(Math.max(config.maxSteps || 15, 1), 40);
     const settle = config.settle || (async () => {});
     const collected = new Map();
-    let duplicateObservations = 0, unidentified = 0, stagnant = 0, steps = 0;
+    let duplicatesInSamples = 0, reobserved = 0, conflictingTexts = 0;
+    let unidentified = 0, stagnant = 0, steps = 0;
     const expected = config.expectedConversationUrl ? conversationId(config.expectedConversationUrl) : null;
-    if (config.expectedConversationUrl && !expected) {
-      return { status: "PARTIAL", reason: "EXPECTED_IDENTITY_INVALID", steps, messages: [], duplicates: 0, unidentified: 0, full_history_verified: false };
-    }
+    const result = (reason) => ({
+      status: "PARTIAL", reason, coverage: "OBSERVED_VISIBLE_TURNS",
+      full_history_verified: false, steps, messages: [...collected.values()],
+      duplicates: duplicatesInSamples + reobserved, duplicatesInSamples,
+      reobserved, conflictingTexts, unidentified,
+      gaps_verifiable: false,
+      note: "Observed turn IDs cannot prove that every older or virtualized turn loaded."
+    });
+    if (config.expectedConversationUrl && !expected) return result("EXPECTED_IDENTITY_INVALID");
     const currentIdentity = () => doc.location?.href ? conversationId(doc.location.href) : null;
-    if (expected && currentIdentity() !== expected) {
-      return { status: "PARTIAL", reason: "CONVERSATION_ID_MISMATCH", steps, messages: [], duplicates: 0, unidentified: 0, full_history_verified: false };
-    }
+    if (expected && currentIdentity() !== expected) return result("CONVERSATION_ID_MISMATCH");
     const first = doc.querySelector(ID_SELECTOR);
-    if (!first) return { status: "PARTIAL", reason: "NO_IDENTIFIED_TURNS", steps, messages: [], duplicates: 0, unidentified: 0 };
-    const container = scrollContainer(first, doc);
-    let reason = "STEP_LIMIT";
-    for (let step = 0; step < maxSteps; step++) {
-      if (expected && currentIdentity() !== expected) { reason = "CONVERSATION_ID_CHANGED"; break; }
+    const observe = () => {
       const sample = scan(doc);
-      steps++;
-      duplicateObservations += sample.duplicates;
+      duplicatesInSamples += sample.duplicates;
       unidentified += sample.unidentified;
       let added = 0;
       for (const row of sample.messages) {
-        if (!collected.has(row.id)) { collected.set(row.id, row); added++; }
+        if (collected.has(row.id)) {
+          reobserved++;
+          if (collected.get(row.id).text !== row.text) conflictingTexts++;
+        } else {
+          collected.set(row.id, row);
+          added++;
+        }
       }
+      return added;
+    };
+    if (!first) {
+      observe();
+      return result("NO_IDENTIFIED_TURNS");
+    }
+    const container = scrollContainer(first, doc);
+    observe(); // Initial screen. Scroll-triggered screens are observed separately.
+    let reason = "STEP_LIMIT";
+    for (let step = 0; step < maxSteps; step++) {
+      if (expected && currentIdentity() !== expected) { reason = "CONVERSATION_ID_CHANGED"; break; }
       const wasAtTop = container.scrollTop <= 0;
       const oldHeight = container.scrollHeight;
       container.scrollTop = Math.max(0, container.scrollTop - Math.max(container.clientHeight, 320));
       await settle();
       if (expected && currentIdentity() !== expected) { reason = "CONVERSATION_ID_CHANGED"; break; }
-      if (!added && wasAtTop && container.scrollHeight === oldHeight) stagnant++;
+      steps++;
+      const added = observe(); // Including the FINAL scroll; no dropped last page.
+      const stillAtTop = container.scrollTop <= 0;
+      if (added === 0 && wasAtTop && stillAtTop && oldHeight === container.scrollHeight) stagnant++;
       else stagnant = 0;
       if (stagnant >= 3) { reason = "NO_MORE_VISIBLE_PROGRESS"; break; }
     }
-    return {
-      status: "PARTIAL",
-      reason,
-      coverage: "OBSERVED_VISIBLE_TURNS",
-      full_history_verified: false,
-      steps,
-      messages: [...collected.values()],
-      duplicates: duplicateObservations,
-      unidentified,
-      note: "Scroll exhaustion cannot prove the server returned the entire conversation."
-    };
+    return result(reason);
   }
   const api = { scan, loadOlder, conversationId };
   if (typeof module === "object" && module.exports) module.exports = api;
