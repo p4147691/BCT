@@ -11,8 +11,8 @@ VTL browser/GUI scenario, Full/VM E2E 순으로 가장 싼 충분한 tier를 선
 검증하고, work scope 안의 browser 또는 profile scenario를 background operation으로 직접 실행한다.
 VTL SHA, 입력 SHA, PASS/FAIL/TIMEOUT, 외부 evidence/result 경로가 BCT receipt에 남으며 GitHub
 Actions를 dispatch하지 않는다. VTL runtime installer와 외부 evidence/run-ID 계약은 VTL 저장소가
-소유한다. 현재 소스·focused MCP 검증은 통과했지만 두 저장소 PR/CI, runtime 설치, BCT exact-main
-배포와 hosted BCT Control E2E 전까지 LIVE 완료로 표시하지 않는다. 상세는
+소유한다. VTL PR #18/merged-main 검증, exact runtime 설치와 직접 Fast smoke, BCT 로컬 757개 전체
+회귀는 통과했다. BCT PR/CI, exact-main 배포와 hosted BCT Control E2E 전까지 LIVE 완료로 표시하지 않는다. 상세는
 `docs/exec-plans/active/BCT_VTL_DIRECT_VALIDATION_20261019.md`를 따른다.
 
 ## 완료 — 일반 ChatGPT/Codex의 VTL Desktop Session 공동 사용 계약

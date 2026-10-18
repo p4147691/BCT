@@ -1,6 +1,6 @@
 # BCT direct VTL validation — 2026-10-19
 
-Status: `IMPLEMENTED / LOCAL_FOCUSED_PASS / PR_AND_LIVE_PENDING`
+Status: `IMPLEMENTED / LOCAL_FULL_PASS / PR_AND_LIVE_PENDING`
 
 ## Goal
 
@@ -36,3 +36,16 @@ loop. GitHub required checks remain the final independent candidate check.
    direct smoke through authenticated BCT MCP and retrieve its final receipt.
 6. Confirm no GitHub VTL workflow was created for the live direct smoke and
    preserve GitHub CI only as the repositories' final merge check.
+
+## Current evidence
+
+- VTL PR #18 merged as `2480d2bd70a420c5300071ad51a541a13407b99b` after both
+  exact-head validation runs passed. Merged-main validation, interactive runner
+  Sandbox smoke and immutable runtime sync all passed.
+- `D:\TOOLS\VTL\current.json` points to that exact merged SHA; its manifest
+  hash matches and the release entrypoint exists.
+- A direct non-Actions browser Fast smoke used the installed release, prepared
+  dependencies once, and returned PASS with result evidence under
+  `D:\BCT\data\vtl-evidence\direct-pre-bct-2480d2bd`.
+- BCT focused feature/MCP/deployment/layout/CI tests passed. The complete local
+  regression passed 757/757 in 347.814 seconds; compile and diff checks passed.
