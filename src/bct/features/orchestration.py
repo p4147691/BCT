@@ -5,7 +5,11 @@ import json
 import math
 import re
 import time
+from pathlib import Path
 from typing import Any
+
+from bct.core.project_memory import ProjectMemoryError
+from bct.core.project_memory_context import contexts_for_session, ProjectContextError
 
 from bct.core.models import (
     ConfirmedFailure, ConflictError,
@@ -87,10 +91,13 @@ class OrchestrationFeature:
     capability = "orchestrate"
 
     def __init__(
-        self, service: OrchestrationService, client: RelayClient | None = None
+        self, service: OrchestrationService, client: RelayClient | None = None,
+        *, project_memory_root: str | Path | None = None,
     ):
         self.service = service
         self.client = client or NamedPipeRelayClient()
+        self.project_memory_root = (Path(project_memory_root).absolute()
+                                    if project_memory_root is not None else None)
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "").strip().casefold()
@@ -2244,6 +2251,34 @@ class OrchestrationFeature:
                 )
             except (KeyError, ConflictError) as exc:
                 raise PreconditionError(str(exc)) from exc
+            # Manager Wake V1/V2 already requests status before deciding.
+            # Present the Manager's prior project memory as bounded, untrusted
+            # read-only context here; do NOT change Wake/Decision/RCC formats.
+            if self.project_memory_root is not None:
+                try:
+                    contexts = contexts_for_session(
+                        root=self.project_memory_root,
+                        sqlite_path=self.service.store.path,
+                        session_id=str(values["session_id"]),
+                        work_id=work.work_id,
+                    )
+                    if any(c["session"]["manager_epoch"] != snapshot["session"]["manager_epoch"]
+                           or c["session"]["manager_node_id"] != snapshot["session"]["manager_node_id"]
+                           for c in contexts):
+                        snapshot["project_memory"] = {
+                            "status": "UNVERIFIED", "code": "PROJECT_CONTEXT_MANAGER_CHANGED",
+                        }
+                    elif contexts:
+                        snapshot["project_memory"] = {
+                            "status": "READ_ONLY", "contexts": contexts,
+                            "source_authority": "BCT original records, not ledger narrative",
+                        }
+                except (ProjectContextError, ProjectMemoryError, OSError, UnicodeError):
+                    # Context corruption must not block an operational status
+                    # receipt, but must never be interpreted as complete.
+                    snapshot["project_memory"] = {
+                        "status": "UNVERIFIED", "code": "PROJECT_CONTEXT_UNAVAILABLE",
+                    }
             return FeatureResult(
                 Outcome.APPLIED,
                 {"operation": operation, "session_id": values["session_id"],
