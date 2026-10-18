@@ -2467,6 +2467,22 @@ async function handleNativeCommand(message) {
 
     }
 
+    // Exact-target history is separate from worker relay and sends no messages.
+    if (message.command === 'history-open') {
+      const outcome = await globalThis.RccHistoryCommands.open(message, {
+        chrome, runIdempotentOperation, waitForConversationReady, loadState,
+        endpointSessionId: () => endpointSessionId
+      });
+      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
+      return;
+    }
+
+    if (message.command === 'history-read') {
+      const snapshot = await globalThis.RccHistoryCommands.read(message, {chrome});
+      postNative({ type: 'host:result', requestId, ...snapshot });
+      return;
+    }
+
     if (message.command === 'create-chat-tab') {
 
       const outcome = await createChatTab(message);

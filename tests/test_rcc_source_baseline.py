@@ -17,11 +17,15 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_release_payload_hashes_match_recorded_baseline(self):
         expected = {
-            "background.js": "57bf4e8715a630a1db4ce703a4afec7fede8d109a3a5104918e9eedae59d896e",
+            # V2 isolated history command bridge candidate. The immutable pre-V2
+            # background source digest is preserved below for provenance.
+            "background.js": "f7173cedf62d1094979be77cdc1e9a290c66c9249dd6cd4370841a00a6d6c558",
             "content.js": "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe",
             "manifest.json": "ded68ea4bc4793fb25e72722b8ff1458db68e6d98f53f1990003947d3b8b551e",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
+        previous_accepted_background = "57bf4e8715a630a1db4ce703a4afec7fede8d109a3a5104918e9eedae59d896e"
+        self.assertNotEqual(expected["background.js"], previous_accepted_background)
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
         native = self.root / "modules" / "rcc" / "native-host" / "RelayNativeHostV2.cs"
