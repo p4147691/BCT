@@ -16,6 +16,8 @@ Codex는 BCT work와 operation을 만들고 읽기, 수정, 실행, 테스트, c
 - Python, PowerShell, 일반 프로그램 실행
 - 장시간 Python/PowerShell/프로그램 세션 시작과 상태 확인
 - Monitor 상태 확인
+- 현재 로그인 사용자 세션 상태와 모니터 구성을 확인
+- 현재 가상 화면, 한 모니터 또는 정확한 HWND를 읽기 전용으로 캡처
 - 기존 operation 결과와 GitHub PR 상태 조회
 
 폴더 내용은 파일 읽기와 구분해 `bct_read`의 `operation: "directory_tree"`로 조회한다.
@@ -34,6 +36,16 @@ Codex는 BCT work와 operation을 만들고 읽기, 수정, 실행, 테스트, c
 UNKNOWN 처리와 정확한 SHA 확인은 각각의 안전 경계를 유지한다.
 
 이 실행들도 BCT receipt, 정확한 작업 루트, PID/fingerprint, timeout과 중복 방지 기록을 남긴다.
+
+데스크톱 조회는 먼저 `desktop_session_status` action의 work를 만들고
+`bct_desktop_session_status`를 호출한다. 화면 캡처는 같은 work에 `desktop_capture`를
+포함하고 `bct_desktop_capture`에서 `target_type`을 `virtual_screen`, `monitor`, `window`
+중 하나로 선택한다. MCP 캡처 응답에는 해시가 검증된 PNG 이미지 블록이 포함된다.
+
+이 첫 구현은 현재 로그인되어 있고 잠기지 않은 사용자 세션에서 수동 실행한 VTL Desktop
+Session Agent를 필요로 한다. Agent가 없거나 다른 세션이거나 Pipe 소유자/DACL이 일치하지
+않으면 요청은 화면을 추측하지 않고 실패한다. 아직 자동 로그인, Scheduled Task, 입력 또는
+창 변경 기능은 제공하지 않는다.
 
 ## 여러 노드로 이어서 작업하기
 
