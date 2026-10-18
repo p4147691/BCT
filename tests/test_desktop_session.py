@@ -8,7 +8,8 @@ from pathlib import Path
 from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
-    DesktopInputFeature, DesktopSessionStatusFeature, DesktopWindowActivateFeature,
+    DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
+    DesktopWindowActivateFeature,
     DesktopWindowListFeature,
 )
 from bct.integrations.desktop_session import (
@@ -25,6 +26,7 @@ class FakeDesktopSessionClient:
         self.control_calls = []
         self.input_calls = []
         self.window_calls = []
+        self.launch_calls = []
 
     @staticmethod
     def _base(command: str):
@@ -116,18 +118,43 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def launch(self, *, request_id: str, **arguments):
+        self.launch_calls.append((request_id, arguments))
+        value = self._base("program_launch")
+        value["requestId"] = request_id
+        value["programLaunch"] = {
+            "leaseId": arguments["lease_id"],
+            "executable": arguments["executable"],
+            "arguments": arguments["arguments"],
+            "workingDirectory": arguments["working_directory"],
+            "pid": 456,
+            "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
+            "sessionId": 1,
+            "startedAtUtc": "2026-10-19T00:00:00.0000000Z",
+            "bindingState": "WINDOW_BOUND",
+            "windowTarget": {
+                "type": "window", "hwnd": "23456", "pid": 456,
+                "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
+                "sessionId": 1, "virtualDesktopId": "b" * 36,
+            },
+        }
+        return value
+
 
 class DesktopSessionFeatureTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.client = FakeDesktopSessionClient(self.root)
+        self.program = self.root / "프로그램 probe.exe"
+        self.program.write_bytes(b"MZ test fixture")
         self.work = Work("desktop", "observe desktop", (str(self.root),),
                          frozenset({
                              "desktop_session_status", "desktop_capture",
                              "desktop_control_lease", "desktop_emergency_stop",
                              "desktop_input",
                              "desktop_window_list", "desktop_window_activate",
+                             "desktop_program_launch",
                          }), "owner")
 
     def tearDown(self):
@@ -319,6 +346,62 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         from bct.core.models import ConfirmedFailure
         with self.assertRaises(ConfirmedFailure):
             DesktopWindowActivateFeature(RejectingClient(self.root)).execute(request)
+
+    def test_program_launch_preserves_argument_array_and_returns_exact_binding(self):
+        feature = DesktopProgramLaunchFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "lease_id": "b" * 32,
+            "executable": str(self.program),
+            "arguments": ["--title", "한글 창", "space value"],
+            "working_directory": str(self.root),
+            "window_timeout_ms": 5000,
+        })
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        self.assertEqual(["--title", "한글 창", "space value"], request.arguments["arguments"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "program-launch-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("WINDOW_BOUND", result.evidence["program_launch"]["bindingState"])
+        self.assertEqual(456, result.evidence["program_launch"]["windowTarget"]["pid"])
+
+    def test_program_launch_rejects_shell_paths_and_unbounded_arguments(self):
+        feature = DesktopProgramLaunchFeature(self.client)
+        valid = {
+            "lease_id": "b" * 32, "executable": str(self.program),
+            "arguments": [], "working_directory": str(self.root),
+        }
+        invalid = (
+            {**valid, "executable": "cmd.exe"},
+            {**valid, "executable": str(self.root / "missing.exe")},
+            {**valid, "arguments": "--not-an-array"},
+            {**valid, "arguments": ["x"] * 33},
+            {**valid, "window_timeout_ms": 99},
+        )
+        for arguments in invalid:
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_program_launch_unknown_and_terminal_failure_are_distinct(self):
+        request = DesktopProgramLaunchFeature(self.client).prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "executable": str(self.program),
+            "arguments": [], "working_directory": str(self.root),
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "program-launch-fail"})
+
+        class UnknownClient(FakeDesktopSessionClient):
+            def launch(self, **_arguments):
+                raise DesktopSessionEffectUnknown("DESKTOP_SESSION_TRANSPORT_UNKNOWN")
+
+        with self.assertRaises(UnknownEffectError):
+            DesktopProgramLaunchFeature(UnknownClient(self.root)).execute(request)
+
+        class RejectingClient(FakeDesktopSessionClient):
+            def launch(self, **_arguments):
+                raise DesktopSessionRequestFailed("PROGRAM_SESSION_LEASE_REQUIRED")
+
+        from bct.core.models import ConfirmedFailure
+        with self.assertRaises(ConfirmedFailure):
+            DesktopProgramLaunchFeature(RejectingClient(self.root)).execute(request)
 
 
 if __name__ == "__main__":

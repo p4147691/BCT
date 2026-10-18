@@ -114,7 +114,7 @@ class DesktopSessionClient:
             "status", "capture", "control_status", "lease_acquire", "lease_renew",
             "lease_release", "emergency_stop", "emergency_reset",
             "input_mouse_move", "input_mouse_click", "input_key", "input_text",
-            "windows_list", "window_activate",
+            "windows_list", "window_activate", "program_launch",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -287,4 +287,54 @@ class DesktopSessionClient:
             or not isinstance(action.get("alreadyForeground"), bool)
         ):
             raise DesktopSessionEffectUnknown("DESKTOP_WINDOW_ACTION_INVALID")
+        return result
+
+    def launch(self, *, request_id: str, owner_id: str, lease_id: str,
+               executable: str, arguments: list[str], working_directory: str,
+               window_timeout_ms: int) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="program_launch",
+            arguments={
+                "ownerId": owner_id, "leaseId": lease_id,
+                "executable": executable, "arguments": arguments,
+                "workingDirectory": working_directory,
+                "windowTimeoutMs": window_timeout_ms,
+            },
+            timeout_s=max(10.0, window_timeout_ms / 1000.0 + 5.0),
+        )
+        launch = result.get("programLaunch")
+        states = {
+            "WINDOW_BOUND", "WINDOW_NOT_OBSERVED", "PROCESS_EXITED_NO_WINDOW",
+            "LEASE_REVOKED", "EMERGENCY_STOPPED",
+        }
+        if (
+            not isinstance(launch, dict)
+            or launch.get("leaseId") != lease_id
+            or isinstance(launch.get("pid"), bool)
+            or not isinstance(launch.get("pid"), int)
+            or launch["pid"] <= 0
+            or not isinstance(launch.get("processStartTimeUtc"), str)
+            or isinstance(launch.get("sessionId"), bool)
+            or not isinstance(launch.get("sessionId"), int)
+            or launch["sessionId"] != int(result["session"]["sessionId"])
+            or not isinstance(launch.get("startedAtUtc"), str)
+            or launch.get("bindingState") not in states
+            or launch.get("executable") != executable
+            or launch.get("arguments") != arguments
+            or launch.get("workingDirectory") != working_directory
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_PROGRAM_LAUNCH_EVIDENCE_INVALID")
+        target = launch.get("windowTarget")
+        if launch["bindingState"] == "WINDOW_BOUND":
+            if (
+                not isinstance(target, dict)
+                or target.get("type") != "window"
+                or target.get("pid") != launch["pid"]
+                or target.get("sessionId") != launch["sessionId"]
+                or not re.fullmatch(r"[1-9][0-9]{0,18}", str(target.get("hwnd") or ""))
+                or target.get("processStartTimeUtc") != launch["processStartTimeUtc"]
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_PROGRAM_WINDOW_BINDING_INVALID")
+        elif target is not None:
+            raise DesktopSessionEffectUnknown("DESKTOP_PROGRAM_WINDOW_BINDING_INVALID")
         return result

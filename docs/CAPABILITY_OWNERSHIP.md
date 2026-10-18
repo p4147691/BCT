@@ -21,7 +21,9 @@ BCT owns the implementation, policy boundary, operation receipt and live accepta
 - policy validation, durable operation fencing and audited dispatch for
   VTL-owned mouse and keyboard input against an exact active window lease; and
 - authenticated current-virtual-desktop window inventory plus audited exact
-  activation of the non-hidden, non-minimized window bound to that lease.
+  activation of the non-hidden, non-minimized window bound to that lease; and
+- bounded exact-EXE launch receipts plus atomic binding of the session lease
+  only to a visible current-desktop window owned by the newly created PID.
 
 These capabilities live in the BCT repository and do not import ACT runtime modules.
 
@@ -63,7 +65,7 @@ VTL owns the Windows `SendInput` execution.  Every effect requires the exact act
 revalidates the target and emergency-stop state immediately before injection, and never retries an
 ambiguous partial effect.  Activation additionally revalidates virtual-desktop
 identity and refuses hidden or minimized windows.  Window restore/move/resize,
-program launch, Scheduled Task recovery, full RDC parity and a misleading ADC
+Scheduled Task recovery, full RDC parity and a misleading ADC
 compatibility layer remain outside this slice.
 
 DesktopWindow Monitor and Chrome Auto Proxy are external compatibility modules, not Core. Their
