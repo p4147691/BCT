@@ -1,6 +1,6 @@
 # BCT Desktop Session read-only first slice — 2026-10-18
 
-Status: `implementation in progress`
+Status: `completed`
 
 ## Exact scope
 
@@ -57,11 +57,25 @@ and emergency stop.  Those begin only after this read-only slice is accepted.
    authenticated MCP endpoint.
 9. Confirm image content, exact session identity, hash and cleanup state.
 
-## Current evidence
+## Completion evidence
 
-The isolated VTL Agent smoke passed in Windows Session 1.  A manually started
-candidate Agent then returned a 2560x1440 virtual-screen source, produced a
-1600x900 PNG under `D:\BCT\data\desktop-session\evidence`, and the BCT candidate
-client verified its SHA-256 and displayed the current desktop image.  This is
-local candidate evidence only until PR/CI/merge/deploy and live MCP acceptance
-finish.
+- VIRTUAL-TEST-LAB PR #6 passed both exact-head checks and merged as
+  `0733e6aeb675d21c7cb08fde45f2a3b2061d5ed1`.
+- BCT PR #187 passed its 12-minute full CI and merged as
+  `d6e88d00206bf5c6123a8830b04985efaf04d691`; the exact merged-main CI also
+  passed before deployment.
+- The reviewed deployment service replaced release `882a496739972b446affd5f04b0b3c037a00d367`
+  with exact merged main `d6e88d00206bf5c6123a8830b04985efaf04d691`.
+  Live Core generation is 111 and its post-deploy health contract is READY.
+- A fresh authenticated MCP session advertised 24 tools including
+  `bct_desktop_session_status` and `bct_desktop_capture`.
+- Live status proved the manually started VTL Agent in Windows Session 1.  Live
+  capture returned both MCP text metadata and an `image/png` content block.
+- The accepted 1280x720 image is
+  `D:\BCT\data\desktop-session\evidence\20261018T132400437Z-desktop-capture-live-01.png`
+  (442448 bytes, SHA-256
+  `6c847dd50ff92595012fe1ed98f8fd7b10f2d780c15e48e029c02e5eb60286b1`).
+- The image was opened and visually confirmed as the current desktop.  The BCT
+  source and VTL completion worktree were clean, both existing Core/Tunnel
+  Supervisor tasks remained running, and no reboot, logoff, auto-start task or
+  input mutation was performed.
