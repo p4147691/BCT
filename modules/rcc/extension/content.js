@@ -842,6 +842,10 @@ function findReadySendButton(editor = null, options = {}) {
   // controls. A page-wide form[type=submit] fallback can hit the new-chat
   // navigation form and turn "기깃" into ?prompt-textarea=기깃 without sending.
   const selectors = [
+    // Current ChatGPT composer may expose an ID instead of data-testid.
+    // Only search within the editor's own verified form/composer.
+    'button#composer-submit-button',
+    'button[data-testid="composer-send-button"]',
     'button[data-testid="send-button"]',
     'button[data-testid*="send-button"]',
     'button[aria-label="Send prompt"]',
@@ -939,11 +943,39 @@ async function submitEditor(editor, options = {}) {
   }
   if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
 
+// Bounded, content-free explanation for why a valid draft was not sent.
+// Never log prompt text, role tokens, conversation URLs, or file contents.
+function sendControlFailureReason(editor) {
+  const form = editor?.closest?.('form');
+  const composer = editor?.closest?.('[data-testid*="composer"], [data-testid="composer"]');
+  const scope = form || composer;
+  if (!scope) return 'EDITOR_SCOPE_MISSING';
+  const selector = [
+    'button#composer-submit-button',
+    'button[data-testid="composer-send-button"]',
+    'button[data-testid="send-button"]',
+    'button[aria-label="Send prompt"]',
+    'button[aria-label="Send message"]',
+    'button[aria-label="보내기"]'
+  ].join(',');
+  const button = scope.querySelector(selector);
+  if (!button) {
+    return document.querySelector(selector) ? 'SEND_CONTROL_OUTSIDE_EDITOR' : 'SEND_CONTROL_ABSENT';
+  }
+  if (button.disabled) return 'SEND_CONTROL_DISABLED';
+  if (button.getAttribute?.('aria-disabled') === 'true') return 'SEND_CONTROL_ARIA_DISABLED';
+  if (button.getClientRects().length === 0) return 'SEND_CONTROL_HIDDEN';
+  return 'SEND_CONTROL_UNVERIFIED';
+}
+
   // Synthetic KeyboardEvent('Enter') is untrusted and does not trigger the
   // browser's default form submit. Reporting it as submitted silently left
   // the draft unsent in existing conversations. Only a verified enabled
   // ChatGPT send control may activate delivery; absent that, fail before
   // a submit-attempt or host ACK is generated. Never retry a prior UNKNOWN.
+  // Diagnostic metadata only. Failed direct sends remain unsubmitted;
+  // do not retry an UNKNOWN operation.
+  console.warn('RELAY_SEND_BUTTON_NOT_READY', sendControlFailureReason(editor));
   throw new Error('RELAY_SEND_BUTTON_NOT_READY');
 }
 
