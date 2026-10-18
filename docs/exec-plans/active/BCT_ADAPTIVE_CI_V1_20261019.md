@@ -43,8 +43,9 @@ it does not upload the screen image or window titles to GitHub.
 2. The four local shard manifests have no overlap and their union equals normal
    unittest discovery.
 3. All four shards, browser-bridge checks, compileall and diff-check pass.
-4. The PR shows parallel core shards and a successful `vtl-readonly` check on
-   `VTL-WINDOWS-01`.
+4. The PR shows parallel core shards. The exact PR head is then dispatched to
+   the private VTL repository's read-only workflow, whose repository-scoped
+   `VTL-WINDOWS-01` runner validates Session 1.
 5. The PR exact head merges without a LIVE deployment because runtime code is
    unchanged.
 
@@ -61,3 +62,10 @@ instances but only 567 unique IDs. The remaining 184 were identical imported
 state equality is required before collapsing them; all 567 unique tests passed
 across the four shards. Observed local shard times were approximately 131, 78,
 53 and 54 seconds.
+
+`VTL-WINDOWS-01` is registered only to the private VTL repository; BCT has no
+self-hosted runner and no cross-repository Actions secret. Therefore a BCT PR
+job cannot be assigned to it. The VTL repository owns the dispatch workflow and
+checks out this public BCT repository at one exact SHA. Fully automatic
+cross-repository dispatch is intentionally deferred until the user approves a
+BCT-specific runner registration or a least-privilege GitHub credential.

@@ -110,24 +110,6 @@ jobs:
       - run: python -m unittest discover -s modules/browser-bridge/tests -p pipe_windows_e2e.py -v
       - run: python -m unittest discover -s modules/browser-bridge/tests -p relay_windows_e2e.py -v
 
-  vtl-readonly:
-    needs: scope
-    if: needs.scope.outputs.vtl == 'true'
-    runs-on: [self-hosted, Windows, X64, vtl, interactive]
-    timeout-minutes: 5
-    concurrency:
-      group: bct-vtl-readonly-session-1
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v7
-      - name: Verify the live interactive desktop boundary without input
-        shell: powershell -ExecutionPolicy Bypass -File {0}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $env:PYTHONPATH = (Join-Path $env:GITHUB_WORKSPACE 'src')
-          python scripts/vtl_readonly_smoke.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
   docs-only:
     needs: scope
     if: needs.scope.outputs.docs_only == 'true'
