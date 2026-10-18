@@ -1,5 +1,16 @@
 # BCT 인수인계
 
+## 진행 — Windows UTF-8 설정 독립 VTL 실행
+
+Windows의 **유니코드 UTF-8 사용** 시스템 로캘은 게임/프로그램 호환을 위해 켜거나
+꺼도 된다. BCT/VTL은 이 전역 설정을 바꾸거나 재부팅을 요구하지 않는다. VTL의
+기계 판정은 명시적 UTF-8 JSON 파일을 사용하고, BCT는 자식 stdout/stderr를 bytes로
+받은 뒤 UTF BOM, strict UTF-8, CP949, 현재 Windows ANSI/OEM 순으로 진단 로그만
+해석한다. 자식 Python에는 process-local UTF-8 환경만 준다. 구현·focused test는
+완료됐고, 정확한 PR CI → VTL runtime sync/prewarm → BCT exact-SHA 배포 → 인증된
+LIVE `bct_vtl_validate` 순서로 종결한다. 상세는
+`docs/exec-plans/completed/BCT_VTL_DIRECT_VALIDATION_20261019.md`를 따른다.
+
 ## 완료 — 일반 ChatGPT의 직접 VTL-first 검증
 
 목표는 일반 ChatGPT/Codex의 반복 개발 검증을 로컬 BCT + VTL Fast mode에서 끝내고,
@@ -11,9 +22,8 @@ VTL browser/GUI scenario, Full/VM E2E 순으로 가장 싼 충분한 tier를 선
 검증하고, work scope 안의 browser 또는 profile scenario를 background operation으로 직접 실행한다.
 VTL SHA, 입력 SHA, PASS/FAIL/TIMEOUT, 외부 evidence/result 경로가 BCT receipt에 남으며 GitHub
 Actions를 dispatch하지 않는다. VTL runtime installer와 외부 evidence/run-ID 계약은 VTL 저장소가
-소유한다. VTL PR #18과 BCT PR #203의 exact-head/main CI가 통과했고, BCT merge
-`af1c4fd9b1ca172c58ca09ebe44185ddda0e14b8`가 LIVE generation 121로 배포됐다.
-최종 설치 VTL merge `6e75ab689c62731e98a50f2786ead92efac98d06`은 한글 사용자 경로를
+소유한다. VTL PR #18과 BCT PR #203의 exact-head/main CI가 통과했고 해당 BCT
+merge가 LIVE generation 121로 배포됐다. 최종 설치 VTL PR #20 main은 한글 사용자 경로를
 비대화형 Windows 코드페이지와 무관하게 처리하고, browser cold prepare/Fast selftest가
 PASS한 뒤에만 runtime pointer를 공개한다. 인증된 MCP operation
 `bct-vtl-direct-live-af1c4fd9-6e75ab68-browser-fast`는 이를 직접 실행해 `APPLIED / PASS`를

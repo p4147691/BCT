@@ -92,3 +92,19 @@ loop. GitHub required checks remain the final independent candidate check.
   `FINISHED / APPLIED / PASS` in 2.078 seconds (3.525 seconds external wall
   time), and duplicate submission returned the original receipt. Evidence is
   `D:\BCT\data\vtl-evidence\3b03c0e2ca7812e9591d86300e4706fd23be06c1b2df9f691289866d45ab090f`.
+
+## Code-page-neutral follow-up
+
+- VTL machine results remain explicit UTF-8 JSON files; ambiguous native
+  stdout is never used to decide PASS/FAIL or locate evidence.
+- BCT now captures child output as bytes, recognizes UTF BOMs, tries strict
+  UTF-8 first, then the deployed Korean legacy encoding before the active
+  Windows ANSI/OEM encodings. This keeps diagnostic logs readable whether the
+  Windows UTF-8 system-locale option is on or off, including after a setting
+  change, without changing that setting itself.
+- Child Python tools receive process-local UTF-8 environment variables. No
+  registry, system locale, language pack, reboot or global shell profile is
+  changed.
+- Focused decoder tests cover UTF-8, CP949, UTF-16 and UTF-32 streams. Final
+  exact-head CI, deployment and authenticated LIVE VTL evidence are recorded
+  with the delivery PR.
