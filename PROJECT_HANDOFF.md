@@ -5,7 +5,7 @@
 Windows의 **유니코드 UTF-8 사용** 시스템 로캘은 게임/프로그램 호환을 위해 켜거나
 꺼도 된다. BCT/VTL은 이 전역 설정을 바꾸거나 재부팅을 요구하지 않는다. VTL의
 기계 판정은 명시적 UTF-8 JSON 파일을 사용하고, BCT는 자식 stdout/stderr를 bytes로
-받은 뒤 UTF BOM, strict UTF-8, 현재 Windows ANSI/OEM, CP949 순으로 진단 로그만
+받은 뒤 UTF BOM, strict UTF-8, CP949, 현재 Windows ANSI/OEM 순으로 진단 로그만
 해석한다. 자식 Python에는 process-local UTF-8 환경만 준다. 구현·focused test는
 완료됐고, 정확한 PR CI → VTL runtime sync/prewarm → BCT exact-SHA 배포 → 인증된
 LIVE `bct_vtl_validate` 순서로 종결한다. 상세는

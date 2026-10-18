@@ -98,8 +98,8 @@ loop. GitHub required checks remain the final independent candidate check.
 - VTL machine results remain explicit UTF-8 JSON files; ambiguous native
   stdout is never used to decide PASS/FAIL or locate evidence.
 - BCT now captures child output as bytes, recognizes UTF BOMs, tries strict
-  UTF-8 first, then the active Windows ANSI/OEM encodings and the deployed
-  Korean legacy encoding. This keeps diagnostic logs readable whether the
+  UTF-8 first, then the deployed Korean legacy encoding before the active
+  Windows ANSI/OEM encodings. This keeps diagnostic logs readable whether the
   Windows UTF-8 system-locale option is on or off, including after a setting
   change, without changing that setting itself.
 - Child Python tools receive process-local UTF-8 environment variables. No

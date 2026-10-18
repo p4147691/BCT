@@ -64,10 +64,14 @@ def _decode_process_output(value: bytes | str | None) -> str:
         if value.startswith(marker):
             return value.decode(encoding, errors="replace")
 
-    candidates = ["utf-8-sig"]
+    # This deployed Windows lane is Korean. Try its stable legacy wire encoding
+    # before the current ACP/OEM: after the system UTF-8 toggle changes, mbcs
+    # can become CP1252/65001 on a different host and permissively turn CP949
+    # bytes into mojibake instead of raising.
+    candidates = ["utf-8-sig", "cp949"]
     if os.name == "nt":
         candidates.extend(("mbcs", "oem"))
-    candidates.extend((locale.getpreferredencoding(False), "cp949"))
+    candidates.append(locale.getpreferredencoding(False))
     attempted: set[str] = set()
     for encoding in candidates:
         normalized = encoding.casefold()
