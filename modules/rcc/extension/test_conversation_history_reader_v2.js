@@ -30,6 +30,40 @@ async function main() {
   assert.equal(scan(doc).unidentified, 1);
   assert.equal(scan(doc).messages[0].text, "안녕하세요");
 
+  // Match the real RCC selectors: prefer data-turn-key over a wrapper testid.
+  const keyed = {
+    getAttribute: key => key === "data-turn-key" ? "turn-key-17" : null,
+    innerText: "실제 대화 메시지",
+    closest: selector => selector === "[data-turn-key]" ? keyed : null
+  };
+  const wrapper = {
+    getAttribute: key => key === "data-testid" ? "conversation-turn-17" : null,
+    innerText: "wrapper text",
+    closest: () => null,
+    querySelectorAll: selector => selector === "[data-turn-key]" ? [keyed] : []
+  };
+  const keyedDom = documentWith([wrapper, keyed]);
+  assert.deepEqual(scan(keyedDom).messages, [
+    {id:"turn-key-17",text:"실제 대화 메시지"}
+  ]);
+  assert.equal(scan(keyedDom).duplicates,1);
+  const contentKey = {
+    getAttribute: key => key === "data-content-search-turn-key" ? "search-turn-18" : null,
+    innerText:"과거 검색 메시지", closest:()=>null, querySelectorAll:()=>[]
+  };
+  const searchDom = documentWith([contentKey]);
+  assert.equal(scan(searchDom).messages[0].id, "search-turn-18");
+  // The canonical ID remains stable if wrappers are virtualized away.
+  const virtualKey = documentWith([wrapper, keyed]);
+  const keyResult = await loadOlder(virtualKey, {maxSteps:1,settle:async()=>{
+    virtualKey.rows=[keyed];
+  }});
+  assert.equal(keyResult.messages.length,1);
+  assert.equal(keyResult.messages[0].id,"turn-key-17");
+  assert.ok(keyResult.reobserved>0);
+  assert.equal(keyResult.full_history_verified,false);
+
+
   const r = await loadOlder(doc, {
     maxSteps: 6,
     settle: async () => { if (doc.scrollingElement.scrollTop === 0) doc.rows = [b, a, duplicate]; }
