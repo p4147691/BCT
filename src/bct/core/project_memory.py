@@ -141,6 +141,33 @@ def _atomic_replace(path: Path, value: bytes) -> None:
             os.unlink(temporary)
 
 
+def _publish_revision(path: Path, value: bytes) -> None:
+    """Make a complete revision visible only after the bytes are fsynced."""
+    if path.exists() or path.is_symlink():
+        if not _regular(path) or path.read_bytes() != value:
+            raise ProjectMemoryCorrupt("PROJECT_MEMORY_REVISION_COLLISION")
+        return
+    temporary: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".revision-",
+                                         suffix=".tmp", delete=False) as handle:
+            temporary = handle.name
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            # Serialized by the project lock. On Windows, rename does not
+            # overwrite an existing destination.
+            os.rename(temporary, path)
+            temporary = None
+        except FileExistsError:
+            if not _regular(path) or path.read_bytes() != value:
+                raise ProjectMemoryCorrupt("PROJECT_MEMORY_REVISION_COLLISION")
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 @contextmanager
 def _writer_lock(path: Path) -> Iterator[None]:
     # The same project mutex is used by all writers, including independent
@@ -230,7 +257,10 @@ class ProjectMemoryStore:
             raise ProjectMemoryError("PROJECT_MEMORY_AUTHOR_INVALID")
         _validate_record(record)
         path = self._project_dir(project_id, create=True)
-        with _writer_lock(path / ".ledger.lock"):
+        lock_path = path / ".ledger.lock"
+        if lock_path.is_symlink():
+            raise ProjectMemoryError("PROJECT_MEMORY_SYMLINK_FORBIDDEN")
+        with _writer_lock(lock_path):
             current = self.get(project_id)
             revision = current["revision"] if current else 0
             if current and _canonical(current["record"]) == _canonical(record):
@@ -256,15 +286,7 @@ class ProjectMemoryStore:
                 raise ProjectMemoryError("PROJECT_MEMORY_SYMLINK_FORBIDDEN")
             folder.mkdir(exist_ok=True)
             revision_path = folder / filename
-            try:
-                with revision_path.open("xb") as handle:
-                    handle.write(data)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-            except FileExistsError:
-                if (not _regular(revision_path)
-                        or revision_path.read_bytes() != data):
-                    raise ProjectMemoryCorrupt("PROJECT_MEMORY_REVISION_COLLISION")
+            _publish_revision(revision_path, data)
             pointer = {
                 "schema": SCHEMA, "project_id": project_id,
                 "revision": revision + 1, "revision_file": filename, "sha256": digest,

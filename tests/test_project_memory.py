@@ -107,6 +107,20 @@ class ProjectMemoryTests(unittest.TestCase):
                         record=record(summary="interrupted"))
         self.assertEqual(len(self.store.history("subtitle-auto")), 2)
 
+    def test_revision_write_interruption_never_publishes_partial_file(self):
+        previous = self._genesis()
+        with patch("bct.core.project_memory.os.rename", side_effect=OSError("interrupted")):
+            with self.assertRaisesRegex(OSError, "interrupted"):
+                self.store.save("subtitle-auto", expected_revision=1,
+                                author="manager-a", record=record(summary="new"))
+        self.assertEqual(self.store.get("subtitle-auto")["sha256"], previous["sha256"])
+        directory = self.root / "subtitle-auto" / "revisions"
+        self.assertFalse(list(directory.glob("00000002-*.json")))
+        self.assertFalse(list(directory.glob(".revision-*.tmp")))
+        self.store.save("subtitle-auto", expected_revision=1,
+                        author="manager-a", record=record(summary="new"))
+        self.assertEqual(len(self.store.history("subtitle-auto")), 2)
+
     def test_unused_orphan_does_not_appear_as_committed_history(self):
         self._genesis()
         try:

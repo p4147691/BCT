@@ -98,8 +98,8 @@ returns record contents ONLY when intentionally requested.
 ## Safety, history and crash behavior
 
 Project-local OS file lock serializes writers across independent processes.
-Inside lock: read pointer, check expected revision, write immutable revision
-and fsync, atomically replace current pointer. Reader can see previous or new
+Inside lock: read pointer, check expected revision, fsync a temporary revision,
+atomically publish its complete bytes, then atomically replace current pointer. Reader can see previous or new
 committed pointer, never a partially written current pointer. SHA256 confirms
 the committed revision. Previous committed snapshots are never overwritten.
 
