@@ -58,7 +58,7 @@ _RELAY_NOTE_DEFAULTS = {
 
 
 def _relay_note(role: str) -> str:
-    """Optional UTF-8 text file; reread on each new assignment or wake."""
+    """Optional Windows text note; detect BOM/UTF-8/CP949 on each delivery."""
     if role not in _RELAY_NOTE_DEFAULTS:
         raise ValueError("RELAY_NOTE_ROLE_UNKNOWN")
     path = _RELAY_NOTES_DIR / (role + "-relay-note.txt")
@@ -66,14 +66,33 @@ def _relay_note(role: str) -> str:
         data = path.read_bytes()
     except FileNotFoundError:
         return _RELAY_NOTE_DEFAULTS[role]
-    if len(data) > 4096:
+    # 2,000 Korean characters can exceed 4 KiB as UTF-8; UTF-32 uses
+    # 4 bytes per character. This is a byte safety cap, not a text limit.
+    if len(data) > 8192:
         raise ValueError("RELAY_NOTE_TOO_LARGE")
     try:
-        note = data.decode("utf-8-sig").strip()
+        if data.startswith((b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")):
+            note = data.decode("utf-32")
+        elif data.startswith((b"\xff\xfe", b"\xfe\xff")):
+            note = data.decode("utf-16")
+        elif data.startswith(b"\xef\xbb\xbf"):
+            # Explicit UTF-8 BOM must never be misread as legacy ANSI.
+            note = data.decode("utf-8-sig")
+        else:
+            try:
+                note = data.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                # Windows Notepad's legacy "ANSI" on Korean systems.
+                # Only use CP949 if UTF-8 decoding was not possible.
+                note = data.decode("cp949")
     except UnicodeDecodeError as exc:
-        raise ValueError("RELAY_NOTE_UTF8_REQUIRED") from exc
+        raise ValueError("RELAY_NOTE_ENCODING_UNSUPPORTED") from exc
+    note = note.strip()
     if not note or len(note) > 2000:
         raise ValueError("RELAY_NOTE_INVALID_LENGTH")
+    if any((ord(ch) < 32 and ch not in "\t\r\n") or ord(ch) == 127
+           for ch in note):
+        raise ValueError("RELAY_NOTE_CONTROL_CHARACTERS")
     if "[BCT_ORCHESTRATION_" in note or DECISION_START in note or DECISION_END in note:
         raise ValueError("RELAY_NOTE_RESERVED_MARKER")
     return note
