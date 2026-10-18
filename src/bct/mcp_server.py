@@ -37,6 +37,7 @@ _CAPABILITY_USAGE = {
     "desktop_window_list": "List bounded visible top-level windows on the current virtual desktop with exact HWND/process fingerprints.",
     "desktop_window_activate": "Bring the exact non-minimized window bound to the active lease to the foreground. This does not launch, restore, move, or resize a window.",
     "desktop_program_launch": "Launch one exact absolute .exe with an argument array under an active session lease, capture the new PID identity, and bind that same lease only if the PID creates a visible window on the current virtual desktop.",
+    "vtl_validate": "Run a project-owned browser or profile scenario directly through the exact immutable local VTL release. Returns PASS/FAIL and durable evidence without dispatching GitHub Actions.",
 }
 _SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 
@@ -228,6 +229,7 @@ def build_mcp(
             background = (
                 selected == "deploy"
                 or selected == "verify"
+                or selected == "vtl_validate"
                 or (
                     selected == "orchestrate"
                     and str(arguments.get("operation") or "")

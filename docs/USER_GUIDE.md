@@ -56,10 +56,33 @@ VTL의 self-hosted runner를 GitHub Actions workflow로 호출하는 방식은 h
 일상적인 편집 반복 경로가 아니다. GitHub required check를 VTL 결과로 통과한 것처럼 표시하거나 생략하지
 않는다. required check 자체를 줄이려면 변경 범위 기반 CI와 저장소 보호 규칙을 별도로 검토한다.
 
-현재 BCT catalogue에는 전용 `bct_vtl_validate` 도구가 없다. 일반 ChatGPT가 BCT의 범용
-`test`/`execute`로 VTL을 직접 실행하려면 정확한 VTL source/runtime, 프로젝트 profile/scenario,
-evidence 경로를 먼저 검증해야 한다. 이 전제 없이 오래된 로컬 clone을 사용하거나 GitHub Actions를
-"VTL 직접 실행"이라고 부르지 않는다.
+전용 `bct_vtl_validate`는 GitHub Actions를 dispatch하지 않고 `D:\TOOLS\VTL\current.json`이
+가리키는 immutable VTL release를 직접 실행한다. 모든 manifest 파일 해시와 VTL source SHA를
+효과 직전에 다시 확인하고, 프로젝트 work root 안의 scenario/profile만 허용한다. `browser`
+operation은 `mode: Fast|Full`과 browser-playwright scenario를, `profile` operation은
+`virtual-test.json`과 일반 VTL scenario를 받는다. profile의 `source_path`도 같은 work scope 안에
+있어야 한다.
+
+실행은 background operation이므로 최초 응답이 `RUNNING`이면 같은 work/operation ID로
+`bct_operation_get(wait_seconds=25)`를 호출해 완료 receipt를 받는다. 테스트 assertion 실패는
+실행 자체가 성공한 `APPLIED` receipt의 `evidence.status: FAIL`로, 도구/manifest/result 계약 문제는
+`FAILED / INFRA_ERROR`로 구분된다. `PASS`, `FAIL`, `TIMEOUT` 모두 VTL SHA, scenario/profile SHA,
+return code, 실행 시간, 외부 evidence/result 경로를 남긴다. evidence는
+`D:\BCT\data\vtl-evidence` 아래 operation별 디렉터리에 기록되고 immutable release에는 쓰지 않는다.
+
+브라우저 반복 검증 예시는 다음 arguments를 사용한다.
+
+```json
+{
+  "operation": "browser",
+  "scenario_path": "D:\\PROJECTS\\SomeProject\\virtual-tests\\smoke.json",
+  "mode": "Fast",
+  "timeout_s": 300
+}
+```
+
+이 경로가 직접 VTL 검증이다. VTL self-hosted runner를 사용하는 GitHub workflow는 여전히 Actions
+경로이므로 최종 교차 환경 증거가 필요할 때만 별도로 실행한다.
 
 데스크톱 조회는 먼저 `desktop_session_status` action의 work를 만들고
 `bct_desktop_session_status`를 호출한다. 화면 캡처는 같은 work에 `desktop_capture`를

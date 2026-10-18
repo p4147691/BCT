@@ -24,6 +24,8 @@ BCT owns the implementation, policy boundary, operation receipt and live accepta
   activation of the non-hidden, non-minimized window bound to that lease; and
 - bounded exact-EXE launch receipts plus atomic binding of the session lease
   only to a visible current-desktop window owned by the newly created PID.
+- exact immutable VTL runtime verification, bounded direct scenario dispatch,
+  background receipt and external evidence identity for `vtl_validate`.
 
 These capabilities live in the BCT repository and do not import ACT runtime modules.
 
@@ -34,6 +36,10 @@ installation stays at the external extension path for compatibility. It is not a
 the independent BCT Monitor is the core operational view. Monitor extension/native source is not
 copied into the Core runtime release; it will use a separate exact module deployment profile when
 its installation is cut over.
+
+VTL owns its runtime installer, generic scenario drivers and result schema. BCT owns the exact
+runtime-manifest verification, work-scope policy, operation receipt and dispatch boundary; product
+repositories continue to own profiles, selectors, scenarios and expected results.
 
 Chrome, Windows, GitHub and GPU drivers are also external assets. BCT owns the exact adapter and
 receipt around them, not the products themselves.

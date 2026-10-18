@@ -1,19 +1,19 @@
 # BCT 인수인계
 
-## 현재 경계 — 일반 ChatGPT의 VTL-first 검증
+## 구현 중 — 일반 ChatGPT의 직접 VTL-first 검증
 
 목표는 일반 ChatGPT/Codex의 반복 개발 검증을 로컬 BCT + VTL Fast mode에서 끝내고,
 통과한 한 후보만 GitHub에 올려 required CI를 최종 1회 수행하는 것이다. 실패 후보마다
 Actions를 디버깅 루프로 사용하는 방식은 피한다. 변경 범위에 따라 정적 검사/focused test,
 VTL browser/GUI scenario, Full/VM E2E 순으로 가장 싼 충분한 tier를 선택한다.
 
-현재 VTL exact-SHA desktop smoke는 self-hosted runner에서 실행되지만 진입점은 여전히
-GitHub Actions다. 따라서 hosted runner 사용은 피하더라도 Actions 실행 횟수와 큐를 없애는
-직접 VTL 경로는 아니다. 또한 현재 BCT MCP에는 전용 `bct_vtl_validate` capability가 없으므로,
-범용 `test`/`execute`를 통한 직접 VTL 실행은 exact VTL source/runtime와 프로젝트 profile,
-scenario, evidence 경로가 검증된 경우에만 가능하다. 다음 구현 우선순위는 이 전제를 하나의
-bounded VTL validation ingress로 고정하는 것이다. 상세 사용 방침은 `docs/USER_GUIDE.md`의
-"빠른 개발 검증: VTL 우선, GitHub 최종 확인" 절을 따른다.
+새 `vtl_validate` capability는 `D:\TOOLS\VTL\current.json`의 immutable release manifest 전체를
+검증하고, work scope 안의 browser 또는 profile scenario를 background operation으로 직접 실행한다.
+VTL SHA, 입력 SHA, PASS/FAIL/TIMEOUT, 외부 evidence/result 경로가 BCT receipt에 남으며 GitHub
+Actions를 dispatch하지 않는다. VTL runtime installer와 외부 evidence/run-ID 계약은 VTL 저장소가
+소유한다. VTL PR #18/merged-main 검증, exact runtime 설치와 직접 Fast smoke, BCT 로컬 757개 전체
+회귀는 통과했다. BCT PR/CI, exact-main 배포와 hosted BCT Control E2E 전까지 LIVE 완료로 표시하지 않는다. 상세는
+`docs/exec-plans/active/BCT_VTL_DIRECT_VALIDATION_20261019.md`를 따른다.
 
 ## 완료 — 일반 ChatGPT/Codex의 VTL Desktop Session 공동 사용 계약
 

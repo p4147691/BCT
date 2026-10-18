@@ -24,6 +24,7 @@ from .features.github import (
 )
 from .features.tests import TestFeature
 from .features.verification import VerificationFeature
+from .features.vtl import VtlValidateFeature
 from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
@@ -118,6 +119,7 @@ class BCT:
             DesktopWindowListFeature(desktop_session),
             DesktopWindowActivateFeature(desktop_session),
             DesktopProgramLaunchFeature(desktop_session),
+            VtlValidateFeature(policy_path, data_root=data_root),
         ):
             self.operations.register(feature)
         self.operations.register(VerificationFeature(self.operations._features, self.store))

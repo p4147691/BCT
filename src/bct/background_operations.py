@@ -16,6 +16,7 @@ from .service_runtime import atomic_json, process_identity, read_json
 
 BACKGROUND_CAPABILITIES = frozenset({
     "deploy", "service_control", "verify", "github_pr_status", "orchestrate",
+    "vtl_validate",
 })
 
 _ORCHESTRATION_RESTARTABLE = frozenset({
