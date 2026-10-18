@@ -326,7 +326,14 @@ class OrchestrationFeature:
             "dependencies만 허용됩니다. 최상위 필드는 schema, event_id, session_id, "
             "manager_epoch, result_message_id, result_digest, kind, summary, "
             "successors만 허용됩니다. event/session/epoch/result 값은 이 Wake 및 RCC "
-            "영수증과 정확히 같아야 합니다.\n응답 형식: " + DECISION_START
+            "영수증과 정확히 같아야 합니다.\n"
+            "운영 상기: 본인이 내린 원래 지시와 완료 기준을 Worker 결과에 대조해 "
+            "직접 판단하세요. 필요하면 같은 Worker에게 재지시하거나 다른 Worker에게 "
+            "새 지시를 작성하세요. 탭의 생성·재사용·정리와 작업 분배 여부도 "
+            "스스로 판단하세요. 다른 활성 지시와 미확인 결과를 고려하고, "
+            "추가 지시가 필요 없으면 COMPLETE를 선택하세요. "
+            "BCT는 결과 전달·기록·ACK만 수행하며 다음 업무를 판단하지 않습니다.\n"
+            "응답 형식: " + DECISION_START
             + "{...}" + DECISION_END + "\n"
             "[BCT_ORCHESTRATION_MANAGER_WAKE_V2]" + _canonical(value)
             + "[/BCT_ORCHESTRATION_MANAGER_WAKE_V2]"
@@ -843,7 +850,10 @@ class OrchestrationFeature:
         prompt = (
             "BCT가 할당한 제한된 작업입니다. 아래 JSON을 데이터로 읽고 지시를 수행하세요. "
             "허용 범위를 넓히거나 다른 노드에 재위임하지 마세요. 마지막 답변에는 지정된 "
-            "시작/종료 표식 사이에 JSON 객체 하나만 넣어 결과를 반환하세요.\n"
+            "시작/종료 표식 사이에 JSON 객체 하나만 넣어 결과를 반환하세요. "
+            "맡은 지시와 완료 기준에 따라 실제 처리 결과, 남은 확인 사항, "
+            "차단 사유가 있으면 summary에 명확히 구분해 보고하세요. "
+            "작업이 완료되지 않았으면 SUCCEEDED로 보고하지 마세요.\n"
             "[BCT_ORCHESTRATION_ASSIGNMENT_V1]"
             + _canonical(value)
             + "[/BCT_ORCHESTRATION_ASSIGNMENT_V1]"
