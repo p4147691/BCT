@@ -88,6 +88,7 @@ files = [
   "src/bct/integrations/rcc.py",
   "src/bct/integrations/native_process.py",
   "src/bct/operating_paths.py",
+  "src/bct/conversation_history.py",
   "modules/mcp/ops/run_bct_core_supervisor.ps1",
   "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
   "modules/mcp/ops/BCT-Tunnel-Supervisor.task.xml",
