@@ -63,6 +63,8 @@ jobs:
             }
             Remove-Item -LiteralPath $resolved -Recurse -Force
           }
+      - run: node modules/rcc/extension/test_conversation_history_reader_v2.js
+        if: steps.scope.outputs.run_tests == 'true'
       - run: python -m unittest discover -s tests -v --durations 20
         if: steps.scope.outputs.run_tests == 'true'
       - run: python -m unittest discover -s modules/browser-bridge/tests -v
