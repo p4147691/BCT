@@ -1,5 +1,28 @@
 # BCT 인수인계
 
+## 완료 — Adaptive CI와 VTL exact-SHA 데스크톱 스모크
+
+BCT PR #199는 보수적 변경 범위 판정, 정확 중복 unittest 제거, 네 개의 결정적
+가중 샤드, 독립 browser-bridge gate를 추가했다. 알 수 없는 실행 경로는 core와
+browser 전체 검사로 fail closed하며 문서-only 변경만 경량화한다. 발견된 751개
+인스턴스 중 같은 test ID·class·method·instance state인 import 재노출 184개만
+제거했고, 567개 고유 테스트를 정확히 한 번씩 실행한다.
+
+정확한 BCT source `f9b299da629bcea26c89043ec4c91733b73221cc`는 CI run
+`39169773634`에서 scope/preflight/core 4-shard/browser Windows E2E를 모두
+통과했다. 전체 벽시계는 211초로 이전 직렬 workflow 약 674초보다 약 69%
+줄었다. VTL repo의 Session 1 runner는 같은 BCT SHA를 별도 checkout하여 run
+`39169787101`에서 status/capture/monitor/windows read-only smoke를 18초에
+통과했다. launcher fail-fast build 산출물은 package-purity 검사 전에 launcher
+root 아래 `bin/obj`만 bounded cleanup하고 Windows E2E 전에 재빌드한다.
+
+BCT에는 self-hosted runner나 cross-repo Actions credential이 없으므로 VTL 검증의
+자동 dispatch는 아직 하지 않는다. 현재는 VTL 소유 수동 exact-SHA workflow가
+GitHub 증거를 남긴다. 자동화하려면 사용자 승인 아래 별도 BCT Session 1 runner
+등록 또는 최소 권한 GitHub App/fine-grained token 중 하나를 선택해야 한다.
+런너 identity나 credential을 임의 변경하지 않는다. 상세 증거는
+`docs/exec-plans/completed/BCT_ADAPTIVE_CI_V1_20261019.md`에 있다.
+
 ## 완료 — 제한된 프로그램 실행과 새 PID 창 바인딩
 
 BCT LIVE는 인증된 `desktop_program_launch`를 제공한다.

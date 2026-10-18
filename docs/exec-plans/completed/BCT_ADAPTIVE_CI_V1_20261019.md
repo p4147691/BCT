@@ -1,6 +1,6 @@
 # BCT adaptive CI and VTL gate — 2026-10-19
 
-Status: IMPLEMENTING
+Status: COMPLETE
 
 ## Goal
 
@@ -69,3 +69,18 @@ job cannot be assigned to it. The VTL repository owns the dispatch workflow and
 checks out this public BCT repository at one exact SHA. Fully automatic
 cross-repository dispatch is intentionally deferred until the user approves a
 BCT-specific runner registration or a least-privilege GitHub credential.
+
+## Completion evidence
+
+- BCT PR #199 exact source `f9b299da629bcea26c89043ec4c91733b73221cc`
+  passed CI run `39169773634`: scope, preflight, four core shards, browser
+  package contract, activation, launcher, pipe and relay E2E all passed.
+- The full PR workflow completed in 211 seconds. The prior serial workflow was
+  approximately 674 seconds, a measured wall-clock reduction of about 69%.
+- VTL run `39169787101` checked out that exact BCT SHA and passed the bounded
+  Session 1 read-only desktop smoke in 18 seconds.
+- The first PR run exposed that the fail-fast launcher build must be removed
+  before the package-purity test, then rebuilt before Windows E2E. The bounded
+  cleanup order was restored and is protected by a planner regression test.
+- No Core deployment, service restart, input injection, Lease acquisition,
+  runner re-registration or credential change was performed.
