@@ -42,8 +42,8 @@ loop. GitHub required checks remain the final independent candidate check.
 - VTL PR #18 merged as `2480d2bd70a420c5300071ad51a541a13407b99b` after both
   exact-head validation runs passed. Merged-main validation, interactive runner
   Sandbox smoke and immutable runtime sync all passed.
-- `D:\TOOLS\VTL\current.json` points to that exact merged SHA; its manifest
-  hash matches and the release entrypoint exists.
+- The initial `D:\TOOLS\VTL\current.json` installation pointed to that exact
+  merge; its manifest hash matched and the release entrypoint existed.
 - A direct non-Actions browser Fast smoke used the installed release, prepared
   dependencies once, and returned PASS with result evidence under
   `D:\BCT\data\vtl-evidence\direct-pre-bct-2480d2bd`.
@@ -69,3 +69,26 @@ loop. GitHub required checks remain the final independent candidate check.
   `d94b9d8c1b6eb353fc050c33398958c27706a3695b3d0293bb58e9c8e8bd0373`.
   No VTL Actions run was created by this acceptance; the latest VTL runs remain
   the three merged-main runs created at `2026-10-18T22:39:08Z`.
+
+## Post-acceptance cold-start correction
+
+- A later documentation-only sync exposed a non-interactive cold-start defect:
+  Node emitted the Chromium executable path as UTF-8 while Windows PowerShell
+  decoded it through the active legacy code page. The non-ASCII user profile
+  became invalid, so operation
+  `bct-vtl-direct-live-af1c4fd9-c332ae84-browser-fast` finished once as
+  `FAILED / INFRA_ERROR / VTL_RESULT_MISSING`. That exact operation was
+  preserved and not retried.
+- VTL PR #20 transports that path as ASCII Base64 with explicit UTF-8 decode,
+  moves the browser selftest to the existing VTL self-hosted runner, removes
+  duplicate feature-branch push/PR validation, and prewarms each exact release
+  before publishing `current.json`. It merged as
+  `6e75ab689c62731e98a50f2786ead92efac98d06`.
+- Merged-main browser selftest `39175862089`, validation `39175862213`, and
+  runtime sync `39175862108` passed. The installed manifest verifies and its
+  prewarm result is PASS in 962 ms.
+- Final authenticated MCP operation
+  `bct-vtl-direct-live-af1c4fd9-6e75ab68-browser-fast` returned
+  `FINISHED / APPLIED / PASS` in 2.078 seconds (3.525 seconds external wall
+  time), and duplicate submission returned the original receipt. Evidence is
+  `D:\BCT\data\vtl-evidence\3b03c0e2ca7812e9591d86300e4706fd23be06c1b2df9f691289866d45ab090f`.
