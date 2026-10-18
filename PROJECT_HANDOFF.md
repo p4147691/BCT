@@ -1,5 +1,29 @@
 # BCT 인수인계
 
+## 완료 — 제한된 프로그램 실행과 새 PID 창 바인딩
+
+BCT LIVE는 인증된 `desktop_program_launch`를 제공한다.
+활성 `session` Lease 아래에서 존재하는 절대 비-reparse `.exe`와 bounded
+문자열 인수 배열만 `UseShellExecute=false`로 실행한다. 새 PID/process birth/
+Session을 기록하고 그 PID가 현재 가상 데스크톱에 만든 보이는 최상위 창을
+입증할 때만 같은 Lease를 정확한 창 fingerprint로 원자적으로 승격한다.
+
+창 대기 중 전역 control lock을 잡지 않아 긴급정지는 독립적으로 호출할 수
+있고, 나머지 Lease 효과는 transition marker로 차단된다. 실행 뒤 transport가
+불명확하면 UNKNOWN으로 남기며 재시도하지 않는다. 새 PID 소유 창이 없으면
+실행은 APPLIED이지만 unbound로 반환한다. Chrome singleton처럼 기존 프로세스로
+넘기는 앱을 임의로 바인딩하지 않는다.
+
+VTL PR #14와 BCT PR #197의 CI, Agent 1.4 exact-source rollout, BCT exact-main
+배포와 인증 MCP LIVE E2E가 통과했다. LIVE E2E는 다른 work 거부, 활성화,
+한글 입력 실제 관측, 긴급중지/리셋 및 최종 무리스/무래치 상태까지 확인했고
+프로브와 임시 파일을 제거했다. 완료 증거는
+`docs/exec-plans/completed/BCT_DESKTOP_PROGRAM_LAUNCH_20261019.md`에 있다.
+
+다음 데스크톱 parity 경계는 창 복원·이동·크기 변경·닫기 또는 Chrome의
+process-family/profile-aware 바인딩 중 하나로 별도 설계한다. 이번 경계에
+임의 shell, 자동 로그인이나 Scheduled Task를 섞지 않는다.
+
 ## 완료 — 현재 세션 정확한 창 목록·활성화
 
 BCT LIVE는 현재 가상 데스크톱의 보이는 최상위 창을 exact fingerprint로
