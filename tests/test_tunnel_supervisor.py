@@ -127,6 +127,13 @@ class TunnelSupervisorTests(unittest.TestCase):
             for thread in threads:
                 thread.join(timeout=5)
 
+    def test_reads_the_utf8_profile_without_corrupting_non_ascii_paths(self) -> None:
+        script = self._script().read_text(encoding="utf-8")
+        self.assertIn(
+            "Get-Content -LiteralPath $profilePath -Raw -Encoding UTF8 -ErrorAction Stop",
+            script,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

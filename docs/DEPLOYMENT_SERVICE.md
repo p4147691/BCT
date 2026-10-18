@@ -106,3 +106,8 @@ Core process when the current immutable release, service receipt, PID fingerprin
 prove that the previous process is absent or stale. A Chrome extension reload is intentionally not
 performed by this host; Chrome owns that boundary and a version mismatch must remain visible to the
 user.
+
+`modules/mcp/ops/BCT-Tunnel-Supervisor.task.xml` is the matching user-session recovery host for the
+private MCP tunnel. It starts the bounded tunnel supervisor at sign-in and restarts only that
+supervisor after an unexpected exit. The task does not connect a tunnel itself; the supervisor
+continues to require the exact executable, tunnel ID, target and health safeguards before any connect.

@@ -88,6 +88,7 @@ files = [
   "src/bct/operating_paths.py",
   "modules/mcp/ops/run_bct_core_supervisor.ps1",
   "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
+  "modules/mcp/ops/BCT-Tunnel-Supervisor.task.xml",
   "modules/mcp/ops/BCT-Core-Supervisor.protected.task.xml.template",
   "modules/mcp/ops/BCT-Tunnel-Supervisor.protected.task.xml.template",
   "modules/status-ui/index.html",
