@@ -116,6 +116,26 @@ class ExecuteFeature:
     capability = "execute"
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        if arguments.get("operation") == "reconcile-not-started":
+            if set(arguments) != {"operation", "cwd", "original_operation_id",
+                                  "original_request_digest"}:
+                raise PreconditionError("EXECUTE_RECOVERY_FIELDS_INVALID")
+            resolved = resolve_execution(work, {
+                "kind": "argv", "cwd": arguments["cwd"], "argv": ["python", "-V"]
+            })
+            original_id = arguments["original_operation_id"]
+            original_digest = arguments["original_request_digest"]
+            if (not isinstance(original_id, str) or not original_id
+                    or not isinstance(original_digest, str)
+                    or len(original_digest) != 64):
+                raise PreconditionError("EXECUTE_RECOVERY_PROVENANCE_INVALID")
+            return FeatureRequest(
+                self.capability, resolved["cwd"], {
+                    "operation": "reconcile-not-started",
+                    "original_operation_id": original_id,
+                    "original_request_digest": original_digest,
+                }, ("execution-recovery:" + original_id,), {"cwd": resolved["cwd"]},
+            )
         resolved = resolve_execution(work, arguments)
         timeout_s = float(arguments.get("timeout_s") or 60.0)
         if not 0.1 <= timeout_s <= 3600.0:
@@ -130,20 +150,38 @@ class ExecuteFeature:
         )
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments.get("operation") == "reconcile-not-started":
+            original_id = request.arguments["original_operation_id"]
+            return FeatureResult(
+                Outcome.APPLIED, {
+                    "operation": "reconcile-not-started",
+                    "original_operation_id": original_id,
+                    "original_request_digest": request.arguments["original_request_digest"],
+                    "evidence": "PERSISTED_POPEN_FILENOTFOUND_BEFORE_PROCESS_CREATE",
+                },
+                reconciled_operation_ids=(original_id,),
+            )
         argv = list(request.arguments["argv"])
         cwd = request.arguments["cwd"]
         timeout_s = float(request.arguments["timeout_s"])
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         started = time.time()
-        process = subprocess.Popen(
-            argv,
-            cwd=cwd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=creationflags,
-            shell=False,
-        )
+        try:
+            process = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=creationflags,
+                shell=False,
+            )
+        except FileNotFoundError:
+            # Popen failed before a child process existed. No execution effect.
+            return FeatureResult(
+                Outcome.NOT_APPLIED,
+                {"phase": "PROCESS_NOT_CREATED", "reason": "EXECUTABLE_NOT_FOUND"},
+            )
         fingerprint = process_fingerprint(process.pid)
         try:
             stdout_raw, stderr_raw = process.communicate(timeout=timeout_s)
