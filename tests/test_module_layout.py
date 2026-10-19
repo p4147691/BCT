@@ -22,6 +22,9 @@ class ModuleLayoutTests(unittest.TestCase):
     def test_monitor_source_is_the_bct_module(self):
         self.assertEqual("modules/monitor", self.config["monitor"]["source_root"])
 
+    def test_desktop_clipboard_is_enabled_in_default_policy(self):
+        self.assertIn("desktop_clipboard", self.config["policy"]["normal_actions"])
+
     def test_manager_wake_receipt_v2_enabled_for_approved_live_rollout(self):
         self.assertIs(
             True,
