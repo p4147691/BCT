@@ -98,6 +98,14 @@ return code, 실행 시간, 외부 evidence/result 경로를 남긴다. evidence
 `bct_read`의 bounded `directory_tree`를 사용한다. `desktop_explore` 자체는 폴더를
 순회하거나 파일 내용을 읽지 않는다.
 
+Chrome 또는 Explorer 창을 좌표나 PID 추측 없이 고를 때는
+`desktop_application_target`을 사용한다. `operation: "list"`는 정확한 process
+family와 top-level window class를 기준으로 현재 데스크톱의 후보를 읽기 전용으로
+반환한다. `operation: "bind"`는 선택 조건에 맞는 후보가 정확히 하나일 때만 그
+HWND의 Window Lease를 발급한다. 0개, 여러 개 또는 Agent 목록이 잘린 경우에는
+어떤 창도 제어하지 않는다. 반환된 Lease는 기존 `desktop_window_activate`,
+`desktop_input`, `desktop_window_manage`에 사용하고 완료 즉시 release한다.
+
 이 첫 구현은 현재 로그인되어 있고 잠기지 않은 사용자 세션에서 수동 실행한 VTL Desktop
 Session Agent를 필요로 한다. Agent가 없거나 다른 세션이거나 Pipe 소유자/DACL이 일치하지
 않으면 요청은 화면을 추측하지 않고 실패한다.

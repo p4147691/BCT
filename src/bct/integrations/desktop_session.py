@@ -270,8 +270,14 @@ class DesktopSessionClient:
                 or not re.fullmatch(r"[1-9][0-9]{0,18}", str(item.get("hwnd") or ""))
                 or isinstance(item.get("pid"), bool) or not isinstance(item.get("pid"), int)
                 or item["pid"] <= 0 or not isinstance(item.get("title"), str)
+                or not isinstance(item.get("processName"), str)
+                or not isinstance(item.get("className"), str)
                 or not isinstance(item.get("processStartTimeUtc"), str)
                 or not isinstance(item.get("virtualDesktopId"), str)
+                or item.get("sessionId") != result["session"]["sessionId"]
+                or not isinstance(item.get("visible"), bool)
+                or not isinstance(item.get("minimized"), bool)
+                or not isinstance(item.get("foreground"), bool)
             ):
                 raise DesktopSessionEffectUnknown("DESKTOP_WINDOWS_INVALID")
         return result

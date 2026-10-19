@@ -21,6 +21,7 @@ normal_actions = [
   "desktop_session_status",
   "desktop_capture",
   "desktop_explore",
+  "desktop_application_target",
   "desktop_control_lease",
   "desktop_emergency_stop",
   "desktop_input",

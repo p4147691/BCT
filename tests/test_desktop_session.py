@@ -7,7 +7,8 @@ from pathlib import Path
 
 from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
-    DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
+    DesktopApplicationTargetFeature, DesktopCaptureFeature, DesktopControlLeaseFeature,
+    DesktopEmergencyStopFeature,
     DesktopExploreFeature, DesktopInputFeature, DesktopProgramLaunchFeature,
     DesktopSessionStatusFeature,
     DesktopWindowActivateFeature, DesktopWindowManageFeature,
@@ -29,6 +30,14 @@ class FakeDesktopSessionClient:
         self.window_calls = []
         self.launch_calls = []
         self.explore_calls = []
+        self.window_items = [{
+            "hwnd": "12345", "pid": 123, "processName": "probe",
+            "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
+            "sessionId": 1, "virtualDesktopId": "a" * 36,
+            "title": "Probe", "className": "ProbeWindow", "visible": True,
+            "minimized": False, "foreground": False, "zOrder": 1,
+            "rect": {"x": 10, "y": 10, "width": 100, "height": 100},
+        }]
 
     @staticmethod
     def _base(command: str):
@@ -71,7 +80,14 @@ class FakeDesktopSessionClient:
             "lease": ({
                 "leaseId": "b" * 32, "ownerId": (arguments or {}).get("ownerId"),
                 "ttlSeconds": (arguments or {}).get("ttlSeconds", 30),
-                "target": {"type": (arguments or {}).get("targetType", "session")},
+                "target": ({
+                    "type": "window", "hwnd": (arguments or {}).get("hwnd"),
+                    "pid": 123,
+                    "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
+                    "sessionId": 1, "virtualDesktopId": "a" * 36,
+                } if (arguments or {}).get("targetType") == "window" else {
+                    "type": (arguments or {}).get("targetType", "session")
+                }),
             } if command in {"lease_acquire", "lease_renew"} else None),
             "emergencyStop": {
                 "active": command == "emergency_stop", "generation": 1,
@@ -95,15 +111,8 @@ class FakeDesktopSessionClient:
         value = self._base("windows_list")
         value["requestId"] = request_id
         value["windows"] = {
-            "items": [{
-                "hwnd": "12345", "pid": 123, "processName": "probe",
-                "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
-                "sessionId": 1, "virtualDesktopId": "a" * 36,
-                "title": "Probe", "className": "ProbeWindow", "visible": True,
-                "minimized": False, "foreground": False, "zOrder": 1,
-                "rect": {"x": 10, "y": 10, "width": 100, "height": 100},
-            }],
-            "count": 1, "truncated": False,
+            "items": list(self.window_items),
+            "count": len(self.window_items), "truncated": False,
             "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
         }
         return value
@@ -223,6 +232,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                          frozenset({
                              "desktop_session_status", "desktop_capture",
                              "desktop_explore",
+                             "desktop_application_target",
                              "desktop_control_lease", "desktop_emergency_stop",
                              "desktop_input",
                              "desktop_window_list", "desktop_window_activate",
@@ -298,6 +308,91 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         with self.assertRaises(ConfirmedFailure) as caught:
             feature.execute(request)
         self.assertTrue(caught.exception.release_claims)
+
+    def test_application_target_lists_exact_chrome_family(self):
+        self.client.window_items = [
+            {**self.client.window_items[0], "processName": "chrome",
+             "className": "Chrome_WidgetWin_1", "title": "BCT - Chrome"},
+            {**self.client.window_items[0], "hwnd": "22222", "processName": "explorer",
+             "className": "CabinetWClass", "title": "Downloads"},
+        ]
+        feature = DesktopApplicationTargetFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "list", "application": "chrome", "title_query": " bct ",
+            "include_minimized": False, "limit": 5,
+        })
+        self.assertEqual(("desktop-session:observe",), request.resources)
+        request = request.__class__(**{**request.__dict__, "operation_id": "app-list-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(1, result.evidence["candidate_count"])
+        self.assertEqual("12345", result.output["applicationWindows"]["items"][0]["hwnd"])
+
+    def test_application_target_binds_one_exact_explorer_window(self):
+        self.client.window_items = [{
+            **self.client.window_items[0], "processName": "explorer",
+            "className": "CabinetWClass", "title": "프로젝트",
+        }]
+        feature = DesktopApplicationTargetFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "bind", "application": "explorer",
+            "title_query": "프로젝트", "ttl_seconds": 45,
+        })
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        request = request.__class__(**{**request.__dict__, "operation_id": "app-bind-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("b" * 32, result.evidence["control"]["lease"]["leaseId"])
+        self.assertEqual("12345", result.evidence["application_target"]["window"]["hwnd"])
+        self.assertEqual("lease_acquire", self.client.control_calls[-1][1])
+
+    def test_application_target_fails_closed_on_absent_or_ambiguous_window(self):
+        from bct.core.models import ConfirmedFailure
+
+        feature = DesktopApplicationTargetFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "bind", "application": "chrome",
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "app-none"})
+        with self.assertRaisesRegex(ConfirmedFailure, "NOT_FOUND"):
+            feature.execute(request)
+        chrome = {
+            **self.client.window_items[0], "processName": "chrome",
+            "className": "Chrome_WidgetWin_1", "title": "Chrome",
+        }
+        self.client.window_items = [chrome, {**chrome, "hwnd": "22222"}]
+        with self.assertRaisesRegex(ConfirmedFailure, "AMBIGUOUS"):
+            feature.execute(request)
+        self.assertEqual([], self.client.control_calls)
+
+    def test_application_target_validates_fields_and_preserves_unknown_bind(self):
+        feature = DesktopApplicationTargetFeature(self.client)
+        invalid = (
+            {},
+            {"operation": "bind", "application": "edge"},
+            {"operation": "list", "application": "chrome", "limit": True},
+            {"operation": "bind", "application": "chrome", "ttl_seconds": 4},
+            {"operation": "list", "application": "chrome", "ttl_seconds": 30},
+        )
+        for arguments in invalid:
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+        class UnknownClient(FakeDesktopSessionClient):
+            def control(self, **_arguments):
+                raise DesktopSessionEffectUnknown("DESKTOP_SESSION_TRANSPORT_UNKNOWN")
+
+        client = UnknownClient(self.root)
+        client.window_items = [{
+            **client.window_items[0], "processName": "chrome",
+            "className": "Chrome_WidgetWin_1", "title": "Chrome",
+        }]
+        request = DesktopApplicationTargetFeature(client).prepare(
+            work=self.work, arguments={"operation": "bind", "application": "chrome"},
+        )
+        request = request.__class__(**{**request.__dict__, "operation_id": "app-unknown"})
+        with self.assertRaises(UnknownEffectError):
+            DesktopApplicationTargetFeature(client).execute(request)
 
     def test_agent_terminal_capture_failure_releases_as_failed_not_unknown(self):
         class RejectingClient(FakeDesktopSessionClient):
