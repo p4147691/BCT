@@ -847,6 +847,55 @@ class DesktopWindowActivateFeature:
         )
 
 
+class DesktopChromeTabSelectFeature:
+    capability = "desktop_chrome_tab_select"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        unknown = set(arguments) - {"lease_id", "ordinal", "expected_title"}
+        if unknown:
+            raise PreconditionError("DESKTOP_CHROME_TAB_SELECT_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_CHROME_TAB_SELECT_OWNER_INVALID")
+        lease_id = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_CHROME_TAB_SELECT_LEASE_ID_INVALID")
+        ordinal = arguments.get("ordinal")
+        if isinstance(ordinal, bool) or not isinstance(ordinal, int) or not 0 <= ordinal < 100:
+            raise PreconditionError("DESKTOP_CHROME_TAB_SELECT_ORDINAL_INVALID")
+        expected_title = arguments.get("expected_title")
+        if (
+            not isinstance(expected_title, str) or not expected_title
+            or len(expected_title) > 500 or "\0" in expected_title
+        ):
+            raise PreconditionError("DESKTOP_CHROME_TAB_SELECT_TITLE_INVALID")
+        return FeatureRequest(
+            self.capability, "select:chrome-tab", {
+                "owner_id": owner_id, "lease_id": lease_id,
+                "ordinal": ordinal, "expected_title": expected_title,
+            }, ("desktop-control:interactive-session",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.select_chrome_tab(
+                request_id=request.operation_id, **request.arguments,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        action = result["chromeTabAction"]
+        return FeatureResult(
+            Outcome.APPLIED, {**_session_evidence(result), "chrome_tab_action": action}, output=result,
+        )
+
+
 class DesktopWindowManageFeature:
     capability = "desktop_window_manage"
 
