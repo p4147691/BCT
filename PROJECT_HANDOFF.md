@@ -702,17 +702,25 @@ Monitor의 인접 snapshot에서는 0.161438초 중 RCC state가 0.147710초로 
 status 내부 최적화 후보는 RCC 조회다. 운영 프로세스는 재시작하지 않았고 임시 DEBUG는 INFO로
 원복했으며 raw HTTP logging은 계속 꺼져 있다.
 
-호출 전 구간을 반복 상관시키기 위한 최소 Core 계측은 독립 branch
-`feat/issue82-passive-boundary-20261020`에서 준비 중이며 아직 LIVE가 아니다. 기존 RCC가 이미
+호출 전 구간을 반복 상관시키기 위한 최소 Core 계측은 PR #242로 병합되어 LIVE generation
+154 / SHA `4b523ff597e5e8c1d528bb23d0d0e0fe2f6be7ab`에 적용됐다. 기존 RCC가 이미
 보유한 `generationStartedAt`/`generationFinishedAt`과 비교할 수 있도록 privacy-safe
 `MCP_TIMING`에 절대 밀리초와 인증된 POST `request_ingress`를 추가하고, status/capabilities
 handler 종료도 같은 trace로 남긴다. `bct_status`는 그 호출의 server-generated opaque trace ID를
 결과에 포함해 Hosted 결과와 로컬 단계를 시간 추정 없이 exact join한다. 요청 본문·헤더·토큰·사용자 텍스트와 caller trace는
-기록하지 않는다. CI-equivalent local Core 628 tests와 최종 focused 7 tests가 PASS했고, 기존과
-후보의 MCP catalogue는 43개/32,542 bytes/동일 SHA-256으로 확인됐다. VTL/RCC/browser 파일은
-변경되지 않았으므로 VTL은 이 diff의 검증 범위가 아니다. PR·CI·병합·배포·재시작은 아직
-실행하지 않았다. 상세는
-`docs/exec-plans/active/BCT_ISSUE82_PASSIVE_BOUNDARY_20261020.md`를 따른다.
+기록하지 않는다. CI-equivalent local Core 628 tests, focused 7 tests, PR required CI가 PASS했고,
+기존과 후보의 MCP catalogue는 43개/32,542 bytes/동일 SHA-256으로 확인됐다.
+
+같은 ChatGPT 탭의 read-only status 3회에서 generation start→Core ingress 중앙값은 4.921초,
+Core ingress→response complete는 0.185초, Core response→assistant complete는 3.390초였다.
+동일 길이 no-tool control 3회의 assistant generation 중앙값은 3.753초였다. status 경로의 중앙
+추가 시간 5.064초 중 Core는 0.185초뿐이므로, 과거 8.196초 pre-tool 지연을 Core 문제로 보지
+않는다. 다만 나머지 Hosted 구간을 context/queue/reasoning/tool selection/argument/tunnel로 더
+나누는 것은 consumer ChatGPT에서 `UNOBSERVABLE`이다. 43개 catalogue는 32,542 bytes이고,
+Desktop 19개가 16,189 bytes를 차지하며 37개 capability wrapper는 설명/title을 제외하면 같은
+입력 schema 구조다. 다음 최소 실험은 기존 full endpoint를 보존한 별도 minimal endpoint의
+randomized A/B이며, 실측 전에는 tool 수를 원인으로 확정하거나 기존 endpoint를 교체하지 않는다.
+상세는 `docs/exec-plans/completed/BCT_ISSUE82_PASSIVE_BOUNDARY_20261020.md`를 따른다.
 
 현재 후속 작업은 새 operation마다 `CLAIM_RESERVED`, `DISPATCH_INTENT`, effect result/uncertain,
 receipt intent/persisted를 작은 redacted SQLite journal로 남기고 `bct_operation_get` 및 Claim
