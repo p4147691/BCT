@@ -20,6 +20,7 @@ normal_actions = [
   "orchestrate",
   "desktop_session_status",
   "desktop_capture",
+  "desktop_explore",
   "desktop_control_lease",
   "desktop_emergency_stop",
   "desktop_input",

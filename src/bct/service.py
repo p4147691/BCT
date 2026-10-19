@@ -32,6 +32,7 @@ from .features.monitor import MonitorFeature
 from .features.orchestration import OrchestrationFeature
 from .features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
+    DesktopExploreFeature,
     DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
     DesktopWindowActivateFeature, DesktopWindowManageFeature,
     DesktopWindowListFeature, desktop_session_client,
@@ -113,6 +114,7 @@ class BCT:
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),
             DesktopCaptureFeature(desktop_session),
+            DesktopExploreFeature(desktop_session),
             DesktopControlLeaseFeature(desktop_session),
             DesktopEmergencyStopFeature(desktop_session),
             DesktopInputFeature(desktop_session),

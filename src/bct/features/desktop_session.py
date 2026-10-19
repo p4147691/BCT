@@ -494,6 +494,82 @@ class DesktopWindowListFeature:
         return FeatureResult(Outcome.APPLIED, evidence, output=result)
 
 
+class DesktopExploreFeature:
+    capability = "desktop_explore"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        operation = str(arguments.get("operation") or "").strip().casefold()
+        if operation not in {"processes", "paths"}:
+            raise PreconditionError("DESKTOP_EXPLORE_OPERATION_INVALID")
+        if operation == "paths":
+            if set(arguments) != {"operation"}:
+                raise PreconditionError("DESKTOP_EXPLORE_FIELDS_CONFLICT")
+            normalized = {"operation": operation}
+        else:
+            allowed = {"operation", "query", "limit", "include_background"}
+            unknown = set(arguments) - allowed
+            if unknown:
+                raise PreconditionError(
+                    "DESKTOP_EXPLORE_FIELD_INVALID:" + ",".join(sorted(unknown))
+                )
+            query = arguments.get("query", "")
+            include_background = arguments.get("include_background", True)
+            limit_value = arguments.get("limit", 100)
+            if not isinstance(query, str) or len(query.strip()) > 200:
+                raise PreconditionError("DESKTOP_EXPLORE_QUERY_INVALID")
+            if not isinstance(include_background, bool):
+                raise PreconditionError("DESKTOP_EXPLORE_BACKGROUND_INVALID")
+            if isinstance(limit_value, bool):
+                raise PreconditionError("DESKTOP_EXPLORE_LIMIT_INVALID")
+            try:
+                limit = int(limit_value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PreconditionError("DESKTOP_EXPLORE_LIMIT_INVALID") from exc
+            if not 1 <= limit <= 256:
+                raise PreconditionError("DESKTOP_EXPLORE_LIMIT_INVALID")
+            normalized = {
+                "operation": operation, "query": query.strip(), "limit": limit,
+                "include_background": include_background,
+            }
+        return FeatureRequest(
+            self.capability, operation + ":interactive-session", normalized,
+            ("desktop-session:observe",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            if request.arguments["operation"] == "paths":
+                result = self.client.paths(request_id=request.operation_id)
+                paths = result["paths"]
+                evidence = {
+                    **_session_evidence(result), "known_folder_count": len(paths["knownFolders"]),
+                    "drive_count": len(paths["drives"]),
+                    "observed_at_utc": paths["observedAtUtc"],
+                }
+            else:
+                result = self.client.processes(
+                    request_id=request.operation_id,
+                    query=request.arguments["query"], limit=request.arguments["limit"],
+                    include_background=request.arguments["include_background"],
+                )
+                processes = result["processes"]
+                evidence = {
+                    **_session_evidence(result), "process_count": processes["count"],
+                    "truncated": processes["truncated"],
+                    "observed_at_utc": processes["observedAtUtc"],
+                }
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        return FeatureResult(Outcome.APPLIED, evidence, output=result)
+
+
 class DesktopWindowActivateFeature:
     capability = "desktop_window_activate"
 

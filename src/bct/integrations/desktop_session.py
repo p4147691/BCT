@@ -115,6 +115,7 @@ class DesktopSessionClient:
             "lease_release", "emergency_stop", "emergency_reset",
             "input_mouse_move", "input_mouse_click", "input_key", "input_text",
             "windows_list", "window_activate", "window_manage", "program_launch",
+            "processes_list", "paths_list",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -287,6 +288,100 @@ class DesktopSessionClient:
             or not isinstance(action.get("alreadyForeground"), bool)
         ):
             raise DesktopSessionEffectUnknown("DESKTOP_WINDOW_ACTION_INVALID")
+        return result
+
+    def processes(self, *, request_id: str, query: str,
+                  limit: int, include_background: bool) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="processes_list",
+            arguments={
+                "query": query, "limit": limit,
+                "includeBackground": include_background,
+            },
+            timeout_s=10.0,
+        )
+        processes = result.get("processes")
+        if not isinstance(processes, dict):
+            raise DesktopSessionEffectUnknown("DESKTOP_PROCESSES_MISSING")
+        items = processes.get("items")
+        count = processes.get("count")
+        session_id = result["session"]["sessionId"]
+        if (
+            not isinstance(items, list) or isinstance(count, bool)
+            or not isinstance(count, int) or count != len(items)
+            or not isinstance(processes.get("truncated"), bool)
+            or not isinstance(processes.get("observedAtUtc"), str)
+            or processes.get("sessionId") != session_id
+            or processes.get("query") != query
+            or processes.get("includeBackground") is not include_background
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_PROCESSES_INVALID")
+        for item in items:
+            windows = item.get("windows") if isinstance(item, dict) else None
+            if (
+                not isinstance(item, dict)
+                or isinstance(item.get("pid"), bool) or not isinstance(item.get("pid"), int)
+                or item["pid"] <= 0 or not isinstance(item.get("processName"), str)
+                or not item["processName"]
+                or item.get("sessionId") != session_id
+                or item.get("processStartTimeUtc") is not None
+                   and not isinstance(item.get("processStartTimeUtc"), str)
+                or item.get("executablePath") is not None
+                   and not isinstance(item.get("executablePath"), str)
+                or item.get("responding") is not None
+                   and not isinstance(item.get("responding"), bool)
+                or isinstance(item.get("windowCount"), bool)
+                or not isinstance(item.get("windowCount"), int) or item["windowCount"] < 0
+                or not isinstance(windows, list) or item["windowCount"] != len(windows)
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_PROCESSES_INVALID")
+            for window in windows:
+                if (
+                    not isinstance(window, dict)
+                    or window.get("pid") != item["pid"]
+                    or not re.fullmatch(r"[1-9][0-9]{0,18}", str(window.get("hwnd") or ""))
+                    or not isinstance(window.get("title"), str)
+                    or not isinstance(window.get("virtualDesktopId"), str)
+                ):
+                    raise DesktopSessionEffectUnknown("DESKTOP_PROCESSES_INVALID")
+        return result
+
+    def paths(self, *, request_id: str) -> dict[str, Any]:
+        result = self.request(request_id=request_id, command="paths_list", timeout_s=10.0)
+        paths = result.get("paths")
+        if not isinstance(paths, dict):
+            raise DesktopSessionEffectUnknown("DESKTOP_PATHS_MISSING")
+        known = paths.get("knownFolders")
+        drives = paths.get("drives")
+        if (
+            not isinstance(known, list) or not isinstance(drives, list)
+            or paths.get("sessionId") != result["session"]["sessionId"]
+            or not isinstance(paths.get("observedAtUtc"), str)
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_PATHS_INVALID")
+        for item in known:
+            if (
+                not isinstance(item, dict) or not isinstance(item.get("name"), str)
+                or not isinstance(item.get("path"), str) or not item["path"]
+                or not Path(item["path"]).is_absolute()
+                or not isinstance(item.get("exists"), bool)
+                or item.get("kind") != "known-folder"
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_PATHS_INVALID")
+        for item in drives:
+            if (
+                not isinstance(item, dict) or not isinstance(item.get("path"), str)
+                or not Path(item["path"]).is_absolute()
+                or not isinstance(item.get("driveType"), str)
+                or not isinstance(item.get("ready"), bool)
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_PATHS_INVALID")
+            for key in ("totalBytes", "freeBytes"):
+                if key in item and (
+                    isinstance(item[key], bool) or not isinstance(item[key], int)
+                    or item[key] < 0
+                ):
+                    raise DesktopSessionEffectUnknown("DESKTOP_PATHS_INVALID")
         return result
 
     def manage(self, *, request_id: str, owner_id: str, lease_id: str,
