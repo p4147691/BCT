@@ -87,10 +87,17 @@ def build_mcp(
 
     @server.tool(description="List the exact BCT capabilities exposed by this runtime.", structured_output=True)
     async def bct_capabilities() -> dict[str, Any]:
-        return {
+        started_ns = time.perf_counter_ns()
+        value = {
             "capabilities": list(capabilities),
             "tools": [*_GENERAL_TOOLS, *[f"bct_{name}" for name in capabilities]],
         }
+        handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
+        _trace_stage(
+            "handler_done", tool_kind="capabilities", handler_ms=handler_ms,
+            wait_ms=0.0, execution_ms=handler_ms,
+        )
+        return value
 
     @server.tool(
         description=(
@@ -100,6 +107,7 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_status(compact: bool = True) -> dict[str, Any]:
+        started_ns = time.perf_counter_ns()
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
         snapshot = await asyncio.to_thread(status_provider)
@@ -113,6 +121,14 @@ def build_mcp(
                 if isinstance(rows, list):
                     monitor[key] = rows[:5]
             snapshot = {**snapshot, "monitor": monitor, "compact": True}
+        current_trace_id = _MCP_TRACE_ID.get()
+        if current_trace_id is not None:
+            snapshot = {**snapshot, "mcp_trace_id": current_trace_id}
+        handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
+        _trace_stage(
+            "handler_done", tool_kind="status", handler_ms=handler_ms,
+            wait_ms=0.0, execution_ms=handler_ms,
+        )
         return snapshot
 
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
@@ -340,6 +356,8 @@ class LocalBearerMiddleware:
         token = _MCP_TRACE_ID.set(trace_id)
         ingress_ns = time.perf_counter_ns()
         first_response_ns = None
+        if str(scope.get("method") or "").upper() == "POST":
+            _trace_stage("request_ingress")
 
         async def traced_send(message: dict[str, Any]) -> None:
             nonlocal first_response_ns
