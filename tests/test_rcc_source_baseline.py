@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         # Previous reviewed RCC background: 57bf4e8715a630a1db4ce703a4afec7fede8d109a3a5104918e9eedae59d896e
         # Direct-tab candidate SHA is reverified from the exact source.
         expected = {
-            "background.js": "32ac8ddf361a0c07b2ec2a8c436307d32708649f134056e894bcefd59fb72767",
+            "background.js": "ea079faded9203abc049a55e01dc42c49b1d5a01e1a4db12c16604b4c2abe24e",
             "content.js": "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe",
             "manifest.json": "7687f3654e0f8e2ca47d4ae6258dbe59b1eb1e152d12eb2844b21bb272f56b7e",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",

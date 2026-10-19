@@ -1130,5 +1130,94 @@ class RccIntegrationTests(unittest.TestCase):
             })
 
 
+    def test_direct_tab_result_read_scoped_to_successful_original(self):
+        direct_id = "direct-tab-first-accepted"
+        self.client.result = {
+            "type": "host:result", "ok": True, "state": "SUBMITTED",
+            "submitted": True, "ambiguous": False, "operationId": direct_id,
+            "instanceId": "instance123", "sessionId": "a" * 32,
+            "tabId": 10, "windowId": 11,
+            "conversationKey": "6ad5b191-947c-83ee-8dae-b9c867af9026",
+        }
+        original = self.call(direct_id, {
+            "command": "send-to-tab", "instance_id": "instance123",
+            "session_id": "a" * 32, "tab_id": 10, "window_id": 11,
+            "conversation_key": "", "text": "bounded isolated test",
+        })
+        self.assertEqual(Outcome.APPLIED, original.outcome)
+        self.assertEqual("send-to-tab", original.evidence["command"])
+        self.client.result = {
+            "type": "host:result", "ok": True, "relayId": direct_id,
+            "found": True, "completed": True, "pending": False,
+            "result": {
+                "id": direct_id, "ok": True,
+                "reply": "BCT_DIRECT_TEST_20261019_OK",
+                "resultState": "RESULT_PERSISTED",
+            },
+        }
+        read = self.call("direct-tab-result-once", {
+            "command": "result", "instance_id": "instance123",
+            "relay_id": direct_id,
+        })
+        self.assertEqual(Outcome.APPLIED, read.outcome)
+        self.assertEqual(
+            "BCT_DIRECT_TEST_20261019_OK",
+            read.output["result"]["result"]["reply"],
+        )
+        self.assertEqual("result", self.client.calls[-1]["command"])
+        self.assertEqual(direct_id, self.client.calls[-1]["text"])
+        self.assertTrue(self.call("direct-tab-result-once", {
+            "command": "result", "instance_id": "instance123",
+            "relay_id": direct_id,
+        }).duplicate)
+
+        with self.assertRaisesRegex(PreconditionError, "RCC_RESULT_INSTANCE_MISMATCH"):
+            self.call("direct-tab-result-wrong-instance", {
+                "command": "result", "instance_id": "otherinstance",
+                "relay_id": direct_id,
+            })
+        self.call("direct-tab-unrelated-state", {
+            "command": "state", "instance_id": "instance123",
+        })
+        with self.assertRaisesRegex(PreconditionError, "RCC_RESULT_ORIGINAL_SEND_REQUIRED"):
+            self.call("direct-tab-result-nonsend-original", {
+                "command": "result", "instance_id": "instance123",
+                "relay_id": "direct-tab-unrelated-state",
+            })
+
+        self.bct.create_work(
+            work_id="other-direct-tab-work", request_summary="strict owner",
+            roots=[str(self.root)], actions=["relay_browser"],
+            principal=self.principal,
+        )
+        with self.assertRaisesRegex(Exception, "OPERATION_RESULT_ACCESS_DENIED"):
+            self.bct.operations.run(
+                principal=self.principal, work_id="other-direct-tab-work",
+                operation_id="direct-tab-cross-work-denied",
+                capability="relay_browser",
+                arguments={
+                    "command": "result", "instance_id": "instance123",
+                    "relay_id": direct_id,
+                },
+            )
+
+    def test_direct_tab_result_read_rejects_not_applied_original(self):
+        self.client.result = {
+            "type": "host:result", "ok": False, "state": "NOT_APPLIED",
+            "effectState": "NOT_APPLIED", "submitted": False,
+            "ambiguous": False, "error": "DIRECT_TAB_IDENTITY_MISMATCH",
+        }
+        original = self.call("direct-tab-rejected", {
+            "command": "send-to-tab", "instance_id": "instance123",
+            "session_id": "a" * 32, "tab_id": 10, "window_id": 11,
+            "conversation_key": "", "text": "bounded isolated test",
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, original.outcome)
+        with self.assertRaisesRegex(PreconditionError, "RCC_RESULT_ORIGINAL_SEND_REQUIRED"):
+            self.call("direct-tab-no-result-on-rejection", {
+                "command": "result", "instance_id": "instance123",
+                "relay_id": "direct-tab-rejected",
+            })
+
 if __name__ == "__main__":
     unittest.main()
