@@ -48,6 +48,11 @@ class OperationCoordinator:
             if capability == "desktop_chrome_tab_reconcile"
             else "desktop_window_activate"
             if capability == "desktop_window_activate_reconcile"
+            else self.store.get_operation_metadata_for(
+                operation_id=str(arguments.get("original_operation_id") or ""),
+                work_id=work_id, principal_id=principal.principal_id,
+            )["capability"]
+            if capability == "claim_reconcile"
             else capability
         )
         decision = self.policy.decide(principal=principal, work=work, action=policy_action,
@@ -157,6 +162,18 @@ class OperationCoordinator:
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
         )
+        if capability == "claim_reconcile":
+            original = self.store.get_operation_metadata_for(
+                operation_id=request.arguments["original_operation_id"],
+                work_id=work_id, principal_id=principal.principal_id,
+            )
+            if original["capability"] not in {"read", "system_inspect", "github_pr_status"}:
+                raise PreconditionError("CLAIM_RECONCILE_CAPABILITY_NOT_READ_ONLY")
+            request = replace(request, preconditions={
+                **request.preconditions,
+                "work_id": work_id,
+                "principal_id": principal.principal_id,
+            })
         if capability == "relay_browser" and rcc_command in {
             "reclassify-rename-claim", "quarantine-legacy-rename-claim",
         }:
@@ -345,6 +362,7 @@ class OperationCoordinator:
     def _execute(self, *, feature: Feature, request, principal=None, work_id=None,
                  approval_ref=None) -> OperationResult:
         operation_id = request.operation_id
+        self.store.record_effect_stage(operation_id=operation_id, stage="DISPATCH_INTENT")
         feature_started = time.perf_counter_ns()
         try:
             if request.capability == "verify":
@@ -379,9 +397,15 @@ class OperationCoordinator:
                 result = feature.execute(request)
             if not isinstance(result, FeatureResult):
                 raise TypeError("FEATURE_RESULT_REQUIRED")
+            self.store.record_effect_stage(
+                operation_id=operation_id, stage="EFFECT_RESULT_OBSERVED",
+                detail={"outcome": result.outcome.value},
+            )
             trace_stage("feature_execution", tool_kind=request.capability,
                         elapsed_ms=(time.perf_counter_ns() - feature_started) / 1e6)
             receipt_started = time.perf_counter_ns()
+            self.store.record_effect_stage(operation_id=operation_id,
+                                           stage="RECEIPT_PERSIST_INTENT")
             current = self.store.get_operation_for(
                 operation_id=operation_id, work_id=work_id,
                 principal_id=principal.principal_id,
@@ -428,24 +452,41 @@ class OperationCoordinator:
                         elapsed_ms=(time.perf_counter_ns() - receipt_started) / 1e6)
             return replace(stored, output=result.output)
         except PreconditionError as exc:
+            self.store.record_effect_stage(
+                operation_id=operation_id, stage="EFFECT_REJECTED",
+                detail={"error_code": str(exc).split(":", 1)[0]},
+            )
             return self.store.finish_operation(
                 operation_id=operation_id, outcome=Outcome.NOT_APPLIED,
                 evidence={"phase": "PRECONDITION", "code": str(exc)}, error=str(exc),
                 release_claims=True,
             )
         except ConfirmedFailure as exc:
+            self.store.record_effect_stage(
+                operation_id=operation_id, stage="EFFECT_RESULT_OBSERVED",
+                detail={"outcome": Outcome.FAILED.value,
+                        "error_code": str(exc).split(":", 1)[0]},
+            )
             return self.store.finish_operation(
                 operation_id=operation_id, outcome=Outcome.FAILED,
                 evidence={"phase": "EXECUTION", "code": str(exc)}, error=str(exc),
                 release_claims=exc.release_claims,
             )
         except UnknownEffectError as exc:
+            self.store.record_effect_stage(
+                operation_id=operation_id, stage="EFFECT_UNCERTAIN",
+                detail={"error_code": str(exc).split(":", 1)[0]},
+            )
             return self.store.finish_operation(
                 operation_id=operation_id, outcome=Outcome.UNKNOWN,
                 evidence={"phase": "EXECUTION", "code": str(exc)}, error=str(exc),
                 release_claims=False,
             )
         except Exception as exc:
+            self.store.record_effect_stage(
+                operation_id=operation_id, stage="EFFECT_UNCERTAIN",
+                detail={"error_type": type(exc).__name__},
+            )
             return self.store.finish_operation(
                 operation_id=operation_id, outcome=Outcome.UNKNOWN,
                 evidence={"phase": "UNEXPECTED", "type": type(exc).__name__},

@@ -29,6 +29,7 @@ from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
 from .features.monitor import MonitorFeature
+from .features.claim_reconciliation import ReadOnlyClaimReconcileFeature
 from .features.orchestration import OrchestrationFeature
 from .features.desktop_session import (
     DesktopCaptureFeature, DesktopClipboardFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
@@ -115,6 +116,7 @@ class BCT:
             SystemInspectFeature(), ExecuteFeature(),
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
+            ReadOnlyClaimReconcileFeature(self.store),
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),
             DesktopCaptureFeature(desktop_session),
