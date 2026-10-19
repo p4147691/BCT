@@ -66,6 +66,19 @@ source_root = "modules/monitor"
 canonical_source_root = "D:\\BCT\\source"
 live_root = "D:\\ChromeExtensions\\DesktopWindow-Monitor"
 
+# Disabled until a separately registered ACK-only ChatGPT conversation is named.
+# The source and probe conversation keys must differ.  With enabled=true BCT
+# watches one exact source; after 30 seconds of continuous generation it sends
+# one fixed Instant ACK prompt to the exact, idle probe conversation.
+[bottleneck_ack]
+enabled = true
+threshold_seconds = 30
+cooldown_seconds = 300
+watch_instance_id = "6174664e1c1b4e6db1d4729c841db3c9"
+watch_conversation_key = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
+probe_instance_id = "6174664e1c1b4e6db1d4729c841db3c9"
+probe_conversation_key = "6ad69ba4-988c-83ee-971e-1ffef5465116"
+
 [deployment.profiles.bct_runtime_v1]
 source_root = "D:\\BCT\\source"
 runtime_root = "D:\\BCT\\runtime"
@@ -81,6 +94,7 @@ files = [
   "src/bct/mcp_server.py",
   "src/bct/trace_timing.py",
   "src/bct/monitor_runtime.py",
+  "src/bct/bottleneck_ack.py",
   "src/bct/manager_decision_recovery.py",
   "src/bct/worker_dispatch_recovery.py",
   "src/bct/background_operations.py",

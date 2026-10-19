@@ -18,6 +18,7 @@ from bct import BCT
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
+from bct.bottleneck_ack import BottleneckAckController, load_bottleneck_ack_policy
 from bct.service_runtime import acquire_runtime_writer_lock, current_process_identity
 
 
@@ -144,6 +145,9 @@ def main() -> int:
     from .background_operations import recover_orphaned_orchestration_operations
     orphan_recoveries = recover_orphaned_orchestration_operations(bct)
     monitor_principal = ensure_monitor_work(bct, runtime_root=runtime_root)
+    bottleneck_ack = BottleneckAckController(
+        load_bottleneck_ack_policy(policy_path), bct=bct, principal=monitor_principal,
+    )
     identity = current_process_identity()
     control_token = os.environ.get("BCT_CONTROL_TOKEN", "")
     mcp_token = os.environ.get("BCT_MCP_TOKEN", "")
@@ -175,6 +179,7 @@ def main() -> int:
             "enabled": bct.worker_dispatch_recovery is not None,
             "runs": 0,
         },
+        "bottleneck_ack": bottleneck_ack.status(),
     }
 
     recovery_stop = threading.Event()
@@ -225,6 +230,21 @@ def main() -> int:
                 }
             # Event-first latency with bounded polling as the recovery safety net.
             recovery.wait(2.0)
+
+    def bottleneck_ack_loop() -> None:
+        """Observe RCC telemetry only; the controller owns any one-shot effect."""
+        while not recovery_stop.is_set():
+            try:
+                monitor = build_monitor_state(
+                    store=bct.store, service_state=state,
+                    data_root=runtime_root.parent / "data",
+                )
+                state["bottleneck_ack"] = bottleneck_ack.observe(
+                    monitor["rcc"]["instances"],
+                )
+            except Exception as exc:  # Never turn an observation fault into a relay retry.
+                state["bottleneck_ack"] = {"state": "UNKNOWN", "error": type(exc).__name__}
+            recovery_stop.wait(2.0)
 
     def status_snapshot() -> dict[str, Any]:
         """Expose one no-argument, read-only operator view for MCP clients."""
@@ -305,6 +325,7 @@ def main() -> int:
     holder["server"] = server
     recovery_thread = None
     dispatch_thread = None
+    bottleneck_thread = None
     if bct.manager_decision_recovery is not None:
         recovery_thread = threading.Thread(
             target=manager_decision_recovery_loop,
@@ -317,6 +338,11 @@ def main() -> int:
             name="bct-worker-dispatch-recovery", daemon=True,
         )
         dispatch_thread.start()
+    if bottleneck_ack.policy.enabled:
+        bottleneck_thread = threading.Thread(
+            target=bottleneck_ack_loop, name="bct-bottleneck-ack", daemon=True,
+        )
+        bottleneck_thread.start()
     try:
         server.run()
     finally:
@@ -325,6 +351,8 @@ def main() -> int:
             recovery_thread.join(timeout=3.0)
         if dispatch_thread is not None:
             dispatch_thread.join(timeout=3.0)
+        if bottleneck_thread is not None:
+            bottleneck_thread.join(timeout=3.0)
         writer_lock.close()
     return 0 if server.started else 1
 

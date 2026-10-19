@@ -125,11 +125,16 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                 tabs.append({
                     "tab_id": item["id"],
                     "window_id": item.get("windowId"),
+                    "conversation_key": str(endpoint.get("conversationKey") or "").lower(),
                     "title": str(item.get("title") or ""),
                     "url": str(item.get("url") or ""),
                     "presence": str(endpoint.get("presence") or "UNKNOWN"),
                     "active": bool(endpoint.get("tabActive")),
                     "generating": bool(endpoint.get("generating")),
+                    "telemetry": {
+                        "generation_started_at": (endpoint.get("telemetry") or {}).get("generationStartedAt"),
+                        "generation_finished_at": (endpoint.get("telemetry") or {}).get("generationFinishedAt"),
+                    } if isinstance(endpoint.get("telemetry"), dict) else {},
                 })
             results[instance_id] = {
                 "instance_id": instance_id,
