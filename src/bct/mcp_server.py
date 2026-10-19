@@ -32,7 +32,7 @@ _CAPABILITY_USAGE = {
     "desktop_session_status": "Return the exact current interactive user-session Agent identity, foreground window, monitor geometry, and capture readiness.",
     "desktop_capture": "Capture the current virtual screen, one monitor, or one exact HWND. The MCP result contains both metadata and an image content block.",
     "desktop_explore": "List exact current-session processes with their desktop windows, or discover the logged-in user's known folders and drives. Use work-scoped read for file contents.",
-    "desktop_application_target": "List Chrome or Explorer windows by semantic application identity and title, or acquire the one exact matching window Lease. Explorer also accepts an exact absolute folder_path. Bind fails closed on zero, multiple, or truncated matches.",
+    "desktop_application_target": "List Chrome or Explorer windows by semantic identity, or acquire one exact matching window Lease. Chrome supports read-only profile_query plus active/any tab_title_query without focus or browser mutation. Explorer supports exact absolute folder_path. Bind fails closed on unavailable inspection, zero, multiple, or truncated matches.",
     "desktop_control_lease": "Status, acquire, renew, release, or generation-fenced reset of the one current-session control lease. This does not inject input.",
     "desktop_emergency_stop": "Latch the current-session emergency stop and immediately revoke its active control lease. This remains callable independently of normal control claims.",
     "desktop_input": "Move/click the mouse or send one bounded key/text batch to an exact window lease. Every effect is fenced by the active lease and emergency stop.",
