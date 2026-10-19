@@ -644,3 +644,20 @@ process가 다시 `healthy/ready`, runtime `ready`, non-stale 상태가 됐다. 
 SHA로 통과했다. 상세 증거는
 `docs/exec-plans/completed/BCT_DEPLOY_SHUTDOWN_RECONCILIATION_20261014.md`와
 `docs/exec-plans/completed/BCT_DEPLOY_FORCE_EXIT_20261014.md`를 따른다.
+
+## Generic desktop UI Automation 완료
+
+BCT는 인증된 MCP에서 일반 Windows UIA 요소 조회와 `set_value`, `invoke`,
+`toggle`, `select`, `expand`, `collapse`를 exact HWND 및 Window Lease에 묶어
+제공한다. 원문 control name과 입력값은 durable evidence에 남기지 않으며,
+텍스트는 OS locale과 무관한 UTF-8/ASCII-envelope 경계로 전달한다.
+
+PR #231은 기본 UIA 경로를, PR #232는 사라진 exact target을 읽기 전용으로
+증명한 뒤 기존 activation UNKNOWN은 보존하고 그 Claim만 해제하는
+`desktop_window_activate_reconcile`을 추가했다. PR #232 merge
+`ea7b9f84207ca1fed4f97a7f39b1e344cb13ea5d`는 PR/main CI를 통과했고 Core
+generation 144에 READY/OK로 배포됐다. VTL Agent 2.3.2와의 authenticated LIVE
+canary에서 10개 요소 조회와 다섯 semantic action의 실제 앱 postcondition,
+Lease 해제, 기존 Chrome 9개 최상위 창 identity 보존을 확인했다. 상세 계약과
+완료 증거는 `docs/exec-plans/completed/BCT_DESKTOP_UIA_CONTROL_20261019.md`를
+따른다.
