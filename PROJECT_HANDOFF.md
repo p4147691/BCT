@@ -691,6 +691,17 @@ Supervisor 하나가 READY다. Hosted read canary는 APPLIED였고 BCT 내부 �
 분리했다. 단, upstream `resp_timing`은 아직 운영자 영수증으로 되돌아오지 않아 hosted
 queue/handback 잔여 구간은 숫자로 확정하지 않는다.
 
+후속 실제 `bct_status(compact=true)` canary는 현재 LIVE
+`b4663866417230d90347d2a295150d7a1a589b61`에서 ChatGPT turn, tunnel metric/debug event,
+BCT `MCP_TIMING`을 같은 단일 성공 호출로 상관시켰다. 전체 13.570초 중 도구 호출 전 모델
+구간 8.196초, control-plane enqueue부터 response acceptance까지 0.781초, 도구 결과 뒤 최종
+답변까지 4.593초였다. 0.781초는 enqueue-to-poll 0.241초, local MCP HTTP 0.184205초,
+dispatcher glue 약 0.004064초, response POST 0.351731초로 분리됐고 같은 호출의 BCT ASGI는
+0.183009초였다. 따라서 이 샘플의 주 병목을 BCT Core나 터널 전체로 부르면 안 된다.
+Monitor의 인접 snapshot에서는 0.161438초 중 RCC state가 0.147710초로 가장 컸으므로 compact
+status 내부 최적화 후보는 RCC 조회다. 운영 프로세스는 재시작하지 않았고 임시 DEBUG는 INFO로
+원복했으며 raw HTTP logging은 계속 꺼져 있다.
+
 현재 후속 작업은 새 operation마다 `CLAIM_RESERVED`, `DISPATCH_INTENT`, effect result/uncertain,
 receipt intent/persisted를 작은 redacted SQLite journal로 남기고 `bct_operation_get` 및 Claim
 diagnostics에서 읽게 하는 것이다. 과거 읽기 전용 UNKNOWN 9건에는 별도

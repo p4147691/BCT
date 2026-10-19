@@ -60,6 +60,26 @@ SHA-256 match. With no pointer it retains the verified v0.0.14 fallback. It expl
   claim reservation 7.207 ms, read 0.341 ms, receipt persistence 6.464 ms, handler
   23.010 ms, and ASGI 29.703 ms. Exact hosted queue/handback timing is not yet projected
   into the operator receipt even though v0.0.16 emits `resp_timing` upstream.
+- A second visible ChatGPT `bct_status(compact=true)` canary on the current LIVE release
+  `b4663866417230d90347d2a295150d7a1a589b61` correlated the ChatGPT turn timestamps,
+  tunnel metric deltas, temporary DEBUG event timestamps, and BCT `MCP_TIMING` for one exact
+  successful `tools/call`. The 13,570 ms whole turn split into 8,196 ms before the Hosted
+  command was enqueued, 781 ms from control-plane enqueue through response acceptance, and
+  4,593 ms after the tool result until the final answer completed. The 781 ms tunnel envelope
+  split into 241 ms enqueue-to-poll wait, 184.205 ms local MCP HTTP, about 4.064 ms dispatcher
+  glue, and 351.731 ms response POST. BCT ASGI for the same call was 183.009 ms. An adjacent
+  Monitor snapshot split its 161.438 ms into store 11.627 ms, process sessions 1.255 ms, RCC
+  discovery 0.845 ms, and RCC state 147.710 ms; this adjacent snapshot is diagnostic context,
+  not falsely labelled as the exact canary's internal subspan.
+- The production tunnel stayed running throughout the second canary. Runtime log level changed
+  from INFO to DEBUG only for the bounded observation window and was verified back at INFO;
+  raw HTTP logging stayed disabled. No Core, Supervisor, tunnel, RCC, Worker, or Manager restart
+  occurred.
+- Optimisation priority follows the measured size and ownership of each segment: first reduce
+  ChatGPT/model pre-tool and post-tool work with shorter deterministic prompts and compact results;
+  next reduce the roughly 148 ms RCC state lookup for compact status; then assess the 352 ms
+  control-plane upload and 241 ms hosted queue as tunnel/platform boundaries. BCT authorization,
+  Claim, receipt, or execution changes are not justified by this status canary.
 
 ## UNKNOWN reconciliation result
 
