@@ -702,6 +702,18 @@ Monitor의 인접 snapshot에서는 0.161438초 중 RCC state가 0.147710초로 
 status 내부 최적화 후보는 RCC 조회다. 운영 프로세스는 재시작하지 않았고 임시 DEBUG는 INFO로
 원복했으며 raw HTTP logging은 계속 꺼져 있다.
 
+호출 전 구간을 반복 상관시키기 위한 최소 Core 계측은 독립 branch
+`feat/issue82-passive-boundary-20261020`에서 준비 중이며 아직 LIVE가 아니다. 기존 RCC가 이미
+보유한 `generationStartedAt`/`generationFinishedAt`과 비교할 수 있도록 privacy-safe
+`MCP_TIMING`에 절대 밀리초와 인증된 POST `request_ingress`를 추가하고, status/capabilities
+handler 종료도 같은 trace로 남긴다. `bct_status`는 그 호출의 server-generated opaque trace ID를
+결과에 포함해 Hosted 결과와 로컬 단계를 시간 추정 없이 exact join한다. 요청 본문·헤더·토큰·사용자 텍스트와 caller trace는
+기록하지 않는다. CI-equivalent local Core 628 tests와 최종 focused 7 tests가 PASS했고, 기존과
+후보의 MCP catalogue는 43개/32,542 bytes/동일 SHA-256으로 확인됐다. VTL/RCC/browser 파일은
+변경되지 않았으므로 VTL은 이 diff의 검증 범위가 아니다. PR·CI·병합·배포·재시작은 아직
+실행하지 않았다. 상세는
+`docs/exec-plans/active/BCT_ISSUE82_PASSIVE_BOUNDARY_20261020.md`를 따른다.
+
 현재 후속 작업은 새 operation마다 `CLAIM_RESERVED`, `DISPATCH_INTENT`, effect result/uncertain,
 receipt intent/persisted를 작은 redacted SQLite journal로 남기고 `bct_operation_get` 및 Claim
 diagnostics에서 읽게 하는 것이다. 과거 읽기 전용 UNKNOWN 9건에는 별도

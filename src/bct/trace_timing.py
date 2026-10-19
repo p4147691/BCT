@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import logging
+import time
 from contextvars import ContextVar
 from collections import deque
 from threading import Lock
@@ -27,7 +28,13 @@ def trace_stage(stage: str, *, tool_kind: str | None = None, **durations_ms: flo
     trace_id = TRACE_ID.get()
     if trace_id is None:
         return
-    payload = {"trace_id": trace_id, "stage": stage}
+    payload = {
+        "trace_id": trace_id,
+        "stage": stage,
+        # Wall-clock milliseconds are deliberately coarse enough to correlate
+        # with RCC's Date.now() telemetry without recording request content.
+        "observed_at_unix_ms": time.time_ns() // 1_000_000,
+    }
     if tool_kind is not None:
         payload["tool_kind"] = tool_kind
     payload.update({key: round(value, 3) for key, value in durations_ms.items()})

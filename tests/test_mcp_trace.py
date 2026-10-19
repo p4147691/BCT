@@ -30,13 +30,21 @@ class TraceTests(unittest.TestCase):
                 return {"type": "http.request", "body": b"secret prompt"}
             async def send(message):
                 sent.append(message)
-            scope = {"type": "http", "path": "/mcp", "headers": [(b"authorization", b"Bearer secret-token")]}
+            scope = {
+                "type": "http", "method": "POST", "path": "/mcp",
+                "headers": [(b"authorization", b"Bearer secret-token")],
+            }
             asyncio.run(LocalBearerMiddleware(app, "secret-token")(scope, receive, send))
             self.assertEqual(2, len(sent))
-            self.assertEqual(2, len(events))
+            self.assertEqual(3, len(events))
             payloads = [json.loads(event.split("MCP_TIMING ", 1)[1]) for event in events]
-            self.assertEqual({"handler_done", "response_complete"}, {p["stage"] for p in payloads})
-            self.assertEqual(payloads[0]["trace_id"], payloads[1]["trace_id"])
+            self.assertEqual(
+                {"request_ingress", "handler_done", "response_complete"},
+                {p["stage"] for p in payloads},
+            )
+            self.assertEqual(1, len({p["trace_id"] for p in payloads}))
+            self.assertTrue(all(type(p["observed_at_unix_ms"]) is int for p in payloads))
+            self.assertTrue(all(p["observed_at_unix_ms"] > 1_000_000_000_000 for p in payloads))
             self.assertNotIn("secret", " ".join(events))
             self.assertNotIn("prompt", " ".join(events))
             self.assertIsNone(_MCP_TRACE_ID.get())
@@ -54,7 +62,8 @@ class TraceTests(unittest.TestCase):
         recent = recent_stages(limit=1)
         self.assertEqual(1, len(recent))
         self.assertEqual(
-            {"trace_id", "stage", "tool_kind", "elapsed_ms"}, set(recent[0])
+            {"trace_id", "stage", "observed_at_unix_ms", "tool_kind", "elapsed_ms"},
+            set(recent[0]),
         )
         self.assertEqual("synthetic-monitor-trace", recent[0]["trace_id"])
         recent[0]["stage"] = "mutated-view"
@@ -102,7 +111,9 @@ class TraceTests(unittest.TestCase):
             self.assertEqual(["authorization_prepare", "claim_reservation"],
                              [x["stage"] for x in payloads])
             self.assertTrue(all(x["trace_id"] == "synthetic-trace-id" for x in payloads))
-            self.assertTrue(all(set(x) == {"trace_id", "stage", "tool_kind", "elapsed_ms"} for x in payloads))
+            self.assertTrue(all(set(x) == {
+                "trace_id", "stage", "observed_at_unix_ms", "tool_kind", "elapsed_ms"
+            } for x in payloads))
             self.assertIsNone(TRACE_ID.get())
         finally:
             logger.removeHandler(capture)

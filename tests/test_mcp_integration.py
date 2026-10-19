@@ -166,6 +166,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     status = await session.call_tool("bct_status", {})
                     self.assertFalse(status.isError)
                     self.assertTrue(status.structuredContent["core"]["ready"])
+                    self.assertRegex(status.structuredContent["mcp_trace_id"], r"^[0-9a-f]{32}$")
                     self.assertEqual(self.release_sha, status.structuredContent["runtime"]["release_sha"])
                     self.assertIn("rcc", status.structuredContent["monitor"])
                     work_arguments = {
