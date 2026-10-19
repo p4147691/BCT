@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-15-rcc-manager-wakeback-v13';
+const RCC_BUILD_VERSION = '2026-10-20-simple-relay-v0';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -1489,11 +1489,30 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
 
 }
 
-
-
-
-
-
+// V0 is a one-way, verbatim hand-off between two explicitly bound
+// conversations. It does not create a legacy relay record, queue a prompt,
+// wait for an assistant response, or interpret that response.
+async function executeSimpleRelayV0(message) {
+  const expectedConversationKey = String(message?.conversationKey || '').trim().toLowerCase();
+  const relayId = String(message?.relayId || '').trim();
+  const text = String(message?.text || '');
+  if (!relayId || !expectedConversationKey || !text || text.length > 12000) {
+    return { ok: false, submitted: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_ARGUMENT_INVALID' };
+  }
+  if (currentConversationKey() !== expectedConversationKey) {
+    return { ok: false, submitted: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_CONVERSATION_MISMATCH' };
+  }
+  try {
+    await sendPrompt(text, null, false);
+    if (currentConversationKey() !== expectedConversationKey) {
+      return { ok: false, submitted: false, effectState: 'UNKNOWN', error: 'SIMPLE_RELAY_CONVERSATION_CHANGED_AFTER_SUBMIT' };
+    }
+    return { ok: true, submitted: true, relayId, conversationKey: expectedConversationKey };
+  } catch (error) {
+    return { ok: false, submitted: false, effectState: 'UNKNOWN',
+      error: String(error?.message || error || 'SIMPLE_RELAY_SUBMIT_FAILED') };
+  }
+}
 
 function currentConversationKey() {
 
@@ -3575,6 +3594,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }));
 
 
+
+    return true;
+
+
+
+  }
+
+  if (message.type === 'relay:simpleExecute') {
+
+    executeSimpleRelayV0(message).then(sendResponse).catch((error) => sendResponse({
+      ok: false, submitted: false, effectState: 'UNKNOWN', error: error.message
+    }));
 
     return true;
 

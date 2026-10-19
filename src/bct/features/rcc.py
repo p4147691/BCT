@@ -36,6 +36,7 @@ _OPERATOR_QUARANTINE_COMMAND = "quarantine-legacy-rename-claim"
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "rename-conversation", "reload-extension", "send", "send-to-tab", "create-and-send",
+    "simple-relay-bind", "simple-relay-send",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
@@ -246,6 +247,26 @@ class RelayBrowserFeature:
             prepared["text"] = str(arguments.get("text") or "")
             if not prepared["to"] or not prepared["text"]:
                 raise PreconditionError("RCC_SEND_TARGET_AND_TEXT_REQUIRED")
+        elif command == "simple-relay-bind":
+            allowed.update({"manager_conversation_key", "worker_conversation_key"})
+            manager_key = str(arguments.get("manager_conversation_key") or "").strip().lower()
+            worker_key = str(arguments.get("worker_conversation_key") or "").strip().lower()
+            key_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+            if (not re.fullmatch(key_pattern, manager_key) or not re.fullmatch(key_pattern, worker_key)
+                    or manager_key == worker_key):
+                raise PreconditionError("RCC_SIMPLE_RELAY_BINDING_INVALID")
+            prepared["extra"].update({
+                "managerConversationKey": manager_key,
+                "workerConversationKey": worker_key,
+            })
+        elif command == "simple-relay-send":
+            allowed.update({"from", "text"})
+            source = str(arguments.get("from") or "").strip().lower()
+            body = str(arguments.get("text") or "")
+            if source not in {"manager", "worker"} or not body or len(body) > 12000:
+                raise PreconditionError("RCC_SIMPLE_RELAY_SEND_INVALID")
+            prepared["text"] = body
+            prepared["extra"]["from"] = source
         elif command == "send-to-tab":
             allowed.update({"session_id", "tab_id", "window_id", "conversation_key", "text"})
             session = str(arguments.get("session_id") or "").strip()
@@ -321,6 +342,10 @@ class RelayBrowserFeature:
         resource = "rcc-instance:" + instance_id
         if command == "send-to-tab":
             resource += ":direct-tab:" + str(prepared["extra"]["tabId"])
+        elif command == "simple-relay-bind":
+            resource += ":simple-relay:binding"
+        elif command == "simple-relay-send":
+            resource += ":simple-relay:" + str(prepared["extra"]["from"])
         if command == "rename-conversation":
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
@@ -794,6 +819,21 @@ class RelayBrowserFeature:
             )
             if not correct:
                 raise UnknownEffectError("RCC_DIRECT_TAB_ACK_UNVERIFIED")
+        if values["command"] == "simple-relay-bind" and result.get("ok") is True:
+            binding = result.get("binding") if isinstance(result.get("binding"), dict) else {}
+            if not (
+                binding.get("managerConversationKey") == extra["managerConversationKey"]
+                and binding.get("workerConversationKey") == extra["workerConversationKey"]
+            ):
+                raise ConfirmedFailure("RCC_SIMPLE_RELAY_BINDING_ACK_UNVERIFIED", release_claims=True)
+        if values["command"] == "simple-relay-send" and result.get("ok") is True:
+            receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else {}
+            if not (
+                receipt.get("operationId") == request.operation_id
+                and receipt.get("from") == extra["from"]
+                and receipt.get("state") == "SUBMITTED"
+            ):
+                raise UnknownEffectError("RCC_SIMPLE_RELAY_ACK_UNVERIFIED")
         if result.get("ok") is True:
             if values["command"] == "send" and result.get("type") == "host:ack":
                 if result.get("submitted") is not True or state != "SUBMITTED":

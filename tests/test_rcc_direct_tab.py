@@ -57,3 +57,28 @@ class DirectTabPrepareTests(unittest.TestCase):
             with self.subTest(change=change):
                 with self.assertRaises(PreconditionError):
                     self.feature.prepare(work=self.work,arguments={**self.args,**change})
+
+    def test_simple_relay_has_no_tab_or_session_input(self):
+        args = {
+            "command": "simple-relay-bind",
+            "instance_id": "6174664e1c1b4e6db1d4729c841db3c9",
+            "manager_conversation_key": "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+        }
+        bound = self.feature.prepare(work=self.work, arguments=args)
+        self.assertEqual(("rcc-instance:6174664e1c1b4e6db1d4729c841db3c9:simple-relay:binding",), bound.resources)
+        self.assertNotIn("tabId", bound.arguments["extra"])
+        send = self.feature.prepare(work=self.work, arguments={
+            "command": "simple-relay-send", "instance_id": args["instance_id"],
+            "from": "manager", "text": "원문 그대로 보냅니다.",
+        })
+        self.assertEqual("manager", send.arguments["extra"]["from"])
+        self.assertEqual("원문 그대로 보냅니다.", send.arguments["text"])
+        self.assertEqual(("rcc-instance:6174664e1c1b4e6db1d4729c841db3c9:simple-relay:manager",), send.resources)
+        for invalid in ({"from": "node"}, {"text": ""}, {"tab_id": 99}):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(PreconditionError):
+                    self.feature.prepare(work=self.work, arguments={
+                        "command": "simple-relay-send", "instance_id": args["instance_id"],
+                        "from": "manager", "text": "x", **invalid,
+                    })

@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-15-rcc-manager-wakeback-v13';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-20-simple-relay-v0';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 // Generic completed operations are an idempotency cache and are intentionally
@@ -16,6 +16,11 @@ const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 const RENAME_RECEIPTS_KEY = 'renameReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
 const BINDING_SUBMIT_LEASE_TTL_MS = 15000;
+// V0 is deliberately independent from the legacy role/lease registry.  It is
+// only an address book for one Manager and one Worker plus compact delivery
+// receipts; it never creates nodes, queues work, or promotes replies.
+const SIMPLE_RELAY_V0_BINDING_KEY = 'simpleRelayV0Binding';
+const SIMPLE_RELAY_V0_RECEIPTS_KEY = 'simpleRelayV0Receipts';
 
 let relayReceiptMutationChain = Promise.resolve();
 let bindingLeaseMutationChain = Promise.resolve();
@@ -83,7 +88,7 @@ async function findPendingRelayForNetwork(tabId) {
 
 async function loadState() {
 
-  const data = await chrome.storage.local.get(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, RENAME_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY]);
+  const data = await chrome.storage.local.get(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, RENAME_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY, SIMPLE_RELAY_V0_BINDING_KEY]);
 
   const settings = data.settings || {};
 
@@ -129,7 +134,9 @@ async function loadState() {
 
     renameReceipts: data[RENAME_RECEIPTS_KEY] || {},
 
-    bindingSubmitLeases: data[BINDING_SUBMIT_LEASES_KEY] || {}
+    bindingSubmitLeases: data[BINDING_SUBMIT_LEASES_KEY] || {},
+
+    simpleRelayV0Binding: data[SIMPLE_RELAY_V0_BINDING_KEY] || null
 
   };
 
@@ -1330,6 +1337,94 @@ async function sendToChatTab(tabId, message) {
 
 }
 
+function simpleRelayV0TabsForBinding(tabs, binding) {
+  const manager = tabs.filter((tab) => RelayCore.conversationKey(tab.url || '') === binding.managerConversationKey);
+  const worker = tabs.filter((tab) => RelayCore.conversationKey(tab.url || '') === binding.workerConversationKey);
+  if (manager.length !== 1 || worker.length !== 1) {
+    throw new Error('SIMPLE_RELAY_ENDPOINT_NOT_UNIQUE_OR_OPEN');
+  }
+  return { manager: manager[0], worker: worker[0] };
+}
+
+async function bindSimpleRelayV0(message) {
+  const binding = SimpleRelayV0.binding(message.managerConversationKey, message.workerConversationKey);
+  const tabs = simpleRelayV0TabsForBinding(await getChatTabs(), binding);
+  await chrome.storage.local.set({ [SIMPLE_RELAY_V0_BINDING_KEY]: binding });
+  return {
+    ok: true, binding,
+    manager: { tabId: tabs.manager.id, windowId: tabs.manager.windowId },
+    worker: { tabId: tabs.worker.id, windowId: tabs.worker.windowId },
+  };
+}
+
+async function readSimpleRelayV0Receipts() {
+  const data = await chrome.storage.local.get(SIMPLE_RELAY_V0_RECEIPTS_KEY);
+  const receipts = data[SIMPLE_RELAY_V0_RECEIPTS_KEY];
+  return receipts && typeof receipts === 'object' ? receipts : {};
+}
+
+async function writeSimpleRelayV0Receipt(operationId, receipt) {
+  const receipts = await readSimpleRelayV0Receipts();
+  receipts[operationId] = receipt;
+  const keep = Object.entries(receipts)
+    .sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0))
+    .slice(0, 32);
+  await chrome.storage.local.set({ [SIMPLE_RELAY_V0_RECEIPTS_KEY]: Object.fromEntries(keep) });
+}
+
+async function sendSimpleRelayV0(message, requestId) {
+  const state = await loadState();
+  const request = SimpleRelayV0.request({
+    binding: state.simpleRelayV0Binding,
+    from: message.from,
+    operationId: message.operationId || requestId,
+    text: message.text,
+  });
+  const fingerprint = await relaySha256(JSON.stringify([
+    request.from, request.to, request.sourceConversationKey,
+    request.targetConversationKey, request.text,
+  ]));
+  const receipts = await readSimpleRelayV0Receipts();
+  const existing = receipts[request.operationId];
+  if (existing) {
+    if (existing.fingerprint !== fingerprint) throw new Error('SIMPLE_RELAY_OPERATION_ID_REUSE_MISMATCH');
+    if (existing.state === 'SUBMITTED') return { ok: true, replayed: true, receipt: existing };
+    throw new Error('SIMPLE_RELAY_PRIOR_EFFECT_UNRESOLVED');
+  }
+  const tabs = simpleRelayV0TabsForBinding(await getChatTabs(), state.simpleRelayV0Binding);
+  const targetTab = request.to === SimpleRelayV0.ROLE.MANAGER ? tabs.manager : tabs.worker;
+  const intent = {
+    version: 0, operationId: request.operationId, fingerprint,
+    from: request.from, to: request.to, targetConversationKey: request.targetConversationKey,
+    textSha256: await relaySha256(request.text), textLength: request.text.length,
+    state: 'INTENT', updatedAt: Date.now(),
+  };
+  await writeSimpleRelayV0Receipt(request.operationId, intent);
+  let ack;
+  try {
+    ack = await sendToChatTab(targetTab.id, {
+      type: 'relay:simpleExecute', relayId: request.operationId,
+      conversationKey: request.targetConversationKey, text: request.text,
+    });
+  } catch (error) {
+    const receipt = { ...intent, state: 'UNKNOWN', updatedAt: Date.now(),
+      error: String(error?.message || error || 'SIMPLE_RELAY_TRANSPORT_UNKNOWN').slice(0, 200) };
+    await writeSimpleRelayV0Receipt(request.operationId, receipt);
+    return { ok: false, ambiguous: true, receipt };
+  }
+  if (ack?.ok === true && ack.submitted === true && ack.conversationKey === request.targetConversationKey) {
+    const receipt = { ...intent, state: 'SUBMITTED', tabId: targetTab.id,
+      windowId: targetTab.windowId, updatedAt: Date.now() };
+    await writeSimpleRelayV0Receipt(request.operationId, receipt);
+    return { ok: true, receipt };
+  }
+  const notApplied = ack?.effectState === 'NOT_APPLIED' || ack?.submitted === false;
+  const receipt = { ...intent, state: notApplied ? 'NOT_APPLIED' : 'UNKNOWN',
+    updatedAt: Date.now(), error: String(ack?.error || 'SIMPLE_RELAY_ACK_INVALID').slice(0, 200) };
+  await writeSimpleRelayV0Receipt(request.operationId, receipt);
+  return { ok: false, ambiguous: !notApplied, receipt };
+}
+
 
 async function ensureRelayReceivers(tabsValue = null) {
   const repaired = [];
@@ -2441,12 +2536,26 @@ async function handleNativeCommand(message) {
 
         registrations: state.registrations, settings: state.settings,
 
+        simpleRelayV0Binding: state.simpleRelayV0Binding,
+
         backgroundBuildId: RCC_BACKGROUND_BUILD_ID
 
       } });
 
       return;
 
+    }
+
+    if (message.command === 'simple-relay-bind') {
+      const result = await bindSimpleRelayV0(message);
+      postNative({ type: 'host:result', requestId, ...result });
+      return;
+    }
+
+    if (message.command === 'simple-relay-send') {
+      const result = await sendSimpleRelayV0(message, requestId);
+      postNative({ type: 'host:result', requestId, ...result });
+      return;
     }
 
     if (message.command === 'rename-receipt') {
