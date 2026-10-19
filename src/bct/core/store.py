@@ -1340,14 +1340,16 @@ class Store:
         db = self._connect()
         try:
             row = db.execute(
-                "SELECT capability,target,state,outcome,error FROM operations "
+                "SELECT capability,target,state,outcome,error,evidence_json FROM operations "
                 "WHERE operation_id=? AND work_id=?", (operation_id, work_id),
             ).fetchone()
         finally:
             db.close()
         if row is None:
             raise KeyError("OPERATION_NOT_FOUND")
-        return dict(row)
+        value = dict(row)
+        value["evidence"] = json.loads(value.pop("evidence_json"))
+        return value
 
     @staticmethod
     def _append_effect_stage(db: sqlite3.Connection, *, operation_id: str,

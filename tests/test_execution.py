@@ -5,10 +5,12 @@ import os
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
 from pathlib import Path
 
 from bct import BCT
 from bct.core.models import PreconditionError, Principal
+import psutil
 
 
 class ExecutionFeatureTests(unittest.TestCase):
@@ -83,6 +85,18 @@ class ExecutionFeatureTests(unittest.TestCase):
             self.call("outside", "execute", {
                 "kind": "python", "cwd": str(outside), "module": "sys", "timeout_s": 1,
             })
+
+    def test_short_lived_process_exit_before_fingerprint_is_not_unknown(self):
+        with patch("bct.features.execution.process_fingerprint",
+                   side_effect=psutil.NoSuchProcess(12345)):
+            result = self.call("short-lived", "execute", {
+                "kind": "python", "cwd": str(self.root),
+                "module": "this_module_does_not_exist_for_bct_fixture",
+                "timeout_s": 10,
+            })
+        self.assertEqual("FAILED", result.outcome.value)
+        self.assertEqual("EXITED_BEFORE_FINGERPRINT", result.evidence["phase"])
+        self.assertNotEqual("UNKNOWN", result.outcome.value)
 
 
 if __name__ == "__main__":

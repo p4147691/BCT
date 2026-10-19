@@ -167,8 +167,10 @@ class OperationCoordinator:
                 operation_id=request.arguments["original_operation_id"],
                 work_id=work_id, principal_id=principal.principal_id,
             )
-            if original["capability"] not in {"read", "system_inspect", "github_pr_status"}:
-                raise PreconditionError("CLAIM_RECONCILE_CAPABILITY_NOT_READ_ONLY")
+            if original["capability"] not in {
+                "read", "system_inspect", "github_pr_status", "execute",
+            }:
+                raise PreconditionError("CLAIM_RECONCILE_CAPABILITY_NOT_SUPPORTED")
             request = replace(request, preconditions={
                 **request.preconditions,
                 "work_id": work_id,

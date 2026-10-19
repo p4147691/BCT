@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import psutil
 import shutil
 import subprocess
 import sys
@@ -144,7 +145,31 @@ class ExecuteFeature:
             creationflags=creationflags,
             shell=False,
         )
-        fingerprint = process_fingerprint(process.pid)
+        try:
+            fingerprint = process_fingerprint(process.pid)
+        except psutil.NoSuchProcess:
+            # A very short-lived process may exit between Popen and psutil's
+            # identity read. Popen still owns the pipes and authoritative exit
+            # code, so collect them instead of misclassifying a known result as
+            # an UNKNOWN external effect.
+            stdout_raw, stderr_raw = process.communicate()
+            stdout, stdout_truncated = _bounded_text(stdout_raw)
+            stderr, stderr_truncated = _bounded_text(stderr_raw)
+            outcome = Outcome.APPLIED if process.returncode == 0 else Outcome.FAILED
+            return FeatureResult(
+                outcome,
+                {
+                    "phase": "EXITED_BEFORE_FINGERPRINT", "pid": process.pid,
+                    "returncode": process.returncode,
+                    "duration_ms": int((time.time() - started) * 1000),
+                },
+                output={
+                    "argv": redact_argv(argv), "returncode": process.returncode,
+                    "stdout": stdout, "stderr": stderr,
+                    "stdout_truncated": stdout_truncated,
+                    "stderr_truncated": stderr_truncated,
+                },
+            )
         try:
             stdout_raw, stderr_raw = process.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired:

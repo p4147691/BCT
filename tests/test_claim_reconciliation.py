@@ -72,7 +72,45 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
             request.capability, request.target, request.arguments, request.resources,
             {"work_id": "work", "principal_id": "owner"}, "resolver",
         )
-        with self.assertRaisesRegex(Exception, "EXACT_READONLY_UNKNOWN_REQUIRED"):
+        with self.assertRaisesRegex(Exception, "EXACT_NO_EFFECT_UNKNOWN_REQUIRED"):
+            feature.execute(request)
+
+    def test_execute_createprocess_file_not_found_is_proven_no_effect(self):
+        self._unknown("missing-executable", "execute")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE operations SET evidence_json=?,error=? WHERE operation_id=?",
+                ('{"phase":"UNEXPECTED","type":"FileNotFoundError"}',
+                 "[WinError 2] file not found", "missing-executable"),
+            )
+        feature = ReadOnlyClaimReconcileFeature(self.store)
+        request = feature.prepare(work=self.work, arguments={
+            "original_operation_id": "missing-executable", "reason": "pre-dispatch proof",
+        })
+        request = type(request)(
+            request.capability, request.target, request.arguments, request.resources,
+            {"work_id": "work", "principal_id": "owner"}, "resolver",
+        )
+        result = feature.execute(request)
+        self.assertEqual("EXECUTE_CREATEPROCESS_FILE_NOT_FOUND", result.evidence["proof"])
+
+    def test_execute_after_process_creation_remains_unknown(self):
+        self._unknown("process-existed", "execute")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE operations SET evidence_json=?,error=? WHERE operation_id=?",
+                ('{"phase":"UNEXPECTED","type":"NoSuchProcess"}',
+                 "process no longer exists", "process-existed"),
+            )
+        feature = ReadOnlyClaimReconcileFeature(self.store)
+        request = feature.prepare(work=self.work, arguments={
+            "original_operation_id": "process-existed", "reason": "must remain protected",
+        })
+        request = type(request)(
+            request.capability, request.target, request.arguments, request.resources,
+            {"work_id": "work", "principal_id": "owner"}, "resolver",
+        )
+        with self.assertRaisesRegex(Exception, "EXACT_NO_EFFECT_UNKNOWN_REQUIRED"):
             feature.execute(request)
 
     def test_effect_journal_is_ordered_and_redacted(self):
