@@ -594,15 +594,33 @@ class DesktopApplicationTargetFeature:
         include_minimized = arguments.get("include_minimized", True)
         if not isinstance(include_minimized, bool):
             raise PreconditionError("DESKTOP_APPLICATION_TARGET_MINIMIZED_INVALID")
+        if application != "explorer" and "folder_path" in arguments:
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_FOLDER_PATH_CONFLICT")
+        folder_path = arguments.get("folder_path", "")
+        if not isinstance(folder_path, str) or "\x00" in folder_path or len(folder_path) > 1024:
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_FOLDER_PATH_INVALID")
+        folder_path = folder_path.strip()
+        if folder_path:
+            path = Path(folder_path)
+            if not path.is_absolute():
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_FOLDER_PATH_INVALID")
+            try:
+                path = path.resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_FOLDER_PATH_INVALID") from exc
+            if not path.is_dir():
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_FOLDER_PATH_INVALID")
+            folder_path = str(path)
         normalized: dict[str, Any] = {
             "operation": operation,
             "application": application,
             "title_query": title_query.strip(),
             "include_minimized": include_minimized,
+            "folder_path": folder_path,
         }
         if operation == "list":
             unknown = set(arguments) - {
-                "operation", "application", "title_query", "include_minimized", "limit",
+                "operation", "application", "title_query", "include_minimized", "folder_path", "limit",
             }
             if unknown:
                 raise PreconditionError(
@@ -621,7 +639,7 @@ class DesktopApplicationTargetFeature:
             resources = ("desktop-session:observe",)
         else:
             unknown = set(arguments) - {
-                "operation", "application", "title_query", "include_minimized", "ttl_seconds",
+                "operation", "application", "title_query", "include_minimized", "folder_path", "ttl_seconds",
             }
             if unknown:
                 raise PreconditionError(
@@ -670,12 +688,21 @@ class DesktopApplicationTargetFeature:
     def execute(self, request: FeatureRequest) -> FeatureResult:
         arguments = request.arguments
         try:
-            observed = self.client.windows(
-                request_id=request.operation_id,
-                include_minimized=arguments["include_minimized"],
-                title_query="",
-                limit=256,
-            )
+            if arguments["application"] == "explorer":
+                observed = self.client.explorer_windows(
+                    request_id=request.operation_id,
+                    include_minimized=arguments["include_minimized"],
+                    title_query="",
+                    folder_path=arguments["folder_path"],
+                    limit=256,
+                )
+            else:
+                observed = self.client.windows(
+                    request_id=request.operation_id,
+                    include_minimized=arguments["include_minimized"],
+                    title_query="",
+                    limit=256,
+                )
         except DesktopSessionUnavailable as exc:
             raise PreconditionError(str(exc)) from exc
         except (DesktopSessionEffectUnknown, DesktopSessionRequestFailed) as exc:
@@ -691,6 +718,7 @@ class DesktopApplicationTargetFeature:
             application_windows = {
                 "application": arguments["application"],
                 "titleQuery": arguments["title_query"],
+                "folderPath": arguments["folder_path"],
                 "items": items,
                 "count": len(items),
                 "truncated": bool(windows["truncated"] or len(candidates) > limit),
@@ -735,6 +763,7 @@ class DesktopApplicationTargetFeature:
         application_target = {
             "application": arguments["application"],
             "titleQuery": arguments["title_query"],
+            "folderPath": arguments["folder_path"],
             "window": candidate,
         }
         output = {**bound, "applicationTarget": application_target}

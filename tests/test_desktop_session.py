@@ -117,6 +117,31 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def explorer_windows(self, *, request_id: str, **arguments):
+        self.window_calls.append((request_id, "explorer_windows_list", arguments))
+        folder_path = arguments.get("folder_path", "")
+        items = []
+        for source in self.window_items:
+            if str(source.get("processName") or "").casefold() != "explorer":
+                continue
+            item = {
+                **source,
+                "folderPath": source.get("folderPath"),
+                "locationUrl": source.get("locationUrl", "file:///D:/"),
+                "locationName": source.get("locationName", source.get("title", "")),
+            }
+            if folder_path and item["folderPath"] != folder_path:
+                continue
+            items.append(item)
+        value = self._base("explorer_windows_list")
+        value["requestId"] = request_id
+        value["windows"] = {
+            "items": items, "count": len(items), "truncated": False,
+            "shellAvailable": True, "folderPath": folder_path,
+            "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
+        }
+        return value
+
     def activate(self, *, request_id: str, owner_id: str, lease_id: str):
         self.window_calls.append((request_id, "window_activate", {
             "owner_id": owner_id, "lease_id": lease_id,
@@ -329,14 +354,17 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         self.assertEqual("12345", result.output["applicationWindows"]["items"][0]["hwnd"])
 
     def test_application_target_binds_one_exact_explorer_window(self):
+        folder = self.root / "프로젝트"
+        folder.mkdir()
         self.client.window_items = [{
             **self.client.window_items[0], "processName": "explorer",
             "className": "CabinetWClass", "title": "프로젝트",
+            "folderPath": str(folder.resolve()),
         }]
         feature = DesktopApplicationTargetFeature(self.client)
         request = feature.prepare(work=self.work, arguments={
             "operation": "bind", "application": "explorer",
-            "title_query": "프로젝트", "ttl_seconds": 45,
+            "title_query": "프로젝트", "folder_path": str(folder), "ttl_seconds": 45,
         })
         self.assertEqual(("desktop-control:interactive-session",), request.resources)
         request = request.__class__(**{**request.__dict__, "operation_id": "app-bind-1"})
@@ -344,6 +372,9 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED, result.outcome)
         self.assertEqual("b" * 32, result.evidence["control"]["lease"]["leaseId"])
         self.assertEqual("12345", result.evidence["application_target"]["window"]["hwnd"])
+        self.assertEqual(str(folder.resolve()), result.output["applicationTarget"]["folderPath"])
+        self.assertEqual("explorer_windows_list", self.client.window_calls[-1][1])
+        self.assertEqual(str(folder.resolve()), self.client.window_calls[-1][2]["folder_path"])
         self.assertEqual("lease_acquire", self.client.control_calls[-1][1])
 
     def test_application_target_fails_closed_on_absent_or_ambiguous_window(self):
@@ -373,6 +404,9 @@ class DesktopSessionFeatureTests(unittest.TestCase):
             {"operation": "list", "application": "chrome", "limit": True},
             {"operation": "bind", "application": "chrome", "ttl_seconds": 4},
             {"operation": "list", "application": "chrome", "ttl_seconds": 30},
+            {"operation": "list", "application": "chrome", "folder_path": str(self.root)},
+            {"operation": "list", "application": "explorer", "folder_path": "relative"},
+            {"operation": "list", "application": "explorer", "folder_path": str(self.root / "missing")},
         )
         for arguments in invalid:
             with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
