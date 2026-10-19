@@ -100,6 +100,7 @@ files = [
   "src/bct/core/store.py",
   "src/bct/features/__init__.py",
   "src/bct/features/common.py",
+  "src/bct/features/claim_reconciliation.py",
   "src/bct/features/deploy.py",
   "src/bct/features/files.py",
   "src/bct/features/git.py",
