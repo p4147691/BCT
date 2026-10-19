@@ -102,8 +102,9 @@ truncation이면 bind 전에 실패한다. list/bind 모두 Chrome을 실행·�
 
 초기 Agent 1.8.0 LIVE에서 helper UTF-8 stdout을 Windows 코드페이지로 해석하는
 오류가 발견됐고 fail-closed했다. VTL PR #32가 strict UTF-8 자식 스트림과 강한
-응답 검증을 추가했다. 최종 VTL main/runtime은 `20249554282c1936e9e4430c7a26916024ed3145`,
-BCT main/runtime은 `2801d1a138eae014be70fca9975f38b98ed7e7dc` generation 132다.
+응답 검증을 추가했다. 정확한 완료 당시 SHA는 아래 완료 증거 문서에 보존하고,
+현재 상태는 각 `origin/main`, runtime `current.json`, health `release_sha`를 기계적으로
+비교해 판정한다.
 인증 MCP LIVE는 Chrome 4개 중 Unicode 프로필+현재 탭 조합으로 1개를 bind/release했고,
 기존 Chrome PID/process birth/HWND는 모두 보존됐으며 최종 Lease는 null,
 emergency stop은 false였다. 상세는
