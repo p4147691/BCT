@@ -1,14 +1,17 @@
 # BCT 인수인계
 
-## 진행 — Unicode desktop clipboard
+## 완료 — Unicode desktop clipboard
 
-`desktop_clipboard`의 BCT/VTL 구현과 집중 테스트를 진행 중이다. `get`/`set` 모두 exact
-Session Lease와 emergency-stop fence를 요구한다. VTL은 STA `UnicodeText` API를 사용해
-Windows UTF-8 시스템 로캘 on/off와 독립적으로 동작하며, set은 재읽기 exact match 전에는
-성공으로 확정하지 않는다. BCT durable evidence에는 문자/UTF-8 byte 길이와 SHA-256만 남고
-원문은 최초 성공 `get` 응답에만 붙는다. 현재 미완료 항목은 두 저장소 전체 회귀, PR/CI/병합,
-exact-main 배포와 원래 클립보드를 복원하는 LIVE 왕복 수락시험이다. 상세는
-`docs/exec-plans/active/BCT_DESKTOP_CLIPBOARD_20261019.md`에 있다.
+`desktop_clipboard`의 BCT/VTL 구현, CI, exact-main 배포와 LIVE 수락시험이 끝났다.
+`get`/`set` 모두 exact Session Lease와 emergency-stop fence를 요구한다. VTL Agent 2.2는
+STA `UnicodeText` API를 사용해 Windows UTF-8 시스템 로캘 on/off와 독립적으로 동작하며,
+set은 재읽기 exact match 전에는 성공으로 확정하지 않는다. BCT durable evidence에는
+Unicode scalar/UTF-8 byte 길이와 SHA-256만 남고 원문은 최초 성공 `get` 응답에만 붙는다.
+VTL PR #47과 BCT PR #228/#229가 required CI를 통과해 병합됐고, BCT Generation 141은
+39개 MCP 도구에 `bct_desktop_clipboard`를 포함한다. Agent 직접 및 인증 MCP LIVE에서
+한글+보조 평면 문자의 set/get/hash를 확인하고 직전 클립보드를 복원했다. 최종 Lease는
+null이고 emergency stop은 false다. 상세는
+`docs/exec-plans/completed/BCT_DESKTOP_CLIPBOARD_20261019.md`에 있다.
 
 ## 완료 — 로그인 세션 Desktop Agent 자동 복구
 
