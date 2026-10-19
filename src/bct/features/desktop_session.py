@@ -596,6 +596,10 @@ class DesktopApplicationTargetFeature:
             raise PreconditionError("DESKTOP_APPLICATION_TARGET_MINIMIZED_INVALID")
         if application != "explorer" and "folder_path" in arguments:
             raise PreconditionError("DESKTOP_APPLICATION_TARGET_FOLDER_PATH_CONFLICT")
+        if application != "chrome" and any(
+            field in arguments for field in ("profile_query", "tab_title_query", "tab_scope")
+        ):
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_CHROME_SELECTOR_CONFLICT")
         folder_path = arguments.get("folder_path", "")
         if not isinstance(folder_path, str) or "\x00" in folder_path or len(folder_path) > 1024:
             raise PreconditionError("DESKTOP_APPLICATION_TARGET_FOLDER_PATH_INVALID")
@@ -611,16 +615,29 @@ class DesktopApplicationTargetFeature:
             if not path.is_dir():
                 raise PreconditionError("DESKTOP_APPLICATION_TARGET_FOLDER_PATH_INVALID")
             folder_path = str(path)
+        profile_query = arguments.get("profile_query", "")
+        if not isinstance(profile_query, str) or len(profile_query.strip()) > 200:
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_PROFILE_QUERY_INVALID")
+        tab_title_query = arguments.get("tab_title_query", "")
+        if not isinstance(tab_title_query, str) or len(tab_title_query.strip()) > 500:
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_TAB_QUERY_INVALID")
+        tab_scope = str(arguments.get("tab_scope", "active")).strip().casefold()
+        if tab_scope not in {"active", "any"}:
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_TAB_SCOPE_INVALID")
         normalized: dict[str, Any] = {
             "operation": operation,
             "application": application,
             "title_query": title_query.strip(),
             "include_minimized": include_minimized,
             "folder_path": folder_path,
+            "profile_query": profile_query.strip(),
+            "tab_title_query": tab_title_query.strip(),
+            "tab_scope": tab_scope,
         }
         if operation == "list":
             unknown = set(arguments) - {
-                "operation", "application", "title_query", "include_minimized", "folder_path", "limit",
+                "operation", "application", "title_query", "include_minimized", "folder_path",
+                "profile_query", "tab_title_query", "tab_scope", "limit",
             }
             if unknown:
                 raise PreconditionError(
@@ -639,7 +656,8 @@ class DesktopApplicationTargetFeature:
             resources = ("desktop-session:observe",)
         else:
             unknown = set(arguments) - {
-                "operation", "application", "title_query", "include_minimized", "folder_path", "ttl_seconds",
+                "operation", "application", "title_query", "include_minimized", "folder_path",
+                "profile_query", "tab_title_query", "tab_scope", "ttl_seconds",
             }
             if unknown:
                 raise PreconditionError(
@@ -697,10 +715,13 @@ class DesktopApplicationTargetFeature:
                     limit=256,
                 )
             else:
-                observed = self.client.windows(
+                observed = self.client.chrome_windows(
                     request_id=request.operation_id,
                     include_minimized=arguments["include_minimized"],
-                    title_query="",
+                    title_query=arguments["title_query"],
+                    profile_query=arguments["profile_query"],
+                    tab_title_query=arguments["tab_title_query"],
+                    tab_scope=arguments["tab_scope"],
                     limit=256,
                 )
         except DesktopSessionUnavailable as exc:
@@ -719,6 +740,9 @@ class DesktopApplicationTargetFeature:
                 "application": arguments["application"],
                 "titleQuery": arguments["title_query"],
                 "folderPath": arguments["folder_path"],
+                "profileQuery": arguments["profile_query"],
+                "tabTitleQuery": arguments["tab_title_query"],
+                "tabScope": arguments["tab_scope"],
                 "items": items,
                 "count": len(items),
                 "truncated": bool(windows["truncated"] or len(candidates) > limit),
@@ -733,6 +757,8 @@ class DesktopApplicationTargetFeature:
                 "observed_at_utc": windows["observedAtUtc"],
             }
             return FeatureResult(Outcome.APPLIED, evidence, output=output)
+        if arguments["application"] == "chrome" and not windows["inspectionAvailable"]:
+            raise ConfirmedFailure("DESKTOP_APPLICATION_TARGET_INSPECTION_UNAVAILABLE", release_claims=True)
         if len(candidates) == 0:
             raise ConfirmedFailure("DESKTOP_APPLICATION_TARGET_NOT_FOUND", release_claims=True)
         if len(candidates) != 1 or windows["truncated"]:
@@ -764,6 +790,9 @@ class DesktopApplicationTargetFeature:
             "application": arguments["application"],
             "titleQuery": arguments["title_query"],
             "folderPath": arguments["folder_path"],
+            "profileQuery": arguments["profile_query"],
+            "tabTitleQuery": arguments["tab_title_query"],
+            "tabScope": arguments["tab_scope"],
             "window": candidate,
         }
         output = {**bound, "applicationTarget": application_target}

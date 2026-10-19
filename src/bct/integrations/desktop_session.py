@@ -115,7 +115,7 @@ class DesktopSessionClient:
             "lease_release", "emergency_stop", "emergency_reset",
             "input_mouse_move", "input_mouse_click", "input_key", "input_text",
             "windows_list", "window_activate", "window_manage", "program_launch",
-            "processes_list", "paths_list", "explorer_windows_list",
+            "processes_list", "paths_list", "explorer_windows_list", "chrome_windows_list",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -252,7 +252,7 @@ class DesktopSessionClient:
             },
             timeout_s=10.0,
         )
-        return self._validated_windows(result, explorer=False)
+        return self._validated_windows(result, adapter="generic")
 
     def explorer_windows(self, *, request_id: str, include_minimized: bool,
                          title_query: str, folder_path: str, limit: int) -> dict[str, Any]:
@@ -266,10 +266,35 @@ class DesktopSessionClient:
             },
             timeout_s=10.0,
         )
-        return self._validated_windows(result, explorer=True)
+        return self._validated_windows(result, adapter="explorer")
+
+    def chrome_windows(self, *, request_id: str, include_minimized: bool,
+                       title_query: str, profile_query: str, tab_title_query: str,
+                       tab_scope: str, limit: int) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="chrome_windows_list",
+            arguments={
+                "includeMinimized": include_minimized,
+                "titleQuery": title_query,
+                "profileQuery": profile_query,
+                "tabTitleQuery": tab_title_query,
+                "tabScope": tab_scope,
+                "limit": limit,
+            },
+            timeout_s=10.0,
+        )
+        validated = self._validated_windows(result, adapter="chrome")
+        windows = validated["windows"]
+        if (
+            windows["profileQuery"] != profile_query
+            or windows["tabTitleQuery"] != tab_title_query
+            or windows["tabScope"] != tab_scope
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_CHROME_WINDOWS_SELECTOR_MISMATCH")
+        return validated
 
     @staticmethod
-    def _validated_windows(result: dict[str, Any], *, explorer: bool) -> dict[str, Any]:
+    def _validated_windows(result: dict[str, Any], *, adapter: str) -> dict[str, Any]:
         windows = result.get("windows")
         if not isinstance(windows, dict):
             raise DesktopSessionEffectUnknown("DESKTOP_WINDOWS_MISSING")
@@ -298,7 +323,7 @@ class DesktopSessionClient:
                 or not isinstance(item.get("foreground"), bool)
             ):
                 raise DesktopSessionEffectUnknown("DESKTOP_WINDOWS_INVALID")
-            if explorer and (
+            if adapter == "explorer" and (
                 str(item.get("processName") or "").casefold() != "explorer"
                 or str(item.get("className") or "").casefold()
                 not in {"cabinetwclass", "explorewclass"}
@@ -313,11 +338,63 @@ class DesktopSessionClient:
                 )
             ):
                 raise DesktopSessionEffectUnknown("DESKTOP_EXPLORER_WINDOWS_INVALID")
-        if explorer and (
+            if adapter == "chrome":
+                tabs = item.get("tabs")
+                active_tab = item.get("activeTab")
+                if (
+                    str(item.get("processName") or "").casefold() != "chrome"
+                    or str(item.get("className") or "").casefold() != "chrome_widgetwin_1"
+                    or not isinstance(item.get("available"), bool)
+                    or not isinstance(item.get("profileName"), str)
+                    or len(item["profileName"]) > 200
+                    or not isinstance(item.get("error"), str)
+                    or not isinstance(tabs, list)
+                    or isinstance(item.get("tabCount"), bool)
+                    or not isinstance(item.get("tabCount"), int)
+                    or item["tabCount"] != len(tabs)
+                    or item["tabCount"] > 100
+                    or active_tab is not None and not isinstance(active_tab, dict)
+                ):
+                    raise DesktopSessionEffectUnknown("DESKTOP_CHROME_WINDOWS_INVALID")
+                selected = []
+                for ordinal, tab in enumerate(tabs):
+                    if (
+                        not isinstance(tab, dict)
+                        or isinstance(tab.get("ordinal"), bool)
+                        or not isinstance(tab.get("ordinal"), int)
+                        or tab["ordinal"] != ordinal
+                        or not isinstance(tab.get("title"), str)
+                        or len(tab["title"]) > 500
+                        or not isinstance(tab.get("selected"), bool)
+                    ):
+                        raise DesktopSessionEffectUnknown("DESKTOP_CHROME_WINDOWS_INVALID")
+                    if tab["selected"]:
+                        selected.append(tab)
+                if len(selected) > 1 or active_tab != (selected[0] if selected else None):
+                    raise DesktopSessionEffectUnknown("DESKTOP_CHROME_WINDOWS_INVALID")
+                if not item["available"] and (
+                    item["profileName"] or tabs or active_tab is not None or not item["error"]
+                ):
+                    raise DesktopSessionEffectUnknown("DESKTOP_CHROME_WINDOWS_INVALID")
+        if adapter == "explorer" and (
             not isinstance(windows.get("shellAvailable"), bool)
             or not isinstance(windows.get("folderPath"), str)
         ):
             raise DesktopSessionEffectUnknown("DESKTOP_EXPLORER_WINDOWS_INVALID")
+        if adapter == "chrome" and (
+            not isinstance(windows.get("inspectionAvailable"), bool)
+            or not isinstance(windows.get("inspectionError"), str)
+            or not isinstance(windows.get("profileQuery"), str)
+            or not isinstance(windows.get("tabTitleQuery"), str)
+            or windows.get("tabScope") not in {"active", "any"}
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_CHROME_WINDOWS_INVALID")
+        if adapter == "chrome" and (
+            windows["inspectionAvailable"]
+            and (windows["inspectionError"] or any(not item["available"] for item in items))
+            or not windows["inspectionAvailable"] and not windows["inspectionError"]
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_CHROME_WINDOWS_INVALID")
         return result
 
     def activate(self, *, request_id: str, owner_id: str, lease_id: str) -> dict[str, Any]:

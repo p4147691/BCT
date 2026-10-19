@@ -30,6 +30,8 @@ class FakeDesktopSessionClient:
         self.window_calls = []
         self.launch_calls = []
         self.explore_calls = []
+        self.chrome_inspection_available = True
+        self.chrome_truncated = False
         self.window_items = [{
             "hwnd": "12345", "pid": 123, "processName": "probe",
             "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
@@ -138,6 +140,50 @@ class FakeDesktopSessionClient:
         value["windows"] = {
             "items": items, "count": len(items), "truncated": False,
             "shellAvailable": True, "folderPath": folder_path,
+            "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
+        }
+        return value
+
+    def chrome_windows(self, *, request_id: str, **arguments):
+        self.window_calls.append((request_id, "chrome_windows_list", arguments))
+        profile_query = arguments.get("profile_query", "").casefold()
+        tab_query = arguments.get("tab_title_query", "").casefold()
+        tab_scope = arguments.get("tab_scope", "active")
+        title_query = arguments.get("title_query", "").casefold()
+        items = []
+        for source in self.window_items:
+            if (
+                str(source.get("processName") or "").casefold() != "chrome"
+                or str(source.get("className") or "").casefold() != "chrome_widgetwin_1"
+            ):
+                continue
+            tabs = source.get("tabs", [{"ordinal": 0, "title": "Home", "selected": True}])
+            item = {
+                **source,
+                "available": source.get("available", True),
+                "profileName": source.get("profileName", "Profile 1"),
+                "tabs": tabs,
+                "tabCount": len(tabs),
+                "activeTab": next((tab for tab in tabs if tab["selected"]), None),
+                "error": source.get("error", ""),
+            }
+            scoped_tabs = tabs if tab_scope == "any" else [tab for tab in tabs if tab["selected"]]
+            if title_query and title_query not in item["title"].casefold():
+                continue
+            if profile_query and profile_query not in item["profileName"].casefold():
+                continue
+            if tab_query and not any(tab_query in tab["title"].casefold() for tab in scoped_tabs):
+                continue
+            items.append(item)
+        value = self._base("chrome_windows_list")
+        value["requestId"] = request_id
+        value["windows"] = {
+            "items": items, "count": len(items), "truncated": self.chrome_truncated,
+            "inspectionAvailable": self.chrome_inspection_available,
+            "inspectionError": "" if self.chrome_inspection_available else "CHROME_UIA_INSPECTION_INCOMPLETE",
+            "profileQuery": arguments.get("profile_query", ""),
+            "tabTitleQuery": arguments.get("tab_title_query", ""),
+            "tabScope": tab_scope,
             "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
         }
         return value
@@ -352,6 +398,60 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED, result.outcome)
         self.assertEqual(1, result.evidence["candidate_count"])
         self.assertEqual("12345", result.output["applicationWindows"]["items"][0]["hwnd"])
+        self.assertEqual("chrome_windows_list", self.client.window_calls[-1][1])
+
+    def test_application_target_selects_chrome_profile_and_tab_without_focus(self):
+        chrome = {
+            **self.client.window_items[0], "processName": "chrome",
+            "className": "Chrome_WidgetWin_1", "title": "Chrome",
+        }
+        self.client.window_items = [
+            {
+                **chrome, "profileName": "BCT Test",
+                "tabs": [
+                    {"ordinal": 0, "title": "Dashboard", "selected": True},
+                    {"ordinal": 1, "title": "Logs", "selected": False},
+                ],
+            },
+            {
+                **chrome, "hwnd": "22222", "profileName": "Personal",
+                "tabs": [{"ordinal": 0, "title": "Dashboard", "selected": True}],
+            },
+        ]
+        feature = DesktopApplicationTargetFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "bind", "application": "chrome",
+            "profile_query": "bct", "tab_title_query": "dash",
+            "tab_scope": "active", "ttl_seconds": 30,
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "chrome-semantic-bind"})
+        result = feature.execute(request)
+        target = result.output["applicationTarget"]
+        self.assertEqual("12345", target["window"]["hwnd"])
+        self.assertEqual("bct", self.client.window_calls[-1][2]["profile_query"])
+        self.assertEqual("dash", self.client.window_calls[-1][2]["tab_title_query"])
+        self.assertEqual("active", target["tabScope"])
+
+    def test_application_target_chrome_bind_fails_closed_on_inspection_or_truncation(self):
+        from bct.core.models import ConfirmedFailure
+
+        self.client.window_items = [{
+            **self.client.window_items[0], "processName": "chrome",
+            "className": "Chrome_WidgetWin_1", "title": "Chrome",
+        }]
+        feature = DesktopApplicationTargetFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "bind", "application": "chrome",
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "chrome-fail-closed"})
+        self.client.chrome_inspection_available = False
+        with self.assertRaisesRegex(ConfirmedFailure, "INSPECTION_UNAVAILABLE"):
+            feature.execute(request)
+        self.client.chrome_inspection_available = True
+        self.client.chrome_truncated = True
+        with self.assertRaisesRegex(ConfirmedFailure, "AMBIGUOUS"):
+            feature.execute(request)
+        self.assertEqual([], self.client.control_calls)
 
     def test_application_target_binds_one_exact_explorer_window(self):
         folder = self.root / "프로젝트"
@@ -405,6 +505,10 @@ class DesktopSessionFeatureTests(unittest.TestCase):
             {"operation": "bind", "application": "chrome", "ttl_seconds": 4},
             {"operation": "list", "application": "chrome", "ttl_seconds": 30},
             {"operation": "list", "application": "chrome", "folder_path": str(self.root)},
+            {"operation": "list", "application": "explorer", "profile_query": "Profile 1"},
+            {"operation": "list", "application": "chrome", "tab_scope": "selected"},
+            {"operation": "list", "application": "chrome", "profile_query": "x" * 201},
+            {"operation": "list", "application": "chrome", "tab_title_query": "x" * 501},
             {"operation": "list", "application": "explorer", "folder_path": "relative"},
             {"operation": "list", "application": "explorer", "folder_path": str(self.root / "missing")},
         )
@@ -447,6 +551,27 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(DesktopSessionUnavailable, "ENDPOINT_UNAVAILABLE"):
             client.status(request_id="status-missing")
+
+    def test_client_validates_chrome_semantic_inventory_shape(self):
+        result = self.client._base("chrome_windows_list")
+        item = {
+            **self.client.window_items[0], "processName": "chrome",
+            "className": "Chrome_WidgetWin_1", "available": True,
+            "profileName": "Profile 1", "error": "",
+            "tabs": [{"ordinal": 0, "title": "Home", "selected": True}],
+            "tabCount": 1,
+        }
+        item["activeTab"] = item["tabs"][0]
+        result["windows"] = {
+            "items": [item], "count": 1, "truncated": False,
+            "inspectionAvailable": True, "inspectionError": "",
+            "profileQuery": "", "tabTitleQuery": "", "tabScope": "active",
+            "observedAtUtc": "2026-10-19T00:00:00Z",
+        }
+        self.assertIs(result, DesktopSessionClient._validated_windows(result, adapter="chrome"))
+        result["windows"]["items"][0]["tabs"][0]["ordinal"] = 1
+        with self.assertRaisesRegex(DesktopSessionEffectUnknown, "CHROME_WINDOWS_INVALID"):
+            DesktopSessionClient._validated_windows(result, adapter="chrome")
 
     def test_control_lease_derives_owner_and_normalizes_session_acquire(self):
         feature = DesktopControlLeaseFeature(self.client)

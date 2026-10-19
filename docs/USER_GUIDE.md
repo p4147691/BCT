@@ -109,6 +109,12 @@ Explorer는 선택적으로 기존 로컬 폴더의 절대 경로를 `folder_pat
 Agent가 Shell 위치를 실제 HWND와 연결하므로 같은 제목의 Explorer 창이 여럿이어도
 정확한 폴더 창만 선택한다. 상대 경로와 존재하지 않는 폴더는 거부하며, 가상 Shell
 위치는 로컬 폴더로 추측하지 않는다. Chrome에는 `folder_path`를 사용할 수 없다.
+Chrome은 선택적으로 `profile_query`, `tab_title_query`, `tab_scope`(`active` 기본값
+또는 `any`)를 사용할 수 있다. Agent는 기존 Chrome 창의 프로필 라벨과 제한된 탭
+제목/선택 상태만 UI Automation으로 읽으며 URL은 반환하지 않는다. 이 조회는 Chrome을
+실행·종료·활성화하거나 입력하지 않는다. UI Automation이 불완전하거나 응답이 잘리면
+`bind`는 실패하여 다른 창을 추측하지 않는다. Explorer에는 이 Chrome 선택자를 사용할
+수 없다.
 
 이 첫 구현은 현재 로그인되어 있고 잠기지 않은 사용자 세션에서 수동 실행한 VTL Desktop
 Session Agent를 필요로 한다. Agent가 없거나 다른 세션이거나 Pipe 소유자/DACL이 일치하지
