@@ -34,6 +34,7 @@ normal_actions = [
   "desktop_clipboard",
   "desktop_window_list",
   "desktop_window_activate",
+  "desktop_window_activate_reconcile",
   "desktop_window_manage",
   "desktop_program_launch",
   "vtl_validate",

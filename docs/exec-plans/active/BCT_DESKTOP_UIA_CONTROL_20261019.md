@@ -6,9 +6,16 @@ Status: active
 
 - Authenticated list/action MCP capabilities, policy, typed Agent validation,
   redacted durable evidence and failure semantics are implemented.
-- BCT full regression passes: 801 tests.
-- Pending: PR/required CI, exact-main Core deploy and authenticated LIVE canary
-  after VTL Agent 2.3 is installed.
+- The list and all five semantic actions passed authenticated LIVE MCP once.
+  A subsequent activation UNKNOWN exposed that an expired Lease does not by
+  itself retire the durable interactive-session Claim.
+- `desktop_window_activate_reconcile` now verifies the exact original Lease
+  digest and UNKNOWN code, stable current Agent observations, clear control
+  state, and absence of the exact retired target before releasing only that
+  Claim while preserving the original UNKNOWN receipt.
+- BCT full regression passes: 803 tests.
+- Pending: reconcile PR/required CI, exact-main Core deploy, reconcile the one
+  known test Claim, then repeat the authenticated LIVE canary on VTL Agent 2.3.2.
 
 ## Goal
 

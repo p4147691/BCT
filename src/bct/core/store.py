@@ -1011,6 +1011,11 @@ class Store:
                 )
                 if not finished_unknown and not recoverable_running:
                     raise ConflictError("RECONCILIATION_ORIGINAL_NOT_UNKNOWN")
+                if (
+                    resolver["capability"] == "desktop_window_activate_reconcile"
+                    and original["capability"] != "desktop_window_activate"
+                ):
+                    raise ConflictError("RECONCILIATION_ORIGINAL_CAPABILITY_MISMATCH")
                 if recoverable_running:
                     running_reconciled.append(original_id)
                 unresolved = db.execute(
