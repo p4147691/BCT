@@ -116,6 +116,13 @@ Chrome은 선택적으로 `profile_query`, `tab_title_query`, `tab_scope`(`activ
 `bind`는 실패하여 다른 창을 추측하지 않는다. Explorer에는 이 Chrome 선택자를 사용할
 수 없다.
 
+Chrome 탭을 실제로 전환할 때는 위 `bind` 결과의 정확한 Window Lease와 탭 목록에서
+`ordinal` 및 전체 `title`을 가져와 `desktop_chrome_tab_select`에 `lease_id`,
+`ordinal`, `expected_title`로 전달한다. Agent는 실행 직전과 직후 동일 창 fingerprint와
+Lease를 다시 확인하고 UI Automation 선택 결과와 foreground 불변을 검증한다. 이 기능은
+탭을 열거나 닫거나 URL로 이동하지 않으며, 결과가 불명확하면 UNKNOWN으로 남겨 자동
+재시도하지 않는다. 작업이 끝나면 Lease를 즉시 반납한다.
+
 이 첫 구현은 현재 로그인되어 있고 잠기지 않은 사용자 세션에서 수동 실행한 VTL Desktop
 Session Agent를 필요로 한다. Agent가 없거나 다른 세션이거나 Pipe 소유자/DACL이 일치하지
 않으면 요청은 화면을 추측하지 않고 실패한다.

@@ -116,6 +116,7 @@ class DesktopSessionClient:
             "input_mouse_move", "input_mouse_click", "input_key", "input_text",
             "windows_list", "window_activate", "window_manage", "program_launch",
             "processes_list", "paths_list", "explorer_windows_list", "chrome_windows_list",
+            "chrome_tab_select",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -409,6 +410,27 @@ class DesktopSessionClient:
             or not isinstance(action.get("alreadyForeground"), bool)
         ):
             raise DesktopSessionEffectUnknown("DESKTOP_WINDOW_ACTION_INVALID")
+        return result
+
+    def select_chrome_tab(self, *, request_id: str, owner_id: str, lease_id: str,
+                          ordinal: int, expected_title: str) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="chrome_tab_select",
+            arguments={
+                "ownerId": owner_id, "leaseId": lease_id,
+                "ordinal": ordinal, "expectedTitle": expected_title,
+            }, timeout_s=10.0,
+        )
+        action = result.get("chromeTabAction")
+        if (
+            not isinstance(action, dict) or action.get("operation") != "select"
+            or action.get("leaseId") != lease_id or action.get("ordinal") != ordinal
+            or action.get("title") != expected_title
+            or action.get("afterOrdinal") != ordinal
+            or not isinstance(action.get("alreadySelected"), bool)
+            or action.get("foregroundPreserved") is not True
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_CHROME_TAB_ACTION_INVALID")
         return result
 
     def processes(self, *, request_id: str, query: str,

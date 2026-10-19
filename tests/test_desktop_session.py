@@ -7,7 +7,8 @@ from pathlib import Path
 
 from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
-    DesktopApplicationTargetFeature, DesktopCaptureFeature, DesktopControlLeaseFeature,
+    DesktopApplicationTargetFeature, DesktopCaptureFeature, DesktopChromeTabSelectFeature,
+    DesktopControlLeaseFeature,
     DesktopEmergencyStopFeature,
     DesktopExploreFeature, DesktopInputFeature, DesktopProgramLaunchFeature,
     DesktopSessionStatusFeature,
@@ -200,6 +201,22 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def select_chrome_tab(self, *, request_id: str, owner_id: str, lease_id: str,
+                          ordinal: int, expected_title: str):
+        self.window_calls.append((request_id, "chrome_tab_select", {
+            "owner_id": owner_id, "lease_id": lease_id,
+            "ordinal": ordinal, "expected_title": expected_title,
+        }))
+        value = self._base("chrome_tab_select")
+        value["requestId"] = request_id
+        value["chromeTabAction"] = {
+            "operation": "select", "leaseId": lease_id,
+            "ordinal": ordinal, "title": expected_title,
+            "beforeOrdinal": 0, "afterOrdinal": ordinal,
+            "alreadySelected": ordinal == 0, "foregroundPreserved": True,
+        }
+        return value
+
     def processes(self, *, request_id: str, **arguments):
         self.explore_calls.append((request_id, "processes", arguments))
         value = self._base("processes_list")
@@ -304,6 +321,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                              "desktop_session_status", "desktop_capture",
                              "desktop_explore",
                              "desktop_application_target",
+                             "desktop_chrome_tab_select",
                              "desktop_control_lease", "desktop_emergency_stop",
                              "desktop_input",
                              "desktop_window_list", "desktop_window_activate",
@@ -716,6 +734,53 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         from bct.core.models import ConfirmedFailure
         with self.assertRaises(ConfirmedFailure):
             DesktopWindowActivateFeature(RejectingClient(self.root)).execute(request)
+
+    def test_chrome_tab_select_uses_exact_observed_identity_and_control_claim(self):
+        feature = DesktopChromeTabSelectFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "ordinal": 2, "expected_title": "한글 탭 — BCT",
+        })
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        self.assertEqual("desktop", request.arguments["owner_id"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "chrome-tab-select-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("chrome_tab_select", self.client.window_calls[-1][1])
+        self.assertEqual(2, result.evidence["chrome_tab_action"]["afterOrdinal"])
+        self.assertTrue(result.evidence["chrome_tab_action"]["foregroundPreserved"])
+
+    def test_chrome_tab_select_rejects_ambiguous_or_unbounded_identity(self):
+        feature = DesktopChromeTabSelectFeature(self.client)
+        valid = {"lease_id": "b" * 32, "ordinal": 1, "expected_title": "Target"}
+        for arguments in (
+            {**valid, "ordinal": True}, {**valid, "ordinal": -1},
+            {**valid, "ordinal": 100}, {**valid, "expected_title": ""},
+            {**valid, "expected_title": "x" * 501}, {**valid, "expected_title": "x\0y"},
+            {**valid, "extra": 1},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_chrome_tab_select_unknown_and_terminal_failure_are_distinct(self):
+        request = DesktopChromeTabSelectFeature(self.client).prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "ordinal": 1, "expected_title": "Target",
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "chrome-tab-select-fail"})
+
+        class UnknownClient(FakeDesktopSessionClient):
+            def select_chrome_tab(self, **_arguments):
+                raise DesktopSessionEffectUnknown("CHROME_TAB_ACTION_EFFECT_UNKNOWN")
+
+        with self.assertRaises(UnknownEffectError):
+            DesktopChromeTabSelectFeature(UnknownClient(self.root)).execute(request)
+
+        class RejectingClient(FakeDesktopSessionClient):
+            def select_chrome_tab(self, **_arguments):
+                raise DesktopSessionRequestFailed("CHROME_TAB_TITLE_MISMATCH")
+
+        from bct.core.models import ConfirmedFailure
+        with self.assertRaises(ConfirmedFailure):
+            DesktopChromeTabSelectFeature(RejectingClient(self.root)).execute(request)
 
     def test_window_manage_normalizes_geometry_and_uses_control_claim(self):
         feature = DesktopWindowManageFeature(self.client)
