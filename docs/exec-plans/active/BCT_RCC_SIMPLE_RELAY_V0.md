@@ -1,6 +1,6 @@
 # RCC Simple Relay V0
 
-상태: `IMPLEMENTED_LOCAL_VALIDATION_PENDING_LIVE_RELOAD`
+상태: `LIVE_SINGLE_DELIVERY_ACCEPTED`
 
 ## 목적
 
@@ -30,6 +30,12 @@
 
 1. Node pure-contract 및 JavaScript syntax 검사.
 2. Python RCC feature의 입력·resource·receipt 계약 검사.
-3. exact live payload backup 및 atomic replacement.
-4. 사용자 수행 extension reload 후 read-only `state`에서 새 build ID와 두 UUID를 확인.
-5. 사용자 승인 시 Manager→Worker 원문 한 건만 전송하고 `SUBMITTED` receipt만 확인한다.
+3. exact live payload backup 및 atomic replacement. 완료: backup은
+   `D:\BCT\runtime\backups\rcc-extension-20261020-090800`.
+4. extension reload 후 read-only `state`에서 build
+   `2026-10-20-simple-relay-v0`와 두 UUID를 확인. 완료.
+5. Manager→Worker 원문 한 건을 전송하고 `SUBMITTED` receipt만 확인한다. 완료:
+   Worker의 user/assistant turn count가 각각 하나 증가한 뒤 IDLE로 돌아왔다.
+
+이 acceptance는 기존 대화에 시험 원문 한 건을 제출한 실제 UI 효과를 포함한다. Worker 응답의
+자동 회수·자동 Manager 전달은 시행하지 않았다.

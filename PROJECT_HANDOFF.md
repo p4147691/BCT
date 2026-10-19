@@ -1,5 +1,16 @@
 # BCT 인수인계
 
+## 진행 — RCC Simple Relay V0 LIVE 단일 전달
+
+RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /
+`simple-relay-send` 경로를 포함한다. Manager·Worker의 exact conversation UUID만 주소록으로
+저장하며, send는 `from=manager|worker`, 원문, operation ID만 사용한다. 탭·창·세션·임시
+노드·자동 회수·자동 재시도는 이 경로에 없다. 2026-10-20에 canonical installed payload를
+`D:\BCT\runtime\backups\rcc-extension-20261020-090800`으로 백업한 뒤 재로드했고, build
+`2026-10-20-simple-relay-v0`의 Manager→Worker 원문 한 건이 `SUBMITTED`로 확인됐다. Worker는
+정확히 한 user turn과 한 assistant turn을 추가한 뒤 IDLE이 됐다. 자동 Worker→Manager 전달은
+아직 구현·활성화하지 않았다.
+
 ## 완료 — RCC Native Host 보안 경계 배포 정합화
 
 2026-10-20에 Chrome Native Messaging 등록값을 canonical manifest
