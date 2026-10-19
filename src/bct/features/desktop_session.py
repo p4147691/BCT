@@ -319,7 +319,7 @@ class DesktopInputFeature:
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         allowed = {
             "operation", "lease_id", "x", "y", "button", "click_count",
-            "key", "modifiers", "text",
+            "key", "modifiers", "text", "delta", "end_x", "end_y", "steps",
         }
         unknown = set(arguments) - allowed
         if unknown:
@@ -331,19 +331,19 @@ class DesktopInputFeature:
         if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
             raise PreconditionError("DESKTOP_INPUT_LEASE_ID_INVALID")
         operation = str(arguments.get("operation") or "").strip().casefold()
-        if operation not in {"move", "click", "key", "text"}:
+        if operation not in {"move", "click", "scroll", "drag", "key", "text"}:
             raise PreconditionError("DESKTOP_INPUT_OPERATION_INVALID")
         normalized: dict[str, Any] = {
             "operation": operation, "owner_id": owner_id, "lease_id": lease_id,
         }
-        if operation in {"move", "click"}:
+        if operation in {"move", "click", "scroll", "drag"}:
             normalized["x"] = self._coordinate(arguments, "x")
             normalized["y"] = self._coordinate(arguments, "y")
         if operation == "move":
-            if set(arguments) & {"button", "click_count", "key", "modifiers", "text"}:
+            if set(arguments) & {"button", "click_count", "key", "modifiers", "text", "delta", "end_x", "end_y", "steps"}:
                 raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
         elif operation == "click":
-            if set(arguments) & {"key", "modifiers", "text"}:
+            if set(arguments) & {"key", "modifiers", "text", "delta", "end_x", "end_y", "steps"}:
                 raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
             button = str(arguments.get("button") or "left").strip().casefold()
             if button not in {"left", "right", "middle"}:
@@ -355,8 +355,29 @@ class DesktopInputFeature:
             if click_count not in {1, 2}:
                 raise PreconditionError("DESKTOP_INPUT_CLICK_COUNT_INVALID")
             normalized.update({"button": button, "click_count": click_count})
+        elif operation == "scroll":
+            if set(arguments) & {"button", "click_count", "key", "modifiers", "text", "end_x", "end_y", "steps"}:
+                raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
+            delta = self._bounded_int(arguments, "delta", "DESKTOP_INPUT_SCROLL_DELTA_INVALID")
+            if delta == 0 or not -1200 <= delta <= 1200 or delta % 120:
+                raise PreconditionError("DESKTOP_INPUT_SCROLL_DELTA_INVALID")
+            normalized["delta"] = delta
+        elif operation == "drag":
+            if set(arguments) & {"click_count", "key", "modifiers", "text", "delta"}:
+                raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
+            end_x = self._coordinate(arguments, "end_x")
+            end_y = self._coordinate(arguments, "end_y")
+            if end_x == normalized["x"] and end_y == normalized["y"]:
+                raise PreconditionError("DESKTOP_INPUT_DRAG_DISTANCE_INVALID")
+            button = str(arguments.get("button") or "left").strip().casefold()
+            if button != "left":
+                raise PreconditionError("DESKTOP_INPUT_DRAG_BUTTON_INVALID")
+            steps = self._bounded_int(arguments, "steps", "DESKTOP_INPUT_DRAG_STEPS_INVALID", default=8)
+            if not 2 <= steps <= 32:
+                raise PreconditionError("DESKTOP_INPUT_DRAG_STEPS_INVALID")
+            normalized.update({"end_x": end_x, "end_y": end_y, "button": button, "steps": steps})
         elif operation == "key":
-            if set(arguments) & {"x", "y", "button", "click_count", "text"}:
+            if set(arguments) & {"x", "y", "button", "click_count", "text", "delta", "end_x", "end_y", "steps"}:
                 raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
             key = str(arguments.get("key") or "").strip().upper()
             modifiers = arguments.get("modifiers", [])
@@ -375,7 +396,7 @@ class DesktopInputFeature:
                 raise PreconditionError("DESKTOP_INPUT_MODIFIERS_INVALID")
             normalized.update({"key": key, "modifiers": normalized_modifiers})
         else:
-            if set(arguments) & {"x", "y", "button", "click_count", "key", "modifiers"}:
+            if set(arguments) & {"x", "y", "button", "click_count", "key", "modifiers", "delta", "end_x", "end_y", "steps"}:
                 raise PreconditionError("DESKTOP_INPUT_FIELDS_CONFLICT")
             text = arguments.get("text")
             if (
@@ -402,17 +423,28 @@ class DesktopInputFeature:
             raise PreconditionError("DESKTOP_INPUT_COORDINATE_INVALID")
         return result
 
+    @staticmethod
+    def _bounded_int(arguments: dict[str, Any], key: str, error: str, *, default: int | None = None) -> int:
+        value = arguments.get(key, default)
+        if isinstance(value, bool) or value is None:
+            raise PreconditionError(error)
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PreconditionError(error) from exc
+
     def execute(self, request: FeatureRequest) -> FeatureResult:
         operation = request.arguments["operation"]
         command = {
             "move": "input_mouse_move", "click": "input_mouse_click",
+            "scroll": "input_mouse_scroll", "drag": "input_mouse_drag",
             "key": "input_key", "text": "input_text",
         }[operation]
         arguments: dict[str, Any] = {
             "ownerId": request.arguments["owner_id"],
             "leaseId": request.arguments["lease_id"],
         }
-        if operation in {"move", "click"}:
+        if operation in {"move", "click", "scroll", "drag"}:
             arguments.update({"x": request.arguments["x"], "y": request.arguments["y"]})
         if operation == "move":
             arguments.update({"button": "", "clickCount": 0})
@@ -420,6 +452,13 @@ class DesktopInputFeature:
             arguments.update({
                 "button": request.arguments["button"],
                 "clickCount": request.arguments["click_count"],
+            })
+        elif operation == "scroll":
+            arguments["delta"] = request.arguments["delta"]
+        elif operation == "drag":
+            arguments.update({
+                "endX": request.arguments["end_x"], "endY": request.arguments["end_y"],
+                "button": request.arguments["button"], "steps": request.arguments["steps"],
             })
         elif operation == "key":
             arguments.update({

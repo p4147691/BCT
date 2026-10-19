@@ -19,7 +19,8 @@ BCT owns the implementation, policy boundary, operation receipt and live accepta
 - durable BCT receipts for the VTL-owned current-session control lease and
   emergency-stop coordination boundary; and
 - policy validation, durable operation fencing and audited dispatch for
-  VTL-owned mouse and keyboard input against an exact active window lease; and
+  VTL-owned mouse move/click/scroll/left-drag and keyboard input against an
+  exact active window lease; and
 - authenticated current-virtual-desktop window inventory plus audited exact
   activation of the non-hidden, non-minimized window bound to that lease; and
 - bounded exact-EXE launch receipts plus atomic binding of the session lease
@@ -66,8 +67,8 @@ The old ACT ADC MCP/controller and ACT-path Laya runtime have been retired.  The
 slice now owns the authenticated adapter, operation receipt and MCP image result for exact session
 status and read-only capture.  VTL owns the generic per-user Windows Agent and protected named-pipe
 implementation.  The second coordination slice adds a short-lived exact-target lease, automatic
-expiry and a generation-fenced emergency-stop latch.  The next bounded slice adds real mouse
-move/click, key and Unicode text input through VTL.  The next slice adds bounded
+expiry and a generation-fenced emergency-stop latch. The input slices add real mouse
+move/click, bounded wheel scroll/left drag, key and Unicode text input through VTL. The next slice adds bounded
 current-virtual-desktop window inventory and exact leased-window activation.
 BCT owns the authenticated policy, durable receipt and UNKNOWN-effect boundary;
 VTL owns the Windows `SendInput` execution.  Every effect requires the exact active window lease,
@@ -75,7 +76,7 @@ revalidates the target and emergency-stop state immediately before injection, an
 ambiguous partial effect.  Activation additionally revalidates virtual-desktop
 identity and refuses hidden or minimized windows. Chrome content pattern execution
 is owned by VTL while BCT owns its authenticated policy/receipt/UNKNOWN boundary.
-Scheduled Task recovery, full RDC parity and a misleading ADC
+Scheduled Task recovery, complete RDC parity and a misleading ADC
 compatibility layer remain outside this slice.
 
 DesktopWindow Monitor and Chrome Auto Proxy are external compatibility modules, not Core. Their
