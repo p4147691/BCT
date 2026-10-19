@@ -22,6 +22,8 @@ normal_actions = [
   "desktop_capture",
   "desktop_explore",
   "desktop_application_target",
+  "desktop_chrome_content_list",
+  "desktop_chrome_content_action",
   "desktop_chrome_tab_reconcile",
   "desktop_chrome_tab_select",
   "desktop_control_lease",

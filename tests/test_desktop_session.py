@@ -8,7 +8,7 @@ from pathlib import Path
 from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
     DesktopApplicationTargetFeature, DesktopCaptureFeature, DesktopChromeTabReconcileFeature,
-    DesktopChromeTabSelectFeature,
+    DesktopChromeContentActionFeature, DesktopChromeContentListFeature, DesktopChromeTabSelectFeature,
     DesktopControlLeaseFeature,
     DesktopEmergencyStopFeature,
     DesktopExploreFeature, DesktopInputFeature, DesktopProgramLaunchFeature,
@@ -218,6 +218,64 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def chrome_content(self, *, request_id: str, hwnd: str,
+                       expected_document_title: str, limit: int):
+        self.window_calls.append((request_id, "chrome_content_list", {
+            "hwnd": hwnd, "expected_document_title": expected_document_title, "limit": limit,
+        }))
+        value = self._base("chrome_content_list")
+        value["requestId"] = request_id
+        title = expected_document_title or "한글 문서"
+        value["chromeContent"] = {
+            "target": {
+                "type": "window", "hwnd": hwnd, "pid": 123, "sessionId": 1,
+                "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
+                "virtualDesktopId": "a" * 36,
+            },
+            "documentTitle": title,
+            "tabOrdinal": 1, "tabTitle": "한글 탭 — BCT",
+            "elements": [{
+                "elementId": "c" * 64, "role": "edit", "name": "메시지 입력",
+                "automationId": "composer", "className": "ProseMirror", "occurrence": 0,
+                "enabled": True, "focusable": True, "canSetValue": True,
+                "canInvoke": False,
+                "bounds": {"left": 10, "top": 20, "width": 400, "height": 40},
+            }],
+            "count": 1, "truncated": False, "foregroundPreserved": True,
+            "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
+        }
+        return value
+
+    def chrome_content_action(self, *, request_id: str, owner_id: str, lease_id: str,
+                              operation: str, element_id: str,
+                              expected_document_title: str, expected_tab_ordinal: int,
+                              expected_tab_title: str, text: str):
+        self.window_calls.append((request_id, "chrome_content_action", {
+            "owner_id": owner_id, "lease_id": lease_id, "operation": operation,
+            "element_id": element_id, "expected_document_title": expected_document_title,
+            "expected_tab_ordinal": expected_tab_ordinal,
+            "expected_tab_title": expected_tab_title, "text": text,
+        }))
+        value = self._base("chrome_content_action")
+        value["requestId"] = request_id
+        encoded = text.encode("utf-8")
+        digest = hashlib.sha256(encoded).hexdigest() if operation == "set_value" else ""
+        value["chromeContentAction"] = {
+            "operation": operation, "leaseId": lease_id, "elementId": element_id,
+            "documentTitle": expected_document_title, "invoked": True,
+            "tabOrdinal": expected_tab_ordinal, "tabTitle": expected_tab_title,
+            "alreadyApplied": False, "foregroundPreserved": True,
+            "textChars": len(text) if operation == "set_value" else 0,
+            "textBytes": len(encoded) if operation == "set_value" else 0,
+            "textSha256": digest,
+            "beforeChars": 0 if operation == "set_value" else None,
+            "beforeSha256": hashlib.sha256(b"").hexdigest() if operation == "set_value" else "",
+            "afterChars": len(text) if operation == "set_value" else None,
+            "afterSha256": digest,
+            "invokeAcknowledged": operation == "invoke",
+        }
+        return value
+
     def processes(self, *, request_id: str, **arguments):
         self.explore_calls.append((request_id, "processes", arguments))
         value = self._base("processes_list")
@@ -322,6 +380,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                              "desktop_session_status", "desktop_capture",
                              "desktop_explore",
                              "desktop_application_target",
+                             "desktop_chrome_content_list", "desktop_chrome_content_action",
                              "desktop_chrome_tab_select",
                              "desktop_control_lease", "desktop_emergency_stop",
                              "desktop_input",
@@ -592,6 +651,55 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         with self.assertRaisesRegex(DesktopSessionEffectUnknown, "CHROME_WINDOWS_INVALID"):
             DesktopSessionClient._validated_windows(result, adapter="chrome")
 
+    def test_client_validates_chrome_content_tab_and_utf8_receipts(self):
+        class StubClient(DesktopSessionClient):
+            response: dict
+
+            def request(self, **_arguments):
+                return self.response
+
+        client = StubClient(endpoint_path=self.root / "unused", evidence_root=self.root)
+        list_result = self.client.chrome_content(
+            request_id="list", hwnd="12345", expected_document_title="한글 문서", limit=10,
+        )
+        client.response = list_result
+        validated = client.chrome_content(
+            request_id="list", hwnd="12345", expected_document_title="한글 문서", limit=10,
+        )
+        self.assertEqual(1, validated["chromeContent"]["tabOrdinal"])
+        client.response = {**list_result, "chromeContent": {
+            **list_result["chromeContent"], "tabOrdinal": 100,
+        }}
+        with self.assertRaisesRegex(DesktopSessionEffectUnknown, "CHROME_CONTENT_INVALID"):
+            client.chrome_content(
+                request_id="list", hwnd="12345", expected_document_title="한글 문서", limit=10,
+            )
+
+        text = "한글 값"
+        action_result = self.client.chrome_content_action(
+            request_id="act", owner_id="desktop", lease_id="b" * 32,
+            operation="set_value", element_id="c" * 64,
+            expected_document_title="한글 문서", expected_tab_ordinal=1,
+            expected_tab_title="한글 탭 — BCT", text=text,
+        )
+        client.response = action_result
+        self.assertIs(action_result, client.chrome_content_action(
+            request_id="act", owner_id="desktop", lease_id="b" * 32,
+            operation="set_value", element_id="c" * 64,
+            expected_document_title="한글 문서", expected_tab_ordinal=1,
+            expected_tab_title="한글 탭 — BCT", text=text,
+        ))
+        client.response = {**action_result, "chromeContentAction": {
+            **action_result["chromeContentAction"], "textBytes": len(text),
+        }}
+        with self.assertRaisesRegex(DesktopSessionEffectUnknown, "CONTENT_ACTION_INVALID"):
+            client.chrome_content_action(
+                request_id="act", owner_id="desktop", lease_id="b" * 32,
+                operation="set_value", element_id="c" * 64,
+                expected_document_title="한글 문서", expected_tab_ordinal=1,
+                expected_tab_title="한글 탭 — BCT", text=text,
+            )
+
     def test_chrome_tab_reconcile_proves_compensated_state_without_effect(self):
         class ReconcileClient(FakeDesktopSessionClient):
             def control(self, **arguments):
@@ -836,6 +944,93 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         from bct.core.models import ConfirmedFailure
         with self.assertRaises(ConfirmedFailure):
             DesktopChromeTabSelectFeature(RejectingClient(self.root)).execute(request)
+
+    def test_chrome_content_list_returns_only_bounded_metadata(self):
+        feature = DesktopChromeContentListFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "hwnd": "12345", "expected_document_title": "한글 문서", "limit": 25,
+        })
+        self.assertEqual(("desktop-session:observe",), request.resources)
+        request = request.__class__(**{**request.__dict__, "operation_id": "chrome-content-list-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("한글 문서", result.output["chromeContent"]["documentTitle"])
+        self.assertTrue(result.output["chromeContent"]["elements"][0]["canSetValue"])
+        self.assertNotIn("value", result.output["chromeContent"]["elements"][0])
+
+    def test_chrome_content_list_rejects_unbounded_selector(self):
+        feature = DesktopChromeContentListFeature(self.client)
+        for arguments in (
+            {"hwnd": ""}, {"hwnd": "foreground"}, {"hwnd": "123", "limit": True},
+            {"hwnd": "123", "limit": 0}, {"hwnd": "123", "limit": 257},
+            {"hwnd": "123", "expected_document_title": "x\0y"},
+            {"hwnd": "123", "extra": 1},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_chrome_content_set_value_hashes_utf8_and_uses_control_claim(self):
+        feature = DesktopChromeContentActionFeature(self.client)
+        text = "한글 입력 — UTF-8 독립"
+        request = feature.prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "operation": "set_value", "element_id": "c" * 64,
+            "expected_document_title": "한글 문서", "expected_tab_ordinal": 1,
+            "expected_tab_title": "한글 탭 — BCT", "text": text,
+        })
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        self.assertEqual("desktop", request.arguments["owner_id"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "chrome-content-set-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        action = result.evidence["chrome_content_action"]
+        self.assertEqual(len(text.encode("utf-8")), action["textBytes"])
+        self.assertEqual(hashlib.sha256(text.encode("utf-8")).hexdigest(), action["textSha256"])
+        self.assertNotIn("text", action)
+
+    def test_chrome_content_invoke_and_failure_semantics(self):
+        feature = DesktopChromeContentActionFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "operation": "invoke", "element_id": "c" * 64,
+            "expected_document_title": "한글 문서", "expected_tab_ordinal": 1,
+            "expected_tab_title": "한글 탭 — BCT",
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "chrome-content-invoke-1"})
+        result = feature.execute(request)
+        self.assertTrue(result.evidence["chrome_content_action"]["invokeAcknowledged"])
+
+        class UnknownClient(FakeDesktopSessionClient):
+            def chrome_content_action(self, **_arguments):
+                raise DesktopSessionEffectUnknown("CHROME_CONTENT_EFFECT_UNKNOWN")
+
+        with self.assertRaises(UnknownEffectError):
+            DesktopChromeContentActionFeature(UnknownClient(self.root)).execute(request)
+
+        class RejectingClient(FakeDesktopSessionClient):
+            def chrome_content_action(self, **_arguments):
+                raise DesktopSessionRequestFailed("CHROME_CONTENT_ELEMENT_MISMATCH")
+
+        from bct.core.models import ConfirmedFailure
+        with self.assertRaises(ConfirmedFailure):
+            DesktopChromeContentActionFeature(RejectingClient(self.root)).execute(request)
+
+    def test_chrome_content_action_rejects_conflicting_or_invalid_fields(self):
+        feature = DesktopChromeContentActionFeature(self.client)
+        valid = {
+            "lease_id": "b" * 32, "operation": "set_value", "element_id": "c" * 64,
+            "expected_document_title": "문서", "expected_tab_ordinal": 1,
+            "expected_tab_title": "탭", "text": "값",
+        }
+        for arguments in (
+            {**valid, "lease_id": "bad"}, {**valid, "operation": "click"},
+            {**valid, "element_id": "bad"}, {**valid, "expected_document_title": ""},
+            {**valid, "expected_tab_ordinal": True}, {**valid, "expected_tab_ordinal": 100},
+            {**valid, "expected_tab_title": ""},
+            {**valid, "text": "x" * 8001}, {**valid, "text": "x\0y"},
+            {**valid, "operation": "invoke", "text": "must-be-empty"},
+            {**valid, "extra": True},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
 
     def test_window_manage_normalizes_geometry_and_uses_control_claim(self):
         feature = DesktopWindowManageFeature(self.client)

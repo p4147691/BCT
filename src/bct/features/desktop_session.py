@@ -897,6 +897,134 @@ class DesktopChromeTabSelectFeature:
         )
 
 
+class DesktopChromeContentListFeature:
+    capability = "desktop_chrome_content_list"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        unknown = set(arguments) - {"hwnd", "expected_document_title", "limit"}
+        if unknown:
+            raise PreconditionError(
+                "DESKTOP_CHROME_CONTENT_LIST_FIELD_INVALID:" + ",".join(sorted(unknown))
+            )
+        hwnd = str(arguments.get("hwnd") or "").strip()
+        if not re.fullmatch(r"[1-9][0-9]{0,18}", hwnd):
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_LIST_HWND_INVALID")
+        title = arguments.get("expected_document_title", "")
+        if not isinstance(title, str) or len(title) > 500 or "\0" in title:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_LIST_TITLE_INVALID")
+        limit_value = arguments.get("limit", 100)
+        if isinstance(limit_value, bool):
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_LIST_LIMIT_INVALID")
+        try:
+            limit = int(limit_value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_LIST_LIMIT_INVALID") from exc
+        if not 1 <= limit <= 256:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_LIST_LIMIT_INVALID")
+        return FeatureRequest(
+            self.capability, "list:chrome-content:" + hwnd,
+            {"hwnd": hwnd, "expected_document_title": title, "limit": limit},
+            ("desktop-session:observe",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.chrome_content(
+                request_id=request.operation_id, **request.arguments,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except (DesktopSessionEffectUnknown, DesktopSessionRequestFailed) as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        content = result["chromeContent"]
+        evidence = {
+            **_session_evidence(result),
+            "hwnd": request.arguments["hwnd"],
+            "document_title": content["documentTitle"],
+            "element_count": content["count"],
+            "truncated": content["truncated"],
+            "foreground_preserved": content["foregroundPreserved"],
+            "observed_at_utc": content["observedAtUtc"],
+        }
+        return FeatureResult(Outcome.APPLIED, evidence, output=result)
+
+
+class DesktopChromeContentActionFeature:
+    capability = "desktop_chrome_content_action"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {
+            "lease_id", "operation", "element_id", "expected_document_title",
+            "expected_tab_ordinal", "expected_tab_title", "text",
+        }
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError(
+                "DESKTOP_CHROME_CONTENT_ACTION_FIELD_INVALID:" + ",".join(sorted(unknown))
+            )
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_OWNER_INVALID")
+        lease_id = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_LEASE_ID_INVALID")
+        operation = str(arguments.get("operation") or "").strip().casefold()
+        if operation not in {"set_value", "invoke"}:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_OPERATION_INVALID")
+        element_id = str(arguments.get("element_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{64}", element_id):
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_ELEMENT_ID_INVALID")
+        title = arguments.get("expected_document_title")
+        if not isinstance(title, str) or not title or len(title) > 500 or "\0" in title:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_TITLE_INVALID")
+        tab_ordinal = arguments.get("expected_tab_ordinal")
+        if isinstance(tab_ordinal, bool) or not isinstance(tab_ordinal, int) or not 0 <= tab_ordinal < 100:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_TAB_ORDINAL_INVALID")
+        tab_title = arguments.get("expected_tab_title")
+        if not isinstance(tab_title, str) or not tab_title or len(tab_title) > 500 or "\0" in tab_title:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_TAB_TITLE_INVALID")
+        text = arguments.get("text", "")
+        if not isinstance(text, str) or "\0" in text or len(text) > 8000:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_TEXT_INVALID")
+        try:
+            text_bytes = text.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_TEXT_INVALID") from exc
+        if len(text_bytes) > 32768 or operation == "invoke" and text:
+            raise PreconditionError("DESKTOP_CHROME_CONTENT_ACTION_TEXT_INVALID")
+        return FeatureRequest(
+            self.capability, operation + ":chrome-content", {
+                "owner_id": owner_id, "lease_id": lease_id, "operation": operation,
+                "element_id": element_id, "expected_document_title": title, "text": text,
+                "expected_tab_ordinal": tab_ordinal, "expected_tab_title": tab_title,
+            }, ("desktop-control:interactive-session",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.chrome_content_action(
+                request_id=request.operation_id, **request.arguments,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        action = result["chromeContentAction"]
+        evidence = {
+            **_session_evidence(result),
+            "chrome_content_action": action,
+        }
+        return FeatureResult(Outcome.APPLIED, evidence, output=result)
+
+
 class DesktopChromeTabReconcileFeature:
     """Release one exact changed-foreground UNKNOWN after read-only state proof."""
 

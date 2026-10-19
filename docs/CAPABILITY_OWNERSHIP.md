@@ -24,6 +24,9 @@ BCT owns the implementation, policy boundary, operation receipt and live accepta
   activation of the non-hidden, non-minimized window bound to that lease; and
 - bounded exact-EXE launch receipts plus atomic binding of the session lease
   only to a visible current-desktop window owned by the newly created PID.
+- authenticated bounded Chrome `RootWebArea` element inventory plus audited
+  exact ValuePattern/InvokePattern dispatch through the VTL-owned helper, fenced
+  by the active tab identity, exact Window Lease, emergency stop and foreground.
 - exact immutable VTL runtime verification, bounded direct scenario dispatch,
   background receipt and external evidence identity for `vtl_validate`.
 
@@ -70,7 +73,8 @@ BCT owns the authenticated policy, durable receipt and UNKNOWN-effect boundary;
 VTL owns the Windows `SendInput` execution.  Every effect requires the exact active window lease,
 revalidates the target and emergency-stop state immediately before injection, and never retries an
 ambiguous partial effect.  Activation additionally revalidates virtual-desktop
-identity and refuses hidden or minimized windows.  Window restore/move/resize,
+identity and refuses hidden or minimized windows. Chrome content pattern execution
+is owned by VTL while BCT owns its authenticated policy/receipt/UNKNOWN boundary.
 Scheduled Task recovery, full RDC parity and a misleading ADC
 compatibility layer remain outside this slice.
 

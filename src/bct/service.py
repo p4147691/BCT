@@ -33,6 +33,7 @@ from .features.orchestration import OrchestrationFeature
 from .features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
     DesktopApplicationTargetFeature, DesktopChromeTabReconcileFeature,
+    DesktopChromeContentActionFeature, DesktopChromeContentListFeature,
     DesktopChromeTabSelectFeature, DesktopExploreFeature,
     DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
     DesktopWindowActivateFeature, DesktopWindowManageFeature,
@@ -117,6 +118,8 @@ class BCT:
             DesktopCaptureFeature(desktop_session),
             DesktopExploreFeature(desktop_session),
             DesktopApplicationTargetFeature(desktop_session),
+            DesktopChromeContentListFeature(desktop_session),
+            DesktopChromeContentActionFeature(desktop_session),
             DesktopChromeTabReconcileFeature(desktop_session),
             DesktopChromeTabSelectFeature(desktop_session),
             DesktopControlLeaseFeature(desktop_session),
