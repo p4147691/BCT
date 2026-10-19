@@ -1,5 +1,16 @@
 # BCT 인수인계
 
+## 완료 — bounded desktop scroll/drag
+
+`desktop_input`은 기존 exact Window Lease 아래에서 wheel `scroll`과 좌클릭
+`drag`를 제공한다. scroll delta와 drag 단계/경로가 제한되며 foreground, 비가림
+좌표, Lease, 프로세스 생성 시점, Session/virtual desktop, emergency stop을 실행
+직전에 다시 검증한다. VTL Agent 전체 probe와 BCT 집중/분할 CI, exact-main 배포,
+인증 MCP disposable-probe 수락시험이 통과했다. 최종 Lease는 null이고 emergency
+stop은 false다. 현재 SHA와 generation은 `origin/main`, 두 `runtime\current.json`,
+health `release_sha`로 확인한다. 상세는
+`docs/exec-plans/completed/BCT_DESKTOP_SCROLL_DRAG_20261019.md`에 있다.
+
 ## 완료 — Chrome 웹 콘텐츠 exact 제어 V1
 
 `desktop_chrome_content_list`와 `desktop_chrome_content_action`을 LIVE 배포했다.
