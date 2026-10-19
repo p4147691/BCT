@@ -73,11 +73,24 @@ class DeploymentServiceTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(payload)
             files[relative] = hashlib.sha256(payload).hexdigest()
+        manifest_sha256 = hashlib.sha256(json.dumps(
+            files, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest()
+        manifest = {
+            "source_head": "a" * 40,
+            "manifest_sha256": manifest_sha256,
+            "release_path": str(release_root.resolve()),
+            "files": files,
+        }
+        atomic_json(release_root / "manifest.json", manifest)
         profile = DeploymentProfile(
             "bct_runtime_v1", runtime, runtime, "bct-core", 18790, tuple(files)
         )
+        # Production re-publication receives the compact current.json pointer,
+        # not the original staging object with its in-memory file map.
         _publish_runtime_recovery_scripts(profile, {
-            "release_path": str(release_root), "files": files,
+            key: manifest[key]
+            for key in ("source_head", "manifest_sha256", "release_path")
         })
         self.assertEqual(payloads["modules/mcp/ops/run_bct_core_supervisor.ps1"], (
             runtime / "ops" / "run_bct_core_supervisor.ps1"
