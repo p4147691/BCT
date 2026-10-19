@@ -1,5 +1,22 @@
 # BCT 인수인계
 
+## 완료 — 로그인 세션 Desktop Agent 자동 복구
+
+Desktop Session Agent는 boot service가 아니라 로그인 사용자의 interactive session에
+존재해야 화면·창·입력을 정확히 제어할 수 있다. VTL의 `BCT Desktop Session
+Supervisor`가 immutable VTL release·manifest·Agent-start source를 검증하고 동일
+세션의 exact Agent만 재사용하거나, 종료된 Agent만 복구한다. old/foreign release는
+임의 종료하지 않고 mismatch로 남긴다. Scheduled Task는 `LogonTrigger`,
+`InteractiveToken`, `LeastPrivilege`로 실행되며, 관리 권한은 Task Scheduler 등록
+갱신 때만 필요하다.
+
+LIVE에서 활성 Lease 없음 및 emergency stop 해제 상태의 구형 Agent를 한 번 종료했고,
+Supervisor가 current immutable release의 새 Agent로 자동 복구했다. 이후 BCT control
+status는 interactive input desktop, null lease, clear emergency stop을 반환했다. 현재
+실제 release는 VTL `current.json`, Agent endpoint와 Supervisor receipt로 확인한다.
+상세는 VTL의
+`docs/exec-plans/completed/bct-desktop-session-supervisor-20261019.md`에 있다.
+
 ## 완료 — bounded desktop scroll/drag
 
 `desktop_input`은 기존 exact Window Lease 아래에서 wheel `scroll`과 좌클릭
