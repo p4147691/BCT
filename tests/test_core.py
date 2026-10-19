@@ -91,7 +91,7 @@ class CoreTests(unittest.TestCase):
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=self.policy)
         actions = frozenset({
             "read", "write", "test", "git_commit",
-            "desktop_chrome_tab_select", "desktop_chrome_tab_reconcile",
+            "desktop_chrome_tab_select",
         })
         self.owner = Principal("owner", "test", actions)
         self.other = Principal("other", "test", actions)
@@ -120,6 +120,9 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(1, feature.calls)
 
     def test_exact_chrome_tab_reconcile_releases_only_proven_unknown_claim(self):
+        self.assertNotIn(
+            "desktop_chrome_tab_reconcile", self.bct.store.get_work("work-1").actions,
+        )
         self.replace_feature(UnknownChromeTabFeature())
         original = self.bct.operations.run(
             principal=self.owner, work_id="work-1", operation_id="tab-unknown",

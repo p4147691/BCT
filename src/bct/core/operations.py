@@ -38,7 +38,17 @@ class OperationCoordinator:
         if feature is None:
             raise KeyError("FEATURE_NOT_REGISTERED:" + capability)
         work = self.store.get_work(work_id)
-        decision = self.policy.decide(principal=principal, work=work, action=capability,
+        # A Chrome-tab reconcile is a read-only proof step for an already
+        # authorized select in this exact work.  Historical work records cannot
+        # gain a newly introduced action, so derive its scope from the original
+        # select authority.  The exact original operation, owner, target,
+        # outcome, and error are still checked below before any feature I/O.
+        policy_action = (
+            "desktop_chrome_tab_select"
+            if capability == "desktop_chrome_tab_reconcile"
+            else capability
+        )
+        decision = self.policy.decide(principal=principal, work=work, action=policy_action,
                                       approval_ref=approval_ref)
         if decision.kind is not DecisionKind.ALLOW:
             raise AuthorizationError(decision.reason_code + ":" + decision.next_action)
