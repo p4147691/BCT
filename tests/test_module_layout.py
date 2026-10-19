@@ -47,6 +47,7 @@ class ModuleLayoutTests(unittest.TestCase):
             "src/bct/core/durable_pr2.py",
             "src/bct/core/manager_decision.py",
             "src/bct/core/rcc_result.py",
+            "src/bct/features/claim_reconciliation.py",
             "src/bct/manager_decision_recovery.py",
             "src/bct/worker_dispatch_recovery.py",
             "src/bct/features/desktop_session.py",
