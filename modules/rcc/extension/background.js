@@ -4483,19 +4483,39 @@ async function deliverResult(relayId, result, senderTabId, bindingAttestation = 
 
   const durable = await persistDurableResultReceipt(relayId, pending, result);
 
-  const latestState = await loadState();
+  // The first send on an existing empty tab creates its conversation key.
+  // Promote the exact registration inside the existing binding mutation lock:
+  // updating a loadState() snapshot without persisting registrations loses the
+  // key, and writing a stale full snapshot can clobber another tab's binding.
   if (pending.bootstrapCreatedTab === true && pending.source === 'BCT_DIRECT_TAB') {
     const role = String(pending.to || '');
-    const bound = latestState.registrations?.[role];
-    if (bound?.directTabWorkId && bound.directTabOperationId === relayId
-        && Number(bound.tabId) === Number(senderTabId)
-        && bound.bootstrapConsumedAt && pending.conversationKey) {
-      bound.conversationKey = pending.conversationKey;
-      bound.authorization = 'ACT_CONVERSATION_BIND';
-      bound.updatedAt = Date.now();
-      latestState.registrations[role] = bound;
-    }
+    const conversationKey = String(pending.conversationKey || '');
+    await mutateRegistrationsWithLeaseFence(
+      [{ role }, { tabId: senderTabId, conversationKey }],
+      async (fresh) => {
+        const bound = fresh.registrations?.[role];
+        if (!bound?.directTabWorkId
+            || bound.directTabOperationId !== relayId
+            || Number(bound.tabId) !== Number(senderTabId)
+            || Number(pending.tabId) !== Number(senderTabId)
+            || !bound.bootstrapConsumedAt || !conversationKey
+            || String(bound.transportInstanceId || '') !== String(fresh.settings.instanceId || '')
+            || String(bound.sessionId || '') !== String(endpointSessionId || '')
+            || !['ACT_CONVERSATION_BOOTSTRAP', 'ACT_CONVERSATION_BIND'].includes(bound.authorization)
+            || (bound.conversationKey && bound.conversationKey !== conversationKey)) {
+          throw new Error('DIRECT_TAB_RESULT_BINDING_CHANGED');
+        }
+        if (bound.conversationKey === conversationKey
+            && bound.authorization === 'ACT_CONVERSATION_BIND') return bound;
+        bound.conversationKey = conversationKey;
+        bound.authorization = 'ACT_CONVERSATION_BIND';
+        bound.updatedAt = Date.now();
+        fresh.registrations[role] = bound;
+        return bound;
+      }
+    );
   }
+  const latestState = await loadState();
   const completedAt = Date.now();
 
   const createdAt = Number(pending.createdAt || 0) || null;

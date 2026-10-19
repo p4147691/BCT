@@ -111,6 +111,9 @@ class OperationCoordinator:
                 or (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
                  and (original.evidence.get("command") == "create-and-send"
                       or str(original.error or "").startswith("RCC_COMPOSE_")))
+                or (rcc_command == "result"
+                    and original.outcome is Outcome.APPLIED
+                    and original.evidence.get("command") == "send-to-tab")
                 or (rcc_command not in {"result-of-create-and-send", "reconcile-create-and-send", "reconcile-send"}
                     and (original.evidence.get("command") == "send-to-created-tab"
                          or str(original.error or "").startswith(

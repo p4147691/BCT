@@ -1,0 +1,149 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Isolated RCC DOM Gate Fixture</title></head>
+<body><div data-testid="composer"><div id="prompt-textarea" role="textbox" contenteditable="true" style="width:420px;height:80px;border:1px solid #666"></div><button id="voice-button" aria-label="음성 대화 시작">voice</button></div>
+<div id="status">idle</div><script>
+window.__clicks=0;window.__mode='normal';
+const RelayCore={normalizeMessageText:x=>String(x||'').trim()};
+function getEditor(){return document.querySelector('#prompt-textarea');}
+function editorDraftText(node){return (node?.innerText||'').trim();}
+document.querySelector('[data-testid="composer"]').addEventListener('input',()=>{
+ if(window.__mode==='never') return;
+ setTimeout(()=>{
+  if(window.__mode!=='normal') return;
+  const voice=document.querySelector('#voice-button');
+  if(!voice) return;
+  const button=document.createElement('button');
+  button.dataset.testid='send-button';
+  button.textContent='보내기';
+  button.onclick=()=>{ window.__clicks++;document.querySelector('#status').textContent='submitted'; };
+  voice.replaceWith(button);
+ },70);
+});
+function findReadySendButton(editor = null, options = {}) {
+  // Only accept controls that explicitly identify themselves as ChatGPT send
+  // controls. A page-wide form[type=submit] fallback can hit the new-chat
+  // navigation form and turn "기깃" into ?prompt-textarea=기깃 without sending.
+  const selectors = [
+    'button[data-testid="send-button"]',
+    'button[data-testid*="send-button"]',
+    'button[aria-label="Send prompt"]',
+    'button[aria-label="Send message"]',
+    'button[aria-label="Send"]',
+    'button[aria-label="메시지 보내기"]',
+    'button[aria-label="프롬프트 보내기"]',
+    'button[aria-label="보내기"]'
+  ];
+
+  const scopes = [];
+  const form = editor?.closest?.('form');
+  if (form) scopes.push(form);
+  const composer = editor?.closest?.('[data-testid*="composer"], [data-testid="composer"]');
+  if (composer && !scopes.includes(composer)) scopes.push(composer);
+  if (options?.allowDocumentFallback !== false) scopes.push(document);
+
+  for (const scope of scopes) {
+    for (const selector of selectors) {
+      const button = scope.querySelector(selector);
+      if (button && button.isConnected !== false && !button.disabled &&
+          button.getAttribute?.('aria-disabled') !== 'true' && button.getClientRects().length > 0) return button;
+    }
+  }
+  return null;
+}
+
+function waitForReadySendButton(editor = null, timeoutMs = 8000, options = {}) {
+  const findVerified = () => {
+    if (typeof options?.expectedText === 'string') {
+      if (getEditor() !== editor ||
+          editorDraftText(editor) !== RelayCore.normalizeMessageText(options.expectedText)) return null;
+    }
+    return findReadySendButton(editor, options);
+  };
+  const existing = findVerified();
+  if (existing) return Promise.resolve(existing);
+
+  return new Promise((resolve) => {
+    let observer = null;
+    let timer = null;
+    let settled = false;
+
+    const finish = (button = null) => {
+      if (settled) return;
+      settled = true;
+      try { observer?.disconnect(); } catch (_) {}
+      if (timer) clearTimeout(timer);
+      resolve(button);
+    };
+
+    const check = () => {
+      const button = findVerified();
+      if (button) finish(button);
+    };
+
+    observer = new MutationObserver(check);
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['disabled','class','aria-disabled','data-testid','aria-label']
+    });
+    timer = setTimeout(() => finish(null), timeoutMs);
+    check();
+  });
+}
+
+async function submitEditor(editor, options = {}) {
+  const allowKeyboardFallback = options?.allowKeyboardFallback !== false;
+  const waitMs = Number(options?.waitMs || 8000);
+  const expected = typeof options?.expectedText === 'string'
+    ? RelayCore.normalizeMessageText(options.expectedText) : null;
+  const matchesDraft = () => expected === null ||
+    (getEditor() === editor && editorDraftText(editor) === expected);
+  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  // Wait for ChatGPT to swap its empty-composer voice control for the enabled send arrow.
+  const button = await waitForReadySendButton(editor, waitMs, options);
+  if (button) {
+    if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+    // A React render may replace or disable the button after the observer resolved.
+    if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
+    const bindingAttestation = typeof options?.beforeSubmit === 'function'
+      ? await options.beforeSubmit() : null;
+    if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+    if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
+    const activationAttestation = typeof options?.beforeActivation === 'function'
+      ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
+      : bindingAttestation;
+    const readyAt = Date.now();
+    button.click();
+    return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now(),
+      bindingAttestation: activationAttestation };
+  }
+  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+
+  if (!allowKeyboardFallback) {
+    throw new Error('RELAY_SEND_BUTTON_NOT_READY');
+  }
+
+  // Existing-conversation relay keeps a bounded keyboard fallback. Provider
+  // bootstrap must disable it because synthetic Enter on ChatGPT's new-chat
+  // route can become ?prompt-textarea=... instead of sending a user turn.
+  const bindingAttestation = typeof options?.beforeSubmit === 'function'
+    ? await options.beforeSubmit() : null;
+  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  const activationAttestation = typeof options?.beforeActivation === 'function'
+    ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
+    : bindingAttestation;
+  editor.focus();
+  for (const type of ['keydown', 'keypress', 'keyup']) {
+    editor.dispatchEvent(new KeyboardEvent(type, {
+      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+      bubbles: true, cancelable: true
+    }));
+  }
+  return { ok: true, method: 'enter-fallback',
+    bindingAttestation: activationAttestation };
+}
+
+
+
+
+</script></body></html>

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "browser": "chromium",
+  "headless": true,
+  "viewport": {
+    "width": 960,
+    "height": 600
+  },
+  "actions": [
+    {
+      "type": "goto",
+      "file": "rcc-dom-gate.html"
+    },
+    {
+      "type": "assertJs",
+      "expression": "(async()=>{const editor=document.querySelector('#prompt-textarea');editor.textContent='한글 입력 안정화 테스트';editor.dispatchEvent(new InputEvent('input',{bubbles:true}));const r=await submitEditor(editor,{expectedText:'한글 입력 안정화 테스트',allowKeyboardFallback:false,allowDocumentFallback:false,waitMs:1500});return r.ok&&r.method==='send-button'&&window.__clicks===1&&document.querySelector('#status').textContent==='submitted';})()",
+      "message": "delayed send button did not receive exactly one click"
+    },
+    {
+      "type": "assertJs",
+      "expression": "(async()=>{window.__mode='never';document.querySelector('[data-testid=\"send-button\"]')?.remove();const voice=document.createElement('button');voice.id='voice-button';voice.textContent='voice';document.querySelector('[data-testid=\"composer\"]').appendChild(voice);const editor=document.querySelector('#prompt-textarea');editor.textContent='미완성 한글';editor.dispatchEvent(new InputEvent('input',{bubbles:true}));try{await submitEditor(editor,{expectedText:'미완성 한글',allowKeyboardFallback:false,allowDocumentFallback:false,waitMs:120});return false;}catch(e){return String(e.message).includes('RELAY_SEND_BUTTON_NOT_READY')&&window.__clicks===1;}})()",
+      "message": "missing send button triggered unsafe Enter or wrong state"
+    },
+    {
+      "type": "assertText",
+      "selector": "#status",
+      "equals": "submitted"
+    }
+  ]
+}
