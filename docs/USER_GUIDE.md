@@ -105,6 +105,10 @@ family와 top-level window class를 기준으로 현재 데스크톱의 후보�
 HWND의 Window Lease를 발급한다. 0개, 여러 개 또는 Agent 목록이 잘린 경우에는
 어떤 창도 제어하지 않는다. 반환된 Lease는 기존 `desktop_window_activate`,
 `desktop_input`, `desktop_window_manage`에 사용하고 완료 즉시 release한다.
+Explorer는 선택적으로 기존 로컬 폴더의 절대 경로를 `folder_path`에 지정할 수 있다.
+Agent가 Shell 위치를 실제 HWND와 연결하므로 같은 제목의 Explorer 창이 여럿이어도
+정확한 폴더 창만 선택한다. 상대 경로와 존재하지 않는 폴더는 거부하며, 가상 Shell
+위치는 로컬 폴더로 추측하지 않는다. Chrome에는 `folder_path`를 사용할 수 없다.
 
 이 첫 구현은 현재 로그인되어 있고 잠기지 않은 사용자 세션에서 수동 실행한 VTL Desktop
 Session Agent를 필요로 한다. Agent가 없거나 다른 세션이거나 Pipe 소유자/DACL이 일치하지

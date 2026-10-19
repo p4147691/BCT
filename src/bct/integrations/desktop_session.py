@@ -115,7 +115,7 @@ class DesktopSessionClient:
             "lease_release", "emergency_stop", "emergency_reset",
             "input_mouse_move", "input_mouse_click", "input_key", "input_text",
             "windows_list", "window_activate", "window_manage", "program_launch",
-            "processes_list", "paths_list",
+            "processes_list", "paths_list", "explorer_windows_list",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -252,6 +252,24 @@ class DesktopSessionClient:
             },
             timeout_s=10.0,
         )
+        return self._validated_windows(result, explorer=False)
+
+    def explorer_windows(self, *, request_id: str, include_minimized: bool,
+                         title_query: str, folder_path: str, limit: int) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="explorer_windows_list",
+            arguments={
+                "includeMinimized": include_minimized,
+                "titleQuery": title_query,
+                "folderPath": folder_path,
+                "limit": limit,
+            },
+            timeout_s=10.0,
+        )
+        return self._validated_windows(result, explorer=True)
+
+    @staticmethod
+    def _validated_windows(result: dict[str, Any], *, explorer: bool) -> dict[str, Any]:
         windows = result.get("windows")
         if not isinstance(windows, dict):
             raise DesktopSessionEffectUnknown("DESKTOP_WINDOWS_MISSING")
@@ -280,6 +298,26 @@ class DesktopSessionClient:
                 or not isinstance(item.get("foreground"), bool)
             ):
                 raise DesktopSessionEffectUnknown("DESKTOP_WINDOWS_INVALID")
+            if explorer and (
+                str(item.get("processName") or "").casefold() != "explorer"
+                or str(item.get("className") or "").casefold()
+                not in {"cabinetwclass", "explorewclass"}
+                or not isinstance(item.get("locationUrl"), str)
+                or not isinstance(item.get("locationName"), str)
+                or (
+                    item.get("folderPath") is not None
+                    and (
+                        not isinstance(item.get("folderPath"), str)
+                        or not Path(item["folderPath"]).is_absolute()
+                    )
+                )
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_EXPLORER_WINDOWS_INVALID")
+        if explorer and (
+            not isinstance(windows.get("shellAvailable"), bool)
+            or not isinstance(windows.get("folderPath"), str)
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_EXPLORER_WINDOWS_INVALID")
         return result
 
     def activate(self, *, request_id: str, owner_id: str, lease_id: str) -> dict[str, Any]:
