@@ -1,5 +1,17 @@
 # BCT 인수인계
 
+## 완료 — RCC Native Host 보안 경계 배포 정합화
+
+2026-10-20에 Chrome Native Messaging 등록값을 canonical manifest
+`D:\ChromeExtensions\RCC\native\com.ai_workspace_relay.host.json`로 정정했다. 재로드 뒤
+기존 host executable이 구식 pipe DACL로 떠 Core의 `DACL_ACE_COUNT` 검증에 거부되는
+배포 불일치를 확인했다. 현재 source의 hardened `RelayNativeHostV2.cs`를 .NET Framework
+compiler로 빌드해 canonical executable에 배포했고, 이전 executable과 manifest는
+`D:\BCT\runtime\backups\rcc-native-host-20261020-084900`에 보존했다. 실행 host를 재연결한
+뒤 RCC `state` 요청이 `ok: true`로 성공하고, 고정 Manager와 Worker의 exact conversation
+identity가 모두 state에 보이는 것을 확인했다. 이 검증은 읽기 전용이며 채팅 메시지를
+전송하지 않았다.
+
 ## 보류 — 병목 신호 기반 Instant ACK 대조 V0
 
 `bottleneck_ack`는 RCC의 exact tab telemetry에서 한 고정 대화가 연속 생성 중인
