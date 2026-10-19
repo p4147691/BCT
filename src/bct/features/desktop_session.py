@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -893,6 +894,133 @@ class DesktopChromeTabSelectFeature:
         action = result["chromeTabAction"]
         return FeatureResult(
             Outcome.APPLIED, {**_session_evidence(result), "chrome_tab_action": action}, output=result,
+        )
+
+
+class DesktopChromeTabReconcileFeature:
+    """Release one exact changed-foreground UNKNOWN after read-only state proof."""
+
+    capability = "desktop_chrome_tab_reconcile"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {
+            "original_operation_id", "hwnd", "pid", "process_start_time_utc",
+            "session_id", "virtual_desktop_id", "expected_ordinal",
+            "expected_title", "expected_foreground_hwnd",
+        }
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError(
+                "DESKTOP_CHROME_TAB_RECONCILE_FIELD_INVALID:" + ",".join(sorted(unknown))
+            )
+        original = str(arguments.get("original_operation_id") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", original):
+            raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_OPERATION_INVALID")
+        hwnd = str(arguments.get("hwnd") or "").strip()
+        foreground = str(arguments.get("expected_foreground_hwnd") or "").strip()
+        if not re.fullmatch(r"[1-9][0-9]{0,18}", hwnd) or not re.fullmatch(
+            r"[1-9][0-9]{0,18}", foreground
+        ):
+            raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_HWND_INVALID")
+        for key in ("pid", "session_id", "expected_ordinal"):
+            value = arguments.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_INTEGER_INVALID")
+        if arguments["pid"] <= 0 or arguments["session_id"] <= 0 or arguments["expected_ordinal"] >= 100:
+            raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_INTEGER_INVALID")
+        started = arguments.get("process_start_time_utc")
+        title = arguments.get("expected_title")
+        if not isinstance(started, str) or not started or len(started) > 80 or "\0" in started:
+            raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_PROCESS_TIME_INVALID")
+        if not isinstance(title, str) or not title or len(title) > 500 or "\0" in title:
+            raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_TITLE_INVALID")
+        try:
+            desktop_id = str(uuid.UUID(str(arguments.get("virtual_desktop_id") or "")))
+        except (ValueError, AttributeError) as exc:
+            raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_DESKTOP_INVALID") from exc
+        normalized = {
+            "original_operation_id": original, "hwnd": hwnd, "pid": arguments["pid"],
+            "process_start_time_utc": started, "session_id": arguments["session_id"],
+            "virtual_desktop_id": desktop_id,
+            "expected_ordinal": arguments["expected_ordinal"],
+            "expected_title": title, "expected_foreground_hwnd": foreground,
+        }
+        return FeatureRequest(
+            self.capability, "reconcile:chrome-tab:" + original, normalized,
+            ("desktop-control-reconcile:" + original.casefold(),),
+        )
+
+    @staticmethod
+    def _control_matches(result: dict[str, Any], *, foreground: str) -> bool:
+        control = result.get("control")
+        session = result.get("session")
+        current = session.get("foregroundWindow") if isinstance(session, dict) else None
+        return bool(
+            isinstance(control, dict) and control.get("lease") is None
+            and isinstance(control.get("emergencyStop"), dict)
+            and control["emergencyStop"].get("active") is False
+            and isinstance(current, dict) and current.get("hwnd") == foreground
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        values = request.arguments
+        try:
+            before = self.client.control(
+                request_id=request.operation_id + ":before", command="control_status",
+            )
+            observed = self.client.chrome_windows(
+                request_id=request.operation_id + ":inventory", include_minimized=True,
+                title_query="", profile_query="", tab_title_query="", tab_scope="active",
+                limit=256,
+            )
+            after = self.client.control(
+                request_id=request.operation_id + ":after", command="control_status",
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except (DesktopSessionEffectUnknown, DesktopSessionRequestFailed) as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        if (
+            before.get("instanceId") != observed.get("instanceId")
+            or before.get("instanceId") != after.get("instanceId")
+            or not self._control_matches(before, foreground=values["expected_foreground_hwnd"])
+            or not self._control_matches(after, foreground=values["expected_foreground_hwnd"])
+        ):
+            raise ConfirmedFailure("DESKTOP_CHROME_TAB_RECONCILE_CONTROL_MISMATCH", release_claims=True)
+        windows = observed["windows"]
+        if windows["truncated"] or not windows["inspectionAvailable"]:
+            raise ConfirmedFailure("DESKTOP_CHROME_TAB_RECONCILE_INVENTORY_INCOMPLETE", release_claims=True)
+        matches = [item for item in windows["items"] if all((
+            item.get("hwnd") == values["hwnd"], item.get("pid") == values["pid"],
+            item.get("processStartTimeUtc") == values["process_start_time_utc"],
+            item.get("sessionId") == values["session_id"],
+            str(item.get("virtualDesktopId") or "").casefold() == values["virtual_desktop_id"].casefold(),
+        ))]
+        if len(matches) != 1:
+            raise ConfirmedFailure("DESKTOP_CHROME_TAB_RECONCILE_TARGET_MISMATCH", release_claims=True)
+        active = matches[0].get("activeTab")
+        if not isinstance(active, dict) or (
+            active.get("ordinal") != values["expected_ordinal"]
+            or active.get("title") != values["expected_title"]
+            or active.get("selected") is not True
+        ):
+            raise ConfirmedFailure("DESKTOP_CHROME_TAB_RECONCILE_TAB_MISMATCH", release_claims=True)
+        evidence = {
+            **_session_evidence(after), "operation": "reconcile-changed-foreground",
+            "original_operation_id": values["original_operation_id"],
+            "target": {key: values[key] for key in (
+                "hwnd", "pid", "process_start_time_utc", "session_id", "virtual_desktop_id",
+            )},
+            "active_tab": active, "foreground_hwnd": values["expected_foreground_hwnd"],
+            "control": after["control"], "observed_at_utc": windows["observedAtUtc"],
+            "reconciled": True,
+        }
+        return FeatureResult(
+            Outcome.APPLIED, evidence,
+            reconciled_operation_ids=(values["original_operation_id"],),
         )
 
 
