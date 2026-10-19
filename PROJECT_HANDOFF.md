@@ -87,9 +87,23 @@ truncation은 제어 효과 전에 실패하므로 좌표나 PID 추측으로 �
 BCT PR #212의 exact-head/main CI, generation 128 exact-main 배포와 인증 MCP LIVE
 수락시험이 완료됐다. LIVE에서는 Chrome 3개와 Explorer 0개를 분류하고 고유한
 Chrome 창을 HWND/PID/process birth/Session/virtual desktop fingerprint로 bind한
-뒤 활성화나 입력 없이 Lease를 즉시 반납했다. Chrome 탭/프로필 및 Explorer 실제
-폴더 경로 연결은 다음 별도 경계다. 상세는
+뒤 활성화나 입력 없이 Lease를 즉시 반납했다. Chrome 탭/프로필 연결은 다음 별도
+경계다. 상세는
 `docs/exec-plans/completed/BCT_DESKTOP_APPLICATION_TARGET_20261019.md`에 있다.
+
+## 완료 — Explorer 실제 폴더 경로 선택·바인딩
+
+`desktop_application_target`의 Explorer 경로는 기존 로컬 폴더의 절대
+`folder_path`를 받아 Agent 1.7의 Shell 위치와 정확한 HWND/PID/process birth/
+Session/current virtual desktop fingerprint를 결합한다. 상대 경로·없는 폴더는
+거부하고 가상 Shell 위치는 로컬 경로로 추측하지 않는다. 목록은 읽기 전용이며
+bind는 후보가 정확히 하나일 때만 기존 Window Lease를 발급한다.
+
+VTL PR #29와 BCT PR #214, 양쪽 CI, exact-main immutable VTL runtime/Agent 1.7,
+BCT generation 130 배포 및 인증 MCP LIVE exact-list/bind/release 수락시험이
+완료됐다. 최종 제어 상태에는 Lease와 emergency-stop latch가 없다. 다음 의미
+어댑터 경계는 Chrome 탭/프로필 식별이다. 상세는
+`docs/exec-plans/completed/BCT_EXPLORER_PATH_TARGET_20261019.md`에 있다.
 
 ## 완료 — Adaptive CI와 VTL exact-SHA 데스크톱 스모크
 
