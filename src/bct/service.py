@@ -36,6 +36,7 @@ from .features.desktop_session import (
     DesktopChromeContentActionFeature, DesktopChromeContentListFeature,
     DesktopChromeTabSelectFeature, DesktopExploreFeature,
     DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
+    DesktopUiaElementActionFeature, DesktopUiaElementsListFeature,
     DesktopWindowActivateFeature, DesktopWindowManageFeature,
     DesktopWindowListFeature, desktop_session_client,
 )
@@ -120,6 +121,8 @@ class BCT:
             DesktopApplicationTargetFeature(desktop_session),
             DesktopChromeContentListFeature(desktop_session),
             DesktopChromeContentActionFeature(desktop_session),
+            DesktopUiaElementsListFeature(desktop_session),
+            DesktopUiaElementActionFeature(desktop_session),
             DesktopChromeTabReconcileFeature(desktop_session),
             DesktopChromeTabSelectFeature(desktop_session),
             DesktopControlLeaseFeature(desktop_session),

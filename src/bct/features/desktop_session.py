@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import tomllib
@@ -1148,6 +1149,147 @@ class DesktopChromeContentActionFeature:
             "chrome_content_action": action,
         }
         return FeatureResult(Outcome.APPLIED, evidence, output=result)
+
+
+class DesktopUiaElementsListFeature:
+    capability = "desktop_uia_elements_list"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        unknown = set(arguments) - {"hwnd", "limit"}
+        if unknown:
+            raise PreconditionError(
+                "DESKTOP_UIA_LIST_FIELD_INVALID:" + ",".join(sorted(unknown))
+            )
+        hwnd = str(arguments.get("hwnd") or "").strip()
+        if not re.fullmatch(r"[1-9][0-9]{0,18}", hwnd):
+            raise PreconditionError("DESKTOP_UIA_LIST_HWND_INVALID")
+        limit_value = arguments.get("limit", 100)
+        if isinstance(limit_value, bool):
+            raise PreconditionError("DESKTOP_UIA_LIST_LIMIT_INVALID")
+        try:
+            limit = int(limit_value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PreconditionError("DESKTOP_UIA_LIST_LIMIT_INVALID") from exc
+        if not 1 <= limit <= 512:
+            raise PreconditionError("DESKTOP_UIA_LIST_LIMIT_INVALID")
+        return FeatureRequest(
+            self.capability, "list:desktop-uia:" + hwnd,
+            {"hwnd": hwnd, "limit": limit}, ("desktop-session:observe",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.uia_elements(
+                request_id=request.operation_id, **request.arguments,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except (DesktopSessionEffectUnknown, DesktopSessionRequestFailed) as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        content = result["uiaElements"]
+        role_counts: dict[str, int] = {}
+        pattern_counts = {
+            "set_value": 0, "invoke": 0, "toggle": 0, "select": 0,
+            "expand_collapse": 0,
+        }
+        sanitized = []
+        for item in content["elements"]:
+            role = item["role"]
+            role_counts[role] = role_counts.get(role, 0) + 1
+            for field, key in (
+                ("canSetValue", "set_value"), ("canInvoke", "invoke"),
+                ("canToggle", "toggle"), ("canSelect", "select"),
+                ("canExpandCollapse", "expand_collapse"),
+            ):
+                if item[field]:
+                    pattern_counts[key] += 1
+            sanitized.append({
+                "element_id": item["elementId"], "role": role,
+                "occurrence": item["occurrence"], "enabled": item["enabled"],
+                "focusable": item["focusable"], "is_password": item["isPassword"],
+                "can_set_value": item["canSetValue"], "can_invoke": item["canInvoke"],
+                "can_toggle": item["canToggle"], "can_select": item["canSelect"],
+                "can_expand_collapse": item["canExpandCollapse"], "bounds": item["bounds"],
+            })
+        digest = hashlib.sha256(json.dumps(
+            sanitized, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        evidence = {
+            **_session_evidence(result), "hwnd": request.arguments["hwnd"],
+            "element_count": content["count"], "truncated": content["truncated"],
+            "foreground_preserved": content["foregroundPreserved"],
+            "observed_at_utc": content["observedAtUtc"],
+            "role_counts": role_counts, "pattern_counts": pattern_counts,
+            "metadata_sha256": digest,
+        }
+        return FeatureResult(Outcome.APPLIED, evidence, output=result)
+
+
+class DesktopUiaElementActionFeature:
+    capability = "desktop_uia_element_action"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {"lease_id", "operation", "element_id", "text", "desired_state"}
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError(
+                "DESKTOP_UIA_ACTION_FIELD_INVALID:" + ",".join(sorted(unknown))
+            )
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_UIA_ACTION_OWNER_INVALID")
+        lease_id = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_UIA_ACTION_LEASE_ID_INVALID")
+        operation = str(arguments.get("operation") or "").strip().casefold()
+        if operation not in {"invoke", "set_value", "toggle", "select", "expand", "collapse"}:
+            raise PreconditionError("DESKTOP_UIA_ACTION_OPERATION_INVALID")
+        element_id = str(arguments.get("element_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{64}", element_id):
+            raise PreconditionError("DESKTOP_UIA_ACTION_ELEMENT_ID_INVALID")
+        text = arguments.get("text", "")
+        if not isinstance(text, str) or "\0" in text or len(text) > 2048:
+            raise PreconditionError("DESKTOP_UIA_ACTION_TEXT_INVALID")
+        try:
+            encoded = text.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise PreconditionError("DESKTOP_UIA_ACTION_TEXT_INVALID") from exc
+        if len(encoded) > 8192 or operation != "set_value" and text:
+            raise PreconditionError("DESKTOP_UIA_ACTION_TEXT_INVALID")
+        desired_state = str(arguments.get("desired_state") or "").strip().casefold()
+        if operation == "toggle":
+            if desired_state not in {"on", "off"}:
+                raise PreconditionError("DESKTOP_UIA_ACTION_STATE_INVALID")
+        elif desired_state:
+            raise PreconditionError("DESKTOP_UIA_ACTION_STATE_INVALID")
+        return FeatureRequest(
+            self.capability, operation + ":desktop-uia", {
+                "owner_id": owner_id, "lease_id": lease_id, "operation": operation,
+                "element_id": element_id, "text": text, "desired_state": desired_state,
+            }, ("desktop-control:interactive-session",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.uia_element_action(
+                request_id=request.operation_id, **request.arguments,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        action = result["uiaAction"]
+        return FeatureResult(
+            Outcome.APPLIED, {**_session_evidence(result), "uia_action": action}, output=result,
+        )
 
 
 class DesktopChromeTabReconcileFeature:

@@ -24,6 +24,8 @@ normal_actions = [
   "desktop_application_target",
   "desktop_chrome_content_list",
   "desktop_chrome_content_action",
+  "desktop_uia_elements_list",
+  "desktop_uia_element_action",
   "desktop_chrome_tab_reconcile",
   "desktop_chrome_tab_select",
   "desktop_control_lease",

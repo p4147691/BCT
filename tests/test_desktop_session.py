@@ -13,6 +13,7 @@ from bct.features.desktop_session import (
     DesktopEmergencyStopFeature,
     DesktopExploreFeature, DesktopInputFeature, DesktopProgramLaunchFeature,
     DesktopSessionStatusFeature,
+    DesktopUiaElementActionFeature, DesktopUiaElementsListFeature,
     DesktopWindowActivateFeature, DesktopWindowManageFeature,
     DesktopWindowListFeature,
 )
@@ -294,6 +295,55 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def uia_elements(self, *, request_id: str, hwnd: str, limit: int):
+        self.window_calls.append((request_id, "uia_elements_list", {
+            "hwnd": hwnd, "limit": limit,
+        }))
+        value = self._base("uia_elements_list")
+        value["requestId"] = request_id
+        value["uiaElements"] = {
+            "target": {
+                "type": "window", "hwnd": hwnd, "pid": 123, "sessionId": 1,
+                "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
+                "virtualDesktopId": "a" * 36,
+            },
+            "elements": [{
+                "elementId": "d" * 64, "role": "edit", "name": "한글 입력",
+                "automationId": "input", "className": "Edit", "occurrence": 0,
+                "enabled": True, "focusable": True, "isPassword": False,
+                "canSetValue": True, "canInvoke": False, "canToggle": False,
+                "canSelect": False, "canExpandCollapse": False,
+                "toggleState": "", "selected": None, "expandCollapseState": "",
+                "bounds": {"left": 10, "top": 20, "width": 300, "height": 30},
+            }],
+            "count": 1, "truncated": False, "foregroundPreserved": True,
+            "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
+        }
+        return value
+
+    def uia_element_action(self, *, request_id: str, owner_id: str, lease_id: str,
+                           operation: str, element_id: str, text: str,
+                           desired_state: str):
+        self.window_calls.append((request_id, "uia_element_action", {
+            "owner_id": owner_id, "lease_id": lease_id, "operation": operation,
+            "element_id": element_id, "text": text, "desired_state": desired_state,
+        }))
+        value = self._base("uia_element_action")
+        value["requestId"] = request_id
+        encoded = text.encode("utf-8")
+        before = "off" if operation == "toggle" else ""
+        after = desired_state if operation == "toggle" else ""
+        value["uiaAction"] = {
+            "operation": operation, "leaseId": lease_id, "elementId": element_id,
+            "invoked": True, "alreadyApplied": False, "foregroundPreserved": True,
+            "textChars": len(text) if operation == "set_value" else 0,
+            "textBytes": len(encoded) if operation == "set_value" else 0,
+            "textSha256": hashlib.sha256(encoded).hexdigest() if operation == "set_value" else "",
+            "beforeState": before, "afterState": after,
+            "appliedAtUtc": "2026-10-19T00:00:00.0000000Z",
+        }
+        return value
+
     def processes(self, *, request_id: str, **arguments):
         self.explore_calls.append((request_id, "processes", arguments))
         value = self._base("processes_list")
@@ -399,6 +449,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                              "desktop_explore",
                              "desktop_application_target",
                              "desktop_chrome_content_list", "desktop_chrome_content_action",
+                             "desktop_uia_elements_list", "desktop_uia_element_action",
                              "desktop_chrome_tab_select",
                              "desktop_control_lease", "desktop_emergency_stop",
                              "desktop_input", "desktop_clipboard",
@@ -716,6 +767,46 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                 operation="set_value", element_id="c" * 64,
                 expected_document_title="한글 문서", expected_tab_ordinal=1,
                 expected_tab_title="한글 탭 — BCT", text=text,
+            )
+
+    def test_client_validates_uia_elements_and_unicode_scalar_receipts(self):
+        class StubClient(DesktopSessionClient):
+            response: dict
+
+            def request(self, **_arguments):
+                return self.response
+
+        client = StubClient(endpoint_path=self.root / "unused", evidence_root=self.root)
+        listed = self.client.uia_elements(request_id="uia-list", hwnd="12345", limit=10)
+        client.response = listed
+        self.assertIs(listed, client.uia_elements(
+            request_id="uia-list", hwnd="12345", limit=10,
+        ))
+        client.response = {**listed, "uiaElements": {
+            **listed["uiaElements"], "elements": [{
+                **listed["uiaElements"]["elements"][0], "selected": "false",
+            }],
+        }}
+        with self.assertRaisesRegex(DesktopSessionEffectUnknown, "UIA_ELEMENTS_INVALID"):
+            client.uia_elements(request_id="uia-list", hwnd="12345", limit=10)
+
+        text = "한글🙂"
+        action = self.client.uia_element_action(
+            request_id="uia-action", owner_id="desktop", lease_id="b" * 32,
+            operation="set_value", element_id="d" * 64, text=text, desired_state="",
+        )
+        client.response = action
+        self.assertIs(action, client.uia_element_action(
+            request_id="uia-action", owner_id="desktop", lease_id="b" * 32,
+            operation="set_value", element_id="d" * 64, text=text, desired_state="",
+        ))
+        client.response = {**action, "uiaAction": {
+            **action["uiaAction"], "textChars": len(text) + 1,
+        }}
+        with self.assertRaisesRegex(DesktopSessionEffectUnknown, "UIA_ACTION_INVALID"):
+            client.uia_element_action(
+                request_id="uia-action", owner_id="desktop", lease_id="b" * 32,
+                operation="set_value", element_id="d" * 64, text=text, desired_state="",
             )
 
     def test_chrome_tab_reconcile_proves_compensated_state_without_effect(self):
@@ -1076,6 +1167,76 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         ):
             with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
                 feature.prepare(work=self.work, arguments=arguments)
+
+    def test_uia_list_returns_labels_only_in_output_and_sanitizes_evidence(self):
+        feature = DesktopUiaElementsListFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={"hwnd": "12345", "limit": 100})
+        self.assertEqual(("desktop-session:observe",), request.resources)
+        request = request.__class__(**{**request.__dict__, "operation_id": "uia-list-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("한글 입력", result.output["uiaElements"]["elements"][0]["name"])
+        self.assertEqual({"edit": 1}, result.evidence["role_counts"])
+        self.assertEqual(1, result.evidence["pattern_counts"]["set_value"])
+        self.assertRegex(result.evidence["metadata_sha256"], r"^[0-9a-f]{64}$")
+        self.assertNotIn("한글 입력", str(result.evidence))
+        self.assertNotIn("automationId", str(result.evidence))
+
+    def test_uia_set_value_hashes_utf8_and_uses_window_control_claim(self):
+        feature = DesktopUiaElementActionFeature(self.client)
+        text = "UIA 한글 입력🙂"
+        request = feature.prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "operation": "set_value",
+            "element_id": "d" * 64, "text": text,
+        })
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        self.assertEqual("desktop", request.arguments["owner_id"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "uia-set-1"})
+        result = feature.execute(request)
+        action = result.evidence["uia_action"]
+        self.assertEqual(len(text.encode("utf-8")), action["textBytes"])
+        self.assertEqual(hashlib.sha256(text.encode("utf-8")).hexdigest(), action["textSha256"])
+        self.assertNotIn("text", action)
+
+    def test_uia_action_validates_operation_specific_fields(self):
+        feature = DesktopUiaElementActionFeature(self.client)
+        valid = {"lease_id": "b" * 32, "operation": "invoke", "element_id": "d" * 64}
+        toggle = feature.prepare(work=self.work, arguments={
+            **valid, "operation": "toggle", "desired_state": "ON",
+        })
+        self.assertEqual("on", toggle.arguments["desired_state"])
+        for arguments in (
+            {**valid, "lease_id": "bad"}, {**valid, "operation": "click"},
+            {**valid, "element_id": "bad"}, {**valid, "text": "not-allowed"},
+            {**valid, "operation": "toggle"},
+            {**valid, "operation": "toggle", "desired_state": "maybe"},
+            {**valid, "desired_state": "on"},
+            {**valid, "operation": "set_value", "text": "x" * 2049},
+            {**valid, "operation": "set_value", "text": "🙂" * 2049},
+            {**valid, "extra": True},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_uia_action_unknown_and_terminal_failure_are_distinct(self):
+        request = DesktopUiaElementActionFeature(self.client).prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "operation": "invoke", "element_id": "d" * 64,
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "uia-fail"})
+
+        class UnknownClient(FakeDesktopSessionClient):
+            def uia_element_action(self, **_arguments):
+                raise DesktopSessionEffectUnknown("DESKTOP_UIA_ACTION_EFFECT_UNKNOWN")
+
+        with self.assertRaises(UnknownEffectError):
+            DesktopUiaElementActionFeature(UnknownClient(self.root)).execute(request)
+
+        class RejectingClient(FakeDesktopSessionClient):
+            def uia_element_action(self, **_arguments):
+                raise DesktopSessionRequestFailed("DESKTOP_UIA_ELEMENT_MISMATCH")
+
+        with self.assertRaises(ConfirmedFailure):
+            DesktopUiaElementActionFeature(RejectingClient(self.root)).execute(request)
 
     def test_window_manage_normalizes_geometry_and_uses_control_claim(self):
         feature = DesktopWindowManageFeature(self.client)
