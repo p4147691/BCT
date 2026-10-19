@@ -14,10 +14,11 @@ UNKNOWN이며 자동 재시도하지 않는다. text는 raw evidence/output에 �
 문자/byte 길이와 SHA-256만 남긴다.
 
 VTL PR #37/#38/#39/#40, BCT PR #221/#222와 모든 required CI가 통과했다.
-BCT full suite 789개와 focused 61개 테스트도 통과했다. VTL immutable main
-`b60de5b2d519ae651da1772ad69b44294a7d68b1`의 Agent 2.0.2가 실행 중이며,
-BCT exact main `928ffcf631d034b446544066e696d65d2ac2f3bc`는 generation 137로
-배포됐다. health는 READY/OK이고 MCP catalogue는 두 새 도구를 포함한 38개다.
+BCT full suite 789개와 focused 61개 테스트도 통과했다. 완료 당시 VTL
+immutable main의 Agent 2.0.2와 BCT exact main이 배포됐다. 현재 버전은 고정 SHA
+문구를 신뢰하지 않고 각 `origin/main`, VTL/BCT `runtime\current.json`, health
+`release_sha`를 기계적으로 비교한다. 완료 당시 health는 READY/OK였고 MCP
+catalogue는 두 새 도구를 포함한 38개였다.
 
 인증 MCP LIVE에서 background write는 실행 전 확정 실패했고, 명시적 활성화 뒤
 16자/20 UTF-8 byte marker set 및 빈 문자열 clear가 각각 matching length/hash와

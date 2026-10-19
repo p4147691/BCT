@@ -811,6 +811,28 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         self.assertEqual("input_text", self.client.input_calls[-1][1])
         self.assertEqual("한글 A9", self.client.input_calls[-1][2]["text"])
 
+    def test_input_normalizes_scroll_and_bounded_left_drag(self):
+        feature = DesktopInputFeature(self.client)
+        scroll = feature.prepare(work=self.work, arguments={
+            "operation": "scroll", "lease_id": "b" * 32, "x": 120, "y": 240,
+            "delta": -240,
+        })
+        scroll = scroll.__class__(**{**scroll.__dict__, "operation_id": "input-scroll-1"})
+        feature.execute(scroll)
+        self.assertEqual("input_mouse_scroll", self.client.input_calls[-1][1])
+        self.assertEqual(-240, self.client.input_calls[-1][2]["delta"])
+
+        drag = feature.prepare(work=self.work, arguments={
+            "operation": "drag", "lease_id": "b" * 32, "x": 10, "y": 20,
+            "end_x": 80, "end_y": 90, "steps": 12,
+        })
+        drag = drag.__class__(**{**drag.__dict__, "operation_id": "input-drag-1"})
+        feature.execute(drag)
+        self.assertEqual("input_mouse_drag", self.client.input_calls[-1][1])
+        self.assertEqual({"endX": 80, "endY": 90, "button": "left", "steps": 12}, {
+            key: self.client.input_calls[-1][2][key] for key in ("endX", "endY", "button", "steps")
+        })
+
     def test_input_validates_conflicting_fields_keys_modifiers_and_coordinates(self):
         feature = DesktopInputFeature(self.client)
         invalid = (
@@ -819,6 +841,11 @@ class DesktopSessionFeatureTests(unittest.TestCase):
             {"operation": "key", "lease_id": "b" * 32, "key": "A", "modifiers": ["ctrl", "CTRL"]},
             {"operation": "click", "lease_id": "b" * 32, "x": True, "y": 2},
             {"operation": "text", "lease_id": "b" * 32, "text": "line\n"},
+            {"operation": "scroll", "lease_id": "b" * 32, "x": 1, "y": 2, "delta": 121},
+            {"operation": "scroll", "lease_id": "b" * 32, "x": 1, "y": 2, "delta": True},
+            {"operation": "drag", "lease_id": "b" * 32, "x": 1, "y": 2, "end_x": 1, "end_y": 2},
+            {"operation": "drag", "lease_id": "b" * 32, "x": 1, "y": 2, "end_x": 3, "end_y": 4, "button": "right"},
+            {"operation": "drag", "lease_id": "b" * 32, "x": 1, "y": 2, "end_x": 3, "end_y": 4, "steps": 33},
         )
         for arguments in invalid:
             with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):

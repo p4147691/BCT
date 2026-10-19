@@ -113,7 +113,8 @@ class DesktopSessionClient:
         if command not in {
             "status", "capture", "control_status", "lease_acquire", "lease_renew",
             "lease_release", "emergency_stop", "emergency_reset",
-            "input_mouse_move", "input_mouse_click", "input_key", "input_text",
+            "input_mouse_move", "input_mouse_click", "input_mouse_scroll", "input_mouse_drag",
+            "input_key", "input_text",
             "windows_list", "window_activate", "window_manage", "program_launch",
             "processes_list", "paths_list", "explorer_windows_list", "chrome_windows_list",
             "chrome_tab_select",
@@ -230,7 +231,8 @@ class DesktopSessionClient:
     def input(self, *, request_id: str, command: str,
               arguments: dict[str, Any]) -> dict[str, Any]:
         if command not in {
-            "input_mouse_move", "input_mouse_click", "input_key", "input_text",
+            "input_mouse_move", "input_mouse_click", "input_mouse_scroll", "input_mouse_drag",
+            "input_key", "input_text",
         }:
             raise ValueError("DESKTOP_INPUT_COMMAND_INVALID")
         result = self.request(
@@ -239,7 +241,7 @@ class DesktopSessionClient:
         evidence = result.get("input")
         if not isinstance(evidence, dict):
             raise DesktopSessionEffectUnknown("DESKTOP_INPUT_EVIDENCE_MISSING")
-        if evidence.get("operation") not in {"move", "click", "key", "text"}:
+        if evidence.get("operation") not in {"move", "click", "scroll", "drag", "key", "text"}:
             raise DesktopSessionEffectUnknown("DESKTOP_INPUT_EVIDENCE_INVALID")
         return result
 
