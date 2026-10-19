@@ -115,6 +115,12 @@ operation 기록에 남으므로 비밀번호·토큰 같은 민감정보 입력
 foreground로 활성화한다. 활성화 직전에 Lease와 전체 창 fingerprint 및 긴급정지를 다시 확인하며,
 Windows API 결과와 실제 foreground가 모순되면 `UNKNOWN`으로 남기고 자동 재시도하지 않는다.
 
+같은 `window` Lease로 `desktop_window_manage`를 호출하면 그 정확한 창만 `restore`, `minimize`,
+`maximize`, `move_resize`할 수 있다. 이동·크기 변경은 복원된 창과 현재 가상 화면 안의 bounded
+사각형만 허용한다. Agent는 효과 뒤 최소화/최대화 상태 또는 정확한 위치·크기를 다시 확인하며,
+시도했지만 결과를 입증하지 못하면 `UNKNOWN`으로 남겨 자동 재시도를 막는다. 창 닫기와 가상
+데스크톱 이동은 이 기능에 포함하지 않는다.
+
 프로그램을 새로 열 때는 먼저 `session` Lease를 획득하고 같은 work와 lease ID로
 `desktop_program_launch`를 호출한다. 실행 파일은 존재하는 절대 `.exe` 경로여야 하며,
 인수는 셸 문자열이 아닌 문자열 배열로 전달한다. Agent는 `UseShellExecute=false`로 정확한
@@ -125,7 +131,7 @@ Windows API 결과와 실제 foreground가 모순되면 `UNKNOWN`으로 남기�
 있다. 이 경우 자동 재실행하지 않는다. 실행 인수는 operation 기록에 남으므로 비밀번호·토큰을
 전달하지 않는다.
 
-아직 자동 로그인, 창 복원·이동·크기 변경 기능은 제공하지 않는다.
+아직 자동 로그인과 창 닫기 기능은 제공하지 않는다.
 
 ## 일반 ChatGPT와 Codex가 데스크톱을 함께 사용할 때
 

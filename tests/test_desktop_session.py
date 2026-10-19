@@ -9,7 +9,7 @@ from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
     DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
-    DesktopWindowActivateFeature,
+    DesktopWindowActivateFeature, DesktopWindowManageFeature,
     DesktopWindowListFeature,
 )
 from bct.integrations.desktop_session import (
@@ -118,6 +118,37 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def manage(self, *, request_id: str, owner_id: str, lease_id: str,
+               operation: str, x, y, width, height):
+        self.window_calls.append((request_id, "window_manage", {
+            "owner_id": owner_id, "lease_id": lease_id, "operation": operation,
+            "x": x, "y": y, "width": width, "height": height,
+        }))
+        value = self._base("window_manage")
+        value["requestId"] = request_id
+        rect = {
+            "left": x if x is not None else 10,
+            "top": y if y is not None else 10,
+            "right": (x + width) if x is not None else 110,
+            "bottom": (y + height) if y is not None else 110,
+            "width": width if width is not None else 100,
+            "height": height if height is not None else 100,
+        }
+        before = {
+            "hwnd": "12345", "visible": True, "minimized": False,
+            "maximized": False, "rect": dict(rect),
+        }
+        after = {**before, "rect": dict(rect)}
+        if operation == "minimize":
+            after["minimized"] = True
+        elif operation == "maximize":
+            after["maximized"] = True
+        value["windowAction"] = {
+            "operation": operation, "leaseId": lease_id, "alreadyApplied": False,
+            "before": before, "after": after,
+        }
+        return value
+
     def launch(self, *, request_id: str, **arguments):
         self.launch_calls.append((request_id, arguments))
         value = self._base("program_launch")
@@ -154,6 +185,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                              "desktop_control_lease", "desktop_emergency_stop",
                              "desktop_input",
                              "desktop_window_list", "desktop_window_activate",
+                             "desktop_window_manage",
                              "desktop_program_launch",
                          }), "owner")
 
@@ -346,6 +378,54 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         from bct.core.models import ConfirmedFailure
         with self.assertRaises(ConfirmedFailure):
             DesktopWindowActivateFeature(RejectingClient(self.root)).execute(request)
+
+    def test_window_manage_normalizes_geometry_and_uses_control_claim(self):
+        feature = DesktopWindowManageFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "operation": "move_resize",
+            "x": 20, "y": 30, "width": 640, "height": 480,
+        })
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        self.assertEqual("desktop", request.arguments["owner_id"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "window-manage-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("window_manage", self.client.window_calls[-1][1])
+        self.assertEqual(640, result.evidence["window_action"]["after"]["rect"]["width"])
+
+    def test_window_manage_rejects_conflicting_or_unbounded_geometry(self):
+        feature = DesktopWindowManageFeature(self.client)
+        valid = {"lease_id": "b" * 32}
+        invalid = (
+            {**valid, "operation": "close"},
+            {**valid, "operation": "restore", "x": 1},
+            {**valid, "operation": "move_resize", "x": 1, "y": 2, "width": 99, "height": 80},
+            {**valid, "operation": "move_resize", "x": 1, "y": 2, "width": 100, "height": True},
+        )
+        for arguments in invalid:
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_window_manage_unknown_and_terminal_failure_are_distinct(self):
+        request = DesktopWindowManageFeature(self.client).prepare(work=self.work, arguments={
+            "lease_id": "b" * 32, "operation": "restore",
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "window-manage-fail"})
+
+        class UnknownClient(FakeDesktopSessionClient):
+            def manage(self, **_arguments):
+                raise DesktopSessionEffectUnknown("WINDOW_MANAGE_EFFECT_UNKNOWN")
+
+        with self.assertRaises(UnknownEffectError):
+            DesktopWindowManageFeature(UnknownClient(self.root)).execute(request)
+
+        class RejectingClient(FakeDesktopSessionClient):
+            def manage(self, **_arguments):
+                raise DesktopSessionRequestFailed("WINDOW_TARGET_NOT_RESTORED")
+
+        from bct.core.models import ConfirmedFailure
+        with self.assertRaises(ConfirmedFailure):
+            DesktopWindowManageFeature(RejectingClient(self.root)).execute(request)
 
     def test_program_launch_preserves_argument_array_and_returns_exact_binding(self):
         feature = DesktopProgramLaunchFeature(self.client)

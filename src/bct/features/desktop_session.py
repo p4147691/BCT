@@ -535,6 +535,71 @@ class DesktopWindowActivateFeature:
         )
 
 
+class DesktopWindowManageFeature:
+    capability = "desktop_window_manage"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {"lease_id", "operation", "x", "y", "width", "height"}
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError("DESKTOP_WINDOW_MANAGE_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_WINDOW_MANAGE_OWNER_INVALID")
+        lease_id = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_WINDOW_MANAGE_LEASE_ID_INVALID")
+        operation = str(arguments.get("operation") or "").strip().casefold()
+        if operation not in {"restore", "minimize", "maximize", "move_resize"}:
+            raise PreconditionError("DESKTOP_WINDOW_MANAGE_OPERATION_INVALID")
+        normalized: dict[str, Any] = {
+            "owner_id": owner_id, "lease_id": lease_id, "operation": operation,
+            "x": None, "y": None, "width": None, "height": None,
+        }
+        geometry = {"x", "y", "width", "height"}
+        if operation == "move_resize":
+            if not geometry.issubset(arguments):
+                raise PreconditionError("DESKTOP_WINDOW_MANAGE_BOUNDS_REQUIRED")
+            for key in geometry:
+                value = arguments.get(key)
+                if isinstance(value, bool):
+                    raise PreconditionError("DESKTOP_WINDOW_MANAGE_BOUNDS_INVALID")
+                try:
+                    normalized[key] = int(value)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise PreconditionError("DESKTOP_WINDOW_MANAGE_BOUNDS_INVALID") from exc
+            if (
+                not -(2 ** 31) <= normalized["x"] < 2 ** 31
+                or not -(2 ** 31) <= normalized["y"] < 2 ** 31
+                or not 100 <= normalized["width"] <= 7680
+                or not 80 <= normalized["height"] <= 4320
+            ):
+                raise PreconditionError("DESKTOP_WINDOW_MANAGE_BOUNDS_INVALID")
+        elif set(arguments) & geometry:
+            raise PreconditionError("DESKTOP_WINDOW_MANAGE_FIELDS_CONFLICT")
+        return FeatureRequest(
+            self.capability, operation + ":interactive-session", normalized,
+            ("desktop-control:interactive-session",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        try:
+            result = self.client.manage(request_id=request.operation_id, **request.arguments)
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        action = result["windowAction"]
+        return FeatureResult(
+            Outcome.APPLIED, {**_session_evidence(result), "window_action": action}, output=result,
+        )
+
+
 class DesktopProgramLaunchFeature:
     capability = "desktop_program_launch"
 
