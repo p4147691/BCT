@@ -25,6 +25,7 @@ normal_actions = [
   "desktop_input",
   "desktop_window_list",
   "desktop_window_activate",
+  "desktop_window_manage",
   "desktop_program_launch",
   "vtl_validate",
 ]

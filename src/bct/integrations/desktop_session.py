@@ -114,7 +114,7 @@ class DesktopSessionClient:
             "status", "capture", "control_status", "lease_acquire", "lease_renew",
             "lease_release", "emergency_stop", "emergency_reset",
             "input_mouse_move", "input_mouse_click", "input_key", "input_text",
-            "windows_list", "window_activate", "program_launch",
+            "windows_list", "window_activate", "window_manage", "program_launch",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -287,6 +287,56 @@ class DesktopSessionClient:
             or not isinstance(action.get("alreadyForeground"), bool)
         ):
             raise DesktopSessionEffectUnknown("DESKTOP_WINDOW_ACTION_INVALID")
+        return result
+
+    def manage(self, *, request_id: str, owner_id: str, lease_id: str,
+               operation: str, x: int | None, y: int | None,
+               width: int | None, height: int | None) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="window_manage",
+            arguments={
+                "ownerId": owner_id, "leaseId": lease_id, "operation": operation,
+                "x": x, "y": y, "width": width, "height": height,
+            },
+            timeout_s=10.0,
+        )
+        action = result.get("windowAction")
+        if (
+            not isinstance(action, dict) or action.get("operation") != operation
+            or action.get("leaseId") != lease_id
+            or not isinstance(action.get("alreadyApplied"), bool)
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_WINDOW_ACTION_INVALID")
+        for key in ("before", "after"):
+            state = action.get(key)
+            rect = state.get("rect") if isinstance(state, dict) else None
+            if (
+                not isinstance(state, dict)
+                or not re.fullmatch(r"[1-9][0-9]{0,18}", str(state.get("hwnd") or ""))
+                or not isinstance(state.get("visible"), bool)
+                or not isinstance(state.get("minimized"), bool)
+                or not isinstance(state.get("maximized"), bool)
+                or not isinstance(rect, dict)
+                or any(
+                    isinstance(rect.get(name), bool) or not isinstance(rect.get(name), int)
+                    for name in ("left", "top", "right", "bottom", "width", "height")
+                )
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_WINDOW_ACTION_INVALID")
+        after = action["after"]
+        if (
+            (operation == "restore" and (after["minimized"] or after["maximized"]))
+            or (operation == "minimize" and not after["minimized"])
+            or (operation == "maximize" and not after["maximized"])
+            or (
+                operation == "move_resize"
+                and (
+                    after["rect"]["left"] != x or after["rect"]["top"] != y
+                    or after["rect"]["width"] != width or after["rect"]["height"] != height
+                )
+            )
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_WINDOW_ACTION_POSTCONDITION_INVALID")
         return result
 
     def launch(self, *, request_id: str, owner_id: str, lease_id: str,

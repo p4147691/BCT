@@ -33,7 +33,7 @@ from .features.orchestration import OrchestrationFeature
 from .features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
     DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
-    DesktopWindowActivateFeature,
+    DesktopWindowActivateFeature, DesktopWindowManageFeature,
     DesktopWindowListFeature, desktop_session_client,
 )
 from .integrations.github import GhCliClient, GitHubClient
@@ -118,6 +118,7 @@ class BCT:
             DesktopInputFeature(desktop_session),
             DesktopWindowListFeature(desktop_session),
             DesktopWindowActivateFeature(desktop_session),
+            DesktopWindowManageFeature(desktop_session),
             DesktopProgramLaunchFeature(desktop_session),
             VtlValidateFeature(policy_path, data_root=data_root),
         ):
