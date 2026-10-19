@@ -110,6 +110,28 @@ truncation이면 bind 전에 실패한다. list/bind 모두 Chrome을 실행·�
 emergency stop은 false였다. 상세는
 `docs/exec-plans/completed/BCT_CHROME_SEMANTIC_TARGET_20261019.md`에 있다.
 
+## 완료 — foreground를 보존하는 Chrome exact-tab 전환
+
+BCT LIVE의 `desktop_chrome_tab_select`은 기존 Chrome Window Lease와 정확한
+HWND/PID/process birth/Session/virtual desktop, ordinal 및 방금 관측한 전체 탭
+제목에 묶여 한 탭만 전환한다. VTL Agent는 UIA 선택 호출 대신 exact client HWND에
+제한된 window message를 보내며 전후 foreground가 같음을 확인한다. 탭을 열거나
+닫거나 이동하지 않고 URL도 다루지 않는다.
+
+초기 UIA 구현이 background 창을 foreground로 올린 실제 결함은 UNKNOWN으로
+차단됐고, 원래 탭과 foreground를 별도 보상했다. 새
+`desktop_chrome_tab_reconcile`은 동일 work/principal의 정확한 changed-foreground
+UNKNOWN에 한해 no-Lease/no-stop, exact foreground/window/active-tab 상태를 읽기
+전용으로 증명한 뒤 그 claim만 해제한다. 과거 Work는 새 action을 추가할 수 없으므로
+원래 `desktop_chrome_tab_select` 권한에서만 이 좁은 화해 권한을 파생한다.
+
+Chrome 접근성 제목의 메모리 수치는 변하므로 전체 제목은 fresh inventory 직후
+소비한다. 활성 탭을 바꾸면 top-level 창 제목도 바뀌므로 복구 조회에 이전 창 제목
+필터를 유지하지 않는다. exact-main CI/배포, 과거 UNKNOWN 화해, background 실제
+전환과 원복, foreground/프로세스 보존 및 최종 무Lease/무래치 상태까지 완료했다.
+상세와 정확한 완료 증거는
+`docs/exec-plans/completed/BCT_CHROME_TAB_SELECT_20261019.md`에 있다.
+
 ## 완료 — Explorer 실제 폴더 경로 선택·바인딩
 
 `desktop_application_target`의 Explorer 경로는 기존 로컬 폴더의 절대
