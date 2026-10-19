@@ -1,6 +1,6 @@
 # BCT generic desktop UI Automation control
 
-Status: active
+Status: completed
 
 ## Progress
 
@@ -14,8 +14,16 @@ Status: active
   state, and absence of the exact retired target before releasing only that
   Claim while preserving the original UNKNOWN receipt.
 - BCT full regression passes: 803 tests.
-- Pending: reconcile PR/required CI, exact-main Core deploy, reconcile the one
-  known test Claim, then repeat the authenticated LIVE canary on VTL Agent 2.3.2.
+- PR #232 and its exact merge `ea7b9f84207ca1fed4f97a7f39b1e344cb13ea5d`
+  passed required PR and main CI. The release was installed as Core generation
+  144 with READY/OK health and the 42-tool MCP catalogue.
+- The known activation UNKNOWN remains immutable. Its exact retired target,
+  absent Lease, clear emergency latch and stable Agent instance were proved by
+  `desktop_window_activate_reconcile`, which released only the retained Claim.
+- A fresh authenticated MCP canary then listed 10 UIA elements and applied
+  Unicode set-value, invoke, toggle, select and expand. Application
+  postconditions passed, the Lease was released, and all nine pre-existing
+  Chrome top-level window identities were preserved.
 
 ## Goal
 
@@ -57,3 +65,10 @@ credential-field extraction, arbitrary shell, automatic login or new scheduler.
    receipt, foreground/process preservation and cleanup.
 7. Finish with null Lease, inactive emergency stop and source/runtime/main SHA
    equality. Move both plans to `completed/` only after LIVE acceptance.
+
+## Final result
+
+Completed. BCT owns authenticated policy, durable receipts and reconciliation;
+VTL Agent 2.3.2 owns the generic UIA and exact-window activation mechanics.
+The Windows UTF-8 locale is not a dependency: text uses strict UTF-8 inside an
+ASCII base64 envelope, and both CP949 and UTF-8 boundary tests passed.
