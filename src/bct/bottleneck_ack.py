@@ -170,11 +170,23 @@ class BottleneckAckController:
         _, source_tab = source
         telemetry = source_tab.get("telemetry") if isinstance(source_tab.get("telemetry"), dict) else {}
         started = self._positive(telemetry.get("generation_started_at"))
-        if not bool(source_tab.get("generating")) or started is None:
+        finished = self._positive(telemetry.get("generation_finished_at"))
+        generating = bool(source_tab.get("generating"))
+        if started is None:
             if self._active is None:
                 self._status = {"state": "WAITING"}
             return self.status()
-        duration = max(0, now_ms - started)
+        if generating:
+            duration = max(0, now_ms - started)
+        elif finished is not None and finished >= started and now_ms - finished <= 10_000:
+            # A short polling gap must not erase evidence that the configured
+            # threshold was crossed.  Restrict this to a freshly completed
+            # generation so a service restart cannot replay old telemetry.
+            duration = finished - started
+        else:
+            if self._active is None:
+                self._status = {"state": "WAITING"}
+            return self.status()
         if duration < round(self.policy.threshold_seconds * 1000):
             self._status = {"state": "WATCHING", "generation_duration_ms": duration}
             return self.status()

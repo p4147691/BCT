@@ -44,10 +44,10 @@ probe_conversation_key = "22222222-2222-2222-2222-222222222222"
             return load_bottleneck_ack_policy(path)
 
     @staticmethod
-    def _instances(*, source_started=960_000, probe_started=None, probe_finished=None, probe_generating=False):
+    def _instances(*, source_started=960_000, source_finished=None, source_generating=True, probe_started=None, probe_finished=None, probe_generating=False):
         return [{"instance_id": "instance_123", "session_id": "a" * 32, "state": "OPEN", "tabs": [
             {"tab_id": 1, "window_id": 10, "conversation_key": "11111111-1111-1111-1111-111111111111",
-             "generating": True, "telemetry": {"generation_started_at": source_started}},
+             "generating": source_generating, "telemetry": {"generation_started_at": source_started, "generation_finished_at": source_finished}},
             {"tab_id": 2, "window_id": 10, "conversation_key": "22222222-2222-2222-2222-222222222222",
              "generating": probe_generating, "telemetry": {"generation_started_at": probe_started, "generation_finished_at": probe_finished}},
         ]}]
@@ -78,6 +78,16 @@ probe_conversation_key = "22222222-2222-2222-2222-222222222222"
         state = controller.observe(self._instances(probe_generating=True), now_ms=1_000_001)
         self.assertEqual("PROBE_BUSY", state["state"])
         self.assertEqual([], bct.operations.calls)
+
+    def test_recent_completed_generation_is_not_lost_between_polls(self):
+        bct = _Bct()
+        controller = BottleneckAckController(self._policy(), bct=bct, principal=Principal("p", "test", frozenset()))
+        state = controller.observe(
+            self._instances(source_started=960_000, source_finished=995_000, source_generating=False),
+            now_ms=1_000_001,
+        )
+        self.assertEqual("SUBMITTED", state["state"])
+        self.assertEqual(1, len(bct.operations.calls))
 
     def test_disabled_policy_needs_no_identity(self):
         with tempfile.TemporaryDirectory() as directory:
