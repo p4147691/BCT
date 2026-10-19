@@ -4,8 +4,8 @@ Status: ACTIVE.
 
 ## Goal
 
-Add authenticated MCP capabilities for bounded element inventory and exact
-background actions inside the active web document of one existing Chrome window.
+Add authenticated MCP capabilities for bounded background element inventory and
+exact actions inside the active web document of one existing Chrome window.
 The VTL Agent remains the execution owner; BCT owns policy, durable receipts,
 Lease fencing, and UNKNOWN semantics.
 
@@ -16,6 +16,8 @@ Lease fencing, and UNKNOWN semantics.
 - `desktop_chrome_content_action`: under the calling work's exact Window Lease,
   either set one writable ValuePattern or invoke one InvokePattern selected by a
   fresh opaque element ID, exact document title, and active-tab ordinal/full title.
+  `set_value` requires the leased Chrome window to already be foreground; callers
+  explicitly activate it first. The action never performs implicit activation.
 
 Text is never persisted in evidence or output.  Only its UTF-8 byte length,
 character length, and SHA-256 are returned.  Invoke success means the exact UIA
@@ -36,6 +38,7 @@ it does not assert an application-specific server-side result.
 Run focused tests first, then the repository's adaptive/full required checks and
 static/diff checks.  Merge only exact heads with required CI green.  Deploy the
 exact BCT main SHA through the reviewed immutable profile.  Authenticated LIVE
-acceptance must prove list plus reversible set/clear against the exact leased
-Chrome window, preserve foreground and Chrome process roots, release the Lease,
+acceptance must prove background list plus explicit activation and reversible
+set/clear against the exact leased Chrome window, restore the original foreground,
+preserve Chrome process roots, release the Lease,
 and leave emergency stop inactive.  Never retry UNKNOWN.

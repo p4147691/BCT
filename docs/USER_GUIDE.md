@@ -130,7 +130,11 @@ edit/button 메타데이터만 반환하고 주소창·북마크 같은 browser 
 읽지 않는다. 실제 동작은 같은 목록에서 받은 `elementId`, `documentTitle`,
 `tabOrdinal`, 전체 `tabTitle`과 정확한 Window Lease를
 `desktop_chrome_content_action`에 전달한다. `set_value`는 `text`를 지정하고,
-`invoke`는 빈 text로 호출한다. 새 목록 없이 element ID를 재사용하거나 탭 제목의
+`invoke`는 빈 text로 호출한다. Chrome의 UIA ValuePattern은 background 창을 활성화하므로
+`set_value`는 exact leased Chrome 창이 이미 foreground일 때만 허용된다. 필요하면 같은
+Lease로 `desktop_window_activate`를 먼저 명시적으로 호출한다. content action 자체는
+창을 암묵적으로 활성화하지 않는다. Invoke는 foreground가 바뀌지 않은 경우만 성공한다.
+새 목록 없이 element ID를 재사용하거나 탭 제목의
 메모리 suffix를 생략하지 않는다. text는 Agent 경계에서 strict UTF-8/base64로 전달되고
 영수증에는 문자/byte 길이와 SHA-256만 남는다. Invoke 성공은 해당 UIA 호출이 반환되고
 Lease·창·foreground가 유지됐다는 뜻이며 웹 서비스의 후속 서버 처리를 증명하지는 않는다.
