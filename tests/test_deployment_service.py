@@ -66,6 +66,7 @@ class DeploymentServiceTests(unittest.TestCase):
         payloads = {
             "modules/mcp/ops/run_bct_core_supervisor.ps1": b"core-supervisor\n",
             "modules/mcp/ops/run_bct_tunnel_supervisor.ps1": b"tunnel-supervisor\n",
+            "modules/mcp/ops/invoke_bct_tunnel_cutover.ps1": b"tunnel-cutover\n",
         }
         for relative, payload in payloads.items():
             path = release_root / relative
@@ -83,6 +84,9 @@ class DeploymentServiceTests(unittest.TestCase):
         ).read_bytes())
         self.assertEqual(payloads["modules/mcp/ops/run_bct_tunnel_supervisor.ps1"], (
             runtime / "ops" / "run_bct_tunnel_supervisor.ps1"
+        ).read_bytes())
+        self.assertEqual(payloads["modules/mcp/ops/invoke_bct_tunnel_cutover.ps1"], (
+            runtime / "ops" / "invoke_bct_tunnel_cutover.ps1"
         ).read_bytes())
 
     def setUp(self):

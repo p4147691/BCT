@@ -1,5 +1,21 @@
 # BCT 인수인계
 
+## 진행 — tunnel-client v0.0.16 단일 원샷 전환
+
+Issue #82의 공식 v0.0.16 후보와 v0.0.14 정확 복구본은 이미 검증돼 있다. 현재 변경은
+Scheduled Task를 새로 만들거나 주기적으로 채팅이 확인하게 하지 않는다. Supervisor가
+hash-verified UTF-8 version pointer를 읽도록 하고, 독립 로컬 one-shot이 단 한 번
+Supervisor 정지, 기존 runtime 정지, pointer 게시, 기존 Task 재시작, exact process/target/
+health 확인을 수행한다. 실패하면 보존된 v0.0.14 pointer로 되돌리고 같은 Task를 복원한다.
+Windows UTF-8 시스템 로캘과 무관하며 trace-context 전달은 명시적으로 꺼 둔다.
+
+작업 브랜치의 Fixture/Inspect와 관련 Python 집중 테스트는 통과했다. 아직 main 병합,
+exact-main 배포, LIVE Cutover 및 Hosted read timing 수락시험은 수행하지 않았다. LIVE
+변경 소유자는 이 closeout Work 하나이며, 다른 시간제 RCC 적용 작업은 비활성화됐다.
+RCC PR #226 payload는 설치·재로드·실제 응답까지 확인됐지만 결과 영수증이 pending에
+남는 별도 결함은 완료로 간주하지 않고 후속 reconciliation 대상으로 보존한다. 상세는
+`docs/exec-plans/active/BCT_TUNNEL_V016_CUTOVER_20261019.md`에 있다.
+
 ## 완료 — Unicode desktop clipboard
 
 `desktop_clipboard`의 BCT/VTL 구현, CI, exact-main 배포와 LIVE 수락시험이 끝났다.

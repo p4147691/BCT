@@ -8,7 +8,8 @@ param(
     # non-ASCII Windows profile cannot prevent the supervisor from starting.
     [string]$ProfileDir = (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)) 'tunnel-client'),
     [string]$McpServerUrl = 'http://127.0.0.1:18790/mcp',
-    [string]$TunnelClientPath = 'D:\TOOLS\OpenAI\tunnel-client\0.0.14\tunnel-client.exe',
+    [string]$TunnelClientPath = '',
+    [string]$TunnelClientPointerPath = '',
     [string]$RuntimeDir = 'D:\BCT\runtime',
     [string]$HealthUrlFile = (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)) '.local\state\tunnel-client\health\act-control.url'),
     [switch]$RepairHealthOnly,
@@ -20,6 +21,10 @@ $LogDir = Join-Path $RuntimeDir 'logs'
 $LockPath = Join-Path $RuntimeDir 'bct-tunnel-supervisor.lock'
 $StopFlag = Join-Path $RuntimeDir 'BCT_TUNNEL_SUPERVISOR.STOP'
 $HeaderReference = 'file:' + (Join-Path $RuntimeDir 'mcp.token')
+$FallbackTunnelClientPath = 'D:\TOOLS\OpenAI\tunnel-client\0.0.14\tunnel-client.exe'
+if ([string]::IsNullOrWhiteSpace($TunnelClientPointerPath)) {
+    $TunnelClientPointerPath = Join-Path $RuntimeDir 'tunnel-client-current.json'
+}
 $Mutex = [Threading.Mutex]::new($false, 'Local\BCT-OpenAI-Tunnel-Supervisor')
 $Lock = $null
 $Acquired = $false
@@ -28,6 +33,49 @@ function Write-Event([string]$Name, [string]$Detail = '') {
     New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
     $line = ((Get-Date).ToString('o') + ' ' + $Name + ' ' + $Detail).TrimEnd()
     Add-Content -LiteralPath (Join-Path $LogDir 'bct-tunnel-supervisor.log') -Value $line -Encoding UTF8
+}
+
+function Read-StrictUtf8Text([string]$Path) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        return [Text.UTF8Encoding]::new($false, $true).GetString($bytes, 3, $bytes.Length - 3)
+    }
+    return [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+}
+
+function Resolve-TunnelClientPath {
+    if (-not [string]::IsNullOrWhiteSpace($TunnelClientPath)) {
+        return [IO.Path]::GetFullPath($TunnelClientPath)
+    }
+    if (-not (Test-Path -LiteralPath $TunnelClientPointerPath -PathType Leaf)) {
+        return $FallbackTunnelClientPath
+    }
+    try {
+        $pointer = (Read-StrictUtf8Text $TunnelClientPointerPath) | ConvertFrom-Json
+    } catch {
+        throw "BCT_TUNNEL_CLIENT_POINTER_INVALID path=$TunnelClientPointerPath"
+    }
+    if ($pointer.schema -cne 'BCT_TUNNEL_CLIENT_POINTER_V1') {
+        throw "BCT_TUNNEL_CLIENT_POINTER_SCHEMA_INVALID path=$TunnelClientPointerPath"
+    }
+    $selected = [IO.Path]::GetFullPath([string]$pointer.path)
+    $allowedRoot = [IO.Path]::GetFullPath('D:\TOOLS\OpenAI\tunnel-client')
+    if (-not $selected.StartsWith($allowedRoot + [IO.Path]::DirectorySeparatorChar,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "BCT_TUNNEL_CLIENT_POINTER_PATH_INVALID path=$selected"
+    }
+    if (-not (Test-Path -LiteralPath $selected -PathType Leaf)) {
+        throw "BCT_TUNNEL_CLIENT_NOT_FOUND path=$selected"
+    }
+    $expectedHash = ([string]$pointer.sha256).Trim().ToLowerInvariant()
+    if ($expectedHash -notmatch '^[a-f0-9]{64}$') {
+        throw 'BCT_TUNNEL_CLIENT_POINTER_HASH_INVALID'
+    }
+    $actualHash = (Get-FileHash -LiteralPath $selected -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -cne $expectedHash) {
+        throw "BCT_TUNNEL_CLIENT_HASH_MISMATCH path=$selected"
+    }
+    return $selected
 }
 
 function Set-RuntimeEnvironment {
@@ -141,6 +189,9 @@ function Ensure-ProfileHeaders {
     $headers = [pscustomobject]@{ 'X-BCT-Token' = $HeaderReference }
     $profile.mcp | Add-Member -MemberType NoteProperty -Name extra_headers -Value $headers -Force
     $profile.mcp | Add-Member -MemberType NoteProperty -Name discovery_extra_headers -Value $headers -Force
+    # v0.0.16 can forward W3C trace context, but production remains explicitly
+    # opt-out until the receiver and privacy boundary are separately accepted.
+    $profile.mcp | Add-Member -MemberType NoteProperty -Name forward_trace_context -Value $false -Force
     $next = $profile | ConvertTo-Json -Depth 20
     if ($next -eq $raw.TrimEnd()) { return }
     $temp = Join-Path $ProfileDir ('.' + $Alias + '.' + [guid]::NewGuid().ToString('N') + '.tmp')
@@ -183,6 +234,7 @@ try {
     try {
         $Lock = [IO.File]::Open($LockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     } catch [IO.IOException] { exit 0 }
+    $TunnelClientPath = Resolve-TunnelClientPath
     if (-not (Test-Path -LiteralPath $TunnelClientPath -PathType Leaf)) {
         throw "BCT_TUNNEL_CLIENT_NOT_FOUND path=$TunnelClientPath"
     }

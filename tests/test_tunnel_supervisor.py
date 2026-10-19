@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.server
+import json
 import os
 import shutil
 import subprocess
@@ -39,6 +40,16 @@ class TunnelSupervisorTests(unittest.TestCase):
             / "mcp"
             / "ops"
             / "run_bct_tunnel_supervisor.ps1"
+        )
+
+    @staticmethod
+    def _cutover_script() -> Path:
+        return (
+            Path(__file__).resolve().parents[1]
+            / "modules"
+            / "mcp"
+            / "ops"
+            / "invoke_bct_tunnel_cutover.ps1"
         )
 
     def test_recovers_missing_health_url_from_exact_process_listener(self) -> None:
@@ -137,6 +148,34 @@ class TunnelSupervisorTests(unittest.TestCase):
         self.assertIn("[Text.Encoding]::Unicode", script)
         self.assertIn("[Text.Encoding]::BigEndianUnicode", script)
         self.assertIn("[Text.Encoding]::Default", script)
+
+    def test_cutover_fixture_fails_closed_for_each_missing_gate(self) -> None:
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        self.assertIsNotNone(shell)
+        result = subprocess.run(
+            [
+                str(shell),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(self._cutover_script()),
+                "-Mode",
+                "FixtureTest",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr or result.stdout)
+        payload = json.loads(result.stdout)
+        self.assertEqual("PASS", payload["status"])
+        self.assertFalse(payload["operational_effects"])
+        self.assertEqual(8, len(payload["checks"]))
+        self.assertTrue(all(check["pass"] for check in payload["checks"]))
 
 
 if __name__ == "__main__":

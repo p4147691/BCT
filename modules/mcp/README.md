@@ -45,3 +45,17 @@ The profile reader accepts UTF-8 (with or without BOM), UTF-16, and a legacy Win
 then normalizes a changed profile to UTF-8. This prevents Windows PowerShell 5.1 from corrupting a
 non-ASCII Windows user-profile path before comparing the configured health URL file.
 
+The supervisor selects its executable from the UTF-8
+`D:\BCT\runtime\tunnel-client-current.json` pointer when that file exists. The pointer is constrained
+to `D:\TOOLS\OpenAI\tunnel-client`, carries the exact binary SHA-256, and is rejected before process
+reuse or startup if its schema, path, or hash drifts. Absence of the pointer preserves the verified
+v0.0.14 bootstrap fallback.
+
+`ops/invoke_bct_tunnel_cutover.ps1` is the local one-shot v0.0.16 transition and rollback entry
+point. It does not depend on MCP or RCC. It verifies both binaries, the exact supervisor and
+Scheduled Task identity, asks the running supervisor to stop through its existing stop flag, holds
+the shared supervisor mutex, stops the single old runtime, atomically publishes the version pointer,
+and starts the existing task once. The new exact process, MCP target, health, and readiness must all
+pass. Otherwise it selects the preserved v0.0.14 binary and verifies that rollback before returning
+failure. `Inspect` and `FixtureTest` are non-mutating modes; `Cutover` is the only operational mode.
+

@@ -72,6 +72,9 @@ class ModuleLayoutTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("D:\\TOOLS\\OpenAI\\tunnel-client\\0.0.14\\tunnel-client.exe", script)
+        self.assertIn("BCT_TUNNEL_CLIENT_POINTER_V1", script)
+        self.assertIn("tunnel-client-current.json", script)
+        self.assertIn("BCT_TUNNEL_CLIENT_HASH_MISMATCH", script)
         self.assertIn("http://127.0.0.1:18790/mcp", script)
         self.assertIn("'file:' + (Join-Path $RuntimeDir 'mcp.token')", script)
         self.assertIn("BCT_TUNNEL_TARGET_MISMATCH", script)
@@ -83,6 +86,15 @@ class ModuleLayoutTests(unittest.TestCase):
         self.assertIn("[Environment+SpecialFolder]::UserProfile", script)
         self.assertNotIn("C:\\Users\\", script)
         self.assertNotIn("D:\\ACT", script)
+
+        cutover = (self.root / "modules" / "mcp" / "ops" / "invoke_bct_tunnel_cutover.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("BCT_TUNNEL_CUTOVER_RECEIPT_V1", cutover)
+        self.assertIn("Local\\BCT-OpenAI-Tunnel-Cutover", cutover)
+        self.assertIn("Write-Pointer '0.0.16'", cutover)
+        self.assertIn("Write-Pointer '0.0.14'", cutover)
+        self.assertIn("Start-And-Verify", cutover)
 
     def test_handoff_current_state_uses_live_proof_not_self_referential_sha(self):
         handoff = (self.root / "PROJECT_HANDOFF.md").read_text(encoding="utf-8")
