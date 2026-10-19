@@ -72,7 +72,7 @@ live_root = "D:\\ChromeExtensions\\DesktopWindow-Monitor"
 # one fixed Instant ACK prompt to the exact, idle probe conversation.
 [bottleneck_ack]
 enabled = true
-threshold_seconds = 30
+threshold_seconds = 5
 cooldown_seconds = 300
 watch_instance_id = "6174664e1c1b4e6db1d4729c841db3c9"
 watch_conversation_key = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
