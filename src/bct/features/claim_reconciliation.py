@@ -9,6 +9,20 @@ from bct.core.store import Store
 READ_ONLY_CAPABILITIES = frozenset({"read", "system_inspect", "github_pr_status"})
 
 
+def _proven_no_effect(metadata: dict) -> tuple[bool, str]:
+    capability = metadata["capability"]
+    if capability in READ_ONLY_CAPABILITIES:
+        return True, "CAPABILITY_IS_READ_ONLY_NO_EXTERNAL_MUTATION"
+    evidence = metadata.get("evidence") or {}
+    if (capability == "execute"
+            and evidence == {"phase": "UNEXPECTED", "type": "FileNotFoundError"}
+            and str(metadata.get("error") or "").startswith("[WinError 2]")):
+        # subprocess.Popen did not return a process object. On Windows this
+        # exact exception is raised before CreateProcess succeeds.
+        return True, "EXECUTE_CREATEPROCESS_FILE_NOT_FOUND"
+    return False, ""
+
+
 class ReadOnlyClaimReconcileFeature:
     """Release one exact read-only UNKNOWN Claim without rewriting its receipt."""
 
@@ -39,17 +53,17 @@ class ReadOnlyClaimReconcileFeature:
             work_id=request.preconditions["work_id"],
             principal_id=request.preconditions["principal_id"],
         )
-        if (metadata["capability"] not in READ_ONLY_CAPABILITIES
-                or metadata["state"] != OperationState.FINISHED.value
+        proven, proof = _proven_no_effect(metadata)
+        if (not proven or metadata["state"] != OperationState.FINISHED.value
                 or metadata["outcome"] != Outcome.UNKNOWN.value):
-            raise PreconditionError("CLAIM_RECONCILE_EXACT_READONLY_UNKNOWN_REQUIRED")
+            raise PreconditionError("CLAIM_RECONCILE_EXACT_NO_EFFECT_UNKNOWN_REQUIRED")
         return FeatureResult(
             Outcome.APPLIED,
             {
                 "operation": "reconcile-readonly-unknown",
                 "original_operation_id": original_id,
                 "original_capability": metadata["capability"],
-                "proof": "CAPABILITY_IS_READ_ONLY_NO_EXTERNAL_MUTATION",
+                "proof": proof,
                 "original_receipt_preserved": True,
                 "reason": request.arguments["reason"],
             },
