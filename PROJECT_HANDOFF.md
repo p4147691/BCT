@@ -63,6 +63,19 @@ BCT exact-main 배포 및 인증 MCP LIVE 수락시험이 완료됐다. LIVE 시
 Windows 공유 오류를 재시도해야 한다. 상세는
 `docs/exec-plans/completed/BCT_DESKTOP_WINDOW_MANAGE_20261019.md`에 있다.
 
+## 완료 — 로그인 세션 프로세스·파일 진입점 탐색
+
+BCT LIVE의 읽기 전용 `desktop_explore`는 실제 Desktop Session Agent와 같은
+Session의 프로세스를 PID/process birth/실행 파일 경로/현재 가상 데스크톱 창에
+연결하고, 로그인 사용자의 알려진 폴더와 준비된 드라이브를 반환한다. Lease나
+foreground 변경 없이 여러 대화가 병행 조회할 수 있다.
+
+파일 내용과 폴더 순회는 이 기능에 중복 구현하지 않았다. 발견한 경로를 Work root로
+명시한 뒤 기존 `read`의 bounded `directory_tree`/file을 사용하므로 기존 scope와
+reparse-point 차단이 그대로 적용된다. VTL PR #27, BCT PR #210, Agent 1.6 rollout,
+exact-main 배포와 인증 MCP LIVE 조합 검증이 완료됐다. 상세는
+`docs/exec-plans/completed/BCT_DESKTOP_EXPLORE_20261019.md`에 있다.
+
 ## 완료 — Adaptive CI와 VTL exact-SHA 데스크톱 스모크
 
 BCT PR #199는 보수적 변경 범위 판정, 정확 중복 unittest 제거, 네 개의 결정적
