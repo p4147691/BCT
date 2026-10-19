@@ -1,6 +1,6 @@
 # BCT 인수인계
 
-## 진행 — UNKNOWN 계측·RCC payload 판정 마무리
+## 완료 — UNKNOWN 계측·RCC payload 판정
 
 tunnel-client v0.0.16의 독립 one-shot 전환, Supervisor 자동 복원, Hosted read timing은
 완료됐다. RCC PR #226 `background.js`도 실제 설치본과 main source의 SHA-256이 일치하고,
@@ -11,8 +11,9 @@ tunnel-client v0.0.16의 독립 one-shot 전환, Supervisor 자동 복원, Hoste
 CreateProcess 이전 FileNotFound execute 4건, 광범위 relay 2건, 무전송 orchestration 1건의
 Claim을 증거로 정리했다. 원래 UNKNOWN receipt는 감사 기록으로 보존한다. 남은 Claim은
 실제 전송·실행 가능성을 배제할 수 없는 정확한 과거 자원에만 묶여 있으며 재전송하거나
-강제 해제하지 않는다. Monitor가 `SHARED_RESOURCE`와 `EXACT_RESOURCE`를 분리하고 RCC
-source/live payload SHA·일치 여부를 직접 표시하도록 하는 후속 변경을 진행 중이다.
+강제 해제하지 않는다. Monitor는 `SHARED_RESOURCE`와 `EXACT_RESOURCE`를 분리하고 RCC
+source/live payload SHA·일치 여부를 직접 표시한다. 불일치는 자동 재로드·재전송하지 않고
+배포 차단 및 진단 신호로만 사용한다.
 
 공유 LIVE 변경은 대상별로 정확히 하나의 Work만 소유한다. 타이머·채팅·스크립트는 별도
 소유자가 아니라 exact operation/payload/pre-state/expiry에 묶인 executor다. 주기적 채팅

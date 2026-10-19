@@ -76,7 +76,7 @@ not prove non-delivery. These Claims therefore remain protected with no replay. 
 their exact historical process path, tab/conversation, attachment, or session/assignment and do not
 justify stopping unrelated work.
 
-The next Monitor revision exposes shared-resource versus exact-resource Claim counts and compares
-the canonical RCC `background.js` SHA-256 with the installed payload SHA-256. This replaces build
+Monitor exposes shared-resource versus exact-resource Claim counts and compares the canonical RCC
+`background.js` SHA-256 with the installed payload SHA-256. This replaces build
 label inference with exact byte comparison. A mismatch is a deployment gate and diagnostic signal;
 it does not trigger an automatic reload or replay.
