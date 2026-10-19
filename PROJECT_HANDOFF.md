@@ -1,16 +1,19 @@
 # BCT 인수인계
 
-## 진행 중 — Chrome 웹 콘텐츠 background 제어 V1
+## 진행 중 — Chrome 웹 콘텐츠 exact 제어 V1
 
 `desktop_chrome_content_list`와 `desktop_chrome_content_action` 후보를 구현했다.
 목록은 정확한 Chrome HWND의 한 visible `RootWebArea`에서 edit/button 메타데이터만
 읽고 field value는 반환하지 않는다. 동작은 기존 Window Lease, document title,
 활성 tab ordinal/full title, opaque element ID를 모두 재검증한 뒤 ValuePattern set 또는
-InvokePattern invoke를 실행한다. foreground 변경·Lease 손실·호출 후 불명확 결과는
+InvokePattern invoke를 실행한다. LIVE에서 UIA ValuePattern이 background Chrome을
+활성화하는 사실이 확인되어 `set_value`는 exact leased 창이 이미 foreground일 때만
+허용하고 필요 시 기존 `desktop_window_activate`를 명시적으로 먼저 쓴다. InvokePattern은
+foreground 불변일 때만 성공한다. foreground 변경·Lease 손실·호출 후 불명확 결과는
 UNKNOWN이며 자동 재시도하지 않는다. text는 raw evidence/output에 넣지 않고 UTF-8
 문자/byte 길이와 SHA-256만 남긴다. 현재 VTL C# 빌드, 실제 Chrome read-only probe,
-BCT focused/MCP tests가 통과했다. 양 저장소 PR/CI, immutable Agent 2.0.0 rollout,
-BCT exact-main 배포와 authenticated LIVE set/clear 검증 전에는 완료가 아니다. 계획은
+BCT focused/MCP tests가 통과했다. 양 저장소 PR/CI, immutable Agent 2.0.1 rollout,
+BCT exact-main 배포와 authenticated LIVE foreground set/clear 검증 전에는 완료가 아니다. 계획은
 `docs/exec-plans/active/BCT_CHROME_CONTENT_CONTROL_20261019.md`에 있다.
 
 ## 완료 — Windows UTF-8 설정 독립 VTL 실행
