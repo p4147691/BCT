@@ -1,6 +1,6 @@
 # BCT tunnel-client v0.0.16 cutover
 
-Status: `SOURCE VALIDATED / PR AND LIVE CUTOVER PENDING`.
+Status: `V0.0.16 LIVE / HOSTED READ MEASURED / UNKNOWN RECONCILIATION ACTIVE`.
 
 ## Goal and boundary
 
@@ -51,11 +51,22 @@ SHA-256 match. With no pointer it retains the verified v0.0.14 fallback. It expl
 - FixtureTest: eight gates PASS, operational effects false.
 - Read-only Inspect: exact old tunnel and one Supervisor observed; cutover ready.
 - Focused Python tests: 25 PASS from this worktree's `src`.
+- PR #234 merged as `8afc6b50e2996d1f9e9f2478fe408f4ab40885e2`; deployment
+  follow-up PR #235 merged as `d28891146a0343606e716169b5e573f206825dc4`.
+- Core LIVE is exact `d28891146a0343606e716169b5e573f206825dc4`, generation 147,
+  and READY/OK. The Scheduled Task runs one Supervisor and exact tunnel-client v0.0.16
+  SHA `4226bb74a72388147882881f29f79801b95e285d731a138071812e3aa6766571`.
+- Hosted read canary finished APPLIED. BCT-local stages measured authorization 2.485 ms,
+  claim reservation 7.207 ms, read 0.341 ms, receipt persistence 6.464 ms, handler
+  23.010 ms, and ASGI 29.703 ms. Exact hosted queue/handback timing is not yet projected
+  into the operator receipt even though v0.0.16 emits `resp_timing` upstream.
 
 ## Remaining adjacent work
 
 RCC PR #226 is installed and reloaded, and a visible ChatGPT canary response succeeded. Its RCC
 result receipt nevertheless remains `pending`, so result-persistence reconciliation is not closed.
-After the tunnel timing acceptance, classify existing UNKNOWN operations by their last durable
-effect stage. Read-only operations go first, then execute, relay, and orchestration. Never clear a
-claim merely because it is old and never resend an UNKNOWN mutation without downstream proof.
+The tunnel timing acceptance is complete. A bounded common effect-stage journal and an exact
+read-only UNKNOWN reconciliation capability are now being added. The nine legacy `read`,
+`system_inspect`, and `github_pr_status` Claims go first; their original UNKNOWN receipts remain.
+Then classify execute, relay, and orchestration. Never clear a mutating claim merely because it is
+old and never resend an UNKNOWN mutation without downstream proof.

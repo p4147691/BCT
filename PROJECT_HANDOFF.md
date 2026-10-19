@@ -677,3 +677,19 @@ canary에서 10개 요소 조회와 다섯 semantic action의 실제 앱 postcon
 Lease 해제, 기존 Chrome 9개 최상위 창 identity 보존을 확인했다. 상세 계약과
 완료 증거는 `docs/exec-plans/completed/BCT_DESKTOP_UIA_CONTROL_20261019.md`를
 따른다.
+
+## Tunnel v0.0.16 및 UNKNOWN 계측 진행
+
+터널 v0.0.16 cutover와 기존 Scheduled Task 기반 Supervisor 복원 검증은 완료됐다. Core LIVE는
+`d28891146a0343606e716169b5e573f206825dc4` generation 147이며 exact v0.0.16 프로세스 하나와
+Supervisor 하나가 READY다. Hosted read canary는 APPLIED였고 BCT 내부 단계를 밀리초 단위로
+분리했다. 단, upstream `resp_timing`은 아직 운영자 영수증으로 되돌아오지 않아 hosted
+queue/handback 잔여 구간은 숫자로 확정하지 않는다.
+
+현재 후속 작업은 새 operation마다 `CLAIM_RESERVED`, `DISPATCH_INTENT`, effect result/uncertain,
+receipt intent/persisted를 작은 redacted SQLite journal로 남기고 `bct_operation_get` 및 Claim
+diagnostics에서 읽게 하는 것이다. 과거 읽기 전용 UNKNOWN 9건에는 별도
+`claim_reconcile` 경로를 사용한다. `read`, `system_inspect`, `github_pr_status`만 허용하며 원래
+UNKNOWN receipt는 바꾸지 않고 exact Claim만 원자적으로 해제한다. mutating capability는 이
+경로에서 거부한다. 그 다음 순서는 execute → relay_browser → orchestrate이며, 외부 postcondition
+증거 없이 mutation을 재실행하거나 Claim을 해제하지 않는다.

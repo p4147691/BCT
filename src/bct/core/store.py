@@ -122,6 +122,13 @@ class Store:
                     event_id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
                     subject_id TEXT NOT NULL, data_json TEXT NOT NULL, created_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS operation_effect_stages (
+                    operation_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+                    stage TEXT NOT NULL, detail_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY(operation_id, sequence),
+                    FOREIGN KEY(operation_id) REFERENCES operations(operation_id)
+                );
                 CREATE TABLE IF NOT EXISTS operation_steps (
                     operation_id TEXT NOT NULL, step_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
                     capability TEXT NOT NULL, request_digest TEXT NOT NULL,
@@ -568,7 +575,8 @@ class Store:
                 "o.created_at,o.updated_at,o.error,"
                 "x.pid AS executor_pid,x.claimed_at AS executor_claimed_at,"
                 "x.fingerprint AS executor_fingerprint,"
-                "e.kind AS latest_event_kind,e.created_at AS latest_event_at "
+                "e.kind AS latest_event_kind,e.created_at AS latest_event_at,"
+                "j.stage AS effect_stage,j.created_at AS effect_stage_at "
                 "FROM resource_claims c "
                 "LEFT JOIN operations o ON o.operation_id=c.operation_id "
                 "AND o.work_id=c.work_id "
@@ -581,6 +589,9 @@ class Store:
                 "'OPERATION_STARTED','OPERATION_FINISHED','OPERATION_RECONCILED',"
                 "'OPERATION_STEPS_INITIALIZED','OPERATION_STEP_STARTED',"
                 "'OPERATION_STEP_FINISHED','OPERATION_STEP_SKIPPED')) "
+                "LEFT JOIN operation_effect_stages j ON j.sequence=("
+                "SELECT MAX(js.sequence) FROM operation_effect_stages js "
+                "WHERE js.operation_id=o.operation_id) AND j.operation_id=o.operation_id "
                 "WHERE c.unresolved=1 ORDER BY c.resource_key"
             ).fetchall()
         finally:
@@ -620,6 +631,9 @@ class Store:
                 "last_event": None if row["latest_event_kind"] is None else {
                     "kind": row["latest_event_kind"],
                     "at": row["latest_event_at"],
+                },
+                "effect_stage": None if row["effect_stage"] is None else {
+                    "stage": row["effect_stage"], "at": row["effect_stage_at"],
                 },
                 "diagnosis": diagnosis,
                 "can_auto_release": False,
@@ -711,6 +725,8 @@ class Store:
                     operation_created_at=now,
                 )
             self._event(db, "OPERATION_STARTED", operation_id, {"capability": capability, "resources": resources})
+            self._append_effect_stage(db, operation_id=operation_id,
+                                      stage="CLAIM_RESERVED", detail={})
             row = db.execute("SELECT * FROM operations WHERE operation_id=?", (operation_id,)).fetchone()
             return True, self._row_result(row)
 
@@ -1071,6 +1087,10 @@ class Store:
             self._event(db, "OPERATION_FINISHED", operation_id,
                         {"outcome": outcome.value, "claims_released": release_claims,
                          "reconciled_operation_ids": list(reconciled)})
+            self._append_effect_stage(
+                db, operation_id=operation_id, stage="RECEIPT_PERSISTED",
+                detail={"outcome": outcome.value},
+            )
             row = db.execute("SELECT * FROM operations WHERE operation_id=?", (operation_id,)).fetchone()
         return self._row_result(row)
 
@@ -1312,6 +1332,71 @@ class Store:
         if row is None:
             raise KeyError("OPERATION_NOT_FOUND")
         return str(row["request_digest"])
+
+    def get_operation_metadata_for(self, *, operation_id: str, work_id: str,
+                                   principal_id: str) -> dict[str, Any]:
+        self.get_operation_for(operation_id=operation_id, work_id=work_id,
+                               principal_id=principal_id)
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT capability,target,state,outcome,error FROM operations "
+                "WHERE operation_id=? AND work_id=?", (operation_id, work_id),
+            ).fetchone()
+        finally:
+            db.close()
+        if row is None:
+            raise KeyError("OPERATION_NOT_FOUND")
+        return dict(row)
+
+    @staticmethod
+    def _append_effect_stage(db: sqlite3.Connection, *, operation_id: str,
+                             stage: str, detail: dict[str, Any]) -> None:
+        allowed = {
+            "CLAIM_RESERVED", "DISPATCH_INTENT", "EFFECT_RESULT_OBSERVED",
+            "EFFECT_REJECTED", "EFFECT_UNCERTAIN", "RECEIPT_PERSIST_INTENT",
+            "RECEIPT_PERSISTED",
+        }
+        if stage not in allowed:
+            raise ValueError("EFFECT_STAGE_INVALID")
+        safe = {key: value for key, value in detail.items()
+                if key in {"outcome", "error_type", "error_code"}
+                and (value is None or isinstance(value, (str, int, float, bool)))}
+        sequence = db.execute(
+            "SELECT COALESCE(MAX(sequence),0)+1 FROM operation_effect_stages "
+            "WHERE operation_id=?", (operation_id,),
+        ).fetchone()[0]
+        db.execute(
+            "INSERT INTO operation_effect_stages VALUES(?,?,?,?,?)",
+            (operation_id, sequence, stage,
+             json.dumps(safe, sort_keys=True, separators=(",", ":")), time.time()),
+        )
+
+    def record_effect_stage(self, *, operation_id: str, stage: str,
+                            detail: dict[str, Any] | None = None) -> None:
+        with self.transaction() as db:
+            if db.execute("SELECT 1 FROM operations WHERE operation_id=?",
+                          (operation_id,)).fetchone() is None:
+                raise KeyError("OPERATION_NOT_FOUND")
+            self._append_effect_stage(db, operation_id=operation_id,
+                                      stage=stage, detail=detail or {})
+
+    def get_effect_journal_for(self, *, operation_id: str, work_id: str,
+                               principal_id: str) -> list[dict[str, Any]]:
+        self.get_operation_for(operation_id=operation_id, work_id=work_id,
+                               principal_id=principal_id)
+        db = self._connect()
+        try:
+            rows = db.execute(
+                "SELECT sequence,stage,detail_json,created_at "
+                "FROM operation_effect_stages WHERE operation_id=? ORDER BY sequence",
+                (operation_id,),
+            ).fetchall()
+        finally:
+            db.close()
+        return [{"sequence": row["sequence"], "stage": row["stage"],
+                 "detail": json.loads(row["detail_json"]),
+                 "created_at": row["created_at"]} for row in rows]
 
     def get_operation_target_for(self, *, operation_id: str, work_id: str, principal_id: str) -> str:
         # Reuse the exact work/principal authorization check before revealing target.
