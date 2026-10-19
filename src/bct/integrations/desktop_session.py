@@ -117,6 +117,7 @@ class DesktopSessionClient:
             "windows_list", "window_activate", "window_manage", "program_launch",
             "processes_list", "paths_list", "explorer_windows_list", "chrome_windows_list",
             "chrome_tab_select",
+            "chrome_content_list", "chrome_content_action",
         }:
             raise ValueError("DESKTOP_SESSION_COMMAND_INVALID")
         endpoint = self._endpoint()
@@ -431,6 +432,113 @@ class DesktopSessionClient:
             or action.get("foregroundPreserved") is not True
         ):
             raise DesktopSessionEffectUnknown("DESKTOP_CHROME_TAB_ACTION_INVALID")
+        return result
+
+    def chrome_content(self, *, request_id: str, hwnd: str,
+                       expected_document_title: str, limit: int) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="chrome_content_list",
+            arguments={
+                "hwnd": hwnd, "expectedDocumentTitle": expected_document_title,
+                "limit": limit,
+            }, timeout_s=10.0,
+        )
+        content = result.get("chromeContent")
+        if not isinstance(content, dict):
+            raise DesktopSessionEffectUnknown("DESKTOP_CHROME_CONTENT_MISSING")
+        elements = content.get("elements")
+        target = content.get("target")
+        if (
+            not isinstance(elements, list)
+            or isinstance(content.get("count"), bool)
+            or not isinstance(content.get("count"), int)
+            or content["count"] != len(elements)
+            or not isinstance(content.get("truncated"), bool)
+            or not isinstance(content.get("documentTitle"), str)
+            or len(content["documentTitle"]) > 500
+            or isinstance(content.get("tabOrdinal"), bool)
+            or not isinstance(content.get("tabOrdinal"), int)
+            or not 0 <= content["tabOrdinal"] < 100
+            or not isinstance(content.get("tabTitle"), str)
+            or not content["tabTitle"] or len(content["tabTitle"]) > 500
+            or expected_document_title and content["documentTitle"] != expected_document_title
+            or content.get("foregroundPreserved") is not True
+            or not isinstance(content.get("observedAtUtc"), str)
+            or not isinstance(target, dict)
+            or target.get("type") != "window"
+            or str(target.get("hwnd") or "") != hwnd
+            or isinstance(target.get("pid"), bool)
+            or not isinstance(target.get("pid"), int) or target["pid"] <= 0
+            or not isinstance(target.get("processStartTimeUtc"), str)
+            or not isinstance(target.get("virtualDesktopId"), str)
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_CHROME_CONTENT_INVALID")
+        seen: set[str] = set()
+        for item in elements:
+            bounds = item.get("bounds") if isinstance(item, dict) else None
+            element_id = item.get("elementId") if isinstance(item, dict) else None
+            if (
+                not isinstance(item, dict)
+                or not isinstance(element_id, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", element_id)
+                or element_id in seen
+                or item.get("role") not in {"edit", "button"}
+                or not isinstance(item.get("name"), str) or len(item["name"]) > 500
+                or not isinstance(item.get("automationId"), str) or len(item["automationId"]) > 200
+                or not isinstance(item.get("className"), str) or len(item["className"]) > 200
+                or isinstance(item.get("occurrence"), bool)
+                or not isinstance(item.get("occurrence"), int) or item["occurrence"] < 0
+                or not all(isinstance(item.get(key), bool) for key in (
+                    "enabled", "focusable", "canSetValue", "canInvoke"
+                ))
+                or not isinstance(bounds, dict)
+                or set(bounds) != {"left", "top", "width", "height"}
+                or any(isinstance(bounds[key], bool) or not isinstance(bounds[key], int)
+                       for key in bounds)
+                or bounds["width"] < 0 or bounds["height"] < 0
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_CHROME_CONTENT_INVALID")
+            seen.add(element_id)
+        return result
+
+    def chrome_content_action(self, *, request_id: str, owner_id: str, lease_id: str,
+                              operation: str, element_id: str,
+                              expected_document_title: str, expected_tab_ordinal: int,
+                              expected_tab_title: str, text: str) -> dict[str, Any]:
+        result = self.request(
+            request_id=request_id, command="chrome_content_action",
+            arguments={
+                "ownerId": owner_id, "leaseId": lease_id, "operation": operation,
+                "elementId": element_id, "expectedDocumentTitle": expected_document_title,
+                "expectedTabOrdinal": expected_tab_ordinal,
+                "expectedTabTitle": expected_tab_title, "text": text,
+            }, timeout_s=10.0,
+        )
+        action = result.get("chromeContentAction")
+        expected_bytes = text.encode("utf-8")
+        expected_hash = hashlib.sha256(expected_bytes).hexdigest() if operation == "set_value" else ""
+        if (
+            not isinstance(action, dict)
+            or action.get("operation") != operation
+            or action.get("leaseId") != lease_id
+            or action.get("elementId") != element_id
+            or action.get("documentTitle") != expected_document_title
+            or action.get("tabOrdinal") != expected_tab_ordinal
+            or action.get("tabTitle") != expected_tab_title
+            or action.get("foregroundPreserved") is not True
+            or not isinstance(action.get("invoked"), bool)
+            or not isinstance(action.get("alreadyApplied"), bool)
+            or operation == "invoke" and action.get("invokeAcknowledged") is not True
+            or operation == "set_value" and (
+                action.get("textChars") != len(text)
+                or action.get("textBytes") != len(expected_bytes)
+                or action.get("textSha256") != expected_hash
+                or isinstance(action.get("afterChars"), bool)
+                or not isinstance(action.get("afterChars"), int)
+                or action.get("afterSha256") != expected_hash
+            )
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_CHROME_CONTENT_ACTION_INVALID")
         return result
 
     def processes(self, *, request_id: str, query: str,

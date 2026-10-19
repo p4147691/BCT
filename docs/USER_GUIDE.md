@@ -123,6 +123,19 @@ Lease를 다시 확인하고 정확한 Chrome client-window 메시지 결과와 
 탭을 열거나 닫거나 URL로 이동하지 않으며, 결과가 불명확하면 UNKNOWN으로 남겨 자동
 재시도하지 않는다. 작업이 끝나면 Lease를 즉시 반납한다.
 
+활성 웹 문서의 입력창·버튼을 찾을 때는 먼저 `desktop_chrome_content_list`에 정확한
+Chrome `hwnd`를 전달한다. 가능하면 직전 응답의 `documentTitle`을 다음 조회의
+`expected_document_title`로 고정한다. 이 조회는 활성 `RootWebArea` 안의 현재 보이는
+edit/button 메타데이터만 반환하고 주소창·북마크 같은 browser chrome과 입력값 본문은
+읽지 않는다. 실제 동작은 같은 목록에서 받은 `elementId`, `documentTitle`,
+`tabOrdinal`, 전체 `tabTitle`과 정확한 Window Lease를
+`desktop_chrome_content_action`에 전달한다. `set_value`는 `text`를 지정하고,
+`invoke`는 빈 text로 호출한다. 새 목록 없이 element ID를 재사용하거나 탭 제목의
+메모리 suffix를 생략하지 않는다. text는 Agent 경계에서 strict UTF-8/base64로 전달되고
+영수증에는 문자/byte 길이와 SHA-256만 남는다. Invoke 성공은 해당 UIA 호출이 반환되고
+Lease·창·foreground가 유지됐다는 뜻이며 웹 서비스의 후속 서버 처리를 증명하지는 않는다.
+UNKNOWN은 자동 재호출하지 말고 화면/상태로 별도 화해한다.
+
 background 창이 foreground로 바뀌어 UNKNOWN이 된 경우 같은 선택을 재시도하지 않는다.
 원래 탭과 foreground를 별도 보상한 다음 `desktop_chrome_tab_reconcile`에 원래 operation
 ID, 정확한 window fingerprint, 현재 active tab과 복원된 foreground HWND를 전달한다.
