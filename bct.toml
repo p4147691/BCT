@@ -29,6 +29,7 @@ normal_actions = [
   "desktop_control_lease",
   "desktop_emergency_stop",
   "desktop_input",
+  "desktop_clipboard",
   "desktop_window_list",
   "desktop_window_activate",
   "desktop_window_manage",
