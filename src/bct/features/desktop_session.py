@@ -1419,6 +1419,133 @@ class DesktopChromeTabReconcileFeature:
         )
 
 
+class DesktopWindowActivateReconcileFeature:
+    """Release one activation UNKNOWN after its exact target is demonstrably retired."""
+
+    capability = "desktop_window_activate_reconcile"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {
+            "original_operation_id", "original_lease_id", "hwnd", "pid",
+            "process_start_time_utc", "session_id", "virtual_desktop_id",
+        }
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError(
+                "DESKTOP_WINDOW_ACTIVATE_RECONCILE_FIELD_INVALID:"
+                + ",".join(sorted(unknown))
+            )
+        original = str(arguments.get("original_operation_id") or "").strip()
+        lease_id = str(arguments.get("original_lease_id") or "").strip().casefold()
+        hwnd = str(arguments.get("hwnd") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", original):
+            raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_RECONCILE_OPERATION_INVALID")
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_RECONCILE_LEASE_INVALID")
+        if not re.fullmatch(r"[1-9][0-9]{0,18}", hwnd):
+            raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_RECONCILE_HWND_INVALID")
+        for key in ("pid", "session_id"):
+            value = arguments.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_RECONCILE_INTEGER_INVALID")
+        started = arguments.get("process_start_time_utc")
+        if not isinstance(started, str) or not started or len(started) > 80 or "\0" in started:
+            raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_RECONCILE_PROCESS_TIME_INVALID")
+        try:
+            desktop_id = str(uuid.UUID(str(arguments.get("virtual_desktop_id") or "")))
+        except (ValueError, AttributeError) as exc:
+            raise PreconditionError("DESKTOP_WINDOW_ACTIVATE_RECONCILE_DESKTOP_INVALID") from exc
+        normalized = {
+            "original_operation_id": original, "original_lease_id": lease_id,
+            "hwnd": hwnd, "pid": arguments["pid"],
+            "process_start_time_utc": started, "session_id": arguments["session_id"],
+            "virtual_desktop_id": desktop_id,
+        }
+        return FeatureRequest(
+            self.capability, "reconcile:window-activate:" + original, normalized,
+            ("desktop-control-reconcile:" + original.casefold(),),
+        )
+
+    @staticmethod
+    def _control_clear(result: dict[str, Any], *, hwnd: str, session_id: int) -> bool:
+        control = result.get("control")
+        session = result.get("session")
+        foreground = session.get("foregroundWindow") if isinstance(session, dict) else None
+        return bool(
+            isinstance(control, dict) and control.get("lease") is None
+            and isinstance(control.get("emergencyStop"), dict)
+            and control["emergencyStop"].get("active") is False
+            and isinstance(session, dict) and session.get("sessionId") == session_id
+            and (not isinstance(foreground, dict) or foreground.get("hwnd") != hwnd)
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        values = request.arguments
+        try:
+            before = self.client.control(
+                request_id=request.operation_id + ":before", command="control_status",
+            )
+            observed = self.client.windows(
+                request_id=request.operation_id + ":inventory",
+                include_minimized=True, title_query="", limit=256,
+            )
+            after = self.client.control(
+                request_id=request.operation_id + ":after", command="control_status",
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except (DesktopSessionEffectUnknown, DesktopSessionRequestFailed) as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        if (
+            before.get("instanceId") != observed.get("instanceId")
+            or before.get("instanceId") != after.get("instanceId")
+            or not self._control_clear(
+                before, hwnd=values["hwnd"], session_id=values["session_id"]
+            )
+            or not self._control_clear(
+                after, hwnd=values["hwnd"], session_id=values["session_id"]
+            )
+        ):
+            raise ConfirmedFailure(
+                "DESKTOP_WINDOW_ACTIVATE_RECONCILE_CONTROL_MISMATCH", release_claims=True,
+            )
+        windows = observed["windows"]
+        if windows["truncated"]:
+            raise ConfirmedFailure(
+                "DESKTOP_WINDOW_ACTIVATE_RECONCILE_INVENTORY_INCOMPLETE",
+                release_claims=True,
+            )
+        matches = [item for item in windows["items"] if all((
+            item.get("hwnd") == values["hwnd"], item.get("pid") == values["pid"],
+            item.get("processStartTimeUtc") == values["process_start_time_utc"],
+            item.get("sessionId") == values["session_id"],
+            str(item.get("virtualDesktopId") or "").casefold()
+            == values["virtual_desktop_id"].casefold(),
+        ))]
+        if matches:
+            raise ConfirmedFailure(
+                "DESKTOP_WINDOW_ACTIVATE_RECONCILE_TARGET_STILL_PRESENT",
+                release_claims=True,
+            )
+        evidence = {
+            **_session_evidence(after), "operation": "reconcile-retired-window-activation",
+            "original_operation_id": values["original_operation_id"],
+            "target": {key: values[key] for key in (
+                "hwnd", "pid", "process_start_time_utc", "session_id",
+                "virtual_desktop_id",
+            )},
+            "target_present": False, "control": after["control"],
+            "observed_at_utc": windows["observedAtUtc"], "reconciled": True,
+        }
+        return FeatureResult(
+            Outcome.APPLIED, evidence,
+            reconciled_operation_ids=(values["original_operation_id"],),
+        )
+
+
 class DesktopWindowManageFeature:
     capability = "desktop_window_manage"
 

@@ -37,7 +37,8 @@ from .features.desktop_session import (
     DesktopChromeTabSelectFeature, DesktopExploreFeature,
     DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
     DesktopUiaElementActionFeature, DesktopUiaElementsListFeature,
-    DesktopWindowActivateFeature, DesktopWindowManageFeature,
+    DesktopWindowActivateFeature, DesktopWindowActivateReconcileFeature,
+    DesktopWindowManageFeature,
     DesktopWindowListFeature, desktop_session_client,
 )
 from .integrations.github import GhCliClient, GitHubClient
@@ -131,6 +132,7 @@ class BCT:
             DesktopClipboardFeature(desktop_session),
             DesktopWindowListFeature(desktop_session),
             DesktopWindowActivateFeature(desktop_session),
+            DesktopWindowActivateReconcileFeature(desktop_session),
             DesktopWindowManageFeature(desktop_session),
             DesktopProgramLaunchFeature(desktop_session),
             VtlValidateFeature(policy_path, data_root=data_root),

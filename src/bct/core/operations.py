@@ -46,6 +46,8 @@ class OperationCoordinator:
         policy_action = (
             "desktop_chrome_tab_select"
             if capability == "desktop_chrome_tab_reconcile"
+            else "desktop_window_activate"
+            if capability == "desktop_window_activate_reconcile"
             else capability
         )
         decision = self.policy.decide(principal=principal, work=work, action=policy_action,
@@ -218,6 +220,44 @@ class OperationCoordinator:
                 != "DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN:CHROME_TAB_ACTION_CHANGED_FOREGROUND"
             ):
                 raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
+        if capability == "desktop_window_activate_reconcile":
+            original_id = request.arguments["original_operation_id"]
+            original = self.store.get_operation_for(
+                operation_id=original_id,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+            )
+            original_target = self.store.get_operation_target_for(
+                operation_id=original_id,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+            )
+            activate_feature = self._features["desktop_window_activate"]
+            original_request = activate_feature.prepare(work=work, arguments={
+                "lease_id": request.arguments["original_lease_id"],
+            })
+            original_digest = hashlib.sha256(json.dumps({
+                "work_id": work_id, "capability": "desktop_window_activate",
+                "target": original_request.target,
+                "arguments": original_request.arguments,
+                "preconditions": original_request.preconditions,
+            }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+            if (
+                original.state is not OperationState.FINISHED
+                or original.outcome is not Outcome.UNKNOWN
+                or original_target != "activate:interactive-session"
+                or str(original.error or "") not in {
+                    "DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN:WINDOW_ACTIVATION_EFFECT_UNKNOWN",
+                    "DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN:WINDOW_ACTIVATION_FRAME_CLICK_EFFECT_UNKNOWN",
+                }
+                or self.store.get_operation_request_digest_for(
+                    operation_id=original_id, work_id=work_id,
+                    principal_id=principal.principal_id,
+                ) != original_digest
+            ):
+                raise PreconditionError(
+                    "DESKTOP_WINDOW_ACTIVATE_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED"
+                )
         if not request.resources:
             raise ValueError("FEATURE_RESOURCE_REQUIRED")
         digest = hashlib.sha256(json.dumps({

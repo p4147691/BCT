@@ -14,7 +14,8 @@ from bct.features.desktop_session import (
     DesktopExploreFeature, DesktopInputFeature, DesktopProgramLaunchFeature,
     DesktopSessionStatusFeature,
     DesktopUiaElementActionFeature, DesktopUiaElementsListFeature,
-    DesktopWindowActivateFeature, DesktopWindowManageFeature,
+    DesktopWindowActivateFeature, DesktopWindowActivateReconcileFeature,
+    DesktopWindowManageFeature,
     DesktopWindowListFeature,
 )
 from bct.integrations.desktop_session import (
@@ -862,6 +863,52 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         ):
             with self.subTest(changed=changed), self.assertRaises(PreconditionError):
                 feature.prepare(work=self.work, arguments=changed)
+
+    def test_window_activate_reconcile_proves_retired_target_without_effect(self):
+        self.client.window_items = []
+        feature = DesktopWindowActivateReconcileFeature(self.client)
+        arguments = {
+            "original_operation_id": "unknown-window-activate",
+            "original_lease_id": "b" * 32,
+            "hwnd": "12345", "pid": 123,
+            "process_start_time_utc": "2026-10-19T00:00:00.0000000Z",
+            "session_id": 1,
+            "virtual_desktop_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        }
+        request = feature.prepare(work=self.work, arguments=arguments)
+        self.assertEqual(
+            ("desktop-control-reconcile:unknown-window-activate",), request.resources,
+        )
+        request = request.__class__(**{
+            **request.__dict__, "operation_id": "window-activate-reconcile",
+        })
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(("unknown-window-activate",), result.reconciled_operation_ids)
+        self.assertFalse(result.evidence["target_present"])
+        self.assertEqual(
+            ["control_status", "control_status"],
+            [call[1] for call in self.client.control_calls],
+        )
+
+    def test_window_activate_reconcile_rejects_target_still_present(self):
+        self.client.window_items[0]["virtualDesktopId"] = (
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        )
+        feature = DesktopWindowActivateReconcileFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "original_operation_id": "unknown-window-activate",
+            "original_lease_id": "b" * 32,
+            "hwnd": "12345", "pid": 123,
+            "process_start_time_utc": "2026-10-19T00:00:00.0000000Z",
+            "session_id": 1,
+            "virtual_desktop_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        })
+        request = request.__class__(**{
+            **request.__dict__, "operation_id": "window-activate-reconcile-present",
+        })
+        with self.assertRaisesRegex(ConfirmedFailure, "TARGET_STILL_PRESENT"):
+            feature.execute(request)
 
     def test_control_lease_derives_owner_and_normalizes_session_acquire(self):
         feature = DesktopControlLeaseFeature(self.client)

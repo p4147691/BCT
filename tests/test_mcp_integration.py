@@ -66,7 +66,8 @@ class MCPIntegrationTests(unittest.TestCase):
             "desktop_chrome_tab_select",
             "desktop_control_lease", "desktop_emergency_stop", "desktop_input",
             "desktop_clipboard",
-            "desktop_window_list", "desktop_window_activate", "desktop_window_manage",
+            "desktop_window_list", "desktop_window_activate",
+            "desktop_window_activate_reconcile", "desktop_window_manage",
             "desktop_program_launch",
             "vtl_validate",
         ]
@@ -141,6 +142,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_desktop_control_lease", "bct_desktop_emergency_stop",
                         "bct_desktop_input", "bct_desktop_clipboard",
                         "bct_desktop_window_list", "bct_desktop_window_activate",
+                        "bct_desktop_window_activate_reconcile",
                         "bct_desktop_window_manage",
                         "bct_desktop_program_launch",
                         "bct_vtl_validate",
