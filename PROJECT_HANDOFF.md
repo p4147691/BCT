@@ -76,6 +76,21 @@ reparse-point 차단이 그대로 적용된다. VTL PR #27, BCT PR #210, Agent 1
 exact-main 배포와 인증 MCP LIVE 조합 검증이 완료됐다. 상세는
 `docs/exec-plans/completed/BCT_DESKTOP_EXPLORE_20261019.md`에 있다.
 
+## 완료 — Chrome/Explorer 의미 기반 창 선택·바인딩
+
+BCT LIVE의 `desktop_application_target`은 Chrome과 Explorer를 정확한 process
+family와 top-level window class로 분류하고, 선택적으로 Unicode 창 제목으로
+좁힌다. `list`는 읽기 전용이고, `bind`는 현재 Session/virtual desktop 후보가
+정확히 하나일 때만 기존 Window Lease를 발급한다. 후보 0개·여러 개·Agent 목록
+truncation은 제어 효과 전에 실패하므로 좌표나 PID 추측으로 다른 창을 잡지 않는다.
+
+BCT PR #212의 exact-head/main CI, generation 128 exact-main 배포와 인증 MCP LIVE
+수락시험이 완료됐다. LIVE에서는 Chrome 3개와 Explorer 0개를 분류하고 고유한
+Chrome 창을 HWND/PID/process birth/Session/virtual desktop fingerprint로 bind한
+뒤 활성화나 입력 없이 Lease를 즉시 반납했다. Chrome 탭/프로필 및 Explorer 실제
+폴더 경로 연결은 다음 별도 경계다. 상세는
+`docs/exec-plans/completed/BCT_DESKTOP_APPLICATION_TARGET_20261019.md`에 있다.
+
 ## 완료 — Adaptive CI와 VTL exact-SHA 데스크톱 스모크
 
 BCT PR #199는 보수적 변경 범위 판정, 정확 중복 unittest 제거, 네 개의 결정적
