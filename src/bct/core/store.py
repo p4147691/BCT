@@ -610,8 +610,18 @@ class Store:
                 diagnosis = "FINISHED_CLAIMED"
             else:
                 diagnosis = "INSUFFICIENT_EVIDENCE"
+            resource_key = str(row["resource_key"] or "")
+            exact_scope = (
+                resource_key.startswith("orchestration-attachment:")
+                or resource_key.startswith("orchestration-run:")
+                or resource_key.startswith("execution:")
+                or ":rename:" in resource_key
+                or ":direct-tab:" in resource_key
+                or ":read:" in resource_key
+            )
+            scope = "EXACT_RESOURCE" if exact_scope else "SHARED_RESOURCE"
             output.append({
-                "resource_key": row["resource_key"],
+                "resource_key": resource_key,
                 "operation_id": row["operation_id"],
                 "work_id": row["work_id"],
                 "assignment_epoch": row["assignment_epoch"],
@@ -636,6 +646,9 @@ class Store:
                     "stage": row["effect_stage"], "at": row["effect_stage_at"],
                 },
                 "diagnosis": diagnosis,
+                "scope": scope,
+                "blocks_unrelated_work": scope == "SHARED_RESOURCE",
+                "replay_allowed": False if outcome == "UNKNOWN" else None,
                 "can_auto_release": False,
             })
         return output

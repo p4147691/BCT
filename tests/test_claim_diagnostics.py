@@ -15,12 +15,30 @@ class ClaimDiagnosticsTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def claim(self, name):
+    def claim(self, name, *, resource=None):
         created, _=self.store.begin_operation(
             operation_id=name, work=self.work, principal_id="fixture-owner",
             request_digest=name, capability="read", target="fixture",
-            resources=("fixture:"+name,),policy_revision="fixture")
+            resources=(resource or "fixture:"+name,),policy_revision="fixture")
         self.assertTrue(created)
+
+    def test_exact_claim_scope_is_distinct_from_shared_scope(self):
+        self.claim("exact", resource="orchestration-run:old-session:old-task")
+        self.store.finish_operation(
+            operation_id="exact", outcome=Outcome.UNKNOWN, evidence={},
+            error="timeout", release_claims=False,
+        )
+        exact = self.store.claim_diagnostics()[0]
+        self.assertEqual("EXACT_RESOURCE", exact["scope"])
+        self.assertFalse(exact["blocks_unrelated_work"])
+        self.assertFalse(exact["replay_allowed"])
+
+        with self.store.transaction() as db:
+            db.execute("UPDATE resource_claims SET unresolved=0 WHERE operation_id='exact'")
+        self.claim("shared", resource="rcc-instance:instance-1")
+        shared = self.store.claim_diagnostics()[0]
+        self.assertEqual("SHARED_RESOURCE", shared["scope"])
+        self.assertTrue(shared["blocks_unrelated_work"])
 
     def test_old_claim_resolves_without_recent_operations_window(self):
         self.claim("first")

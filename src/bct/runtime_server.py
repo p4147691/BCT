@@ -232,6 +232,8 @@ def main() -> int:
             store=bct.store,
             service_state=state,
             data_root=runtime_root.parent / "data",
+            rcc_source_path=Path(r"D:\BCT\source\modules\rcc\extension\background.js"),
+            rcc_live_path=Path(r"D:\ChromeExtensions\RCC\extension\background.js"),
         )
         return {
             "schema": 1,
