@@ -185,6 +185,26 @@ class OperationCoordinator:
                 or not receipt_matches
             ):
                 raise PreconditionError("DEPLOYMENT_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
+        if capability == "desktop_chrome_tab_reconcile":
+            original_id = request.arguments["original_operation_id"]
+            original = self.store.get_operation_for(
+                operation_id=original_id,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+            )
+            original_target = self.store.get_operation_target_for(
+                operation_id=original_id,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+            )
+            if (
+                original.state is not OperationState.FINISHED
+                or original.outcome is not Outcome.UNKNOWN
+                or original_target != "select:chrome-tab"
+                or str(original.error or "")
+                != "DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN:CHROME_TAB_ACTION_CHANGED_FOREGROUND"
+            ):
+                raise PreconditionError("DESKTOP_CHROME_TAB_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
         if not request.resources:
             raise ValueError("FEATURE_RESOURCE_REQUIRED")
         digest = hashlib.sha256(json.dumps({

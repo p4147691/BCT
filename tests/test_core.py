@@ -33,6 +33,37 @@ class UnknownFeature(CountingFeature):
         raise UnknownEffectError("lost result after dispatch")
 
 
+class UnknownChromeTabFeature:
+    capability = "desktop_chrome_tab_select"
+
+    def prepare(self, *, work, arguments):
+        return FeatureRequest(
+            self.capability, "select:chrome-tab", dict(arguments),
+            ("desktop-control:interactive-session",),
+        )
+
+    def execute(self, request):
+        raise UnknownEffectError(
+            "DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN:CHROME_TAB_ACTION_CHANGED_FOREGROUND"
+        )
+
+
+class ProvenChromeTabReconcileFeature:
+    capability = "desktop_chrome_tab_reconcile"
+
+    def prepare(self, *, work, arguments):
+        return FeatureRequest(
+            self.capability, "reconcile:chrome-tab:" + arguments["original_operation_id"],
+            dict(arguments), ("desktop-control-reconcile:" + arguments["original_operation_id"],),
+        )
+
+    def execute(self, request):
+        return FeatureResult(
+            Outcome.APPLIED, {"reconciled": True},
+            reconciled_operation_ids=(request.arguments["original_operation_id"],),
+        )
+
+
 class BlockingFeature(CountingFeature):
     def __init__(self):
         super().__init__()
@@ -53,14 +84,19 @@ class CoreTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.policy = self.root / "bct.toml"
         self.policy.write_text(
-            '[policy]\nnormal_actions=["read","write","test","git_commit"]\n'
+            '[policy]\nnormal_actions=["read","write","test","git_commit",'
+            '"desktop_chrome_tab_select","desktop_chrome_tab_reconcile"]\n'
             'approval_actions=["deploy"]\n', encoding="utf-8"
         )
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=self.policy)
-        self.owner = Principal("owner", "test", frozenset({"read", "write", "test", "git_commit"}))
-        self.other = Principal("other", "test", frozenset({"read", "write", "test", "git_commit"}))
+        actions = frozenset({
+            "read", "write", "test", "git_commit",
+            "desktop_chrome_tab_select", "desktop_chrome_tab_reconcile",
+        })
+        self.owner = Principal("owner", "test", actions)
+        self.other = Principal("other", "test", actions)
         self.bct.create_work(work_id="work-1", request_summary="test", roots=[str(self.root)],
-                             actions=["read", "write", "test", "git_commit"], principal=self.owner)
+                             actions=sorted(actions), principal=self.owner)
 
     def tearDown(self):
         self.temp.cleanup()
@@ -82,6 +118,23 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(second.duplicate)
         self.assertEqual(1, feature.calls)
+
+    def test_exact_chrome_tab_reconcile_releases_only_proven_unknown_claim(self):
+        self.replace_feature(UnknownChromeTabFeature())
+        original = self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="tab-unknown",
+            capability="desktop_chrome_tab_select", arguments={"ordinal": 2},
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.replace_feature(ProvenChromeTabReconcileFeature())
+        reconciled = self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="tab-reconcile",
+            capability="desktop_chrome_tab_reconcile",
+            arguments={"original_operation_id": "tab-unknown"},
+        )
+        self.assertEqual(Outcome.APPLIED, reconciled.outcome)
+        unresolved = self.bct.store.monitor_snapshot()["unresolved_claims"]
+        self.assertFalse(any(item["operation_id"] == "tab-unknown" for item in unresolved))
 
     def test_background_begin_and_resume_execute_exactly_once(self):
         feature = CountingFeature()

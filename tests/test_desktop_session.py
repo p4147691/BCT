@@ -7,7 +7,8 @@ from pathlib import Path
 
 from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
-    DesktopApplicationTargetFeature, DesktopCaptureFeature, DesktopChromeTabSelectFeature,
+    DesktopApplicationTargetFeature, DesktopCaptureFeature, DesktopChromeTabReconcileFeature,
+    DesktopChromeTabSelectFeature,
     DesktopControlLeaseFeature,
     DesktopEmergencyStopFeature,
     DesktopExploreFeature, DesktopInputFeature, DesktopProgramLaunchFeature,
@@ -590,6 +591,60 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         result["windows"]["items"][0]["tabs"][0]["ordinal"] = 1
         with self.assertRaisesRegex(DesktopSessionEffectUnknown, "CHROME_WINDOWS_INVALID"):
             DesktopSessionClient._validated_windows(result, adapter="chrome")
+
+    def test_chrome_tab_reconcile_proves_compensated_state_without_effect(self):
+        class ReconcileClient(FakeDesktopSessionClient):
+            def control(self, **arguments):
+                value = super().control(**arguments)
+                value["session"]["foregroundWindow"] = {"hwnd": "99999"}
+                return value
+
+        client = ReconcileClient(self.root)
+        client.window_items = [{
+            **client.window_items[0], "processName": "chrome",
+            "className": "Chrome_WidgetWin_1", "title": "Restored - Chrome",
+            "virtualDesktopId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "tabs": [{"ordinal": 0, "title": "Restored", "selected": True}],
+        }]
+        feature = DesktopChromeTabReconcileFeature(client)
+        arguments = {
+            "original_operation_id": "unknown-tab-select", "hwnd": "12345", "pid": 123,
+            "process_start_time_utc": "2026-10-19T00:00:00.0000000Z", "session_id": 1,
+            "virtual_desktop_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "expected_ordinal": 0, "expected_title": "Restored",
+            "expected_foreground_hwnd": "99999",
+        }
+        request = feature.prepare(work=self.work, arguments=arguments)
+        self.assertEqual(
+            ("desktop-control-reconcile:unknown-tab-select",), request.resources,
+        )
+        request = request.__class__(**{**request.__dict__, "operation_id": "tab-reconcile"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(("unknown-tab-select",), result.reconciled_operation_ids)
+        self.assertEqual("Restored", result.evidence["active_tab"]["title"])
+        self.assertEqual(
+            ["control_status", "control_status"],
+            [call[1] for call in client.control_calls],
+        )
+
+    def test_chrome_tab_reconcile_rejects_changed_or_incomplete_state(self):
+        feature = DesktopChromeTabReconcileFeature(self.client)
+        base = {
+            "original_operation_id": "unknown-tab-select", "hwnd": "12345", "pid": 123,
+            "process_start_time_utc": "2026-10-19T00:00:00Z", "session_id": 1,
+            "virtual_desktop_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "expected_ordinal": 0, "expected_title": "Restored",
+            "expected_foreground_hwnd": "99999",
+        }
+        for changed in (
+            {**base, "original_operation_id": "bad id"},
+            {**base, "expected_ordinal": 100},
+            {**base, "virtual_desktop_id": "bad"},
+            {**base, "expected_title": ""},
+        ):
+            with self.subTest(changed=changed), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=changed)
 
     def test_control_lease_derives_owner_and_normalizes_session_acquire(self):
         feature = DesktopControlLeaseFeature(self.client)
