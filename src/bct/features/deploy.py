@@ -723,7 +723,19 @@ def _publish_runtime_recovery_scripts(
     if profile.name != "bct_runtime_v1":
         return
     release_root = Path(str(release["release_path"])).resolve()
-    files = release.get("files")
+    # current.json is deliberately a small activation pointer and does not
+    # duplicate the immutable release's file map.  Re-publication after a Core
+    # upgrade must therefore load that map from the already validated release
+    # manifest instead of assuming the caller still has the staging object.
+    manifest = read_json(release_root / "manifest.json")
+    if (
+        manifest is None
+        or manifest.get("source_head") != release.get("source_head")
+        or manifest.get("manifest_sha256") != release.get("manifest_sha256")
+        or manifest.get("release_path") != str(release_root)
+    ):
+        raise PreconditionError("DEPLOYMENT_RELEASE_MANIFEST_INVALID")
+    files = manifest.get("files")
     if not isinstance(files, dict):
         raise PreconditionError("DEPLOYMENT_RELEASE_MANIFEST_INVALID")
     ops_root = profile.runtime_root / "ops"
