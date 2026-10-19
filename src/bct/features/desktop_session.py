@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 import uuid
@@ -479,6 +480,91 @@ class DesktopInputFeature:
         evidence = result.get("input") if isinstance(result.get("input"), dict) else {}
         return FeatureResult(
             Outcome.APPLIED, {**_session_evidence(result), "input": evidence}, output=result,
+        )
+
+
+class DesktopClipboardFeature:
+    capability = "desktop_clipboard"
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {"operation", "lease_id", "text", "max_chars"}
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError("DESKTOP_CLIPBOARD_FIELD_INVALID:" + ",".join(sorted(unknown)))
+        operation = str(arguments.get("operation") or "").strip().casefold()
+        if operation not in {"get", "set"}:
+            raise PreconditionError("DESKTOP_CLIPBOARD_OPERATION_INVALID")
+        lease_id = str(arguments.get("lease_id") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", lease_id):
+            raise PreconditionError("DESKTOP_CLIPBOARD_LEASE_ID_INVALID")
+        owner_id = work.work_id
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", owner_id):
+            raise PreconditionError("DESKTOP_CLIPBOARD_OWNER_ID_INVALID")
+        normalized: dict[str, Any] = {
+            "operation": operation, "owner_id": owner_id, "lease_id": lease_id,
+        }
+        if operation == "get":
+            if "text" in arguments:
+                raise PreconditionError("DESKTOP_CLIPBOARD_FIELDS_CONFLICT")
+            if isinstance(arguments.get("max_chars", 262144), bool):
+                raise PreconditionError("DESKTOP_CLIPBOARD_MAX_CHARS_INVALID")
+            try:
+                max_chars = int(arguments.get("max_chars", 262144))
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PreconditionError("DESKTOP_CLIPBOARD_MAX_CHARS_INVALID") from exc
+            if not 0 <= max_chars <= 262144:
+                raise PreconditionError("DESKTOP_CLIPBOARD_MAX_CHARS_INVALID")
+            normalized["max_chars"] = max_chars
+        else:
+            if "max_chars" in arguments or not isinstance(arguments.get("text"), str):
+                raise PreconditionError("DESKTOP_CLIPBOARD_FIELDS_CONFLICT")
+            text = arguments["text"]
+            if len(text) > 262144:
+                raise PreconditionError("DESKTOP_CLIPBOARD_TEXT_TOO_LARGE")
+            # Leave room for the request envelope and JSON escaping below the
+            # Desktop Session protocol's exact 64-KiB frame boundary.
+            encoded_text = json.dumps(text, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            if len(encoded_text) > 60000:
+                raise PreconditionError("DESKTOP_CLIPBOARD_TEXT_TOO_LARGE")
+            normalized["text"] = text
+        return FeatureRequest(
+            self.capability, operation + ":interactive-session", normalized,
+            ("desktop-control:interactive-session",),
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        operation = request.arguments["operation"]
+        arguments = {
+            "ownerId": request.arguments["owner_id"],
+            "leaseId": request.arguments["lease_id"],
+        }
+        if operation == "get":
+            arguments["maxChars"] = request.arguments["max_chars"]
+        else:
+            arguments["text"] = request.arguments["text"]
+        try:
+            result = self.client.clipboard(
+                request_id=request.operation_id,
+                command="clipboard_" + operation,
+                arguments=arguments,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            if operation == "get":
+                raise ConfirmedFailure(str(exc), release_claims=True) from exc
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        clipboard = dict(result["clipboard"])
+        evidence_clipboard = {key: value for key, value in clipboard.items() if key != "text"}
+        return FeatureResult(
+            Outcome.APPLIED,
+            {**_session_evidence(result), "clipboard": evidence_clipboard},
+            output=result,
         )
 
 

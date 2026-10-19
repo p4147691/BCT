@@ -31,7 +31,7 @@ from .features.process_session import ProcessSessionFeature
 from .features.monitor import MonitorFeature
 from .features.orchestration import OrchestrationFeature
 from .features.desktop_session import (
-    DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
+    DesktopCaptureFeature, DesktopClipboardFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
     DesktopApplicationTargetFeature, DesktopChromeTabReconcileFeature,
     DesktopChromeContentActionFeature, DesktopChromeContentListFeature,
     DesktopChromeTabSelectFeature, DesktopExploreFeature,
@@ -125,6 +125,7 @@ class BCT:
             DesktopControlLeaseFeature(desktop_session),
             DesktopEmergencyStopFeature(desktop_session),
             DesktopInputFeature(desktop_session),
+            DesktopClipboardFeature(desktop_session),
             DesktopWindowListFeature(desktop_session),
             DesktopWindowActivateFeature(desktop_session),
             DesktopWindowManageFeature(desktop_session),

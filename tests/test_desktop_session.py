@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
+from bct.core.models import ConfirmedFailure, Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
     DesktopApplicationTargetFeature, DesktopCaptureFeature, DesktopChromeTabReconcileFeature,
     DesktopChromeContentActionFeature, DesktopChromeContentListFeature, DesktopChromeTabSelectFeature,
-    DesktopControlLeaseFeature,
+    DesktopClipboardFeature, DesktopControlLeaseFeature,
     DesktopEmergencyStopFeature,
     DesktopExploreFeature, DesktopInputFeature, DesktopProgramLaunchFeature,
     DesktopSessionStatusFeature,
@@ -29,6 +29,7 @@ class FakeDesktopSessionClient:
         self.capture_calls = 0
         self.control_calls = []
         self.input_calls = []
+        self.clipboard_calls = []
         self.window_calls = []
         self.launch_calls = []
         self.explore_calls = []
@@ -108,6 +109,23 @@ class FakeDesktopSessionClient:
             "operation": command.removeprefix("input_mouse_").removeprefix("input_"),
             "leaseId": arguments["leaseId"], "eventCount": 2,
         }
+        return value
+
+    def clipboard(self, *, request_id: str, command: str, arguments):
+        self.clipboard_calls.append((request_id, command, arguments))
+        text = arguments.get("text", "한글 clipboard")
+        encoded = text.encode("utf-8")
+        value = self._base(command)
+        value["requestId"] = request_id
+        value["clipboard"] = {
+            "operation": command.removeprefix("clipboard_"),
+            "leaseId": arguments["leaseId"], "hasText": True,
+            "textLength": len(text), "utf8Bytes": len(encoded),
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "appliedAtUtc": "2026-10-19T00:00:00Z",
+        }
+        if command == "clipboard_get":
+            value["clipboard"]["text"] = text
         return value
 
     def windows(self, *, request_id: str, **arguments):
@@ -383,7 +401,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
                              "desktop_chrome_content_list", "desktop_chrome_content_action",
                              "desktop_chrome_tab_select",
                              "desktop_control_lease", "desktop_emergency_stop",
-                             "desktop_input",
+                             "desktop_input", "desktop_clipboard",
                              "desktop_window_list", "desktop_window_activate",
                              "desktop_window_manage",
                              "desktop_program_launch",
@@ -1162,6 +1180,57 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         from bct.core.models import ConfirmedFailure
         with self.assertRaises(ConfirmedFailure):
             DesktopProgramLaunchFeature(RejectingClient(self.root)).execute(request)
+
+    def test_clipboard_get_and_set_use_session_control_and_redact_evidence(self):
+        feature = DesktopClipboardFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "set", "lease_id": "b" * 32, "text": "한글 clipboard🙂",
+        })
+        self.assertEqual(("desktop-control:interactive-session",), request.resources)
+        request = request.__class__(**{**request.__dict__, "operation_id": "clipboard-set-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertNotIn("text", result.evidence["clipboard"])
+        self.assertEqual("clipboard_set", self.client.clipboard_calls[-1][1])
+
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "get", "lease_id": "b" * 32, "max_chars": 4096,
+        })
+        request = request.__class__(**{**request.__dict__, "operation_id": "clipboard-get-1"})
+        result = feature.execute(request)
+        self.assertEqual("한글 clipboard", result.output["clipboard"]["text"])
+        self.assertNotIn("text", result.evidence["clipboard"])
+
+    def test_clipboard_rejects_conflicting_or_unbounded_fields(self):
+        feature = DesktopClipboardFeature(self.client)
+        invalid = (
+            {"operation": "get", "lease_id": "b" * 32, "text": "x"},
+            {"operation": "get", "lease_id": "b" * 32, "max_chars": 262145},
+            {"operation": "get", "lease_id": "b" * 32, "max_chars": True},
+            {"operation": "set", "lease_id": "b" * 32},
+            {"operation": "set", "lease_id": "bad", "text": "x"},
+            {"operation": "set", "lease_id": "b" * 32, "text": '"' * 60001},
+        )
+        for arguments in invalid:
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_clipboard_unknown_get_is_failure_but_unknown_set_stays_unknown(self):
+        class UnknownClient(FakeDesktopSessionClient):
+            def clipboard(self, **_arguments):
+                raise DesktopSessionEffectUnknown("response missing")
+
+        feature = DesktopClipboardFeature(UnknownClient(self.root))
+        get_request = feature.prepare(work=self.work, arguments={
+            "operation": "get", "lease_id": "b" * 32,
+        })
+        with self.assertRaises(ConfirmedFailure):
+            feature.execute(get_request)
+        set_request = feature.prepare(work=self.work, arguments={
+            "operation": "set", "lease_id": "b" * 32, "text": "한글",
+        })
+        with self.assertRaises(UnknownEffectError):
+            feature.execute(set_request)
 
 
 if __name__ == "__main__":
