@@ -1,6 +1,6 @@
 # BCT 인수인계
 
-## 진행 — 병목 신호 기반 Instant ACK 대조 V0 (미배포)
+## 완료 — 병목 신호 기반 Instant ACK 대조 V0
 
 `bottleneck_ack`는 RCC의 exact tab telemetry에서 한 고정 대화가 연속 생성 중인
 시간을 읽고, 임계값을 넘으면 **별도의 ACK 전용 대화**에만 고정된 Instant ACK
@@ -12,11 +12,15 @@ ID와 in-process latch로 중복 전송하지 않는다. UNKNOWN/미확인 결�
 않는다. probe의 generation start/finish가 제출 뒤에 관측되면 시작·완료·생성 시간을
 `bct_status`의 `core.bottleneck_ack`에만 수치로 기록한다.
 
-기본 `bct.toml`은 `enabled=false`다. LIVE 활성화 전에는 사용자가 ACK 전용 고정
-ChatGPT 대화를 별도로 등록하고, 실제 source/probe conversation key·임계값을 검증해야
-한다. 이 변경은 아직 commit/PR/배포/실사용 전송을 하지 않았다. focused unittest 15개와
-`compileall`, `git diff --check`는 통과했다. 전체 suite는 이 환경의 30초 실행 창에서
-완료 결과를 받지 못했으므로 통과로 기록하지 않는다.
+사용자가 등록한 고정 Manager와 ACK 전용 ChatGPT 대화를 exact instance/conversation
+identity로 LIVE 정책에 연결했다. 수락시험에서는 5초 임계값으로 한 번만 검증한 뒤,
+운영 임계값을 30초로 복원한다. 실제 장문 Manager 생성에서 BCT가 생성한 `relay_browser`
+operation receipt가 `APPLIED`였고 ACK 전용 대화에서 고정 문구와 `ACK` 응답을 확인했다.
+초기 구현은 polling 사이에 생성이 끝나면 지연 증거를 버렸으며, 막 끝난 generation의
+start/finish telemetry를 10초 이내에서만 인정하도록 보완했다. 서비스 재시작 뒤 오래된
+telemetry를 재생하지 않도록 시간 창을 제한했다. focused unittest 16개, `compileall`,
+`git diff --check`는 통과했다. 전체 suite는 이 환경의 30초 실행 창에서 완료 결과를
+받지 못했으므로 통과로 기록하지 않는다.
 
 ## 완료 — UNKNOWN 계측·RCC payload 판정
 
