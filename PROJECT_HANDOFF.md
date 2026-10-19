@@ -1,19 +1,23 @@
 # BCT 인수인계
 
-## 진행 — tunnel-client v0.0.16 단일 원샷 전환
+## 진행 — UNKNOWN 계측·RCC payload 판정 마무리
 
-Issue #82의 공식 v0.0.16 후보와 v0.0.14 정확 복구본은 이미 검증돼 있다. 현재 변경은
-Scheduled Task를 새로 만들거나 주기적으로 채팅이 확인하게 하지 않는다. Supervisor가
-hash-verified UTF-8 version pointer를 읽도록 하고, 독립 로컬 one-shot이 단 한 번
-Supervisor 정지, 기존 runtime 정지, pointer 게시, 기존 Task 재시작, exact process/target/
-health 확인을 수행한다. 실패하면 보존된 v0.0.14 pointer로 되돌리고 같은 Task를 복원한다.
-Windows UTF-8 시스템 로캘과 무관하며 trace-context 전달은 명시적으로 꺼 둔다.
+tunnel-client v0.0.16의 독립 one-shot 전환, Supervisor 자동 복원, Hosted read timing은
+완료됐다. RCC PR #226 `background.js`도 실제 설치본과 main source의 SHA-256이 일치하고,
+재로드 뒤 두 RCC 인스턴스가 같은 build ID로 OPEN이다. 고정 SHA 문구 대신 현재 값은
+`origin/main`, `runtime\current.json`, Core health 및 파일 해시로 다시 확인한다.
 
-작업 브랜치의 Fixture/Inspect와 관련 Python 집중 테스트는 통과했다. 아직 main 병합,
-exact-main 배포, LIVE Cutover 및 Hosted read timing 수락시험은 수행하지 않았다. LIVE
-변경 소유자는 이 closeout Work 하나이며, 다른 시간제 RCC 적용 작업은 비활성화됐다.
-RCC PR #226 payload는 설치·재로드·실제 응답까지 확인됐지만 결과 영수증이 pending에
-남는 별도 결함은 완료로 간주하지 않고 후속 reconciliation 대상으로 보존한다. 상세는
+공통 operation effect-stage journal과 안전한 `claim_reconcile`이 LIVE다. read-only 9건,
+CreateProcess 이전 FileNotFound execute 4건, 광범위 relay 2건, 무전송 orchestration 1건의
+Claim을 증거로 정리했다. 원래 UNKNOWN receipt는 감사 기록으로 보존한다. 남은 Claim은
+실제 전송·실행 가능성을 배제할 수 없는 정확한 과거 자원에만 묶여 있으며 재전송하거나
+강제 해제하지 않는다. Monitor가 `SHARED_RESOURCE`와 `EXACT_RESOURCE`를 분리하고 RCC
+source/live payload SHA·일치 여부를 직접 표시하도록 하는 후속 변경을 진행 중이다.
+
+공유 LIVE 변경은 대상별로 정확히 하나의 Work만 소유한다. 타이머·채팅·스크립트는 별도
+소유자가 아니라 exact operation/payload/pre-state/expiry에 묶인 executor다. 주기적 채팅
+감시 대신 이벤트 또는 짧은 조건부 local one-shot을 사용하고, 결과와 postcondition을
+기록한 뒤 소유권을 종료한다. 상세는
 `docs/exec-plans/active/BCT_TUNNEL_V016_CUTOVER_20261019.md`에 있다.
 
 ## 완료 — Unicode desktop clipboard

@@ -37,8 +37,38 @@ class MonitorRuntimeTests(unittest.TestCase):
                 timings[key] for key in ("store_snapshot_ms", "process_sessions_ms", "rcc_discovery_ms", "rcc_state_ms")
             ))
             self.assertEqual(1, state["counts"]["works"])
+            self.assertEqual(0, state["counts"]["unresolved_claims_shared"])
+            self.assertEqual(0, state["counts"]["unresolved_claims_exact"])
             self.assertNotIn("roots", state["works"][0])
             self.assertEqual([], state["operations"])
+
+    def test_rcc_payload_reports_exact_hash_match_without_paths_or_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.js"
+            live = root / "live.js"
+            source.write_bytes(b"same payload")
+            live.write_bytes(b"same payload")
+            store = Store(root / "state.sqlite")
+            with patch("bct.monitor_runtime.discover_instance_ids", return_value=[]):
+                state = build_monitor_state(
+                    store=store, service_state={"ready": True},
+                    data_root=root / "data", rcc_source_path=source,
+                    rcc_live_path=live,
+                )
+            payload = state["rcc"]["payload"]
+            self.assertEqual("MATCH", payload["state"])
+            self.assertTrue(payload["files_match"])
+            self.assertEqual(payload["source_sha256"], payload["live_sha256"])
+            self.assertNotIn(str(root), repr(payload))
+            live.write_bytes(b"different payload")
+            with patch("bct.monitor_runtime.discover_instance_ids", return_value=[]):
+                changed = build_monitor_state(
+                    store=store, service_state={"ready": True},
+                    data_root=root / "data", rcc_source_path=source,
+                    rcc_live_path=live,
+                )
+            self.assertEqual("MISMATCH", changed["rcc"]["payload"]["state"])
 
     def test_unavailable_instance_is_cached_and_healthy_instance_remains_fresh(self):
         from bct.monitor_runtime import _RCC_HEALTH

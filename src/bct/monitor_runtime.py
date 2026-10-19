@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from threading import Lock
 from pathlib import Path
@@ -165,8 +166,47 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
     return [results[instance_id] for instance_id in instance_ids]
 
 
+def _file_sha256(path: Path | None) -> str | None:
+    if path is None or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _rcc_payload_status(
+    *, source_path: Path | None, live_path: Path | None,
+    instances: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compare exact bytes without exposing local paths or extension contents."""
+    source_sha256 = _file_sha256(source_path)
+    live_sha256 = _file_sha256(live_path)
+    if source_sha256 is None:
+        state = "SOURCE_MISSING"
+    elif live_sha256 is None:
+        state = "LIVE_MISSING"
+    elif source_sha256 == live_sha256:
+        state = "MATCH"
+    else:
+        state = "MISMATCH"
+    return {
+        "state": state,
+        "source_sha256": source_sha256,
+        "live_sha256": live_sha256,
+        "files_match": state == "MATCH",
+        "advertised_build_ids": sorted({
+            str(row.get("background_build_id") or "")
+            for row in instances
+            if str(row.get("background_build_id") or "")
+        }),
+    }
+
+
 def build_monitor_state(
-    *, store: Any, service_state: dict[str, Any], data_root: Path
+    *, store: Any, service_state: dict[str, Any], data_root: Path,
+    rcc_source_path: Path | None = None, rcc_live_path: Path | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     snapshot = store.monitor_snapshot()
@@ -186,6 +226,10 @@ def build_monitor_state(
         "rcc_state_ms": round((after_rcc - after_discovery) * 1000, 3),
         "total_ms": round((after_rcc - started) * 1000, 3),
     }
+    claim_diagnostics = store.claim_diagnostics()
+    shared_claims = sum(
+        1 for item in claim_diagnostics if item["scope"] == "SHARED_RESOURCE"
+    )
     return {
         "observability": {"schema": 1, "read_only": True, "timings": timings, "mcp_recent": recent_stages()},
         "schema": 1,
@@ -195,6 +239,8 @@ def build_monitor_state(
             "works": len(snapshot["works"]),
             "operations": len(snapshot["operations"]),
             "unresolved_claims": len(snapshot["unresolved_claims"]),
+            "unresolved_claims_shared": shared_claims,
+            "unresolved_claims_exact": len(claim_diagnostics) - shared_claims,
             "nodes": len(snapshot["nodes"]),
             "connections": len(snapshot["connections"]),
             "rcc_instances": len(instance_ids),
@@ -202,8 +248,14 @@ def build_monitor_state(
             "orchestration_sessions": len(snapshot["orchestration_sessions"]),
             "orchestration_assignments": len(snapshot["orchestration_assignments"]),
         },
-        "rcc": {"instances": rcc},
+        "rcc": {
+            "instances": rcc,
+            "payload": _rcc_payload_status(
+                source_path=rcc_source_path, live_path=rcc_live_path,
+                instances=rcc,
+            ),
+        },
         "process_sessions": sessions,
-        "claim_diagnostics": store.claim_diagnostics(),
+        "claim_diagnostics": claim_diagnostics,
         **snapshot,
     }

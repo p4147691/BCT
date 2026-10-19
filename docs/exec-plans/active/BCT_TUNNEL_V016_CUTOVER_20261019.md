@@ -1,6 +1,6 @@
 # BCT tunnel-client v0.0.16 cutover
 
-Status: `V0.0.16 LIVE / HOSTED READ MEASURED / UNKNOWN RECONCILIATION ACTIVE`.
+Status: `V0.0.16 LIVE / HOSTED READ MEASURED / LEGACY UNKNOWN CLASSIFIED`.
 
 ## Goal and boundary
 
@@ -61,12 +61,22 @@ SHA-256 match. With no pointer it retains the verified v0.0.14 fallback. It expl
   23.010 ms, and ASGI 29.703 ms. Exact hosted queue/handback timing is not yet projected
   into the operator receipt even though v0.0.16 emits `resp_timing` upstream.
 
-## Remaining adjacent work
+## UNKNOWN reconciliation result
 
-RCC PR #226 is installed and reloaded, and a visible ChatGPT canary response succeeded. Its RCC
-result receipt nevertheless remains `pending`, so result-persistence reconciliation is not closed.
-The tunnel timing acceptance is complete. A bounded common effect-stage journal and an exact
-read-only UNKNOWN reconciliation capability are now being added. The nine legacy `read`,
-`system_inspect`, and `github_pr_status` Claims go first; their original UNKNOWN receipts remain.
-Then classify execute, relay, and orchestration. Never clear a mutating claim merely because it is
-old and never resend an UNKNOWN mutation without downstream proof.
+The common effect-stage journal and bounded `claim_reconcile` capability are LIVE. Evidence-based
+cleanup released nine read-only Claims, four execute Claims whose exact FileNotFound receipt proves
+CreateProcess never started, two broad relay Claims after durable continuity observations, and one
+orchestration operation whose recovery receipt proves `external_effect_excluded=true`. Original
+UNKNOWN receipts remain unchanged.
+
+Twenty-two exact-resource Claims remain: one fast-exit execute, one exact historical RCC rename,
+and twenty orchestration attachment/session Claims whose worker message may have been submitted.
+Seven exact RCC result lookups now return `OPERATION_NOT_FOUND`; absence after retention expiry does
+not prove non-delivery. These Claims therefore remain protected with no replay. They are scoped to
+their exact historical process path, tab/conversation, attachment, or session/assignment and do not
+justify stopping unrelated work.
+
+The next Monitor revision exposes shared-resource versus exact-resource Claim counts and compares
+the canonical RCC `background.js` SHA-256 with the installed payload SHA-256. This replaces build
+label inference with exact byte comparison. A mismatch is a deployment gate and diagnostic signal;
+it does not trigger an automatic reload or replay.
