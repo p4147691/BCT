@@ -570,6 +570,184 @@ class DesktopExploreFeature:
         return FeatureResult(Outcome.APPLIED, evidence, output=result)
 
 
+class DesktopApplicationTargetFeature:
+    capability = "desktop_application_target"
+
+    _APPLICATIONS = {
+        "chrome": ("chrome", frozenset({"chrome_widgetwin_1"})),
+        "explorer": ("explorer", frozenset({"cabinetwclass", "explorewclass"})),
+    }
+
+    def __init__(self, client: DesktopSessionClient):
+        self.client = client
+
+    def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        operation = str(arguments.get("operation") or "").strip().casefold()
+        if operation not in {"list", "bind"}:
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_OPERATION_INVALID")
+        application = str(arguments.get("application") or "").strip().casefold()
+        if application not in self._APPLICATIONS:
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_APPLICATION_INVALID")
+        title_query = arguments.get("title_query", "")
+        if not isinstance(title_query, str) or len(title_query.strip()) > 200:
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_QUERY_INVALID")
+        include_minimized = arguments.get("include_minimized", True)
+        if not isinstance(include_minimized, bool):
+            raise PreconditionError("DESKTOP_APPLICATION_TARGET_MINIMIZED_INVALID")
+        normalized: dict[str, Any] = {
+            "operation": operation,
+            "application": application,
+            "title_query": title_query.strip(),
+            "include_minimized": include_minimized,
+        }
+        if operation == "list":
+            unknown = set(arguments) - {
+                "operation", "application", "title_query", "include_minimized", "limit",
+            }
+            if unknown:
+                raise PreconditionError(
+                    "DESKTOP_APPLICATION_TARGET_FIELD_INVALID:" + ",".join(sorted(unknown))
+                )
+            limit_value = arguments.get("limit", 100)
+            if isinstance(limit_value, bool):
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_LIMIT_INVALID")
+            try:
+                limit = int(limit_value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_LIMIT_INVALID") from exc
+            if not 1 <= limit <= 256:
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_LIMIT_INVALID")
+            normalized["limit"] = limit
+            resources = ("desktop-session:observe",)
+        else:
+            unknown = set(arguments) - {
+                "operation", "application", "title_query", "include_minimized", "ttl_seconds",
+            }
+            if unknown:
+                raise PreconditionError(
+                    "DESKTOP_APPLICATION_TARGET_FIELD_INVALID:" + ",".join(sorted(unknown))
+                )
+            ttl_value = arguments.get("ttl_seconds", 30)
+            if isinstance(ttl_value, bool):
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_TTL_INVALID")
+            try:
+                ttl_seconds = int(ttl_value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_TTL_INVALID") from exc
+            if not 5 <= ttl_seconds <= 300:
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_TTL_INVALID")
+            if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", work.work_id):
+                raise PreconditionError("DESKTOP_APPLICATION_TARGET_OWNER_INVALID")
+            normalized.update({"ttl_seconds": ttl_seconds, "owner_id": work.work_id})
+            resources = ("desktop-control:interactive-session",)
+        return FeatureRequest(self.capability, operation + ":" + application, normalized, resources)
+
+    @classmethod
+    def _candidates(cls, windows: list[dict[str, Any]], *, application: str,
+                    title_query: str) -> list[dict[str, Any]]:
+        process_name, classes = cls._APPLICATIONS[application]
+        query = title_query.casefold()
+        candidates = []
+        for window in windows:
+            if str(window.get("processName") or "").casefold() != process_name:
+                continue
+            if str(window.get("className") or "").casefold() not in classes:
+                continue
+            if query and query not in str(window.get("title") or "").casefold():
+                continue
+            candidates.append(window)
+        return candidates
+
+    @staticmethod
+    def _same_target(candidate: dict[str, Any], target: dict[str, Any]) -> bool:
+        return target.get("type") == "window" and all(
+            target.get(key) == candidate.get(key)
+            for key in (
+                "hwnd", "pid", "processStartTimeUtc", "sessionId", "virtualDesktopId",
+            )
+        )
+
+    def execute(self, request: FeatureRequest) -> FeatureResult:
+        arguments = request.arguments
+        try:
+            observed = self.client.windows(
+                request_id=request.operation_id,
+                include_minimized=arguments["include_minimized"],
+                title_query="",
+                limit=256,
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except (DesktopSessionEffectUnknown, DesktopSessionRequestFailed) as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        windows = observed["windows"]
+        candidates = self._candidates(
+            windows["items"], application=arguments["application"],
+            title_query=arguments["title_query"],
+        )
+        if arguments["operation"] == "list":
+            limit = arguments["limit"]
+            items = candidates[:limit]
+            application_windows = {
+                "application": arguments["application"],
+                "titleQuery": arguments["title_query"],
+                "items": items,
+                "count": len(items),
+                "truncated": bool(windows["truncated"] or len(candidates) > limit),
+                "observedAtUtc": windows["observedAtUtc"],
+            }
+            output = {**observed, "applicationWindows": application_windows}
+            evidence = {
+                **_session_evidence(observed),
+                "application": arguments["application"],
+                "candidate_count": len(items),
+                "truncated": application_windows["truncated"],
+                "observed_at_utc": windows["observedAtUtc"],
+            }
+            return FeatureResult(Outcome.APPLIED, evidence, output=output)
+        if len(candidates) == 0:
+            raise ConfirmedFailure("DESKTOP_APPLICATION_TARGET_NOT_FOUND", release_claims=True)
+        if len(candidates) != 1 or windows["truncated"]:
+            raise ConfirmedFailure("DESKTOP_APPLICATION_TARGET_AMBIGUOUS", release_claims=True)
+        candidate = candidates[0]
+        try:
+            bound = self.client.control(
+                request_id=request.operation_id,
+                command="lease_acquire",
+                arguments={
+                    "ownerId": arguments["owner_id"],
+                    "ttlSeconds": arguments["ttl_seconds"],
+                    "targetType": "window",
+                    "hwnd": str(candidate["hwnd"]),
+                },
+            )
+        except DesktopSessionUnavailable as exc:
+            raise PreconditionError(str(exc)) from exc
+        except DesktopSessionEffectUnknown as exc:
+            raise UnknownEffectError(str(exc)) from exc
+        except DesktopSessionRequestFailed as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        control = bound.get("control")
+        lease = control.get("lease") if isinstance(control, dict) else None
+        target = lease.get("target") if isinstance(lease, dict) else None
+        if not isinstance(target, dict) or not self._same_target(candidate, target):
+            raise UnknownEffectError("DESKTOP_APPLICATION_TARGET_BINDING_MISMATCH")
+        application_target = {
+            "application": arguments["application"],
+            "titleQuery": arguments["title_query"],
+            "window": candidate,
+        }
+        output = {**bound, "applicationTarget": application_target}
+        evidence = {
+            **_session_evidence(bound),
+            "application": arguments["application"],
+            "candidate_count": 1,
+            "application_target": application_target,
+            "control": control,
+        }
+        return FeatureResult(Outcome.APPLIED, evidence, output=output)
+
+
 class DesktopWindowActivateFeature:
     capability = "desktop_window_activate"
 
