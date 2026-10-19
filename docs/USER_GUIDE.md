@@ -89,6 +89,15 @@ return code, 실행 시간, 외부 evidence/result 경로를 남긴다. evidence
 포함하고 `bct_desktop_capture`에서 `target_type`을 `virtual_screen`, `monitor`, `window`
 중 하나로 선택한다. MCP 캡처 응답에는 해시가 검증된 PNG 이미지 블록이 포함된다.
 
+로그인 세션의 앱과 파일 진입점을 조사할 때는 같은 work에 `desktop_explore`를
+포함하고 `bct_desktop_explore`를 호출한다. `operation: "processes"`는 Agent와
+같은 Session의 프로세스만 반환하며 PID, 프로세스 생성 시점, 접근 가능한 실행 파일
+경로 및 현재 가상 데스크톱의 창 목록을 연결한다. `operation: "paths"`는 실제 로그인
+사용자의 알려진 폴더와 준비된 드라이브를 반환한다. 둘 다 읽기 전용이라 Lease가
+필요 없다. 발견된 폴더 내용을 볼 때는 그 경로를 work root에 명시하고 기존
+`bct_read`의 bounded `directory_tree`를 사용한다. `desktop_explore` 자체는 폴더를
+순회하거나 파일 내용을 읽지 않는다.
+
 이 첫 구현은 현재 로그인되어 있고 잠기지 않은 사용자 세션에서 수동 실행한 VTL Desktop
 Session Agent를 필요로 한다. Agent가 없거나 다른 세션이거나 Pipe 소유자/DACL이 일치하지
 않으면 요청은 화면을 추측하지 않고 실패한다.
@@ -145,7 +154,8 @@ VTL 저장소나 GitHub Actions가 모든 대화에 직접 노출되는 것은 �
 GUI 검증은 가능하면 격리된 VTL browser/VM scenario로 실행하고, 실제 로그인 데스크톱 제어는
 실사용 확인이나 격리 환경으로 증명할 수 없는 경계에만 사용한다.
 
-읽기 전용 `desktop_session_status`, `desktop_capture`, `desktop_window_list`는 여러 대화가
+읽기 전용 `desktop_session_status`, `desktop_capture`, `desktop_window_list`,
+`desktop_explore`는 여러 대화가
 동시에 호출해도 상태를 바꾸지 않는다. 다만 캡처 중 사용자나 다른 대화가 화면을 바꾸면 서로 다른
 시점의 화면을 볼 수 있으므로, 캡처 결과를 제어 성공의 원자적 증거로 간주하지 않는다.
 

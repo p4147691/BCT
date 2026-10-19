@@ -8,7 +8,8 @@ from pathlib import Path
 from bct.core.models import Outcome, PreconditionError, UnknownEffectError, Work
 from bct.features.desktop_session import (
     DesktopCaptureFeature, DesktopControlLeaseFeature, DesktopEmergencyStopFeature,
-    DesktopInputFeature, DesktopProgramLaunchFeature, DesktopSessionStatusFeature,
+    DesktopExploreFeature, DesktopInputFeature, DesktopProgramLaunchFeature,
+    DesktopSessionStatusFeature,
     DesktopWindowActivateFeature, DesktopWindowManageFeature,
     DesktopWindowListFeature,
 )
@@ -27,6 +28,7 @@ class FakeDesktopSessionClient:
         self.input_calls = []
         self.window_calls = []
         self.launch_calls = []
+        self.explore_calls = []
 
     @staticmethod
     def _base(command: str):
@@ -118,6 +120,44 @@ class FakeDesktopSessionClient:
         }
         return value
 
+    def processes(self, *, request_id: str, **arguments):
+        self.explore_calls.append((request_id, "processes", arguments))
+        value = self._base("processes_list")
+        value["requestId"] = request_id
+        value["processes"] = {
+            "items": [{
+                "pid": 123, "processName": "probe",
+                "processStartTimeUtc": "2026-10-19T00:00:00.0000000Z",
+                "sessionId": 1, "executablePath": r"D:\probe.exe",
+                "responding": True, "windowCount": 1,
+                "windows": [{
+                    "hwnd": "12345", "pid": 123, "title": "Probe",
+                    "virtualDesktopId": "a" * 36,
+                }],
+            }],
+            "count": 1, "truncated": False, "query": arguments["query"],
+            "includeBackground": arguments["include_background"], "sessionId": 1,
+            "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
+        }
+        return value
+
+    def paths(self, *, request_id: str):
+        self.explore_calls.append((request_id, "paths", {}))
+        value = self._base("paths_list")
+        value["requestId"] = request_id
+        value["paths"] = {
+            "knownFolders": [{
+                "name": "profile", "path": r"C:\Users\tester",
+                "exists": True, "kind": "known-folder",
+            }],
+            "drives": [{
+                "path": "C:\\", "driveType": "Fixed", "ready": True,
+                "totalBytes": 1000, "freeBytes": 500,
+            }],
+            "sessionId": 1, "observedAtUtc": "2026-10-19T00:00:00.0000000Z",
+        }
+        return value
+
     def manage(self, *, request_id: str, owner_id: str, lease_id: str,
                operation: str, x, y, width, height):
         self.window_calls.append((request_id, "window_manage", {
@@ -182,6 +222,7 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         self.work = Work("desktop", "observe desktop", (str(self.root),),
                          frozenset({
                              "desktop_session_status", "desktop_capture",
+                             "desktop_explore",
                              "desktop_control_lease", "desktop_emergency_stop",
                              "desktop_input",
                              "desktop_window_list", "desktop_window_activate",
@@ -214,6 +255,49 @@ class DesktopSessionFeatureTests(unittest.TestCase):
         feature = DesktopCaptureFeature(self.client)
         with self.assertRaisesRegex(PreconditionError, "HWND_INVALID"):
             feature.prepare(work=self.work, arguments={"target_type": "window", "hwnd": "foreground"})
+
+    def test_desktop_explore_processes_normalizes_and_returns_session_evidence(self):
+        feature = DesktopExploreFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={
+            "operation": "processes", "query": " Probe ",
+            "limit": 12, "include_background": False,
+        })
+        self.assertEqual(("desktop-session:observe",), request.resources)
+        self.assertEqual("Probe", request.arguments["query"])
+        request = request.__class__(**{**request.__dict__, "operation_id": "explore-processes-1"})
+        result = feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual(1, result.evidence["process_count"])
+        self.assertEqual("processes", self.client.explore_calls[-1][1])
+
+    def test_desktop_explore_paths_and_validation(self):
+        feature = DesktopExploreFeature(self.client)
+        request = feature.prepare(work=self.work, arguments={"operation": "paths"})
+        request = request.__class__(**{**request.__dict__, "operation_id": "explore-paths-1"})
+        result = feature.execute(request)
+        self.assertEqual(1, result.evidence["known_folder_count"])
+        self.assertEqual(1, result.evidence["drive_count"])
+        for arguments in (
+            {}, {"operation": "unknown"}, {"operation": "paths", "limit": 1},
+            {"operation": "processes", "limit": True},
+            {"operation": "processes", "include_background": "yes"},
+            {"operation": "processes", "query": "x" * 201},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(PreconditionError):
+                feature.prepare(work=self.work, arguments=arguments)
+
+    def test_desktop_explore_read_only_transport_loss_is_confirmed_failure(self):
+        class UnknownClient(FakeDesktopSessionClient):
+            def processes(self, **_arguments):
+                raise DesktopSessionEffectUnknown("DESKTOP_SESSION_TRANSPORT_UNKNOWN")
+
+        feature = DesktopExploreFeature(UnknownClient(self.root))
+        request = feature.prepare(work=self.work, arguments={"operation": "processes"})
+        request = request.__class__(**{**request.__dict__, "operation_id": "explore-unknown"})
+        from bct.core.models import ConfirmedFailure
+        with self.assertRaises(ConfirmedFailure) as caught:
+            feature.execute(request)
+        self.assertTrue(caught.exception.release_claims)
 
     def test_agent_terminal_capture_failure_releases_as_failed_not_unknown(self):
         class RejectingClient(FakeDesktopSessionClient):
