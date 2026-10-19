@@ -1,6 +1,6 @@
 # BCT 인수인계
 
-## 완료 — 병목 신호 기반 Instant ACK 대조 V0
+## 보류 — 병목 신호 기반 Instant ACK 대조 V0
 
 `bottleneck_ack`는 RCC의 exact tab telemetry에서 한 고정 대화가 연속 생성 중인
 시간을 읽고, 임계값을 넘으면 **별도의 ACK 전용 대화**에만 고정된 Instant ACK
@@ -12,15 +12,32 @@ ID와 in-process latch로 중복 전송하지 않는다. UNKNOWN/미확인 결�
 않는다. probe의 generation start/finish가 제출 뒤에 관측되면 시작·완료·생성 시간을
 `bct_status`의 `core.bottleneck_ack`에만 수치로 기록한다.
 
-사용자가 등록한 고정 Manager와 ACK 전용 ChatGPT 대화를 exact instance/conversation
-identity로 LIVE 정책에 연결했다. 수락시험에서는 5초 임계값으로 한 번만 검증한 뒤,
-운영 임계값을 30초로 복원한다. 실제 장문 Manager 생성에서 BCT가 생성한 `relay_browser`
-operation receipt가 `APPLIED`였고 ACK 전용 대화에서 고정 문구와 `ACK` 응답을 확인했다.
-초기 구현은 polling 사이에 생성이 끝나면 지연 증거를 버렸으며, 막 끝난 generation의
-start/finish telemetry를 10초 이내에서만 인정하도록 보완했다. 서비스 재시작 뒤 오래된
-telemetry를 재생하지 않도록 시간 창을 제한했다. focused unittest 16개, `compileall`,
+초기 LIVE 수락시험과 보완 코드는 감사용으로 보존했지만, 사용자의 현재 협업 흐름과
+무관하게 자동 메시지를 보내지 않도록 정책을 `enabled=false`로 전환했다. 다시 쓰려면
+별도 사용자 요청과 분리된 진단 계획이 필요하다. focused unittest 16개, `compileall`,
 `git diff --check`는 통과했다. 전체 suite는 이 환경의 30초 실행 창에서 완료 결과를
 받지 못했으므로 통과로 기록하지 않는다.
+
+## 정의 — 고정 Manager↔Worker 자연어 릴레이 V0
+
+목표는 대화를 자동으로 판단·구조화·대체하는 것이 아니라, 사용자가 하던 전달을
+안전하게 자동화하는 것이다. BCT는 고정된 Manager와 Worker 대화를 역할·exact 대화
+identity로 등록하고, 전달 전문을 바꾸지 않은 채 정확한 상대에게 보내며 delivery
+receipt만 남긴다.
+
+- Manager는 필요할 때 자연어 전달서를 작성한다. BCT는 목표·할 일·완료 조건 양식을
+  강제하거나 Worker 생성 여부를 판단하지 않는다.
+- `Manager → Worker`는 전달서 원문과 source/target identity, 제출·전달 결과를 receipt로
+  남긴다. Worker는 원문을 보고 기존 대화 문맥 안에서 처리한다.
+- `Worker → Manager`는 Worker의 처리 결과 전문을 그대로 되돌린다. Manager는 그 결과를
+  보고 다음 전달서 또는 완료를 스스로 결정한다.
+- V0에는 자동 재질문, 자동 재전송, 자동 노드 생성, ACK·병목 감시, 작업표 강제 및
+  결과 요약/변형이 없다. 전송 후 결과가 불명확하면 `UNKNOWN`으로 남기고 재전송하지
+  않는다.
+
+완료 판정은 전달 왕복 하나에 대해 source/target 대화 identity, 제출 receipt, 실제
+대화에 나타난 원문 및 응답 전문이 일치하는지로만 한다. Manager의 판단 품질은 BCT의
+검증 대상이 아니다.
 
 ## 완료 — UNKNOWN 계측·RCC payload 판정
 
