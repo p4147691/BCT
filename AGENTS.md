@@ -43,3 +43,18 @@ first; run local checks as one recipe; use one coherent PR and exact-head CI;
 deploy the exact SHA; then advance E2E in ordered gates. Preserve UNKNOWN
 effects and protected claims, diagnose failed external effects before retrying,
 and parallelize only read-only or independently prepared work.
+
+## Shared LIVE mutation ownership
+
+- A manager may prepare several candidates in parallel, but it must name exactly one active
+  `LIVE owner` Work for each shared runtime target (Core, tunnel, RCC, or VTL Agent) before the
+  first state-changing operation. Other Works remain read-only or preparation-only for that target.
+- A timer, heartbeat, chat, or local helper is never a second owner. An approved local one-shot
+  executor may act only as the named Work's bounded executor and must be pinned to the exact target,
+  operation ID, payload SHA, expected pre-state, rollback, and expiry.
+- Prefer event/condition-triggered one-shot execution over periodic chat polling. It checks the
+  declared conditions once, applies at most once, writes a durable result, and exits. A failed or
+  UNKNOWN mutation is reconciled from receipts and postconditions; it is not blindly replayed.
+- Ownership ends only after the durable result and postcondition are recorded, or after an explicit
+  handoff records the successor. Do not reload, deploy, or schedule the same LIVE target from two
+  chats while either owner or executor is active.

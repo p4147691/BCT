@@ -38,6 +38,7 @@ _LOCAL_APP_DATA_PREFIX = "%LOCALAPPDATA%"
 _RUNTIME_RECOVERY_SCRIPTS = (
     "modules/mcp/ops/run_bct_core_supervisor.ps1",
     "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
+    "modules/mcp/ops/invoke_bct_tunnel_cutover.ps1",
 )
 
 
