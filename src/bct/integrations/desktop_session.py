@@ -115,6 +115,7 @@ class DesktopSessionClient:
             "lease_release", "emergency_stop", "emergency_reset",
             "input_mouse_move", "input_mouse_click", "input_mouse_scroll", "input_mouse_drag",
             "input_key", "input_text",
+            "clipboard_get", "clipboard_set",
             "windows_list", "window_activate", "window_manage", "program_launch",
             "processes_list", "paths_list", "explorer_windows_list", "chrome_windows_list",
             "chrome_tab_select",
@@ -243,6 +244,48 @@ class DesktopSessionClient:
             raise DesktopSessionEffectUnknown("DESKTOP_INPUT_EVIDENCE_MISSING")
         if evidence.get("operation") not in {"move", "click", "scroll", "drag", "key", "text"}:
             raise DesktopSessionEffectUnknown("DESKTOP_INPUT_EVIDENCE_INVALID")
+        return result
+
+    def clipboard(self, *, request_id: str, command: str,
+                  arguments: dict[str, Any]) -> dict[str, Any]:
+        if command not in {"clipboard_get", "clipboard_set"}:
+            raise ValueError("DESKTOP_CLIPBOARD_COMMAND_INVALID")
+        result = self.request(
+            request_id=request_id, command=command, arguments=arguments, timeout_s=10.0,
+        )
+        value = result.get("clipboard")
+        if (
+            not isinstance(value, dict)
+            or value.get("operation") != command.removeprefix("clipboard_")
+            or value.get("leaseId") != arguments.get("leaseId")
+            or not isinstance(value.get("hasText"), bool)
+            or isinstance(value.get("textLength"), bool)
+            or not isinstance(value.get("textLength"), int)
+            or isinstance(value.get("utf8Bytes"), bool)
+            or not isinstance(value.get("utf8Bytes"), int)
+            or not isinstance(value.get("sha256"), str)
+            or not isinstance(value.get("appliedAtUtc"), str)
+            or value["textLength"] < 0
+            or value["utf8Bytes"] < 0
+        ):
+            raise DesktopSessionEffectUnknown("DESKTOP_CLIPBOARD_EVIDENCE_INVALID")
+        if value["hasText"]:
+            if not re.fullmatch(r"[0-9a-f]{64}", value["sha256"]):
+                raise DesktopSessionEffectUnknown("DESKTOP_CLIPBOARD_EVIDENCE_INVALID")
+            observed = value.get("text") if command == "clipboard_get" else arguments.get("text")
+            if not isinstance(observed, str):
+                raise DesktopSessionEffectUnknown("DESKTOP_CLIPBOARD_TEXT_MISSING")
+            encoded = observed.encode("utf-8")
+            if (
+                value["textLength"] != len(observed)
+                or value["utf8Bytes"] != len(encoded)
+                or value["sha256"] != hashlib.sha256(encoded).hexdigest()
+            ):
+                raise DesktopSessionEffectUnknown("DESKTOP_CLIPBOARD_EVIDENCE_INVALID")
+        elif value["textLength"] != 0 or value["utf8Bytes"] != 0 or value["sha256"]:
+            raise DesktopSessionEffectUnknown("DESKTOP_CLIPBOARD_EVIDENCE_INVALID")
+        elif command == "clipboard_set" and arguments.get("text") != "":
+            raise DesktopSessionEffectUnknown("DESKTOP_CLIPBOARD_EVIDENCE_INVALID")
         return result
 
     def windows(self, *, request_id: str, include_minimized: bool,

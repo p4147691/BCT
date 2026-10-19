@@ -21,6 +21,10 @@ BCT owns the implementation, policy boundary, operation receipt and live accepta
 - policy validation, durable operation fencing and audited dispatch for
   VTL-owned mouse move/click/scroll/left-drag and keyboard input against an
   exact active window lease; and
+- authenticated Unicode clipboard read/write receipts through the VTL-owned
+  current-session helper, fenced by an exact Session Lease; raw clipboard text
+  is transient output and durable evidence contains only length/hash metadata;
+  and
 - authenticated current-virtual-desktop window inventory plus audited exact
   activation of the non-hidden, non-minimized window bound to that lease; and
 - bounded exact-EXE launch receipts plus atomic binding of the session lease
@@ -76,6 +80,9 @@ revalidates the target and emergency-stop state immediately before injection, an
 ambiguous partial effect.  Activation additionally revalidates virtual-desktop
 identity and refuses hidden or minimized windows. Chrome content pattern execution
 is owned by VTL while BCT owns its authenticated policy/receipt/UNKNOWN boundary.
+Unicode clipboard access is owned by VTL's STA helper and requires a Session
+Lease; BCT persists only metadata and returns clipboard text only on the first
+successful direct `get` response.
 Scheduled Task recovery, complete RDC parity and a misleading ADC
 compatibility layer remain outside this slice.
 

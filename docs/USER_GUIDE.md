@@ -168,6 +168,16 @@ Lease owner/ID, HWND/PID/프로세스 생성 시점, 입력 데스크톱과 긴�
 실행 여부가 불명확한 결과는 `UNKNOWN`으로 남기고 자동 재시도하지 않는다. 텍스트 인자는 감사용
 operation 기록에 남으므로 비밀번호·토큰 같은 민감정보 입력에는 사용하지 않는다.
 
+로그인 사용자의 텍스트 클립보드를 읽거나 바꿀 때는 `session` Lease를 획득하고 같은 work와
+lease ID로 `desktop_clipboard`를 호출한다. `operation: "get"`은 `max_chars` 범위 안의
+Unicode 텍스트와 문자 수, UTF-8 byte 수, SHA-256을 반환한다. `operation: "set"`은 `text`를
+Windows `UnicodeText`로 기록한 뒤 즉시 다시 읽어 exact 일치를 검증하며, 빈 문자열은 텍스트
+클립보드를 비운다. 원문은 첫 성공 응답에만 나타나고 durable operation evidence에는 길이·해시만
+남으므로 duplicate operation 조회로 원문을 재생할 수 없다. 쓰기 결과가 불명확하면 자동 반복하지
+말고 새 읽기로 상태를 확인한다. Windows의 전역 UTF-8 시스템 로캘은 이 기능과 무관하며 켜거나
+꺼도 된다. 실사용 자동화는 변경 전에 원문을 읽어 메모리에 보관하고 `finally`에서 복원한 뒤
+Lease를 즉시 반납한다.
+
 현재 가상 데스크톱의 창을 고를 때는 읽기 전용 `desktop_window_list`를 호출한다. 반환값은 보이는
 제목 있는 최상위 창만 포함하며 HWND, PID, 프로세스 생성 시점, Session ID, 가상 데스크톱 ID,
 제목, 클래스, 위치와 foreground/minimized 상태를 함께 준다. 선택한 HWND로 `window` Lease를 획득한
