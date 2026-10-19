@@ -1,6 +1,6 @@
 # BCT Chrome content control V1
 
-Status: ACTIVE.
+Status: COMPLETE — EXACT-MAIN DEPLOYED / AUTHENTICATED MCP LIVE PASS.
 
 ## Goal
 
@@ -42,3 +42,31 @@ acceptance must prove background list plus explicit activation and reversible
 set/clear against the exact leased Chrome window, restore the original foreground,
 preserve Chrome process roots, release the Lease,
 and leave emergency stop inactive.  Never retry UNKNOWN.
+
+## Final validation
+
+- VTL PR #37/#38/#39/#40 produced Agent 2.0.2 at immutable main
+  `b60de5b2d519ae651da1772ad69b44294a7d68b1`. BCT PR #221/#222 produced
+  main `928ffcf631d034b446544066e696d65d2ac2f3bc`; exact-main CI run
+  `39208516097` passed every required job.
+- BCT focused desktop/MCP tests (61), full suite (789), `py_compile`, and
+  `git diff --check` passed before merge.
+- Authenticated `bct_deploy` installed exact BCT main as generation 137 with
+  manifest `05757ae9ff4c20026e26dccc6ae1cdde04ca072b57dc0b56741d3f372c09f3e3`.
+  Health is READY/OK and the MCP catalogue contains 38 tools including both
+  new Chrome-content capabilities.
+- Authenticated LIVE background `set_value` was rejected before dispatch as
+  `CHROME_CONTENT_VALUE_REQUIRES_FOREGROUND`. After explicit restore/activation
+  of the exact disposable Chrome for Testing window, set operation
+  `mcp2-set-72a0c82ffe8044faa1bcc93c720c1186` wrote 16 characters / 20 UTF-8
+  bytes and matched the returned SHA-256. Clear operation
+  `mcp2-clear-51bf7fa419bf408ba9987262857d0ddd` proved zero characters and the
+  empty-string SHA-256. Both were APPLIED with `foregroundPreserved=true`.
+- One immediate read-only post-clear list overlapped a user foreground change
+  and failed closed with `CHROME_CONTENT_LIST_CHANGED_FOREGROUND`; it performed
+  no mutation and was not retried as an effect. A later fresh authenticated MCP
+  list proved one writable empty editor, one disabled send control and preserved
+  foreground.
+- Final control state has no Lease and no emergency stop; the disposable window
+  is minimized again. No Chrome process/tab/window was launched or closed and no
+  content was submitted.
