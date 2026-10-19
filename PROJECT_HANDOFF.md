@@ -1,8 +1,8 @@
 # BCT 인수인계
 
-## 진행 중 — Chrome 웹 콘텐츠 exact 제어 V1
+## 완료 — Chrome 웹 콘텐츠 exact 제어 V1
 
-`desktop_chrome_content_list`와 `desktop_chrome_content_action` 후보를 구현했다.
+`desktop_chrome_content_list`와 `desktop_chrome_content_action`을 LIVE 배포했다.
 목록은 정확한 Chrome HWND의 한 visible `RootWebArea`에서 edit/button 메타데이터만
 읽고 field value는 반환하지 않는다. 동작은 기존 Window Lease, document title,
 활성 tab ordinal/full title, opaque element ID를 모두 재검증한 뒤 ValuePattern set 또는
@@ -11,10 +11,20 @@ InvokePattern invoke를 실행한다. LIVE에서 UIA ValuePattern이 background 
 허용하고 필요 시 기존 `desktop_window_activate`를 명시적으로 먼저 쓴다. InvokePattern은
 foreground 불변일 때만 성공한다. foreground 변경·Lease 손실·호출 후 불명확 결과는
 UNKNOWN이며 자동 재시도하지 않는다. text는 raw evidence/output에 넣지 않고 UTF-8
-문자/byte 길이와 SHA-256만 남긴다. 현재 VTL C# 빌드, 실제 Chrome read-only probe,
-BCT focused/MCP tests가 통과했다. 양 저장소 PR/CI, immutable Agent 2.0.1 rollout,
-BCT exact-main 배포와 authenticated LIVE foreground set/clear 검증 전에는 완료가 아니다. 계획은
-`docs/exec-plans/active/BCT_CHROME_CONTENT_CONTROL_20261019.md`에 있다.
+문자/byte 길이와 SHA-256만 남긴다.
+
+VTL PR #37/#38/#39/#40, BCT PR #221/#222와 모든 required CI가 통과했다.
+BCT full suite 789개와 focused 61개 테스트도 통과했다. VTL immutable main
+`b60de5b2d519ae651da1772ad69b44294a7d68b1`의 Agent 2.0.2가 실행 중이며,
+BCT exact main `928ffcf631d034b446544066e696d65d2ac2f3bc`는 generation 137로
+배포됐다. health는 READY/OK이고 MCP catalogue는 두 새 도구를 포함한 38개다.
+
+인증 MCP LIVE에서 background write는 실행 전 확정 실패했고, 명시적 활성화 뒤
+16자/20 UTF-8 byte marker set 및 빈 문자열 clear가 각각 matching length/hash와
+`foregroundPreserved=true`로 APPLIED됐다. 후속 조회는 빈 입력을 확인했다. 전용
+Chrome for Testing 창은 다시 최소화했고 원래 foreground를 복원했으며 최종 Lease는
+null, emergency stop은 false다. 상세 증거는
+`docs/exec-plans/completed/BCT_CHROME_CONTENT_CONTROL_20261019.md`에 있다.
 
 ## 완료 — Windows UTF-8 설정 독립 VTL 실행
 
