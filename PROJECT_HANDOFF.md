@@ -48,6 +48,21 @@ UNKNOWN 효과는 무재시도 후 receipt와 화면으로 화해한다. 일반 
 운영 절차는 `docs/USER_GUIDE.md`의 "일반 ChatGPT와 Codex가 데스크톱을 함께
 사용할 때" 절에 기록했다.
 
+## 완료 — Lease로 제한된 창 상태·위치 제어
+
+BCT LIVE는 `desktop_window_manage`로 활성 Window Lease에 묶인 정확한 창을
+복원·최소화·최대화·이동/크기 변경할 수 있다. 효과 직전에 owner/Lease ID,
+HWND/PID/process birth, Session, virtual desktop 및 emergency stop을 다시
+검증한다. 창 닫기는 사용자 데이터 손실 경계라 제공하지 않는다.
+
+VTL PR #25와 BCT PR #208의 exact-head/main CI, immutable VTL Agent 1.5 배포,
+BCT exact-main 배포 및 인증 MCP LIVE 수락시험이 완료됐다. LIVE 시험은 BCT로
+프로브를 실행·바인딩하고 네 상태 동작과 이동/크기 변경, 활성화, 입력을 영수증으로
+검증한 뒤 Lease·프로세스·임시 파일을 정리했다. 검증 wrapper는 durable receipt의
+`programLaunch.pid`를 사용하고 원자적으로 교체되는 probe JSON 읽기의 일시적인
+Windows 공유 오류를 재시도해야 한다. 상세는
+`docs/exec-plans/completed/BCT_DESKTOP_WINDOW_MANAGE_20261019.md`에 있다.
+
 ## 완료 — Adaptive CI와 VTL exact-SHA 데스크톱 스모크
 
 BCT PR #199는 보수적 변경 범위 판정, 정확 중복 unittest 제거, 네 개의 결정적
@@ -91,9 +106,10 @@ VTL PR #14와 BCT PR #197의 CI, Agent 1.4 exact-source rollout, BCT exact-main
 프로브와 임시 파일을 제거했다. 완료 증거는
 `docs/exec-plans/completed/BCT_DESKTOP_PROGRAM_LAUNCH_20261019.md`에 있다.
 
-다음 데스크톱 parity 경계는 창 복원·이동·크기 변경·닫기 또는 Chrome의
-process-family/profile-aware 바인딩 중 하나로 별도 설계한다. 이번 경계에
-임의 shell, 자동 로그인이나 Scheduled Task를 섞지 않는다.
+다음 데스크톱 parity 경계는 프로세스·파일 탐색, Chrome/Explorer의 상위 수준
+workflow, 창 닫기 또는 Chrome의 process-family/profile-aware 바인딩 중 하나로
+별도 설계한다. 이번 경계에 임의 shell, 자동 로그인이나 Scheduled Task를 섞지
+않는다.
 
 ## 완료 — 현재 세션 정확한 창 목록·활성화
 
@@ -101,7 +117,7 @@ BCT LIVE는 현재 가상 데스크톱의 보이는 최상위 창을 exact finge
 조회하고, 활성 `window` Lease에 묶인 숨김/최소화되지 않은 정확한 창만
 foreground로 활성화할 수 있다. owner/lease, HWND/PID/process start, Session,
 virtual desktop, 긴급정지를 효과 직전에 재검증하며 UNKNOWN은 재시도하지
-않는다. 프로그램 실행과 창 복원·이동·크기 변경은 아직 별도 경계다.
+않는다. 프로그램 실행과 창 상태·위치 제어도 이후 별도 완료됐다.
 완료 증거는
 `docs/exec-plans/completed/BCT_DESKTOP_WINDOW_CONTROL_20261019.md`에 있다.
 
