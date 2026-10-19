@@ -87,9 +87,27 @@ truncation은 제어 효과 전에 실패하므로 좌표나 PID 추측으로 �
 BCT PR #212의 exact-head/main CI, generation 128 exact-main 배포와 인증 MCP LIVE
 수락시험이 완료됐다. LIVE에서는 Chrome 3개와 Explorer 0개를 분류하고 고유한
 Chrome 창을 HWND/PID/process birth/Session/virtual desktop fingerprint로 bind한
-뒤 활성화나 입력 없이 Lease를 즉시 반납했다. Chrome 탭/프로필 연결은 다음 별도
-경계다. 상세는
+뒤 활성화나 입력 없이 Lease를 즉시 반납했다. Chrome 탭/프로필 연결은 아래의 별도
+increment로 완료됐다. 상세는
 `docs/exec-plans/completed/BCT_DESKTOP_APPLICATION_TARGET_20261019.md`에 있다.
+
+## 완료 — Chrome 프로필·탭 의미 기반 선택·바인딩
+
+Agent 1.8.1은 기존 Chrome 창을 UI Automation으로 읽어 제한된 프로필 라벨,
+탭 제목과 현재 선택 탭을 반환한다. URL은 반환하지 않는다. BCT의
+`desktop_application_target`은 `profile_query`, `tab_title_query`,
+`tab_scope`(`active`/`any`)로 좁히고, UIA 불완전·0/복수 후보·window/tab
+truncation이면 bind 전에 실패한다. list/bind 모두 Chrome을 실행·종료·활성화하거나
+입력하지 않는다.
+
+초기 Agent 1.8.0 LIVE에서 helper UTF-8 stdout을 Windows 코드페이지로 해석하는
+오류가 발견됐고 fail-closed했다. VTL PR #32가 strict UTF-8 자식 스트림과 강한
+응답 검증을 추가했다. 최종 VTL main/runtime은 `20249554282c1936e9e4430c7a26916024ed3145`,
+BCT main/runtime은 `2801d1a138eae014be70fca9975f38b98ed7e7dc` generation 132다.
+인증 MCP LIVE는 Chrome 4개 중 Unicode 프로필+현재 탭 조합으로 1개를 bind/release했고,
+기존 Chrome PID/process birth/HWND는 모두 보존됐으며 최종 Lease는 null,
+emergency stop은 false였다. 상세는
+`docs/exec-plans/completed/BCT_CHROME_SEMANTIC_TARGET_20261019.md`에 있다.
 
 ## 완료 — Explorer 실제 폴더 경로 선택·바인딩
 
@@ -101,8 +119,8 @@ bind는 후보가 정확히 하나일 때만 기존 Window Lease를 발급한다
 
 VTL PR #29와 BCT PR #214, 양쪽 CI, exact-main immutable VTL runtime/Agent 1.7,
 BCT generation 130 배포 및 인증 MCP LIVE exact-list/bind/release 수락시험이
-완료됐다. 최종 제어 상태에는 Lease와 emergency-stop latch가 없다. 다음 의미
-어댑터 경계는 Chrome 탭/프로필 식별이다. 상세는
+완료됐다. 최종 제어 상태에는 Lease와 emergency-stop latch가 없다. Chrome
+탭/프로필 식별도 위 별도 increment로 완료됐다. 상세는
 `docs/exec-plans/completed/BCT_EXPLORER_PATH_TARGET_20261019.md`에 있다.
 
 ## 완료 — Adaptive CI와 VTL exact-SHA 데스크톱 스모크
