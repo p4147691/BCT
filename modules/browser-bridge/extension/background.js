@@ -86,7 +86,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (!["READ_FIXTURE", "RECEIPT_LOOKUP"].includes(message?.type) || sender.tab) return false;
+  if (!["READ_FIXTURE", "RECEIPT_LOOKUP"].includes(message?.type) ||
+      sender.url !== chrome.runtime.getURL("popup.html") || sender.frameId !== 0) return false;
   const lookup = message.type === "RECEIPT_LOOKUP";
   if (!lookup && (typeof message.path !== "string" || !message.path || message.path.length > 1024)) {
     sendResponse({ok: false, error: "INVALID_PATH"}); return false;
