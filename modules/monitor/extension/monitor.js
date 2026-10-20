@@ -19166,6 +19166,9 @@ function monitorNodeNumbersForMinimizedHwnd(hwnd, state = monitorLastAiState) {
 
 }
 
+// The desktop thumbnail is a summary of the desktop, not only of its minimized
+// windows. A BCT/RCC number stays visible while its physical ChatGPT window is
+// open, and naturally disappears only once the exact HWND mapping disappears.
 function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
   return monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({
     locations: monitorWindowDesktopLocations,
