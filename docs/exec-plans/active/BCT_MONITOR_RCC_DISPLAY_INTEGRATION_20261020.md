@@ -1,6 +1,6 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `ISOLATED_ACCEPTED / LIVE_PAYLOAD_PUBLISHED / SAME_ID_RELOAD_PENDING`
+상태: `ISOLATED_ACCEPTED / LIVE_PAYLOAD_PUBLISHED_2.0.2 / SAME_ID_RELOAD_PENDING`
 
 ## 범위와 기준
 
@@ -78,7 +78,13 @@ same-ID reload가 완료된 뒤에만 E2E를 계속한다.
 노드가 아니므로 노란 `28s` 같은 화면 카운트다운을 만들지 않도록 변경했다. 기존 payload가 남긴 overlay는 다음
 화면 동기화에서 제거한다. 이 변경은 ChatGPT 노드 번호, `N?` 규칙, 창 최소화/복원, Native Host 관측과 Chrome
 창 조작을 변경하지 않는다. source 검증은 `check_monitor_non_chat_countdown_hidden.js` 및 기존 Monitor 회귀로
-통과했으며, 설치본에는 다음 versioned publish와 same-ID reload 전까지 적용되지 않는다.
+통과했으며, 설치본 versioned publish는 완료됐지만 same-ID reload 전까지 실행 중 Monitor에는 적용되지 않는다.
+
+후속 source commit `4bb1c5b6f9fdcb3ac2ba6dc20211169d8ade3d46`의 `monitor.js`, `monitor.css`,
+`MONITOR_JS_INDEX.md`는 설치본에 source SHA와 동일하게 반영했다. 직전 설치 세 파일은
+`D:\ChromeExtensions\DesktopWindow-Monitor\backup\monitor-live-4bb1c5b-20261020-025500`에 보관했다.
+공식 publish gate는 version `2.0.2`, token `a6510f50cf3547f8bf9132a5ad8da3f4`를 기록했다. ACK는 이전
+token이라 아직 불일치하며, 공식 `설치본 리로드` 한 번 뒤에만 새 payload 실행과 실제 화면 제거를 확인한다.
 
 이전에는 `ISOLATED_ACCEPTED`로 올리려면 다음 중 하나의 **읽기 전용·fresh** 대조 계약이 필요했다.
 
