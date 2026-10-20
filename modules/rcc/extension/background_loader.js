@@ -4,6 +4,8 @@ importScripts('core/conversation.js');
 importScripts('core/transport.js');
 importScripts('core/shadow.js');
 importScripts('browser/read_adapter.js');
+importScripts('browser/tab_move_contract.js');
+importScripts('browser/tab_move_adapter.js');
 importScripts('relay_core.js');
 importScripts('network/directory.js');
 importScripts('relay/contract.js');

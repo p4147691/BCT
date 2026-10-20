@@ -1,5 +1,6 @@
 const CHAT_URLS = ['https://chatgpt.com/*', 'https://chat.openai.com/*'];
 let browserReadAdapter = null;
+let browserTabMoveAdapter = null;
 
 function getBrowserReadAdapter() {
   if (browserReadAdapter) return browserReadAdapter;
@@ -9,6 +10,18 @@ function getBrowserReadAdapter() {
   }
   browserReadAdapter = adapterFactory.create(chrome, CHAT_URLS);
   return browserReadAdapter;
+}
+
+function getBrowserTabMoveAdapter() {
+  if (browserTabMoveAdapter) return browserTabMoveAdapter;
+  const adapterFactory = globalThis.RccBrowserTabMoveAdapter;
+  const contract = globalThis.RccBrowserTabMoveContract;
+  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_TAB_MOVE_ADAPTER_NOT_LOADED');
+  browserTabMoveAdapter = adapterFactory.create(chrome, contract, {
+    isChatTab,
+    conversationKey: (url) => RelayCore.conversationKey(url || ''),
+  });
+  return browserTabMoveAdapter;
 }
 
 const CONTROL = 'CONTROL';
@@ -2272,33 +2285,19 @@ async function moveExactChatTab(message) {
 
     const tab = resolved.tab;
 
-    const sourceWindowId = Number(tab.windowId);
+    const receipt = await getBrowserTabMoveAdapter().move({
+      operationId,
+      tabId: Number(tab.id),
+      expectedWindowId: Number(tab.windowId),
+      targetWindowId: windowId,
+      requestedIndex: index,
+      conversationKey,
+      expectBlankConversation: pending,
+    });
 
-    const windowTabs = await chrome.tabs.query({ windowId });
-
-    const sameWindow = sourceWindowId === windowId;
-
-    if (sameWindow && !windowTabs.some((item) => Number(item.id) === Number(tab.id))) throw new Error('Move source tab missing from window');
-
-    const maxIndex = sameWindow ? Math.max(0, windowTabs.length - 1) : windowTabs.length;
-
-    if (index !== -1 && index > maxIndex) throw new Error('Invalid tab index');
-
-    const moved = await chrome.tabs.move(tab.id, { windowId, index });
-
-    const movedTab = Array.isArray(moved) ? moved.find((item) => Number(item.id) === Number(tab.id)) : moved;
-
-    if (!movedTab || !isChatTab(movedTab) || Number(movedTab.id) !== Number(tab.id)
-
-        || Number(movedTab.windowId) !== windowId
-
-        || RelayCore.conversationKey(movedTab.url || '') !== conversationKey) throw new Error('Move verification failed');
-
-    return { ok: true, operationId, moved: true, tabId: movedTab.id, windowId,
-
-      index: Number(movedTab.index), conversationKey, pendingUnbound: pending,
-
-      createOperationId: resolved.createOperationId };
+    return { ...receipt, windowId,
+      index: Number.isInteger(receipt.after?.index) ? Number(receipt.after.index) : null, conversationKey,
+      pendingUnbound: pending, createOperationId: resolved.createOperationId };
 
   });
 

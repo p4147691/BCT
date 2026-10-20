@@ -1,6 +1,6 @@
 # RCC Rebuild V1 — 연결을 유지한 내부 재구축
 
-상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_SOURCE_ONLY_COMPLETED / STAGE_2_LIVE_SHADOW_COMPLETED / STAGE_3_PROTOCOL_VALIDATED / STAGE_3A_SOURCE_RELAY_BOUNDARY_COMPLETED / STAGE_4_MANAGER_TO_WORKER_COMPLETED / STAGE_5_WORKER_TO_MANAGER_COMPLETED / STAGE_6_LEGACY_MUTATION_BLOCKED / STAGE_7_CONVERSATION_NETWORK_SOURCE_FOUNDATION_COMPLETED / STAGE_7A_BROWSER_READ_ADAPTER_SOURCE_IMPLEMENTED`
+상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_SOURCE_ONLY_COMPLETED / STAGE_2_LIVE_SHADOW_COMPLETED / STAGE_3_PROTOCOL_VALIDATED / STAGE_3A_SOURCE_RELAY_BOUNDARY_COMPLETED / STAGE_4_MANAGER_TO_WORKER_COMPLETED / STAGE_5_WORKER_TO_MANAGER_COMPLETED / STAGE_6_LEGACY_MUTATION_BLOCKED / STAGE_7_CONVERSATION_NETWORK_SOURCE_FOUNDATION_COMPLETED / STAGE_7A_BROWSER_READ_ADAPTER_SOURCE_IMPLEMENTED / STAGE_7B_BROWSER_TAB_MOVE_ADAPTER_SOURCE_IMPLEMENTED`
 
 ## 1. 목표와 비목표
 
@@ -198,6 +198,19 @@ UUID 동일성 확인이 모두 통과한다.
 
 통과 조건: 기존 read-only state 결과와 Core shadow 입력이 유지되고, Adapter의 source에
 effectful Browser API가 없음을 정적 테스트로 확인한다.
+
+### 7B단계 — Browser Tab Move Adapter와 영수증 계약 분리
+
+- `chrome.tabs.move`는 탭 이동 전용 Adapter만 소유하고 `background.js`는 이를 직접 호출하지
+  않는다.
+- 이동 전에 정확한 탭·대화·원래 창·목표 index를 검사하고, 이동 후 같은 대화가 목표 창에
+  있는지 다시 확인한다.
+- 결과는 `MOVED`, `NOT_APPLIED`, `MOVE_UNKNOWN`으로 기록하며, 어떤 상태도 자동 재시도하지
+  않는다. 특히 `MOVE_UNKNOWN`은 동일 작업 ID의 저장된 결과만 조회한다.
+- 설치본과 legacy `move-tab` 차단 정책은 변경하지 않는 source-only 단계로 진행한다.
+
+통과 조건: `chrome.tabs.move` 직접 호출이 새 Adapter 한 곳에만 있고, 상태별 단위 테스트와 RCC
+전체 회귀 테스트가 통과한다.
 
 ### 8단계 — 정리와 제거
 
