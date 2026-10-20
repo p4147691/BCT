@@ -5,8 +5,9 @@ const path = require('path');
 const root = __dirname;
 const policy = require(path.join(root, 'legacy/command_policy.js'));
 const loader = fs.readFileSync(path.join(root, 'background_loader.js'), 'utf8');
-const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
-const content = fs.readFileSync(path.join(root, 'content.js'), 'utf8');
+const nativeCommands = fs.readFileSync(path.join(root, 'domain/readonly_diagnostics.js'), 'utf8');
+const runtimeMessages = fs.readFileSync(path.join(root, 'domain/runtime_message_service.js'), 'utf8');
+const content = fs.readFileSync(path.join(root, 'content/content_router.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
 for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'state', 'result', 'probe-tabs']) {
@@ -24,15 +25,14 @@ for (const type of ['relay:manualSend', 'relay:autoDirective', 'relay:workerResu
 assert.equal(policy.nativeCommand('unknown').allowed, false);
 assert.equal(policy.runtimeMessage('relay:unknown').allowed, false);
 assert(loader.includes("importScripts('legacy/command_policy.js');"));
-const nativeHandler = background.split('async function handleNativeCommand(message) {')[1]
-  .split('async function connectNativeHost(', 1)[0];
+const nativeHandler = nativeCommands.split('async function handleNativeCommand(message) {')[1];
 assert(nativeHandler.includes('RccLegacyCommandPolicy.nativeCommand(message.command)'));
 assert(nativeHandler.indexOf('RccLegacyCommandPolicy.nativeCommand(message.command)')
   < nativeHandler.indexOf("message.command === 'simple-relay-send'"));
 for (const command of ['create-chat-tab', 'move-tab', 'register', 'send', 'send-wakeback', 'reload-workers', 'result-ack']) {
   assert(!nativeHandler.includes(`message.command === '${command}'`), `${command} implementation must be pruned`);
 }
-const runtimeHandler = background.split('function handleRuntimeMessage(message, sender, sendResponse) {')[1];
+const runtimeHandler = runtimeMessages.split('function handleRuntimeMessage(message, sender, sendResponse) {')[1];
 assert(runtimeHandler.includes('RccLegacyCommandPolicy.runtimeMessage(message?.type)'));
 assert(runtimeHandler.indexOf('RccLegacyCommandPolicy.runtimeMessage(message?.type)')
   < runtimeHandler.indexOf("message.type === 'relay:getPendingStatus'"));
@@ -45,7 +45,10 @@ for (const type of ['relay:simpleExecute', 'relay:simpleReadReply', 'relay:activ
 for (const type of ['relay:execute', 'relay:deliver', 'relay:bootstrap', 'relay:renameConversation']) {
   assert(!content.includes(`message.type === '${type}'`), `${type} legacy content route must be pruned`);
 }
-assert.deepEqual(manifest.content_scripts[0].js, ['relay_core.js', 'content.js']);
+assert.deepEqual(manifest.content_scripts[0].js, [
+  'relay_core.js', 'content/conversation_dom.js', 'content/simple_relay_executor.js',
+  'content/content_router.js', 'content/activity_reporter.js', 'content.js'
+]);
 assert(!loader.includes("importScripts('act_bridge.js');"));
 
 console.log('legacy command policy v6: PASS');

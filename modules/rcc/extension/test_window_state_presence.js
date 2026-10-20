@@ -1,6 +1,7 @@
 const fs = require('fs');
 const vm = require('vm');
-const src = fs.readFileSync('background.js', 'utf8');
+const src = fs.readFileSync('domain/endpoint_service.js', 'utf8')
+  + fs.readFileSync('domain/runtime_message_service.js', 'utf8');
 const a = src.indexOf('function endpointFromTab(');
 const b = src.indexOf('async function endpointFromTabWithActivity(', a);
 if (a < 0 || b < 0) throw new Error('presence helpers missing');

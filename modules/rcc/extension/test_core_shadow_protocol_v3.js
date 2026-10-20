@@ -1,8 +1,9 @@
 const assert = require('assert');
 const fs = require('fs');
 
-const background = fs.readFileSync('background.js', 'utf8');
-const content = fs.readFileSync('content.js', 'utf8');
+const background = fs.readFileSync('domain/endpoint_service.js', 'utf8')
+  + fs.readFileSync('domain/readonly_diagnostics.js', 'utf8');
+const content = fs.readFileSync('content/content_router.js', 'utf8');
 const loader = fs.readFileSync('background_loader.js', 'utf8');
 
 const activity = content.split("message.type === 'relay:activityProbe'")[1]

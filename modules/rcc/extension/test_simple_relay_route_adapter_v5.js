@@ -2,8 +2,10 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const content = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
-const background = fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8');
+const content = fs.readFileSync(path.join(__dirname, 'content/simple_relay_executor.js'), 'utf8');
+const background = fs.readFileSync(path.join(__dirname, 'domain/simple_relay_service.js'), 'utf8')
+  + fs.readFileSync(path.join(__dirname, 'domain/simple_relay_receipts.js'), 'utf8')
+  + fs.readFileSync(path.join(__dirname, 'domain/readonly_diagnostics.js'), 'utf8');
 const execute = content.split('async function executeSimpleRelayV0(message) {')[1]
   .split('// This read is intentionally narrow:', 1)[0];
 const read = content.split('async function readSimpleRelayV0Reply(message) {')[1]

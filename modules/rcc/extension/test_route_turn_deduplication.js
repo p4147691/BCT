@@ -1,7 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 
-const source = fs.readFileSync('content.js', 'utf8');
+const source = fs.readFileSync('content/conversation_dom.js', 'utf8');
 const messageBegin = source.indexOf('function canonicalMessageUnit(');
 const messageEnd = source.indexOf('function messageUnitRole(', messageBegin);
 assert(messageBegin >= 0 && messageEnd > messageBegin);

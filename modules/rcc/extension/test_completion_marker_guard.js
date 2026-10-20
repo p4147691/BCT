@@ -1,7 +1,8 @@
 const assert = require('assert');
 const fs = require('fs');
 
-const source = fs.readFileSync('content.js', 'utf8');
+const source = fs.readFileSync('content/conversation_dom.js', 'utf8')
+  + fs.readFileSync('content/simple_relay_executor.js', 'utf8');
 assert(!source.includes('RCC_DONE_'), 'active content script must not require RCC_DONE markers');
 assert(!source.includes('makeCompletionMarker'), 'marker generator must be removed');
 assert(!source.includes('wrapPromptWithMarker'), 'prompt marker wrapping must be removed');

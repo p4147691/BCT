@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = fs.readFileSync('content.js', 'utf8');
+const source = fs.readFileSync('content/conversation_dom.js', 'utf8');
 const start = source.indexOf('function turnUserText(');
 const end = source.indexOf('function isVisible(', start);
 assert(start >= 0 && end > start, 'route resolver boundary missing');

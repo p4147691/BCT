@@ -1,6 +1,6 @@
 # RCC Rebuild V2 — 통합 종료 계획
 
-상태: `V2_2_SOURCE_COMPLETE / CI_PASS / RCC_LIVE_UNCHANGED`
+상태: `V2_3_SOURCE_COMPLETE / LOCAL_VERIFIED / RCC_LIVE_UNCHANGED`
 
 V1의 API별 Adapter 추가 방식은 여기서 종료한다. 이 문서는 RCC를 실제로 끝낼 수 있도록
 남은 책임 전체, 한 번에 묶을 전환 단위, LIVE 전환 시점과 완료 조건을 다시 고정한 실행 계획이다.
@@ -129,6 +129,11 @@ Chrome 효과는 다섯 플랫폼 모듈로 이동했고, 이 단계도 source�
 - content의 활성 router, DOM 판별, submit/read, activity 관측을 분리한다.
 - 활성 메시지에서 도달할 수 없는 content handler와 helper를 제거한다.
 - 원문을 요약·변환하지 않으며 전송 방향과 UUID binding 의미를 바꾸지 않는다.
+
+2026-10-20 실행 결과는
+`BCT_RCC_REBUILD_V2_STAGE3_DOMAIN_CONTENT_20261020.md`에 기록한다. background와 content 진입점은
+각각 3줄 조립 파일이 되었고, domain/content 활성 구현은 책임별 파일로 이동했다. 이 단계도
+source와 테스트만 변경한다.
 
 통과 조건:
 

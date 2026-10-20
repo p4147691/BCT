@@ -1031,3 +1031,18 @@ fail-closed 오류는 유지했다.
 exact source commit `a2d20c80d9d3b35b134f6f0f86220fb947a0b202`의 GitHub Actions
 `BCT CI` run `39390634666`도 전체 통과했다. 다음 단계는 V2-3 활성 도메인·content 일괄
 분리이며 계속 source-only다.
+
+## RCC 재구축 V2-3 source 완료
+
+endpoint, Simple Relay, receipt, read-only diagnostics와 runtime route를 background domain/boot
+파일로 분리하고, content의 DOM 판별, submit/read executor, 단일 router, activity reporter를
+분리했다. `background.js`와 `content.js`는 각각 3줄 조립 진입점이며 domain의 직접 `chrome.*`
+호출과 active bundle의 zero-caller named function/top-level 상태는 모두 0개다.
+
+기존 native command 15개, runtime/content message 8개, storage key, 원문·UUID·receipt와
+fail-closed 오류 계약은 유지했다. JavaScript 테스트 23개, focused Python 계약 18개와 전체
+BCT Python 회귀 842개가 통과했고 실제 loader/manifest 순서로 background와 content bundle을
+실행하는 시험도 통과했다.
+LIVE RCC 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
+`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE3_DOMAIN_CONTENT_20261020.md`를 따른다.
+다음 단계는 V2-4 통합 Release Candidate 검증이며 계속 비-LIVE다.

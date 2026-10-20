@@ -3,7 +3,13 @@ const fs = require('fs');
 const vm = require('vm');
 const { randomUUID, webcrypto } = require('crypto');
 
-const source = fs.readFileSync('background.js', 'utf8') + `
+const source = [
+  'boot/platform_context.js', 'domain/state_service.js',
+  'domain/simple_relay_receipts.js', 'domain/endpoint_service.js',
+  'domain/diagnostic_support.js', 'domain/simple_relay_service.js',
+  'domain/readonly_diagnostics.js'
+].map((file) => fs.readFileSync(file, 'utf8')).join('\n') + `
+  nativeTransport = { post: recordPost };
   ;globalThis.__captureRecoveryTest = {
     handleNativeCommand
   };`;
@@ -65,6 +71,7 @@ const context = {
   console, URL, TextEncoder, Uint8Array,
   setTimeout, clearTimeout, setInterval: () => 0, clearInterval: () => {},
   crypto: { randomUUID, subtle: webcrypto.subtle },
+  recordPost: (value) => posted.push(value),
   RelayCore: require('./relay_core.js'),
   RccLegacyCommandPolicy: require('./legacy/command_policy.js'),
   RccChromeStateRepository: require('./platform/chrome_state_repository.js'),
@@ -117,7 +124,7 @@ const context = {
   }
 };
 vm.createContext(context);
-vm.runInContext(source, context, { filename: 'background.js' });
+vm.runInContext(source, context, { filename: 'rcc-background-services.js' });
 
 (async () => {
   const before = JSON.stringify(store.relayResultReceiptsV1);

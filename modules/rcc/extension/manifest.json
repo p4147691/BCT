@@ -31,6 +31,10 @@
       ],
       "js": [
         "relay_core.js",
+        "content/conversation_dom.js",
+        "content/simple_relay_executor.js",
+        "content/content_router.js",
+        "content/activity_reporter.js",
         "content.js"
       ],
       "run_at": "document_idle"

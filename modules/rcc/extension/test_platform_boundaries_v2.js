@@ -5,6 +5,15 @@ const NativeTransport = require('./platform/native_transport.js');
 const ObservationGateway = require('./platform/observation_gateway.js');
 const Lifecycle = require('./platform/lifecycle.js');
 
+const receiverFiles = [
+  'relay_core.js',
+  'content/conversation_dom.js',
+  'content/simple_relay_executor.js',
+  'content/content_router.js',
+  'content/activity_reporter.js',
+  'content.js',
+];
+
 const listeners = {};
 const local = { settings: { instanceId: 'a'.repeat(32) } };
 const session = {};
@@ -41,7 +50,7 @@ const chrome = {
   scripting: {
     executeScript: async (spec) => {
       if (spec.func) return [{ result: receiverReady }];
-      assert.deepEqual(spec.files, ['relay_core.js', 'content.js']);
+      assert.deepEqual(spec.files, receiverFiles);
       receiverReady = true;
       return [];
     },
@@ -71,7 +80,7 @@ const chrome = {
   assert.equal((await repository.getLocal('receipt')).receipt.state, 'SUBMITTED');
 
   const browser = BrowserGateway.create(chrome, {
-    chatUrls: ['https://chatgpt.com/*'], receiverFiles: ['relay_core.js', 'content.js'],
+    chatUrls: ['https://chatgpt.com/*'], receiverFiles,
   });
   assert.deepEqual((await browser.queryChatTabs()).map((item) => item.id), [7]);
   assert.equal((await browser.getExactTab(7)).url, tab.url);

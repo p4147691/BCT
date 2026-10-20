@@ -2,8 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const RelayCore = require('./relay_core.js');
-const content = fs.readFileSync('content.js', 'utf8');
-const background = fs.readFileSync('background.js', 'utf8');
+const content = fs.readFileSync('content/conversation_dom.js', 'utf8');
+const background = fs.readFileSync('domain/diagnostic_support.js', 'utf8');
 
 // Small tree/selector fixture, not a text-returning mock. Cloning, adjacency,
 // descendants and removal all affect textContent like the observed DOM.

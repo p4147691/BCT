@@ -15,13 +15,27 @@ class RccSourceBaselineTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parents[1]
         cls.extension = cls.root / "modules" / "rcc" / "extension"
 
-    def test_source_only_v2_2_payload_hashes_match_recorded_baseline(self):
-        # Source-only RCC Rebuild V2-2 guard. This is not an installed/LIVE hash.
+    def test_source_only_v2_3_payload_hashes_match_recorded_baseline(self):
+        # Source-only RCC Rebuild V2-3 guard. This is not an installed/LIVE hash.
         expected = {
-            "background.js": "71914c04715811b02b46892b9007c1a554ba18dbcd244e919345212dcd5cdbf0",
-            "content.js": "641d56fbe3d31e36dcf32d99e378cf667ec30a21e4c8b0c908681d91a56c131c",
-            "manifest.json": "ce459e432179478309273453e8ea53f06a9017346b4fb2d51b0ad34a9874e7ae",
+            "background.js": "585ae34ee0af8531362f384e4c11a903b1c23056ad61c15d0edec3c826fbe450",
+            "background_loader.js": "f517a7f2ea091caa9e15c1e04acc4d89d98bb5ac210d591d13212a0e64a3161f",
+            "content.js": "dd594299e99e728e73ee64f6a95d26cd142cba026f490e781e8f55d2b27177f3",
+            "manifest.json": "9868f94443c95e5cc590af91989fcc53451d3c4b13e89fef44fbed5b32d41e18",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
+            "boot/platform_context.js": "89c8ac3a49ce640b257d94738ff3386ce778c11dfa91f62d978d2636200c4817",
+            "boot/background_app.js": "2b22759ba92035191b8e18f9e44c646a91c601966ce8b71ed7a29ea7f832661c",
+            "domain/state_service.js": "61102132340d1e0acea6a5d9c7b6154ced5fcec35f9ecfeb6d76973376be5a70",
+            "domain/simple_relay_receipts.js": "f46561ce7e73b7342a3fc18476229d4969977ff5b0a3dced20f5b1ad85e35689",
+            "domain/endpoint_service.js": "4a22a307ab390f47d0f9a974a19ce51233d2781ba921d8817d6a2db6a2fa7c9e",
+            "domain/diagnostic_support.js": "06562ada53e67519fb0d1b46b4654096dace2b7ac8a8bbeb0232b88fab716e1c",
+            "domain/simple_relay_service.js": "9d2135a6c20702772048d0aebfff997d8fcd3c1650c1b843047f740749552506",
+            "domain/readonly_diagnostics.js": "ebd5afe1640de5a5e5532f1dc1c8a69419135f5f26cbba504515daf22da94b3e",
+            "domain/runtime_message_service.js": "5141dc8b8854dcdceb697598221d26c64abc1952d10a6f221e203524c563e471",
+            "content/conversation_dom.js": "bddfa0460d1f6d98d1471e5c480e43c9ee165278176bd2d7a0852600b60bd785",
+            "content/simple_relay_executor.js": "52874024a0c99f7241ef87fd0ace8227c91a72f21213ca640e49eb1e1cb2178e",
+            "content/content_router.js": "5008fee382df5fa72ed64347e989c9b34b4a863cef9f7e931673b153e9228e76",
+            "content/activity_reporter.js": "e73c7469d87f35e677e5d37935b518dd6f5eff5155ce2fc9ae42f4ae2dc5aee8",
         }
         for name, digest in expected.items():
             self.assertEqual(digest, hashlib.sha256((self.extension / name).read_bytes()).hexdigest())
@@ -45,10 +59,15 @@ class RccSourceBaselineTests(unittest.TestCase):
             for nibble in (byte >> 4, byte & 0x0F)
         )
         self.assertEqual("ocbidbaplechjjdacmokhnfbdmgjkphf", extension_id)
-        self.assertEqual(["relay_core.js", "content.js"], manifest["content_scripts"][0]["js"])
+        self.assertEqual([
+            "relay_core.js", "content/conversation_dom.js",
+            "content/simple_relay_executor.js", "content/content_router.js",
+            "content/activity_reporter.js", "content.js",
+        ], manifest["content_scripts"][0]["js"])
 
     def test_active_native_and_runtime_surface_is_explicit(self):
-        background = (self.extension / "background.js").read_text(encoding="utf-8")
+        background = (self.extension / "domain" / "readonly_diagnostics.js").read_text(encoding="utf-8")
+        runtime = (self.extension / "domain" / "runtime_message_service.js").read_text(encoding="utf-8")
         for command in (
             "ping", "state", "simple-relay-bind", "simple-relay-send",
             "simple-relay-return", "rename-receipt", "result", "main-capture-get",
@@ -68,15 +87,16 @@ class RccSourceBaselineTests(unittest.TestCase):
             self.assertNotIn(f"message.command === '{command}'", background)
 
         for message_type in ("relay:getPendingStatus", "relay:getState", "relay:activity"):
-            self.assertIn(f"message.type === '{message_type}'", background)
+            self.assertIn(f"message.type === '{message_type}'", runtime)
         for message_type in (
             "relay:manualSend", "relay:autoDirective", "relay:workerResult",
             "relay:actNaturalCommand", "relay:register", "relay:arm", "relay:hello",
         ):
-            self.assertNotIn(f"message.type === '{message_type}'", background)
+            self.assertNotIn(f"message.type === '{message_type}'", runtime)
 
     def test_active_content_surface_and_simple_relay_contract_remain(self):
-        content = (self.extension / "content.js").read_text(encoding="utf-8")
+        content = (self.extension / "content" / "content_router.js").read_text(encoding="utf-8")
+        executor = (self.extension / "content" / "simple_relay_executor.js").read_text(encoding="utf-8")
         for message_type in (
             "relay:recoverExecution", "relay:activityProbe", "relay:probe",
             "relay:simpleExecute", "relay:simpleReadReply",
@@ -87,8 +107,8 @@ class RccSourceBaselineTests(unittest.TestCase):
             "relay:renameConversation", "relay:networkStarted", "relay:networkComplete",
         ):
             self.assertNotIn(f"message.type === '{message_type}'", content)
-        self.assertIn("async function executeSimpleRelayV0(message)", content)
-        self.assertIn("async function readSimpleRelayV0Reply(message)", content)
+        self.assertIn("async function executeSimpleRelayV0(message)", executor)
+        self.assertIn("async function readSimpleRelayV0Reply(message)", executor)
         self.assertIn("recoverCompletedReplyFromDom({ ...record, conversationKey })", content)
 
     def test_optional_browser_management_is_preserved_but_unloaded(self):
@@ -123,11 +143,11 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_content_and_background_build_markers_match(self):
         marker = "2026-10-20-rcc-core-shadow-v1"
-        for name in ("content.js", "background.js"):
+        for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
     def test_stale_content_completion_requires_exact_durable_receipt(self):
-        background = (self.extension / "background.js").read_text(encoding="utf-8")
+        background = (self.extension / "domain" / "runtime_message_service.js").read_text(encoding="utf-8")
         handler = background.split(
             "if (message.type === 'relay:getPendingStatus') {", 1
         )[1].split("if (message.type === 'relay:getState') {", 1)[0]
@@ -137,7 +157,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         self.assertIn("completed: true", handler)
 
     def test_recovery_requires_exact_turn_terminal_evidence(self):
-        content = (self.extension / "content.js").read_text(encoding="utf-8")
+        content = (self.extension / "content" / "simple_relay_executor.js").read_text(encoding="utf-8")
         recovery = content.split("function recoverCompletedReplyFromDom(record) {", 1)[1].split(
             "function normalizedUiText", 1
         )[0]
@@ -176,6 +196,8 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_legacy_command_policy_v6.js", "legacy command policy v6: PASS"),
             ("test_architecture_boundaries_v35.js", "rcc architecture boundaries v3.5: PASS"),
             ("test_platform_boundaries_v2.js", "rcc platform boundaries v2: PASS"),
+            ("test_domain_content_boundaries_v3.js", "rcc domain/content boundaries v3: PASS"),
+            ("test_active_bundle_load_v3.js", "rcc active bundle load v3: PASS"),
         ):
             self._run_node(name, marker)
 
@@ -217,6 +239,13 @@ class RccSourceBaselineTests(unittest.TestCase):
             "platform/chrome_state_repository.js", "platform/browser_gateway.js",
             "platform/native_transport.js", "platform/observation_gateway.js",
             "platform/lifecycle.js",
+            "boot/platform_context.js", "boot/background_app.js",
+            "domain/state_service.js", "domain/simple_relay_receipts.js",
+            "domain/endpoint_service.js", "domain/diagnostic_support.js",
+            "domain/simple_relay_service.js", "domain/readonly_diagnostics.js",
+            "domain/runtime_message_service.js", "content/conversation_dom.js",
+            "content/simple_relay_executor.js", "content/content_router.js",
+            "content/activity_reporter.js",
         ):
             completed = subprocess.run(
                 [node, "--check", str(self.extension / name)], capture_output=True,
