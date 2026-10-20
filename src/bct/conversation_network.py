@@ -144,6 +144,40 @@ def node_labels_for_conversations(store: Store, *, conversation_keys: list[str] 
     return {str(row["conversation_key"]): _node_label(int(row["node_number"])) for row in rows}
 
 
+def ensure_observed_node_labels(store: Store, *, conversations: list[tuple[str, str]]) -> dict[str, str]:
+    """Allocate display labels for RCC-observed conversations, never roles or routes."""
+    titles: dict[str, str] = {}
+    for raw_key, raw_title in conversations:
+        key = str(raw_key or "").strip().lower()
+        if not _UUID.fullmatch(key):
+            continue
+        title = str(raw_title or "").replace("\x00", "").strip()[:120] or "ChatGPT"
+        titles.setdefault(key, title)
+    if not titles:
+        return {}
+    with store.transaction() as db:
+        next_number = int(db.execute(
+            "SELECT COALESCE(MAX(node_number),0)+1 AS next_number FROM conversation_network_node_labels"
+        ).fetchone()["next_number"])
+        for key in sorted(titles):
+            if db.execute(
+                "SELECT 1 FROM conversation_network_conversations WHERE conversation_key=?", (key,)
+            ).fetchone() is None:
+                db.execute(
+                    "INSERT INTO conversation_network_conversations(conversation_key,display_name,created_at,updated_at) VALUES(?,?,?,?)",
+                    (key, titles[key], time.time(), time.time()),
+                )
+            if db.execute(
+                "SELECT 1 FROM conversation_network_node_labels WHERE conversation_key=?", (key,)
+            ).fetchone() is None:
+                db.execute(
+                    "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
+                    (key, next_number, time.time()),
+                )
+                next_number += 1
+    return node_labels_for_conversations(store, conversation_keys=list(titles))
+
+
 def resolve_project_id(store: Store, *, project_reference: str) -> str:
     """Resolve an exact project ID or one unambiguous user-facing display name."""
     reference = _text(project_reference, "CONVERSATION_NETWORK_PROJECT_REFERENCE_INVALID", 120)

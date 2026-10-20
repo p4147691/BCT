@@ -6,7 +6,7 @@ from threading import Lock
 from pathlib import Path
 from typing import Any
 
-from bct.conversation_network import node_labels_for_conversations
+from bct.conversation_network import ensure_observed_node_labels
 from bct.integrations.rcc import NamedPipeRelayClient, discover_instance_ids
 from bct.integrations.native_process import process_matches
 from bct.service_runtime import read_json
@@ -223,12 +223,12 @@ def build_monitor_state(
     after_discovery = time.perf_counter()
     rcc = _rcc_states(instance_ids)
     after_rcc = time.perf_counter()
-    observed_keys = [
-        str(tab.get("conversation_key") or "")
+    observed_conversations = [
+        (str(tab.get("conversation_key") or ""), str(tab.get("title") or ""))
         for instance in rcc for tab in instance.get("tabs", [])
         if isinstance(tab, dict)
     ]
-    labels = node_labels_for_conversations(store, conversation_keys=observed_keys)
+    labels = ensure_observed_node_labels(store, conversations=observed_conversations)
     for instance in rcc:
         for tab in instance.get("tabs", []):
             if not isinstance(tab, dict):
@@ -250,7 +250,7 @@ def build_monitor_state(
         1 for item in claim_diagnostics if item["scope"] == "SHARED_RESOURCE"
     )
     return {
-        "observability": {"schema": 1, "read_only": True, "timings": timings, "mcp_recent": recent_stages()},
+        "observability": {"schema": 1, "read_only": False, "registry_sync": "DISPLAY_LABELS_ONLY", "timings": timings, "mcp_recent": recent_stages()},
         "schema": 1,
         "generated_at": time.time(),
         "service": dict(service_state),

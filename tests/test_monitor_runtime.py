@@ -26,7 +26,8 @@ class MonitorRuntimeTests(unittest.TestCase):
                     data_root=root / "data",
                 )
             self.assertEqual(1, state["schema"])
-            self.assertTrue(state["observability"]["read_only"])
+            self.assertFalse(state["observability"]["read_only"])
+            self.assertEqual("DISPLAY_LABELS_ONLY", state["observability"]["registry_sync"])
             self.assertIsInstance(state["observability"]["mcp_recent"], list)
             timings = state["observability"]["timings"]
             self.assertEqual(
@@ -224,6 +225,19 @@ class MonitorRuntimeTests(unittest.TestCase):
                  patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
                 state = build_monitor_state(store=store, service_state={"ready": True}, data_root=root / "data")
         self.assertEqual("N1", state["rcc"]["instances"][0]["tabs"][0]["node_label"])
+
+    def test_observed_conversation_is_registered_once_for_display_only(self):
+        conversation = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
+        class Client:
+            def request(self, **kwargs):
+                return {"state": {"sessionId": "live", "tabs": [{"id": 1, "windowId": 2, "title": "Observed", "url": f"https://chatgpt.com/c/{conversation}"}], "endpoints": [{"tabId": 1, "conversationKey": conversation, "presence": "OPEN"}]}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); store = Store(root / "state.sqlite")
+            with patch("bct.monitor_runtime.discover_instance_ids", return_value=["instance"]), patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+                first = build_monitor_state(store=store, service_state={}, data_root=root / "data")
+                second = build_monitor_state(store=store, service_state={}, data_root=root / "data")
+        self.assertEqual("N1", first["rcc"]["instances"][0]["tabs"][0]["node_label"])
+        self.assertEqual("N1", second["rcc"]["instances"][0]["tabs"][0]["node_label"])
 
 
 if __name__ == "__main__":
