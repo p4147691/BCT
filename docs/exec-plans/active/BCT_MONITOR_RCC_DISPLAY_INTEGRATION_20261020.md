@@ -1,6 +1,6 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `BWM_UI_AND_HWND_CONVERGENCE_SOURCE_FIXED / CI_PENDING / LIVE_NOT_APPLIED`
+상태: `BWM_UI_AND_HWND_CONVERGENCE_MAIN_CI_SUCCESS / INSTALL_PUBLISHED_2.0.11 / RELOAD_PENDING`
 
 ## 2026-10-21 BWM 상단 정리·실제 HWND 투영 수렴 보수
 
@@ -29,6 +29,14 @@ disabled다. 2열/3열 선택기는 제거하고 3열을 기본값으로 고정�
 현재 상태 목록에 실행 operation이 없었고, 이 변경은 새 통합 Work에서 공유 source의 단일 dirty
 set으로 진행한다. 이름 변경 실패는 기존 대상별 UNKNOWN claim을 우회하지 않으며 화면에는 내부
 resource ID 대신 이전 결과 미확정이라는 안전한 설명을 표시한다.
+
+source commit/main은 `802c5a3fb90f6c4e04cc111b6e61a481027b0236`, exact GitHub Actions
+`39477884804`는 SUCCESS다. 런타임 5파일은 source SHA와 일치하게 설치본에 반영했고, 직전
+파일은 `D:\ChromeExtensions\DesktopWindow-Monitor\backup\monitor-live-802c5a3-20261021-035300`에
+보관했다. 공식 publish gate는 설치 manifest `2.0.11`과 token
+`d589c3f24c594be1b461a5febf597070`을 발행했으며 구조 gate는 PASS했다. 다만 실행 renderer는
+여전히 `2.0.10`과 이전 ACK token을 보고한다. 따라서 설치 파일은 준비됐지만 same-ID reload와
+실제 번호·상단 UI 화면 수락 전이며, 확장 URL에 대한 자동 조작 보안 정책을 우회하지 않는다.
 
 ## 2026-10-21 노드 카드 단일 선택·썸네일 오버레이 보수
 

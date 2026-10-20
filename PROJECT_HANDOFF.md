@@ -12,7 +12,12 @@ Monitor 상단을 `BWM`과 실행 버전 중심으로 단순화하고, BCT healt
 계약 결함이었다. topology 준비 후 최대 세 번의 bounded 대조를 추가하고, cached last-known OPEN은
 Native가 같은 Chrome HWND를 5초 이내에 신선하게 관측할 때만 기존 binding을 retain한다. cached
 행은 새 binding을 만들 수 없다. 실제 shell+contract 회귀에서 동일 창 N4/7/9 유지와 stale 제거를
-검증했다. 아직 commit/CI/main/설치본 publish/reload/LIVE 화면 수락 전이다.
+검증했다. source commit/main `802c5a3fb90f6c4e04cc111b6e61a481027b0236`과 GitHub Actions
+`39477884804`는 SUCCESS다. exact runtime 5파일을 설치본에 반영하고 공식 publish gate로
+`2.0.11`/token `d589c3f24c594be1b461a5febf597070`을 발행했다. 변경 전 파일은
+`D:\ChromeExtensions\DesktopWindow-Monitor\backup\monitor-live-802c5a3-20261021-035300`에
+보관했다. 실행 중 renderer는 아직 `2.0.10`과 이전 token을 보고하므로 same-ID reload 및 LIVE
+화면 수락은 남아 있다. 보안 정책상 확장 URL 자동 조작은 우회하지 않는다.
 
 우클릭 이름 변경은 UI 결함이 아니라 기존 대화별 UNKNOWN rename claim에 의해 안전 차단된 대상이
 남아 있다. 이를 재전송하거나 claim 해제하지 않았고, 화면 오류만 사용자가 이해할 수 있는 문구로
