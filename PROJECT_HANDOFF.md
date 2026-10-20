@@ -79,6 +79,13 @@ candidate 5개와 active 파일 4개를 source hash와 동일하게 배치했다
 Native Host, Chrome 탭 새로고침/이동, Relay binding/storage, composer, 메시지 전송은 변경하지
 않았다. 다음 3단계는 content protocol 호환성 전환으로 별도 승인 전에는 시작하지 않는다.
 
+## 완료 — RCC Rebuild V1 3단계 content protocol 호환성
+
+기존 `relay:activityProbe` content 응답과 background endpoint/Core Shadow 반영을
+`test_core_shadow_protocol_v3.js`로 고정했다. LIVE에서도 두 고정 대화 receiver가 새 Shadow
+build로 read-only probe에 응답했으므로 tab refresh 없이 protocol 호환성을 확인했다. 다음
+4단계의 Manager→Worker 실제 원문 전송은 별도 사용자 승인 없이는 시작하지 않는다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /
