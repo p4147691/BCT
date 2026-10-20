@@ -8,9 +8,10 @@ Native Host가 각각 고정된 `BCT Core Supervisor`, `BCT Tunnel Supervisor` �
 health/ready를 다시 확인한다. BC는 선택된 정확한 ChatGPT conversation/tab/window를 재대조하고
 생성 중이 아닐 때 그 탭만 reload한다. 임의 command/path, shell, Chrome UI 자동화는 추가하지 않았다.
 
-exact adapter와 Monitor 계약 검사, 관련 Python 20 tests, Native Host compile은 PASS다. source-only
-후보이며 설치본·Chrome·Native Host·Core·RCC·터널은 변경하거나 재시작하지 않았다. GitHub PR/CI와
-LIVE 배포·버튼 클릭 수락시험이 남았다. 상세는
+exact adapter와 Monitor 계약 검사, 관련 Python 20 tests, Native Host compile은 PASS다. source commit
+`2397853cda06b79ffb514344a267bbdbfc6a4893`, PR #260, BCT CI run `39517865233`의 scope/preflight,
+Core 4 shards, Browser Bridge는 전부 SUCCESS다. 설치본·Chrome·Native Host·Core·RCC·터널은 변경하거나
+재시작하지 않았다. main 반영과 LIVE 배포·버튼 클릭 수락시험이 남았다. 상세는
 `docs/exec-plans/active/BCT_MONITOR_RECOVERY_ACTIONS_20261021.md`에 있다.
 
 별도 `feat/local-authority-integrated-20261020` 작업은 HEAD `1d9ff592...`와 미커밋 `bct.toml`만

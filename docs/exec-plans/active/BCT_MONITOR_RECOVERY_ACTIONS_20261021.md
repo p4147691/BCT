@@ -1,6 +1,6 @@
 # BWM 복구 버튼 연결 — 2026-10-21
 
-상태: `SOURCE_TESTED / LIVE_NOT_APPLIED`
+상태: `PR_CI_SUCCESS / LIVE_NOT_APPLIED`
 
 ## 목적
 
@@ -34,6 +34,8 @@ BWM 상단의 기존 비활성 버튼을 임의 shell/UI 자동화 없이 검증
 - Python Monitor runtime/integration/conversation tests: 20 PASS
 - Native Host .NET Framework compile: PASS
 - `git diff --check`: PASS
+- source commit `2397853cda06b79ffb514344a267bbdbfc6a4893`
+- GitHub PR #260, BCT CI run `39517865233`: scope/preflight/Core 4 shards/Browser Bridge 전부 SUCCESS
 
 `check_monitor_desktop_visual.js`는 격리 worktree에 prebuilt Native payload가 없어 실행하지 못했다.
 `check_monitor_ncodex_rdp_route.js`는 현재 main에도 없는 레거시 문자열을 요구하는 기존 checker 문제로
@@ -43,4 +45,3 @@ BWM 상단의 기존 비활성 버튼을 임의 shell/UI 자동화 없이 검증
 
 이 단계에서는 설치본, Chrome, Native Host binding, BCT Core, RCC, MCP 터널을 변경하거나
 재시작하지 않는다. 실제 버튼 클릭 수락시험은 exact main 반영과 명시적인 LIVE 배포 단계 뒤에 수행한다.
-
