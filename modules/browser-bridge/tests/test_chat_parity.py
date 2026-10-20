@@ -38,6 +38,9 @@ class ChatParityTests(unittest.TestCase):
     def test_old_marker_and_revocation_negative_cases(self):
         self._node_suite("check_chat_revocation.cjs", 3)
 
+    def test_current_chatgpt_dil_and_prosemirror_negative_cases(self):
+        self._node_suite("check_chat_ui_2026.cjs", 3)
+
     def test_existing_native_host_has_no_chat_execution_privilege(self):
         source = (ROOT / "native/native_host.py").read_text(encoding="utf-8")
         self.assertIn('("bridge_read", "receipt_lookup")', source)
