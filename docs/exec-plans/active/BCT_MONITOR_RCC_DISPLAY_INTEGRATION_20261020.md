@@ -1,6 +1,6 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `ISOLATED_ACCEPTED / LIVE_NOT_APPLIED / LIVE_THUMBNAIL_TRANSITION_UNVERIFIED`
+상태: `ISOLATED_ACCEPTED / LIVE_PAYLOAD_PUBLISHED / SAME_ID_RELOAD_PENDING`
 
 ## 범위와 기준
 
@@ -62,9 +62,15 @@ HWND로 대조했고, 그중 2개가 Native Host 기준으로 이미 최소화 �
 Chrome 창, stale Native identity를 모두 거부하는 회귀를 통과했다. 기존 `check_monitor_bct_minimized_badges.js`는
 최소화→복원시 번호 배지가 제거되는 isolated DOM 시나리오를 통과했다.
 
-따라서 `ISOLATED_ACCEPTED`로 올렸지만, 설치된 Monitor에는 이 후보가 아직 없으므로 실제 화면에서 새
-배지가 최소화·복원에 따라 나타나고 사라지는 전환은 검증하지 않았다. 이는 `LIVE_NOT_APPLIED` 상태를 보존하기
-위한 의도된 경계다.
+후보 payload는 설치 Monitor에 versioned publish 되었고, 설치본 manifest는 `2.0.1`이다. 변경 전 설치본은
+`D:\ChromeExtensions\DesktopWindow-Monitor\backup\monitor-live-7437ef3-20261020-191940`에 file-level로 보관했다.
+설치본 구조·조직 회귀 gate는 PASS했다. 최초 gate는 후보와 함께 변경된 organization checker가 설치본에는 이전판이라
+fail-closed 되었고, manifest/token 변경 없이 중단됐다. 같은 후보의 checker를 맞춘 뒤에만 재실행했다.
+
+그러나 배포 marker ACK는 아직 도착하지 않았고, 실행 중 Monitor는 reload 전 `2.0.0`으로 관측된다. 따라서 실제
+화면에서 새 배지가 최소화·복원에 따라 나타나고 사라지는 전환은 아직 검증하지 않았다. 확장 페이지 직접 자동 조작은
+browser security policy가 차단하므로 이를 우회하지 않는다. 열려 있는 Monitor의 공식 `설치본 리로드` 버튼으로
+same-ID reload가 완료된 뒤에만 E2E를 계속한다.
 
 이전에는 `ISOLATED_ACCEPTED`로 올리려면 다음 중 하나의 **읽기 전용·fresh** 대조 계약이 필요했다.
 
@@ -82,6 +88,5 @@ same-ID reload한 뒤, 이 계약이 확정한 창만 대상으로 최소화→�
 차단은 확인되지 않았다. 이번 표시 후보에 차단 기능을 섞지 않는다. 보호 기능은 immutable desktop
 ID 기준으로 각 효과 소유자가 거부하는 별도 격리 단계다.
 
-이 branch는 `LIVE_NOT_APPLIED`다. 폐기 시 branch/worktree만 제거하면 되고 설치본 rollback은
-필요 없다. 향후 배포는 기존 `Publish-MonitorDeployment.ps1` 경로로 exact 설치본 snapshot을 만든 뒤,
-same-ID reload 1회와 post-reload 관측을 별도 승인으로 진행한다.
+source branch는 GitHub `feat/monitor-rcc-display-integration-20261020`의 `7437ef3`이다. payload rollback은
+위 backup 디렉터리의 file-level snapshot으로 하고, reload 전에는 새 payload를 실행 중이라고 주장하지 않는다.
