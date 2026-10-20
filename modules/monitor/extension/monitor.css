@@ -381,7 +381,8 @@
 .monitor-worker-resource-actionable.monitor-worker-resource-pending { cursor:wait; filter:brightness(1.12); }
 
 
-.monitor-thumbnail-tab-badge { position:absolute; transform:translate(2px,2px); pointer-events:none; }
+.monitor-thumbnail-node-overlay { position:absolute; inset:0; z-index:2147480000; overflow:hidden; pointer-events:none; }
+.monitor-thumbnail-tab-badge { position:absolute; transform:translate(2px,2px); z-index:1!important; pointer-events:none; }
 
 
 .monitor-worker-row.monitor-worker-working {

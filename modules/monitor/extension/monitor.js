@@ -55533,6 +55533,13 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
   if (!monitorLastAiState) return;
   for (const badge of container.querySelectorAll(".monitor-thumbnail-tab-badge, .monitor-window-desktop-badge-thumb, .monitor-window-desktop-badge")) badge.remove();
+  let overlayLayer=container.querySelector(".monitor-thumbnail-node-overlay");
+  if(!overlayLayer){
+    overlayLayer=document.createElement("span");
+    overlayLayer.className="monitor-thumbnail-node-overlay";
+    overlayLayer.setAttribute("aria-hidden","true");
+    container.append(overlayLayer);
+  }
 
 
 
@@ -55777,7 +55784,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
-    container.append(badge);
+    overlayLayer.append(badge);
 
 
 
