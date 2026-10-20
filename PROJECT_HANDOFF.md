@@ -9,6 +9,15 @@ read-only 경계를 갖는다. extension ID/path, Native Host registration/path,
 gate는 `docs/exec-plans/active/BCT_RCC_REBUILD_V1.md`에 고정했다. Simple Relay V0는 이 계획의
 임시 Relay 기반이며 legacy execution 제거 전에는 새 기능을 legacy 경로에 추가하지 않는다.
 
+전환은 전면 교체가 아니라 0) 기준선/복구 묶음, 1) source-only Core 추출, 2) read-only shadow,
+3) 기존 열린 탭과 content protocol 호환, 4) Manager→Worker 단일 전송, 5) Worker→Manager 반환,
+6) legacy 변경 경로 차단, 7) 호출자 0 확인 후 제거 순서다. 후보 파일을 먼저 배치하고 loader를
+마지막에 바꾸며, 각 gate마다 same-ID reload와 두 conversation UUID의 exact resolve를 확인한다.
+읽기 실패는 복원할 수 있지만 변경 요청 실패를 legacy로 자동 재시도하지 않는다. 이미 보냈을
+가능성이 있는 `UNKNOWN` 효과의 중복 전달을 막기 위한 보호 규칙이다. 다음 실행 단위는 LIVE
+코드 변경이 아닌 0단계 기준선 동결과 비-LIVE 임시 디렉터리에서의 exact backup 복구
+rehearsal뿐이다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /
