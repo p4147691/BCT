@@ -28,3 +28,14 @@ source test와 remote CI가 통과한 뒤 설치본에 policy, loader, backgroun
 extension reload 한 번으로 활성화한다. 이후 state/probe read-only 확인과 허용 command 1개,
 차단 command 1개의 무효화 확인을 한다. 차단 command는 실제 효과가 없는 `register`로만
 검증한다.
+
+## LIVE 완료
+
+remote CI `39357982486` 통과 뒤 exact extension backup(38 files, path/hash mismatch 0)을 만든
+후 policy, loader, background를 source hash와 일치하게 배치했다. same-ID extension reload는 한
+번만 수행했다. post-reload Manager·Worker는 모두 `CONNECTED`, existing binding은 유지됐다.
+
+`register` command를 존재하지 않는 role/conversation 값으로 한 번 호출한 결과는
+`ok=false`, `effectState=NOT_APPLIED`,
+`RCC_NATIVE_COMMAND_LEGACY_MUTATION_DISABLED:register`였다. 호출 전후 두 대화의 state/count와
+binding은 변하지 않았다. 탭 새로고침·이동·새 노드 생성·메시지 전송은 없었다.

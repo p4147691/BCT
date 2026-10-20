@@ -116,12 +116,15 @@ conversation UUID는 유지됐다. 탭 새로고침·이동·새 노드 생성�
 assistant 응답만 읽도록 바꾼다. compact receipt 상태도 Native 결과에 포함한다. 상세는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE5_ROUTE_ADAPTER_REPAIR_20261020.md`에 있다.
 
-## 진행 — RCC Rebuild V1 6단계 Legacy 변경 경로 차단
+## 완료 — RCC Rebuild V1 6단계 Legacy 변경 경로 차단
 
 `legacy/command_policy.js`에서 새 Simple Relay·읽기 전용 조회만 허용하고, 기존 node/tab
 관리·legacy send/wakeback·queue recovery·ACK·ACT·autoDirective·workerResult 같은 mutation
-명령은 fail-closed로 거부하도록 source를 준비했다. policy source의 local tests는 통과했고,
-remote CI와 설치/reload acceptance 전에는 LIVE에 활성화하지 않는다. 상세는
+명령은 fail-closed로 거부하도록 source를 준비했다. remote CI `39357982486` 통과 뒤 exact
+38-file backup(hash mismatch 0)을 만들고 policy/loader/background를 installed payload에 배치해
+same-ID reload 한 번으로 활성화했다. `register`는 `NOT_APPLIED`와 explicit legacy-mutation
+rejection으로 차단됐으며 전후 Manager/Worker state·binding은 동일했다. 탭 새로고침·이동·새
+노드 생성·메시지 전송은 없었다. 상세는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE6_LEGACY_BLOCK_20261020.md`에 있다.
 
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
