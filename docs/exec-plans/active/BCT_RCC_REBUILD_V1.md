@@ -224,6 +224,18 @@ effectful Browser API가 없음을 정적 테스트로 확인한다.
 통과 조건: `chrome.tabs.create` 직접 호출이 새 Adapter 한 곳에만 있고, 기존 빈 탭 생성 영수증
 호환성 및 상태별 단위 테스트와 RCC 전체 회귀 테스트가 통과한다.
 
+### 7D단계 — Browser Tab Close Adapter와 영수증 계약 분리
+
+- `chrome.tabs.remove`는 탭 닫기 전용 Adapter만 소유하고 `background.js`는 직접 호출하지 않는다.
+- 닫기 전에 정확한 탭·대화·창(제공된 경우)을 검사하고, 호출 뒤 탭 부재를 확인한 경우에만
+  성공으로 기록한다.
+- 결과는 `CLOSED_CONFIRMED`, `NOT_APPLIED`, `CLOSE_UNKNOWN`으로 기록하며 어떤 상태도 자동
+  재시도하지 않는다. 특히 닫기 호출 이후 오류는 `NOT_APPLIED`로 축소하지 않는다.
+- 설치본과 legacy `close-conversation-tab` 차단 정책은 변경하지 않는 source-only 단계로 진행한다.
+
+통과 조건: `chrome.tabs.remove` 직접 호출이 새 Adapter 한 곳에만 있고, 상태별 단위 테스트와 RCC
+전체 회귀 테스트가 통과한다.
+
 ### 8단계 — 정리와 제거
 
 - 안정화 기간 동안 연결 상태, protocol mismatch, UNKNOWN effect, 중복 turn이 없는지 확인한다.

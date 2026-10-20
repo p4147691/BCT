@@ -2,6 +2,7 @@ const CHAT_URLS = ['https://chatgpt.com/*', 'https://chat.openai.com/*'];
 let browserReadAdapter = null;
 let browserTabMoveAdapter = null;
 let browserTabCreateAdapter = null;
+let browserTabCloseAdapter = null;
 
 function getBrowserReadAdapter() {
   if (browserReadAdapter) return browserReadAdapter;
@@ -35,6 +36,18 @@ function getBrowserTabCreateAdapter() {
     conversationKey: (url) => RelayCore.conversationKey(url || ''),
   });
   return browserTabCreateAdapter;
+}
+
+function getBrowserTabCloseAdapter() {
+  if (browserTabCloseAdapter) return browserTabCloseAdapter;
+  const adapterFactory = globalThis.RccBrowserTabCloseAdapter;
+  const contract = globalThis.RccBrowserTabCloseContract;
+  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_TAB_CLOSE_ADAPTER_NOT_LOADED');
+  browserTabCloseAdapter = adapterFactory.create(chrome, contract, {
+    isChatTab,
+    conversationKey: (url) => RelayCore.conversationKey(url || ''),
+  });
+  return browserTabCloseAdapter;
 }
 
 const CONTROL = 'CONTROL';
@@ -3510,13 +3523,31 @@ async function handleNativeCommand(message) {
 
       const outcome = await runIdempotentOperation(operationId, 'close-conversation-tab', fingerprint, async () => {
 
-        const tab = await resolveExactConversationCommand(message);
+        const state = await loadState();
 
-        const result = { ok: true, operationId, closed: true, tabId: tab.id, conversationKey };
+        const requestedSessionId = String(message.sessionId || '').trim();
 
-        await chrome.tabs.remove(tab.id);
+        if (requestedSessionId && requestedSessionId !== endpointSessionId) {
 
-        return result;
+          throw new Error('Endpoint session mismatch');
+
+        }
+
+        return getBrowserTabCloseAdapter().closeTab({
+
+          operationId,
+
+          instanceId: String(state.settings.instanceId || ''),
+
+          sessionId: endpointSessionId,
+
+          tabId: Number(message.tabId),
+
+          expectedWindowId: message.windowId,
+
+          conversationKey,
+
+        });
 
       });
 
