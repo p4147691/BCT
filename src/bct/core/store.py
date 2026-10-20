@@ -100,6 +100,44 @@ class Store:
                     instance TEXT NOT NULL, endpoint TEXT NOT NULL, generation INTEGER NOT NULL,
                     active INTEGER NOT NULL, FOREIGN KEY(node_id) REFERENCES nodes(node_id)
                 );
+                -- Conversation-network records deliberately do not reuse the
+                -- orchestration role/lease tables below. They are a project
+                -- directory and an append-only Monitor observation ledger.
+                CREATE TABLE IF NOT EXISTS conversation_network_projects (
+                    project_id TEXT PRIMARY KEY, display_name TEXT NOT NULL,
+                    active INTEGER NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS conversation_network_conversations (
+                    conversation_key TEXT PRIMARY KEY, display_name TEXT NOT NULL,
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS conversation_network_memberships (
+                    project_id TEXT NOT NULL, conversation_key TEXT NOT NULL,
+                    activity TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    PRIMARY KEY(project_id, conversation_key),
+                    FOREIGN KEY(project_id) REFERENCES conversation_network_projects(project_id),
+                    FOREIGN KEY(conversation_key) REFERENCES conversation_network_conversations(conversation_key)
+                );
+                CREATE TABLE IF NOT EXISTS conversation_network_membership_tags (
+                    project_id TEXT NOT NULL, conversation_key TEXT NOT NULL, tag TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY(project_id, conversation_key, tag),
+                    FOREIGN KEY(project_id, conversation_key)
+                        REFERENCES conversation_network_memberships(project_id, conversation_key)
+                );
+                CREATE TABLE IF NOT EXISTS conversation_network_monitor_snapshots (
+                    snapshot_id TEXT PRIMARY KEY, observed_at TEXT NOT NULL,
+                    completeness TEXT NOT NULL, payload_digest TEXT NOT NULL,
+                    received_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS conversation_network_monitor_rows (
+                    snapshot_id TEXT NOT NULL, node_label TEXT NOT NULL,
+                    conversation_key TEXT NOT NULL, title TEXT NOT NULL, presence TEXT NOT NULL,
+                    PRIMARY KEY(snapshot_id, conversation_key),
+                    FOREIGN KEY(snapshot_id) REFERENCES conversation_network_monitor_snapshots(snapshot_id)
+                );
+                CREATE INDEX IF NOT EXISTS conversation_network_monitor_rows_snapshot_label
+                    ON conversation_network_monitor_rows(snapshot_id, node_label);
                 CREATE TABLE IF NOT EXISTS works (
                     work_id TEXT PRIMARY KEY, request_summary TEXT NOT NULL, roots_json TEXT NOT NULL,
                     actions_json TEXT NOT NULL, owner_principal_id TEXT NOT NULL,

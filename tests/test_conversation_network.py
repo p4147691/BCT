@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from bct.conversation_network import (
+    ConversationNetworkError, project_view, record_monitor_snapshot,
+    set_membership, upsert_conversation, upsert_project,
+)
+from bct.core.store import Store
+
+
+MANAGER = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
+WORKER = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+
+
+class ConversationNetworkTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.temp.name) / "state.sqlite")
+        upsert_project(self.store, project_id="bct.rcc", display_name="BCT RCC", now=100.0)
+        upsert_conversation(self.store, conversation_key=MANAGER, display_name="오류 병목 감시 측정기", now=100.0)
+        upsert_conversation(self.store, conversation_key=WORKER, display_name="대화 기록 조회 구현", now=100.0)
+        set_membership(self.store, project_id="bct.rcc", conversation_key=MANAGER,
+                       tags=["조정", "병목 분석"], now=100.0)
+        set_membership(self.store, project_id="bct.rcc", conversation_key=WORKER,
+                       tags=["구현", "테스트"], now=100.0)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    @staticmethod
+    def snapshot(snapshot_id: str = "monitor.1", completeness: str = "COMPLETE", nodes=None):
+        return {
+            "schema": "BCT_MONITOR_NODE_SNAPSHOT_V1", "source": "MONITOR",
+            "snapshot_id": snapshot_id, "observed_at": "2026-10-20T03:18:00Z",
+            "completeness": completeness,
+            "nodes": nodes if nodes is not None else [
+                {"node_label": "D1-3", "conversation_key": MANAGER,
+                 "title": "오류 병목 감시 측정기", "presence": "OPEN"},
+                {"node_label": "D1-4", "conversation_key": WORKER,
+                 "title": "대화 기록 조회 구현", "presence": "OPEN"},
+            ],
+        }
+
+    def test_literal_monitor_label_is_recorded_and_matched_by_conversation_key(self):
+        receipt = record_monitor_snapshot(self.store, self.snapshot(), now=200.0)
+        self.assertEqual({"snapshot_id": "monitor.1", "duplicate": False, "recorded": True,
+                          "completeness": "COMPLETE", "node_count": 2}, receipt)
+        view = project_view(self.store, project_id="bct.rcc")
+        manager = next(item for item in view["members"] if item["display_name"] == "오류 병목 감시 측정기")
+        self.assertEqual("D1-3", manager["monitor"]["node_label"])
+        self.assertEqual("MATCHED", manager["monitor_match"])
+        self.assertCountEqual(["조정", "병목 분석"], manager["role_tags"])
+        self.assertEqual([], view["monitor_only"])
+
+    def test_partial_snapshot_never_treats_missing_member_as_removed(self):
+        record_monitor_snapshot(self.store, self.snapshot(nodes=[
+            {"node_label": "D1-4", "conversation_key": WORKER,
+             "title": "대화 기록 조회 구현", "presence": "OPEN"},
+        ], completeness="PARTIAL"), now=200.0)
+        view = project_view(self.store, project_id="bct.rcc")
+        manager = next(item for item in view["members"] if item["display_name"] == "오류 병목 감시 측정기")
+        self.assertEqual("PARTIAL_UNOBSERVED", manager["monitor_match"])
+
+    def test_monitor_only_node_is_visible_but_not_auto_added_to_project(self):
+        third = "6ad5b191-947c-83ee-8dae-b9c867af9026"
+        record_monitor_snapshot(self.store, self.snapshot(nodes=[
+            {"node_label": "D1-3", "conversation_key": MANAGER,
+             "title": "오류 병목 감시 측정기", "presence": "OPEN"},
+            {"node_label": "D1-5", "conversation_key": third,
+             "title": "새 대화", "presence": "OPEN"},
+        ]), now=200.0)
+        view = project_view(self.store, project_id="bct.rcc")
+        self.assertEqual([{"node_label": "D1-5", "title": "새 대화", "presence": "OPEN"}], view["monitor_only"])
+        self.assertEqual(2, len(view["members"]))
+
+    def test_conflicting_label_is_rejected_without_recording(self):
+        with self.assertRaisesRegex(ConversationNetworkError, "CONVERSATION_NETWORK_LABEL_CONFLICT"):
+            record_monitor_snapshot(self.store, self.snapshot(nodes=[
+                {"node_label": "D1-3", "conversation_key": MANAGER, "title": "A", "presence": "OPEN"},
+                {"node_label": "D1-3", "conversation_key": WORKER, "title": "B", "presence": "OPEN"},
+            ]), now=200.0)
+        self.assertIsNone(project_view(self.store, project_id="bct.rcc")["monitor_snapshot"])
+
+    def test_unavailable_snapshot_does_not_erase_last_observation(self):
+        record_monitor_snapshot(self.store, self.snapshot(), now=200.0)
+        record_monitor_snapshot(self.store, self.snapshot("monitor.2", "UNAVAILABLE", []), now=201.0)
+        view = project_view(self.store, project_id="bct.rcc")
+        self.assertEqual("UNAVAILABLE", view["monitor_snapshot"]["completeness"])
+        self.assertTrue(all(item["monitor_match"] == "MONITOR_UNAVAILABLE" for item in view["members"]))

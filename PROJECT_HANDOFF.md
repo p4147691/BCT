@@ -141,6 +141,19 @@ rejection으로 차단됐으며 전후 Manager/Worker state·binding은 동일�
 탭, storage, binding, 실제 메시지는 바꾸지 않았다. 세부와 검증은
 `docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE7_CONVERSATION_NETWORK_FOUNDATION_20261020.md`에 있다.
 
+## 완료 — BCT 대화망 1단계 durable Monitor snapshot (source-only)
+
+RCC의 source 대화망 계약과 별개로 BCT durable store에 프로젝트·대화 UUID·안내용 역할 태그·
+활동 상태·append-only Monitor snapshot을 추가했다. Monitor 원문 표기(예: `D1-3`)는 UUID와
+함께 읽기 전용으로 저장하지만 BCT가 생성·해석·재형식화하지 않는다. `COMPLETE`, `PARTIAL`,
+`UNAVAILABLE`을 구별하며 PARTIAL/UNAVAILABLE로 프로젝트 멤버나 이전 관측을 지우지 않는다.
+Monitor에서만 보이는 노드는 자동 등록·자동 전달 대상이 아니다.
+
+이 단계는 source SQLite schema/query와 unit test만 추가했다. BCT Control endpoint, Monitor
+실시간 입력, RCC/Native Host/Chrome extension, 탭, storage, binding, 실제 메시지 및 LIVE
+프로젝트 레코드는 변경하지 않았다. 세부 계약은
+`docs/exec-plans/active/BCT_CONVERSATION_NETWORK_STAGE1_DURABLE_SNAPSHOT_20261020.md`에 있다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /
