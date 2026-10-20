@@ -1045,4 +1045,6 @@ BCT Python 회귀 842개가 통과했고 실제 loader/manifest 순서로 backgr
 실행하는 시험도 통과했다.
 LIVE RCC 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE3_DOMAIN_CONTENT_20261020.md`를 따른다.
-다음 단계는 V2-4 통합 Release Candidate 검증이며 계속 비-LIVE다.
+exact source commit `62317038bd50b848f6d49714029630c3fda03040`의 GitHub Actions
+`BCT CI` run `39393918353`도 전체 통과했다. 다음 단계는 V2-4 통합 Release Candidate
+검증이며 계속 비-LIVE다.

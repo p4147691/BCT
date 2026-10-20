@@ -1,6 +1,6 @@
 # RCC Rebuild V2-3 — 활성 domain·content 일괄 분리
 
-상태: `SOURCE_COMPLETE / LOCAL_VERIFIED / RCC_LIVE_UNCHANGED`
+상태: `SOURCE_COMPLETE / CI_PASS / RCC_LIVE_UNCHANGED`
 
 ## 범위
 
@@ -56,5 +56,7 @@ assembly marker를 실행한다. 기존 content 구현은 책임 경계로 이�
 - 전체 BCT Python 회귀 842개: PASS
 - active JavaScript 30개 syntax, `python -m compileall -q src tests`, `git diff --check`: PASS
 
-원격 CI 결과와 exact source commit은 commit 이후 추가한다. V2-4 통합 Release Candidate 검증 전에는
-이 source payload를 LIVE RCC 설치본에 복사하거나 확장을 reload하지 않는다.
+exact source commit은 `62317038bd50b848f6d49714029630c3fda03040`이며 GitHub Actions
+`BCT CI` run `39393918353`의 preflight, core 4개 shard, browser-bridge가 모두 통과했다.
+V2-4 통합 Release Candidate 검증 전에는 이 source payload를 LIVE RCC 설치본에 복사하거나
+확장을 reload하지 않는다.
