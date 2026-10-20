@@ -964,3 +964,16 @@ diagnostics에서 읽게 하는 것이다. 과거 읽기 전용 UNKNOWN 9건에�
 UNKNOWN receipt는 바꾸지 않고 exact Claim만 원자적으로 해제한다. mutating capability는 이
 경로에서 거부한다. 그 다음 순서는 execute → relay_browser → orchestrate이며, 외부 postcondition
 증거 없이 mutation을 재실행하거나 Claim을 해제하지 않는다.
+
+## Monitor BCT 전환 후 legacy 조직 조회 경계
+
+2026-10-20 읽기 전용 점검에서 `check_monitor_live_organization.py`가 찾는 ACT
+`/organization/*` endpoint는 응답하지 않았다. 이는 BCT Core/RCC 장애가 아니라, 2026-10-13
+`729d403` 전환에서 ACT 조직 authority를 퇴역시키고 Monitor 기본 화면을 BCT의 RCC 관측
+window/tab projection으로 바꾼 결과다. 같은 시점의 LIVE BCT `/monitor/state`는 RCC instance와
+열린 ChatGPT 대화를 정상 관측했다.
+
+따라서 legacy `D1-3` 같은 조직 노드 표기는 BCT-native snapshot의 입력이 아니며, 이를 얻기 위해
+퇴역 ACT를 재가동하거나 legacy endpoint를 복구하면 안 된다. 대화망에 표시할 후속 표기는 BCT가
+관측한 exact conversation key를 기준으로 별도 read-only display mapping으로 정의해야 한다. 이는
+relay routing/권한을 만들지 않는다.
