@@ -133,6 +133,30 @@ vm.runInContext(source, context);
   assert.equal(nodes[1].conversationKey, "");
   assert.equal(nodes[1].url, "https://chatgpt.com/");
   assert.ok(nodes.every((node) => /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:[/?#]|$)/i.test(node.url)));
+  const tabOrdered = shell.windowNodes({
+    rcc: { instances: [{
+      instance_id: "rcc-live", session_id: "session-live", state: "OPEN",
+      tabs: [
+        { tab_id: 7, window_id: 20, tab_index: 5, title: "N7", url: "https://chatgpt.com/c/seven", node_label: "N7" },
+        { tab_id: 4, window_id: 20, tab_index: 1, title: "N4", url: "https://chatgpt.com/c/four", node_label: "N4" },
+        { tab_id: 9, window_id: 20, tab_index: 3, title: "N9", url: "https://chatgpt.com/c/nine", node_label: "N9" },
+      ],
+    }] },
+  });
+  assert.deepEqual(Array.from(tabOrdered, (node) => node.nodeLabel), ["N4", "N9", "N7"],
+    "window nodes must follow the current Chrome tab strip order");
+  const tabReordered = shell.windowNodes({
+    rcc: { instances: [{
+      instance_id: "rcc-live", session_id: "session-live", state: "OPEN",
+      tabs: [
+        { tab_id: 7, window_id: 20, tab_index: 3, title: "N7", url: "https://chatgpt.com/c/seven", node_label: "N7" },
+        { tab_id: 4, window_id: 20, tab_index: 1, title: "N4", url: "https://chatgpt.com/c/four", node_label: "N4" },
+        { tab_id: 9, window_id: 20, tab_index: 5, title: "N9", url: "https://chatgpt.com/c/nine", node_label: "N9" },
+      ],
+    }] },
+  });
+  assert.deepEqual(Array.from(tabReordered, (node) => node.nodeLabel), ["N4", "N7", "N9"],
+    "moving a Chrome tab must change the grouped node order on the next snapshot");
   const retainedDisplay = shell.displayWindowNodes({
     service: monitorState.service,
     rcc: { instances: [{ instance_id: "rcc-live", state: "UNAVAILABLE", tabs: [] }] },

@@ -31,6 +31,7 @@ const RccBackgroundApp = Object.freeze({
         handleEndpointTabUpdated(tabId, changeInfo, tab).catch(() => {});
       },
       onRemoved: (tabId) => { handleEndpointTabRemoved(tabId).catch(() => {}); },
+      onMoved: (tabId) => { handleEndpointTabMoved(tabId).catch(() => {}); },
     });
     connectNativeHost();
   },

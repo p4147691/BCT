@@ -12,10 +12,11 @@ assert.ok(start > 0 && end > start);
 const fn = source.slice(start,end);
 const state = { dummy:true };
 const nodes = [
-  {windowId:491,nodeLabel:"N5",title:"묶음 지시 최적화",conversationKey:"b"},
-  {windowId:491,nodeLabel:"N4",title:"평점 조회 방식 조사",conversationKey:"a"},
+  {windowId:491,nodeLabel:"N4",title:"첫 탭",conversationKey:"a"},
+  {windowId:491,nodeLabel:"N9",title:"둘째 탭",conversationKey:"c"},
+  {windowId:491,nodeLabel:"N7",title:"셋째 탭",conversationKey:"b"},
   {windowId:319,nodeLabel:"N3",title:"오류 병목 감시 측정기",conversationKey:"c"},
-  {windowId:491,nodeLabel:"N5",title:"같은 노드 중복 관측",conversationKey:"b"},
+  {windowId:491,nodeLabel:"N9",title:"같은 노드 중복 관측",conversationKey:"c"},
   {windowId:491,nodeLabel:"",title:"대화 준비",conversationKey:""}
 ];
 const ctx = {
@@ -28,11 +29,11 @@ const ctx = {
 vm.createContext(ctx);
 vm.runInContext(fn,ctx);
 const lookup=(hwnd)=>Array.from(ctx.monitorBadgeNodeNumbersForHwnd(hwnd,state));
-assert.deepEqual(lookup("5000"),[4,5],"shared Chrome HWND must show all RCC node labels");
+assert.deepEqual(lookup("5000"),[4,9,7],"shared Chrome HWND must preserve Chrome tab order");
 assert.deepEqual(lookup("6000"),[3],"other HWND must not leak labels");
 assert.deepEqual(lookup("7000"),[],"unmapped HWND must not show fabricated labels");
 assert.deepEqual(lookup(""),[],"empty HWND must remain empty");
-assert.deepEqual(lookup("5000"),[4,5],"pending conversation must not fabricate a permanent label");
+assert.deepEqual(lookup("5000"),[4,9,7],"pending conversation must not fabricate a permanent label");
 ctx.monitorBctWindowNodesCache=[];
 assert.deepEqual(lookup("5000"),[],"authoritative empty directory must not use obsolete ACT labels");
 ctx.monitorBctWindowNodesCache=null;

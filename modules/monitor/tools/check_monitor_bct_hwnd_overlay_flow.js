@@ -82,9 +82,9 @@ const openState = {
     session_id: "session-live",
     state: "OPEN",
     tabs: [
-      { tab_id: 4, window_id: 594834491, title: "N4", url: "https://chatgpt.com/c/chat-four", node_label: "N4", active: true },
-      { tab_id: 7, window_id: 594834491, title: "N7", url: "https://chatgpt.com/c/chat-seven", node_label: "N7", active: false },
-      { tab_id: 9, window_id: 594834491, title: "N9", url: "https://chatgpt.com/c/chat-nine", node_label: "N9", active: false },
+      { tab_id: 4, window_id: 594834491, tab_index: 0, title: "N4", url: "https://chatgpt.com/c/chat-four", node_label: "N4", active: true },
+      { tab_id: 7, window_id: 594834491, tab_index: 2, title: "N7", url: "https://chatgpt.com/c/chat-seven", node_label: "N7", active: false },
+      { tab_id: 9, window_id: 594834491, tab_index: 1, title: "N9", url: "https://chatgpt.com/c/chat-nine", node_label: "N9", active: false },
     ],
   }] },
 };
@@ -103,10 +103,10 @@ function projectedLabel(nodes, bindings) {
     const lineage = `${node.instanceId}:${node.sessionId}:${node.windowId}`;
     return hwndByLineage.get(lineage) === "777";
   }).map((node) => Number(String(node.nodeLabel).replace(/^N/i, ""))).filter(Number.isFinite);
-  return `N${[...new Set(labels)].sort((a, b) => a - b).join("/")}`;
+  return `N${[...new Set(labels)].join("/")}`;
 }
 
-assert.equal(projectedLabel(openNodes, initial.bindings), "N4/7/9");
+assert.equal(projectedLabel(openNodes, initial.bindings), "N4/9/7");
 
 const unavailableState = {
   rcc: { instances: [{ instance_id: "rcc-live", state: "UNAVAILABLE", error: "TimeoutError", tabs: [] }] },
@@ -118,8 +118,8 @@ assert.equal(contract.resolve({ nodes: cachedNodes, locations, now }).bindings.l
 const retained = contract.retainCurrentSessionBindings({
   bindings: [], previousBindings: initial.bindings, nodes: cachedNodes, locations, now,
 });
-assert.equal(projectedLabel(cachedNodes, retained), "N4/7/9",
-  "a transient RCC miss preserves the prior exact N4/7/9 projection while Native still sees the same HWND");
+assert.equal(projectedLabel(cachedNodes, retained), "N4/9/7",
+  "a transient RCC miss preserves the prior exact N4/9/7 projection while Native still sees the same HWND");
 
 const expired = contract.retainCurrentSessionBindings({
   bindings: [], previousBindings: initial.bindings, nodes: cachedNodes,
@@ -138,7 +138,7 @@ const display = contract.resolveDisplay({
   nodes: openNodes, locations: geometryLocations, now,
   browserWindows: [{ windowId: 594834491, left: 1024, top: 0, width: 1024, height: 720, state: "normal", observedAt: now - 50 }],
 });
-assert.equal(projectedLabel(openNodes, display.bindings), "N4/7/9",
+assert.equal(projectedLabel(openNodes, display.bindings), "N4/9/7",
   "a unique Chrome window_id geometry may restore only the display projection after extension reload");
 assert.equal(display.bindings[0].displayOnly, true);
 assert.equal(contract.resolve({ nodes: openNodes, locations: geometryLocations, now }).bindings.length, 0,
@@ -154,7 +154,7 @@ const ambiguousDisplay = contract.resolveDisplay({
 assert.equal(ambiguousDisplay.bindings.length, 0, "identical Native geometry must remain unassigned");
 assert.ok(ambiguousDisplay.rejected.some((item) => item.reason === "HWND_GEOMETRY_AMBIGUOUS"));
 
-console.log("PASS: exact action binding stays strict while unique window_id geometry restores display-only N4/7/9 after reload");
+console.log("PASS: exact action binding stays strict while unique window_id geometry restores tab-ordered N4/9/7 after reload");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

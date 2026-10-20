@@ -57,6 +57,9 @@
         for (const tab of Array.isArray(instance?.tabs) ? instance.tabs : []) {
           const tabId = Number(tab?.tab_id || 0);
           const windowId = Number(tab?.window_id || 0);
+          const tabIndex = Number.isSafeInteger(tab?.tab_index) && tab.tab_index >= 0
+            ? tab.tab_index
+            : null;
           if (!Number.isSafeInteger(tabId) || tabId <= 0 ||
               !Number.isSafeInteger(windowId) || windowId <= 0) continue;
           const url = String(tab?.url || "").trim();
@@ -74,6 +77,7 @@
             displayStale: instanceCached && instanceState !== "OPEN",
             tabId,
             windowId,
+            tabIndex,
             title: String(tab?.title || "ChatGPT").trim() || "ChatGPT",
             url,
             conversationKey: conversationMatch?.[1] || "",
@@ -85,7 +89,9 @@
         }
       }
       nodes.sort((left, right) =>
-        left.windowId - right.windowId || left.tabId - right.tabId ||
+        left.windowId - right.windowId ||
+        (left.tabIndex ?? Number.MAX_SAFE_INTEGER) - (right.tabIndex ?? Number.MAX_SAFE_INTEGER) ||
+        left.tabId - right.tabId ||
         left.instanceId.localeCompare(right.instanceId));
       return Object.freeze(nodes);
     }

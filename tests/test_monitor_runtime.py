@@ -240,8 +240,8 @@ class MonitorRuntimeTests(unittest.TestCase):
                     "sessionId": "session-123",
                     "settings": {"token": "must-not-leak"},
                     "registrations": {"MANAGER": {"secret": "must-not-leak"}},
-                    "tabs": [{"id": 12, "windowId": 34, "title": "Manager", "url": "https://chatgpt.com/c/x"}],
-                    "endpoints": [{"tabId": 12, "presence": "OPEN", "tabActive": True, "generating": False}],
+                    "tabs": [{"id": 12, "windowId": 34, "index": 7, "title": "Manager", "url": "https://chatgpt.com/c/x"}],
+                    "endpoints": [{"tabId": 12, "tabIndex": 8, "presence": "OPEN", "tabActive": True, "generating": False}],
                 }}
 
         with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
@@ -249,6 +249,7 @@ class MonitorRuntimeTests(unittest.TestCase):
         self.assertEqual("OPEN", rows[0]["state"])
         self.assertEqual("session-123", rows[0]["session_id"])
         self.assertEqual(12, rows[0]["tabs"][0]["tab_id"])
+        self.assertEqual(7, rows[0]["tabs"][0]["tab_index"])
         self.assertNotIn("settings", rows[0])
         self.assertNotIn("registrations", rows[0])
         self.assertNotIn("must-not-leak", repr(rows))

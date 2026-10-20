@@ -25,6 +25,7 @@
       publicTab: (tab) => ({
         id: tab?.id,
         windowId: tab?.windowId ?? null,
+        index: Number.isInteger(tab?.index) ? tab.index : null,
         title: tab?.title || '',
         url: tab?.url || '',
       }),
