@@ -51,8 +51,6 @@
     layer.replaceChildren();
     container.append(layer);
 
-    if (!state) return Object.freeze({ status: "NO_STATE", candidates: 0, matched: 0, rendered: 0 });
-
     const desktopId = text(container.dataset.desktopId);
     const images = [...container.querySelectorAll(".monitor-desktop-thumb-window[data-hwnd]")];
     const imagesByHwnd = new Map(images

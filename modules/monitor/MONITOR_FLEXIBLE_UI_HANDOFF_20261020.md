@@ -109,3 +109,17 @@ Safe extension principles:
 - A square is allowed only for a connected task with an authoritative terminal success report. Chat generation becoming idle, a disconnected connection, a stopped/cancelled process, or an unverified report cannot create it.
 - Network disconnection, retry/recovery/new-chat requirements, failed/blocked reports, and review-required reports use warning. Warning is independently rendered with an active/play or pause icon when both facts exist.
 - This is source-only and shares the same pending LIVE gate as the minimized-number correction.
+
+## 2026-10-21 open-window node projection: legacy-state gate removed
+
+### LIVE failure evidence and exact cause
+- Installed Monitor 2.0.14 acknowledged the official same-ID reload, but both desktop projections reported `NO_STATE`, `candidates: 0`, `matched: 0`, and `rendered: 0`.
+- The overlay was not hidden by capture pixels or z-index. `monitor-bct-thumbnail-projection.js` returned before collecting exact HWND candidates whenever the legacy `monitorLastAiState` value was null.
+- BCT/RCC node cards and node-number lookup use `monitorBctWindowNodesCache`; this authoritative path remains valid without legacy ACT/AI state. The renderer therefore had an obsolete cross-domain prerequisite.
+- The previous regression passed only because it injected `state: {}`. It did not reproduce the actual BCT/RCC-only runtime.
+
+### Correction and regression contract
+- The projection renderer no longer requires legacy ACT/AI state before enumerating exact Native HWND geometry and asking the supplied BCT/RCC number provider for labels.
+- Strict window identity is unchanged: no HWND or node number is invented, and unresolved bindings still render no badge.
+- `check_monitor_thumbnail_node_overlay.js` now passes `state: null` and requires an exact N4/7/9 overlay from the BCT/RCC provider, including capture-DOM replacement.
+- Focused node overlay, minimized badge, thumbnail label, current-session HWND, HWND overlay-flow, render-backpressure, syntax, and Monitor structure checks pass locally.

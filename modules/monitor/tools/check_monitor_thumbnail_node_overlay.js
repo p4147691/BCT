@@ -93,16 +93,24 @@ context.globalThis = context;
 vm.createContext(context);
 vm.runInContext(source, context);
 const locations = new Map([["500", { hwnd: "500", desktopId: "desk-a", left: 500, top: 0, width: 500, height: 800, iconic: false, visible: true }]]);
+let observedState = "not-called";
 const render = () => context.MonitorBctThumbnailProjection.render({
   container: visual,
-  state: {},
+  // Production can have no legacy ACT/AI state while the BCT/RCC node cache
+  // and the exact HWND contract are healthy. That must not suppress badges.
+  state: null,
   locations,
   highlightedHwnd: "500",
-  numbersForHwnd: (hwnd) => hwnd === "500" ? [4, 7, 9] : [],
+  numbersForHwnd: (hwnd, state) => {
+    observedState = state;
+    return hwnd === "500" ? [4, 7, 9] : [];
+  },
 });
 const first = render();
 assert.deepEqual({ status:first.status, candidates:first.candidates, matched:first.matched, rendered:first.rendered },
   { status:"RENDERED", candidates:1, matched:1, rendered:1 });
+assert.equal(observedState, null,
+  "BCT/RCC number projection must run even when legacy ACT/AI state is absent");
 
 const layer = visual.querySelector(".monitor-thumbnail-node-overlay");
 assert.ok(layer, "dedicated thumbnail overlay layer must be created");
