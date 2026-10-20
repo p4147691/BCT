@@ -1,6 +1,6 @@
 # RCC Rebuild V2 — 통합 종료 계획
 
-상태: `V2_4_RC_ASSEMBLED / LOCAL_PASS / CI_PENDING / RCC_LIVE_UNCHANGED`
+상태: `V2_4_RC_COMPLETE / CI_PASS / RCC_LIVE_UNCHANGED`
 
 V1의 API별 Adapter 추가 방식은 여기서 종료한다. 이 문서는 RCC를 실제로 끝낼 수 있도록
 남은 책임 전체, 한 번에 묶을 전환 단위, LIVE 전환 시점과 완료 조건을 다시 고정한 실행 계획이다.

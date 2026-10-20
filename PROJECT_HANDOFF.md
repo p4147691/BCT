@@ -1,6 +1,6 @@
 # BCT 인수인계
 
-## 진행 — RCC Rebuild V2-4 비-LIVE Release Candidate
+## 완료 — RCC Rebuild V2-4 비-LIVE Release Candidate
 
 V2-1~3 source payload를 `RCC_REBUILD_V2_RC1` 46개 exact 파일로 조립했다. active loader graph,
 domain/platform dependency, allowed message matrix, storage/wire, extension ID/Native Host 계약을
@@ -17,7 +17,9 @@ runtime/content sender를 fail-closed로 검증하고 popup을 `relay:getState` 
 `93b1cfdc4e6602ddfb7de46b6fa00eb10173db01f911c1530c952cc1439e583b`와 exact 일치한다. 후보는
 `D:\BCT\runtime\rehearsals\rcc-rebuild-v2-rc1-ce3a33bb`에만 조립했고 extra/missing 0개다.
 RCC Node 23개, focused Python 17개, 전체 BCT Python 845개, candidate/LIVE verifier,
-compileall, diff check가 통과했다. remote CI는 아직 남았다. LIVE RCC 설치본, Chrome, Native Host와 binding은
+compileall, diff check가 통과했다. exact implementation SHA
+`62049dc4810e03c86f9b1b92b3c184d303df488e`의 GitHub Actions run `39398670419`도 preflight,
+Core 4개 shard와 Browser Bridge 전체 PASS다. LIVE RCC 설치본, Chrome, Native Host와 binding은
 변경하지 않았다. 상세는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE4_RELEASE_CANDIDATE_20261020.md`에 있다.
 

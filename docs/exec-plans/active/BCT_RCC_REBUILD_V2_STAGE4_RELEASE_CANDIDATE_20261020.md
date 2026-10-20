@@ -1,6 +1,6 @@
 # RCC Rebuild V2-4 — 비-LIVE Release Candidate
 
-상태: `SOURCE_RC_ASSEMBLED / LOCAL_PASS / CI_PENDING / RCC_LIVE_UNCHANGED`
+상태: `SOURCE_RC_COMPLETE / LOCAL_PASS / CI_PASS / RCC_LIVE_UNCHANGED`
 
 ## 범위
 
@@ -77,7 +77,14 @@ profile, storage와 binding은 후보 배치 및 rollback 대상이 아니다.
 - Python compileall: PASS
 - `git diff --check`: PASS
 
-remote CI 결과는 구현 commit 뒤 이 문서에 exact SHA/run으로 추가한다.
+## 원격 CI
+
+- exact implementation SHA: `62049dc4810e03c86f9b1b92b3c184d303df488e`
+- GitHub Actions `BCT CI`: run `39398670419` PASS
+- preflight, Core 4개 shard, Browser Bridge 전체 PASS
+
+이 SHA의 source payload와 `rcc_v2_rc.json` candidate aggregate를 V2-5 precondition으로 사용한다.
+문서 후속 commit은 이 검증된 source payload를 바꾸지 않는다.
 
 ## LIVE 변경 금지선
 
