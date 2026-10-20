@@ -31,7 +31,13 @@ the desktop thumbnail badge is `N4/9/7`, not a numeric `N4/7/9` sort.
 
 ## Status
 
-`LOCAL_VERIFIED / PR_PENDING / LIVE_NOT_APPLIED`
+`MERGED / MAIN_CI_SUCCESS / LIVE_NOT_APPLIED`
+
+- PR: `#258`
+- Feature head: `64c7640e7e23ea6434697aba1e8e899c83d88186`
+- Main merge SHA: `29aecfa47f1a9284eacdb860927e0bd52992a076`
+- PR CI: `39509511270` — SUCCESS
+- Main CI: `39510205768` — SUCCESS
 
 LIVE RCC, Core, Monitor, Native Host, Chrome tabs, and bindings remain
 unchanged. LIVE acceptance requires one coordinated exact-SHA rollout and a
