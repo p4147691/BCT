@@ -103,7 +103,7 @@ const render = () => context.MonitorBctThumbnailProjection.render({
   highlightedHwnd: "500",
   numbersForHwnd: (hwnd, state) => {
     observedState = state;
-    return hwnd === "500" ? [4, 7, 9] : [];
+    return hwnd === "500" ? [4, 9, 7, 9] : [];
   },
 });
 const first = render();
@@ -122,7 +122,7 @@ assert.equal(windowOverlay.style.width, "50%");
 assert.match(windowOverlay.className, /monitor-bct-node-target-highlighted/);
 const badges = windowOverlay.querySelectorAll(".monitor-thumbnail-tab-badge");
 assert.equal(badges.length, 1);
-assert.equal(badges[0].textContent, "N4/7/9");
+assert.equal(badges[0].textContent, "N4/9/7");
 
 render();
 assert.equal(visual.querySelectorAll(".monitor-thumbnail-node-overlay").length, 1);
@@ -139,5 +139,5 @@ assert.equal(geometryOverlay.style.left, "50%");
 assert.equal(geometryOverlay.style.top, "0%");
 assert.equal(geometryOverlay.style.width, "50%");
 assert.equal(geometryOverlay.style.height, "100%");
-assert.equal(geometryOverlay.querySelector(".monitor-thumbnail-tab-badge").textContent, "N4/7/9");
+assert.equal(geometryOverlay.querySelector(".monitor-thumbnail-tab-badge").textContent, "N4/9/7");
 console.log("PASS: open ChatGPT node overlay survives capture DOM replacement using exact Native geometry");

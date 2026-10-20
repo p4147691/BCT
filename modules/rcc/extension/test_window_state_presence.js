@@ -9,11 +9,16 @@ const ctx = { result: null, RelayCore: { conversationKey: () => 'chat-x' }, brow
 vm.createContext(ctx);
 vm.runInContext(`${src.slice(a,b)}; result={endpointFromTab,endpointComparable,attachEndpointWindowBounds};`, ctx);
 (async () => {
-  const e = ctx.result.endpointFromTab({ id: 1, windowId: 2, url: 'https://chatgpt.com/c/chat-x', title: 'X', active: false });
+  const e = ctx.result.endpointFromTab({ id: 1, windowId: 2, index: 4, url: 'https://chatgpt.com/c/chat-x', title: 'X', active: false });
+  if (e.tabIndex !== 4) throw new Error('Chrome tab index missing');
   await ctx.result.attachEndpointWindowBounds(e);
   if (e.windowBounds.state !== 'minimized' || e.windowBounds.activeTab !== false) throw new Error('window state/active tab missing');
   const moved = JSON.parse(JSON.stringify(e)); moved.windowBounds.left = 30;
   if (ctx.result.endpointComparable(e) === ctx.result.endpointComparable(moved)) throw new Error('bounds changes must publish');
+  const reordered = JSON.parse(JSON.stringify(e)); reordered.tabIndex = 1;
+  if (ctx.result.endpointComparable(e) === ctx.result.endpointComparable(reordered)) throw new Error('tab order changes must publish');
+  if (!src.includes('async function handleEndpointTabMoved(')) throw new Error('tab move observer missing');
+  if (!src.includes("await publishEndpointSnapshot('moved')")) throw new Error('tab move must refresh sibling indices');
   if (!src.includes('endpointComparable(previous) === endpointComparable(endpoint)')) throw new Error('poll must compare fresh bounds');
   console.log('RELAY_WINDOW_STATE_PRESENCE_PASS');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

@@ -68,6 +68,8 @@ function endpointFromTab(tab, presence = 'OPEN', reason = '') {
 
     windowId: tab?.windowId ?? null,
 
+    tabIndex: Number.isInteger(tab?.index) ? tab.index : null,
+
     conversationKey: RelayCore.conversationKey(url),
 
     title: String(tab?.title || ''),
@@ -94,6 +96,8 @@ function endpointComparable(endpoint) {
   return JSON.stringify([
 
     endpoint?.windowId ?? null,
+
+    endpoint?.tabIndex ?? null,
 
     endpoint?.conversationKey || '',
 
@@ -298,6 +302,15 @@ async function handleEndpointTabRemoved(tabId) {
 
 }
 
+async function handleEndpointTabMoved(_tabId) {
+
+  // Moving any tab shifts every later Chrome tab index in the same window.
+  // Publish one complete snapshot instead of leaving sibling ChatGPT indices
+  // stale until the next explicit state read.
+  await publishEndpointSnapshot('moved');
+
+}
+
 async function ensureRelayReceivers(tabsValue = null) {
   const repaired = [];
   const healthy = [];
@@ -311,4 +324,3 @@ async function ensureRelayReceivers(tabsValue = null) {
   });
   return { healthy, repaired };
 }
-

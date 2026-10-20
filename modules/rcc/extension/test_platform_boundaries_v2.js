@@ -17,7 +17,7 @@ const receiverFiles = [
 const listeners = {};
 const local = { settings: { instanceId: 'a'.repeat(32) } };
 const session = {};
-const tab = { id: 7, windowId: 9, url: 'https://chatgpt.com/c/exact', title: 'Exact' };
+const tab = { id: 7, windowId: 9, index: 2, url: 'https://chatgpt.com/c/exact', title: 'Exact' };
 let sendCalls = 0;
 let receiverReady = false;
 let reloadCalls = 0;
@@ -45,6 +45,7 @@ const chrome = {
     onCreated: { addListener: (fn) => { listeners.created = fn; } },
     onUpdated: { addListener: (fn) => { listeners.updated = fn; } },
     onRemoved: { addListener: (fn) => { listeners.removed = fn; } },
+    onMoved: { addListener: (fn) => { listeners.moved = fn; } },
   },
   windows: { get: async () => ({ id: 9, state: 'normal' }) },
   scripting: {
@@ -104,9 +105,10 @@ const chrome = {
     onCreated: (value) => observed.push(['created', value.id]),
     onUpdated: (id) => observed.push(['updated', id]),
     onRemoved: (id) => observed.push(['removed', id]),
+    onMoved: (id) => observed.push(['moved', id]),
   });
-  listeners.created(tab); listeners.updated(7, {}, tab); listeners.removed(7, {});
-  assert.deepEqual(observed, [['created', 7], ['updated', 7], ['removed', 7]]);
+  listeners.created(tab); listeners.updated(7, {}, tab); listeners.removed(7, {}); listeners.moved(7, { toIndex: 1 });
+  assert.deepEqual(observed, [['created', 7], ['updated', 7], ['removed', 7], ['moved', 7]]);
 
   const lifecycle = Lifecycle.create(chrome);
   assert.equal(lifecycle.runtimeSenderKind({ id: 'other' }), 'UNTRUSTED');

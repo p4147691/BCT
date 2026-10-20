@@ -14,6 +14,8 @@
           handlers.onUpdated?.(tabId, changeInfo, tab));
         chromeApi.tabs.onRemoved?.addListener((tabId, removeInfo) =>
           handlers.onRemoved?.(tabId, removeInfo));
+        chromeApi.tabs.onMoved?.addListener((tabId, moveInfo) =>
+          handlers.onMoved?.(tabId, moveInfo));
       },
     });
   }

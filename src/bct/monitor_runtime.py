@@ -131,9 +131,15 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                 if not isinstance(item, dict) or not isinstance(item.get("id"), int):
                     continue
                 endpoint = endpoints.get(int(item["id"]), {})
+                tab_index = item.get("index")
+                if not isinstance(tab_index, int) or isinstance(tab_index, bool) or tab_index < 0:
+                    tab_index = endpoint.get("tabIndex")
+                if not isinstance(tab_index, int) or isinstance(tab_index, bool) or tab_index < 0:
+                    tab_index = None
                 tabs.append({
                     "tab_id": item["id"],
                     "window_id": item.get("windowId"),
+                    "tab_index": tab_index,
                     "conversation_key": str(endpoint.get("conversationKey") or "").lower(),
                     "title": str(item.get("title") or ""),
                     "url": str(item.get("url") or ""),

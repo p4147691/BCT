@@ -5,7 +5,7 @@
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 48,
-    "aggregateSha256": "9ae94c72398d96ee01a6812478fce23972b76ea2bc42f783099e67b1fb73fd62",
+    "aggregateSha256": "7b001d30711a7e9e562818471433a997ac45db7d57fa96688abbfc5758a1221d",
     "files": [
       {
         "path": "background_loader.js",
@@ -19,8 +19,8 @@
       },
       {
         "path": "boot/background_app.js",
-        "size": 1235,
-        "sha256": "2b22759ba92035191b8e18f9e44c646a91c601966ce8b71ed7a29ea7f832661c"
+        "size": 1313,
+        "sha256": "dad95831e0b5d8239ec489a02362621356f245c460a23ca19e4bfd062d4296da"
       },
       {
         "path": "boot/platform_context.js",
@@ -29,8 +29,8 @@
       },
       {
         "path": "browser/read_adapter.js",
-        "size": 1612,
-        "sha256": "ceab052395f6457f3f22f7769ec0245dde699e7fbed2bf370df23369c6c6e24c"
+        "size": 1676,
+        "sha256": "c83b6e484853b8b8339389b5540f142e8f6870f1247ab5aedbc50299f3d0cd3f"
       },
       {
         "path": "browser/tab_close_adapter.js",
@@ -149,8 +149,8 @@
       },
       {
         "path": "domain/endpoint_service.js",
-        "size": 7233,
-        "sha256": "4a22a307ab390f47d0f9a974a19ce51233d2781ba921d8817d6a2db6a2fa7c9e"
+        "size": 7625,
+        "sha256": "b95769a353ae8a1ffaa57ab31e54e8dac6dfdfe466ea83ac3ee090c32a95bd08"
       },
       {
         "path": "domain/readonly_diagnostics.js",
@@ -194,8 +194,8 @@
       },
       {
         "path": "platform/browser_gateway.js",
-        "size": 2752,
-        "sha256": "f88d1590dd1af8e82bf01c9eaf33c4169bcf63d35c3b72670e751af82b57fe2c"
+        "size": 2816,
+        "sha256": "e8b654781b845a42101d8b7977eee15d243ba474d3bfe0563d1b6083b1d4b737"
       },
       {
         "path": "platform/chrome_state_repository.js",
@@ -214,8 +214,8 @@
       },
       {
         "path": "platform/observation_gateway.js",
-        "size": 836,
-        "sha256": "4c932a1029dfd234dcf0ed34b6dd92c71c114fe7890023b7ce302e838db861b8"
+        "size": 949,
+        "sha256": "2574fa66cfacf2878e5387b72f7a918cd0d7b0292d1f5b94de66986ca49ed363"
       },
       {
         "path": "popup.css",

@@ -85,8 +85,7 @@
       }
       const numbers = [...new Set(numbersForHwnd(hwnd, state)
         .map(Number)
-        .filter((number) => Number.isSafeInteger(number) && number > 0))]
-        .sort((a, b) => a - b);
+        .filter((number) => Number.isSafeInteger(number) && number > 0))];
       if (!numbers.length) {
         skipped.noNumbers += 1;
         continue;

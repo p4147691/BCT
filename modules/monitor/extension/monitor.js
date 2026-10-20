@@ -53951,7 +53951,7 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
     return [...new Set(matched.map((node) => {
       const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
       return match ? Number(match[1]) : 0;
-    }).filter((n) => Number.isSafeInteger(n) && n > 0))].sort((a, b) => a - b);
+    }).filter((n) => Number.isSafeInteger(n) && n > 0))];
   }
   return monitorActNodeNumbersForHwnd(hwnd, state);
 }
