@@ -15649,9 +15649,14 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     String(ep?.presence_state || "").toUpperCase() === "OPEN"
     && ["GOOGLE", "NAVER"].includes(String(ep?.profile_id || "").toUpperCase())
   );
-  if (!openEndpoints.length || !monitorDesktopState.desktopIds.length) return false;
+  const bctActiveNodes = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+    .filter((node) => node?.active === true && String(node?.instanceState || "").toUpperCase() === "OPEN");
+  if ((!openEndpoints.length && !bctActiveNodes.length) || !monitorDesktopState.desktopIds.length) return false;
 
-  const wanted = new Set(openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()).filter(Boolean));
+  const wanted = new Set([
+    ...openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()),
+    ...bctActiveNodes.map((node) => String(node?.conversationKey || "").trim()),
+  ].filter(Boolean));
   if (!wanted.size) return false;
 
   const renderSignature = (location) => [
@@ -15693,7 +15698,16 @@ async function refreshMonitorIdentityIndex(state, force = false) {
 
         const identity = await monitorNativeWithTimeout({ type: "getChromeConversationIdentity", hwnd }, 2500).catch(() => null);
         const key = String(identity?.conversationKey || "").trim();
-        if (!wanted.has(key)) return;
+        if (!wanted.has(key)) {
+          const latest = monitorWindowDesktopLocations.get(hwnd) || {};
+          if (latest.conversationKey || latest.identityAt) {
+            monitorWindowDesktopLocations.set(hwnd, {
+              ...latest, identityAt: now, conversationKey: "", identityTitle: "", nonChatSince: Date.now(),
+            });
+            projectionChanged = true;
+          }
+          return;
+        }
 
         const latest = monitorWindowDesktopLocations.get(hwnd) || {};
         const nextIdentity = {
@@ -15713,6 +15727,7 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     }
 
     monitorIdentityIndexRefreshAt = Date.now();
+    refreshMonitorBctCurrentSessionWindowHwnd();
     if (projectionChanged && monitorLastAiState) renderWorkers(monitorLastAiState);
     return projectionChanged;
   })().finally(() => { monitorIdentityIndexInflight = null; });
@@ -21640,9 +21655,39 @@ function monitorBrowserWindowIdForEndpoint(endpoint) {
   return String(endpoint?.window_id ?? endpoint?.browser_window_id ?? metadata.window_id ?? metadata.browser_window_id ?? "").trim();
 }
 
-function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState) {
+function refreshMonitorBctCurrentSessionWindowHwnd() {
+  const resolution = monitorWindowHwndContract?.resolve?.({
+    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations, now: Date.now(),
+  });
+  const next = new Map();
+  for (const binding of Array.isArray(resolution?.bindings) ? resolution.bindings : []) {
+    next.set(String(binding.lineage || ""), binding);
+  }
+  monitorBctCurrentSessionWindowHwnd = next;
+  return resolution || null;
+}
+
+function monitorBctCurrentSessionHwnd(windowIdValue, instanceIdValue = "", sessionIdValue = "") {
   const windowId = String(windowIdValue ?? "").trim();
-  if (!/^\d+$/.test(windowId) || windowId === "0" || !state) return "";
+  const instanceId = String(instanceIdValue ?? "").trim();
+  const sessionId = String(sessionIdValue ?? "").trim();
+  if (!/^\d+$/.test(windowId) || windowId === "0") return "";
+  if (instanceId && sessionId) {
+    return String(monitorBctCurrentSessionWindowHwnd.get(`${instanceId}:${sessionId}:${windowId}`)?.hwnd || "");
+  }
+  const matches = [...monitorBctCurrentSessionWindowHwnd.values()]
+    .filter((binding) => String(binding?.windowId || "") === windowId)
+    .map((binding) => String(binding?.hwnd || ""))
+    .filter((hwnd) => /^\d+$/.test(hwnd) && hwnd !== "0");
+  return new Set(matches).size === 1 ? matches[0] : "";
+}
+
+function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
+  const windowId = String(windowIdValue ?? "").trim();
+  if (!/^\d+$/.test(windowId) || windowId === "0") return "";
+  const currentSessionHwnd = monitorBctCurrentSessionHwnd(windowId, instanceIdValue, sessionIdValue);
+  if (currentSessionHwnd) return currentSessionHwnd;
+  if (!state) return "";
 
   const candidates = new Set();
   const browserNodes = Array.isArray(state?.organization?.browser_nodes) ? state.organization.browser_nodes : [];
@@ -43003,8 +43048,10 @@ const monitorRccRescan = document.getElementById("monitorRccRescan");
 const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
+const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
+let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctWindowNodeRefreshBusy = false;
 const monitorNodeCols2 = document.getElementById("monitorNodeCols2");
 const monitorNodeCols3 = document.getElementById("monitorNodeCols3");
@@ -43145,10 +43192,12 @@ function renderMonitorBctWindowNodes(nodes) {
     row.className = "monitor-bct-node-row";
     row.dataset.tabId = String(node.tabId);
     row.dataset.windowId = String(node.windowId);
+    row.dataset.instanceId = String(node.instanceId || "");
+    row.dataset.sessionId = String(node.sessionId || "");
     row.dataset.nodeIndex = String(index + 1);
     row.dataset.nodeLabel = node.nodeLabel || "";
     row.dataset.conversationKey = node.conversationKey;
-    const mappedHwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState);
+    const mappedHwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
     const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
     const desktopPosition = nativeLocation
       ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
@@ -43201,6 +43250,8 @@ async function refreshMonitorBctWindowNodes() {
   try {
     const state = await monitorBctShell.monitorState();
     monitorBctWindowNodesCache = monitorBctShell.windowNodes(state);
+    await refreshMonitorIdentityIndex(monitorLastAiState, true);
+    refreshMonitorBctCurrentSessionWindowHwnd();
     renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
     syncMonitorAllDesktopThumbnailNodeBadges();
   } catch (error) {
@@ -53535,7 +53586,7 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   // A missing HWND hides only the thumbnail overlay, never the node list.
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
-      monitorHwndForBrowserWindowId(node.windowId, state) === String(hwnd));
+      monitorHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd));
     return [...new Set(matched.map((node) => {
       const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
       return match ? Number(match[1]) : 0;
@@ -55693,7 +55744,7 @@ function syncMonitorBctNodeLocationLabels() {
   // Refresh visible location only. No Chrome action, no polling, no stored binding.
   if (!Array.isArray(monitorBctWindowNodesCache) || !monitorWorkers) return;
   for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
-    const hwnd = monitorHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState);
+    const hwnd = monitorHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState, row.dataset.instanceId, row.dataset.sessionId);
     const location = hwnd ? monitorWindowDesktopLocations.get(hwnd) : null;
     const index = location
       ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))

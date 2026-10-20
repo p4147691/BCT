@@ -1,6 +1,6 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `ISOLATED_PARTIAL / LIVE_NOT_APPLIED / HWND_MAPPING_E2E_UNVERIFIED`
+상태: `ISOLATED_ACCEPTED / LIVE_NOT_APPLIED / LIVE_THUMBNAIL_TRANSITION_UNVERIFIED`
 
 ## 범위와 기준
 
@@ -45,15 +45,36 @@ RCC relay, Wakeup Relay와 Native Host의 효과 경계를 추가하지 않는�
 `window_id → hwnd` 대조 데이터를 제공하지 않는다. 따라서 세 Chrome `window_id` 모두 정확한
 HWND 후보가 0개였고, 배지를 억지로 표시하지 않았다. 이는 수락 계약의 안전한 degraded 상태다.
 
-`ISOLATED_ACCEPTED`로 올리려면 다음 중 하나의 **읽기 전용·fresh** 대조 계약이 필요하다.
+## 현재 session 대조 계약과 검증
+
+`monitor-window-hwnd-contract.js`는 다음의 읽기 전용, memory-only 계약을 추가한다.
+
+1. BCT/RCC의 현재 `instance_id + session_id + window_id`마다 활성 ChatGPT 탭이 정확히 하나이고
+   `conversation_key`가 있어야 한다.
+2. Native Host가 같은 관측 회차에 읽은 Chrome HWND의 주소창 대화 키가 정확히 하나여야 한다.
+3. 하나의 HWND가 둘 이상의 RCC Chrome window 후보에 해당하면 둘 다 거부한다.
+4. Native identity가 8초보다 오래되었거나 대화 키가 중복되면 거부한다.
+5. 결과는 extension memory에만 유지한다. storage/BCT 등록/노드 번호/Chrome 창은 변경하지 않는다.
+
+현재 session의 read-only Chrome/Native E2E probe는 활성 ChatGPT Chrome window 3개를 각기 고유한
+HWND로 대조했고, 그중 2개가 Native Host 기준으로 이미 최소화 상태임을 확인했다. 거부된 매핑은 없었다.
+`check_monitor_current_session_window_hwnd_contract.js`는 활성 탭 중복, 동일 대화가 열린 둘 이상의
+Chrome 창, stale Native identity를 모두 거부하는 회귀를 통과했다. 기존 `check_monitor_bct_minimized_badges.js`는
+최소화→복원시 번호 배지가 제거되는 isolated DOM 시나리오를 통과했다.
+
+따라서 `ISOLATED_ACCEPTED`로 올렸지만, 설치된 Monitor에는 이 후보가 아직 없으므로 실제 화면에서 새
+배지가 최소화·복원에 따라 나타나고 사라지는 전환은 검증하지 않았다. 이는 `LIVE_NOT_APPLIED` 상태를 보존하기
+위한 의도된 경계다.
+
+이전에는 `ISOLATED_ACCEPTED`로 올리려면 다음 중 하나의 **읽기 전용·fresh** 대조 계약이 필요했다.
 
 - Monitor/RCC가 현재 session의 Chrome `window_id`, `tab_id`, conversation key와 Native Host가
   관측한 HWND를 같은 session/turn으로 정확히 결합해 제공하거나,
 - 이미 있는 Monitor node binding을 현재 session identity와 Native observation으로 재검증해
   stale/reused Chrome window ID를 배제한다.
 
-과거 storage binding이나 제목만으로 대조를 추측해서는 안 된다. 이 계약이 생긴 뒤에야 실제
-최소화·복원 썸네일 E2E를 수행한다.
+과거 storage binding이나 제목만으로 대조를 추측해서는 안 된다. LIVE 수락 단계에서는 검증된 설치본을
+same-ID reload한 뒤, 이 계약이 확정한 창만 대상으로 최소화→썸네일 번호 표시→복원→번호 제거를 확인한다.
 
 ## 자물쇠와 LIVE
 
