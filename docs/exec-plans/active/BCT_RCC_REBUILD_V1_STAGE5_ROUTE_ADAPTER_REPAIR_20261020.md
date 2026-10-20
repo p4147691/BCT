@@ -7,8 +7,15 @@
 총수를 pre-send count와 비교했다. 긴 대화의 virtualized DOM은 총수를 줄일 수 있으므로,
 새 응답이 있어도 `NOT_APPLIED`로 잘못 판정할 수 있다.
 
-해당 반환 요청은 실패 응답 뒤 재전송하지 않았다. Manager에 원문이 전달됐다는 증거가 없으므로
-5단계는 완료가 아니다.
+해당 반환 요청은 실패 응답 뒤 재전송하지 않았다. 당시 Native 응답만으로는 Manager 전달 증거를
+확인할 수 없었다.
+
+## 후속 LIVE 증거
+
+Native 결과의 false 보고와 달리 Manager 대화 UI에서 Worker의 새 assistant 원문이 새 user turn으로
+한 번 도착한 것과 뒤이은 Manager 응답을 확인했다. 따라서 반환은 실제로 한 번 이루어졌고
+재전송하지 않았다. 아래 source 보수는 이 실제 효과와 host 보고가 어긋나는 관측 문제를
+재발하지 않게 하기 위한 후속 보수다.
 
 ## Source 보수
 

@@ -16,6 +16,7 @@ const context = {
   console, URL, setTimeout, clearTimeout, setInterval: () => 0,
   crypto: { randomUUID },
   RelayCore: { conversationKey: () => '', normalizeRole: (v) => String(v || '').toUpperCase() },
+  RccLegacyCommandPolicy: require('./legacy/command_policy.js'),
   chrome: {
     storage: { local: {
       get: async (keys) => {

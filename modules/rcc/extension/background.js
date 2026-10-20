@@ -2598,6 +2598,11 @@ async function handleNativeCommand(message) {
 
   if (message?.type !== 'host:command') return;
 
+  const commandDecision = RccLegacyCommandPolicy.nativeCommand(message.command);
+  if (!commandDecision.allowed) {
+    throw new Error(RccLegacyCommandPolicy.rejectCode('NATIVE_COMMAND', message.command, commandDecision));
+  }
+
   const requestId = String(message.requestId || crypto.randomUUID());
 
   try {
@@ -4936,6 +4941,11 @@ async function autoDirective(payload, senderTabId) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   (async () => {
+
+    const messageDecision = RccLegacyCommandPolicy.runtimeMessage(message?.type);
+    if (!messageDecision.allowed) {
+      throw new Error(RccLegacyCommandPolicy.rejectCode('RUNTIME_MESSAGE', message?.type, messageDecision));
+    }
 
     if (message.type === 'relay:actDirectTask') return requestActDirectTask(sender, message.directive);
 

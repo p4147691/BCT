@@ -5,5 +5,6 @@ importScripts('core/transport.js');
 importScripts('core/shadow.js');
 importScripts('relay_core.js');
 importScripts('relay/contract.js');
+importScripts('legacy/command_policy.js');
 importScripts('act_bridge.js');
 importScripts('background.js');
