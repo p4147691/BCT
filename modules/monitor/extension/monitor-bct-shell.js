@@ -68,6 +68,7 @@
             title: String(tab?.title || "ChatGPT").trim() || "ChatGPT",
             url,
             conversationKey: conversationMatch?.[1] || "",
+            nodeLabel: String(tab?.node_label || "").trim(),
             presence: String(tab?.presence || "UNKNOWN").trim().toUpperCase(),
             active: tab?.active === true,
             generating: tab?.generating === true,

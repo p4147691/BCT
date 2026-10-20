@@ -8,6 +8,7 @@ from unittest.mock import patch
 from bct.core.models import Principal, Work
 from bct.core.store import Store
 from bct.monitor_runtime import _rcc_states, build_monitor_state
+from bct.conversation_network import upsert_conversation
 
 
 class MonitorRuntimeTests(unittest.TestCase):
@@ -206,6 +207,23 @@ class MonitorRuntimeTests(unittest.TestCase):
         self.assertNotIn("settings", rows[0])
         self.assertNotIn("registrations", rows[0])
         self.assertNotIn("must-not-leak", repr(rows))
+
+    def test_registered_conversation_gets_its_durable_display_label(self):
+        conversation = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
+        class Client:
+            def request(self, **kwargs):
+                return {"state": {
+                    "sessionId": "live", "tabs": [{"id": 12, "windowId": 34, "title": "Manager", "url": f"https://chatgpt.com/c/{conversation}"}],
+                    "endpoints": [{"tabId": 12, "conversationKey": conversation, "presence": "OPEN"}],
+                }}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "state.sqlite")
+            upsert_conversation(store, conversation_key=conversation, display_name="Manager")
+            with patch("bct.monitor_runtime.discover_instance_ids", return_value=["instance_123"]), \
+                 patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+                state = build_monitor_state(store=store, service_state={"ready": True}, data_root=root / "data")
+        self.assertEqual("N1", state["rcc"]["instances"][0]["tabs"][0]["node_label"])
 
 
 if __name__ == "__main__":

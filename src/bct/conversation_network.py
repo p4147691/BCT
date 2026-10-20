@@ -2,8 +2,9 @@
 
 This module does not call Monitor, RCC, Chrome, or an AI model. A caller may
 provide an observed Monitor snapshot; this module validates and durably records
-only that observation. The literal Monitor node label (for example ``D1-3``)
-is display data, never a route identity or a BCT-generated number.
+only that observation. Each registered conversation receives one durable BCT
+display label (``N1``, ``N2``, ...).  The label is an alias for people, never
+a route identity, policy subject, or BCT Node/Connection.
 """
 from __future__ import annotations
 
@@ -66,6 +67,10 @@ def _canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _node_label(number: int) -> str:
+    return f"N{number}"
+
+
 def upsert_project(store: Store, *, project_id: str, display_name: str,
                    active: bool = True, now: float | None = None) -> dict[str, object]:
     """Create or update a project directory entry; it has no routing effect."""
@@ -91,7 +96,7 @@ def upsert_project(store: Store, *, project_id: str, display_name: str,
 
 def upsert_conversation(store: Store, *, conversation_key: str, display_name: str,
                         now: float | None = None) -> dict[str, str]:
-    """Register a known ChatGPT conversation without attaching it to a project."""
+    """Register a conversation and allocate its permanent display-only label."""
     key = _conversation_key(conversation_key)
     name = _text(display_name, "CONVERSATION_NETWORK_NODE_NAME_INVALID", 120)
     when = float(time.time() if now is None else now)
@@ -109,7 +114,34 @@ def upsert_conversation(store: Store, *, conversation_key: str, display_name: st
                 "UPDATE conversation_network_conversations SET display_name=?,updated_at=? WHERE conversation_key=?",
                 (name, when, key),
             )
-    return {"conversation_key": key, "display_name": name}
+        label_row = db.execute(
+            "SELECT node_number FROM conversation_network_node_labels WHERE conversation_key=?", (key,)
+        ).fetchone()
+        if label_row is None:
+            next_number = int(db.execute(
+                "SELECT COALESCE(MAX(node_number),0)+1 AS next_number FROM conversation_network_node_labels"
+            ).fetchone()["next_number"])
+            db.execute(
+                "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
+                (key, next_number, when),
+            )
+        else:
+            next_number = int(label_row["node_number"])
+    return {"conversation_key": key, "display_name": name, "node_label": _node_label(next_number)}
+
+
+def node_labels_for_conversations(store: Store, *, conversation_keys: list[str] | tuple[str, ...]) -> dict[str, str]:
+    """Read existing BCT display labels without allocating or changing state."""
+    keys = sorted({str(value or "").strip().lower() for value in conversation_keys if _UUID.fullmatch(str(value or "").strip())})
+    if not keys:
+        return {}
+    placeholders = ",".join("?" for _ in keys)
+    with store.transaction() as db:
+        rows = list(db.execute(
+            "SELECT conversation_key,node_number FROM conversation_network_node_labels "
+            f"WHERE conversation_key IN ({placeholders})", keys,
+        ))
+    return {str(row["conversation_key"]): _node_label(int(row["node_number"])) for row in rows}
 
 
 def resolve_project_id(store: Store, *, project_reference: str) -> str:
@@ -272,8 +304,9 @@ def project_view(store: Store, *, project_id: str) -> dict[str, object]:
         )]
         by_key = {str(row["conversation_key"]): row for row in latest_rows}
         members = [dict(row) for row in db.execute(
-            "SELECT m.conversation_key,c.display_name,m.activity FROM conversation_network_memberships m "
+            "SELECT m.conversation_key,c.display_name,m.activity,n.node_number FROM conversation_network_memberships m "
             "JOIN conversation_network_conversations c ON c.conversation_key=m.conversation_key "
+            "JOIN conversation_network_node_labels n ON n.conversation_key=m.conversation_key "
             "WHERE m.project_id=? ORDER BY c.display_name COLLATE NOCASE", (project,)
         )]
         tags = [dict(row) for row in db.execute(
@@ -299,6 +332,7 @@ def project_view(store: Store, *, project_id: str) -> dict[str, object]:
         else:
             match = "NETWORK_UNOBSERVED"
         result_members.append({
+            "node_label": _node_label(int(member["node_number"])),
             "display_name": str(member["display_name"]), "activity": str(member["activity"]),
             "role_tags": tags_by_key.get(key, []), "monitor_match": match,
             "monitor": None if monitor is None else {

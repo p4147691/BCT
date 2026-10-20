@@ -43130,6 +43130,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.dataset.tabId = String(node.tabId);
     row.dataset.windowId = String(node.windowId);
     row.dataset.nodeIndex = String(index + 1);
+    row.dataset.nodeLabel = node.nodeLabel || "";
     row.dataset.conversationKey = node.conversationKey;
     row.title = node.conversationKey
       ? `우클릭하여 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
@@ -43137,7 +43138,10 @@ function renderMonitorBctWindowNodes(nodes) {
 
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
-    number.textContent = `N${index + 1}`;
+    number.textContent = node.nodeLabel || "N?";
+    number.title = node.nodeLabel
+      ? "BCT 대화망에 등록된 표시 전용 번호"
+      : "관측됨 · 대화망 등록 전이라 표시 번호가 없습니다";
 
     const body = document.createElement("span");
     body.className = "monitor-bct-node-body";

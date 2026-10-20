@@ -14,7 +14,9 @@
 - 검증: `..\tools\check_monitor_bct_shell.js`.
 
 ### BCT window-node summary — ACTIVE BCT PROJECTION
-- `N<n>`은 현재 열린 RCC ChatGPT 탭의 표시 순서일 뿐 권한·역할·영구 신원이 아니다.
+- 대화망에 등록된 대화의 `N<n>`은 BCT가 conversation key에 한 번만 부여하는 표시 전용 번호다.
+  창/탭 이동, 제목 변경, 역할 태그 변경과 무관하며 재사용하지 않는다. 번호 자체는 권한·역할·라우팅·영구 신원이 아니다.
+- 대화망에 아직 등록되지 않은 RCC 대화는 `N?`로 보이며, 대상 식별은 계속 exact conversation key가 맡는다.
 - 행 제목은 별도 Monitor alias가 아니라 RCC가 관측한 실제 ChatGPT 대화 제목이다.
 - 우클릭 편집은 확인/Enter에서만 실제 제목을 변경한다. 취소/X/Escape/바깥 클릭은
   operation을 만들지 않는다.

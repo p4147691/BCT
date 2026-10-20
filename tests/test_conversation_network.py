@@ -51,6 +51,7 @@ class ConversationNetworkTests(unittest.TestCase):
                           "completeness": "COMPLETE", "node_count": 2}, receipt)
         view = project_view(self.store, project_id="bct.rcc")
         manager = next(item for item in view["members"] if item["display_name"] == "오류 병목 감시 측정기")
+        self.assertEqual("N1", manager["node_label"])
         self.assertEqual("D1-3", manager["monitor"]["node_label"])
         self.assertEqual("MATCHED", manager["monitor_match"])
         self.assertCountEqual(["조정", "병목 분석"], manager["role_tags"])
@@ -96,3 +97,11 @@ class ConversationNetworkTests(unittest.TestCase):
 
     def test_display_name_resolves_without_requiring_a_project_id(self):
         self.assertEqual("bct.rcc", resolve_project_id(self.store, project_reference="BCT RCC"))
+
+    def test_display_labels_are_permanent_and_do_not_depend_on_monitor_order(self):
+        first = upsert_conversation(self.store, conversation_key=MANAGER,
+                                    display_name="제목이 바뀌어도 같은 대화", now=200.0)
+        third = upsert_conversation(self.store, conversation_key="6ad5b191-947c-83ee-8dae-b9c867af9026",
+                                    display_name="새 대화", now=201.0)
+        self.assertEqual("N1", first["node_label"])
+        self.assertEqual("N3", third["node_label"])

@@ -111,6 +111,14 @@ class Store:
                     conversation_key TEXT PRIMARY KEY, display_name TEXT NOT NULL,
                     created_at REAL NOT NULL, updated_at REAL NOT NULL
                 );
+                -- A durable, display-only number for a known conversation.  It
+                -- is deliberately separate from a Node/Connection: it has no
+                -- policy, routing, or authority meaning.
+                CREATE TABLE IF NOT EXISTS conversation_network_node_labels (
+                    conversation_key TEXT PRIMARY KEY, node_number INTEGER NOT NULL UNIQUE,
+                    assigned_at REAL NOT NULL,
+                    FOREIGN KEY(conversation_key) REFERENCES conversation_network_conversations(conversation_key)
+                );
                 CREATE TABLE IF NOT EXISTS conversation_network_memberships (
                     project_id TEXT NOT NULL, conversation_key TEXT NOT NULL,
                     activity TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL,

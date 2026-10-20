@@ -31,7 +31,7 @@ const monitorState = {
       state: "OPEN",
       tabs: [
         { tab_id: 22, window_id: 12, title: "둘", url: "https://chatgpt.com/", presence: "OPEN", active: false, generating: true },
-        { tab_id: 11, window_id: 10, title: "하나", url: "https://chatgpt.com/c/chat-one", presence: "OPEN", active: true, generating: false },
+        { tab_id: 11, window_id: 10, title: "하나", url: "https://chatgpt.com/c/chat-one", node_label: "N7", presence: "OPEN", active: true, generating: false },
       ],
     }],
   },
@@ -116,6 +116,7 @@ vm.runInContext(source, context);
     [[10, 11, "OPEN", true, false], [12, 22, "OPEN", false, true]],
   );
   assert.equal(nodes[0].conversationKey, "chat-one");
+  assert.equal(nodes[0].nodeLabel, "N7");
   assert.equal(nodes[0].sessionId, "session-live");
   assert.equal(nodes[1].conversationKey, "");
   assert.throws(() => shell.windowNodes({ rcc: {} }), /BCT_RCC_STATE_INVALID/);

@@ -6,6 +6,7 @@ from threading import Lock
 from pathlib import Path
 from typing import Any
 
+from bct.conversation_network import node_labels_for_conversations
 from bct.integrations.rcc import NamedPipeRelayClient, discover_instance_ids
 from bct.integrations.native_process import process_matches
 from bct.service_runtime import read_json
@@ -222,6 +223,19 @@ def build_monitor_state(
     after_discovery = time.perf_counter()
     rcc = _rcc_states(instance_ids)
     after_rcc = time.perf_counter()
+    observed_keys = [
+        str(tab.get("conversation_key") or "")
+        for instance in rcc for tab in instance.get("tabs", [])
+        if isinstance(tab, dict)
+    ]
+    labels = node_labels_for_conversations(store, conversation_keys=observed_keys)
+    for instance in rcc:
+        for tab in instance.get("tabs", []):
+            if not isinstance(tab, dict):
+                continue
+            label = labels.get(str(tab.get("conversation_key") or "").lower())
+            if label:
+                tab["node_label"] = label
     # Passive timing of the existing read-only monitor stages. Do not persist,
     # probe additional endpoints, or expose operation payloads and credentials.
     timings = {
