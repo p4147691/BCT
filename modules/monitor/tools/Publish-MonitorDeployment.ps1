@@ -40,18 +40,23 @@ function Invoke-MonitorStructureGate {
 Invoke-MonitorStructureGate
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $currentVersion = [string]$manifest.version
-$match = [regex]::Match($currentVersion, '^(\d+)\.(\d+)\.(\d+)\.(\d+)$')
+$match = [regex]::Match($currentVersion, '^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$')
 if (!$match.Success) {
-    throw "Monitor manifest version must have four numeric components: $currentVersion"
+    throw "Monitor manifest version must have three or four numeric components: $currentVersion"
 }
-$parts = @($match.Groups[1..4] | ForEach-Object { [int]$_.Value })
+$parts = @($match.Groups[1..3] | ForEach-Object { [int]$_.Value })
+if ($match.Groups[4].Success) { $parts += [int]$match.Groups[4].Value }
 if ($parts | Where-Object { $_ -gt 65535 }) {
     throw "Monitor manifest version component exceeds Chrome limit: $currentVersion"
 }
-if ($parts[3] -ge 65535) {
-    throw "Monitor build component is exhausted; choose a reviewed base version before publishing: $currentVersion"
+if ($parts[-1] -ge 65535) {
+    throw "Monitor final version component is exhausted; choose a reviewed base version before publishing: $currentVersion"
 }
-$nextVersion = "$($parts[0]).$($parts[1]).$($parts[2]).$($parts[3] + 1)"
+if ($parts.Count -eq 3) {
+    $nextVersion = "$($parts[0]).$($parts[1]).$($parts[2] + 1)"
+} else {
+    $nextVersion = "$($parts[0]).$($parts[1]).$($parts[2]).$($parts[3] + 1)"
+}
 
 if (!$PSCmdlet.ShouldProcess($manifestPath, "publish Monitor extension version $currentVersion -> $nextVersion")) {
     Write-Output "MONITOR_DEPLOYMENT_PREVIEW version=$nextVersion"
