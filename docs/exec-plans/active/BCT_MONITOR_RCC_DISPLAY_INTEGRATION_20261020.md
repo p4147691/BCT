@@ -1,6 +1,34 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `NODE_NAVIGATION_SOURCE_VALIDATED / CI_AND_LIVE_RELOAD_PENDING`
+상태: `NODE_OVERLAY_FIX_LIVE_LOADED / VISUAL_CONFIRMATION_PENDING`
+
+## 2026-10-21 노드 카드 단일 선택·썸네일 오버레이 보수
+
+Monitor `2.0.9` LIVE 화면에서 같은 Chrome 창의 N4/N7/N9 카드가 모두 선택 표시되고, 열린
+ChatGPT 창의 썸네일 내부 번호와 선택 테두리가 보이지 않는 현상을 재확인했다. 원인은 두 가지다.
+
+- 카드 선택 상태가 탭/대화가 아니라 물리 Chrome HWND만 비교했다. 같은 창의 여러 ChatGPT 탭은
+  HWND가 같으므로 전부 선택됐다.
+- 열린 번호가 캡처 이미지 DOM에 종속돼 있었다. 캡처 요소가 교체되거나 exact HWND 이미지 요소가
+  일시적으로 없으면 BCT/RCC 번호와 Native 좌표가 정상이어도 화면 오버레이를 만들지 못했다.
+
+수정 후 카드 선택은 `instance + session + window_id + tab_id` 키로 구분한다. 노란 물리 창 테두리는
+여전히 검증된 HWND 하나를 가리키므로, 클릭한 카드 하나만 선택되고 그 카드가 속한 실제 Chrome 창
+하나만 강조된다. 열린 번호와 테두리는 캡처 픽셀을 수정하지 않고, Native가 확인한 desktop/HWND/창
+좌표와 프리뷰 viewport로 만든 전용 semantic overlay에 렌더링한다. 캡처 DOM 교체 시에도 overlay를
+재조립하고 항상 최상단에 다시 붙인다. 최소화 번호는 기존대로 썸네일 아래 정보 행만 사용한다.
+
+- main/source commit: `b647d5e12ad0a4b3e678610238e6016d41d7478d`
+- exact GitHub Actions: `39470647101` SUCCESS
+- 설치 Monitor: `2.0.10`, publish token과 fresh runtime telemetry 일치
+- LIVE 적용 전 백업: `D:\BCT\runtime\backups\monitor-pre-node-overlay-fix-20261021-030428`
+- 설치본 회귀: overlay, 단일 카드 선택, 최소화, current-session HWND, reload/structure PASS
+- 현재 session read-only 대조: ChatGPT 탭 3개, mapped Chrome HWND 1개, rejected 0개
+
+RCC, Native Host, BCT Core, relay/binding은 변경하거나 재시작하지 않았다. 자동 검사와 실행 payload
+관측은 완료됐고, 사용자의 실제 화면에서 번호·한 카드 선택을 확인하는 마지막 시각 수락만 남았다.
+롤백 시 위 백업의 `extension/monitor.js`, `monitor.css`, `MONITOR_JS_INDEX.md`, manifest/reload marker와
+관련 tool 파일을 같은 위치로 복원한 뒤 공식 same-ID reload를 수행한다.
 
 ## 2026-10-20 노드 카드 → 정확한 브라우저 창 상호작용
 
