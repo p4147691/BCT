@@ -14,6 +14,10 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from bct.conversation_network import (
+    record_monitor_snapshot, set_membership, upsert_conversation, upsert_project,
+)
+from bct.core.store import Store
 from bct.service_runtime import RuntimeServiceController
 
 
@@ -85,6 +89,22 @@ class MCPIntegrationTests(unittest.TestCase):
             'files=["bct.toml"]\n',
             encoding="utf-8",
         )
+        state_root = self.runtime / "state"
+        state_root.mkdir(parents=True, exist_ok=True)
+        conversation_store = Store(state_root / "state.sqlite")
+        self.manager = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
+        upsert_project(conversation_store, project_id="bct.rcc", display_name="BCT RCC", now=100.0)
+        upsert_conversation(conversation_store, conversation_key=self.manager, display_name="Manager", now=100.0)
+        set_membership(conversation_store, project_id="bct.rcc", conversation_key=self.manager,
+                       tags=["조정"], now=100.0)
+        record_monitor_snapshot(conversation_store, {
+            "schema": "BCT_MONITOR_NODE_SNAPSHOT_V1", "source": "MONITOR",
+            "snapshot_id": "mcp.monitor.1", "observed_at": "2026-10-20T03:18:00Z",
+            "completeness": "COMPLETE", "nodes": [{
+                "node_label": "D1-3", "conversation_key": self.manager,
+                "title": "Manager", "presence": "OPEN",
+            }],
+        }, now=200.0)
         self.controller = RuntimeServiceController(
             runtime_root=self.runtime,
             service_name="bct-mcp-test",
@@ -151,7 +171,8 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get",
+                            "bct_work_create", "bct_operation_get",
                         },
                         names,
                     )
@@ -159,7 +180,8 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertFalse(capabilities.isError)
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get",
+                            "bct_work_create", "bct_operation_get",
                         },
                         set(capabilities.structuredContent["tools"]),
                     )
@@ -169,6 +191,14 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertRegex(status.structuredContent["mcp_trace_id"], r"^[0-9a-f]{32}$")
                     self.assertEqual(self.release_sha, status.structuredContent["runtime"]["release_sha"])
                     self.assertIn("rcc", status.structuredContent["monitor"])
+                    conversation_network = await session.call_tool(
+                        "bct_conversation_network_get", {"project": "BCT RCC"}
+                    )
+                    self.assertFalse(conversation_network.isError, conversation_network)
+                    self.assertEqual("OK", conversation_network.structuredContent["status"])
+                    member = conversation_network.structuredContent["members"][0]
+                    self.assertEqual("D1-3", member["monitor"]["node_label"])
+                    self.assertNotIn(self.manager, json.dumps(conversation_network.structuredContent))
                     work_arguments = {
                         "work_id": "mcp-read-work",
                         "request_summary": "read one exact test file",

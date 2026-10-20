@@ -12,6 +12,7 @@ from mcp.server.fastmcp import FastMCP, Image
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
+from .conversation_network import ConversationNetworkError, project_view, resolve_project_id
 from .core.models import Principal, Work
 
 
@@ -19,7 +20,10 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
-_GENERAL_TOOLS = ("bct_capabilities", "bct_status", "bct_work_create", "bct_operation_get")
+_GENERAL_TOOLS = (
+    "bct_capabilities", "bct_status", "bct_conversation_network_get",
+    "bct_work_create", "bct_operation_get",
+)
 _CAPABILITY_USAGE = {
     "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; this requires verify and every child capability in work scope.",
     "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled. Requires each child action in work scope. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
@@ -130,6 +134,37 @@ def build_mcp(
             wait_ms=0.0, execution_ms=handler_ms,
         )
         return snapshot
+
+    @server.tool(
+        description=(
+            "Read one registered BCT conversation-network project. Returns display names, advisory tags, "
+            "activity, literal Monitor labels, observation state, and Monitor-only rows. "
+            "This creates no work and does not call Monitor, RCC, Chrome, or relay delivery."
+        ),
+        structured_output=True,
+    )
+    async def bct_conversation_network_get(project: str) -> dict[str, Any]:
+        """Read a user-facing conversation-network view without exposing route UUIDs."""
+        started_ns = time.perf_counter_ns()
+        try:
+            project_id = await asyncio.to_thread(
+                resolve_project_id, bct.store, project_reference=project,
+            )
+            view = await asyncio.to_thread(project_view, bct.store, project_id=project_id)
+        except ConversationNetworkError as exc:
+            reason = str(exc)
+            value = {
+                "status": "NOT_FOUND" if reason == "CONVERSATION_NETWORK_PROJECT_NOT_FOUND" else "INVALID_REQUEST",
+                "reason": reason,
+            }
+        else:
+            value = {"status": "OK", **view}
+        handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
+        _trace_stage(
+            "handler_done", tool_kind="conversation_network_get", handler_ms=handler_ms,
+            wait_ms=0.0, execution_ms=handler_ms,
+        )
+        return value
 
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
     async def bct_work_create(

@@ -154,6 +154,18 @@ Monitor에서만 보이는 노드는 자동 등록·자동 전달 대상이 아�
 프로젝트 레코드는 변경하지 않았다. 세부 계약은
 `docs/exec-plans/active/BCT_CONVERSATION_NETWORK_STAGE1_DURABLE_SNAPSHOT_20261020.md`에 있다.
 
+## 완료 — BCT 대화망 2단계 BCT Control 읽기 조회 (source-only)
+
+`bct_conversation_network_get(project="표시 이름")`를 MCP catalogue에 추가했다. 이 조회는
+표시 이름·안내용 역할 태그·활동 상태·Monitor의 원문 표기/관측 상태·Monitor-only 노드만
+반환한다. 사용자는 내부 project ID를 기억하지 않아도 되며, 대화 UUID/tab/window/session ID와
+snapshot ID는 결과에 노출되지 않는다. 동일 표시 이름이 여러 개면 임의로 고르지 않는다.
+
+실제 Monitor 호출·polling, relay, RCC/Native Host/Chrome extension, 탭, binding, storage, BCT
+runtime 배포·재시작은 모두 변경하지 않았다. MCP 통합시험으로 임시 runtime에서 catalogue,
+표시 이름 조회, `D1-3` 원문 표기, UUID 비노출을 검증했다. 세부는
+`docs/exec-plans/active/BCT_CONVERSATION_NETWORK_STAGE2_READONLY_CONTROL_20261020.md`에 있다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /

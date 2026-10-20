@@ -168,7 +168,7 @@ def main() -> int:
         "capabilities": list(bct.operations.capabilities),
         "mcp_ready": True,
         "mcp_endpoint": f"http://127.0.0.1:{arguments.port}/mcp",
-        "mcp_tool_count": len(bct.operations.capabilities) + 4,
+        "mcp_tool_count": len(bct.operations.capabilities) + 5,
         "started_at": time.time(),
         "orphan_recoveries": orphan_recoveries,
         "manager_decision_recovery": {

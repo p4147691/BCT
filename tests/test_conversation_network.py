@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from bct.conversation_network import (
     ConversationNetworkError, project_view, record_monitor_snapshot,
-    set_membership, upsert_conversation, upsert_project,
+    resolve_project_id, set_membership, upsert_conversation, upsert_project,
 )
 from bct.core.store import Store
 
@@ -54,6 +55,8 @@ class ConversationNetworkTests(unittest.TestCase):
         self.assertEqual("MATCHED", manager["monitor_match"])
         self.assertCountEqual(["조정", "병목 분석"], manager["role_tags"])
         self.assertEqual([], view["monitor_only"])
+        self.assertNotIn(MANAGER, json.dumps(view, ensure_ascii=False))
+        self.assertNotIn("snapshot_id", view["monitor_snapshot"])
 
     def test_partial_snapshot_never_treats_missing_member_as_removed(self):
         record_monitor_snapshot(self.store, self.snapshot(nodes=[
@@ -90,3 +93,6 @@ class ConversationNetworkTests(unittest.TestCase):
         view = project_view(self.store, project_id="bct.rcc")
         self.assertEqual("UNAVAILABLE", view["monitor_snapshot"]["completeness"])
         self.assertTrue(all(item["monitor_match"] == "MONITOR_UNAVAILABLE" for item in view["members"]))
+
+    def test_display_name_resolves_without_requiring_a_project_id(self):
+        self.assertEqual("bct.rcc", resolve_project_id(self.store, project_reference="BCT RCC"))

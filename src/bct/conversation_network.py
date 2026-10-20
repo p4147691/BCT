@@ -112,6 +112,25 @@ def upsert_conversation(store: Store, *, conversation_key: str, display_name: st
     return {"conversation_key": key, "display_name": name}
 
 
+def resolve_project_id(store: Store, *, project_reference: str) -> str:
+    """Resolve an exact project ID or one unambiguous user-facing display name."""
+    reference = _text(project_reference, "CONVERSATION_NETWORK_PROJECT_REFERENCE_INVALID", 120)
+    with store.transaction() as db:
+        by_id = db.execute(
+            "SELECT project_id FROM conversation_network_projects WHERE project_id=?", (reference,)
+        ).fetchone()
+        if by_id is not None:
+            return str(by_id["project_id"])
+        matches = list(db.execute(
+            "SELECT project_id FROM conversation_network_projects WHERE display_name=?", (reference,)
+        ))
+    if not matches:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_PROJECT_NOT_FOUND")
+    if len(matches) != 1:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_PROJECT_AMBIGUOUS")
+    return str(matches[0]["project_id"])
+
+
 def set_membership(store: Store, *, project_id: str, conversation_key: str,
                    activity: str = "ACTIVE", tags: list[str] | tuple[str, ...] = (),
                    now: float | None = None) -> dict[str, object]:
@@ -291,7 +310,7 @@ def project_view(store: Store, *, project_id: str) -> dict[str, object]:
     return {
         "project": {"display_name": str(project_row["display_name"]), "active": bool(project_row["active"])},
         "monitor_snapshot": None if snapshots is None else {
-            "snapshot_id": str(snapshots["snapshot_id"]), "observed_at": str(snapshots["observed_at"]),
+            "observed_at": str(snapshots["observed_at"]),
             "completeness": str(snapshots["completeness"]),
         },
         "members": result_members,

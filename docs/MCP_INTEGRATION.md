@@ -7,12 +7,16 @@ second BCT service. At process start, `build_mcp()` reads the exact capabilities
 registered in `OperationCoordinator` and creates one `bct_<capability>` tool for each.
 The catalogue therefore cannot advertise a capability with no executor.
 
-Four management tools are added:
+Five management tools are added:
 
 - `bct_capabilities`: return the exact runtime capability/tool mapping.
 - `bct_status`: return a read-only Core release/health, Monitor, RCC and active process-session snapshot without creating a work.
 - `bct_work_create`: create or recover one exact work record.
 - `bct_operation_get`: retrieve an operation receipt for the owning work.
+- `bct_conversation_network_get(project="표시 이름")`: read one registered conversation-network project
+  by its display name (an exact project ID is also accepted) without invoking
+  Monitor, RCC, Chrome, or relay delivery. It returns display names, advisory tags, activity, literal
+  Monitor labels, observation states, and Monitor-only rows; route UUIDs are not returned.
 
 `bct_status(compact=true)` limits each history category to five rows, while preserving
 current state, counts and unresolved claims. Use `compact=false` for detailed history.
