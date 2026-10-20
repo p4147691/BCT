@@ -70,7 +70,10 @@ async function sendSimpleRelayV0(message, requestId) {
     await writeSimpleRelayV0Receipt(request.operationId, receipt);
     return { ok: true, receipt };
   }
-  const notApplied = ack?.effectState === 'NOT_APPLIED' || ack?.submitted === false;
+  // A false/missing `submitted` bit after UI activation is not proof that no
+  // effect occurred. Only an explicit pre-submit NOT_APPLIED classification may
+  // release the caller to try another operation.
+  const notApplied = ack?.effectState === 'NOT_APPLIED';
   const receipt = { ...intent, state: notApplied ? 'NOT_APPLIED' : 'UNKNOWN',
     updatedAt: Date.now(), error: String(ack?.error || 'SIMPLE_RELAY_ACK_INVALID').slice(0, 200) };
   await writeSimpleRelayV0Receipt(request.operationId, receipt);
@@ -138,11 +141,10 @@ async function returnSimpleRelayV0(message, requestId) {
     await writeSimpleRelayV0Receipt(returnOperationId, receipt);
     return { ok: true, receipt };
   }
-  const notApplied = ack?.effectState === 'NOT_APPLIED' || ack?.submitted === false;
+  const notApplied = ack?.effectState === 'NOT_APPLIED';
   const receipt = { ...captured, state: notApplied ? 'NOT_APPLIED' : 'UNKNOWN', updatedAt: Date.now(),
     error: String(ack?.error || 'SIMPLE_RELAY_RETURN_ACK_INVALID').slice(0, 200) };
   await writeSimpleRelayV0Receipt(returnOperationId, receipt);
   return { ok: false, ambiguous: !notApplied, receipt };
 }
-
 

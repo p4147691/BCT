@@ -1,6 +1,6 @@
 # RCC Rebuild V2 — 통합 종료 계획
 
-상태: `V2_4_RC_COMPLETE / CI_PASS / RCC_LIVE_UNCHANGED`
+상태: `V2_5_RC1_ROLLED_BACK / RC2_FIX_PENDING_CI / LIVE_BASELINE_RESTORED`
 
 V1의 API별 Adapter 추가 방식은 여기서 종료한다. 이 문서는 RCC를 실제로 끝낼 수 있도록
 남은 책임 전체, 한 번에 묶을 전환 단위, LIVE 전환 시점과 완료 조건을 다시 고정한 실행 계획이다.
@@ -171,6 +171,12 @@ API 경계를 재점검해 sender validation, 최소 permission과 read-only pop
 
 통과 조건: source/main/설치 payload/runtime SHA가 연결되고 두 방향 원문 영수증과 postcondition이
 일치한다. reload나 부분 배포를 모듈마다 반복하지 않는다.
+
+2026-10-20 첫 RC1 전환은 read-only state/probe까지 통과했으나 첫 Manager→Worker 수락시험에서
+실제 생성 정황과 `NOT_APPLIED` 영수증이 충돌했다. 재전송·반환 없이 exact baseline으로 즉시
+rollback했다. 원인과 RC2 보완은
+`BCT_RCC_REBUILD_V2_STAGE5_LIVE_CUTOVER_20261020.md`에 기록한다. RC2는 CI 통과 전 LIVE에
+재적용하지 않는다.
 
 ### V2-6 — 정리와 종료
 

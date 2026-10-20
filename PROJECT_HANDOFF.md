@@ -1,5 +1,24 @@
 # BCT 인수인계
 
+## 진행 — RCC Rebuild V2-5 RC1 rollback / RC2 CI 대기
+
+사용자 허용 뒤 RC1 46파일을 exact backup 후 단일 LIVE 전환하고 same-ID reload 1회를 수행했다.
+state/probe는 기존 Manager `6ad5afa4-b1e0-83ee-8692-aec4bb51523e`와 Worker
+`6ad4bb5d-6624-83ee-b045-e57fdad5120e`를 정상 확인했다. 첫 Manager→Worker 수락시험은
+`NOT_APPLIED / RELAY_EXACT_USER_TURN_NOT_CONFIRMED`를 반환했지만 Worker에 새 생성 lifecycle이
+관측되어 계약 불일치로 판정했다. 같은 원문을 재전송하거나 반환하지 않고 39파일 rollback
+baseline으로 원자 복구하고 reload했다. 설치본 핵심 SHA, Native Host, binding은 전환 전 값이다.
+
+원인은 DOM 가상화 환경에서 user node 개수 증가를 요구한 제출 fence와, content의 `UNKNOWN`을
+background가 `submitted:false`만으로 `NOT_APPLIED`로 축소한 분류다. RC2는 새 turn identity로
+제출을 확인하고 클릭 직후 복구 record를 먼저 저장하며 명시적 `NOT_APPLIED`만 재시도 가능으로
+분류한다. exact RC2 aggregate는
+`e7b0bd98b74fd982031565c3701fe68f0c7b45e2984deba8c490867272756c39`, rehearsal은
+`D:\BCT\runtime\rehearsals\rcc-rebuild-v2-rc2-e7b0bd98`다. RCC Node 24개와 focused Python
+17개는 PASS다. 전체 로컬 suite의 service integration 13개는 격리 runtime readiness timeout으로
+실패해 원격 CI를 최종 gate로 사용한다. RC2 CI 통과 전 LIVE 재전환 금지다. 상세는
+`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE5_LIVE_CUTOVER_20261020.md`에 있다.
+
 ## 완료 — RCC Rebuild V2-4 비-LIVE Release Candidate
 
 V2-1~3 source payload를 `RCC_REBUILD_V2_RC1` 46개 exact 파일로 조립했다. active loader graph,

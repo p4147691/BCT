@@ -433,24 +433,22 @@ function editorDraftText(editor) {
   return RelayCore.normalizeMessageText(raw);
 }
 
-function waitForExactUserSubmission(expectedText, beforeUserCount, timeoutMs = 8000) {
-  const expected = RelayCore.normalizeMessageText(expectedText || '');
+function waitForExactUserSubmission(record, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let observer = null;
     let timer = null;
-    const finish = (error) => {
+    const finish = (error, turnKey = '') => {
       if (settled) return;
       settled = true;
       try { observer?.disconnect(); } catch (_) {}
       if (timer) clearTimeout(timer);
-      error ? reject(error) : resolve(true);
+      error ? reject(error) : resolve(turnKey);
     };
     const check = () => {
-      const users = getMessageUnits('user');
-      if (users.length <= beforeUserCount) return;
-      const added = users.slice(beforeUserCount);
-      if (added.some((node) => messageUnitText(node, 'user') === expected)) finish();
+      const routed = resolveRoutedTurn(record);
+      if (routed.ok && routed.turnKey) finish(null, routed.turnKey);
+      else if (routed.terminal) finish(new Error(routed.reason || 'RELAY_EXACT_USER_TURN_REJECTED'));
     };
     observer = new MutationObserver(check);
     observer.observe(conversationObserveRoot() || document.body, { childList: true, subtree: true, characterData: true });
@@ -476,25 +474,29 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
 
   const beforeText = lastAssistantText();
 
-  const beforeUserCount = getMessageUnits('user').length;
-
-
   setEditorText(editor, text);
 
 
   await submitEditor(editor);
 
-  await waitForExactUserSubmission(text, beforeUserCount);
-
-
-  if (tracking?.relayId) saveRelayExecution({
+  const submittedAt = Date.now();
+  const activatedRecord = tracking?.relayId ? {
     ...tracking,
     relayId: tracking.relayId,
     conversationKey: currentConversationKey(),
     beforeCount,
     beforeText,
+    phase: 'submit-activated',
+    submittedAt,
+  } : null;
+  if (activatedRecord) saveRelayExecution(activatedRecord);
+
+  const routeTurnKey = await waitForExactUserSubmission(activatedRecord || tracking);
+
+  if (activatedRecord) saveRelayExecution({
+    ...activatedRecord,
+    routeTurnKey,
     phase: 'submitted',
-    submittedAt: Date.now(),
   });
 
   if (!awaitReply) return { submitted: true, beforeCount, beforeText };
@@ -634,4 +636,3 @@ function recoverCompletedReplyFromDom(record) {
 }
 
 function normalizedUiText(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
-

@@ -15,8 +15,8 @@ class RccSourceBaselineTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parents[1]
         cls.extension = cls.root / "modules" / "rcc" / "extension"
 
-    def test_source_only_v2_4_critical_payload_hashes_match_recorded_baseline(self):
-        # Source-only RCC Rebuild V2-4 guard. The complete payload is additionally
+    def test_source_only_v2_5_critical_payload_hashes_match_recorded_baseline(self):
+        # RCC Rebuild V2-5 acceptance-fix guard. The complete payload is additionally
         # covered by modules/rcc/release/rcc_v2_rc.json.
         expected = {
             "background.js": "585ae34ee0af8531362f384e4c11a903b1c23056ad61c15d0edec3c826fbe450",
@@ -30,11 +30,11 @@ class RccSourceBaselineTests(unittest.TestCase):
             "domain/simple_relay_receipts.js": "f46561ce7e73b7342a3fc18476229d4969977ff5b0a3dced20f5b1ad85e35689",
             "domain/endpoint_service.js": "4a22a307ab390f47d0f9a974a19ce51233d2781ba921d8817d6a2db6a2fa7c9e",
             "domain/diagnostic_support.js": "06562ada53e67519fb0d1b46b4654096dace2b7ac8a8bbeb0232b88fab716e1c",
-            "domain/simple_relay_service.js": "9d2135a6c20702772048d0aebfff997d8fcd3c1650c1b843047f740749552506",
+            "domain/simple_relay_service.js": "a83a7377938dd49e3dde61e9c8b8f58bafa0c40d609828545a8be9db8fb8a669",
             "domain/readonly_diagnostics.js": "ebd5afe1640de5a5e5532f1dc1c8a69419135f5f26cbba504515daf22da94b3e",
             "domain/runtime_message_service.js": "ac30947109dd637abd9086a8c68b494bfe6821c824d0d272160e3f7051135e13",
             "content/conversation_dom.js": "bddfa0460d1f6d98d1471e5c480e43c9ee165278176bd2d7a0852600b60bd785",
-            "content/simple_relay_executor.js": "52874024a0c99f7241ef87fd0ace8227c91a72f21213ca640e49eb1e1cb2178e",
+            "content/simple_relay_executor.js": "39469f22ddcac7e057ec6738a62e03f45f50afbb76524c1ba649d8d1ea6ebe50",
             "content/content_router.js": "9ad096e37ba62219601689816ad65a85a9dcf4c46f1af5d72ebe5147d1263e15",
             "content/activity_reporter.js": "e73c7469d87f35e677e5d37935b518dd6f5eff5155ce2fc9ae42f4ae2dc5aee8",
         }

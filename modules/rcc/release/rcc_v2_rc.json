@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC1",
+  "candidate": "RCC_REBUILD_V2_RC2",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 46,
-    "aggregateSha256": "ce3a33bb107dc74eb23da50d0d48a85dab656c69ee65e90caca763cde55f1606",
+    "aggregateSha256": "e7b0bd98b74fd982031565c3701fe68f0c7b45e2984deba8c490867272756c39",
     "files": [
       {
         "path": "background_loader.js",
@@ -104,8 +104,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 20878,
-        "sha256": "52874024a0c99f7241ef87fd0ace8227c91a72f21213ca640e49eb1e1cb2178e"
+        "size": 20967,
+        "sha256": "39469f22ddcac7e057ec6738a62e03f45f50afbb76524c1ba649d8d1ea6ebe50"
       },
       {
         "path": "core/conversation.js",
@@ -159,8 +159,8 @@
       },
       {
         "path": "domain/simple_relay_service.js",
-        "size": 7675,
-        "sha256": "9d2135a6c20702772048d0aebfff997d8fcd3c1650c1b843047f740749552506"
+        "size": 7827,
+        "sha256": "a83a7377938dd49e3dde61e9c8b8f58bafa0c40d609828545a8be9db8fb8a669"
       },
       {
         "path": "domain/state_service.js",
