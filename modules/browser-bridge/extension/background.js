@@ -1,5 +1,4 @@
 "use strict";
-// Independent Browser Bridge; only an explicitly opted-in exact ChatGPT tab may request a Core read.
 importScripts("chat_protocol.js");
 const HOST = "com.bct.browser_bridge.prototype";
 let port = null;
@@ -52,21 +51,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "BRIDGE_CHAT_STATUS") {
     if (Object.keys(message).sort().join(",") !== "conversationKey,type" ||
         !validContentSender(message, sender)) {
-      sendResponse({enabled: false});
-      return false;
+      sendResponse({enabled: false}); return false;
     }
     chrome.storage.session.get(consentKey(message.conversationKey, sender.tab.id))
-      .then(flags => sendResponse({
-        enabled: flags[consentKey(message.conversationKey, sender.tab.id)] === true,
-        tabId: sender.tab.id
-      }))
-      .catch(() => sendResponse({enabled: false}));
+      .then(flags => {
+        const grantId = flags[consentKey(message.conversationKey, sender.tab.id)];
+        sendResponse({
+          enabled: BctBridgeChat.validOperationId(grantId),
+          grantId: BctBridgeChat.validOperationId(grantId) ? grantId : null,
+          tabId: sender.tab.id
+        });
+      }).catch(() => sendResponse({enabled: false}));
     return true;
   }
 
   if (message?.type === "BRIDGE_CHAT_READ") {
-    if (Object.keys(message).sort().join(",") !== "conversationKey,path,requestId,type" ||
+    if (Object.keys(message).sort().join(",") !== "conversationKey,grantId,path,requestId,type" ||
         !validContentSender(message, sender) ||
+        !BctBridgeChat.validOperationId(message.grantId) ||
         !BctBridgeChat.validOperationId(message.requestId) ||
         typeof message.path !== "string" || message.path.length < 1 ||
         message.path.length > 1024 || message.path.includes("\0")) {
@@ -75,8 +77,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     const flag = consentKey(message.conversationKey, sender.tab.id);
     chrome.storage.session.get(flag).then(values => {
-      if (values[flag] !== true) {
-        sendResponse({ok: false, outcome: "INPUT_DENIED", error: "CHAT_NOT_ENABLED"});
+      if (values[flag] !== message.grantId) {
+        sendResponse({ok: false, outcome: "INPUT_DENIED", error: "CHAT_GRANT_REVOKED"});
         return;
       }
       nativeRequest(message.requestId, "bridge_read", {path: message.path}, sendResponse);
@@ -87,12 +89,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!["READ_FIXTURE", "RECEIPT_LOOKUP"].includes(message?.type) || sender.tab) return false;
   const lookup = message.type === "RECEIPT_LOOKUP";
   if (!lookup && (typeof message.path !== "string" || !message.path || message.path.length > 1024)) {
-    sendResponse({ok: false, error: "INVALID_PATH"});
-    return false;
+    sendResponse({ok: false, error: "INVALID_PATH"}); return false;
   }
   if (lookup && !BctBridgeChat.validOperationId(message.operationId)) {
-    sendResponse({ok: false, error: "INVALID_OPERATION_ID"});
-    return false;
+    sendResponse({ok: false, error: "INVALID_OPERATION_ID"}); return false;
   }
   const id = lookup ? message.operationId : identifier();
   nativeRequest(id, lookup ? "receipt_lookup" : "bridge_read",

@@ -1,4 +1,4 @@
-"""Independent Local Bridge parity: strict chat READ and Native Host boundary."""
+"""Source-only independent Browser Bridge read and consent/revocation acceptance."""
 import json
 from pathlib import Path
 import shutil
@@ -18,18 +18,25 @@ class ChatParityTests(unittest.TestCase):
         self.assertNotIn("externally_connectable", manifest)
         self.assertNotIn("host_permissions", manifest)
 
-    def test_browser_protocol_and_background_mock(self):
+    def _node_suite(self, filename, pass_count):
         node = shutil.which("node")
         if not node:
             self.skipTest("Node is unavailable")
         result = subprocess.run(
-            [node, str(ROOT / "tests/check_chat_parity.cjs")],
-            cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+            [node, str(ROOT / "tests" / filename)], cwd=ROOT,
+            capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=25, check=False,
         )
         output = (result.stdout or "") + "\n" + (result.stderr or "")
         self.assertEqual(0, result.returncode, output)
-        self.assertIn("pass 5", output)
+        self.assertIn(f"pass {pass_count}", output)
+        self.assertIn("fail 0", output)
+
+    def test_browser_protocol_and_background_mock(self):
+        self._node_suite("check_chat_parity.cjs", 7)
+
+    def test_old_marker_and_revocation_negative_cases(self):
+        self._node_suite("check_chat_revocation.cjs", 3)
 
     def test_existing_native_host_has_no_chat_execution_privilege(self):
         source = (ROOT / "native/native_host.py").read_text(encoding="utf-8")
