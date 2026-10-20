@@ -131,7 +131,8 @@ class SnapshotBundleTests(unittest.TestCase):
         with patch("bct.features.snapshot._fingerprint_file", side_effect=AssertionError("replayed")):
             repeated = self.snapshot(files=[{"id": "binary", "path": str(binary)}])
         self.assertTrue(repeated.duplicate)
-        self.assertEqual(result.output, repeated.output)
+        self.assertEqual(result.evidence, repeated.evidence)
+        self.assertEqual(repeated.output, {})  # Stored receipts do not cache file metadata.
 
 
 if __name__ == "__main__":
