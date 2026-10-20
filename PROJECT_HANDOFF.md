@@ -15,6 +15,8 @@ Native Host, binding, Chrome은 변경하거나 reload하지 않았다. 최신 �
 `D:\BCT\runtime\rehearsals\rcc-rebuild-v2-rc2-e7b0bd98`은 유지했다. V1/V2 실행 문서는
 `docs/exec-plans/completed/`로 닫았다. 최종 구조·manifest·rollback·acceptance 영수증은
 `docs/exec-plans/completed/BCT_RCC_REBUILD_V2_STAGE6_CLOSEOUT_20261020.md`에 있다.
+종료 기록 commit `aef81006a3c611da75b8af96397ecc6702010ba6`의 BCT CI run
+`39404680776`도 PASS했다.
 
 남은 Browser Adapter는 불필요 구파일이 아니라 의도적으로 비활성 보존한 기능이다. 별도 설계
 전에는 active loader와 Simple Relay 권한에 연결하지 않는다.

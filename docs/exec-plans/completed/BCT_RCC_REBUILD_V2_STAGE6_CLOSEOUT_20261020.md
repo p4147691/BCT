@@ -83,4 +83,5 @@ V2-6에서는 LIVE extension 파일, Chrome, Native Host, extension ID, profile,
 - LIVE RC2 / rehearsal RC2 / retained rollback exact verifier: PASS
 - Python compileall, `git diff --check`: PASS
 
-이 문서와 통합 계획이 main에 반영되고 exact-head CI가 통과하면 RCC Rebuild V2는 종료다.
+종료 기록 commit `aef81006a3c611da75b8af96397ecc6702010ba6`은 main에 반영됐고 BCT CI
+run `39404680776`의 scope와 docs-only gate가 PASS했다. 이로써 RCC Rebuild V2는 종료다.
