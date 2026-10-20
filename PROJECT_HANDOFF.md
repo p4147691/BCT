@@ -35,6 +35,20 @@ LIVE-only 비실행 이전 테스트/backup 파일 3개는 실행 payload 불일
 docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE0_BASELINE_20261020.md에 있다. 다음 단계는
 LIVE에 손대지 않는 source-only Core 분리다.
 
+## 완료 — RCC Rebuild V1 1단계 source-only Core 분리
+
+source에만 modules/rcc/extension/core/identity.js, state.js, conversation.js, transport.js를
+추가했다. 각각 UUID 기반 exact tab 해석, endpoint 상태 판정, 제출·응답 계약, transport 결과와
+자동 재시도 금지 경계를 순수 함수로 분리한다. manifest, background loader, background/content
+scripts, Native Host, Chrome storage, Relay binding은 변경하지 않았고 새 Core는 현재 실행 경로에
+import되지 않는다. Core/기존 Simple Relay/Relay Core/identity/result 관련 focused Node tests
+9개와 syntax/diff 검사가 통과했다. LIVE 설치 경로에는 core 디렉터리가 없고 기존 active
+content.js source/LIVE SHA-256도 일치한다. 상세는
+docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE1_SOURCE_CORE_20261020.md에 있다.
+
+다음 2단계는 installed payload 후보 배치와 same-ID extension reload가 필요한 read-only Shadow다.
+현재 source-only 제약 아래에서는 시작하지 않는다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /

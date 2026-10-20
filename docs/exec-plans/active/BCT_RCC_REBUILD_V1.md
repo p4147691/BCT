@@ -1,6 +1,6 @@
 # RCC Rebuild V1 — 연결을 유지한 내부 재구축
 
-상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_NOT_STARTED`
+상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_SOURCE_ONLY_COMPLETED / STAGE_2_NOT_STARTED`
 
 ## 1. 목표와 비목표
 
@@ -254,5 +254,8 @@ tab/window/session ID와 상세 해시는 진단 상세에서만 보여준다. �
 0단계의 실제 결과는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE0_BASELINE_20261020.md`에 고정했다.
 
-다음 작업은 **1단계 source-only Core 분리**다. installed payload, extension reload, Native Host,
-Chrome 탭, Relay binding을 같은 작업에 섞지 않는다.
+1단계의 실제 결과는
+`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE1_SOURCE_CORE_20261020.md`에 고정했다.
+
+다음 단계는 2단계 read-only Shadow 후보 배치다. 이 단계부터는 installed payload 변경과 same-ID
+extension reload가 필요하므로, 현재 작업의 source-only 제약 아래에서는 시작하지 않는다.
