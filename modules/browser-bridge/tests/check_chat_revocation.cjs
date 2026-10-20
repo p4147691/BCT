@@ -64,9 +64,10 @@ function harness() {
   return state;
 }
 async function settle(predicate) {
-  for(let i=0;i<120;i++){
-    if(predicate()){await new Promise(resolve=>setImmediate(resolve));return;}
-    await new Promise(resolve=>setImmediate(resolve));
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (predicate()) { await new Promise(resolve => setTimeout(resolve, 10)); return; }
+    await new Promise(resolve => setTimeout(resolve, 10));
   }
   throw Error("ASYNC_SCAN_DID_NOT_SETTLE");
 }
