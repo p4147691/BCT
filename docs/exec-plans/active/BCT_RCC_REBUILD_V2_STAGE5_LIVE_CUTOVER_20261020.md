@@ -1,6 +1,6 @@
 # RCC Rebuild V2-5 — 단일 LIVE 전환
 
-상태: `RC1_ACCEPTANCE_FAILED / EXACT_ROLLBACK_COMPLETE / RC2_PENDING_CI`
+상태: `RC1_EXACT_ROLLBACK_COMPLETE / RC2_LIVE_ACCEPTED / V2_5_COMPLETE`
 
 ## RC1 전환과 안전 복구
 
@@ -56,7 +56,31 @@ activation 직후 recovery record를 먼저 저장하고, background는 명시�
 
 ## 다음 gate
 
-RC2 exact source commit의 GitHub Actions 전체 통과를 확인한 뒤에만 현재 LIVE baseline을 다시
+RC2 exact source commit의 GitHub Actions 전체 통과를 확인한 뒤 현재 LIVE baseline을 다시
 backup하고 RC2를 단일 전환한다. 새 수락 원문은 첫 시도와 구분되는 새 operation ID를 사용하되,
 RC1 원문을 재사용하지 않는다. 두 방향 `SUBMITTED` 영수증과 postcondition이 모두 일치해야
 V2-5를 완료로 바꾼다.
+
+## RC2 최종 LIVE 수락 결과
+
+- exact source/main: `447c6bb5296e8a8bb7f9896d65ed49e48a385afb`
+- GitHub Actions: run `39402641746`, preflight/Core 4 shard/Browser Bridge 전체 PASS
+- LIVE payload: 46파일, aggregate
+  `e7b0bd98b74fd982031565c3701fe68f0c7b45e2984deba8c490867272756c39`
+- RC2 backup:
+  `D:\BCT\runtime\backups\rcc-rebuild-v2-stage5-rc2-20261020-184845`
+- immediate rollback:
+  `D:\ChromeExtensions\RCC\rcc-v2-pre-rc2-stage5-20261020-184845`
+- reload: `rcc-v2-5-rc2-reload-20261020-01`, exactly one successful same-ID reload
+- post-reload: 새 Native session, binding 불변, 여섯 열린 tab의 `probe-tabs` 전부 OK
+- Manager→Worker: `rcc-v2-5-rc2-m2w-20261020-01`, `SUBMITTED`, 원문 60자,
+  SHA-256 `09375f061252b2965ceb5e89f28d0e252b14cb6b76db2f29f974b2f12f2c5aaf`
+- Worker→Manager: `rcc-v2-5-rc2-w2m-20261020-01`, `SUBMITTED`, 응답 10자,
+  SHA-256 `5365e0b45f4a830703aa1a16bc1c9dedd3ec5ea7403d50f878612d3e44bd56f5`
+- 최종 postcondition: Manager/Worker 모두 generation 완료·IDLE, 각 message count 6/6,
+  Core shadow `matches:true`
+- Native Host executable SHA-256:
+  `78087b6a1ece5793be22028c6c002f44eb2fb81f74609d8bf9893b8dae7a1d30`
+
+이 결과로 V2-5는 완료다. 다음 V2-6에서는 LIVE 호출자가 0인 구파일과 보존 backup을 먼저
+검토하고, 복구에 필요한 최신 RC2 backup은 유지한 채 안전한 범위만 정리한다.
