@@ -14,6 +14,7 @@ from bct.core.models import (
     FeatureRequest,
     FeatureResult,
     Outcome,
+    OperationState,
     PreconditionError,
     UnknownEffectError,
     Work,
@@ -34,6 +35,7 @@ _OPERATIONS = {
     "worker-replace", "reconcile", "recover-not-dispatched",
     "recover-node-sync", "recover-reconciled-wake",
     "chain-run", "chain-resume", "manager-wake", "status", "cancel",
+    "inspect-result-receipt",
 }
 _RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 _RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
@@ -197,6 +199,14 @@ class OrchestrationFeature:
                 },
                 {"evidence", "timeout_s"},
             )
+        elif operation == "inspect-result-receipt":
+            # The result identity must come from an existing assignment of this
+            # original Work; arbitrary cross-Work relay IDs are not permitted.
+            _exact_keys(
+                arguments,
+                common | {"assignment_id", "original_operation_id", "delivery_id"},
+                set(),
+            )
         elif operation == "reconcile":
             _exact_keys(
                 arguments,
@@ -278,6 +288,11 @@ class OrchestrationFeature:
             resources = (
                 "orchestration-recovery:"
                 + str(arguments.get("original_operation_id")),
+            )
+        elif operation == "inspect-result-receipt":
+            resources = (
+                "orchestration-inspection:" + session_id + ":"
+                + str(arguments["assignment_id"]),
             )
         elif operation == "chain-run":
             attachment_ids: set[str] = set()
@@ -1152,20 +1167,14 @@ class OrchestrationFeature:
             delivery_acknowledged = True
         deadline = began + timeout_s
         terminal: dict[str, Any] | None = None
-        immediate_terminal: dict[str, Any] | None = None
         if (
             send_result.get("ok") is True
             and isinstance(send_result.get("reply"), str)
             and send_result.get("reply")
         ):
-            immediate_terminal = {
-                "ok": True,
-                "result": {
-                    "id": delivery_id,
-                    "reply": send_result["reply"],
-                    "fingerprint": send_result.get("fingerprint"),
-                },
-            }
+            # An immediate reply is not an attested persisted RCC receipt.
+            # Allow readback time, but never promote partial fields to a terminal
+            # result or acknowledge delivery without the complete exact receipt.
             deadline = max(deadline, time.monotonic() + 5.0)
         while terminal is None and time.monotonic() < deadline:
             try:
@@ -1188,8 +1197,6 @@ class OrchestrationFeature:
                 terminal = readback
                 break
             time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
-        if terminal is None and immediate_terminal is not None:
-            terminal = immediate_terminal
         if terminal is None:
             self.service.record_delivery(
                 assignment_id=assignment_id, generation=generation,
@@ -1349,6 +1356,128 @@ class OrchestrationFeature:
         ):
             return readback["result"]
         return receipt
+
+    def _inspect_result_receipt(
+        self, *, work: Work, values: dict[str, Any],
+    ) -> dict[str, Any]:
+        # Read-only RCC observation: no recover-pending, send, ACK, reconcile,
+        # assignment mutation, result promotion, or claim release.
+        session_id = str(values["session_id"])
+        try:
+            assignment = self.service.assignment(
+                work=work, session_id=session_id,
+                assignment_id=str(values["assignment_id"]),
+            )
+        except (KeyError, ConflictError) as exc:
+            raise PreconditionError("ORCHESTRATION_INSPECT_ASSIGNMENT_NOT_ACCESSIBLE") from exc
+        original_id = str(values["original_operation_id"])
+        if assignment["request"].get("_outer_operation_id") != original_id:
+            raise PreconditionError("ORCHESTRATION_INSPECT_ORIGINAL_OPERATION_MISMATCH")
+        try:
+            original = self.service.store.get_operation_for(
+                operation_id=original_id, work_id=work.work_id,
+                principal_id=work.owner_principal_id,
+            )
+        except (KeyError, ConflictError) as exc:
+            raise PreconditionError("ORCHESTRATION_INSPECT_ORIGINAL_NOT_ACCESSIBLE") from exc
+        if (original.state is not OperationState.FINISHED
+                or original.outcome is not Outcome.UNKNOWN):
+            raise PreconditionError("ORCHESTRATION_INSPECT_ORIGINAL_UNKNOWN_REQUIRED")
+        if not assignment["attempts"]:
+            raise PreconditionError("ORCHESTRATION_INSPECT_DISPATCH_ATTEMPT_MISSING")
+        attempt = assignment["attempts"][-1]
+        delivery_id = str(attempt.get("dispatch_operation_id") or "")
+        if not delivery_id or delivery_id != str(values["delivery_id"]):
+            raise PreconditionError("ORCHESTRATION_INSPECT_DELIVERY_ID_MISMATCH")
+        try:
+            attachment = self.service.attachment(
+                work=work, session_id=session_id,
+                attachment_id=str(attempt["attachment_id"]),
+                generation=int(attempt["attachment_generation"]),
+            )
+        except (KeyError, ConflictError) as exc:
+            raise PreconditionError("ORCHESTRATION_INSPECT_ATTACHMENT_NOT_ACCESSIBLE") from exc
+        common = {
+            "operation": "inspect-result-receipt",
+            "session_id": session_id,
+            "assignment_id": assignment["assignment_id"],
+            "delivery_id": delivery_id,
+            "original_operation_id": original_id,
+            "original_outcome": "UNKNOWN",
+        }
+        try:
+            readback = self.client.request(
+                instance_id=str(attachment["instance_id"]),
+                request_id="orch.inspect." + _hash(
+                    work.work_id + ":" + original_id + ":" + delivery_id, 32
+                ),
+                command="result", text=delivery_id, timeout_s=3.0,
+            )
+        except (RelayUnavailable, RelayEffectUnknown) as exc:
+            return {**common, "observation": "RCC_READ_UNAVAILABLE",
+                    "transport_error_type": type(exc).__name__}
+        receipt = readback.get("result")
+        if (readback.get("found") is not True
+                or readback.get("completed") is not True
+                or readback.get("pending") is not False
+                or not isinstance(receipt, dict)):
+            return {**common, "observation": "RCC_RECEIPT_NOT_CONFIRMED",
+                    "found": readback.get("found") is True,
+                    "completed": readback.get("completed") is True,
+                    "pending": readback.get("pending") is True}
+        parts = None
+        try:
+            parts = json.loads(str(receipt.get("fingerprint") or ""))
+        except (TypeError, ValueError):
+            pass
+        expected_identity_parts = [
+            attachment["relay_role"], None, False, "",
+            attachment["binding_receipt_id"], assignment["request_digest"],
+            attachment["instance_id"], attachment["external_session_id"],
+            attachment["tab_id"], attachment["conversation_key"],
+            attachment["generation"],
+        ]
+        fingerprint_structure_valid = isinstance(parts, list) and len(parts) == 11
+        identity_matches = (
+            fingerprint_structure_valid
+            and all(
+                parts[i] == expected_identity_parts[i]
+                for i in range(11) if i != 1
+            )
+        )
+        checks = {
+            "delivery_id": str(receipt.get("id") or "") == delivery_id,
+            "complete": receipt.get("ok") is True
+                and receipt.get("ambiguous") is False
+                and receipt.get("resultState") == "RESULT_PERSISTED",
+            "message_hash": str(receipt.get("messageHash") or "")
+                == assignment["request_digest"],
+            "binding_receipt": str(receipt.get("targetBindingReceipt") or "")
+                == str(attachment["binding_receipt_id"]),
+            "instance_id": str(receipt.get("instanceId") or "")
+                == str(attachment["instance_id"]),
+            "session_id": str(receipt.get("sessionId") or "")
+                == str(attachment["external_session_id"]),
+            "tab_id": str(receipt.get("tabId") or "")
+                == str(attachment["tab_id"]),
+            "conversation_key": str(receipt.get("conversationKey") or "")
+                == str(attachment["conversation_key"]),
+            "attachment_generation": str(receipt.get("attachmentGeneration") or "")
+                == str(attachment["generation"]),
+            "result_hash_shape": re.fullmatch(
+                r"[a-f0-9]{64}", str(receipt.get("resultHash") or "")
+            ) is not None,
+            "fingerprint_structure": fingerprint_structure_valid,
+            "fingerprint_identity_except_prompt": bool(identity_matches),
+        }
+        # The original generated prompt is not guaranteed to be retained.
+        # Reconstructing it with *current* editable relay notes cannot prove a
+        # historical fingerprint match. Never declare terminal success here.
+        return {**common, "observation": "RCC_RECEIPT_FOUND",
+                "checks": checks,
+                "all_identity_checks_except_prompt": all(checks.values()),
+                "historical_prompt_verified": False,
+                "result_promoted": False}
 
     def _reconcile(
         self, *, work: Work, values: dict[str, Any],
@@ -1943,6 +2072,16 @@ class OrchestrationFeature:
                 {"operation": operation, "session_id": values["session_id"],
                  "event_id": values["event_id"], "wake_state": state},
                 release_claims=outcome is not Outcome.UNKNOWN,
+                output=result,
+            )
+        if operation == "inspect-result-receipt":
+            authorize("orchestrate")
+            result = self._inspect_result_receipt(work=work, values=values)
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": operation, "session_id": values["session_id"],
+                 "assignment_id": values["assignment_id"],
+                 "observation": result["observation"]},
                 output=result,
             )
         if operation == "dispatch":

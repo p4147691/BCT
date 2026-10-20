@@ -802,6 +802,254 @@ class OrchestrationTests(unittest.TestCase):
         self.assertNotEqual(Outcome.APPLIED, retry.outcome)
         self.assertEqual(1, len([call for call in self.relay.calls if call["command"] == "send-wakeback"]))
 
+    def test_unknown_receipt_inspection_is_exact_owned_read_only(self):
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        original = self.call("inspect-original", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "inspect-target",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "produce one exact persistent reply",
+            "acceptance": {"inspect": True}, "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        a = self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="inspect-target",
+        )
+        delivery_id = a["attempts"][-1]["dispatch_operation_id"]
+        self.assertIn(delivery_id, self.relay.results)
+        sends_before = len([x for x in self.relay.calls if x["command"] == "send"])
+        base = {"operation": "inspect-result-receipt", "session_id": "session",
+                "assignment_id": "inspect-target",
+                "original_operation_id": "inspect-original",
+                "delivery_id": delivery_id}
+        before = self.call("receipt-inspect-missing", base)
+        self.assertEqual(Outcome.APPLIED, before.outcome)
+        self.assertEqual("RCC_RECEIPT_NOT_CONFIRMED", before.output["observation"])
+        self.relay.hide_results = False
+        result = self.call("receipt-inspect-found", base)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("RCC_RECEIPT_FOUND", result.output["observation"])
+        self.assertTrue(result.output["all_identity_checks_except_prompt"])
+        self.assertFalse(result.output["historical_prompt_verified"])
+        self.assertFalse(result.output["result_promoted"])
+        self.assertNotIn("reply", str(result.output))
+        self.assertEqual(sends_before, len(
+            [x for x in self.relay.calls if x["command"] == "send"]
+        ))
+        original_after = self.bct.store.get_operation_for(
+            operation_id="inspect-original", work_id="work", principal_id="owner"
+        )
+        self.assertEqual(Outcome.UNKNOWN, original_after.outcome)
+        self.assertEqual("UNKNOWN", self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="inspect-target",
+        )["state"])
+        incorrect = dict(base, delivery_id="another-delivery")
+        denied = self.call("receipt-inspect-other-delivery", incorrect)
+        self.assertEqual(Outcome.NOT_APPLIED, denied.outcome)
+        self.assertEqual(sends_before, len(
+            [x for x in self.relay.calls if x["command"] == "send"]
+        ))
+        wrong_owner = dict(base, original_operation_id="not-the-original")
+        rejected = self.call("receipt-inspect-other-origin", wrong_owner)
+        self.assertEqual(Outcome.NOT_APPLIED, rejected.outcome)
+
+    def test_unknown_receipt_inspection_reports_binding_mismatch_without_promoting(self):
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        original = self.call("inspect-mismatch-original", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "inspect-mismatch",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "produce a receipt to independently inspect",
+            "acceptance": {"inspect": True}, "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        a = self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="inspect-mismatch",
+        )
+        delivery_id = a["attempts"][-1]["dispatch_operation_id"]
+        self.relay.hide_results = False
+        self.relay.result_mutator = lambda value: {
+            **value, "targetBindingReceipt": "tampered"
+        }
+        result = self.call("receipt-inspect-mismatch", {
+            "operation": "inspect-result-receipt", "session_id": "session",
+            "assignment_id": "inspect-mismatch",
+            "original_operation_id": "inspect-mismatch-original",
+            "delivery_id": delivery_id,
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("RCC_RECEIPT_FOUND", result.output["observation"])
+        self.assertFalse(result.output["checks"]["binding_receipt"])
+        self.assertFalse(result.output["all_identity_checks_except_prompt"])
+        self.assertFalse(result.output["result_promoted"])
+
+    def test_inspection_foreign_work_missing_assignment_and_attachment_reject_without_unknown(self):
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        original = self.call("access-inspect-original", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "access-inspect-target",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "produce one uncertain receipt for access checks",
+            "acceptance": {"inspect": True}, "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        a = self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="access-inspect-target",
+        )
+        delivery_id = a["attempts"][-1]["dispatch_operation_id"]
+        base = {
+            "operation": "inspect-result-receipt", "session_id": "session",
+            "assignment_id": "access-inspect-target",
+            "original_operation_id": "access-inspect-original",
+            "delivery_id": delivery_id,
+        }
+        self.bct.create_work(
+            work_id="foreign-work", request_summary="separate work fixture",
+            roots=[str(self.root)], actions=["orchestrate"], principal=self.owner,
+        )
+        rejected_foreign = self.bct.operations.run(
+            principal=self.owner, work_id="foreign-work",
+            operation_id="access-foreign-inspector", capability="orchestrate",
+            arguments=base,
+        )
+        self.assertEqual(Outcome.NOT_APPLIED, rejected_foreign.outcome)
+        rejected_missing = self.call(
+            "access-missing-assignment",
+            {**base, "assignment_id": "not-an-assignment"},
+        )
+        self.assertEqual(Outcome.NOT_APPLIED, rejected_missing.outcome)
+        rejected_other = self.call(
+            "access-foreign-original",
+            {**base, "original_operation_id": "not-the-original"},
+        )
+        self.assertEqual(Outcome.NOT_APPLIED, rejected_other.outcome)
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_session_nodes SET active=0 "
+                "WHERE session_id=? AND node_id=?",
+                ("session", "worker-b"),
+            )
+        rejected_attachment = self.call("access-missing-attachment", base)
+        self.assertEqual(Outcome.NOT_APPLIED, rejected_attachment.outcome)
+        claimed = {
+            x["operation_id"] for x in
+            self.bct.store.monitor_snapshot()["unresolved_claims"]
+        }
+        for operation_id in (
+            "access-foreign-inspector", "access-missing-assignment",
+            "access-foreign-original", "access-missing-attachment",
+        ):
+            self.assertNotIn(operation_id, claimed)
+        self.assertIn("access-inspect-original", claimed)
+
+    def test_inspection_mismatched_fingerprint_is_diagnostic_not_success(self):
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        original = self.call("inspect-fingerprint-original", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "inspect-fingerprint",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "return a receipt with immutable target identity",
+            "acceptance": {"inspect": True}, "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        a = self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="inspect-fingerprint",
+        )
+        delivery_id = a["attempts"][-1]["dispatch_operation_id"]
+        self.relay.hide_results = False
+
+        def corrupted_fingerprint(value):
+            parts = json.loads(value["fingerprint"])
+            parts[6] = "incorrect-instance"
+            return {**value, "fingerprint": json.dumps(
+                parts, ensure_ascii=False, separators=(",", ":")
+            )}
+
+        self.relay.result_mutator = corrupted_fingerprint
+        sends_before = len([x for x in self.relay.calls if x["command"] == "send"])
+        observed = self.call("inspect-fingerprint-mismatched-result", {
+            "operation": "inspect-result-receipt", "session_id": "session",
+            "assignment_id": "inspect-fingerprint",
+            "original_operation_id": "inspect-fingerprint-original",
+            "delivery_id": delivery_id,
+        })
+        self.assertEqual(Outcome.APPLIED, observed.outcome)
+        self.assertEqual("RCC_RECEIPT_FOUND", observed.output["observation"])
+        self.assertTrue(observed.output["checks"]["fingerprint_structure"])
+        self.assertFalse(
+            observed.output["checks"]["fingerprint_identity_except_prompt"]
+        )
+        self.assertTrue(observed.output["checks"]["instance_id"])
+        self.assertFalse(observed.output["all_identity_checks_except_prompt"])
+        self.assertFalse(observed.output["result_promoted"])
+        self.assertEqual(sends_before, len([
+            x for x in self.relay.calls if x["command"] == "send"
+        ]))
+        self.assertEqual(
+            Outcome.UNKNOWN,
+            self.bct.store.get_operation_for(
+                operation_id="inspect-fingerprint-original", work_id="work",
+                principal_id="owner",
+            ).outcome,
+        )
+
+    def test_immediate_reply_is_not_durable_receipt_and_later_reconciles(self):
+        # RCC has an exact result, but its durable readback is temporarily
+        # unavailable; the immediate reply has no attested receipt metadata.
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        original = self.call("immediate-but-unconfirmed", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "immediate-late-receipt",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "return a result after readback reconnects",
+            "acceptance": {"recover": True}, "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        assignment = self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="immediate-late-receipt",
+        )
+        self.assertEqual(
+            "ORCHESTRATION_RESULT_NOT_CONFIRMED",
+            assignment["terminal_result"]["error"],
+        )
+        sends_before = len([
+            x for x in self.relay.calls if x["command"] == "send"
+        ])
+        self.relay.hide_results = False
+        recovered = self.call("immediate-late-reconcile", {
+            "operation": "reconcile", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "immediate-late-receipt",
+            "original_operation_id": "immediate-but-unconfirmed",
+            "timeout_s": 2,
+        })
+        self.assertEqual(Outcome.APPLIED, recovered.outcome)
+        self.assertEqual(sends_before, len([
+            x for x in self.relay.calls if x["command"] == "send"
+        ]))
+        self.assertEqual(
+            Outcome.UNKNOWN,
+            self.bct.store.get_operation_for(
+                operation_id="immediate-but-unconfirmed",
+                work_id="work", principal_id="owner",
+            ).outcome,
+        )
+
     def test_exact_result_reconciles_unknown_without_resend(self):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
