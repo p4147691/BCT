@@ -60,6 +60,9 @@ source와 0단계에서 동결한 LIVE payload가 이미 현재 값으로 일치
 `origin/main`, `runtime\\current.json`, health `release_sha`를 요구하며, 과거 기록은
 그대로 보존한다. 이 역시 source test만 바꾼 것으로 LIVE에는 영향이 없다.
 
+GitHub Actions `BCT CI` run `39351244745`는 보정 뒤 전체 PASS했다. preflight, browser-bridge,
+core shard 0–3이 모두 성공했으며, 이전 실패 지점이던 core shard 1도 성공했다.
+
 추가로 LIVE 설치 경로에는 core 디렉터리가 존재하지 않음을 확인했고, 변경하지 않은 active
 content.js의 source/LIVE SHA-256이 같음을 확인했다.
 

@@ -60,6 +60,8 @@ extension reload, Native Host, Chrome 탭, Relay binding에 영향을 주지 않
 후속 CI에서 발견한 Handoff layout test의 역사 기록 오판도 source test에서만 보정했다.
 현재 상태는 여전히 문서의 SHA가 아니라 `origin/main`·`runtime\\current.json`·health
 `release_sha`의 기계적 일치로 판정한다.
+GitHub Actions `BCT CI` run `39351244745`는 보정 뒤 전체 통과했다. 이 확인 뒤에도 2단계는
+installed payload 변경 및 same-ID extension reload가 필요한 별도 승인 범위이므로 시작하지 않았다.
 
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
