@@ -55,6 +55,11 @@ payload가 아니라 과거 `1.0.21 / 2026-10-15` 값과 해시를 기대한 것
 source와 0단계에서 동결한 LIVE payload가 이미 현재 값으로 일치함을 근거로, 코드나 설치본이
 아닌 해당 테스트의 release baseline만 현재 값으로 갱신했다.
 
+같은 CI에서 `test_module_layout`가 Handoff의 과거 완료 기록에 포함된 40자리 commit ID까지
+현재 상태 주장으로 잘못 판정한 회귀를 발견했다. 테스트는 이제 현재 상태의 검증 문장에만
+`origin/main`, `runtime\\current.json`, health `release_sha`를 요구하며, 과거 기록은
+그대로 보존한다. 이 역시 source test만 바꾼 것으로 LIVE에는 영향이 없다.
+
 추가로 LIVE 설치 경로에는 core 디렉터리가 존재하지 않음을 확인했고, 변경하지 않은 active
 content.js의 source/LIVE SHA-256이 같음을 확인했다.
 

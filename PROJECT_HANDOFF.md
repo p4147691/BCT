@@ -57,6 +57,9 @@ docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE1_SOURCE_CORE_20261020.md에 있�
 않고 테스트의 release baseline만 그 확인값으로 갱신했다. 이 보정은 source-only이며
 extension reload, Native Host, Chrome 탭, Relay binding에 영향을 주지 않는다.
 수정 뒤 `tests.test_rcc_source_baseline` 17개와 새 `test_rcc_core_v1.js`가 통과했다.
+후속 CI에서 발견한 Handoff layout test의 역사 기록 오판도 source test에서만 보정했다.
+현재 상태는 여전히 문서의 SHA가 아니라 `origin/main`·`runtime\\current.json`·health
+`release_sha`의 기계적 일치로 판정한다.
 
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 

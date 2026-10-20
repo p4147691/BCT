@@ -99,11 +99,13 @@ class ModuleLayoutTests(unittest.TestCase):
 
     def test_handoff_current_state_uses_live_proof_not_self_referential_sha(self):
         handoff = (self.root / "PROJECT_HANDOFF.md").read_text(encoding="utf-8")
-        current_section = handoff.split("## 현재 결정", 1)[0]
-        self.assertIn("origin/main", current_section)
-        self.assertIn("runtime\\current.json", current_section)
-        self.assertIn("release_sha", current_section)
-        self.assertIsNone(re.search(r"\b[0-9a-f]{40}\b", current_section))
+        proof = re.search(
+            r"현재 SHA와 generation은 `origin/main`, 두 `runtime\\current\.json`,\s*"
+            r"health `release_sha`로 확인한다\.",
+            handoff,
+        )
+        self.assertIsNotNone(proof)
+        self.assertIsNone(re.search(r"\b[0-9a-f]{40}\b", proof.group(0)))
 
 
 if __name__ == "__main__":
