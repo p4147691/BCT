@@ -137,8 +137,8 @@ console.log(JSON.stringify({base,newNode,moved,swappedDefault,normalizedDefault,
     physical_node_dedup = 'function monitorStructureNodeIdentityTokens(node)' in text and 'identityTokens.some(token=>seenPhysicalNodes.has(token))' in text and 'return [`act:${label}`]' in text and 'return [`tab:${tabId}:conversation:${conversationKey}`]' in text
     minimized_native_desktop_authority = (
         'function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState)' in text
-        and 'const desktopId = String(location?.desktopId || "").trim();' in text
-        and 'if (!desktopId) continue;' in text
+        and 'monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({' in text
+        and 'locations: monitorWindowDesktopLocations,' in text
         and 'stable.desktopId || monitorDesktopState.desktopIds[Number(stable.desktop)-1]' not in text
     )
     minimized_exact_hwnd_identity = (
