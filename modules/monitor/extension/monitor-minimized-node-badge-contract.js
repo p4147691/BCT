@@ -2,9 +2,10 @@
 
 // Pure projection boundary for desktop-thumbnail node badges.
 // Native lifecycle supplies the desktop; BCT/RCC supplies node numbers for an
-// HWND. Open and minimized ChatGPT windows are both represented. This module
-// never invents a node or controls a window, so a missing mapping merely hides
-// the badge.
+// HWND. Only minimized ChatGPT windows are represented in the desktop-label
+// summary. Open ChatGPT windows have their own badge inside the thumbnail.
+// This module never invents a node or controls a window, so a missing mapping
+// merely hides the badge.
 (function installMonitorMinimizedNodeBadgeContract(root) {
   function text(value) { return String(value ?? "").trim(); }
   function positiveNodeNumber(value) {
@@ -19,7 +20,9 @@
     const locations = input.locations instanceof Map ? input.locations : new Map(input.locations || []);
     const numbersForHwnd = typeof input.numbersForHwnd === "function" ? input.numbersForHwnd : () => [];
     for (const [rawHwnd, location] of locations) {
-      if (location?.visible === false && !Boolean(location?.iconic)) continue;
+      // The bottom desktop label is a minimized-window summary, not a list of
+      // every ChatGPT tab that happens to be open on the desktop.
+      if (!Boolean(location?.iconic)) continue;
       const desktopId = text(location?.desktopId);
       if (!desktopId) continue;
       const hwnd = text(location?.hwnd || rawHwnd);

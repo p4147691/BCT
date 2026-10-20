@@ -19166,9 +19166,8 @@ function monitorNodeNumbersForMinimizedHwnd(hwnd, state = monitorLastAiState) {
 
 }
 
-// The desktop thumbnail is a summary of the desktop, not only of its minimized
-// windows. A BCT/RCC number stays visible while its physical ChatGPT window is
-// open, and naturally disappears only once the exact HWND mapping disappears.
+// The desktop-label summary is reserved for minimized ChatGPT windows. Open
+// ChatGPT windows render their BCT/RCC number directly on their thumbnail.
 function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
   return monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({
     locations: monitorWindowDesktopLocations,
@@ -55759,7 +55758,10 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
     const windowZ=Math.max(1,Number(img.style.zIndex||img.dataset.nativeZIndex||1));
-    badge.style.zIndex=String(windowZ);
+    // The badge is a sibling of the per-window thumbnail. Keep it one layer
+    // above that thumbnail so a fresh capture cannot cover the number.
+    badge.style.zIndex=String(windowZ+1);
+    badge.style.display="";
 
 
 
