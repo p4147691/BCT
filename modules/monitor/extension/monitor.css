@@ -1755,13 +1755,10 @@
 
 
 
-.monitor-window-non-chat-countdown{position:absolute;pointer-events:none;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:2px dashed rgba(255,190,88,.96);background:rgba(18,10,2,.16);color:#ffd38a;font:900 16px/1 "Segoe UI","Malgun Gothic",sans-serif;text-shadow:0 1px 3px #000;}
 
 
-.monitor-window-non-chat-countdown::after{content:attr(data-hwnd);display:none;}
 
 
-.monitor-window-non-chat-countdown-thumb{font-size:10px;border-width:1px;}
 
 
 
@@ -1978,6 +1975,21 @@
 
 
 .monitor-alert-tone-action::before,.monitor-work-state.monitor-alert-tone-action{color:#ff9b52!important;text-shadow:0 0 6px rgba(255,155,82,.84),0 0 14px rgba(245,120,45,.58)!important;}
+
+/* THUMBNAIL_STATUS_SVG_V1: semantic status is rendered by inline SVG, never
+   text glyphs. All icon variants intentionally use one white monochrome. */
+.monitor-work-state{position:relative;overflow:visible;color:#fff!important;font-size:0!important;text-shadow:none!important;}
+.monitor-status-icon{display:block;width:100%;height:100%;fill:#fff;stroke:#fff;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round;color:#fff;}
+.monitor-status-icon-play,.monitor-status-icon-complete,.monitor-status-icon-pause{stroke:none;}
+.monitor-status-icon-warning{position:absolute;width:58%;height:58%;right:-28%;bottom:-25%;fill:none!important;stroke:#fff!important;stroke-width:2.1;filter:drop-shadow(0 0 2px rgba(0,0,0,.78));}
+.monitor-window-pause-overlay{display:grid!important;place-items:center!important;}
+.monitor-window-pause-overlay::before{content:none!important;display:none!important;}
+.monitor-window-pause-overlay>.monitor-status-icon{position:absolute;width:clamp(20px,4.7vw,44px);height:clamp(20px,4.7vw,44px);filter:drop-shadow(0 0 5px rgba(0,0,0,.78));}
+.monitor-window-pause-overlay-thumb>.monitor-status-icon{width:20px;height:20px;}
+.monitor-window-pause-overlay>.monitor-status-icon-warning{width:46%;height:46%;right:21%;bottom:21%;}
+.monitor-alert-tone-general::before,.monitor-alert-tone-success::before,.monitor-alert-tone-failure::before,.monitor-alert-tone-review::before,.monitor-alert-tone-question::before,.monitor-alert-tone-input::before,.monitor-alert-tone-action::before{color:#fff!important;text-shadow:none!important;}
+.monitor-bct-node-presence{position:relative;display:grid!important;place-items:center;width:14px!important;height:14px!important;background:none!important;box-shadow:none!important;color:#fff!important;}
+.monitor-bct-node-presence>.monitor-status-icon{width:12px;height:12px;}
 
 
 
@@ -3874,3 +3886,43 @@
 #monitorStructurePanel .monitor-org-workers>.monitor-org-worker-card,
 #monitorStructurePanel .monitor-org-workers>.monitor-org-bundle,
 #monitorStructurePanel .monitor-org-desk-bundles>.monitor-org-bundle{width:var(--org-node-width)!important;min-width:var(--org-node-width)!important;max-width:var(--org-node-width)!important;height:var(--org-node-height)!important;min-height:var(--org-node-height)!important;max-height:var(--org-node-height)!important;box-sizing:border-box!important}
+
+
+/* Isolated BCT/RCC presentation: user-selectable compact 2/3-column node grid. */
+.monitor-bct-nodes[data-columns="3"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.monitor-bct-nodes[data-columns="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.monitor-bct-node-row { grid-template-columns:29px minmax(0,1fr) 17px; }
+.monitor-bct-node-body { min-width:0; }
+.monitor-bct-node-location { display:block; color:rgba(202,216,232,.64); font:600 10px/1.25 "Segoe UI","Malgun Gothic",sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.monitor-bct-node-presence { width:auto; height:auto; background:none; border-radius:0; box-shadow:none; font:800 12px/1 sans-serif; color:rgba(190,205,226,.86); }
+.monitor-bct-node-presence.is-busy { color:#8ee2ad; background:none; box-shadow:none; }
+.monitor-node-columns { display:inline-flex;gap:3px;align-items:center; }
+.monitor-node-columns button { height:23px; padding:0 5px;border-radius:5px;border:1px solid rgba(137,167,193,.3);color:#e6edf5;background:rgba(255,255,255,.05);font-size:10px;cursor:pointer; }
+.monitor-node-columns button[aria-pressed="true"] { background:rgba(117,184,255,.23);border-color:rgba(117,184,255,.7); }
+.monitor-recovery-menu { position:relative; }
+.monitor-recovery-menu summary { list-style:none;cursor:pointer;border:1px solid rgba(117,184,255,.34);padding:4px 7px;border-radius:6px;font:700 11px/1.1 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-recovery-menu summary::-webkit-details-marker { display:none; }
+.monitor-recovery-menu-actions { display:grid;gap:4px;position:absolute;top:100%;right:0;min-width:214px;padding:8px;background:#121c2a;border:1px solid rgba(117,184,255,.4);border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,.48);z-index:100000; }
+.monitor-recovery-menu-actions button { width:100%;text-align:left;min-height:28px;border-radius:5px;padding:5px 8px; }
+.monitor-recovery-menu-actions button:disabled { opacity:.5;cursor:not-allowed; }
+@media (max-width:790px) { .monitor-bct-nodes[data-columns="3"] { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:450px) { .monitor-bct-nodes { grid-template-columns:minmax(0,1fr)!important; } }
+
+
+/* Read-only minimized C-node labels are overlaid inside the thumbnail lower-right. */
+.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes {
+  position:absolute!important;left:auto!important;top:auto!important;bottom:4px!important;right:4px!important;
+  transform:none!important;display:inline-flex;gap:2px;align-items:center;justify-content:flex-end;
+  max-width:calc(100% - 8px);z-index:21032!important;overflow:hidden;
+  pointer-events:none;isolation:isolate;
+}
+.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes[hidden] { display:none!important; }
+.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes .monitor-desktop-minimized-node {
+  min-width:20px;padding:0 3px;min-height:16px;border-radius:4px;
+  background:rgba(5,9,16,.9);border:1px solid rgba(226,239,255,.53);color:#fff;
+  font-size:10px;line-height:14px;
+}
+.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more {
+  min-width:13px;color:#fff;font-weight:900;font-size:10px;
+  text-shadow:0 1px 3px #000;
+}

@@ -516,7 +516,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BCT Window Monitor</strong><span id="monitorVersion" class="monitor-version"></span><div class="monitor-act-row"><span id="monitorService" style="display:none">호환 계층 확인 중…</span><span id="monitorBctStatus" class="monitor-bct-status" role="status">BCT 확인 중…</span><button id="monitorBctOpen" type="button" title="BCT Core의 읽기 전용 상태 화면을 엽니다">BCT 상태</button><button id="monitorLocalLlmOpen" type="button" title="BCT 상태 화면에서 현재 Laya 서비스 상태를 확인합니다">Laya 상태</button><button id="monitorExtensionReload" type="button" title="이미 설치된 BCT Window Monitor 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">설치본 리로드</button></div></div></div>
+    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BCT Window Monitor</strong><span id="monitorVersion" class="monitor-version"></span><div class="monitor-act-row"><span id="monitorService" style="display:none">호환 계층 확인 중…</span><span id="monitorBctStatus" class="monitor-bct-status" role="status">BCT 확인 중…</span><button id="monitorBctOpen" type="button" title="BCT Core의 읽기 전용 상태 화면을 엽니다">BCT 상태</button><details class="monitor-recovery-menu"><summary title="RCC·Monitor 상태 관리">리로드·복구 ▾</summary><div class="monitor-recovery-menu-actions"><button id="monitorRccRescan" type="button">RCC 재조회</button><button id="monitorExtensionReload" type="button" title="이미 설치된 BCT Window Monitor 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">설치본 리로드</button><button type="button" disabled title="RCC 소유 작업의 승인된 리로드 경로 확인 후 연결">RCC 리로드 · 준비 중</button><button type="button" disabled title="Supervisor 경로 확인 후 연결">BCT 시작·복구 · 준비 중</button><button type="button" disabled title="터널 작업 및 영수증 확인 후 연결">MCP 터널 복구 · 준비 중</button><button type="button" disabled title="ChatGPT 설정에서 수동 갱신">도구 새로고침 · 설정에서</button></div></details></div></div></div>
 
 
 
@@ -596,7 +596,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="BCT가 현재 확인한 RCC 창과 탭 상태를 다시 읽습니다">새로고침</button></div>
+    <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><span class="monitor-node-columns" aria-label="노드 열 수"><button type="button" id="monitorNodeCols2">2열</button><button type="button" id="monitorNodeCols3">3열</button></span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
     <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
 
 
@@ -15649,9 +15649,14 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     String(ep?.presence_state || "").toUpperCase() === "OPEN"
     && ["GOOGLE", "NAVER"].includes(String(ep?.profile_id || "").toUpperCase())
   );
-  if (!openEndpoints.length || !monitorDesktopState.desktopIds.length) return false;
+  const bctActiveNodes = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+    .filter((node) => node?.active === true && String(node?.instanceState || "").toUpperCase() === "OPEN");
+  if ((!openEndpoints.length && !bctActiveNodes.length) || !monitorDesktopState.desktopIds.length) return false;
 
-  const wanted = new Set(openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()).filter(Boolean));
+  const wanted = new Set([
+    ...openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()),
+    ...bctActiveNodes.map((node) => String(node?.conversationKey || "").trim()),
+  ].filter(Boolean));
   if (!wanted.size) return false;
 
   const renderSignature = (location) => [
@@ -15693,7 +15698,16 @@ async function refreshMonitorIdentityIndex(state, force = false) {
 
         const identity = await monitorNativeWithTimeout({ type: "getChromeConversationIdentity", hwnd }, 2500).catch(() => null);
         const key = String(identity?.conversationKey || "").trim();
-        if (!wanted.has(key)) return;
+        if (!wanted.has(key)) {
+          const latest = monitorWindowDesktopLocations.get(hwnd) || {};
+          if (latest.conversationKey || latest.identityAt) {
+            monitorWindowDesktopLocations.set(hwnd, {
+              ...latest, identityAt: now, conversationKey: "", identityTitle: "", nonChatSince: Date.now(),
+            });
+            projectionChanged = true;
+          }
+          return;
+        }
 
         const latest = monitorWindowDesktopLocations.get(hwnd) || {};
         const nextIdentity = {
@@ -15713,6 +15727,7 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     }
 
     monitorIdentityIndexRefreshAt = Date.now();
+    refreshMonitorBctCurrentSessionWindowHwnd();
     if (projectionChanged && monitorLastAiState) renderWorkers(monitorLastAiState);
     return projectionChanged;
   })().finally(() => { monitorIdentityIndexInflight = null; });
@@ -19152,25 +19167,10 @@ function monitorNodeNumbersForMinimizedHwnd(hwnd, state = monitorLastAiState) {
 }
 
 function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
-  const grouped = new Map();
-
-  // Native window lifecycle is the single source of truth for minimized state.
-  // ACT/stable bindings provide only the node numbers attached to each HWND.
-  for (const [hwnd, location] of monitorWindowDesktopLocations) {
-    if (!Boolean(location?.iconic)) continue;
-    const desktopId = String(location?.desktopId || "").trim();
-    if (!desktopId) continue;
-
-    const slots = monitorNodeNumbersForMinimizedHwnd(hwnd, state);
-    if (!slots.length) continue;
-    if (!grouped.has(desktopId)) grouped.set(desktopId, new Set());
-    const target = grouped.get(desktopId);
-    for (const slot of slots) target.add(slot);
-  }
-
-  return new Map(
-    [...grouped].map(([desktopId, slots]) => [desktopId, [...slots].sort((a, b) => a - b)])
-  );
+  return monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({
+    locations: monitorWindowDesktopLocations,
+    numbersForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state),
+  }) || new Map();
 }
 
 function profileForMonitorWorker(worker, state) {
@@ -20886,8 +20886,8 @@ function monitorDirectEndpointUserAttention(endpoint) {
 
 function monitorUserAttentionVisualDetail(attentionRaw) {
   const kind=String(attentionRaw?.kind||"").trim().toUpperCase();
-  if(kind==="RETRY_REQUIRED") return {symbol:"!",tone:"failure",label:String(attentionRaw?.label||"다시 시도 필요")};
-  if(["NEW_CHAT_REQUIRED","RECOVERY_REQUIRED"].includes(kind)) return {symbol:"⚠",tone:"review",label:String(attentionRaw?.label||"사용자 조치 필요")};
+  if(kind==="RETRY_REQUIRED") return {warning:true,tone:"failure",label:String(attentionRaw?.label||"다시 시도 필요")};
+  if(["NEW_CHAT_REQUIRED","RECOVERY_REQUIRED"].includes(kind)) return {warning:true,tone:"review",label:String(attentionRaw?.label||"사용자 조치 필요")};
   return null;
 }
 
@@ -21640,9 +21640,39 @@ function monitorBrowserWindowIdForEndpoint(endpoint) {
   return String(endpoint?.window_id ?? endpoint?.browser_window_id ?? metadata.window_id ?? metadata.browser_window_id ?? "").trim();
 }
 
-function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState) {
+function refreshMonitorBctCurrentSessionWindowHwnd() {
+  const resolution = monitorWindowHwndContract?.resolve?.({
+    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations, now: Date.now(),
+  });
+  const next = new Map();
+  for (const binding of Array.isArray(resolution?.bindings) ? resolution.bindings : []) {
+    next.set(String(binding.lineage || ""), binding);
+  }
+  monitorBctCurrentSessionWindowHwnd = next;
+  return resolution || null;
+}
+
+function monitorBctCurrentSessionHwnd(windowIdValue, instanceIdValue = "", sessionIdValue = "") {
   const windowId = String(windowIdValue ?? "").trim();
-  if (!/^\d+$/.test(windowId) || windowId === "0" || !state) return "";
+  const instanceId = String(instanceIdValue ?? "").trim();
+  const sessionId = String(sessionIdValue ?? "").trim();
+  if (!/^\d+$/.test(windowId) || windowId === "0") return "";
+  if (instanceId && sessionId) {
+    return String(monitorBctCurrentSessionWindowHwnd.get(`${instanceId}:${sessionId}:${windowId}`)?.hwnd || "");
+  }
+  const matches = [...monitorBctCurrentSessionWindowHwnd.values()]
+    .filter((binding) => String(binding?.windowId || "") === windowId)
+    .map((binding) => String(binding?.hwnd || ""))
+    .filter((hwnd) => /^\d+$/.test(hwnd) && hwnd !== "0");
+  return new Set(matches).size === 1 ? matches[0] : "";
+}
+
+function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
+  const windowId = String(windowIdValue ?? "").trim();
+  if (!/^\d+$/.test(windowId) || windowId === "0") return "";
+  const currentSessionHwnd = monitorBctCurrentSessionHwnd(windowId, instanceIdValue, sessionIdValue);
+  if (currentSessionHwnd) return currentSessionHwnd;
+  if (!state) return "";
 
   const candidates = new Set();
   const browserNodes = Array.isArray(state?.organization?.browser_nodes) ? state.organization.browser_nodes : [];
@@ -22950,7 +22980,7 @@ async function monitorSyncSharedRuntime() {
 
 
 
-        const detail=monitorChatAlertDetails.get(key)||{symbol:"!",tone:"general",label:"채팅 작업 완료"};
+        const detail=monitorChatAlertDetails.get(key)||{activity:"pause",tone:"general",label:"채팅 작업 완료"};
 
 
 
@@ -22966,7 +22996,7 @@ async function monitorSyncSharedRuntime() {
 
 
 
-        await monitorPublishSharedRuntime("alert",key,{symbol:detail.symbol||"!",tone:detail.tone||"general",label:detail.label||"채팅 작업 완료"});
+        await monitorPublishSharedRuntime("alert",key,{activity:detail.activity||"",warning:detail.warning===true,tone:detail.tone||"general",label:detail.label||"채팅 작업 완료"});
 
 
 
@@ -23462,7 +23492,7 @@ async function monitorSyncSharedRuntime() {
 
 
 
-        if(alertAt>ackAt){monitorPostWorkAlerts.add(key);monitorChatAlertDetails.set(key,{symbol:String(row.symbol||"!"),tone:String(row.tone||"general"),label:String(row.label||"채팅 작업 완료")});monitorAcknowledgedPostWork.delete(key);}
+        if(alertAt>ackAt){const legacyTone=String(row.tone||"general");monitorPostWorkAlerts.add(key);monitorChatAlertDetails.set(key,{activity:String(row.activity||""),warning:row.warning===true||["failure","review","input","action","question"].includes(legacyTone),tone:legacyTone,label:String(row.label||"채팅 작업 완료")});monitorAcknowledgedPostWork.delete(key);}
 
 
 
@@ -23918,7 +23948,9 @@ function monitorCreateChatCompletionAlert(conversationKey, attentionCue="", comp
 
 
 
-  const detail=attention==="action"?{symbol:"?",tone:"action",label:"사용자 조치 필요"}:attention==="input"?{symbol:"?",tone:"input",label:"추가 입력 필요"}:attention==="question"?{symbol:"?",tone:"question",label:"사용자 확인/선택 대기"}:cue==="failure"?{symbol:"!",tone:"failure",label:"실패 / 오류"}:cue==="review"?{symbol:"!",tone:"review",label:"검토 필요"}:cue==="success"?{symbol:"!",tone:"success",label:"성공 / 완료"}:{symbol:"!",tone:"general",label:"채팅 작업 완료"};
+  // Chat generation finishing is a pause/notice, never evidence that project
+  // work is close-safe. Only an authoritative terminal report emits complete.
+  const detail=attention==="action"?{warning:true,tone:"action",label:"사용자 조치 필요"}:attention==="input"?{warning:true,tone:"input",label:"추가 입력 필요"}:attention==="question"?{warning:true,tone:"question",label:"사용자 확인/선택 대기"}:cue==="failure"?{warning:true,tone:"failure",label:"실패 / 오류"}:cue==="review"?{warning:true,tone:"review",label:"검토 필요"}:{activity:"pause",tone:cue==="success"?"success":"general",label:cue==="success"?"응답 완료 · 후속 확인 대기":"채팅 작업 완료"};
 
 
 
@@ -23950,7 +23982,7 @@ function monitorCreateChatCompletionAlert(conversationKey, attentionCue="", comp
 
 
 
-  const at=Date.now(); monitorSharedRuntimeAlertAt.set(key,at); void monitorPublishSharedRuntime("alert",key,{symbol:detail.symbol,tone:detail.tone,label:detail.label},at);
+  const at=Date.now(); monitorSharedRuntimeAlertAt.set(key,at); void monitorPublishSharedRuntime("alert",key,{activity:detail.activity||"",warning:detail.warning===true,tone:detail.tone,label:detail.label},at);
 
 
 
@@ -23998,7 +24030,7 @@ function monitorChatAlertDetail(conversationKey) {
 
 
 
-  const key=String(conversationKey||"").trim(); return key&&monitorPostWorkAlerts.has(key)?(monitorChatAlertDetails.get(key)||{symbol:"!",tone:"general",label:"채팅 작업 완료"}):null;
+  const key=String(conversationKey||"").trim(); return key&&monitorPostWorkAlerts.has(key)?(monitorChatAlertDetails.get(key)||{activity:"pause",tone:"general",label:"채팅 작업 완료"}):null;
 
 
 
@@ -24358,7 +24390,7 @@ function monitorAuthoritativeConversationForTask(task, state, report) {
 
 
 
-function monitorAuthoritativeAlertDetail(report) {
+function monitorAuthoritativeAlertDetail(report, task = null) {
 
 
 
@@ -24406,7 +24438,7 @@ function monitorAuthoritativeAlertDetail(report) {
 
 
 
-  if (/\b(FAIL|FAILED|BLOCKED|ERROR|FATAL|BROKEN|UNRECOVERABLE)\b|실패|오류|중단|차단/.test(reportText)) return {symbol:"!",tone:"failure",label:"중요 오류 / 실패 / BLOCKED"};
+  if (/\b(FAIL|FAILED|BLOCKED|ERROR|FATAL|BROKEN|UNRECOVERABLE)\b|실패|오류|중단|차단/.test(reportText)) return {warning:true,tone:"failure",label:"중요 오류 / 실패 / BLOCKED"};
 
 
 
@@ -24422,7 +24454,7 @@ function monitorAuthoritativeAlertDetail(report) {
 
 
 
-  if (/\b(NEEDS_REVIEW|WARNING|WARN|CAUTION|PARTIAL|DEGRADED|ATTENTION)\b|검토 필요|주의|경고|부분 성공|확인 필요/.test(reportText)) return {symbol:"!",tone:"review",label:"주의 / 검토 필요"};
+  if (/\b(NEEDS_REVIEW|WARNING|WARN|CAUTION|PARTIAL|DEGRADED|ATTENTION)\b|검토 필요|주의|경고|부분 성공|확인 필요/.test(reportText)) return {warning:true,tone:"review",label:"주의 / 검토 필요"};
 
 
 
@@ -24438,7 +24470,8 @@ function monitorAuthoritativeAlertDetail(report) {
 
 
 
-  if (/\b(PASS|PASSED|SUCCESS|SUCCEEDED|COMPLETED|COMPLETE|DONE|VERIFIED|OK)\b|성공|완료|검증 통과|정상/.test(reportText)) return {symbol:"!",tone:"success",label:"성공 / 완료"};
+  const taskStatus=String(task?.status||"").toUpperCase();
+  if (["SUCCEEDED","COMPLETED","COMPLETE","DONE"].includes(taskStatus) && /\b(PASS|PASSED|SUCCESS|SUCCEEDED|COMPLETED|COMPLETE|DONE|VERIFIED|OK)\b|성공|완료|검증 통과|정상/.test(reportText)) return {activity:"complete",tone:"success",label:"작업 완료 · 창을 닫아도 됨"};
 
 
 
@@ -24502,7 +24535,7 @@ function monitorAuthoritativeAlertDetail(report) {
 
 
 
-  return {symbol:"!",tone:"general",label:"ACT 완료 보고"};
+  return {activity:"pause",tone:"general",label:"완료 보고 대기"};
 
 
 
@@ -24547,7 +24580,7 @@ function monitorSyncAuthoritativeCompletionAlerts(state) {
     if (!task || !terminal.has(String(task?.status||"").toUpperCase()) || !monitorReportMatchesTask(report,task)) continue;
     const key=monitorAuthoritativeConversationForTask(task,state,report); if(!key)continue;
     const previous=authoritative.get(key);
-    if(!previous || monitorGhostTime(report?.created_at)>monitorGhostTime(previous?.report?.created_at)) authoritative.set(key,{report,detail:monitorAuthoritativeAlertDetail(report)});
+    if(!previous || monitorGhostTime(report?.created_at)>monitorGhostTime(previous?.report?.created_at)) authoritative.set(key,{report,detail:monitorAuthoritativeAlertDetail(report,task)});
   }
 
   for (const reportId of [...monitorAcknowledgedReportIds]) if(!pendingIds.has(reportId)) monitorAcknowledgedReportIds.delete(reportId);
@@ -29979,7 +30012,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (alertDetail) return { symbol: alertDetail.symbol, label: alertDetail.label, tone: alertDetail.tone };
+  if (alertDetail) return { symbol: "", label: alertDetail.label, tone: alertDetail.tone };
 
 
 
@@ -30011,7 +30044,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (["running", "working", "busy", "executing", "in_progress"].includes(value)) return { symbol: "▶", label: "실행" };
+  if (["running", "working", "busy", "executing", "in_progress"].includes(value)) return { symbol: "", label: "실행" };
 
 
 
@@ -30027,7 +30060,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (["waiting_resource", "waiting", "paused", "queued", "pending"].includes(value)) return { symbol: "⏸", label: "대기" };
+  if (["waiting_resource", "waiting", "paused", "queued", "pending"].includes(value)) return { symbol: "", label: "대기" };
 
 
 
@@ -30043,7 +30076,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (connection === "disconnected" || ["offline", "stopped", "cancelled", "canceled"].includes(value)) return { symbol: "■", label: "정지" };
+  if (connection === "disconnected" || ["offline", "stopped", "cancelled", "canceled"].includes(value)) return { symbol: "", label: "사용자 조치 필요" };
 
 
 
@@ -30059,7 +30092,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (["succeeded", "completed", "complete", "done"].includes(value)) return { symbol: "✓", label: "완료" };
+  if (["succeeded", "completed", "complete", "done"].includes(value)) return { symbol: "", label: "완료" };
 
 
 
@@ -30075,7 +30108,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  return { symbol: "■", label: "유휴" };
+  return { symbol: "", label: "유휴" };
 
 
 
@@ -30106,6 +30139,22 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
+
+// SVG icon semantics used by the node list and desktop-thumbnail overlay.
+// Kept distinct from the legacy text symbol helper above so persisted old
+// alert records cannot accidentally control the new visual meaning.
+function monitorWorkIconState(work, connection, alertDetail = null) {
+  const value = String(work || "").toLowerCase();
+  const active = ["running", "working", "busy", "executing", "in_progress"].includes(value) ? "play" : "";
+  const waiting = ["waiting_resource", "waiting", "paused", "queued", "pending"].includes(value) ? "pause" : "";
+  const complete = ["succeeded", "completed", "complete", "done"].includes(value) && connection === "connected" ? "complete" : "";
+  // A disconnected, stopped, or cancelled process requires attention; it is
+  // explicitly not a declaration that the project work can be closed.
+  const warning = connection === "disconnected" || ["offline", "stopped", "cancelled", "canceled"].includes(value) || alertDetail?.warning === true;
+  const activity = alertDetail?.activity || active || waiting || complete;
+  const label = alertDetail?.label || (warning ? "사용자 조치 필요" : activity === "play" ? "실행" : activity === "pause" ? "일시 정지" : activity === "complete" ? "작업 완료 · 창을 닫아도 됨" : "상태 없음");
+  return { activity, warning, label, tone: alertDetail?.tone || "general" };
+}
 
 const MONITOR_ROLE_ORDER = ["SUPERVISOR-A", "SUPERVISOR-B", "RELAY", "SOURCE", "WS2", "WORKER-A", "WORKER-B", "IMPLEMENTER", "MONITOR-IMPLEMENTER"];
 
@@ -42174,7 +42223,7 @@ function performMonitorWorkerRender(state) {
 
 
 
-      const visualWork = liveWorking ? "running" : (monitorIsActivelyWorking(work) ? "" : work); const attentionEndpoint = endpointForMonitorWorker(worker, state); const directAttention = monitorDirectEndpointUserAttention(attentionEndpoint); const attentionRaw = directAttention || attentionEndpoint?.telemetry?.user_attention || attentionEndpoint?.metadata?.user_attention || attentionEndpoint?.metadata?.telemetry?.user_attention || null; const userAttentionDetail = monitorUserAttentionVisualDetail(attentionRaw); const visual = monitorWorkSymbol(visualWork, connection, userAttentionDetail || alertDetail);
+      const visualWork = liveWorking ? "running" : (monitorIsActivelyWorking(work) ? "" : work); const attentionEndpoint = endpointForMonitorWorker(worker, state); const directAttention = monitorDirectEndpointUserAttention(attentionEndpoint); const attentionRaw = directAttention || attentionEndpoint?.telemetry?.user_attention || attentionEndpoint?.metadata?.user_attention || attentionEndpoint?.metadata?.telemetry?.user_attention || null; const userAttentionDetail = monitorUserAttentionVisualDetail(attentionRaw); const visual = monitorWorkIconState(visualWork, connection, userAttentionDetail || alertDetail);
 
 
 
@@ -42222,7 +42271,7 @@ function performMonitorWorkerRender(state) {
 
 
 
-      workState.textContent = visual.symbol;
+      globalThis.MonitorStatusIcon?.render?.(workState, visual);
 
 
 
@@ -42999,11 +43048,45 @@ const monitorNodeSync = document.getElementById("monitorNodeSync");
 
 const monitorBctStatus = document.getElementById("monitorBctStatus");
 const monitorBctOpen = document.getElementById("monitorBctOpen");
-const monitorLocalLlmOpen = document.getElementById("monitorLocalLlmOpen");
+const monitorRccRescan = document.getElementById("monitorRccRescan");
 const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
+const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
+const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
+// Null means BCT not yet observed; [] means BCT observed an empty node list.
+let monitorBctWindowNodesCache = null;
+let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctWindowNodeRefreshBusy = false;
+let monitorMinimizedBadgeConvergenceTimer = 0;
+
+function scheduleMonitorMinimizedBadgeConvergence(hwnd) {
+  const key = String(hwnd || "").trim();
+  if (!key || !Array.isArray(monitorBctWindowNodesCache)) return;
+  if (monitorMinimizedBadgeConvergenceTimer) return;
+  monitorMinimizedBadgeConvergenceTimer = setTimeout(async () => {
+    monitorMinimizedBadgeConvergenceTimer = 0;
+    // A BCT-initiated minimize can arrive before the Native identity snapshot.
+    // Reconcile once; this is deliberately bounded, not a background poll.
+    await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
+    refreshMonitorBctCurrentSessionWindowHwnd();
+    syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  }, 250);
+}
+const monitorNodeCols2 = document.getElementById("monitorNodeCols2");
+const monitorNodeCols3 = document.getElementById("monitorNodeCols3");
+function monitorSetNodeGridColumns(value) {
+  const count = value === 3 ? 3 : 2;
+  if (monitorWorkers) monitorWorkers.dataset.columns = String(count);
+  monitorNodeCols2?.setAttribute("aria-pressed", String(count === 2));
+  monitorNodeCols3?.setAttribute("aria-pressed", String(count === 3));
+  try { globalThis.localStorage?.setItem("bct.monitor.node-columns.v1", String(count)); } catch {}
+}
+let monitorInitialNodeColumns = 3;
+try { monitorInitialNodeColumns = Number(globalThis.localStorage?.getItem("bct.monitor.node-columns.v1")) === 2 ? 2 : 3; } catch {}
+monitorSetNodeGridColumns(monitorInitialNodeColumns);
+monitorNodeCols2?.addEventListener("click", () => monitorSetNodeGridColumns(2));
+monitorNodeCols3?.addEventListener("click", () => monitorSetNodeGridColumns(3));
 let monitorBctRenameEditor = null;
 
 function closeMonitorBctRenameEditor() {
@@ -43129,9 +43212,16 @@ function renderMonitorBctWindowNodes(nodes) {
     row.className = "monitor-bct-node-row";
     row.dataset.tabId = String(node.tabId);
     row.dataset.windowId = String(node.windowId);
+    row.dataset.instanceId = String(node.instanceId || "");
+    row.dataset.sessionId = String(node.sessionId || "");
     row.dataset.nodeIndex = String(index + 1);
     row.dataset.nodeLabel = node.nodeLabel || "";
     row.dataset.conversationKey = node.conversationKey;
+    const mappedHwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+    const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
+    const desktopPosition = nativeLocation
+      ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
+      : -1;
     row.title = node.conversationKey
       ? `우클릭하여 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
       : `창 ${node.windowId} · 탭 ${node.tabId}`;
@@ -43149,11 +43239,16 @@ function renderMonitorBctWindowNodes(nodes) {
     title.className = "monitor-bct-node-title";
     title.textContent = node.title;
     body.append(title);
+    const location = document.createElement("small");
+    location.className = "monitor-bct-node-location";
+    location.textContent = desktopPosition >= 0 ? "D" + (desktopPosition + 1) : "위치 확인 중";
+    body.append(location);
 
     const presence = document.createElement("span");
     presence.className = `monitor-bct-node-presence${node.generating ? " is-busy" : ""}`;
     presence.setAttribute("aria-label", node.generating ? "응답 생성 중" : "열려 있음");
     presence.title = node.generating ? "응답 생성 중" : "열려 있음";
+    globalThis.MonitorStatusIcon?.render?.(presence, { activity: node.generating ? "play" : "pause" });
     row.append(number, body, presence);
     if (node.conversationKey) {
       row.addEventListener("contextmenu", (event) => {
@@ -43174,7 +43269,11 @@ async function refreshMonitorBctWindowNodes() {
   if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
   try {
     const state = await monitorBctShell.monitorState();
-    renderMonitorBctWindowNodes(monitorBctShell.windowNodes(state));
+    monitorBctWindowNodesCache = monitorBctShell.windowNodes(state);
+    await refreshMonitorIdentityIndex(monitorLastAiState, true);
+    refreshMonitorBctCurrentSessionWindowHwnd();
+    renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+    syncMonitorAllDesktopThumbnailNodeBadges();
   } catch (error) {
     if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "상태 확인 실패";
     const message = document.createElement("div");
@@ -43209,11 +43308,10 @@ monitorBctOpen?.addEventListener("click", () => {
   });
 });
 
-monitorLocalLlmOpen?.addEventListener("click", () => {
-  void monitorBctShell?.openLocalLlm?.().catch((error) => {
-    setMonitorStatus(`Laya 상태 화면 열기 실패 · ${error?.message || error}`, false);
-  });
+monitorRccRescan?.addEventListener("click", () => {
+  void refreshMonitorBctWindowNodes();
 });
+
 
 monitorBctNodesRefresh?.addEventListener("click", () => {
   void refreshMonitorBctWindowNodes();
@@ -46518,7 +46616,11 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
   const vl=Number(event.previewVirtualLeft)||0, vt=Number(event.previewVirtualTop)||0;
-  const restoring=Boolean(prior.iconic)&&!Boolean(event.iconic)&&event.visible!==false;
+  const lifecycleReason=String(event?.reason||"").toLowerCase();
+  // Native notifications are allowed to use either `iconic: true` or the
+  // lifecycle reason. The picture-hiding and node-badge paths must agree.
+  const minimized=monitorMinimizedNodeBadgeContract?.minimizedEvent?.(event) || lifecycleReason==="minimized" || Boolean(event.iconic);
+  const restoring=Boolean(prior.iconic)&&!minimized&&event.visible!==false;
 
 
 
@@ -46534,7 +46636,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-  const apply=(img)=>{ img.style.display=(Boolean(event.iconic)||event.visible===false)?"none":""; img.style.left=`${((Number(event.left)-vl)/vw)*100}%`; img.style.top=`${((Number(event.top)-vt)/vh)*100}%`; img.style.width=`${(Number(event.width)/vw)*100}%`; img.style.height=`${(Number(event.height)/vh)*100}%`; syncMonitorStatusLayer(img,hwnd); syncMonitorPauseOverlay(img,hwnd); if(!restoring)syncMonitorDesktopNumberBadge(img,hwnd); syncMonitorNonChatCountdown(img,hwnd); };
+  const apply=(img)=>{ img.style.display=(minimized||event.visible===false)?"none":""; img.style.left=`${((Number(event.left)-vl)/vw)*100}%`; img.style.top=`${((Number(event.top)-vt)/vh)*100}%`; img.style.width=`${(Number(event.width)/vw)*100}%`; img.style.height=`${(Number(event.height)/vh)*100}%`; syncMonitorStatusLayer(img,hwnd); syncMonitorPauseOverlay(img,hwnd); if(!restoring)syncMonitorDesktopNumberBadge(img,hwnd); syncMonitorNonChatCountdown(img,hwnd); };
 
 
 
@@ -46566,8 +46668,9 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:Boolean(event.iconic),visible:event.visible!==false,at:Date.now()});
+  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  if (minimized) scheduleMonitorMinimizedBadgeConvergence(hwnd);
   const badgeTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
   const badgeVisual=badgeTile?.querySelector(".monitor-desktop-thumb-visual");
   if (restoring) {
@@ -46606,7 +46709,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-  const lifecycleHidden=reason==="minimized"||reason==="hidden"||Boolean(event.iconic)||event.visible===false;
+  const lifecycleHidden=reason==="hidden"||minimized||event.visible===false;
   if (lifecycleHidden) {
     monitorThumbnailService.invalidate(hwnd);
     removeMonitorEventThumbWindow(hwnd);
@@ -52837,6 +52940,7 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 
 
+
   const key = String(hwnd || "");
 
 
@@ -52888,7 +52992,9 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 
 
-  if (!paused && !userAttentionDetail && !completionDetail) { overlay?.remove(); return; }
+  const activity=monitorHwndIsGenerating(key, monitorLastAiState) ? "play" : (completionDetail?.activity || (paused ? "pause" : ""));
+  const warning=userAttentionDetail?.warning === true || completionDetail?.warning === true;
+  if (!activity && !warning) { overlay?.remove(); return; }
 
 
 
@@ -52920,7 +53026,7 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 
 
-  const detail=userAttentionDetail||completionDetail||{symbol:"!",tone:"general",label:"채팅 작업 완료"};
+  const detail=userAttentionDetail||completionDetail||{tone:"general",label:"채팅 작업 완료"};
 
 
 
@@ -52936,7 +53042,8 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 
 
-  overlay.dataset.symbol=detail.symbol; overlay.title=detail.label;
+  delete overlay.dataset.symbol; overlay.title=detail.label;
+  globalThis.MonitorStatusIcon?.render?.(overlay,{activity,warning});
 
 
 
@@ -53504,7 +53611,17 @@ function monitorActNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
 
 
 function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
-  return monitorActNodeNumbersForHwnd(hwnd,state);
+  // BCT/RCC owns conversation labels, and Native/ACT maps the physical HWND.
+  // A missing HWND hides only the thumbnail overlay, never the node list.
+  if (Array.isArray(monitorBctWindowNodesCache)) {
+    const matched = monitorBctWindowNodesCache.filter((node) =>
+      monitorHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd));
+    return [...new Set(matched.map((node) => {
+      const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
+      return match ? Number(match[1]) : 0;
+    }).filter((n) => Number.isSafeInteger(n) && n > 0))].sort((a, b) => a - b);
+  }
+  return monitorActNodeNumbersForHwnd(hwnd, state);
 }
 
 function syncMonitorDesktopNumberBadge(img, hwnd) {
@@ -53746,6 +53863,12 @@ function syncMonitorDesktopNumberBadge(img, hwnd) {
 
 
 function syncMonitorNonChatCountdown(img, hwnd, now = Date.now()) {
+  // Non-ChatGPT Chrome windows remain filtered by the grace-state logic, but
+  // they are not Monitor nodes and must not receive a visible countdown.
+  if (img?.parentElement) {
+    img.parentElement.querySelectorAll(".monitor-window-non-chat-countdown").forEach((node) => node.remove());
+  }
+  return;
 
 
 
@@ -55507,7 +55630,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
-    badge.textContent=numbers.join("/");
+    badge.textContent="N" + numbers.join("/");
 
 
 
@@ -55652,11 +55775,27 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
+function syncMonitorBctNodeLocationLabels() {
+  // Refresh visible location only. No Chrome action, no polling, no stored binding.
+  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorWorkers) return;
+  for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
+    const hwnd = monitorHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState, row.dataset.instanceId, row.dataset.sessionId);
+    const location = hwnd ? monitorWindowDesktopLocations.get(hwnd) : null;
+    const index = location
+      ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))
+      : -1;
+    const position = row.querySelector(".monitor-bct-node-location");
+    if (position) position.textContent = index >= 0 ? "D" + (index + 1) : "위치 확인 중";
+    row.dataset.desktopNumber = index >= 0 ? String(index + 1) : "";
+  }
+}
 function syncMonitorAllDesktopThumbnailNodeBadges() {
   for (const button of monitorDesktopThumbs.children) {
     const visual=button.querySelector(".monitor-desktop-thumb-visual");
     if (visual?.isConnected) syncMonitorThumbnailTabBadges(visual,"monitor-desktop-thumb-window");
   }
+  syncMonitorBctNodeLocationLabels();
+  syncMonitorMinimizedNodeBadges(monitorLastAiState);
 }
 
 let monitorWindowPointerDrag = null;
@@ -65724,7 +65863,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    const label = button.querySelector(".monitor-desktop-thumb-label");
+    const visual = button.querySelector(".monitor-desktop-thumb-visual");
 
 
 
@@ -65740,7 +65879,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    if (!label) continue;
+    if (!visual) continue;
 
 
 
@@ -65756,7 +65895,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    let host = label.querySelector(".monitor-desktop-minimized-nodes");
+    let host = visual.querySelector(".monitor-desktop-minimized-nodes");
 
 
 
@@ -65772,7 +65911,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; label.append(host); }
+    if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; visual.append(host); }
 
 
 
@@ -65804,9 +65943,9 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    const visibleSlots = slots.slice(0, 3);
+    const visibleSlots = slots.slice(0, 2);
     const badges = visibleSlots.map((slot) => { const badge=document.createElement("span"); badge.className="monitor-node-number-badge monitor-desktop-minimized-node"; badge.textContent=String(slot); badge.title=`최소화 노드 ${slot}`; return badge; });
-    if (slots.length >= 4) {
+    if (slots.length >= 3) {
       const more = document.createElement("span");
       more.className = "monitor-desktop-minimized-more";
       more.textContent = "...";
@@ -66070,7 +66209,7 @@ function syncDesktopSwitcher() {
 
 
 
-      label.append(desktopBadge, labelText, minimizedNodes);
+      label.append(desktopBadge, labelText); visual.append(minimizedNodes);
       monitorAttachDesktopManagementControl(label, desktopId);
 
 
@@ -68818,7 +68957,7 @@ function renderLightweightDesktopCards() {
     const minimizedNodes = document.createElement("span");
     minimizedNodes.className = "monitor-desktop-minimized-nodes";
     minimizedNodes.hidden = true;
-    label.append(badge, text, minimizedNodes); button.append(visual, label); monitorAttachDesktopManagementControl(label, desktopId);
+    label.append(badge, text); visual.append(minimizedNodes); button.append(visual, label); monitorAttachDesktopManagementControl(label, desktopId);
 
 
 
