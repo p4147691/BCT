@@ -20,6 +20,8 @@ from bct.core.models import (
 )
 from bct.integrations.github import GitHubClient
 
+from .git_authority import read_git_authority
+
 from .common import resolve_in_work
 
 
@@ -181,7 +183,12 @@ class GitHubPushFeature:
         if remote_url.returncode != 0 or not _remote_matches(values["repository"], remote_url.stdout):
             raise PreconditionError("GITHUB_REMOTE_MISMATCH")
         _ensure_clean(root)
-        before = _remote_sha(root, remote, branch)
+        try:
+            before = _remote_sha(root, remote, branch)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            # No push was dispatched: offline access is a confirmed non-effect,
+            # not an UNKNOWN remote mutation.
+            raise PreconditionError("GIT_REMOTE_PREFLIGHT_UNAVAILABLE") from exc
         if before == expected_head:
             return FeatureResult(Outcome.APPLIED, {
                 "repository": values["repository"], "branch": branch,
@@ -406,11 +413,16 @@ class GitHubPullRequestStatusFeature:
 class GitHubPullRequestMergeFeature:
     capability = "github_pr_merge"
 
-    def __init__(self, client: GitHubClient):
+    def __init__(self, client: GitHubClient, policy_path: str | Path | None = None):
         self.client = client
+        self.policy_path = policy_path
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         status = GitHubPullRequestStatusFeature(self.client).prepare(work=work, arguments=arguments)
+        authority = read_git_authority(self.policy_path)
+        if (authority.mode == "local" and status.arguments["repository"].casefold()
+                == authority.repository.casefold()):
+            raise PreconditionError("LOCAL_MAIN_REMOTE_PR_MERGE_FORBIDDEN")
         method = str(arguments.get("method") or "squash")
         if method not in {"merge", "squash", "rebase"}:
             raise PreconditionError("GITHUB_MERGE_METHOD_INVALID")
@@ -492,8 +504,14 @@ class GitHubPullRequestMergeFeature:
 class GitHubSyncMainFeature:
     capability = "github_sync_main"
 
+    def __init__(self, policy_path: str | Path | None = None):
+        self.policy_path = policy_path
+
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         root = _repo_root(resolve_in_work(work, str(arguments.get("path") or ""), must_exist=True))
+        authority = read_git_authority(self.policy_path)
+        if authority.mode == "local" and authority.source_root == root:
+            raise PreconditionError("LOCAL_MAIN_REMOTE_SYNC_FORBIDDEN")
         repository = _validate_repository(arguments.get("repository"))
         expected_local_head = _validate_sha(arguments.get("expected_local_head"))
         verified_main_sha = _validate_sha(arguments.get("verified_main_sha"))

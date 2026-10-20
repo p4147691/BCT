@@ -16,6 +16,7 @@ from bct.core.models import (
 )
 
 from .common import relative_git_path, resolve_in_work, sha256_file
+from .git_authority import require_local_main
 
 
 def _git(root: Path, *args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
@@ -55,7 +56,43 @@ def _dirty_paths(root: Path) -> set[str]:
 class GitCommitFeature:
     capability = "git_commit"
 
+    def __init__(self, policy_path: str | Path | None = None):
+        self.policy_path = policy_path
+
+    def _prepare_local_main_merge(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        if set(arguments) != {"operation", "path", "branch", "expected_head", "expected_feature_head", "message"}:
+            raise PreconditionError("LOCAL_MAIN_MERGE_ARGUMENTS_INVALID")
+        root = _repo_root(resolve_in_work(work, arguments["path"], must_exist=True))
+        authority = require_local_main(self.policy_path, root)
+        branch = str(arguments["branch"])
+        if (branch == "main" or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,119}", branch)
+                or ".." in branch or branch.endswith(("/", ".", ".lock"))
+                or _git(root, "check-ref-format", "--branch", branch).returncode != 0):
+            raise PreconditionError("LOCAL_MAIN_FEATURE_BRANCH_INVALID")
+        before = str(arguments["expected_head"]).lower()
+        feature_head = str(arguments["expected_feature_head"]).lower()
+        if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", before):
+            raise PreconditionError("LOCAL_MAIN_EXPECTED_HEAD_INVALID")
+        if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", feature_head):
+            raise PreconditionError("LOCAL_MAIN_FEATURE_SHA_INVALID")
+        message = str(arguments["message"])
+        if not message or len(message) > 240 or any(ch in message for ch in "\n\r"):
+            raise PreconditionError("LOCAL_MAIN_MESSAGE_INVALID")
+        return FeatureRequest(
+            self.capability, str(root),
+            {"operation": "merge_local_main", "branch": branch,
+             "expected_head": before, "expected_feature_head": feature_head, "message": message},
+            ("git-index:" + str(root).casefold(), "git-worktree:" + str(root).casefold(),
+             "github-base:" + authority.repository.casefold()),
+            {"expected_head": before, "expected_feature_head": feature_head},
+        )
+
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        operation = arguments.get("operation", "commit")
+        if operation == "merge_local_main":
+            return self._prepare_local_main_merge(work=work, arguments=arguments)
+        if operation != "commit":
+            raise PreconditionError("GIT_OPERATION_INVALID")
         root = _repo_root(resolve_in_work(work, str(arguments.get("path") or ""), must_exist=True))
         paths = arguments.get("paths")
         expected_head = str(arguments.get("expected_head") or "").lower()
@@ -95,7 +132,75 @@ class GitCommitFeature:
             {"expected_head": expected_head},
         )
 
+    def _execute_local_main_merge(self, request: FeatureRequest) -> FeatureResult:
+        root = Path(request.target)
+        require_local_main(self.policy_path, root)
+        before = request.preconditions["expected_head"]
+        feature_head = request.preconditions["expected_feature_head"]
+        branch = request.arguments["branch"]
+        head = _git(root, "rev-parse", "HEAD")
+        current_branch = _git(root, "branch", "--show-current")
+        if head.returncode != 0 or head.stdout.strip().lower() != before:
+            raise PreconditionError("LOCAL_MAIN_HEAD_MISMATCH")
+        if current_branch.returncode != 0 or current_branch.stdout.strip() != "main":
+            raise PreconditionError("LOCAL_MAIN_BRANCH_REQUIRED")
+        if _dirty_paths(root):
+            raise PreconditionError("LOCAL_MAIN_WORKTREE_DIRTY")
+        feature = _git(root, "rev-parse", "--verify", f"refs/heads/{branch}^{{commit}}")
+        if feature.returncode != 0 or feature.stdout.strip().lower() != feature_head:
+            raise PreconditionError("LOCAL_MAIN_FEATURE_HEAD_MISMATCH")
+        already = _git(root, "merge-base", "--is-ancestor", feature_head, before)
+        if already.returncode == 0:
+            raise PreconditionError("LOCAL_MAIN_FEATURE_ALREADY_CONTAINED")
+        if already.returncode != 1:
+            raise PreconditionError("LOCAL_MAIN_ANCESTRY_UNVERIFIED")
+        # Preflight detects ordinary content conflicts before changing main/worktree.
+        preview = _git(root, "merge-tree", "--write-tree", before, feature_head)
+        if preview.returncode != 0:
+            raise PreconditionError("LOCAL_MAIN_MERGE_CONFLICT_OR_UNAVAILABLE")
+        tree_sha = preview.stdout.splitlines()[0].strip().lower() if preview.stdout else ""
+        if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", tree_sha):
+            raise PreconditionError("LOCAL_MAIN_PREVIEW_TREE_INVALID")
+        # Re-fence both refs immediately before the effect.
+        if (_git(root, "rev-parse", "HEAD").stdout.strip().lower() != before
+                or _git(root, "rev-parse", f"refs/heads/{branch}").stdout.strip().lower() != feature_head
+                or _dirty_paths(root)):
+            raise PreconditionError("LOCAL_MAIN_REFS_CHANGED")
+        try:
+            merged = _git(root, "merge", "--no-ff", "--no-edit",
+                          "-m", request.arguments["message"], feature_head)
+        except (OSError, subprocess.TimeoutExpired):
+            merged = None
+        if merged is None or merged.returncode != 0:
+            try:
+                current = _git(root, "rev-parse", "HEAD")
+                clean = not _dirty_paths(root)
+                state = _git(root, "rev-parse", "--verify", "-q", "MERGE_HEAD")
+            except Exception as exc:
+                raise UnknownEffectError("LOCAL_MAIN_MERGE_POSTSTATE_UNAVAILABLE") from exc
+            if (merged is not None and current.returncode == 0
+                    and current.stdout.strip().lower() == before and clean and state.returncode != 0):
+                raise ConfirmedFailure("LOCAL_MAIN_MERGE_NOT_APPLIED", release_claims=True)
+            raise UnknownEffectError("LOCAL_MAIN_MERGE_EFFECT_UNKNOWN")
+        after = _git(root, "rev-parse", "HEAD")
+        parents = _git(root, "rev-list", "--parents", "-n", "1", "HEAD")
+        actual_tree = _git(root, "rev-parse", "HEAD^{tree}")
+        tokens = parents.stdout.strip().lower().split() if parents.returncode == 0 else []
+        if (after.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", after.stdout.strip().lower())
+                or tokens != [after.stdout.strip().lower(), before, feature_head]
+                or actual_tree.returncode != 0 or actual_tree.stdout.strip().lower() != tree_sha
+                or _dirty_paths(root)):
+            raise UnknownEffectError("LOCAL_MAIN_MERGE_POSTSTATE_UNVERIFIED")
+        return FeatureResult(Outcome.APPLIED, {
+            "operation": "merge_local_main", "root": str(root),
+            "head_before": before, "feature_head": feature_head,
+            "head_after": after.stdout.strip().lower(), "tree_sha": tree_sha,
+            "remote_ci_required": False,
+        })
+
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments.get("operation") == "merge_local_main":
+            return self._execute_local_main_merge(request)
         root = Path(request.target)
         paths: list[str] = request.arguments["paths"]
         proofs: dict[str, str] = dict(request.arguments["new_files"])

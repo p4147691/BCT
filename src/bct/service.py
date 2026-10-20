@@ -107,10 +107,10 @@ class BCT:
         deployment_profiles = DeploymentProfiles(policy_path)
         desktop_session = desktop_session_client(policy_path, data_root=data_root)
         for feature in (
-            FileReadFeature(self.store), FileWriteFeature(), TestFeature(), GitCommitFeature(),
+            FileReadFeature(self.store), FileWriteFeature(), TestFeature(), GitCommitFeature(policy_path),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
-            GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github),
-            GitHubSyncMainFeature(),
+            GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
+            GitHubSyncMainFeature(policy_path),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             RelayBrowserFeature(),
             SystemInspectFeature(), ExecuteFeature(),
