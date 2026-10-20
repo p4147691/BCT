@@ -15,13 +15,12 @@ async function setChatConsent(enabled) {
       return;
     }
     const flag = "bct-chat-consent:" + chat.key + ":" + chat.tabId;
-    if (enabled) await chrome.storage.session.set({[flag]: true});
+    if (enabled) await chrome.storage.session.set({[flag]: crypto.randomUUID().replace(/-/g, "")});
     else await chrome.storage.session.remove(flag);
     chatStatus.textContent = enabled ? "이 Chrome 탭에서만 읽기 요청을 허용했습니다." : "이 탭의 자동 읽기 요청을 중단했습니다.";
-    if (enabled) {
-      try { await chrome.tabs.sendMessage(chat.tabId, {type: "BCT_BRIDGE_SCAN_NOW"}); }
-      catch (_) { chatStatus.textContent += " 페이지가 로드되어야 감지가 시작됩니다."; }
-    }
+    // Notify on both enable and revoke; status and grant are rechecked by content.
+    try { await chrome.tabs.sendMessage(chat.tabId, {type: "BCT_BRIDGE_SCAN_NOW"}); }
+    catch (_) { chatStatus.textContent += " 페이지가 로드되어야 감지가 갱신됩니다."; }
   } catch (_) { chatStatus.textContent = "대화 활성화 상태를 확인할 수 없습니다."; }
 }
 document.getElementById("chatEnable").addEventListener("click", () => setChatConsent(true));
