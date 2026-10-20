@@ -1479,7 +1479,15 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
 
 
 
-  if (tracking?.relayId) saveRelayExecution({ relayId: tracking.relayId, conversationKey: currentConversationKey(), beforeCount, beforeText, phase: 'submitted', submittedAt: Date.now() });
+  if (tracking?.relayId) saveRelayExecution({
+    ...tracking,
+    relayId: tracking.relayId,
+    conversationKey: currentConversationKey(),
+    beforeCount,
+    beforeText,
+    phase: 'submitted',
+    submittedAt: Date.now(),
+  });
 
   if (!awaitReply) return { submitted: true, beforeCount, beforeText };
 
@@ -1503,10 +1511,25 @@ async function executeSimpleRelayV0(message) {
     return { ok: false, submitted: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_CONVERSATION_MISMATCH' };
   }
   try {
-    const submission = await sendPrompt(text, null, false);
+    const record = {
+      relayId,
+      conversationKey: expectedConversationKey,
+      submittedText: RelayCore.normalizeMessageText(text),
+      beforeTurnKeys: getConversationTurns().map(turnIdentity).filter(Boolean),
+      routeTurnKey: '',
+    };
+    const submission = await sendPrompt(text, record, false);
     if (currentConversationKey() !== expectedConversationKey) {
       return { ok: false, submitted: false, effectState: 'UNKNOWN', error: 'SIMPLE_RELAY_CONVERSATION_CHANGED_AFTER_SUBMIT' };
     }
+    const persistedRecord = loadRelayExecution() || record;
+    const routed = resolveRoutedTurn(persistedRecord);
+    if (!routed.ok || !routed.turnKey) {
+      clearRelayExecution(relayId);
+      return { ok: false, submitted: false, effectState: 'UNKNOWN', error: 'SIMPLE_RELAY_ROUTE_TURN_UNVERIFIED' };
+    }
+    persistedRecord.routeTurnKey = routed.turnKey;
+    saveRelayExecution(persistedRecord);
     return { ok: true, submitted: true, relayId, conversationKey: expectedConversationKey,
       beforeAssistantCount: Number(submission?.beforeCount || 0) };
   } catch (error) {
@@ -1521,6 +1544,7 @@ async function executeSimpleRelayV0(message) {
 async function readSimpleRelayV0Reply(message) {
   const expectedConversationKey = String(message?.conversationKey || '').trim().toLowerCase();
   const afterAssistantCount = Number(message?.afterAssistantCount);
+  const relayId = String(message?.relayId || '').trim();
   if (!expectedConversationKey || !Number.isInteger(afterAssistantCount) || afterAssistantCount < 0) {
     return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_READ_ARGUMENT_INVALID' };
   }
@@ -1530,15 +1554,20 @@ async function readSimpleRelayV0Reply(message) {
   if (isGenerating()) {
     return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_REPLY_STILL_GENERATING' };
   }
-  const assistantCount = getAssistantNodes().length;
-  const responseText = lastAssistantText();
-  if (assistantCount <= afterAssistantCount || !responseText) {
-    return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_NEW_REPLY_NOT_READY' };
+  const record = loadRelayExecution();
+  if (!relayId || record?.relayId !== relayId || record?.conversationKey !== expectedConversationKey) {
+    return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_ROUTE_RECORD_MISSING' };
   }
-  if (responseText.length > 12000) {
-    return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_REPLY_TOO_LARGE' };
+  try {
+    const responseText = recoverCompletedReplyFromDom(record);
+    if (responseText.length > 12000) {
+      return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_REPLY_TOO_LARGE' };
+    }
+    return { ok: true, conversationKey: expectedConversationKey, responseText };
+  } catch (error) {
+    return { ok: false, effectState: 'NOT_APPLIED',
+      error: String(error?.message || error || 'SIMPLE_RELAY_NEW_REPLY_NOT_READY').slice(0, 200) };
   }
-  return { ok: true, conversationKey: expectedConversationKey, assistantCount, responseText };
 }
 
 function currentConversationKey() {

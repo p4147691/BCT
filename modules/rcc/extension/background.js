@@ -1386,6 +1386,19 @@ async function writeSimpleRelayV0Receipt(operationId, receipt) {
   await chrome.storage.local.set({ [SIMPLE_RELAY_V0_RECEIPTS_KEY]: Object.fromEntries(keep) });
 }
 
+function publicSimpleRelayV0Receipt(receipt) {
+  if (!receipt || typeof receipt !== 'object') return null;
+  return {
+    operationId: String(receipt.operationId || ''),
+    sourceOperationId: String(receipt.sourceOperationId || ''),
+    kind: String(receipt.kind || 'DELIVERY'),
+    state: String(receipt.state || ''),
+    targetConversationKey: String(receipt.targetConversationKey || ''),
+    responseLength: Number.isInteger(receipt.responseLength) ? receipt.responseLength : null,
+    error: String(receipt.error || ''),
+  };
+}
+
 async function sendSimpleRelayV0(message, requestId) {
   const state = await loadState();
   const request = SimpleRelayV0.request({
@@ -1470,7 +1483,7 @@ async function returnSimpleRelayV0(message, requestId) {
   await writeSimpleRelayV0Receipt(returnOperationId, intent);
   const read = await sendToChatTab(tabs.worker.id, {
     type: 'relay:simpleReadReply', conversationKey: route.sourceConversationKey,
-    afterAssistantCount: source.beforeAssistantCount,
+    afterAssistantCount: source.beforeAssistantCount, relayId: sourceOperationId,
   });
   if (read?.ok !== true || read.conversationKey !== route.sourceConversationKey
       || typeof read.responseText !== 'string' || !read.responseText) {
@@ -2641,13 +2654,15 @@ async function handleNativeCommand(message) {
 
     if (message.command === 'simple-relay-send') {
       const result = await sendSimpleRelayV0(message, requestId);
-      postNative({ type: 'host:result', requestId, ...result });
+      postNative({ type: 'host:result', requestId, ...result,
+        relayReceipt: publicSimpleRelayV0Receipt(result.receipt) });
       return;
     }
 
     if (message.command === 'simple-relay-return') {
       const result = await returnSimpleRelayV0(message, requestId);
-      postNative({ type: 'host:result', requestId, ...result });
+      postNative({ type: 'host:result', requestId, ...result,
+        relayReceipt: publicSimpleRelayV0Receipt(result.receipt) });
       return;
     }
 

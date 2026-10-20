@@ -100,6 +100,22 @@ entrypoint이고, background loader는 canonical Relay contract를 직접 로드
 분리되지 않았으며, 4~7단계의 전환·차단·제거 대상이다. 세부는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE3A_SOURCE_RELAY_BOUNDARY_20261020.md`에 있다.
 
+## 완료 — RCC Rebuild V1 4단계 Manager→Worker 단일 전송
+
+새 Relay contract를 installed payload에 배치하기 전 exact extension backup(37 files, path/hash
+mismatch 0)을 만들고 same-ID reload를 정확히 한 번 수행했다. 이후 Manager→Worker 원문 한 건은
+Worker user turn 한 건만 추가했고 Worker는 새 assistant 응답을 완료했다. 기존 binding과 두
+conversation UUID는 유지됐다. 탭 새로고침·이동·새 노드 생성은 하지 않았다.
+
+## 진행 — RCC Rebuild V1 5단계 반환 Browser Adapter 보수
+
+기존 반환은 virtualized DOM의 현재 assistant 총수에 의존해 완료된 새 Worker 응답을
+`NOT_APPLIED`로 잘못 판정할 수 있음이 확인됐다. 반환을 재전송하지 않았고 Manager에 전달
+증거도 없다. source 보수는 exact submitted user turn에 route key를 연결하고 그 turn 내부
+assistant 응답만 읽도록 바꾼다. compact receipt 상태도 Native 결과에 포함한다. 이 보수의
+CI·설치·새 승인 원문 수락시험이 통과하기 전에는 6단계 Legacy 변경 경로 차단을 활성화하지
+않는다. 상세는 `docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE5_ROUTE_ADAPTER_REPAIR_20261020.md`에 있다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /
