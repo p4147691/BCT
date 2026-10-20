@@ -485,6 +485,19 @@ class OperationCoordinator:
                 release_claims=False,
             )
         except Exception as exc:
+            # A downstream failure may occur *after* an atomic feature or
+            # receipt commit. Never overwrite its durable terminal outcome
+            # with an inferred UNKNOWN: recover the exact original receipt.
+            if principal is not None and work_id is not None:
+                try:
+                    persisted = self.store.get_operation_for(
+                        operation_id=operation_id, work_id=work_id,
+                        principal_id=principal.principal_id,
+                    )
+                except Exception:
+                    persisted = None
+                if persisted is not None and persisted.state is OperationState.FINISHED:
+                    return persisted
             self.store.record_effect_stage(
                 operation_id=operation_id, stage="EFFECT_UNCERTAIN",
                 detail={"error_type": type(exc).__name__},

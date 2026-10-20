@@ -104,6 +104,41 @@ class CoreTests(unittest.TestCase):
     def replace_feature(self, feature):
         self.bct.operations._features[feature.capability] = feature
 
+    def test_recover_already_persisted_receipt_after_unexpected_exception(self):
+        # Simulates a lost response after the feature itself atomically committed
+        # the original result. Recovery must not replace APPLIED with UNKNOWN.
+        class PersistThenRaise(CountingFeature):
+            def __init__(self, store):
+                super().__init__()
+                self.store = store
+
+            def execute(self, request):
+                self.calls += 1
+                self.store.finish_operation(
+                    operation_id=request.operation_id,
+                    outcome=Outcome.APPLIED,
+                    evidence={"source": "exact-original-commit"},
+                    error=None, release_claims=True,
+                )
+                raise RuntimeError("transport lost after durable commit")
+
+        feature = PersistThenRaise(self.bct.store)
+        self.replace_feature(feature)
+        result = self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="receipt-recovery",
+            capability="write", arguments={"resource": "receipt"},
+        )
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("exact-original-commit", result.evidence["source"])
+        self.assertEqual(1, feature.calls)
+        original = self.bct.store.get_operation_for(
+            operation_id="receipt-recovery", work_id="work-1",
+            principal_id=self.owner.principal_id,
+        )
+        self.assertEqual(Outcome.APPLIED, original.outcome)
+        self.assertFalse(any(x["operation_id"] == "receipt-recovery"
+                             for x in self.bct.store.monitor_snapshot()["unresolved_claims"]))
+
     def test_duplicate_operation_executes_once(self):
         feature = CountingFeature()
         self.replace_feature(feature)
