@@ -15,27 +15,29 @@ class RccSourceBaselineTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parents[1]
         cls.extension = cls.root / "modules" / "rcc" / "extension"
 
-    def test_source_only_v2_5_critical_payload_hashes_match_recorded_baseline(self):
-        # RCC Rebuild V2-5 acceptance-fix guard. The complete payload is additionally
+    def test_source_only_rc3_critical_payload_hashes_match_recorded_baseline(self):
+        # RCC Rebuild RC3 acceptance-fix guard. The complete payload is additionally
         # covered by modules/rcc/release/rcc_v2_rc.json.
         expected = {
             "background.js": "585ae34ee0af8531362f384e4c11a903b1c23056ad61c15d0edec3c826fbe450",
-            "background_loader.js": "f517a7f2ea091caa9e15c1e04acc4d89d98bb5ac210d591d13212a0e64a3161f",
+            "background_loader.js": "53b66fc0d8aa2d753e8df4386d2b27bcb0839f57502ddd9365b43793bbad5a5f",
             "content.js": "dd594299e99e728e73ee64f6a95d26cd142cba026f490e781e8f55d2b27177f3",
-            "manifest.json": "edd5afb0428f98ec53fe1e501a2fea2cde83acc6a2bb84af16ff38e254a4f619",
+            "manifest.json": "52c838a311bc6baf801ad6613141d7a60ba8ef8a98a9b52e995821f875b905f0",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
-            "boot/platform_context.js": "89c8ac3a49ce640b257d94738ff3386ce778c11dfa91f62d978d2636200c4817",
+            "boot/platform_context.js": "4b757f2a8b6c0e6adac785e5e687c078499a922666851c83c814daf60a03458f",
             "boot/background_app.js": "2b22759ba92035191b8e18f9e44c646a91c601966ce8b71ed7a29ea7f832661c",
             "domain/state_service.js": "61102132340d1e0acea6a5d9c7b6154ced5fcec35f9ecfeb6d76973376be5a70",
             "domain/simple_relay_receipts.js": "f46561ce7e73b7342a3fc18476229d4969977ff5b0a3dced20f5b1ad85e35689",
             "domain/endpoint_service.js": "4a22a307ab390f47d0f9a974a19ce51233d2781ba921d8817d6a2db6a2fa7c9e",
             "domain/diagnostic_support.js": "06562ada53e67519fb0d1b46b4654096dace2b7ac8a8bbeb0232b88fab716e1c",
             "domain/simple_relay_service.js": "a83a7377938dd49e3dde61e9c8b8f58bafa0c40d609828545a8be9db8fb8a669",
-            "domain/readonly_diagnostics.js": "ebd5afe1640de5a5e5532f1dc1c8a69419135f5f26cbba504515daf22da94b3e",
+            "domain/conversation_rename_service.js": "b0e20dacf40b09433c1d0c50d0240bbf6a36255f48ca1d301b4e36c549865c8b",
+            "domain/readonly_diagnostics.js": "58aa39a713d080b1f40c4abde60239c7e5845a2247fdb8f78e6da39f8a50f2a5",
             "domain/runtime_message_service.js": "ac30947109dd637abd9086a8c68b494bfe6821c824d0d272160e3f7051135e13",
-            "content/conversation_dom.js": "bddfa0460d1f6d98d1471e5c480e43c9ee165278176bd2d7a0852600b60bd785",
+            "content/conversation_dom.js": "255a8f0077c2ebc372e8990e14116cc8372e9474038bdd2dc6d78d23e5dee376",
             "content/simple_relay_executor.js": "39469f22ddcac7e057ec6738a62e03f45f50afbb76524c1ba649d8d1ea6ebe50",
-            "content/content_router.js": "9ad096e37ba62219601689816ad65a85a9dcf4c46f1af5d72ebe5147d1263e15",
+            "content/conversation_rename.js": "a2d2c5a02710eda2804cd06651e505852ac0bea5b188132212fb18e6dbc53a18",
+            "content/content_router.js": "129655553ad882b2169046f8330386133b0731a3de09f7277674aa03d1f7af2a",
             "content/activity_reporter.js": "e73c7469d87f35e677e5d37935b518dd6f5eff5155ce2fc9ae42f4ae2dc5aee8",
         }
         for name, digest in expected.items():
@@ -49,8 +51,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.24", manifest["version"])
-        self.assertEqual("1.0.24 · RCC Core Read-Only Shadow", manifest["version_name"])
+        self.assertEqual("1.0.25", manifest["version"])
+        self.assertEqual("1.0.25 · RCC Core Conversation Rename", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -63,7 +65,8 @@ class RccSourceBaselineTests(unittest.TestCase):
         self.assertEqual("ocbidbaplechjjdacmokhnfbdmgjkphf", extension_id)
         self.assertEqual([
             "relay_core.js", "content/conversation_dom.js",
-            "content/simple_relay_executor.js", "content/content_router.js",
+            "content/simple_relay_executor.js", "content/conversation_rename.js",
+            "content/content_router.js",
             "content/activity_reporter.js", "content.js",
         ], manifest["content_scripts"][0]["js"])
 
@@ -72,7 +75,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         runtime = (self.extension / "domain" / "runtime_message_service.js").read_text(encoding="utf-8")
         for command in (
             "ping", "state", "simple-relay-bind", "simple-relay-send",
-            "simple-relay-return", "rename-receipt", "result", "main-capture-get",
+            "simple-relay-return", "rename-conversation", "rename-receipt", "result", "main-capture-get",
             "api-probe", "probe-tabs", "diagnose-activity",
             "diagnose-conversation-ui", "diagnose-composer", "probe",
             "reload-extension",
@@ -83,7 +86,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "conversation-bootstrap-bind", "create-chat-tab", "create-chat-window",
             "ensure", "main-capture-install", "manager-promote", "move-tab",
             "recover-created-result", "recover-pending", "register", "reload-workers",
-            "rename-conversation", "result-ack", "send", "send-to-created-tab",
+            "result-ack", "send", "send-to-created-tab",
             "send-to-tab", "send-wakeback",
         ):
             self.assertNotIn(f"message.command === '{command}'", background)
@@ -108,12 +111,12 @@ class RccSourceBaselineTests(unittest.TestCase):
         executor = (self.extension / "content" / "simple_relay_executor.js").read_text(encoding="utf-8")
         for message_type in (
             "relay:recoverExecution", "relay:activityProbe", "relay:probe",
-            "relay:simpleExecute", "relay:simpleReadReply",
+            "relay:simpleExecute", "relay:simpleReadReply", "relay:renameConversation",
         ):
             self.assertIn(f"message.type === '{message_type}'", content)
         for message_type in (
             "relay:execute", "relay:deliver", "relay:bootstrap",
-            "relay:renameConversation", "relay:networkStarted", "relay:networkComplete",
+            "relay:networkStarted", "relay:networkComplete",
         ):
             self.assertNotIn(f"message.type === '{message_type}'", content)
         self.assertIn("async function executeSimpleRelayV0(message)", executor)
@@ -151,7 +154,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-20-rcc-core-shadow-v1"
+        marker = "2026-10-20-rcc-core-rename-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
@@ -203,6 +206,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_simple_relay_v0.js", "simple_relay_v0: PASS"),
             ("test_simple_relay_route_adapter_v5.js", "simple relay route adapter v5: PASS"),
             ("test_legacy_command_policy_v6.js", "legacy command policy v6: PASS"),
+            ("test_conversation_rename_service_v1.js", "conversation rename service v1: PASS"),
             ("test_architecture_boundaries_v35.js", "rcc architecture boundaries v3.5: PASS"),
             ("test_platform_boundaries_v2.js", "rcc platform boundaries v2: PASS"),
             ("test_domain_content_boundaries_v3.js", "rcc domain/content boundaries v3: PASS"),

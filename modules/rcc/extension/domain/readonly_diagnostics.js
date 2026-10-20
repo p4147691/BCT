@@ -113,6 +113,16 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'rename-conversation') {
+
+          const result = await renameConversation(message, requestId);
+
+          postNative({ type: 'host:result', requestId, ...result });
+
+          return;
+
+        }
+
     if (message.command === 'rename-receipt') {
 
           // Inspection only: never perform or repeat an effect here.
@@ -930,5 +940,4 @@ async function handleNativeCommand(message) {
     postNative({ type: 'host:result', requestId, ok: false, error: error.message });
   }
 }
-
 

@@ -56,10 +56,18 @@ def _rcc_cached_row(instance_id: str, hint: dict[str, Any], now: float) -> dict[
             "instance_id": instance_id, "state": "UNKNOWN",
             "error": "PROBE_DEFERRED", "tabs": [], "cached": True,
         }
+    last_known_row = hint.get("last_known_row")
+    if not isinstance(last_known_row, dict):
+        last_known_row = {}
     result: dict[str, Any] = {
+        **last_known_row,
         "instance_id": instance_id, "state": "UNAVAILABLE" if hint.get("unavailable") else "UNKNOWN",
         "error": hint.get("error", "PROBE_IN_PROGRESS"),
-        "tabs": [], "cached": True,
+        # A short RCC probe timeout is not evidence that every observed tab
+        # disappeared. Preserve the last verified display snapshot while
+        # marking it stale; Monitor must not erase node cards and thumbnail
+        # numbers merely because a bounded read missed its deadline.
+        "tabs": list(last_known_row.get("tabs") or []), "cached": True,
     }
     if hint.get("last_known_state"):
         result["last_known_state"] = hint["last_known_state"]
@@ -137,17 +145,19 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                         "generation_finished_at": (endpoint.get("telemetry") or {}).get("generationFinishedAt"),
                     } if isinstance(endpoint.get("telemetry"), dict) else {},
                 })
-            results[instance_id] = {
+            live_row = {
                 "instance_id": instance_id,
                 "session_id": str(state.get("sessionId") or ""),
                 "state": "OPEN",
                 "background_build_id": str(state.get("backgroundBuildId") or ""),
                 "tabs": tabs,
             }
+            results[instance_id] = live_row
             with _RCC_HEALTH_LOCK:
                 _RCC_HEALTH[instance_id] = {
                     "unavailable": False, "last_known_state": "OPEN",
                     "last_seen_at": time.time(),
+                    "last_known_row": live_row,
                 }
         except Exception as exc:
             error = type(exc).__name__
@@ -161,6 +171,7 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                     "retry_at": time.monotonic() + _RCC_RETRY_SECONDS,
                     "last_known_state": hint.get("last_known_state"),
                     "last_seen_at": hint.get("last_seen_at"),
+                    "last_known_row": hint.get("last_known_row"),
                 }
         finally:
             with _RCC_HEALTH_LOCK:

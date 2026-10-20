@@ -124,6 +124,7 @@ def _verify_contracts(
     matrix = contracts["messageMatrix"]
     policy_sets = {
         "nativeNewRelay": _set_values(policy, "NEW_RELAY_COMMANDS"),
+        "nativeConversation": _set_values(policy, "CONVERSATION_COMMANDS"),
         "nativeReadOnly": _set_values(policy, "READ_ONLY_COMMANDS"),
         "nativeMaintenance": _set_values(policy, "MAINTENANCE_COMMANDS"),
         "nativeBlockedLegacy": _set_values(policy, "LEGACY_MUTATION_COMMANDS"),

@@ -4,6 +4,9 @@
   const NEW_RELAY_COMMANDS = new Set([
     'simple-relay-bind', 'simple-relay-send', 'simple-relay-return',
   ]);
+  const CONVERSATION_COMMANDS = new Set([
+    'rename-conversation',
+  ]);
   const READ_ONLY_COMMANDS = new Set([
     'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
     'diagnose-activity', 'diagnose-composer', 'diagnose-conversation-ui',
@@ -17,7 +20,7 @@
     'conversation-bootstrap-bind', 'create-chat-tab', 'create-chat-window',
     'ensure', 'main-capture-install', 'manager-promote', 'move-tab',
     'recover-created-result', 'recover-pending', 'register', 'reload-workers',
-    'rename-conversation', 'result-ack', 'send', 'send-to-created-tab',
+    'result-ack', 'send', 'send-to-created-tab',
     'send-to-tab', 'send-wakeback',
   ]);
   const LEGACY_MUTATION_MESSAGES = new Set([
@@ -35,6 +38,7 @@
   function nativeCommand(command) {
     const value = String(command || '');
     if (NEW_RELAY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'NEW_RELAY' });
+    if (CONVERSATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'CONVERSATION' });
     if (READ_ONLY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'LEGACY_READONLY' });
     if (MAINTENANCE_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'MAINTENANCE' });
     if (LEGACY_MUTATION_COMMANDS.has(value)) return Object.freeze({ allowed: false, kind: 'LEGACY_MUTATION' });

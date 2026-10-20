@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-20-rcc-core-shadow-v1';
+const RCC_BUILD_VERSION = '2026-10-20-rcc-core-rename-v1';
 
 function editorCandidates() {
 
@@ -534,4 +534,3 @@ function isSendReady() {
 
 
 }
-

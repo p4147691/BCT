@@ -1,5 +1,22 @@
 # BCT 인수인계
 
+## 진행 — Monitor 번호·RCC 이름 변경 통합 복구
+
+2026-10-20 화면 재현에서 Monitor가 새 설치본을 실행 중이라고 오판했고 실제 renderer는
+`v2.0.6`이었다. 동시에 짧은 RCC 조회 timeout이 정상 3개 노드를 `0개`로 덮어썼으며, RCC V2
+정리 때 `rename-conversation` 실행기만 제거된 상태에서 Monitor UI가 계속 노출돼 이름 변경이
+항상 실패했다.
+
+source는 실제 reload + exact runtime telemetry를 배포 성공 조건으로 바꾸고, bounded 조회
+실패 시 마지막 검증 tab identity를 stale 표시용으로 보존하며, RCC rename을 exact
+session/tab/conversation과 전용 영수증을 가진 독립 domain/content 모듈로 복구했다. 다른 legacy
+mutation은 계속 차단된다. RCC RC3 48파일 aggregate는
+`9ae94c72398d96ee01a6812478fce23972b76ea2bc42f783099e67b1fb73fd62`다. RCC Node 24개 및 관련
+Python 77개와 Monitor 번호/reload 회귀는 PASS했다. 다음 순서는 commit/push → exact-head CI →
+BCT Core/RCC/Monitor exact payload 배포 → 실제 loaded version 확인 → 열린/최소화 번호와 새
+unclaimed 대화 이름 변경 LIVE E2E다. 기존 UNKNOWN rename claim은 재실행하거나 강제 해제하지
+않는다.
+
 ## 완료 — RCC Rebuild V2-6 정리·종료
 
 RCC Rebuild V2-1~6을 완료했다. LIVE `D:\ChromeExtensions\RCC\extension`은 RC2 exact

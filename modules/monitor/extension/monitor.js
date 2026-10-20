@@ -74863,6 +74863,7 @@ let monitorDeploymentCheckBusy = false;
 
 
 let monitorReloadToken = null;
+let monitorDeploymentReloadRequested = false;
 
 
 
@@ -74990,6 +74991,24 @@ async function checkMonitorDeploymentUpdate() {
 
 
 
+    const publishedVersion = String(info?.version || "");
+    const versionMismatch = Boolean(
+      publishedVersion && publishedVersion.localeCompare(
+        String(running), undefined, { numeric: true, sensitivity: "base" }
+      ) !== 0
+    );
+
+    if (versionMismatch) {
+      setMonitorStatus(`업데이트 ${publishedVersion} 감지 · 설치본 재로드 중`, false);
+      if (!monitorDeploymentReloadRequested) {
+        monitorDeploymentReloadRequested = true;
+        chrome.runtime.sendMessage({ type: "monitor-reload-extension" }).catch(() => {
+          monitorDeploymentReloadRequested = false;
+        });
+      }
+      return;
+    }
+
     if (monitorReloadToken === null) {
 
 
@@ -75054,23 +75073,14 @@ async function checkMonitorDeploymentUpdate() {
 
 
 
-      monitorReloadToken = reloadToken;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-      await monitorNative({ type: "ackExtensionReload", token: reloadToken }).catch(() => null);
+      if (!monitorDeploymentReloadRequested) {
+        monitorDeploymentReloadRequested = true;
+        setMonitorStatus("새 설치본 감지 · 설치본 재로드 중", false);
+        chrome.runtime.sendMessage({ type: "monitor-reload-extension" }).catch(() => {
+          monitorDeploymentReloadRequested = false;
+        });
+      }
+      return;
 
 
 
@@ -75108,39 +75118,7 @@ async function checkMonitorDeploymentUpdate() {
     if (reloadToken && monitorReloadToken === reloadToken) {
       await monitorPublishSharedInstance("deployment-token-ready");
     }
-    if (info?.ok && info.version && String(info.version).localeCompare(String(running), undefined, { numeric: true, sensitivity: "base" }) > 0) {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-      setMonitorStatus(`업데이트 ${info.version} 감지 · 수동 새로고침 필요`, false);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    }
+    monitorDeploymentReloadRequested = false;
 
 
 

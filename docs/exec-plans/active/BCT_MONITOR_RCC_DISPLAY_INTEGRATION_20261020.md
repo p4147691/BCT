@@ -1,6 +1,33 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `ISOLATED_ACCEPTED / LIVE_PAYLOAD_PUBLISHED_2.0.2 / SAME_ID_RELOAD_PENDING`
+상태: `SOURCE_REPAIR_VALIDATED / CI_AND_LIVE_DEPLOY_PENDING`
+
+## 2026-10-20 통합 결함 재진단 및 source 보수
+
+사용자 화면에서 이름 변경 실패, 열린 ChatGPT 썸네일 번호 누락, 최소화 번호 누락이 함께
+재현됐다. 세 현상은 CSS 한 곳의 문제가 아니었다.
+
+- 설치 디렉터리는 새 payload였지만 실행 renderer는 `2.0.6`이었다. 기존 배포 gate는 옛
+  renderer가 새 token만 ACK해도 reload 성공으로 오판했다. 이제 버전 또는 token 변경을 본
+  renderer가 실제 `monitor-reload-extension`을 요청하고, publish/check 스크립트는 exact
+  manifest version + token + publish 이후의 fresh shared-runtime telemetry까지 일치해야만
+  성공한다.
+- BCT Monitor의 bounded RCC 조회가 한 번 timeout되면 `tabs: []`를 반환해 검증된 노드 목록과
+  배지를 지웠다. 이제 마지막 검증 row의 tab identity를 `cached:true`, state
+  `UNAVAILABLE/UNKNOWN`으로만 유지한다. stale 관측을 LIVE로 위장하지 않지만 표시 identity는
+  보존한다.
+- RCC V2 legacy prune에서 `rename-conversation` handler와 content route가 제거됐지만 Monitor
+  UI는 남아 있었다. RC3는 이 한 기능만 `domain/conversation_rename_service.js`와
+  `content/conversation_rename.js`로 복구한다. exact session/tab/conversation, PREPARED/terminal
+  rename ledger, APPLIED/NOT_APPLIED/UNKNOWN 분류, terminal replay 금지를 사용하며 다른 legacy
+  mutation은 계속 차단한다.
+
+열린 번호는 썸네일 내부 overlay, 최소화 번호만 데스크톱 썸네일 아래 정보 행이라는 계약은
+변경하지 않았다. source 회귀에서 이 계약과 재로드 검증 계약이 PASS했다. RCC RC3는 48파일,
+aggregate `9ae94c72398d96ee01a6812478fce23972b76ea2bc42f783099e67b1fb73fd62`이며
+RCC Node 전체 24개와 관련 Python 77개가 PASS했다. 아직 GitHub CI, BCT Core 배포, RCC/Monitor
+설치본 적용과 loaded-runtime LIVE E2E는 수행 전이다. 기존 `FINISHED/UNKNOWN` rename 작업은
+효과가 부정되지 않았으므로 재실행·강제 claim 해제하지 않는다.
 
 ## 범위와 기준
 

@@ -14,6 +14,7 @@ $ext = Join-Path $runtimeRoot 'extension'
 $manifestPath = Join-Path $ext 'manifest.json'
 $tokenPath = Join-Path $ext '.reload-token'
 $ackPath = Join-Path $ext '.reload-ack'
+$runtimeTelemetryPath = Join-Path $env:LOCALAPPDATA 'DesktopWindowMonitor\shared-runtime.json'
 $checkerPath = Join-Path $runtimeRoot 'tools\check_monitor_structure.py'
 
 if (!(Test-Path -LiteralPath $ext -PathType Container)) {
@@ -86,6 +87,7 @@ try {
 # is never published when the active payload fails the post-write check.
 Invoke-MonitorStructureGate
 $token = [guid]::NewGuid().ToString('N')
+$publishedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 [System.IO.File]::WriteAllText($tokenPath, $token + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
 Write-Output "MONITOR_DEPLOYMENT_PUBLISHED version=$nextVersion token=$token"
 
@@ -95,15 +97,33 @@ if (!$WaitForObservation) {
 }
 
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+$lastObservedVersion = ''
+$lastObservedToken = ''
 do {
     Start-Sleep -Milliseconds 250
+    $ackMatches = $false
     if (Test-Path -LiteralPath $ackPath -PathType Leaf) {
         $ack = (Get-Content -LiteralPath $ackPath -Raw).Trim()
-        if ($ack -eq $token) {
-            Write-Output "MONITOR_DEPLOYMENT_OBSERVED version=$nextVersion token=$token"
-            return
+        $ackMatches = $ack -eq $token
+    }
+    if ($ackMatches -and (Test-Path -LiteralPath $runtimeTelemetryPath -PathType Leaf)) {
+        try {
+            $runtime = Get-Content -LiteralPath $runtimeTelemetryPath -Raw | ConvertFrom-Json
+            $row = $runtime.'__MONITOR_INSTANCE__:GOOGLE'
+            $loaded = if ($row -and $row.label) { $row.label | ConvertFrom-Json } else { $null }
+            $lastObservedVersion = [string]$loaded.manifest_version
+            $lastObservedToken = [string]$loaded.reload_token
+            $seenAtMs = [long]$loaded.seen_at_ms
+            if ($lastObservedVersion -eq $nextVersion -and
+                $lastObservedToken -eq $token -and $seenAtMs -ge $publishedAtMs) {
+                Write-Output "MONITOR_DEPLOYMENT_OBSERVED version=$nextVersion token=$token runtime=verified"
+                return
+            }
+        } catch {
+            # A concurrent Native Host write can expose a short partial-read
+            # window. Retry within the existing bounded observation deadline.
         }
     }
 } while ((Get-Date) -lt $deadline)
 
-throw "Monitor deployment observation ACK timeout: version=$nextVersion token=$token"
+throw "Monitor deployment runtime verification timeout: expectedVersion=$nextVersion observedVersion=$lastObservedVersion expectedToken=$token observedToken=$lastObservedToken"

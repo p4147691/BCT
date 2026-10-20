@@ -156,6 +156,50 @@ class MonitorRuntimeTests(unittest.TestCase):
                 _RCC_HEALTH.clear()
                 _RCC_INFLIGHT.clear()
 
+    def test_transient_timeout_retains_last_verified_tabs_as_stale_display_data(self):
+        from bct.monitor_runtime import _RCC_HEALTH, _RCC_INFLIGHT
+        conversation = "6ad733b6-95d4-83ee-b4ba-49a671229d77"
+
+        class Client:
+            calls = 0
+
+            def request(self, **kwargs):
+                self.calls += 1
+                if self.calls > 1:
+                    raise TimeoutError("short monitor probe timed out")
+                return {"state": {
+                    "backgroundBuildId": "verified-build",
+                    "sessionId": "verified-session",
+                    "tabs": [{
+                        "id": 71, "windowId": 44, "title": "격리 검증 방법 안내",
+                        "url": f"https://chatgpt.com/c/{conversation}",
+                    }],
+                    "endpoints": [{
+                        "tabId": 71, "conversationKey": conversation,
+                        "presence": "OPEN", "tabActive": True,
+                    }],
+                }}
+
+        client = Client()
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=client):
+            _RCC_HEALTH.clear()
+            _RCC_INFLIGHT.clear()
+            try:
+                live = _rcc_states(["service-a"])[0]
+                timed_out = _rcc_states(["service-a"])[0]
+                deferred = _rcc_states(["service-a"])[0]
+                self.assertEqual("OPEN", live["state"])
+                self.assertEqual("UNAVAILABLE", timed_out["state"])
+                self.assertEqual("UNAVAILABLE", deferred["state"])
+                self.assertTrue(deferred["cached"])
+                self.assertEqual("verified-session", deferred["session_id"])
+                self.assertEqual("verified-build", deferred["background_build_id"])
+                self.assertEqual(71, deferred["tabs"][0]["tab_id"])
+                self.assertEqual(conversation, deferred["tabs"][0]["conversation_key"])
+            finally:
+                _RCC_HEALTH.clear()
+                _RCC_INFLIGHT.clear()
+
     def test_parallel_monitor_reads_do_not_duplicate_inflight_probe(self):
         from bct.monitor_runtime import _RCC_HEALTH, _RCC_INFLIGHT
         from concurrent.futures import ThreadPoolExecutor

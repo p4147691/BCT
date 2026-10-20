@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC2",
+  "candidate": "RCC_REBUILD_V2_RC3",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
-    "fileCount": 46,
-    "aggregateSha256": "e7b0bd98b74fd982031565c3701fe68f0c7b45e2984deba8c490867272756c39",
+    "fileCount": 48,
+    "aggregateSha256": "9ae94c72398d96ee01a6812478fce23972b76ea2bc42f783099e67b1fb73fd62",
     "files": [
       {
         "path": "background_loader.js",
-        "size": 1048,
-        "sha256": "f517a7f2ea091caa9e15c1e04acc4d89d98bb5ac210d591d13212a0e64a3161f"
+        "size": 1104,
+        "sha256": "53b66fc0d8aa2d753e8df4386d2b27bcb0839f57502ddd9365b43793bbad5a5f"
       },
       {
         "path": "background.js",
@@ -24,8 +24,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 746,
-        "sha256": "89c8ac3a49ce640b257d94738ff3386ce778c11dfa91f62d978d2636200c4817"
+        "size": 782,
+        "sha256": "4b757f2a8b6c0e6adac785e5e687c078499a922666851c83c814daf60a03458f"
       },
       {
         "path": "browser/read_adapter.js",
@@ -93,14 +93,19 @@
         "sha256": "e73c7469d87f35e677e5d37935b518dd6f5eff5155ce2fc9ae42f4ae2dc5aee8"
       },
       {
+        "path": "content/conversation_rename.js",
+        "size": 11418,
+        "sha256": "a2d2c5a02710eda2804cd06651e505852ac0bea5b188132212fb18e6dbc53a18"
+      },
+      {
         "path": "content/content_router.js",
-        "size": 5917,
-        "sha256": "9ad096e37ba62219601689816ad65a85a9dcf4c46f1af5d72ebe5147d1263e15"
+        "size": 6232,
+        "sha256": "129655553ad882b2169046f8330386133b0731a3de09f7277674aa03d1f7af2a"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 16685,
-        "sha256": "bddfa0460d1f6d98d1471e5c480e43c9ee165278176bd2d7a0852600b60bd785"
+        "size": 16684,
+        "sha256": "255a8f0077c2ebc372e8990e14116cc8372e9474038bdd2dc6d78d23e5dee376"
       },
       {
         "path": "content/simple_relay_executor.js",
@@ -133,6 +138,11 @@
         "sha256": "8b89dd65a24fa6dceb97d853c7d4e5da36c9f42d086ee3ddc0ea4e11d4307233"
       },
       {
+        "path": "domain/conversation_rename_service.js",
+        "size": 4878,
+        "sha256": "b0e20dacf40b09433c1d0c50d0240bbf6a36255f48ca1d301b4e36c549865c8b"
+      },
+      {
         "path": "domain/diagnostic_support.js",
         "size": 8808,
         "sha256": "06562ada53e67519fb0d1b46b4654096dace2b7ac8a8bbeb0232b88fab716e1c"
@@ -144,8 +154,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 26062,
-        "sha256": "ebd5afe1640de5a5e5532f1dc1c8a69419135f5f26cbba504515daf22da94b3e"
+        "size": 26287,
+        "sha256": "58aa39a713d080b1f40c4abde60239c7e5845a2247fdb8f78e6da39f8a50f2a5"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -169,13 +179,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 2855,
-        "sha256": "f2ff69f22460aa3812ed4879557fdb7410a4399a16a18d4a4fa95a564d0e30df"
+        "size": 3012,
+        "sha256": "29932bda2ace1725f8289240e0d00453fdaba9132d61e53b1e05c74003df06b4"
       },
       {
         "path": "manifest.json",
-        "size": 1379,
-        "sha256": "edd5afb0428f98ec53fe1e501a2fea2cde83acc6a2bb84af16ff38e254a4f619"
+        "size": 1451,
+        "sha256": "52c838a311bc6baf801ad6613141d7a60ba8ef8a98a9b52e995821f875b905f0"
       },
       {
         "path": "network/directory.js",
@@ -262,6 +272,7 @@
       "domain/endpoint_service.js",
       "domain/diagnostic_support.js",
       "domain/simple_relay_service.js",
+      "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
       "domain/runtime_message_service.js",
       "boot/background_app.js",
@@ -271,6 +282,7 @@
       "relay_core.js",
       "content/conversation_dom.js",
       "content/simple_relay_executor.js",
+      "content/conversation_rename.js",
       "content/content_router.js",
       "content/activity_reporter.js",
       "content.js"
@@ -287,6 +299,7 @@
       "domain/endpoint_service.js",
       "domain/diagnostic_support.js",
       "domain/simple_relay_service.js",
+      "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
       "domain/runtime_message_service.js"
     ]
@@ -332,6 +345,9 @@
         "simple-relay-send",
         "simple-relay-return"
       ],
+      "nativeConversation": [
+        "rename-conversation"
+      ],
       "nativeReadOnly": [
         "ping",
         "state",
@@ -363,7 +379,6 @@
         "recover-pending",
         "register",
         "reload-workers",
-        "rename-conversation",
         "result-ack",
         "send",
         "send-to-created-tab",
@@ -399,7 +414,8 @@
         "relay:activityProbe",
         "relay:probe",
         "relay:simpleExecute",
-        "relay:simpleReadReply"
+        "relay:simpleReadReply",
+        "relay:renameConversation"
       ],
       "popupAccepted": [
         "relay:getState"
@@ -444,7 +460,8 @@
         "relay:activityProbe",
         "relay:probe",
         "relay:simpleExecute",
-        "relay:simpleReadReply"
+        "relay:simpleReadReply",
+        "relay:renameConversation"
       ],
       "runtime": [
         "relay:getPendingStatus",

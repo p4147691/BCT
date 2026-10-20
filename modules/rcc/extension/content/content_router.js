@@ -159,10 +159,22 @@ if (message.type === 'relay:simpleReadReply') {
 
 
   }
+
+if (message.type === 'relay:renameConversation') {
+
+    renameConversationUi(message).then(sendResponse).catch((error) => sendResponse({
+      ok: false,
+      effectState: String(error?.effectState || 'UNKNOWN'),
+      error: String(error?.message || error || 'RENAME_UI_UNKNOWN')
+    }));
+
+    return true;
+
+
+  }
   sendResponse({ ok: false, error: `RCC_CONTENT_MESSAGE_DISABLED:${String(message?.type || '')}` });
   return false;
 });
 
 
 const telemetryKey = 'dwActTelemetryV1';
-
