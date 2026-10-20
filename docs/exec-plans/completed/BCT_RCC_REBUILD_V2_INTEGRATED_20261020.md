@@ -1,6 +1,6 @@
 # RCC Rebuild V2 — 통합 종료 계획
 
-상태: `V2_5_LIVE_COMPLETE / RC2_CI_PASS / BIDIRECTIONAL_ACCEPTANCE_PASS / V2_6_NEXT`
+상태: `COMPLETE / V2_1..6_CLOSED / RC2_LIVE_ACCEPTED / CLEANUP_VERIFIED`
 
 V1의 API별 Adapter 추가 방식은 여기서 종료한다. 이 문서는 RCC를 실제로 끝낼 수 있도록
 남은 책임 전체, 한 번에 묶을 전환 단위, LIVE 전환 시점과 완료 조건을 다시 고정한 실행 계획이다.
@@ -184,6 +184,15 @@ LIVE 전환했다. 새 수락 원문으로 Manager→Worker와 Worker→Manager 
 - LIVE에서 호출자가 0임이 다시 확인된 구파일만 삭제한다.
 - V1/V2 실행 문서를 completed로 옮기고 최종 구조도, manifest, rollback, acceptance 영수증을 남긴다.
 - BOOTSTRAP/REGISTRY/PROJECT_HANDOFF에 완료 상태와 남은 optional 기능만 기록한다.
+
+2026-10-20 실행 결과, LIVE 46파일은 active loader 35파일과 의도적으로 보존한 optional Browser
+payload 11파일의 exact RC2였다. 제외 대상으로 고정한 legacy payload 5개는 이미 LIVE에 없어서
+LIVE 삭제는 0개다. optional Browser payload는 zero-caller이지만 향후 명시적 capability로 쓰기
+위해 보존하기로 한 기능이므로 삭제하지 않았다.
+
+RC1 rehearsal/failed candidate, 중복 pre-RC2 rollback, 1.0.8~1.0.20 과거 extension backup과
+빈 PR staged 디렉터리만 검증 후 정리했다. 최신 RC2 복구본과 exact RC2 rehearsal은 유지했다.
+최종 증거는 `BCT_RCC_REBUILD_V2_STAGE6_CLOSEOUT_20261020.md`에 기록한다.
 
 ## 5. 변경 금지선
 

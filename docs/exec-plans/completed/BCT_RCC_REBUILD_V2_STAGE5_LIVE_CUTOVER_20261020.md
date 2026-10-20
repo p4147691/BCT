@@ -8,10 +8,12 @@
 - RC1 aggregate: `ce3a33bb107dc74eb23da50d0d48a85dab656c69ee65e90caca763cde55f1606`
 - 전환 전 LIVE 39파일 aggregate:
   `93b1cfdc4e6602ddfb7de46b6fa00eb10173db01f911c1530c952cc1439e583b`
-- verified backup:
-  `D:\BCT\runtime\backups\rcc-rebuild-v2-stage5-20261020-181950`
-- 실패 후보 보존:
-  `D:\ChromeExtensions\RCC\rcc-v2-failed-stage5-20261020-181950`
+- 당시 verified backup:
+  `D:\BCT\runtime\backups\rcc-rebuild-v2-stage5-20261020-181950` (V2-6에서 최신 RC2 backup과
+  중복임을 검증한 뒤 정리)
+- 당시 실패 후보:
+  `D:\ChromeExtensions\RCC\rcc-v2-failed-stage5-20261020-181950` (V2-6에서 RC1 manifest와
+  exact 일치를 검증한 뒤 정리)
 
 RC1 46파일을 exact 검증한 뒤 설치 경로 전체를 한 번에 바꾸고 `reload-extension`을 정확히
 한 번 호출했다. 새 Native session이 생성됐고 네 열린 ChatGPT tab 모두 `probe-tabs` OK였다.
@@ -69,8 +71,9 @@ V2-5를 완료로 바꾼다.
   `e7b0bd98b74fd982031565c3701fe68f0c7b45e2984deba8c490867272756c39`
 - RC2 backup:
   `D:\BCT\runtime\backups\rcc-rebuild-v2-stage5-rc2-20261020-184845`
-- immediate rollback:
-  `D:\ChromeExtensions\RCC\rcc-v2-pre-rc2-stage5-20261020-184845`
+- 당시 immediate rollback:
+  `D:\ChromeExtensions\RCC\rcc-v2-pre-rc2-stage5-20261020-184845` (V2-6에서 아래 RC2 backup과
+  39파일 SHA가 동일함을 확인한 뒤 중복본 정리)
 - reload: `rcc-v2-5-rc2-reload-20261020-01`, exactly one successful same-ID reload
 - post-reload: 새 Native session, binding 불변, 여섯 열린 tab의 `probe-tabs` 전부 OK
 - Manager→Worker: `rcc-v2-5-rc2-m2w-20261020-01`, `SUBMITTED`, 원문 60자,
@@ -82,5 +85,6 @@ V2-5를 완료로 바꾼다.
 - Native Host executable SHA-256:
   `78087b6a1ece5793be22028c6c002f44eb2fb81f74609d8bf9893b8dae7a1d30`
 
-이 결과로 V2-5는 완료다. 다음 V2-6에서는 LIVE 호출자가 0인 구파일과 보존 backup을 먼저
-검토하고, 복구에 필요한 최신 RC2 backup은 유지한 채 안전한 범위만 정리한다.
+이 결과로 V2-5는 완료다. V2-6은 LIVE payload를 변경하지 않고 과거 후보·중복 backup만
+정리했으며, 복구에 필요한 최신 RC2 backup은 위 경로에 유지했다. 최종 종료 증거는
+`BCT_RCC_REBUILD_V2_STAGE6_CLOSEOUT_20261020.md`에 있다.

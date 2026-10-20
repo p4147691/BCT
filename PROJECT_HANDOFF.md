@@ -1,5 +1,24 @@
 # BCT 인수인계
 
+## 완료 — RCC Rebuild V2-6 정리·종료
+
+RCC Rebuild V2-1~6을 완료했다. LIVE `D:\ChromeExtensions\RCC\extension`은 RC2 exact
+46파일, aggregate
+`e7b0bd98b74fd982031565c3701fe68f0c7b45e2984deba8c490867272756c39`다. active loader graph는
+35파일이며, 나머지 11개는 향후 명시적 browser management capability를 위해 보존한 optional
+Adapter/contract다. 제외 legacy 5개는 LIVE에 없어서 LIVE 삭제는 0개다.
+
+RC1 rehearsal/failed candidate, 중복 pre-RC2 rollback, 과거 extension backup 10개와 빈 PR
+staged 디렉터리 등 15개 디렉터리·452파일·5,587,932 bytes를 검증 후 정리했다. 현재 LIVE,
+Native Host, binding, Chrome은 변경하거나 reload하지 않았다. 최신 복구본
+`D:\BCT\runtime\backups\rcc-rebuild-v2-stage5-rc2-20261020-184845`과 exact RC2 rehearsal
+`D:\BCT\runtime\rehearsals\rcc-rebuild-v2-rc2-e7b0bd98`은 유지했다. V1/V2 실행 문서는
+`docs/exec-plans/completed/`로 닫았다. 최종 구조·manifest·rollback·acceptance 영수증은
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V2_STAGE6_CLOSEOUT_20261020.md`에 있다.
+
+남은 Browser Adapter는 불필요 구파일이 아니라 의도적으로 비활성 보존한 기능이다. 별도 설계
+전에는 active loader와 Simple Relay 권한에 연결하지 않는다.
+
 ## 완료 — RCC Rebuild V2-5 RC2 LIVE 전환
 
 사용자 허용 뒤 RC1 46파일을 exact backup 후 단일 LIVE 전환하고 same-ID reload 1회를 수행했다.
@@ -23,9 +42,9 @@ same-ID reload 1회를 수행했다. 새 수락 operation
 `5365e0b45f4a830703aa1a16bc1c9dedd3ec5ea7403d50f878612d3e44bd56f5`이며 Manager와 Worker
 양쪽 generation 완료 후 Core shadow `matches:true`를 확인했다. RC2 전환 backup은
 `D:\BCT\runtime\backups\rcc-rebuild-v2-stage5-rc2-20261020-184845`이고 Native Host·binding은
-변경하지 않았다. 다음 단계는 V2-6에서 zero-caller 구파일과 보존 backup을 검토해 정리하고
-실행 문서를 completed로 닫는 일이다. 상세는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE5_LIVE_CUTOVER_20261020.md`에 있다.
+변경하지 않았다. 후속 V2-6에서 zero-caller 구파일과 보존 backup을 검토해 안전한 범위만
+정리했고 실행 문서를 completed로 닫았다. 상세는
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V2_STAGE5_LIVE_CUTOVER_20261020.md`에 있다.
 
 ## 완료 — RCC Rebuild V2-4 비-LIVE Release Candidate
 
@@ -48,7 +67,7 @@ compileall, diff check가 통과했다. exact implementation SHA
 `62049dc4810e03c86f9b1b92b3c184d303df488e`의 GitHub Actions run `39398670419`도 preflight,
 Core 4개 shard와 Browser Bridge 전체 PASS다. LIVE RCC 설치본, Chrome, Native Host와 binding은
 변경하지 않았다. 상세는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE4_RELEASE_CANDIDATE_20261020.md`에 있다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V2_STAGE4_RELEASE_CANDIDATE_20261020.md`에 있다.
 
 ## 계획 — RCC Rebuild V1
 
@@ -56,7 +75,7 @@ RCC를 기존 5,000줄 실행부에 기능을 계속 더하는 방식으로 유�
 conversation UUID 기반 Core, Manager/Worker relay binding, verbatim Relay, 선택 모듈, legacy
 read-only 경계를 갖는다. extension ID/path, Native Host registration/path, Chrome storage와
 기존 conversation UUID는 전환 중 불변이다. 실제 단계와 exact path/identity/reload/rollback
-gate는 `docs/exec-plans/active/BCT_RCC_REBUILD_V1.md`에 고정했다. Simple Relay V0는 이 계획의
+gate는 `docs/exec-plans/completed/BCT_RCC_REBUILD_V1.md`에 고정했다. Simple Relay V0는 이 계획의
 임시 Relay 기반이며 legacy execution 제거 전에는 새 기능을 legacy 경로에 추가하지 않는다.
 
 전환은 전면 교체가 아니라 0) 기준선/복구 묶음, 1) source-only Core 추출, 2) read-only shadow,
@@ -82,7 +101,7 @@ backup과 일치한다. 확장 reload, Native Host 재시작, Chrome 탭 동작,
 source와 LIVE의 실행·표시 payload 29개 파일은 모두 일치한다. source-only test/fixture 9개와
 LIVE-only 비실행 이전 테스트/backup 파일 3개는 실행 payload 불일치가 아니라 명시적으로
 분리한 잔존 파일이다. 상세 기준선과 복구 증거는
-docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE0_BASELINE_20261020.md에 있다. 다음 단계는
+docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE0_BASELINE_20261020.md에 있다. 다음 단계는
 LIVE에 손대지 않는 source-only Core 분리다.
 
 ## 완료 — RCC Rebuild V1 1단계 source-only Core 분리
@@ -94,7 +113,7 @@ scripts, Native Host, Chrome storage, Relay binding은 변경하지 않았고 �
 import되지 않는다. Core/기존 Simple Relay/Relay Core/identity/result 관련 focused Node tests
 9개와 syntax/diff 검사가 통과했다. LIVE 설치 경로에는 core 디렉터리가 없고 기존 active
 content.js source/LIVE SHA-256도 일치한다. 상세는
-docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE1_SOURCE_CORE_20261020.md에 있다.
+docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE1_SOURCE_CORE_20261020.md에 있다.
 
 다음 2단계는 installed payload 후보 배치와 same-ID extension reload가 필요한 read-only Shadow다.
 현재 source-only 제약 아래에서는 시작하지 않는다.
@@ -114,7 +133,7 @@ GitHub Actions `BCT CI` run `39351244745`는 보정 뒤 전체 통과했다. 사
 installed payload 변경 및 same-ID extension reload를 명시 승인했다. 현재 source에는
 read-only Shadow 후보만 준비했으며, exact-main CI와 LIVE precondition을 다시 확인한 뒤에만
 배치·재로드한다. 상세 gate는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE2_READONLY_SHADOW_20261020.md`에 있다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE2_READONLY_SHADOW_20261020.md`에 있다.
 
 ## 완료 — RCC Rebuild V1 2단계 Read-Only Shadow
 
@@ -148,7 +167,7 @@ entrypoint이고, background loader는 canonical Relay contract를 직접 로드
 설치본·확장 reload·Native Host·Chrome 탭·binding·storage·Composer·메시지 전송은 변경하지
 않았다. `background.js`와 `content.js`의 실제 Browser Adapter 및 자동화/Legacy 기능은 아직
 분리되지 않았으며, 4~7단계의 전환·차단·제거 대상이다. 세부는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE3A_SOURCE_RELAY_BOUNDARY_20261020.md`에 있다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE3A_SOURCE_RELAY_BOUNDARY_20261020.md`에 있다.
 
 ## 완료 — RCC Rebuild V1 4단계 Manager→Worker 단일 전송
 
@@ -164,7 +183,7 @@ conversation UUID는 유지됐다. 탭 새로고침·이동·새 노드 생성�
 번 전달됐으며 재전송하지 않았다. root cause는 virtualized DOM 총수에 의존한 상태 판정/영수증
 표시 부족이며, source 보수는 exact submitted user turn에 route key를 연결하고 그 turn 내부
 assistant 응답만 읽도록 바꾼다. compact receipt 상태도 Native 결과에 포함한다. 상세는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE5_ROUTE_ADAPTER_REPAIR_20261020.md`에 있다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE5_ROUTE_ADAPTER_REPAIR_20261020.md`에 있다.
 
 ## 완료 — RCC Rebuild V1 6단계 Legacy 변경 경로 차단
 
@@ -175,7 +194,7 @@ assistant 응답만 읽도록 바꾼다. compact receipt 상태도 Native 결과
 same-ID reload 한 번으로 활성화했다. `register`는 `NOT_APPLIED`와 explicit legacy-mutation
 rejection으로 차단됐으며 전후 Manager/Worker state·binding은 동일했다. 탭 새로고침·이동·새
 노드 생성·메시지 전송은 없었다. 상세는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE6_LEGACY_BLOCK_20261020.md`에 있다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE6_LEGACY_BLOCK_20261020.md`에 있다.
 
 ## 완료 — RCC Rebuild V1 7단계 대화망 기반 (source-only)
 
@@ -189,7 +208,7 @@ rejection으로 차단됐으며 전후 Manager/Worker state·binding은 동일�
 안내문은 별도 스냅샷으로 보존된다. 새 대화창 생성·탭 이동·자동 실행은 이 단계에 포함되지
 않고, legacy 탭 관리 기능도 제거하지 않았다. installed extension, reload, Native Host, Chrome
 탭, storage, binding, 실제 메시지는 바꾸지 않았다. 세부와 검증은
-`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE7_CONVERSATION_NETWORK_FOUNDATION_20261020.md`에 있다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE7_CONVERSATION_NETWORK_FOUNDATION_20261020.md`에 있다.
 
 ## 완료 — BCT 대화망 1단계 durable Monitor snapshot (source-only)
 
@@ -1034,7 +1053,7 @@ RCC V1의 API별 Browser Adapter 연속 분리는 Stage 7F에서 중단했다. 2
 HEAD `40083383a236072d7e14cea4530eb1719adc327e` 기준 background 5,103줄과 content
 4,458줄에는 정책이 이미 차단한 ACT/등록/rename/일반 mutation 구현이 활성 Simple Relay 및
 read-only diagnostics와 함께 남아 있다. 다음 작업은 Adapter를 하나 더 만드는 것이 아니라
-`docs/exec-plans/active/BCT_RCC_REBUILD_V2_INTEGRATED_20261020.md` 순서대로 진행한다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V2_INTEGRATED_20261020.md` 순서대로 진행했다.
 
 먼저 source-only로 차단된 레거시와 zero-caller 경로를 일괄 제거하고, storage/browser/native/
 observation 플랫폼 경계와 Simple Relay/content 활성 도메인을 큰 단위로 분리한다. 전체 CI와
@@ -1054,7 +1073,7 @@ active loader나 Relay 권한에 연결하지 않는다.
 Simple Relay V0, exact conversation/read-only diagnostics, fail-closed 오류 계약은 유지했다.
 optional browser mutation Adapter는 source에 남아 있지만 loader와 manifest에서 제외했다.
 LIVE 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE1_LEGACY_PRUNE_20261020.md`를 따른다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V2_STAGE1_LEGACY_PRUNE_20261020.md`를 따른다.
 다음 구조 단계는 V2-2 플랫폼 경계 일괄 분리이며 계속 source-only다.
 
 V2-1 exact commit `46f1772ecddb2079198101692b40eb5155f87b1e`는 GitHub Actions run
@@ -1077,7 +1096,7 @@ fail-closed 오류는 유지했다.
 기존 read Adapter와 tab/window mutation Adapter는 source에 보존하되 active loader에서
 제외했다. 남은 RCC JavaScript 테스트 21개와 focused Python 계약 18개가 통과했다. LIVE RCC
 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE2_PLATFORM_BOUNDARIES_20261020.md`를 따른다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V2_STAGE2_PLATFORM_BOUNDARIES_20261020.md`를 따른다.
 exact source commit `a2d20c80d9d3b35b134f6f0f86220fb947a0b202`의 GitHub Actions
 `BCT CI` run `39390634666`도 전체 통과했다. 다음 단계는 V2-3 활성 도메인·content 일괄
 분리이며 계속 source-only다.
@@ -1094,7 +1113,7 @@ fail-closed 오류 계약은 유지했다. JavaScript 테스트 23개, focused P
 BCT Python 회귀 842개가 통과했고 실제 loader/manifest 순서로 background와 content bundle을
 실행하는 시험도 통과했다.
 LIVE RCC 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE3_DOMAIN_CONTENT_20261020.md`를 따른다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V2_STAGE3_DOMAIN_CONTENT_20261020.md`를 따른다.
 exact source commit `62317038bd50b848f6d49714029630c3fda03040`의 GitHub Actions
 `BCT CI` run `39393918353`도 전체 통과했다. 다음 단계는 V2-4 통합 Release Candidate
 검증이며 계속 비-LIVE다.

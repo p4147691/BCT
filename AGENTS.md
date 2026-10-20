@@ -23,6 +23,11 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
   dispatch a mutation through ACT.
 - Project-specific ADC utilities are not platform subsystems. Run them as ordinary project workflows
   through BCT execution when needed instead of copying every historical tool into BCT core.
+- RCC Rebuild V2-1~6 is complete. LIVE RCC is the exact 46-file RC2 payload; Simple Relay,
+  read-only diagnostics and existing error contracts are active. Browser management Adapters remain
+  optional source/payload and must not be connected to relay authority without a separate design and
+  acceptance. The retained rollback is
+  `D:\BCT\runtime\backups\rcc-rebuild-v2-stage5-rc2-20261020-184845`.
 
 ## Development
 

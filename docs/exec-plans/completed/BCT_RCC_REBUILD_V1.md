@@ -1,6 +1,6 @@
 # RCC Rebuild V1 — 연결을 유지한 내부 재구축
 
-상태: `SUPERSEDED_BY_RCC_REBUILD_V2_INTEGRATED_20261020 / STAGE_0..7F_HISTORY_PRESERVED`
+상태: `COMPLETED_ARCHIVE / SUPERSEDED_BY_RCC_REBUILD_V2 / STAGE_0..7F_HISTORY_PRESERVED`
 
 > 이 문서는 V1 단계별 수행 기록으로만 보존한다. API별 Adapter를 계속 추가하는 후속 방식은
 > 중단했다. 남은 RCC 재구축의 유일한 실행 기준은
@@ -339,10 +339,10 @@ tab/window/session ID와 상세 해시는 진단 상세에서만 보여준다. �
 ## 10. 다음 실행 단위
 
 0단계의 실제 결과는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE0_BASELINE_20261020.md`에 고정했다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE0_BASELINE_20261020.md`에 고정했다.
 
 1단계의 실제 결과는
-`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE1_SOURCE_CORE_20261020.md`에 고정했다.
+`docs/exec-plans/completed/BCT_RCC_REBUILD_V1_STAGE1_SOURCE_CORE_20261020.md`에 고정했다.
 
 다음 단계는 2단계 read-only Shadow 후보 배치다. 이 단계부터는 installed payload 변경과 same-ID
 extension reload가 필요하므로, 현재 작업의 source-only 제약 아래에서는 시작하지 않는다.
