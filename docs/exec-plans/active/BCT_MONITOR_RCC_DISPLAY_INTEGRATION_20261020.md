@@ -1,6 +1,34 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `NODE_OVERLAY_FIX_LIVE_LOADED / VISUAL_CONFIRMATION_PENDING`
+상태: `BWM_UI_AND_HWND_CONVERGENCE_SOURCE_FIXED / CI_PENDING / LIVE_NOT_APPLIED`
+
+## 2026-10-21 BWM 상단 정리·실제 HWND 투영 수렴 보수
+
+현재 BCT/RCC는 N4·N7·N9를 동일 Chrome `window_id`에 보존하지만 실행 Monitor에서 카드 위치와
+썸네일 번호가 누락됐다. 원인은 캡처 이미지 레이어가 아니라 두 상태 경계의 결합이었다.
+
+- BCT 노드 조회가 Native desktop topology보다 먼저 끝나면 exact conversation→HWND 조회가
+  desktop ID 없음으로 종료됐고, topology가 준비된 뒤 다시 대조하는 보장된 단계가 없었다.
+- RCC의 짧은 probe 실패는 마지막 탭 목록을 표시용으로 보존해도 instance state가
+  `UNAVAILABLE`이 되어, 기존 HWND 계약의 `OPEN` 조건에서 이미 검증한 binding까지 제거했다.
+
+source는 desktop topology 준비 뒤 exact identity 대조를 0/450/1400ms 최대 세 번만 수행한다.
+주기 poll은 추가하지 않는다. RCC가 일시 불가하면 마지막 노드 목록을 stale로 명시하고, 새 HWND를
+만들지 않은 채 기존 exact binding만 Native Host가 같은 Chrome HWND를 5초 이내에 다시 관측한
+동안 유지한다. Native 증거가 낡거나 prior binding이 없으면 번호를 붙이지 않는다. 실제 shell과
+HWND contract를 함께 실행하는 회귀는 같은 창의 N4/7/9 유지, 신규 binding 생성 금지, Native
+stale 시 제거를 검증한다.
+
+상단 표시는 `BWM`+버전으로 줄이고 BCT health가 정상일 때 버전만 초록색으로 표시한다. 세대/상태
+문구와 BCT 상태 버튼은 향후 정보창 범위로 제거했다. 복구 항목은 상단 버튼으로 옮겼으며 공식
+실행 경로가 없는 RCC/BCT/tunnel/BCT Control 항목은 효과가 있는 것처럼 보이지 않도록 계속
+disabled다. 2열/3열 선택기는 제거하고 3열을 기본값으로 고정했으며 N 글자만 키웠다. 생성 상태는
+입력 가능 여부가 아니라 RCC의 실제 generating telemetry를 계속 사용한다.
+
+기존 `BCT-MONITOR-NODE-SELECTION-OVERLAY-FIX-20261021-01`은 같은 MCP principal의 ACTIVE 기록이지만
+현재 상태 목록에 실행 operation이 없었고, 이 변경은 새 통합 Work에서 공유 source의 단일 dirty
+set으로 진행한다. 이름 변경 실패는 기존 대상별 UNKNOWN claim을 우회하지 않으며 화면에는 내부
+resource ID 대신 이전 결과 미확정이라는 안전한 설명을 표시한다.
 
 ## 2026-10-21 노드 카드 단일 선택·썸네일 오버레이 보수
 

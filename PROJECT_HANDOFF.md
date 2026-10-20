@@ -1,5 +1,23 @@
 # BCT 인수인계
 
+## 진행 — BWM UI·썸네일 HWND 수렴 보수
+
+Monitor 상단을 `BWM`과 실행 버전 중심으로 단순화하고, BCT health 정상일 때 버전만 초록색으로
+표시하도록 source를 수정했다. `BCT 정상 · G...`와 BCT 상태 버튼은 향후 정보창 범위로 제거했다.
+복구 메뉴 항목은 상단 버튼으로 옮겼고, 현재 공식 효과 경로가 검증된 확장 리로드만 활성이다.
+2열/3열 선택기는 제거하고 3열 기본, 노드 번호 글자 확대를 적용했다.
+
+썸네일 번호 누락의 실제 원인은 노드 조회가 desktop topology보다 먼저 끝난 뒤 exact HWND 대조가
+재실행되지 않는 순서 결함과, RCC transient `UNAVAILABLE`에서 이전 exact binding까지 버리는
+계약 결함이었다. topology 준비 후 최대 세 번의 bounded 대조를 추가하고, cached last-known OPEN은
+Native가 같은 Chrome HWND를 5초 이내에 신선하게 관측할 때만 기존 binding을 retain한다. cached
+행은 새 binding을 만들 수 없다. 실제 shell+contract 회귀에서 동일 창 N4/7/9 유지와 stale 제거를
+검증했다. 아직 commit/CI/main/설치본 publish/reload/LIVE 화면 수락 전이다.
+
+우클릭 이름 변경은 UI 결함이 아니라 기존 대화별 UNKNOWN rename claim에 의해 안전 차단된 대상이
+남아 있다. 이를 재전송하거나 claim 해제하지 않았고, 화면 오류만 사용자가 이해할 수 있는 문구로
+바꿨다. generating 아이콘은 editable composer가 아니라 RCC telemetry 기준을 유지한다.
+
 ## 진행 — Monitor 노드 클릭 강조·더블클릭 브라우저 이동
 
 source base `0645a13839467387aa7b810d1b81593aef9efd5d`에서 Monitor의 BCT/RCC 노드 카드와

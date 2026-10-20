@@ -91,11 +91,19 @@ vm.runInContext(source, context);
   assert.equal(manifest.name, "BCT Window Monitor");
   assert.equal(manifest.version, "2.0.0");
   assert.ok(desktopSource.indexOf("monitor-bct-shell.js") < desktopSource.indexOf("monitor.js"));
-  assert.match(monitorSource, /id="monitorBctOpen"/);
+  assert.match(monitorSource, /id="monitorTitle">BWM</);
+  assert.doesNotMatch(monitorSource, /id="monitorBctOpen"/);
+  assert.doesNotMatch(monitorSource, /id="monitorBctStatus"/);
   assert.doesNotMatch(monitorSource, /id="monitorLocalLlmOpen"/);
-  assert.match(monitorSource, /id="monitorRccRescan"/);
-  assert.match(monitorSource, /id="monitorNodeCols3"/);
+  assert.doesNotMatch(monitorSource, /id="monitorRccRescan"/);
+  assert.doesNotMatch(monitorSource, /id="monitorNodeCols[23]"/);
   assert.match(monitorSource, /id="monitorExtensionReload"/);
+  assert.match(monitorSource, /id="monitorRccReload"/);
+  assert.match(monitorSource, /id="monitorBctRecover"/);
+  assert.match(monitorSource, /id="monitorMcpTunnelRecover"/);
+  assert.match(monitorSource, /id="monitorBctControlRefresh"/);
+  assert.match(monitorSource, /monitorWorkers\.dataset\.columns = "3"/);
+  assert.match(monitorSource, /monitorVersion\.classList\.add\("healthy"\)/);
   assert.doesNotMatch(monitorSource, /id="monitorActRestart"/);
   assert.doesNotMatch(monitorSource, /id="monitorNodeSync"/);
   assert.match(monitorSource, /const MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED = false;/);
@@ -125,6 +133,13 @@ vm.runInContext(source, context);
   assert.equal(nodes[1].conversationKey, "");
   assert.equal(nodes[1].url, "https://chatgpt.com/");
   assert.ok(nodes.every((node) => /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:[/?#]|$)/i.test(node.url)));
+  const retainedDisplay = shell.displayWindowNodes({
+    service: monitorState.service,
+    rcc: { instances: [{ instance_id: "rcc-live", state: "UNAVAILABLE", tabs: [] }] },
+  }, nodes);
+  assert.equal(retainedDisplay.length, 2);
+  assert.ok(retainedDisplay.every((node) => node.displayStale === true && node.instanceCached === true));
+  assert.ok(retainedDisplay.every((node) => node.instanceState === "UNAVAILABLE" && node.lastKnownState === "OPEN"));
   assert.throws(() => shell.windowNodes({ rcc: {} }), /BCT_RCC_STATE_INVALID/);
   const renamed = await shell.renameConversation(nodes[0], " 새 이름 ");
   assert.equal(renamed.operationId, "monitor.rename.test-id");

@@ -52,11 +52,17 @@
     // When a user selects an unregistered/new tab, the physical Chrome window
     // still owns every registered conversation in that RCC window. Preserve an
     // already exact binding only while the same Chrome HWND is freshly observed
-    // and the RCC lineage remains OPEN. This never invents a new HWND binding.
+    // and the RCC lineage is OPEN, or a monitor-only cached row says its last
+    // verified state was OPEN. Cached rows can retain but never create a binding.
     function retainCurrentSessionBindings(input = {}) {
       const now = Number(input.now) || Date.now();
       const next = new Map(Array.isArray(input.bindings) ? input.bindings.map((item) => [text(item?.lineage), item]).filter(([key]) => Boolean(key)) : []);
-      const liveLineages = new Set((Array.isArray(input.nodes) ? input.nodes : []).filter((node) => text(node?.instanceState).toUpperCase() === "OPEN").map(lineage).filter(Boolean));
+      const liveLineages = new Set((Array.isArray(input.nodes) ? input.nodes : []).filter((node) => {
+        const state = text(node?.instanceState).toUpperCase();
+        if (state === "OPEN") return true;
+        return node?.instanceCached === true && text(node?.lastKnownState).toUpperCase() === "OPEN"
+          && ["UNKNOWN", "UNAVAILABLE", "PROBE_TIMEOUT", "PROBE_ERROR"].includes(state);
+      }).map(lineage).filter(Boolean));
       const freshChromeHwnds = new Set(locations(input.locations).filter((location) => {
         const hwnd = positiveId(location?.hwnd), observedAt = Number(location?.at) || 0;
         return hwnd && text(location?.className) === "Chrome_WidgetWin_1" && observedAt >= now - locationMaxAgeMs && observedAt <= now + 1000;

@@ -19,6 +19,21 @@ const retained = contract.retainCurrentSessionBindings({
   locations: new Map([["500", { hwnd: "500", className: "Chrome_WidgetWin_1", at: now - 100 }], ["600", { hwnd: "600", className: "Chrome_WidgetWin_1", at: now - 100 }]]), now,
 });
 assert.deepEqual(Array.from(retained, (row) => [row.lineage, row.hwnd]), [["rcc-a:session-a:11", "500"], ["rcc-a:session-a:12", "600"]]);
+const cachedUnavailableNodes = nodes.map((node) => ({
+  ...node, instanceState: "UNAVAILABLE", instanceCached: true, lastKnownState: "OPEN",
+}));
+assert.equal(contract.resolve({ nodes: cachedUnavailableNodes, locations, now }).bindings.length, 0,
+  "a cached RCC row must never create a new HWND binding");
+assert.deepEqual(Array.from(contract.retainCurrentSessionBindings({
+  bindings: [], previousBindings: resolution.bindings,
+  nodes: cachedUnavailableNodes,
+  locations: new Map([["500", { hwnd: "500", className: "Chrome_WidgetWin_1", at: now - 100 }], ["600", { hwnd: "600", className: "Chrome_WidgetWin_1", at: now - 100 }]]), now,
+}), (row) => [row.lineage, row.hwnd]), [["rcc-a:session-a:11", "500"], ["rcc-a:session-a:12", "600"]]);
+assert.equal(contract.retainCurrentSessionBindings({
+  bindings: [], previousBindings: resolution.bindings,
+  nodes: cachedUnavailableNodes.map((node) => ({ ...node, instanceCached: false })),
+  locations: new Map([["500", { hwnd: "500", className: "Chrome_WidgetWin_1", at: now - 100 }]]), now,
+}).length, 0, "an unverified unavailable RCC row must not retain a binding");
 assert.equal(contract.retainCurrentSessionBindings({
   bindings: [], previousBindings: resolution.bindings, nodes,
   locations: new Map([["500", { hwnd: "500", className: "Chrome_WidgetWin_1", at: now - 6000 }]]), now,

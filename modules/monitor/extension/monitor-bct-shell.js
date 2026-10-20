@@ -52,6 +52,8 @@
       for (const instance of state.rcc.instances) {
         const instanceId = String(instance?.instance_id || "").trim();
         const instanceState = String(instance?.state || "UNKNOWN").trim().toUpperCase();
+        const instanceCached = instance?.cached === true;
+        const lastKnownState = String(instance?.last_known_state || "").trim().toUpperCase();
         for (const tab of Array.isArray(instance?.tabs) ? instance.tabs : []) {
           const tabId = Number(tab?.tab_id || 0);
           const windowId = Number(tab?.window_id || 0);
@@ -67,6 +69,9 @@
             instanceId,
             sessionId: String(instance?.session_id || "").trim(),
             instanceState,
+            instanceCached,
+            lastKnownState,
+            displayStale: instanceCached && instanceState !== "OPEN",
             tabId,
             windowId,
             title: String(tab?.title || "ChatGPT").trim() || "ChatGPT",
@@ -83,6 +88,30 @@
         left.windowId - right.windowId || left.tabId - right.tabId ||
         left.instanceId.localeCompare(right.instanceId));
       return Object.freeze(nodes);
+    }
+
+    // The first failed RCC probe can contain no tabs even though the previous
+    // exact display snapshot is still valid. Preserve that snapshot only as a
+    // stale display candidate. The HWND contract may retain an existing exact
+    // binding while Native still observes the same physical Chrome window; it
+    // cannot create a new binding from these stale rows.
+    function displayWindowNodes(state, previousNodes = []) {
+      const current = windowNodes(state);
+      if (current.length || !Array.isArray(previousNodes) || !previousNodes.length) return current;
+      const instances = Array.isArray(state?.rcc?.instances) ? state.rcc.instances : [];
+      const unavailable = new Set(instances.filter((instance) => {
+        const value = String(instance?.state || "UNKNOWN").trim().toUpperCase();
+        return value !== "OPEN";
+      }).map((instance) => String(instance?.instance_id || "").trim()).filter(Boolean));
+      if (!unavailable.size) return current;
+      const retained = previousNodes.filter((node) => unavailable.has(String(node?.instanceId || "").trim())).map((node) => Object.freeze({
+        ...node,
+        instanceState: "UNAVAILABLE",
+        instanceCached: true,
+        lastKnownState: String(node?.lastKnownState || node?.instanceState || "OPEN").trim().toUpperCase(),
+        displayStale: true,
+      }));
+      return Object.freeze(retained);
     }
 
     async function renameConversation(node, nextTitle, operationId = "") {
@@ -142,6 +171,7 @@
       health,
       monitorState,
       windowNodes,
+      displayWindowNodes,
       renameConversation,
       openStatus: () => open(URLS.status, { width: 1120, height: 820 }),
       openLocalLlm: () => open(URLS.localLlm, { width: 1200, height: 820 }),
