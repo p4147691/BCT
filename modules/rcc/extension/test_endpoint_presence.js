@@ -2,6 +2,8 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 const { randomUUID } = require('crypto');
+const browserReadAdapter = require('./browser/read_adapter.js');
+const legacyCommandPolicy = require('./legacy/command_policy.js');
 
 const source = fs.readFileSync('background.js', 'utf8');
 
@@ -72,10 +74,13 @@ function makeHarness(initialTabs) {
       conversationKey,
       makeResultEnvelope: () => ''
     },
+    RccBrowserReadAdapter: browserReadAdapter,
+    RccLegacyCommandPolicy: legacyCommandPolicy,
     chrome
   };
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'background.js' });
+  assert.doesNotThrow(() => context.getBrowserReadAdapter(), 'background must resolve its loaded Browser read adapter');
 
   return {
     nativeMessages,
@@ -184,8 +189,9 @@ function endpointMessages(messages) {
     message.endpoints[0].presence === 'OFFLINE' && message.endpoints[0].reason === 'removed'));
 
   const ensure = await h.nativeCommand('ensure', 'SOURCE', 'restored-conversation');
-  assert.strictEqual(ensure.ok, true);
-  assert.strictEqual(ensure.registration.conversationKey, 'restored-conversation');
+  assert.strictEqual(ensure.ok, false);
+  assert.strictEqual(ensure.effectState, 'NOT_APPLIED');
+  assert.match(ensure.error, /RCC_NATIVE_COMMAND_LEGACY_MUTATION_DISABLED:ensure/);
 
   const restarted = makeHarness([
     { id: 77, windowId: 21, url: 'https://chatgpt.com/c/restored-conversation', title: 'Restored' }
@@ -194,7 +200,7 @@ function endpointMessages(messages) {
   const restartSnapshot = endpointMessages(restarted.nativeMessages).find((message) => message.mode === 'snapshot');
   assert.strictEqual(restartSnapshot.endpoints.length, 1);
   assert.strictEqual(restartSnapshot.endpoints[0].tabId, 77);
-  console.log('endpoint presence tests: PASS (startup/delta/offline/duplicate/restart/ensure/query-budget/bounded-concurrency)');
+  console.log('endpoint presence tests: PASS (startup/delta/offline/duplicate/restart/legacy-block/query-budget/bounded-concurrency)');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

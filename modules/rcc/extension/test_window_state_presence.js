@@ -5,6 +5,7 @@ const a = src.indexOf('function endpointFromTab(');
 const b = src.indexOf('async function endpointFromTabWithActivity(', a);
 if (a < 0 || b < 0) throw new Error('presence helpers missing');
 const ctx = { result: null, RelayCore: { conversationKey: () => 'chat-x' }, chrome: { windows: { get: async () => ({ left: 10, top: 20, width: 800, height: 600, state: 'minimized', focused: false }) } } };
+ctx.getBrowserReadAdapter = () => ({ getWindow: ctx.chrome.windows.get });
 vm.createContext(ctx);
 vm.runInContext(`${src.slice(a,b)}; result={endpointFromTab,endpointComparable,attachEndpointWindowBounds};`, ctx);
 (async () => {

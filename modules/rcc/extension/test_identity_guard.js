@@ -2,6 +2,8 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 const { randomUUID } = require('crypto');
+const browserReadAdapter = require('./browser/read_adapter.js');
+const legacyCommandPolicy = require('./legacy/command_policy.js');
 
 const source = fs.readFileSync('background.js', 'utf8') +
   '\n;globalThis.__relayTest = { resolveRegistration, ensureRoleConversation };';
@@ -37,6 +39,8 @@ function makeHarness(registrations, initialTabs, createDelayMs = 0) {
       conversationKey,
       makeResultEnvelope: () => ''
     },
+    RccBrowserReadAdapter: browserReadAdapter,
+    RccLegacyCommandPolicy: legacyCommandPolicy,
     chrome: {
       storage: { local: {
         get: async () => store,
@@ -97,19 +101,21 @@ async function testHelloDoesNotFollowTabDrift() {
     [{ id: 1, url: 'https://chatgpt.com/c/drifted', title: 'Drifted' }]
   );
   const reply = await h.hello({ id: 1, url: 'https://chatgpt.com/c/drifted' });
-  assert.strictEqual(reply.role, null);
+  assert.strictEqual(reply.ok, false);
+  assert.match(reply.error, /RCC_RUNTIME_MESSAGE_LEGACY_MUTATION_DISABLED:relay:hello/);
   assert.strictEqual(h.store.registrations.SOURCE.conversationKey, 'original');
   assert.strictEqual(h.store.registrations.SOURCE.tabId, 1);
 }
-async function testHelloRebindsOriginalConversationOnNewTab() {
+async function testHelloDoesNotRebindOriginalConversationOnNewTab() {
   const h = makeHarness(
     { SOURCE: { role: 'SOURCE', tabId: 1, conversationKey: 'original' } },
     [{ id: 2, url: 'https://chatgpt.com/c/original', title: 'Original' }]
   );
   const reply = await h.hello({ id: 2, url: 'https://chatgpt.com/c/original' });
-  assert.strictEqual(reply.role, 'SOURCE');
+  assert.strictEqual(reply.ok, false);
+  assert.match(reply.error, /RCC_RUNTIME_MESSAGE_LEGACY_MUTATION_DISABLED:relay:hello/);
   assert.strictEqual(h.store.registrations.SOURCE.conversationKey, 'original');
-  assert.strictEqual(h.store.registrations.SOURCE.tabId, 2);
+  assert.strictEqual(h.store.registrations.SOURCE.tabId, 1);
 }
 
 async function testResolveRegistrationRebindsOriginalElsewhere() {
@@ -161,7 +167,7 @@ async function testEnsureWaitsForCreatedConversationNavigation() {
 
 (async () => {
   await testHelloDoesNotFollowTabDrift();
-  await testHelloRebindsOriginalConversationOnNewTab();
+  await testHelloDoesNotRebindOriginalConversationOnNewTab();
   await testResolveRegistrationRebindsOriginalElsewhere();
   await testResolveRegistrationFailsClosedWhenOriginalMissing();
   await testEnsureOpensAndBindsMissingConversation();

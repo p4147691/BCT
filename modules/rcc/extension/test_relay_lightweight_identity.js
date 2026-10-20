@@ -1,8 +1,9 @@
 const assert = require('assert');
 const fs = require('fs');
 
-const content = fs.readFileSync('content.js', 'utf8');
-const background = fs.readFileSync('background.js', 'utf8');
+const content = fs.readFileSync('content.js', 'utf8');
+const background = fs.readFileSync('background.js', 'utf8');
+const browserReadAdapter = fs.readFileSync('browser/read_adapter.js', 'utf8');
 
 assert(content.includes("message.type === 'relay:activityProbe'"),
   'content script must expose a lightweight activity probe');
@@ -11,8 +12,9 @@ const activityBlock = content.split("message.type === 'relay:activityProbe'")[1]
 assert(!activityBlock.includes('conversationTail('),
   'lightweight activity probe must not read conversation history');
 
-assert(background.includes("{ type: 'relay:activityProbe' }"),
-  'normal endpoint activity checks must use the lightweight probe');
+assert(background.includes('getBrowserReadAdapter().probeActivity(tab.id)') &&
+       browserReadAdapter.includes("type: 'relay:activityProbe'"),
+  'normal endpoint activity checks must use the Browser read adapter lightweight probe');
 
 assert(content.includes("relayRole === 'CONTROL' && markerScanEnabled"),
   'marker directive scanning must be explicitly gated');

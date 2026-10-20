@@ -1,6 +1,6 @@
 # RCC Rebuild V1 — 연결을 유지한 내부 재구축
 
-상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_SOURCE_ONLY_COMPLETED / STAGE_2_LIVE_SHADOW_COMPLETED / STAGE_3_PROTOCOL_VALIDATED / STAGE_3A_SOURCE_RELAY_BOUNDARY_COMPLETED / STAGE_4_MANAGER_TO_WORKER_COMPLETED / STAGE_5_WORKER_TO_MANAGER_COMPLETED / STAGE_6_LEGACY_MUTATION_BLOCKED / STAGE_7_CONVERSATION_NETWORK_SOURCE_FOUNDATION_COMPLETED`
+상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_SOURCE_ONLY_COMPLETED / STAGE_2_LIVE_SHADOW_COMPLETED / STAGE_3_PROTOCOL_VALIDATED / STAGE_3A_SOURCE_RELAY_BOUNDARY_COMPLETED / STAGE_4_MANAGER_TO_WORKER_COMPLETED / STAGE_5_WORKER_TO_MANAGER_COMPLETED / STAGE_6_LEGACY_MUTATION_BLOCKED / STAGE_7_CONVERSATION_NETWORK_SOURCE_FOUNDATION_COMPLETED / STAGE_7A_BROWSER_READ_ADAPTER_SOURCE_IMPLEMENTED`
 
 ## 1. 목표와 비목표
 
@@ -188,6 +188,16 @@ UUID 동일성 확인이 모두 통과한다.
   연결은 별도 acceptance를 거친다.
 - legacy 실행 코드의 삭제는 대화 관리 기능(탭 생성·이동·닫기)과 관측 기능을 새 Adapter로
   이식·검증한 뒤에만 시작한다. 6단계의 차단은 삭제 완료를 뜻하지 않는다.
+
+### 7A단계 — Browser Read Adapter 분리
+
+- `background.js`의 ChatGPT 탭 조회, endpoint 관측, 활동 상태 probe를 관측 전용 Adapter로
+  분리한다.
+- Adapter는 탭 생성·이동·닫기·재로드·focus·입력 전송 API를 제공하지 않는다.
+- 설치본/확장 reload 없이 source와 테스트에서만 먼저 경계를 검증한다.
+
+통과 조건: 기존 read-only state 결과와 Core shadow 입력이 유지되고, Adapter의 source에
+effectful Browser API가 없음을 정적 테스트로 확인한다.
 
 ### 8단계 — 정리와 제거
 

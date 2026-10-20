@@ -1,4 +1,15 @@
 const CHAT_URLS = ['https://chatgpt.com/*', 'https://chat.openai.com/*'];
+let browserReadAdapter = null;
+
+function getBrowserReadAdapter() {
+  if (browserReadAdapter) return browserReadAdapter;
+  const adapterFactory = globalThis.RccBrowserReadAdapter;
+  if (!adapterFactory) {
+    throw new Error('RCC_BROWSER_READ_ADAPTER_NOT_LOADED');
+  }
+  browserReadAdapter = adapterFactory.create(chrome, CHAT_URLS);
+  return browserReadAdapter;
+}
 
 const CONTROL = 'CONTROL';
 
@@ -641,7 +652,7 @@ async function correlateRelayNetworkEnd(details, ok) {
 
 async function getChatTabs() {
 
-  return chrome.tabs.query({ url: CHAT_URLS });
+  return getBrowserReadAdapter().queryChatTabs();
 
 }
 
@@ -761,7 +772,7 @@ async function attachEndpointWindowBounds(endpoint) {
 
   try {
 
-    const win = await chrome.windows.get(windowId);
+    const win = await getBrowserReadAdapter().getWindow(windowId);
 
     endpoint.windowBounds = {
 
@@ -793,7 +804,7 @@ async function endpointFromTabWithActivity(tab, presence = 'OPEN', reason = '') 
 
   try {
 
-    const probe = await chrome.tabs.sendMessage(tab.id, { type: 'relay:activityProbe' });
+    const probe = await getBrowserReadAdapter().probeActivity(tab.id);
 
     endpoint.generating = !!probe?.generating;
 
