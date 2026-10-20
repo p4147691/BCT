@@ -5,6 +5,7 @@ const fs=require("node:fs");
 const path=require("node:path");
 const vm=require("node:vm");
 const src=fs.readFileSync(path.join(__dirname,"../extension/monitor.js"),"utf8");
+const contractSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-minimized-node-badge-contract.js"),"utf8");
 function extract(name,until){
   const a=src.indexOf("function "+name+"(");
   const b=src.indexOf("\nfunction "+until+"(",a+1);
@@ -52,6 +53,8 @@ const ctx={
   document,Map,Set,Boolean,String,Number,Array
 };
 vm.createContext(ctx);
+vm.runInContext(contractSrc,ctx);
+ctx.monitorMinimizedNodeBadgeContract=ctx.MonitorMinimizedNodeBadgeContract;
 vm.runInContext(aggregate+"\n"+render,ctx);
 const arr=ctx.monitorMinimizedNodeSlotsByDesktop({});
 assert.deepEqual(Array.from(arr.get("deskA")),[2,3,5,6,7]);
@@ -63,10 +66,14 @@ locationMap.set("100",{desktopId:"deskA",iconic:false});
 locationMap.set("200",{desktopId:"deskA",iconic:false});
 ctx.syncMonitorMinimizedNodeBadges({});
 assert.equal(visual.badges.hidden,true);
+assert.equal(ctx.MonitorMinimizedNodeBadgeContract.minimizedEvent({reason:"minimized",iconic:false}),true);
+assert.equal(ctx.MonitorMinimizedNodeBadgeContract.minimizedEvent({reason:"restored",iconic:false}),false);
 const css=fs.readFileSync(path.join(__dirname,"../extension/monitor.css"),"utf8");
 assert.match(css,/\.monitor-desktop-thumb-visual\s*>\s*\.monitor-desktop-minimized-nodes/);
 assert.match(css,/bottom:4px!important;right:4px!important/);
 assert.match(src,/label\.append\(desktopBadge,\s*labelText\);\s*visual\.append\(minimizedNodes\)/);
 assert.match(src,/label\.append\(badge,\s*text\);\s*visual\.append\(minimizedNodes\)/);
-assert.match(src,/const slots = monitorBadgeNodeNumbersForHwnd\(hwnd,\s*state\)/);
-console.log("PASS: minimized display uses BCT labels, 2+ellipsis bottom-right, Native iconic/desktop filter, no invented nodes");
+assert.match(src,/numbersForHwnd: \(hwnd\) => monitorBadgeNodeNumbersForHwnd\(hwnd, state\)/);
+assert.match(src,/iconic:minimized/);
+assert.match(src,/scheduleMonitorMinimizedBadgeConvergence\(hwnd\)/);
+console.log("PASS: minimized display uses BCT labels, lifecycle reason and iconic state agree, 2+ellipsis bottom-right, Native desktop filter, no invented nodes");

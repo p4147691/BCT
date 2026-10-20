@@ -82,3 +82,22 @@ Safe extension principles:
 
 ### Remaining gate
 - This work does not authorize LIVE changes. Inspect other Monitor and RCC active owners and fresh main versus installed Monitor diffs before integrating, then test visually with the true Native Host and Chrome. Separate user approval required for deployment.
+
+## 2026-10-20 minimized badge projection correction
+
+### Cause confirmed by LIVE evidence
+- The installed Monitor hid a desktop preview on either a native `iconic: true` field or a `reason: "minimized"` lifecycle event.
+- The minimized-node overlay used only `iconic: true`. A valid lifecycle event that supplied `reason: "minimized"` without that field could therefore hide the Chrome preview while projecting no node number. This is the observed LIVE failure; it is not a missing BCT node registration.
+
+### Isolated correction
+- `monitor-minimized-node-badge-contract.js` is a pure boundary: Native lifecycle provides minimized/desktop facts; BCT/RCC provides existing node numbers for an HWND. It cannot create a node, alter a window, or infer an HWND.
+- Both the thumbnail hide path and the badge path normalize `reason: "minimized"` and `iconic: true` to one minimized state.
+- A minimized event schedules exactly one 250 ms identity re-convergence. It refreshes the read-only identity index and redraws only the badge projection; it does not poll, reload Chrome, mutate a tab, or control a window.
+
+### Isolated verification
+- `node --check monitor-minimized-node-badge-contract.js` PASS.
+- `check_monitor_bct_minimized_badges.js` PASS: shared-window labels, desktop grouping, restore removal, `reason: "minimized"` normalization, bottom-right 2+ellipsis projection, and no invented labels.
+- Existing current-session HWND, thumbnail-label, and thumbnail-service checks PASS.
+
+### Still required
+- The correction is source-only and is not installed. Before any LIVE claim, deploy through the official Monitor path, same-ID reload it, and repeat one bounded minimize → visible number → restore → removed-number E2E on an already-open ChatGPT Chrome window.

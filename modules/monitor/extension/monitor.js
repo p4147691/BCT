@@ -19167,25 +19167,10 @@ function monitorNodeNumbersForMinimizedHwnd(hwnd, state = monitorLastAiState) {
 }
 
 function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
-  const grouped = new Map();
-
-  // Native window lifecycle is the single source of truth for minimized state.
-  // ACT/stable bindings provide only the node numbers attached to each HWND.
-  for (const [hwnd, location] of monitorWindowDesktopLocations) {
-    if (!Boolean(location?.iconic)) continue;
-    const desktopId = String(location?.desktopId || "").trim();
-    if (!desktopId) continue;
-
-    const slots = monitorBadgeNodeNumbersForHwnd(hwnd, state);
-    if (!slots.length) continue;
-    if (!grouped.has(desktopId)) grouped.set(desktopId, new Set());
-    const target = grouped.get(desktopId);
-    for (const slot of slots) target.add(slot);
-  }
-
-  return new Map(
-    [...grouped].map(([desktopId, slots]) => [desktopId, [...slots].sort((a, b) => a - b)])
-  );
+  return monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({
+    locations: monitorWindowDesktopLocations,
+    numbersForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state),
+  }) || new Map();
 }
 
 function profileForMonitorWorker(worker, state) {
@@ -43049,10 +43034,26 @@ const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
+const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
 let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctWindowNodeRefreshBusy = false;
+let monitorMinimizedBadgeConvergenceTimer = 0;
+
+function scheduleMonitorMinimizedBadgeConvergence(hwnd) {
+  const key = String(hwnd || "").trim();
+  if (!key || !Array.isArray(monitorBctWindowNodesCache)) return;
+  if (monitorMinimizedBadgeConvergenceTimer) return;
+  monitorMinimizedBadgeConvergenceTimer = setTimeout(async () => {
+    monitorMinimizedBadgeConvergenceTimer = 0;
+    // A BCT-initiated minimize can arrive before the Native identity snapshot.
+    // Reconcile once; this is deliberately bounded, not a background poll.
+    await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
+    refreshMonitorBctCurrentSessionWindowHwnd();
+    syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  }, 250);
+}
 const monitorNodeCols2 = document.getElementById("monitorNodeCols2");
 const monitorNodeCols3 = document.getElementById("monitorNodeCols3");
 function monitorSetNodeGridColumns(value) {
@@ -46596,7 +46597,11 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
   const vl=Number(event.previewVirtualLeft)||0, vt=Number(event.previewVirtualTop)||0;
-  const restoring=Boolean(prior.iconic)&&!Boolean(event.iconic)&&event.visible!==false;
+  const lifecycleReason=String(event?.reason||"").toLowerCase();
+  // Native notifications are allowed to use either `iconic: true` or the
+  // lifecycle reason. The picture-hiding and node-badge paths must agree.
+  const minimized=monitorMinimizedNodeBadgeContract?.minimizedEvent?.(event) || lifecycleReason==="minimized" || Boolean(event.iconic);
+  const restoring=Boolean(prior.iconic)&&!minimized&&event.visible!==false;
 
 
 
@@ -46612,7 +46617,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-  const apply=(img)=>{ img.style.display=(Boolean(event.iconic)||event.visible===false)?"none":""; img.style.left=`${((Number(event.left)-vl)/vw)*100}%`; img.style.top=`${((Number(event.top)-vt)/vh)*100}%`; img.style.width=`${(Number(event.width)/vw)*100}%`; img.style.height=`${(Number(event.height)/vh)*100}%`; syncMonitorStatusLayer(img,hwnd); syncMonitorPauseOverlay(img,hwnd); if(!restoring)syncMonitorDesktopNumberBadge(img,hwnd); syncMonitorNonChatCountdown(img,hwnd); };
+  const apply=(img)=>{ img.style.display=(minimized||event.visible===false)?"none":""; img.style.left=`${((Number(event.left)-vl)/vw)*100}%`; img.style.top=`${((Number(event.top)-vt)/vh)*100}%`; img.style.width=`${(Number(event.width)/vw)*100}%`; img.style.height=`${(Number(event.height)/vh)*100}%`; syncMonitorStatusLayer(img,hwnd); syncMonitorPauseOverlay(img,hwnd); if(!restoring)syncMonitorDesktopNumberBadge(img,hwnd); syncMonitorNonChatCountdown(img,hwnd); };
 
 
 
@@ -46644,8 +46649,9 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:Boolean(event.iconic),visible:event.visible!==false,at:Date.now()});
+  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  if (minimized) scheduleMonitorMinimizedBadgeConvergence(hwnd);
   const badgeTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
   const badgeVisual=badgeTile?.querySelector(".monitor-desktop-thumb-visual");
   if (restoring) {
@@ -46684,7 +46690,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-  const lifecycleHidden=reason==="minimized"||reason==="hidden"||Boolean(event.iconic)||event.visible===false;
+  const lifecycleHidden=reason==="hidden"||minimized||event.visible===false;
   if (lifecycleHidden) {
     monitorThumbnailService.invalidate(hwnd);
     removeMonitorEventThumbWindow(hwnd);
