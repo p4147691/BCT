@@ -53,7 +53,9 @@ def capture_work_snapshot(store: Any, arguments: dict[str, Any]) -> dict[str, An
     own_claims = [
         {"resource_key": row["resource_key"], "operation_id": row["operation_id"],
          "assignment_epoch": row["assignment_epoch"]}
-        for row in projection["unresolved_claims"] if row["work_id"] == work_id
+        for row in projection["unresolved_claims"]
+        if row["work_id"] == work_id
+        and row["resource_key"] != "work-snapshot:" + work_id.casefold()
     ] if arguments["include_claims"] else []
 
     receipts = []
