@@ -658,6 +658,25 @@ def _validate_release(
             raise PreconditionError("DEPLOYMENT_RELEASE_FILE_HASH_MISMATCH:" + relative)
 
 
+def _validate_historic_release(profile: DeploymentProfile, release: dict[str, Any]) -> None:
+    """Validate a retained rollback release against its own immutable policy."""
+    _validate_release(profile, release, require_profile_files=False)
+    release_root = Path(str(release["release_path"])).resolve()
+    try:
+        historic = DeploymentProfiles(release_root / "bct.toml").get(profile.name)
+    except (OSError, ValueError, KeyError) as exc:
+        raise PreconditionError("DEPLOYMENT_HISTORIC_PROFILE_INVALID") from exc
+    if (
+        historic.runtime_root != profile.runtime_root
+        or historic.service_name != profile.service_name
+        or historic.port != profile.port
+    ):
+        raise PreconditionError("DEPLOYMENT_HISTORIC_PROFILE_TARGET_MISMATCH")
+    manifest = read_json(release_root / "manifest.json")
+    if not isinstance(manifest, dict) or set(manifest.get("files") or {}) != set(historic.files):
+        raise PreconditionError("DEPLOYMENT_HISTORIC_PROFILE_FILE_SET_MISMATCH")
+
+
 def _stage_release(profile: DeploymentProfile, manifest: dict[str, Any]) -> dict[str, Any]:
     runtime_root = profile.runtime_root
     runtime_root.mkdir(parents=True, exist_ok=True)
@@ -1072,7 +1091,7 @@ class DeployFeature:
         current = _read_current(profile)
         if current is None or current.get("source_head") != rollback_head:
             raise PreconditionError("DEPLOYMENT_RECONCILE_ROLLBACK_CURRENT_MISMATCH")
-        _validate_release(profile, current, require_profile_files=True)
+        _validate_historic_release(profile, current)
         receipt_path = Path(request.preconditions["reconciliation_receipt"])
         receipt = read_json(receipt_path)
         previous = receipt.get("previous_current") if isinstance(receipt, dict) else None
