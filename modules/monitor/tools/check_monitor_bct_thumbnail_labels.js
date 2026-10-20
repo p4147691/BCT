@@ -20,7 +20,7 @@ const nodes = [
 const ctx = {
   monitorBctWindowNodesCache:nodes,
   monitorLastAiState:state,
-  monitorHwndForBrowserWindowId:(windowId)=>({491:"5000",319:"6000"})[windowId]||"",
+  monitorDisplayHwndForBrowserWindowId:(windowId)=>({491:"5000",319:"6000"})[windowId]||"",
   monitorActNodeNumbersForHwnd:()=>[99],
   String,Number,Array,Set
 };
@@ -42,6 +42,9 @@ assert.match(source,/syncMonitorAllDesktopThumbnailNodeBadges\(\)/);
 assert.match(source,/MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object\.freeze\(\[0, 450, 1400\]\)/);
 assert.match(source,/scheduleMonitorBctProjectionConvergence\("desktop-topology"\)/);
 assert.match(source,/monitorBctProjectionConvergenceAttempt >= MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS\.length/);
+assert.match(source,/function monitorDisplayHwndForBrowserWindowId\(/);
+assert.match(source,/resolveMonitorBctNodeDisplayHwnd\(node\)\.then/);
+assert.match(source,/resolveMonitorBctNodeHwnd\(node\)\.then/);
 assert.match(source,/location\.textContent = desktopPosition >= 0/);
 assert.match(source,/MonitorStatusIcon\?\.render\?\.\(presence, \{ activity: node\.generating \? "play" : "pause" \}\)/);
 assert.doesNotMatch(source,/presence\.textContent\s*=/);

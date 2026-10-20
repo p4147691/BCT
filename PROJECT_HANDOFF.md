@@ -16,8 +16,17 @@ Native가 같은 Chrome HWND를 5초 이내에 신선하게 관측할 때만 기
 `39477884804`는 SUCCESS다. exact runtime 5파일을 설치본에 반영하고 공식 publish gate로
 `2.0.11`/token `d589c3f24c594be1b461a5febf597070`을 발행했다. 변경 전 파일은
 `D:\ChromeExtensions\DesktopWindow-Monitor\backup\monitor-live-802c5a3-20261021-035300`에
-보관했다. 실행 중 renderer는 아직 `2.0.10`과 이전 token을 보고하므로 same-ID reload 및 LIVE
-화면 수락은 남아 있다. 보안 정책상 확장 URL 자동 조작은 우회하지 않는다.
+보관했다. publish 직후 renderer는 `2.0.10`과 이전 token을 보고해 same-ID reload가 필요했고,
+보안 정책상 확장 URL 자동 조작은 우회하지 않았다.
+
+사용자의 공식 버튼 재로드 뒤 `2.0.11`과 publish token ACK 일치를 확인했다. 그러나 재로드 직후
+읽기 전용 LIVE 대조는 RCC가 다시 OPEN이고 N4/N7/N9가 같은 `window_id 594834491`에 있어도
+`mapped_windows: 0`이었다. 재로드 시 선택 탭이 비-ChatGPT이면 memory-only exact binding을
+재생성할 대화 키가 없기 때문이다. 후속 source는 표시와 조작 권한을 분리했다. 번호/노란 표시만
+Chrome window_id의 현재 bounds와 fresh Native Chrome HWND bounds가 허용 오차 안에서 유일하게
+일치할 때 display-only binding을 사용한다. 동일 bounds 후보가 둘이면 거부한다. 더블클릭 이동 등
+실제 부작용은 기존 conversation exact binding만 허용한다. 이 후속 보수는 source 회귀 PASS,
+commit/CI/설치본 publish/reload/LIVE 수락 전이다.
 
 우클릭 이름 변경은 UI 결함이 아니라 기존 대화별 UNKNOWN rename claim에 의해 안전 차단된 대상이
 남아 있다. 이를 재전송하거나 claim 해제하지 않았고, 화면 오류만 사용자가 이해할 수 있는 문구로

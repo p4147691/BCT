@@ -21658,6 +21658,34 @@ function refreshMonitorBctCurrentSessionWindowHwnd() {
   return resolution || null;
 }
 
+async function refreshMonitorBctBrowserWindowGeometry() {
+  const ids = [...new Set((Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+    .map((node) => Number(node?.windowId)).filter(Number.isInteger))];
+  const observedAt = Date.now();
+  const rows = await Promise.all(ids.map(async (windowId) => {
+    try {
+      const browserWindow = await chrome.windows.get(windowId, { populate: false });
+      return {
+        windowId, observedAt,
+        left: Number(browserWindow?.left), top: Number(browserWindow?.top),
+        width: Number(browserWindow?.width), height: Number(browserWindow?.height),
+        state: String(browserWindow?.state || "normal"), focused: browserWindow?.focused === true,
+      };
+    } catch (_) { return null; }
+  }));
+  monitorBctBrowserWindows = new Map(rows.filter(Boolean).map((row) => [String(row.windowId), row]));
+  return monitorBctBrowserWindows;
+}
+
+function refreshMonitorBctDisplayWindowHwnd() {
+  const display = monitorWindowHwndContract?.resolveDisplay?.({
+    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations,
+    browserWindows: monitorBctBrowserWindows, now: Date.now(),
+  });
+  monitorBctDisplayWindowHwnd = new Map((display?.bindings || []).map((binding) => [String(binding.lineage || ""), binding]));
+  return display || null;
+}
+
 function monitorBctCurrentSessionHwnd(windowIdValue, instanceIdValue = "", sessionIdValue = "") {
   const windowId = String(windowIdValue ?? "").trim();
   const instanceId = String(instanceIdValue ?? "").trim();
@@ -21667,6 +21695,23 @@ function monitorBctCurrentSessionHwnd(windowIdValue, instanceIdValue = "", sessi
     return String(monitorBctCurrentSessionWindowHwnd.get(`${instanceId}:${sessionId}:${windowId}`)?.hwnd || "");
   }
   const matches = [...monitorBctCurrentSessionWindowHwnd.values()]
+    .filter((binding) => String(binding?.windowId || "") === windowId)
+    .map((binding) => String(binding?.hwnd || ""))
+    .filter((hwnd) => /^\d+$/.test(hwnd) && hwnd !== "0");
+  return new Set(matches).size === 1 ? matches[0] : "";
+}
+
+function monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue = "", sessionIdValue = "") {
+  const exact = monitorBctCurrentSessionHwnd(windowIdValue, instanceIdValue, sessionIdValue);
+  if (exact) return exact;
+  const windowId = String(windowIdValue ?? "").trim();
+  const instanceId = String(instanceIdValue ?? "").trim();
+  const sessionId = String(sessionIdValue ?? "").trim();
+  if (!/^\d+$/.test(windowId) || windowId === "0") return "";
+  if (instanceId && sessionId) {
+    return String(monitorBctDisplayWindowHwnd.get(`${instanceId}:${sessionId}:${windowId}`)?.hwnd || "");
+  }
+  const matches = [...monitorBctDisplayWindowHwnd.values()]
     .filter((binding) => String(binding?.windowId || "") === windowId)
     .map((binding) => String(binding?.hwnd || ""))
     .filter((hwnd) => /^\d+$/.test(hwnd) && hwnd !== "0");
@@ -21697,6 +21742,11 @@ function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState
   }
 
   return candidates.size === 1 ? [...candidates][0] : "";
+}
+
+function monitorDisplayHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
+  return monitorHwndForBrowserWindowId(windowIdValue, state, instanceIdValue, sessionIdValue)
+    || monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue, sessionIdValue);
 }
 
 function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState) {
@@ -43157,6 +43207,8 @@ const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeCo
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
 let monitorBctCurrentSessionWindowHwnd = new Map();
+let monitorBctDisplayWindowHwnd = new Map();
+let monitorBctBrowserWindows = new Map();
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorMinimizedBadgeConvergenceTimer = 0;
 let monitorBctProjectionGeneration = 0;
@@ -43174,8 +43226,10 @@ function scheduleMonitorMinimizedBadgeConvergence(hwnd) {
     monitorMinimizedBadgeConvergenceTimer = 0;
     // A BCT-initiated minimize can arrive before the Native identity snapshot.
     // Reconcile once; this is deliberately bounded, not a background poll.
+    await refreshMonitorBctBrowserWindowGeometry();
     await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
     refreshMonitorBctCurrentSessionWindowHwnd();
+    refreshMonitorBctDisplayWindowHwnd();
     syncMonitorMinimizedNodeBadges(monitorLastAiState);
   }, 250);
 }
@@ -43193,7 +43247,7 @@ function resetMonitorBctProjectionConvergence() {
 
 function monitorBctProjectionHasUnresolvedLineage() {
   return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) =>
-    !monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId)
+    !monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId)
   );
 }
 
@@ -43220,8 +43274,10 @@ function scheduleMonitorBctProjectionConvergence(reason = "state-ready") {
     monitorBctProjectionConvergenceAttempt += 1;
     monitorBctProjectionConvergenceInflight = true;
     try {
+      await refreshMonitorBctBrowserWindowGeometry();
       await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
       refreshMonitorBctCurrentSessionWindowHwnd();
+      refreshMonitorBctDisplayWindowHwnd();
       renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
       syncMonitorAllDesktopThumbnailNodeBadges();
     } finally {
@@ -43373,6 +43429,18 @@ async function resolveMonitorBctNodeHwnd(node) {
   return String(hwnd);
 }
 
+async function resolveMonitorBctNodeDisplayHwnd(node) {
+  let hwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  if (hwnd) return String(hwnd);
+  await refreshMonitorBctBrowserWindowGeometry();
+  await refreshMonitorIdentityIndex(monitorLastAiState, true);
+  refreshMonitorBctCurrentSessionWindowHwnd();
+  refreshMonitorBctDisplayWindowHwnd();
+  hwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  if (!hwnd) throw new Error("현재 세션에서 이 노드의 표시 위치를 고유하게 대조하지 못함");
+  return String(hwnd);
+}
+
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
   const fragment = document.createDocumentFragment();
@@ -43395,7 +43463,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.setAttribute("role", "button");
     row.setAttribute("aria-selected", "false");
     row.tabIndex = 0;
-    const mappedHwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+    const mappedHwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
     const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
     const desktopPosition = nativeLocation
       ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
@@ -43429,7 +43497,7 @@ function renderMonitorBctWindowNodes(nodes) {
     globalThis.MonitorStatusIcon?.render?.(presence, { activity: node.generating ? "play" : "pause" });
     row.append(number, body, presence);
     row.addEventListener("click", () => {
-      void resolveMonitorBctNodeHwnd(node).then((hwnd) => {
+      void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
         getMonitorBctNodeInteractionService().select(hwnd);
         setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
@@ -43486,8 +43554,10 @@ async function refreshMonitorBctWindowNodes() {
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
     resetMonitorBctProjectionConvergence();
+    await refreshMonitorBctBrowserWindowGeometry();
     await refreshMonitorIdentityIndex(monitorLastAiState, true);
     refreshMonitorBctCurrentSessionWindowHwnd();
+    refreshMonitorBctDisplayWindowHwnd();
     renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
     syncMonitorAllDesktopThumbnailNodeBadges();
     scheduleMonitorBctProjectionConvergence("bct-state");
@@ -53830,7 +53900,7 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   // A missing HWND hides only the thumbnail overlay, never the node list.
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
-      monitorHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd));
+      monitorDisplayHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd));
     return [...new Set(matched.map((node) => {
       const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
       return match ? Number(match[1]) : 0;
@@ -56032,7 +56102,7 @@ function syncMonitorBctNodeLocationLabels() {
   // Refresh visible location only. No Chrome action, no polling, no stored binding.
   if (!Array.isArray(monitorBctWindowNodesCache) || !monitorWorkers) return;
   for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
-    const hwnd = monitorHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState, row.dataset.instanceId, row.dataset.sessionId);
+    const hwnd = monitorDisplayHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState, row.dataset.instanceId, row.dataset.sessionId);
     const location = hwnd ? monitorWindowDesktopLocations.get(hwnd) : null;
     const index = location
       ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))
