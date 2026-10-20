@@ -49,6 +49,15 @@ docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE1_SOURCE_CORE_20261020.md에 있�
 다음 2단계는 installed payload 후보 배치와 same-ID extension reload가 필요한 read-only Shadow다.
 현재 source-only 제약 아래에서는 시작하지 않는다.
 
+### 검증 기준선 보정
+
+1단계 CI에서 `tests/test_rcc_source_baseline.py`가 과거 `1.0.21 / 2026-10-15` payload
+해시를 기대하는 것을 확인했다. 0단계에서 source와 LIVE가 이미 같은 `1.0.23 /
+2026-10-20-simple-relay-return-v0`임을 동결했으므로, 설치 payload나 실행 경로를 바꾸지
+않고 테스트의 release baseline만 그 확인값으로 갱신했다. 이 보정은 source-only이며
+extension reload, Native Host, Chrome 탭, Relay binding에 영향을 주지 않는다.
+수정 뒤 `tests.test_rcc_source_baseline` 17개와 새 `test_rcc_core_v1.js`가 통과했다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /

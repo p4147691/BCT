@@ -16,12 +16,12 @@ class RccSourceBaselineTests(unittest.TestCase):
         cls.extension = cls.root / "modules" / "rcc" / "extension"
 
     def test_release_payload_hashes_match_recorded_baseline(self):
-        # Previous reviewed RCC background: 57bf4e8715a630a1db4ce703a4afec7fede8d109a3a5104918e9eedae59d896e
-        # Direct-tab candidate SHA is reverified from the exact source.
+        # Accepted Simple Relay Return V0 source/LIVE baseline (2026-10-20).
+        # These are release guards, not a deployment action.
         expected = {
-            "background.js": "ea079faded9203abc049a55e01dc42c49b1d5a01e1a4db12c16604b4c2abe24e",
-            "content.js": "4545c6169043b37148beddf7c063f0367a1a889e781243794fbffb2d55b09cbe",
-            "manifest.json": "7687f3654e0f8e2ca47d4ae6258dbe59b1eb1e152d12eb2844b21bb272f56b7e",
+            "background.js": "75a0f23edf04e0c4988f329753b881c6d1643002f9ee633fe53c20a87ce9a102",
+            "content.js": "daac5bb8eab162c753afeb8e7fe7597723841ba4efe2e11d469ec0d934ed8bbf",
+            "manifest.json": "d9cdead8f4cb3abc9686f6217de5eb10f002bdb71025ddf8f5e5ff77ceeae919",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
         for name, digest in expected.items():
@@ -34,8 +34,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.21", manifest["version"])
-        self.assertEqual("1.0.21 · BCT", manifest["version_name"])
+        self.assertEqual("1.0.23", manifest["version"])
+        self.assertEqual("1.0.23 · Simple Relay Return V0", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -58,7 +58,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             self.assertIn(marker, background)
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-15-rcc-manager-wakeback-v13"
+        marker = "2026-10-20-simple-relay-return-v0"
         for name in ("content.js", "background.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 

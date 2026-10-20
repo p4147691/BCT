@@ -2,7 +2,7 @@
 
 상태: STAGE_1_COMPLETED_NO_LIVE_PAYLOAD_CHANGE
 
-기록 시각: 2026-10-20 09:49 KST
+기록 시각: 2026-10-20 10:02 KST
 
 ## 변경 범위
 
@@ -47,7 +47,13 @@ receipt 형식, existing content.js DOM adapter를 바꾸지 않았다. 다음 �
 - test_identity_guard.js: PASS
 - test_full_result_capture.js: PASS
 - test_route_turn_deduplication.js: PASS
+- tests.test_rcc_source_baseline (17 tests): PASS
 - Node syntax check, git diff --check: PASS
+
+기존 `test_rcc_source_baseline.py`가 현재 승인된 `1.0.23 / 2026-10-20-simple-relay-return-v0`
+payload가 아니라 과거 `1.0.21 / 2026-10-15` 값과 해시를 기대한 것을 발견했다. 실제
+source와 0단계에서 동결한 LIVE payload가 이미 현재 값으로 일치함을 근거로, 코드나 설치본이
+아닌 해당 테스트의 release baseline만 현재 값으로 갱신했다.
 
 추가로 LIVE 설치 경로에는 core 디렉터리가 존재하지 않음을 확인했고, 변경하지 않은 active
 content.js의 source/LIVE SHA-256이 같음을 확인했다.
