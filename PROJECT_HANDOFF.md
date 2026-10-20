@@ -7,9 +7,12 @@ RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-
 저장하며, send는 `from=manager|worker`, 원문, operation ID만 사용한다. 탭·창·세션·임시
 노드·자동 회수·자동 재시도는 이 경로에 없다. 2026-10-20에 canonical installed payload를
 `D:\BCT\runtime\backups\rcc-extension-20261020-090800`으로 백업한 뒤 재로드했고, build
-`2026-10-20-simple-relay-v0`의 Manager→Worker 원문 한 건이 `SUBMITTED`로 확인됐다. Worker는
-정확히 한 user turn과 한 assistant turn을 추가한 뒤 IDLE이 됐다. 자동 Worker→Manager 전달은
-아직 구현·활성화하지 않았다.
+`2026-10-20-simple-relay-return-v0`의 Manager→Worker 원문 한 건이 `SUBMITTED`로 확인됐다.
+Worker는 정확히 한 user turn과 한 assistant turn을 추가한 뒤 IDLE이 됐고, 그 새 Worker 응답
+원문은 Manager에 한 번 `SUBMITTED`로 전달됐다. 반환은 source send receipt의 pre-send
+assistant count보다 새 응답이 늘었을 때만 가능하며, 이전 1.0.22 receipt처럼 그 증거가 없는
+항목은 전송 없이 거부한다. Core adapter는 source head
+`7df4f06a5e9390175392e341e567b02631fa6ce5`, generation 160으로 LIVE 배포됐다.
 
 ## 완료 — RCC Native Host 보안 경계 배포 정합화
 

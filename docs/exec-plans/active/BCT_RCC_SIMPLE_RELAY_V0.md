@@ -1,6 +1,6 @@
 # RCC Simple Relay V0
 
-상태: `RETURN_IMPLEMENTED_LOCAL_VALIDATION_PENDING_LIVE_RELOAD`
+상태: `LIVE_RETURN_ACCEPTED`
 
 ## 목적
 
@@ -39,5 +39,10 @@
    Worker의 user/assistant turn count가 각각 하나 증가한 뒤 IDLE로 돌아왔다.
 
 이 acceptance는 기존 대화에 시험 원문 한 건을 제출한 실제 UI 효과를 포함한다. 반환 경로는
-local test를 통과했으며 다음 exact payload reload 뒤 이 단일 시험 receipt만 대상으로 LIVE
-검증한다.
+extension 1.0.23에서 LIVE 검증됐다. 새 Manager→Worker 시험은 Worker가 IDLE이 되고 assistant
+turn 수가 정확히 하나 증가한 뒤에만 읽혔고, 33자 원문이 Manager에 `SUBMITTED`로 한 번
+전달됐다. 이전 1.0.22 send receipt에는 pre-send assistant turn 수가 없으므로 반환을 거부했다.
+이는 기존 응답을 추측해 전송하지 않는 fail-closed 동작이다.
+
+Core adapter도 같은 source head `7df4f06a5e9390175392e341e567b02631fa6ce5`로 배포됐고,
+`bct-core` generation 160의 health `OK`를 확인했다.
