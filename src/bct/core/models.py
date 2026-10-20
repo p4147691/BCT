@@ -119,6 +119,10 @@ class PreconditionError(BCTError):
 class UnknownEffectError(BCTError):
     code = "EFFECT_UNKNOWN"
 
+    def __init__(self, message: str | None = None, *, release_claims: bool = False):
+        super().__init__(message)
+        self.release_claims = release_claims
+
 
 class ConfirmedFailure(BCTError):
     code = "EXECUTION_FAILED"

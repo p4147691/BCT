@@ -16,6 +16,9 @@ from bct.integrations.desktop_session import (
     DesktopSessionClient, DesktopSessionEffectUnknown, DesktopSessionRequestFailed,
     DesktopSessionUnavailable,
 )
+from bct.features.claim_reconciliation import (
+    _RETIRED_UIA_ERROR, desktop_control_is_idle,
+)
 
 
 def desktop_session_client(policy_path: str | Path, *, data_root: str | Path | None) -> DesktopSessionClient:
@@ -1283,7 +1286,20 @@ class DesktopUiaElementActionFeature:
         except DesktopSessionUnavailable as exc:
             raise PreconditionError(str(exc)) from exc
         except DesktopSessionEffectUnknown as exc:
-            raise UnknownEffectError(str(exc)) from exc
+            # The UI effect itself stays UNKNOWN. Only retire the exclusive
+            # desktop reservation if a fresh agent query proves no active lease.
+            # A failed query, a live lease, or an emergency stop preserves Claim.
+            retired = False
+            if str(exc) == _RETIRED_UIA_ERROR:
+                try:
+                    control = self.client.control(
+                        request_id=request.operation_id + ":retired-lease-proof",
+                        command="control_status",
+                    )
+                    retired = desktop_control_is_idle(control)
+                except Exception:
+                    retired = False
+            raise UnknownEffectError(str(exc), release_claims=retired) from exc
         except DesktopSessionRequestFailed as exc:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
         action = result["uiaAction"]
