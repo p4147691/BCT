@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         # Accepted Simple Relay Return V0 source/LIVE baseline (2026-10-20).
         # These are release guards, not a deployment action.
         expected = {
-            "background.js": "8c3a027a89ece83b58e44a396ddd0dfdfdc0ea12d729b6653675afe9f13f258f",
+            "background.js": "da1859294aeea563ba00cae3710ee051d1b71f84d3ccbd92aac7d90d8a7402ee",
             "content.js": "d059091b689e4dec9f702b33c65b421d86fefc3408e2aa6dfdebe40cfec7b941",
             "manifest.json": "b45d1a3cd4ad5aa0d57ddd106c89ed749c264ea8af4994aeb8175cf9fc274ec1",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",

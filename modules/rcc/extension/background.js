@@ -2598,12 +2598,15 @@ async function handleNativeCommand(message) {
 
   if (message?.type !== 'host:command') return;
 
+  const requestId = String(message.requestId || crypto.randomUUID());
   const commandDecision = RccLegacyCommandPolicy.nativeCommand(message.command);
   if (!commandDecision.allowed) {
-    throw new Error(RccLegacyCommandPolicy.rejectCode('NATIVE_COMMAND', message.command, commandDecision));
+    postNative({
+      type: 'host:result', requestId, ok: false, effectState: 'NOT_APPLIED',
+      error: RccLegacyCommandPolicy.rejectCode('NATIVE_COMMAND', message.command, commandDecision),
+    });
+    return;
   }
-
-  const requestId = String(message.requestId || crypto.randomUUID());
 
   try {
 

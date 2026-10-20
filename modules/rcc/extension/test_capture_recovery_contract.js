@@ -114,15 +114,15 @@ context.__captureRecoveryTest.setNativePort(port);
 
 (async () => {
   const before = JSON.stringify(store.relayResultReceiptsV1);
-  await assert.rejects(
-    () => context.__captureRecoveryTest.handleNativeCommand({
-      type: 'host:command', command: 'recover-pending', requestId: 'recover-contract-test',
-      to: role, text: relayId
-    }),
-    /RCC_NATIVE_COMMAND_LEGACY_MUTATION_DISABLED:recover-pending/
-  );
-  assert(!posted.some((item) => item.requestId === 'recover-contract-test'),
-    'legacy recovery rejection must not emit a success receipt');
+  await context.__captureRecoveryTest.handleNativeCommand({
+    type: 'host:command', command: 'recover-pending', requestId: 'recover-contract-test',
+    to: role, text: relayId
+  });
+  const rejected = posted.find((item) => item.requestId === 'recover-contract-test');
+  assert(rejected, 'legacy recovery rejection must return a receipt');
+  assert.strictEqual(rejected.ok, false);
+  assert.strictEqual(rejected.effectState, 'NOT_APPLIED');
+  assert.match(rejected.error, /RCC_NATIVE_COMMAND_LEGACY_MUTATION_DISABLED:recover-pending/);
   assert.strictEqual(sentMessages.length, 0, 'disabled recovery must not contact a chat tab');
   assert.strictEqual(directRecoveryCalls, 0, 'disabled recovery must not invoke direct DOM recovery');
   assert.strictEqual(JSON.stringify(store.relayResultReceiptsV1), before,
