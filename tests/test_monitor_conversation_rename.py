@@ -11,6 +11,7 @@ from bct.runtime_server import (
     ensure_monitor_work,
     monitor_extension_origin_allowed,
     run_monitor_conversation_rename,
+    run_monitor_rcc_reload,
 )
 from bct.service import BCT
 
@@ -21,6 +22,11 @@ class FakeRelayClient:
 
     def request(self, **values):
         self.calls.append(values)
+        if values["command"] == "reload-extension":
+            return {
+                "type": "host:result", "ok": True,
+                "instanceId": values["instance_id"], "reloading": True,
+            }
         return {
             "type": "host:result",
             "ok": True,
@@ -92,6 +98,35 @@ class MonitorConversationRenameTests(unittest.TestCase):
             run_monitor_conversation_rename(
                 self.bct, principal=self.principal, payload=self.payload(role="MANAGER")
             )
+        self.assertEqual([], self.client.calls)
+
+    def test_rcc_reload_uses_exact_instance_and_durable_duplicate_receipt(self):
+        payload = {
+            "instance_id": "instance123",
+            "operation_id": "monitor-rcc-reload-1",
+            "timeout_s": 10,
+        }
+        first = run_monitor_rcc_reload(
+            self.bct, principal=self.principal, payload=payload,
+        )
+        duplicate = run_monitor_rcc_reload(
+            self.bct, principal=self.principal, payload=payload,
+        )
+        self.assertEqual(Outcome.APPLIED.value, first["outcome"])
+        self.assertTrue(duplicate["duplicate"])
+        self.assertEqual(1, len(self.client.calls))
+        self.assertEqual("reload-extension", self.client.calls[0]["command"])
+        self.assertEqual("instance123", self.client.calls[0]["instance_id"])
+
+    def test_rcc_reload_rejects_ambiguous_fields_before_dispatch(self):
+        with self.assertRaisesRegex(ValueError, "MONITOR_RCC_RELOAD_INSTANCE_ID_INVALID"):
+            run_monitor_rcc_reload(self.bct, principal=self.principal, payload={
+                "instance_id": "", "operation_id": "reload-1",
+            })
+        with self.assertRaisesRegex(ValueError, "MONITOR_RCC_RELOAD_FIELD_NOT_ALLOWED"):
+            run_monitor_rcc_reload(self.bct, principal=self.principal, payload={
+                "instance_id": "instance123", "operation_id": "reload-1", "force": True,
+            })
         self.assertEqual([], self.client.calls)
 
     def test_existing_foreign_monitor_work_fails_closed(self):
