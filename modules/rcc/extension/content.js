@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-20-simple-relay-v0';
+const RCC_BUILD_VERSION = '2026-10-20-simple-relay-return-v0';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;
@@ -1503,15 +1503,42 @@ async function executeSimpleRelayV0(message) {
     return { ok: false, submitted: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_CONVERSATION_MISMATCH' };
   }
   try {
-    await sendPrompt(text, null, false);
+    const submission = await sendPrompt(text, null, false);
     if (currentConversationKey() !== expectedConversationKey) {
       return { ok: false, submitted: false, effectState: 'UNKNOWN', error: 'SIMPLE_RELAY_CONVERSATION_CHANGED_AFTER_SUBMIT' };
     }
-    return { ok: true, submitted: true, relayId, conversationKey: expectedConversationKey };
+    return { ok: true, submitted: true, relayId, conversationKey: expectedConversationKey,
+      beforeAssistantCount: Number(submission?.beforeCount || 0) };
   } catch (error) {
     return { ok: false, submitted: false, effectState: 'UNKNOWN',
       error: String(error?.message || error || 'SIMPLE_RELAY_SUBMIT_FAILED') };
   }
+}
+
+// This read is intentionally narrow: it returns only the response that appeared
+// after the exact Simple Relay submission. It neither sends, queues, summarizes,
+// nor marks the response as consumed.
+async function readSimpleRelayV0Reply(message) {
+  const expectedConversationKey = String(message?.conversationKey || '').trim().toLowerCase();
+  const afterAssistantCount = Number(message?.afterAssistantCount);
+  if (!expectedConversationKey || !Number.isInteger(afterAssistantCount) || afterAssistantCount < 0) {
+    return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_READ_ARGUMENT_INVALID' };
+  }
+  if (currentConversationKey() !== expectedConversationKey) {
+    return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_READ_CONVERSATION_MISMATCH' };
+  }
+  if (isGenerating()) {
+    return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_REPLY_STILL_GENERATING' };
+  }
+  const assistantCount = getAssistantNodes().length;
+  const responseText = lastAssistantText();
+  if (assistantCount <= afterAssistantCount || !responseText) {
+    return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_NEW_REPLY_NOT_READY' };
+  }
+  if (responseText.length > 12000) {
+    return { ok: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_REPLY_TOO_LARGE' };
+  }
+  return { ok: true, conversationKey: expectedConversationKey, assistantCount, responseText };
 }
 
 function currentConversationKey() {
@@ -3605,6 +3632,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     executeSimpleRelayV0(message).then(sendResponse).catch((error) => sendResponse({
       ok: false, submitted: false, effectState: 'UNKNOWN', error: error.message
+    }));
+
+    return true;
+
+
+
+  }
+
+  if (message.type === 'relay:simpleReadReply') {
+
+    readSimpleRelayV0Reply(message).then(sendResponse).catch((error) => sendResponse({
+      ok: false, effectState: 'NOT_APPLIED', error: error.message
     }));
 
     return true;

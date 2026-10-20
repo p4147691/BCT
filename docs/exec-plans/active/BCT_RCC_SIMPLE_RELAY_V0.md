@@ -1,6 +1,6 @@
 # RCC Simple Relay V0
 
-상태: `LIVE_SINGLE_DELIVERY_ACCEPTED`
+상태: `RETURN_IMPLEMENTED_LOCAL_VALIDATION_PENDING_LIVE_RELOAD`
 
 ## 목적
 
@@ -18,8 +18,9 @@
 - 제출 뒤의 불명확한 결과는 `UNKNOWN` receipt로 남기며 자동 재시도하지 않는다.
 - receipt에는 방향, 대상 UUID, 원문 길이·SHA-256 및 제출 상태만 남긴다. 원문·응답 전문,
   노드, 작업표, 자동 판단은 저장·생성하지 않는다.
-- Worker 응답을 Manager에 보내는 것은 별도의 명시적 `from=worker` 단일 전송이다. V0는
-  응답을 읽거나 요약하거나 자동 전달하지 않는다.
+- `simple-relay-return`: 앞선 Manager→Worker 제출 receipt를 명시하면, 그 제출 전의 assistant
+  turn 수보다 하나 이상 늘어난 IDLE Worker 응답 하나만 읽어 원문 그대로 Manager에 전송한다.
+  이전 응답, 생성 중 응답, 빈 응답, 12,000자 초과 응답은 Manager에 전송하지 않는다.
 
 ## 제외 범위
 
@@ -37,5 +38,6 @@
 5. Manager→Worker 원문 한 건을 전송하고 `SUBMITTED` receipt만 확인한다. 완료:
    Worker의 user/assistant turn count가 각각 하나 증가한 뒤 IDLE로 돌아왔다.
 
-이 acceptance는 기존 대화에 시험 원문 한 건을 제출한 실제 UI 효과를 포함한다. Worker 응답의
-자동 회수·자동 Manager 전달은 시행하지 않았다.
+이 acceptance는 기존 대화에 시험 원문 한 건을 제출한 실제 UI 효과를 포함한다. 반환 경로는
+local test를 통과했으며 다음 exact payload reload 뒤 이 단일 시험 receipt만 대상으로 LIVE
+검증한다.

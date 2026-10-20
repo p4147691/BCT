@@ -61,7 +61,7 @@ assert(background.includes("message.command === 'reload-extension'") &&
   'explicit user-requested extension reload must remain available');
 
 
-assert(content.includes("const RCC_BUILD_VERSION = '2026-10-20-simple-relay-v0';"),
+assert(content.includes("const RCC_BUILD_VERSION = '2026-10-20-simple-relay-return-v0';"),
 
   'content script must expose an internal RCC build version');
 

@@ -36,7 +36,7 @@ _OPERATOR_QUARANTINE_COMMAND = "quarantine-legacy-rename-claim"
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "rename-conversation", "reload-extension", "send", "send-to-tab", "create-and-send",
-    "simple-relay-bind", "simple-relay-send",
+    "simple-relay-bind", "simple-relay-send", "simple-relay-return",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
@@ -267,6 +267,12 @@ class RelayBrowserFeature:
                 raise PreconditionError("RCC_SIMPLE_RELAY_SEND_INVALID")
             prepared["text"] = body
             prepared["extra"]["from"] = source
+        elif command == "simple-relay-return":
+            allowed.add("source_operation_id")
+            source_operation_id = str(arguments.get("source_operation_id") or "").strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", source_operation_id):
+                raise PreconditionError("RCC_SIMPLE_RELAY_SOURCE_OPERATION_INVALID")
+            prepared["extra"]["sourceOperationId"] = source_operation_id
         elif command == "send-to-tab":
             allowed.update({"session_id", "tab_id", "window_id", "conversation_key", "text"})
             session = str(arguments.get("session_id") or "").strip()
@@ -346,6 +352,8 @@ class RelayBrowserFeature:
             resource += ":simple-relay:binding"
         elif command == "simple-relay-send":
             resource += ":simple-relay:" + str(prepared["extra"]["from"])
+        elif command == "simple-relay-return":
+            resource += ":simple-relay:return:" + str(prepared["extra"]["sourceOperationId"])
         if command == "rename-conversation":
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
@@ -834,6 +842,16 @@ class RelayBrowserFeature:
                 and receipt.get("state") == "SUBMITTED"
             ):
                 raise UnknownEffectError("RCC_SIMPLE_RELAY_ACK_UNVERIFIED")
+        if values["command"] == "simple-relay-return" and result.get("ok") is True:
+            receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else {}
+            if not (
+                receipt.get("operationId") == request.operation_id
+                and receipt.get("sourceOperationId") == extra["sourceOperationId"]
+                and receipt.get("from") == "worker"
+                and receipt.get("to") == "manager"
+                and receipt.get("state") == "SUBMITTED"
+            ):
+                raise UnknownEffectError("RCC_SIMPLE_RELAY_RETURN_ACK_UNVERIFIED")
         if result.get("ok") is True:
             if values["command"] == "send" and result.get("type") == "host:ack":
                 if result.get("submitted") is not True or state != "SUBMITTED":

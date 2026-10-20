@@ -75,6 +75,14 @@ class DirectTabPrepareTests(unittest.TestCase):
         self.assertEqual("manager", send.arguments["extra"]["from"])
         self.assertEqual("원문 그대로 보냅니다.", send.arguments["text"])
         self.assertEqual(("rcc-instance:6174664e1c1b4e6db1d4729c841db3c9:simple-relay:manager",), send.resources)
+        returned = self.feature.prepare(work=self.work, arguments={
+            "command": "simple-relay-return", "instance_id": args["instance_id"],
+            "source_operation_id": "manager-send-001",
+        })
+        self.assertEqual(
+            ("rcc-instance:6174664e1c1b4e6db1d4729c841db3c9:simple-relay:return:manager-send-001",),
+            returned.resources,
+        )
         for invalid in ({"from": "node"}, {"text": ""}, {"tab_id": 99}):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(PreconditionError):
@@ -82,3 +90,8 @@ class DirectTabPrepareTests(unittest.TestCase):
                         "command": "simple-relay-send", "instance_id": args["instance_id"],
                         "from": "manager", "text": "x", **invalid,
                     })
+        with self.assertRaises(PreconditionError):
+            self.feature.prepare(work=self.work, arguments={
+                "command": "simple-relay-return", "instance_id": args["instance_id"],
+                "source_operation_id": "invalid id",
+            })
