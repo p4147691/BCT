@@ -150,7 +150,7 @@ console.log(JSON.stringify({base,newNode,moved,swappedDefault,normalizedDefault,
     minimized_lightweight_projection = (
         'function renderLightweightDesktopCards()' in text
         and 'minimizedNodes.className = "monitor-desktop-minimized-nodes";' in text
-        and 'label.append(badge, text, minimizedNodes); button.append(visual, label);' in text
+        and 'label.append(badge, text); visual.append(minimizedNodes); button.append(visual, label);' in text
         and 'syncMonitorMinimizedNodeBadges();\n  return true;' in text
     )
     command_rail_ok = 'const workers=monitorStructureDeskNodeGrid(group.workers||[],desktopId);' in text and 'lowerDeskCount===1' in text and 'is-single-lower-desk' in text

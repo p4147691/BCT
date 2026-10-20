@@ -32,6 +32,7 @@ const monitorState = {
       tabs: [
         { tab_id: 22, window_id: 12, title: "둘", url: "https://chatgpt.com/", presence: "OPEN", active: false, generating: true },
         { tab_id: 11, window_id: 10, title: "하나", url: "https://chatgpt.com/c/chat-one", node_label: "N7", presence: "OPEN", active: true, generating: false },
+        { tab_id: 33, window_id: 12, title: "다른 사이트", url: "https://www.youtube.com/watch?v=test", presence: "OPEN", active: false, generating: false },
       ],
     }],
   },
@@ -91,7 +92,10 @@ vm.runInContext(source, context);
   assert.equal(manifest.version, "2.0.0");
   assert.ok(desktopSource.indexOf("monitor-bct-shell.js") < desktopSource.indexOf("monitor.js"));
   assert.match(monitorSource, /id="monitorBctOpen"/);
-  assert.match(monitorSource, /id="monitorLocalLlmOpen"/);
+  assert.doesNotMatch(monitorSource, /id="monitorLocalLlmOpen"/);
+  assert.match(monitorSource, /id="monitorRccRescan"/);
+  assert.match(monitorSource, /id="monitorNodeCols3"/);
+  assert.match(monitorSource, /id="monitorExtensionReload"/);
   assert.doesNotMatch(monitorSource, /id="monitorActRestart"/);
   assert.doesNotMatch(monitorSource, /id="monitorNodeSync"/);
   assert.match(monitorSource, /const MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED = false;/);
@@ -119,6 +123,8 @@ vm.runInContext(source, context);
   assert.equal(nodes[0].nodeLabel, "N7");
   assert.equal(nodes[0].sessionId, "session-live");
   assert.equal(nodes[1].conversationKey, "");
+  assert.equal(nodes[1].url, "https://chatgpt.com/");
+  assert.ok(nodes.every((node) => /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:[/?#]|$)/i.test(node.url)));
   assert.throws(() => shell.windowNodes({ rcc: {} }), /BCT_RCC_STATE_INVALID/);
   const renamed = await shell.renameConversation(nodes[0], " 새 이름 ");
   assert.equal(renamed.operationId, "monitor.rename.test-id");

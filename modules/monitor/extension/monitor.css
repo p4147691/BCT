@@ -3874,3 +3874,43 @@
 #monitorStructurePanel .monitor-org-workers>.monitor-org-worker-card,
 #monitorStructurePanel .monitor-org-workers>.monitor-org-bundle,
 #monitorStructurePanel .monitor-org-desk-bundles>.monitor-org-bundle{width:var(--org-node-width)!important;min-width:var(--org-node-width)!important;max-width:var(--org-node-width)!important;height:var(--org-node-height)!important;min-height:var(--org-node-height)!important;max-height:var(--org-node-height)!important;box-sizing:border-box!important}
+
+
+/* Isolated BCT/RCC presentation: user-selectable compact 2/3-column node grid. */
+.monitor-bct-nodes[data-columns="3"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.monitor-bct-nodes[data-columns="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.monitor-bct-node-row { grid-template-columns:29px minmax(0,1fr) 17px; }
+.monitor-bct-node-body { min-width:0; }
+.monitor-bct-node-location { display:block; color:rgba(202,216,232,.64); font:600 10px/1.25 "Segoe UI","Malgun Gothic",sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.monitor-bct-node-presence { width:auto; height:auto; background:none; border-radius:0; box-shadow:none; font:800 12px/1 sans-serif; color:rgba(190,205,226,.86); }
+.monitor-bct-node-presence.is-busy { color:#8ee2ad; background:none; box-shadow:none; }
+.monitor-node-columns { display:inline-flex;gap:3px;align-items:center; }
+.monitor-node-columns button { height:23px; padding:0 5px;border-radius:5px;border:1px solid rgba(137,167,193,.3);color:#e6edf5;background:rgba(255,255,255,.05);font-size:10px;cursor:pointer; }
+.monitor-node-columns button[aria-pressed="true"] { background:rgba(117,184,255,.23);border-color:rgba(117,184,255,.7); }
+.monitor-recovery-menu { position:relative; }
+.monitor-recovery-menu summary { list-style:none;cursor:pointer;border:1px solid rgba(117,184,255,.34);padding:4px 7px;border-radius:6px;font:700 11px/1.1 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-recovery-menu summary::-webkit-details-marker { display:none; }
+.monitor-recovery-menu-actions { display:grid;gap:4px;position:absolute;top:100%;right:0;min-width:214px;padding:8px;background:#121c2a;border:1px solid rgba(117,184,255,.4);border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,.48);z-index:100000; }
+.monitor-recovery-menu-actions button { width:100%;text-align:left;min-height:28px;border-radius:5px;padding:5px 8px; }
+.monitor-recovery-menu-actions button:disabled { opacity:.5;cursor:not-allowed; }
+@media (max-width:790px) { .monitor-bct-nodes[data-columns="3"] { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:450px) { .monitor-bct-nodes { grid-template-columns:minmax(0,1fr)!important; } }
+
+
+/* Read-only minimized C-node labels are overlaid inside the thumbnail lower-right. */
+.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes {
+  position:absolute!important;left:auto!important;top:auto!important;bottom:4px!important;right:4px!important;
+  transform:none!important;display:inline-flex;gap:2px;align-items:center;justify-content:flex-end;
+  max-width:calc(100% - 8px);z-index:21032!important;overflow:hidden;
+  pointer-events:none;isolation:isolate;
+}
+.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes[hidden] { display:none!important; }
+.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes .monitor-desktop-minimized-node {
+  min-width:20px;padding:0 3px;min-height:16px;border-radius:4px;
+  background:rgba(5,9,16,.9);border:1px solid rgba(226,239,255,.53);color:#fff;
+  font-size:10px;line-height:14px;
+}
+.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more {
+  min-width:13px;color:#fff;font-weight:900;font-size:10px;
+  text-shadow:0 1px 3px #000;
+}

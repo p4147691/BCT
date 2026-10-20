@@ -516,7 +516,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BCT Window Monitor</strong><span id="monitorVersion" class="monitor-version"></span><div class="monitor-act-row"><span id="monitorService" style="display:none">호환 계층 확인 중…</span><span id="monitorBctStatus" class="monitor-bct-status" role="status">BCT 확인 중…</span><button id="monitorBctOpen" type="button" title="BCT Core의 읽기 전용 상태 화면을 엽니다">BCT 상태</button><button id="monitorLocalLlmOpen" type="button" title="BCT 상태 화면에서 현재 Laya 서비스 상태를 확인합니다">Laya 상태</button><button id="monitorExtensionReload" type="button" title="이미 설치된 BCT Window Monitor 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">설치본 리로드</button></div></div></div>
+    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BCT Window Monitor</strong><span id="monitorVersion" class="monitor-version"></span><div class="monitor-act-row"><span id="monitorService" style="display:none">호환 계층 확인 중…</span><span id="monitorBctStatus" class="monitor-bct-status" role="status">BCT 확인 중…</span><button id="monitorBctOpen" type="button" title="BCT Core의 읽기 전용 상태 화면을 엽니다">BCT 상태</button><details class="monitor-recovery-menu"><summary title="RCC·Monitor 상태 관리">리로드·복구 ▾</summary><div class="monitor-recovery-menu-actions"><button id="monitorRccRescan" type="button">RCC 재조회</button><button id="monitorExtensionReload" type="button" title="이미 설치된 BCT Window Monitor 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">설치본 리로드</button><button type="button" disabled title="RCC 소유 작업의 승인된 리로드 경로 확인 후 연결">RCC 리로드 · 준비 중</button><button type="button" disabled title="Supervisor 경로 확인 후 연결">BCT 시작·복구 · 준비 중</button><button type="button" disabled title="터널 작업 및 영수증 확인 후 연결">MCP 터널 복구 · 준비 중</button><button type="button" disabled title="ChatGPT 설정에서 수동 갱신">도구 새로고침 · 설정에서</button></div></details></div></div></div>
 
 
 
@@ -596,7 +596,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="BCT가 현재 확인한 RCC 창과 탭 상태를 다시 읽습니다">새로고침</button></div>
+    <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><span class="monitor-node-columns" aria-label="노드 열 수"><button type="button" id="monitorNodeCols2">2열</button><button type="button" id="monitorNodeCols3">3열</button></span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
     <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
 
 
@@ -19161,7 +19161,7 @@ function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
     const desktopId = String(location?.desktopId || "").trim();
     if (!desktopId) continue;
 
-    const slots = monitorNodeNumbersForMinimizedHwnd(hwnd, state);
+    const slots = monitorBadgeNodeNumbersForHwnd(hwnd, state);
     if (!slots.length) continue;
     if (!grouped.has(desktopId)) grouped.set(desktopId, new Set());
     const target = grouped.get(desktopId);
@@ -42999,11 +42999,27 @@ const monitorNodeSync = document.getElementById("monitorNodeSync");
 
 const monitorBctStatus = document.getElementById("monitorBctStatus");
 const monitorBctOpen = document.getElementById("monitorBctOpen");
-const monitorLocalLlmOpen = document.getElementById("monitorLocalLlmOpen");
+const monitorRccRescan = document.getElementById("monitorRccRescan");
 const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
+// Null means BCT not yet observed; [] means BCT observed an empty node list.
+let monitorBctWindowNodesCache = null;
 let monitorBctWindowNodeRefreshBusy = false;
+const monitorNodeCols2 = document.getElementById("monitorNodeCols2");
+const monitorNodeCols3 = document.getElementById("monitorNodeCols3");
+function monitorSetNodeGridColumns(value) {
+  const count = value === 3 ? 3 : 2;
+  if (monitorWorkers) monitorWorkers.dataset.columns = String(count);
+  monitorNodeCols2?.setAttribute("aria-pressed", String(count === 2));
+  monitorNodeCols3?.setAttribute("aria-pressed", String(count === 3));
+  try { globalThis.localStorage?.setItem("bct.monitor.node-columns.v1", String(count)); } catch {}
+}
+let monitorInitialNodeColumns = 3;
+try { monitorInitialNodeColumns = Number(globalThis.localStorage?.getItem("bct.monitor.node-columns.v1")) === 2 ? 2 : 3; } catch {}
+monitorSetNodeGridColumns(monitorInitialNodeColumns);
+monitorNodeCols2?.addEventListener("click", () => monitorSetNodeGridColumns(2));
+monitorNodeCols3?.addEventListener("click", () => monitorSetNodeGridColumns(3));
 let monitorBctRenameEditor = null;
 
 function closeMonitorBctRenameEditor() {
@@ -43132,6 +43148,11 @@ function renderMonitorBctWindowNodes(nodes) {
     row.dataset.nodeIndex = String(index + 1);
     row.dataset.nodeLabel = node.nodeLabel || "";
     row.dataset.conversationKey = node.conversationKey;
+    const mappedHwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState);
+    const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
+    const desktopPosition = nativeLocation
+      ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
+      : -1;
     row.title = node.conversationKey
       ? `우클릭하여 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
       : `창 ${node.windowId} · 탭 ${node.tabId}`;
@@ -43149,11 +43170,16 @@ function renderMonitorBctWindowNodes(nodes) {
     title.className = "monitor-bct-node-title";
     title.textContent = node.title;
     body.append(title);
+    const location = document.createElement("small");
+    location.className = "monitor-bct-node-location";
+    location.textContent = desktopPosition >= 0 ? "D" + (desktopPosition + 1) : "위치 확인 중";
+    body.append(location);
 
     const presence = document.createElement("span");
     presence.className = `monitor-bct-node-presence${node.generating ? " is-busy" : ""}`;
     presence.setAttribute("aria-label", node.generating ? "응답 생성 중" : "열려 있음");
     presence.title = node.generating ? "응답 생성 중" : "열려 있음";
+    presence.textContent = node.generating ? "▶" : "Ⅱ";
     row.append(number, body, presence);
     if (node.conversationKey) {
       row.addEventListener("contextmenu", (event) => {
@@ -43174,7 +43200,9 @@ async function refreshMonitorBctWindowNodes() {
   if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
   try {
     const state = await monitorBctShell.monitorState();
-    renderMonitorBctWindowNodes(monitorBctShell.windowNodes(state));
+    monitorBctWindowNodesCache = monitorBctShell.windowNodes(state);
+    renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+    syncMonitorAllDesktopThumbnailNodeBadges();
   } catch (error) {
     if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "상태 확인 실패";
     const message = document.createElement("div");
@@ -43209,11 +43237,10 @@ monitorBctOpen?.addEventListener("click", () => {
   });
 });
 
-monitorLocalLlmOpen?.addEventListener("click", () => {
-  void monitorBctShell?.openLocalLlm?.().catch((error) => {
-    setMonitorStatus(`Laya 상태 화면 열기 실패 · ${error?.message || error}`, false);
-  });
+monitorRccRescan?.addEventListener("click", () => {
+  void refreshMonitorBctWindowNodes();
 });
+
 
 monitorBctNodesRefresh?.addEventListener("click", () => {
   void refreshMonitorBctWindowNodes();
@@ -53504,7 +53531,17 @@ function monitorActNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
 
 
 function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
-  return monitorActNodeNumbersForHwnd(hwnd,state);
+  // BCT/RCC owns conversation labels, and Native/ACT maps the physical HWND.
+  // A missing HWND hides only the thumbnail overlay, never the node list.
+  if (Array.isArray(monitorBctWindowNodesCache)) {
+    const matched = monitorBctWindowNodesCache.filter((node) =>
+      monitorHwndForBrowserWindowId(node.windowId, state) === String(hwnd));
+    return [...new Set(matched.map((node) => {
+      const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
+      return match ? Number(match[1]) : 0;
+    }).filter((n) => Number.isSafeInteger(n) && n > 0))].sort((a, b) => a - b);
+  }
+  return monitorActNodeNumbersForHwnd(hwnd, state);
 }
 
 function syncMonitorDesktopNumberBadge(img, hwnd) {
@@ -55507,7 +55544,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
-    badge.textContent=numbers.join("/");
+    badge.textContent="N" + numbers.join("/");
 
 
 
@@ -55652,11 +55689,27 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
+function syncMonitorBctNodeLocationLabels() {
+  // Refresh visible location only. No Chrome action, no polling, no stored binding.
+  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorWorkers) return;
+  for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
+    const hwnd = monitorHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState);
+    const location = hwnd ? monitorWindowDesktopLocations.get(hwnd) : null;
+    const index = location
+      ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))
+      : -1;
+    const position = row.querySelector(".monitor-bct-node-location");
+    if (position) position.textContent = index >= 0 ? "D" + (index + 1) : "위치 확인 중";
+    row.dataset.desktopNumber = index >= 0 ? String(index + 1) : "";
+  }
+}
 function syncMonitorAllDesktopThumbnailNodeBadges() {
   for (const button of monitorDesktopThumbs.children) {
     const visual=button.querySelector(".monitor-desktop-thumb-visual");
     if (visual?.isConnected) syncMonitorThumbnailTabBadges(visual,"monitor-desktop-thumb-window");
   }
+  syncMonitorBctNodeLocationLabels();
+  syncMonitorMinimizedNodeBadges(monitorLastAiState);
 }
 
 let monitorWindowPointerDrag = null;
@@ -65724,7 +65777,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    const label = button.querySelector(".monitor-desktop-thumb-label");
+    const visual = button.querySelector(".monitor-desktop-thumb-visual");
 
 
 
@@ -65740,7 +65793,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    if (!label) continue;
+    if (!visual) continue;
 
 
 
@@ -65756,7 +65809,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    let host = label.querySelector(".monitor-desktop-minimized-nodes");
+    let host = visual.querySelector(".monitor-desktop-minimized-nodes");
 
 
 
@@ -65772,7 +65825,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; label.append(host); }
+    if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; visual.append(host); }
 
 
 
@@ -65804,9 +65857,9 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    const visibleSlots = slots.slice(0, 3);
+    const visibleSlots = slots.slice(0, 2);
     const badges = visibleSlots.map((slot) => { const badge=document.createElement("span"); badge.className="monitor-node-number-badge monitor-desktop-minimized-node"; badge.textContent=String(slot); badge.title=`최소화 노드 ${slot}`; return badge; });
-    if (slots.length >= 4) {
+    if (slots.length >= 3) {
       const more = document.createElement("span");
       more.className = "monitor-desktop-minimized-more";
       more.textContent = "...";
@@ -66070,7 +66123,7 @@ function syncDesktopSwitcher() {
 
 
 
-      label.append(desktopBadge, labelText, minimizedNodes);
+      label.append(desktopBadge, labelText); visual.append(minimizedNodes);
       monitorAttachDesktopManagementControl(label, desktopId);
 
 
@@ -68818,7 +68871,7 @@ function renderLightweightDesktopCards() {
     const minimizedNodes = document.createElement("span");
     minimizedNodes.className = "monitor-desktop-minimized-nodes";
     minimizedNodes.hidden = true;
-    label.append(badge, text, minimizedNodes); button.append(visual, label); monitorAttachDesktopManagementControl(label, desktopId);
+    label.append(badge, text); visual.append(minimizedNodes); button.append(visual, label); monitorAttachDesktopManagementControl(label, desktopId);
 
 
 

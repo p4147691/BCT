@@ -58,6 +58,10 @@
           if (!Number.isSafeInteger(tabId) || tabId <= 0 ||
               !Number.isSafeInteger(windowId) || windowId <= 0) continue;
           const url = String(tab?.url || "").trim();
+          // A missing /c/<key> is a pending ChatGPT conversation, not a reason to
+          // project an arbitrary browser tab as N?. Only supported ChatGPT hosts
+          // may enter the Monitor node list.
+          if (!/^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:[/?#]|$)/i.test(url)) continue;
           const conversationMatch = url.match(/\/c\/([a-z0-9-]+)/i);
           nodes.push(Object.freeze({
             instanceId,
