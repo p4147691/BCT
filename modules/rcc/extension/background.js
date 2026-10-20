@@ -1,6 +1,7 @@
 const CHAT_URLS = ['https://chatgpt.com/*', 'https://chat.openai.com/*'];
 let browserReadAdapter = null;
 let browserTabMoveAdapter = null;
+let browserTabCreateAdapter = null;
 
 function getBrowserReadAdapter() {
   if (browserReadAdapter) return browserReadAdapter;
@@ -22,6 +23,18 @@ function getBrowserTabMoveAdapter() {
     conversationKey: (url) => RelayCore.conversationKey(url || ''),
   });
   return browserTabMoveAdapter;
+}
+
+function getBrowserTabCreateAdapter() {
+  if (browserTabCreateAdapter) return browserTabCreateAdapter;
+  const adapterFactory = globalThis.RccBrowserTabCreateAdapter;
+  const contract = globalThis.RccBrowserTabCreateContract;
+  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_TAB_CREATE_ADAPTER_NOT_LOADED');
+  browserTabCreateAdapter = adapterFactory.create(chrome, contract, {
+    isChatTab,
+    conversationKey: (url) => RelayCore.conversationKey(url || ''),
+  });
+  return browserTabCreateAdapter;
 }
 
 const CONTROL = 'CONTROL';
@@ -1971,28 +1984,6 @@ async function validateExactWindowId(windowIdValue) {
 
 }
 
-async function waitForBlankChatReady(tabId, timeoutMs = 8000) {
-
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-
-    const tab = await chrome.tabs.get(Number(tabId));
-
-    const url = String(tab?.url || '');
-
-    if (/^https:\/\/(chatgpt\.com|chat\.openai\.com)\/?(?:[?#].*)?$/i.test(url)
-
-        && !RelayCore.conversationKey(url)) return tab;
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-  }
-
-  throw new Error('Blank ChatGPT tab did not finish loading');
-
-}
-
 async function createChatTab(message) {
 
   const operationId = String(message.operationId || '').trim();
@@ -2003,7 +1994,11 @@ async function createChatTab(message) {
 
   const hasWindowId = message.windowId !== undefined && message.windowId !== null && String(message.windowId) !== '';
 
-  const requestedWindowId = hasWindowId ? await validateExactWindowId(message.windowId) : null;
+  const requestedWindowId = hasWindowId ? Number(message.windowId) : null;
+
+  if (requestedWindowId !== null && (!Number.isSafeInteger(requestedWindowId) || requestedWindowId < 1)) {
+    throw new Error('Invalid window id');
+  }
 
   const fingerprint = JSON.stringify([requestedWindowId, 'https://chatgpt.com/']);
 
@@ -2011,75 +2006,13 @@ async function createChatTab(message) {
 
     const state = await loadState();
 
-    const receiptBase = {
-
+    return getBrowserTabCreateAdapter().createTab({
       operationId,
-
       instanceId: String(state.settings.instanceId || ''),
-
       sessionId: endpointSessionId,
-
+      requestedWindowId,
       conversationKey: '',
-
-      pending: true,
-
-      unbound: true
-
-    };
-
-    let created;
-
-    try {
-
-      const options = { url: 'https://chatgpt.com/', active: false };
-
-      if (requestedWindowId !== null) options.windowId = requestedWindowId;
-
-      created = await chrome.tabs.create(options);
-
-    } catch (_) {
-
-      return { ok: false, created: false, state: 'CREATE_UNKNOWN', ...receiptBase,
-
-        tabId: null, windowId: requestedWindowId, error: 'CREATE_UNKNOWN' };
-
-    }
-
-    try {
-
-      const tab = await waitForBlankChatReady(created.id);
-
-      if (!isChatTab(tab) || RelayCore.conversationKey(tab.url || '')) throw new Error('Blank chat identity not ready');
-
-      return { ok: true, created: true, state: 'PENDING_UNBOUND', ...receiptBase,
-
-        tabId: tab.id, windowId: tab.windowId ?? requestedWindowId,
-
-        creationReceipt: {
-
-          tabId: tab.id,
-
-          windowId: tab.windowId ?? requestedWindowId,
-
-          instanceId: String(state.settings.instanceId || ''),
-
-          sessionId: endpointSessionId,
-
-          conversationKey: '',
-
-          bindingState: 'PENDING_UNBOUND'
-
-        } };
-
-    } catch (_) {
-
-      return { ok: false, created: true, state: 'CREATE_UNKNOWN', ...receiptBase,
-
-        tabId: Number(created?.id) || null, windowId: created?.windowId ?? requestedWindowId,
-
-        error: 'CREATE_UNKNOWN' };
-
-    }
+    });
 
   });
 
@@ -2386,32 +2319,6 @@ async function promoteManagerBinding(message) {
 }
 
 
-
-async function waitForConversationReady(tabId, conversationKey, timeoutMs = 8000) {
-
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-
-    const tab = await chrome.tabs.get(Number(tabId));
-
-    const url = String(tab?.url || '');
-
-    if (/^https:\/\/(chatgpt\.com|chat\.openai\.com)\//i.test(url) &&
-
-        RelayCore.conversationKey(url) === conversationKey) {
-
-      return tab;
-
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-  }
-
-  throw new Error(`Conversation did not finish loading: ${conversationKey}`);
-
-}
 
 function postNative(message) {
 
@@ -2975,7 +2882,9 @@ async function handleNativeCommand(message) {
 
     if (message.command === 'ensure') {
 
-      const registration = await ensureRoleConversation(message.to, message.text);
+      const registration = await ensureRoleConversation(
+        message.to, message.text, String(message.operationId || requestId)
+      );
 
       postNative({ type: 'host:result', requestId, ok: true, registration });
 
@@ -4056,7 +3965,7 @@ async function registerRole(roleValue, tabId) {
 
 
 
-async function ensureRoleConversation(roleValue, conversationKeyValue) {
+async function ensureRoleConversation(roleValue, conversationKeyValue, operationId) {
 
   const role = RelayCore.normalizeRole(roleValue);
 
@@ -4070,17 +3979,31 @@ async function ensureRoleConversation(roleValue, conversationKeyValue) {
 
   const tabs = await getChatTabs();
 
-  let tab = tabs.find((item) => RelayCore.conversationKey(item.url || '') === key);
+  const existing = tabs.find((item) => RelayCore.conversationKey(item.url || '') === key);
 
-  if (!tab) {
+  let tabId = Number(existing?.id) || null;
 
-    const created = await chrome.tabs.create({ url: `https://chatgpt.com/c/${key}`, active: false });
+  if (!tabId) {
 
-    tab = await waitForConversationReady(created.id, key);
+    const state = await loadState();
+
+    const receipt = await getBrowserTabCreateAdapter().createTab({
+      operationId,
+      instanceId: String(state.settings.instanceId || ''),
+      sessionId: endpointSessionId,
+      requestedWindowId: null,
+      conversationKey: key,
+    });
+
+    if (!receipt.ok || receipt.state !== 'CREATED_CONFIRMED') {
+      throw new Error(String(receipt.error || receipt.state || 'TAB_CREATE_NOT_CONFIRMED'));
+    }
+
+    tabId = Number(receipt.tabId);
 
   }
 
-  return registerRole(role, tab.id);
+  return registerRole(role, tabId);
 
 }
 

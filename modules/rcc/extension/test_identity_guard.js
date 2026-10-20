@@ -3,6 +3,8 @@ const fs = require('fs');
 const vm = require('vm');
 const { randomUUID } = require('crypto');
 const browserReadAdapter = require('./browser/read_adapter.js');
+const tabCreateContract = require('./browser/tab_create_contract.js');
+const tabCreateAdapter = require('./browser/tab_create_adapter.js');
 const legacyCommandPolicy = require('./legacy/command_policy.js');
 
 const source = fs.readFileSync('background.js', 'utf8') +
@@ -40,6 +42,8 @@ function makeHarness(registrations, initialTabs, createDelayMs = 0) {
       makeResultEnvelope: () => ''
     },
     RccBrowserReadAdapter: browserReadAdapter,
+    RccBrowserTabCreateContract: tabCreateContract,
+    RccBrowserTabCreateAdapter: tabCreateAdapter,
     RccLegacyCommandPolicy: legacyCommandPolicy,
     chrome: {
       storage: { local: {
@@ -148,7 +152,7 @@ async function testEnsureOpensAndBindsMissingConversation() {
     { SOURCE: { role: 'SOURCE', tabId: 1, conversationKey: 'wrong-key' } },
     []
   );
-  const reg = await h.ensureRoleConversation('SOURCE', 'original');
+  const reg = await h.ensureRoleConversation('SOURCE', 'original', 'ensure-original');
   assert.strictEqual(reg.conversationKey, 'original');
   assert.strictEqual(reg.tabId, 100);
   assert.strictEqual(h.store.registrations.SOURCE.conversationKey, 'original');
@@ -160,7 +164,7 @@ async function testEnsureWaitsForCreatedConversationNavigation() {
     [],
     80
   );
-  const reg = await h.ensureRoleConversation('SOURCE', 'delayed-original');
+  const reg = await h.ensureRoleConversation('SOURCE', 'delayed-original', 'ensure-delayed-original');
   assert.strictEqual(reg.conversationKey, 'delayed-original');
   assert.strictEqual(reg.tabId, 100);
 }
