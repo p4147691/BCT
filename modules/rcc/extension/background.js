@@ -16,68 +16,6 @@ function getBrowserReadAdapter() {
   return browserReadAdapter;
 }
 
-function getBrowserTabMoveAdapter() {
-  if (browserTabMoveAdapter) return browserTabMoveAdapter;
-  const adapterFactory = globalThis.RccBrowserTabMoveAdapter;
-  const contract = globalThis.RccBrowserTabMoveContract;
-  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_TAB_MOVE_ADAPTER_NOT_LOADED');
-  browserTabMoveAdapter = adapterFactory.create(chrome, contract, {
-    isChatTab,
-    conversationKey: (url) => RelayCore.conversationKey(url || ''),
-  });
-  return browserTabMoveAdapter;
-}
-
-function getBrowserTabCreateAdapter() {
-  if (browserTabCreateAdapter) return browserTabCreateAdapter;
-  const adapterFactory = globalThis.RccBrowserTabCreateAdapter;
-  const contract = globalThis.RccBrowserTabCreateContract;
-  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_TAB_CREATE_ADAPTER_NOT_LOADED');
-  browserTabCreateAdapter = adapterFactory.create(chrome, contract, {
-    isChatTab,
-    conversationKey: (url) => RelayCore.conversationKey(url || ''),
-  });
-  return browserTabCreateAdapter;
-}
-
-function getBrowserTabCloseAdapter() {
-  if (browserTabCloseAdapter) return browserTabCloseAdapter;
-  const adapterFactory = globalThis.RccBrowserTabCloseAdapter;
-  const contract = globalThis.RccBrowserTabCloseContract;
-  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_TAB_CLOSE_ADAPTER_NOT_LOADED');
-  browserTabCloseAdapter = adapterFactory.create(chrome, contract, {
-    isChatTab,
-    conversationKey: (url) => RelayCore.conversationKey(url || ''),
-  });
-  return browserTabCloseAdapter;
-}
-
-function getBrowserWindowCreateAdapter() {
-  if (browserWindowCreateAdapter) return browserWindowCreateAdapter;
-  const adapterFactory = globalThis.RccBrowserWindowCreateAdapter;
-  const contract = globalThis.RccBrowserWindowCreateContract;
-  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_WINDOW_CREATE_ADAPTER_NOT_LOADED');
-  browserWindowCreateAdapter = adapterFactory.create(chrome, contract, {
-    isChatTab,
-    conversationKey: (url) => RelayCore.conversationKey(url || ''),
-  });
-  return browserWindowCreateAdapter;
-}
-
-function getBrowserTabReloadAdapter() {
-  if (browserTabReloadAdapter) return browserTabReloadAdapter;
-  const adapterFactory = globalThis.RccBrowserTabReloadAdapter;
-  const contract = globalThis.RccBrowserTabReloadContract;
-  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_TAB_RELOAD_ADAPTER_NOT_LOADED');
-  browserTabReloadAdapter = adapterFactory.create(chrome, contract, {
-    isChatTab,
-    conversationKey: (url) => RelayCore.conversationKey(url || ''),
-  }, {
-    probe: (tabId) => sendToChatTab(tabId, { type: 'relay:probe' }),
-  });
-  return browserTabReloadAdapter;
-}
-
 const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
@@ -127,42 +65,7 @@ const endpointSessionReady = (async () => {
 })();
 
 
-
 const relayNetworkRequests = new Map();
-
-function relayNetworkUrlLooksRelevant(url) {
-
-  try {
-
-    const path = new URL(String(url || '')).pathname.toLowerCase();
-
-    if (/\/conversation\/prepare(?:\/|$)/.test(path)) return false;
-
-    return /^\/backend-api\/(?:f\/)?conversation(?:$|\/)/.test(path);
-
-  } catch (_) { return false; }
-
-}
-
-async function findPendingRelayForNetwork(tabId) {
-
-  const state = await loadState();
-
-  const now = Date.now();
-
-  const candidates = Object.entries(state.pending || {}).filter(([, item]) =>
-
-    Number(item?.tabId) === Number(tabId) && !item?.networkRequestId &&
-
-    now - Number(item?.createdAt || 0) >= 0 && now - Number(item?.createdAt || 0) <= 20000
-
-  ).sort((a,b) => Number(b[1]?.createdAt || 0) - Number(a[1]?.createdAt || 0));
-
-  return { state, match: candidates[0] || null };
-
-}
-
-
 
 async function loadState() {
 
@@ -220,23 +123,6 @@ async function loadState() {
 
 }
 
-function boundedRelayResultPayload(result) {
-  const reply = String(result?.reply || '');
-  if (reply.length > 1048576) throw new Error('RELAY_RESULT_TOO_LARGE');
-  return {
-    failureEvidence: result?.failureEvidence ? {
-      phase: String(result.failureEvidence.phase || '').slice(0, 80),
-      networkError: String(result.failureEvidence.networkError || '').slice(0, 300),
-      domError: String(result.failureEvidence.domError || '').slice(0, 300),
-      networkSignal: String(result.failureEvidence.networkSignal || '').slice(0, 40)
-    } : null,
-    ok: result?.ok === true,
-    reply,
-    error: String(result?.error || '').slice(0, 1000),
-    ambiguous: result?.ambiguous === true
-  };
-}
-
 async function relaySha256(value) {
   const bytes = new TextEncoder().encode(String(value));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -278,445 +164,11 @@ function publicResultFromReceipt(receipt) {
   };
 }
 
-function withRelayReceiptMutation(work) {
-  const next = relayReceiptMutationChain.catch(() => {}).then(work);
-  relayReceiptMutationChain = next.catch(() => {});
-  return next;
-}
-
-async function persistDurableResultReceipt(relayId, pending, result) {
-  const routeId = String(relayId || '').trim();
-  if (!routeId) throw new Error('RELAY_ID_REQUIRED');
-  const resultPayload = boundedRelayResultPayload(result);
-  const resultHash = await relaySha256(JSON.stringify(resultPayload));
-  return withRelayReceiptMutation(async () => {
-    const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const receipts = { ...(data[RELAY_RESULT_RECEIPTS_KEY] || {}) };
-    const existing = receipts[routeId] || null;
-    if (existing) {
-      if (String(existing.resultHash || '') !== resultHash) throw new Error('RELAY_RESULT_CONFLICT');
-      return { receipt: existing, duplicate: true };
-    }
-    if (!pending) throw new Error('Unknown relay result');
-    const completedAt = Date.now();
-    const createdAt = Number(pending.createdAt || 0) || null;
-    const networkStartedAt = Number(pending.networkStartedAt || 0) || null;
-    const networkCompletedAt = Number(pending.networkCompletedAt || 0) || null;
-    const timing = {
-      createdAt,
-      acceptedAt: Number(pending.acceptedAt || 0) || null,
-      submittedAt: Number(pending.submittedAt || 0) || null,
-      networkStartedAt,
-      networkCompletedAt,
-      completedAt,
-      deliveryMs: createdAt && networkStartedAt ? Math.max(0, networkStartedAt - createdAt) : null,
-      processingMs: networkStartedAt && networkCompletedAt ? Math.max(0, networkCompletedAt - networkStartedAt) : null,
-      returnMs: networkCompletedAt ? Math.max(0, completedAt - networkCompletedAt) : null,
-      totalMs: createdAt ? Math.max(0, completedAt - createdAt) : null
-    };
-    const attestation = pending.bindingAttestation && typeof pending.bindingAttestation === 'object'
-      ? pending.bindingAttestation : null;
-    const receipt = {
-      version: 1,
-      routeId,
-      messageHash: String(pending.messageHash || pending.fingerprint || ''),
-
-      dispatchFingerprint: String(pending.fingerprint || ''),
-      from: String(pending.fromNode || pending.source || ''),
-      to: String(pending.to || ''),
-      targetBindingReceipt: String(attestation?.bindingReceiptId || pending.targetBindingReceipt || ''),
-      instanceId: String(attestation?.instanceId || pending.expectedInstanceId || ''),
-      sessionId: String(attestation?.sessionId || pending.expectedSessionId || ''),
-      attachmentGeneration: Number(attestation?.attachmentGeneration || pending.attachmentGeneration) || null,
-      bindingLeaseId: String(attestation?.leaseId || ''),
-      bindingLeaseConsumedAt: Number(attestation?.leaseConsumedAt || 0) || null,
-      submitState: pending.submitUnknown === true ? 'SUBMIT_UNKNOWN' :
-        pending.deliveryConfirmed === true ? 'SUBMITTED_CONFIRMED' : 'SUBMIT_NOT_STARTED',
-      resultState: 'RESULT_PERSISTED',
-      resultHash,
-      resultPayload,
-      tabId: Number(attestation?.tabId || pending.tabId) || null,
-      conversationKey: String(attestation?.conversationKey || pending.conversationKey || ''),
-      stageTiming: pending.stageTiming || null,
-      timing,
-      createdAt: Number(pending.createdAt || 0) || null,
-      completedAt,
-      ackState: 'UNACKED',
-      acknowledgedAt: null,
-      receiverAckState: (pending.returnToRole || pending.returnToControl) ? 'PENDING' : 'NOT_REQUESTED',
-      receiverAcknowledgedAt: null,
-      returnState: (pending.returnToRole || pending.returnToControl) ? 'PENDING' : 'NOT_REQUESTED',
-      returnedAt: null,
-      returnToRole: String(pending.returnToRole || ''),
-      returnToControl: pending.returnToControl === true
-    };
-    receipts[routeId] = receipt;
-    await chrome.storage.local.set({ [RELAY_RESULT_RECEIPTS_KEY]: receipts });
-    const verified = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const stored = verified[RELAY_RESULT_RECEIPTS_KEY]?.[routeId] || null;
-    if (!stored || String(stored.resultHash || '') !== resultHash) throw new Error('RELAY_RESULT_PERSIST_VERIFY_FAILED');
-    return { receipt: stored, duplicate: false };
-  });
-}
-
-function isRecoverableCaptureResult(payload) {
-  if (!payload || payload.ok === true) return false;
-  const failureEvidence = payload.failureEvidence && typeof payload.failureEvidence === 'object'
-    ? payload.failureEvidence : {};
-  const evidence = [
-    payload.error,
-    failureEvidence.networkError,
-    failureEvidence.domError
-  ].map((value) => String(value || '')).join('\n');
-  return /RELAY_NETWORK_SIGNAL_TIMEOUT|RELAY_FINAL_DOM_UNKNOWN:ASSISTANT_RESPONSE_AMBIGUOUS|net::ERR_(?:FAILED|ABORTED)|RELAY_FINAL_DOM_NOT_READY/i.test(evidence);
-}
-
-async function replaceRecoverableResultReceipt(relayId, recoveredResult) {
-  const routeId = String(relayId || '').trim();
-  if (!routeId) throw new Error('RELAY_ID_REQUIRED');
-  const nextPayload = boundedRelayResultPayload(recoveredResult);
-  if (nextPayload.ok !== true || !String(nextPayload.reply || '').trim()) throw new Error('RELAY_RECOVERY_RESULT_INVALID');
-  const nextHash = await relaySha256(JSON.stringify(nextPayload));
-  return withRelayReceiptMutation(async () => {
-    const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const receipts = { ...(data[RELAY_RESULT_RECEIPTS_KEY] || {}) };
-    const receipt = receipts[routeId] || null;
-    if (!receipt || receipt.resultState !== 'RESULT_PERSISTED') throw new Error('RELAY_RESULT_NOT_FOUND');
-    if (receipt.ackState === 'ACKED' || receipt.returnState === 'DELIVERED') throw new Error('RELAY_RECOVERY_RESULT_ALREADY_FINAL');
-    if (!isRecoverableCaptureResult(receipt.resultPayload)) throw new Error('RELAY_RECOVERY_RESULT_NOT_CAPTURE_ERROR');
-    const updated = {
-      ...receipt,
-      priorResultHash: String(receipt.resultHash || ''),
-      priorResultError: String(receipt.resultPayload?.error || ''),
-      recoveryCorrectedAt: Date.now(),
-      resultHash: nextHash,
-      resultPayload: nextPayload,
-      completedAt: Date.now()
-    };
-    receipts[routeId] = updated;
-    await chrome.storage.local.set({ [RELAY_RESULT_RECEIPTS_KEY]: receipts });
-    const verified = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const stored = verified[RELAY_RESULT_RECEIPTS_KEY]?.[routeId] || null;
-    if (!stored || String(stored.resultHash || '') !== nextHash) throw new Error('RELAY_RECOVERY_RESULT_VERIFY_FAILED');
-    return stored;
-  });
-}
-
-async function markDurableResultReturned(relayId, stateValue) {
-  return withRelayReceiptMutation(async () => {
-    const routeId = String(relayId || '');
-    const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const receipts = { ...(data[RELAY_RESULT_RECEIPTS_KEY] || {}) };
-    const receipt = receipts[routeId] || null;
-    if (!receipt) throw new Error('RELAY_RESULT_NOT_FOUND');
-    const returnState = String(stateValue || 'DELIVERED');
-    const updated = { ...receipt, returnState,
-      returnedAt: returnState === 'DELIVERED' ? Date.now() : receipt.returnedAt || null };
-    receipts[routeId] = updated;
-    await chrome.storage.local.set({ [RELAY_RESULT_RECEIPTS_KEY]: receipts });
-    return updated;
-  });
-}
-
-async function acknowledgeDurableResultReceipt(relayId) {
-  const routeId = String(relayId || '').trim();
-  if (!routeId) throw new Error('RELAY_ID_REQUIRED');
-  return withRelayReceiptMutation(async () => {
-    const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const receipts = { ...(data[RELAY_RESULT_RECEIPTS_KEY] || {}) };
-    const receipt = receipts[routeId] || null;
-    if (!receipt) throw new Error('RELAY_RESULT_NOT_FOUND');
-    if (receipt.ackState === 'ACKED') return { receipt, duplicate: true };
-    const updated = { ...receipt, ackState: 'ACKED', acknowledgedAt: Date.now() };
-    receipts[routeId] = updated;
-    await chrome.storage.local.set({ [RELAY_RESULT_RECEIPTS_KEY]: receipts });
-    const verified = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const stored = verified[RELAY_RESULT_RECEIPTS_KEY]?.[routeId] || null;
-    if (!stored || stored.ackState !== 'ACKED') throw new Error('RELAY_RESULT_ACK_VERIFY_FAILED');
-    return { receipt: stored, duplicate: false };
-  });
-}
-
-
-
-
-
-async function markDurableReceiverDelivered(relayId) {
-  const routeId = String(relayId || '').trim();
-  if (!routeId) throw new Error('RELAY_ID_REQUIRED');
-  return withRelayReceiptMutation(async () => {
-    const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const receipts = { ...(data[RELAY_RESULT_RECEIPTS_KEY] || {}) };
-    const receipt = receipts[routeId] || null;
-    if (!receipt) throw new Error('RELAY_RESULT_NOT_FOUND');
-    if (receipt.returnState === 'DELIVERED' && receipt.receiverAckState === 'ACKED') {
-      return { receipt, duplicate: true };
-    }
-    const now = Date.now();
-    const updated = {
-      ...receipt,
-      returnState: 'DELIVERED',
-      returnedAt: receipt.returnedAt || now,
-      receiverAckState: 'ACKED',
-      receiverAcknowledgedAt: receipt.receiverAcknowledgedAt || now,
-    };
-    receipts[routeId] = updated;
-    await chrome.storage.local.set({ [RELAY_RESULT_RECEIPTS_KEY]: receipts });
-    const verified = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const stored = verified[RELAY_RESULT_RECEIPTS_KEY]?.[routeId] || null;
-    if (!stored || stored.returnState !== 'DELIVERED' || stored.receiverAckState !== 'ACKED') {
-      throw new Error('RELAY_RETURN_ACK_VERIFY_FAILED');
-    }
-    return { receipt: stored, duplicate: false };
-  });
-}
-
-async function beginDurableReceiverDelivery(relayId) {
-  const routeId = String(relayId || '').trim();
-  if (!routeId) throw new Error('RELAY_ID_REQUIRED');
-  return withRelayReceiptMutation(async () => {
-    const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const receipts = { ...(data[RELAY_RESULT_RECEIPTS_KEY] || {}) };
-    const receipt = receipts[routeId] || null;
-    if (!receipt) throw new Error('RELAY_RESULT_NOT_FOUND');
-    if (receipt.returnState === 'DELIVERED' && receipt.receiverAckState === 'ACKED') {
-      return { receipt, started: false, delivered: true };
-    }
-    if (receipt.returnState === 'DELIVERING') {
-      return { receipt, started: false, delivered: false, inFlight: true };
-    }
-    const updated = { ...receipt, returnState: 'DELIVERING', returnAttemptedAt: Date.now() };
-    receipts[routeId] = updated;
-    await chrome.storage.local.set({ [RELAY_RESULT_RECEIPTS_KEY]: receipts });
-    return { receipt: updated, started: true, delivered: false };
-  });
-}
-
-async function resetDurableReceiverDelivery(relayId) {
-  const routeId = String(relayId || '').trim();
-  if (!routeId) return null;
-  return withRelayReceiptMutation(async () => {
-    const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-    const receipts = { ...(data[RELAY_RESULT_RECEIPTS_KEY] || {}) };
-    const receipt = receipts[routeId] || null;
-    if (!receipt || receipt.returnState !== 'DELIVERING') return receipt;
-    const updated = { ...receipt, returnState: 'PENDING', returnAttemptedAt: null };
-    receipts[routeId] = updated;
-    await chrome.storage.local.set({ [RELAY_RESULT_RECEIPTS_KEY]: receipts });
-    return updated;
-  });
-}
-
-async function confirmDurableReceiverDelivery(sender, relayId) {
-  const routeId = String(relayId || '').trim();
-  if (!routeId) throw new Error('RELAY_ID_REQUIRED');
-  const tab = sender?.tab;
-  if (!isChatTab(tab) || tab?.id == null) throw new Error('RELAY_RETURN_ACK_SOURCE_NOT_CHAT_TAB');
-  const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-  const receipt = (data[RELAY_RESULT_RECEIPTS_KEY] || {})[routeId] || null;
-  if (!receipt) throw new Error('RELAY_RESULT_NOT_FOUND');
-  const returnRole = String(receipt.returnToRole || '').trim()
-    || (receipt.returnToControl === true ? CONTROL : '');
-  if (!returnRole) throw new Error('RELAY_RETURN_TARGET_NOT_REQUESTED');
-  const registration = await resolveRegistration(returnRole);
-  const conversationKey = RelayCore.conversationKey(tab.url || '');
-  if (Number(registration.tabId) !== Number(tab.id)
-      || !conversationKey
-      || String(registration.conversationKey || '') !== conversationKey) {
-    throw new Error('RELAY_RETURN_ACK_IDENTITY_MISMATCH');
-  }
-  return markDurableReceiverDelivered(routeId);
-}
-
-async function returnPersistedResult(relayId, pending, receipt) {
-  if (!receipt || String(receipt.resultState || '') !== 'RESULT_PERSISTED') {
-    throw new Error('RELAY_RESULT_NOT_PERSISTED');
-  }
-  const returnRole = String(pending?.returnToRole || receipt.returnToRole || '').trim()
-    || ((pending?.returnToControl === true || receipt.returnToControl === true) ? CONTROL : '');
-  if (!returnRole) {
-    const finalState = await loadState();
-    if (finalState.pending?.[relayId]) delete finalState.pending[relayId];
-    await chrome.storage.local.set({ pending: finalState.pending });
-    return { ok: true, returnState: 'NOT_REQUESTED', receiverAckState: 'NOT_REQUESTED', replayed: true };
-  }
-  if (receipt.returnState === 'DELIVERED' && receipt.receiverAckState === 'ACKED') {
-    const finalState = await loadState();
-    if (finalState.pending?.[relayId]) delete finalState.pending[relayId];
-    await chrome.storage.local.set({ pending: finalState.pending });
-    return { ok: true, returnState: 'DELIVERED', receiverAckState: 'ACKED', replayed: true };
-  }
-  const control = await resolveRegistration(returnRole);
-  const claim = await beginDurableReceiverDelivery(relayId);
-  if (claim.delivered === true) {
-    return { ok: true, returnState: 'DELIVERED', receiverAckState: 'ACKED', replayed: true };
-  }
-  if (claim.inFlight === true || claim.started !== true) {
-    return { ok: true, returnState: 'DELIVERING', receiverAckState: 'PENDING', inFlight: true };
-  }
-  const payload = receipt.resultPayload || {};
-  const envelope = RelayCore.makeResultEnvelope(
-    String(pending?.to || receipt.to || ''),
-    relayId,
-    payload.ok === true ? String(payload.reply || '') : `ERROR: ${String(payload.error || 'unknown')}`
-  );
-  let delivery;
-  try {
-    delivery = await sendToChatTab(control.tabId, { type: 'relay:deliver', relayId, text: envelope });
-  } catch (error) {
-    await resetDurableReceiverDelivery(relayId);
-    throw error;
-  }
-  if (!delivery?.ok) {
-    if (delivery?.inFlight !== true) await resetDurableReceiverDelivery(relayId);
-    throw new Error(delivery?.error || 'RELAY_RETURN_DELIVERY_NOT_ACKED');
-  }
-  const acknowledged = await markDurableReceiverDelivered(relayId);
-  const finalState = await loadState();
-  if (finalState.pending?.[relayId]) delete finalState.pending[relayId];
-  await chrome.storage.local.set({ pending: finalState.pending });
-  return {
-    ok: true,
-    returnState: String(acknowledged.receipt?.returnState || ''),
-    receiverAckState: String(acknowledged.receipt?.receiverAckState || ''),
-    replayed: acknowledged.duplicate === true,
-  };
-}
-
 // A completed worker result is durable before it ever reaches the manager.  If
 // the manager is composing or generating, keep that result pending and retry
 // only after the *same exact tab* reports that its composer is empty again.
 // This is deliberately event-driven: it does not poll ChatGPT, overwrite a
 // user draft, or redirect a result to a different role/tab.
-async function retryPendingResultReturnForTab(tabId) {
-  const state = await loadState();
-  const pendingEntries = Object.entries(state.pending || {});
-  const candidates = [];
-  for (const [relayId, pending] of pendingEntries) {
-    const receipt = state.resultReceipts?.[relayId];
-    if (!receipt || String(receipt.resultState || '') !== 'RESULT_PERSISTED') continue;
-    if (String(receipt.returnState || '') !== 'PENDING') continue;
-    const returnRole = String(pending?.returnToRole || receipt.returnToRole || '').trim()
-      || ((pending?.returnToControl === true || receipt.returnToControl === true) ? CONTROL : '');
-    if (!returnRole) continue;
-    const registration = state.registrations?.[returnRole];
-    if (!registration || Number(registration.tabId) !== Number(tabId)) continue;
-    candidates.push({ relayId, pending, receipt });
-  }
-  // One delivery per ready notification prevents a result burst from turning
-  // into a prompt burst.  The next ready notification advances the queue.
-  if (candidates.length === 0) return { attempted: false, pending: 0 };
-  const candidate = candidates.sort((left, right) => String(left.relayId).localeCompare(String(right.relayId)))[0];
-  try {
-    const returned = await returnPersistedResult(candidate.relayId, candidate.pending, candidate.receipt);
-    return { attempted: true, routeId: candidate.relayId, delivered: returned.returnState === 'DELIVERED',
-      pending: candidates.length - (returned.returnState === 'DELIVERED' ? 1 : 0) };
-  } catch (error) {
-    // The receipt and pending route remain the recovery authority.  A later
-    // ready event can retry; do not fabricate delivery or resend worker work.
-    return { attempted: true, routeId: candidate.relayId, delivered: false,
-      error: String(error?.message || error), pending: candidates.length };
-  }
-}
-
-async function recordRelayNetworkCandidate(details) {
-
-  if (!Number.isInteger(Number(details?.tabId)) || Number(details.tabId) < 0) return;
-
-  const state = await loadState();
-
-  const now = Date.now();
-
-  const match = Object.entries(state.pending || {}).filter(([, item]) => Number(item?.tabId) === Number(details.tabId) && now - Number(item?.createdAt || 0) >= 0 && now - Number(item?.createdAt || 0) <= 20000).sort((a,b)=>Number(b[1]?.createdAt||0)-Number(a[1]?.createdAt||0))[0];
-
-  if (!match) return;
-
-  const [relayId,pending]=match; let path=''; try { path=new URL(String(details.url||'')).pathname.slice(0,300); } catch (_) {}
-
-  const items=Array.isArray(pending.networkCandidates)?pending.networkCandidates:[];
-
-  if (path && !items.some((item)=>item.path===path && item.method===String(details.method||''))) items.push({ path, method:String(details.method||''), type:String(details.type||''), at:now });
-
-  pending.networkCandidates=items.slice(-12); state.pending[relayId]=pending; await chrome.storage.local.set({pending:state.pending});
-
-}
-
-
-
-async function correlateRelayNetworkStart(details) {
-
-  await recordRelayNetworkCandidate(details);
-
-  if (String(details?.method || '').toUpperCase() !== 'POST') return;
-
-  if (!Number.isInteger(Number(details?.tabId)) || Number(details.tabId) < 0) return;
-
-  if (!relayNetworkUrlLooksRelevant(details.url)) return;
-
-  const { state, match } = await findPendingRelayForNetwork(details.tabId);
-
-  if (!match) return;
-
-  const [relayId, pending] = match;
-
-  pending.networkRequestId = String(details.requestId || '');
-
-  pending.networkStartedAt = Date.now();
-
-  try { pending.networkPath = new URL(details.url).pathname.slice(0, 300); } catch (_) {}
-
-  state.pending[relayId] = pending;
-
-  await chrome.storage.local.set({ pending: state.pending });
-
-  relayNetworkRequests.set(String(details.requestId || ''), { relayId, tabId: Number(details.tabId) });
-
-  try { await sendToChatTab(Number(details.tabId), { type: 'relay:networkStarted', relayId }); } catch (_) {}
-
-}
-
-async function correlateRelayNetworkEnd(details, ok) {
-
-  const requestId = String(details?.requestId || '');
-
-  let tracked = relayNetworkRequests.get(requestId) || null;
-
-  const state = await loadState();
-
-  if (!tracked) {
-
-    for (const [relayId, pending] of Object.entries(state.pending || {})) {
-
-      if (String(pending?.networkRequestId || '') === requestId) { tracked = { relayId, tabId: Number(pending.tabId) }; break; }
-
-    }
-
-  }
-
-  if (!tracked) return;
-
-  const pending = state.pending?.[tracked.relayId];
-
-  if (!pending) { relayNetworkRequests.delete(requestId); return; }
-
-  pending.networkCompletedAt = Date.now();
-
-  pending.networkOk = !!ok;
-
-  if (!ok) pending.networkError = String(details?.error || 'NETWORK_REQUEST_FAILED').slice(0, 200);
-
-  state.pending[tracked.relayId] = pending;
-
-  await chrome.storage.local.set({ pending: state.pending });
-
-  relayNetworkRequests.delete(requestId);
-
-  try { await sendToChatTab(tracked.tabId, { type: 'relay:networkComplete', relayId: tracked.relayId, ok: !!ok, error: pending.networkError || '' }); } catch (_) {}
-
-}
-
-
-
 async function getChatTabs() {
 
   return getBrowserReadAdapter().queryChatTabs();
@@ -743,7 +195,6 @@ async function forEachChatTabBounded(tabsValue, worker, concurrency = 4) {
 }
 
 
-
 function publicTab(tab) {
 
   return { id: tab.id, windowId: tab.windowId ?? null, title: tab.title || '', url: tab.url || '' };
@@ -765,13 +216,11 @@ function coreShadowSnapshot(tabs, endpoints, binding) {
 }
 
 
-
 function isChatTab(tab) {
 
   return !!(tab?.url && /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//i.test(tab.url));
 
 }
-
 
 
 function endpointFromTab(tab, presence = 'OPEN', reason = '') {
@@ -803,7 +252,6 @@ function endpointFromTab(tab, presence = 'OPEN', reason = '') {
 }
 
 
-
 function endpointComparable(endpoint) {
 
   const bounds = endpoint?.windowBounds && typeof endpoint.windowBounds === 'object' ? endpoint.windowBounds : {};
@@ -828,7 +276,6 @@ function endpointComparable(endpoint) {
   ]);
 
 }
-
 
 
 async function attachEndpointWindowBounds(endpoint) {
@@ -858,7 +305,6 @@ async function attachEndpointWindowBounds(endpoint) {
   return endpoint;
 
 }
-
 
 
 async function endpointFromTabWithActivity(tab, presence = 'OPEN', reason = '') {
@@ -894,7 +340,6 @@ async function endpointFromTabWithActivity(tab, presence = 'OPEN', reason = '') 
 }
 
 
-
 async function captureEndpointSnapshot(reason = 'snapshot', tabsValue = null) {
 
   const tabs = Array.isArray(tabsValue) ? tabsValue : await getChatTabs();
@@ -920,7 +365,6 @@ async function captureEndpointSnapshot(reason = 'snapshot', tabsValue = null) {
   return endpoints;
 
 }
-
 
 
 async function postEndpointPresence(mode, endpoints, reason) {
@@ -949,7 +393,6 @@ async function postEndpointPresence(mode, endpoints, reason) {
 }
 
 
-
 async function publishEndpointSnapshot(reason = 'startup', tabsValue = null) {
 
   const endpoints = await captureEndpointSnapshot(reason, tabsValue);
@@ -961,13 +404,11 @@ async function publishEndpointSnapshot(reason = 'startup', tabsValue = null) {
 }
 
 
-
 async function publishEndpointDelta(endpoint, reason) {
 
   await postEndpointPresence('delta', [endpoint], reason);
 
 }
-
 
 
 async function handleEndpointTabCreated(tab) {
@@ -981,7 +422,6 @@ async function handleEndpointTabCreated(tab) {
   await publishEndpointDelta(endpoint, 'created');
 
 }
-
 
 
 async function handleEndpointTabUpdated(tabId, changeInfo, tab) {
@@ -1011,7 +451,6 @@ async function handleEndpointTabUpdated(tabId, changeInfo, tab) {
 }
 
 
-
 async function handleEndpointTabRemoved(tabId) {
 
   const previous = endpointPresence.get(tabId);
@@ -1025,13 +464,11 @@ async function handleEndpointTabRemoved(tabId) {
 }
 
 
-
 function isMissingReceiver(error) {
 
   return /Receiving end does not exist|Could not establish connection/i.test(String(error?.message || error || ''));
 
 }
-
 
 
 async function injectRelayReceiver(tabId) {
@@ -1051,7 +488,6 @@ async function injectRelayReceiver(tabId) {
   });
 
 }
-
 
 
 async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, submittedText) {
@@ -1207,206 +643,6 @@ async function mutateRegistrationsWithLeaseFence(targets, mutation) {
     });
     return result;
   });
-}
-
-async function expireBindingSubmitLease(leaseId) {
-  return withBindingLeaseMutation(async () => {
-    const state = await loadState();
-    const lease = state.bindingSubmitLeases?.[leaseId];
-    if (!lease || Number(lease.expiresAt || 0) > Date.now()) return false;
-    delete state.bindingSubmitLeases[leaseId];
-    await chrome.storage.local.set({ [BINDING_SUBMIT_LEASES_KEY]: state.bindingSubmitLeases });
-    return true;
-  });
-}
-
-async function recoverCreatedResult(relayId) {
-  const state = await loadState();
-  const existing = state.resultReceipts?.[relayId] || null;
-  if (existing?.resultState === 'RESULT_PERSISTED') {
-    return { type: 'host:result', ok: true, relayId, found: true,
-      completed: true, pending: false, result: publicResultFromReceipt(existing) };
-  }
-  const pending = state.pending?.[relayId] || null;
-  let fingerprint;
-  try { fingerprint = JSON.parse(String(pending?.fingerprint || '')); }
-  catch (_) { fingerprint = null; }
-  if (!pending || pending.bootstrapCreatedTab !== true
-      || !Array.isArray(fingerprint) || fingerprint.length !== 6
-      || String(fingerprint[1] || '') !== String(state.settings.instanceId || '')
-      || Number(fingerprint[3]) !== Number(pending.tabId)
-      || Number(fingerprint[4]) !== Number(pending.windowId)
-      || !String(fingerprint[0] || '').startsWith('bct-compose-c-')
-      || !String(fingerprint[5] || '')) {
-    throw new Error('COMPOSE_RECOVERY_PENDING_IDENTITY_MISMATCH');
-  }
-  const tab = await chrome.tabs.get(Number(pending.tabId));
-  const conversationKey = RelayCore.conversationKey(tab?.url || '');
-  if (!conversationKey) throw new Error('COMPOSE_RECOVERY_CONVERSATION_NOT_READY');
-  const recovered = await recoverCompletedReplyDirectlyFromTab(
-    Number(pending.tabId), conversationKey, String(fingerprint[5])
-  );
-  if (!recovered?.ok || recovered.recovered !== true
-      || !String(recovered.recoveredReply || '').trim()) {
-    throw new Error(String(recovered?.error || 'COMPOSE_RECOVERY_RESULT_NOT_READY'));
-  }
-  pending.conversationKey = conversationKey;
-  pending.deliveryConfirmed = true;
-  pending.acceptedAt = Number(pending.acceptedAt || 0) || Date.now();
-  pending.submittedAt = Number(pending.submittedAt || 0)
-    || Number(pending.networkStartedAt || 0) || Date.now();
-  pending.submissionState = 'SUBMITTED_RECOVERED_FROM_EXACT_DOM';
-  pending.submitUnknown = true;
-  state.pending[relayId] = pending;
-  await chrome.storage.local.set({ pending: state.pending });
-  await deliverResult(relayId, {
-    ok: true,
-    reply: String(recovered.recoveredReply),
-    recovered: 'exact-created-tab-dom'
-  }, Number(pending.tabId));
-  const completedState = await loadState();
-  const receipt = completedState.resultReceipts?.[relayId] || null;
-  if (!receipt || receipt.resultState !== 'RESULT_PERSISTED') {
-    throw new Error('COMPOSE_RECOVERY_RESULT_NOT_PERSISTED');
-  }
-  return { type: 'host:result', ok: true, relayId, found: true,
-    completed: true, pending: false, result: publicResultFromReceipt(receipt) };
-}
-
-function bootstrapSubmissionEvidenceIsExact(pending, recovered, expected) {
-  return pending?.bootstrapCreatedTab === true
-    && Number(pending?.tabId) === Number(expected?.tabId)
-    && Number(pending?.windowId) === Number(expected?.windowId)
-    && Number(pending?.networkStartedAt || 0) > 0
-    && !!String(pending?.networkRequestId || '')
-    && recovered?.ok === true
-    && Number(recovered?.tabId) === Number(expected?.tabId)
-    && Number(recovered?.windowId) === Number(expected?.windowId)
-    && !!String(recovered?.conversationKey || '')
-    && String(recovered?.submittedText || '') === String(expected?.submittedText || '');
-}
-
-function waitForCreatedConversationIdentity(tabId, windowId, timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let timer = null;
-    const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      try { chrome.tabs.onUpdated.removeListener(checkUpdate); } catch (_) {}
-      try { chrome.tabs.onRemoved.removeListener(checkRemoved); } catch (_) {}
-    };
-    const finish = (error, value = null) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      error ? reject(error) : resolve(value);
-    };
-    const inspect = async () => {
-      try {
-        const tab = await chrome.tabs.get(Number(tabId));
-        const conversationKey = RelayCore.conversationKey(tab?.url || '');
-        if (!isChatTab(tab) || Number(tab?.windowId) !== Number(windowId)) {
-          finish(new Error('BOOTSTRAP_ACK_TAB_IDENTITY_MISMATCH'));
-        } else if (conversationKey) {
-          finish(null, { tab, conversationKey });
-        }
-      } catch (error) {
-        finish(error);
-      }
-    };
-    const checkUpdate = (updatedTabId) => {
-      if (Number(updatedTabId) === Number(tabId)) inspect();
-    };
-    const checkRemoved = (removedTabId) => {
-      if (Number(removedTabId) === Number(tabId)) {
-        finish(new Error('BOOTSTRAP_ACK_TAB_REMOVED'));
-      }
-    };
-    chrome.tabs.onUpdated.addListener(checkUpdate);
-    chrome.tabs.onRemoved.addListener(checkRemoved);
-    timer = setTimeout(() => finish(new Error('BOOTSTRAP_ACK_CONVERSATION_TIMEOUT')), timeoutMs);
-    inspect();
-  });
-}
-
-async function recoverBootstrapSubmissionAfterTransportLoss(
-  operationId, tabId, windowId, submittedText, timeoutMs = 8000
-) {
-  const identity = await waitForCreatedConversationIdentity(tabId, windowId, timeoutMs);
-  const injected = await chrome.scripting.executeScript({
-    target: { tabId: Number(tabId) },
-    args: [String(submittedText || ''), Number(timeoutMs)],
-    func: (expectedRaw, waitMs) => new Promise((resolve) => {
-      const normalize = (value) => String(value || '')
-        .replace(/\r\n?/g, '\n')
-        .replace(/\u00a0/g, ' ')
-        .split('\n').map((line) => line.replace(/[ \t]+$/g, '')).join('\n').trim();
-      const expected = normalize(expectedRaw);
-      let observer = null;
-      let timer = null;
-      let settled = false;
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        try { observer?.disconnect(); } catch (_) {}
-        if (timer) clearTimeout(timer);
-        resolve(value);
-      };
-      const userText = (unit) => {
-        const clone = unit.cloneNode(true);
-        clone.querySelectorAll('button,[role="button"],[contenteditable="true"]').forEach((item) => item.remove());
-        return normalize(clone.textContent || '');
-      };
-      const check = () => {
-        const candidates = Array.from(document.querySelectorAll(
-          '[data-message-author-role="user"],[data-content-search-unit-key$=":user"],[data-user-message-bubble="true"]'
-        )).filter((unit, index, all) => !all.some((other, otherIndex) =>
-          otherIndex !== index && other.contains(unit)
-        ));
-        const matches = candidates.filter((unit) => userText(unit) === expected);
-        if (matches.length === 1) finish({
-          ok: true,
-          conversationKey: location.pathname.match(/^\/c\/([a-z0-9-]{8,64})/i)?.[1] || '',
-          submittedText: expected,
-        });
-        else if (matches.length > 1) finish({ ok: false, error: 'BOOTSTRAP_ACK_USER_TURN_AMBIGUOUS' });
-      };
-      observer = new MutationObserver(check);
-      observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-      timer = setTimeout(() => finish({ ok: false, error: 'BOOTSTRAP_ACK_USER_TURN_TIMEOUT' }), waitMs);
-      check();
-    }),
-  });
-  const observed = injected?.[0]?.result || null;
-  const recovered = {
-    ...observed,
-    tabId: Number(identity.tab.id),
-    windowId: Number(identity.tab.windowId),
-    conversationKey: String(observed?.conversationKey || identity.conversationKey || ''),
-  };
-  const state = await loadState();
-  const pending = state.pending?.[operationId];
-  const expected = {
-    tabId, windowId,
-    submittedText: RelayCore.normalizeMessageText(submittedText || ''),
-  };
-  if (!bootstrapSubmissionEvidenceIsExact(pending, recovered, expected)
-      || recovered.conversationKey !== identity.conversationKey) {
-    throw new Error(String(observed?.error || 'BOOTSTRAP_ACK_EVIDENCE_INSUFFICIENT'));
-  }
-  pending.deliveryConfirmed = true;
-  pending.acceptedAt = Date.now();
-  pending.submittedAt = Number(pending.networkStartedAt) || Date.now();
-  pending.submissionState = 'SUBMITTED_RECOVERED_AFTER_NAVIGATION';
-  pending.conversationKey = identity.conversationKey;
-  pending.submitUnknown = false;
-  state.pending[operationId] = pending;
-  await chrome.storage.local.set({ pending: state.pending });
-  return {
-    ok: true, state: 'SUBMITTED_RECOVERED_AFTER_NAVIGATION', operationId,
-    tabId: Number(tabId), windowId: Number(windowId),
-    conversationKey: identity.conversationKey, recoveredAfterTransportLoss: true,
-  };
 }
 
 async function sendToChatTab(tabId, message) {
@@ -1615,620 +851,9 @@ async function ensureRelayReceivers(tabsValue = null) {
 }
 
 
-
-async function resolveExactConversationCommand(message) {
-
-  const conversationKey = String(message.conversationKey || '').trim();
-
-  const sessionId = String(message.sessionId || '').trim();
-
-  const tabId = Number(message.tabId);
-
-  if (!/^[a-z0-9-]{8,64}$/i.test(conversationKey)) throw new Error('Invalid conversation key');
-
-  if (!Number.isInteger(tabId) || tabId <= 0) throw new Error('Invalid tab id');
-
-  if (sessionId && sessionId !== endpointSessionId) throw new Error('Endpoint session mismatch');
-
-  const tab = await chrome.tabs.get(tabId);
-
-  if (!isChatTab(tab) || RelayCore.conversationKey(tab.url || '') !== conversationKey) {
-
-    throw new Error('Exact conversation target mismatch');
-
-  }
-
-  return tab;
-
-}
-
 // Exact operator-selected tab: one-call registration and first send.
-async function sendToExistingTab(message) {
-  await endpointSessionReady;
-  const operationId = String(message.operationId || '');
-  const instanceId = String(message.instanceId || '');
-  const sessionId = String(message.sessionId || '');
-  const workId = String(message.workId || '');
-  const tabId = Number(message.tabId);
-  const windowId = Number(message.windowId);
-  const requestedKey = String(message.conversationKey || '').toLowerCase();
-  const body = String(message.text || '');
-  if (!operationId || !workId || !sessionId || !instanceId || !body
-      || body.length > 12000 || !Number.isSafeInteger(tabId) || tabId < 1
-      || !Number.isSafeInteger(windowId) || windowId < 1)
-    throw new Error('DIRECT_TAB_ARGUMENT_INVALID');
-  const fingerprint = JSON.stringify([instanceId, sessionId, workId, tabId,
-    windowId, requestedKey, body]);
-  return runIdempotentOperation(operationId, 'send-to-tab', fingerprint, async () => {
-    const state = await loadState();
-    if (state.settings.instanceId !== instanceId || endpointSessionId !== sessionId)
-      throw new Error('DIRECT_TAB_ENDPOINT_SESSION_MISMATCH');
-    const tab = await chrome.tabs.get(tabId);
-    if (!tab || Number(tab.windowId) !== windowId || !isChatTab(tab))
-      throw new Error('DIRECT_TAB_IDENTITY_MISMATCH');
-    const liveKey = RelayCore.conversationKey(tab.url || '');
-    const blank = !requestedKey && !liveKey
-      && /^https:\/\/(chatgpt\.com|chat\.openai\.com)\/?$/.test(String(tab.url || ''));
-    if (!blank && (!requestedKey || liveKey !== requestedKey))
-      throw new Error('DIRECT_TAB_CONVERSATION_MISMATCH');
-    const role = RelayCore.normalizeRole('BCT_TAB_' + tabId);
-    const others = Object.entries(state.registrations || {}).filter(([name, reg]) =>
-      Number(reg?.tabId) === tabId && name !== role);
-    if (others.length) throw new Error('DIRECT_TAB_ALREADY_OWNED');
-    if (Object.values(state.pending || {}).some(p => Number(p?.tabId) === tabId))
-      throw new Error('DIRECT_TAB_HAS_PENDING_EFFECT');
-    const previous = state.registrations?.[role] || null;
-    if (previous && (previous.directTabWorkId !== workId
-        || Number(previous.tabId) !== tabId
-        || String(previous.conversationKey || '') !== liveKey))
-      throw new Error('DIRECT_TAB_ROLE_ALREADY_OWNED');
-    const receiptId = previous?.bindingReceiptId ||
-      'RCB-' + crypto.randomUUID().replaceAll('-', '').toUpperCase();
-    const bootstrapId = previous?.bootstrapReceiptId ||
-      'RCI-' + crypto.randomUUID().replaceAll('-', '').toUpperCase();
-    const registration = previous || {
-      role, tabId, conversationKey: liveKey, title: String(tab.title || ''),
-      transportInstanceId: instanceId, sessionId, directTabWorkId: workId,
-      authorization: blank ? 'ACT_CONVERSATION_BOOTSTRAP' : 'ACT_CONVERSATION_BIND',
-      bindingReceiptId: receiptId, bootstrapReceiptId: bootstrapId,
-      expiresAt: Date.now() + 600000, updatedAt: Date.now()
-    };
-    registration.directTabOperationId = operationId;
-    await mutateRegistrationsWithLeaseFence([{ role }, { tabId, conversationKey: liveKey }],
-      async (fresh) => {
-        if (Object.entries(fresh.registrations || {}).some(([name, reg]) =>
-            Number(reg?.tabId) === tabId && name !== role))
-          throw new Error('DIRECT_TAB_BINDING_CHANGED');
-        const existing = fresh.registrations?.[role];
-        if (existing && (existing.directTabWorkId !== workId
-            || Number(existing.tabId) !== tabId
-            || String(existing.conversationKey || '') !== liveKey))
-          throw new Error('DIRECT_TAB_BINDING_CHANGED');
-        fresh.registrations[role] = registration;
-        return registration;
-      });
-    const result = await dispatchRelay({
-      to: role, text: body, id: operationId, source: 'BCT_DIRECT_TAB',
-      fromNode: 'BCT_MANAGER', returnToControl: false, hostRequestId: operationId
-    });
-    const submitted = result?.ok === true && result.deliveryConfirmed === true;
-    const current = await chrome.tabs.get(tabId);
-    const currentKey = RelayCore.conversationKey(current.url || '');
-    return {
-      ok: submitted, state: submitted ? 'SUBMITTED' :
-        (result?.effectState === 'NOT_APPLIED' ? 'NOT_APPLIED' : 'SUBMIT_UNKNOWN'),
-      ambiguous: !submitted && result?.effectState !== 'NOT_APPLIED',
-      operationId, instanceId, sessionId, tabId, windowId,
-      submitted, role, conversationKey: currentKey || '',
-      error: submitted ? undefined : String(result?.error || 'DIRECT_TAB_ACK_NOT_CONFIRMED')
-    };
-  });
-}
-
-async function resolveExactPendingCreatedTab(message) {
-
-  await endpointSessionReady;
-
-  const instanceId = String(message.instanceId || '').trim();
-
-  const sessionId = String(message.sessionId || '').trim();
-
-  const tabId = Number(message.tabId);
-
-  const requestedWindowId = Number(message.windowId);
-
-  const createOperationId = String(message.createOperationId || '').trim();
-
-  const state = await loadState();
-
-  if (!instanceId || instanceId !== String(state.settings.instanceId || '')) throw new Error('Endpoint instance mismatch');
-
-  if (!sessionId || sessionId !== endpointSessionId) throw new Error('Endpoint session mismatch');
-
-  if (!Number.isInteger(tabId) || tabId <= 0) throw new Error('Invalid tab id');
-
-  const receipts = Object.entries(state.operations || {}).filter(([operationId, record]) =>
-
-    (!createOperationId || operationId === createOperationId)
-
-    && ['create-chat-tab', 'create-chat-window'].includes(record?.command)
-
-    && record?.result?.state === 'PENDING_UNBOUND'
-
-    && Number(record?.result?.tabId) === tabId
-
-    && String(record?.result?.instanceId || '') === instanceId
-
-    && Number(record?.result?.creationReceipt?.tabId) === tabId
-
-    && Number(record?.result?.creationReceipt?.windowId) === Number(record?.result?.windowId)
-
-    && String(record?.result?.creationReceipt?.instanceId || '') === instanceId
-
-    && String(record?.result?.creationReceipt?.bindingState || '') === 'PENDING_UNBOUND');
-
-  // A background reload intentionally rotates endpointSessionId while keeping
-  // the same extension instance and Chrome tab.  The durable create receipt is
-  // the authority for the still-blank tab; requiring its historical session
-  // here makes automatic reconnect impossible.  The caller's current session
-  // was already fenced above, and the live tab identity is verified below.
-
-  if (receipts.length !== 1) throw new Error('PENDING_CREATE_RECEIPT_REQUIRED');
-
-  const tab = await chrome.tabs.get(tabId);
-
-  if (message.requireCurrentWindow === true && Number.isInteger(requestedWindowId) && requestedWindowId > 0
-
-      && Number(tab?.windowId) !== requestedWindowId) throw new Error('PENDING_CREATED_WINDOW_IDENTITY_MISMATCH');
-
-  const url = String(tab?.url || '');
-
-  if (!isChatTab(tab) || RelayCore.conversationKey(url)
-
-      || !/^https:\/\/(chatgpt\.com|chat\.openai\.com)\/?(?:[?#].*)?$/i.test(url)) {
-
-    throw new Error('PENDING_CREATED_TAB_IDENTITY_MISMATCH');
-
-  }
-
-  return { tab, createOperationId: receipts[0][0] };
-
-}
-
-async function sendToCreatedTab(message) {
-
-  const operationId = String(message.operationId || '').trim();
-
-  const createOperationId = String(message.createOperationId || '').trim();
-
-  const payloadText = String(message.text || '').slice(0, 12000);
-
-  if (!operationId) throw new Error('Bootstrap send operation id required');
-
-  if (!createOperationId) throw new Error('PENDING_CREATE_OPERATION_ID_REQUIRED');
-
-  if (!payloadText) throw new Error('Bootstrap send text required');
-
-  if (String(message.conversationKey || '').trim() || String(message.to || '').trim()) {
-
-    throw new Error('BOOTSTRAP_SEND_BINDING_IDENTITY_FORBIDDEN');
-
-  }
-
-  const fingerprint = JSON.stringify([createOperationId, String(message.instanceId || ''),
-
-    String(message.sessionId || ''), Number(message.tabId), Number(message.windowId), payloadText]);
-
-  return runIdempotentOperation(operationId, 'send-to-created-tab', fingerprint, async () => {
-
-    let resolved;
-
-    try {
-
-      resolved = await resolveExactPendingCreatedTab({ ...message, requireCurrentWindow: true });
-
-      const state = await loadState();
-
-      if (Object.values(state.registrations || {}).some((registration) =>
-
-        Number(registration?.tabId) === Number(resolved.tab.id))) throw new Error('CONVERSATION_ALREADY_BOUND');
-
-    } catch (error) {
-
-      return { ok: false, state: 'NOT_APPLIED', operationId, createOperationId,
-
-        tabId: Number(message.tabId) || null, windowId: Number(message.windowId) || null,
-
-        error: String(error?.message || error || 'BOOTSTRAP_SEND_REJECTED') };
-
-    }
-
-    const state = await loadState();
-
-    if (Object.entries(state.pending || {}).some(([pendingId, pending]) =>
-
-      pendingId !== operationId && pending?.bootstrapCreatedTab === true
-
-      && Number(pending?.tabId) === Number(resolved.tab.id))) {
-
-      return { ok: false, state: 'NOT_APPLIED', operationId, createOperationId,
-
-        tabId: Number(resolved.tab.id), windowId: Number(resolved.tab.windowId),
-
-        error: 'BOOTSTRAP_SEND_ALREADY_PENDING' };
-
-    }
-
-    state.pending[operationId] = {
-
-      to: '', tabId: Number(resolved.tab.id), windowId: Number(resolved.tab.windowId), conversationKey: '',
-
-      source: 'ACT_CREATED_TAB_BOOTSTRAP', fromNode: '', messageHash: fingerprint,
-
-      targetBindingReceipt: '', returnToControl: false, returnToRole: '', hostRequestId: '', fingerprint,
-
-      createdAt: Date.now(), deliveryConfirmed: false, bootstrapCreatedTab: true,
-
-      createOperationId, instanceId: String(state.settings.instanceId || ''), sessionId: endpointSessionId,
-
-      submissionState: 'INTENT_RECORDED'
-
-    };
-
-    await chrome.storage.local.set({ pending: state.pending });
-
-    let ack;
-
-    try {
-
-      ack = await sendToChatTab(resolved.tab.id, {
-
-        type: 'relay:execute', relayId: operationId, text: payloadText, bootstrapCreatedTab: true
-
-      });
-
-    } catch (error) {
-
-      try {
-
-        return await recoverBootstrapSubmissionAfterTransportLoss(
-          operationId, Number(resolved.tab.id), Number(resolved.tab.windowId), payloadText
-        );
-
-      } catch (_) {}
-
-      const unknownState = await loadState();
-
-      if (unknownState.pending?.[operationId]) {
-
-        unknownState.pending[operationId].submitUnknown = true;
-
-        unknownState.pending[operationId].submissionState = 'SUBMIT_UNKNOWN';
-
-        unknownState.pending[operationId].lastTransportError = String(error?.message || error || 'SUBMIT_UNKNOWN').slice(0, 200);
-
-        await chrome.storage.local.set({ pending: unknownState.pending });
-
-      }
-
-      return { ok: false, state: 'SUBMIT_UNKNOWN', operationId, createOperationId,
-
-        tabId: Number(resolved.tab.id), windowId: Number(resolved.tab.windowId), error: 'SUBMIT_UNKNOWN' };
-
-    }
-
-    if (!ack?.ok || ack.submitted !== true) {
-
-      const rejectedState = await loadState();
-
-      if (ack?.deferred === true) {
-
-        if (rejectedState.pending?.[operationId]) {
-
-          rejectedState.pending[operationId].submitUnknown = true;
-
-          rejectedState.pending[operationId].submissionState = 'SUBMIT_UNKNOWN';
-
-          await chrome.storage.local.set({ pending: rejectedState.pending });
-
-        }
-
-        return { ok: false, state: 'SUBMIT_UNKNOWN', operationId, createOperationId,
-
-          tabId: Number(resolved.tab.id), windowId: Number(resolved.tab.windowId), error: 'SUBMIT_DEFERRED_UNKNOWN' };
-
-      }
-
-      if (rejectedState.pending?.[operationId]) delete rejectedState.pending[operationId];
-
-      await chrome.storage.local.set({ pending: rejectedState.pending });
-
-      return { ok: false, state: 'NOT_APPLIED', operationId, createOperationId,
-
-        tabId: Number(resolved.tab.id), windowId: Number(resolved.tab.windowId),
-
-        error: String(ack?.error || 'BOOTSTRAP_SEND_NOT_APPLIED') };
-
-    }
-
-    const submittedState = await loadState();
-
-    const pending = submittedState.pending?.[operationId];
-
-    if (!pending) return { ok: false, state: 'SUBMIT_UNKNOWN', operationId, createOperationId,
-
-      tabId: Number(resolved.tab.id), windowId: Number(resolved.tab.windowId), error: 'RELAY_PENDING_LOST_AFTER_ACCEPT' };
-
-    const currentTab = await chrome.tabs.get(Number(resolved.tab.id));
-
-    const capturedConversationKey = String(ack.conversationKey || RelayCore.conversationKey(currentTab?.url || '') || '');
-
-    if (capturedConversationKey && RelayCore.conversationKey(currentTab?.url || '') !== capturedConversationKey) {
-
-      pending.submitUnknown = true;
-
-      pending.submissionState = 'SUBMIT_UNKNOWN';
-
-      submittedState.pending[operationId] = pending;
-
-      await chrome.storage.local.set({ pending: submittedState.pending });
-
-      return { ok: false, state: 'SUBMIT_UNKNOWN', operationId, createOperationId,
-
-        tabId: Number(resolved.tab.id), windowId: Number(resolved.tab.windowId), error: 'CONVERSATION_IDENTITY_MISMATCH' };
-
-    }
-
-    pending.deliveryConfirmed = true;
-
-    pending.acceptedAt = Date.now();
-
-    pending.submittedAt = Date.now();
-
-    pending.submissionState = 'SUBMITTED';
-
-    pending.conversationKey = capturedConversationKey;
-
-    submittedState.pending[operationId] = pending;
-
-    await chrome.storage.local.set({ pending: submittedState.pending });
-
-    return { ok: true, state: 'SUBMITTED', operationId, createOperationId,
-
-      tabId: Number(resolved.tab.id), windowId: Number(resolved.tab.windowId),
-
-      conversationKey: capturedConversationKey, bindingState: 'PENDING_UNBOUND', responsePending: true };
-
-  });
-
-}
-
-async function validateExactWindowId(windowIdValue) {
-
-  const windowId = Number(windowIdValue);
-
-  if (!Number.isInteger(windowId) || windowId <= 0) throw new Error('Invalid window id');
-
-  try {
-
-    const win = await chrome.windows.get(windowId);
-
-    if (!win || Number(win.id) !== windowId) throw new Error('Invalid window id');
-
-  } catch (_) {
-
-    throw new Error('Invalid window id');
-
-  }
-
-  return windowId;
-
-}
-
-async function createChatTab(message) {
-
-  const operationId = String(message.operationId || '').trim();
-
-  if (!operationId) throw new Error('Create operation id required');
-
-  if (String(message.conversationKey || '').trim()) throw new Error('CREATE_CHAT_TAB_CONVERSATION_KEY_FORBIDDEN');
-
-  const hasWindowId = message.windowId !== undefined && message.windowId !== null && String(message.windowId) !== '';
-
-  const requestedWindowId = hasWindowId ? Number(message.windowId) : null;
-
-  if (requestedWindowId !== null && (!Number.isSafeInteger(requestedWindowId) || requestedWindowId < 1)) {
-    throw new Error('Invalid window id');
-  }
-
-  const fingerprint = JSON.stringify([requestedWindowId, 'https://chatgpt.com/']);
-
-  return runIdempotentOperation(operationId, 'create-chat-tab', fingerprint, async () => {
-
-    const state = await loadState();
-
-    return getBrowserTabCreateAdapter().createTab({
-      operationId,
-      instanceId: String(state.settings.instanceId || ''),
-      sessionId: endpointSessionId,
-      requestedWindowId,
-      conversationKey: '',
-    });
-
-  });
-
-}
-
-async function createChatWindow(message) {
-
-  const operationId = String(message.operationId || '').trim();
-
-  if (!operationId) throw new Error('Create window operation id required');
-
-  if (String(message.conversationKey || '').trim()) throw new Error('CREATE_CHAT_WINDOW_CONVERSATION_KEY_FORBIDDEN');
-
-  const fingerprint = JSON.stringify(['https://chatgpt.com/', 'normal']);
-
-  return runIdempotentOperation(operationId, 'create-chat-window', fingerprint, async () => {
-
-    const state = await loadState();
-
-    return getBrowserWindowCreateAdapter().createWindow({
-
-      operationId,
-
-      instanceId: String(state.settings.instanceId || ''),
-
-      sessionId: endpointSessionId,
-
-      conversationKey: '',
-
-    });
-
-  });
-
-}
-
-async function moveExactChatTab(message) {
-
-  const operationId = String(message.operationId || '').trim();
-
-  const conversationKey = String(message.conversationKey || '').trim();
-
-  const instanceId = String(message.instanceId || '').trim();
-
-  const sessionId = String(message.sessionId || '').trim();
-
-  if (!operationId) throw new Error('Move operation id required');
-
-  const state = await loadState();
-
-  if (!instanceId || instanceId !== String(state.settings.instanceId || '')) throw new Error('Endpoint instance mismatch');
-
-  if (!sessionId || sessionId !== endpointSessionId) throw new Error('Endpoint session mismatch');
-
-  const windowId = await validateExactWindowId(message.windowId);
-
-  const index = Number(message.index);
-
-  if (!Number.isInteger(index) || index < -1) throw new Error('Invalid tab index');
-
-  const fingerprint = JSON.stringify([conversationKey, instanceId, sessionId, Number(message.tabId), windowId, index]);
-
-  return runIdempotentOperation(operationId, 'move-tab', fingerprint, async () => {
-
-    const pending = !conversationKey;
-
-    const resolved = pending
-
-      ? await resolveExactPendingCreatedTab(message)
-
-      : { tab: await resolveExactConversationCommand(message), createOperationId: '' };
-
-    const tab = resolved.tab;
-
-    const receipt = await getBrowserTabMoveAdapter().move({
-      operationId,
-      tabId: Number(tab.id),
-      expectedWindowId: Number(tab.windowId),
-      targetWindowId: windowId,
-      requestedIndex: index,
-      conversationKey,
-      expectBlankConversation: pending,
-    });
-
-    return { ...receipt, windowId,
-      index: Number.isInteger(receipt.after?.index) ? Number(receipt.after.index) : null, conversationKey,
-      pendingUnbound: pending, createOperationId: resolved.createOperationId };
-
-  });
-
-}
-
 // Promote an already-bound backup only after ACT has proved that the former
 // manager endpoint is no longer live. This never sends a chat message.
-async function promoteManagerBinding(message) {
-  const operationId = String(message.operationId || '').trim();
-  if (!operationId) throw new Error('Manager promotion operation id required');
-  const managerNode = RelayCore.normalizeRole(message.managerNode || 'MANAGER');
-  const backupNode = RelayCore.normalizeRole(message.backupNode || 'BACKUP_MANAGER');
-  const instanceId = String(message.instanceId || '').trim();
-  const priorManagerReceiptId = String(message.priorManagerReceiptId || '').trim();
-  const priorBackupReceiptId = String(message.priorBackupReceiptId || '').trim();
-  const newManagerReceiptId = String(message.newManagerReceiptId || '').trim();
-  const priorManagerConversationKey = String(message.priorManagerConversationKey || '').trim();
-  if (managerNode === backupNode) throw new Error('Manager and backup node must differ');
-  if (!instanceId || !priorManagerConversationKey) throw new Error('Manager promotion identity required');
-  for (const receipt of [priorManagerReceiptId, priorBackupReceiptId, newManagerReceiptId]) {
-    if (!/^RCB-[A-Z0-9]{12,40}$/.test(receipt)) throw new Error('Manager promotion binding receipt required');
-  }
-  const fingerprint = JSON.stringify([managerNode, backupNode, instanceId, priorManagerConversationKey,
-    priorManagerReceiptId, priorBackupReceiptId, newManagerReceiptId,
-    String(message.conversationKey || ''), String(message.sessionId || ''), Number(message.tabId)]);
-  return runIdempotentOperation(operationId, 'manager-promote', fingerprint, async () => {
-    const state = await loadState();
-    if (String(state.settings.instanceId || '') !== instanceId) throw new Error('Endpoint instance mismatch');
-    const previous = state.registrations?.[managerNode];
-    const backup = state.registrations?.[backupNode];
-    if (!previous || !backup) throw new Error('MANAGER_PROMOTION_BINDING_REQUIRED');
-    if (String(previous.conversationKey || '') !== priorManagerConversationKey
-        || String(previous.bindingReceiptId || '') !== priorManagerReceiptId) {
-      throw new Error('MANAGER_PROMOTION_MANAGER_FENCE_MISMATCH');
-    }
-    if (String(backup.bindingReceiptId || '') !== priorBackupReceiptId) {
-      throw new Error('MANAGER_PROMOTION_BACKUP_FENCE_MISMATCH');
-    }
-    const backupTab = await resolveExactConversationCommand({
-      conversationKey: String(message.conversationKey || ''),
-      sessionId: String(message.sessionId || ''), tabId: Number(message.tabId),
-    });
-    if (String(backup.conversationKey || '') !== String(message.conversationKey || '')
-        || String(backup.sessionId || '') !== String(message.sessionId || '')
-        || Number(backup.tabId) !== Number(backupTab.id)) {
-      throw new Error('MANAGER_PROMOTION_BACKUP_EXACT_MISMATCH');
-    }
-    try {
-      const oldTab = await chrome.tabs.get(Number(previous.tabId));
-      if (isChatTab(oldTab) && RelayCore.conversationKey(oldTab.url || '') === priorManagerConversationKey) {
-        throw new Error('MANAGER_ENDPOINT_STILL_LIVE');
-      }
-    } catch (error) {
-      if (String(error?.message || error) === 'MANAGER_ENDPOINT_STILL_LIVE') throw error;
-    }
-    for (const [role, registration] of Object.entries(state.registrations || {})) {
-      if (role !== managerNode && role !== backupNode
-          && (String(registration?.conversationKey || '') === String(backup.conversationKey || '')
-            || Number(registration?.tabId) === Number(backup.tabId))) {
-        throw new Error('CONVERSATION_ALREADY_BOUND');
-      }
-    }
-    await mutateRegistrationsWithLeaseFence(
-      [{ role: managerNode }, { role: backupNode }, previous, backup],
-      async (latest) => {
-        const latestPrevious = latest.registrations?.[managerNode];
-        const latestBackup = latest.registrations?.[backupNode];
-        if (!latestPrevious || !latestBackup
-            || String(latestPrevious.bindingReceiptId || '') !== priorManagerReceiptId
-            || String(latestBackup.bindingReceiptId || '') !== priorBackupReceiptId) {
-          throw new Error('MANAGER_PROMOTION_BINDING_CHANGED');
-        }
-        delete latest.registrations[managerNode];
-        delete latest.registrations[backupNode];
-        latest.registrations[managerNode] = {
-          ...latestBackup, role: managerNode, bindingReceiptId: newManagerReceiptId,
-          authorization: 'ACT_CONVERSATION_BIND', updatedAt: Date.now(),
-        };
-      }
-    );
-    return { ok: true, mutationState: 'APPLIED', managerNode, retiredBackupNode: backupNode,
-      priorManagerConversationKey, conversationKey: String(backup.conversationKey || ''),
-      sessionId: String(backup.sessionId || ''), tabId: Number(backup.tabId),
-      bindingReceiptId: newManagerReceiptId };
-  });
-}
-
-
-
 function postNative(message) {
 
   try {
@@ -2239,25 +864,6 @@ function postNative(message) {
 
 }
 
-
-
-let relayNetworkListenersInstalled = false;
-
-function installRelayNetworkListeners() {
-
-  if (relayNetworkListenersInstalled || !chrome.webRequest?.onBeforeRequest) return;
-
-  const relayNetworkFilter = { urls: CHAT_URLS, types: ['xmlhttprequest'] };
-
-  chrome.webRequest.onBeforeRequest.addListener((details) => { correlateRelayNetworkStart(details).catch(() => {}); }, relayNetworkFilter);
-
-  chrome.webRequest.onCompleted.addListener((details) => { correlateRelayNetworkEnd(details, true).catch(() => {}); }, relayNetworkFilter);
-
-  chrome.webRequest.onErrorOccurred.addListener((details) => { correlateRelayNetworkEnd(details, false).catch(() => {}); }, relayNetworkFilter);
-
-  relayNetworkListenersInstalled = true;
-
-}
 
 function scheduleNativeReconnect() {
 
@@ -2274,1537 +880,932 @@ function scheduleNativeReconnect() {
 }
 
 
-
-async function getCompletedOperation(operationId, command, fingerprint) {
-
-  const state = await loadState();
-
-  // A rename receipt is deliberately not subject to the generic 100-record
-  // operation cache.  It remains an idempotency answer as well as the
-  // recovery receipt used by the read-only native command below.
-  const dedicatedRenameReceipt = command === 'rename-conversation'
-    ? state.renameReceipts?.[operationId] : null;
-  const record = dedicatedRenameReceipt || state.operations?.[operationId];
-
-  if (!record) return null;
-
-  if (record.command !== command || record.fingerprint !== fingerprint) throw new Error('OPERATION_ID_REUSE_MISMATCH');
-
-  // A service-worker restart after durable reservation but before a terminal
-  // host answer leaves the external UI outcome unknown.  Do not treat that
-  // reservation as success and, critically, do not resend the rename.
-  if (command === 'rename-conversation' && dedicatedRenameReceipt && record.terminal !== true) {
-    throw new Error('RENAME_RECEIPT_PREPARED_OUTCOME_UNKNOWN');
-  }
-
-  return record.result || null;
-
-}
-
-function preparedRenameResult(operationId, fingerprint) {
-  let parts;
-  try { parts = JSON.parse(fingerprint); }
-  catch (_) { throw new Error('RENAME_RECEIPT_FINGERPRINT_INVALID'); }
-  if (!Array.isArray(parts) || parts.length !== 4
-      || !Number.isSafeInteger(Number(parts[1])) || Number(parts[1]) <= 0
-      || !String(parts[0] || '').trim() || !String(parts[3] || '').trim()) {
-    throw new Error('RENAME_RECEIPT_FINGERPRINT_INVALID');
-  }
-  return {
-    ok: true, operationId, savedTitle: String(parts[3]),
-    tabId: Number(parts[1]), conversationKey: String(parts[0]),
-  };
-}
-
-async function reserveRenameReceipt(operationId, fingerprint) {
-  return withRelayReceiptMutation(async () => {
-    const state = await loadState();
-    const existing = state.renameReceipts?.[operationId];
-    if (existing) {
-      if (existing.command !== 'rename-conversation' || existing.fingerprint !== fingerprint) {
-        throw new Error('OPERATION_ID_REUSE_MISMATCH');
-      }
-      if (existing.terminal !== true) throw new Error('RENAME_RECEIPT_PREPARED_OUTCOME_UNKNOWN');
-      return;
-    }
-    // Reserve the full terminal-shaped value before the UI effect.  A storage
-    // capacity failure is therefore confirmed before dispatch; after dispatch
-    // only the fixed-size terminal marker changes.
-    await chrome.storage.local.set({
-      [RENAME_RECEIPTS_KEY]: {
-        ...(state.renameReceipts || {}),
-        [operationId]: {
-          command: 'rename-conversation', fingerprint,
-          result: preparedRenameResult(operationId, fingerprint),
-          terminal: false, at: Date.now(),
-        },
-      },
-    });
-  });
-}
-
-async function saveCompletedOperation(operationId, command, fingerprint, result) {
-
-  const save = async () => {
-    const state = await loadState();
-
-    const operations = { ...(state.operations || {}) };
-
-    operations[operationId] = { command, fingerprint, result, at: Date.now() };
-
-    const keys = Object.keys(operations).sort((a,b)=>Number(operations[b]?.at||0)-Number(operations[a]?.at||0));
-
-    for (const key of keys.slice(100)) delete operations[key];
-
-    const update = { operations };
-    if (command === 'rename-conversation') {
-      // Store only the exact terminal proof needed to fence a duplicate and to
-      // reconcile a response lost after the UI effect.  Do not fold this into
-      // the bounded generic cache; losing it would make an UNKNOWN permanent.
-      update[RENAME_RECEIPTS_KEY] = {
-        ...(state.renameReceipts || {}),
-        [operationId]: { command, fingerprint, result, terminal: true, at: Date.now() },
-      };
-    }
-    await chrome.storage.local.set(update);
-  };
-  // The dedicated ledger is a whole-object storage value.  Serialize its
-  // read-modify-write cycle with the durable relay receipt ledger so two
-  // distinct rename operations cannot erase each other's proof.
-  return command === 'rename-conversation' ? withRelayReceiptMutation(save) : save();
-
-}
-
-const nativeOperationInflight = new Map();
-
-async function runIdempotentOperation(operationId, command, fingerprint, work) {
-
-  const completed = await getCompletedOperation(operationId, command, fingerprint);
-
-  if (completed) return { result: completed, replayed: true };
-
-  const running = nativeOperationInflight.get(operationId);
-
-  if (running) {
-
-    if (running.command !== command || running.fingerprint !== fingerprint) throw new Error('OPERATION_ID_REUSE_MISMATCH');
-
-    return { result: await running.promise, replayed: true };
-
-  }
-
-  const promise = (async () => {
-
-    if (command === 'rename-conversation') {
-      await reserveRenameReceipt(operationId, fingerprint);
-    }
-
-    const result = await work();
-
-    await saveCompletedOperation(operationId, command, fingerprint, result);
-
-    return result;
-
-  })();
-
-  nativeOperationInflight.set(operationId, { command, fingerprint, promise });
-
-  try { return { result: await promise, replayed: false }; }
-
-  finally { nativeOperationInflight.delete(operationId); }
-
-}
-
-
-
 async function handleNativeCommand(message) {
-
   await endpointSessionReady;
-  if (typeof acceptActNativeResult === 'function' && acceptActNativeResult(message)) return;
-
   if (message?.type !== 'host:command') return;
-
   const requestId = String(message.requestId || crypto.randomUUID());
   const commandDecision = RccLegacyCommandPolicy.nativeCommand(message.command);
   if (!commandDecision.allowed) {
-    postNative({
-      type: 'host:result', requestId, ok: false, effectState: 'NOT_APPLIED',
-      error: RccLegacyCommandPolicy.rejectCode('NATIVE_COMMAND', message.command, commandDecision),
-    });
+    postNative({ type: 'host:result', requestId, ok: false, effectState: 'NOT_APPLIED',
+      error: RccLegacyCommandPolicy.rejectCode('NATIVE_COMMAND', message.command, commandDecision) });
     return;
   }
-
   try {
-
     if (message.command === 'ping') {
 
-      const state = await loadState();
 
-      postNative({ type: 'host:result', requestId, ok: true, pong: true,
+          const state = await loadState();
 
-        instanceId: state.settings.instanceId, backgroundBuildId: RCC_BACKGROUND_BUILD_ID });
 
-      return;
+          postNative({ type: 'host:result', requestId, ok: true, pong: true,
 
-    }
+
+            instanceId: state.settings.instanceId, backgroundBuildId: RCC_BACKGROUND_BUILD_ID });
+
+
+          return;
+
+
+        }
 
     if (message.command === 'state') {
 
-      await endpointSessionReady;
 
-      const state = await loadState();
+          await endpointSessionReady;
 
-      const chatTabs = await getChatTabs();
 
-      const tabs = chatTabs.map(publicTab);
+          const state = await loadState();
 
-      const endpoints = await captureEndpointSnapshot('state', chatTabs);
 
-      const coreShadow = coreShadowSnapshot(tabs, endpoints, state.simpleRelayV0Binding);
+          const chatTabs = await getChatTabs();
 
-      postNative({ type: 'host:result', requestId, ok: true, state: {
 
-        instanceId: state.settings.instanceId, sessionId: endpointSessionId, tabs, endpoints,
+          const tabs = chatTabs.map(publicTab);
 
-        registrations: state.registrations, settings: state.settings,
 
-        simpleRelayV0Binding: state.simpleRelayV0Binding,
+          const endpoints = await captureEndpointSnapshot('state', chatTabs);
 
-        coreShadow,
 
-        backgroundBuildId: RCC_BACKGROUND_BUILD_ID
+          const coreShadow = coreShadowSnapshot(tabs, endpoints, state.simpleRelayV0Binding);
 
-      } });
 
-      return;
+          postNative({ type: 'host:result', requestId, ok: true, state: {
 
-    }
+
+            instanceId: state.settings.instanceId, sessionId: endpointSessionId, tabs, endpoints,
+
+
+            registrations: state.registrations, settings: state.settings,
+
+
+            simpleRelayV0Binding: state.simpleRelayV0Binding,
+
+
+            coreShadow,
+
+
+            backgroundBuildId: RCC_BACKGROUND_BUILD_ID
+
+
+          } });
+
+
+          return;
+
+
+        }
 
     if (message.command === 'simple-relay-bind') {
-      const result = await bindSimpleRelayV0(message);
-      postNative({ type: 'host:result', requestId, ...result });
-      return;
-    }
+
+          const result = await bindSimpleRelayV0(message);
+
+          postNative({ type: 'host:result', requestId, ...result });
+
+          return;
+
+        }
 
     if (message.command === 'simple-relay-send') {
-      const result = await sendSimpleRelayV0(message, requestId);
-      postNative({ type: 'host:result', requestId, ...result,
-        relayReceipt: publicSimpleRelayV0Receipt(result.receipt) });
-      return;
-    }
+
+          const result = await sendSimpleRelayV0(message, requestId);
+
+          postNative({ type: 'host:result', requestId, ...result,
+
+            relayReceipt: publicSimpleRelayV0Receipt(result.receipt) });
+
+          return;
+
+        }
 
     if (message.command === 'simple-relay-return') {
-      const result = await returnSimpleRelayV0(message, requestId);
-      postNative({ type: 'host:result', requestId, ...result,
-        relayReceipt: publicSimpleRelayV0Receipt(result.receipt) });
-      return;
-    }
+
+          const result = await returnSimpleRelayV0(message, requestId);
+
+          postNative({ type: 'host:result', requestId, ...result,
+
+            relayReceipt: publicSimpleRelayV0Receipt(result.receipt) });
+
+          return;
+
+        }
 
     if (message.command === 'rename-receipt') {
-      // Inspection only: never perform or repeat an effect here.
-      const relayId = String(message.text || '').trim();
-      const tabId = Number(message.tabId);
-      const conversationKey = String(message.conversationKey || '');
-      if (!relayId || !Number.isSafeInteger(tabId) || tabId <= 0 || !conversationKey) {
-        throw new Error('RENAME_RECEIPT_IDENTITY_REQUIRED');
-      }
-      const state = await loadState();
-      // `operations` is a short generic idempotency cache.  Prefer the
-      // dedicated rename ledger so unrelated traffic cannot erase recovery
-      // evidence, while preserving compatibility with receipts recorded by
-      // earlier builds.
-      const dedicatedRenameReceipt = state.renameReceipts?.[relayId] || null;
-      const record = dedicatedRenameReceipt || state.operations?.[relayId] || null;
-      // A reservation contains caller-controlled expected fields so it can
-      // reserve storage before UI dispatch.  It is not a terminal receipt and
-      // must never be exposed as proof to Core reconciliation.
-      const terminal = dedicatedRenameReceipt
-        ? dedicatedRenameReceipt.terminal === true : Boolean(record);
-      const tab = await chrome.tabs.get(tabId).catch(() => null);
-      const observed = tab ? {
-        tabId: tab.id,
-        conversationKey: RelayCore.conversationKey(String(tab.url || '')),
-        title: String(tab.title || ''),
-        presence: isChatTab(tab) ? 'OPEN' : 'UNKNOWN',
-        currentSessionId: endpointSessionId,
-      } : null;
-      postNative({ type: 'host:result', requestId, ok: true,
-        instanceId: state.settings.instanceId, relayId,
-        receipt: terminal && record ? { command: record.command,
-          fingerprint: record.fingerprint, result: record.result } : null,
-        receiptState: terminal ? 'TERMINAL' : (record ? 'PREPARED' : 'MISSING'),
-        observed });
-      return;
-    }
+
+          // Inspection only: never perform or repeat an effect here.
+
+          const relayId = String(message.text || '').trim();
+
+          const tabId = Number(message.tabId);
+
+          const conversationKey = String(message.conversationKey || '');
+
+          if (!relayId || !Number.isSafeInteger(tabId) || tabId <= 0 || !conversationKey) {
+
+            throw new Error('RENAME_RECEIPT_IDENTITY_REQUIRED');
+
+          }
+
+          const state = await loadState();
+
+          // `operations` is a short generic idempotency cache.  Prefer the
+
+          // dedicated rename ledger so unrelated traffic cannot erase recovery
+
+          // evidence, while preserving compatibility with receipts recorded by
+
+          // earlier builds.
+
+          const dedicatedRenameReceipt = state.renameReceipts?.[relayId] || null;
+
+          const record = dedicatedRenameReceipt || state.operations?.[relayId] || null;
+
+          // A reservation contains caller-controlled expected fields so it can
+
+          // reserve storage before UI dispatch.  It is not a terminal receipt and
+
+          // must never be exposed as proof to Core reconciliation.
+
+          const terminal = dedicatedRenameReceipt
+
+            ? dedicatedRenameReceipt.terminal === true : Boolean(record);
+
+          const tab = await chrome.tabs.get(tabId).catch(() => null);
+
+          const observed = tab ? {
+
+            tabId: tab.id,
+
+            conversationKey: RelayCore.conversationKey(String(tab.url || '')),
+
+            title: String(tab.title || ''),
+
+            presence: isChatTab(tab) ? 'OPEN' : 'UNKNOWN',
+
+            currentSessionId: endpointSessionId,
+
+          } : null;
+
+          postNative({ type: 'host:result', requestId, ok: true,
+
+            instanceId: state.settings.instanceId, relayId,
+
+            receipt: terminal && record ? { command: record.command,
+
+              fingerprint: record.fingerprint, result: record.result } : null,
+
+            receiptState: terminal ? 'TERMINAL' : (record ? 'PREPARED' : 'MISSING'),
+
+            observed });
+
+          return;
+
+        }
+
     if (message.command === 'result') {
 
-      const relayId = String(message.text || message.relayId || '').trim();
 
-      if (!relayId) throw new Error('RELAY_ID_REQUIRED');
+          const relayId = String(message.text || message.relayId || '').trim();
 
-      const state = await loadState();
 
-      const receipt = state.resultReceipts?.[relayId] || null;
+          if (!relayId) throw new Error('RELAY_ID_REQUIRED');
 
-      const completed = publicResultFromReceipt(receipt) ||
 
-        (state.results || []).find((item) => String(item?.id || '') === relayId) || null;
+          const state = await loadState();
 
-      const pending = state.pending?.[relayId] || null;
 
-      postNative({ type: 'host:result', requestId, ok: true, relayId, found: !!completed,
+          const receipt = state.resultReceipts?.[relayId] || null;
 
-        completed: !!completed, pending: !!pending, result: completed,
 
-        pendingStatus: pending ? { to: String(pending.to || ''), createdAt: Number(pending.createdAt || 0) || null,
+          const completed = publicResultFromReceipt(receipt) ||
 
-          acceptedAt: Number(pending.acceptedAt || 0) || null, submittedAt: Number(pending.submittedAt || 0) || null,
 
-          deliveryConfirmed: pending.deliveryConfirmed === true, deferred: pending.deferred === true,
+            (state.results || []).find((item) => String(item?.id || '') === relayId) || null;
 
-          networkStartedAt: Number(pending.networkStartedAt || 0) || null,
 
-          networkCompletedAt: Number(pending.networkCompletedAt || 0) || null } : null });
+          const pending = state.pending?.[relayId] || null;
 
-      return;
 
-    }
+          postNative({ type: 'host:result', requestId, ok: true, relayId, found: !!completed,
 
-    if (message.command === 'recover-created-result') {
 
-      const relayId = String(message.text || message.relayId || '').trim();
+            completed: !!completed, pending: !!pending, result: completed,
 
-      if (!relayId) throw new Error('RELAY_ID_REQUIRED');
 
-      const recovered = await recoverCreatedResult(relayId);
+            pendingStatus: pending ? { to: String(pending.to || ''), createdAt: Number(pending.createdAt || 0) || null,
 
-      postNative({ ...recovered, requestId });
 
-      return;
+              acceptedAt: Number(pending.acceptedAt || 0) || null, submittedAt: Number(pending.submittedAt || 0) || null,
 
-    }
 
-    if (message.command === 'result-ack') {
+              deliveryConfirmed: pending.deliveryConfirmed === true, deferred: pending.deferred === true,
 
-      const relayId = String(message.text || message.relayId || '').trim();
 
-      const acknowledged = await acknowledgeDurableResultReceipt(relayId);
+              networkStartedAt: Number(pending.networkStartedAt || 0) || null,
 
-      postNative({ type: 'host:result', requestId, ok: true, relayId,
 
-        ackState: String(acknowledged.receipt?.ackState || ''),
+              networkCompletedAt: Number(pending.networkCompletedAt || 0) || null } : null });
 
-        resultHash: String(acknowledged.receipt?.resultHash || ''),
 
-        duplicate: acknowledged.duplicate === true });
-      return;
+          return;
 
-    }
 
-    if (message.command === 'create-chat-tab') {
-
-      const outcome = await createChatTab(message);
-
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-
-      return;
-
-    }
-
-    if (message.command === 'create-chat-window') {
-
-      const outcome = await createChatWindow(message);
-
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-
-      return;
-
-    }
-
-    if (message.command === 'send-to-tab') {
-      const outcome = await sendToExistingTab(message);
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-      return;
-    }
-
-    if (message.command === 'send-to-created-tab') {
-
-      const outcome = await sendToCreatedTab(message);
-
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-
-      return;
-
-    }
-
-    if (message.command === 'move-tab') {
-
-      const outcome = await moveExactChatTab(message);
-
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-
-      return;
-
-    }
-
-    if (message.command === 'manager-promote') {
-
-      const outcome = await promoteManagerBinding(message);
-
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-
-      return;
-
-    }
-
-    if (message.command === 'register') {
-
-      const role = RelayCore.normalizeRole(message.to);
-
-      const key = String(message.text || '').trim();
-
-      const tabs = await getChatTabs();
-
-      const tab = tabs.find((item) => RelayCore.conversationKey(item.url || '') === key);
-
-      if (!tab) throw new Error(`Conversation not open: ${key}`);
-
-      const registration = await registerRole(role, tab.id);
-
-      postNative({ type: 'host:result', requestId, ok: true, registration });
-
-      return;
-
-    }
-
-    if (message.command === 'conversation-bind') {
-      const role = RelayCore.normalizeRole(message.to);
-      const tab = await resolveExactConversationCommand(message);
-      const conversationKey = String(message.conversationKey || '').trim();
-      const bindingReceiptId = String(message.bindingReceiptId || '').trim();
-      if (!/^RCB-[A-Z0-9]{12,40}$/.test(bindingReceiptId)) throw new Error('CONVERSATION_BINDING_RECEIPT_REQUIRED');
-      const registration = await mutateRegistrationsWithLeaseFence(
-        [{ role }, { tabId: tab.id, conversationKey }],
-        async (state) => {
-          const current = state.registrations?.[role] || null;
-          if (current) {
-            const conflict = Object.values(state.bindingSubmitLeases || {}).some((lease) =>
-              bindingLeaseTargetsConflict(lease, current));
-            if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
-          }
-          const promotingBootstrap = !!current
-            && current.authorization === 'ACT_CONVERSATION_BOOTSTRAP'
-            && !String(current.conversationKey || '')
-            && Number(current.tabId) === Number(tab.id)
-            && String(current.transportInstanceId || '') === String(state.settings.instanceId || '')
-            && String(current.sessionId || '') === String(endpointSessionId || '');
-          const changingEndpoint = !!current
-            && (String(current.conversationKey || '') !== conversationKey
-              || Number(current.tabId) !== Number(tab.id));
-          if (changingEndpoint && !promotingBootstrap) {
-            if (message.replaceStale !== true) throw new Error('LOGICAL_NODE_BINDING_CONFLICT');
-            if (String(message.expectedCurrentConversationKey || '') !== String(current.conversationKey || '')
-              || String(message.expectedCurrentBindingReceiptId || '') !== String(current.bindingReceiptId || '')) {
-              throw new Error('LOGICAL_NODE_BINDING_REPLACEMENT_FENCE_MISMATCH');
-            }
-          }
-          for (const [otherRole, other] of Object.entries(state.registrations || {})) {
-            if (otherRole !== role
-                && (String(other?.conversationKey || '') === conversationKey
-                  || Number(other?.tabId) === Number(tab.id))) {
-              throw new Error('CONVERSATION_ALREADY_BOUND');
-            }
-          }
-          const next = {
-            ...(current || {}), role, tabId: Number(tab.id), conversationKey,
-            title: tab.title || current?.title || '',
-            transportInstanceId: String(state.settings.instanceId || ''),
-            sessionId: String(endpointSessionId || ''), bindingReceiptId,
-            authorization: 'ACT_CONVERSATION_BIND', updatedAt: Date.now()
-          };
-          state.registrations[role] = next;
-          return { ...next };
         }
-      );
-      postNative({ type: 'host:result', requestId, ok: true, registration,
-        binding: { logicalNode: role, conversationKey, instanceId: registration.transportInstanceId,
-          sessionId: endpointSessionId, tabId: tab.id, bindingReceiptId } });
-      return;
-    }
-
-    if (message.command === 'conversation-bootstrap-bind') {
-
-      await endpointSessionReady;
-
-      const role = RelayCore.normalizeRole(message.to);
-
-      const operationId = String(message.operationId || '').trim();
-
-      const bootstrapReceiptId = String(message.bootstrapReceiptId || '').trim();
-
-      if (!operationId) throw new Error('Bootstrap operation id required');
-
-      if (!/^RCI-[A-Z0-9]{12,40}$/.test(bootstrapReceiptId)) throw new Error('CONVERSATION_BOOTSTRAP_RECEIPT_REQUIRED');
-
-      const fingerprint = JSON.stringify([role, String(message.instanceId || ''), String(message.sessionId || ''),
-
-        Number(message.tabId), bootstrapReceiptId]);
-
-      const outcome = await runIdempotentOperation(operationId, 'conversation-bootstrap-bind', fingerprint, async () => {
-
-        const resolved = await resolveExactPendingCreatedTab(message);
-        const registration = await mutateRegistrationsWithLeaseFence(
-          [{ role }, { tabId: resolved.tab.id }],
-          async (state) => {
-            const current = state.registrations?.[role] || null;
-            if (current && (Number(current.tabId) !== Number(resolved.tab.id)
-                || String(current.authorization || '') !== 'ACT_CONVERSATION_BOOTSTRAP')) {
-              throw new Error('LOGICAL_NODE_BINDING_CONFLICT');
-            }
-            for (const [otherRole, other] of Object.entries(state.registrations || {})) {
-              if (otherRole !== role && Number(other?.tabId) === Number(resolved.tab.id)) {
-                throw new Error('CONVERSATION_ALREADY_BOUND');
-              }
-            }
-            const next = {
-              role, tabId: Number(resolved.tab.id), conversationKey: '',
-              title: resolved.tab.title || '',
-              transportInstanceId: String(state.settings.instanceId || ''),
-              sessionId: endpointSessionId,
-              authorization: 'ACT_CONVERSATION_BOOTSTRAP', bootstrapReceiptId, operationId,
-              createOperationId: resolved.createOperationId,
-              expiresAt: Date.now() + (10 * 60 * 1000), updatedAt: Date.now()
-            };
-            state.registrations[role] = next;
-            return { ...next };
-          }
-        );
-        return { ok: true, registration, bootstrap: true };
-
-      });
-
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-
-      return;
-
-    }
-
-    if (message.command === 'ensure') {
-
-      const registration = await ensureRoleConversation(
-        message.to, message.text, String(message.operationId || requestId)
-      );
-
-      postNative({ type: 'host:result', requestId, ok: true, registration });
-
-      return;
-
-    }
-
-    if (message.command === 'recover-pending') {
-
-      const reg = await resolveRegistration(message.to);
-
-      const state = await loadState();
-
-      const relayId = String(message.relayId || message.text || '').trim();
-
-      let pending = state.pending?.[relayId];
-      const receipt = state.resultReceipts?.[relayId] || null;
-
-      if (!pending && receipt?.resultState === 'RESULT_PERSISTED') {
-        if (Number(receipt.tabId) !== Number(reg.tabId) || receipt.conversationKey !== reg.conversationKey) {
-          throw new Error('RELAY_RECOVERY_PENDING_NOT_FOUND');
-        }
-        pending = {
-          relayId,
-          to: reg.role,
-          tabId: reg.tabId,
-          conversationKey: reg.conversationKey,
-          createdAt: receipt.createdAt || new Date().toISOString(),
-          deliveryConfirmed: true,
-          recoveredPending: true,
-          returnToRole: String(receipt.returnToRole || ''),
-          returnToControl: receipt.returnToControl === true,
-          source: 'recovered-durable-result-receipt'
-        };
-      }
-
-      if (!pending) {
-
-        const inspected = await sendToChatTab(reg.tabId, { type: 'relay:inspectExecution', relayId });
-
-        const record = inspected?.record;
-
-        if (!inspected?.ok || record?.relayId !== relayId || record?.conversationKey !== reg.conversationKey) throw new Error('RELAY_RECOVERY_PENDING_NOT_FOUND');
-
-        pending = {
-
-          relayId,
-
-          to: reg.role,
-
-          tabId: reg.tabId,
-
-          conversationKey: reg.conversationKey,
-
-          createdAt: record.submittedAt || new Date().toISOString(),
-
-          deliveryConfirmed: true,
-
-          recoveredPending: true,
-
-          source: 'recovered-content-record'
-
-        };
-
-        state.pending[relayId] = pending;
-
-        await chrome.storage.local.set({ pending: state.pending });
-
-      }
-
-      if (Number(pending.tabId) !== Number(reg.tabId) || pending.conversationKey !== reg.conversationKey) throw new Error('RELAY_RECOVERY_PENDING_NOT_FOUND');
-
-      if (receipt?.resultState === 'RESULT_PERSISTED') {
-        let activeReceipt = receipt;
-        if (isRecoverableCaptureResult(receipt.resultPayload)) {
-          let submittedText = '';
-          try {
-            const fingerprintParts = JSON.parse(String(receipt.dispatchFingerprint || ''));
-            if (Array.isArray(fingerprintParts) && typeof fingerprintParts[1] === 'string') submittedText = fingerprintParts[1];
-          } catch (_) {}
-          if (!submittedText) {
-            postNative({
-              type: 'host:result', requestId, ok: true, relayId,
-              recovered: false, persistedResult: true, resultUnchanged: true,
-              captureRecoveryError: 'RELAY_RECOVERY_SUBMITTED_TEXT_MISSING'
-            });
-            return;
-          }
-          if (submittedText) {
-            const recoveryMessage = {
-              type: 'relay:recoverExecution',
-              relayId,
-              returnOnly: true,
-              recoveryRecord: {
-                relayId,
-                conversationKey: reg.conversationKey,
-                submittedText,
-                beforeTurnKeys: [],
-                routeTurnKey: '',
-                phase: 'submitted',
-                submittedAt: Number(receipt.createdAt || 0) || Date.now(),
-                completionMarker: ''
-              }
-            };
-            let recovered = null;
-            let captureRecoveryError = '';
-            try {
-              recovered = await Promise.race([
-                sendToChatTab(reg.tabId, recoveryMessage),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('RELAY_RECOVERY_CONTENT_RPC_TIMEOUT')), 2000))
-              ]);
-            } catch (error) {
-              captureRecoveryError = String(error?.message || error || 'RELAY_RECOVERY_CONTENT_RPC_FAILED');
-            }
-            if (RelayCore.needsDirectCaptureRecovery(recovered)) {
-              try {
-                recovered = await recoverCompletedReplyDirectlyFromTab(
-                  reg.tabId, reg.conversationKey, submittedText
-                );
-                captureRecoveryError = '';
-              } catch (error) {
-                captureRecoveryError = String(error?.message || error || 'RELAY_RECOVERY_DIRECT_FAILED');
-              }
-            }
-            if (!RelayCore.needsDirectCaptureRecovery(recovered)) {
-              const recoveredReply = String(recovered.recoveredReply || '');
-              if (receipt.ackState === 'ACKED' || receipt.returnState === 'DELIVERED') {
-                postNative({
-                  type: 'host:result',
-                  requestId,
-                  ok: true,
-                  relayId,
-                  recovered: true,
-                  persistedResult: true,
-                  readOnlyRecovery: true,
-                  recoveredReply,
-                  returnState: String(receipt.returnState || ''),
-                  receiverAckState: String(receipt.receiverAckState || '')
-                });
-                return;
-              }
-              activeReceipt = await replaceRecoverableResultReceipt(relayId, {
-                ok: true,
-                reply: recoveredReply,
-                recovered: 'route-scoped-final-dom'
-              });
-            }
-            if (isRecoverableCaptureResult(activeReceipt.resultPayload)) {
-              postNative({
-                type: 'host:result', requestId, ok: true, relayId,
-                recovered: false, persistedResult: true, resultUnchanged: true,
-                captureRecoveryError: String(captureRecoveryError || 'RELAY_RECOVERY_FINAL_RESULT_NOT_CONFIRMED').slice(0, 300)
-              });
-              return;
-            }
-          }
-        }
-        const returned = await returnPersistedResult(relayId, pending, activeReceipt);
-        postNative({ type: 'host:result', requestId, ok: true, relayId, recovered: true,
-          persistedResult: true, returnState: returned.returnState,
-          receiverAckState: returned.receiverAckState, replayed: returned.replayed === true });
-        return;
-      }
-
-      const reply = await sendToChatTab(reg.tabId, { type: 'relay:recoverExecution', relayId });
-
-      if ((!reply?.ok || reply.recovered !== true) && String(reply?.error || '') === 'RELAY_RECOVERY_RECORD_NOT_FOUND' && pending.deliveryConfirmed !== true) {
-
-        delete state.pending[relayId];
-
-        await chrome.storage.local.set({ pending: state.pending });
-
-        postNative({ type: 'host:result', requestId, ok: true, relayId, recovered: false, discarded: true });
-
-        return;
-
-      }
-
-      if (!reply?.ok || reply.recovered !== true) throw new Error(reply?.error || 'RELAY_RECOVERY_FAILED');
-
-      postNative({ type: 'host:result', requestId, ok: true, relayId, recovered: true });
-
-      return;
-
-    }
-
-    if (message.command === 'clear-relay-state') {
-
-      const reg = await resolveRegistration(message.to);
-
-      const state = await loadState();
-
-      let removedPending = 0;
-
-      for (const [relayId, pending] of Object.entries(state.pending || {})) {
-
-        if (Number(pending?.tabId) === Number(reg.tabId)) { delete state.pending[relayId]; removedPending += 1; }
-
-      }
-
-      await chrome.storage.local.set({ pending: state.pending });
-
-      const injected = await chrome.scripting.executeScript({ target: { tabId: reg.tabId }, func: () => {
-
-        const active = sessionStorage.getItem('relayActiveExecutionV1');
-
-        let queueDepth = 0;
-
-        try { const q = JSON.parse(sessionStorage.getItem('relayDeferredQueueV1') || '[]'); queueDepth = Array.isArray(q) ? q.length : 0; } catch (_) {}
-
-        sessionStorage.removeItem('relayActiveExecutionV1');
-
-        sessionStorage.removeItem('relayDeferredQueueV1');
-
-        return { hadActive: !!active, queueDepth };
-
-      } });
-
-      const cleared = injected?.[0]?.result || {};
-
-      postNative({ type: 'host:result', requestId, ok: true, role: RelayCore.normalizeRole(message.to), removedPending, hadActive: !!cleared.hadActive, queueDepth: Number(cleared.queueDepth || 0) });
-
-      return;
-
-    }
-
-    if (message.command === 'main-capture-install') {
-
-      const reg=await resolveRegistration(message.to);
-
-      const x=await chrome.scripting.executeScript({target:{tabId:reg.tabId},world:'MAIN',func:()=>{
-
-        if (window.__dwRelayCaptureInstalled) return {installed:true,reused:true}; window.__dwRelayCaptureInstalled=true; window.__dwRelayCaptured=[];
-
-        const save=(kind,url,text,error='')=>{ try { window.__dwRelayCaptured.push({kind,url:String(url||''),at:Date.now(),len:String(text||'').length,tail:String(text||'').slice(-12000),error:String(error||'')}); window.__dwRelayCaptured=window.__dwRelayCaptured.slice(-6); } catch(_){} };
-
-        const of=window.fetch; window.fetch=async function(...a){ const r=await of.apply(this,a); try{ const i=a[0],init=a[1]||{},u=typeof i==='string'?i:(i?.url||''),m=String(init.method||i?.method||'GET').toUpperCase(); if(m==='POST'&&String(u).includes('/backend-api/f/conversation')) r.clone().text().then(t=>save('fetch',u,t)).catch(e=>save('fetch',u,'',e)); }catch(_){} return r; };
-
-        const oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send; XMLHttpRequest.prototype.open=function(m,u,...r){this.__dwM=String(m||'GET').toUpperCase();this.__dwU=String(u||'');return oo.call(this,m,u,...r)}; XMLHttpRequest.prototype.send=function(...a){ if(this.__dwM==='POST'&&this.__dwU.includes('/backend-api/f/conversation')) this.addEventListener('loadend',()=>{try{save('xhr',this.__dwU,this.responseType===''||this.responseType==='text'?this.responseText:'')}catch(e){save('xhr',this.__dwU,'',e)}}); return os.apply(this,a); };
-
-        return {installed:true,reused:false};
-
-      }}); postNative({type:'host:result',requestId,ok:true,result:x?.[0]?.result||null}); return;
-
-    }
 
     if (message.command === 'main-capture-get') {
 
-      const reg=await resolveRegistration(message.to); const x=await chrome.scripting.executeScript({target:{tabId:reg.tabId},world:'MAIN',func:()=>window.__dwRelayCaptured||[]}); postNative({type:'host:result',requestId,ok:true,captured:x?.[0]?.result||[]}); return;
 
-    }
+          const reg=await resolveRegistration(message.to); const x=await chrome.scripting.executeScript({target:{tabId:reg.tabId},world:'MAIN',func:()=>window.__dwRelayCaptured||[]}); postNative({type:'host:result',requestId,ok:true,captured:x?.[0]?.result||[]}); return;
+
+
+        }
 
     if (message.command === 'api-probe') {
 
-      const reg = await resolveRegistration(message.to);
 
-      const key = String(reg.conversationKey || '');
+          const reg = await resolveRegistration(message.to);
 
-      const injected = await chrome.scripting.executeScript({ target: { tabId: reg.tabId }, func: async (conversationKey) => {
 
-        const urls=[`/backend-api/conversation/${conversationKey}`,`/backend-api/conversations/${conversationKey}`]; const out=[];
+          const key = String(reg.conversationKey || '');
 
-        for (const url of urls) { try { const r=await fetch(url,{credentials:'include',cache:'no-store'}); const text=await r.text(); out.push({url,status:r.status,ok:r.ok,preview:text.slice(0,800)}); } catch (e) { out.push({url,error:String(e?.message||e)}); } }
 
-        return out;
+          const injected = await chrome.scripting.executeScript({ target: { tabId: reg.tabId }, func: async (conversationKey) => {
 
-      }, args: [key] });
 
-      postNative({ type:'host:result', requestId, ok:true, role:RelayCore.normalizeRole(message.to), api:injected?.[0]?.result || [] });
+            const urls=[`/backend-api/conversation/${conversationKey}`,`/backend-api/conversations/${conversationKey}`]; const out=[];
 
-      return;
 
-    }
+            for (const url of urls) { try { const r=await fetch(url,{credentials:'include',cache:'no-store'}); const text=await r.text(); out.push({url,status:r.status,ok:r.ok,preview:text.slice(0,800)}); } catch (e) { out.push({url,error:String(e?.message||e)}); } }
+
+
+            return out;
+
+
+          }, args: [key] });
+
+
+          postNative({ type:'host:result', requestId, ok:true, role:RelayCore.normalizeRole(message.to), api:injected?.[0]?.result || [] });
+
+
+          return;
+
+
+        }
 
     if (message.command === 'probe-tabs') {
-      const tabs = (await getChatTabs()).filter(isChatTab);
-      const probes = [];
-      for (const tab of tabs) {
-        let probe = null;
-        let error = '';
-        try {
-          probe = await chrome.tabs.sendMessage(tab.id, { type: 'relay:probe' });
-        } catch (err) {
-          error = String(err?.message || err);
+
+          const tabs = (await getChatTabs()).filter(isChatTab);
+
+          const probes = [];
+
+          for (const tab of tabs) {
+
+            let probe = null;
+
+            let error = '';
+
+            try {
+
+              probe = await chrome.tabs.sendMessage(tab.id, { type: 'relay:probe' });
+
+            } catch (err) {
+
+              error = String(err?.message || err);
+
+            }
+
+            probes.push({
+
+              tabId: tab.id,
+
+              windowId: tab.windowId,
+
+              conversationKey: RelayCore.conversationKey(tab.url || ''),
+
+              title: tab.title || '',
+
+              ok: probe?.ok === true,
+
+              buildVersion: String(probe?.buildVersion || ''),
+
+              contentVersion: String(probe?.contentVersion || ''),
+
+              error
+
+            });
+
+          }
+
+          postNative({ type: 'host:result', requestId, ok: true, probes });
+
+          return;
+
         }
-        probes.push({
-          tabId: tab.id,
-          windowId: tab.windowId,
-          conversationKey: RelayCore.conversationKey(tab.url || ''),
-          title: tab.title || '',
-          ok: probe?.ok === true,
-          buildVersion: String(probe?.buildVersion || ''),
-          contentVersion: String(probe?.contentVersion || ''),
-          error
-        });
-      }
-      postNative({ type: 'host:result', requestId, ok: true, probes });
-      return;
-    }
 
     if (message.command === 'diagnose-activity') {
 
-      const key = String(message.text || '').trim();
 
-      const tabs = (await getChatTabs()).filter((tab) => !key || RelayCore.conversationKey(tab?.url || '') === key);
+          const key = String(message.text || '').trim();
 
-      const diagnostics = [];
 
-      for (const tab of tabs) {
+          const tabs = (await getChatTabs()).filter((tab) => !key || RelayCore.conversationKey(tab?.url || '') === key);
 
-        try {
 
-          const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => {
+          const diagnostics = [];
 
-            const items = [...document.querySelectorAll('button,[data-testid],[aria-label]')].map((el) => ({
 
-              tag: el.tagName, testid: el.getAttribute('data-testid') || '', aria: el.getAttribute('aria-label') || '',
+          for (const tab of tabs) {
 
-              title: el.getAttribute('title') || '', text: String(el.textContent || '').trim().slice(0,80), disabled: !!el.disabled
 
-            }));
+            try {
 
-            return items.filter((x) => /stop|cancel|send|submit|voice|record|generat|중지|전송|음성|보내/i.test([x.testid,x.aria,x.title,x.text].join(' '))).slice(0,80);
 
-          }});
+              const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => {
 
-          diagnostics.push({ tabId: tab.id, conversationKey: RelayCore.conversationKey(tab.url || ''), title: tab.title || '', items: result?.[0]?.result || [] });
 
-        } catch (error) { diagnostics.push({ tabId: tab.id, error: String(error?.message || error) }); }
+                const items = [...document.querySelectorAll('button,[data-testid],[aria-label]')].map((el) => ({
 
-      }
 
-      postNative({ type: 'host:result', requestId, ok: true, diagnostics });
+                  tag: el.tagName, testid: el.getAttribute('data-testid') || '', aria: el.getAttribute('aria-label') || '',
 
-      return;
 
-    }
+                  title: el.getAttribute('title') || '', text: String(el.textContent || '').trim().slice(0,80), disabled: !!el.disabled
+
+
+                }));
+
+
+                return items.filter((x) => /stop|cancel|send|submit|voice|record|generat|중지|전송|음성|보내/i.test([x.testid,x.aria,x.title,x.text].join(' '))).slice(0,80);
+
+
+              }});
+
+
+              diagnostics.push({ tabId: tab.id, conversationKey: RelayCore.conversationKey(tab.url || ''), title: tab.title || '', items: result?.[0]?.result || [] });
+
+
+            } catch (error) { diagnostics.push({ tabId: tab.id, error: String(error?.message || error) }); }
+
+
+          }
+
+
+          postNative({ type: 'host:result', requestId, ok: true, diagnostics });
+
+
+          return;
+
+
+        }
 
     if (message.command === 'diagnose-conversation-ui') {
-      const key = String(message.conversationKey || message.text || '').trim();
-      const tabs = (await getChatTabs()).filter((tab) => !key || RelayCore.conversationKey(tab?.url || '') === key);
-      const diagnostics = [];
-      for (const tab of tabs) {
-        try {
-          const result = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: () => {
-              const visible = (el) => {
-                if (!el || el.getClientRects().length === 0) return false;
-                const rect = el.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0) return false;
-                const style = getComputedStyle(el);
-                return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0;
-              };
-              const pack = (el) => {
-                const rect = el.getBoundingClientRect();
-                return {
-                  tag: el.tagName,
-                  role: el.getAttribute('role') || '',
-                  href: el.getAttribute('href') || '',
-                  testid: el.getAttribute('data-testid') || '',
-                  sidebar: el.getAttribute('data-sidebar-item') || '',
-                  aria: el.getAttribute('aria-label') || '',
-                  title: el.getAttribute('title') || '',
-                  text: String(el.textContent || '').replace(/\s+/g,' ').trim().slice(0,120),
-                  left: Math.round(rect.left), top: Math.round(rect.top),
-                  width: Math.round(rect.width), height: Math.round(rect.height)
-                };
-              };
-              const rowSelector = '[data-sidebar-item="true"], nav li, aside li';
-              const rows = Array.from(document.querySelectorAll(rowSelector)).filter(visible).map(pack).slice(0,120);
-              const links = Array.from(document.querySelectorAll('a[href]')).filter((el) => {
-                if (!visible(el)) return false;
-                const href = String(el.getAttribute('href') || '');
-                return /\/c\/[a-z0-9-]{8,64}/i.test(href);
-              }).map(pack).slice(0,120);
-              const buttons = Array.from(document.querySelectorAll('button')).filter((el) => {
-                if (!visible(el) || el.disabled) return false;
-                const text = [el.getAttribute('aria-label'),el.getAttribute('title'),el.getAttribute('data-testid'),el.textContent].filter(Boolean).join(' ');
-                return /sidebar|side bar|menu|more|options|chat|conversation|history|사이드|메뉴|옵션|더 보기|대화|채팅/i.test(text);
-              }).map(pack).slice(0,120);
-              const assistantSelector = [
-                '[data-message-author-role="assistant"]',
-                '[data-content-search-unit-key$=":assistant"]',
-                '[data-chatgpt-search-unit-key$=":assistant"]',
-                '[data-markdown-text-style="assistant-message"]'
-              ].join(',');
-              const userSelector = [
-                '[data-message-author-role="user"]',
-                '[data-content-search-unit-key$=":user"]',
-                '[data-user-message-bubble="true"]'
-              ].join(',');
-              const userNodes = Array.from(document.querySelectorAll(userSelector));
-              const userUnits = userNodes.map((el, index) => {
-                const closestTurn = el.closest('[data-turn-key],[data-content-search-turn-key],[data-testid^="conversation-turn-"]');
-                const clone = el.cloneNode(true);
-                clone.querySelectorAll('button,[role="button"],[contenteditable="true"]').forEach((item) => item.remove());
-                return {
-                  index,
-                  visible: visible(el),
-                  turnKey: closestTurn?.getAttribute('data-turn-key') || closestTurn?.getAttribute('data-content-search-turn-key') || closestTurn?.getAttribute('data-testid') || '',
-                  textLength: String(clone.textContent || '').trim().length,
-                  textPreview: String(clone.textContent || '').replace(/\s+/g,' ').trim().slice(0,260),
-                  textFull: String(clone.textContent || '').trim()
-                };
-              }).slice(-40);
-              const assistantNodes = Array.from(document.querySelectorAll(assistantSelector));
-              const assistantUnits = assistantNodes.map((el, index) => {
-                const closestTurn = el.closest('[data-turn-key],[data-content-search-turn-key],[data-testid^="conversation-turn-"]');
-                return {
-                  index,
-                  visible: visible(el),
-                  tag: el.tagName,
-                  authorRole: el.getAttribute('data-message-author-role') || '',
-                  unitKey: el.getAttribute('data-content-search-unit-key') || el.getAttribute('data-chatgpt-search-unit-key') || '',
-                  markdownStyle: el.getAttribute('data-markdown-text-style') || '',
-                  turnKey: closestTurn?.getAttribute('data-turn-key') || closestTurn?.getAttribute('data-content-search-turn-key') || closestTurn?.getAttribute('data-testid') || '',
-                  nestedAssistantCount: el.querySelectorAll(assistantSelector).length,
-                  textLength: String(el.innerText || el.textContent || '').trim().length,
-                  textPreview: String(el.innerText || el.textContent || '').replace(/\s+/g,' ').trim().slice(0,160)
-                };
-              }).slice(-40);
-              let relayExecution = null;
-              try {
-                const raw = sessionStorage.getItem('relayActiveExecutionV1');
-                const parsed = raw ? JSON.parse(raw) : null;
-                if (parsed && typeof parsed === 'object') {
-                  relayExecution = {
-                    relayId: String(parsed.relayId || ''),
-                    conversationKey: String(parsed.conversationKey || ''),
-                    routeTurnKey: String(parsed.routeTurnKey || ''),
-                    phase: String(parsed.phase || ''),
-                    submittedAt: parsed.submittedAt || null,
-                    beforeTurnKeys: Array.isArray(parsed.beforeTurnKeys) ? parsed.beforeTurnKeys.slice(-8) : []
+
+          const key = String(message.conversationKey || message.text || '').trim();
+
+          const tabs = (await getChatTabs()).filter((tab) => !key || RelayCore.conversationKey(tab?.url || '') === key);
+
+          const diagnostics = [];
+
+          for (const tab of tabs) {
+
+            try {
+
+              const result = await chrome.scripting.executeScript({
+
+                target: { tabId: tab.id },
+
+                func: () => {
+
+                  const visible = (el) => {
+
+                    if (!el || el.getClientRects().length === 0) return false;
+
+                    const rect = el.getBoundingClientRect();
+
+                    if (rect.width <= 0 || rect.height <= 0) return false;
+
+                    const style = getComputedStyle(el);
+
+                    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0;
+
                   };
+
+                  const pack = (el) => {
+
+                    const rect = el.getBoundingClientRect();
+
+                    return {
+
+                      tag: el.tagName,
+
+                      role: el.getAttribute('role') || '',
+
+                      href: el.getAttribute('href') || '',
+
+                      testid: el.getAttribute('data-testid') || '',
+
+                      sidebar: el.getAttribute('data-sidebar-item') || '',
+
+                      aria: el.getAttribute('aria-label') || '',
+
+                      title: el.getAttribute('title') || '',
+
+                      text: String(el.textContent || '').replace(/\s+/g,' ').trim().slice(0,120),
+
+                      left: Math.round(rect.left), top: Math.round(rect.top),
+
+                      width: Math.round(rect.width), height: Math.round(rect.height)
+
+                    };
+
+                  };
+
+                  const rowSelector = '[data-sidebar-item="true"], nav li, aside li';
+
+                  const rows = Array.from(document.querySelectorAll(rowSelector)).filter(visible).map(pack).slice(0,120);
+
+                  const links = Array.from(document.querySelectorAll('a[href]')).filter((el) => {
+
+                    if (!visible(el)) return false;
+
+                    const href = String(el.getAttribute('href') || '');
+
+                    return /\/c\/[a-z0-9-]{8,64}/i.test(href);
+
+                  }).map(pack).slice(0,120);
+
+                  const buttons = Array.from(document.querySelectorAll('button')).filter((el) => {
+
+                    if (!visible(el) || el.disabled) return false;
+
+                    const text = [el.getAttribute('aria-label'),el.getAttribute('title'),el.getAttribute('data-testid'),el.textContent].filter(Boolean).join(' ');
+
+                    return /sidebar|side bar|menu|more|options|chat|conversation|history|사이드|메뉴|옵션|더 보기|대화|채팅/i.test(text);
+
+                  }).map(pack).slice(0,120);
+
+                  const assistantSelector = [
+
+                    '[data-message-author-role="assistant"]',
+
+                    '[data-content-search-unit-key$=":assistant"]',
+
+                    '[data-chatgpt-search-unit-key$=":assistant"]',
+
+                    '[data-markdown-text-style="assistant-message"]'
+
+                  ].join(',');
+
+                  const userSelector = [
+
+                    '[data-message-author-role="user"]',
+
+                    '[data-content-search-unit-key$=":user"]',
+
+                    '[data-user-message-bubble="true"]'
+
+                  ].join(',');
+
+                  const userNodes = Array.from(document.querySelectorAll(userSelector));
+
+                  const userUnits = userNodes.map((el, index) => {
+
+                    const closestTurn = el.closest('[data-turn-key],[data-content-search-turn-key],[data-testid^="conversation-turn-"]');
+
+                    const clone = el.cloneNode(true);
+
+                    clone.querySelectorAll('button,[role="button"],[contenteditable="true"]').forEach((item) => item.remove());
+
+                    return {
+
+                      index,
+
+                      visible: visible(el),
+
+                      turnKey: closestTurn?.getAttribute('data-turn-key') || closestTurn?.getAttribute('data-content-search-turn-key') || closestTurn?.getAttribute('data-testid') || '',
+
+                      textLength: String(clone.textContent || '').trim().length,
+
+                      textPreview: String(clone.textContent || '').replace(/\s+/g,' ').trim().slice(0,260),
+
+                      textFull: String(clone.textContent || '').trim()
+
+                    };
+
+                  }).slice(-40);
+
+                  const assistantNodes = Array.from(document.querySelectorAll(assistantSelector));
+
+                  const assistantUnits = assistantNodes.map((el, index) => {
+
+                    const closestTurn = el.closest('[data-turn-key],[data-content-search-turn-key],[data-testid^="conversation-turn-"]');
+
+                    return {
+
+                      index,
+
+                      visible: visible(el),
+
+                      tag: el.tagName,
+
+                      authorRole: el.getAttribute('data-message-author-role') || '',
+
+                      unitKey: el.getAttribute('data-content-search-unit-key') || el.getAttribute('data-chatgpt-search-unit-key') || '',
+
+                      markdownStyle: el.getAttribute('data-markdown-text-style') || '',
+
+                      turnKey: closestTurn?.getAttribute('data-turn-key') || closestTurn?.getAttribute('data-content-search-turn-key') || closestTurn?.getAttribute('data-testid') || '',
+
+                      nestedAssistantCount: el.querySelectorAll(assistantSelector).length,
+
+                      textLength: String(el.innerText || el.textContent || '').trim().length,
+
+                      textPreview: String(el.innerText || el.textContent || '').replace(/\s+/g,' ').trim().slice(0,160)
+
+                    };
+
+                  }).slice(-40);
+
+                  let relayExecution = null;
+
+                  try {
+
+                    const raw = sessionStorage.getItem('relayActiveExecutionV1');
+
+                    const parsed = raw ? JSON.parse(raw) : null;
+
+                    if (parsed && typeof parsed === 'object') {
+
+                      relayExecution = {
+
+                        relayId: String(parsed.relayId || ''),
+
+                        conversationKey: String(parsed.conversationKey || ''),
+
+                        routeTurnKey: String(parsed.routeTurnKey || ''),
+
+                        phase: String(parsed.phase || ''),
+
+                        submittedAt: parsed.submittedAt || null,
+
+                        beforeTurnKeys: Array.isArray(parsed.beforeTurnKeys) ? parsed.beforeTurnKeys.slice(-8) : []
+
+                      };
+
+                    }
+
+                  } catch (_) {}
+
+                  return { href: location.href, documentTitle: document.title, rows, links, buttons, userUnits, assistantUnits, relayExecution };
+
                 }
-              } catch (_) {}
-              return { href: location.href, documentTitle: document.title, rows, links, buttons, userUnits, assistantUnits, relayExecution };
+
+              });
+
+              diagnostics.push({
+
+                tabId: tab.id,
+
+                conversationKey: RelayCore.conversationKey(tab.url || ''),
+
+                title: tab.title || '',
+
+                ui: result?.[0]?.result || null
+
+              });
+
+            } catch (error) {
+
+              diagnostics.push({ tabId: tab.id, error: String(error?.message || error) });
+
             }
-          });
-          diagnostics.push({
-            tabId: tab.id,
-            conversationKey: RelayCore.conversationKey(tab.url || ''),
-            title: tab.title || '',
-            ui: result?.[0]?.result || null
-          });
-        } catch (error) {
-          diagnostics.push({ tabId: tab.id, error: String(error?.message || error) });
-        }
-      }
-      let recoveryProbe = null;
-      const probeRelayId = String(message.relayId || '').trim();
-      const probeRole = String(message.to || '').trim();
-      if (probeRelayId && probeRole) {
-        try {
-          const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
-          const probeReceipt = (data[RELAY_RESULT_RECEIPTS_KEY] || {})[probeRelayId] || null;
-          const probeReg = await resolveRegistration(probeRole);
-          let submittedText = '';
-          try {
-            const parts = JSON.parse(String(probeReceipt?.dispatchFingerprint || ''));
-            if (Array.isArray(parts) && typeof parts[1] === 'string') submittedText = parts[1];
-          } catch (_) {}
-          const recovered = await recoverCompletedReplyDirectlyFromTab(
-            probeReg.tabId, probeReg.conversationKey, submittedText
-          );
-          recoveryProbe = {
-            ok: recovered?.ok === true,
-            replyLength: String(recovered?.recoveredReply || '').length,
-            replyPreview: String(recovered?.recoveredReply || '').slice(0, 220)
-          };
-        } catch (error) {
-          let comparison = null;
-          try {
-            const compare = await chrome.scripting.executeScript({
-              target: { tabId: probeReg.tabId },
-              args: [submittedText],
-              func: (submittedRaw) => {
-                const norm = (value) => String(value || '').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
-                const submitted = norm(submittedRaw);
-                const turns = Array.from(document.querySelectorAll(
-                  '[data-turn-key],[data-content-search-turn-key],[data-testid^="conversation-turn-"]'
-                ));
-                const seen = new Set();
-                const rows = [];
-                for (const node of turns) {
-                  const turn = node.matches('[data-turn-key]') ? node : (node.closest('[data-turn-key]') || node);
-                  if (seen.has(turn)) continue;
-                  seen.add(turn);
-                  const user = turn.querySelector(
-                    '[data-message-author-role="user"],[data-content-search-unit-key$=":user"],[data-user-message-bubble="true"]'
-                  );
-                  if (!user) continue;
-                  const clone = user.cloneNode(true);
-                  clone.querySelectorAll('button,[role="button"],[contenteditable="true"]').forEach((item) => item.remove());
-                  const rendered = norm(clone.textContent || '');
-                  let diff = -1;
-                  const min = Math.min(submitted.length, rendered.length);
-                  for (let i = 0; i < min; i += 1) {
-                    if (submitted[i] !== rendered[i]) { diff = i; break; }
+
+          }
+
+          let recoveryProbe = null;
+
+          const probeRelayId = String(message.relayId || '').trim();
+
+          const probeRole = String(message.to || '').trim();
+
+          if (probeRelayId && probeRole) {
+
+            try {
+
+              const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
+
+              const probeReceipt = (data[RELAY_RESULT_RECEIPTS_KEY] || {})[probeRelayId] || null;
+
+              const probeReg = await resolveRegistration(probeRole);
+
+              let submittedText = '';
+
+              try {
+
+                const parts = JSON.parse(String(probeReceipt?.dispatchFingerprint || ''));
+
+                if (Array.isArray(parts) && typeof parts[1] === 'string') submittedText = parts[1];
+
+              } catch (_) {}
+
+              const recovered = await recoverCompletedReplyDirectlyFromTab(
+
+                probeReg.tabId, probeReg.conversationKey, submittedText
+
+              );
+
+              recoveryProbe = {
+
+                ok: recovered?.ok === true,
+
+                replyLength: String(recovered?.recoveredReply || '').length,
+
+                replyPreview: String(recovered?.recoveredReply || '').slice(0, 220)
+
+              };
+
+            } catch (error) {
+
+              let comparison = null;
+
+              try {
+
+                const compare = await chrome.scripting.executeScript({
+
+                  target: { tabId: probeReg.tabId },
+
+                  args: [submittedText],
+
+                  func: (submittedRaw) => {
+
+                    const norm = (value) => String(value || '').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
+
+                    const submitted = norm(submittedRaw);
+
+                    const turns = Array.from(document.querySelectorAll(
+
+                      '[data-turn-key],[data-content-search-turn-key],[data-testid^="conversation-turn-"]'
+
+                    ));
+
+                    const seen = new Set();
+
+                    const rows = [];
+
+                    for (const node of turns) {
+
+                      const turn = node.matches('[data-turn-key]') ? node : (node.closest('[data-turn-key]') || node);
+
+                      if (seen.has(turn)) continue;
+
+                      seen.add(turn);
+
+                      const user = turn.querySelector(
+
+                        '[data-message-author-role="user"],[data-content-search-unit-key$=":user"],[data-user-message-bubble="true"]'
+
+                      );
+
+                      if (!user) continue;
+
+                      const clone = user.cloneNode(true);
+
+                      clone.querySelectorAll('button,[role="button"],[contenteditable="true"]').forEach((item) => item.remove());
+
+                      const rendered = norm(clone.textContent || '');
+
+                      let diff = -1;
+
+                      const min = Math.min(submitted.length, rendered.length);
+
+                      for (let i = 0; i < min; i += 1) {
+
+                        if (submitted[i] !== rendered[i]) { diff = i; break; }
+
+                      }
+
+                      if (diff < 0 && submitted.length !== rendered.length) diff = min;
+
+                      rows.push({
+
+                        turnKey: turn.getAttribute('data-turn-key') || turn.getAttribute('data-content-search-turn-key') || turn.getAttribute('data-testid') || '',
+
+                        submittedLength: submitted.length,
+
+                        renderedLength: rendered.length,
+
+                        diff,
+
+                        submittedChar: diff >= 0 ? submitted.charCodeAt(diff) : null,
+
+                        renderedChar: diff >= 0 ? rendered.charCodeAt(diff) : null,
+
+                        submittedAround: diff >= 0 ? submitted.slice(Math.max(0,diff-20),diff+21) : '',
+
+                        renderedAround: diff >= 0 ? rendered.slice(Math.max(0,diff-20),diff+21) : ''
+
+                      });
+
+                    }
+
+                    return rows;
+
                   }
-                  if (diff < 0 && submitted.length !== rendered.length) diff = min;
-                  rows.push({
-                    turnKey: turn.getAttribute('data-turn-key') || turn.getAttribute('data-content-search-turn-key') || turn.getAttribute('data-testid') || '',
-                    submittedLength: submitted.length,
-                    renderedLength: rendered.length,
-                    diff,
-                    submittedChar: diff >= 0 ? submitted.charCodeAt(diff) : null,
-                    renderedChar: diff >= 0 ? rendered.charCodeAt(diff) : null,
-                    submittedAround: diff >= 0 ? submitted.slice(Math.max(0,diff-20),diff+21) : '',
-                    renderedAround: diff >= 0 ? rendered.slice(Math.max(0,diff-20),diff+21) : ''
-                  });
-                }
-                return rows;
-              }
-            });
-            comparison = compare?.[0]?.result || null;
-          } catch (_) {}
-          recoveryProbe = { ok: false, error: String(error?.message || error || ''), comparison };
+
+                });
+
+                comparison = compare?.[0]?.result || null;
+
+              } catch (_) {}
+
+              recoveryProbe = { ok: false, error: String(error?.message || error || ''), comparison };
+
+            }
+
+          }
+
+          postNative({ type: 'host:result', requestId, ok: true, diagnostics, recoveryProbe });
+
+          return;
+
         }
-      }
-      postNative({ type: 'host:result', requestId, ok: true, diagnostics, recoveryProbe });
-      return;
-    }
 
     if (message.command === 'diagnose-composer') {
-      const tabs = (await getChatTabs()).filter(isChatTab);
-      const diagnostics = [];
-      for (const tab of tabs) {
-        try {
-          const result = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: () => {
-              const selectors = [
-                '#prompt-textarea',
-                'div[contenteditable="true"][role="textbox"]',
-                'div[contenteditable="true"][data-virtualkeyboard="true"]',
-                'textarea[name="prompt-textarea"]'
-              ];
-              let editor = null;
-              for (const selector of selectors) {
-                editor = document.querySelector(selector);
-                if (editor) break;
-              }
-              const form = editor?.closest?.('form') || null;
-              const buttons = Array.from((form || document).querySelectorAll('button')).map((button) => ({
-                type: button.getAttribute('type') || '',
-                testid: button.getAttribute('data-testid') || '',
-                aria: button.getAttribute('aria-label') || '',
-                title: button.getAttribute('title') || '',
-                text: String(button.textContent || '').trim().slice(0, 80),
-                disabled: !!button.disabled,
-                visible: button.getClientRects().length > 0
-              })).slice(0, 80);
-              return {
-                href: location.href,
-                editor: editor ? {
-                  tag: editor.tagName,
-                  value: typeof editor.value === 'string' ? editor.value : '',
-                  text: String(editor.innerText || editor.textContent || ''),
-                  html: String(editor.innerHTML || '').slice(0, 1500),
-                  contenteditable: editor.getAttribute('contenteditable') || '',
-                  role: editor.getAttribute('role') || '',
-                  testid: editor.getAttribute('data-testid') || '',
-                  aria: editor.getAttribute('aria-label') || '',
-                  placeholder: editor.getAttribute('placeholder') || editor.getAttribute('data-placeholder') || ''
-                } : null,
-                form: form ? {
-                  method: form.getAttribute('method') || '',
-                  action: form.getAttribute('action') || '',
-                  text: String(form.textContent || '').trim().slice(0, 300)
-                } : null,
-                buttons
-              };
+
+          const tabs = (await getChatTabs()).filter(isChatTab);
+
+          const diagnostics = [];
+
+          for (const tab of tabs) {
+
+            try {
+
+              const result = await chrome.scripting.executeScript({
+
+                target: { tabId: tab.id },
+
+                func: () => {
+
+                  const selectors = [
+
+                    '#prompt-textarea',
+
+                    'div[contenteditable="true"][role="textbox"]',
+
+                    'div[contenteditable="true"][data-virtualkeyboard="true"]',
+
+                    'textarea[name="prompt-textarea"]'
+
+                  ];
+
+                  let editor = null;
+
+                  for (const selector of selectors) {
+
+                    editor = document.querySelector(selector);
+
+                    if (editor) break;
+
+                  }
+
+                  const form = editor?.closest?.('form') || null;
+
+                  const buttons = Array.from((form || document).querySelectorAll('button')).map((button) => ({
+
+                    type: button.getAttribute('type') || '',
+
+                    testid: button.getAttribute('data-testid') || '',
+
+                    aria: button.getAttribute('aria-label') || '',
+
+                    title: button.getAttribute('title') || '',
+
+                    text: String(button.textContent || '').trim().slice(0, 80),
+
+                    disabled: !!button.disabled,
+
+                    visible: button.getClientRects().length > 0
+
+                  })).slice(0, 80);
+
+                  return {
+
+                    href: location.href,
+
+                    editor: editor ? {
+
+                      tag: editor.tagName,
+
+                      value: typeof editor.value === 'string' ? editor.value : '',
+
+                      text: String(editor.innerText || editor.textContent || ''),
+
+                      html: String(editor.innerHTML || '').slice(0, 1500),
+
+                      contenteditable: editor.getAttribute('contenteditable') || '',
+
+                      role: editor.getAttribute('role') || '',
+
+                      testid: editor.getAttribute('data-testid') || '',
+
+                      aria: editor.getAttribute('aria-label') || '',
+
+                      placeholder: editor.getAttribute('placeholder') || editor.getAttribute('data-placeholder') || ''
+
+                    } : null,
+
+                    form: form ? {
+
+                      method: form.getAttribute('method') || '',
+
+                      action: form.getAttribute('action') || '',
+
+                      text: String(form.textContent || '').trim().slice(0, 300)
+
+                    } : null,
+
+                    buttons
+
+                  };
+
+                }
+
+              });
+
+              diagnostics.push({ tabId: tab.id, title: tab.title || '', url: tab.url || '', result: result?.[0]?.result || null });
+
+            } catch (error) {
+
+              diagnostics.push({ tabId: tab.id, title: tab.title || '', url: tab.url || '', error: String(error?.message || error) });
+
             }
-          });
-          diagnostics.push({ tabId: tab.id, title: tab.title || '', url: tab.url || '', result: result?.[0]?.result || null });
-        } catch (error) {
-          diagnostics.push({ tabId: tab.id, title: tab.title || '', url: tab.url || '', error: String(error?.message || error) });
+
+          }
+
+          postNative({ type: 'host:result', requestId, ok: true, diagnostics });
+
+          return;
+
         }
-      }
-      postNative({ type: 'host:result', requestId, ok: true, diagnostics });
-      return;
-    }
 
     if (message.command === 'probe') {
 
-      const reg = await resolveRegistration(message.to);
 
-      const probe = await sendToChatTab(reg.tabId, { type: 'relay:probe' });
+          const reg = await resolveRegistration(message.to);
 
-      const state = await loadState();
 
-      const pending = Object.entries(state.pending || {}).filter(([, item]) => Number(item?.tabId) === Number(reg.tabId)).map(([relayId, item]) => ({
+          const probe = await sendToChatTab(reg.tabId, { type: 'relay:probe' });
 
-        relayId, deliveryConfirmed: item?.deliveryConfirmed === true,
 
-        networkPath: String(item?.networkPath || ''), networkRequestId: String(item?.networkRequestId || ''),
+          const state = await loadState();
 
-        networkStartedAt: Number(item?.networkStartedAt || 0) || null,
 
-        networkCompletedAt: Number(item?.networkCompletedAt || 0) || null,
+          const pending = Object.entries(state.pending || {}).filter(([, item]) => Number(item?.tabId) === Number(reg.tabId)).map(([relayId, item]) => ({
 
-        networkOk: item?.networkOk !== false, networkCandidates: Array.isArray(item?.networkCandidates) ? item.networkCandidates : [], createdAt: Number(item?.createdAt || 0) || null
 
-      }));
+            relayId, deliveryConfirmed: item?.deliveryConfirmed === true,
 
-      postNative({ type: 'host:result', requestId, ok: true, role: RelayCore.normalizeRole(message.to), probe, pending });
 
-      return;
+            networkPath: String(item?.networkPath || ''), networkRequestId: String(item?.networkRequestId || ''),
 
-    }
 
-    if (message.command === 'close-conversation-tab') {
+            networkStartedAt: Number(item?.networkStartedAt || 0) || null,
 
-      const operationId = String(message.operationId || '').trim();
 
-      const conversationKey = String(message.conversationKey || '').trim();
+            networkCompletedAt: Number(item?.networkCompletedAt || 0) || null,
 
-      if (!operationId) throw new Error('Close operation id required');
 
-      const fingerprint = JSON.stringify([conversationKey, Number(message.tabId), String(message.sessionId || '')]);
+            networkOk: item?.networkOk !== false, networkCandidates: Array.isArray(item?.networkCandidates) ? item.networkCandidates : [], createdAt: Number(item?.createdAt || 0) || null
 
-      const outcome = await runIdempotentOperation(operationId, 'close-conversation-tab', fingerprint, async () => {
 
-        const state = await loadState();
+          }));
 
-        const requestedSessionId = String(message.sessionId || '').trim();
 
-        if (requestedSessionId && requestedSessionId !== endpointSessionId) {
+          postNative({ type: 'host:result', requestId, ok: true, role: RelayCore.normalizeRole(message.to), probe, pending });
 
-          throw new Error('Endpoint session mismatch');
+
+          return;
+
 
         }
-
-        return getBrowserTabCloseAdapter().closeTab({
-
-          operationId,
-
-          instanceId: String(state.settings.instanceId || ''),
-
-          sessionId: endpointSessionId,
-
-          tabId: Number(message.tabId),
-
-          expectedWindowId: message.windowId,
-
-          conversationKey,
-
-        });
-
-      });
-
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-
-      return;
-
-    }
-
-    if (message.command === 'rename-conversation') {
-
-      const title = String(message.title || '').trim();
-
-      const operationId = String(message.operationId || '').trim();
-
-      const conversationKey = String(message.conversationKey || '');
-
-      if (!title || title.length > 100) throw new Error('Invalid conversation title');
-
-      if (!operationId) throw new Error('Rename operation id required');
-
-      const fingerprint = JSON.stringify([conversationKey, Number(message.tabId), String(message.sessionId || ''), title]);
-
-      const outcome = await runIdempotentOperation(operationId, 'rename-conversation', fingerprint, async () => {
-
-        const tab = await resolveExactConversationCommand(message);
-
-        const reply = await sendToChatTab(tab.id, { type: 'relay:renameConversation', conversationKey, title, operationId });
-
-        if (!reply?.ok || String(reply.savedTitle || '').trim() !== title) throw new Error(reply?.error || 'Conversation rename not confirmed');
-
-        const current = await resolveExactConversationCommand(message);
-
-        await publishEndpointSnapshot('conversation-renamed');
-
-        return { ok: true, operationId, savedTitle: title, tabId: current.id, conversationKey };
-
-      });
-
-      postNative({ type: 'host:result', requestId, ...outcome.result, replayed: outcome.replayed });
-
-      return;
-
-    }
 
     if (message.command === 'reload-extension') {
 
-      postNative({ type: 'host:result', requestId, ok: true, reloading: true });
 
-      setTimeout(() => chrome.runtime.reload(), 50);
+          postNative({ type: 'host:result', requestId, ok: true, reloading: true });
 
-      return;
 
-    }
+          setTimeout(() => chrome.runtime.reload(), 50);
 
-    if (message.command === 'reload-workers') {
 
-      const state = await loadState();
+          return;
 
-      const operationId = String(message.operationId || requestId).trim();
-
-      const requestedRole = String(message.to || '').trim() ? RelayCore.normalizeRole(message.to) : '';
-
-      const reloaded = [];
-
-      const skipped = [];
-
-      const receipts = [];
-
-      for (const [role, reg] of Object.entries(state.registrations || {})) {
-
-        if (requestedRole && role !== requestedRole) continue;
-
-        if (role === CONTROL || role === 'TEST') { skipped.push({ role, reason: 'protected' }); continue; }
-
-        const tabId = Number(reg?.tabId);
-
-        const conversationKey = String(reg?.conversationKey || '').trim();
-
-        if (!Number.isInteger(tabId)) { skipped.push({ role, reason: 'no-tab' }); continue; }
-
-        if (!conversationKey) { skipped.push({ role, reason: 'no-conversation-key' }); continue; }
-
-        try {
-
-          const receipt = await getBrowserTabReloadAdapter().reloadTab({
-            operationId,
-            instanceId: String(state.settings.instanceId || ''),
-            sessionId: endpointSessionId,
-            targetRole: role,
-            tabId,
-            conversationKey,
-          });
-
-          receipts.push(receipt);
-
-          if (receipt.state === 'RELOADED_CONFIRMED') {
-            reloaded.push({ role, tabId, conversationKey });
-          } else {
-            skipped.push({ role, reason: String(receipt.error || receipt.state) });
-          }
-
-        } catch (error) {
-
-          skipped.push({ role, reason: String(error?.message || error) });
 
         }
-
-      }
-
-      postNative({ type: 'host:result', requestId, ok: true, reloaded, skipped, receipts });
-
-      return;
-
-    }
-
-    if (message.command === 'probe') {
-
-      const reg = await resolveRegistration(message.to);
-
-      const probe = await sendToChatTab(reg.tabId, { type: 'relay:probe' });
-
-      postNative({ type: 'host:result', requestId, ok: true, role: message.to, probe });
-
-      return;
-
-    }
-
-    if (message.command !== 'send' && message.command !== 'send-wakeback') throw new Error(`Unknown native command: ${message.command}`);
-
-    let result;
-    try {
-      result = await dispatchRelay({ to: message.to, text: message.text, id: requestId,
-
-        source: 'native', fromNode: message.fromNode, messageHash: message.messageHash,
-
-        targetBindingReceipt: message.bindingReceiptId,
-        expectedInstanceId: message.expectedInstanceId,
-        expectedSessionId: message.expectedSessionId,
-        expectedTabId: message.expectedTabId,
-        expectedConversationKey: message.expectedConversationKey,
-        attachmentGeneration: message.attachmentGeneration,
-        returnToControl: false,
-
-        // A wakeback may target any exact registered role.  Never replace the
-        // caller-provided return target with a generic WORKER role: that can
-        // redirect a durable result after manager takeover.
-        returnToRole: String(message.returnTo || '').trim(), hostRequestId: requestId });
-    } catch (error) {
-      const latest = await loadState();
-      const effectState = latest.resultReceipts?.[requestId]
-        ? 'UNKNOWN' : (latest.pending?.[requestId] ? 'UNKNOWN' : 'NOT_APPLIED');
-      postNative({ type: 'host:result', requestId, ok: false, effectState,
-        ambiguous: effectState === 'UNKNOWN',
-        error: String(error?.message || error || 'RELAY_DISPATCH_FAILED') });
-      return;
-    }
-
-    if (result.ok === false) {
-
-      postNative({ type: 'host:result', requestId, relayId: result.relayId,
-        ok: false, effectState: String(result.effectState || 'UNKNOWN'),
-        ambiguous: result.effectState !== 'NOT_APPLIED',
-        error: String(result.error || 'RELAY_DISPATCH_FAILED') });
-
-    } else if (result.completed && result.completedResult) {
-
-      const done = result.completedResult;
-
-      postNative({ type: 'host:result', requestId, relayId: result.relayId, from: done.from || result.to,
-
-        ok: !!done.ok, reply: String(done.reply || ''), error: String(done.error || ''), replayed: true });
-
-    } else if (result.pending && result.deliveryConfirmed !== true) {
-
-      postNative({ type: 'host:result', requestId, relayId: result.relayId, ok: false, ambiguous: true, error: 'RELAY_DELIVERY_UNCONFIRMED' });
-
-    } else {
-
-      postNative({ type: 'host:ack', requestId, relayId: result.relayId, ok: true,
-        submitted: result.deferred === true ? false : true, deferred: result.deferred === true,
-        effectState: result.deferred === true ? 'QUEUED' : 'SUBMITTED',
-        replayed: !!result.duplicate });
-
-    }
-
+    throw new Error(`Unknown native command: ${message.command}`);
   } catch (error) {
-
     postNative({ type: 'host:result', requestId, ok: false, error: error.message });
-
   }
-
 }
-
-
-
-async function ensureActivityBridges(tabsValue = null) {
-
-  await forEachChatTabBounded(tabsValue, async (tab) => {
-
-    try {
-
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['activity_bridge.js'] });
-
-    } catch (_) {}
-
-  });
-
-}
-
-
-
-async function ensureNaturalRoleBridges(tabsValue = null) {
-
-  await forEachChatTabBounded(tabsValue, async (tab) => {
-
-    try {
-
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['act_command_bridge.js'] });
-
-    } catch (_) {}
-
-  });
-
-}
-
-
-
-async function notifyRelayLocalState(tabsValue = null) {
-
-  await forEachChatTabBounded(tabsValue, async (tab) => {
-
-    try { await sendToChatTab(tab.id, { type: 'relay:refreshLocalState' }); } catch (_) {}
-
-  });
-
-}
-
-
-
-async function reconcileRegistrationsWithTabs(tabsValue = null) {
-
-  await endpointSessionReady;
-  const tabs = (Array.isArray(tabsValue) ? tabsValue : await getChatTabs()).filter(isChatTab);
-  return mutateRegistrationsWithLeaseFence([], async (state) => {
-    for (const reg of Object.values(state.registrations || {})) {
-      if (!reg?.conversationKey) continue;
-      const match = tabs.find((tab) => RelayCore.conversationKey(tab.url || '') === reg.conversationKey);
-      if (!match) continue;
-      const reconnectableDynamicBinding = reg.authorization === 'ACT_CONVERSATION_BIND'
-        && /^RCB-[A-Z0-9]{12,40}$/.test(String(reg.bindingReceiptId || ''))
-        && String(reg.transportInstanceId || '') === String(state.settings.instanceId || '');
-      const needsTabRefresh = Number(reg.tabId) !== Number(match.id);
-      const needsSessionRefresh = reconnectableDynamicBinding
-        && String(reg.sessionId || '') !== String(endpointSessionId || '');
-      if (!needsTabRefresh && !needsSessionRefresh) continue;
-      const conflict = Object.values(state.bindingSubmitLeases || {}).some((lease) =>
-        bindingLeaseTargetsConflict(lease, reg)
-        || bindingLeaseTargetsConflict(lease, { role: reg.role, tabId: match.id,
-          conversationKey: reg.conversationKey }));
-      if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
-      reg.tabId = match.id;
-      reg.title = match.title || reg.title;
-      if (needsSessionRefresh) reg.sessionId = String(endpointSessionId || '');
-      reg.updatedAt = Date.now();
-    }
-    return state.registrations;
-  });
-
-}
-
-
-
-async function reconcilePendingRelayTargets(reason = 'reconcile', tabsValue = null) {
-
-  const state = await loadState();
-
-  const tabs = (Array.isArray(tabsValue) ? tabsValue : await getChatTabs()).filter(isChatTab);
-
-  const byId = new Map(tabs.map((tab) => [Number(tab.id), tab]));
-
-  let changed = false;
-
-  for (const [relayId, pending] of Object.entries(state.pending || {})) {
-
-    const tab = byId.get(Number(pending?.tabId));
-
-    const expectedKey = String(pending?.conversationKey || '');
-
-    const currentKey = tab ? RelayCore.conversationKey(tab.url || '') : '';
-
-    if (tab && (!expectedKey || currentKey === expectedKey)) continue;
-
-    const error = 'RELAY_RESULT_AMBIGUOUS_TARGET_GONE';
-
-    const durable = await persistDurableResultReceipt(relayId, pending, {
-
-      ok: false, reply: '', error, ambiguous: true
-
-    });
-
-    const latest = await loadState();
-
-    if (latest.pending?.[relayId]) delete latest.pending[relayId];
-
-    latest.results.unshift({
-
-      id: relayId, from: String(pending?.to || ''), ok: false, reply: '', error,
-
-      fingerprint: String(pending?.fingerprint || ''), ambiguous: true, reason,
-
-      at: Date.now()
-
-    });
-
-    latest.results = latest.results.slice(0, 50);
-
-    await chrome.storage.local.set({ pending: latest.pending, results: latest.results });
-
-    if (pending?.hostRequestId) {
-
-      postNative({ type: 'host:result', requestId: String(pending.hostRequestId), relayId,
-
-        from: String(pending?.to || ''), ok: false, error, ambiguous: true });
-
-    }
-
-    changed = changed || !durable.duplicate;
-
-  }
-
-  const finalState = await loadState();
-
-  return { changed, pendingCount: Object.keys(finalState.pending || {}).length };
-
-}
-
-
-
-async function forceRelayRefresh(reason = 'manual-refresh') {
-
-  const tabs = (await getChatTabs()).filter(isChatTab);
-
-  await ensureActivityBridges(tabs);
-
-  await ensureNaturalRoleBridges(tabs);
-
-  const registrations = await reconcileRegistrationsWithTabs(tabs);
-
-  const pending = await reconcilePendingRelayTargets(reason, tabs);
-
-  await notifyRelayLocalState(tabs);
-
-  const endpoints = await publishEndpointSnapshot(reason, tabs);
-
-  return { ok: true, endpointCount: endpoints.length, registrationCount: Object.keys(registrations || {}).length,
-
-    pendingCount: pending.pendingCount, pendingChanged: pending.changed };
-
-}
-
 
 
 async function connectNativeHost() {
@@ -3833,14 +1834,6 @@ async function connectNativeHost() {
 
       await ensureRelayReceivers(tabs);
 
-      await ensureActivityBridges(tabs);
-
-      await ensureNaturalRoleBridges(tabs);
-
-      await reconcileRegistrationsWithTabs(tabs);
-
-      await reconcilePendingRelayTargets('native-connect', tabs);
-
       await publishEndpointSnapshot('native-connect', tabs);
 
     })().catch(() => {});
@@ -3854,95 +1847,6 @@ async function connectNativeHost() {
   }
 
 }
-
-
-
-async function registerRole(roleValue, tabId) {
-
-  const role = RelayCore.normalizeRole(roleValue);
-
-  const tab = await chrome.tabs.get(Number(tabId));
-
-  if (!tab.url || !/^https:\/\/(chatgpt\.com|chat\.openai\.com)\//i.test(tab.url)) {
-
-    throw new Error('Only ChatGPT tabs can be registered');
-
-  }
-
-  const conversationKey = RelayCore.conversationKey(tab.url);
-  const registration = await mutateRegistrationsWithLeaseFence(
-    [{ role }, { tabId: tab.id, conversationKey }],
-    async (state) => {
-      const previous = state.registrations?.[role] || null;
-      if (previous) {
-        const conflict = Object.values(state.bindingSubmitLeases || {}).some((lease) =>
-          bindingLeaseTargetsConflict(lease, previous));
-        if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
-      }
-      for (const [name, item] of Object.entries(state.registrations)) {
-        if (name !== role && item.tabId === tab.id) delete state.registrations[name];
-      }
-      state.registrations[role] = {
-        role,
-        tabId: tab.id,
-        conversationKey,
-        title: tab.title || '',
-        updatedAt: Date.now()
-      };
-      return { ...state.registrations[role] };
-    }
-  );
-
-  await notifyRelayLocalState();
-
-  return registration;
-
-}
-
-
-
-async function ensureRoleConversation(roleValue, conversationKeyValue, operationId) {
-
-  const role = RelayCore.normalizeRole(roleValue);
-
-  const key = String(conversationKeyValue || '').trim();
-
-  if (!/^[a-z0-9-]{8,64}$/i.test(key)) {
-
-    throw new Error(`Invalid conversation key: ${key}`);
-
-  }
-
-  const tabs = await getChatTabs();
-
-  const existing = tabs.find((item) => RelayCore.conversationKey(item.url || '') === key);
-
-  let tabId = Number(existing?.id) || null;
-
-  if (!tabId) {
-
-    const state = await loadState();
-
-    const receipt = await getBrowserTabCreateAdapter().createTab({
-      operationId,
-      instanceId: String(state.settings.instanceId || ''),
-      sessionId: endpointSessionId,
-      requestedWindowId: null,
-      conversationKey: key,
-    });
-
-    if (!receipt.ok || receipt.state !== 'CREATED_CONFIRMED') {
-      throw new Error(String(receipt.error || receipt.state || 'TAB_CREATE_NOT_CONFIRMED'));
-    }
-
-    tabId = Number(receipt.tabId);
-
-  }
-
-  return registerRole(role, tabId);
-
-}
-
 
 
 async function resolveRegistration(roleValue) {
@@ -4002,1093 +1906,166 @@ async function resolveRegistration(roleValue) {
 
 }
 
-function registrationHasDynamicAuthorization(registration, state) {
-  return !!registration
-    && registration.authorization === 'ACT_CONVERSATION_BIND'
-    && /^RCB-[A-Z0-9]{12,40}$/.test(String(registration.bindingReceiptId || ''))
-    && String(registration.transportInstanceId || '') === String(state?.settings?.instanceId || '')
-    && String(registration.sessionId || '') === String(endpointSessionId || '');
-}
-
-function registrationHasBootstrapAuthorization(registration, state) {
-
-  return !!registration
-
-    && registration.authorization === 'ACT_CONVERSATION_BOOTSTRAP'
-
-    && /^RCI-[A-Z0-9]{12,40}$/.test(String(registration.bootstrapReceiptId || ''))
-
-    && !String(registration.conversationKey || '')
-
-    && Number(registration.expiresAt || 0) > Date.now()
-
-    && String(registration.transportInstanceId || '') === String(state?.settings?.instanceId || '')
-
-    && String(registration.sessionId || '') === String(endpointSessionId || '');
-
-}
-
-function orchestrationBindingAttestationMatches(expected, actual) {
-  if (!expected || typeof expected !== 'object' || !actual || typeof actual !== 'object') return false;
-  return String(actual.instanceId || '') === String(expected.instanceId || '')
-    && String(actual.sessionId || '') === String(expected.sessionId || '')
-    && Number(actual.tabId || 0) === Number(expected.tabId || 0)
-    && String(actual.conversationKey || '') === String(expected.conversationKey || '')
-    && String(actual.bindingReceiptId || '') === String(expected.bindingReceiptId || '')
-    && Number(actual.attachmentGeneration || 0) === Number(expected.attachmentGeneration || 0)
-    && (!expected.leaseId || String(actual.leaseId || '') === String(expected.leaseId || ''))
-    && (!expected.leaseConsumedAt
-      || Number(actual.leaseConsumedAt || 0) === Number(expected.leaseConsumedAt || 0));
-}
-
-async function authorizeInjectionSender(sender, requestedConversationKey, exactBinding = null,
-  relayIdValue = '', authorizationPhase = 'PROBE') {
-  if (exactBinding && authorizationPhase === 'PRE_SUBMIT') {
-    return withBindingLeaseMutation(async () => {
-      const probe = await authorizeInjectionSender(
-        sender, requestedConversationKey, exactBinding, relayIdValue, 'PROBE'
-      );
-      if (probe?.authorized !== true) return probe;
-      const state = await loadState();
-      pruneExpiredBindingSubmitLeases(state);
-      const relayId = String(relayIdValue || '').trim();
-      const registration = state.registrations?.[probe.logicalNode] || null;
-      const pending = state.pending?.[relayId] || null;
-      const attestation = {
-        instanceId: String(registration?.transportInstanceId || ''),
-        sessionId: String(registration?.sessionId || ''),
-        tabId: Number(registration?.tabId || 0),
-        conversationKey: String(registration?.conversationKey || ''),
-        bindingReceiptId: String(registration?.bindingReceiptId || ''),
-        attachmentGeneration: Number(pending?.attachmentGeneration || 0)
-      };
-      if (!relayId || !pending
-          || !orchestrationBindingAttestationMatches(exactBinding, attestation)) {
-        return { ok: true, authorized: false, reason: 'RCC_INJECTION_EXACT_BINDING_MISMATCH' };
-      }
-      if (Number(pending.bindingLeaseConsumedAt || 0) > 0
-          || Number(pending.bindingAttestation?.leaseConsumedAt || 0) > 0) {
-        return { ok: true, authorized: false, reason: 'RCC_PRE_SUBMIT_LEASE_ALREADY_CONSUMED' };
-      }
-      const existing = Object.values(state.bindingSubmitLeases || {}).find((lease) =>
-        String(lease?.relayId || '') === relayId);
-      if (existing && !orchestrationBindingAttestationMatches(attestation, existing)) {
-        return { ok: true, authorized: false, reason: 'RCC_PRE_SUBMIT_LEASE_CONFLICT' };
-      }
-      const conflicting = Object.values(state.bindingSubmitLeases || {}).find((lease) =>
-        String(lease?.relayId || '') !== relayId
-        && bindingLeaseTargetsConflict(lease, { role: probe.logicalNode, ...attestation }));
-      if (conflicting) {
-        return { ok: true, authorized: false, reason: 'RCC_PRE_SUBMIT_LEASE_CONFLICT' };
-      }
-      const issuedAt = Date.now();
-      const lease = existing || {
-        ...attestation, leaseId: `RCL-${crypto.randomUUID().replaceAll('-', '').toUpperCase()}`,
-        relayId, role: probe.logicalNode, issuedAt,
-        expiresAt: issuedAt + BINDING_SUBMIT_LEASE_TTL_MS
-      };
-      state.bindingSubmitLeases[lease.leaseId] = lease;
-      await chrome.storage.local.set({ [BINDING_SUBMIT_LEASES_KEY]: state.bindingSubmitLeases });
-      setTimeout(() => { expireBindingSubmitLease(lease.leaseId).catch(() => {}); },
-        Math.max(1, Number(lease.expiresAt) - Date.now() + 25));
-      return { ...probe, bindingAttestation: { ...attestation,
-        leaseId: lease.leaseId, leaseExpiresAt: Number(lease.expiresAt) } };
-    });
-  }
-  await endpointSessionReady;
-  if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !isChatTab(sender.tab)) {
-    return { ok: true, authorized: false, reason: 'RCC_UNTRUSTED_INJECTION_SENDER' };
-  }
-  const tabId = Number(sender.tab?.id);
-  const liveKey = RelayCore.conversationKey(sender.tab?.url || '');
-  const requestedKey = String(requestedConversationKey || '').trim();
-  if (liveKey && requestedKey !== liveKey) {
-    return { ok: true, authorized: false, reason: 'RCC_INJECTION_CONVERSATION_MISMATCH' };
-  }
-  const state = await loadState();
-
-  if (!liveKey && !requestedKey) {
-
-    const pendingBootstrapSends = Object.entries(state.pending || {}).filter(([, pending]) =>
-
-      pending?.bootstrapCreatedTab === true
-
-      && Number(pending?.tabId) === tabId
-
-      && String(pending?.instanceId || '') === String(state.settings?.instanceId || '')
-
-      && String(pending?.sessionId || '') === String(endpointSessionId || '')
-
-      && ['INTENT_RECORDED', 'SUBMITTED'].includes(String(pending?.submissionState || '')));
-
-    if (pendingBootstrapSends.length === 1) {
-
-      return { ok: true, authorized: true, logicalNode: '', conversationKey: '',
-
-        instanceId: String(state.settings?.instanceId || ''), sessionId: endpointSessionId, tabId,
-
-        bootstrapCreatedTab: true, operationId: pendingBootstrapSends[0][0] };
-
-    }
-
-    if (pendingBootstrapSends.length > 1) {
-
-      return { ok: true, authorized: false, reason: 'RCC_INJECTION_BOOTSTRAP_AMBIGUOUS' };
-
-    }
-
-    const bootstrapMatches = Object.values(state.registrations || {}).filter((registration) =>
-
-      Number(registration?.tabId) === tabId && registrationHasBootstrapAuthorization(registration, state));
-
-    if (bootstrapMatches.length !== 1) {
-
-      return { ok: true, authorized: false, reason: bootstrapMatches.length ? 'RCC_INJECTION_BINDING_AMBIGUOUS' : 'RCC_INJECTION_BINDING_REQUIRED' };
-
-    }
-
-    return { ok: true, authorized: true, logicalNode: bootstrapMatches[0].role,
-
-      conversationKey: '', instanceId: bootstrapMatches[0].transportInstanceId,
-
-      sessionId: bootstrapMatches[0].sessionId, tabId };
-
-  }
-  const matches = Object.values(state.registrations || {}).filter((registration) =>
-    Number(registration?.tabId) === tabId
-    && String(registration?.conversationKey || '') === liveKey
-    && registrationHasDynamicAuthorization(registration, state));
-  if (matches.length !== 1) {
-    return { ok: true, authorized: false, reason: matches.length ? 'RCC_INJECTION_BINDING_AMBIGUOUS' : 'RCC_INJECTION_BINDING_REQUIRED' };
-  }
-  const registration = matches[0];
-  let bindingAttestation = null;
-  if (exactBinding && typeof exactBinding === 'object') {
-    const relayId = String(relayIdValue || '').trim();
-    const pending = relayId ? state.pending?.[relayId] : null;
-    bindingAttestation = {
-      instanceId: String(registration.transportInstanceId || ''),
-      sessionId: String(registration.sessionId || ''),
-      tabId,
-      conversationKey: liveKey,
-      bindingReceiptId: String(registration.bindingReceiptId || ''),
-      attachmentGeneration: Number(pending?.attachmentGeneration || 0)
-    };
-    const pendingExpected = pending ? {
-      instanceId: String(pending.expectedInstanceId || ''),
-      sessionId: String(pending.expectedSessionId || ''),
-      tabId: Number(pending.tabId || 0),
-      conversationKey: String(pending.conversationKey || ''),
-      bindingReceiptId: String(pending.targetBindingReceipt || ''),
-      attachmentGeneration: Number(pending.attachmentGeneration || 0)
-    } : null;
-    if (!pendingExpected
-        || !orchestrationBindingAttestationMatches(exactBinding, bindingAttestation)
-        || !orchestrationBindingAttestationMatches(pendingExpected, bindingAttestation)) {
-      return { ok: true, authorized: false, reason: 'RCC_INJECTION_EXACT_BINDING_MISMATCH' };
-    }
-  }
-  return { ok: true, authorized: true, logicalNode: registration.role,
-    conversationKey: liveKey, instanceId: registration.transportInstanceId,
-    sessionId: registration.sessionId, tabId, bindingReceiptId: registration.bindingReceiptId,
-    bindingAttestation };
-}
-
-async function consumeBindingSubmitLease(sender, relayIdValue, bindingAttestation) {
-  await endpointSessionReady;
-  return withBindingLeaseMutation(async () => {
-    if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !isChatTab(sender.tab)) {
-      throw new Error('RCC_UNTRUSTED_INJECTION_SENDER');
-    }
-    const state = await loadState();
-    pruneExpiredBindingSubmitLeases(state);
-    const relayId = String(relayIdValue || '').trim();
-    const leaseId = String(bindingAttestation?.leaseId || '').trim();
-    const lease = state.bindingSubmitLeases?.[leaseId] || null;
-    const pending = state.pending?.[relayId] || null;
-    if (!lease || !pending || String(lease.relayId || '') !== relayId) {
-      throw new Error('RCC_PRE_SUBMIT_LEASE_MISSING_OR_EXPIRED');
-    }
-    const liveKey = RelayCore.conversationKey(sender.tab?.url || '');
-    const registration = state.registrations?.[lease.role] || null;
-    const current = {
-      instanceId: String(registration?.transportInstanceId || ''),
-      sessionId: String(registration?.sessionId || ''),
-      tabId: Number(sender.tab?.id || 0), conversationKey: liveKey,
-      bindingReceiptId: String(registration?.bindingReceiptId || ''),
-      attachmentGeneration: Number(pending.attachmentGeneration || 0)
-    };
-    if (!registration || Number(registration.tabId) !== Number(sender.tab?.id)
-        || !orchestrationBindingAttestationMatches(lease, bindingAttestation)
-        || !orchestrationBindingAttestationMatches(current, lease)) {
-      throw new Error('RCC_PRE_SUBMIT_LEASE_ATTESTATION_MISMATCH');
-    }
-    delete state.bindingSubmitLeases[leaseId];
-    const consumed = { ...current, leaseId, leaseExpiresAt: Number(lease.expiresAt),
-      leaseConsumedAt: Date.now() };
-    pending.bindingAttestation = consumed;
-    pending.bindingLeaseConsumedAt = consumed.leaseConsumedAt;
-    state.pending[relayId] = pending;
-    await chrome.storage.local.set({ pending: state.pending,
-      [BINDING_SUBMIT_LEASES_KEY]: state.bindingSubmitLeases });
-    return { ok: true, consumed: true, bindingAttestation: consumed };
-  });
-}
-
-
-
 const nativeRelayInflight = new Map();
 
-async function dispatchRelay({ to, text, id, source, fromNode = '', messageHash = '',
-
-  targetBindingReceipt = '', expectedInstanceId = '', expectedSessionId = '',
-  expectedTabId = 0, expectedConversationKey = '', attachmentGeneration = 0,
-  returnToControl, returnToRole = '', hostRequestId }) {
-
-  const role = RelayCore.normalizeRole(to);
-
-  if (role === CONTROL) throw new Error('CONTROL cannot be a worker target');
-
-  const relayId = id || crypto.randomUUID();
-
-  const payloadText = String(text || '').slice(0, 12000);
-
-  const fingerprint = JSON.stringify([role, payloadText, !!returnToControl,
-    String(returnToRole || ''), String(targetBindingReceipt || ''),
-    String(messageHash || ''), String(expectedInstanceId || ''),
-    String(expectedSessionId || ''), Number(expectedTabId) || 0,
-    String(expectedConversationKey || ''), Number(attachmentGeneration) || 0]);
-
-  const running = nativeRelayInflight.get(relayId);
-
-  if (running) {
-
-    if (running.fingerprint !== fingerprint) throw new Error('RELAY_ID_REUSE_MISMATCH');
-
-    return { ...(await running.promise), duplicate: true, inflight: true };
-
-  }
-
-  const promise = dispatchRelayOnce({ role, payloadText, relayId, source, fromNode,
-
-    messageHash, targetBindingReceipt, expectedInstanceId, expectedSessionId,
-    expectedTabId, expectedConversationKey, attachmentGeneration,
-    returnToControl, returnToRole, hostRequestId, fingerprint });
-
-  nativeRelayInflight.set(relayId, { fingerprint, promise });
-
-  try { return await promise; }
-
-  finally { nativeRelayInflight.delete(relayId); }
-
-}
-
-async function dispatchRelayOnce({ role, payloadText, relayId, source, fromNode = '',
-
-  messageHash = '', targetBindingReceipt = '', expectedInstanceId = '',
-  expectedSessionId = '', expectedTabId = 0, expectedConversationKey = '',
-  attachmentGeneration = 0, returnToControl, returnToRole = '', hostRequestId, fingerprint }) {
-
-  const reg = await resolveRegistration(role);
-
-  const state = await loadState();
-
-  if (targetBindingReceipt
-      && String(reg.bindingReceiptId || '') !== String(targetBindingReceipt)) {
-    throw new Error('TARGET_BINDING_RECEIPT_MISMATCH');
-  }
-
-  const exactRegistration = state.registrations?.[role] || null;
-  if (!exactRegistration
-      || Number(exactRegistration.tabId) !== Number(reg.tabId)
-      || String(exactRegistration.conversationKey || '') !== String(reg.conversationKey || '')
-      || String(exactRegistration.sessionId || '') !== String(reg.sessionId || '')
-      || (targetBindingReceipt && String(exactRegistration.bindingReceiptId || '') !== String(targetBindingReceipt))
-      || (expectedInstanceId && String(exactRegistration.transportInstanceId || '') !== String(expectedInstanceId))
-      || (expectedSessionId && String(exactRegistration.sessionId || '') !== String(expectedSessionId))
-      || (Number(expectedTabId) > 0 && Number(exactRegistration.tabId) !== Number(expectedTabId))
-      || (expectedConversationKey && String(exactRegistration.conversationKey || '') !== String(expectedConversationKey))) {
-    throw new Error('TARGET_BINDING_CHANGED_BEFORE_DISPATCH');
-  }
-
-  const bootstrapAuthorized = registrationHasBootstrapAuthorization(reg, state);
-
-  if (!registrationHasDynamicAuthorization(reg, state) && !bootstrapAuthorized) throw new Error('CHAT_INJECTION_DISABLED');
-
-  const completed = publicResultFromReceipt(state.resultReceipts?.[relayId]) ||
-
-    (state.results || []).find((item) => String(item?.id || '') === relayId);
-
-  if (completed) {
-
-    if (String(completed.fingerprint || '') && completed.fingerprint !== fingerprint) throw new Error('RELAY_ID_REUSE_MISMATCH');
-
-    return { ok: true, relayId, to: completed.from || role, duplicate: true, completed: true, completedResult: completed };
-
-  }
-
-  const existing = state.pending?.[relayId];
-
-  if (existing) {
-
-    if (existing.fingerprint && existing.fingerprint !== fingerprint) throw new Error('RELAY_ID_REUSE_MISMATCH');
-
-    if (existing.to !== role) throw new Error('RELAY_ID_REUSE_MISMATCH');
-
-    return { ok: true, relayId, to: role, duplicate: true, pending: true, deliveryConfirmed: existing.deliveryConfirmed === true };
-
-  }
-
-  if (bootstrapAuthorized && reg.bootstrapConsumedAt) throw new Error('CONVERSATION_BOOTSTRAP_ALREADY_CONSUMED');
-
-  state.pending[relayId] = { to: role, tabId: reg.tabId, conversationKey: String(reg.conversationKey || ''),
-
-    ...(bootstrapAuthorized ? { bootstrapCreatedTab: true, instanceId: state.settings.instanceId,
-      sessionId: endpointSessionId, submissionState: 'INTENT_RECORDED' } : {}),
-    source, fromNode: String(fromNode || ''), messageHash: String(messageHash || ''),
-
-    targetBindingReceipt: String(targetBindingReceipt || ''), returnToControl: !!returnToControl,
-
-    expectedInstanceId: String(expectedInstanceId || ''),
-    expectedSessionId: String(expectedSessionId || ''),
-    attachmentGeneration: Number(attachmentGeneration) || 0,
-
-    returnToRole: String(returnToRole || ''), hostRequestId: hostRequestId || '', fingerprint,
-
-    createdAt: Date.now(), deliveryConfirmed: false };
-
-  await chrome.storage.local.set({ pending: state.pending });
-
-  const exactFenceRequested = !!(targetBindingReceipt || expectedInstanceId
-    || expectedSessionId || Number(expectedTabId) > 0 || expectedConversationKey);
-  if (exactFenceRequested) {
-    const preDispatchState = await loadState();
-    const preDispatchRegistration = preDispatchState.registrations?.[role] || null;
-    if (!preDispatchRegistration
-        || String(preDispatchRegistration.bindingReceiptId || '') !== String(targetBindingReceipt || '')
-        || String(preDispatchRegistration.transportInstanceId || '') !== String(expectedInstanceId || '')
-        || String(preDispatchRegistration.sessionId || '') !== String(expectedSessionId || '')
-        || Number(preDispatchRegistration.tabId) !== Number(expectedTabId)
-        || String(preDispatchRegistration.conversationKey || '') !== String(expectedConversationKey || '')) {
-      delete preDispatchState.pending[relayId];
-      await chrome.storage.local.set({ pending: preDispatchState.pending });
-      throw new Error('TARGET_BINDING_CHANGED_BEFORE_SUBMIT');
-    }
-  }
-
-  let ack;
-
-  const exactBinding = exactFenceRequested ? {
-    instanceId: String(expectedInstanceId || ''),
-    sessionId: String(expectedSessionId || ''),
-    tabId: Number(expectedTabId) || 0,
-    conversationKey: String(expectedConversationKey || ''),
-    bindingReceiptId: String(targetBindingReceipt || ''),
-    attachmentGeneration: Number(attachmentGeneration) || 0
-  } : null;
-
-  try { ack = await sendToChatTab(reg.tabId, {
-    type: 'relay:execute', relayId, text: payloadText, exactBinding, bootstrapCreatedTab: bootstrapAuthorized
-  }); }
-
-  catch (error) {
-
-    state.pending[relayId].submitUnknown = true;
-
-    state.pending[relayId].lastTransportError = String(error?.message || error || 'RELAY_SUBMIT_UNKNOWN').slice(0, 200);
-
-    await chrome.storage.local.set({ pending: state.pending });
-
-    throw error;
-
-  }
-
-  if (!ack || !ack.ok || (ack.submitted !== true && ack.deferred !== true)) {
-    const effectState = String(ack?.effectState || '').toUpperCase();
-    if (effectState === 'NOT_APPLIED' && ack?.submitted === false) {
-      const latest = await loadState();
-      if (latest.pending?.[relayId]) delete latest.pending[relayId];
-      await chrome.storage.local.set({ pending: latest.pending });
-      return { ok: false, relayId, to: role, effectState: 'NOT_APPLIED',
-        error: String(ack?.error || 'Worker did not accept relay') };
-    }
-    const latest = await loadState();
-    const latestPending = latest.pending?.[relayId];
-    if (latestPending) {
-      latestPending.submitUnknown = true;
-      latestPending.lastTransportError = String(
-        ack?.error || 'RELAY_SUBMIT_OUTCOME_UNKNOWN'
-      ).slice(0, 200);
-      latest.pending[relayId] = latestPending;
-      await chrome.storage.local.set({ pending: latest.pending });
-    }
-    return { ok: false, relayId, to: role, effectState: 'UNKNOWN', ambiguous: true,
-      error: String(ack?.error || 'Worker did not accept relay') };
-
-  }
-
-  const latestState = await loadState();
-
-  const latestPending = latestState.pending?.[relayId];
-
-  if (!latestPending) throw new Error('RELAY_PENDING_LOST_AFTER_ACCEPT');
-
-  if (exactFenceRequested && ack.submitted === true
-      && (!orchestrationBindingAttestationMatches(exactBinding, ack.bindingAttestation)
-        || !ack.bindingAttestation?.leaseId
-        || Number(ack.bindingAttestation?.leaseConsumedAt || 0) <= 0
-        || !orchestrationBindingAttestationMatches(
-          latestPending.bindingAttestation, ack.bindingAttestation
-        ))) {
-    latestPending.submitUnknown = true;
-    latestPending.lastTransportError = 'RELAY_SUBMIT_ATTESTATION_MISMATCH';
-    latestState.pending[relayId] = latestPending;
-    await chrome.storage.local.set({ pending: latestState.pending });
-    throw new Error('RELAY_SUBMIT_ATTESTATION_MISMATCH');
-  }
-
-  latestPending.deliveryConfirmed = ack.submitted === true;
-
-  latestPending.deferred = ack.deferred === true;
-
-  latestPending.acceptedAt = Date.now();
-
-  latestPending.stageTiming = ack.stageTiming && typeof ack.stageTiming === 'object'
-    ? { ...ack.stageTiming } : null;
-
-  if (ack.bindingAttestation && typeof ack.bindingAttestation === 'object') {
-    latestPending.bindingAttestation = { ...ack.bindingAttestation };
-  }
-
-  if (ack.submitted === true) latestPending.submittedAt = Date.now();
-
-  if (bootstrapAuthorized) {
-
-    const latestRegistration = latestState.registrations?.[role];
-
-    if (latestRegistration && String(latestRegistration.bootstrapReceiptId || '') === String(reg.bootstrapReceiptId || '')) {
-
-      latestRegistration.bootstrapConsumedAt = Date.now();
-
-      latestRegistration.updatedAt = Date.now();
-
-      latestState.registrations[role] = latestRegistration;
-
-    }
-
-  }
-
-  latestState.pending[relayId] = latestPending;
-
-  await chrome.storage.local.set({ pending: latestState.pending, registrations: latestState.registrations });
-
-  return { ok: true, relayId, to: role, deliveryConfirmed: latestPending.deliveryConfirmed, deferred: latestPending.deferred };
-
-}
-
-
-
-async function deliverResult(relayId, result, senderTabId, bindingAttestation = null) {
-
-  const state = await loadState();
-
-  const pending = state.pending[relayId];
-
-  if (!pending) {
-
-    const existing = state.resultReceipts?.[relayId] || null;
-
-    if (existing) {
-
-      if (existing.returnState === 'PENDING') throw new Error('RELAY_RETURN_RECOVERY_STATE_MISSING');
-
-      const replay = await persistDurableResultReceipt(relayId, null, result);
-
-      return { ok: true, duplicate: replay.duplicate, resultHash: replay.receipt.resultHash,
-        returnState: String(replay.receipt.returnState || '') };
-
-    }
-
-    const completed = (state.results || []).find((item) => String(item?.id || '') === String(relayId));
-
-    if (completed) return { ok: true, duplicate: true };
-
-    throw new Error('Unknown relay result');
-
-  }
-
-  if (result?.stageTiming && typeof result.stageTiming === 'object') {
-    const allowed = [
-      'commandReceivedAt', 'editorReadyAt', 'draftExactAt',
-      'sendButtonReadyAt', 'sendButtonClickedAt', 'userTurnConfirmedAt',
-      'conversationCapturedAt', 'assistantResponseStartedAt',
-      'assistantResponseCompletedAt'
-    ];
-    pending.stageTiming = { ...(pending.stageTiming || {}) };
-    for (const key of allowed) {
-      const value = Number(result.stageTiming[key] || 0);
-      pending.stageTiming[key] = value > 0 ? value : null;
-    }
-  }
-
-  if (pending.tabId !== senderTabId) throw new Error('Relay result came from wrong tab');
-
-  const exactFenceRequested = !!(pending.targetBindingReceipt || pending.expectedInstanceId
-    || pending.expectedSessionId || Number(pending.attachmentGeneration) > 0);
-  if (exactFenceRequested) {
-    const pendingExpected = {
-      instanceId: String(pending.expectedInstanceId || ''),
-      sessionId: String(pending.expectedSessionId || ''),
-      tabId: Number(pending.tabId || 0),
-      conversationKey: String(pending.conversationKey || ''),
-      bindingReceiptId: String(pending.targetBindingReceipt || ''),
-      attachmentGeneration: Number(pending.attachmentGeneration || 0)
-    };
-    if (!orchestrationBindingAttestationMatches(pendingExpected, bindingAttestation)) {
-      throw new Error('RELAY_RESULT_BINDING_ATTESTATION_MISMATCH');
-    }
-    if (!pending.bindingAttestation?.leaseId
-        || Number(pending.bindingAttestation?.leaseConsumedAt || 0) <= 0
-        || !orchestrationBindingAttestationMatches(
-          pending.bindingAttestation, bindingAttestation
-        )) {
-      throw new Error('RELAY_RESULT_LEASE_ATTESTATION_MISMATCH');
-    }
-    pending.bindingAttestation = { ...bindingAttestation };
-  }
-
-  if (pending.bootstrapCreatedTab === true) {
-
-    const senderTab = await chrome.tabs.get(Number(senderTabId));
-
-    const liveConversationKey = RelayCore.conversationKey(senderTab?.url || '');
-
-    if (!liveConversationKey) throw new Error('BOOTSTRAP_CONVERSATION_ID_NOT_CAPTURED');
-
-    if (pending.conversationKey && pending.conversationKey !== liveConversationKey) {
-
-      throw new Error('BOOTSTRAP_CONVERSATION_IDENTITY_MISMATCH');
-
-    }
-
-    pending.conversationKey = liveConversationKey;
-
-  }
-
-  const durable = await persistDurableResultReceipt(relayId, pending, result);
-
-  // The first send on an existing empty tab creates its conversation key.
-  // Promote the exact registration inside the existing binding mutation lock:
-  // updating a loadState() snapshot without persisting registrations loses the
-  // key, and writing a stale full snapshot can clobber another tab's binding.
-  if (pending.bootstrapCreatedTab === true && pending.source === 'BCT_DIRECT_TAB') {
-    const role = String(pending.to || '');
-    const conversationKey = String(pending.conversationKey || '');
-    await mutateRegistrationsWithLeaseFence(
-      [{ role }, { tabId: senderTabId, conversationKey }],
-      async (fresh) => {
-        const bound = fresh.registrations?.[role];
-        if (!bound?.directTabWorkId
-            || bound.directTabOperationId !== relayId
-            || Number(bound.tabId) !== Number(senderTabId)
-            || Number(pending.tabId) !== Number(senderTabId)
-            || !bound.bootstrapConsumedAt || !conversationKey
-            || String(bound.transportInstanceId || '') !== String(fresh.settings.instanceId || '')
-            || String(bound.sessionId || '') !== String(endpointSessionId || '')
-            || !['ACT_CONVERSATION_BOOTSTRAP', 'ACT_CONVERSATION_BIND'].includes(bound.authorization)
-            || (bound.conversationKey && bound.conversationKey !== conversationKey)) {
-          throw new Error('DIRECT_TAB_RESULT_BINDING_CHANGED');
-        }
-        if (bound.conversationKey === conversationKey
-            && bound.authorization === 'ACT_CONVERSATION_BIND') return bound;
-        bound.conversationKey = conversationKey;
-        bound.authorization = 'ACT_CONVERSATION_BIND';
-        bound.updatedAt = Date.now();
-        fresh.registrations[role] = bound;
-        return bound;
-      }
-    );
-  }
-  const latestState = await loadState();
-  const completedAt = Date.now();
-
-  const createdAt = Number(pending.createdAt || 0) || null;
-
-  const acceptedAt = Number(pending.acceptedAt || 0) || null;
-
-  const submittedAt = Number(pending.submittedAt || 0) || null;
-
-  const networkStartedAt = Number(pending.networkStartedAt || 0) || null;
-
-  const networkCompletedAt = Number(pending.networkCompletedAt || 0) || null;
-
-  const timing = {
-
-    createdAt, acceptedAt, submittedAt, networkStartedAt, networkCompletedAt, completedAt,
-
-    deliveryMs: createdAt && networkStartedAt ? Math.max(0, networkStartedAt - createdAt) : null,
-
-    processingMs: networkStartedAt && networkCompletedAt ? Math.max(0, networkCompletedAt - networkStartedAt) : null,
-
-    returnMs: networkCompletedAt ? Math.max(0, completedAt - networkCompletedAt) : null,
-
-    totalMs: createdAt ? Math.max(0, completedAt - createdAt) : null
-
-  };
-
-  pending.timing = timing;
-
-  const completedResult = {
-
-    id: relayId,
-
-    from: pending.to,
-
-    ok: !!result.ok,
-
-    reply: String(result.reply || ''),
-
-    error: String(result.error || ''),
-
-    fingerprint: String(pending.fingerprint || ''),
-
-    tabId: Number(pending.tabId) || null, conversationKey: String(pending.conversationKey || ''),
-
-    networkPath: String(pending.networkPath || ''),
-
-    networkCandidates: Array.isArray(pending.networkCandidates) ? pending.networkCandidates : [],
-
-    networkStartedAt, networkCompletedAt,
-
-    networkDurationMs: timing.processingMs,
-
-    timing,
-
-    at: completedAt
-
-  };
-
-  latestState.results = (latestState.results || []).filter((item) => String(item?.id || '') !== String(relayId));
-
-  latestState.results.unshift(completedResult);
-
-  latestState.results = latestState.results.slice(0, 50);
-
-  if (pending.bootstrapCreatedTab === true && latestState.operations?.[relayId]?.command === 'send-to-created-tab') {
-
-    const operation = latestState.operations[relayId];
-
-    operation.result = {
-
-      ...(operation.result || {}), ok: !!result.ok, state: 'RESPONSE_COMPLETED', responsePending: false,
-
-      conversationKey: String(pending.conversationKey || ''), tabId: Number(pending.tabId) || null,
-
-      windowId: Number(pending.windowId) || null, reply: String(result.reply || ''),
-
-      error: String(result.error || ''), resultHash: String(durable.receipt.resultHash || '')
-
-    };
-
-    operation.at = Date.now();
-
-    latestState.operations[relayId] = operation;
-
-  }
-
-  await chrome.storage.local.set({ results: latestState.results, operations: latestState.operations });
-
-
-
-  if (pending.hostRequestId) {
-
-    postNative({
-
-      type: 'host:result',
-
-      requestId: pending.hostRequestId,
-
-      relayId,
-
-      from: pending.to,
-
-      ok: !!result.ok,
-
-      reply: String(result.reply || ''),
-
-      error: String(result.error || ''),
-
-      timing
-
-    });
-
-  }
-
-  const returnRole = String(pending.returnToRole || '').trim() || (pending.returnToControl ? CONTROL : '');
-
-  if (!returnRole) {
-
-    const finalState = await loadState();
-
-    if (finalState.pending?.[relayId]) delete finalState.pending[relayId];
-
-    await chrome.storage.local.set({ pending: finalState.pending });
-
-    return { ok: true, duplicate: durable.duplicate,
-
-      resultHash: durable.receipt.resultHash, returnState: 'NOT_REQUESTED' };
-
-  }
-
-  const control = await resolveRegistration(returnRole);
-
-  const envelope = RelayCore.makeResultEnvelope(
-
-    pending.to,
-
-    relayId,
-
-    result.ok ? result.reply : `ERROR: ${result.error || 'unknown'}`
-
-  );
-
-  const delivery = await sendToChatTab(control.tabId, {
-
-    type: 'relay:deliver',
-
-    relayId,
-
-    text: envelope
-
-  });
-
-  if (!delivery?.ok) throw new Error(delivery?.error || 'RELAY_RETURN_DELIVERY_NOT_ACKED');
-
-  const returned = await markDurableReceiverDelivered(relayId);
-
-  const finalState = await loadState();
-
-  if (finalState.pending?.[relayId]) delete finalState.pending[relayId];
-
-  await chrome.storage.local.set({ pending: finalState.pending });
-
-  return { ok: true, duplicate: durable.duplicate, resultHash: durable.receipt.resultHash,
-    returnState: String(returned.receipt?.returnState || ''),
-    receiverAckState: String(returned.receipt?.receiverAckState || '') };
-
-}
-
-
-
-async function autoDirective(payload, senderTabId) {
-
-  const state = await loadState();
-
-  const control = state.registrations[CONTROL];
-
-  if (!control || control.tabId !== senderTabId) throw new Error('Directive not from CONTROL');
-
-  if (!state.settings.armed || state.settings.budget <= 0) throw new Error('Auto relay is not armed');
-
-  if (payload.token !== state.settings.token) throw new Error('Bad relay token');
-
-  const relayId = payload.id || crypto.randomUUID();
-
-  if (state.processed.includes(relayId)) throw new Error('Duplicate relay id');
-
-  state.processed.unshift(relayId);
-
-  state.processed = state.processed.slice(0, 100);
-
-  state.settings.budget -= 1;
-
-  if (state.settings.budget <= 0) state.settings.armed = false;
-
-  await chrome.storage.local.set({ processed: state.processed, settings: state.settings });
-
-  return dispatchRelay({ to: payload.to, text: payload.text, id: relayId, source: 'control', returnToControl: true });
-
-}
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-
   (async () => {
-
     const messageDecision = RccLegacyCommandPolicy.runtimeMessage(message?.type);
-    if (!messageDecision.allowed) {
-      throw new Error(RccLegacyCommandPolicy.rejectCode('RUNTIME_MESSAGE', message?.type, messageDecision));
-    }
-
-    if (message.type === 'relay:actDirectTask') return requestActDirectTask(sender, message.directive);
-
-    if (message.type === 'relay:actLocalExecution') return requestActLocalExecution(sender, message.directive);
-
-    if (message.type === 'relay:actWorkerOperation') return requestActWorkerOperation(sender, message.directive);
-
-    if (message.type === 'relay:actNaturalCommand') return requestActNaturalCommand(sender, message.text);
-
-    if (message.type === 'relay:actBootstrapResync') {
-
-      if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !isChatTab(sender.tab)) throw new Error('ACT_UNTRUSTED_SENDER');
-
-      return requestActBootstrapResync(sender.tab);
-
-    }
-
-    if (message.type === 'relay:forceRefresh') return forceRelayRefresh('manual-refresh');
-
-    if (message.type === 'relay:authorizeInjection') {
-      return authorizeInjectionSender(
-        sender, message.conversationKey, message.exactBinding, message.relayId,
-        message.authorizationPhase
-      );
-    }
-
-    if (message.type === 'relay:consumeBindingLease') {
-      return consumeBindingSubmitLease(
-        sender, message.relayId, message.bindingAttestation
-      );
-    }
-
+    if (!messageDecision.allowed) throw new Error(RccLegacyCommandPolicy.rejectCode('RUNTIME_MESSAGE', message?.type, messageDecision));
     if (message.type === 'relay:getPendingStatus') {
 
-      const state = await loadState();
 
-      const relayId = String(message.relayId || '');
+          const state = await loadState();
 
-      const pending = state.pending?.[relayId];
 
-      const tabId = Number(sender.tab?.id);
+          const relayId = String(message.relayId || '');
 
-      const key = RelayCore.conversationKey(sender.tab?.url || '');
 
-      if (!pending) {
-        const receipt = state.resultReceipts?.[relayId] || null;
-        const exactDurableResult = receipt?.resultState === 'RESULT_PERSISTED'
-          && Number(receipt.tabId) === tabId
-          && !!String(receipt.conversationKey || '')
-          && String(receipt.conversationKey) === key;
-        if (exactDurableResult) return { ok: true, found: false, completed: true,
-          relayId, resultHash: String(receipt.resultHash || '') };
-        return { ok: false, found: false };
-      }
+          const pending = state.pending?.[relayId];
 
-      if (Number(pending.tabId) !== tabId) return { ok: false, found: false };
 
-      if (pending.conversationKey && key !== pending.conversationKey) return { ok: false, found: false, error: 'PENDING_IDENTITY_MISMATCH' };
+          const tabId = Number(sender.tab?.id);
 
-      return { ok: true, found: true, relayId,
 
-        deliveryConfirmed: pending.deliveryConfirmed === true,
+          const key = RelayCore.conversationKey(sender.tab?.url || '');
 
-        networkStartedAt: Number(pending.networkStartedAt || 0) || null,
 
-        networkCompletedAt: Number(pending.networkCompletedAt || 0) || null,
+          if (!pending) {
 
-        networkOk: pending.networkOk !== false,
+            const receipt = state.resultReceipts?.[relayId] || null;
 
-        networkError: String(pending.networkError || '') };
+            const exactDurableResult = receipt?.resultState === 'RESULT_PERSISTED'
 
-    }
+              && Number(receipt.tabId) === tabId
+
+              && !!String(receipt.conversationKey || '')
+
+              && String(receipt.conversationKey) === key;
+
+            if (exactDurableResult) return { ok: true, found: false, completed: true,
+
+              relayId, resultHash: String(receipt.resultHash || '') };
+
+            return { ok: false, found: false };
+
+          }
+
+
+          if (Number(pending.tabId) !== tabId) return { ok: false, found: false };
+
+
+          if (pending.conversationKey && key !== pending.conversationKey) return { ok: false, found: false, error: 'PENDING_IDENTITY_MISMATCH' };
+
+
+          return { ok: true, found: true, relayId,
+
+
+            deliveryConfirmed: pending.deliveryConfirmed === true,
+
+
+            networkStartedAt: Number(pending.networkStartedAt || 0) || null,
+
+
+            networkCompletedAt: Number(pending.networkCompletedAt || 0) || null,
+
+
+            networkOk: pending.networkOk !== false,
+
+
+            networkError: String(pending.networkError || '') };
+
+
+        }
 
     if (message.type === 'relay:getState') {
 
-      const state = await loadState();
 
-      const tabs = (await getChatTabs()).map(publicTab);
+          const state = await loadState();
 
-      return { ok: true, tabs, registrations: state.registrations, settings: state.settings, results: state.results };
 
-    }
+          const tabs = (await getChatTabs()).map(publicTab);
 
-    if (message.type === 'relay:register') {
 
-      return { ok: true, registration: await registerRole(message.role, message.tabId) };
+          return { ok: true, tabs, registrations: state.registrations, settings: state.settings, results: state.results };
 
-    }
-
-    if (message.type === 'relay:arm') {
-
-      const state = await loadState();
-
-      state.settings.armed = !!message.armed;
-
-      state.settings.budget = state.settings.armed ? Math.max(1, Math.min(Number(message.budget) || 6, 12)) : 0;
-
-      await chrome.storage.local.set({ settings: state.settings });
-
-      await notifyRelayLocalState();
-
-      return { ok: true, settings: state.settings };
-
-    }
-
-    if (message.type === 'relay:manualSend') {
-
-      return dispatchRelay({ to: message.to, text: message.text, source: 'popup', returnToControl: !!message.returnToControl });
-
-    }
-
-    if (message.type === 'relay:bootstrap') {
-
-      const state = await loadState();
-
-      const control = await resolveRegistration(CONTROL);
-
-      const reply = await sendToChatTab(control.tabId, { type: 'relay:bootstrap', token: state.settings.token });
-
-      return reply || { ok: false, error: 'No bootstrap response' };
-
-    }
-
-    if (message.type === 'relay:hello') {
-
-      const state = await loadState();
-
-      const tabId = sender.tab?.id;
-
-      const key = RelayCore.conversationKey(sender.tab?.url || message.url || '');
-
-      let role = null;
-
-      for (const [name, reg] of Object.entries(state.registrations)) {
-
-        const keyMatches = !!(reg.conversationKey && key && reg.conversationKey === key);
-
-        const legacyTabMatches = !reg.conversationKey && reg.tabId === tabId;
-
-        if (keyMatches || legacyTabMatches) {
-
-          role = name;
-          const capturesBootstrapKey = !!(key && !reg.conversationKey
-            && reg.authorization === 'ACT_CONVERSATION_BOOTSTRAP');
-          const rebindsTab = !!(tabId && reg.tabId !== tabId);
-          if (capturesBootstrapKey || rebindsTab) {
-            await mutateRegistrationsWithLeaseFence(
-              [{ role: name }, reg, { tabId, conversationKey: key }],
-              async (latest) => {
-                const current = latest.registrations?.[name];
-                if (!current) throw new Error('LOGICAL_NODE_BINDING_MISSING');
-                if (capturesBootstrapKey) current.bootstrapConversationKey = key;
-                if (rebindsTab) current.tabId = tabId;
-                current.updatedAt = Date.now();
-                latest.registrations[name] = current;
-              }
-            );
-          }
-
-          break;
 
         }
 
-      }
-
-      return { ok: true, role, armed: !!state.settings.armed, budget: state.settings.budget || 0,
-
-        markerScanEnabled: !!state.settings.armed };
-
-    }
-
-    if (message.type === 'relay:returnDelivered') {
-      const relayId = String(message.relayId || '').trim();
-      const confirmed = await confirmDurableReceiverDelivery(sender, relayId);
-      return { ok: true, relayId, returnState: String(confirmed.receipt?.returnState || ''),
-        receiverAckState: String(confirmed.receipt?.receiverAckState || ''),
-        duplicate: confirmed.duplicate === true };
-    }
-
-    if (message.type === 'relay:deliveryReady') {
-      await endpointSessionReady;
-      const tab = sender.tab;
-      if (!isChatTab(tab) || tab?.id == null) {
-        return { ok: false, error: 'DELIVERY_READY_SOURCE_NOT_CHAT_TAB' };
-      }
-      const state = await loadState();
-      const conversationKey = RelayCore.conversationKey(tab.url || '');
-      if (!conversationKey || conversationKey !== String(message.conversationKey || '')) {
-        return { ok: false, error: 'DELIVERY_READY_CONVERSATION_MISMATCH' };
-      }
-      const authorized = Object.values(state.registrations || {}).some((registration) =>
-        Number(registration?.tabId) === Number(tab.id)
-        && String(registration?.conversationKey || '') === conversationKey
-        && (registrationHasDynamicAuthorization(registration, state)
-          || registrationHasBootstrapAuthorization(registration, state)));
-      if (!authorized) return { ok: true, attempted: false, reason: 'DELIVERY_READY_UNBOUND' };
-      return { ok: true, ...(await retryPendingResultReturnForTab(tab.id)) };
-    }
-
     if (message.type === 'relay:activity') {
 
-      const tab = sender.tab;
 
-      if (!isChatTab(tab) || tab?.id == null) return { ok: false, error: 'Activity source is not an open ChatGPT tab' };
+          const tab = sender.tab;
 
-      const previous = endpointPresence.get(tab.id);
 
-      const endpoint = endpointFromTab(tab, 'OPEN', 'activity');
+          if (!isChatTab(tab) || tab?.id == null) return { ok: false, error: 'Activity source is not an open ChatGPT tab' };
 
-      await attachEndpointWindowBounds(endpoint);
 
-      endpoint.generating = !!message.generating;
-      endpoint.connection = message.connection && typeof message.connection === 'object'
-        ? message.connection
-        : (previous?.connection && typeof previous.connection === 'object' ? previous.connection : null);
+          const previous = endpointPresence.get(tab.id);
 
-      const incomingTelemetry = message.telemetry && typeof message.telemetry === 'object' ? message.telemetry : null;
 
-      const previousTelemetry = previous?.telemetry && typeof previous.telemetry === 'object' ? previous.telemetry : null;
+          const endpoint = endpointFromTab(tab, 'OPEN', 'activity');
 
-      endpoint.telemetry = { ...(previousTelemetry || {}), ...(incomingTelemetry || {}) };
 
-      endpoint.telemetry.generationState = endpoint.generating ? 'GENERATING' : 'IDLE';
+          await attachEndpointWindowBounds(endpoint);
 
-      const incomingReadiness = String(incomingTelemetry?.readiness || '');
 
-      const previousReadiness = String(previousTelemetry?.readiness || '');
+          endpoint.generating = !!message.generating;
 
-      if (incomingReadiness) endpoint.telemetry.readiness = incomingReadiness;
+          endpoint.connection = message.connection && typeof message.connection === 'object'
 
-      else if (endpoint.generating) endpoint.telemetry.readiness = 'BUSY';
+            ? message.connection
 
-      else if (previousReadiness === 'BUSY') endpoint.telemetry.readiness = 'IDLE';
+            : (previous?.connection && typeof previous.connection === 'object' ? previous.connection : null);
 
-      else endpoint.telemetry.readiness = previousReadiness || 'IDLE';
 
-      if (previous && previous.generating === endpoint.generating && endpointComparable(previous) === endpointComparable(endpoint) && JSON.stringify(previous?.telemetry || null) === JSON.stringify(endpoint.telemetry || null)) return { ok: true, unchanged: true };
+          const incomingTelemetry = message.telemetry && typeof message.telemetry === 'object' ? message.telemetry : null;
 
-      endpointPresence.set(tab.id, endpoint);
 
-      await publishEndpointDelta(endpoint, 'activity');
+          const previousTelemetry = previous?.telemetry && typeof previous.telemetry === 'object' ? previous.telemetry : null;
 
-      return { ok: true, generating: endpoint.generating };
 
-    }
+          endpoint.telemetry = { ...(previousTelemetry || {}), ...(incomingTelemetry || {}) };
 
-    if (message.type === 'relay:autoDirective') {
 
-      return autoDirective(message.directive, sender.tab?.id);
+          endpoint.telemetry.generationState = endpoint.generating ? 'GENERATING' : 'IDLE';
 
-    }
 
-    if (message.type === 'relay:workerResult') {
+          const incomingReadiness = String(incomingTelemetry?.readiness || '');
 
-      return deliverResult(
-        message.relayId, message.result || {}, sender.tab?.id, message.bindingAttestation
-      );
 
-    }
+          const previousReadiness = String(previousTelemetry?.readiness || '');
 
+
+          if (incomingReadiness) endpoint.telemetry.readiness = incomingReadiness;
+
+
+          else if (endpoint.generating) endpoint.telemetry.readiness = 'BUSY';
+
+
+          else if (previousReadiness === 'BUSY') endpoint.telemetry.readiness = 'IDLE';
+
+
+          else endpoint.telemetry.readiness = previousReadiness || 'IDLE';
+
+
+          if (previous && previous.generating === endpoint.generating && endpointComparable(previous) === endpointComparable(endpoint) && JSON.stringify(previous?.telemetry || null) === JSON.stringify(endpoint.telemetry || null)) return { ok: true, unchanged: true };
+
+
+          endpointPresence.set(tab.id, endpoint);
+
+
+          await publishEndpointDelta(endpoint, 'activity');
+
+
+          return { ok: true, generating: endpoint.generating };
+
+
+        }
     throw new Error(`Unknown message type: ${message.type}`);
-
   })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
-
   return true;
-
 });
 
-
-
-installRelayNetworkListeners();
 
 connectNativeHost();
 

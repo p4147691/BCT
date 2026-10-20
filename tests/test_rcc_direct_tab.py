@@ -40,18 +40,6 @@ class DirectTabPrepareTests(unittest.TestCase):
         with self.assertRaises(UnknownEffectError):
             self.feature.execute(request)
 
-    def test_node_harness_one_call_idempotent_and_tab_scoped(self):
-        import subprocess,shutil
-        from pathlib import Path
-        exe=shutil.which("node")
-        if not exe:self.skipTest("node unavailable")
-        root=Path(__file__).resolve().parents[1]
-        result=subprocess.run([exe,str(root/"modules/rcc/extension/test_direct_tab_send.js")],
-                              cwd=root,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
-                              timeout=30,check=False)
-        self.assertEqual(0,result.returncode,result.stdout+result.stderr)
-        self.assertIn("RCC_DIRECT_TAB_TEST_PASS",result.stdout)
-
     def test_blank_requires_explicit_identity(self):
         for change in [{"session_id":""},{"tab_id":0},{"window_id":0},{"text":""},{"conversation_key":"bad"},{"extra":"untrusted"}]:
             with self.subTest(change=change):

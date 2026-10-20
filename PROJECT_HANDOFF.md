@@ -992,3 +992,17 @@ exact payload/rollback 검증이 끝난 뒤에만 별도 명시 허용을 받아
 확장에 한 번 배포·reload한다. 그전까지 LIVE 설치본, Chrome, Native Host, binding은 변경하지
 않는다. 기존 tab move/create/close/reload 및 window create Adapter는 optional source로 보존하되
 active loader나 Relay 권한에 연결하지 않는다.
+
+## RCC 재구축 V2-1 source 완료
+
+정책상 차단된 background/content 레거시와 그 전용 zero-caller helper를 call graph와 계약
+테스트로 확인해 일괄 제거했다. background는 5,103→2,080줄, content는 4,458→1,780줄이며
+파일 내부 참조가 선언뿐인 named function은 0개다. 폐기 구현을 직접 호출하던 테스트 16개도
+활성 계약 테스트와 중복되지 않음을 확인하고 제거했으며, 남은 RCC JavaScript 테스트 20개가
+모두 통과한다.
+
+Simple Relay V0, exact conversation/read-only diagnostics, fail-closed 오류 계약은 유지했다.
+optional browser mutation Adapter는 source에 남아 있지만 loader와 manifest에서 제외했다.
+LIVE 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
+`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE1_LEGACY_PRUNE_20261020.md`를 따른다.
+다음 구조 단계는 V2-2 플랫폼 경계 일괄 분리이며 계속 source-only다.

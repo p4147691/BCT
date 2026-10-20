@@ -1,6 +1,6 @@
 # RCC Rebuild V2 — 통합 종료 계획
 
-상태: `PLAN_FROZEN / SOURCE_UNCHANGED / LIVE_UNCHANGED`
+상태: `V2_1_SOURCE_COMPLETE / LOCAL_VERIFIED / LIVE_UNCHANGED`
 
 V1의 API별 Adapter 추가 방식은 여기서 종료한다. 이 문서는 RCC를 실제로 끝낼 수 있도록
 남은 책임 전체, 한 번에 묶을 전환 단위, LIVE 전환 시점과 완료 조건을 다시 고정한 실행 계획이다.
@@ -93,6 +93,10 @@ domain은 `chrome.*`를 직접 호출하지 않는다. optional 기능은 active
 - 그 branch만 호출하던 background/content helper와 listener를 call graph 증거로 함께 제거한다.
 - Simple Relay, exact conversation 조회, 읽기 전용 diagnostics는 이름과 결과 계약을 유지한다.
 - browser management Adapter는 optional source로 보존하되 active loader에서 제외한다.
+
+2026-10-20 실행 결과는
+`BCT_RCC_REBUILD_V2_STAGE1_LEGACY_PRUNE_20261020.md`에 기록한다. 이 단계는 source와
+테스트만 변경하며 설치본·Chrome·Native Host·binding에는 반영하지 않는다.
 
 통과 조건:
 

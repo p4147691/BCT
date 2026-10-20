@@ -31,9 +31,7 @@
       ],
       "js": [
         "relay_core.js",
-        "content.js",
-        "act_content.js",
-        "act_command_bridge.js"
+        "content.js"
       ],
       "run_at": "document_idle"
     }

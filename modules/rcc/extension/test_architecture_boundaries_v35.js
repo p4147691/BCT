@@ -72,16 +72,16 @@ assert(loader.includes("importScripts('relay/contract.js');"), 'loader must sele
 assert(loader.includes("importScripts('relay/envelope.js');"), 'loader must select relay envelope contract');
 assert(loader.includes("importScripts('network/directory.js');"), 'loader must select conversation network contract');
 assert(loader.includes("importScripts('browser/read_adapter.js');"), 'loader must select Browser read adapter');
-assert(loader.includes("importScripts('browser/tab_move_contract.js');"), 'loader must select tab move receipt contract');
-assert(loader.includes("importScripts('browser/tab_move_adapter.js');"), 'loader must select tab move adapter');
-assert(loader.includes("importScripts('browser/tab_create_contract.js');"), 'loader must select tab create receipt contract');
-assert(loader.includes("importScripts('browser/tab_create_adapter.js');"), 'loader must select tab create adapter');
-assert(loader.includes("importScripts('browser/tab_close_contract.js');"), 'loader must select tab close receipt contract');
-assert(loader.includes("importScripts('browser/tab_close_adapter.js');"), 'loader must select tab close adapter');
-assert(loader.includes("importScripts('browser/window_create_contract.js');"), 'loader must select window create receipt contract');
-assert(loader.includes("importScripts('browser/window_create_adapter.js');"), 'loader must select window create adapter');
-assert(loader.includes("importScripts('browser/tab_reload_contract.js');"), 'loader must select tab reload receipt contract');
-assert(loader.includes("importScripts('browser/tab_reload_adapter.js');"), 'loader must select tab reload adapter');
+for (const optional of [
+  'browser/tab_move_contract.js', 'browser/tab_move_adapter.js',
+  'browser/tab_create_contract.js', 'browser/tab_create_adapter.js',
+  'browser/tab_close_contract.js', 'browser/tab_close_adapter.js',
+  'browser/window_create_contract.js', 'browser/window_create_adapter.js',
+  'browser/tab_reload_contract.js', 'browser/tab_reload_adapter.js',
+]) {
+  assert(!loader.includes(`importScripts('${optional}');`), `${optional} must remain optional and unloaded`);
+}
+assert(!loader.includes("importScripts('act_bridge.js');"), 'retired ACT bridge must not load');
 assert(!loader.includes("importScripts('simple_relay_v0.js');"), 'loader must not select legacy Relay contract');
 
 console.log('rcc architecture boundaries v3.5: PASS');
