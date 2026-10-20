@@ -86,6 +86,20 @@ Native Host, Chrome 탭 새로고침/이동, Relay binding/storage, composer, �
 build로 read-only probe에 응답했으므로 tab refresh 없이 protocol 호환성을 확인했다. 다음
 4단계의 Manager→Worker 실제 원문 전송은 별도 사용자 승인 없이는 시작하지 않는다.
 
+## 완료 — RCC Rebuild V1 3A단계 Source Relay 경계
+
+Relay 계약을 `modules/rcc/extension/relay/contract.js`로 옮겨 Core와 Browser Adapter 사이의
+독립 계층으로 고정했다. 이 계약은 UUID endpoint, 역할, operation ID, 원문만 다루며 Chrome,
+DOM, storage, 전송과 효과 반복을 사용하지 않는다. 기존 `simple_relay_v0.js`는 compatibility
+entrypoint이고, background loader는 canonical Relay contract를 직접 로드한다. source-only
+검증은 `test_architecture_boundaries_v35.js`, `test_rcc_core_v1.js`, `test_simple_relay_v0.js`,
+`test_core_shadow_protocol_v3.js`, baseline unittest 17개가 모두 통과했다.
+
+설치본·확장 reload·Native Host·Chrome 탭·binding·storage·Composer·메시지 전송은 변경하지
+않았다. `background.js`와 `content.js`의 실제 Browser Adapter 및 자동화/Legacy 기능은 아직
+분리되지 않았으며, 4~7단계의 전환·차단·제거 대상이다. 세부는
+`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE3A_SOURCE_RELAY_BOUNDARY_20261020.md`에 있다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /

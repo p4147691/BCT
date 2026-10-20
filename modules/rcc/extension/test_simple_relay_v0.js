@@ -1,5 +1,5 @@
 const assert = require('assert');
-const relay = require('./simple_relay_v0.js');
+const relay = require('./relay/contract.js');
 
 const manager = '6ad5afa4-b1e0-83ee-8692-aec4bb51523e';
 const worker = '6ad4bb5d-6624-83ee-b045-e57fdad5120e';

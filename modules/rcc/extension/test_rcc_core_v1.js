@@ -8,7 +8,7 @@ const conversation = require(path.join(extensionRoot, 'core/conversation.js'));
 const transport = require(path.join(extensionRoot, 'core/transport.js'));
 const shadow = require(path.join(extensionRoot, 'core/shadow.js'));
 const relayCore = require(path.join(extensionRoot, 'relay_core.js'));
-const simpleRelay = require(path.join(extensionRoot, 'simple_relay_v0.js'));
+const simpleRelay = require(path.join(extensionRoot, 'relay/contract.js'));
 
 const manager = '6ad5afa4-b1e0-83ee-8692-aec4bb51523e';
 const worker = '6ad4bb5d-6624-83ee-b045-e57fdad5120e';
@@ -79,6 +79,9 @@ for (const coreFile of ['identity.js', 'state.js', 'conversation.js', 'transport
   const text = fs.readFileSync(path.join(extensionRoot, 'core', coreFile), 'utf8');
   assert(!text.includes('chrome.'), coreFile + ' must remain a pure Core module');
 }
+const relayContract = fs.readFileSync(path.join(extensionRoot, 'relay/contract.js'), 'utf8');
+assert(!relayContract.includes('chrome.'), 'Relay contract must remain browser-independent');
+assert(loader.includes('relay/contract.js'), 'loader must use the canonical Relay contract');
 assert(!manifest.includes('core/'), 'Core files remain background-only and are not manifest content scripts');
 for (const coreFile of ['identity.js', 'state.js', 'conversation.js', 'transport.js', 'shadow.js']) {
   assert(loader.includes(`core/${coreFile}`), `${coreFile} must be loaded for the read-only Shadow`);
