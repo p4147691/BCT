@@ -1,6 +1,6 @@
 # RCC Rebuild V1 — 2단계 Read-Only Shadow
 
-상태: SOURCE_PREPARED_AWAITING_CI_AND_LIVE_GATE
+상태: STAGE_2_COMPLETED_LIVE_READ_ONLY_SHADOW
 
 ## 허용된 LIVE 효과
 
@@ -33,3 +33,19 @@ loader는 Core 파일을 background에서만 먼저 읽는다. manifest의 conte
 
 어느 gate라도 실패하면 이전 exact payload를 복원하고 같은 ID로 재로드한 뒤 read-only state만
 확인한다. 메시지는 보내지 않으며 UNKNOWN 효과를 재시도하지 않는다.
+
+## 완료 증거
+
+- source commit `a977a6f`의 GitHub Actions `BCT CI` run `39353500261`: 전체 PASS
+- exact backup: `D:\BCT\runtime\backups\rcc-rebuild-v1-stage2-exact-20261020-103204`
+  (32 files, source LIVE와 SHA-256 불일치 0)
+- 후보 5개와 active 파일 4개를 installed extension에 배치한 뒤 source/LIVE hash 불일치 0
+- same-ID extension reload 요청은 정확히 한 번 성공했다.
+- post-reload manifest `1.0.24`, background build
+  `2026-10-20-rcc-core-shadow-v1`, `coreShadow.mode=READ_ONLY_SHADOW`
+- Manager와 Worker는 각각 `CONNECTED`, `6:6:6` count이며 binding UUID는 유지됐다.
+  1초 간격 3회 state read에서 동일 결과를 확인했고 두 열린 content receiver도 read-only probe에
+  응답했다.
+
+Native Host, Chrome 탭 새로고침/이동, Relay binding/storage, composer와 메시지 전송은 하지
+않았다. 다음 3단계는 content protocol 호환성 전환이며 별도 승인 없이는 시작하지 않는다.

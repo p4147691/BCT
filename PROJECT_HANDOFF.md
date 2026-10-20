@@ -66,6 +66,19 @@ read-only Shadow 후보만 준비했으며, exact-main CI와 LIVE precondition�
 배치·재로드한다. 상세 gate는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE2_READONLY_SHADOW_20261020.md`에 있다.
 
+## 완료 — RCC Rebuild V1 2단계 Read-Only Shadow
+
+source commit `a977a6f`의 CI 전체 통과 뒤 installed RCC payload를 exact backup
+`D:\BCT\runtime\backups\rcc-rebuild-v1-stage2-exact-20261020-103204`으로 보존하고, Core
+candidate 5개와 active 파일 4개를 source hash와 동일하게 배치했다. same-ID extension reload는
+정확히 한 번만 요청했다. post-reload background build는
+`2026-10-20-rcc-core-shadow-v1`, manifest는 `1.0.24`이며, `state.coreShadow`는
+`READ_ONLY_SHADOW`로 Manager·Worker의 UUID, CONNECTED 상태와 `6:6:6` count를 기존 관측과
+3회 연속 일치시켰다. 기존 content receiver도 read-only probe에 응답했다.
+
+Native Host, Chrome 탭 새로고침/이동, Relay binding/storage, composer, 메시지 전송은 변경하지
+않았다. 다음 3단계는 content protocol 호환성 전환으로 별도 승인 전에는 시작하지 않는다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /
