@@ -84,7 +84,7 @@ class FileReadFeature:
              "owner_principal_id": work.owner_principal_id,
              "assignment_epoch": work.assignment_epoch,
              "files": normalized_files, "receipt_ids": receipt_ids,
-             "include_claims": include_claims}, tuple(resources),
+             "include_claims": include_claims}, ("work-snapshot:" + work.work_id.casefold(), *resources),
         )
 
     def _prepare_batch(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
