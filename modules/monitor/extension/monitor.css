@@ -3929,3 +3929,20 @@
 
 /* D1/D2 already identifies the desktop; use the rest of the row for node metadata. */
 .monitor-desktop-thumb-label > .monitor-desktop-label-text { display:none!important; }
+
+/* Exact BCT node selection: the linked native browser window remains visible
+   even when the generic role/foreground styles are active. */
+.monitor-bct-node-row { cursor:pointer; }
+.monitor-bct-node-row.is-selected {
+  border-color:#ffd75a!important;
+  background:rgba(255,215,90,.12)!important;
+  box-shadow:inset 0 0 0 1px rgba(255,215,90,.34),0 0 10px rgba(255,215,90,.12)!important;
+}
+.monitor-bct-node-row.monitor-bct-node-switch-pending { opacity:.72; }
+.monitor-desktop-thumb-window.monitor-bct-node-target-highlighted,
+.monitor-window-preview.monitor-bct-node-target-highlighted {
+  outline:3px solid #ffd75a!important;
+  outline-offset:-3px!important;
+  box-shadow:0 0 0 1px rgba(36,25,0,.92),0 0 14px rgba(255,215,90,.68)!important;
+  filter:brightness(1.1)!important;
+}

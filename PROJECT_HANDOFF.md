@@ -1,5 +1,21 @@
 # BCT 인수인계
 
+## 진행 — Monitor 노드 클릭 강조·더블클릭 브라우저 이동
+
+source base `0645a13839467387aa7b810d1b81593aef9efd5d`에서 Monitor의 BCT/RCC 노드 카드와
+현재 session exact `window_id → HWND` 계약을 연결했다. 한 번 클릭은 연결된 물리 Chrome 창의
+썸네일/preview에 노란 테두리를 표시하고, 더블클릭은 Native Host의 데스크톱별 HWND 재대조 후
+해당 데스크톱으로 전환하고 그 Chrome HWND를 foreground로 활성화한다. exact HWND가 없으면
+어떤 창도 추측하거나 전환하지 않는다.
+
+동작은 `monitor-bct-node-interaction.js`로 분리했으며 focused 계약, Monitor 구조/문법,
+번호·최소화·SVG·backpressure·현재 session HWND 회귀가 PASS했다. 현재 LIVE 읽기 전용 대조는
+ChatGPT 탭 3개, 물리 ChatGPT Chrome 창 1개, binding 1개, rejected 0개다. GitHub main 반영,
+원격 CI, 설치본 publish/reload, 클릭/더블클릭 LIVE 수락시험은 아직 남았다.
+
+별도 인수된 PR #247/#251은 정확한 HEAD·기존 CI SUCCESS·현재 MERGEABLE/CLEAN만 재확인했다.
+별도 승인이 없으므로 병합·배포하지 않았고, 과거 UNKNOWN 결과도 성공으로 바꾸지 않는다.
+
 ## 진행 — Monitor 번호·RCC 이름 변경 통합 복구
 
 2026-10-20 화면 재현에서 Monitor가 새 설치본을 실행 중이라고 오판했고 실제 renderer는

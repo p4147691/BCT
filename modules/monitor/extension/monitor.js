@@ -27063,6 +27063,8 @@ function applyPersistentMonitorRoleClass(node, hwnd) {
 
 let monitorHighlightedHwnd = "";
 
+let monitorBctNodeHighlightedHwnd = "";
+
 
 
 
@@ -28888,6 +28890,34 @@ function scheduleMonitorHoverRecheck() {
 
 
 
+function syncMonitorBctNodeTargetHighlight() {
+  const selectedHwnd = String(monitorBctNodeHighlightedHwnd || "");
+  for (const preview of document.querySelectorAll(".monitor-desktop-thumb-window, .monitor-window-preview")) {
+    preview.classList.toggle(
+      "monitor-bct-node-target-highlighted",
+      Boolean(selectedHwnd) && String(preview.dataset.hwnd || "") === selectedHwnd,
+    );
+  }
+  if (!monitorWorkers) return;
+  for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
+    const hwnd = monitorHwndForBrowserWindowId(
+      row.dataset.windowId,
+      monitorLastAiState,
+      row.dataset.instanceId,
+      row.dataset.sessionId,
+    );
+    const selected = Boolean(selectedHwnd) && String(hwnd || "") === selectedHwnd;
+    row.classList.toggle("is-selected", selected);
+    row.setAttribute("aria-selected", selected ? "true" : "false");
+  }
+}
+
+function applyMonitorBctNodeHighlight(hwnd) {
+  monitorBctNodeHighlightedHwnd = String(hwnd || "");
+  applyMonitorWindowHighlight(hwnd, { bctNode: true });
+  syncMonitorBctNodeTargetHighlight();
+}
+
 function applyMonitorWindowHighlight(hwnd, options = {}) {
 
 
@@ -28921,6 +28951,8 @@ function applyMonitorWindowHighlight(hwnd, options = {}) {
 
 
   const changed = nextHwnd !== monitorHighlightedHwnd;
+
+  if (!options.bctNode && !options.preserve && !options.remote) monitorBctNodeHighlightedHwnd = "";
 
 
 
@@ -29272,6 +29304,7 @@ function applyMonitorWindowHighlight(hwnd, options = {}) {
 
 
 
+  syncMonitorBctNodeTargetHighlight();
   if (!options.remote && !options.preserve) publishMonitorSharedSelection();
 
 
@@ -43258,6 +43291,30 @@ function openMonitorBctRenameEditor(node, row) {
   input.select();
 }
 
+let monitorBctNodeInteractionService = null;
+
+function getMonitorBctNodeInteractionService() {
+  if (monitorBctNodeInteractionService) return monitorBctNodeInteractionService;
+  if (!globalThis.MonitorBctNodeInteraction?.create) throw new Error("BCT 노드 이동 모듈을 불러오지 못함");
+  monitorBctNodeInteractionService = globalThis.MonitorBctNodeInteraction.create({
+    nativeRequest: monitorNative,
+    renderVirtualDesktops,
+    selectVirtualDesktopPreview,
+    highlight: applyMonitorBctNodeHighlight,
+  });
+  return monitorBctNodeInteractionService;
+}
+
+async function resolveMonitorBctNodeHwnd(node) {
+  let hwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  if (hwnd) return String(hwnd);
+  await refreshMonitorIdentityIndex(monitorLastAiState, true);
+  refreshMonitorBctCurrentSessionWindowHwnd();
+  hwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  if (!hwnd) throw new Error("현재 세션에서 이 노드와 웹브라우저 창을 정확히 대조하지 못함");
+  return String(hwnd);
+}
+
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
   const fragment = document.createDocumentFragment();
@@ -43277,14 +43334,17 @@ function renderMonitorBctWindowNodes(nodes) {
     row.dataset.nodeIndex = String(index + 1);
     row.dataset.nodeLabel = node.nodeLabel || "";
     row.dataset.conversationKey = node.conversationKey;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-selected", "false");
+    row.tabIndex = 0;
     const mappedHwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
     const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
     const desktopPosition = nativeLocation
       ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
       : -1;
     row.title = node.conversationKey
-      ? `우클릭하여 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
-      : `창 ${node.windowId} · 탭 ${node.tabId}`;
+      ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동 · 우클릭: 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
+      : `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동 · 창 ${node.windowId} · 탭 ${node.tabId}`;
 
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
@@ -43310,6 +43370,33 @@ function renderMonitorBctWindowNodes(nodes) {
     presence.title = node.generating ? "응답 생성 중" : "열려 있음";
     globalThis.MonitorStatusIcon?.render?.(presence, { activity: node.generating ? "play" : "pause" });
     row.append(number, body, presence);
+    row.addEventListener("click", () => {
+      void resolveMonitorBctNodeHwnd(node).then((hwnd) => {
+        getMonitorBctNodeInteractionService().select(hwnd);
+        setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
+      }).catch((error) => {
+        setMonitorStatus(`연결 창 표시 실패 · ${error?.message || error}`, false, 3500);
+      });
+    });
+    row.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      row.classList.add("monitor-bct-node-switch-pending");
+      void resolveMonitorBctNodeHwnd(node).then((hwnd) => (
+        getMonitorBctNodeInteractionService().activate(hwnd)
+      )).then((result) => {
+        setMonitorStatus(`${node.nodeLabel || "N?"} 창이 있는 D${result.index + 1}(으)로 이동해 웹브라우저를 활성화했습니다.`, true, 3200);
+      }).catch((error) => {
+        setMonitorStatus(`노드 창 이동 실패 · ${error?.message || error}`, false, 4500);
+      }).finally(() => {
+        globalThis.setTimeout(() => row.classList.remove("monitor-bct-node-switch-pending"), 350);
+      });
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      row.click();
+    });
     if (node.conversationKey) {
       row.addEventListener("contextmenu", (event) => {
         event.preventDefault();
@@ -43319,6 +43406,7 @@ function renderMonitorBctWindowNodes(nodes) {
     fragment.append(row);
   });
   monitorWorkers.replaceChildren(fragment);
+  syncMonitorBctNodeTargetHighlight();
   if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = `${nodes.length}개 · BCT/RCC 실시간 상태`;
 }
 
@@ -55869,6 +55957,7 @@ function syncMonitorAllDesktopThumbnailNodeBadges() {
   }
   syncMonitorBctNodeLocationLabels();
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  syncMonitorBctNodeTargetHighlight();
 }
 
 let monitorWindowPointerDrag = null;

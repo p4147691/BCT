@@ -1,6 +1,28 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `SOURCE_REPAIR_VALIDATED / CI_AND_LIVE_DEPLOY_PENDING`
+상태: `NODE_NAVIGATION_SOURCE_VALIDATED / CI_AND_LIVE_RELOAD_PENDING`
+
+## 2026-10-20 노드 카드 → 정확한 브라우저 창 상호작용
+
+Monitor 상단 BCT/RCC 노드 카드에 두 가지 사용자 동작을 추가했다.
+
+- 한 번 클릭하면 현재 session의 검증된 `window_id → HWND` 대조 결과와 일치하는 데스크톱
+  썸네일/창 preview에만 노란 테두리를 표시한다. 같은 Chrome 창의 여러 대화 노드는 같은
+  물리 창을 가리키며, 다른 창이나 탭을 추측하지 않는다.
+- 더블클릭하면 Native Host에서 모든 가상 데스크톱의 실제 HWND를 다시 찾은 뒤 정확히 일치한
+  데스크톱으로 전환하고 `restoreForegroundWindow`로 그 Chrome 창을 활성화한다. HWND를 찾지
+  못하면 데스크톱 전환과 창 활성화를 모두 실행하지 않는다.
+
+효과 순서는 독립 `monitor-bct-node-interaction.js` 계약으로 분리했다. focused 계약, Monitor
+구조/문법, 기존 번호·최소화·SVG·backpressure·current-session HWND 회귀와 현재 LIVE의 읽기
+전용 대조가 통과했다. 현재 실측은 ChatGPT 탭 3개, 물리 ChatGPT Chrome 창 1개, exact HWND
+binding 1개, rejected 0개다. source base는 `0645a13839467387aa7b810d1b81593aef9efd5d`이며
+아직 GitHub main, 설치 Monitor, 실행 renderer에는 이 상호작용을 적용하지 않았다.
+
+인수인계된 PR #247 (`a03ecea468ee7bd8997d430a72b99f6ba3635137`)과 PR #251
+(`94a945807053fba2378c36ef68953cf93e4eb13c`)은 각각 기존 CI SUCCESS와 현재
+`MERGEABLE/CLEAN`을 읽기 전용으로 재확인했다. 둘 다 별도 병합 승인이 없으므로 OPEN 상태를
+유지하며, 과거 UNKNOWN의 실제 외부 결과도 미확정 상태를 보존한다.
 
 ## 2026-10-20 통합 결함 재진단 및 source 보수
 

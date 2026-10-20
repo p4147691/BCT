@@ -26,6 +26,7 @@ def main():
         ext/'MONITOR_MODULE_BOUNDARIES.md', ext/'MONITOR_ORGANIZATION_MODEL.md', ext/'MONITOR_JS_INDEX.md',
         ext/'manifest.json', ext/'desktop.html', ext/'monitor.js', ext/'monitor.css',
         ext/'monitor-provider-launch-queue.js', ext/'monitor-act-transport.js',
+        ext/'monitor-bct-node-interaction.js',
         root/'tools'/'Request-MonitorDeploymentCheck.ps1',
         root/'tools'/'Publish-MonitorDeployment.ps1',
         root/'tools'/'build_monitor_js_index.py',
