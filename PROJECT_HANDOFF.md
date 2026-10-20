@@ -1,5 +1,14 @@
 # BCT 인수인계
 
+## 계획 — RCC Rebuild V1
+
+RCC를 기존 5,000줄 실행부에 기능을 계속 더하는 방식으로 유지하지 않는다. 새 구조는
+conversation UUID 기반 Core, Manager/Worker address book, verbatim Relay, 선택 모듈, legacy
+read-only 경계를 갖는다. extension ID/path, Native Host registration/path, Chrome storage와
+기존 conversation UUID는 전환 중 불변이다. 실제 단계와 exact path/identity/reload/rollback
+gate는 `docs/exec-plans/active/BCT_RCC_REBUILD_V1.md`에 고정했다. Simple Relay V0는 이 계획의
+임시 Relay 기반이며 legacy execution 제거 전에는 새 기능을 legacy 경로에 추가하지 않는다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /
