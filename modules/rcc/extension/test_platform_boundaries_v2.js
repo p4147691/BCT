@@ -109,6 +109,19 @@ const chrome = {
   assert.deepEqual(observed, [['created', 7], ['updated', 7], ['removed', 7]]);
 
   const lifecycle = Lifecycle.create(chrome);
+  assert.equal(lifecycle.runtimeSenderKind({ id: 'other' }), 'UNTRUSTED');
+  assert.equal(lifecycle.runtimeSenderKind({
+    id: 'extension-id', url: 'chrome-extension://extension-id/popup.html'
+  }), 'EXTENSION_PAGE');
+  assert.equal(lifecycle.runtimeSenderKind({
+    id: 'extension-id', origin: 'chrome-extension://extension-id'
+  }), 'EXTENSION_PAGE');
+  assert.equal(lifecycle.runtimeSenderKind({
+    id: 'extension-id', frameId: 0, tab
+  }), 'CHAT_CONTENT');
+  assert.equal(lifecycle.runtimeSenderKind({
+    id: 'extension-id', frameId: 1, tab
+  }), 'UNTRUSTED');
   lifecycle.registerRuntimeMessage(() => true);
   lifecycle.registerStartup(() => {});
   assert.equal(typeof listeners.runtimeMessage, 'function');

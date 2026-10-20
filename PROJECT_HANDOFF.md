@@ -1,5 +1,26 @@
 # BCT 인수인계
 
+## 진행 — RCC Rebuild V2-4 비-LIVE Release Candidate
+
+V2-1~3 source payload를 `RCC_REBUILD_V2_RC1` 46개 exact 파일로 조립했다. active loader graph,
+domain/platform dependency, allowed message matrix, storage/wire, extension ID/Native Host 계약을
+`modules/rcc/release/verify_release_candidate.py`와
+`modules/rcc/release/rcc_v2_rc.json`으로 자동 검증한다. candidate aggregate는
+`ce3a33bb107dc74eb23da50d0d48a85dab656c69ee65e90caca763cde55f1606`이다.
+
+Chrome Extensions 공식 API 점검에서 Content Script sender 검증 누락, 활성 호출자 없는
+`webRequest` permission, 차단된 legacy runtime 메시지를 보내는 popup을 발견했다. source에서
+runtime/content sender를 fail-closed로 검증하고 popup을 `relay:getState` 전용 read-only 화면으로
+바꿨다. Simple Relay 원문/UUID/storage key/wire 이름은 유지했다.
+
+현재 LIVE 39개 파일은 rollback aggregate
+`93b1cfdc4e6602ddfb7de46b6fa00eb10173db01f911c1530c952cc1439e583b`와 exact 일치한다. 후보는
+`D:\BCT\runtime\rehearsals\rcc-rebuild-v2-rc1-ce3a33bb`에만 조립했고 extra/missing 0개다.
+RCC Node 23개, focused Python 17개, 전체 BCT Python 845개, candidate/LIVE verifier,
+compileall, diff check가 통과했다. remote CI는 아직 남았다. LIVE RCC 설치본, Chrome, Native Host와 binding은
+변경하지 않았다. 상세는
+`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE4_RELEASE_CANDIDATE_20261020.md`에 있다.
+
 ## 계획 — RCC Rebuild V1
 
 RCC를 기존 5,000줄 실행부에 기능을 계속 더하는 방식으로 유지하지 않는다. 새 구조는

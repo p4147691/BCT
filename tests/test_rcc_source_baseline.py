@@ -15,13 +15,14 @@ class RccSourceBaselineTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parents[1]
         cls.extension = cls.root / "modules" / "rcc" / "extension"
 
-    def test_source_only_v2_3_payload_hashes_match_recorded_baseline(self):
-        # Source-only RCC Rebuild V2-3 guard. This is not an installed/LIVE hash.
+    def test_source_only_v2_4_critical_payload_hashes_match_recorded_baseline(self):
+        # Source-only RCC Rebuild V2-4 guard. The complete payload is additionally
+        # covered by modules/rcc/release/rcc_v2_rc.json.
         expected = {
             "background.js": "585ae34ee0af8531362f384e4c11a903b1c23056ad61c15d0edec3c826fbe450",
             "background_loader.js": "f517a7f2ea091caa9e15c1e04acc4d89d98bb5ac210d591d13212a0e64a3161f",
             "content.js": "dd594299e99e728e73ee64f6a95d26cd142cba026f490e781e8f55d2b27177f3",
-            "manifest.json": "9868f94443c95e5cc590af91989fcc53451d3c4b13e89fef44fbed5b32d41e18",
+            "manifest.json": "edd5afb0428f98ec53fe1e501a2fea2cde83acc6a2bb84af16ff38e254a4f619",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
             "boot/platform_context.js": "89c8ac3a49ce640b257d94738ff3386ce778c11dfa91f62d978d2636200c4817",
             "boot/background_app.js": "2b22759ba92035191b8e18f9e44c646a91c601966ce8b71ed7a29ea7f832661c",
@@ -31,10 +32,10 @@ class RccSourceBaselineTests(unittest.TestCase):
             "domain/diagnostic_support.js": "06562ada53e67519fb0d1b46b4654096dace2b7ac8a8bbeb0232b88fab716e1c",
             "domain/simple_relay_service.js": "9d2135a6c20702772048d0aebfff997d8fcd3c1650c1b843047f740749552506",
             "domain/readonly_diagnostics.js": "ebd5afe1640de5a5e5532f1dc1c8a69419135f5f26cbba504515daf22da94b3e",
-            "domain/runtime_message_service.js": "5141dc8b8854dcdceb697598221d26c64abc1952d10a6f221e203524c563e471",
+            "domain/runtime_message_service.js": "ac30947109dd637abd9086a8c68b494bfe6821c824d0d272160e3f7051135e13",
             "content/conversation_dom.js": "bddfa0460d1f6d98d1471e5c480e43c9ee165278176bd2d7a0852600b60bd785",
             "content/simple_relay_executor.js": "52874024a0c99f7241ef87fd0ace8227c91a72f21213ca640e49eb1e1cb2178e",
-            "content/content_router.js": "5008fee382df5fa72ed64347e989c9b34b4a863cef9f7e931673b153e9228e76",
+            "content/content_router.js": "9ad096e37ba62219601689816ad65a85a9dcf4c46f1af5d72ebe5147d1263e15",
             "content/activity_reporter.js": "e73c7469d87f35e677e5d37935b518dd6f5eff5155ce2fc9ae42f4ae2dc5aee8",
         }
         for name, digest in expected.items():
@@ -51,6 +52,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         self.assertEqual("1.0.24", manifest["version"])
         self.assertEqual("1.0.24 · RCC Core Read-Only Shadow", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
+        self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
         alphabet = "abcdefghijklmnop"
         extension_id = "".join(
@@ -93,6 +95,13 @@ class RccSourceBaselineTests(unittest.TestCase):
             "relay:actNaturalCommand", "relay:register", "relay:arm", "relay:hello",
         ):
             self.assertNotIn(f"message.type === '{message_type}'", runtime)
+        popup = (self.extension / "popup.js").read_text(encoding="utf-8")
+        self.assertIn("relay:getState", popup)
+        for message_type in (
+            "relay:register", "relay:forceRefresh", "relay:bootstrap",
+            "relay:arm", "relay:manualSend",
+        ):
+            self.assertNotIn(message_type, popup)
 
     def test_active_content_surface_and_simple_relay_contract_remain(self):
         content = (self.extension / "content" / "content_router.js").read_text(encoding="utf-8")

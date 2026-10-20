@@ -2,6 +2,12 @@ function handleRuntimeMessage(message, sender, sendResponse) {
   (async () => {
     const messageDecision = RccLegacyCommandPolicy.runtimeMessage(message?.type);
     if (!messageDecision.allowed) throw new Error(RccLegacyCommandPolicy.rejectCode('RUNTIME_MESSAGE', message?.type, messageDecision));
+    const senderKind = lifecycle.runtimeSenderKind(sender);
+    const expectedSenderKind = message?.type === 'relay:getState'
+      ? 'EXTENSION_PAGE' : 'CHAT_CONTENT';
+    if (senderKind !== expectedSenderKind) {
+      throw new Error(`RCC_RUNTIME_SENDER_REJECTED:${String(message?.type || '')}`);
+    }
     if (message.type === 'relay:getPendingStatus') {
 
 
@@ -76,7 +82,8 @@ function handleRuntimeMessage(message, sender, sendResponse) {
           const tabs = (await getChatTabs()).map(publicTab);
 
 
-          return { ok: true, tabs, registrations: state.registrations, settings: state.settings, results: state.results };
+          return { ok: true, tabs, registrations: state.registrations, settings: state.settings,
+            results: state.results, simpleRelayV0Binding: state.simpleRelayV0Binding };
 
 
         }
@@ -155,4 +162,3 @@ function handleRuntimeMessage(message, sender, sendResponse) {
   })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 }
-

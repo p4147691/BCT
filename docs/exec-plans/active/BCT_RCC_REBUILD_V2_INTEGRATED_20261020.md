@@ -1,6 +1,6 @@
 # RCC Rebuild V2 — 통합 종료 계획
 
-상태: `V2_3_SOURCE_COMPLETE / CI_PASS / RCC_LIVE_UNCHANGED`
+상태: `V2_4_RC_ASSEMBLED / LOCAL_PASS / CI_PENDING / RCC_LIVE_UNCHANGED`
 
 V1의 API별 Adapter 추가 방식은 여기서 종료한다. 이 문서는 RCC를 실제로 끝낼 수 있도록
 남은 책임 전체, 한 번에 묶을 전환 단위, LIVE 전환 시점과 완료 조건을 다시 고정한 실행 계획이다.
@@ -151,6 +151,11 @@ source와 테스트만 변경한다.
 - active loader graph, dependency rule, allowed message matrix, storage/wire 호환성을 자동 검사한다.
 - 전체 로컬 테스트와 원격 CI를 통과시키고 exact payload manifest, SHA, backup/rollback 절차를 만든다.
 - 설치본과 Chrome은 여전히 변경하지 않는다.
+
+2026-10-20 실행 결과는
+`BCT_RCC_REBUILD_V2_STAGE4_RELEASE_CANDIDATE_20261020.md`에 기록한다. Chrome Extensions 공식
+API 경계를 재점검해 sender validation, 최소 permission과 read-only popup을 보완했고, exact
+46-file candidate와 현재 LIVE 39-file rollback baseline을 비-LIVE에서 검증했다.
 
 통과 조건: main exact SHA의 CI가 통과하고, 후보 payload 전체와 rollback payload 전체의 해시가
 검증되며, unknown effect가 없다.

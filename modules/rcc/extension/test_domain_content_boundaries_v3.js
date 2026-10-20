@@ -52,6 +52,8 @@ assert(relay.includes('async function sendSimpleRelayV0('));
 assert(relay.includes('async function returnSimpleRelayV0('));
 assert(diagnostics.includes("message.command === 'diagnose-conversation-ui'"));
 assert(runtime.includes("message.type === 'relay:getPendingStatus'"));
+assert(runtime.includes('lifecycle.runtimeSenderKind(sender)'));
+assert(runtime.includes('RCC_RUNTIME_SENDER_REJECTED'));
 for (const relative of domainFiles) {
   assert(!read(relative).includes('chrome.'), `${relative} must use platform services`);
 }
@@ -65,6 +67,7 @@ assert(executor.includes('async function executeSimpleRelayV0('));
 assert(executor.includes('async function readSimpleRelayV0Reply('));
 assert(router.includes("message.type === 'relay:simpleExecute'"));
 assert(router.includes("message.type === 'relay:simpleReadReply'"));
+assert(router.includes('RCC_CONTENT_SENDER_REJECTED'));
 assert(activity.includes('async function reportGenerationSignal('));
 
 const active = [

@@ -1,4 +1,8 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+if (String(sender?.id || '') !== String(chrome.runtime.id || '')) {
+  sendResponse({ ok: false, error: 'RCC_CONTENT_SENDER_REJECTED' });
+  return false;
+}
 if (message.type === 'relay:recoverExecution') {
     const storedRecord = loadRelayExecution();
     const suppliedRecord = message.recoveryRecord && typeof message.recoveryRecord === 'object'
@@ -161,5 +165,4 @@ if (message.type === 'relay:simpleReadReply') {
 
 
 const telemetryKey = 'dwActTelemetryV1';
-
 

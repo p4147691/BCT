@@ -9,8 +9,7 @@
     "scripting",
     "nativeMessaging",
     "storage",
-    "tabs",
-    "webRequest"
+    "tabs"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",

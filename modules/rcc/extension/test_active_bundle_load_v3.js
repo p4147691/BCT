@@ -53,7 +53,7 @@ function event() {
   class MutationObserver { constructor(callback) { this.callback = callback; } observe() {} }
   const contentContext = vm.createContext({
     console,
-    chrome: { runtime: { onMessage: { addListener: (fn) => contentListeners.push(fn) },
+    chrome: { runtime: { id: 'test-extension', onMessage: { addListener: (fn) => contentListeners.push(fn) },
       sendMessage: async () => ({ ok: true }) } },
     document, window: { addEventListener() {} },
     location: { href: 'https://chatgpt.com/c/test', pathname: '/c/test' },

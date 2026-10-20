@@ -1,60 +1,61 @@
-# AI Workspace Relay MVP
+# BCT RCC extension
 
-A local-only Chrome Manifest V3 extension that relays messages between registered ChatGPT tabs.
+RCC is a Chrome Manifest V3 extension that keeps fixed ChatGPT conversations observable and carries
+the Simple Relay V0 Manager→Worker handoff and Worker→Manager verbatim return. GitHub/BCT is the
+durable authority; the extension is a browser transport and observation boundary.
 
-## Goals
+## Active structure
 
-- No Codex usage.
-- No OpenAI API usage.
-- No local HTTP server.
-- No Tampermonkey/userscript dependency.
-- Works across separate Chrome windows, tab groups, and Windows virtual desktops in the same Chrome profile.
-- GitHub remains durable state/evidence; this extension is only the live chat transport.
+- `background_loader.js` loads Core, Platform, Relay, Domain, and the three-line background entrypoint.
+- `content/` owns conversation DOM detection, exact submit/read, the accepted message router, and bounded activity observation.
+- `platform/` is the only active background boundary for `chrome.storage`, `chrome.tabs`,
+  `chrome.scripting`, Native Messaging, observation events, and extension lifecycle.
+- `domain/` has no direct `chrome.*` calls.
+- `browser/` contains optional tab/window capability contracts and adapters. They are preserved source,
+  not active loader entries or Relay permissions.
+- The popup is read-only and sends only `relay:getState`.
+
+The exact V2 Release Candidate file list, loader graph, message matrix, storage/wire contract, and
+rollback baseline are in `../release/rcc_v2_rc.json`.
+
+## Chrome API boundary
+
+Content Scripts cannot call the Tabs or Native Messaging APIs. They send bounded messages to the
+extension Service Worker, which validates the sender and delegates effects to Platform adapters.
+Runtime messages from ChatGPT must come from the same extension, the top frame, and an allowed
+ChatGPT origin. Extension-page state reads must come from the same extension origin.
+
+`chrome.storage.local` keeps compatible durable binding/receipt/state keys. The endpoint session ID
+uses `chrome.storage.session`, which is intentionally cleared when the extension is disabled,
+reloaded, updated, or the browser restarts. Per-page execution and telemetry use page
+`sessionStorage` and are not extension-durable state.
+
+Official references used by V2-4:
+
+- https://developer.chrome.com/docs/extensions/reference/api/runtime
+- https://developer.chrome.com/docs/extensions/reference/api/tabs
+- https://developer.chrome.com/docs/extensions/reference/api/storage
+- https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging
+- https://developer.chrome.com/docs/extensions/develop/concepts/messaging
 
 ## Safety defaults
 
-- Host permission is limited to `chatgpt.com` and legacy `chat.openai.com`.
-- Only manually registered tabs receive relay commands.
-- `CONTROL` cannot be used as a worker target.
-- Automatic relay starts DISARMED.
-- Arming is bounded to 6 commands by the popup (hard cap 12).
-- CONTROL directives require a per-install random token.
-- Worker reports have relay markers escaped before returning to CONTROL.
+- Host access is limited to `chatgpt.com` and legacy `chat.openai.com`.
+- Active permissions are `scripting`, `nativeMessaging`, `storage`, and `tabs`; unused `webRequest`
+  permission was removed from the V2 candidate.
+- Unknown or legacy mutation messages fail closed. Confirmed or UNKNOWN browser effects are never
+  retried automatically.
+- Original relay text, conversation UUID, storage keys, Native Host name, extension ID, and wire
+  message names remain compatible.
+- Loading or reloading the unpacked extension is a LIVE operation. Source validation never reloads Chrome.
 
-## Conversation network foundation
+## Source-only verification
 
-The rebuilt RCC keeps a project conversation network as a directory, not an
-authority graph. A conversation has a display name, user-managed role tags,
-and last observed state. Tags are routing hints only: an explicitly named
-conversation can always receive a relay. `relay/envelope.js` appends a visible
-return prompt to a handoff and a visible follow-up prompt to a return while
-preserving the original body as a separate snapshot. The source-only contract
-does not yet persist the directory or alter live relay payloads.
-## First run
+Run from `D:\BCT\source`:
 
-1. Open `chrome://extensions`.
-2. Enable Developer mode.
-3. Choose **Load unpacked** and select `D:\ChromeExtensions\RCC\extension`.
-   The committed manifest key fixes the installed identity at
-   `ocbidbaplechjjdacmokhnfbdmgjkphf`, independent of checkout location.
-4. Refresh the ChatGPT tabs that will participate.
-5. Open the extension popup and assign one tab `CONTROL`, others `WS2`, `WS3`, etc.
-6. First run a manual relay with automatic relay still DISARMED.
-7. After manual round-trip succeeds, click **CONTROL 프로토콜 넣기**.
-8. Only then arm up to 6 automatic relay turns.
+    python modules/rcc/release/verify_release_candidate.py
+    python -m unittest discover -s tests -p test_rcc_release_candidate.py -v
+    python -m unittest discover -s tests -p test_rcc_source_baseline.py -v
 
-## Validation already run
-
-- `node --check` on all JavaScript files: PASS.
-- `manifest.json` JSON parse: PASS.
-- `test_relay_core.js`: PASS.
-- No live ChatGPT message was sent during build-time validation.
-
-## Update resilience
-
-ChatGPT DOM changes can still break any browser-UI automation. This MVP reduces the blast radius by using several semantic/fallback selectors and by failing closed when the editor cannot be found or the target is already generating. The relay core, registry, safety token, and Chrome tab messaging do not depend on ChatGPT DOM structure; only `content.js` input/reply adapters do.
-## Prior art checked
-
-The design was compared against `OLmatter/chatgpt-bridge` (local HTTP + userscript bridge) and `bsamek/blaster` (Manifest V3 background/tab-manager/content-script orchestration). We intentionally kept the useful browser-extension pattern while removing the local server and userscript layers for this use case.
-
-No third-party source code is copied into this MVP; the implementation is purpose-built around the user's registered ChatGPT workspace tabs.
+To verify the already assembled non-LIVE candidate and current rollback baseline without changing
+either, add `--candidate-root <rehearsal path>` and `--live-root D:\ChromeExtensions\RCC\extension`.
