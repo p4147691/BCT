@@ -23,6 +23,7 @@ function loadModule() {
   const highlights = [];
   const renders = [];
   const selected = [];
+  const focusedTabs = [];
   const nativeRequest = async (message) => {
     calls.push({ ...message });
     if (message.type === "getVirtualDesktops") return { ok: true, desktopIds: ["desk-a", "desk-b"] };
@@ -38,9 +39,18 @@ function loadModule() {
     highlight: (hwnd) => highlights.push(hwnd),
     renderVirtualDesktops: (state) => renders.push(state),
     selectVirtualDesktopPreview: (index) => selected.push(index),
+    focusBrowserTab: async (target) => {
+      focusedTabs.push({ ...target });
+      return { ok: true, status: "APPLIED", schema: "monitor.browser.tab-focus.receipt.v1" };
+    },
   });
-  const result = await service.activate("4242");
-  assert.deepEqual({ ...result }, { ok: true, hwnd: "4242", index: 1 });
+  const target = { tabId: 17, windowId: 33, conversationKey: "6ad733b6-95d4-83ee-b4ba-49a671229d77" };
+  const result = await service.activate("4242", target);
+  assert.equal(result.ok, true);
+  assert.equal(result.hwnd, "4242");
+  assert.equal(result.index, 1);
+  assert.equal(result.tabReceipt.status, "APPLIED");
+  assert.deepEqual(focusedTabs, [target]);
   assert.deepEqual(highlights, ["4242", "4242"]);
   assert.deepEqual(selected, [1]);
   assert.equal(renders.length, 2);
@@ -66,6 +76,12 @@ function loadModule() {
   assert.equal(missingCalls.some((call) => call.type === "switchVirtualDesktop"), false);
   assert.equal(missingCalls.some((call) => call.type === "restoreForegroundWindow"), false);
   assert.throws(() => service.select("not-a-hwnd"), /BCT_NODE_HWND_INVALID/);
+
+  const focusFailure = loadModule().create({
+    nativeRequest,
+    focusBrowserTab: async () => ({ ok: false, status: "NOT_APPLIED", error: "IDENTITY_MISMATCH" }),
+  });
+  await assert.rejects(() => focusFailure.activate("4242", target), /IDENTITY_MISMATCH/);
 
   const monitor = fs.readFileSync(monitorPath, "utf8");
   const css = fs.readFileSync(cssPath, "utf8");
@@ -110,6 +126,7 @@ function loadModule() {
     missing_hwnd_has_no_side_effect: true,
     yellow_thumbnail_contract: true,
     exact_node_card_selection: true,
+    exact_tab_focus: true,
   }));
 })().catch((error) => {
   console.error(error.stack || error);

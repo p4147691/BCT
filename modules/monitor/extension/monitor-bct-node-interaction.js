@@ -19,6 +19,7 @@
   function create(options = {}) {
     if (typeof options.nativeRequest !== "function") throw new Error("BCT_NODE_NATIVE_REQUEST_REQUIRED");
     const nativeRequest = options.nativeRequest;
+    const focusBrowserTab = typeof options.focusBrowserTab === "function" ? options.focusBrowserTab : null;
     const highlight = typeof options.highlight === "function" ? options.highlight : () => {};
     const renderVirtualDesktops = typeof options.renderVirtualDesktops === "function" ? options.renderVirtualDesktops : () => {};
     const selectVirtualDesktopPreview = typeof options.selectVirtualDesktopPreview === "function" ? options.selectVirtualDesktopPreview : () => {};
@@ -30,7 +31,7 @@
       return Object.freeze({ ok: true, hwnd });
     }
 
-    async function activate(hwndValue) {
+    async function activate(hwndValue, tabTarget = null) {
       const hwnd = select(hwndValue).hwnd;
       const state = await nativeRequest({ type: "getVirtualDesktops" });
       if (!state?.ok) throw new Error(state?.error || "데스크톱 상태 확인 실패");
@@ -57,8 +58,13 @@
 
       const foreground = await nativeRequest({ type: "restoreForegroundWindow", hwnd });
       if (!foreground?.ok) throw new Error(foreground?.error || "웹브라우저 창 활성화 실패");
+      if (!focusBrowserTab) throw new Error("BCT_NODE_TAB_FOCUS_REQUIRED");
+      const tabReceipt = await focusBrowserTab(tabTarget);
+      if (!tabReceipt?.ok || tabReceipt?.status !== "APPLIED") {
+        throw new Error(tabReceipt?.error || "정확한 ChatGPT 탭 선택 실패");
+      }
       highlight(hwnd);
-      return Object.freeze({ ok: true, hwnd, index });
+      return Object.freeze({ ok: true, hwnd, index, tabReceipt });
     }
 
     return Object.freeze({ select, activate });

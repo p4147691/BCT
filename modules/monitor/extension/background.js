@@ -1,4 +1,7 @@
+importScripts("browser/tab-focus-adapter.js");
+
 const HOST_NAME = "com.pas40.desktop_window_monitor";
+const monitorTabFocusAdapter = globalThis.MonitorTabFocusAdapter.create(chrome);
 
 
 
@@ -2313,6 +2316,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.update(tabId, { url, active: true })
       .then((tab) => sendResponse({ ok: true, tabId: tab?.id ?? tabId, windowId: tab?.windowId ?? null, url }))
       .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
+    return true;
+  }
+
+  if (message?.type === "monitor-focus-exact-chat-tab") {
+    monitorTabFocusAdapter.focus({
+      tabId: message?.tabId,
+      windowId: message?.windowId,
+      conversationKey: message?.conversationKey,
+    }).then(sendResponse).catch((error) => sendResponse({
+      schema: "monitor.browser.tab-focus.receipt.v1",
+      ok: false,
+      status: "NOT_APPLIED",
+      error: error?.message || String(error),
+    }));
     return true;
   }
 

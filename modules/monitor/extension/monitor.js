@@ -43450,6 +43450,12 @@ function getMonitorBctNodeInteractionService() {
     renderVirtualDesktops,
     selectVirtualDesktopPreview,
     highlight: applyMonitorBctNodeHighlight,
+    focusBrowserTab: async (target) => chrome.runtime.sendMessage({
+      type: "monitor-focus-exact-chat-tab",
+      tabId: target?.tabId,
+      windowId: target?.windowId,
+      conversationKey: target?.conversationKey,
+    }),
   });
   return monitorBctNodeInteractionService;
 }
@@ -43504,8 +43510,8 @@ function renderMonitorBctWindowNodes(nodes) {
       ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
       : -1;
     row.title = node.conversationKey
-      ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동 · 우클릭: 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
-      : `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동 · 창 ${node.windowId} · 탭 ${node.tabId}`;
+      ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 우클릭: 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
+      : `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 창 ${node.windowId} · 탭 ${node.tabId}`;
 
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
@@ -43546,9 +43552,13 @@ function renderMonitorBctWindowNodes(nodes) {
       row.classList.add("monitor-bct-node-switch-pending");
       void resolveMonitorBctNodeHwnd(node).then((hwnd) => (
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node),
-        getMonitorBctNodeInteractionService().activate(hwnd)
+        getMonitorBctNodeInteractionService().activate(hwnd, {
+          tabId: node.tabId,
+          windowId: node.windowId,
+          conversationKey: node.conversationKey,
+        })
       )).then((result) => {
-        setMonitorStatus(`${node.nodeLabel || "N?"} 창이 있는 D${result.index + 1}(으)로 이동해 웹브라우저를 활성화했습니다.`, true, 3200);
+        setMonitorStatus(`${node.nodeLabel || "N?"} 창이 있는 D${result.index + 1}(으)로 이동해 정확한 ChatGPT 탭을 선택했습니다.`, true, 3200);
       }).catch((error) => {
         setMonitorStatus(`노드 창 이동 실패 · ${error?.message || error}`, false, 4500);
       }).finally(() => {
