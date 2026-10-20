@@ -133,6 +133,7 @@ files = [
   "src/bct/integrations/desktop_session.py",
   "src/bct/operating_paths.py",
   "src/bct/conversation_history.py",
+  "src/bct/conversation_network.py",
   "modules/mcp/ops/run_bct_core_supervisor.ps1",
   "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
   "modules/mcp/ops/invoke_bct_tunnel_cutover.ps1",

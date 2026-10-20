@@ -166,6 +166,10 @@ runtime 배포·재시작은 모두 변경하지 않았다. MCP 통합시험으�
 표시 이름 조회, `D1-3` 원문 표기, UUID 비노출을 검증했다. 세부는
 `docs/exec-plans/active/BCT_CONVERSATION_NETWORK_STAGE2_READONLY_CONTROL_20261020.md`에 있다.
 
+LIVE 반영 전 `bct_runtime_v1` file list에 `src/bct/conversation_network.py`가 빠진 것을 발견했다.
+누락 상태에서는 새 MCP 도구가 runtime import에 실패하므로 배포하지 않았다. 파일을 exact release
+목록에 추가했고, deployment service 12개 회귀시험과 MCP·대화망 시험으로 검증했다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /

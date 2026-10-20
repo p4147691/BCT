@@ -26,6 +26,12 @@ UUID, tab/window/session ID, snapshot ID는 결과에 노출하지 않는다. �
   전혀 수행하지 않는다.
 - 실사용 BCT runtime 배포·재시작·확장 reload는 하지 않았다.
 
+## 배포 목록 보정
+
+LIVE 반영 전 `bct_runtime_v1`의 exact file list에 `src/bct/conversation_network.py`가 빠진 것을
+확인했다. 그대로면 새 MCP tool의 import가 실패하므로 배포를 시작하지 않았다. 파일을 목록에
+추가하고 deployment service 회귀시험으로 새 파일을 포함한 exact release upgrade를 검증했다.
+
 ## 검증
 
 `tests.test_mcp_integration`에서 임시 runtime에 프로젝트, 대화, Monitor snapshot을 넣고 실제
@@ -36,7 +42,8 @@ MCP 연결로 다음을 검증했다.
 3. `D1-3` 표기가 그대로 반환된다.
 4. conversation UUID와 snapshot ID는 반환되지 않는다.
 
-추가로 `tests.test_conversation_network` 및 `tests.test_rcc_source_baseline`을 통과했다.
+추가로 `tests.test_conversation_network`, `tests.test_rcc_source_baseline`,
+`tests.test_deployment_service`를 통과했다.
 
 ## 다음 단계
 
