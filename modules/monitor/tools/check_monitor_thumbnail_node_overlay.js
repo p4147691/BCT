@@ -5,10 +5,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const source = fs.readFileSync(path.join(__dirname, "../extension/monitor.js"), "utf8");
-const start = source.indexOf("function syncMonitorThumbnailTabBadges(");
-const end = source.indexOf("\nfunction syncMonitorBctNodeLocationLabels(", start);
-assert.ok(start > 0 && end > start, "thumbnail badge renderer must be extractable");
+const source = fs.readFileSync(
+  path.join(__dirname, "../extension/monitor-bct-thumbnail-projection.js"), "utf8",
+);
+const monitorSource = fs.readFileSync(path.join(__dirname, "../extension/monitor.js"), "utf8");
+assert.match(monitorSource,
+  /function syncMonitorThumbnailTabBadges\([\s\S]*MonitorBctThumbnailProjection[\s\S]*return diagnostics;/,
+  "the active thumbnail path must delegate to the isolated projection renderer");
+const decoratorStart = monitorSource.indexOf("function syncMonitorDesktopNumberBadge(");
+const decoratorEnd = monitorSource.indexOf("\nfunction ", decoratorStart + 1);
+const decorator = monitorSource.slice(decoratorStart, decoratorEnd);
+assert.doesNotMatch(decorator, /syncMonitorThumbnailTabBadges\(/,
+  "per-image decoration must not re-enter the full thumbnail projection");
 
 function node(className = "") {
   const result = {
@@ -77,16 +85,24 @@ chrome.style.zIndex = "9998";
 visual.append(chrome);
 
 const context = {
-  monitorLastAiState: {},
-  monitorBctNodeHighlightedHwnd: "500",
-  monitorWindowDesktopLocations: new Map([["500", { hwnd: "500", desktopId: "desk-a", left: 500, top: 0, width: 500, height: 800, iconic: false, visible: true }]]),
-  monitorBadgeNodeNumbersForHwnd: (hwnd) => hwnd === "500" ? [4, 7, 9] : [],
+  globalThis: null,
   document: { createElement: () => node() },
-  String, Number, Math, Boolean, Map, Set,
+  String, Number, Math, Boolean, Map, Set, Object,
 };
+context.globalThis = context;
 vm.createContext(context);
-vm.runInContext(source.slice(start, end), context);
-context.syncMonitorThumbnailTabBadges(visual, "monitor-desktop-thumb-window");
+vm.runInContext(source, context);
+const locations = new Map([["500", { hwnd: "500", desktopId: "desk-a", left: 500, top: 0, width: 500, height: 800, iconic: false, visible: true }]]);
+const render = () => context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  state: {},
+  locations,
+  highlightedHwnd: "500",
+  numbersForHwnd: (hwnd) => hwnd === "500" ? [4, 7, 9] : [],
+});
+const first = render();
+assert.deepEqual({ status:first.status, candidates:first.candidates, matched:first.matched, rendered:first.rendered },
+  { status:"RENDERED", candidates:1, matched:1, rendered:1 });
 
 const layer = visual.querySelector(".monitor-thumbnail-node-overlay");
 assert.ok(layer, "dedicated thumbnail overlay layer must be created");
@@ -100,7 +116,7 @@ const badges = windowOverlay.querySelectorAll(".monitor-thumbnail-tab-badge");
 assert.equal(badges.length, 1);
 assert.equal(badges[0].textContent, "N4/7/9");
 
-context.syncMonitorThumbnailTabBadges(visual, "monitor-desktop-thumb-window");
+render();
 assert.equal(visual.querySelectorAll(".monitor-thumbnail-node-overlay").length, 1);
 assert.equal(layer.querySelectorAll(".monitor-thumbnail-tab-badge").length, 1);
 assert.equal(visual.children.at(-1), layer, "overlay layer must stay above every captured window image");
@@ -108,7 +124,7 @@ assert.equal(visual.children.at(-1), layer, "overlay layer must stay above every
 // The semantic overlay is also renderable from exact Native geometry when the
 // capture image is temporarily absent or replaced.
 chrome.remove();
-context.syncMonitorThumbnailTabBadges(visual, "monitor-desktop-thumb-window");
+render();
 const geometryOverlay = layer.querySelector(".monitor-thumbnail-node-window");
 assert.ok(geometryOverlay, "native geometry must survive capture DOM replacement");
 assert.equal(geometryOverlay.style.left, "50%");

@@ -258,3 +258,18 @@ generation·desktop·geometry 조합은 재시도하지 않아 배경 polling이
 회귀는 실제 호출 순서(`remember → bounded projection refresh`)와 fresh Native/Chrome geometry의
 결합 성공, 동일 geometry 무한 재조회 방지를 검증한다. 기존 exact action binding은 완화하지 않으며,
 표시 결합 실패 시 임의 HWND에 번호를 붙이지 않는다.
+
+### 2026-10-21 후속 교정 — 활성 렌더러 재진입 제거
+
+`v2.0.13`에서도 노드 카드의 D2 위치와 `window_id 594834491 → HWND 132482` 결합은 정상인데
+섬네일 내부 `N4/7/9`가 보이지 않았다. 따라서 이전 순서 보완만으로는 충분하지 않았다. 활성
+`syncMonitorDesktopNumberBadge()`가 캡처 창 하나를 꾸미는 도중 전체 번호 렌더러를 다시 호출하고,
+그 결과로 생긴 자식 배지에 창의 물리 좌표를 한 번 더 넣었다. 배치 결과가 캡처 DOM 순서와 다음
+reconcile에 의존한 것이 실제 잔존 원인이다.
+
+번호 투영을 `monitor-bct-thumbnail-projection.js`의 단일 의미 계층으로 분리했다. 캡처 이미지는
+배경 자료로만 사용하며 번호 위치는 fresh Native HWND geometry와 BCT/RCC 번호 결합으로 한 번만
+계산한다. 캡처 이미지 DOM이 교체되거나 잠시 없어도 같은 exact HWND geometry로 오버레이를 다시
+만들며, 최소화 창은 이 계층에서 제외해 하단 요약에만 남긴다. 구 인라인 렌더러는 제거했고
+per-image decorator는 전체 투영을 재진입하지 않는다. 화면을 직접 열지 않아도 LIVE 상태에서
+`candidates/matched/rendered`를 확인할 수 있도록 변경 시점 진단 영수증을 shared runtime에 싣는다.

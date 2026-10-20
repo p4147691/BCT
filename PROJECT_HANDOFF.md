@@ -1199,3 +1199,10 @@ desktop, geometry는 한 번만 시도하므로 과거 Monitor 부하 문제를 
 exact action binding, RCC, Native Host, Claim 및 기존 UNKNOWN은 변경하지 않는다. focused overlay,
 HWND, minimized, interaction, backpressure, deployment 회귀와 Monitor 구조 검사를 통과한 뒤
 정확한 main SHA와 설치 payload를 배포하고 reload 후 실제 화면 수락을 받아야 한다.
+
+후속 대조에서 위치 라벨 D2가 정상인 사실로 `window_id → HWND` 결합 성공을 다시 확인했다. 남은
+결함은 기존 인라인 썸네일 렌더러가 per-image 장식 중 전체 렌더러를 재진입하고 자식 배지에 창
+좌표를 중복 적용하던 구조였다. 활성 경로를 독립 `monitor-bct-thumbnail-projection.js`로 옮기고
+구 인라인 구현을 제거했다. 새 계약은 N4/N7/N9 동일 창 투영, 캡처 DOM 교체 후 유지, 열린 창은
+썸네일 내부·최소화 창은 하단 요약만 사용함을 검사한다. LIVE reload 뒤 shared runtime의
+`thumbnail_projection`에서 `matched=1`, `rendered=1`과 실제 화면 `N4/7/9`를 함께 확인해야 한다.

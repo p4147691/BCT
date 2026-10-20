@@ -6,6 +6,7 @@ const path=require("node:path");
 const vm=require("node:vm");
 const src=fs.readFileSync(path.join(__dirname,"../extension/monitor.js"),"utf8");
 const contractSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-minimized-node-badge-contract.js"),"utf8");
+const projectionSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-bct-thumbnail-projection.js"),"utf8");
 function extract(name,until){
   const a=src.indexOf("function "+name+"(");
   const b=src.indexOf("\nfunction "+until+"(",a+1);
@@ -90,7 +91,8 @@ assert.match(src,/iconic:minimized/);
 assert.match(src,/scheduleMonitorMinimizedBadgeConvergence\(hwnd\)/);
 assert.match(contractSrc,/if \(!Boolean\(location\?\.iconic\)\) continue;/);
 assert.match(src,/reconcileFrame\(visual, frame, "monitor-desktop-thumb-window"\);\s*syncMonitorThumbnailTabBadges\(visual, "monitor-desktop-thumb-window"\);/);
-assert.match(src,/windowOverlay\.append\(badge\)/);
-assert.match(src,/overlayLayer\.append\(windowOverlay\)/);
+assert.match(src,/MonitorBctThumbnailProjection/);
+assert.match(projectionSrc,/windowLayer\.append\(badge\)/);
+assert.match(projectionSrc,/layer\.append\(windowLayer\)/);
 assert.match(css,/\.monitor-thumbnail-node-overlay\s*\{[^}]*z-index:2147480000/s);
 console.log("PASS: only minimized ChatGPT windows use the bottom desktop summary; open nodes render above their thumbnail");

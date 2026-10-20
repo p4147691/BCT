@@ -22898,7 +22898,7 @@ async function monitorPublishSharedInstance(reason = "event") {
 
   // Runtime presence is one current record per browser profile. Using the
   // transient HWND in the key left old rows behind after an extension reload.
-  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),seen_at_ms:Date.now()})});
+  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
 
 
 
@@ -46993,6 +46993,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   if (restoring) {
     badgeVisual?.querySelectorAll(`.monitor-thumbnail-tab-badge[data-hwnd="${hwnd}"], .monitor-window-desktop-badge[data-hwnd="${hwnd}"]`).forEach((node)=>node.remove());
     for (const img of document.querySelectorAll(`.monitor-window-preview[data-hwnd="${hwnd}"], .monitor-desktop-thumb-window[data-hwnd="${hwnd}"]`)) syncMonitorDesktopNumberBadge(img,hwnd);
+    if (badgeVisual?.isConnected) syncMonitorThumbnailTabBadges(badgeVisual,"monitor-desktop-thumb-window");
     void refreshMonitorConversationStateFast(true).catch(()=>{});
   } else if (badgeVisual?.isConnected) syncMonitorThumbnailTabBadges(badgeVisual,"monitor-desktop-thumb-window");
 
@@ -53996,16 +53997,9 @@ function syncMonitorDesktopNumberBadge(img, hwnd) {
   let badge=[...img.parentElement.querySelectorAll(".monitor-window-desktop-badge")].find((node)=>node.dataset.hwnd===key);
   if(img.classList.contains("monitor-desktop-thumb-window")){
     badge?.remove();
-    const parent=img.parentElement;
-    let thumbBadge=[...parent.querySelectorAll(".monitor-thumbnail-tab-badge")].find((node)=>node.dataset.hwnd===key);
-    if(!thumbBadge&&monitorLastAiState){
-      syncMonitorThumbnailTabBadges(parent,"monitor-desktop-thumb-window");
-      thumbBadge=[...parent.querySelectorAll(".monitor-thumbnail-tab-badge")].find((node)=>node.dataset.hwnd===key);
-    }
-    if(thumbBadge){
-      thumbBadge.style.left=img.style.left;
-      thumbBadge.style.top=img.style.top;
-    }
+    // Render once after the full Native frame is reconciled. Re-entering the
+    // renderer here used to apply the window's physical offset to its child
+    // badge a second time and made the result depend on image iteration order.
     return;
   }
 
@@ -55764,376 +55758,27 @@ function reconcileFrame(container, frame, className) {
 
 function syncMonitorThumbnailTabBadges(container, className) {
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   if (className !== "monitor-desktop-thumb-window") return;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (!monitorLastAiState) return;
-  for (const badge of container.querySelectorAll(".monitor-thumbnail-tab-badge, .monitor-window-desktop-badge-thumb, .monitor-window-desktop-badge")) badge.remove();
-  let overlayLayer=container.querySelector(".monitor-thumbnail-node-overlay");
-  if(!overlayLayer){
-    overlayLayer=document.createElement("span");
-    overlayLayer.className="monitor-thumbnail-node-overlay";
-    overlayLayer.setAttribute("aria-hidden","true");
+  const projection = globalThis.MonitorBctThumbnailProjection;
+  if (!projection?.render) {
+    container.dataset.monitorNodeOverlayStatus = "MODULE_MISSING";
+    container.dataset.monitorNodeOverlayRendered = "0";
+    return;
   }
-  overlayLayer.replaceChildren();
-  // Captured window elements may be reconciled after this layer was first made.
-  // Re-appending keeps one top-most semantic layer without editing capture pixels.
-  container.append(overlayLayer);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const state=monitorLastAiState;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if(!state)return;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const thumbnailWindows=[...container.querySelectorAll(".monitor-desktop-thumb-window[data-hwnd]")];
-  const imagesByHwnd=new Map(thumbnailWindows.map((img)=>[String(img.dataset.hwnd||"").trim(),img]).filter(([hwnd])=>Boolean(hwnd)));
-  const candidateHwnds=new Set(imagesByHwnd.keys());
-  const desktopId=String(container.dataset.desktopId||"").trim();
-  for(const [hwnd,location] of monitorWindowDesktopLocations){
-    if(String(location?.desktopId||"").trim()===desktopId)candidateHwnds.add(String(hwnd||"").trim());
-  }
-  const vw=Math.max(1,Number(container.dataset.monitorPreviewVirtualWidth)||1);
-  const vh=Math.max(1,Number(container.dataset.monitorPreviewVirtualHeight)||1);
-  const vl=Number(container.dataset.monitorPreviewVirtualLeft)||0;
-  const vt=Number(container.dataset.monitorPreviewVirtualTop)||0;
-  for(const hwnd of candidateHwnds){
-    const img=imagesByHwnd.get(hwnd)||null;
-    const location=monitorWindowDesktopLocations.get(hwnd)||null;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if(!hwnd||img?.style?.display==="none"||Boolean(location?.iconic)||location?.visible===false)continue;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const numbers=monitorBadgeNodeNumbersForHwnd(hwnd,state);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if(!numbers.length)continue;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const windowOverlay=document.createElement("span");
-    windowOverlay.className="monitor-thumbnail-node-window";
-    windowOverlay.dataset.hwnd=hwnd;
-    const left=img?.style?.left || (location ? `${((Number(location.left)-vl)/vw)*100}%` : "");
-    const top=img?.style?.top || (location ? `${((Number(location.top)-vt)/vh)*100}%` : "");
-    const width=img?.style?.width || (location ? `${(Number(location.width)/vw)*100}%` : "");
-    const height=img?.style?.height || (location ? `${(Number(location.height)/vh)*100}%` : "");
-    if(!left||!top||!width||!height)continue;
-    windowOverlay.style.left=left;
-    windowOverlay.style.top=top;
-    windowOverlay.style.width=width;
-    windowOverlay.style.height=height;
-    windowOverlay.classList.toggle("monitor-bct-node-target-highlighted",Boolean(monitorBctNodeHighlightedHwnd)&&hwnd===String(monitorBctNodeHighlightedHwnd));
-    const badge=document.createElement("span");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    badge.className="monitor-node-number-badge monitor-thumbnail-tab-badge";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    badge.dataset.hwnd=hwnd;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    badge.textContent="N" + numbers.join("/");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    badge.title=`ACT 노드 ${numbers.join(" / ")}`;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    badge.style.display="";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    windowOverlay.append(badge);
-    overlayLayer.append(windowOverlay);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  const diagnostics = projection.render({
+    container,
+    state: monitorLastAiState,
+    locations: monitorWindowDesktopLocations,
+    highlightedHwnd: monitorBctNodeHighlightedHwnd,
+    numbersForHwnd: monitorBadgeNodeNumbersForHwnd,
+  });
+  container.dataset.monitorNodeOverlayStatus = String(diagnostics.status || "UNKNOWN");
+  container.dataset.monitorNodeOverlayCandidates = String(Number(diagnostics.candidates) || 0);
+  container.dataset.monitorNodeOverlayMatched = String(Number(diagnostics.matched) || 0);
+  container.dataset.monitorNodeOverlayRendered = String(Number(diagnostics.rendered) || 0);
+  scheduleMonitorThumbnailProjectionReceipt();
+  return diagnostics;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function syncMonitorBctNodeLocationLabels() {
   // Refresh visible location only. No Chrome action, no polling, no stored binding.
   if (!Array.isArray(monitorBctWindowNodesCache) || !monitorWorkers) return;
@@ -56148,6 +55793,32 @@ function syncMonitorBctNodeLocationLabels() {
     row.dataset.desktopNumber = index >= 0 ? String(index + 1) : "";
   }
 }
+let monitorThumbnailProjectionPublishSignature="";
+let monitorThumbnailProjectionPublishTimer=0;
+function monitorThumbnailProjectionRuntimeDiagnostics() {
+  if(!monitorDesktopThumbs)return [];
+  return [...monitorDesktopThumbs.children].map((button)=>{
+    const visual=button.querySelector(".monitor-desktop-thumb-visual");
+    return {
+      desktop_id:String(button.dataset.desktopId||visual?.dataset?.desktopId||""),
+      status:String(visual?.dataset?.monitorNodeOverlayStatus||"NOT_RENDERED"),
+      candidates:Number(visual?.dataset?.monitorNodeOverlayCandidates)||0,
+      matched:Number(visual?.dataset?.monitorNodeOverlayMatched)||0,
+      rendered:Number(visual?.dataset?.monitorNodeOverlayRendered)||0,
+    };
+  });
+}
+function scheduleMonitorThumbnailProjectionReceipt() {
+  const diagnostics=monitorThumbnailProjectionRuntimeDiagnostics();
+  const signature=JSON.stringify(diagnostics);
+  if(signature===monitorThumbnailProjectionPublishSignature)return;
+  monitorThumbnailProjectionPublishSignature=signature;
+  if(monitorThumbnailProjectionPublishTimer)clearTimeout(monitorThumbnailProjectionPublishTimer);
+  monitorThumbnailProjectionPublishTimer=setTimeout(()=>{
+    monitorThumbnailProjectionPublishTimer=0;
+    void monitorPublishSharedInstance("thumbnail-projection");
+  },500);
+}
 function syncMonitorAllDesktopThumbnailNodeBadges() {
   for (const button of monitorDesktopThumbs.children) {
     const visual=button.querySelector(".monitor-desktop-thumb-visual");
@@ -56156,6 +55827,7 @@ function syncMonitorAllDesktopThumbnailNodeBadges() {
   syncMonitorBctNodeLocationLabels();
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
   syncMonitorBctNodeTargetHighlight();
+  scheduleMonitorThumbnailProjectionReceipt();
 }
 
 let monitorWindowPointerDrag = null;
