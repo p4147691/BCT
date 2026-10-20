@@ -1,6 +1,54 @@
 # BCT Monitor 노드·썸네일 표시 — RCC 통합 격리 검증
 
-상태: `NODE_OVERLAY_FIX_LIVE_LOADED / VISUAL_CONFIRMATION_PENDING`
+상태: `BWM_UI_2.0.11_RELOADED / LIVE_MAPPING_ZERO_REPRODUCED / DISPLAY_ONLY_GEOMETRY_SOURCE_FIXED`
+
+## 2026-10-21 BWM 상단 정리·실제 HWND 투영 수렴 보수
+
+현재 BCT/RCC는 N4·N7·N9를 동일 Chrome `window_id`에 보존하지만 실행 Monitor에서 카드 위치와
+썸네일 번호가 누락됐다. 원인은 캡처 이미지 레이어가 아니라 두 상태 경계의 결합이었다.
+
+- BCT 노드 조회가 Native desktop topology보다 먼저 끝나면 exact conversation→HWND 조회가
+  desktop ID 없음으로 종료됐고, topology가 준비된 뒤 다시 대조하는 보장된 단계가 없었다.
+- RCC의 짧은 probe 실패는 마지막 탭 목록을 표시용으로 보존해도 instance state가
+  `UNAVAILABLE`이 되어, 기존 HWND 계약의 `OPEN` 조건에서 이미 검증한 binding까지 제거했다.
+
+source는 desktop topology 준비 뒤 exact identity 대조를 0/450/1400ms 최대 세 번만 수행한다.
+주기 poll은 추가하지 않는다. RCC가 일시 불가하면 마지막 노드 목록을 stale로 명시하고, 새 HWND를
+만들지 않은 채 기존 exact binding만 Native Host가 같은 Chrome HWND를 5초 이내에 다시 관측한
+동안 유지한다. Native 증거가 낡거나 prior binding이 없으면 번호를 붙이지 않는다. 실제 shell과
+HWND contract를 함께 실행하는 회귀는 같은 창의 N4/7/9 유지, 신규 binding 생성 금지, Native
+stale 시 제거를 검증한다.
+
+상단 표시는 `BWM`+버전으로 줄이고 BCT health가 정상일 때 버전만 초록색으로 표시한다. 세대/상태
+문구와 BCT 상태 버튼은 향후 정보창 범위로 제거했다. 복구 항목은 상단 버튼으로 옮겼으며 공식
+실행 경로가 없는 RCC/BCT/tunnel/BCT Control 항목은 효과가 있는 것처럼 보이지 않도록 계속
+disabled다. 2열/3열 선택기는 제거하고 3열을 기본값으로 고정했으며 N 글자만 키웠다. 생성 상태는
+입력 가능 여부가 아니라 RCC의 실제 generating telemetry를 계속 사용한다.
+
+기존 `BCT-MONITOR-NODE-SELECTION-OVERLAY-FIX-20261021-01`은 같은 MCP principal의 ACTIVE 기록이지만
+현재 상태 목록에 실행 operation이 없었고, 이 변경은 새 통합 Work에서 공유 source의 단일 dirty
+set으로 진행한다. 이름 변경 실패는 기존 대상별 UNKNOWN claim을 우회하지 않으며 화면에는 내부
+resource ID 대신 이전 결과 미확정이라는 안전한 설명을 표시한다.
+
+source commit/main은 `802c5a3fb90f6c4e04cc111b6e61a481027b0236`, exact GitHub Actions
+`39477884804`는 SUCCESS다. 런타임 5파일은 source SHA와 일치하게 설치본에 반영했고, 직전
+파일은 `D:\ChromeExtensions\DesktopWindow-Monitor\backup\monitor-live-802c5a3-20261021-035300`에
+보관했다. 공식 publish gate는 설치 manifest `2.0.11`과 token
+`d589c3f24c594be1b461a5febf597070`을 발행했으며 구조 gate는 PASS했다. publish 직후 renderer는
+`2.0.10`과 이전 ACK token을 보고해 same-ID reload가 필요했고, 확장 URL에 대한 자동 조작 보안
+정책을 우회하지 않았다.
+
+사용자의 공식 버튼 재로드 뒤 running renderer `2.0.11`, publish token과 ACK 일치를 확인했다.
+재로드 후 RCC가 OPEN으로 돌아와 N4/N7/N9를 같은 Chrome `window_id 594834491`에 보고했지만,
+읽기 전용 Native 대조는 `mapped_windows: 0`이었다. 선택된 실제 Chrome 탭이 비-ChatGPT이면
+memory-only conversation binding을 새 renderer가 복구할 수 없는 것이 남은 원인이었다.
+
+후속 source는 display identity와 action identity를 분리한다. 썸네일 번호·카드 위치·한 번 클릭
+강조는 `chrome.windows.get(window_id)`의 fresh bounds와 Native의 fresh Chrome HWND bounds가
+허용 오차 안에서 하나만 일치할 때 `displayOnly` binding을 사용할 수 있다. 둘 이상의 Native HWND가
+같이 맞으면 `HWND_GEOMETRY_AMBIGUOUS`로 거부한다. 더블클릭 데스크톱 이동·foreground 같은 실제
+조작은 display-only 결과를 사용하지 않고 기존 conversation-key exact binding만 허용한다. 계약
+회귀는 재로드 뒤 N4/7/9 표시 복구, 동일 geometry 거부, 조작 계약 비완화를 모두 PASS했다.
 
 ## 2026-10-21 노드 카드 단일 선택·썸네일 오버레이 보수
 

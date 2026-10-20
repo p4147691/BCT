@@ -13,6 +13,19 @@
     return instanceId && sessionId && windowId ? `${instanceId}:${sessionId}:${windowId}` : "";
   }
   function locations(value) { return value instanceof Map ? [...value.values()] : (Array.isArray(value) ? value : []); }
+  function browserWindows(value) { return value instanceof Map ? [...value.values()] : (Array.isArray(value) ? value : []); }
+  function finiteGeometry(value) {
+    const geometry = {
+      left: Number(value?.left), top: Number(value?.top),
+      width: Number(value?.width), height: Number(value?.height),
+    };
+    return [geometry.left, geometry.top, geometry.width, geometry.height].every(Number.isFinite)
+      && geometry.width > 0 && geometry.height > 0 ? geometry : null;
+  }
+  function geometryScore(left, right) {
+    return Math.abs(left.left - right.left) + Math.abs(left.top - right.top)
+      + Math.abs(left.width - right.width) + Math.abs(left.height - right.height);
+  }
 
   function create(options = {}) {
     const identityMaxAgeMs = Math.max(1000, Number(options.identityMaxAgeMs) || 8000);
@@ -52,11 +65,17 @@
     // When a user selects an unregistered/new tab, the physical Chrome window
     // still owns every registered conversation in that RCC window. Preserve an
     // already exact binding only while the same Chrome HWND is freshly observed
-    // and the RCC lineage remains OPEN. This never invents a new HWND binding.
+    // and the RCC lineage is OPEN, or a monitor-only cached row says its last
+    // verified state was OPEN. Cached rows can retain but never create a binding.
     function retainCurrentSessionBindings(input = {}) {
       const now = Number(input.now) || Date.now();
       const next = new Map(Array.isArray(input.bindings) ? input.bindings.map((item) => [text(item?.lineage), item]).filter(([key]) => Boolean(key)) : []);
-      const liveLineages = new Set((Array.isArray(input.nodes) ? input.nodes : []).filter((node) => text(node?.instanceState).toUpperCase() === "OPEN").map(lineage).filter(Boolean));
+      const liveLineages = new Set((Array.isArray(input.nodes) ? input.nodes : []).filter((node) => {
+        const state = text(node?.instanceState).toUpperCase();
+        if (state === "OPEN") return true;
+        return node?.instanceCached === true && text(node?.lastKnownState).toUpperCase() === "OPEN"
+          && ["UNKNOWN", "UNAVAILABLE", "PROBE_TIMEOUT", "PROBE_ERROR"].includes(state);
+      }).map(lineage).filter(Boolean));
       const freshChromeHwnds = new Set(locations(input.locations).filter((location) => {
         const hwnd = positiveId(location?.hwnd), observedAt = Number(location?.at) || 0;
         return hwnd && text(location?.className) === "Chrome_WidgetWin_1" && observedAt >= now - locationMaxAgeMs && observedAt <= now + 1000;
@@ -68,7 +87,66 @@
       }
       return Object.freeze([...next.values()]);
     }
-    return Object.freeze({ schema: SCHEMA, resolve, retainCurrentSessionBindings, lineage });
+    // Thumbnail labels are display-only and must survive an extension reload
+    // even when the selected tab in the Chrome window is not ChatGPT. Chrome's
+    // own window_id and bounds may therefore join to one uniquely matching
+    // fresh Native Chrome HWND. This result must never authorize a window
+    // mutation; side effects continue to use resolve()'s conversation identity.
+    function resolveDisplay(input = {}) {
+      const now = Number(input.now) || Date.now();
+      const tolerance = Math.max(0, Number(input.geometryTolerance) || 16);
+      const rejected = [], bindings = [];
+      const nodeLineages = new Map();
+      for (const node of Array.isArray(input.nodes) ? input.nodes : []) {
+        const state = text(node?.instanceState).toUpperCase();
+        const displayable = state === "OPEN" || (
+          node?.instanceCached === true && text(node?.lastKnownState).toUpperCase() === "OPEN"
+          && ["UNKNOWN", "UNAVAILABLE", "PROBE_TIMEOUT", "PROBE_ERROR"].includes(state)
+        );
+        const key = lineage(node);
+        if (!displayable || !key) continue;
+        if (!nodeLineages.has(key)) nodeLineages.set(key, Object.freeze({
+          lineage: key, instanceId: text(node.instanceId), sessionId: text(node.sessionId), windowId: positiveId(node.windowId),
+        }));
+      }
+      const native = locations(input.locations).map((location) => ({ location, hwnd: positiveId(location?.hwnd), geometry: finiteGeometry(location) })).filter((item) => {
+        const observedAt = Number(item.location?.at) || 0;
+        return item.hwnd && item.geometry && text(item.location?.className) === "Chrome_WidgetWin_1"
+          && observedAt >= now - locationMaxAgeMs && observedAt <= now + 1000;
+      });
+      const browserById = new Map(browserWindows(input.browserWindows).map((window) => [positiveId(window?.windowId ?? window?.id), window]).filter(([id]) => Boolean(id)));
+      for (const candidate of nodeLineages.values()) {
+        const browser = browserById.get(candidate.windowId);
+        const browserGeometry = finiteGeometry(browser);
+        const observedAt = Number(browser?.observedAt) || 0;
+        if (!browserGeometry || observedAt < now - locationMaxAgeMs || observedAt > now + 1000) {
+          rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "BROWSER_WINDOW_GEOMETRY_UNAVAILABLE" }));
+          continue;
+        }
+        const minimized = text(browser?.state).toLowerCase() === "minimized";
+        const ranked = native.filter((item) => Boolean(item.location?.iconic) === minimized)
+          .map((item) => ({ ...item, score: geometryScore(browserGeometry, item.geometry) }))
+          .sort((a, b) => a.score - b.score || a.hwnd.localeCompare(b.hwnd));
+        if (!ranked.length || ranked[0].score > tolerance) {
+          rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "HWND_GEOMETRY_UNAVAILABLE" }));
+          continue;
+        }
+        if (ranked.length > 1 && ranked[1].score <= tolerance) {
+          rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "HWND_GEOMETRY_AMBIGUOUS" }));
+          continue;
+        }
+        bindings.push(Object.freeze({ ...candidate, hwnd: ranked[0].hwnd, observedAt: now, displayOnly: true }));
+      }
+      const lineagesByHwnd = new Map();
+      for (const item of bindings) { const values = lineagesByHwnd.get(item.hwnd) || []; values.push(item); lineagesByHwnd.set(item.hwnd, values); }
+      const unique = bindings.filter((item) => {
+        const allowed = (lineagesByHwnd.get(item.hwnd) || []).length === 1;
+        if (!allowed) rejected.push(Object.freeze({ lineage: item.lineage, reason: "RCC_DISPLAY_WINDOW_AMBIGUOUS" }));
+        return allowed;
+      });
+      return Object.freeze({ schema: SCHEMA, generatedAt: now, locationMaxAgeMs, bindings: Object.freeze(unique), rejected: Object.freeze(rejected) });
+    }
+    return Object.freeze({ schema: SCHEMA, resolve, resolveDisplay, retainCurrentSessionBindings, lineage });
   }
   root.MonitorWindowHwndContract = Object.freeze({ SCHEMA, create });
 })(globalThis);

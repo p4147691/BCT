@@ -468,7 +468,7 @@ monitorRoot.className = "desktop-window-monitor";
 
 
 
-monitorRoot.setAttribute("aria-label", "BCT Window Monitor");
+monitorRoot.setAttribute("aria-label", "BWM");
 
 
 
@@ -516,7 +516,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BCT Window Monitor</strong><span id="monitorVersion" class="monitor-version"></span><div class="monitor-act-row"><span id="monitorService" style="display:none">호환 계층 확인 중…</span><span id="monitorBctStatus" class="monitor-bct-status" role="status">BCT 확인 중…</span><button id="monitorBctOpen" type="button" title="BCT Core의 읽기 전용 상태 화면을 엽니다">BCT 상태</button><details class="monitor-recovery-menu"><summary title="RCC·Monitor 상태 관리">리로드·복구 ▾</summary><div class="monitor-recovery-menu-actions"><button id="monitorRccRescan" type="button">RCC 재조회</button><button id="monitorExtensionReload" type="button" title="이미 설치된 BCT Window Monitor 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">설치본 리로드</button><button type="button" disabled title="RCC 소유 작업의 승인된 리로드 경로 확인 후 연결">RCC 리로드 · 준비 중</button><button type="button" disabled title="Supervisor 경로 확인 후 연결">BCT 시작·복구 · 준비 중</button><button type="button" disabled title="터널 작업 및 영수증 확인 후 연결">MCP 터널 복구 · 준비 중</button><button type="button" disabled title="ChatGPT 설정에서 수동 갱신">도구 새로고침 · 설정에서</button></div></details></div></div></div>
+    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BWM</strong><span id="monitorVersion" class="monitor-version" role="status"></span><span id="monitorService" style="display:none">호환 계층 확인 중…</span></div><div class="monitor-utility-actions" role="toolbar" aria-label="BWM 복구 도구"><button id="monitorExtensionReload" type="button" title="이미 설치된 BWM 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">확장 리로드</button><button id="monitorRccReload" type="button" disabled title="RCC 소유 작업의 승인된 공식 리로드 경로가 연결되면 사용할 수 있습니다.">RCC 리로드</button><button id="monitorBctRecover" type="button" disabled title="BCT Supervisor의 공식 복구 경로가 연결되면 사용할 수 있습니다.">BCT 시작·복구</button><button id="monitorMcpTunnelRecover" type="button" disabled title="MCP 터널의 공식 복구·영수증 경로가 연결되면 사용할 수 있습니다.">MCP 터널 복구</button><button id="monitorBctControlRefresh" type="button" disabled title="ChatGPT의 BCT Control 도구 새로고침은 아직 Monitor에서 안전하게 실행할 수 없습니다.">BCT Control 도구 새로고침</button></div></div>
 
 
 
@@ -596,7 +596,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><span class="monitor-node-columns" aria-label="노드 열 수"><button type="button" id="monitorNodeCols2">2열</button><button type="button" id="monitorNodeCols3">3열</button></span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
+    <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
     <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
 
 
@@ -1599,10 +1599,10 @@ function syncMonitorTitle() {
 
 
   const version = monitorExtensionVersion();
-  monitorTitle.textContent = "BCT Window Monitor";
+  monitorTitle.textContent = "BWM";
   if (monitorVersion) {
     monitorVersion.textContent = version ? `v${version}` : "버전 미확인";
-    monitorVersion.title = version ? `실행 중인 BCT Window Monitor 버전 ${version}` : "실행 중인 확장 버전을 확인하지 못했습니다";
+    monitorVersion.title = version ? `실행 중인 BWM 버전 ${version} · BCT 연결 확인 중` : "실행 중인 확장 버전을 확인하지 못했습니다";
   }
   document.title = monitorWindowTitle();
 
@@ -21658,6 +21658,34 @@ function refreshMonitorBctCurrentSessionWindowHwnd() {
   return resolution || null;
 }
 
+async function refreshMonitorBctBrowserWindowGeometry() {
+  const ids = [...new Set((Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+    .map((node) => Number(node?.windowId)).filter(Number.isInteger))];
+  const observedAt = Date.now();
+  const rows = await Promise.all(ids.map(async (windowId) => {
+    try {
+      const browserWindow = await chrome.windows.get(windowId, { populate: false });
+      return {
+        windowId, observedAt,
+        left: Number(browserWindow?.left), top: Number(browserWindow?.top),
+        width: Number(browserWindow?.width), height: Number(browserWindow?.height),
+        state: String(browserWindow?.state || "normal"), focused: browserWindow?.focused === true,
+      };
+    } catch (_) { return null; }
+  }));
+  monitorBctBrowserWindows = new Map(rows.filter(Boolean).map((row) => [String(row.windowId), row]));
+  return monitorBctBrowserWindows;
+}
+
+function refreshMonitorBctDisplayWindowHwnd() {
+  const display = monitorWindowHwndContract?.resolveDisplay?.({
+    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations,
+    browserWindows: monitorBctBrowserWindows, now: Date.now(),
+  });
+  monitorBctDisplayWindowHwnd = new Map((display?.bindings || []).map((binding) => [String(binding.lineage || ""), binding]));
+  return display || null;
+}
+
 function monitorBctCurrentSessionHwnd(windowIdValue, instanceIdValue = "", sessionIdValue = "") {
   const windowId = String(windowIdValue ?? "").trim();
   const instanceId = String(instanceIdValue ?? "").trim();
@@ -21667,6 +21695,23 @@ function monitorBctCurrentSessionHwnd(windowIdValue, instanceIdValue = "", sessi
     return String(monitorBctCurrentSessionWindowHwnd.get(`${instanceId}:${sessionId}:${windowId}`)?.hwnd || "");
   }
   const matches = [...monitorBctCurrentSessionWindowHwnd.values()]
+    .filter((binding) => String(binding?.windowId || "") === windowId)
+    .map((binding) => String(binding?.hwnd || ""))
+    .filter((hwnd) => /^\d+$/.test(hwnd) && hwnd !== "0");
+  return new Set(matches).size === 1 ? matches[0] : "";
+}
+
+function monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue = "", sessionIdValue = "") {
+  const exact = monitorBctCurrentSessionHwnd(windowIdValue, instanceIdValue, sessionIdValue);
+  if (exact) return exact;
+  const windowId = String(windowIdValue ?? "").trim();
+  const instanceId = String(instanceIdValue ?? "").trim();
+  const sessionId = String(sessionIdValue ?? "").trim();
+  if (!/^\d+$/.test(windowId) || windowId === "0") return "";
+  if (instanceId && sessionId) {
+    return String(monitorBctDisplayWindowHwnd.get(`${instanceId}:${sessionId}:${windowId}`)?.hwnd || "");
+  }
+  const matches = [...monitorBctDisplayWindowHwnd.values()]
     .filter((binding) => String(binding?.windowId || "") === windowId)
     .map((binding) => String(binding?.hwnd || ""))
     .filter((hwnd) => /^\d+$/.test(hwnd) && hwnd !== "0");
@@ -21697,6 +21742,11 @@ function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState
   }
 
   return candidates.size === 1 ? [...candidates][0] : "";
+}
+
+function monitorDisplayHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
+  return monitorHwndForBrowserWindowId(windowIdValue, state, instanceIdValue, sessionIdValue)
+    || monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue, sessionIdValue);
 }
 
 function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState) {
@@ -43149,9 +43199,6 @@ const monitorActRestart = document.getElementById("monitorActRestart");
 
 const monitorNodeSync = document.getElementById("monitorNodeSync");
 
-const monitorBctStatus = document.getElementById("monitorBctStatus");
-const monitorBctOpen = document.getElementById("monitorBctOpen");
-const monitorRccRescan = document.getElementById("monitorRccRescan");
 const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
@@ -43160,8 +43207,16 @@ const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeCo
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
 let monitorBctCurrentSessionWindowHwnd = new Map();
+let monitorBctDisplayWindowHwnd = new Map();
+let monitorBctBrowserWindows = new Map();
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorMinimizedBadgeConvergenceTimer = 0;
+let monitorBctProjectionGeneration = 0;
+let monitorBctProjectionConvergenceTimer = 0;
+let monitorBctProjectionConvergenceKey = "";
+let monitorBctProjectionConvergenceAttempt = 0;
+let monitorBctProjectionConvergenceInflight = false;
+const MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object.freeze([0, 450, 1400]);
 
 function scheduleMonitorMinimizedBadgeConvergence(hwnd) {
   const key = String(hwnd || "").trim();
@@ -43171,25 +43226,74 @@ function scheduleMonitorMinimizedBadgeConvergence(hwnd) {
     monitorMinimizedBadgeConvergenceTimer = 0;
     // A BCT-initiated minimize can arrive before the Native identity snapshot.
     // Reconcile once; this is deliberately bounded, not a background poll.
+    await refreshMonitorBctBrowserWindowGeometry();
     await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
     refreshMonitorBctCurrentSessionWindowHwnd();
+    refreshMonitorBctDisplayWindowHwnd();
     syncMonitorMinimizedNodeBadges(monitorLastAiState);
   }, 250);
 }
-const monitorNodeCols2 = document.getElementById("monitorNodeCols2");
-const monitorNodeCols3 = document.getElementById("monitorNodeCols3");
-function monitorSetNodeGridColumns(value) {
-  const count = value === 3 ? 3 : 2;
-  if (monitorWorkers) monitorWorkers.dataset.columns = String(count);
-  monitorNodeCols2?.setAttribute("aria-pressed", String(count === 2));
-  monitorNodeCols3?.setAttribute("aria-pressed", String(count === 3));
-  try { globalThis.localStorage?.setItem("bct.monitor.node-columns.v1", String(count)); } catch {}
+if (monitorWorkers) monitorWorkers.dataset.columns = "3";
+
+function resetMonitorBctProjectionConvergence() {
+  monitorBctProjectionGeneration += 1;
+  monitorBctProjectionConvergenceKey = "";
+  monitorBctProjectionConvergenceAttempt = 0;
+  if (monitorBctProjectionConvergenceTimer) {
+    clearTimeout(monitorBctProjectionConvergenceTimer);
+    monitorBctProjectionConvergenceTimer = 0;
+  }
 }
-let monitorInitialNodeColumns = 3;
-try { monitorInitialNodeColumns = Number(globalThis.localStorage?.getItem("bct.monitor.node-columns.v1")) === 2 ? 2 : 3; } catch {}
-monitorSetNodeGridColumns(monitorInitialNodeColumns);
-monitorNodeCols2?.addEventListener("click", () => monitorSetNodeGridColumns(2));
-monitorNodeCols3?.addEventListener("click", () => monitorSetNodeGridColumns(3));
+
+function monitorBctProjectionHasUnresolvedLineage() {
+  return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) =>
+    !monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId)
+  );
+}
+
+function scheduleMonitorBctProjectionConvergence(reason = "state-ready") {
+  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorBctWindowNodesCache.length ||
+      !Array.isArray(monitorDesktopState?.desktopIds) || !monitorDesktopState.desktopIds.length ||
+      !monitorBctProjectionHasUnresolvedLineage()) return;
+  const key = [
+    monitorBctProjectionGeneration,
+    monitorDesktopState.desktopIds.join(","),
+    ...monitorBctWindowNodesCache.map((node) =>
+      `${node.instanceId}:${node.sessionId}:${node.windowId}:${node.conversationKey}:${node.active ? 1 : 0}:${node.instanceState}`
+    ),
+  ].join("|");
+  if (key !== monitorBctProjectionConvergenceKey) {
+    monitorBctProjectionConvergenceKey = key;
+    monitorBctProjectionConvergenceAttempt = 0;
+  }
+  if (monitorBctProjectionConvergenceTimer || monitorBctProjectionConvergenceInflight ||
+      monitorBctProjectionConvergenceAttempt >= MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS.length) return;
+  const delay = MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS[monitorBctProjectionConvergenceAttempt];
+  monitorBctProjectionConvergenceTimer = setTimeout(async () => {
+    monitorBctProjectionConvergenceTimer = 0;
+    monitorBctProjectionConvergenceAttempt += 1;
+    monitorBctProjectionConvergenceInflight = true;
+    try {
+      await refreshMonitorBctBrowserWindowGeometry();
+      await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
+      refreshMonitorBctCurrentSessionWindowHwnd();
+      refreshMonitorBctDisplayWindowHwnd();
+      renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+      syncMonitorAllDesktopThumbnailNodeBadges();
+    } finally {
+      monitorBctProjectionConvergenceInflight = false;
+    }
+    if (monitorBctProjectionHasUnresolvedLineage()) scheduleMonitorBctProjectionConvergence(reason);
+  }, delay);
+}
+
+function monitorBctRenameErrorText(error) {
+  const raw = String(error?.message || error || "").trim();
+  if (/RESOURCE_ALREADY_CLAIMED|UNKNOWN|OUTCOME_UNVERIFIED/i.test(raw)) {
+    return "이 대화의 이전 이름 변경 결과가 아직 미확정이라 안전상 다시 바꾸지 않았습니다.";
+  }
+  return raw ? `변경되지 않았습니다 · ${raw}` : "이름을 변경하지 못했습니다.";
+}
 let monitorBctRenameEditor = null;
 
 function closeMonitorBctRenameEditor() {
@@ -43293,7 +43397,7 @@ function openMonitorBctRenameEditor(node, row) {
       editor.close.disabled = false;
       editor.confirm.disabled = false;
       editor.confirm.textContent = "확인";
-      editor.error.textContent = `변경되지 않았습니다 · ${renameError?.message || renameError}`;
+      editor.error.textContent = monitorBctRenameErrorText(renameError);
       editor.input.focus();
     }
   });
@@ -43325,6 +43429,18 @@ async function resolveMonitorBctNodeHwnd(node) {
   return String(hwnd);
 }
 
+async function resolveMonitorBctNodeDisplayHwnd(node) {
+  let hwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  if (hwnd) return String(hwnd);
+  await refreshMonitorBctBrowserWindowGeometry();
+  await refreshMonitorIdentityIndex(monitorLastAiState, true);
+  refreshMonitorBctCurrentSessionWindowHwnd();
+  refreshMonitorBctDisplayWindowHwnd();
+  hwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  if (!hwnd) throw new Error("현재 세션에서 이 노드의 표시 위치를 고유하게 대조하지 못함");
+  return String(hwnd);
+}
+
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
   const fragment = document.createDocumentFragment();
@@ -43347,7 +43463,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.setAttribute("role", "button");
     row.setAttribute("aria-selected", "false");
     row.tabIndex = 0;
-    const mappedHwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+    const mappedHwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
     const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
     const desktopPosition = nativeLocation
       ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
@@ -43381,7 +43497,7 @@ function renderMonitorBctWindowNodes(nodes) {
     globalThis.MonitorStatusIcon?.render?.(presence, { activity: node.generating ? "play" : "pause" });
     row.append(number, body, presence);
     row.addEventListener("click", () => {
-      void resolveMonitorBctNodeHwnd(node).then((hwnd) => {
+      void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
         getMonitorBctNodeInteractionService().select(hwnd);
         setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
@@ -43419,7 +43535,12 @@ function renderMonitorBctWindowNodes(nodes) {
   });
   monitorWorkers.replaceChildren(fragment);
   syncMonitorBctNodeTargetHighlight();
-  if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = `${nodes.length}개 · BCT/RCC 실시간 상태`;
+  if (monitorBctNodeSummary) {
+    const stale = nodes.some((node) => node.displayStale === true);
+    monitorBctNodeSummary.textContent = stale
+      ? `${nodes.length}개 · RCC 일시 지연 · 마지막 검증 목록`
+      : `${nodes.length}개 · BCT/RCC 실시간 상태`;
+  }
 }
 
 async function refreshMonitorBctWindowNodes() {
@@ -43429,11 +43550,17 @@ async function refreshMonitorBctWindowNodes() {
   if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
   try {
     const state = await monitorBctShell.monitorState();
-    monitorBctWindowNodesCache = monitorBctShell.windowNodes(state);
+    monitorBctWindowNodesCache = monitorBctShell.displayWindowNodes
+      ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
+      : monitorBctShell.windowNodes(state);
+    resetMonitorBctProjectionConvergence();
+    await refreshMonitorBctBrowserWindowGeometry();
     await refreshMonitorIdentityIndex(monitorLastAiState, true);
     refreshMonitorBctCurrentSessionWindowHwnd();
+    refreshMonitorBctDisplayWindowHwnd();
     renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
     syncMonitorAllDesktopThumbnailNodeBadges();
+    scheduleMonitorBctProjectionConvergence("bct-state");
   } catch (error) {
     if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "상태 확인 실패";
     const message = document.createElement("div");
@@ -43447,30 +43574,20 @@ async function refreshMonitorBctWindowNodes() {
 }
 
 async function refreshMonitorBctStatus() {
-  if (!monitorBctStatus || !monitorBctShell) return;
-  monitorBctStatus.textContent = "BCT 확인 중…";
-  monitorBctStatus.classList.remove("healthy", "unhealthy");
+  if (!monitorVersion || !monitorBctShell) return;
+  monitorVersion.classList.remove("healthy", "unhealthy");
+  monitorVersion.setAttribute("aria-label", "BCT 연결 확인 중");
   try {
     const state = await monitorBctShell.health();
-    monitorBctStatus.textContent = `BCT 정상 · G${state.generation}`;
-    monitorBctStatus.title = `PID ${state.pid} · ${state.releaseSha || "release 미확인"}`;
-    monitorBctStatus.classList.add("healthy");
+    monitorVersion.title = `${monitorVersion.textContent} · BCT 연결 정상`;
+    monitorVersion.setAttribute("aria-label", `${monitorVersion.textContent} · BCT 연결 정상`);
+    monitorVersion.classList.add("healthy");
   } catch (error) {
-    monitorBctStatus.textContent = "BCT 연결 안 됨";
-    monitorBctStatus.title = error?.message || String(error);
-    monitorBctStatus.classList.add("unhealthy");
+    monitorVersion.title = `${monitorVersion.textContent} · BCT 연결 안 됨 · ${error?.message || error}`;
+    monitorVersion.setAttribute("aria-label", `${monitorVersion.textContent} · BCT 연결 안 됨`);
+    monitorVersion.classList.add("unhealthy");
   }
 }
-
-monitorBctOpen?.addEventListener("click", () => {
-  void monitorBctShell?.openStatus?.().catch((error) => {
-    setMonitorStatus(`BCT 상태 화면 열기 실패 · ${error?.message || error}`, false);
-  });
-});
-
-monitorRccRescan?.addEventListener("click", () => {
-  void refreshMonitorBctWindowNodes();
-});
 
 
 monitorBctNodesRefresh?.addEventListener("click", () => {
@@ -53783,7 +53900,7 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   // A missing HWND hides only the thumbnail overlay, never the node list.
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
-      monitorHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd));
+      monitorDisplayHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd));
     return [...new Set(matched.map((node) => {
       const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
       return match ? Number(match[1]) : 0;
@@ -55985,7 +56102,7 @@ function syncMonitorBctNodeLocationLabels() {
   // Refresh visible location only. No Chrome action, no polling, no stored binding.
   if (!Array.isArray(monitorBctWindowNodesCache) || !monitorWorkers) return;
   for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
-    const hwnd = monitorHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState, row.dataset.instanceId, row.dataset.sessionId);
+    const hwnd = monitorDisplayHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState, row.dataset.instanceId, row.dataset.sessionId);
     const location = hwnd ? monitorWindowDesktopLocations.get(hwnd) : null;
     const index = location
       ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))
@@ -69682,6 +69799,10 @@ function renderVirtualDesktops(state) {
 
 
   monitorDesktopState = { count, currentIndex, selectedIndex, currentDesktopId, hostDesktopId, hostWindowHwnd, observedDesktopId, desktopIds };
+  // BCT node state can arrive before Native desktop topology. Once the
+  // desktop IDs exist, perform only a bounded exact identity reconciliation
+  // so the semantic thumbnail overlay has a verified HWND to project onto.
+  scheduleMonitorBctProjectionConvergence("desktop-topology");
   if (currentDesktopId && currentDesktopId !== previousCurrentDesktopId) void ensureMonitorCurrentWallpaperSnapshot(currentDesktopId);
   if (hostDesktopId && /^\d+$/.test(String(hostWindowHwnd || "")) && String(hostWindowHwnd) !== "0") {
     void chrome.runtime.sendMessage({ type:"monitor-update-popup-runtime", desktopId:hostDesktopId, hwnd:String(hostWindowHwnd) }).catch(() => null);
