@@ -33,10 +33,13 @@ class ChatParityTests(unittest.TestCase):
         self.assertIn("fail 0", output)
 
     def test_browser_protocol_and_background_mock(self):
-        self._node_suite("check_chat_parity.cjs", 7)
+        self._node_suite("check_chat_parity.cjs", 9)
 
     def test_old_marker_and_revocation_negative_cases(self):
         self._node_suite("check_chat_revocation.cjs", 3)
+
+    def test_current_chatgpt_dil_and_prosemirror_negative_cases(self):
+        self._node_suite("check_chat_ui_2026.cjs", 3)
 
     def test_existing_native_host_has_no_chat_execution_privilege(self):
         source = (ROOT / "native/native_host.py").read_text(encoding="utf-8")

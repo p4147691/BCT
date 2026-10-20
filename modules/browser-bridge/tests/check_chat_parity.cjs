@@ -40,7 +40,7 @@ function createBackground(initial={}) {
     onDisconnect:{addListener(fn){callbacks.disconnect=fn}},
     postMessage(body){posted.push(body)}};
   const chrome={
-    runtime:{id:extensionId,connectNative(name){assert.equal(name,"com.bct.browser_bridge.prototype");return port},
+    runtime:{id:extensionId,getURL(p){return "chrome-extension://"+extensionId+"/"+p},connectNative(name){assert.equal(name,"com.bct.browser_bridge.prototype");return port},
       onMessage:{addListener(fn){callbacks.message=fn}}},
     storage:{session:{async get(key){return {[key]:consent[key]}}}}
   };
@@ -94,4 +94,30 @@ test("status exposes only an exact 32-hex grant for that tab",async()=>{
   b.callbacks.message({type:"BRIDGE_CHAT_STATUS",conversationKey:conversation},sender,x=>response=x);
   await tick();
   assert.equal(response.enabled,false);
+});
+
+test("popup READ is allowed even when Chrome attaches sender.tab metadata",async()=>{
+  const b=createBackground();
+  const popup={id:extensionId,frameId:0,
+    url:"chrome-extension://"+extensionId+"/popup.html",
+    tab:{id:101,url:chatUrl}};
+  let reply;
+  assert.equal(b.callbacks.message({type:"READ_FIXTURE",path:"C:\\\\fixture.txt"},popup,x=>reply=x),true);
+  await tick();
+  assert.equal(b.posted.length,1);
+  assert.equal(b.posted[0].type,"bridge_read");
+  b.callbacks.reply({request_id:b.posted[0].request_id,ok:true});
+  assert.equal(reply.ok,true);
+});
+test("forged popup origins and subframes cannot invoke manual READ",async()=>{
+  const b=createBackground();
+  const base={id:extensionId,frameId:0,tab:{id:101,url:chatUrl}};
+  const message={type:"READ_FIXTURE",path:"C:\\\\fixture.txt"};
+  for(const sender of [
+    {...base,url:chatUrl},
+    {...base,url:"chrome-extension://"+extensionId+"/other.html"},
+    {...base,url:"chrome-extension://"+extensionId+"/popup.html",frameId:1},
+    {...base,url:"chrome-extension://"+extensionId+"/popup.html",id:"another-id"}
+  ])assert.equal(b.callbacks.message(message,sender,()=>{}),false);
+  assert.equal(b.posted.length,0);
 });
