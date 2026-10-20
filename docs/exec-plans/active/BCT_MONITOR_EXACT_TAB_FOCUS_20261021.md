@@ -24,9 +24,12 @@ already-observed ChatGPT tab, and verify that the window and tab are active.
 
 ## Source status
 
-- Branch: `feat/monitor-exact-tab-focus-20261021`
+- Pull request: `#257` merged
+- Candidate head: `cc9cc98e812ef1af9cce01a57908ad95425c1134`
+- Main merge SHA: `39d9a2e4b2bc5824f8d1f3e31a28445f2817fe6f`
+- Main CI: `39504380642` success
 - Original base: `d8082fff6baaae5b792103d41b4ed289165d8d56`
-- Latest integrated main: `c4d6e06ba3f8ef8038cff5155d541deedf290215`
+- Integrated main before merge: `c4d6e06ba3f8ef8038cff5155d541deedf290215`
 - LIVE Monitor/RCC/Native Host: unchanged
 
 ## Verification
@@ -48,9 +51,7 @@ Two unrelated checks are not candidates for this change's success signal:
 
 ## Remaining
 
-1. Commit and push the isolated source candidate.
-2. Run GitHub CI on the exact candidate.
-3. Do not overwrite the installed pending Monitor build until its existing
+1. Do not overwrite the installed pending Monitor build until its existing
    reload result is reconciled.
-4. After a separately staged Monitor release and same-ID reload, double-click
+2. After a separately staged Monitor release and same-ID reload, double-click
    N4/N7/N9 and confirm exact desktop, window, and tab selection in LIVE.
