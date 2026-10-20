@@ -84,7 +84,18 @@ same-ID reload가 완료된 뒤에만 E2E를 계속한다.
 `MONITOR_JS_INDEX.md`는 설치본에 source SHA와 동일하게 반영했다. 직전 설치 세 파일은
 `D:\ChromeExtensions\DesktopWindow-Monitor\backup\monitor-live-4bb1c5b-20261020-025500`에 보관했다.
 공식 publish gate는 version `2.0.2`, token `a6510f50cf3547f8bf9132a5ad8da3f4`를 기록했다. ACK는 이전
-token이라 아직 불일치하며, 공식 `설치본 리로드` 한 번 뒤에만 새 payload 실행과 실제 화면 제거를 확인한다.
+token이었다가 공식 `설치본 리로드` 뒤 일치했다. 새 payload는 실행 중이지만, 실제 최소화→복원 전환 E2E는
+별도로 남아 있다.
+
+## 발견된 별도 결함 — Monitor 대화 이름 변경 UI
+
+2026-10-20 LIVE에서 Monitor가 노출한 이름 변경 UI는 BCT `rename-conversation`을 호출하지만, 현재 활성 RCC
+loader에는 그 mutation handler가 없다. 두 시도는 각각 `RCC_HOST_OUTCOME_UNVERIFIED:MISSING`으로 terminal
+`UNKNOWN`이 되었고, 대상별 rename claim이 남았다. 현재 RCC state가 보고한 원래 ChatGPT 제목도 그대로여서 이
+시도들이 적용됐다고 볼 증거는 없다. 이는 사용자 입력·창 식별·Monitor 재로드 문제가 아니라, optional Browser
+Adapter를 active relay에 연결하지 않는 RCC V2 정책과 UI가 어긋난 계약 결함이다. 이 후보에서 legacy mutation을
+되살리거나 UNKNOWN claim을 강제 해제하지 않는다. 이름 변경은 별도의 Adapter·영수증 계약·reconciliation UI
+단계로 복구하며, 그 전에는 Monitor UI가 이를 지원한다고 표시해서는 안 된다.
 
 이전에는 `ISOLATED_ACCEPTED`로 올리려면 다음 중 하나의 **읽기 전용·fresh** 대조 계약이 필요했다.
 
