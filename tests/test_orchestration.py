@@ -827,12 +827,16 @@ class OrchestrationTests(unittest.TestCase):
                 "delivery_id": delivery_id}
         before = self.call("receipt-inspect-missing", base)
         self.assertEqual(Outcome.APPLIED, before.outcome)
-        self.assertEqual("RCC_RECEIPT_NOT_CONFIRMED", before.output["observation"])
+        self.assertEqual("RESULT_NOT_CONFIRMED", before.output["observation"])
         self.relay.hide_results = False
         result = self.call("receipt-inspect-found", base)
         self.assertEqual(Outcome.APPLIED, result.outcome)
-        self.assertEqual("RCC_RECEIPT_FOUND", result.output["observation"])
+        self.assertEqual("RESULT_CANDIDATE_FOUND", result.output["observation"])
         self.assertTrue(result.output["all_identity_checks_except_prompt"])
+        self.assertEqual("UNVERIFIED", result.output["receipt_origin"])
+        self.assertFalse(result.output["receipt_origin_attested"])
+        self.assertEqual([], result.output["missing_fields"])
+        self.assertEqual([], result.output["identity_mismatches"])
         self.assertFalse(result.output["historical_prompt_verified"])
         self.assertFalse(result.output["result_promoted"])
         self.assertNotIn("reply", str(result.output))
@@ -885,10 +889,100 @@ class OrchestrationTests(unittest.TestCase):
             "delivery_id": delivery_id,
         })
         self.assertEqual(Outcome.APPLIED, result.outcome)
-        self.assertEqual("RCC_RECEIPT_FOUND", result.output["observation"])
+        self.assertEqual("IDENTITY_MISMATCH", result.output["observation"])
         self.assertFalse(result.output["checks"]["binding_receipt"])
+        self.assertIn("binding_receipt", result.output["identity_mismatches"])
+        self.assertEqual([], result.output["missing_fields"])
         self.assertFalse(result.output["all_identity_checks_except_prompt"])
         self.assertFalse(result.output["result_promoted"])
+
+    def test_inspector_rejects_legacy_result_cache_as_incomplete_receipt(self):
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        original = self.call("inspect-legacy-original", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "inspect-legacy",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "return one original result", "acceptance": {"inspect": True},
+            "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        assignment = self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="inspect-legacy",
+        )
+        delivery_id = assignment["attempts"][-1]["dispatch_operation_id"]
+        self.relay.hide_results = False
+
+        # The historical general results cache could contain a valid
+        # fingerprint but omit eight proof fields present in durable receipts.
+        self.relay.result_mutator = lambda value: {
+            key: value[key] for key in
+            ("id", "ok", "reply", "fingerprint", "tabId", "conversationKey")
+            if key in value
+        }
+        before_sends = len([
+            call for call in self.relay.calls if call["command"] == "send"
+        ])
+        inspected = self.call("inspect-legacy-candidate", {
+            "operation": "inspect-result-receipt", "session_id": "session",
+            "assignment_id": "inspect-legacy",
+            "original_operation_id": "inspect-legacy-original",
+            "delivery_id": delivery_id,
+        })
+        self.assertEqual(Outcome.APPLIED, inspected.outcome)
+        self.assertEqual("RECEIPT_INCOMPLETE", inspected.output["observation"])
+        self.assertTrue(inspected.output["result_candidate_found"])
+        self.assertFalse(inspected.output["receipt_origin_attested"])
+        self.assertEqual("UNVERIFIED", inspected.output["receipt_origin"])
+        self.assertEqual({
+            "ambiguous", "attachmentGeneration", "instanceId", "messageHash",
+            "resultHash", "resultState", "sessionId", "targetBindingReceipt",
+        }, set(inspected.output["missing_fields"]))
+        self.assertEqual([], inspected.output["identity_mismatches"])
+        self.assertFalse(inspected.output["result_promoted"])
+        self.assertNotIn("reply", str(inspected.output))
+        self.assertEqual(before_sends, len([
+            call for call in self.relay.calls if call["command"] == "send"
+        ]))
+        self.assertEqual(Outcome.UNKNOWN, self.bct.store.get_operation_for(
+            operation_id="inspect-legacy-original",
+            work_id="work", principal_id="owner",
+        ).outcome)
+
+    def test_inspector_incomplete_structural_proof_is_not_identity_mismatch(self):
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        original = self.call("inspect-broken-proof-original", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "inspect-broken-proof",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "return exact proof", "acceptance": {"inspect": True},
+            "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        assignment = self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="inspect-broken-proof",
+        )
+        delivery_id = assignment["attempts"][-1]["dispatch_operation_id"]
+        self.relay.hide_results = False
+        self.relay.result_mutator = lambda value: {
+            **value, "resultHash": "not-a-valid-hash",
+        }
+        inspected = self.call("inspect-broken-proof-candidate", {
+            "operation": "inspect-result-receipt", "session_id": "session",
+            "assignment_id": "inspect-broken-proof",
+            "original_operation_id": "inspect-broken-proof-original",
+            "delivery_id": delivery_id,
+        })
+        self.assertEqual(Outcome.APPLIED, inspected.outcome)
+        self.assertEqual("RECEIPT_INCOMPLETE", inspected.output["observation"])
+        self.assertEqual([], inspected.output["missing_fields"])
+        self.assertIn("resultHash", inspected.output["invalid_proof_fields"])
+        self.assertFalse(inspected.output["result_promoted"])
 
     def test_inspection_foreign_work_missing_assignment_and_attachment_reject_without_unknown(self):
         worker = self.attachment("worker-b")
@@ -987,7 +1081,7 @@ class OrchestrationTests(unittest.TestCase):
             "delivery_id": delivery_id,
         })
         self.assertEqual(Outcome.APPLIED, observed.outcome)
-        self.assertEqual("RCC_RECEIPT_FOUND", observed.output["observation"])
+        self.assertEqual("IDENTITY_MISMATCH", observed.output["observation"])
         self.assertTrue(observed.output["checks"]["fingerprint_structure"])
         self.assertFalse(
             observed.output["checks"]["fingerprint_identity_except_prompt"]
