@@ -120,6 +120,7 @@ files = [
   "src/bct/features/rcc.py",
   "src/bct/features/execution.py",
   "src/bct/features/process_session.py",
+  "src/bct/features/snapshot.py",
   "src/bct/features/monitor.py",
   "src/bct/features/orchestration.py",
   "src/bct/features/tests.py",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import tomllib
 import unittest
 from pathlib import Path
 from typing import Any
@@ -58,6 +60,36 @@ def free_port() -> int:
 
 
 class DeploymentServiceTests(unittest.TestCase):
+    def test_production_release_list_closes_relative_python_imports(self):
+        """A production release must not omit a module needed at runtime."""
+        project = Path(__file__).resolve().parents[1]
+        policy = tomllib.loads((project / "bct.toml").read_text(encoding="utf-8"))
+        files = set(policy["deployment"]["profiles"]["bct_runtime_v1"]["files"])
+        missing: set[str] = set()
+        for relative in sorted(path for path in files if path.endswith(".py")):
+            path = project / relative
+            package = Path(relative).with_suffix("").parts[1:-1]
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom) or node.level == 0:
+                    continue
+                parent = list(package[:len(package) - node.level + 1])
+                imported = node.module.split(".") if node.module else []
+                candidates = [parent + imported]
+                if node.module is None:
+                    candidates = [parent + [alias.name] for alias in node.names]
+                for parts in candidates:
+                    module = "src/" + "/".join(parts) + ".py"
+                    package_init = "src/" + "/".join(parts) + "/__init__.py"
+                    # ``from . import BCT`` can name an attribute exported by
+                    # __init__, not a sibling module.  Only enforce names that
+                    # are actual local modules/packages in the source tree.
+                    if not (project / module).is_file() and not (project / package_init).is_file():
+                        continue
+                    if module not in files and package_init not in files:
+                        missing.add(module if (project / module).is_file() else package_init)
+        self.assertEqual(set(), missing)
+
     def test_production_profile_publishes_hash_verified_recovery_entrypoints(self):
         runtime = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, runtime, ignore_errors=True)
