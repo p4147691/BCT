@@ -12,7 +12,7 @@ gate는 `docs/exec-plans/active/BCT_RCC_REBUILD_V1.md`에 고정했다. Simple R
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /
-`simple-relay-send` 경로를 포함한다. Manager·Worker의 exact conversation UUID만 주소록으로
+`simple-relay-send` 경로를 포함한다. Manager·Worker의 exact conversation UUID 관계만 binding으로
 저장하며, send는 `from=manager|worker`, 원문, operation ID만 사용한다. 탭·창·세션·임시
 노드·자동 회수·자동 재시도는 이 경로에 없다. 2026-10-20에 canonical installed payload를
 `D:\BCT\runtime\backups\rcc-extension-20261020-090800`으로 백업한 뒤 재로드했고, build
