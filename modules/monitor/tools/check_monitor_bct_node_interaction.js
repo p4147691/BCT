@@ -72,8 +72,36 @@ function loadModule() {
   assert.match(monitor, /row\.addEventListener\("click"/);
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
+  assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\)/);
   assert.match(css, /monitor-bct-node-target-highlighted/);
   assert.match(css, /#ffd75a/);
+
+  const selectionStart = monitor.indexOf("function syncMonitorBctNodeTargetHighlight(");
+  const selectionEnd = monitor.indexOf("\nfunction applyMonitorBctNodeHighlight(", selectionStart);
+  assert.ok(selectionStart > 0 && selectionEnd > selectionStart);
+  function row(tabId) {
+    const classes = new Set();
+    return {
+      dataset: { instanceId: "rcc-1", sessionId: "session-1", windowId: "100", tabId: String(tabId) },
+      classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); } },
+      setAttribute(name, value) { this[name] = value; },
+      classes,
+    };
+  }
+  const first = row(11), second = row(12), third = row(13);
+  const selectionContext = {
+    monitorBctNodeHighlightedHwnd: "4242",
+    monitorBctSelectedNodeKey: "rcc-1:session-1:100:12",
+    monitorWorkers: { querySelectorAll: () => [first, second, third] },
+    document: { querySelectorAll: () => [] },
+    String, Boolean,
+  };
+  vm.createContext(selectionContext);
+  vm.runInContext(monitor.slice(selectionStart, selectionEnd), selectionContext);
+  selectionContext.syncMonitorBctNodeTargetHighlight();
+  assert.equal(first.classes.has("is-selected"), false);
+  assert.equal(second.classes.has("is-selected"), true);
+  assert.equal(third.classes.has("is-selected"), false);
   console.log(JSON.stringify({
     status: "PASS",
     exact_hwnd: result.hwnd,
@@ -81,6 +109,7 @@ function loadModule() {
     switch_before_foreground: true,
     missing_hwnd_has_no_side_effect: true,
     yellow_thumbnail_contract: true,
+    exact_node_card_selection: true,
   }));
 })().catch((error) => {
   console.error(error.stack || error);

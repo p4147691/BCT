@@ -89,8 +89,8 @@ assert.match(src,/numbersForHwnd: \(hwnd\) => monitorBadgeNodeNumbersForHwnd\(hw
 assert.match(src,/iconic:minimized/);
 assert.match(src,/scheduleMonitorMinimizedBadgeConvergence\(hwnd\)/);
 assert.match(contractSrc,/if \(!Boolean\(location\?\.iconic\)\) continue;/);
-assert.match(src,/badge\.style\.zIndex=String\(windowZ\+1\)/);
 assert.match(src,/reconcileFrame\(visual, frame, "monitor-desktop-thumb-window"\);\s*syncMonitorThumbnailTabBadges\(visual, "monitor-desktop-thumb-window"\);/);
-assert.match(src,/overlayLayer\.append\(badge\)/);
+assert.match(src,/windowOverlay\.append\(badge\)/);
+assert.match(src,/overlayLayer\.append\(windowOverlay\)/);
 assert.match(css,/\.monitor-thumbnail-node-overlay\s*\{[^}]*z-index:2147480000/s);
 console.log("PASS: only minimized ChatGPT windows use the bottom desktop summary; open nodes render above their thumbnail");

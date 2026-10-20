@@ -382,7 +382,8 @@
 
 
 .monitor-thumbnail-node-overlay { position:absolute; inset:0; z-index:2147480000; overflow:hidden; pointer-events:none; }
-.monitor-thumbnail-tab-badge { position:absolute; transform:translate(2px,2px); z-index:1!important; pointer-events:none; }
+.monitor-thumbnail-node-window { position:absolute; z-index:1; box-sizing:border-box; pointer-events:none; }
+.monitor-thumbnail-tab-badge { position:absolute; left:2px; top:2px; transform:none; z-index:2!important; pointer-events:none; }
 
 
 .monitor-worker-row.monitor-worker-working {
@@ -3940,7 +3941,8 @@
 }
 .monitor-bct-node-row.monitor-bct-node-switch-pending { opacity:.72; }
 .monitor-desktop-thumb-window.monitor-bct-node-target-highlighted,
-.monitor-window-preview.monitor-bct-node-target-highlighted {
+.monitor-window-preview.monitor-bct-node-target-highlighted,
+.monitor-thumbnail-node-window.monitor-bct-node-target-highlighted {
   outline:3px solid #ffd75a!important;
   outline-offset:-3px!important;
   box-shadow:0 0 0 1px rgba(36,25,0,.92),0 0 14px rgba(255,215,90,.68)!important;

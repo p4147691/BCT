@@ -27065,6 +27065,8 @@ let monitorHighlightedHwnd = "";
 
 let monitorBctNodeHighlightedHwnd = "";
 
+let monitorBctSelectedNodeKey = "";
+
 
 
 
@@ -28892,7 +28894,7 @@ function scheduleMonitorHoverRecheck() {
 
 function syncMonitorBctNodeTargetHighlight() {
   const selectedHwnd = String(monitorBctNodeHighlightedHwnd || "");
-  for (const preview of document.querySelectorAll(".monitor-desktop-thumb-window, .monitor-window-preview")) {
+  for (const preview of document.querySelectorAll(".monitor-desktop-thumb-window, .monitor-window-preview, .monitor-thumbnail-node-window")) {
     preview.classList.toggle(
       "monitor-bct-node-target-highlighted",
       Boolean(selectedHwnd) && String(preview.dataset.hwnd || "") === selectedHwnd,
@@ -28900,16 +28902,21 @@ function syncMonitorBctNodeTargetHighlight() {
   }
   if (!monitorWorkers) return;
   for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
-    const hwnd = monitorHwndForBrowserWindowId(
-      row.dataset.windowId,
-      monitorLastAiState,
-      row.dataset.instanceId,
-      row.dataset.sessionId,
-    );
-    const selected = Boolean(selectedHwnd) && String(hwnd || "") === selectedHwnd;
+    const selected = Boolean(monitorBctSelectedNodeKey)
+      && monitorBctNodeSelectionKey(row.dataset) === monitorBctSelectedNodeKey;
     row.classList.toggle("is-selected", selected);
     row.setAttribute("aria-selected", selected ? "true" : "false");
   }
+}
+
+function monitorBctNodeSelectionKey(value) {
+  const instanceId = String(value?.instanceId || "").trim();
+  const sessionId = String(value?.sessionId || "").trim();
+  const windowId = String(value?.windowId || "").trim();
+  const tabId = String(value?.tabId || "").trim();
+  return instanceId && sessionId && windowId && tabId
+    ? `${instanceId}:${sessionId}:${windowId}:${tabId}`
+    : "";
 }
 
 function applyMonitorBctNodeHighlight(hwnd) {
@@ -28952,7 +28959,10 @@ function applyMonitorWindowHighlight(hwnd, options = {}) {
 
   const changed = nextHwnd !== monitorHighlightedHwnd;
 
-  if (!options.bctNode && !options.preserve && !options.remote) monitorBctNodeHighlightedHwnd = "";
+  if (!options.bctNode && !options.preserve && !options.remote) {
+    monitorBctNodeHighlightedHwnd = "";
+    monitorBctSelectedNodeKey = "";
+  }
 
 
 
@@ -43372,6 +43382,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.append(number, body, presence);
     row.addEventListener("click", () => {
       void resolveMonitorBctNodeHwnd(node).then((hwnd) => {
+        monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
         getMonitorBctNodeInteractionService().select(hwnd);
         setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
       }).catch((error) => {
@@ -43383,6 +43394,7 @@ function renderMonitorBctWindowNodes(nodes) {
       event.stopPropagation();
       row.classList.add("monitor-bct-node-switch-pending");
       void resolveMonitorBctNodeHwnd(node).then((hwnd) => (
+        monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node),
         getMonitorBctNodeInteractionService().activate(hwnd)
       )).then((result) => {
         setMonitorStatus(`${node.nodeLabel || "N?"} 창이 있는 D${result.index + 1}(으)로 이동해 웹브라우저를 활성화했습니다.`, true, 3200);
@@ -46469,6 +46481,11 @@ function upsertMonitorEventThumbWindow(event, dataUri = "") {
 
 
   const vl=Number(event.previewVirtualLeft)||0, vt=Number(event.previewVirtualTop)||0;
+
+  visual.dataset.monitorPreviewVirtualLeft=String(vl);
+  visual.dataset.monitorPreviewVirtualTop=String(vt);
+  visual.dataset.monitorPreviewVirtualWidth=String(vw);
+  visual.dataset.monitorPreviewVirtualHeight=String(vh);
 
 
 
@@ -54853,6 +54870,11 @@ function reconcileFrame(container, frame, className) {
 
   const vl = Number(frame.meta.previewVirtualLeft ?? frame.meta.virtualLeft ?? 0), vt = Number(frame.meta.previewVirtualTop ?? frame.meta.virtualTop ?? 0);
 
+  container.dataset.monitorPreviewVirtualLeft = String(vl);
+  container.dataset.monitorPreviewVirtualTop = String(vt);
+  container.dataset.monitorPreviewVirtualWidth = String(vw);
+  container.dataset.monitorPreviewVirtualHeight = String(vh);
+
 
 
 
@@ -55626,8 +55648,11 @@ function syncMonitorThumbnailTabBadges(container, className) {
     overlayLayer=document.createElement("span");
     overlayLayer.className="monitor-thumbnail-node-overlay";
     overlayLayer.setAttribute("aria-hidden","true");
-    container.append(overlayLayer);
   }
+  overlayLayer.replaceChildren();
+  // Captured window elements may be reconciled after this layer was first made.
+  // Re-appending keeps one top-most semantic layer without editing capture pixels.
+  container.append(overlayLayer);
 
 
 
@@ -55676,7 +55701,19 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
   const thumbnailWindows=[...container.querySelectorAll(".monitor-desktop-thumb-window[data-hwnd]")];
-  for(const img of thumbnailWindows){
+  const imagesByHwnd=new Map(thumbnailWindows.map((img)=>[String(img.dataset.hwnd||"").trim(),img]).filter(([hwnd])=>Boolean(hwnd)));
+  const candidateHwnds=new Set(imagesByHwnd.keys());
+  const desktopId=String(container.dataset.desktopId||"").trim();
+  for(const [hwnd,location] of monitorWindowDesktopLocations){
+    if(String(location?.desktopId||"").trim()===desktopId)candidateHwnds.add(String(hwnd||"").trim());
+  }
+  const vw=Math.max(1,Number(container.dataset.monitorPreviewVirtualWidth)||1);
+  const vh=Math.max(1,Number(container.dataset.monitorPreviewVirtualHeight)||1);
+  const vl=Number(container.dataset.monitorPreviewVirtualLeft)||0;
+  const vt=Number(container.dataset.monitorPreviewVirtualTop)||0;
+  for(const hwnd of candidateHwnds){
+    const img=imagesByHwnd.get(hwnd)||null;
+    const location=monitorWindowDesktopLocations.get(hwnd)||null;
 
 
 
@@ -55692,7 +55729,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
-    const hwnd=String(img.dataset.hwnd||"").trim(); if(!hwnd||img.style.display==="none")continue;
+    if(!hwnd||img?.style?.display==="none"||Boolean(location?.iconic)||location?.visible===false)continue;
 
 
 
@@ -55740,6 +55777,19 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
+    const windowOverlay=document.createElement("span");
+    windowOverlay.className="monitor-thumbnail-node-window";
+    windowOverlay.dataset.hwnd=hwnd;
+    const left=img?.style?.left || (location ? `${((Number(location.left)-vl)/vw)*100}%` : "");
+    const top=img?.style?.top || (location ? `${((Number(location.top)-vt)/vh)*100}%` : "");
+    const width=img?.style?.width || (location ? `${(Number(location.width)/vw)*100}%` : "");
+    const height=img?.style?.height || (location ? `${(Number(location.height)/vh)*100}%` : "");
+    if(!left||!top||!width||!height)continue;
+    windowOverlay.style.left=left;
+    windowOverlay.style.top=top;
+    windowOverlay.style.width=width;
+    windowOverlay.style.height=height;
+    windowOverlay.classList.toggle("monitor-bct-node-target-highlighted",Boolean(monitorBctNodeHighlightedHwnd)&&hwnd===String(monitorBctNodeHighlightedHwnd));
     const badge=document.createElement("span");
 
 
@@ -55820,7 +55870,6 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
-    badge.style.left=img.style.left;
 
 
 
@@ -55836,7 +55885,6 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
-    badge.style.top=img.style.top;
 
 
 
@@ -55852,10 +55900,6 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
-    const windowZ=Math.max(1,Number(img.style.zIndex||img.dataset.nativeZIndex||1));
-    // The badge is a sibling of the per-window thumbnail. Keep it one layer
-    // above that thumbnail so a fresh capture cannot cover the number.
-    badge.style.zIndex=String(windowZ+1);
     badge.style.display="";
 
 
@@ -55872,7 +55916,8 @@ function syncMonitorThumbnailTabBadges(container, className) {
 
 
 
-    overlayLayer.append(badge);
+    windowOverlay.append(badge);
+    overlayLayer.append(windowOverlay);
 
 
 
