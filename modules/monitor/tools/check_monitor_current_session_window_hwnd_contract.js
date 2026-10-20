@@ -13,6 +13,16 @@ const nodes = [
 const locations = new Map([["500", { hwnd: "500", conversationKey: "chat-one", identityAt: now - 100 }], ["600", { hwnd: "600", conversationKey: "chat-three", identityAt: now - 100 }]]);
 let resolution = contract.resolve({ nodes, locations, now });
 assert.deepEqual(Array.from(resolution.bindings, (row) => [row.lineage, row.hwnd]), [["rcc-a:session-a:11", "500"], ["rcc-a:session-a:12", "600"]]);
+const retained = contract.retainCurrentSessionBindings({
+  bindings: [], previousBindings: resolution.bindings,
+  nodes: nodes.map((node) => ({ ...node, active: false })),
+  locations: new Map([["500", { hwnd: "500", className: "Chrome_WidgetWin_1", at: now - 100 }], ["600", { hwnd: "600", className: "Chrome_WidgetWin_1", at: now - 100 }]]), now,
+});
+assert.deepEqual(Array.from(retained, (row) => [row.lineage, row.hwnd]), [["rcc-a:session-a:11", "500"], ["rcc-a:session-a:12", "600"]]);
+assert.equal(contract.retainCurrentSessionBindings({
+  bindings: [], previousBindings: resolution.bindings, nodes,
+  locations: new Map([["500", { hwnd: "500", className: "Chrome_WidgetWin_1", at: now - 6000 }]]), now,
+}).length, 0);
 resolution = contract.resolve({ nodes: [...nodes, { instanceId: "rcc-a", sessionId: "session-a", instanceState: "OPEN", windowId: 13, tabId: 4, active: true, conversationKey: "chat-one" }], locations, now });
 assert.equal(resolution.bindings.length, 1); assert.ok(resolution.rejected.some((row) => row.reason === "RCC_WINDOW_AMBIGUOUS"));
 resolution = contract.resolve({ nodes, locations: new Map([["500", { hwnd: "500", conversationKey: "chat-one", identityAt: now - 100 }], ["501", { hwnd: "501", conversationKey: "chat-one", identityAt: now - 100 }], ["600", { hwnd: "600", conversationKey: "chat-three", identityAt: now - 9000 }]]), now });
@@ -22,4 +32,5 @@ assert.ok(desktopSource.indexOf("monitor-window-hwnd-contract.js") < desktopSour
 assert.match(monitorSource, /refreshMonitorBctCurrentSessionWindowHwnd\(\)/);
 assert.match(monitorSource, /monitorBctCurrentSessionHwnd\(windowId/);
 assert.match(monitorSource, /monitorWindowHwndContract\?\.resolve/);
-console.log("PASS: current-session RCC Chrome window_id to HWND contract rejects stale and ambiguous identity");
+assert.match(monitorSource, /retainCurrentSessionBindings/);
+console.log("PASS: current-session RCC Chrome window_id to HWND contract rejects stale/ambiguous identity and retains only a freshly observed physical window across tab selection");

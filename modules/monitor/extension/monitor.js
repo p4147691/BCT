@@ -21644,8 +21644,12 @@ function refreshMonitorBctCurrentSessionWindowHwnd() {
   const resolution = monitorWindowHwndContract?.resolve?.({
     nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations, now: Date.now(),
   });
+  const bindings = monitorWindowHwndContract?.retainCurrentSessionBindings?.({
+    bindings: resolution?.bindings || [], previousBindings: [...monitorBctCurrentSessionWindowHwnd.values()],
+    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations, now: Date.now(),
+  }) || (resolution?.bindings || []);
   const next = new Map();
-  for (const binding of Array.isArray(resolution?.bindings) ? resolution.bindings : []) {
+  for (const binding of bindings) {
     next.set(String(binding.lineage || ""), binding);
   }
   monitorBctCurrentSessionWindowHwnd = next;
@@ -65895,7 +65899,10 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    let host = visual.querySelector(".monitor-desktop-minimized-nodes");
+    const label = button.querySelector(".monitor-desktop-thumb-label");
+    if (!label) continue;
+    visual.querySelector(".monitor-desktop-minimized-nodes")?.remove();
+    let host = label.querySelector(".monitor-desktop-minimized-nodes");
 
 
 
@@ -65911,7 +65918,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 
 
 
-    if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; visual.append(host); }
+    if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; label.append(host); }
 
 
 
@@ -66209,7 +66216,7 @@ function syncDesktopSwitcher() {
 
 
 
-      label.append(desktopBadge, labelText); visual.append(minimizedNodes);
+      label.append(desktopBadge, labelText, minimizedNodes);
       monitorAttachDesktopManagementControl(label, desktopId);
 
 
@@ -68957,7 +68964,7 @@ function renderLightweightDesktopCards() {
     const minimizedNodes = document.createElement("span");
     minimizedNodes.className = "monitor-desktop-minimized-nodes";
     minimizedNodes.hidden = true;
-    label.append(badge, text); visual.append(minimizedNodes); button.append(visual, label); monitorAttachDesktopManagementControl(label, desktopId);
+    label.append(badge, text, minimizedNodes); button.append(visual, label); monitorAttachDesktopManagementControl(label, desktopId);
 
 
 

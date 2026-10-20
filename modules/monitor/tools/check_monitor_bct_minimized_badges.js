@@ -37,9 +37,19 @@ const visual2={
   querySelector(query){return query===".monitor-desktop-minimized-nodes"?this.badges:null;},
   append(child){this.badges=child;}
 };
+const label={
+  badges:null,
+  querySelector(query){return query===".monitor-desktop-minimized-nodes"?this.badges:null;},
+  append(child){this.badges=child;}
+};
+const label2={
+  badges:null,
+  querySelector(query){return query===".monitor-desktop-minimized-nodes"?this.badges:null;},
+  append(child){this.badges=child;}
+};
 const buttons=[
-  {dataset:{desktopId:"deskA"},querySelector(q){return q===".monitor-desktop-thumb-visual"?visual:null;}},
-  {dataset:{desktopId:"deskB"},querySelector(q){return q===".monitor-desktop-thumb-visual"?visual2:null;}}
+  {dataset:{desktopId:"deskA"},querySelector(q){return q===".monitor-desktop-thumb-visual"?visual:q===".monitor-desktop-thumb-label"?label:null;}},
+  {dataset:{desktopId:"deskB"},querySelector(q){return q===".monitor-desktop-thumb-visual"?visual2:q===".monitor-desktop-thumb-label"?label2:null;}}
 ];
 const document={createElement(tag){
   assert.equal(tag,"span");
@@ -60,19 +70,20 @@ const arr=ctx.monitorMinimizedNodeSlotsByDesktop({});
 assert.deepEqual(Array.from(arr.get("deskA")),[2,3,5,6,7]);
 assert.deepEqual(Array.from(arr.get("deskB")),[8]);
 ctx.syncMonitorMinimizedNodeBadges({});
-assert.deepEqual(visual.badges.children.map(x=>x.textContent),["2","3","..."]);
-assert.deepEqual(visual2.badges.children.map(x=>x.textContent),["8"]);
+assert.deepEqual(label.badges.children.map(x=>x.textContent),["2","3","..."]);
+assert.deepEqual(label2.badges.children.map(x=>x.textContent),["8"]);
 locationMap.set("100",{desktopId:"deskA",iconic:false});
 locationMap.set("200",{desktopId:"deskA",iconic:false});
 ctx.syncMonitorMinimizedNodeBadges({});
-assert.equal(visual.badges.hidden,true);
+assert.equal(label.badges.hidden,true);
 assert.equal(ctx.MonitorMinimizedNodeBadgeContract.minimizedEvent({reason:"minimized",iconic:false}),true);
 assert.equal(ctx.MonitorMinimizedNodeBadgeContract.minimizedEvent({reason:"restored",iconic:false}),false);
 const css=fs.readFileSync(path.join(__dirname,"../extension/monitor.css"),"utf8");
-assert.match(css,/\.monitor-desktop-thumb-visual\s*>\s*\.monitor-desktop-minimized-nodes/);
-assert.match(css,/bottom:4px!important;right:4px!important/);
-assert.match(src,/label\.append\(desktopBadge,\s*labelText\);\s*visual\.append\(minimizedNodes\)/);
-assert.match(src,/label\.append\(badge,\s*text\);\s*visual\.append\(minimizedNodes\)/);
+assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-minimized-nodes/);
+assert.match(css,/grid-column:3 \/ 5/);
+assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-label-text\s*\{ display:none!important; \}/);
+assert.match(src,/label\.append\(desktopBadge,\s*labelText,\s*minimizedNodes\)/);
+assert.match(src,/label\.append\(badge,\s*text,\s*minimizedNodes\)/);
 assert.match(src,/numbersForHwnd: \(hwnd\) => monitorBadgeNodeNumbersForHwnd\(hwnd, state\)/);
 assert.match(src,/iconic:minimized/);
 assert.match(src,/scheduleMonitorMinimizedBadgeConvergence\(hwnd\)/);

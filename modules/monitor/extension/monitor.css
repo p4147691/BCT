@@ -3910,19 +3910,21 @@
 
 
 /* Read-only minimized C-node labels are overlaid inside the thumbnail lower-right. */
-.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes {
-  position:absolute!important;left:auto!important;top:auto!important;bottom:4px!important;right:4px!important;
-  transform:none!important;display:inline-flex;gap:2px;align-items:center;justify-content:flex-end;
-  max-width:calc(100% - 8px);z-index:21032!important;overflow:hidden;
-  pointer-events:none;isolation:isolate;
+.monitor-desktop-thumb-label > .monitor-desktop-minimized-nodes {
+  position:static!important;grid-column:3 / 5;justify-self:end;transform:none!important;
+  display:inline-flex;gap:2px;align-items:center;justify-content:flex-end;
+  max-width:100%;z-index:2!important;overflow:hidden;pointer-events:none;
 }
-.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes[hidden] { display:none!important; }
-.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes .monitor-desktop-minimized-node {
+.monitor-desktop-thumb-label > .monitor-desktop-minimized-nodes[hidden] { display:none!important; }
+.monitor-desktop-thumb-label > .monitor-desktop-minimized-nodes .monitor-desktop-minimized-node {
   min-width:20px;padding:0 3px;min-height:16px;border-radius:4px;
   background:rgba(5,9,16,.9);border:1px solid rgba(226,239,255,.53);color:#fff;
   font-size:10px;line-height:14px;
 }
-.monitor-desktop-thumb-visual > .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more {
+.monitor-desktop-thumb-label > .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more {
   min-width:13px;color:#fff;font-weight:900;font-size:10px;
   text-shadow:0 1px 3px #000;
 }
+
+/* D1/D2 already identifies the desktop; use the rest of the row for node metadata. */
+.monitor-desktop-thumb-label > .monitor-desktop-label-text { display:none!important; }

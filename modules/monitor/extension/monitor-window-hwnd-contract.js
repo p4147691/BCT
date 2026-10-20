@@ -16,6 +16,7 @@
 
   function create(options = {}) {
     const identityMaxAgeMs = Math.max(1000, Number(options.identityMaxAgeMs) || 8000);
+    const locationMaxAgeMs = Math.max(1000, Number(options.locationMaxAgeMs) || 5000);
     function resolve(input = {}) {
       const now = Number(input.now) || Date.now();
       const activeByLineage = new Map(), rejected = [];
@@ -48,7 +49,26 @@
       });
       return Object.freeze({ schema: SCHEMA, generatedAt: now, identityMaxAgeMs, bindings: Object.freeze(bindings), rejected: Object.freeze(rejected) });
     }
-    return Object.freeze({ schema: SCHEMA, resolve, lineage });
+    // When a user selects an unregistered/new tab, the physical Chrome window
+    // still owns every registered conversation in that RCC window. Preserve an
+    // already exact binding only while the same Chrome HWND is freshly observed
+    // and the RCC lineage remains OPEN. This never invents a new HWND binding.
+    function retainCurrentSessionBindings(input = {}) {
+      const now = Number(input.now) || Date.now();
+      const next = new Map(Array.isArray(input.bindings) ? input.bindings.map((item) => [text(item?.lineage), item]).filter(([key]) => Boolean(key)) : []);
+      const liveLineages = new Set((Array.isArray(input.nodes) ? input.nodes : []).filter((node) => text(node?.instanceState).toUpperCase() === "OPEN").map(lineage).filter(Boolean));
+      const freshChromeHwnds = new Set(locations(input.locations).filter((location) => {
+        const hwnd = positiveId(location?.hwnd), observedAt = Number(location?.at) || 0;
+        return hwnd && text(location?.className) === "Chrome_WidgetWin_1" && observedAt >= now - locationMaxAgeMs && observedAt <= now + 1000;
+      }).map((location) => positiveId(location.hwnd)));
+      for (const previous of Array.isArray(input.previousBindings) ? input.previousBindings : []) {
+        const key = text(previous?.lineage), hwnd = positiveId(previous?.hwnd);
+        if (!key || !hwnd || next.has(key) || !liveLineages.has(key) || !freshChromeHwnds.has(hwnd)) continue;
+        next.set(key, Object.freeze({ ...previous, hwnd, observedAt: now, retained: true }));
+      }
+      return Object.freeze([...next.values()]);
+    }
+    return Object.freeze({ schema: SCHEMA, resolve, retainCurrentSessionBindings, lineage });
   }
   root.MonitorWindowHwndContract = Object.freeze({ SCHEMA, create });
 })(globalThis);
