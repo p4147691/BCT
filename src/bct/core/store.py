@@ -1091,6 +1091,23 @@ class Store:
                     and original["capability"] != "desktop_window_activate"
                 ):
                     raise ConflictError("RECONCILIATION_ORIGINAL_CAPABILITY_MISMATCH")
+                if resolver["capability"] == "claim_reconcile" and original["capability"] == "desktop_uia_element_action":
+                    # Exact original identity and uncertainty remain immutable.
+                    # Reclaim ONLY the retired global UIA reservation; unrelated
+                    # claims from this operation and any other work stay protected.
+                    code = "DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN:DESKTOP_UIA_ACTION_CHANGED_FOREGROUND"
+                    original_evidence = json.loads(original["evidence_json"])
+                    active_claims = db.execute(
+                        "SELECT resource_key FROM resource_claims "
+                        "WHERE operation_id=? AND unresolved=1",
+                        (original_id,),
+                    ).fetchall()
+                    if (original["error"] != code
+                            or original_evidence != {"phase": "EXECUTION", "code": code}
+                            or [row["resource_key"] for row in active_claims]
+                               != ["desktop-control:interactive-session"]
+                            or evidence.get("proof") != "RETIRED_DESKTOP_CLAIM_ONLY_EFFECT_REMAINS_UNKNOWN"):
+                        raise ConflictError("DESKTOP_UIA_RECLAIM_EXACT_CLAIM_REQUIRED")
                 if recoverable_running:
                     running_reconciled.append(original_id)
                 unresolved = db.execute(

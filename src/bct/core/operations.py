@@ -169,6 +169,7 @@ class OperationCoordinator:
             )
             if original["capability"] not in {
                 "read", "system_inspect", "github_pr_status", "execute",
+                "desktop_uia_element_action",
             }:
                 raise PreconditionError("CLAIM_RECONCILE_CAPABILITY_NOT_SUPPORTED")
             request = replace(request, preconditions={
@@ -482,7 +483,7 @@ class OperationCoordinator:
             return self.store.finish_operation(
                 operation_id=operation_id, outcome=Outcome.UNKNOWN,
                 evidence={"phase": "EXECUTION", "code": str(exc)}, error=str(exc),
-                release_claims=False,
+                release_claims=exc.release_claims,
             )
         except Exception as exc:
             self.store.record_effect_stage(

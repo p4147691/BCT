@@ -116,7 +116,7 @@ class BCT:
             SystemInspectFeature(), ExecuteFeature(),
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
-            ReadOnlyClaimReconcileFeature(self.store),
+            ReadOnlyClaimReconcileFeature(self.store, desktop_session),
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),
             DesktopCaptureFeature(desktop_session),
