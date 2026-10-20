@@ -977,3 +977,18 @@ window/tab projection으로 바꾼 결과다. 같은 시점의 LIVE BCT `/monito
 퇴역 ACT를 재가동하거나 legacy endpoint를 복구하면 안 된다. 대화망에 표시할 후속 표기는 BCT가
 관측한 exact conversation key를 기준으로 별도 read-only display mapping으로 정의해야 한다. 이는
 relay routing/권한을 만들지 않는다.
+
+## RCC 재구축 V2 통합 계획
+
+RCC V1의 API별 Browser Adapter 연속 분리는 Stage 7F에서 중단했다. 2026-10-20 source
+HEAD `40083383a236072d7e14cea4530eb1719adc327e` 기준 background 5,103줄과 content
+4,458줄에는 정책이 이미 차단한 ACT/등록/rename/일반 mutation 구현이 활성 Simple Relay 및
+read-only diagnostics와 함께 남아 있다. 다음 작업은 Adapter를 하나 더 만드는 것이 아니라
+`docs/exec-plans/active/BCT_RCC_REBUILD_V2_INTEGRATED_20261020.md` 순서대로 진행한다.
+
+먼저 source-only로 차단된 레거시와 zero-caller 경로를 일괄 제거하고, storage/browser/native/
+observation 플랫폼 경계와 Simple Relay/content 활성 도메인을 큰 단위로 분리한다. 전체 CI와
+exact payload/rollback 검증이 끝난 뒤에만 별도 명시 허용을 받아 coherent payload를 same-ID
+확장에 한 번 배포·reload한다. 그전까지 LIVE 설치본, Chrome, Native Host, binding은 변경하지
+않는다. 기존 tab move/create/close/reload 및 window create Adapter는 optional source로 보존하되
+active loader나 Relay 권한에 연결하지 않는다.
