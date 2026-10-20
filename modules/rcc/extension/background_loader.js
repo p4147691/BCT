@@ -10,6 +10,8 @@ importScripts('browser/tab_create_contract.js');
 importScripts('browser/tab_create_adapter.js');
 importScripts('browser/tab_close_contract.js');
 importScripts('browser/tab_close_adapter.js');
+importScripts('browser/window_create_contract.js');
+importScripts('browser/window_create_adapter.js');
 importScripts('relay_core.js');
 importScripts('network/directory.js');
 importScripts('relay/contract.js');

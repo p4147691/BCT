@@ -3,6 +3,7 @@ let browserReadAdapter = null;
 let browserTabMoveAdapter = null;
 let browserTabCreateAdapter = null;
 let browserTabCloseAdapter = null;
+let browserWindowCreateAdapter = null;
 
 function getBrowserReadAdapter() {
   if (browserReadAdapter) return browserReadAdapter;
@@ -48,6 +49,18 @@ function getBrowserTabCloseAdapter() {
     conversationKey: (url) => RelayCore.conversationKey(url || ''),
   });
   return browserTabCloseAdapter;
+}
+
+function getBrowserWindowCreateAdapter() {
+  if (browserWindowCreateAdapter) return browserWindowCreateAdapter;
+  const adapterFactory = globalThis.RccBrowserWindowCreateAdapter;
+  const contract = globalThis.RccBrowserWindowCreateContract;
+  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_WINDOW_CREATE_ADAPTER_NOT_LOADED');
+  browserWindowCreateAdapter = adapterFactory.create(chrome, contract, {
+    isChatTab,
+    conversationKey: (url) => RelayCore.conversationKey(url || ''),
+  });
+  return browserWindowCreateAdapter;
 }
 
 const CONTROL = 'CONTROL';
@@ -2031,38 +2044,6 @@ async function createChatTab(message) {
 
 }
 
-async function waitForCreatedChatWindowReady(windowId, tabId, timeoutMs = 8000) {
-
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-
-    try {
-
-      const win = await chrome.windows.get(Number(windowId));
-
-      const tab = await chrome.tabs.get(Number(tabId));
-
-      const url = String(tab?.url || '');
-
-      if (Number(win?.id) === Number(windowId)
-
-          && Number(tab?.windowId) === Number(windowId)
-
-          && /^https:\/\/(chatgpt\.com|chat\.openai\.com)\/?(?:[?#].*)?$/i.test(url)
-
-          && !RelayCore.conversationKey(url)) return { win, tab };
-
-    } catch (_) {}
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-  }
-
-  throw new Error('Created ChatGPT window did not become ready');
-
-}
-
 async function createChatWindow(message) {
 
   const operationId = String(message.operationId || '').trim();
@@ -2077,7 +2058,7 @@ async function createChatWindow(message) {
 
     const state = await loadState();
 
-    const receiptBase = {
+    return getBrowserWindowCreateAdapter().createWindow({
 
       operationId,
 
@@ -2085,109 +2066,9 @@ async function createChatWindow(message) {
 
       sessionId: endpointSessionId,
 
-      url: 'https://chatgpt.com/',
-
       conversationKey: '',
 
-      bindingState: 'PENDING_UNBOUND'
-
-    };
-
-    let created;
-
-    try {
-
-      created = await chrome.windows.create({
-
-        url: 'https://chatgpt.com/',
-
-        type: 'normal',
-
-        focused: true
-
-      });
-
-    } catch (_) {
-
-      return { ok: false, created: false, state: 'CREATE_UNKNOWN', ...receiptBase,
-
-        windowId: null, tabId: null, windowState: 'UNKNOWN', tabPresence: 'UNKNOWN',
-
-        error: 'CREATE_UNKNOWN' };
-
-    }
-
-    const createdWindowId = Number(created?.id);
-
-    let createdTab = null;
-
-    try {
-
-      if (!Number.isInteger(createdWindowId) || createdWindowId <= 0) {
-
-        throw new Error('Created window identity missing');
-
-      }
-
-      createdTab = Array.isArray(created?.tabs) ? created.tabs[0] : null;
-
-      if (!createdTab) {
-
-        const createdTabs = await chrome.tabs.query({ windowId: createdWindowId });
-
-        createdTab = createdTabs.find((tab) => /^https:\/\/(chatgpt\.com|chat\.openai\.com)\/?(?:[?#].*)?$/i.test(String(tab?.url || '')));
-
-      }
-
-      const createdTabId = Number(createdTab?.id);
-
-      if (!Number.isInteger(createdTabId) || createdTabId <= 0) throw new Error('Created tab identity missing');
-
-      const ready = await waitForCreatedChatWindowReady(createdWindowId, createdTabId);
-
-      return { ok: true, created: true, state: 'PENDING_UNBOUND', ...receiptBase,
-
-        windowId: createdWindowId, tabId: createdTabId,
-
-        windowState: String(ready.win?.state || created?.state || 'normal').toUpperCase(),
-
-        tabPresence: 'OPEN',
-
-        creationReceipt: {
-
-          operationId,
-
-          windowId: createdWindowId,
-
-          tabId: createdTabId,
-
-          url: 'https://chatgpt.com/',
-
-          instanceId: String(state.settings.instanceId || ''),
-
-          sessionId: endpointSessionId,
-
-          conversationKey: '',
-
-          bindingState: 'PENDING_UNBOUND',
-
-          windowState: String(ready.win?.state || created?.state || 'normal').toUpperCase(),
-
-          tabPresence: 'OPEN'
-
-        } };
-
-    } catch (_) {
-
-      return { ok: false, created: true, state: 'CREATE_UNKNOWN', ...receiptBase,
-
-        windowId: Number.isInteger(createdWindowId) ? createdWindowId : null,
-
-        tabId: Number.isInteger(Number(createdTab?.id)) ? Number(createdTab.id) : null,
-
-        windowState: 'UNKNOWN', tabPresence: 'UNKNOWN', error: 'CREATE_UNKNOWN' };
-
-    }
+    });
 
   });
 

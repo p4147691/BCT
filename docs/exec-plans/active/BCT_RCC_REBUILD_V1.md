@@ -236,6 +236,19 @@ effectful Browser API가 없음을 정적 테스트로 확인한다.
 통과 조건: `chrome.tabs.remove` 직접 호출이 새 Adapter 한 곳에만 있고, 상태별 단위 테스트와 RCC
 전체 회귀 테스트가 통과한다.
 
+### 7E단계 — Browser Window Create Adapter와 영수증 계약 분리
+
+- `chrome.windows.create`는 창 생성 전용 Adapter만 소유하고 `background.js`는 직접 호출하지
+  않는다.
+- 고정된 빈 ChatGPT 주소로 일반 창 하나를 생성하고, 생성 후 정확한 창·탭·빈 대화 정체를
+  확인한 경우에만 `PENDING_UNBOUND`로 기록한다.
+- 생성 호출 이후 오류 또는 사후 증명 실패는 `CREATE_UNKNOWN`으로 기록하고 자동 재시도하지 않는다.
+- 기존 bootstrap 생성 영수증 호환성을 유지하며 설치본과 legacy `create-chat-window` 차단 정책은
+  변경하지 않는 source-only 단계로 진행한다.
+
+통과 조건: `chrome.windows.create` 직접 호출이 새 Adapter 한 곳에만 있고, 기존 bootstrap 영수증
+호환성 및 상태별 단위 테스트와 RCC 전체 회귀 테스트가 통과한다.
+
 ### 8단계 — 정리와 제거
 
 - 안정화 기간 동안 연결 상태, protocol mismatch, UNKNOWN effect, 중복 turn이 없는지 확인한다.
