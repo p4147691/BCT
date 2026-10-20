@@ -1421,10 +1421,11 @@ class OrchestrationFeature:
                 or readback.get("completed") is not True
                 or readback.get("pending") is not False
                 or not isinstance(receipt, dict)):
-            return {**common, "observation": "RCC_RECEIPT_NOT_CONFIRMED",
+            return {**common, "observation": "RESULT_NOT_CONFIRMED",
                     "found": readback.get("found") is True,
                     "completed": readback.get("completed") is True,
-                    "pending": readback.get("pending") is True}
+                    "pending": readback.get("pending") is True,
+                    "result_promoted": False}
         parts = None
         try:
             parts = json.loads(str(receipt.get("fingerprint") or ""))
@@ -1470,14 +1471,60 @@ class OrchestrationFeature:
             "fingerprint_structure": fingerprint_structure_valid,
             "fingerprint_identity_except_prompt": bool(identity_matches),
         }
-        # The original generated prompt is not guaranteed to be retained.
-        # Reconstructing it with *current* editable relay notes cannot prove a
-        # historical fingerprint match. Never declare terminal success here.
-        return {**common, "observation": "RCC_RECEIPT_FOUND",
-                "checks": checks,
-                "all_identity_checks_except_prompt": all(checks.values()),
-                "historical_prompt_verified": False,
-                "result_promoted": False}
+        # RCC's result endpoint historically returned either the durable
+        # relayResultReceiptsV1 projection OR the limited general results cache.
+        # The response has no authenticated store-origin discriminator.
+        # Even a completely matching candidate cannot prove its provenance or
+        # the original prompt. Never promote UNKNOWN to terminal success.
+        required_fields = (
+            "id", "fingerprint", "ok", "ambiguous", "resultState",
+            "messageHash", "targetBindingReceipt", "instanceId",
+            "sessionId", "tabId", "conversationKey",
+            "attachmentGeneration", "resultHash",
+        )
+        missing_fields = [
+            field for field in required_fields
+            if field not in receipt or receipt[field] is None
+            or (isinstance(receipt[field], str) and not receipt[field].strip())
+        ]
+        invalid_proof_fields = []
+        if not checks["fingerprint_structure"] and "fingerprint" not in missing_fields:
+            invalid_proof_fields.append("fingerprint")
+        if not checks["result_hash_shape"] and "resultHash" not in missing_fields:
+            invalid_proof_fields.append("resultHash")
+        if not checks["complete"] and not any(
+            field in missing_fields for field in ("ok", "ambiguous", "resultState")
+        ):
+            invalid_proof_fields.append("terminal_state")
+
+        identity_check_names = (
+            "delivery_id", "message_hash", "binding_receipt",
+            "instance_id", "session_id", "tab_id", "conversation_key",
+            "attachment_generation", "fingerprint_identity_except_prompt",
+        )
+        identity_mismatches = [
+            name for name in identity_check_names if not checks[name]
+        ]
+        if missing_fields or invalid_proof_fields:
+            observation = "RECEIPT_INCOMPLETE"
+        elif identity_mismatches:
+            observation = "IDENTITY_MISMATCH"
+        else:
+            observation = "RESULT_CANDIDATE_FOUND"
+        return {
+            **common,
+            "observation": observation,
+            "result_candidate_found": True,
+            "missing_fields": missing_fields,
+            "invalid_proof_fields": invalid_proof_fields,
+            "identity_mismatches": identity_mismatches if not missing_fields else [],
+            "checks": checks,
+            "all_identity_checks_except_prompt": all(checks.values()),
+            "receipt_origin": "UNVERIFIED",
+            "receipt_origin_attested": False,
+            "historical_prompt_verified": False,
+            "result_promoted": False,
+        }
 
     def _reconcile(
         self, *, work: Work, values: dict[str, Any],
