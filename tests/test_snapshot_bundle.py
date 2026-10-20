@@ -119,6 +119,15 @@ class SnapshotBundleTests(unittest.TestCase):
                 with self.assertRaises(PreconditionError):
                     self.snapshot(operation_id="invalid-snapshot", **arguments)
 
+    def test_snapshot_does_not_report_its_temporary_claim_as_unresolved(self):
+        result = self.snapshot(
+            operation_id="own-claim-observation", include_claims=True,
+        )
+        self.assertEqual(result.outcome, Outcome.APPLIED)
+        self.assertEqual(result.output["claims"]["count"], 0)
+        self.assertEqual(result.output["claims"]["items"], [])
+        self.assertEqual(self.bct.store.monitor_snapshot()["unresolved_claims"], [])
+
     def test_binary_metadata_and_idempotent_receipt(self):
         binary = self.root / "bytes.bin"
         binary.write_bytes(b"\xff\x00\xfe")
