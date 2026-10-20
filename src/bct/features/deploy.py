@@ -788,7 +788,7 @@ class DeployFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "apply").strip().lower()
-        if operation not in {"apply", "reconcile"}:
+        if operation not in {"apply", "reconcile", "reconcile-rollback"}:
             raise PreconditionError("DEPLOYMENT_OPERATION_INVALID")
         profile_name = str(arguments.get("profile") or "")
         profile = self.profiles.get(profile_name)
@@ -803,7 +803,7 @@ class DeployFeature:
                 raise PreconditionError("DEPLOYMENT_CURRENT_SHA_INVALID")
         if not isinstance(restart, bool):
             raise PreconditionError("DEPLOYMENT_RESTART_INVALID")
-        if operation == "reconcile":
+        if operation in {"reconcile", "reconcile-rollback"}:
             original_operation_id = str(
                 arguments.get("original_operation_id") or ""
             ).strip()
@@ -811,8 +811,10 @@ class DeployFeature:
                 raise PreconditionError("DEPLOYMENT_RECONCILE_OPERATION_ID_INVALID")
             if restart:
                 raise PreconditionError("DEPLOYMENT_RECONCILE_RESTART_FORBIDDEN")
-            if expected_current != expected_source_head:
+            if operation == "reconcile" and expected_current != expected_source_head:
                 raise PreconditionError("DEPLOYMENT_RECONCILE_EXACT_CURRENT_REQUIRED")
+            if operation == "reconcile-rollback" and expected_current == expected_source_head:
+                raise PreconditionError("DEPLOYMENT_RECONCILE_ROLLBACK_CURRENT_REQUIRED")
             receipt_path = (
                 profile.runtime_root / "deployments" / (expected_source_head + ".json")
             )
@@ -820,7 +822,7 @@ class DeployFeature:
                 self.capability,
                 profile.name,
                 {
-                    "operation": "reconcile",
+                    "operation": operation,
                     "original_operation_id": original_operation_id,
                     "profile": profile.name,
                     "expected_source_head": expected_source_head,
@@ -851,6 +853,8 @@ class DeployFeature:
     def execute(self, request: FeatureRequest) -> FeatureResult:
         if request.arguments.get("operation") == "reconcile":
             return self._reconcile(request)
+        if request.arguments.get("operation") == "reconcile-rollback":
+            return self._reconcile_rollback(request)
         trusted_profile = self.profiles.get(request.arguments["profile"])
         profile = _target_profile(trusted_profile, request.arguments["expected_source_head"])
         if not profile.protected_activation_required:
@@ -1056,6 +1060,57 @@ class DeployFeature:
                 "deployment_receipt": str(receipt_path),
                 "reconciled_operation_id": original_operation_id,
                 "live_state_verified": True,
+            },
+            reconciled_operation_ids=(original_operation_id,),
+        )
+
+    def _reconcile_rollback(self, request: FeatureRequest) -> FeatureResult:
+        """Release one UNKNOWN deploy claim only after its rollback is LIVE."""
+        profile = self.profiles.get(request.arguments["profile"])
+        failed_head = request.arguments["expected_source_head"]
+        rollback_head = request.arguments["expected_current_source_head"]
+        current = _read_current(profile)
+        if current is None or current.get("source_head") != rollback_head:
+            raise PreconditionError("DEPLOYMENT_RECONCILE_ROLLBACK_CURRENT_MISMATCH")
+        _validate_release(profile, current, require_profile_files=True)
+        receipt_path = Path(request.preconditions["reconciliation_receipt"])
+        receipt = read_json(receipt_path)
+        previous = receipt.get("previous_current") if isinstance(receipt, dict) else None
+        if (
+            receipt is None
+            or receipt.get("state") != "ROLLBACK_FAILED"
+            or receipt.get("profile") != profile.name
+            or receipt.get("source_head") != failed_head
+            or not isinstance(previous, dict)
+            or previous.get("source_head") != rollback_head
+            or previous.get("manifest_sha256") != current.get("manifest_sha256")
+            or previous.get("release_path") != current.get("release_path")
+        ):
+            raise PreconditionError("DEPLOYMENT_RECONCILE_ROLLBACK_RECEIPT_MISMATCH")
+        controller = RuntimeServiceController(
+            runtime_root=profile.runtime_root,
+            service_name=profile.service_name,
+            port=profile.port,
+        )
+        service = controller.inspect()
+        if (
+            service.get("state") != "RUNNING"
+            or service.get("release_sha") != rollback_head
+            or service.get("manifest_sha256") != current.get("manifest_sha256")
+        ):
+            raise PreconditionError("DEPLOYMENT_RECONCILE_ROLLBACK_SERVICE_MISMATCH")
+        original_operation_id = request.arguments["original_operation_id"]
+        return FeatureResult(
+            Outcome.APPLIED,
+            {
+                "profile": profile.name,
+                "failed_source_head": failed_head,
+                "rollback_source_head": rollback_head,
+                "manifest_sha256": current["manifest_sha256"],
+                "service": service,
+                "deployment_receipt": str(receipt_path),
+                "reconciled_operation_id": original_operation_id,
+                "rollback_live_verified": True,
             },
             reconciled_operation_ids=(original_operation_id,),
         )

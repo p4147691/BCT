@@ -293,6 +293,16 @@ class DeploymentServiceTests(unittest.TestCase):
             "restart": False,
         })
 
+    def reconcile_rollback(self, operation: str, original: str, failed_head: str, rollback_head: str):
+        return self.call(operation, "deploy", {
+            "operation": "reconcile-rollback",
+            "original_operation_id": original,
+            "profile": "test_runtime",
+            "expected_source_head": failed_head,
+            "expected_current_source_head": rollback_head,
+            "restart": False,
+        })
+
     def test_deploy_duplicate_restart_stop_and_start(self):
         deployed = self.deploy("deploy-1", self.head, None)
         self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
@@ -345,6 +355,39 @@ class DeploymentServiceTests(unittest.TestCase):
         self.assertEqual(Outcome.NOT_APPLIED, rejected.outcome, rejected.as_dict())
         with self.assertRaisesRegex(ConflictError, "deploy-unknown-mismatch"):
             self.deploy("deploy-still-blocked", self.head, self.head)
+
+    def test_rollback_reconciliation_releases_only_verified_previous_live_state(self):
+        deployed = self.deploy("deploy-before-rollback-unknown", self.head, None)
+        self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
+        previous = read_json(self.runtime / "current.json")
+        self.assertIsNotNone(previous)
+        failed_head = "b" * 40
+        failed_release = self.runtime / "releases" / failed_head
+        shutil.copytree(self.runtime / "releases" / self.head, failed_release)
+        failed_manifest = read_json(failed_release / "manifest.json")
+        atomic_json(failed_release / "manifest.json", {**failed_manifest, "source_head": failed_head,
+            "release_path": str(failed_release)})
+        receipt_path = self.runtime / "deployments" / f"{failed_head}.json"
+        atomic_json(receipt_path, {
+            "state": "ROLLBACK_FAILED", "profile": "test_runtime", "source_head": failed_head,
+            "previous_current": previous,
+        })
+        created, _ = self.bct.operations.begin(
+            principal=self.principal, work_id="deployment", operation_id="deploy-rollback-unknown",
+            capability="deploy", arguments={"profile": "test_runtime", "expected_source_head": failed_head,
+                "expected_current_source_head": self.head, "restart": True},
+        )
+        self.assertTrue(created)
+        self.bct.store.finish_operation(
+            operation_id="deploy-rollback-unknown", outcome=Outcome.UNKNOWN,
+            evidence={"phase": "EXECUTION"}, error="DEPLOYMENT_ROLLBACK_UNVERIFIED:" + str(receipt_path),
+            release_claims=False,
+        )
+        reconciled = self.reconcile_rollback(
+            "deploy-rollback-reconcile", "deploy-rollback-unknown", failed_head, self.head,
+        )
+        self.assertEqual(Outcome.APPLIED, reconciled.outcome, reconciled.as_dict())
+        self.assertTrue(reconciled.evidence["rollback_live_verified"])
 
     def test_runtime_server_has_bounded_graceful_shutdown(self):
         config = build_server_config(Mock(), port=self.port)
