@@ -303,11 +303,35 @@ class OperationCoordinator:
                         elapsed_ms=(time.perf_counter_ns() - prepare_started) / 1e6)
         claim_started = time.perf_counter_ns()
         try:
+            retired_desktop_claim = None
+            if "desktop-control:interactive-session" in request.resources:
+                # A terminal desktop UNKNOWN is an effect receipt, not an
+                # indefinite execution lock. A live agent (not a monitor
+                # projection) proves idle before atomic replacement.
+                candidate = self.store.retired_desktop_claim_candidate()
+                if candidate is not None:
+                    desktop = self._features.get("desktop_control_lease")
+                    client = getattr(desktop, "client", None)
+                    if client is not None:
+                        try:
+                            from bct.features.claim_reconciliation import desktop_control_is_idle
+                            control = client.control(
+                                request_id=operation_id + ":desktop-idle-before-reservation",
+                                command="control_status",
+                            )
+                        except Exception:
+                            control = None
+                        if desktop_control_is_idle(control):
+                            retired_desktop_claim = (
+                                candidate["operation_id"], candidate["work_id"],
+                                candidate["assignment_epoch"],
+                            )
             created, current = self.store.begin_operation(
                 operation_id=operation_id, work=work, principal_id=principal.principal_id,
                 request_digest=digest, capability=capability, target=request.target,
                 resources=request.resources, policy_revision=decision.policy_revision,
                 background_job=background_job,
+                retired_desktop_claim=retired_desktop_claim,
             )
         finally:
             trace_stage("claim_reservation", tool_kind=capability,

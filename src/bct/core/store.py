@@ -725,10 +725,51 @@ class Store:
             self._event(db, "WORK_HANDED_OFF", work_id, {"old": old_principal_id, "new": new_principal_id})
         return self.get_work(work_id)
 
+    # One-shot desktop operations end when their BCT Operation is FINISHED.
+    # Their uncertain *effects* stay in immutable receipts; the exclusive
+    # desktop Claim represents only a live execution reservation.
+    _RETIRED_DESKTOP_CAPABILITIES = frozenset({
+        "desktop_uia_element_action", "desktop_chrome_content_action",
+        "desktop_chrome_tab_select", "desktop_window_activate",
+        "desktop_window_manage", "desktop_input", "desktop_clipboard",
+        "desktop_application_target", "desktop_control_lease",
+    })
+
+    def retired_desktop_claim_candidate(self) -> dict[str, Any] | None:
+        """Internal reservation lookup, never a monitoring/authorization signal."""
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT c.operation_id,c.work_id,c.assignment_epoch,"
+                "o.capability,o.state,o.outcome,o.assignment_epoch AS operation_epoch "
+                "FROM resource_claims c JOIN operations o "
+                "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
+                "WHERE c.resource_key='desktop-control:interactive-session' AND c.unresolved=1"
+            ).fetchone()
+            if row is None:
+                return None
+            result = dict(row)
+            if (result["state"] != OperationState.FINISHED.value
+                    or result["capability"] not in self._RETIRED_DESKTOP_CAPABILITIES
+                    or result["operation_epoch"] != result["assignment_epoch"]):
+                return None
+            # A still-associated background executor requires an independent
+            # liveness check; it cannot be inferred idle from the UI monitor.
+            owner = db.execute(
+                "SELECT COUNT(*) FROM background_job_executors WHERE operation_id=?",
+                (result["operation_id"],),
+            ).fetchone()[0]
+            if owner:
+                return None
+            return result
+        finally:
+            db.close()
+
     def begin_operation(self, *, operation_id: str, work: Work, principal_id: str,
                         request_digest: str, capability: str, target: str,
                         resources: tuple[str, ...], policy_revision: str,
                         background_job: dict[str, Any] | None = None,
+                        retired_desktop_claim: tuple[str, str, int] | None = None,
                         ) -> tuple[bool, OperationResult]:
         now = time.time()
         with self.transaction() as db:
@@ -755,6 +796,40 @@ class Store:
             )
             for resource in sorted(set(resources)):
                 row = db.execute("SELECT * FROM resource_claims WHERE resource_key=? AND unresolved=1", (resource,)).fetchone()
+                if row is not None and resource == "desktop-control:interactive-session" and retired_desktop_claim is not None:
+                    previous_id, previous_work, previous_epoch = retired_desktop_claim
+                    if (row["operation_id"], row["work_id"], row["assignment_epoch"]) == (previous_id, previous_work, previous_epoch):
+                        owner = db.execute(
+                            "SELECT capability,state,assignment_epoch FROM operations "
+                            "WHERE operation_id=? AND work_id=?",
+                            (previous_id, previous_work),
+                        ).fetchone()
+                        actor = db.execute(
+                            "SELECT COUNT(*) FROM background_job_executors "
+                            "WHERE operation_id=?", (previous_id,),
+                        ).fetchone()[0]
+                        if (owner is not None
+                                and owner["state"] == OperationState.FINISHED.value
+                                and owner["assignment_epoch"] == previous_epoch
+                                and owner["capability"] in self._RETIRED_DESKTOP_CAPABILITIES
+                                and not actor):
+                            released = db.execute(
+                                "UPDATE resource_claims SET unresolved=0 "
+                                "WHERE resource_key=? AND operation_id=? AND work_id=? "
+                                "AND assignment_epoch=? AND unresolved=1",
+                                (resource, previous_id, previous_work, previous_epoch),
+                            ).rowcount
+                            if released != 1:
+                                raise ConflictError("DESKTOP_RETIRE_CLAIM_CHANGED")
+                            self._event(db, "DESKTOP_CLAIM_RETIRED", previous_id, {
+                                "new_operation_id": operation_id,
+                                "original_work_id": previous_work,
+                                "original_assignment_epoch": previous_epoch,
+                                "resource_key": resource,
+                                "reason": "TERMINAL_OPERATION_AGENT_IDLE",
+                                "original_effect_unchanged": True,
+                            })
+                            row = None
                 if row is not None:
                     # Only the current work may see its own operation identity.
                     # Foreign claims remain opaque, including their resource key.

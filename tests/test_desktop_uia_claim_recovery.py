@@ -26,7 +26,7 @@ class IdleDesktop:
         if not self.available:
             raise OSError("agent unavailable")
         assert command == "control_status"
-        assert request_id.endswith(":retired-lease-proof")
+        assert request_id.endswith((":retired-lease-proof", ":desktop-idle-before-reservation"))
         return {"control": {
             "lease": self.lease,
             "emergencyStop": {"active": self.stopped},
@@ -248,6 +248,172 @@ class AutoRevokeUnknownLeaseTests(unittest.TestCase):
         self.assertFalse(can_release)
         self.assertEqual(0, polls)
 
+
+class CrossWorkDesktopReacquisitionTests(unittest.TestCase):
+    """A terminal claim is NOT an authorization source for new work."""
+
+    def setUp(self):
+        from bct.core.models import Principal, Decision, DecisionKind
+        from bct.core.operations import OperationCoordinator
+        from bct.features.desktop_session import DesktopControlLeaseFeature
+
+        class LocalPolicy:
+            def decide(self, **kwargs):
+                return Decision(DecisionKind.ALLOW, "ALLOW", "", "fixture")
+
+        self.temp = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.temp.name) / "state.sqlite")
+        self.principal = Principal("owner", "fixture", frozenset({
+            "desktop_control_lease", "desktop_uia_element_action"
+        }))
+        self.old = self.store.create_work(Work(
+            "prior", "prior desktop action", (self.temp.name,),
+            frozenset({"desktop_uia_element_action"}), "owner"))
+        self.new = self.store.create_work(Work(
+            "new", "new independent desktop action", (self.temp.name,),
+            frozenset({"desktop_control_lease"}), "owner"))
+        self.agent = IdleDesktop()
+        self.ops = OperationCoordinator(store=self.store, policy=LocalPolicy())
+        self.ops.register(DesktopControlLeaseFeature(self.agent))
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def original(self, *, name="prior-uia", finish=True, capability="desktop_uia_element_action",
+                 resources=(CLAIM,)):
+        created, _ = self.store.begin_operation(
+            operation_id=name, work=self.old, principal_id="owner",
+            request_digest="prior-digest", capability=capability,
+            target="expand:desktop-uia", resources=resources,
+            policy_revision="fixture")
+        self.assertTrue(created)
+        if finish:
+            self.store.finish_operation(
+                operation_id=name, outcome=Outcome.UNKNOWN,
+                evidence={"phase":"EXECUTION","code":ERROR},
+                error=ERROR, release_claims=False)
+
+    def acquire(self, *, id="fresh"):
+        return self.ops.begin(
+            principal=self.principal, work_id=self.new.work_id,
+            operation_id=id, capability="desktop_control_lease",
+            arguments={"operation":"acquire", "target_type":"session"})
+
+    def test_new_work_automatically_reclaims_stale_claim_and_keeps_receipt(self):
+        self.original()
+        before=self.store.get_operation_for(
+            operation_id="prior-uia",work_id="prior",principal_id="owner")
+        journal=self.store.get_effect_journal_for(
+            operation_id="prior-uia",work_id="prior",principal_id="owner")
+        created, current=self.acquire()
+        self.assertTrue(created)
+        self.assertEqual("fresh",current.operation_id)
+        self.assertEqual(1,self.agent.calls)
+        self.assertEqual(before,self.store.get_operation_for(
+            operation_id="prior-uia",work_id="prior",principal_id="owner"))
+        self.assertEqual(journal,self.store.get_effect_journal_for(
+            operation_id="prior-uia",work_id="prior",principal_id="owner"))
+        claims=self.store.claim_diagnostics()
+        self.assertEqual(["fresh"],[c["operation_id"] for c in claims])
+        # Same original ID can never dispatch again, even after the Claim retires.
+        duplicate, old=self.store.begin_operation(
+            operation_id="prior-uia",work=self.old,principal_id="owner",
+            request_digest="prior-digest",capability="desktop_uia_element_action",
+            target="expand:desktop-uia",resources=(CLAIM,),
+            policy_revision="fixture")
+        self.assertFalse(duplicate)
+        self.assertEqual(Outcome.UNKNOWN,old.outcome)
+        self.store.finish_operation(operation_id="fresh",outcome=Outcome.APPLIED,
+            evidence={"phase":"fixture"},error=None,release_claims=True)
+        self.assertEqual([],self.store.claim_diagnostics())
+
+    def test_active_agent_lease_fences_independent_work(self):
+        self.original()
+        self.agent.lease={"leaseId":"still-held"}
+        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
+            self.acquire()
+        self.assertEqual("prior-uia",self.store.claim_diagnostics()[0]["operation_id"])
+
+    def test_emergency_stop_fences_independent_work(self):
+        self.original()
+        self.agent.stopped=True
+        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
+            self.acquire()
+
+    def test_unavailable_agent_fences_independent_work(self):
+        self.original()
+        self.agent.available=False
+        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
+            self.acquire()
+
+    def test_unfinished_original_fences_independent_work(self):
+        self.original(finish=False)
+        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
+            self.acquire()
+        self.assertEqual(0,self.agent.calls)
+
+    def test_unrelated_running_resource_is_never_retired(self):
+        self.original(capability="desktop_program_launch")
+        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
+            self.acquire()
+        self.assertEqual(0,self.agent.calls)
+
+    def test_unrelated_claim_of_original_remains_protected(self):
+        self.original(resources=(CLAIM,"other:critical-resource"))
+        created,_=self.acquire()
+        self.assertTrue(created)
+        records=self.store.claim_diagnostics()
+        self.assertEqual(2,len(records))
+        self.assertEqual({"fresh","prior-uia"},
+            {c["operation_id"] for c in records})
+
+    def test_monitor_diagnostics_cannot_block_or_grant_execution(self):
+        self.original()
+        def no_monitor(*args,**kwargs):
+            raise RuntimeError("MONITOR_IS_OBSERVATION_NOT_AUTHORITY")
+        self.store.claim_diagnostics=no_monitor
+        created,_=self.acquire()
+        self.assertTrue(created)
+
+    def test_new_operation_id_does_not_authorize_old_id_replay(self):
+        self.original()
+        self.acquire()
+        with self.assertRaisesRegex(ConflictError,"OPERATION_RESULT_ACCESS_DENIED"):
+            self.store.begin_operation(operation_id="prior-uia",work=self.new,
+                principal_id="owner",request_digest="new-request",
+                capability="desktop_control_lease",target="acquire:session",
+                resources=(CLAIM,),policy_revision="fixture")
+
+
+    def test_executor_association_blocks_retirement_even_when_finished(self):
+        self.original()
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO background_jobs VALUES(?,?,?)",
+                ("prior-uia", "{}", 100.0))
+            db.execute(
+                "INSERT INTO background_job_executors VALUES(?,?,?,?)",
+                ("prior-uia", 321, "attached-worker", 101.0))
+        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
+            self.acquire()
+        self.assertEqual(0, self.agent.calls)
+
+    def test_old_assignment_epoch_change_blocks_stale_proof(self):
+        self.original()
+        cand=self.store.retired_desktop_claim_candidate()
+        self.assertIsNotNone(cand)
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE resource_claims SET assignment_epoch=? "
+                "WHERE operation_id=?", (9, "prior-uia"))
+        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
+            self.store.begin_operation(
+                operation_id="fresh",work=self.new,principal_id="owner",
+                request_digest="fresh",capability="desktop_control_lease",
+                target="acquire:session",resources=(CLAIM,),
+                policy_revision="fixture",
+                retired_desktop_claim=(cand["operation_id"],cand["work_id"],
+                                       cand["assignment_epoch"]))
 
 if __name__ == "__main__":
     unittest.main()
