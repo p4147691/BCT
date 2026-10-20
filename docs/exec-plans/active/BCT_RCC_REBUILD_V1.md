@@ -249,6 +249,19 @@ effectful Browser API가 없음을 정적 테스트로 확인한다.
 통과 조건: `chrome.windows.create` 직접 호출이 새 Adapter 한 곳에만 있고, 기존 bootstrap 영수증
 호환성 및 상태별 단위 테스트와 RCC 전체 회귀 테스트가 통과한다.
 
+### 7F단계 — Browser Tab Reload Adapter와 영수증 계약 분리
+
+- `chrome.tabs.reload`는 탭 재로드 전용 Adapter만 소유하고 `background.js`는 직접 호출하지 않는다.
+- 재로드 전 정확한 탭·대화 정체를 확인하고, 재로드 후 navigation 완료와 기존 read-only probe의
+  receiver 응답을 모두 확인한 경우에만 성공으로 기록한다.
+- 결과는 `RELOADED_CONFIRMED`, `NOT_APPLIED`, `RELOAD_UNKNOWN`으로 기록하며 효과 호출은 자동
+  재시도하지 않는다.
+- 설치본, `reload-workers` legacy 차단 정책, 별도 `reload-extension` maintenance 경로는 변경하지
+  않는 source-only 단계로 진행한다.
+
+통과 조건: `chrome.tabs.reload` 직접 호출이 새 Adapter 한 곳에만 있고, 상태별 단위 테스트와 RCC
+전체 회귀 테스트가 통과한다.
+
 ### 8단계 — 정리와 제거
 
 - 안정화 기간 동안 연결 상태, protocol mismatch, UNKNOWN effect, 중복 turn이 없는지 확인한다.

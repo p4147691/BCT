@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         # Accepted Simple Relay Return V0 source/LIVE baseline (2026-10-20).
         # These are release guards, not a deployment action.
         expected = {
-            "background.js": "d931b73ecf760481241bc5e47644eb7a15c5bcea5dc72115836a929a7be420cc",
+            "background.js": "43a04cb44f8be3f426f7bf34a6ae12d655661a291a0065d3ec095f3f3b7f829c",
             "content.js": "d059091b689e4dec9f702b33c65b421d86fefc3408e2aa6dfdebe40cfec7b941",
             "manifest.json": "b45d1a3cd4ad5aa0d57ddd106c89ed749c264ea8af4994aeb8175cf9fc274ec1",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
@@ -246,7 +246,8 @@ class RccSourceBaselineTests(unittest.TestCase):
             "browser/tab_move_adapter.js", "browser/tab_create_contract.js",
             "browser/tab_create_adapter.js", "browser/tab_close_contract.js",
             "browser/tab_close_adapter.js", "browser/window_create_contract.js",
-            "browser/window_create_adapter.js", "relay/contract.js", "legacy/command_policy.js",
+            "browser/window_create_adapter.js", "browser/tab_reload_contract.js",
+            "browser/tab_reload_adapter.js", "relay/contract.js", "legacy/command_policy.js",
         ):
             completed = subprocess.run(
                 [node, "--check", str(self.extension / name)],

@@ -4,6 +4,7 @@ let browserTabMoveAdapter = null;
 let browserTabCreateAdapter = null;
 let browserTabCloseAdapter = null;
 let browserWindowCreateAdapter = null;
+let browserTabReloadAdapter = null;
 
 function getBrowserReadAdapter() {
   if (browserReadAdapter) return browserReadAdapter;
@@ -61,6 +62,20 @@ function getBrowserWindowCreateAdapter() {
     conversationKey: (url) => RelayCore.conversationKey(url || ''),
   });
   return browserWindowCreateAdapter;
+}
+
+function getBrowserTabReloadAdapter() {
+  if (browserTabReloadAdapter) return browserTabReloadAdapter;
+  const adapterFactory = globalThis.RccBrowserTabReloadAdapter;
+  const contract = globalThis.RccBrowserTabReloadContract;
+  if (!adapterFactory || !contract) throw new Error('RCC_BROWSER_TAB_RELOAD_ADAPTER_NOT_LOADED');
+  browserTabReloadAdapter = adapterFactory.create(chrome, contract, {
+    isChatTab,
+    conversationKey: (url) => RelayCore.conversationKey(url || ''),
+  }, {
+    probe: (tabId) => sendToChatTab(tabId, { type: 'relay:probe' }),
+  });
+  return browserTabReloadAdapter;
 }
 
 const CONTROL = 'CONTROL';
@@ -3488,11 +3503,15 @@ async function handleNativeCommand(message) {
 
       const state = await loadState();
 
+      const operationId = String(message.operationId || requestId).trim();
+
       const requestedRole = String(message.to || '').trim() ? RelayCore.normalizeRole(message.to) : '';
 
       const reloaded = [];
 
       const skipped = [];
+
+      const receipts = [];
 
       for (const [role, reg] of Object.entries(state.registrations || {})) {
 
@@ -3502,25 +3521,30 @@ async function handleNativeCommand(message) {
 
         const tabId = Number(reg?.tabId);
 
+        const conversationKey = String(reg?.conversationKey || '').trim();
+
         if (!Number.isInteger(tabId)) { skipped.push({ role, reason: 'no-tab' }); continue; }
+
+        if (!conversationKey) { skipped.push({ role, reason: 'no-conversation-key' }); continue; }
 
         try {
 
-          const tab = await chrome.tabs.get(tabId);
+          const receipt = await getBrowserTabReloadAdapter().reloadTab({
+            operationId,
+            instanceId: String(state.settings.instanceId || ''),
+            sessionId: endpointSessionId,
+            targetRole: role,
+            tabId,
+            conversationKey,
+          });
 
-          const key = RelayCore.conversationKey(tab?.url || '');
+          receipts.push(receipt);
 
-          if (!isChatTab(tab) || (reg.conversationKey && key !== reg.conversationKey)) {
-
-            skipped.push({ role, reason: 'identity-mismatch' });
-
-            continue;
-
+          if (receipt.state === 'RELOADED_CONFIRMED') {
+            reloaded.push({ role, tabId, conversationKey });
+          } else {
+            skipped.push({ role, reason: String(receipt.error || receipt.state) });
           }
-
-          await chrome.tabs.reload(tabId);
-
-          reloaded.push({ role, tabId, conversationKey: key });
 
         } catch (error) {
 
@@ -3530,7 +3554,7 @@ async function handleNativeCommand(message) {
 
       }
 
-      postNative({ type: 'host:result', requestId, ok: true, reloaded, skipped });
+      postNative({ type: 'host:result', requestId, ok: true, reloaded, skipped, receipts });
 
       return;
 

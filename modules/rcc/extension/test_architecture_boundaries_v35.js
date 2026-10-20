@@ -16,6 +16,8 @@ const tabCloseContract = fs.readFileSync(path.join(root, 'browser/tab_close_cont
 const tabCloseAdapter = fs.readFileSync(path.join(root, 'browser/tab_close_adapter.js'), 'utf8');
 const windowCreateContract = fs.readFileSync(path.join(root, 'browser/window_create_contract.js'), 'utf8');
 const windowCreateAdapter = fs.readFileSync(path.join(root, 'browser/window_create_adapter.js'), 'utf8');
+const tabReloadContract = fs.readFileSync(path.join(root, 'browser/tab_reload_contract.js'), 'utf8');
+const tabReloadAdapter = fs.readFileSync(path.join(root, 'browser/tab_reload_adapter.js'), 'utf8');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 
 for (const file of ['identity.js', 'state.js', 'conversation.js', 'transport.js', 'shadow.js']) {
@@ -56,6 +58,13 @@ for (const prohibited of ['tabs.create', 'tabs.move', 'tabs.remove', 'tabs.reloa
 }
 assert(windowCreateAdapter.includes('windows.create'), 'Window create adapter must own the window create effect');
 assert(!background.includes('chrome.windows.create'), 'Background must delegate window creation to the adapter');
+assert(!tabReloadContract.includes('chrome.'), 'Tab reload receipt contract must not depend on Chrome');
+assert(!tabReloadContract.includes('storage.'), 'Tab reload receipt contract must not persist state');
+for (const prohibited of ['tabs.create', 'tabs.move', 'tabs.remove', 'windows.create', 'windows.update', 'sendMessage']) {
+  assert(!tabReloadAdapter.includes(prohibited), `Tab reload adapter must not contain ${prohibited}`);
+}
+assert(tabReloadAdapter.includes('tabs.reload'), 'Tab reload adapter must own the tab reload effect');
+assert(!background.includes('chrome.tabs.reload'), 'Background must delegate tab reload to the adapter');
 for (const prohibited of ['tabs.create', 'tabs.move', 'tabs.remove', 'tabs.reload', 'windows.create', 'windows.update']) {
   assert(!browserReadAdapter.includes(prohibited), `Browser read adapter must not contain ${prohibited}`);
 }
@@ -71,6 +80,8 @@ assert(loader.includes("importScripts('browser/tab_close_contract.js');"), 'load
 assert(loader.includes("importScripts('browser/tab_close_adapter.js');"), 'loader must select tab close adapter');
 assert(loader.includes("importScripts('browser/window_create_contract.js');"), 'loader must select window create receipt contract');
 assert(loader.includes("importScripts('browser/window_create_adapter.js');"), 'loader must select window create adapter');
+assert(loader.includes("importScripts('browser/tab_reload_contract.js');"), 'loader must select tab reload receipt contract');
+assert(loader.includes("importScripts('browser/tab_reload_adapter.js');"), 'loader must select tab reload adapter');
 assert(!loader.includes("importScripts('simple_relay_v0.js');"), 'loader must not select legacy Relay contract');
 
 console.log('rcc architecture boundaries v3.5: PASS');
