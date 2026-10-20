@@ -74,8 +74,13 @@ def build_mcp(
     bct: Any,
     *,
     status_provider: Callable[[], dict[str, Any]] | None = None,
+    compact_catalogue: bool = False,
+    hybrid_catalogue: bool = False,
 ) -> FastMCP:
     """Build the public MCP catalogue from the registered BCT capabilities."""
+    if compact_catalogue and hybrid_catalogue:
+        raise ValueError("MCP_CATALOGUE_MODES_MUTUALLY_EXCLUSIVE")
+    compact_catalogue = compact_catalogue or hybrid_catalogue
     capabilities = tuple(bct.operations.capabilities)
     principal = Principal(MCP_PRINCIPAL_ID, "local-bearer", frozenset(capabilities))
     server = FastMCP(
@@ -94,7 +99,7 @@ def build_mcp(
         started_ns = time.perf_counter_ns()
         value = {
             "capabilities": list(capabilities),
-            "tools": [*_GENERAL_TOOLS, *[f"bct_{name}" for name in capabilities]],
+            "tools": [*_GENERAL_TOOLS, "bct_dispatch"] if compact_catalogue else [*_GENERAL_TOOLS, *[f"bct_{name}" for name in capabilities]],
         }
         handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
         _trace_stage(
@@ -342,6 +347,42 @@ def build_mcp(
         execute.__name__ = "bct_" + capability
         execute.__doc__ = f"Execute the registered BCT {capability!r} capability."
         return execute
+
+    if compact_catalogue:
+        @server.tool(
+            name="bct_dispatch",
+            description=(
+                "Dispatch one explicitly named BCT capability through its existing "
+                "Work authorization, durable Operation receipt and UNKNOWN/Claim contracts. "
+                "Use bct_capabilities to discover exact names. Desktop image capture "
+                "requires the original full endpoint."
+            ),
+            structured_output=True,
+        )
+        async def bct_dispatch(
+            capability: str,
+            work_id: str,
+            operation_id: str,
+            arguments: dict[str, Any],
+            approval_ref: str | None = None,
+        ) -> dict[str, Any]:
+            if capability not in capabilities or capability in _SPECIAL_CAPABILITIES:
+                return {"error": "CAPABILITY_NOT_AVAILABLE_IN_COMPACT_CATALOGUE"}
+            return await make_executor(capability)(
+                work_id, operation_id, arguments, approval_ref
+            )
+        if hybrid_catalogue:
+            for exposed in ("execute", "read"):
+                if exposed in capabilities:
+                    server.tool(
+                        name="bct_" + exposed,
+                        description=(
+                            f"Run BCT capability {exposed} with an exact work and operation ID. "
+                            + _CAPABILITY_USAGE.get(exposed, "")
+                        ),
+                        structured_output=True,
+                    )(make_executor(exposed))
+        return server
 
     for capability in capabilities:
         if capability in _SPECIAL_CAPABILITIES:

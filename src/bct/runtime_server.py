@@ -155,6 +155,11 @@ def main() -> int:
         raise RuntimeError("BCT_CONTROL_TOKEN_MISSING")
     if len(mcp_token) != 64:
         raise RuntimeError("BCT_MCP_TOKEN_MISSING")
+    catalogue_mode = os.environ.get("BCT_MCP_CATALOGUE", "full")
+    if catalogue_mode not in ("full", "compact", "hybrid"):
+        raise RuntimeError("BCT_MCP_CATALOGUE_INVALID")
+    compact_catalogue = catalogue_mode == "compact"
+    hybrid_catalogue = catalogue_mode == "hybrid"
     state = {
         "status": "OK",
         "ready": True,
@@ -168,7 +173,7 @@ def main() -> int:
         "capabilities": list(bct.operations.capabilities),
         "mcp_ready": True,
         "mcp_endpoint": f"http://127.0.0.1:{arguments.port}/mcp",
-        "mcp_tool_count": len(bct.operations.capabilities) + 5,
+        "mcp_tool_count": 10 if hybrid_catalogue else 8 if compact_catalogue else len(bct.operations.capabilities) + 5,
         "started_at": time.time(),
         "orphan_recoveries": orphan_recoveries,
         "manager_decision_recovery": {
@@ -266,7 +271,7 @@ def main() -> int:
             "monitor": monitor,
         }
 
-    mcp = build_mcp(bct, status_provider=status_snapshot)
+    mcp = build_mcp(bct, status_provider=status_snapshot, compact_catalogue=compact_catalogue, hybrid_catalogue=hybrid_catalogue)
     holder: dict[str, uvicorn.Server] = {}
 
     @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
