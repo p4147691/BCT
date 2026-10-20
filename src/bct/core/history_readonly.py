@@ -55,3 +55,26 @@ def integrity(path):
                 "nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],
                 "sessions":db.execute("SELECT COUNT(*) FROM orchestration_sessions").fetchone()[0],
                 "messages":db.execute("SELECT COUNT(*) FROM orchestration_mailbox").fetchone()[0]}
+
+def current_nodes(path):
+    """Registration/connection facts, not a claim of a live AI worker."""
+    with closing(connect(path)) as db:
+        result=rows(db,"""SELECT n.node_id,n.name,n.role,n.active,n.revision,
+          COUNT(c.connection_id) AS registered_connections,
+          SUM(CASE WHEN c.active=1 THEN 1 ELSE 0 END) AS active_connection_records
+          FROM nodes n LEFT JOIN connections c ON n.node_id=c.node_id
+          WHERE n.active=1 GROUP BY n.node_id ORDER BY n.node_id""")
+        for record in result:
+            record["live_presence"]="UNVERIFIED_REQUIRES_RCC"
+            record["assignable"]="UNVERIFIED_REQUIRES_RUNTIME_POLICY"
+        return result
+
+def work_history(path,work_id):
+    """Return one Work and all its durable collaboration sessions."""
+    with closing(connect(path)) as db:
+        w=db.execute("SELECT * FROM works WHERE work_id=?",(work_id,)).fetchone()
+        if w is None: raise KeyError("WORK_NOT_FOUND")
+        ids=[r[0] for r in db.execute("""SELECT session_id FROM orchestration_sessions
+           WHERE work_id=? ORDER BY created_at,session_id""",(work_id,))]
+    return {"work":dict(w),"sessions":[timeline(path,sid) for sid in ids],
+            "chat_transcript_coverage":"NOT_VERIFIED","full_history_verified":False}

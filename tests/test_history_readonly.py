@@ -3,7 +3,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 from contextlib import closing
-from bct.core.history_readonly import connect,historical_nodes,timeline,integrity
+from bct.core.history_readonly import connect,historical_nodes,timeline,integrity,current_nodes,work_history
 
 class HistoryReadOnlyTests(unittest.TestCase):
     def setUp(self):
@@ -12,6 +12,8 @@ class HistoryReadOnlyTests(unittest.TestCase):
         with closing(sqlite3.connect(self.db)) as d:
             d.executescript("""
             CREATE TABLE nodes(node_id TEXT,name TEXT,role TEXT,active INTEGER,revision INTEGER);
+            CREATE TABLE connections(connection_id TEXT,node_id TEXT,active INTEGER);
+            CREATE TABLE works(work_id TEXT);
             CREATE TABLE orchestration_sessions(session_id TEXT,work_id TEXT,state TEXT,created_at REAL);
             CREATE TABLE orchestration_session_nodes(node_id TEXT,session_id TEXT,session_role TEXT);
             CREATE TABLE orchestration_assignments(assignment_id TEXT,session_id TEXT,created_at REAL);
@@ -20,6 +22,8 @@ class HistoryReadOnlyTests(unittest.TestCase):
             CREATE TABLE orchestration_consumption_receipts(result_message_id TEXT,session_id TEXT,created_at REAL);
             CREATE TABLE orchestration_manager_wakes(event_id TEXT,session_id TEXT,created_at REAL);
             INSERT INTO nodes VALUES('n1','Previous worker','WORKER',0,1);
+            INSERT INTO nodes VALUES('n2','Current worker','WORKER',1,1);
+            INSERT INTO works VALUES('w1');
             INSERT INTO orchestration_sessions VALUES('s1','w1','FINISHED',1.0);
             INSERT INTO orchestration_session_nodes VALUES('n1','s1','WORKER');
             INSERT INTO orchestration_assignments VALUES('a1','s1',2.0);
@@ -42,6 +46,14 @@ class HistoryReadOnlyTests(unittest.TestCase):
         with closing(connect(self.db)) as d:
             with self.assertRaises(sqlite3.OperationalError):
                 d.execute("INSERT INTO nodes VALUES('n2','x','WORKER',1,1)")
+    def test_current_nodes_does_not_infer_availability(self):
+        n=current_nodes(self.db)
+        self.assertEqual([x['node_id'] for x in n],['n2'])
+        self.assertEqual(n[0]['live_presence'],'UNVERIFIED_REQUIRES_RCC')
+    def test_work_history_isolated(self):
+        w=work_history(self.db,'w1')
+        self.assertEqual(len(w['sessions']),1)
+        self.assertFalse(w['full_history_verified'])
     def test_integrity(self):
         r=integrity(self.db)
         self.assertEqual(r["integrity"],["ok"])
