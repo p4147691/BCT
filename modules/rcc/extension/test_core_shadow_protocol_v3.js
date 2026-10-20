@@ -13,7 +13,7 @@ assert(activity.includes('telemetry: typeof telemetry === \'object\''));
 
 const snapshot = background.split('async function endpointFromTabWithActivity(')[1]
   .split('async function captureEndpointSnapshot(', 1)[0];
-assert(snapshot.includes('getBrowserReadAdapter().probeActivity(tab.id)'));
+assert(snapshot.includes('browserGateway.probeActivity(tab.id)'));
 assert(snapshot.includes('endpoint.generating = !!probe?.generating'));
 assert(snapshot.includes('endpoint.telemetry = probe?.telemetry'));
 assert(snapshot.includes('endpoint.connection = probe?.connection'));
@@ -27,6 +27,6 @@ assert(nativeState.includes('coreShadow,'));
 for (const name of ['identity.js', 'state.js', 'conversation.js', 'transport.js', 'shadow.js']) {
   assert(loader.includes(`core/${name}`));
 }
-assert(loader.includes('browser/read_adapter.js'));
+assert(loader.includes('platform/browser_gateway.js'));
 
 console.log('core shadow content protocol v3: PASS');

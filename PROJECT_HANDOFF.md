@@ -1015,3 +1015,17 @@ exact commit을 BCT Core generation 165로 APPLIED했다. Core health는 READY/O
 catalogue는 full 44-tool 기본값을 유지한다. RCC 설치본·Chrome·Native Host·Relay binding은
 변경하지 않았고 설치 RCC/Native Host 해시와 관측 instance/session/tab/conversation identity가
 배포 전후 동일하다.
+
+## RCC 재구축 V2-2 source 완료
+
+활성 background의 storage, exact tab ID 조회와 receiver 주입, Native Messaging, tab 관측
+listener, runtime lifecycle을 책임 단위 다섯 플랫폼 모듈로 한 번에 분리했다. `background.js`의
+직접 `chrome.*` 호출은 24곳에서 0곳, 크기는 2,080줄에서 1,969줄로 줄었다. storage key,
+native command/content message 이름, Simple Relay 원문/receipt, read-only diagnostics와 기존
+fail-closed 오류는 유지했다.
+
+기존 read Adapter와 tab/window mutation Adapter는 source에 보존하되 active loader에서
+제외했다. 남은 RCC JavaScript 테스트 21개와 focused Python 계약 18개가 통과했다. LIVE RCC
+설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
+`docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE2_PLATFORM_BOUNDARIES_20261020.md`를 따른다.
+다음 단계는 V2-3 활성 도메인·content 일괄 분리이며 계속 source-only다.

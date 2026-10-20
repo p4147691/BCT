@@ -15,10 +15,10 @@ class RccSourceBaselineTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parents[1]
         cls.extension = cls.root / "modules" / "rcc" / "extension"
 
-    def test_source_only_v2_1_payload_hashes_match_recorded_baseline(self):
-        # Source-only RCC Rebuild V2-1 guard. This is not an installed/LIVE hash.
+    def test_source_only_v2_2_payload_hashes_match_recorded_baseline(self):
+        # Source-only RCC Rebuild V2-2 guard. This is not an installed/LIVE hash.
         expected = {
-            "background.js": "af8992f6c1d6bdcc62d8e331bf0cb05b1fd96efa4899b93d59d6b644c265d479",
+            "background.js": "71914c04715811b02b46892b9007c1a554ba18dbcd244e919345212dcd5cdbf0",
             "content.js": "641d56fbe3d31e36dcf32d99e378cf667ec30a21e4c8b0c908681d91a56c131c",
             "manifest.json": "ce459e432179478309273453e8ea53f06a9017346b4fb2d51b0ad34a9874e7ae",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
@@ -93,8 +93,8 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_optional_browser_management_is_preserved_but_unloaded(self):
         loader = (self.extension / "background_loader.js").read_text(encoding="utf-8")
-        self.assertIn("importScripts('browser/read_adapter.js');", loader)
         optional = (
+            "browser/read_adapter.js",
             "browser/tab_move_contract.js", "browser/tab_move_adapter.js",
             "browser/tab_create_contract.js", "browser/tab_create_adapter.js",
             "browser/tab_close_contract.js", "browser/tab_close_adapter.js",
@@ -105,6 +105,21 @@ class RccSourceBaselineTests(unittest.TestCase):
             self.assertTrue((self.extension / relative).is_file(), relative)
             self.assertNotIn(f"importScripts('{relative}');", loader)
         self.assertNotIn("importScripts('act_bridge.js');", loader)
+
+    def test_platform_boundaries_own_background_chrome_effects(self):
+        loader = (self.extension / "background_loader.js").read_text(encoding="utf-8")
+        background = (self.extension / "background.js").read_text(encoding="utf-8")
+        self.assertNotIn("chrome.", background)
+        platform = (
+            "platform/chrome_state_repository.js", "platform/browser_gateway.js",
+            "platform/native_transport.js", "platform/observation_gateway.js",
+            "platform/lifecycle.js",
+        )
+        for relative in platform:
+            self.assertTrue((self.extension / relative).is_file(), relative)
+            self.assertIn(f"importScripts('{relative}');", loader)
+            self.assertLess(loader.index(f"importScripts('{relative}');"),
+                            loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
         marker = "2026-10-20-rcc-core-shadow-v1"
@@ -160,6 +175,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_simple_relay_route_adapter_v5.js", "simple relay route adapter v5: PASS"),
             ("test_legacy_command_policy_v6.js", "legacy command policy v6: PASS"),
             ("test_architecture_boundaries_v35.js", "rcc architecture boundaries v3.5: PASS"),
+            ("test_platform_boundaries_v2.js", "rcc platform boundaries v2: PASS"),
         ):
             self._run_node(name, marker)
 
@@ -198,6 +214,9 @@ class RccSourceBaselineTests(unittest.TestCase):
             "browser/tab_close_adapter.js", "browser/window_create_contract.js",
             "browser/window_create_adapter.js", "browser/tab_reload_contract.js",
             "browser/tab_reload_adapter.js", "relay/contract.js", "legacy/command_policy.js",
+            "platform/chrome_state_repository.js", "platform/browser_gateway.js",
+            "platform/native_transport.js", "platform/observation_gateway.js",
+            "platform/lifecycle.js",
         ):
             completed = subprocess.run(
                 [node, "--check", str(self.extension / name)], capture_output=True,

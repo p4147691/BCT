@@ -1,6 +1,6 @@
 # RCC Rebuild V2 — 통합 종료 계획
 
-상태: `V2_1_SOURCE_COMPLETE / CI_PASS / RCC_LIVE_UNCHANGED`
+상태: `V2_2_SOURCE_COMPLETE / LOCAL_VERIFIED / RCC_LIVE_UNCHANGED`
 
 V1의 API별 Adapter 추가 방식은 여기서 종료한다. 이 문서는 RCC를 실제로 끝낼 수 있도록
 남은 책임 전체, 한 번에 묶을 전환 단위, LIVE 전환 시점과 완료 조건을 다시 고정한 실행 계획이다.
@@ -112,6 +112,10 @@ domain은 `chrome.*`를 직접 호출하지 않는다. optional 기능은 active
 - Native Messaging, 관측 listener, lifecycle을 각각 transport/observation/lifecycle 경계로 옮긴다.
 - API 호출 하나마다 새 단계나 새 Adapter를 만들지 않는다. 기존 browser mutation Adapter는
   gateway가 필요할 때 조합하는 optional 효과 구현으로만 둔다.
+
+2026-10-20 실행 결과는
+`BCT_RCC_REBUILD_V2_STAGE2_PLATFORM_BOUNDARIES_20261020.md`에 기록한다. active background의
+Chrome 효과는 다섯 플랫폼 모듈로 이동했고, 이 단계도 source와 테스트만 변경한다.
 
 통과 조건:
 

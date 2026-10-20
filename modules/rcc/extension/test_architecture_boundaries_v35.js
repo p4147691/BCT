@@ -8,6 +8,11 @@ const relay = fs.readFileSync(path.join(root, 'relay/contract.js'), 'utf8');
 const envelope = fs.readFileSync(path.join(root, 'relay/envelope.js'), 'utf8');
 const network = fs.readFileSync(path.join(root, 'network/directory.js'), 'utf8');
 const browserReadAdapter = fs.readFileSync(path.join(root, 'browser/read_adapter.js'), 'utf8');
+const stateRepository = fs.readFileSync(path.join(root, 'platform/chrome_state_repository.js'), 'utf8');
+const browserGateway = fs.readFileSync(path.join(root, 'platform/browser_gateway.js'), 'utf8');
+const nativeTransport = fs.readFileSync(path.join(root, 'platform/native_transport.js'), 'utf8');
+const observationGateway = fs.readFileSync(path.join(root, 'platform/observation_gateway.js'), 'utf8');
+const lifecycle = fs.readFileSync(path.join(root, 'platform/lifecycle.js'), 'utf8');
 const tabMoveContract = fs.readFileSync(path.join(root, 'browser/tab_move_contract.js'), 'utf8');
 const tabMoveAdapter = fs.readFileSync(path.join(root, 'browser/tab_move_adapter.js'), 'utf8');
 const tabCreateContract = fs.readFileSync(path.join(root, 'browser/tab_create_contract.js'), 'utf8');
@@ -30,6 +35,16 @@ assert(!relay.includes('retry'), 'Relay contract must not retry side effects');
 assert(!envelope.includes('chrome.'), 'Relay envelope must not depend on Chrome');
 assert(!network.includes('chrome.'), 'Conversation network must not depend on Chrome');
 assert(!network.includes('storage.'), 'Conversation network must not persist state');
+assert(!background.includes('chrome.'), 'Background assembly/domain must use platform boundaries');
+assert(stateRepository.includes('chromeApi.storage.local'));
+assert(stateRepository.includes('chromeApi.storage.session'));
+assert(browserGateway.includes('chromeApi.tabs.get'));
+assert(browserGateway.includes('chromeApi.tabs.sendMessage'));
+assert(browserGateway.includes('chromeApi.scripting.executeScript'));
+assert(nativeTransport.includes('chromeApi.runtime.connectNative'));
+assert(observationGateway.includes('chromeApi.tabs.onCreated'));
+assert(lifecycle.includes('chromeApi.runtime.onMessage'));
+assert(lifecycle.includes('chromeApi.runtime.onStartup'));
 assert(!tabMoveContract.includes('chrome.'), 'Tab move receipt contract must not depend on Chrome');
 assert(!tabMoveContract.includes('storage.'), 'Tab move receipt contract must not persist state');
 for (const prohibited of ['tabs.create', 'tabs.remove', 'tabs.reload', 'windows.create', 'windows.update', 'sendMessage']) {
@@ -71,13 +86,20 @@ for (const prohibited of ['tabs.create', 'tabs.move', 'tabs.remove', 'tabs.reloa
 assert(loader.includes("importScripts('relay/contract.js');"), 'loader must select canonical Relay contract');
 assert(loader.includes("importScripts('relay/envelope.js');"), 'loader must select relay envelope contract');
 assert(loader.includes("importScripts('network/directory.js');"), 'loader must select conversation network contract');
-assert(loader.includes("importScripts('browser/read_adapter.js');"), 'loader must select Browser read adapter');
+for (const platform of [
+  'platform/chrome_state_repository.js', 'platform/browser_gateway.js',
+  'platform/native_transport.js', 'platform/observation_gateway.js', 'platform/lifecycle.js',
+]) {
+  assert(loader.includes(`importScripts('${platform}');`), `${platform} must load before background`);
+}
+assert(!loader.includes("importScripts('browser/read_adapter.js');"), 'old read adapter must remain optional');
 for (const optional of [
   'browser/tab_move_contract.js', 'browser/tab_move_adapter.js',
   'browser/tab_create_contract.js', 'browser/tab_create_adapter.js',
   'browser/tab_close_contract.js', 'browser/tab_close_adapter.js',
   'browser/window_create_contract.js', 'browser/window_create_adapter.js',
   'browser/tab_reload_contract.js', 'browser/tab_reload_adapter.js',
+  'browser/read_adapter.js',
 ]) {
   assert(!loader.includes(`importScripts('${optional}');`), `${optional} must remain optional and unloaded`);
 }

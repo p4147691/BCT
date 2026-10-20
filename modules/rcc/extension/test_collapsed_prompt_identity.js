@@ -82,8 +82,10 @@ vm.runInContext(slice(content, 'function canonicalMessageUnit(', 'function getAs
 const directContext = vm.createContext({RelayCore, isChatTab: () => true,
   getComputedStyle: () => ({visibility: 'visible', display: 'block'}),
   get document() { return document; },
-  chrome: {tabs: {get: async () => ({url: 'https://chatgpt.com/c/conversation-test'})},
-    scripting: {executeScript: async spec => [{result: await spec.func(...spec.args)}]}}});
+  browserGateway: {
+    getExactTab: async () => ({url: 'https://chatgpt.com/c/conversation-test'}),
+    executeScript: async spec => [{result: await spec.func(...spec.args)}],
+  }});
 vm.runInContext(slice(background, 'async function recoverCompletedReplyDirectlyFromTab(', 'function bindingLeaseTargetsConflict(')
   + ';globalThis.direct = recoverCompletedReplyDirectlyFromTab;', directContext);
 const record = (prompt, extra = {}) => ({submittedText: prompt, conversationKey: 'conversation-test', beforeTurnKeys: [], ...extra});

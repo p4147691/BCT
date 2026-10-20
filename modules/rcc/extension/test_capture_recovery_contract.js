@@ -5,8 +5,7 @@ const { randomUUID, webcrypto } = require('crypto');
 
 const source = fs.readFileSync('background.js', 'utf8') + `
   ;globalThis.__captureRecoveryTest = {
-    handleNativeCommand,
-    setNativePort(value) { nativePort = value; }
+    handleNativeCommand
   };`;
 
 const relayId = 'orch.send.live-capture-regression';
@@ -68,11 +67,20 @@ const context = {
   crypto: { randomUUID, subtle: webcrypto.subtle },
   RelayCore: require('./relay_core.js'),
   RccLegacyCommandPolicy: require('./legacy/command_policy.js'),
+  RccChromeStateRepository: require('./platform/chrome_state_repository.js'),
+  RccBrowserGateway: require('./platform/browser_gateway.js'),
+  RccNativeTransport: require('./platform/native_transport.js'),
+  RccObservationGateway: require('./platform/observation_gateway.js'),
+  RccLifecycle: require('./platform/lifecycle.js'),
   chrome: {
     storage: {
       local: {
         get: async () => store,
         set: async (patch) => Object.assign(store, patch)
+      },
+      session: {
+        get: async () => ({}),
+        set: async () => {}
       }
     },
     tabs: {
@@ -110,7 +118,6 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext(source, context, { filename: 'background.js' });
-context.__captureRecoveryTest.setNativePort(port);
 
 (async () => {
   const before = JSON.stringify(store.relayResultReceiptsV1);

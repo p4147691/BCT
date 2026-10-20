@@ -1,20 +1,11 @@
 const CHAT_URLS = ['https://chatgpt.com/*', 'https://chat.openai.com/*'];
-let browserReadAdapter = null;
-let browserTabMoveAdapter = null;
-let browserTabCreateAdapter = null;
-let browserTabCloseAdapter = null;
-let browserWindowCreateAdapter = null;
-let browserTabReloadAdapter = null;
-
-function getBrowserReadAdapter() {
-  if (browserReadAdapter) return browserReadAdapter;
-  const adapterFactory = globalThis.RccBrowserReadAdapter;
-  if (!adapterFactory) {
-    throw new Error('RCC_BROWSER_READ_ADAPTER_NOT_LOADED');
-  }
-  browserReadAdapter = adapterFactory.create(chrome, CHAT_URLS);
-  return browserReadAdapter;
-}
+const stateRepository = RccChromeStateRepository.create(chrome, () => crypto.randomUUID());
+const browserGateway = RccBrowserGateway.create(chrome, {
+  chatUrls: CHAT_URLS,
+  receiverFiles: ['relay_core.js', 'content.js'],
+});
+const observationGateway = RccObservationGateway.create(chrome);
+const lifecycle = RccLifecycle.create(chrome);
 
 const CONTROL = 'CONTROL';
 
@@ -31,45 +22,29 @@ const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 // protocol after BCT has durably established a terminal outcome.
 const RENAME_RECEIPTS_KEY = 'renameReceiptsV1';
 const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
-const BINDING_SUBMIT_LEASE_TTL_MS = 15000;
 // V0 is deliberately independent from the legacy role/lease registry.  It is
 // only an address book for one Manager and one Worker plus compact delivery
 // receipts; it never creates nodes, queues work, or promotes replies.
 const SIMPLE_RELAY_V0_BINDING_KEY = 'simpleRelayV0Binding';
 const SIMPLE_RELAY_V0_RECEIPTS_KEY = 'simpleRelayV0Receipts';
 
-let relayReceiptMutationChain = Promise.resolve();
 let bindingLeaseMutationChain = Promise.resolve();
 
-let nativePort = null;
-
-let nativeReconnectTimer = null;
+let nativeTransport = null;
 
 const endpointPresence = new Map();
 
 const ENDPOINT_SESSION_STORAGE_KEY = 'rccEndpointSessionIdV1';
 let endpointSessionId = '';
 const endpointSessionReady = (async () => {
-  try {
-    const data = await chrome.storage.session.get([ENDPOINT_SESSION_STORAGE_KEY]);
-    let sessionId = String(data?.[ENDPOINT_SESSION_STORAGE_KEY] || '').trim();
-    if (!/^[a-f0-9]{32}$/i.test(sessionId)) {
-      sessionId = crypto.randomUUID().replaceAll('-', '');
-      await chrome.storage.session.set({ [ENDPOINT_SESSION_STORAGE_KEY]: sessionId });
-    }
-    endpointSessionId = sessionId;
-  } catch (_) {
-    endpointSessionId = crypto.randomUUID().replaceAll('-', '');
-  }
+  endpointSessionId = await stateRepository.getOrCreateSessionId(ENDPOINT_SESSION_STORAGE_KEY);
   return endpointSessionId;
 })();
 
 
-const relayNetworkRequests = new Map();
-
 async function loadState() {
 
-  const data = await chrome.storage.local.get(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, RENAME_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY, SIMPLE_RELAY_V0_BINDING_KEY]);
+  const data = await stateRepository.getLocal(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, RENAME_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY, SIMPLE_RELAY_V0_BINDING_KEY]);
 
   const settings = data.settings || {};
 
@@ -95,7 +70,7 @@ async function loadState() {
 
   }
 
-  if (settingsDirty) await chrome.storage.local.set({ settings });
+  if (settingsDirty) await stateRepository.setLocal({ settings });
 
   return {
 
@@ -170,8 +145,7 @@ function publicResultFromReceipt(receipt) {
 // This is deliberately event-driven: it does not poll ChatGPT, overwrite a
 // user draft, or redirect a result to a different role/tab.
 async function getChatTabs() {
-
-  return getBrowserReadAdapter().queryChatTabs();
+  return browserGateway.queryChatTabs();
 
 }
 
@@ -196,8 +170,7 @@ async function forEachChatTabBounded(tabsValue, worker, concurrency = 4) {
 
 
 function publicTab(tab) {
-
-  return { id: tab.id, windowId: tab.windowId ?? null, title: tab.title || '', url: tab.url || '' };
+  return browserGateway.publicTab(tab);
 
 }
 
@@ -217,8 +190,7 @@ function coreShadowSnapshot(tabs, endpoints, binding) {
 
 
 function isChatTab(tab) {
-
-  return !!(tab?.url && /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//i.test(tab.url));
+  return browserGateway.isChatTab(tab);
 
 }
 
@@ -286,7 +258,7 @@ async function attachEndpointWindowBounds(endpoint) {
 
   try {
 
-    const win = await getBrowserReadAdapter().getWindow(windowId);
+    const win = await browserGateway.getWindow(windowId);
 
     endpoint.windowBounds = {
 
@@ -317,7 +289,7 @@ async function endpointFromTabWithActivity(tab, presence = 'OPEN', reason = '') 
 
   try {
 
-    const probe = await getBrowserReadAdapter().probeActivity(tab.id);
+    const probe = await browserGateway.probeActivity(tab.id);
 
     endpoint.generating = !!probe?.generating;
 
@@ -464,38 +436,12 @@ async function handleEndpointTabRemoved(tabId) {
 }
 
 
-function isMissingReceiver(error) {
-
-  return /Receiving end does not exist|Could not establish connection/i.test(String(error?.message || error || ''));
-
-}
-
-
-async function injectRelayReceiver(tabId) {
-
-  const alreadyReady = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => globalThis.__RCC_RELAY_RECEIVER_READY__ === true,
-  });
-  if (alreadyReady?.[0]?.result === true) return;
-
-  await chrome.scripting.executeScript({
-
-    target: { tabId },
-
-    files: ['relay_core.js', 'content.js', 'act_content.js', 'act_command_bridge.js']
-
-  });
-
-}
-
-
 async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, submittedText) {
-  const tab = await chrome.tabs.get(tabId);
+  const tab = await browserGateway.getExactTab(tabId);
   if (!isChatTab(tab) || RelayCore.conversationKey(tab.url || '') !== String(conversationKey || '')) {
     throw new Error('RELAY_RECOVERY_DIRECT_IDENTITY_MISMATCH');
   }
-  const injected = await chrome.scripting.executeScript({
+  const injected = await browserGateway.executeScript({
     target: { tabId },
     args: [String(submittedText || '')],
     func: (submittedRaw) => {
@@ -637,7 +583,7 @@ async function mutateRegistrationsWithLeaseFence(targets, mutation) {
       targetList.some((target) => bindingLeaseTargetsConflict(lease, target)));
     if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
     const result = await mutation(state);
-    await chrome.storage.local.set({
+    await stateRepository.setLocal({
       registrations: state.registrations,
       [BINDING_SUBMIT_LEASES_KEY]: state.bindingSubmitLeases || {}
     });
@@ -646,22 +592,7 @@ async function mutateRegistrationsWithLeaseFence(targets, mutation) {
 }
 
 async function sendToChatTab(tabId, message) {
-
-  try {
-
-    return await chrome.tabs.sendMessage(tabId, message);
-
-  } catch (error) {
-
-    if (!isMissingReceiver(error)) throw error;
-
-    await injectRelayReceiver(tabId);
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    return chrome.tabs.sendMessage(tabId, message);
-
-  }
+  return browserGateway.sendWithReceiver(tabId, message);
 
 }
 
@@ -677,7 +608,7 @@ function simpleRelayV0TabsForBinding(tabs, binding) {
 async function bindSimpleRelayV0(message) {
   const binding = SimpleRelayV0.binding(message.managerConversationKey, message.workerConversationKey);
   const tabs = simpleRelayV0TabsForBinding(await getChatTabs(), binding);
-  await chrome.storage.local.set({ [SIMPLE_RELAY_V0_BINDING_KEY]: binding });
+  await stateRepository.setLocal({ [SIMPLE_RELAY_V0_BINDING_KEY]: binding });
   return {
     ok: true, binding,
     manager: { tabId: tabs.manager.id, windowId: tabs.manager.windowId },
@@ -686,7 +617,7 @@ async function bindSimpleRelayV0(message) {
 }
 
 async function readSimpleRelayV0Receipts() {
-  const data = await chrome.storage.local.get(SIMPLE_RELAY_V0_RECEIPTS_KEY);
+  const data = await stateRepository.getLocal(SIMPLE_RELAY_V0_RECEIPTS_KEY);
   const receipts = data[SIMPLE_RELAY_V0_RECEIPTS_KEY];
   return receipts && typeof receipts === 'object' ? receipts : {};
 }
@@ -697,7 +628,7 @@ async function writeSimpleRelayV0Receipt(operationId, receipt) {
   const keep = Object.entries(receipts)
     .sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0))
     .slice(0, 32);
-  await chrome.storage.local.set({ [SIMPLE_RELAY_V0_RECEIPTS_KEY]: Object.fromEntries(keep) });
+  await stateRepository.setLocal({ [SIMPLE_RELAY_V0_RECEIPTS_KEY]: Object.fromEntries(keep) });
 }
 
 function publicSimpleRelayV0Receipt(receipt) {
@@ -855,27 +786,7 @@ async function ensureRelayReceivers(tabsValue = null) {
 // Promote an already-bound backup only after ACT has proved that the former
 // manager endpoint is no longer live. This never sends a chat message.
 function postNative(message) {
-
-  try {
-
-    if (nativePort) nativePort.postMessage(message);
-
-  } catch {}
-
-}
-
-
-function scheduleNativeReconnect() {
-
-  if (nativeReconnectTimer) return;
-
-  nativeReconnectTimer = setTimeout(() => {
-
-    nativeReconnectTimer = null;
-
-    connectNativeHost();
-
-  }, 3000);
+  nativeTransport?.post(message);
 
 }
 
@@ -1029,7 +940,7 @@ async function handleNativeCommand(message) {
 
             ? dedicatedRenameReceipt.terminal === true : Boolean(record);
 
-          const tab = await chrome.tabs.get(tabId).catch(() => null);
+          const tab = await browserGateway.getExactTab(tabId).catch(() => null);
 
           const observed = tab ? {
 
@@ -1114,7 +1025,7 @@ async function handleNativeCommand(message) {
     if (message.command === 'main-capture-get') {
 
 
-          const reg=await resolveRegistration(message.to); const x=await chrome.scripting.executeScript({target:{tabId:reg.tabId},world:'MAIN',func:()=>window.__dwRelayCaptured||[]}); postNative({type:'host:result',requestId,ok:true,captured:x?.[0]?.result||[]}); return;
+          const reg=await resolveRegistration(message.to); const x=await browserGateway.executeScript({target:{tabId:reg.tabId},world:'MAIN',func:()=>window.__dwRelayCaptured||[]}); postNative({type:'host:result',requestId,ok:true,captured:x?.[0]?.result||[]}); return;
 
 
         }
@@ -1128,7 +1039,7 @@ async function handleNativeCommand(message) {
           const key = String(reg.conversationKey || '');
 
 
-          const injected = await chrome.scripting.executeScript({ target: { tabId: reg.tabId }, func: async (conversationKey) => {
+          const injected = await browserGateway.executeScript({ target: { tabId: reg.tabId }, func: async (conversationKey) => {
 
 
             const urls=[`/backend-api/conversation/${conversationKey}`,`/backend-api/conversations/${conversationKey}`]; const out=[];
@@ -1165,7 +1076,7 @@ async function handleNativeCommand(message) {
 
             try {
 
-              probe = await chrome.tabs.sendMessage(tab.id, { type: 'relay:probe' });
+              probe = await browserGateway.sendMessage(tab.id, { type: 'relay:probe' });
 
             } catch (err) {
 
@@ -1219,7 +1130,7 @@ async function handleNativeCommand(message) {
             try {
 
 
-              const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => {
+              const result = await browserGateway.executeScript({ target: { tabId: tab.id }, func: () => {
 
 
                 const items = [...document.querySelectorAll('button,[data-testid],[aria-label]')].map((el) => ({
@@ -1269,7 +1180,7 @@ async function handleNativeCommand(message) {
 
             try {
 
-              const result = await chrome.scripting.executeScript({
+              const result = await browserGateway.executeScript({
 
                 target: { tabId: tab.id },
 
@@ -1491,7 +1402,7 @@ async function handleNativeCommand(message) {
 
             try {
 
-              const data = await chrome.storage.local.get([RELAY_RESULT_RECEIPTS_KEY]);
+              const data = await stateRepository.getLocal([RELAY_RESULT_RECEIPTS_KEY]);
 
               const probeReceipt = (data[RELAY_RESULT_RECEIPTS_KEY] || {})[probeRelayId] || null;
 
@@ -1529,7 +1440,7 @@ async function handleNativeCommand(message) {
 
               try {
 
-                const compare = await chrome.scripting.executeScript({
+                const compare = await browserGateway.executeScript({
 
                   target: { tabId: probeReg.tabId },
 
@@ -1639,7 +1550,7 @@ async function handleNativeCommand(message) {
 
             try {
 
-              const result = await chrome.scripting.executeScript({
+              const result = await browserGateway.executeScript({
 
                 target: { tabId: tab.id },
 
@@ -1794,7 +1705,7 @@ async function handleNativeCommand(message) {
           postNative({ type: 'host:result', requestId, ok: true, reloading: true });
 
 
-          setTimeout(() => chrome.runtime.reload(), 50);
+          lifecycle.reload(50);
 
 
           return;
@@ -1809,43 +1720,19 @@ async function handleNativeCommand(message) {
 
 
 async function connectNativeHost() {
+  return nativeTransport.connect();
 
-  if (nativePort) return;
+}
 
-  try {
-
-    const port = chrome.runtime.connectNative(NATIVE_HOST);
-
-    nativePort = port;
-
-    port.onMessage.addListener((message) => handleNativeCommand(message));
-
-    port.onDisconnect.addListener(() => { nativePort = null; scheduleNativeReconnect(); });
-
-    const state = await loadState();
-
-    postNative({ type: 'host:ready', extensionId: chrome.runtime.id,
-
-      instanceId: state.settings.instanceId });
-
-    (async () => {
-
-      const tabs = (await getChatTabs()).filter(isChatTab);
-
-      await ensureRelayReceivers(tabs);
-
-      await publishEndpointSnapshot('native-connect', tabs);
-
-    })().catch(() => {});
-
-  } catch {
-
-    nativePort = null;
-
-    scheduleNativeReconnect();
-
-  }
-
+async function handleNativeConnected(connection) {
+  const state = await loadState();
+  postNative({ type: 'host:ready', extensionId: connection.extensionId,
+    instanceId: state.settings.instanceId });
+  (async () => {
+    const tabs = (await getChatTabs()).filter(isChatTab);
+    await ensureRelayReceivers(tabs);
+    await publishEndpointSnapshot('native-connect', tabs);
+  })().catch(() => {});
 }
 
 
@@ -1863,7 +1750,7 @@ async function resolveRegistration(roleValue) {
 
     try {
 
-      const tab = await chrome.tabs.get(reg.tabId);
+      const tab = await browserGateway.getExactTab(reg.tabId);
 
       if (tab.url && /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//i.test(tab.url)) {
 
@@ -1906,9 +1793,7 @@ async function resolveRegistration(roleValue) {
 
 }
 
-const nativeRelayInflight = new Map();
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+function handleRuntimeMessage(message, sender, sendResponse) {
   (async () => {
     const messageDecision = RccLegacyCommandPolicy.runtimeMessage(message?.type);
     if (!messageDecision.allowed) throw new Error(RccLegacyCommandPolicy.rejectCode('RUNTIME_MESSAGE', message?.type, messageDecision));
@@ -2064,17 +1949,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     throw new Error(`Unknown message type: ${message.type}`);
   })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
+}
+
+nativeTransport = RccNativeTransport.create(chrome, {
+  hostName: NATIVE_HOST,
+  reconnectDelayMs: 3000,
+  onMessage: handleNativeCommand,
+  onConnected: handleNativeConnected,
 });
-
-
+lifecycle.registerRuntimeMessage(handleRuntimeMessage);
+lifecycle.registerStartup(() => connectNativeHost());
+observationGateway.registerTabListeners({
+  onCreated: (tab) => { handleEndpointTabCreated(tab).catch(() => {}); },
+  onUpdated: (tabId, changeInfo, tab) => {
+    handleEndpointTabUpdated(tabId, changeInfo, tab).catch(() => {});
+  },
+  onRemoved: (tabId) => { handleEndpointTabRemoved(tabId).catch(() => {}); },
+});
 connectNativeHost();
-
-chrome.runtime.onStartup.addListener(() => connectNativeHost());
-
-chrome.runtime.onInstalled.addListener(() => connectNativeHost());
-
-chrome.tabs.onCreated?.addListener((tab) => { handleEndpointTabCreated(tab).catch(() => {}); });
-
-chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => { handleEndpointTabUpdated(tabId, changeInfo, tab).catch(() => {}); });
-
-chrome.tabs.onRemoved?.addListener((tabId) => { handleEndpointTabRemoved(tabId).catch(() => {}); });

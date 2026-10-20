@@ -25,14 +25,14 @@ assert.equal(policy.nativeCommand('unknown').allowed, false);
 assert.equal(policy.runtimeMessage('relay:unknown').allowed, false);
 assert(loader.includes("importScripts('legacy/command_policy.js');"));
 const nativeHandler = background.split('async function handleNativeCommand(message) {')[1]
-  .split('chrome.runtime.onMessage.addListener(', 1)[0];
+  .split('async function connectNativeHost(', 1)[0];
 assert(nativeHandler.includes('RccLegacyCommandPolicy.nativeCommand(message.command)'));
 assert(nativeHandler.indexOf('RccLegacyCommandPolicy.nativeCommand(message.command)')
   < nativeHandler.indexOf("message.command === 'simple-relay-send'"));
 for (const command of ['create-chat-tab', 'move-tab', 'register', 'send', 'send-wakeback', 'reload-workers', 'result-ack']) {
   assert(!nativeHandler.includes(`message.command === '${command}'`), `${command} implementation must be pruned`);
 }
-const runtimeHandler = background.split('chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {')[1];
+const runtimeHandler = background.split('function handleRuntimeMessage(message, sender, sendResponse) {')[1];
 assert(runtimeHandler.includes('RccLegacyCommandPolicy.runtimeMessage(message?.type)'));
 assert(runtimeHandler.indexOf('RccLegacyCommandPolicy.runtimeMessage(message?.type)')
   < runtimeHandler.indexOf("message.type === 'relay:getPendingStatus'"));
