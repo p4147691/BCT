@@ -21728,15 +21728,25 @@ function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState)
 
 const monitorBrowserVisualPendingWindowIds = new Set();
 let monitorBrowserVisualRefreshTimer = 0;
+let monitorBrowserVisualRefreshInFlight = false;
+const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 360;
 
 function scheduleMonitorBrowserVisualRefresh(message) {
   const windowId = Number(message?.windowId);
   if (!Number.isInteger(windowId)) return;
 
   monitorBrowserVisualPendingWindowIds.add(windowId);
-  if (monitorBrowserVisualRefreshTimer) clearTimeout(monitorBrowserVisualRefreshTimer);
-  monitorBrowserVisualRefreshTimer = setTimeout(async () => {
+  if (monitorBrowserVisualRefreshTimer || monitorBrowserVisualRefreshInFlight) return;
+  monitorBrowserVisualRefreshTimer = setTimeout(() => {
     monitorBrowserVisualRefreshTimer = 0;
+    void flushMonitorBrowserVisualRefresh();
+  }, MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS);
+}
+
+async function flushMonitorBrowserVisualRefresh() {
+  if (monitorBrowserVisualRefreshInFlight) return;
+  monitorBrowserVisualRefreshInFlight = true;
+  try {
     const windowIds = [...monitorBrowserVisualPendingWindowIds];
     monitorBrowserVisualPendingWindowIds.clear();
     if (!windowIds.length) return;
@@ -21777,7 +21787,58 @@ function scheduleMonitorBrowserVisualRefresh(message) {
     }
     const backgroundIds = [...desktopIds].filter((desktopId) => desktopId !== selectedDesktopId);
     if (backgroundIds.length) await refreshBackgroundThumbs(...backgroundIds).catch(() => []);
-  }, 120);
+  } finally {
+    monitorBrowserVisualRefreshInFlight = false;
+    if (monitorBrowserVisualPendingWindowIds.size && !monitorBrowserVisualRefreshTimer) {
+      monitorBrowserVisualRefreshTimer = setTimeout(() => {
+        monitorBrowserVisualRefreshTimer = 0;
+        void flushMonitorBrowserVisualRefresh();
+      }, MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS);
+    }
+  }
+}
+
+const monitorPopupTopologyPendingDesktopIds = new Set();
+let monitorPopupTopologyRefreshTimer = 0;
+let monitorPopupTopologyRefreshInFlight = false;
+const MONITOR_POPUP_TOPOLOGY_REFRESH_DEBOUNCE_MS = 360;
+
+function scheduleMonitorPopupTopologyRefresh(desktopIds) {
+  for (const desktopId of desktopIds || []) {
+    const key = String(desktopId || "").trim();
+    if (key) monitorPopupTopologyPendingDesktopIds.add(key);
+  }
+  if (!monitorPopupTopologyPendingDesktopIds.size || monitorPopupTopologyRefreshTimer || monitorPopupTopologyRefreshInFlight) return;
+  monitorPopupTopologyRefreshTimer = setTimeout(() => {
+    monitorPopupTopologyRefreshTimer = 0;
+    void flushMonitorPopupTopologyRefresh();
+  }, MONITOR_POPUP_TOPOLOGY_REFRESH_DEBOUNCE_MS);
+}
+
+async function flushMonitorPopupTopologyRefresh() {
+  if (monitorPopupTopologyRefreshInFlight) return;
+  monitorPopupTopologyRefreshInFlight = true;
+  try {
+    const desktopIds = [...monitorPopupTopologyPendingDesktopIds];
+    monitorPopupTopologyPendingDesktopIds.clear();
+    if (!desktopIds.length || !monitorDesktopState.hostDesktopId || monitorDesktopState.hostDesktopId !== monitorDesktopState.currentDesktopId) return;
+    invalidateMonitorDesktopFrames(...desktopIds);
+    for (const desktopId of desktopIds) {
+      const tile = [...monitorDesktopThumbs.children].find((button) => String(button.dataset.desktopId || "") === desktopId);
+      const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
+      if (visual?.isConnected) await refreshDesktopThumb(visual, desktopId).catch(() => false);
+    }
+    const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
+    if (selectedDesktopId && desktopIds.includes(selectedDesktopId)) await refreshObservedWindows().catch(() => false);
+  } finally {
+    monitorPopupTopologyRefreshInFlight = false;
+    if (monitorPopupTopologyPendingDesktopIds.size && !monitorPopupTopologyRefreshTimer) {
+      monitorPopupTopologyRefreshTimer = setTimeout(() => {
+        monitorPopupTopologyRefreshTimer = 0;
+        void flushMonitorPopupTopologyRefresh();
+      }, MONITOR_POPUP_TOPOLOGY_REFRESH_DEBOUNCE_MS);
+    }
+  }
 }
 
 function scheduleMonitorChatNavigationRefresh(message) {
@@ -21838,14 +21899,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     if (!monitorDesktopState.hostDesktopId || monitorDesktopState.hostDesktopId !== monitorDesktopState.currentDesktopId) return;
     const desktopIds = [...new Set((Array.isArray(message?.desktopIds) ? message.desktopIds : []).map((value) => String(value || "").trim()).filter(Boolean))];
     if (!desktopIds.length) return;
-    invalidateMonitorDesktopFrames(...desktopIds);
-    for (const desktopId of desktopIds) {
-      const tile = [...monitorDesktopThumbs.children].find((button) => String(button.dataset.desktopId || "") === desktopId);
-      const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-      if (visual?.isConnected) void refreshDesktopThumb(visual, desktopId).catch(() => false);
-    }
-    const selectedDesktopId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
-    if (selectedDesktopId && desktopIds.includes(selectedDesktopId)) void refreshObservedWindows().catch(() => false);
+    scheduleMonitorPopupTopologyRefresh(desktopIds);
     return;
   }
 
@@ -50683,7 +50737,10 @@ if (!globalThis.MonitorThumbnailService?.create) {
 // prevents a mixed-profile refresh from turning three per-profile limits into
 // six simultaneous native captures.
 const monitorCaptureScheduler = (() => {
-  const maxConcurrent = 2;
+  // One WGC snapshot at a time keeps desktop interaction responsive. Refresh
+  // queues remain coalesced by HWND, so this trades a little thumbnail latency
+  // for a bounded CPU/GPU burst rather than dropping a requested frame.
+  const maxConcurrent = 1;
   const queue = [];
   let active = 0;
   let maxObservedActive = 0;
