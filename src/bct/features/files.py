@@ -10,6 +10,7 @@ from typing import Any
 from bct.core.models import FeatureRequest, FeatureResult, Outcome, PreconditionError, Work
 
 from .common import is_reparse_point, resolve_in_work, sha256_file
+from .snapshot import capture_work_snapshot
 
 
 class FileReadFeature:
@@ -19,15 +20,71 @@ class FileReadFeature:
     batch_max_total_bytes = 1024 * 1024
     batch_max_tree_entries = 2000
 
+    def __init__(self, store=None):
+        self.store = store
+
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "file").strip().casefold()
-        if operation not in {"file", "directory_tree", "batch"}:
+        if operation not in {"file", "directory_tree", "batch", "snapshot"}:
             raise PreconditionError("READ_OPERATION_INVALID")
+        if operation == "snapshot":
+            return self._prepare_snapshot(work=work, arguments=arguments)
         if operation == "batch":
             return self._prepare_batch(work=work, arguments=arguments)
         normalized, resource = self._prepare_item(work=work, arguments=arguments)
         return FeatureRequest(
             self.capability, normalized["path"], normalized, (resource,),
+        )
+
+    def _prepare_snapshot(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        if self.store is None:
+            raise PreconditionError("SNAPSHOT_STORE_UNAVAILABLE")
+        if set(arguments) - {"operation", "files", "receipt_ids", "include_claims"}:
+            raise PreconditionError("SNAPSHOT_ARGUMENT_UNKNOWN")
+        files = arguments.get("files", [])
+        receipt_ids = arguments.get("receipt_ids", [])
+        include_claims = arguments.get("include_claims", True)
+        if (not isinstance(files, list) or len(files) > self.batch_max_items
+                or not isinstance(receipt_ids, list) or len(receipt_ids) > 12
+                or not isinstance(include_claims, bool)):
+            raise PreconditionError("SNAPSHOT_BOUNDS_INVALID")
+        if (any(not isinstance(value, str) or not value.strip()
+                or len(value) > 128 for value in receipt_ids)
+                or len(set(receipt_ids)) != len(receipt_ids)):
+            raise PreconditionError("SNAPSHOT_RECEIPTS_INVALID")
+        normalized_files, resources, seen_ids, seen_paths = [], [], set(), set()
+        total = 0
+        for item in files:
+            if not isinstance(item, dict) or set(item) != {"id", "path"}:
+                raise PreconditionError("SNAPSHOT_FILE_INVALID")
+            identifier = item["id"]
+            if (not isinstance(identifier, str) or not identifier.strip()
+                    or len(identifier) > 128 or identifier in seen_ids):
+                raise PreconditionError("SNAPSHOT_FILE_ID_INVALID")
+            normalized, resource = self._prepare_item(
+                work=work, arguments={"operation": "file", "path": item["path"]},
+            )
+            path = normalized["path"]
+            if path.casefold() in seen_paths:
+                raise PreconditionError("SNAPSHOT_FILE_DUPLICATE")
+            try:
+                size = Path(path).stat().st_size
+            except OSError as exc:
+                raise PreconditionError("SNAPSHOT_FILE_CHANGED") from exc
+            total += size
+            if size > self.batch_max_file_bytes or total > self.batch_max_total_bytes:
+                raise PreconditionError("SNAPSHOT_FILE_TOO_LARGE")
+            normalized_files.append({"id": identifier, "path": path})
+            seen_ids.add(identifier)
+            seen_paths.add(path.casefold())
+            resources.append(resource)
+        return FeatureRequest(
+            self.capability, "snapshot:" + work.work_id,
+            {"operation": "snapshot", "work_id": work.work_id,
+             "owner_principal_id": work.owner_principal_id,
+             "assignment_epoch": work.assignment_epoch,
+             "files": normalized_files, "receipt_ids": receipt_ids,
+             "include_claims": include_claims}, tuple(resources),
         )
 
     def _prepare_batch(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
@@ -107,6 +164,16 @@ class FileReadFeature:
         )
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments["operation"] == "snapshot":
+            output = capture_work_snapshot(self.store, request.arguments)
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": "snapshot", "read_only": True,
+                 "file_count": len(output["files"]),
+                 "receipt_count": len(output["receipts"]),
+                 "claim_count": output["claims"]["count"]},
+                output=output,
+            )
         if request.arguments["operation"] == "batch":
             return self._execute_batch(request.arguments["items"])
         evidence, output = self._execute_item(request.arguments)
