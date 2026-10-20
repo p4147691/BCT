@@ -1,6 +1,6 @@
 # RCC Rebuild V1 — 연결을 유지한 내부 재구축
 
-상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_SOURCE_ONLY_COMPLETED / STAGE_2_LIVE_SHADOW_COMPLETED / STAGE_3_PROTOCOL_VALIDATED / STAGE_3A_SOURCE_RELAY_BOUNDARY_COMPLETED / STAGE_4_MANAGER_TO_WORKER_COMPLETED / STAGE_5_WORKER_TO_MANAGER_COMPLETED / STAGE_6_LEGACY_MUTATION_BLOCKED`
+상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_SOURCE_ONLY_COMPLETED / STAGE_2_LIVE_SHADOW_COMPLETED / STAGE_3_PROTOCOL_VALIDATED / STAGE_3A_SOURCE_RELAY_BOUNDARY_COMPLETED / STAGE_4_MANAGER_TO_WORKER_COMPLETED / STAGE_5_WORKER_TO_MANAGER_COMPLETED / STAGE_6_LEGACY_MUTATION_BLOCKED / STAGE_7_CONVERSATION_NETWORK_SOURCE_FOUNDATION_COMPLETED`
 
 ## 1. 목표와 비목표
 
@@ -14,7 +14,8 @@ RCC가 제공할 기본 기능은 아래 네 가지다.
 4. 제출 뒤 새로 생긴 응답 원문을 읽는다.
 
 Manager·Worker는 사람이나 별도 계정이 아니라 Relay의 두 방향 이름이다. 자동 작업 분배,
-Manager의 판단, 결과 요약은 RCC Core의 책임이 아니다.
+Manager의 판단, 결과 요약은 RCC Core의 책임이 아니다. 7단계의 대화망은 이를 권한 계층으로
+바꾸지 않으며, 프로젝트별 대화창·역할 태그·관측 사실·전달 영수증을 다루는 별도 계약이다.
 
 이번 재구축에서 하지 않는 일:
 
@@ -22,7 +23,7 @@ Manager의 판단, 결과 요약은 RCC Core의 책임이 아니다.
 - Chrome profile이나 기존 ChatGPT 대화 교체
 - Native Host 이름·등록 위치·실행 파일 경로 변경
 - 기존 대화 내용을 다른 저장소로 이관
-- ACK 감시, 자동 노드 생성, 자동 작업 분배 같은 새 기능 추가
+- ACK 감시, 자동 노드 생성, 자동 작업 분배 같은 새 기능의 LIVE 실행
 - 실패한 전송을 구경로로 자동 재시도
 
 ## 2. 현재 정상 기준선
@@ -179,7 +180,16 @@ UUID 동일성 확인이 모두 통과한다.
 
 통과 조건: 허용된 새 Relay 이외의 변경 명령이 명시적으로 거부되고, 기존 기록 조회는 된다.
 
-### 7단계 — 정리와 제거
+### 7단계 — 대화망 기반과 Legacy 정리 분리
+
+- 먼저 source-only 대화망 계약을 추가한다. 프로젝트별 대화창의 표시 이름, 권한 없는 역할
+  태그, 마지막 관측 상태, 원문 전달·반환의 분리된 영수증과 방향별 이어가기 안내문을 다룬다.
+- 대화망 계약은 탭/창/권한/자동 전송을 직접 조작하지 않는다. 실제 저장·화면·Browser Adapter
+  연결은 별도 acceptance를 거친다.
+- legacy 실행 코드의 삭제는 대화 관리 기능(탭 생성·이동·닫기)과 관측 기능을 새 Adapter로
+  이식·검증한 뒤에만 시작한다. 6단계의 차단은 삭제 완료를 뜻하지 않는다.
+
+### 8단계 — 정리와 제거
 
 - 안정화 기간 동안 연결 상태, protocol mismatch, UNKNOWN effect, 중복 turn이 없는지 확인한다.
 - legacy 파일의 실제 호출자가 0임을 정적 검색과 runtime 계측으로 모두 확인한다.

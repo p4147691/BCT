@@ -127,6 +127,20 @@ rejection으로 차단됐으며 전후 Manager/Worker state·binding은 동일�
 노드 생성·메시지 전송은 없었다. 상세는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE6_LEGACY_BLOCK_20261020.md`에 있다.
 
+## 완료 — RCC Rebuild V1 7단계 대화망 기반 (source-only)
+
+고정 Manager/Worker를 권한 계층으로 확대하지 않고, 프로젝트 안의 대화창을 표시 이름,
+사용자 관리 역할 태그, 안내용 활동 상태, 마지막 관측 사실로 표현하는 순수 대화망 계약을
+추가했다. 역할 태그는 `구현`·`CI`·`병합`·`배포`·`조정`처럼 자유롭게 추가·삭제되는 추천
+표지이며, 명시 대상 전달을 차단하거나 권한을 주지 않는다.
+
+방향별 relay envelope도 source에만 추가했다. A→B 전달에는 처리 전문이 A로 돌아온다는
+반환 안내를, B→A 반환에는 다음 전달서 또는 완료를 판단하라는 후속 안내를 붙인다. 원문과
+안내문은 별도 스냅샷으로 보존된다. 새 대화창 생성·탭 이동·자동 실행은 이 단계에 포함되지
+않고, legacy 탭 관리 기능도 제거하지 않았다. installed extension, reload, Native Host, Chrome
+탭, storage, binding, 실제 메시지는 바꾸지 않았다. 세부와 검증은
+`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE7_CONVERSATION_NETWORK_FOUNDATION_20261020.md`에 있다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /

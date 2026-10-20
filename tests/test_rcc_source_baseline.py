@@ -128,6 +128,18 @@ class RccSourceBaselineTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
         self.assertIn("12 tests PASS", completed.stdout)
 
+    def test_conversation_network_is_directory_only_and_envelopes_preserve_the_body(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is unavailable")
+        completed = subprocess.run(
+            [node, "test_conversation_network_v7.js"], cwd=str(self.extension),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+        self.assertIn("conversation network v7: PASS", completed.stdout)
+
     def test_first_message_navigation_ack_recovery(self):
         node = shutil.which("node")
         if not node:

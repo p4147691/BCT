@@ -20,6 +20,16 @@ A local-only Chrome Manifest V3 extension that relays messages between registere
 - Arming is bounded to 6 commands by the popup (hard cap 12).
 - CONTROL directives require a per-install random token.
 - Worker reports have relay markers escaped before returning to CONTROL.
+
+## Conversation network foundation
+
+The rebuilt RCC keeps a project conversation network as a directory, not an
+authority graph. A conversation has a display name, user-managed role tags,
+and last observed state. Tags are routing hints only: an explicitly named
+conversation can always receive a relay. `relay/envelope.js` appends a visible
+return prompt to a handoff and a visible follow-up prompt to a return while
+preserving the original body as a separate snapshot. The source-only contract
+does not yet persist the directory or alter live relay payloads.
 ## First run
 
 1. Open `chrome://extensions`.
