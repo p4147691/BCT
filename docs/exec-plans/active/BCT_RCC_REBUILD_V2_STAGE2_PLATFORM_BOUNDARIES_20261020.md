@@ -1,6 +1,6 @@
 # RCC Rebuild V2-2 — 플랫폼 경계 일괄 분리
 
-상태: `SOURCE_COMPLETE / LOCAL_VERIFIED / RCC_LIVE_UNCHANGED`
+상태: `SOURCE_COMPLETE / CI_PASS / RCC_LIVE_UNCHANGED`
 
 ## 범위
 
@@ -46,5 +46,6 @@ background는 아직 도메인 service와 큰 native command route를 포함한�
 - `python -m compileall -q src tests`: PASS
 - `git diff --check`: PASS
 
-원격 CI 결과와 exact source commit은 commit 이후 추가한다. V2-4 이전에는 이 source payload를
-LIVE RCC 설치본에 복사하거나 확장을 reload하지 않는다.
+exact source commit은 `a2d20c80d9d3b35b134f6f0f86220fb947a0b202`이며 GitHub Actions
+`BCT CI` run `39390634666`의 preflight, core 4개 shard, browser-bridge가 모두 통과했다.
+V2-4 이전에는 이 source payload를 LIVE RCC 설치본에 복사하거나 확장을 reload하지 않는다.

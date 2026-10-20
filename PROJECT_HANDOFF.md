@@ -1028,4 +1028,6 @@ fail-closed 오류는 유지했다.
 제외했다. 남은 RCC JavaScript 테스트 21개와 focused Python 계약 18개가 통과했다. LIVE RCC
 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE2_PLATFORM_BOUNDARIES_20261020.md`를 따른다.
-다음 단계는 V2-3 활성 도메인·content 일괄 분리이며 계속 source-only다.
+exact source commit `a2d20c80d9d3b35b134f6f0f86220fb947a0b202`의 GitHub Actions
+`BCT CI` run `39390634666`도 전체 통과했다. 다음 단계는 V2-3 활성 도메인·content 일괄
+분리이며 계속 source-only다.
