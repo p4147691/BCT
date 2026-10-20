@@ -72,6 +72,14 @@ fail-closed 되었고, manifest/token 변경 없이 중단됐다. 같은 후보�
 browser security policy가 차단하므로 이를 우회하지 않는다. 열려 있는 Monitor의 공식 `설치본 리로드` 버튼으로
 same-ID reload가 완료된 뒤에만 E2E를 계속한다.
 
+## 후속 정리 — 일반 Chrome 카운트다운 표시 제거
+
+일반 Chrome 창이 ChatGPT 대화로 식별되기를 잠시 기다리는 기존 30초 grace filter는 유지하되, 이 창은 Monitor
+노드가 아니므로 노란 `28s` 같은 화면 카운트다운을 만들지 않도록 변경했다. 기존 payload가 남긴 overlay는 다음
+화면 동기화에서 제거한다. 이 변경은 ChatGPT 노드 번호, `N?` 규칙, 창 최소화/복원, Native Host 관측과 Chrome
+창 조작을 변경하지 않는다. source 검증은 `check_monitor_non_chat_countdown_hidden.js` 및 기존 Monitor 회귀로
+통과했으며, 설치본에는 다음 versioned publish와 same-ID reload 전까지 적용되지 않는다.
+
 이전에는 `ISOLATED_ACCEPTED`로 올리려면 다음 중 하나의 **읽기 전용·fresh** 대조 계약이 필요했다.
 
 - Monitor/RCC가 현재 session의 Chrome `window_id`, `tab_id`, conversation key와 Native Host가

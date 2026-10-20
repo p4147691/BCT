@@ -52915,6 +52915,7 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 
 
+
   const key = String(hwnd || "");
 
 
@@ -53834,6 +53835,12 @@ function syncMonitorDesktopNumberBadge(img, hwnd) {
 
 
 function syncMonitorNonChatCountdown(img, hwnd, now = Date.now()) {
+  // Non-ChatGPT Chrome windows remain filtered by the grace-state logic, but
+  // they are not Monitor nodes and must not receive a visible countdown.
+  if (img?.parentElement) {
+    img.parentElement.querySelectorAll(".monitor-window-non-chat-countdown").forEach((node) => node.remove());
+  }
+  return;
 
 
 

@@ -1755,13 +1755,10 @@
 
 
 
-.monitor-window-non-chat-countdown{position:absolute;pointer-events:none;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:2px dashed rgba(255,190,88,.96);background:rgba(18,10,2,.16);color:#ffd38a;font:900 16px/1 "Segoe UI","Malgun Gothic",sans-serif;text-shadow:0 1px 3px #000;}
 
 
-.monitor-window-non-chat-countdown::after{content:attr(data-hwnd);display:none;}
 
 
-.monitor-window-non-chat-countdown-thumb{font-size:10px;border-width:1px;}
 
 
 
