@@ -18,6 +18,23 @@ gate는 `docs/exec-plans/active/BCT_RCC_REBUILD_V1.md`에 고정했다. Simple R
 코드 변경이 아닌 0단계 기준선 동결과 비-LIVE 임시 디렉터리에서의 exact backup 복구
 rehearsal뿐이다.
 
+## 완료 — RCC Rebuild V1 0단계 기준선·비-LIVE 복구 rehearsal
+
+2026-10-20 09:44 KST에 RCC의 LIVE extension ID/path, Native Host registry/manifest/executable,
+Simple Relay V0 binding과 대상 대화 상태를 읽기 전용으로 고정했다. Manager/Worker conversation
+UUID는 각각 열린 endpoint로 해석됐고 두 대화 모두 OPEN·비생성중이었다. LIVE extension 32개
+파일을 D:\BCT\runtime\backups\rcc-rebuild-v1-baseline-20261020-093700에 백업하고,
+D:\BCT\runtime\rehearsals\rcc-rebuild-v1-baseline-20261020-093700에만 다시 복원했다.
+원본↔backup, backup↔rehearsal은 각각 SHA-256 불일치 0건이다. Native manifest/executable도
+backup과 일치한다. 확장 reload, Native Host 재시작, Chrome 탭 동작, 대화 전송, storage 변경은
+없었다.
+
+source와 LIVE의 실행·표시 payload 29개 파일은 모두 일치한다. source-only test/fixture 9개와
+LIVE-only 비실행 이전 테스트/backup 파일 3개는 실행 payload 불일치가 아니라 명시적으로
+분리한 잔존 파일이다. 상세 기준선과 복구 증거는
+docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE0_BASELINE_20261020.md에 있다. 다음 단계는
+LIVE에 손대지 않는 source-only Core 분리다.
+
 ## 진행 — RCC Simple Relay V0 LIVE 단일 전달
 
 RCC extension 1.0.22는 기존 orchestration role registry와 분리된 `simple-relay-bind` /

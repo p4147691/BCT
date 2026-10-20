@@ -1,6 +1,6 @@
 # RCC Rebuild V1 — 연결을 유지한 내부 재구축
 
-상태: `PLAN_READY_IMPLEMENTATION_NOT_STARTED`
+상태: `STAGE_0_BASELINE_COMPLETED / STAGE_1_NOT_STARTED`
 
 ## 1. 목표와 비목표
 
@@ -251,6 +251,8 @@ tab/window/session ID와 상세 해시는 진단 상세에서만 보여준다. �
 
 ## 10. 다음 실행 단위
 
-다음 작업은 **0단계 기준선 동결과 비-LIVE 복구 rehearsal만** 수행한다. Core 분리, 확장 reload,
-LIVE 코드 전환을 같은 작업에 섞지 않는다. 0단계 결과와 복구 가능성이 확인된 뒤에만 1단계를
-시작한다.
+0단계의 실제 결과는
+`docs/exec-plans/active/BCT_RCC_REBUILD_V1_STAGE0_BASELINE_20261020.md`에 고정했다.
+
+다음 작업은 **1단계 source-only Core 분리**다. installed payload, extension reload, Native Host,
+Chrome 탭, Relay binding을 같은 작업에 섞지 않는다.
