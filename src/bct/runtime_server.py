@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import hmac
 import os
 import re
@@ -15,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 
 from bct import BCT
-from bct.core.models import BCTError, Principal, Work
+from bct.core.models import BCTError, ConflictError, Outcome, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
 from bct.bottleneck_ack import BottleneckAckController, load_bottleneck_ack_policy
@@ -103,13 +104,82 @@ def run_monitor_conversation_rename(
         "title": title,
         "timeout_s": payload.get("timeout_s", 30.0),
     }
-    return bct.operations.run(
-        principal=principal,
-        work_id=MONITOR_WORK_ID,
-        operation_id=operation_id,
-        capability="relay_browser",
-        arguments=arguments,
-    ).as_dict()
+    def run_once() -> dict[str, Any]:
+        return bct.operations.run(
+            principal=principal,
+            work_id=MONITOR_WORK_ID,
+            operation_id=operation_id,
+            capability="relay_browser",
+            arguments=arguments,
+        ).as_dict()
+
+    try:
+        return run_once()
+    except ConflictError as exc:
+        match = re.fullmatch(
+            r"RESOURCE_ALREADY_CLAIMED:SAME_WORK:"
+            r"([A-Za-z0-9_.:-]+):FINISHED:UNKNOWN:REVIEW_UNRESOLVED",
+            str(exc),
+        )
+        if match is None:
+            raise
+
+        original_operation_id = match.group(1)
+        inspection_id = "monitor.rename.inspect." + hashlib.sha256(
+            f"{operation_id}:{original_operation_id}".encode("utf-8")
+        ).hexdigest()[:32]
+        inspection = bct.operations.run(
+            principal=principal,
+            work_id=MONITOR_WORK_ID,
+            operation_id=inspection_id,
+            capability="relay_browser",
+            arguments={
+                "command": "inspect-rename-receipt",
+                "instance_id": arguments["instance_id"],
+                "relay_id": original_operation_id,
+                "tab_id": arguments["tab_id"],
+                "conversation_key": arguments["conversation_key"],
+                "timeout_s": min(float(arguments["timeout_s"]), 5.0),
+            },
+        ).as_dict()
+        if inspection.get("outcome") != Outcome.APPLIED.value:
+            raise ConflictError("MONITOR_RENAME_PRIOR_INSPECTION_NOT_APPLIED") from exc
+        host_result = inspection.get("output", {}).get("result", {})
+        observed = host_result.get("observed", {}) if isinstance(host_result, dict) else {}
+        exact_open = (
+            host_result.get("ok") is True
+            and host_result.get("instanceId") == arguments["instance_id"]
+            and host_result.get("relayId") == original_operation_id
+            and observed.get("tabId") == int(arguments["tab_id"])
+            and observed.get("conversationKey") == arguments["conversation_key"]
+            and observed.get("presence") == "OPEN"
+            and bool(str(observed.get("currentSessionId") or "").strip())
+            and bool(str(observed.get("title") or "").strip())
+        )
+        if not exact_open:
+            raise ConflictError("MONITOR_RENAME_PRIOR_IDENTITY_NOT_OPEN") from exc
+
+        resource_key = (
+            "rcc-instance:" + arguments["instance_id"]
+            + ":rename:" + str(int(arguments["tab_id"]))
+            + ":" + arguments["conversation_key"]
+        )
+        observed_title = str(observed["title"])
+        bct.store.supersede_unverified_exact_rename_claim(
+            original_operation_id=original_operation_id,
+            expected_work_id=MONITOR_WORK_ID,
+            expected_principal_id=principal.principal_id,
+            expected_resource_key=resource_key,
+            successor_operation_id=operation_id,
+            observation={
+                "presence": "OPEN",
+                "current_session_id": str(observed["currentSessionId"]),
+                "title": observed_title,
+                "title_sha256": hashlib.sha256(observed_title.encode("utf-8")).hexdigest(),
+                "receipt_state": str(host_result.get("receiptState") or "UNKNOWN"),
+            },
+        )
+        return run_once()
 
 
 def parse_arguments() -> argparse.Namespace:

@@ -1054,6 +1054,60 @@ class Store:
                 (resolver_operation_id,)).fetchone()
         return self._row_result(row)
 
+    def supersede_unverified_exact_rename_claim(
+        self, *, original_operation_id: str, expected_work_id: str,
+        expected_principal_id: str, expected_resource_key: str,
+        successor_operation_id: str, observation: dict[str, Any],
+    ) -> None:
+        """Retire one exact cosmetic rename fence after fresh target inspection.
+
+        The original operation remains FINISHED/UNKNOWN. This does not decide
+        whether its historical effect happened; it records that a new explicit
+        user rename supersedes that old final-state request for the same exact
+        tab/conversation. No RCC mutation is replayed by this transaction.
+        """
+        if (not expected_resource_key.startswith("rcc-instance:")
+                or ":rename:" not in expected_resource_key
+                or not successor_operation_id
+                or observation.get("presence") != "OPEN"
+                or not str(observation.get("current_session_id") or "").strip()
+                or not str(observation.get("title") or "").strip()):
+            raise ConflictError("RCC_RENAME_SUPERSEDE_INVALID_EVIDENCE")
+        with self.transaction() as db:
+            original = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?",
+                (original_operation_id,),
+            ).fetchone()
+            claim = db.execute(
+                "SELECT * FROM resource_claims WHERE operation_id=? AND resource_key=?"
+                " AND unresolved=1",
+                (original_operation_id, expected_resource_key),
+            ).fetchone()
+            if (original is None or claim is None
+                    or original["work_id"] != expected_work_id
+                    or original["principal_id"] != expected_principal_id
+                    or claim["work_id"] != expected_work_id
+                    or original["capability"] != "relay_browser"
+                    or original["state"] != OperationState.FINISHED.value
+                    or original["outcome"] != Outcome.UNKNOWN.value
+                    or not str(original["error"] or "").startswith(
+                        "RCC_HOST_OUTCOME_UNVERIFIED:")):
+                raise ConflictError("RCC_RENAME_SUPERSEDE_ORIGINAL_FENCE")
+            db.execute(
+                "UPDATE resource_claims SET unresolved=0 WHERE operation_id=?"
+                " AND resource_key=? AND unresolved=1",
+                (original_operation_id, expected_resource_key),
+            )
+            self._event(db, "RCC_RENAME_UNKNOWN_SUPERSEDED", original_operation_id, {
+                "successor_operation_id": successor_operation_id,
+                "original_outcome_preserved": "UNKNOWN",
+                "resource_key": expected_resource_key,
+                "observed_presence": "OPEN",
+                "observed_current_session_id": str(observation["current_session_id"]),
+                "observed_title_sha256": str(observation.get("title_sha256") or ""),
+                "receipt_state": str(observation.get("receipt_state") or "UNKNOWN"),
+            })
+
     def finish_operation(self, *, operation_id: str, outcome: Outcome,
                          evidence: dict[str, Any], error: str | None,
                          release_claims: bool,

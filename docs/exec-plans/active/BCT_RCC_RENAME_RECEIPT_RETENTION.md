@@ -67,3 +67,16 @@ This plan authorizes source and isolated tests only.  It does not authorize
 RCC reload, Chrome modification, Core deployment, historical claim mutation,
 or Issue #111 E2E.  Before any activation, verify exact source SHA, payload
 hash, install path and a controlled new-target test under separate approval.
+
+## 2026-10-21 exact-claim successor draft
+
+Monitor에서 생성된 새 형식의 exact rename Claim은 과거 broad Claim과 구분한다.
+같은 대화의 이전 rename이 `FINISHED / UNKNOWN`인 경우에도 사용자가 새로운 제목을
+명시하면, 이전 Operation을 재실행하지 않고 `inspect-rename-receipt`로 현재
+instance/tab/conversation이 정확히 `OPEN`인지 다시 관측한다. 현재 session과 실제
+제목이 확인된 경우에만 이전 exact 실행 예약을 종료하고 새로운 Operation ID의 요청을
+한 번 실행한다. 이전 UNKNOWN 결과와 영수증은 그대로 보존한다.
+
+이 초안은 receipt가 사라진 historical broad Claim을 해제하지 않으며, 현재 대화가
+닫혔거나 식별이 달라지면 fail-closed 한다. source focused test까지만 완료하고 별도
+PR·Core 배포·RCC reload·실제 이름 변경은 아직 수행하지 않는다.
