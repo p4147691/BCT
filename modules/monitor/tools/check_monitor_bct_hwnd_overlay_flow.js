@@ -5,6 +5,44 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
+const monitorSource = fs.readFileSync(path.join(__dirname, "../extension/monitor.js"), "utf8");
+assert.match(monitorSource,
+  /rememberMonitorDesktopWindows\(desktopId, liveWindows\);\s*await refreshMonitorBctThumbnailProjectionForDesktop\(desktopId\);/,
+  "fresh Native thumbnail geometry must trigger the bounded RCC window_id -> HWND display projection");
+assert.match(monitorSource,
+  /async function refreshMonitorBctThumbnailProjectionForDesktop\(desktopId\)[\s\S]*await refreshMonitorBctBrowserWindowGeometry\(\);[\s\S]*refreshMonitorBctDisplayWindowHwnd\(\);/,
+  "thumbnail projection must refresh Chrome geometry before resolving the display-only HWND binding");
+
+const projectionStart = monitorSource.indexOf("async function refreshMonitorBctThumbnailProjectionForDesktop(");
+const projectionEnd = monitorSource.indexOf("\nfunction monitorBctProjectionHasUnresolvedLineage(", projectionStart);
+assert.ok(projectionStart > 0 && projectionEnd > projectionStart, "thumbnail projection helper must be extractable");
+let browserGeometryRefreshes = 0;
+let displayRefreshes = 0;
+let browserGeometryFresh = false;
+let unresolvedProjection = true;
+const projectionContext = {
+  monitorBctWindowNodesCache: [{ windowId: 594834491 }],
+  monitorWindowDesktopLocations: new Map([["132482", {
+    hwnd: "132482", desktopId: "desktop-2", className: "Chrome_WidgetWin_1",
+    left: 1273, top: 696, width: 1294, height: 703, iconic: false,
+  }]]),
+  monitorBctThumbnailProjectionAttemptKeys: new Set(),
+  monitorBctProjectionGeneration: 7,
+  refreshMonitorBctCurrentSessionWindowHwnd() {},
+  refreshMonitorBctDisplayWindowHwnd() {
+    displayRefreshes += 1;
+    if (browserGeometryFresh) unresolvedProjection = false;
+  },
+  monitorBctProjectionHasUnresolvedLineage: () => unresolvedProjection,
+  async refreshMonitorBctBrowserWindowGeometry() {
+    browserGeometryRefreshes += 1;
+    browserGeometryFresh = true;
+  },
+  Array, Boolean, Map, Set, String, Number,
+};
+vm.createContext(projectionContext);
+vm.runInContext(monitorSource.slice(projectionStart, projectionEnd), projectionContext);
+
 function load(relativePath, context) {
   const source = fs.readFileSync(path.join(__dirname, "..", "extension", relativePath), "utf8");
   vm.runInContext(source, context);
@@ -19,6 +57,19 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
+
+(async () => {
+  assert.equal(await projectionContext.refreshMonitorBctThumbnailProjectionForDesktop("desktop-2"), true,
+    "fresh Native HWND geometry must be joined after refreshing Chrome window geometry");
+  assert.equal(browserGeometryRefreshes, 1);
+  assert.equal(displayRefreshes, 2, "display projection is checked before and after refreshing Chrome geometry");
+
+  unresolvedProjection = true;
+  browserGeometryFresh = false;
+  assert.equal(await projectionContext.refreshMonitorBctThumbnailProjectionForDesktop("desktop-2"), false,
+    "the same thumbnail geometry must not start an unbounded Chrome refresh loop");
+  assert.equal(browserGeometryRefreshes, 1);
+
 load("monitor-bct-shell.js", context);
 load("monitor-window-hwnd-contract.js", context);
 
@@ -104,3 +155,7 @@ assert.equal(ambiguousDisplay.bindings.length, 0, "identical Native geometry mus
 assert.ok(ambiguousDisplay.rejected.some((item) => item.reason === "HWND_GEOMETRY_AMBIGUOUS"));
 
 console.log("PASS: exact action binding stays strict while unique window_id geometry restores display-only N4/7/9 after reload");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

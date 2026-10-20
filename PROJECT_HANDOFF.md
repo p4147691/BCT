@@ -1184,3 +1184,18 @@ LIVE RCC 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다
 exact source commit `62317038bd50b848f6d49714029630c3fda03040`의 GitHub Actions
 `BCT CI` run `39393918353`도 전체 통과했다. 다음 단계는 V2-4 통합 Release Candidate
 검증이며 계속 비-LIVE다.
+
+## Monitor 섬네일 실제 Chrome 창 번호 결합 후속
+
+2026-10-21 LIVE `v2.0.12`에서 BWM 노드 카드는 `N4/N7/N9`를 표시했지만 데스크톱 섬네일 속
+실제 Chrome 창에는 `N4/7/9` 오버레이가 나타나지 않았다. RCC의 동일 Chrome
+`window_id 594834491`과 Native Host의 대상 `HWND 132482` 및 D2 좌표는 모두 정상이라 정보
+부재가 아니었다. Native thumbnail geometry와 RCC/Chrome geometry가 비동기로 도착하는데,
+Native 좌표 저장 후 display-only 결합을 재계산하지 않는 순서 결함이 원인이다.
+
+수정은 fresh Native HWND geometry 저장 직후 미대조 lineage에 한해서만 Chrome geometry를
+갱신하고 표시 전용 `window_id → HWND` projection을 다시 계산한다. 같은 projection generation,
+desktop, geometry는 한 번만 시도하므로 과거 Monitor 부하 문제를 되살리는 polling이 아니다.
+exact action binding, RCC, Native Host, Claim 및 기존 UNKNOWN은 변경하지 않는다. focused overlay,
+HWND, minimized, interaction, backpressure, deployment 회귀와 Monitor 구조 검사를 통과한 뒤
+정확한 main SHA와 설치 payload를 배포하고 reload 후 실제 화면 수락을 받아야 한다.

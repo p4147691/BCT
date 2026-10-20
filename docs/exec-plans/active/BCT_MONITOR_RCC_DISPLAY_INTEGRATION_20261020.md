@@ -240,3 +240,21 @@ ID 기준으로 각 효과 소유자가 거부하는 별도 격리 단계다.
 
 source branch는 GitHub `feat/monitor-rcc-display-integration-20261020`의 `7437ef3`이다. payload rollback은
 위 backup 디렉터리의 file-level snapshot으로 하고, reload 전에는 새 payload를 실행 중이라고 주장하지 않는다.
+
+## 2026-10-21 섬네일 내부 번호 미표시 원인 확정
+
+LIVE `v2.0.12`에서 노드 카드의 `N4/N7/N9`는 정상인데 데스크톱 섬네일 속 실제 Chrome 창에는
+`N4/7/9`가 없었다. 읽기 전용 대조 결과 RCC는 세 노드를 동일 Chrome `window_id 594834491`로
+보존했고, Native Host는 대상 ChatGPT 창을 `HWND 132482`와 실제 D2 좌표로 관측했다. 따라서
+데이터 부재나 CSS 레이어 문제가 아니라 실행 순서 결함이다.
+
+RCC/Chrome geometry 조회가 먼저 끝난 뒤 Native 섬네일 geometry가 도착하면 기존 코드는
+`rememberMonitorDesktopWindows()`로 실제 HWND 좌표만 갱신하고 display-only 결합을 다시 계산하지
+않았다. 반대 순서에서는 Native 좌표가 5초 freshness 창을 벗어나 같은 문제가 났다. 수정은 실제
+데스크톱 캡처가 fresh HWND geometry를 저장한 직후, 아직 미대조 lineage가 있을 때만 Chrome
+window geometry를 한 번 갱신하고 `window_id → HWND` 표시 결합을 재계산한다. 동일 projection
+generation·desktop·geometry 조합은 재시도하지 않아 배경 polling이나 증폭 호출을 만들지 않는다.
+
+회귀는 실제 호출 순서(`remember → bounded projection refresh`)와 fresh Native/Chrome geometry의
+결합 성공, 동일 geometry 무한 재조회 방지를 검증한다. 기존 exact action binding은 완화하지 않으며,
+표시 결합 실패 시 임의 HWND에 번호를 붙이지 않는다.

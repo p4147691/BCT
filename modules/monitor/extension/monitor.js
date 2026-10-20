@@ -43216,6 +43216,7 @@ let monitorBctProjectionConvergenceTimer = 0;
 let monitorBctProjectionConvergenceKey = "";
 let monitorBctProjectionConvergenceAttempt = 0;
 let monitorBctProjectionConvergenceInflight = false;
+let monitorBctThumbnailProjectionAttemptKeys = new Set();
 const MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object.freeze([0, 450, 1400]);
 
 function scheduleMonitorMinimizedBadgeConvergence(hwnd) {
@@ -43237,12 +43238,46 @@ if (monitorWorkers) monitorWorkers.dataset.columns = "3";
 
 function resetMonitorBctProjectionConvergence() {
   monitorBctProjectionGeneration += 1;
+  monitorBctThumbnailProjectionAttemptKeys = new Set();
   monitorBctProjectionConvergenceKey = "";
   monitorBctProjectionConvergenceAttempt = 0;
   if (monitorBctProjectionConvergenceTimer) {
     clearTimeout(monitorBctProjectionConvergenceTimer);
     monitorBctProjectionConvergenceTimer = 0;
   }
+}
+
+async function refreshMonitorBctThumbnailProjectionForDesktop(desktopId) {
+  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorBctWindowNodesCache.length) return false;
+
+  // Native thumbnail capture and the RCC/Chrome snapshot arrive independently.
+  // Resolve once while this desktop's HWND geometry is fresh so the semantic
+  // N-label is attached to the real browser rectangle rather than to a node card.
+  refreshMonitorBctCurrentSessionWindowHwnd();
+  refreshMonitorBctDisplayWindowHwnd();
+  if (!monitorBctProjectionHasUnresolvedLineage()) return true;
+
+  const chromeLocations = [...monitorWindowDesktopLocations.values()].filter((location) =>
+    String(location?.desktopId || "") === String(desktopId || "") &&
+    String(location?.className || "") === "Chrome_WidgetWin_1" &&
+    Number(location?.width) > 0 && Number(location?.height) > 0
+  );
+  if (!chromeLocations.length) return false;
+
+  const locationKey = chromeLocations.map((location) =>
+    `${location.hwnd}:${location.left}:${location.top}:${location.width}:${location.height}:${location.iconic ? 1 : 0}`
+  ).sort().join(",");
+  const attemptKey = `${monitorBctProjectionGeneration}:${desktopId}:${locationKey}`;
+  if (monitorBctThumbnailProjectionAttemptKeys.has(attemptKey)) return false;
+  monitorBctThumbnailProjectionAttemptKeys.add(attemptKey);
+  if (monitorBctThumbnailProjectionAttemptKeys.size > 24) {
+    monitorBctThumbnailProjectionAttemptKeys = new Set([attemptKey]);
+  }
+
+  await refreshMonitorBctBrowserWindowGeometry();
+  refreshMonitorBctCurrentSessionWindowHwnd();
+  refreshMonitorBctDisplayWindowHwnd();
+  return !monitorBctProjectionHasUnresolvedLineage();
 }
 
 function monitorBctProjectionHasUnresolvedLineage() {
@@ -52446,6 +52481,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
       return { ...previous, ...item, conversationKey: String(item?.conversationKey || previous?.conversationKey || actByHwnd.get(hwnd)?.conversationKey || "") };
     });
     rememberMonitorDesktopWindows(desktopId, liveWindows);
+    await refreshMonitorBctThumbnailProjectionForDesktop(desktopId);
 
 
 
