@@ -1976,6 +1976,21 @@
 
 .monitor-alert-tone-action::before,.monitor-work-state.monitor-alert-tone-action{color:#ff9b52!important;text-shadow:0 0 6px rgba(255,155,82,.84),0 0 14px rgba(245,120,45,.58)!important;}
 
+/* THUMBNAIL_STATUS_SVG_V1: semantic status is rendered by inline SVG, never
+   text glyphs. All icon variants intentionally use one white monochrome. */
+.monitor-work-state{position:relative;overflow:visible;color:#fff!important;font-size:0!important;text-shadow:none!important;}
+.monitor-status-icon{display:block;width:100%;height:100%;fill:#fff;stroke:#fff;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round;color:#fff;}
+.monitor-status-icon-play,.monitor-status-icon-complete,.monitor-status-icon-pause{stroke:none;}
+.monitor-status-icon-warning{position:absolute;width:58%;height:58%;right:-28%;bottom:-25%;fill:none!important;stroke:#fff!important;stroke-width:2.1;filter:drop-shadow(0 0 2px rgba(0,0,0,.78));}
+.monitor-window-pause-overlay{display:grid!important;place-items:center!important;}
+.monitor-window-pause-overlay::before{content:none!important;display:none!important;}
+.monitor-window-pause-overlay>.monitor-status-icon{position:absolute;width:clamp(20px,4.7vw,44px);height:clamp(20px,4.7vw,44px);filter:drop-shadow(0 0 5px rgba(0,0,0,.78));}
+.monitor-window-pause-overlay-thumb>.monitor-status-icon{width:20px;height:20px;}
+.monitor-window-pause-overlay>.monitor-status-icon-warning{width:46%;height:46%;right:21%;bottom:21%;}
+.monitor-alert-tone-general::before,.monitor-alert-tone-success::before,.monitor-alert-tone-failure::before,.monitor-alert-tone-review::before,.monitor-alert-tone-question::before,.monitor-alert-tone-input::before,.monitor-alert-tone-action::before{color:#fff!important;text-shadow:none!important;}
+.monitor-bct-node-presence{position:relative;display:grid!important;place-items:center;width:14px!important;height:14px!important;background:none!important;box-shadow:none!important;color:#fff!important;}
+.monitor-bct-node-presence>.monitor-status-icon{width:12px;height:12px;}
+
 
 
 

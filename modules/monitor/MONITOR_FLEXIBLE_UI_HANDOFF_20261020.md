@@ -101,3 +101,11 @@ Safe extension principles:
 
 ### Still required
 - The correction is source-only and is not installed. Before any LIVE claim, deploy through the official Monitor path, same-ID reload it, and repeat one bounded minimize → visible number → restore → removed-number E2E on an already-open ChatGPT Chrome window.
+
+## 2026-10-20 thumbnail status SVG contract
+
+- Thumbnail and node-list state icons are inline SVG only: filled play triangle, two-rectangle pause, square close-safe completion, and triangle/exclamation warning. They share one white monochrome style.
+- Existing overlay containers are reused; no desktop/window capture pixels, capture route, click target, drag target, or completion acknowledgement path changes.
+- A square is allowed only for a connected task with an authoritative terminal success report. Chat generation becoming idle, a disconnected connection, a stopped/cancelled process, or an unverified report cannot create it.
+- Network disconnection, retry/recovery/new-chat requirements, failed/blocked reports, and review-required reports use warning. Warning is independently rendered with an active/play or pause icon when both facts exist.
+- This is source-only and shares the same pending LIVE gate as the minimized-number correction.

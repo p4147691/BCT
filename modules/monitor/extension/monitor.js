@@ -20886,8 +20886,8 @@ function monitorDirectEndpointUserAttention(endpoint) {
 
 function monitorUserAttentionVisualDetail(attentionRaw) {
   const kind=String(attentionRaw?.kind||"").trim().toUpperCase();
-  if(kind==="RETRY_REQUIRED") return {symbol:"!",tone:"failure",label:String(attentionRaw?.label||"다시 시도 필요")};
-  if(["NEW_CHAT_REQUIRED","RECOVERY_REQUIRED"].includes(kind)) return {symbol:"⚠",tone:"review",label:String(attentionRaw?.label||"사용자 조치 필요")};
+  if(kind==="RETRY_REQUIRED") return {warning:true,tone:"failure",label:String(attentionRaw?.label||"다시 시도 필요")};
+  if(["NEW_CHAT_REQUIRED","RECOVERY_REQUIRED"].includes(kind)) return {warning:true,tone:"review",label:String(attentionRaw?.label||"사용자 조치 필요")};
   return null;
 }
 
@@ -22980,7 +22980,7 @@ async function monitorSyncSharedRuntime() {
 
 
 
-        const detail=monitorChatAlertDetails.get(key)||{symbol:"!",tone:"general",label:"채팅 작업 완료"};
+        const detail=monitorChatAlertDetails.get(key)||{activity:"pause",tone:"general",label:"채팅 작업 완료"};
 
 
 
@@ -22996,7 +22996,7 @@ async function monitorSyncSharedRuntime() {
 
 
 
-        await monitorPublishSharedRuntime("alert",key,{symbol:detail.symbol||"!",tone:detail.tone||"general",label:detail.label||"채팅 작업 완료"});
+        await monitorPublishSharedRuntime("alert",key,{activity:detail.activity||"",warning:detail.warning===true,tone:detail.tone||"general",label:detail.label||"채팅 작업 완료"});
 
 
 
@@ -23492,7 +23492,7 @@ async function monitorSyncSharedRuntime() {
 
 
 
-        if(alertAt>ackAt){monitorPostWorkAlerts.add(key);monitorChatAlertDetails.set(key,{symbol:String(row.symbol||"!"),tone:String(row.tone||"general"),label:String(row.label||"채팅 작업 완료")});monitorAcknowledgedPostWork.delete(key);}
+        if(alertAt>ackAt){const legacyTone=String(row.tone||"general");monitorPostWorkAlerts.add(key);monitorChatAlertDetails.set(key,{activity:String(row.activity||""),warning:row.warning===true||["failure","review","input","action","question"].includes(legacyTone),tone:legacyTone,label:String(row.label||"채팅 작업 완료")});monitorAcknowledgedPostWork.delete(key);}
 
 
 
@@ -23948,7 +23948,9 @@ function monitorCreateChatCompletionAlert(conversationKey, attentionCue="", comp
 
 
 
-  const detail=attention==="action"?{symbol:"?",tone:"action",label:"사용자 조치 필요"}:attention==="input"?{symbol:"?",tone:"input",label:"추가 입력 필요"}:attention==="question"?{symbol:"?",tone:"question",label:"사용자 확인/선택 대기"}:cue==="failure"?{symbol:"!",tone:"failure",label:"실패 / 오류"}:cue==="review"?{symbol:"!",tone:"review",label:"검토 필요"}:cue==="success"?{symbol:"!",tone:"success",label:"성공 / 완료"}:{symbol:"!",tone:"general",label:"채팅 작업 완료"};
+  // Chat generation finishing is a pause/notice, never evidence that project
+  // work is close-safe. Only an authoritative terminal report emits complete.
+  const detail=attention==="action"?{warning:true,tone:"action",label:"사용자 조치 필요"}:attention==="input"?{warning:true,tone:"input",label:"추가 입력 필요"}:attention==="question"?{warning:true,tone:"question",label:"사용자 확인/선택 대기"}:cue==="failure"?{warning:true,tone:"failure",label:"실패 / 오류"}:cue==="review"?{warning:true,tone:"review",label:"검토 필요"}:{activity:"pause",tone:cue==="success"?"success":"general",label:cue==="success"?"응답 완료 · 후속 확인 대기":"채팅 작업 완료"};
 
 
 
@@ -23980,7 +23982,7 @@ function monitorCreateChatCompletionAlert(conversationKey, attentionCue="", comp
 
 
 
-  const at=Date.now(); monitorSharedRuntimeAlertAt.set(key,at); void monitorPublishSharedRuntime("alert",key,{symbol:detail.symbol,tone:detail.tone,label:detail.label},at);
+  const at=Date.now(); monitorSharedRuntimeAlertAt.set(key,at); void monitorPublishSharedRuntime("alert",key,{activity:detail.activity||"",warning:detail.warning===true,tone:detail.tone,label:detail.label},at);
 
 
 
@@ -24028,7 +24030,7 @@ function monitorChatAlertDetail(conversationKey) {
 
 
 
-  const key=String(conversationKey||"").trim(); return key&&monitorPostWorkAlerts.has(key)?(monitorChatAlertDetails.get(key)||{symbol:"!",tone:"general",label:"채팅 작업 완료"}):null;
+  const key=String(conversationKey||"").trim(); return key&&monitorPostWorkAlerts.has(key)?(monitorChatAlertDetails.get(key)||{activity:"pause",tone:"general",label:"채팅 작업 완료"}):null;
 
 
 
@@ -24388,7 +24390,7 @@ function monitorAuthoritativeConversationForTask(task, state, report) {
 
 
 
-function monitorAuthoritativeAlertDetail(report) {
+function monitorAuthoritativeAlertDetail(report, task = null) {
 
 
 
@@ -24436,7 +24438,7 @@ function monitorAuthoritativeAlertDetail(report) {
 
 
 
-  if (/\b(FAIL|FAILED|BLOCKED|ERROR|FATAL|BROKEN|UNRECOVERABLE)\b|실패|오류|중단|차단/.test(reportText)) return {symbol:"!",tone:"failure",label:"중요 오류 / 실패 / BLOCKED"};
+  if (/\b(FAIL|FAILED|BLOCKED|ERROR|FATAL|BROKEN|UNRECOVERABLE)\b|실패|오류|중단|차단/.test(reportText)) return {warning:true,tone:"failure",label:"중요 오류 / 실패 / BLOCKED"};
 
 
 
@@ -24452,7 +24454,7 @@ function monitorAuthoritativeAlertDetail(report) {
 
 
 
-  if (/\b(NEEDS_REVIEW|WARNING|WARN|CAUTION|PARTIAL|DEGRADED|ATTENTION)\b|검토 필요|주의|경고|부분 성공|확인 필요/.test(reportText)) return {symbol:"!",tone:"review",label:"주의 / 검토 필요"};
+  if (/\b(NEEDS_REVIEW|WARNING|WARN|CAUTION|PARTIAL|DEGRADED|ATTENTION)\b|검토 필요|주의|경고|부분 성공|확인 필요/.test(reportText)) return {warning:true,tone:"review",label:"주의 / 검토 필요"};
 
 
 
@@ -24468,7 +24470,8 @@ function monitorAuthoritativeAlertDetail(report) {
 
 
 
-  if (/\b(PASS|PASSED|SUCCESS|SUCCEEDED|COMPLETED|COMPLETE|DONE|VERIFIED|OK)\b|성공|완료|검증 통과|정상/.test(reportText)) return {symbol:"!",tone:"success",label:"성공 / 완료"};
+  const taskStatus=String(task?.status||"").toUpperCase();
+  if (["SUCCEEDED","COMPLETED","COMPLETE","DONE"].includes(taskStatus) && /\b(PASS|PASSED|SUCCESS|SUCCEEDED|COMPLETED|COMPLETE|DONE|VERIFIED|OK)\b|성공|완료|검증 통과|정상/.test(reportText)) return {activity:"complete",tone:"success",label:"작업 완료 · 창을 닫아도 됨"};
 
 
 
@@ -24532,7 +24535,7 @@ function monitorAuthoritativeAlertDetail(report) {
 
 
 
-  return {symbol:"!",tone:"general",label:"ACT 완료 보고"};
+  return {activity:"pause",tone:"general",label:"완료 보고 대기"};
 
 
 
@@ -24577,7 +24580,7 @@ function monitorSyncAuthoritativeCompletionAlerts(state) {
     if (!task || !terminal.has(String(task?.status||"").toUpperCase()) || !monitorReportMatchesTask(report,task)) continue;
     const key=monitorAuthoritativeConversationForTask(task,state,report); if(!key)continue;
     const previous=authoritative.get(key);
-    if(!previous || monitorGhostTime(report?.created_at)>monitorGhostTime(previous?.report?.created_at)) authoritative.set(key,{report,detail:monitorAuthoritativeAlertDetail(report)});
+    if(!previous || monitorGhostTime(report?.created_at)>monitorGhostTime(previous?.report?.created_at)) authoritative.set(key,{report,detail:monitorAuthoritativeAlertDetail(report,task)});
   }
 
   for (const reportId of [...monitorAcknowledgedReportIds]) if(!pendingIds.has(reportId)) monitorAcknowledgedReportIds.delete(reportId);
@@ -30009,7 +30012,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (alertDetail) return { symbol: alertDetail.symbol, label: alertDetail.label, tone: alertDetail.tone };
+  if (alertDetail) return { symbol: "", label: alertDetail.label, tone: alertDetail.tone };
 
 
 
@@ -30041,7 +30044,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (["running", "working", "busy", "executing", "in_progress"].includes(value)) return { symbol: "▶", label: "실행" };
+  if (["running", "working", "busy", "executing", "in_progress"].includes(value)) return { symbol: "", label: "실행" };
 
 
 
@@ -30057,7 +30060,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (["waiting_resource", "waiting", "paused", "queued", "pending"].includes(value)) return { symbol: "⏸", label: "대기" };
+  if (["waiting_resource", "waiting", "paused", "queued", "pending"].includes(value)) return { symbol: "", label: "대기" };
 
 
 
@@ -30073,7 +30076,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (connection === "disconnected" || ["offline", "stopped", "cancelled", "canceled"].includes(value)) return { symbol: "■", label: "정지" };
+  if (connection === "disconnected" || ["offline", "stopped", "cancelled", "canceled"].includes(value)) return { symbol: "", label: "사용자 조치 필요" };
 
 
 
@@ -30089,7 +30092,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  if (["succeeded", "completed", "complete", "done"].includes(value)) return { symbol: "✓", label: "완료" };
+  if (["succeeded", "completed", "complete", "done"].includes(value)) return { symbol: "", label: "완료" };
 
 
 
@@ -30105,7 +30108,7 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
-  return { symbol: "■", label: "유휴" };
+  return { symbol: "", label: "유휴" };
 
 
 
@@ -30136,6 +30139,22 @@ function monitorWorkSymbol(work, connection, alertDetail = null) {
 
 
 
+
+// SVG icon semantics used by the node list and desktop-thumbnail overlay.
+// Kept distinct from the legacy text symbol helper above so persisted old
+// alert records cannot accidentally control the new visual meaning.
+function monitorWorkIconState(work, connection, alertDetail = null) {
+  const value = String(work || "").toLowerCase();
+  const active = ["running", "working", "busy", "executing", "in_progress"].includes(value) ? "play" : "";
+  const waiting = ["waiting_resource", "waiting", "paused", "queued", "pending"].includes(value) ? "pause" : "";
+  const complete = ["succeeded", "completed", "complete", "done"].includes(value) && connection === "connected" ? "complete" : "";
+  // A disconnected, stopped, or cancelled process requires attention; it is
+  // explicitly not a declaration that the project work can be closed.
+  const warning = connection === "disconnected" || ["offline", "stopped", "cancelled", "canceled"].includes(value) || alertDetail?.warning === true;
+  const activity = alertDetail?.activity || active || waiting || complete;
+  const label = alertDetail?.label || (warning ? "사용자 조치 필요" : activity === "play" ? "실행" : activity === "pause" ? "일시 정지" : activity === "complete" ? "작업 완료 · 창을 닫아도 됨" : "상태 없음");
+  return { activity, warning, label, tone: alertDetail?.tone || "general" };
+}
 
 const MONITOR_ROLE_ORDER = ["SUPERVISOR-A", "SUPERVISOR-B", "RELAY", "SOURCE", "WS2", "WORKER-A", "WORKER-B", "IMPLEMENTER", "MONITOR-IMPLEMENTER"];
 
@@ -42204,7 +42223,7 @@ function performMonitorWorkerRender(state) {
 
 
 
-      const visualWork = liveWorking ? "running" : (monitorIsActivelyWorking(work) ? "" : work); const attentionEndpoint = endpointForMonitorWorker(worker, state); const directAttention = monitorDirectEndpointUserAttention(attentionEndpoint); const attentionRaw = directAttention || attentionEndpoint?.telemetry?.user_attention || attentionEndpoint?.metadata?.user_attention || attentionEndpoint?.metadata?.telemetry?.user_attention || null; const userAttentionDetail = monitorUserAttentionVisualDetail(attentionRaw); const visual = monitorWorkSymbol(visualWork, connection, userAttentionDetail || alertDetail);
+      const visualWork = liveWorking ? "running" : (monitorIsActivelyWorking(work) ? "" : work); const attentionEndpoint = endpointForMonitorWorker(worker, state); const directAttention = monitorDirectEndpointUserAttention(attentionEndpoint); const attentionRaw = directAttention || attentionEndpoint?.telemetry?.user_attention || attentionEndpoint?.metadata?.user_attention || attentionEndpoint?.metadata?.telemetry?.user_attention || null; const userAttentionDetail = monitorUserAttentionVisualDetail(attentionRaw); const visual = monitorWorkIconState(visualWork, connection, userAttentionDetail || alertDetail);
 
 
 
@@ -42252,7 +42271,7 @@ function performMonitorWorkerRender(state) {
 
 
 
-      workState.textContent = visual.symbol;
+      globalThis.MonitorStatusIcon?.render?.(workState, visual);
 
 
 
@@ -43229,7 +43248,7 @@ function renderMonitorBctWindowNodes(nodes) {
     presence.className = `monitor-bct-node-presence${node.generating ? " is-busy" : ""}`;
     presence.setAttribute("aria-label", node.generating ? "응답 생성 중" : "열려 있음");
     presence.title = node.generating ? "응답 생성 중" : "열려 있음";
-    presence.textContent = node.generating ? "▶" : "Ⅱ";
+    globalThis.MonitorStatusIcon?.render?.(presence, { activity: node.generating ? "play" : "pause" });
     row.append(number, body, presence);
     if (node.conversationKey) {
       row.addEventListener("contextmenu", (event) => {
@@ -52973,7 +52992,9 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 
 
-  if (!paused && !userAttentionDetail && !completionDetail) { overlay?.remove(); return; }
+  const activity=monitorHwndIsGenerating(key, monitorLastAiState) ? "play" : (completionDetail?.activity || (paused ? "pause" : ""));
+  const warning=userAttentionDetail?.warning === true || completionDetail?.warning === true;
+  if (!activity && !warning) { overlay?.remove(); return; }
 
 
 
@@ -53005,7 +53026,7 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 
 
-  const detail=userAttentionDetail||completionDetail||{symbol:"!",tone:"general",label:"채팅 작업 완료"};
+  const detail=userAttentionDetail||completionDetail||{tone:"general",label:"채팅 작업 완료"};
 
 
 
@@ -53021,7 +53042,8 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 
 
-  overlay.dataset.symbol=detail.symbol; overlay.title=detail.label;
+  delete overlay.dataset.symbol; overlay.title=detail.label;
+  globalThis.MonitorStatusIcon?.render?.(overlay,{activity,warning});
 
 
 
