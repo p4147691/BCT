@@ -25,7 +25,8 @@ already-observed ChatGPT tab, and verify that the window and tab are active.
 ## Source status
 
 - Branch: `feat/monitor-exact-tab-focus-20261021`
-- Base: `d8082fff6baaae5b792103d41b4ed289165d8d56`
+- Original base: `d8082fff6baaae5b792103d41b4ed289165d8d56`
+- Latest integrated main: `c4d6e06ba3f8ef8038cff5155d541deedf290215`
 - LIVE Monitor/RCC/Native Host: unchanged
 
 ## Verification
