@@ -53,7 +53,7 @@ _CAPABILITY_USAGE = {
     "desktop_window_manage": "Restore, minimize, maximize, or move/resize only the exact window bound to the active lease. Close is not supported.",
     "desktop_program_launch": "Launch one exact absolute .exe with an argument array under an active session lease, capture the new PID identity, and bind that same lease only if the PID creates a visible window on the current virtual desktop.",
     "vtl_validate": "Run a project-owned browser or profile scenario directly through the exact immutable local VTL release. Returns PASS/FAIL and durable evidence without dispatching GitHub Actions.",
-    "claim_reconcile": "Release one exact unresolved Claim from a FINISHED UNKNOWN read-only operation or an execute operation whose durable FileNotFoundError proves CreateProcess never started. The original UNKNOWN receipt is preserved; unproven effects are rejected.",
+    "claim_reconcile": "Default: release one proven-no-effect FINISHED UNKNOWN read-only/failed-CreateProcess Claim. Exceptional opt-in quarantine_uia_expand mode requires exact original digest, explicit operator acknowledgement, and fresh agent no-lease proof; narrows only a terminal UNKNOWN UIA Expand shared fence while preserving the original UNKNOWN receipt and forbidding replay.",
 }
 _SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 

@@ -167,7 +167,10 @@ class OperationCoordinator:
                 operation_id=request.arguments["original_operation_id"],
                 work_id=work_id, principal_id=principal.principal_id,
             )
-            if original["capability"] not in {
+            if request.arguments.get("mode") == "quarantine_uia_expand":
+                if original["capability"] != "desktop_uia_element_action":
+                    raise PreconditionError("UIA_QUARANTINE_CAPABILITY_NOT_SUPPORTED")
+            elif original["capability"] not in {
                 "read", "system_inspect", "github_pr_status", "execute",
             }:
                 raise PreconditionError("CLAIM_RECONCILE_CAPABILITY_NOT_SUPPORTED")
@@ -442,6 +445,16 @@ class OperationCoordinator:
                     expected_work_id=work_id,
                     instance_id=result.evidence["instance_id"],
                     new_resource_key=result.evidence["new_resource_key"],
+                    evidence=result.evidence,
+                )
+            elif (request.capability == "claim_reconcile"
+                    and request.arguments.get("mode") == "quarantine_uia_expand"
+                    and result.outcome is Outcome.APPLIED):
+                stored = self.store.finish_uia_expand_claim_operator_quarantine(
+                    resolver_operation_id=operation_id,
+                    original_operation_id=result.evidence["original_operation_id"],
+                    expected_original_digest=result.evidence["expected_original_digest"],
+                    expected_work_id=work_id,
                     evidence=result.evidence,
                 )
             else:

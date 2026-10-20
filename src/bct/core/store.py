@@ -5,6 +5,7 @@ import sqlite3
 import threading
 import time
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -661,6 +662,7 @@ class Store:
                 resource_key.startswith("orchestration-attachment:")
                 or resource_key.startswith("orchestration-run:")
                 or resource_key.startswith("execution:")
+                or resource_key.startswith("desktop-control:quarantined-uia-expand:")
                 or ":rename:" in resource_key
                 or ":direct-tab:" in resource_key
                 or ":read:" in resource_key
@@ -1054,6 +1056,103 @@ class Store:
                 (resolver_operation_id,)).fetchone()
         return self._row_result(row)
 
+    def finish_uia_expand_claim_operator_quarantine(
+        self, *, resolver_operation_id: str, original_operation_id: str,
+        expected_original_digest: str, expected_work_id: str, evidence: dict[str, Any],
+    ) -> OperationResult:
+        """Quarantine one UNKNOWN UIA Expand claim; never reinterpret its effect.
+
+        This is an explicitly acknowledged *resource-fence scope change*, not
+        reconciliation of the historical operation. The original remains UNKNOWN.
+        """
+        old_key = "desktop-control:interactive-session"
+        new_key = "desktop-control:quarantined-uia-expand:" + original_operation_id
+        required = {
+            "operation": "quarantine_uia_expand",
+            "audit_kind": "OPERATOR_QUARANTINE_NOT_RECONCILIATION",
+            "original_operation_id": original_operation_id,
+            "expected_original_digest": expected_original_digest,
+            "new_resource_key": new_key,
+            "original_outcome_preserved": "UNKNOWN",
+            "lease_state": "NONE",
+            "operator_acknowledgement": "ACK_UNKNOWN_UIA_EXPAND_EFFECT_NO_REPLAY",
+        }
+        observed_at = evidence.get("observed_at_utc")
+        try:
+            observed = datetime.fromisoformat(str(observed_at).replace("Z", "+00:00"))
+            freshness = (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds() if observed.tzinfo is not None else float("inf")
+        except (TypeError, ValueError, AttributeError, OverflowError):
+            freshness = float("inf")
+        if (not expected_original_digest or len(expected_original_digest) != 64
+                or any(evidence.get(k) != v for k, v in required.items())
+                or not str(evidence.get("operator_justification") or "").strip()
+                or not str(evidence.get("agent_instance_id") or "").strip()
+                or not 0 <= freshness <= 30):
+            raise ConflictError("UIA_QUARANTINE_EVIDENCE_INVALID")
+        with self.transaction() as db:
+            resolver = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?", (resolver_operation_id,)
+            ).fetchone()
+            original = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?", (original_operation_id,)
+            ).fetchone()
+            if (resolver is None or resolver["state"] != OperationState.RUNNING.value
+                    or resolver["capability"] != "claim_reconcile"
+                    or resolver["work_id"] != expected_work_id
+                    or original is None or original["work_id"] != expected_work_id
+                    or resolver["principal_id"] != original["principal_id"]
+                    or original["capability"] != "desktop_uia_element_action"
+                    or original["target"] != "expand:desktop-uia"
+                    or original["state"] != OperationState.FINISHED.value
+                    or original["outcome"] != Outcome.UNKNOWN.value
+                    or original["error"] !=
+                       "DESKTOP_SESSION_AGENT_EFFECT_UNKNOWN:DESKTOP_UIA_ACTION_CHANGED_FOREGROUND"
+                    or original["request_digest"] != expected_original_digest
+                    or float(original["updated_at"]) > time.time() - 120):
+                raise ConflictError("UIA_QUARANTINE_ORIGINAL_FENCE_MISMATCH")
+            claims = db.execute(
+                "SELECT resource_key FROM resource_claims WHERE operation_id=? AND unresolved=1",
+                (original_operation_id,),
+            ).fetchall()
+            if len(claims) != 1 or claims[0]["resource_key"] != old_key:
+                raise ConflictError("UIA_QUARANTINE_UNEXPECTED_ORIGINAL_CLAIMS")
+            if db.execute("SELECT 1 FROM resource_claims WHERE resource_key=?",
+                          (new_key,)).fetchone() is not None:
+                raise ConflictError("UIA_QUARANTINE_TARGET_ALREADY_EXISTS")
+            changed = db.execute(
+                "UPDATE resource_claims SET resource_key=? WHERE operation_id=? "
+                "AND resource_key=? AND unresolved=1",
+                (new_key, original_operation_id, old_key),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("UIA_QUARANTINE_RESOURCE_CHANGED")
+            db.execute(
+                "UPDATE operations SET state=?,outcome=?,evidence_json=?,error=?,updated_at=? "
+                "WHERE operation_id=? AND state=?",
+                (OperationState.FINISHED.value, Outcome.APPLIED.value,
+                 json.dumps(evidence, sort_keys=True), None, time.time(),
+                 resolver_operation_id, OperationState.RUNNING.value),
+            )
+            db.execute(
+                "UPDATE resource_claims SET unresolved=0 WHERE operation_id=?",
+                (resolver_operation_id,),
+            )
+            self._event(db, "UIA_UNKNOWN_EXPAND_CLAIM_OPERATOR_QUARANTINED", original_operation_id, {
+                "resolver_operation_id": resolver_operation_id,
+                "original_outcome_preserved": "UNKNOWN",
+                "new_resource_key": new_key,
+                "operator_justification": evidence["operator_justification"],
+                "operator_acknowledgement": evidence["operator_acknowledgement"],
+            })
+            self._event(db, "OPERATION_FINISHED", resolver_operation_id, {
+                "outcome": "APPLIED", "claims_released": True,
+                "reconciled_operation_ids": [],
+            })
+            row = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?", (resolver_operation_id,)
+            ).fetchone()
+        return self._row_result(row)
+
     def finish_operation(self, *, operation_id: str, outcome: Outcome,
                          evidence: dict[str, Any], error: str | None,
                          release_claims: bool,
@@ -1399,7 +1498,7 @@ class Store:
         db = self._connect()
         try:
             row = db.execute(
-                "SELECT capability,target,state,outcome,error,evidence_json FROM operations "
+                "SELECT capability,target,state,outcome,error,request_digest,evidence_json FROM operations "
                 "WHERE operation_id=? AND work_id=?", (operation_id, work_id),
             ).fetchone()
         finally:
