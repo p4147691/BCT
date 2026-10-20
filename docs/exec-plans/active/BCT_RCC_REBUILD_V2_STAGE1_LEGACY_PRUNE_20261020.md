@@ -1,6 +1,6 @@
 # RCC Rebuild V2-1 — 차단 레거시 일괄 제거
 
-상태: `SOURCE_COMPLETE / LOCAL_VERIFIED / LIVE_UNCHANGED`
+상태: `SOURCE_COMPLETE / CI_PASS / RCC_LIVE_UNCHANGED`
 
 ## 범위
 
@@ -46,5 +46,13 @@ architecture test로 고정했다.
 - `python -m compileall -q src tests`: PASS
 - `git diff --check`: PASS
 
-원격 CI 결과와 exact commit SHA는 commit 이후 이 문서에 추가한다. V2-2 전에는 source를
-LIVE RCC 설치본에 복사하거나 확장을 reload하지 않는다.
+exact source commit은 `46f1772ecddb2079198101692b40eb5155f87b1e`이며 GitHub Actions
+`BCT CI` run `39388085496`의 preflight, Core 4개 shard와 browser-bridge가 모두 통과했다.
+V2-2 전에는 source를 LIVE RCC 설치본에 복사하거나 확장을 reload하지 않는다.
+
+같은 시점에 별도로 밀린 BCT Core 배포 후보를 감사했다. 이전 LIVE `c2e7d39` 이후 runtime
+프로필에 포함되는 실제 코드 변경은 opt-in compact/hybrid MCP catalogue뿐이었고, RCC 변경은
+프로필에 포함되지 않았다. durable `bct_deploy` operation
+`bct-live-deploy-20261020-46f1772`가 exact commit을 generation 165로 APPLIED했다. production
+catalogue는 기존 full 44-tool 기본값을 유지했다. RCC 설치본 3개 파일과 Native Host 실행 파일
+SHA-256, RCC instance/session, 열린 대화 UUID와 tab identity는 배포 전후 동일했다.

@@ -1006,3 +1006,12 @@ optional browser mutation Adapter는 source에 남아 있지만 loader와 manife
 LIVE 설치본, Chrome, Native Host, Relay binding은 변경하지 않았다. 상세는
 `docs/exec-plans/active/BCT_RCC_REBUILD_V2_STAGE1_LEGACY_PRUNE_20261020.md`를 따른다.
 다음 구조 단계는 V2-2 플랫폼 경계 일괄 분리이며 계속 source-only다.
+
+V2-1 exact commit `46f1772ecddb2079198101692b40eb5155f87b1e`는 GitHub Actions run
+`39388085496` 전체를 통과했다. 별도로 `c2e7d39` 이후 main의 LIVE 미반영분을 감사한 결과,
+runtime profile에 포함되는 배포 후보는 opt-in compact/hybrid MCP catalogue 코드였고 나머지는
+RCC source-only와 문서였다. durable deploy operation `bct-live-deploy-20261020-46f1772`가 해당
+exact commit을 BCT Core generation 165로 APPLIED했다. Core health는 READY/OK, production MCP
+catalogue는 full 44-tool 기본값을 유지한다. RCC 설치본·Chrome·Native Host·Relay binding은
+변경하지 않았고 설치 RCC/Native Host 해시와 관측 instance/session/tab/conversation identity가
+배포 전후 동일하다.
