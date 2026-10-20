@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-20-simple-relay-return-v0';
+const RCC_BUILD_VERSION = '2026-10-20-rcc-core-shadow-v1';
 
 function exactBindingAttestationMatches(expected, attestation) {
   if (!expected || typeof expected !== 'object') return true;

@@ -6,6 +6,7 @@ const identity = require(path.join(extensionRoot, 'core/identity.js'));
 const state = require(path.join(extensionRoot, 'core/state.js'));
 const conversation = require(path.join(extensionRoot, 'core/conversation.js'));
 const transport = require(path.join(extensionRoot, 'core/transport.js'));
+const shadow = require(path.join(extensionRoot, 'core/shadow.js'));
 const relayCore = require(path.join(extensionRoot, 'relay_core.js'));
 const simpleRelay = require(path.join(extensionRoot, 'simple_relay_v0.js'));
 
@@ -31,6 +32,19 @@ assert.equal(state.inspectConversation(tabs, [{ ...endpoints[0], generating: tru
 assert.equal(state.inspectConversation(tabs, [], manager).status, state.STATUS.RECEIVER_UNKNOWN);
 assert.equal(state.inspectConversation(tabs, [{ ...endpoints[0], conversationKey: worker }, endpoints[1]], manager).status, state.STATUS.PROTOCOL_MISMATCH);
 assert.equal(state.inspectPair(tabs, endpoints, manager, worker).connected, true);
+const shadowSnapshot = shadow.snapshot({
+  tabs,
+  endpoints: [
+    { ...endpoints[0], telemetry: { user_count: 3, assistant_count: 3, turns: 6 } },
+    { ...endpoints[1], telemetry: { user_count: 4, assistant_count: 4, turns: 8 } },
+  ],
+  binding: { version: 0, managerConversationKey: manager, workerConversationKey: worker },
+});
+assert.equal(shadowSnapshot.mode, 'READ_ONLY_SHADOW');
+assert.equal(shadowSnapshot.matches, true);
+assert.equal(shadowSnapshot.manager.coreStatus, 'CONNECTED');
+assert.deepEqual(shadowSnapshot.worker.messageCounts, { user: 4, assistant: 4, turns: 8 });
+assert.throws(() => shadow.snapshot({ tabs, endpoints, binding: null }), /RCC_CORE_SHADOW_BINDING_INVALID/);
 
 const simpleRequest = simpleRelay.request({
   binding: simpleRelay.binding(manager, worker), from: 'manager', operationId: 'core-v1.1', text: '원문 보존',
@@ -61,11 +75,13 @@ assert.equal(transport.requiresNewOperationForRetry('UNKNOWN'), false);
 
 const manifest = fs.readFileSync(path.join(extensionRoot, 'manifest.json'), 'utf8');
 const loader = fs.readFileSync(path.join(extensionRoot, 'background_loader.js'), 'utf8');
-for (const coreFile of ['identity.js', 'state.js', 'conversation.js', 'transport.js']) {
+for (const coreFile of ['identity.js', 'state.js', 'conversation.js', 'transport.js', 'shadow.js']) {
   const text = fs.readFileSync(path.join(extensionRoot, 'core', coreFile), 'utf8');
-  assert(!text.includes('chrome.'), coreFile + ' must remain pure source-only Core');
+  assert(!text.includes('chrome.'), coreFile + ' must remain a pure Core module');
 }
-assert(!manifest.includes('core/'), 'Stage 1 must not add Core modules to the active manifest');
-assert(!loader.includes('core/'), 'Stage 1 must not add Core modules to the active background loader');
+assert(!manifest.includes('core/'), 'Core files remain background-only and are not manifest content scripts');
+for (const coreFile of ['identity.js', 'state.js', 'conversation.js', 'transport.js', 'shadow.js']) {
+  assert(loader.includes(`core/${coreFile}`), `${coreFile} must be loaded for the read-only Shadow`);
+}
 
 console.log('rcc_core_v1 source-only tests: PASS');

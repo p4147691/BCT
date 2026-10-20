@@ -4,7 +4,7 @@ const CONTROL = 'CONTROL';
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
 
-const RCC_BACKGROUND_BUILD_ID = '2026-10-20-simple-relay-return-v0';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-20-rcc-core-shadow-v1';
 
 const RELAY_RESULT_RECEIPTS_KEY = 'relayResultReceiptsV1';
 // Generic completed operations are an idempotency cache and are intentionally
@@ -670,6 +670,20 @@ function publicTab(tab) {
 
   return { id: tab.id, windowId: tab.windowId ?? null, title: tab.title || '', url: tab.url || '' };
 
+}
+
+function coreShadowSnapshot(tabs, endpoints, binding) {
+  try {
+    return RccCoreShadow.snapshot({ tabs, endpoints, binding });
+  } catch (error) {
+    return {
+      schemaVersion: 1,
+      mode: 'READ_ONLY_SHADOW',
+      status: 'PROTOCOL_MISMATCH',
+      matches: false,
+      error: String(error?.message || error || 'RCC_CORE_SHADOW_FAILED').slice(0, 160),
+    };
+  }
 }
 
 
@@ -2599,6 +2613,8 @@ async function handleNativeCommand(message) {
 
       const endpoints = await captureEndpointSnapshot('state', chatTabs);
 
+      const coreShadow = coreShadowSnapshot(tabs, endpoints, state.simpleRelayV0Binding);
+
       postNative({ type: 'host:result', requestId, ok: true, state: {
 
         instanceId: state.settings.instanceId, sessionId: endpointSessionId, tabs, endpoints,
@@ -2606,6 +2622,8 @@ async function handleNativeCommand(message) {
         registrations: state.registrations, settings: state.settings,
 
         simpleRelayV0Binding: state.simpleRelayV0Binding,
+
+        coreShadow,
 
         backgroundBuildId: RCC_BACKGROUND_BUILD_ID
 

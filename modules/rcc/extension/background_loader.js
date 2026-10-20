@@ -1,3 +1,8 @@
+importScripts('core/identity.js');
+importScripts('core/state.js');
+importScripts('core/conversation.js');
+importScripts('core/transport.js');
+importScripts('core/shadow.js');
 importScripts('relay_core.js');
 importScripts('simple_relay_v0.js');
 importScripts('act_bridge.js');

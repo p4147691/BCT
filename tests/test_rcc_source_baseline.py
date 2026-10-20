@@ -19,9 +19,9 @@ class RccSourceBaselineTests(unittest.TestCase):
         # Accepted Simple Relay Return V0 source/LIVE baseline (2026-10-20).
         # These are release guards, not a deployment action.
         expected = {
-            "background.js": "75a0f23edf04e0c4988f329753b881c6d1643002f9ee633fe53c20a87ce9a102",
-            "content.js": "daac5bb8eab162c753afeb8e7fe7597723841ba4efe2e11d469ec0d934ed8bbf",
-            "manifest.json": "d9cdead8f4cb3abc9686f6217de5eb10f002bdb71025ddf8f5e5ff77ceeae919",
+            "background.js": "129f198712d051dadccb2ce4b0c569c3d6323ce48a8055eb1222aaa01b4095bd",
+            "content.js": "611b3a2e08ab5637da09905cfbf7493eb5787760786385d5aa95b95185b05552",
+            "manifest.json": "b45d1a3cd4ad5aa0d57ddd106c89ed749c264ea8af4994aeb8175cf9fc274ec1",
             "relay_core.js": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd",
         }
         for name, digest in expected.items():
@@ -34,8 +34,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_key_fixes_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.23", manifest["version"])
-        self.assertEqual("1.0.23 · Simple Relay Return V0", manifest["version_name"])
+        self.assertEqual("1.0.24", manifest["version"])
+        self.assertEqual("1.0.24 · RCC Core Read-Only Shadow", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotEqual("0.1.0", manifest["version"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -58,7 +58,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             self.assertIn(marker, background)
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-20-simple-relay-return-v0"
+        marker = "2026-10-20-rcc-core-shadow-v1"
         for name in ("content.js", "background.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
@@ -229,6 +229,8 @@ class RccSourceBaselineTests(unittest.TestCase):
         for name in (
             "background.js", "content.js", "relay_core.js", "act_content.js",
             "act_bridge.js", "act_command_bridge.js", "activity_bridge.js", "popup.js",
+            "core/identity.js", "core/state.js", "core/conversation.js", "core/transport.js",
+            "core/shadow.js",
         ):
             completed = subprocess.run(
                 [node, "--check", str(self.extension / name)],
