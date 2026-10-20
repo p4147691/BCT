@@ -3,6 +3,7 @@ from __future__ import annotations
 """Bounded, work-scoped metadata snapshot; never a second operation authority."""
 
 import hashlib
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -68,7 +69,7 @@ def capture_work_snapshot(store: Any, arguments: dict[str, Any]) -> dict[str, An
             "operation_id": operation_id, "state": receipt.state.value,
             "outcome": receipt.outcome.value if receipt.outcome else None,
             "evidence_sha256": hashlib.sha256(
-                __import__("json").dumps(receipt.evidence, sort_keys=True,
+                json.dumps(receipt.evidence, sort_keys=True,
                                         separators=(",", ":"), ensure_ascii=False).encode("utf-8")
             ).hexdigest(),
         })
