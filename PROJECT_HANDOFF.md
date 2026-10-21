@@ -1,5 +1,23 @@
 # BCT 인수인계
 
+## 진행 — BWM 복구 버튼 공식 경로 연결
+
+BWM 상단의 `RCC 리로드`, `BCT 시작·복구`, `MCP 터널 복구`, `BC 도구 새로고침`을 source-only로
+연결했다. RCC는 현재 exact instance 하나와 BCT durable receipt를 요구한다. Core/Tunnel은 Monitor
+Native Host가 각각 고정된 `BCT Core Supervisor`, `BCT Tunnel Supervisor` 예약 작업만 호출하고
+health/ready를 다시 확인한다. BC는 선택된 정확한 ChatGPT conversation/tab/window를 재대조하고
+생성 중이 아닐 때 그 탭만 reload한다. 임의 command/path, shell, Chrome UI 자동화는 추가하지 않았다.
+
+exact adapter와 Monitor 계약 검사, 관련 Python 20 tests, Native Host compile은 PASS다. source commit
+`2397853cda06b79ffb514344a267bbdbfc6a4893`, PR #260, BCT CI run `39517865233`의 scope/preflight,
+Core 4 shards, Browser Bridge는 전부 SUCCESS다. 설치본·Chrome·Native Host·Core·RCC·터널은 변경하거나
+재시작하지 않았다. main 반영과 LIVE 배포·버튼 클릭 수락시험이 남았다. 상세는
+`docs/exec-plans/active/BCT_MONITOR_RECOVERY_ACTIONS_20261021.md`에 있다.
+
+별도 `feat/local-authority-integrated-20261020` 작업은 HEAD `1d9ff592...`와 미커밋 `bct.toml`만
+로컬에 있고 원격 branch·PR·CI·main 반영이 없다. 따라서 `D:\BCT\source`는 계속 GitHub main의
+동기화 작업 사본이라는 현재 `AGENTS.md` 정책이 실제 운영 상태와 일치한다.
+
 ## 진행 — BWM UI·썸네일 HWND 수렴 보수
 
 Monitor 상단을 `BWM`과 실행 버전 중심으로 단순화하고, BCT health 정상일 때 버전만 초록색으로

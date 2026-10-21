@@ -62,6 +62,19 @@ const context = {
         },
       };
     }
+    if (url === "http://127.0.0.1:18790/monitor/rcc/reload") {
+      assert.equal(init.method, "POST");
+      assert.deepEqual(JSON.parse(init.body), {
+        instance_id: "rcc-live",
+        operation_id: "monitor.rcc-reload.test-id",
+        timeout_s: 10,
+      });
+      return {
+        ok: true,
+        status: 200,
+        async json() { return { outcome: "APPLIED", evidence: { command: "reload-extension" } }; },
+      };
+    }
     if (url === "http://127.0.0.1:18790/monitor/state") {
       return { ok: true, status: 200, async json() { return monitorState; } };
     }
@@ -102,6 +115,14 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /id="monitorBctRecover"/);
   assert.match(monitorSource, /id="monitorMcpTunnelRecover"/);
   assert.match(monitorSource, /id="monitorBctControlRefresh"/);
+  assert.doesNotMatch(monitorSource, /id="monitorRccReload" type="button" disabled/);
+  assert.doesNotMatch(monitorSource, /id="monitorBctRecover" type="button" disabled/);
+  assert.doesNotMatch(monitorSource, /id="monitorMcpTunnelRecover" type="button" disabled/);
+  assert.doesNotMatch(monitorSource, /id="monitorBctControlRefresh" type="button" disabled/);
+  assert.match(monitorSource, />BC 도구 새로고침<\/button>/);
+  assert.match(monitorSource, /type:"recoverBctCore"/);
+  assert.match(monitorSource, /type:"recoverMcpTunnel"/);
+  assert.match(monitorSource, /type:"monitor-refresh-exact-chatgpt-tab"/);
   assert.match(monitorSource, /monitorWorkers\.dataset\.columns = "3"/);
   assert.match(monitorSource, /monitorVersion\.classList\.add\("healthy"\)/);
   assert.doesNotMatch(monitorSource, /id="monitorActRestart"/);
@@ -167,6 +188,10 @@ vm.runInContext(source, context);
   assert.throws(() => shell.windowNodes({ rcc: {} }), /BCT_RCC_STATE_INVALID/);
   const renamed = await shell.renameConversation(nodes[0], " 새 이름 ");
   assert.equal(renamed.operationId, "monitor.rename.test-id");
+  const reloaded = await shell.reloadRcc("rcc-live");
+  assert.equal(reloaded.operationId, "monitor.rcc-reload.test-id");
+  assert.equal(reloaded.instanceId, "rcc-live");
+  await assert.rejects(shell.reloadRcc("x"), /BCT_RCC_RELOAD_EXACT_INSTANCE_REQUIRED/);
   await assert.rejects(shell.renameConversation(nodes[1], "이름"), /BCT_RENAME_EXACT_IDENTITY_REQUIRED/);
   await shell.openStatus();
   await shell.openLocalLlm();

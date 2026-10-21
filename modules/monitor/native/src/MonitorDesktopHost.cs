@@ -1168,7 +1168,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-    private static object Handle(Dictionary<string, object> request)
+    private static object Handle(Dictionary<string, object> request)
 
 
 
@@ -1188,7 +1188,11 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-        if (type == "getDeploymentInfo") return GetDeploymentInfo();
+        if (type == "getDeploymentInfo") return GetDeploymentInfo();
+
+        if (type == "recoverBctCore") return RecoverBoundedService("BCT Core Supervisor", true);
+
+        if (type == "recoverMcpTunnel") return RecoverBoundedService("BCT Tunnel Supervisor", false);
         if (type == "getRdcRemoteStatus") return GetRdcRemoteStatus();
         if (type == "startRdcRemote") return StartRdcRemote();
         if (type == "stopRdcRemote") return StopRdcRemote();
@@ -1345,12 +1349,120 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-        return Error("癲ル슣????誘⑦←뵳?異?堉온 ????낆툗 ??釉먯뒜?????낇돲??");
-
-
-
-
-    }
+        return Error("癲ル슣????誘⑦←뵳?異?堉온 ????낆툗 ??釉먯뒜?????낇돲??");
+
+    }
+
+    private static bool ProbeHttp(string url, string expectedFragment)
+    {
+        try
+        {
+            var request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "GET";
+            request.Timeout = 1500;
+            request.ReadWriteTimeout = 1500;
+            request.Proxy = null;
+            using (var response = (HttpWebResponse)request.GetResponse())
+            using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+            {
+                if ((int)response.StatusCode != 200) return false;
+                string body = reader.ReadToEnd();
+                return body.IndexOf(expectedFragment, StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+        }
+        catch { return false; }
+    }
+
+    private static bool BctCoreReady()
+    {
+        return ProbeHttp("http://127.0.0.1:18790/health", "\"service\":\"bct-core\"")
+            && ProbeHttp("http://127.0.0.1:18790/health", "\"ready\":true");
+    }
+
+    private static string TunnelHealthBaseUrl()
+    {
+        try
+        {
+            string path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                @".local\state\tunnel-client\health\act-control.url");
+            if (!File.Exists(path)) return "";
+            string raw = File.ReadAllText(path, Encoding.UTF8).Trim();
+            Uri uri;
+            if (!Uri.TryCreate(raw, UriKind.Absolute, out uri) || uri.Scheme != "http" ||
+                uri.Host != "127.0.0.1" || !string.IsNullOrEmpty(uri.UserInfo) || uri.Port <= 0)
+                return "";
+            return uri.GetLeftPart(UriPartial.Authority);
+        }
+        catch { return ""; }
+    }
+
+    private static bool McpTunnelReady()
+    {
+        string baseUrl = TunnelHealthBaseUrl();
+        return !string.IsNullOrEmpty(baseUrl)
+            && ProbeHttp(baseUrl + "/healthz", "live")
+            && ProbeHttp(baseUrl + "/readyz", "ready");
+    }
+
+    private static Dictionary<string, object> RunScheduledTask(string taskName)
+    {
+        string executable = Path.Combine(Environment.SystemDirectory, "schtasks.exe");
+        if (!File.Exists(executable)) throw new FileNotFoundException("BCT_RECOVERY_SCHTASKS_MISSING");
+        var start = new ProcessStartInfo {
+            FileName = executable,
+            Arguments = "/Run /TN \"" + taskName + "\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        using (var process = Process.Start(start))
+        {
+            if (process == null) throw new InvalidOperationException("BCT_RECOVERY_TASK_START_FAILED");
+            string stdout = process.StandardOutput.ReadToEnd();
+            string stderr = process.StandardError.ReadToEnd();
+            if (!process.WaitForExit(10000)) {
+                try { process.Kill(); } catch { }
+                throw new TimeoutException("BCT_RECOVERY_TASK_REQUEST_TIMEOUT");
+            }
+            if (process.ExitCode != 0) {
+                throw new InvalidOperationException(
+                    "BCT_RECOVERY_TASK_REJECTED:" + process.ExitCode + ":" + (stderr + stdout).Trim());
+            }
+            return new Dictionary<string, object> {
+                { "task", taskName }, { "accepted", true }, { "exitCode", process.ExitCode }
+            };
+        }
+    }
+
+    private static object RecoverBoundedService(string taskName, bool core)
+    {
+        try
+        {
+            Func<bool> ready = core ? (Func<bool>)BctCoreReady : McpTunnelReady;
+            if (ready()) return new Dictionary<string, object> {
+                { "ok", true }, { "task", taskName }, { "alreadyReady", true }, { "verified", true }
+            };
+            Dictionary<string, object> receipt = RunScheduledTask(taskName);
+            DateTime deadline = DateTime.UtcNow.AddSeconds(18);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (ready()) {
+                    receipt["ok"] = true;
+                    receipt["alreadyReady"] = false;
+                    receipt["verified"] = true;
+                    return receipt;
+                }
+                Thread.Sleep(300);
+            }
+            receipt["ok"] = false;
+            receipt["verified"] = false;
+            receipt["error"] = core ? "BCT_CORE_RECOVERY_NOT_READY" : "BCT_TUNNEL_RECOVERY_NOT_READY";
+            return receipt;
+        }
+        catch (Exception ex) { return Error(ex.Message); }
+    }
 
 
 

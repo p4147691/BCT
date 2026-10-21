@@ -112,6 +112,37 @@ def run_monitor_conversation_rename(
     ).as_dict()
 
 
+def run_monitor_rcc_reload(
+    bct: BCT,
+    *,
+    principal: Principal,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Reload one exact observed RCC instance through the durable receipt path."""
+    allowed = {"instance_id", "operation_id", "timeout_s"}
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError("MONITOR_RCC_RELOAD_FIELD_NOT_ALLOWED:" + ",".join(sorted(unknown)))
+    operation_id = str(payload.get("operation_id") or "").strip()
+    if not _OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise ValueError("MONITOR_RCC_RELOAD_OPERATION_ID_INVALID")
+    instance_id = str(payload.get("instance_id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]{6,128}", instance_id):
+        raise ValueError("MONITOR_RCC_RELOAD_INSTANCE_ID_INVALID")
+    arguments = {
+        "command": "reload-extension",
+        "instance_id": instance_id,
+        "timeout_s": payload.get("timeout_s", 10.0),
+    }
+    return bct.operations.run(
+        principal=principal,
+        work_id=MONITOR_WORK_ID,
+        operation_id=operation_id,
+        capability="relay_browser",
+        arguments=arguments,
+    ).as_dict()
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-root", required=True)
@@ -308,6 +339,28 @@ def main() -> int:
                 raise ValueError("MONITOR_RENAME_OBJECT_REQUIRED")
             result = await asyncio.to_thread(
                 run_monitor_conversation_rename,
+                bct,
+                principal=monitor_principal,
+                payload=payload,
+            )
+        except (ValueError, BCTError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse(result)
+
+    @mcp.custom_route(
+        "/monitor/rcc/reload",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def monitor_rcc_reload(request: Request) -> JSONResponse:
+        if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+            return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_INVALID"}, status_code=403)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("MONITOR_RCC_RELOAD_OBJECT_REQUIRED")
+            result = await asyncio.to_thread(
+                run_monitor_rcc_reload,
                 bct,
                 principal=monitor_principal,
                 payload=payload,

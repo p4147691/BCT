@@ -516,7 +516,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BWM</strong><span id="monitorVersion" class="monitor-version" role="status"></span><span id="monitorService" style="display:none">호환 계층 확인 중…</span></div><div class="monitor-utility-actions" role="toolbar" aria-label="BWM 복구 도구"><button id="monitorExtensionReload" type="button" title="이미 설치된 BWM 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">확장 리로드</button><button id="monitorRccReload" type="button" disabled title="RCC 소유 작업의 승인된 공식 리로드 경로가 연결되면 사용할 수 있습니다.">RCC 리로드</button><button id="monitorBctRecover" type="button" disabled title="BCT Supervisor의 공식 복구 경로가 연결되면 사용할 수 있습니다.">BCT 시작·복구</button><button id="monitorMcpTunnelRecover" type="button" disabled title="MCP 터널의 공식 복구·영수증 경로가 연결되면 사용할 수 있습니다.">MCP 터널 복구</button><button id="monitorBctControlRefresh" type="button" disabled title="ChatGPT의 BCT Control 도구 새로고침은 아직 Monitor에서 안전하게 실행할 수 없습니다.">BCT Control 도구 새로고침</button></div></div>
+    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BWM</strong><span id="monitorVersion" class="monitor-version" role="status"></span><span id="monitorService" style="display:none">호환 계층 확인 중…</span></div><div class="monitor-utility-actions" role="toolbar" aria-label="BWM 복구 도구"><button id="monitorExtensionReload" type="button" title="이미 설치된 BWM 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">확장 리로드</button><button id="monitorRccReload" type="button" title="현재 관측된 정확한 RCC 인스턴스 하나를 BCT 영수증 경로로 다시 로드합니다.">RCC 리로드</button><button id="monitorBctRecover" type="button" title="Windows의 BCT Core Supervisor 공식 작업을 실행하고 READY를 확인합니다.">BCT 시작·복구</button><button id="monitorMcpTunnelRecover" type="button" title="Windows의 BCT Tunnel Supervisor 공식 작업을 실행하고 health/ready를 확인합니다.">MCP 터널 복구</button><button id="monitorBctControlRefresh" type="button" title="선택한 정확한 ChatGPT 대화 탭을 다시 불러와 BC 도구 연결을 새로 읽습니다.">BC 도구 새로고침</button></div></div>
 
 
 
@@ -43194,6 +43194,10 @@ initializeMonitorWorkerOrderStorage();
 
 
 const monitorExtensionReload = document.getElementById("monitorExtensionReload");
+const monitorRccReload = document.getElementById("monitorRccReload");
+const monitorBctRecover = document.getElementById("monitorBctRecover");
+const monitorMcpTunnelRecover = document.getElementById("monitorMcpTunnelRecover");
+const monitorBctControlRefresh = document.getElementById("monitorBctControlRefresh");
 
 const monitorActRestart = document.getElementById("monitorActRestart");
 
@@ -43699,6 +43703,79 @@ if (monitorExtensionReload) monitorExtensionReload.addEventListener("click", () 
     monitorExtensionReload.disabled = false;
     setMonitorStatus("확장 리로드 실패 · " + (error?.message || String(error)), false);
   }
+});
+
+function monitorExactSelectedChatNode() {
+  const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
+  const selected = nodes.find((node) =>
+    monitorBctSelectedNodeKey && monitorBctNodeSelectionKey(node) === monitorBctSelectedNodeKey
+  );
+  if (selected) return selected;
+  const active = nodes.filter((node) => node.active === true && node.conversationKey && !node.displayStale);
+  return active.length === 1 ? active[0] : null;
+}
+
+async function runMonitorUtilityAction(button, pendingText, action) {
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  setMonitorStatus(pendingText, true, 5000);
+  try {
+    const result = await action();
+    if (result?.ok === false) throw new Error(result.error || "복구 결과를 확인하지 못함");
+    return result;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+monitorRccReload?.addEventListener("click", () => {
+  void runMonitorUtilityAction(monitorRccReload, "RCC의 정확한 현재 인스턴스를 확인 중…", async () => {
+    if (!Array.isArray(monitorBctWindowNodesCache)) await refreshMonitorBctWindowNodes();
+    const instances = [...new Set((monitorBctWindowNodesCache || [])
+      .filter((node) => !node.displayStale && node.instanceState === "OPEN")
+      .map((node) => String(node.instanceId || "").trim()).filter(Boolean))];
+    if (instances.length !== 1) throw new Error(`RCC_RELOAD_EXACT_INSTANCE_REQUIRED:${instances.length}`);
+    await monitorBctShell.reloadRcc(instances[0]);
+    setMonitorStatus("RCC 리로드 영수증을 확인했습니다. 연결 복구를 기다립니다.", true, 5000);
+    globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 1400);
+    return { ok:true };
+  }).catch((error) => setMonitorStatus(`RCC 리로드 실패 · ${error?.message || error}`, false, 6000));
+});
+
+monitorBctRecover?.addEventListener("click", () => {
+  void runMonitorUtilityAction(monitorBctRecover, "BCT Core Supervisor 복구 상태를 확인 중…", async () => {
+    const result = await monitorNative({ type:"recoverBctCore" });
+    if (!result?.ok || result?.verified !== true) throw new Error(result?.error || "BCT_CORE_RECOVERY_UNVERIFIED");
+    await refreshMonitorBctStatus();
+    setMonitorStatus(result.alreadyReady ? "BCT Core가 이미 정상입니다." : "BCT Core 시작·복구와 READY를 확인했습니다.", true, 4500);
+    return result;
+  }).catch((error) => setMonitorStatus(`BCT 시작·복구 실패 · ${error?.message || error}`, false, 6500));
+});
+
+monitorMcpTunnelRecover?.addEventListener("click", () => {
+  void runMonitorUtilityAction(monitorMcpTunnelRecover, "MCP 터널 Supervisor 복구 상태를 확인 중…", async () => {
+    const result = await monitorNative({ type:"recoverMcpTunnel" });
+    if (!result?.ok || result?.verified !== true) throw new Error(result?.error || "BCT_TUNNEL_RECOVERY_UNVERIFIED");
+    setMonitorStatus(result.alreadyReady ? "MCP 터널이 이미 정상입니다." : "MCP 터널 복구와 health/ready를 확인했습니다.", true, 4500);
+    return result;
+  }).catch((error) => setMonitorStatus(`MCP 터널 복구 실패 · ${error?.message || error}`, false, 6500));
+});
+
+monitorBctControlRefresh?.addEventListener("click", () => {
+  void runMonitorUtilityAction(monitorBctControlRefresh, "선택한 ChatGPT 탭의 BC 도구 연결을 새로 읽는 중…", async () => {
+    const node = monitorExactSelectedChatNode();
+    if (!node?.conversationKey) throw new Error("BC_REFRESH_SELECT_EXACT_CHAT_NODE_FIRST");
+    if (node.generating === true) throw new Error("BC_REFRESH_CHAT_IS_GENERATING");
+    const result = await chrome.runtime.sendMessage({
+      type:"monitor-refresh-exact-chatgpt-tab",
+      tabId:node.tabId,
+      windowId:node.windowId,
+      conversationKey:node.conversationKey,
+    });
+    if (!result?.ok || result?.reloaded !== true) throw new Error(result?.error || "BC_REFRESH_UNVERIFIED");
+    setMonitorStatus(`${node.nodeLabel || "선택 노드"} ChatGPT 탭을 다시 불러왔습니다. BC 도구가 다시 연결됩니다.`, true, 5000);
+    return result;
+  }).catch((error) => setMonitorStatus(`BC 도구 새로고침 실패 · ${error?.message || error}`, false, 6500));
 });
 if (monitorNodeSync) monitorNodeSync.addEventListener("click", async () => {
   if (monitorNodeSync.disabled) return;

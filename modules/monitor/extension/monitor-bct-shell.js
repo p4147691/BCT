@@ -7,6 +7,7 @@
     health: "http://127.0.0.1:18790/health",
     monitorState: "http://127.0.0.1:18790/monitor/state",
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
+    rccReload: "http://127.0.0.1:18790/monitor/rcc/reload",
     status: "http://127.0.0.1:18790/monitor",
     localLlm: "http://127.0.0.1:18790/monitor#local-llm",
   });
@@ -162,6 +163,32 @@
       return Object.freeze({ receipt, operationId: generated, title });
     }
 
+    async function reloadRcc(instanceId, operationId = "") {
+      if (typeof fetcher !== "function") throw new Error("BCT_RCC_RELOAD_FETCH_UNAVAILABLE");
+      const instance = String(instanceId || "").trim();
+      if (!/^[A-Za-z0-9_.:-]{6,128}$/.test(instance)) {
+        throw new Error("BCT_RCC_RELOAD_EXACT_INSTANCE_REQUIRED");
+      }
+      const generated = String(operationId || `monitor.rcc-reload.${randomId?.() || ""}`).trim();
+      if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(generated)) {
+        throw new Error("BCT_RCC_RELOAD_OPERATION_ID_INVALID");
+      }
+      const response = await fetcher(URLS.rccReload, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ instance_id: instance, operation_id: generated, timeout_s: 10 }),
+      });
+      const receipt = await response?.json?.().catch(() => null);
+      if (!response?.ok) {
+        throw new Error(String(receipt?.error || `BCT_RCC_RELOAD_HTTP_${Number(response?.status || 0)}`));
+      }
+      if (String(receipt?.outcome || "").toUpperCase() !== "APPLIED") {
+        throw new Error(String(receipt?.error || `BCT_RCC_RELOAD_${receipt?.outcome || "UNVERIFIED"}`));
+      }
+      return Object.freeze({ receipt, operationId: generated, instanceId: instance });
+    }
+
     async function open(url, size) {
       if (!windowsApi?.create) throw new Error("BCT_WINDOW_CREATE_UNAVAILABLE");
       return windowsApi.create({
@@ -179,6 +206,7 @@
       windowNodes,
       displayWindowNodes,
       renameConversation,
+      reloadRcc,
       openStatus: () => open(URLS.status, { width: 1120, height: 820 }),
       openLocalLlm: () => open(URLS.localLlm, { width: 1200, height: 820 }),
     });
