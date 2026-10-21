@@ -1,6 +1,6 @@
 # BCT Conversation Network A — flexible scope and advisory roles
 
-Status: `SOURCE_IMPLEMENTED / LOCAL_TESTS_PASS / LOCAL_MAIN_PENDING / LIVE_NOT_APPLIED`
+Status: `LOCAL_MAIN_ACCEPTED / MAIN_CI_SUCCESS / LIVE_NOT_APPLIED`
 
 ## User contract fixed on 2026-10-21
 
@@ -48,8 +48,11 @@ expects a retired label. Neither failure executes or covers this conversation-sc
 
 ## Remaining gates
 
-1. Commit the isolated branch, integrate through the local-main contract, publish, and obtain exact
-   head CI.
-2. Deploy exact accepted Core and Monitor payload only after the shared LIVE target is clear.
-3. Reload same-ID BWM and perform actual right-click, scope grouping, 600 ms Manager tag, rename,
+The candidate commit `06b157cbf32557696ef1818782c46e9da494dda2` was integrated through the
+`merge_local_main` operation as exact main `73066a84caba93d18a2c933c629fe26d5364d8aa` and
+published fast-forward-only. GitHub Actions run `39551081584` passed scope, preflight, all four Core
+shards, and Browser Bridge.
+
+1. Deploy the exact accepted Core and Monitor payload only after the shared LIVE target is clear.
+2. Reload same-ID BWM and perform actual right-click, scope grouping, 600 ms Manager tag, rename,
    close/trash/recovery E2E. Until then this is not LIVE accepted.
