@@ -188,6 +188,28 @@ class Store:
                     assignment_epoch INTEGER NOT NULL, unresolved INTEGER NOT NULL,
                     FOREIGN KEY(operation_id) REFERENCES operations(operation_id)
                 );
+                -- One row is one complete Manager -> Worker -> Manager relay.
+                -- Runtime/tab generations are observations, not identity or
+                -- authorization fences.  The immutable identity is the
+                -- delivery id plus both exact conversation UUIDs and request
+                -- hash.
+                CREATE TABLE IF NOT EXISTS relay_deliveries (
+                    delivery_id TEXT PRIMARY KEY,
+                    work_id TEXT NOT NULL,
+                    instance_id TEXT NOT NULL,
+                    manager_conversation_key TEXT NOT NULL,
+                    worker_conversation_key TEXT NOT NULL,
+                    request_sha256 TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    response_sha256 TEXT,
+                    response_length INTEGER,
+                    observation_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    FOREIGN KEY(work_id) REFERENCES works(work_id)
+                );
+                CREATE INDEX IF NOT EXISTS relay_deliveries_work_state
+                    ON relay_deliveries(work_id,state,updated_at);
                 CREATE TABLE IF NOT EXISTS events (
                     event_id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
                     subject_id TEXT NOT NULL, data_json TEXT NOT NULL, created_at REAL NOT NULL

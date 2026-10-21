@@ -29,6 +29,9 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
         cls.state_service = (
             ROOT / "modules/rcc/extension/domain/state_service.js"
         ).read_text(encoding="utf-8")
+        cls.delivery_service = (
+            ROOT / "modules/rcc/extension/domain/delivery_ledger_service.js"
+        ).read_text(encoding="utf-8")
         cls.store = (ROOT / "src/bct/core/store.py").read_text(encoding="utf-8")
         cls.plan = PLAN.read_text(encoding="utf-8")
 
@@ -37,6 +40,7 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
             "NEW_RELAY_COMMANDS": {
                 "simple-relay-bind", "simple-relay-send",
                 "simple-relay-return", "new-chat-send",
+                "delivery-start", "delivery-status", "delivery-return",
             },
             "CONVERSATION_COMMANDS": {
                 "rename-conversation", "conversation-bind",
@@ -60,10 +64,11 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
             "relayResultReceiptsV1", "renameReceiptsV1",
             "bindingSubmitLeasesV1", "simpleRelayV0Binding",
             "simpleRelayV0Receipts", "newChatReceiptsV1",
+            "deliveryLedgerMirrorV1",
         }
         for key in keys:
             with self.subTest(key=key):
-                self.assertIn(key, self.state_service)
+                self.assertIn(key, self.state_service + self.delivery_service)
                 self.assertIn(f"`{key}`", self.plan)
 
     def test_orchestration_table_inventory_is_documented(self) -> None:

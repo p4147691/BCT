@@ -113,6 +113,24 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'delivery-start') {
+          const result = await deliveryStart(message);
+          postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
+          return;
+        }
+
+    if (message.command === 'delivery-status') {
+          const result = await deliveryStatus(message);
+          postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
+          return;
+        }
+
+    if (message.command === 'delivery-return') {
+          const result = await deliveryReturn(message);
+          postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
+          return;
+        }
+
     if (message.command === 'new-chat-send') {
 
           const result = await sendNewChatAndAwaitResult(message);

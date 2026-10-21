@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import unittest
+import hashlib
+import tempfile
+from pathlib import Path
 
+from bct.core.delivery_ledger import DeliveryLedger
 from bct.core.delivery_state import (
     DeliveryEvent,
     DeliveryState,
     DeliveryTransitionError,
     advance_delivery_state,
 )
+from bct.core.models import ConflictError, Work
+from bct.core.store import Store
 
 
 class DeliveryStateTests(unittest.TestCase):
@@ -86,6 +92,62 @@ class DeliveryStateTests(unittest.TestCase):
             ),
             DeliveryState.FAILED,
         )
+
+
+class DeliveryLedgerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.temp.name) / "state.sqlite3")
+        self.work = self.store.create_work(Work(
+            "delivery-work", "thin relay", (self.temp.name,),
+            frozenset({"relay_browser"}), "owner",
+        ))
+        self.ledger = DeliveryLedger(self.store)
+        self.identity = dict(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+            instance_id="6174664e1c1b4e6db1d4729c841db3c9",
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            request_sha256=hashlib.sha256(b"one exact message").hexdigest(),
+        )
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_one_row_covers_the_whole_roundtrip(self) -> None:
+        created, row = self.ledger.create_or_get(**self.identity)
+        self.assertTrue(created)
+        self.assertEqual("NOT_SENT", row["state"])
+        row = self.ledger.observe(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+            event=DeliveryEvent.WORKER_TURN_CONFIRMED,
+            observation={"rcc_session_id": "session-1", "untrusted": "drop"},
+        )
+        self.assertEqual("SENT_WAITING", row["state"])
+        self.assertEqual({"rcc_session_id": "session-1"}, row["observation"])
+        response_hash = hashlib.sha256(b"worker reply").hexdigest()
+        row = self.ledger.observe(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+            event=DeliveryEvent.WORKER_REPLY_CAPTURED,
+            response_sha256=response_hash, response_length=12,
+        )
+        self.assertEqual("REPLY_CAPTURED", row["state"])
+        row = self.ledger.observe(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+            event=DeliveryEvent.MANAGER_TURN_CONFIRMED,
+        )
+        self.assertEqual("RETURNED", row["state"])
+        self.assertEqual(response_hash, row["response_sha256"])
+
+    def test_same_id_is_idempotent_but_identity_is_immutable(self) -> None:
+        self.ledger.create_or_get(**self.identity)
+        created, _row = self.ledger.create_or_get(**self.identity)
+        self.assertFalse(created)
+        with self.assertRaisesRegex(ConflictError, "DELIVERY_ID_REUSE_MISMATCH"):
+            self.ledger.create_or_get(**{
+                **self.identity,
+                "request_sha256": hashlib.sha256(b"different").hexdigest(),
+            })
 
 
 if __name__ == "__main__":

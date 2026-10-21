@@ -1,6 +1,6 @@
 # BCT RCC delivery ledger V1
 
-Status: `CHANGE_FREEZE / READ_ONLY_AUDIT_COMPLETE / STATE_MACHINE_CONTRACT_LOCKED / THIN_PATH_NOT_IMPLEMENTED`
+Status: `CHANGE_FREEZE / READ_ONLY_AUDIT_COMPLETE / STATE_MACHINE_CONTRACT_LOCKED / THIN_PATH_SOURCE_IMPLEMENTED / LIVE_NOT_APPLIED`
 
 ## Why this reset exists
 
@@ -72,7 +72,7 @@ conversation UUID.
 
 | Policy class | Commands | Decision |
 | --- | --- | --- |
-| new relay | `simple-relay-bind`, `simple-relay-send`, `simple-relay-return`, `new-chat-send` | keep new-chat separate; integrate the three Simple Relay commands |
+| new relay | `delivery-start`, `delivery-status`, `delivery-return`, `simple-relay-bind`, `simple-relay-send`, `simple-relay-return`, `new-chat-send` | the three `delivery-*` commands are the replacement; keep new-chat separate; retire the three Simple Relay commands only after acceptance |
 | conversation | `rename-conversation`, `conversation-bind` | keep rename; retire persisted relay binding after replacement acceptance |
 | orchestration | `send` | replace with the single delivery contract |
 | read-only | `ping`, `state`, `result`, `rename-receipt`, `probe`, `probe-tabs`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `api-probe`, `main-capture-get` | keep; consolidate diagnostics later without blocking delivery |
@@ -99,7 +99,9 @@ It will not create a second content-script implementation.
 
 ### BCT SQLite
 
-The LIVE database currently contains the general audit tables `operations`,
+The source schema adds one replacement table, `relay_deliveries`. The LIVE
+database does not contain it because this candidate is not deployed. The LIVE
+database currently contains the general audit tables `operations`,
 `resource_claims`, `operation_effect_stages` and `operation_steps`, plus:
 
 - project directory/run: `conversation_network_projects`,
@@ -130,7 +132,9 @@ Claims. These historical rows are evidence and are not modified by this work.
 Current keys are `settings`, `registrations`, `pending`, `results`, `processed`,
 `operations`, `relayResultReceiptsV1`, `renameReceiptsV1`,
 `bindingSubmitLeasesV1`, `simpleRelayV0Binding`, `simpleRelayV0Receipts` and
-`newChatReceiptsV1`.
+`newChatReceiptsV1`. The replacement source adds one bounded mirror,
+`deliveryLedgerMirrorV1`; it is not present in LIVE before deployment and first
+use.
 
 ### Page/extension session state
 
@@ -223,6 +227,24 @@ Rules:
 6. Resolve the Manager UUID, submit that captured reply once, and prove the
    exact Manager user turn.
 7. Persist `RETURNED`.
+
+## Thin-path implementation boundary
+
+The source implementation is intentionally three calls over one logical ID:
+
+- `delivery-start`: creates the authoritative BCT row, resolves both exact
+  conversation UUIDs, submits to the Worker once and records `SENT_WAITING`;
+- `delivery-status`: reads only the exact Worker turn and records
+  `REPLY_CAPTURED`; a reply that is still generating remains pending;
+- `delivery-return`: submits the stored reply to the exact Manager tab and
+  records `RETURNED`.
+
+Each outer BCT operation uses the exact resource
+`rcc-instance:<instance>:delivery:<delivery_id>`. It never reserves the whole
+RCC instance. An ambiguous boundary records `NEEDS_REVIEW` and releases that
+exact execution Claim; the immutable ledger row is the warning/audit record.
+No Project Run, wake, failover, attachment generation or orchestration mailbox
+code calls this path yet.
 
 Wake-up, role failover, multiple Workers and autonomous scheduling are forbidden
 until this sequence succeeds twice, including one normal reload/disconnection
