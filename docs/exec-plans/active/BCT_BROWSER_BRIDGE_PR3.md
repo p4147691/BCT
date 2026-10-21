@@ -360,3 +360,32 @@ Focused tests prove one status observation, zero added tab creations, and zero
 added submissions; the full RCC JavaScript suite and Python RCC integration
 suite also pass locally.  Exact-head CI, payload publication, one same-ID
 reload, and no-resend LIVE reconciliation remain required.
+
+## 2026-10-21 ordinary ChatGPT new-tab acceptance
+
+Exact main `4760a19366b828e67e68360794044887ab561629` passed BCT CI run
+`39616902897`.  Its 49-file RCC payload aggregate
+`179806b157cc277ce21201b48420cf0de3b70a0dea5e400529ef6cc0890fde88`
+was backed up, installed, and same-ID reloaded.  The RCC instance remained
+`6174664e1c1b4e6db1d4729c841db3c9`; only its extension session changed.
+
+The old one-turn operation was recovered from its already-submitted tab with
+the exact UUID, text hash, reply and result hash.  Reconciliation preserved the
+original UNKNOWN receipt, reported `no_resend=true`, and released only its
+exact Claim.
+
+An ordinary ChatGPT BCT Control call then ran the public high-level
+`create-and-send` contract against exact Chrome window `594834491`.  It created
+tab `594835040` once, submitted one user turn, acquired conversation UUID
+`6ad8cfc0-30fc-83ee-adaf-73fa0267df55`, and eventually recovered the exact
+reply `BCT_BROWSER_BRIDGE_ORDINARY_CHAT_OK_20261021_2341`.  The final receipt
+hash is `69ab334eaa445d37970b7c24ed4cf86fe4ec58fa43b4e2a3ca3f501f05f8be90`.
+No second tab or message was created; the original bounded-wait UNKNOWN remains
+immutable and its Claim was reconciled separately.
+
+Chrome tab creation and UUID capture completed in about seven seconds.  The
+remote ChatGPT response itself took `597904 ms`, so the multi-minute wall time
+was not Chrome API or RCC transport latency.  During that wait the generic
+result view exposed `pending=true` but omitted the new-chat state, tab, window,
+UUID and stage timing.  The follow-up candidate adds those non-sensitive fields
+to `pendingStatus`; it changes no effect, transport, retry or timeout rule.

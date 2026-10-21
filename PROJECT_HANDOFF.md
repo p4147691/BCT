@@ -1387,3 +1387,19 @@ conversation·text hash·reply·result hash로 검증해 원본 UNKNOWN을 보�
 Browser Bridge나 새 통신 계층은 추가하지 않으며 같은 메시지를 다시 보내지 않는다. 현재 로컬 focused
 회귀와 RC inventory는 PASS이고, exact-head CI·Core/RCC 정확 SHA 배포·same-ID reload·기존 operation의
 result-only LIVE 정산이 남았다.
+
+## RCC 신규 대화 LIVE 수락 및 지연 판정
+
+exact main `4760a19366b828e67e68360794044887ab561629`의 CI run `39616902897`은
+SUCCESS이고, exact 49-file RCC payload를 백업 후 설치해 same-ID reload했다. RCC instance와 열린
+탭은 보존됐다. 기존 operation `rcc-new-chat-live-e2e-9c1675e-20261021-02`의 늦은 응답은 원문을
+재전송하지 않고 UUID `6ad8a8c2-3d74-83e8-9e08-96152cf39efb`와 exact reply/hash로 회수했으며,
+원본 UNKNOWN은 보존하고 exact Claim만 `no_resend=true` 영수증으로 해제했다.
+
+일반 ChatGPT의 공개 BCT Control 도구에서도 exact window `594834491` 대상으로 동일 고수준
+`create-and-send`를 실행했다. tab `594835040`, UUID
+`6ad8cfc0-30fc-83ee-adaf-73fa0267df55`, user/assistant 각 1 turn, exact reply와 result hash를
+확인했고 중복 탭·중복 메시지는 없다. 탭 생성과 UUID 확보는 약 7초였지만 ChatGPT 생성 자체가
+`597904 ms` 걸렸다. 따라서 2분 이상 지연의 주원인은 Chrome API/RCC가 아니라 원격 응답 생성이다.
+진행 중 `pending=true`가 새 대화의 state/tab/window/UUID를 숨기는 관측성 결함은 별도 최소 후보로
+보완하되, 전송 의미·timeout·Browser Bridge·재시도 정책은 바꾸지 않는다.

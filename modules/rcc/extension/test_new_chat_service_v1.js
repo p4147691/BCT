@@ -93,6 +93,14 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
     tabId: 71, windowId: 11, conversationKey, textSha256: lateTextSha256,
     stageTiming: { beganAt: Date.now() },
   };
+  const pendingStatus = context.publicPendingNewChatStatus(
+    local.newChatReceiptsV1[lateOperationId],
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(pendingStatus)), {
+    kind: 'NEW_CHAT', state: 'SUBMIT_UNKNOWN', tabId: 71, windowId: 11,
+    requestedWindowId: null, conversationKey, textSha256: lateTextSha256,
+    stageTiming: local.newChatReceiptsV1[lateOperationId].stageTiming, error: '',
+  });
   const createsBeforeRecovery = createCount;
   const submissionsBeforeRecovery = executeCount;
   const statusesBeforeRecovery = statusCount;
@@ -106,6 +114,9 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
   assert.equal(executeCount, submissionsBeforeRecovery);
   assert.equal(statusCount, statusesBeforeRecovery + 1);
   assert.equal(local.newChatReceiptsV1[lateOperationId].state, 'RESULT_PERSISTED');
+  assert.equal(context.publicPendingNewChatStatus(
+    local.newChatReceiptsV1[lateOperationId],
+  ), null);
 
   local.newChatReceiptsV1['new-chat-test-pre-submit'] = {
     operationId: 'new-chat-test-pre-submit', state: 'CREATED',

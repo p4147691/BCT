@@ -232,13 +232,16 @@ async function handleNativeCommand(message) {
             await recoverPersistedNewChatResult(state, relayId) || null;
 
 
-          const pending = completed ? null : state.pending?.[relayId] ||
+          const newChatPendingStatus = completed ? null
 
 
-            (newChatReceipt && !['RESULT_PERSISTED', 'NOT_APPLIED'].includes(
+            : publicPendingNewChatStatus(newChatReceipt);
 
 
-              String(newChatReceipt.state || '')) ? newChatReceipt : null);
+          const pending = completed ? null : newChatPendingStatus ||
+
+
+            state.pending?.[relayId] || null;
 
 
           postNative({ type: 'host:result', requestId, ok: true, relayId, found: !!completed,
@@ -247,7 +250,7 @@ async function handleNativeCommand(message) {
             completed: !!completed, pending: !!pending, result: completed,
 
 
-            pendingStatus: pending ? { to: String(pending.to || ''), createdAt: Number(pending.createdAt || 0) || null,
+            pendingStatus: newChatPendingStatus || (pending ? { to: String(pending.to || ''), createdAt: Number(pending.createdAt || 0) || null,
 
 
               acceptedAt: Number(pending.acceptedAt || 0) || null, submittedAt: Number(pending.submittedAt || 0) || null,
@@ -259,7 +262,7 @@ async function handleNativeCommand(message) {
               networkStartedAt: Number(pending.networkStartedAt || 0) || null,
 
 
-              networkCompletedAt: Number(pending.networkCompletedAt || 0) || null } : null });
+              networkCompletedAt: Number(pending.networkCompletedAt || 0) || null } : null) });
 
 
           return;

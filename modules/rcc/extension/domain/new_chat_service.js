@@ -54,6 +54,23 @@ function publicPersistedNewChatResult(state, operationId) {
   return publicNewChatResult(receipt, true);
 }
 
+function publicPendingNewChatStatus(receipt) {
+  if (!receipt || ['RESULT_PERSISTED', 'NOT_APPLIED'].includes(
+    String(receipt.state || ''),
+  )) return null;
+  return {
+    kind: 'NEW_CHAT',
+    state: String(receipt.state || 'UNKNOWN'),
+    tabId: Number(receipt.tabId) || null,
+    windowId: Number(receipt.windowId) || null,
+    requestedWindowId: Number(receipt.requestedWindowId) || null,
+    conversationKey: String(receipt.conversationKey || ''),
+    textSha256: String(receipt.textSha256 || ''),
+    stageTiming: receipt.stageTiming || null,
+    error: String(receipt.error || ''),
+  };
+}
+
 // A create-and-send request can outlive the caller's bounded wait while the
 // exact ChatGPT tab keeps generating.  A later result lookup may finish that
 // receipt from the already-submitted tab, but it must never create a tab or
