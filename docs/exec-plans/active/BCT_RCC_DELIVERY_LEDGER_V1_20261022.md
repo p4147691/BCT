@@ -1,6 +1,6 @@
 # BCT RCC delivery ledger V1
 
-Status: `CHANGE_FREEZE / READ_ONLY_AUDIT_COMPLETE / STATE_MACHINE_CONTRACT_LOCKED / THIN_PATH_SOURCE_IMPLEMENTED / LIVE_NOT_APPLIED`
+Status: `CHANGE_FREEZE / READ_ONLY_AUDIT_COMPLETE / STATE_MACHINE_CONTRACT_LOCKED / THIN_PATH_RC5_PACKAGED / LIVE_NOT_APPLIED`
 
 ## Why this reset exists
 
@@ -259,3 +259,21 @@ recovery, without duplicate turns.
 - no new global Claim and no dependency on a stable attachment generation;
 - only then may wake-up, role transition and multiple Workers be designed;
 - legacy callers must reach zero before code/storage retirement.
+
+## RC5 source receipt
+
+The thin path is packaged as `RCC_REBUILD_V2_RC5` at source commit
+`1cd3eb1b063786c2ebd8c6e5ee3c2596c2c847fd`.
+
+- extension version: `1.0.28 · Delivery Ledger V1`;
+- candidate inventory: 52 files, aggregate
+  `10b85114421b7e5ce33da8cc00c027f8b278d7bddf87308de59aac60f326f998`;
+- preserved rollback baseline: 49 files, aggregate
+  `dcf27a7b32797d0bbc10405dee2ee9c743d638000ad4ae0673c11f791400ef2d`;
+- focused Python/package regression: 45 PASS;
+- complete RCC extension JavaScript suite: PASS;
+- release-candidate inventory verifier and `git diff --check`: PASS.
+
+This receipt is source-only. It does not authorize or claim an RCC install,
+same-ID reload, Chrome message send, LIVE acceptance, wake-up, role failover,
+multiple Workers or legacy deletion.

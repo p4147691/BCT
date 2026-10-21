@@ -1502,8 +1502,15 @@ UNKNOWN 7개가 남아 있다. 반면 Simple Relay는 exact 대화 UUID와 기�
 제거되지 않으며 전체 RCC/desktop Claim을 사용하지 않는다.
 
 Python 상태·ledger·feature·기존 RCC transport 회귀 28개 PASS, 기존 orchestration 포함 85개
-PASS, RCC extension JavaScript 전체 suite PASS다. 기존 RC4 고정 hash 검사는 source 변경 때문에
-의도대로 불일치하며 새 release candidate를 만들기 전에는 갱신하지 않는다. LIVE·설치 RCC·Chrome·
-기존 후보 `f573961d...`는 변경하지 않았다. 다음 단계는 source 후보 review와 새 RC/전체 CI이며,
-그 뒤에만 exact Manager 1개/Worker 1개로 실제 왕복 두 번 및 reload/단절 복구를 검증한다.
-그 검증 전에는 Wake-up·역할 전환·다중 Worker 또는 legacy 삭제를 시작하지 않는다.
+PASS, RCC extension JavaScript 전체 suite PASS다. 이후 source 후보를
+`RCC_REBUILD_V2_RC5`, extension `1.0.28 · Delivery Ledger V1`로 패키징했다. 격리 HEAD는
+`1cd3eb1b063786c2ebd8c6e5ee3c2596c2c847fd`, candidate inventory는 52파일 aggregate
+`10b85114421b7e5ce33da8cc00c027f8b278d7bddf87308de59aac60f326f998`, 보존된 rollback
+baseline은 49파일 aggregate
+`dcf27a7b32797d0bbc10405dee2ee9c743d638000ad4ae0673c11f791400ef2d`다. 패키지·상태기계·
+transport focused Python 45개, RCC extension JavaScript 전체 suite, RC inventory verifier와
+`git diff --check`가 PASS했다.
+
+LIVE·설치 RCC·Chrome·기존 후보 `f573961d...`는 변경하지 않았다. 다음 단계는 이 exact HEAD의
+PR/CI다. 그 뒤에만 exact Manager 1개/Worker 1개로 실제 왕복 두 번 및 reload/단절 복구를
+검증한다. 그 검증 전에는 Wake-up·역할 전환·다중 Worker 또는 legacy 삭제를 시작하지 않는다.
