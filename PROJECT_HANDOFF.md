@@ -1,5 +1,19 @@
 # BCT 인수인계
 
+## 진행 — RCC 신규 대화 영수증 회수와 유지보수 Claim 분리
+
+신규 대화 operation `rcc-new-chat-live-e2e-9c1675e-20261021-02`는 실제로 탭 하나와 원문 한
+건, ChatGPT 응답 한 건을 만들었으므로 재전송하지 않는다. 새 영수증 저장소 조회와 원본
+operation ID readback 결함은 각각 `362b20c`, `a3240a5`에서 수정됐다. 남은 병목은 그
+FINISHED/UNKNOWN의 전역 RCC Claim이 exact RCC payload의 공식 same-ID reload까지 차단한 것이다.
+
+reload는 이제 `rcc-instance:<id>:maintenance:reload-extension` Claim을 사용한다. Store 트랜잭션은
+RUNNING RCC-wide 효과와 maintenance를 양방향 차단하지만, 실행자 없는 FINISHED effect Claim은
+기록 그대로 둔 채 reload와 공존시킨다. reload 직전 exact instance/session과 모든 관측 endpoint의
+`generating=false`를 읽기 전용으로 확인한다. focused RCC/Core/Claim 83개 회귀와 compileall,
+diff check가 통과했다. exact local main commit·GitHub CI·Core 배포 후 RCC를 한 번만 reload하고,
+원본 operation의 저장된 result를 read/reconcile해 no-resend와 Claim 정산을 확인하는 단계가 남았다.
+
 ## 진행 — BWM 섬네일 노드 번호 충돌 회피
 
 같은 데스크톱에서 서로 겹친 두 Chrome 창의 노드 번호가 모두 각 투영 창의 좌상단을 사용해
@@ -12,7 +26,7 @@
 Monitor 설치본 배포와 same-ID reload 후 실제 겹친 창 표시를 확인한다. 상세는
 `docs/exec-plans/active/BCT_MONITOR_THUMBNAIL_BADGE_COLLISION_20261021.md`를 따른다.
 
-## 진행 — 로컬 main 정본 전환
+## 완료 — 로컬 main 정본 전환
 
 운영 결정은 `D:\BCT\source`의 로컬 Git `main`을 공식 소스 정본으로 사용하고 GitHub는
 게시·백업·리뷰·CI 감사 원격으로 두는 것이다. 기존
@@ -21,11 +35,10 @@ Monitor 설치본 배포와 same-ID reload 후 실제 겹친 창 표시를 확�
 충돌 없이 리베이스했다. `[git_authority] mode="local"`, exact local merge 계약,
 remote merge/sync 차단, `IN_SYNC`/`SYNC_PENDING`/`SYNC_CONFLICT` 게시 상태를 포함한다.
 
-작업본을 명시한 관련 회귀 41개, compileall, diff check가 PASS했다. 이전에 전역
-`PYTHONPATH`가 `D:\BCT\source`를 가리켜 다른 코드를 검사한 시행착오가 있었으므로, worktree
-검증은 반드시 해당 worktree의 `src`를 명시한다. 후보 커밋·PR·CI, 기준선 일회성 fast-forward,
-로컬 main 계약 병합, exact LIVE 배포, fast-forward GitHub 게시와 감사 CI가 남아 있다. 상세는
-`docs/exec-plans/active/BCT_LOCAL_GIT_AUTHORITY_ISOLATED_20261020.md`에 있다.
+전환은 완료되어 `AGENTS.md`의 source authority 계약과 실제 local/origin main 운영에 사용 중이다.
+이전에 전역 `PYTHONPATH`가 `D:\BCT\source`를 가리켜 다른 코드를 검사한 시행착오가 있었으므로,
+worktree 검증은 반드시 해당 worktree의 `src`를 명시한다. 이후 전달 흐름은 exact local main
+commit을 기준으로 GitHub fast-forward 게시·CI 감사와 runtime release를 서로 구분한다.
 
 ## 진행 — BWM 복구 버튼 공식 경로 연결
 
@@ -852,8 +865,8 @@ Windows 129개 테스트, main CI 및 LIVE/hosted connector E2E를 통과했다.
 
 `BCT_PLATFORM_PACKAGE_V1=LIVE_ACCEPTED`; `BCT_CORE_RELEASE_BOUNDARY=LIVE_ACCEPTED`.
 
-- GitHub `p4147691/BCT`의 `main`이 유일한 공식 소스이며 `D:\BCT\source`는 그 main의
-  깨끗한 로컬 checkout이다. 현재 정합성은 문서에 금방 낡는 SHA를 복사하지 않고
+- `D:\BCT\source`의 로컬 Git `main`이 유일한 공식 소스이며 GitHub
+  `p4147691/BCT`의 `main`은 게시·백업·리뷰·CI 감사 원격이다. 현재 정합성은 문서에 금방 낡는 SHA를 복사하지 않고
   `origin/main`, 로컬 `HEAD`, `D:\BCT\runtime\current.json`의 `source_head`, `/health`의
   `release_sha`가 모두 같은지 기계적으로 비교해 판정한다.
 - 운영 release는 `D:\BCT\runtime`, receipt와 session 상태는 `D:\BCT\data`에 있다.

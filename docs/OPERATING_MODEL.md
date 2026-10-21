@@ -2,12 +2,13 @@
 
 ## 하나의 공식 소스
 
-BCT와 BCT가 관리하는 사용자 프로젝트의 버전 관리 대상 코드는 GitHub `main`을 유일한
-공식 소스로 사용한다. `정본`이라는 단어는 대상이 불명확하므로 운영 문서에서 단독으로
-사용하지 않는다.
+BCT 자체의 버전 관리 대상 코드는 `D:\BCT\source`의 로컬 Git `main`을 공식 소스로
+사용한다. GitHub `p4147691/BCT`는 게시·백업·리뷰·CI 감사 원격이다. BCT가 관리하는 다른
+사용자 프로젝트에는 그 프로젝트가 명시한 authority 계약을 적용한다. `정본`이라는 단어는
+대상이 불명확하므로 운영 문서에서 단독으로 사용하지 않는다.
 
-- **공식 소스**: GitHub `main`의 검증된 commit.
-- **로컬 checkout**: 공식 소스를 동기화한 작업 사본.
+- **BCT 공식 소스**: `D:\BCT\source` 로컬 Git `main`의 검증된 commit.
+- **GitHub 원격**: 정확한 로컬 main commit을 fast-forward로 게시하는 백업·리뷰·CI 감사 사본.
 - **worktree**: 격리된 수정·테스트 사본.
 - **배포 release**: 정확한 공식 commit으로 만든 불변 실행 파일 집합.
 - **운영 상태**: 실제 PID, fingerprint, health, 현재 release SHA와 operation receipt.
@@ -16,8 +17,8 @@ BCT와 BCT가 관리하는 사용자 프로젝트의 버전 관리 대상 코드
 
 Runtime은 현재 무엇이 실행 중인지 판단하는 증거지만 소스가 아니다. Runtime에만 존재하는
 코드는 정상 변경으로 승격하지 않는다. 공식 소스가 유실된 과거 구성요소를 복구할 때만
-exact bytes와 SHA를 회수해 baseline commit으로 만든 뒤, 이후 변경은 다시 GitHub `main`을
-통한다.
+exact bytes와 SHA를 회수해 baseline commit으로 만든 뒤, 이후 변경은 다시 로컬 Git `main`
+계약을 통한다.
 
 ## 기본 완료 흐름
 
@@ -26,7 +27,7 @@ exact bytes와 SHA를 회수해 baseline commit으로 만든 뒤, 이후 변경�
 1. 격리 worktree에서 수정한다.
 2. focused test와 관련 회귀 테스트를 통과한다.
 3. local commit을 만든다.
-4. GitHub PR·CI를 거쳐 `main`에 통합한다.
+4. 로컬 main 계약으로 통합한 뒤 exact commit을 GitHub에 fast-forward 게시하고 CI를 수행한다.
 5. exact main SHA의 release를 배포한다.
 6. 필요한 구성요소만 최소 재시작한다.
 7. source SHA, loaded release, health와 실제 기능을 확인한다.
@@ -35,8 +36,10 @@ exact bytes와 SHA를 회수해 baseline commit으로 만든 뒤, 이후 변경�
 `LIVE_ACCEPTANCE_PENDING`이다. 사용자가 소스·로컬·Runtime 중 무엇을 기준으로 삼을지
 매번 선택하지 않는다.
 
-GitHub 또는 네트워크가 일시적으로 사용할 수 없어도 로컬 수정·테스트·commit은 계속할 수
-있다. 단, 공식 통합과 운영 배포가 끝나기 전에는 완료로 표시하지 않는다.
+GitHub 또는 네트워크가 일시적으로 사용할 수 없어도 로컬 수정·테스트·main 통합과, 이미
+검증된 로컬 commit의 복구 가능한 표시 전용 LIVE 수락은 계속할 수 있다. 이 경우 게시 상태를
+`SYNC_PENDING`으로 기록한다. Core/RCC/Native Host·프로토콜·DB/Claim·메시지 효과는 exact-head
+CI 성공 뒤 배포한다.
 
 ## 자유로운 작업과 단계별 안전
 
@@ -80,7 +83,7 @@ duplicate guard, effect evidence는 유지한다.
 
 1. 세 위치의 exact SHA와 현재 process identity를 기록한다.
 2. Runtime-only 변경은 별도 recovery branch로 회수하고 직접 main으로 승격하지 않는다.
-3. 테스트와 PR을 거쳐 공식 소스를 결정한다.
+3. 테스트와 로컬 main 통합 계약을 거쳐 공식 소스를 결정한다.
 4. exact release로 재배포하고 drift가 사라졌음을 확인한다.
 
 이 절차는 예외 복구이며 일상적인 개발 경로가 아니다.

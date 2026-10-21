@@ -46,3 +46,16 @@ turn 수가 정확히 하나 증가한 뒤에만 읽혔고, 33자 원문이 Mana
 
 Core adapter도 같은 source head `7df4f06a5e9390175392e341e567b02631fa6ce5`로 배포됐고,
 `bct-core` generation 160의 health `OK`를 확인했다.
+
+## 2026-10-21 신규 대화 후속과 유지보수 경계
+
+`create-and-send` 신규 대화의 실제 탭·원문·응답 효과는 한 번 확인됐지만 BCT는 새 영수증
+저장소와 원본 operation ID를 조회하지 못해 UNKNOWN으로 기록했다. 같은 메시지는 재전송하지
+않고, 새 영수증 projection과 exact original-ID readback을 추가했다.
+
+이 UNKNOWN의 전역 `rcc-instance:<id>` Claim이 이후 공식 reload까지 막던 문제는 reload를
+별도 maintenance Claim으로 분리해 해결한다. maintenance는 실행자 없는 FINISHED effect 기록과는
+공존하지만 RUNNING RCC-wide effect와는 Store 트랜잭션에서 양방향 충돌한다. 또한 reload 직전
+exact RCC state에서 생성 중 endpoint가 하나라도 있으면 실행하지 않는다. 원 UNKNOWN·receipt·
+Claim은 영수증 검증 전까지 변경하지 않으며, reload 후 persisted result를 읽어 검증된 경우에만
+reconcile이 정확한 원 Claim을 정산한다.

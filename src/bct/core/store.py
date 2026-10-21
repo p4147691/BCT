@@ -848,6 +848,41 @@ class Store:
                  policy_revision, now, now),
             )
             for resource in sorted(set(resources)):
+                if resource.startswith("rcc-instance:") and resource.endswith(
+                    ":maintenance:reload-extension"
+                ):
+                    instance_id = resource[
+                        len("rcc-instance:"):-len(":maintenance:reload-extension")
+                    ]
+                    broad = db.execute(
+                        "SELECT c.operation_id,c.work_id,c.assignment_epoch,"
+                        "o.state,o.assignment_epoch AS operation_epoch "
+                        "FROM resource_claims c JOIN operations o "
+                        "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
+                        "WHERE c.resource_key=? AND c.unresolved=1",
+                        ("rcc-instance:" + instance_id,),
+                    ).fetchone()
+                    if broad is not None:
+                        actor = db.execute(
+                            "SELECT COUNT(*) FROM background_job_executors "
+                            "WHERE operation_id=?", (broad["operation_id"],),
+                        ).fetchone()[0]
+                        if (
+                            broad["state"] != OperationState.FINISHED.value
+                            or broad["operation_epoch"] != broad["assignment_epoch"]
+                            or actor
+                        ):
+                            raise ConflictError("RCC_MAINTENANCE_ACTIVE_EXECUTION")
+                elif resource.startswith("rcc-instance:") and resource.count(":") == 1:
+                    maintenance = db.execute(
+                        "SELECT c.operation_id,o.state FROM resource_claims c "
+                        "JOIN operations o ON c.operation_id=o.operation_id "
+                        "AND c.work_id=o.work_id "
+                        "WHERE c.resource_key=? AND c.unresolved=1",
+                        (resource + ":maintenance:reload-extension",),
+                    ).fetchone()
+                    if maintenance is not None:
+                        raise ConflictError("RCC_MAINTENANCE_IN_PROGRESS")
                 row = db.execute("SELECT * FROM resource_claims WHERE resource_key=? AND unresolved=1", (resource,)).fetchone()
                 if row is not None and resource == "desktop-control:interactive-session" and retired_desktop_claim is not None:
                     previous_id, previous_work, previous_epoch = retired_desktop_claim

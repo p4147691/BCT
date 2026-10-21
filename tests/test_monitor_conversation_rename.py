@@ -24,6 +24,12 @@ class FakeRelayClient:
 
     def request(self, **values):
         self.calls.append(values)
+        if values["command"] == "state":
+            return {
+                "type": "host:result", "ok": True,
+                "state": {"instanceId": values["instance_id"],
+                          "sessionId": "session-current", "endpoints": []},
+            }
         if values["command"] == "reload-extension":
             return {
                 "type": "host:result", "ok": True,
@@ -167,9 +173,11 @@ class MonitorConversationRenameTests(unittest.TestCase):
         )
         self.assertEqual(Outcome.APPLIED.value, first["outcome"])
         self.assertTrue(duplicate["duplicate"])
-        self.assertEqual(1, len(self.client.calls))
-        self.assertEqual("reload-extension", self.client.calls[0]["command"])
-        self.assertEqual("instance123", self.client.calls[0]["instance_id"])
+        self.assertEqual(2, len(self.client.calls))
+        self.assertEqual(["state", "reload-extension"], [
+            call["command"] for call in self.client.calls
+        ])
+        self.assertEqual("instance123", self.client.calls[1]["instance_id"])
 
     def test_rcc_reload_rejects_ambiguous_fields_before_dispatch(self):
         with self.assertRaisesRegex(ValueError, "MONITOR_RCC_RELOAD_INSTANCE_ID_INVALID"):

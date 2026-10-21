@@ -386,7 +386,13 @@ class RelayBrowserFeature:
         if unknown:
             raise PreconditionError("RCC_ARGUMENT_NOT_ALLOWED:" + ",".join(sorted(unknown)))
         resource = "rcc-instance:" + instance_id
-        if command == "send-to-tab":
+        if command == "reload-extension":
+            # Reload is maintenance for the already-running RCC identity, not
+            # another browser/message effect.  Keep it mutually exclusive with
+            # live RCC-wide execution in Store, while allowing immutable
+            # FINISHED/UNKNOWN effect history to remain recorded.
+            resource += ":maintenance:reload-extension"
+        elif command == "send-to-tab":
             resource += ":direct-tab:" + str(prepared["extra"]["tabId"])
         elif command == "simple-relay-bind":
             resource += ":simple-relay:binding"
@@ -493,6 +499,47 @@ class RelayBrowserFeature:
             return self._execute_create_and_send(request)
         values = request.arguments
         extra = dict(values["extra"])
+        if values["command"] == "reload-extension":
+            # The maintenance claim has already been reserved atomically. Do
+            # one final read-only runtime check before the reload side effect.
+            # Duplicate operation IDs never reach execute, so neither this
+            # probe nor the reload is repeated.
+            try:
+                state_reply = self.client.request(
+                    instance_id=values["instance_id"],
+                    request_id="rcc-reload-idle-" + hashlib.sha256(
+                        request.operation_id.encode("utf-8")
+                    ).hexdigest()[:24],
+                    command="state",
+                    timeout_s=2.0,
+                )
+            except (RelayUnavailable, RelayEffectUnknown) as exc:
+                raise ConfirmedFailure(
+                    "RCC_RELOAD_IDLE_PROOF_UNAVAILABLE", release_claims=True
+                ) from exc
+            observed_state = (
+                state_reply.get("state")
+                if isinstance(state_reply, dict)
+                and isinstance(state_reply.get("state"), dict)
+                else {}
+            )
+            endpoints = observed_state.get("endpoints")
+            if (
+                state_reply.get("ok") is not True
+                or observed_state.get("instanceId") != values["instance_id"]
+                or not str(observed_state.get("sessionId") or "").strip()
+                or not isinstance(endpoints, list)
+            ):
+                raise ConfirmedFailure(
+                    "RCC_RELOAD_IDLE_PROOF_INVALID", release_claims=True
+                )
+            if any(
+                isinstance(endpoint, dict) and endpoint.get("generating") is True
+                for endpoint in endpoints
+            ):
+                raise ConfirmedFailure(
+                    "RCC_RELOAD_CHAT_GENERATING", release_claims=True
+                )
         if values["command"] == "send":
             # Transport-only option: do not change the persisted request digest.
             # Legacy UNKNOWN sends must retain their exact original fingerprint

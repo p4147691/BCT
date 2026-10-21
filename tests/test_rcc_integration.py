@@ -386,10 +386,11 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual("instance123", self.client.calls[0]["extra"]["instanceId"])
 
     def test_extension_reload_is_an_explicit_idempotent_mutation(self):
-        self.client.result = {
-            "type": "host:result", "requestId": "reload-1", "ok": True,
-            "reloading": True,
-        }
+        self.client.results = [
+            self._idle_rcc_state(),
+            {"type": "host:result", "requestId": "reload-1", "ok": True,
+             "reloading": True},
+        ]
         first = self.call("reload-1", {
             "command": "reload-extension", "instance_id": "instance123",
         })
@@ -398,9 +399,87 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(1, len(self.client.calls))
-        self.assertEqual("reload-extension", self.client.calls[0]["command"])
-        self.assertEqual("reload-1", self.client.calls[0]["extra"]["operationId"])
+        self.assertEqual(["state", "reload-extension"], [
+            call["command"] for call in self.client.calls
+        ])
+        self.assertEqual("reload-1", self.client.calls[1]["extra"]["operationId"])
+
+    def test_extension_reload_coexists_with_finished_unknown_effect_claim(self):
+        wrong = self._new_chat_result("compose-before-reload")
+        wrong["windowId"] = 99
+        original = self.call("compose-before-reload", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.client.results = [
+            self._idle_rcc_state(),
+            {"type": "host:result", "requestId": "reload-after-unknown",
+             "ok": True, "reloading": True},
+        ]
+        reloaded = self.call("reload-after-unknown", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, reloaded.outcome)
+        original_after = self.bct.store.get_operation_for(
+            operation_id="compose-before-reload", work_id="rcc-work",
+            principal_id="codex",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original_after.outcome)
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                ("compose-before-reload",),
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
+
+    def test_extension_reload_rejects_generating_chat(self):
+        busy = self._idle_rcc_state()
+        busy["state"]["endpoints"] = [{"tabId": 10, "generating": True}]
+        self.client.result = busy
+        rejected = self.call("reload-while-generating", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.FAILED, rejected.outcome)
+        self.assertEqual("RCC_RELOAD_CHAT_GENERATING", rejected.error)
+        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
+
+    def test_extension_reload_does_not_bypass_running_rcc_effect(self):
+        created, _ = self.bct.operations.begin(
+            principal=self.principal, work_id="rcc-work",
+            operation_id="compose-still-running", capability="relay_browser",
+            arguments={
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "window_id": 11, "text": "hello",
+                "timeout_s": 120,
+            },
+        )
+        self.assertTrue(created)
+        with self.assertRaisesRegex(Exception, "RCC_MAINTENANCE_ACTIVE_EXECUTION"):
+            self.call("reload-during-running-effect", {
+                "command": "reload-extension", "instance_id": "instance123",
+            })
+        self.assertEqual([], self.client.calls)
+
+    def test_rcc_effect_does_not_start_during_reserved_reload(self):
+        created, _ = self.bct.operations.begin(
+            principal=self.principal, work_id="rcc-work",
+            operation_id="reload-reserved", capability="relay_browser",
+            arguments={
+                "command": "reload-extension", "instance_id": "instance123",
+            },
+        )
+        self.assertTrue(created)
+        with self.assertRaisesRegex(Exception, "RCC_MAINTENANCE_IN_PROGRESS"):
+            self.call("compose-during-reload", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "window_id": 11, "text": "hello",
+                "timeout_s": 120,
+            })
+        self.assertEqual([], self.client.calls)
 
     def test_bootstrap_send_requires_exact_creation_identity(self):
         with self.assertRaisesRegex(PreconditionError, "RCC_BOOTSTRAP_IDENTITY_REQUIRED"):
@@ -554,7 +633,8 @@ class RccIntegrationTests(unittest.TestCase):
     def _idle_rcc_state():
         return {
             "type": "host:result", "ok": True,
-            "state": {"instanceId": "instance123", "sessionId": "session-current"},
+            "state": {"instanceId": "instance123", "sessionId": "session-current",
+                      "endpoints": []},
         }
 
     @staticmethod

@@ -8,8 +8,8 @@
 
 사용자는 BCT 안에 실제 기능 소스를 두고, 노드와 설정을 쉽게 변경할 수 있기를 원한다.
 ACT 전체를 영구적으로 호출하는 wrapper는 최종 구조로 삼지 않는다.
-검증된 구현과 테스트를 기능 단위로 가져오며, 이전된 기능의 공식 소스는 GitHub BCT main
-한곳이다.
+검증된 구현과 테스트를 기능 단위로 가져오며, 이전된 기능의 공식 소스는
+`D:\BCT\source` 로컬 Git main 한곳이다. GitHub는 게시·백업·리뷰·CI 감사 원격이다.
 
 기존 ACT는 기능별 전환이 검증될 때까지 운영한다.
 현재 Chrome/MCP 설정을 다시 만들지 않고 이어 쓰는 것을 이전 acceptance에 포함한다.
@@ -60,16 +60,15 @@ MCP catalogue도 이 목록에서 생성/검사하여 공개만 되고 실행기
 
 ## 3. 공식 소스와 운영 상태
 
-전달 단계의 용어와 책임은 `OPERATING_MODEL.md`로 고정한다. GitHub main이 유일한 공식
-소스다. 로컬 checkout과
-worktree는 개발 사본이며, runtime과 Chrome extension 폴더는 특정 commit에서 배포한
+전달 단계의 용어와 책임은 `OPERATING_MODEL.md`로 고정한다. BCT의 로컬 Git main이 유일한
+공식 소스다. worktree는 개발 사본이며, runtime과 Chrome extension 폴더는 특정 commit에서 배포한
 설치·실행 사본이다. 이 관계는 BCT 자체와 BCT가 다루는 사용자 프로젝트에 동일하게
 적용한다. 운영 DB, receipt, 모델 weight와 Chrome profile은 소스가 아니라 상태/자산이다.
 
 - bct.toml: 사람이 관리하는 정책/위험 기본값/기능 설정. 명시한 사용자 요청 안의 일반 개발 작업은 기본 허용.
 - state.sqlite: node, connection, work, operation, resource_claim, event 및 적용 revision.
 - OS credential store/기존 안전한 인증 저장소: 비밀정보. TOML/Git/receipt에는 비밀 값 저장 금지.
-- GitHub main: 소스와 설계. 현재 task/연결의 live truth가 아니다.
+- GitHub main: 로컬 main exact commit의 게시·백업·리뷰·CI 감사 사본. 현재 task/연결의 live truth가 아니다.
 
 설정과 노드의 관리 entrypoint는 하나로 제공한다. 내부 데이터는 성격에 따라 분리한다.
 정책 설정은 문법 검증 후 atomic replace하고 content hash를 policy_revision으로 사용한다.
@@ -204,7 +203,7 @@ inspect_outcome은 지원되는 경우 기존 효과를 읽어서 판정하며 �
 - 아직 이전되지 않은 기능과 source/runtime 상태.
 
 모든 소스를 무작정 복사하거나 기존 runtime DB/프로필/비밀정보를 저장소에 넣지 않는다.
-feature마다 GitHub BCT main에 단일 공식 소스를 두고 ACT/BCT 양쪽을 동시에 수정하지 않는다.
+feature마다 BCT 로컬 Git main에 단일 공식 소스를 두고 ACT/BCT 양쪽을 동시에 수정하지 않는다.
 ACT 내부 구현 직접 import를 영구 요구하지 않는다.
 기능 전체 보존은 목표이며 검증된 목록만 compatible로 표시한다.
 
