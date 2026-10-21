@@ -1358,10 +1358,12 @@ send button이 검증되지 않으면 Enter fallback을 금지하고, RCC 내부
 
 이 경로는 실제 Chrome 탭과 메시지를 만들므로 로컬 회귀와 RC 검증 → exact main CI 성공 →
 설치본 백업·same-ID reload → 일반 ChatGPT의 BCT Control 호출 LIVE E2E 순서를 유지한다.
-현재 LIVE RCC 48파일은 RC3 inventory와 missing/extra/mismatch 0으로 일치하며, RC4 manifest의
-rollback baseline도 해당 48파일 aggregate
-`9ef3eb39080f68589c5e856147905bb47706171a1c9673362a988122a80d0e46`로 갱신했다. 과거 39파일
-pre-rebuild 기준으로 복구하지 않는다.
+당시 LIVE RCC 48파일은 RC3 inventory와 missing/extra/mismatch 0으로 일치했으며, RC4 manifest의
+rollback baseline도 당시 48파일 aggregate
+`9ef3eb39080f68589c5e856147905bb47706171a1c9673362a988122a80d0e46`였다. 이후 Project Run binding
+후보를 LIVE에 적용하면서 설치 payload가 49파일로 바뀌었으므로 아래 Project Run 릴레이 배포 전에
+rollback baseline을 다시 현재 설치본과 대조해야 한다. 과거 39파일 pre-rebuild 기준으로 복구하지
+않는다.
 
 일반 ChatGPT의 첫 `create-and-send` E2E는 도구 선택에는 성공했지만 효과 시작 전에 종료된 과거
 `create-chat-window` UNKNOWN의 전역 `rcc-instance:<id>` Claim에 차단됐다. 해당 정확한 operation을
@@ -1465,3 +1467,11 @@ executor는 exact user turn 1회 제출과 assistant 전문 회수만 담당하�
 `ff672173ffbf087833da6fe744f2135c9aa8a866666dfcfa20530b61c4105a5f`이며, JavaScript 전체 회귀,
 Project Run/RCC source baseline 19개와 release inventory 검증을 통과했다. exact-head CI, 로컬 main
 병합, same-ID reload, 새 attachment 재동기화와 새 Manager checkpoint LIVE 왕복은 아직 남았다.
+
+배포 직전 감사에서 RC manifest의 rollback baseline이 위의 과거 48파일 상태를 계속 가리키는 결함을
+발견해 RCC 설치와 reload를 중단했다. 현재 설치본은 승인된 Project Run binding 후보의 정확한 49파일
+payload이며 aggregate는
+`dcf27a7b32797d0bbc10405dee2ee9c743d638000ad4ae0673c11f791400ef2d`다. manifest를 이 49파일
+목록으로 교정한 뒤 release verifier로 현재 설치본의 missing/extra/mismatch 0과 rollback aggregate를
+다시 확인했다. 이 manifest 교정도 exact-head CI와 로컬 main 병합을 거쳐야 하며, 그 전에는 RCC를
+변경하거나 reload하지 않는다.
