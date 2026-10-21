@@ -389,3 +389,21 @@ was not Chrome API or RCC transport latency.  During that wait the generic
 result view exposed `pending=true` but omitted the new-chat state, tab, window,
 UUID and stage timing.  The follow-up candidate adds those non-sensitive fields
 to `pendingStatus`; it changes no effect, transport, retry or timeout rule.
+
+## 2026-10-22 pending-observability publication
+
+Exact main `12b8c442a07c9ecf4e210a74929a62aefd3dd243` passed BCT CI run
+`39622162603` (scope, preflight, all four Core shards, and Browser Bridge).
+The exact 49-file RCC aggregate
+`bb90671339456fa9a30d52732fe108746ae36799ba9e7fd46b271cf1e4f2157b`
+was backed up, installed, and same-ID reloaded. The RCC instance stayed
+`6174664e1c1b4e6db1d4729c841db3c9`, the session changed to
+`bba404ee8f0e4a40bc09b94a28d9d769`, and all nine existing tabs were
+preserved with no generating endpoint.
+
+A post-reload read-only lookup of the existing ordinary-ChatGPT operation
+returned the persisted exact tab, UUID, text hash, reply, and result hash with
+`replayed=true`. No new tab or message was sent. A new long-generation effect
+was deliberately not created merely to exercise the transient UI field; the
+pending branch is covered by focused source tests, while terminal LIVE readback
+correctly keeps `pendingStatus=null`.

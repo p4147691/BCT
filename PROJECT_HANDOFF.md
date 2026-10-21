@@ -1403,3 +1403,22 @@ SUCCESS이고, exact 49-file RCC payload를 백업 후 설치해 same-ID reload�
 `597904 ms` 걸렸다. 따라서 2분 이상 지연의 주원인은 Chrome API/RCC가 아니라 원격 응답 생성이다.
 진행 중 `pending=true`가 새 대화의 state/tab/window/UUID를 숨기는 관측성 결함은 별도 최소 후보로
 보완하되, 전송 의미·timeout·Browser Bridge·재시도 정책은 바꾸지 않는다.
+
+## 2026-10-22 RCC 신규 대화 진행 상태 관측 LIVE 수락
+
+exact main `12b8c442a07c9ecf4e210a74929a62aefd3dd243`의 BCT CI run
+`39622162603`은 scope, preflight, Core 4개 shard와 Browser Bridge를 모두 통과했다. 49-file
+payload aggregate `bb90671339456fa9a30d52732fe108746ae36799ba9e7fd46b271cf1e4f2157b`를
+백업 후 설치하고 same-ID reload했다. RCC instance
+`6174664e1c1b4e6db1d4729c841db3c9`와 기존 탭 9개는 유지됐고 session만
+`bba404ee8f0e4a40bc09b94a28d9d769`로 갱신됐다.
+
+기존 ordinary-ChatGPT E2E operation은 reload 후에도 exact tab `594835040`, UUID,
+text SHA, reply와 result hash로 읽혔고 `replayed=true`였다. 새 탭·메시지 전송은 없었다.
+이번 변경은 실제 pending 동안 state/tab/window/UUID/stage timing을 비민감 상태로 보여주는
+관측성만 추가한다. terminal 결과에서는 `pendingStatus=null`을 유지한다.
+
+BWM의 단색 회색 plate는 capture 실패가 아니라 current desktop 카드의 solid gray CSS였다.
+exact main `c846b27e3e7432fba2d5d0062aa3e8749801e39e`와 CI run `39610757767`을
+LIVE 적용한 뒤 fresh capture에서 D1/D2 실제 이미지와 전체 UI를 확인했다. 남은 별도 현상은
+extension reload 직후 공식 Alt+M 초기화 전 blank shell이 잠시 남을 수 있는 초기화 race다.
