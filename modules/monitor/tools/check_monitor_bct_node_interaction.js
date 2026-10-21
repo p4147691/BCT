@@ -87,10 +87,17 @@ function loadModule() {
   const css = fs.readFileSync(cssPath, "utf8");
   assert.match(monitor, /row\.addEventListener\("click"/);
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
+  assert.match(monitor, /row\.addEventListener\("dragstart"/);
+  assert.match(monitor, /commitMonitorBctNodeDrop/);
+  assert.match(monitor, /monitorBctShell\.reorderConversations/);
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
   assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\)/);
   assert.match(css, /monitor-bct-node-target-highlighted/);
   assert.match(css, /#ffd75a/);
+  assert.match(css, /monitor-bct-drop-before/);
+  assert.match(css, /monitor-bct-node-drag-ghost/);
+  const selectedRule = css.match(/\.monitor-bct-node-row\.is-selected\s*\{([^}]+)\}/)?.[1] || "";
+  assert.doesNotMatch(selectedRule, /background:/);
 
   const selectionStart = monitor.indexOf("function syncMonitorBctNodeTargetHighlight(");
   const selectionEnd = monitor.indexOf("\nfunction applyMonitorBctNodeHighlight(", selectionStart);

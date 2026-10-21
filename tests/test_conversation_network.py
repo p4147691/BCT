@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 
 from bct.conversation_network import (
-    ConversationNetworkError, configure_conversation_scope, conversation_scope_directory,
+    ConversationNetworkError, arrange_conversations, configure_conversation_scope,
+    conversation_display_order_directory, conversation_scope_directory,
     project_view, record_monitor_snapshot,
     resolve_project_id, set_membership, upsert_conversation, upsert_project,
 )
@@ -175,3 +176,59 @@ class ConversationNetworkTests(unittest.TestCase):
             self.store, conversation_key=MANAGER, display_name="다시 열린 이름", now=302.0
         )["node_label"]
         self.assertEqual(before, after)
+
+    def test_display_order_is_durable_and_scope_move_preserves_advisory_tags(self):
+        arranged = arrange_conversations(
+            self.store,
+            conversation_keys=[WORKER, MANAGER],
+            scope_id="bct.rcc",
+            now=400.0,
+        )
+        self.assertEqual([WORKER, MANAGER], arranged["conversation_keys"])
+        self.assertEqual(
+            {MANAGER: 2, WORKER: 1},
+            conversation_display_order_directory(
+                self.store, conversation_keys=[MANAGER, WORKER]
+            ),
+        )
+        configured = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="오류 병목 감시 측정기",
+            scope_name="다른 대화망",
+            role_tags=["Manager", "병목 분석"],
+            now=401.0,
+        )
+        arrange_conversations(
+            self.store,
+            conversation_keys=[WORKER, MANAGER],
+            scope_id="bct.rcc",
+            moved_conversation_key=MANAGER,
+            now=402.0,
+        )
+        directory = conversation_scope_directory(
+            self.store, conversation_keys=[MANAGER, WORKER]
+        )
+        self.assertEqual("bct.rcc", directory[MANAGER]["scope_id"])
+        self.assertCountEqual(["Manager", "병목 분석"], directory[MANAGER]["role_tags"])
+        self.assertTrue(configured["scope_id"].startswith("network."))
+
+    def test_reorder_rejects_scope_mismatch_without_partial_write(self):
+        other = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="오류 병목 감시 측정기",
+            scope_name="다른 대화망",
+            role_tags=[],
+            now=500.0,
+        )
+        with self.assertRaisesRegex(ConversationNetworkError, "ORDER_SCOPE_MISMATCH"):
+            arrange_conversations(
+                self.store,
+                conversation_keys=[MANAGER, WORKER],
+                scope_id="bct.rcc",
+                now=501.0,
+            )
+        self.assertEqual(other["scope_id"], conversation_scope_directory(
+            self.store, conversation_keys=[MANAGER]
+        )[MANAGER]["scope_id"])

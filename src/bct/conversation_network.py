@@ -420,6 +420,121 @@ def conversation_scope_directory(
     return selected
 
 
+def conversation_display_order_directory(
+    store: Store, *, conversation_keys: list[str] | tuple[str, ...]
+) -> dict[str, int]:
+    """Return durable display order for exact known conversations."""
+    keys = sorted({
+        str(value or "").strip().lower()
+        for value in conversation_keys
+        if _UUID.fullmatch(str(value or "").strip())
+    })
+    if not keys:
+        return {}
+    placeholders = ",".join("?" for _ in keys)
+    with store.transaction() as db:
+        rows = db.execute(
+            "SELECT conversation_key,display_order FROM conversation_network_conversations "
+            f"WHERE conversation_key IN ({placeholders})",
+            keys,
+        ).fetchall()
+    return {str(row["conversation_key"]): int(row["display_order"] or 0) for row in rows}
+
+
+def arrange_conversations(
+    store: Store,
+    *,
+    conversation_keys: list[str] | tuple[str, ...],
+    scope_id: str = "",
+    moved_conversation_key: str = "",
+    now: float | None = None,
+) -> dict[str, object]:
+    """Atomically reorder visible chats and optionally move one between scopes.
+
+    This is display metadata only.  It preserves a moved chat's advisory role
+    tags, never changes its N label, and does not grant policy authority.
+    """
+    if not isinstance(conversation_keys, (list, tuple)):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_ORDER_INVALID")
+    keys = [_conversation_key(value) for value in conversation_keys]
+    if not keys or len(keys) > 512 or len(set(keys)) != len(keys):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_ORDER_INVALID")
+    destination = str(scope_id or "").strip()
+    if destination and not _ID.fullmatch(destination):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_ID_INVALID")
+    moved = _conversation_key(moved_conversation_key) if str(moved_conversation_key or "").strip() else ""
+    if moved and moved not in keys:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_MOVED_NODE_MISSING")
+    when = float(time.time() if now is None else now)
+    with store.transaction() as db:
+        found = {
+            str(row["conversation_key"])
+            for row in db.execute(
+                "SELECT conversation_key FROM conversation_network_conversations "
+                f"WHERE conversation_key IN ({','.join('?' for _ in keys)})",
+                keys,
+            )
+        }
+        if found != set(keys):
+            raise ConversationNetworkError("CONVERSATION_NETWORK_ORDER_NODE_UNKNOWN")
+        if destination and db.execute(
+            "SELECT 1 FROM conversation_network_projects WHERE project_id=? AND active=1",
+            (destination,),
+        ).fetchone() is None:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_UNKNOWN")
+
+        current_rows = db.execute(
+            "SELECT conversation_key,project_id FROM conversation_network_memberships "
+            f"WHERE activity='ACTIVE' AND conversation_key IN ({','.join('?' for _ in keys)})",
+            keys,
+        ).fetchall()
+        current = {str(row["conversation_key"]): str(row["project_id"]) for row in current_rows}
+        for key in keys:
+            if key != moved and current.get(key, "") != destination:
+                raise ConversationNetworkError("CONVERSATION_NETWORK_ORDER_SCOPE_MISMATCH")
+
+        if moved and current.get(moved, "") != destination:
+            old_scope = current.get(moved, "")
+            tags: list[str] = []
+            if old_scope:
+                tags = [str(row["tag"]) for row in db.execute(
+                    "SELECT tag FROM conversation_network_membership_tags "
+                    "WHERE project_id=? AND conversation_key=? ORDER BY tag COLLATE NOCASE",
+                    (old_scope, moved),
+                )]
+            db.execute(
+                "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+                "WHERE conversation_key=? AND activity='ACTIVE'",
+                (when, moved),
+            )
+            if destination:
+                db.execute(
+                    "INSERT INTO conversation_network_memberships(project_id,conversation_key,activity,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?) ON CONFLICT(project_id,conversation_key) DO UPDATE SET "
+                    "activity='ACTIVE',updated_at=excluded.updated_at",
+                    (destination, moved, "ACTIVE", when, when),
+                )
+                db.execute(
+                    "DELETE FROM conversation_network_membership_tags WHERE project_id=? AND conversation_key=?",
+                    (destination, moved),
+                )
+                db.executemany(
+                    "INSERT INTO conversation_network_membership_tags(project_id,conversation_key,tag,created_at) "
+                    "VALUES(?,?,?,?)",
+                    [(destination, moved, tag, when) for tag in tags],
+                )
+
+        db.executemany(
+            "UPDATE conversation_network_conversations SET display_order=?,updated_at=? WHERE conversation_key=?",
+            [(index, when, key) for index, key in enumerate(keys, start=1)],
+        )
+    return {
+        "scope_id": destination,
+        "conversation_keys": keys,
+        "moved_conversation_key": moved,
+    }
+
+
 def _validated_snapshot(value: object) -> tuple[dict[str, object], str]:
     if not isinstance(value, dict) or set(value) != {
         "schema", "source", "snapshot_id", "observed_at", "completeness", "nodes"

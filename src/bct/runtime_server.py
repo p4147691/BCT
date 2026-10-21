@@ -19,6 +19,7 @@ from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
 from bct.conversation_network import (
+    arrange_conversations,
     ConversationNetworkError,
     configure_conversation_scope,
     upsert_conversation,
@@ -142,6 +143,22 @@ def run_monitor_conversation_scope_update(
         display_name=str(payload.get("display_name") or ""),
         scope_name=str(payload.get("scope_name") or ""),
         role_tags=payload.get("role_tags") or [],
+    )
+
+
+def run_monitor_conversation_order_update(
+    bct: BCT, *, payload: dict[str, Any]
+) -> dict[str, object]:
+    """Persist display order and an optional cross-scope move atomically."""
+    allowed = {"conversation_keys", "scope_id", "moved_conversation_key"}
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError("MONITOR_CONVERSATION_ORDER_FIELD_NOT_ALLOWED:" + ",".join(sorted(unknown)))
+    return arrange_conversations(
+        bct.store,
+        conversation_keys=payload.get("conversation_keys") or [],
+        scope_id=str(payload.get("scope_id") or ""),
+        moved_conversation_key=str(payload.get("moved_conversation_key") or ""),
     )
 
 
@@ -422,6 +439,27 @@ def main() -> int:
         except (ValueError, ConversationNetworkError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse({"status": "OK", "conversation": result})
+
+    @mcp.custom_route(
+        "/monitor/conversation-network/reorder",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def monitor_conversation_network_reorder(request: Request) -> JSONResponse:
+        if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+            return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_INVALID"}, status_code=403)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("MONITOR_CONVERSATION_ORDER_OBJECT_REQUIRED")
+            result = await asyncio.to_thread(
+                run_monitor_conversation_order_update,
+                bct,
+                payload=payload,
+            )
+        except (ValueError, ConversationNetworkError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse({"status": "OK", "order": result})
 
     @mcp.custom_route("/shutdown", methods=["POST"], include_in_schema=False)
     async def shutdown(request: Request) -> JSONResponse:

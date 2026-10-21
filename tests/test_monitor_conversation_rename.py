@@ -11,6 +11,7 @@ from bct.runtime_server import (
     ensure_monitor_work,
     monitor_extension_origin_allowed,
     run_monitor_conversation_rename,
+    run_monitor_conversation_order_update,
     run_monitor_conversation_scope_update,
     run_monitor_rcc_reload,
 )
@@ -109,6 +110,32 @@ class MonitorConversationRenameTests(unittest.TestCase):
         self.assertEqual("BCT 작업", second["scope_name"])
         self.assertIn("Manager", first["role_tags"])
         self.assertIn("Manager", second["role_tags"])
+        self.assertEqual([], self.bct.store.claim_diagnostics())
+
+    def test_order_update_is_metadata_only_and_keeps_claims_empty(self):
+        keys = [
+            self.payload()["conversation_key"],
+            "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+        ]
+        for index, key in enumerate(keys):
+            run_monitor_conversation_scope_update(self.bct, payload={
+                "conversation_key": key,
+                "display_name": f"대화 {index}",
+                "scope_name": "BCT 작업",
+                "role_tags": [],
+            })
+        scope_id = run_monitor_conversation_scope_update(self.bct, payload={
+            "conversation_key": keys[0],
+            "display_name": "대화 0",
+            "scope_name": "BCT 작업",
+            "role_tags": [],
+        })["scope_id"]
+        result = run_monitor_conversation_order_update(self.bct, payload={
+            "conversation_keys": list(reversed(keys)),
+            "scope_id": scope_id,
+            "moved_conversation_key": "",
+        })
+        self.assertEqual(list(reversed(keys)), result["conversation_keys"])
         self.assertEqual([], self.bct.store.claim_diagnostics())
 
     def test_invalid_or_changed_request_is_rejected_without_dispatch(self):

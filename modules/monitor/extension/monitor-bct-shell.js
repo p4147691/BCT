@@ -8,6 +8,7 @@
     monitorState: "http://127.0.0.1:18790/monitor/state",
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
     updateConversationScope: "http://127.0.0.1:18790/monitor/conversation-network/update",
+    reorderConversations: "http://127.0.0.1:18790/monitor/conversation-network/reorder",
     rccReload: "http://127.0.0.1:18790/monitor/rcc/reload",
     status: "http://127.0.0.1:18790/monitor",
     localLlm: "http://127.0.0.1:18790/monitor#local-llm",
@@ -92,6 +93,9 @@
             roleTags: Object.freeze(Array.isArray(scope?.role_tags)
               ? scope.role_tags.map((value) => String(value || "").trim()).filter(Boolean)
               : []),
+            displayOrder: Number.isSafeInteger(Number(scope?.display_order))
+              ? Math.max(0, Number(scope.display_order))
+              : 0,
             presence: String(tab?.presence || "UNKNOWN").trim().toUpperCase(),
             active: tab?.active === true,
             generating: tab?.generating === true,
@@ -230,6 +234,36 @@
       return Object.freeze(result.conversation || {});
     }
 
+    async function reorderConversations(nodes, options = {}) {
+      if (typeof fetcher !== "function") throw new Error("BCT_CONVERSATION_ORDER_FETCH_UNAVAILABLE");
+      const conversationKeys = (Array.isArray(nodes) ? nodes : [])
+        .map((node) => String(node?.conversationKey || "").trim().toLowerCase());
+      if (!conversationKeys.length || conversationKeys.some((key) =>
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(key)) ||
+        new Set(conversationKeys).size !== conversationKeys.length) {
+        throw new Error("BCT_CONVERSATION_ORDER_IDENTITY_INVALID");
+      }
+      const movedConversationKey = String(options?.movedConversationKey || "").trim().toLowerCase();
+      if (movedConversationKey && !conversationKeys.includes(movedConversationKey)) {
+        throw new Error("BCT_CONVERSATION_ORDER_MOVED_NODE_MISSING");
+      }
+      const response = await fetcher(URLS.reorderConversations, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          conversation_keys: conversationKeys,
+          scope_id: String(options?.scopeId || "").trim(),
+          moved_conversation_key: movedConversationKey,
+        }),
+      });
+      const result = await response?.json?.().catch(() => null);
+      if (!response?.ok || result?.status !== "OK") {
+        throw new Error(String(result?.error || `BCT_CONVERSATION_ORDER_HTTP_${Number(response?.status || 0)}`));
+      }
+      return Object.freeze(result.order || {});
+    }
+
     async function open(url, size) {
       if (!windowsApi?.create) throw new Error("BCT_WINDOW_CREATE_UNAVAILABLE");
       return windowsApi.create({
@@ -248,6 +282,7 @@
       displayWindowNodes,
       renameConversation,
       updateConversationScope,
+      reorderConversations,
       reloadRcc,
       openStatus: () => open(URLS.status, { width: 1120, height: 820 }),
       openLocalLlm: () => open(URLS.localLlm, { width: 1200, height: 820 }),

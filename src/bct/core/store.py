@@ -109,6 +109,7 @@ class Store:
                 );
                 CREATE TABLE IF NOT EXISTS conversation_network_conversations (
                     conversation_key TEXT PRIMARY KEY, display_name TEXT NOT NULL,
+                    display_order INTEGER NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL, updated_at REAL NOT NULL
                 );
                 -- A durable, display-only number for a known conversation.  It
@@ -388,6 +389,16 @@ class Store:
                     ON orchestration_manager_wakes(session_id,manager_epoch,state,created_at);
                 """
             )
+            conversation_columns = {
+                row["name"] for row in db.execute(
+                    "PRAGMA table_info(conversation_network_conversations)"
+                ).fetchall()
+            }
+            if "display_order" not in conversation_columns:
+                db.execute(
+                    "ALTER TABLE conversation_network_conversations ADD COLUMN "
+                    "display_order INTEGER NOT NULL DEFAULT 0"
+                )
             wake_columns = {
                 row["name"] for row in db.execute(
                     "PRAGMA table_info(orchestration_manager_wakes)"

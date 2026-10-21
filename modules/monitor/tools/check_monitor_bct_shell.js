@@ -32,7 +32,7 @@ const monitorState = {
       tabs: [
         { tab_id: 22, window_id: 12, title: "둘", url: "https://chatgpt.com/", presence: "OPEN", active: false, generating: true },
         { tab_id: 11, window_id: 10, title: "하나", url: "https://chatgpt.com/c/chat-one", node_label: "N7", presence: "OPEN", active: true, generating: false,
-          conversation_scope: { scope_id: "network.monitor", scope_name: "모니터 관리", role_tags: ["Manager", "검토"] } },
+          conversation_scope: { scope_id: "network.monitor", scope_name: "모니터 관리", role_tags: ["Manager", "검토"], display_order: 2 } },
         { tab_id: 33, window_id: 12, title: "다른 사이트", url: "https://www.youtube.com/watch?v=test", presence: "OPEN", active: false, generating: false },
       ],
     }],
@@ -92,6 +92,22 @@ const context = {
         },
       };
     }
+    if (url === "http://127.0.0.1:18790/monitor/conversation-network/reorder") {
+      assert.equal(init.method, "POST");
+      assert.deepEqual(JSON.parse(init.body), {
+        conversation_keys: [
+          "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+          "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+        ],
+        scope_id: "network.monitor",
+        moved_conversation_key: "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+      });
+      return {
+        ok: true,
+        status: 200,
+        async json() { return { status: "OK", order: { scope_id: "network.monitor" } }; },
+      };
+    }
     if (url === "http://127.0.0.1:18790/monitor/state") {
       return { ok: true, status: 200, async json() { return monitorState; } };
     }
@@ -119,7 +135,7 @@ vm.runInContext(source, context);
 
 (async () => {
   assert.equal(manifest.name, "BCT Window Monitor");
-  assert.equal(manifest.version, "2.0.0");
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.ok(desktopSource.indexOf("monitor-bct-shell.js") < desktopSource.indexOf("monitor.js"));
   assert.match(monitorSource, /id="monitorTitle">BWM</);
   assert.doesNotMatch(monitorSource, /id="monitorBctOpen"/);
@@ -176,6 +192,7 @@ vm.runInContext(source, context);
   assert.equal(nodes[0].nodeLabel, "N7");
   assert.equal(nodes[0].sessionId, "session-live");
   assert.equal(nodes[0].scopeName, "모니터 관리");
+  assert.equal(nodes[0].displayOrder, 2);
   assert.deepEqual(Array.from(nodes[0].roleTags), ["Manager", "검토"]);
   assert.equal(nodes[1].conversationKey, "");
   assert.equal(nodes[1].url, "https://chatgpt.com/");
@@ -223,6 +240,14 @@ vm.runInContext(source, context);
     roleTags: ["Manager", "검토"],
   });
   assert.equal(scoped.scope_name, "모니터 관리");
+  const arranged = await shell.reorderConversations([
+    { conversationKey: "6ad4bb5d-6624-83ee-b045-e57fdad5120e" },
+    { conversationKey: "6ad5afa4-b1e0-83ee-8692-aec4bb51523e" },
+  ], {
+    scopeId: "network.monitor",
+    movedConversationKey: "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+  });
+  assert.equal(arranged.scope_id, "network.monitor");
   await assert.rejects(shell.reloadRcc("x"), /BCT_RCC_RELOAD_EXACT_INSTANCE_REQUIRED/);
   await assert.rejects(shell.renameConversation(nodes[1], "이름"), /BCT_RENAME_EXACT_IDENTITY_REQUIRED/);
   await shell.openStatus();

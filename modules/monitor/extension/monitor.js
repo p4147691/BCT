@@ -43210,6 +43210,8 @@ const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
+let monitorBctDraggedNodeKey = "";
+let monitorBctDragGhost = null;
 let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
@@ -43624,6 +43626,18 @@ async function resolveMonitorBctNodeDisplayHwnd(node) {
   return String(hwnd);
 }
 
+function compareMonitorBctNodeDisplayOrder(left, right) {
+  const leftOrder = Number(left.displayOrder || 0);
+  const rightOrder = Number(right.displayOrder || 0);
+  if (leftOrder > 0 || rightOrder > 0) {
+    if (leftOrder <= 0) return 1;
+    if (rightOrder <= 0) return -1;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  }
+  return (left.tabIndex ?? Number.MAX_SAFE_INTEGER) - (right.tabIndex ?? Number.MAX_SAFE_INTEGER)
+    || left.tabId - right.tabId;
+}
+
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
   const fragment = document.createDocumentFragment();
@@ -43644,6 +43658,7 @@ function renderMonitorBctWindowNodes(nodes) {
     groups.get(key).nodes.push(node);
   }
   for (const group of groups.values()) {
+    group.nodes.sort(compareMonitorBctNodeDisplayOrder);
     const groupHeader = document.createElement("button");
     groupHeader.type = "button";
     groupHeader.className = "monitor-bct-scope-heading";
@@ -43659,6 +43674,19 @@ function renderMonitorBctWindowNodes(nodes) {
       if (monitorBctCollapsedScopes.has(group.key)) monitorBctCollapsedScopes.delete(group.key);
       else monitorBctCollapsedScopes.add(group.key);
       renderMonitorBctWindowNodes(nodes);
+    });
+    groupHeader.addEventListener("dragover", (event) => {
+      if (!monitorBctDraggedNodeKey) return;
+      event.preventDefault();
+      clearMonitorBctNodeDropFeedback();
+      groupHeader.classList.add("monitor-bct-scope-drop-target");
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+    groupHeader.addEventListener("drop", (event) => {
+      if (!monitorBctDraggedNodeKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void commitMonitorBctNodeDrop(group.key, "", "after");
     });
     fragment.append(groupHeader);
     if (monitorBctCollapsedScopes.has(group.key)) continue;
@@ -43676,6 +43704,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.setAttribute("role", "button");
     row.setAttribute("aria-selected", "false");
     row.tabIndex = 0;
+    row.draggable = Boolean(node.conversationKey);
     const mappedHwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
     const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
     const desktopPosition = nativeLocation
@@ -43711,6 +43740,52 @@ function renderMonitorBctWindowNodes(nodes) {
     row.append(number, body, presence);
     row.classList.toggle("is-manager", Array.isArray(node.roleTags) && node.roleTags.includes("Manager"));
     installMonitorBctManagerLongPress(row, node);
+    row.addEventListener("dragstart", (event) => {
+      if (!node.conversationKey || !event.dataTransfer) {
+        event.preventDefault();
+        return;
+      }
+      monitorBctDraggedNodeKey = node.conversationKey;
+      monitorBctSuppressedClickKey = monitorBctNodeSelectionKey(node);
+      row.classList.add("is-dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/x-bct-conversation-key", node.conversationKey);
+      event.dataTransfer.setData("text/plain", node.conversationKey);
+      monitorBctDragGhost?.remove?.();
+      monitorBctDragGhost = createMonitorNodeDragGhost(row, event);
+      monitorBctDragGhost.classList.add("monitor-bct-node-drag-ghost");
+      const blank = document.createElement("canvas");
+      blank.width = 1;
+      blank.height = 1;
+      event.dataTransfer.setDragImage(blank, 0, 0);
+      moveMonitorNodeDragGhost(monitorBctDragGhost, event.clientX, event.clientY);
+    });
+    row.addEventListener("drag", (event) => {
+      if (event.clientX || event.clientY) moveMonitorNodeDragGhost(monitorBctDragGhost, event.clientX, event.clientY);
+    });
+    row.addEventListener("dragover", (event) => {
+      if (!monitorBctDraggedNodeKey || monitorBctDraggedNodeKey === node.conversationKey) return;
+      event.preventDefault();
+      clearMonitorBctNodeDropFeedback();
+      const rect = row.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2 ||
+        (Math.abs(event.clientY - (rect.top + rect.height / 2)) < rect.height / 3 &&
+          event.clientX < rect.left + rect.width / 2);
+      row.classList.add(before ? "monitor-bct-drop-before" : "monitor-bct-drop-after");
+      row.dataset.dropPosition = before ? "before" : "after";
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+    row.addEventListener("drop", (event) => {
+      if (!monitorBctDraggedNodeKey || monitorBctDraggedNodeKey === node.conversationKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void commitMonitorBctNodeDrop(
+        node.scopeId || "__unassigned__",
+        node.conversationKey,
+        row.dataset.dropPosition === "before" ? "before" : "after",
+      );
+    });
+    row.addEventListener("dragend", () => finishMonitorBctNodeDrag());
     row.addEventListener("click", (event) => {
       if (monitorBctSuppressedClickKey === monitorBctNodeSelectionKey(node)) {
         monitorBctSuppressedClickKey = "";
@@ -43766,6 +43841,81 @@ function renderMonitorBctWindowNodes(nodes) {
     monitorBctNodeSummary.textContent = stale
       ? `${nodes.length}개 · RCC 일시 지연 · 마지막 검증 목록`
       : `${nodes.length}개 · BCT/RCC 실시간 상태`;
+  }
+}
+
+function clearMonitorBctNodeDropFeedback() {
+  monitorWorkers?.querySelectorAll?.(
+    ".monitor-bct-drop-before,.monitor-bct-drop-after,.monitor-bct-scope-drop-target",
+  ).forEach((element) => {
+    element.classList.remove(
+      "monitor-bct-drop-before",
+      "monitor-bct-drop-after",
+      "monitor-bct-scope-drop-target",
+    );
+    if (element.dataset) delete element.dataset.dropPosition;
+  });
+}
+
+function finishMonitorBctNodeDrag() {
+  const suppressedKey = monitorBctSuppressedClickKey;
+  monitorBctDraggedNodeKey = "";
+  clearMonitorBctNodeDropFeedback();
+  monitorWorkers?.querySelectorAll?.(".monitor-bct-node-row.is-dragging")
+    .forEach((row) => row.classList.remove("is-dragging"));
+  monitorBctDragGhost?.remove?.();
+  monitorBctDragGhost = null;
+  globalThis.setTimeout(() => {
+    if (monitorBctSuppressedClickKey === suppressedKey) monitorBctSuppressedClickKey = "";
+  }, 400);
+}
+
+async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationKey, position) {
+  const draggedKey = monitorBctDraggedNodeKey;
+  const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
+  const dragged = snapshot.find((node) => node.conversationKey === draggedKey);
+  const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
+  const destinationSample = snapshot.find((node) => (node.scopeId || "") === destinationScopeId);
+  if (!dragged || !monitorBctShell?.reorderConversations) {
+    finishMonitorBctNodeDrag();
+    return;
+  }
+  const destination = snapshot
+    .filter((node) => node.conversationKey !== draggedKey && (node.scopeId || "") === destinationScopeId)
+    .sort(compareMonitorBctNodeDisplayOrder);
+  let insertion = destination.length;
+  if (targetConversationKey) {
+    const targetIndex = destination.findIndex((node) => node.conversationKey === targetConversationKey);
+    if (targetIndex >= 0) insertion = targetIndex + (position === "after" ? 1 : 0);
+  }
+  destination.splice(insertion, 0, dragged);
+  const movedAcrossScopes = (dragged.scopeId || "") !== destinationScopeId;
+  const nextOrders = new Map(destination.map((node, index) => [node.conversationKey, index + 1]));
+  monitorBctWindowNodesCache = snapshot.map((node) => {
+    if (!nextOrders.has(node.conversationKey)) return node;
+    return Object.freeze({
+      ...node,
+      scopeId: destinationScopeId,
+      scopeName: destinationScopeId ? String(destinationSample?.scopeName || "") : "",
+      displayOrder: nextOrders.get(node.conversationKey),
+    });
+  });
+  finishMonitorBctNodeDrag();
+  renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+  try {
+    await monitorBctShell.reorderConversations(destination, {
+      scopeId: destinationScopeId,
+      movedConversationKey: movedAcrossScopes ? draggedKey : "",
+    });
+    setMonitorStatus(
+      movedAcrossScopes ? "노드를 대화망으로 이동하고 순서를 저장했습니다." : "노드 표시 순서를 저장했습니다.",
+      true,
+      2200,
+    );
+  } catch (error) {
+    monitorBctWindowNodesCache = snapshot;
+    renderMonitorBctWindowNodes(snapshot);
+    setMonitorStatus(`노드 순서 저장 실패 · ${error?.message || error}`, false, 4200);
   }
 }
 
