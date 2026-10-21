@@ -14,6 +14,12 @@ function visibleNode(attributes = {}, textContent = '') {
 }
 
 const renameItem = visibleNode({}, '이름 변경');
+const renameInput = visibleNode({
+  'aria-label': '채팅 제목',
+  placeholder: '제목 추가…',
+});
+const dialog = visibleNode();
+dialog.contains = (node) => node === renameInput;
 const menuRoot = visibleNode();
 menuRoot.querySelectorAll = (selector) =>
   selector === '[role="menuitem"], button, a[href]' ? [renameItem] : [];
@@ -34,6 +40,10 @@ const document = {
   querySelectorAll: (selector) => {
     if (selector === '[role="menu"], [data-radix-menu-content]') return [menuRoot];
     if (selector === '[role="menuitem"]') return [renameItem];
+    if (selector === '[role="dialog"]') return [dialog];
+    if (selector === 'input:not([type]), input[type="text"], textarea, [contenteditable="true"], [role="textbox"]') {
+      return [renameInput];
+    }
     return [];
   },
 };
@@ -68,6 +78,11 @@ assert.equal(
   vm.runInContext('findRenameMenuItem()', context),
   renameItem,
   'the current Korean label "이름 변경" must be recognized'
+);
+assert.equal(
+  vm.runInContext('findRenameEditor(null)', context),
+  renameInput,
+  'a rename dialog input with the implicit default text type must be recognized'
 );
 
 console.log('conversation rename UI v2: PASS');

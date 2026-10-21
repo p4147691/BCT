@@ -5,7 +5,7 @@
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 48,
-    "aggregateSha256": "dafc96623a4322a72a3baeaef3baef30db6cafb2574bb8456b0d05faf81b6e93",
+    "aggregateSha256": "9ef3eb39080f68589c5e856147905bb47706171a1c9673362a988122a80d0e46",
     "files": [
       {
         "path": "background_loader.js",
@@ -94,8 +94,8 @@
       },
       {
         "path": "content/conversation_rename.js",
-        "size": 12170,
-        "sha256": "d0eb0f5119f6f938fcb6d88b438eac36e81060c6d5a353f122a80df14abb98fe"
+        "size": 12444,
+        "sha256": "946b47eaa133e2d47b7b6867978466b8f5b771bae76946bd3c889f0d06e0d4a4"
       },
       {
         "path": "content/content_router.js",

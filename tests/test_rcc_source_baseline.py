@@ -36,7 +36,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "domain/runtime_message_service.js": "ac30947109dd637abd9086a8c68b494bfe6821c824d0d272160e3f7051135e13",
             "content/conversation_dom.js": "255a8f0077c2ebc372e8990e14116cc8372e9474038bdd2dc6d78d23e5dee376",
             "content/simple_relay_executor.js": "39469f22ddcac7e057ec6738a62e03f45f50afbb76524c1ba649d8d1ea6ebe50",
-            "content/conversation_rename.js": "d0eb0f5119f6f938fcb6d88b438eac36e81060c6d5a353f122a80df14abb98fe",
+            "content/conversation_rename.js": "946b47eaa133e2d47b7b6867978466b8f5b771bae76946bd3c889f0d06e0d4a4",
             "content/content_router.js": "129655553ad882b2169046f8330386133b0731a3de09f7277674aa03d1f7af2a",
             "content/activity_reporter.js": "e73c7469d87f35e677e5d37935b518dd6f5eff5155ce2fc9ae42f4ae2dc5aee8",
         }

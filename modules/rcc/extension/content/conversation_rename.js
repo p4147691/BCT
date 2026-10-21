@@ -180,7 +180,11 @@ function isPromptComposerEditor(editor) {
 }
 
 function renameEditors() {
-  const selector = 'input[type="text"], textarea, [contenteditable="true"], [role="textbox"]';
+  // ChatGPT's current rename dialog uses an <input> without an explicit
+  // type attribute (the HTML default is still text).  Requiring
+  // input[type="text"] therefore skipped the only dialog editor after the
+  // rename action had already opened it.
+  const selector = 'input:not([type]), input[type="text"], textarea, [contenteditable="true"], [role="textbox"]';
   return Array.from(document.querySelectorAll(selector)).filter((node) =>
     isVisible(node) && !node.disabled && !isPromptComposerEditor(node)
   );

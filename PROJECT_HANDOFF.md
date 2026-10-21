@@ -1156,6 +1156,12 @@ content 구현이 `/c/<uuid>` anchor를 찾지 못했고, 현재 메뉴의 한�
 호환 fallback으로 남긴다. `이름 변경` 표기를 명시적으로 인식하며, 접힌 sidebar와 현재 한국어
 메뉴를 재현한 content 회귀를 포함한다. broad selector나 임의의 다른 대화 메뉴로 우회하지 않는다.
 
+첫 LIVE 재검증에서 메뉴 동작은 복구됐지만 현재 ChatGPT 대화상자의 제목 필드는 명시적
+`type="text"`가 없는 기본 text `<input aria-label="채팅 제목">`라서 기존 editor selector가
+`RENAME_INPUT_NOT_FOUND / NOT_APPLIED`로 안전 종료했다. selector는 dialog 안의
+`input:not([type])`을 포함하도록 보완했고, composer와 숨은 file input 배제 및 단일 dialog editor
+조건은 그대로 유지한다. 실제 UI 계약을 재현한 회귀로 이 경로를 고정한다.
+
 ## Monitor BCT 전환 후 legacy 조직 조회 경계
 
 2026-10-20 읽기 전용 점검에서 `check_monitor_live_organization.py`가 찾는 ACT
