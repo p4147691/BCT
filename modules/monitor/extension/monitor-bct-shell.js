@@ -7,6 +7,7 @@
     health: "http://127.0.0.1:18790/health",
     monitorState: "http://127.0.0.1:18790/monitor/state",
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
+    updateConversationScope: "http://127.0.0.1:18790/monitor/conversation-network/update",
     rccReload: "http://127.0.0.1:18790/monitor/rcc/reload",
     status: "http://127.0.0.1:18790/monitor",
     localLlm: "http://127.0.0.1:18790/monitor#local-llm",
@@ -69,6 +70,9 @@
           // may enter the Monitor node list.
           if (!/^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:[/?#]|$)/i.test(url)) continue;
           const conversationMatch = url.match(/\/c\/([a-z0-9-]+)/i);
+          const scope = tab?.conversation_scope && typeof tab.conversation_scope === "object"
+            ? tab.conversation_scope
+            : {};
           nodes.push(Object.freeze({
             instanceId,
             sessionId: String(instance?.session_id || "").trim(),
@@ -83,6 +87,11 @@
             url,
             conversationKey: conversationMatch?.[1] || "",
             nodeLabel: String(tab?.node_label || "").trim(),
+            scopeId: String(scope?.scope_id || "").trim(),
+            scopeName: String(scope?.scope_name || "").trim(),
+            roleTags: Object.freeze(Array.isArray(scope?.role_tags)
+              ? scope.role_tags.map((value) => String(value || "").trim()).filter(Boolean)
+              : []),
             presence: String(tab?.presence || "UNKNOWN").trim().toUpperCase(),
             active: tab?.active === true,
             generating: tab?.generating === true,
@@ -189,6 +198,38 @@
       return Object.freeze({ receipt, operationId: generated, instanceId: instance });
     }
 
+    async function updateConversationScope(node, values = {}) {
+      if (typeof fetcher !== "function") throw new Error("BCT_CONVERSATION_SCOPE_FETCH_UNAVAILABLE");
+      const conversationKey = String(node?.conversationKey || "").trim();
+      const displayName = String(values?.displayName || node?.title || "").trim();
+      const scopeName = String(values?.scopeName || "").trim();
+      const roleTags = Array.isArray(values?.roleTags)
+        ? values.roleTags.map((value) => String(value || "").trim()).filter(Boolean)
+        : [];
+      if (!conversationKey || !displayName || displayName.length > 120 || scopeName.length > 120) {
+        throw new Error("BCT_CONVERSATION_SCOPE_IDENTITY_INVALID");
+      }
+      if (roleTags.length > 24 || roleTags.some((value) => value.length > 48)) {
+        throw new Error("BCT_CONVERSATION_SCOPE_TAGS_INVALID");
+      }
+      const response = await fetcher(URLS.updateConversationScope, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          conversation_key: conversationKey,
+          display_name: displayName,
+          scope_name: scopeName,
+          role_tags: roleTags,
+        }),
+      });
+      const result = await response?.json?.().catch(() => null);
+      if (!response?.ok || result?.status !== "OK") {
+        throw new Error(String(result?.error || `BCT_CONVERSATION_SCOPE_HTTP_${Number(response?.status || 0)}`));
+      }
+      return Object.freeze(result.conversation || {});
+    }
+
     async function open(url, size) {
       if (!windowsApi?.create) throw new Error("BCT_WINDOW_CREATE_UNAVAILABLE");
       return windowsApi.create({
@@ -206,6 +247,7 @@
       windowNodes,
       displayWindowNodes,
       renameConversation,
+      updateConversationScope,
       reloadRcc,
       openStatus: () => open(URLS.status, { width: 1120, height: 820 }),
       openLocalLlm: () => open(URLS.localLlm, { width: 1200, height: 820 }),

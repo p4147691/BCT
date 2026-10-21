@@ -31,7 +31,8 @@ const monitorState = {
       state: "OPEN",
       tabs: [
         { tab_id: 22, window_id: 12, title: "둘", url: "https://chatgpt.com/", presence: "OPEN", active: false, generating: true },
-        { tab_id: 11, window_id: 10, title: "하나", url: "https://chatgpt.com/c/chat-one", node_label: "N7", presence: "OPEN", active: true, generating: false },
+        { tab_id: 11, window_id: 10, title: "하나", url: "https://chatgpt.com/c/chat-one", node_label: "N7", presence: "OPEN", active: true, generating: false,
+          conversation_scope: { scope_id: "network.monitor", scope_name: "모니터 관리", role_tags: ["Manager", "검토"] } },
         { tab_id: 33, window_id: 12, title: "다른 사이트", url: "https://www.youtube.com/watch?v=test", presence: "OPEN", active: false, generating: false },
       ],
     }],
@@ -73,6 +74,22 @@ const context = {
         ok: true,
         status: 200,
         async json() { return { outcome: "APPLIED", evidence: { command: "reload-extension" } }; },
+      };
+    }
+    if (url === "http://127.0.0.1:18790/monitor/conversation-network/update") {
+      assert.equal(init.method, "POST");
+      assert.deepEqual(JSON.parse(init.body), {
+        conversation_key: "chat-one",
+        display_name: "새 이름",
+        scope_name: "모니터 관리",
+        role_tags: ["Manager", "검토"],
+      });
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { status: "OK", conversation: { scope_name: "모니터 관리", role_tags: ["Manager", "검토"] } };
+        },
       };
     }
     if (url === "http://127.0.0.1:18790/monitor/state") {
@@ -134,6 +151,13 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /refreshMonitorBctWindowNodes/);
   assert.match(monitorSource, /addEventListener\("contextmenu"/);
   assert.match(monitorSource, /monitorBctShell\.renameConversation\(node, title\)/);
+  assert.match(monitorSource, /monitorBctShell\.updateConversationScope\(node,/);
+  assert.match(monitorSource, /Manager는 안내용 역할 태그입니다/);
+  assert.match(monitorSource, /setTimeout\(\(\) => \{[\s\S]*?\}, 600\)/);
+  assert.match(monitorSource, /network_name:String\(bctNode\?\.scopeName/);
+  assert.match(monitorSource, /openMonitorTrashRecovery/);
+  assert.doesNotMatch(monitorSource, /첫 노드[\s\S]{0,120}Manager/);
+  assert.doesNotMatch(monitorSource, /Manager[\s\S]{0,120}후임/);
   assert.match(monitorSource, /event\.target === overlay/);
   assert.match(monitorSource, /event\.key === "Escape"/);
   assert.match(monitorSource, /dialog\.addEventListener\("submit"/);
@@ -151,6 +175,8 @@ vm.runInContext(source, context);
   assert.equal(nodes[0].conversationKey, "chat-one");
   assert.equal(nodes[0].nodeLabel, "N7");
   assert.equal(nodes[0].sessionId, "session-live");
+  assert.equal(nodes[0].scopeName, "모니터 관리");
+  assert.deepEqual(Array.from(nodes[0].roleTags), ["Manager", "검토"]);
   assert.equal(nodes[1].conversationKey, "");
   assert.equal(nodes[1].url, "https://chatgpt.com/");
   assert.ok(nodes.every((node) => /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:[/?#]|$)/i.test(node.url)));
@@ -191,6 +217,12 @@ vm.runInContext(source, context);
   const reloaded = await shell.reloadRcc("rcc-live");
   assert.equal(reloaded.operationId, "monitor.rcc-reload.test-id");
   assert.equal(reloaded.instanceId, "rcc-live");
+  const scoped = await shell.updateConversationScope(nodes[0], {
+    displayName: "새 이름",
+    scopeName: "모니터 관리",
+    roleTags: ["Manager", "검토"],
+  });
+  assert.equal(scoped.scope_name, "모니터 관리");
   await assert.rejects(shell.reloadRcc("x"), /BCT_RCC_RELOAD_EXACT_INSTANCE_REQUIRED/);
   await assert.rejects(shell.renameConversation(nodes[1], "이름"), /BCT_RENAME_EXACT_IDENTITY_REQUIRED/);
   await shell.openStatus();

@@ -8,7 +8,7 @@ from unittest.mock import patch
 from bct.core.models import Principal, Work
 from bct.core.store import Store
 from bct.monitor_runtime import _rcc_states, build_monitor_state
-from bct.conversation_network import upsert_conversation
+from bct.conversation_network import configure_conversation_scope, upsert_conversation
 
 
 class MonitorRuntimeTests(unittest.TestCase):
@@ -266,10 +266,20 @@ class MonitorRuntimeTests(unittest.TestCase):
             root = Path(directory)
             store = Store(root / "state.sqlite")
             upsert_conversation(store, conversation_key=conversation, display_name="Manager")
+            configure_conversation_scope(
+                store,
+                conversation_key=conversation,
+                display_name="Manager",
+                scope_name="릴레이 운영",
+                role_tags=["Manager", "배포"],
+            )
             with patch("bct.monitor_runtime.discover_instance_ids", return_value=["instance_123"]), \
                  patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
                 state = build_monitor_state(store=store, service_state={"ready": True}, data_root=root / "data")
-        self.assertEqual("N1", state["rcc"]["instances"][0]["tabs"][0]["node_label"])
+        tab = state["rcc"]["instances"][0]["tabs"][0]
+        self.assertEqual("N1", tab["node_label"])
+        self.assertEqual("릴레이 운영", tab["conversation_scope"]["scope_name"])
+        self.assertEqual(["Manager", "배포"], tab["conversation_scope"]["role_tags"])
 
     def test_observed_conversation_is_registered_once_for_display_only(self):
         conversation = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"

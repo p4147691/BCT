@@ -1,10 +1,16 @@
-"""Project conversation-network directory and read-only Monitor snapshots.
+"""Conversation scopes and read-only Monitor snapshots.
 
 This module does not call Monitor, RCC, Chrome, or an AI model. A caller may
 provide an observed Monitor snapshot; this module validates and durably records
 only that observation. Each registered conversation receives one durable BCT
 display label (``N1``, ``N2``, ...).  The label is an alias for people, never
 a route identity, policy subject, or BCT Node/Connection.
+
+``conversation_network_projects`` is retained as the durable compatibility
+table, but its user-facing meaning is one *conversation scope*.  A scope can
+describe a Git project, a product, or any other group without introducing a
+second network object.  Role tags such as ``Manager`` are advisory metadata;
+they never grant authority and there may be zero, one, or many Managers.
 """
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ import hashlib
 import json
 import re
 import time
+import uuid
 
 from bct.core.store import Store
 
@@ -221,6 +228,12 @@ def set_membership(store: Store, *, project_id: str, conversation_key: str,
             raise ConversationNetworkError("CONVERSATION_NETWORK_PROJECT_NOT_FOUND")
         if db.execute("SELECT 1 FROM conversation_network_conversations WHERE conversation_key=?", (key,)).fetchone() is None:
             raise ConversationNetworkError("CONVERSATION_NETWORK_CONVERSATION_NOT_FOUND")
+        if state == "ACTIVE":
+            db.execute(
+                "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+                "WHERE conversation_key=? AND activity='ACTIVE' AND project_id<>?",
+                (when, key, project),
+            )
         db.execute(
             "INSERT INTO conversation_network_memberships(project_id,conversation_key,activity,created_at,updated_at) "
             "VALUES(?,?,?,?,?) ON CONFLICT(project_id,conversation_key) DO UPDATE SET "
@@ -236,6 +249,175 @@ def set_membership(store: Store, *, project_id: str, conversation_key: str,
             [(project, key, tag, when) for tag in checked_tags],
         )
     return {"project_id": project, "conversation_key": key, "activity": state, "tags": checked_tags}
+
+
+def _role_tags(values: object) -> list[str]:
+    if not isinstance(values, (list, tuple)):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_TAGS_INVALID")
+    result: list[str] = []
+    for value in values:
+        tag = _text(value, "CONVERSATION_NETWORK_TAG_INVALID", 48)
+        if tag not in result:
+            result.append(tag)
+    if len(result) > 24:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_TAGS_TOO_MANY")
+    return result
+
+
+def configure_conversation_scope(
+    store: Store,
+    *,
+    conversation_key: str,
+    display_name: str,
+    scope_name: str = "",
+    role_tags: list[str] | tuple[str, ...] = (),
+    now: float | None = None,
+) -> dict[str, object]:
+    """Set the one current user-facing scope and advisory tags for a chat.
+
+    This deliberately does not elect a privileged Manager, require a Manager,
+    or move a Chrome tab.  Existing memberships are kept as inactive history
+    rows so a trash/recovery view can still describe the previous scope.
+    """
+    key = _conversation_key(conversation_key)
+    name = _text(display_name, "CONVERSATION_NETWORK_NODE_NAME_INVALID", 120)
+    scope = str(scope_name or "").strip()
+    if "\x00" in scope or len(scope) > 120:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_NAME_INVALID")
+    tags = _role_tags(role_tags)
+    when = float(time.time() if now is None else now)
+    with store.transaction() as db:
+        conversation = db.execute(
+            "SELECT conversation_key FROM conversation_network_conversations WHERE conversation_key=?",
+            (key,),
+        ).fetchone()
+        if conversation is None:
+            db.execute(
+                "INSERT INTO conversation_network_conversations(conversation_key,display_name,created_at,updated_at) "
+                "VALUES(?,?,?,?)",
+                (key, name, when, when),
+            )
+            next_number = int(db.execute(
+                "SELECT COALESCE(MAX(node_number),0)+1 AS next_number FROM conversation_network_node_labels"
+            ).fetchone()["next_number"])
+            db.execute(
+                "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
+                (key, next_number, when),
+            )
+        else:
+            db.execute(
+                "UPDATE conversation_network_conversations SET display_name=?,updated_at=? WHERE conversation_key=?",
+                (name, when, key),
+            )
+
+        project_id = ""
+        if scope:
+            matches = list(db.execute(
+                "SELECT project_id FROM conversation_network_projects "
+                "WHERE display_name=? COLLATE NOCASE ORDER BY updated_at DESC",
+                (scope,),
+            ))
+            if len(matches) > 1:
+                raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_AMBIGUOUS")
+            if matches:
+                project_id = str(matches[0]["project_id"])
+                db.execute(
+                    "UPDATE conversation_network_projects SET display_name=?,active=1,updated_at=? WHERE project_id=?",
+                    (scope, when, project_id),
+                )
+            else:
+                project_id = f"network.{uuid.uuid4().hex}"
+                db.execute(
+                    "INSERT INTO conversation_network_projects(project_id,display_name,active,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?)",
+                    (project_id, scope, 1, when, when),
+                )
+
+        # A chat has one current scope. Old rows remain queryable history and
+        # are not deleted merely because the user moves the chat elsewhere.
+        db.execute(
+            "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+            "WHERE conversation_key=? AND activity='ACTIVE' AND project_id<>?",
+            (when, key, project_id),
+        )
+        if not project_id:
+            db.execute(
+                "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+                "WHERE conversation_key=? AND activity='ACTIVE'",
+                (when, key),
+            )
+        else:
+            db.execute(
+                "INSERT INTO conversation_network_memberships(project_id,conversation_key,activity,created_at,updated_at) "
+                "VALUES(?,?,?,?,?) ON CONFLICT(project_id,conversation_key) DO UPDATE SET "
+                "activity='ACTIVE',updated_at=excluded.updated_at",
+                (project_id, key, "ACTIVE", when, when),
+            )
+            db.execute(
+                "DELETE FROM conversation_network_membership_tags WHERE project_id=? AND conversation_key=?",
+                (project_id, key),
+            )
+            db.executemany(
+                "INSERT INTO conversation_network_membership_tags(project_id,conversation_key,tag,created_at) "
+                "VALUES(?,?,?,?)",
+                [(project_id, key, tag, when) for tag in tags],
+            )
+    label = node_labels_for_conversations(store, conversation_keys=[key]).get(key, "")
+    return {
+        "conversation_key": key,
+        "display_name": name,
+        "node_label": label,
+        "scope_id": project_id,
+        "scope_name": scope,
+        "role_tags": tags if project_id else [],
+    }
+
+
+def conversation_scope_directory(
+    store: Store, *, conversation_keys: list[str] | tuple[str, ...]
+) -> dict[str, dict[str, object]]:
+    """Return current scope metadata for exact UUIDs without allocating it."""
+    keys = sorted({
+        str(value or "").strip().lower()
+        for value in conversation_keys
+        if _UUID.fullmatch(str(value or "").strip())
+    })
+    if not keys:
+        return {}
+    placeholders = ",".join("?" for _ in keys)
+    with store.transaction() as db:
+        rows = [dict(row) for row in db.execute(
+            "SELECT m.conversation_key,m.project_id,p.display_name AS scope_name,m.updated_at "
+            "FROM conversation_network_memberships m "
+            "JOIN conversation_network_projects p ON p.project_id=m.project_id "
+            f"WHERE m.activity='ACTIVE' AND m.conversation_key IN ({placeholders}) "
+            "ORDER BY m.conversation_key,m.updated_at DESC",
+            keys,
+        )]
+        tag_rows = [dict(row) for row in db.execute(
+            "SELECT t.conversation_key,t.project_id,t.tag "
+            "FROM conversation_network_membership_tags t "
+            "JOIN conversation_network_memberships m "
+            "ON m.project_id=t.project_id AND m.conversation_key=t.conversation_key "
+            f"WHERE m.activity='ACTIVE' AND t.conversation_key IN ({placeholders}) "
+            "ORDER BY t.tag COLLATE NOCASE",
+            keys,
+        )]
+    selected: dict[str, dict[str, object]] = {}
+    for row in rows:
+        key = str(row["conversation_key"])
+        if key not in selected:
+            selected[key] = {
+                "scope_id": str(row["project_id"]),
+                "scope_name": str(row["scope_name"]),
+                "role_tags": [],
+            }
+    for row in tag_rows:
+        key = str(row["conversation_key"])
+        current = selected.get(key)
+        if current is not None and str(row["project_id"]) == current["scope_id"]:
+            current["role_tags"].append(str(row["tag"]))
+    return selected
 
 
 def _validated_snapshot(value: object) -> tuple[dict[str, object], str]:
@@ -341,10 +523,13 @@ def project_view(store: Store, *, project_id: str) -> dict[str, object]:
             "SELECT m.conversation_key,c.display_name,m.activity,n.node_number FROM conversation_network_memberships m "
             "JOIN conversation_network_conversations c ON c.conversation_key=m.conversation_key "
             "JOIN conversation_network_node_labels n ON n.conversation_key=m.conversation_key "
-            "WHERE m.project_id=? ORDER BY c.display_name COLLATE NOCASE", (project,)
+            "WHERE m.project_id=? AND m.activity='ACTIVE' ORDER BY c.display_name COLLATE NOCASE", (project,)
         )]
         tags = [dict(row) for row in db.execute(
-            "SELECT conversation_key,tag FROM conversation_network_membership_tags WHERE project_id=? "
+            "SELECT t.conversation_key,t.tag FROM conversation_network_membership_tags t "
+            "JOIN conversation_network_memberships m "
+            "ON m.project_id=t.project_id AND m.conversation_key=t.conversation_key "
+            "WHERE t.project_id=? AND m.activity='ACTIVE' "
             "ORDER BY tag COLLATE NOCASE", (project,)
         )]
     tags_by_key: dict[str, list[str]] = {}

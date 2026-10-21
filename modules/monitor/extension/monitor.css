@@ -946,6 +946,14 @@
 .monitor-bct-rename-actions button { min-width:62px; height:29px; padding:0 10px; border:1px solid rgba(255,255,255,.16); border-radius:6px; background:rgba(255,255,255,.06); color:#eef5fc; font:700 11px/1 "Segoe UI","Malgun Gothic",sans-serif; cursor:pointer; }
 .monitor-bct-rename-actions button.is-primary { border-color:rgba(117,184,255,.56); background:rgba(117,184,255,.18); }
 .monitor-bct-rename-actions button:disabled,.monitor-bct-rename-close:disabled { opacity:.48; cursor:default; }
+.monitor-bct-node-facts { display:grid; gap:4px; margin:0 0 10px; padding:8px; border:1px solid rgba(255,255,255,.10); border-radius:7px; background:rgba(3,8,14,.42); }
+.monitor-bct-node-facts>div { display:grid; grid-template-columns:70px minmax(0,1fr); gap:8px; font-size:10px; line-height:1.35; }
+.monitor-bct-node-facts b { color:rgba(225,235,247,.60); }
+.monitor-bct-node-facts span { overflow-wrap:anywhere; user-select:text; color:rgba(245,248,252,.90); }
+.monitor-bct-info-field { display:grid; gap:4px; margin-top:8px; }
+.monitor-bct-info-field>span { color:rgba(225,235,247,.72); font:700 10px/1.2 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-info-hint { margin-top:6px; color:rgba(211,224,239,.58); font:500 10px/1.4 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-rename-actions .monitor-bct-open-recovery { margin-right:auto; }
 @media (max-width:720px) { .monitor-bct-nodes { grid-template-columns:minmax(0,1fr); } }
 
 
@@ -3887,7 +3895,17 @@
 
 /* BCT/RCC node grid defaults to three columns; narrow windows still degrade safely. */
 .monitor-bct-nodes[data-columns="3"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.monitor-bct-scope-heading {
+  grid-column:1 / -1;display:flex;align-items:center;gap:7px;width:100%;min-width:0;
+  margin:3px 0 0;padding:5px 7px;border:0;border-bottom:1px solid rgba(255,255,255,.10);
+  background:transparent;color:rgba(236,243,251,.86);font:800 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif;
+  text-align:left;cursor:pointer;
+}
+.monitor-bct-scope-caret { width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid rgba(220,233,247,.72);transform-origin:50% 35%; }
+.monitor-bct-scope-heading[aria-expanded="false"] .monitor-bct-scope-caret { transform:rotate(-90deg); }
 .monitor-bct-node-row { grid-template-columns:29px minmax(0,1fr) 17px; }
+.monitor-bct-node-row.is-manager { background:rgba(177,134,31,.20);border-color:rgba(255,211,92,.42); }
+.monitor-bct-node-row.monitor-bct-manager-hold { box-shadow:inset 0 0 0 2px rgba(255,215,90,.34); }
 .monitor-bct-node-body { min-width:0; }
 .monitor-bct-node-location { display:block; color:rgba(202,216,232,.64); font:600 10px/1.25 "Segoe UI","Malgun Gothic",sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .monitor-bct-node-presence,

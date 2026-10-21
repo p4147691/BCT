@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 
 from bct.conversation_network import (
-    ConversationNetworkError, project_view, record_monitor_snapshot,
+    ConversationNetworkError, configure_conversation_scope, conversation_scope_directory,
+    project_view, record_monitor_snapshot,
     resolve_project_id, set_membership, upsert_conversation, upsert_project,
 )
 from bct.core.store import Store
@@ -105,3 +106,72 @@ class ConversationNetworkTests(unittest.TestCase):
                                     display_name="새 대화", now=201.0)
         self.assertEqual("N1", first["node_label"])
         self.assertEqual("N3", third["node_label"])
+
+    def test_current_scope_is_singular_but_manager_tag_is_not(self):
+        configured = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="오류 병목 감시 측정기",
+            scope_name="모니터 관리",
+            role_tags=["Manager", "병목 분석"],
+            now=300.0,
+        )
+        configure_conversation_scope(
+            self.store,
+            conversation_key=WORKER,
+            display_name="대화 기록 조회 구현",
+            scope_name="모니터 관리",
+            role_tags=["Manager", "구현"],
+            now=301.0,
+        )
+        directory = conversation_scope_directory(
+            self.store, conversation_keys=[MANAGER, WORKER]
+        )
+        self.assertEqual("모니터 관리", configured["scope_name"])
+        self.assertIn("Manager", directory[MANAGER]["role_tags"])
+        self.assertIn("Manager", directory[WORKER]["role_tags"])
+
+        moved = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="오류 병목 감시 측정기",
+            scope_name="RCC 개선",
+            role_tags=[],
+            now=302.0,
+        )
+        self.assertEqual("RCC 개선", moved["scope_name"])
+        with self.store.transaction() as db:
+            active = list(db.execute(
+                "SELECT project_id FROM conversation_network_memberships "
+                "WHERE conversation_key=? AND activity='ACTIVE'",
+                (MANAGER,),
+            ))
+            old = list(db.execute(
+                "SELECT project_id FROM conversation_network_memberships "
+                "WHERE conversation_key=? AND activity='EXCLUDED'",
+                (MANAGER,),
+            ))
+        self.assertEqual(1, len(active))
+        self.assertGreaterEqual(len(old), 1)
+
+    def test_blank_scope_means_unassigned_without_reusing_node_number(self):
+        before = upsert_conversation(
+            self.store, conversation_key=MANAGER, display_name="이름", now=300.0
+        )["node_label"]
+        cleared = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="이름",
+            scope_name="",
+            role_tags=["Manager"],
+            now=301.0,
+        )
+        self.assertEqual("", cleared["scope_id"])
+        self.assertEqual([], cleared["role_tags"])
+        self.assertNotIn(MANAGER, conversation_scope_directory(
+            self.store, conversation_keys=[MANAGER]
+        ))
+        after = upsert_conversation(
+            self.store, conversation_key=MANAGER, display_name="다시 열린 이름", now=302.0
+        )["node_label"]
+        self.assertEqual(before, after)
