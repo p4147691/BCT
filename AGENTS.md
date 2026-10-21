@@ -5,8 +5,11 @@ Read `docs/DESIGN.md`, `PROJECT_HANDOFF.md`, and the relevant execution plan bef
 ## Source of truth
 
 - Repository: `p4147691/BCT`
-- Default branch: `main`
-- Local `main` checkout: `D:\BCT\source` (a synchronized working copy, not a second authority)
+- Official source authority: local Git `main` at `D:\BCT\source`.
+- Feature worktrees live under `D:\BCT\worktrees`; only the BCT local-main merge contract may integrate them.
+- GitHub `p4147691/BCT` is the publication, backup, review, and CI audit remote. A GitHub outage does not revoke an already verified local merge or LIVE acceptance.
+- Publish is fast-forward-only from the exact accepted local main SHA. Record `SYNC_PENDING` when publication has not occurred and `SYNC_CONFLICT` when the observed remote ref differs from the expected publication base; never force-push either state.
+- GitHub PR merge and remote-to-local main synchronization are forbidden for this repository after local authority is enabled.
 - Runtime releases and durable state remain separate under `D:\BCT\runtime` and `D:\BCT\data`.
 - BCT source and tests live in this repository. ACT runtime is not the BCT source tree.
 

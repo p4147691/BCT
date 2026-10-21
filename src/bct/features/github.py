@@ -20,6 +20,14 @@ from bct.core.models import (
 )
 from bct.integrations.github import GitHubClient
 
+from .git_authority import (
+    SYNC_CONFLICT,
+    SYNC_IN_SYNC,
+    SYNC_PENDING,
+    classify_publish_sync,
+    read_git_authority,
+)
+
 from .common import resolve_in_work
 
 
@@ -181,15 +189,25 @@ class GitHubPushFeature:
         if remote_url.returncode != 0 or not _remote_matches(values["repository"], remote_url.stdout):
             raise PreconditionError("GITHUB_REMOTE_MISMATCH")
         _ensure_clean(root)
-        before = _remote_sha(root, remote, branch)
-        if before == expected_head:
+        try:
+            before = _remote_sha(root, remote, branch)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            # No push was dispatched: offline access is a confirmed non-effect,
+            # not an UNKNOWN remote mutation.
+            raise PreconditionError("GIT_REMOTE_PREFLIGHT_UNAVAILABLE:" + SYNC_PENDING) from exc
+        sync_state = classify_publish_sync(
+            local_sha=expected_head,
+            remote_sha=before,
+            expected_remote_sha=values["expected_remote_sha"],
+        )
+        if sync_state == SYNC_IN_SYNC:
             return FeatureResult(Outcome.APPLIED, {
                 "repository": values["repository"], "branch": branch,
                 "local_sha": expected_head, "remote_sha": expected_head,
-                "already_current": True,
+                "already_current": True, "sync_state": SYNC_IN_SYNC,
             })
-        if before != values["expected_remote_sha"]:
-            raise PreconditionError("GIT_REMOTE_SHA_MISMATCH")
+        if sync_state == SYNC_CONFLICT:
+            raise PreconditionError("GIT_REMOTE_SHA_MISMATCH:" + SYNC_CONFLICT)
         if before is not None:
             fetch = _git(root, "fetch", "--no-tags", remote, f"refs/heads/{branch}")
             if fetch.returncode != 0:
@@ -213,10 +231,13 @@ class GitHubPushFeature:
             return FeatureResult(Outcome.APPLIED, {
                 "repository": values["repository"], "branch": branch,
                 "local_sha": expected_head, "remote_sha": after,
-                "already_current": False,
+                "already_current": False, "sync_state": SYNC_IN_SYNC,
             })
         if after == before:
-            raise ConfirmedFailure("GIT_PUSH_NOT_APPLIED:" + failure, release_claims=True)
+            raise ConfirmedFailure(
+                "GIT_PUSH_NOT_APPLIED:" + SYNC_PENDING + ":" + failure,
+                release_claims=True,
+            )
         raise UnknownEffectError("GIT_PUSH_REMOTE_STATE_UNEXPECTED")
 
 
@@ -406,11 +427,16 @@ class GitHubPullRequestStatusFeature:
 class GitHubPullRequestMergeFeature:
     capability = "github_pr_merge"
 
-    def __init__(self, client: GitHubClient):
+    def __init__(self, client: GitHubClient, policy_path: str | Path | None = None):
         self.client = client
+        self.policy_path = policy_path
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         status = GitHubPullRequestStatusFeature(self.client).prepare(work=work, arguments=arguments)
+        authority = read_git_authority(self.policy_path)
+        if (authority.mode == "local" and status.arguments["repository"].casefold()
+                == authority.repository.casefold()):
+            raise PreconditionError("LOCAL_MAIN_REMOTE_PR_MERGE_FORBIDDEN")
         method = str(arguments.get("method") or "squash")
         if method not in {"merge", "squash", "rebase"}:
             raise PreconditionError("GITHUB_MERGE_METHOD_INVALID")
@@ -492,8 +518,14 @@ class GitHubPullRequestMergeFeature:
 class GitHubSyncMainFeature:
     capability = "github_sync_main"
 
+    def __init__(self, policy_path: str | Path | None = None):
+        self.policy_path = policy_path
+
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         root = _repo_root(resolve_in_work(work, str(arguments.get("path") or ""), must_exist=True))
+        authority = read_git_authority(self.policy_path)
+        if authority.mode == "local" and authority.source_root == root:
+            raise PreconditionError("LOCAL_MAIN_REMOTE_SYNC_FORBIDDEN")
         repository = _validate_repository(arguments.get("repository"))
         expected_local_head = _validate_sha(arguments.get("expected_local_head"))
         verified_main_sha = _validate_sha(arguments.get("verified_main_sha"))
