@@ -1892,10 +1892,10 @@
 /* CURRENT_DESKTOP_SOFT_GRAY_CARD_V3 */
 
 
-.monitor-desktop-thumb.current{background:rgba(208,213,219,.96)!important;border-color:rgba(192,198,206,.98)!important;box-shadow:0 0 0 2px rgba(184,191,199,.66),0 0 12px 4px rgba(155,168,182,.26),0 0 22px 8px rgba(110,136,162,.16)!important;}
+.monitor-desktop-thumb.current{background:rgba(255,255,255,.06)!important;border-color:rgba(205,221,238,.78)!important;box-shadow:0 0 0 1px rgba(205,221,238,.28),0 0 12px 3px rgba(110,136,162,.16)!important;}
 
 
-.monitor-desktop-thumb.current .monitor-desktop-label-text{color:#1d2530!important;text-shadow:none!important;font-weight:900!important;}
+.monitor-desktop-thumb.current .monitor-desktop-label-text{color:rgba(244,251,255,.98)!important;text-shadow:0 0 4px rgba(210,238,255,.32)!important;font-weight:900!important;}
 
 
 .monitor-desktop-thumb.current .monitor-desktop-number-badge{background:rgba(42,50,60,.94)!important;border-color:rgba(42,50,60,.90)!important;color:#fff!important;box-shadow:none!important;}
