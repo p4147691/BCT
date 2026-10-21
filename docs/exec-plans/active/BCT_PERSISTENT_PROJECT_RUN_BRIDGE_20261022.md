@@ -133,3 +133,40 @@ retain their legacy behavior unless a registered session proves them stale.
 The release profile also explicitly includes `src/bct/project_run.py`; omitting
 it would have made the deployed orchestration import fail even though source
 tests passed.
+
+## First LIVE node-sync regression and bounded recovery
+
+Exact feature HEAD `23be3a4b2f25978782d7b0997a344d1e4314087a` passed GitHub CI run
+`39661769198`, was integrated into local authoritative main
+`23235e23e1e9c6facbba9b49d3f1d7d6762cf372`, and deployed as Core generation
+177. Project Run planning and session creation then succeeded, but the first
+LIVE node sync finished `UNKNOWN / ORCHESTRATION_BINDING_UNVERIFIED` before
+any attachment was published.
+
+The cause is a modular RCC regression, not a Chrome/Monitor identity failure.
+`conversation-bind` remained in the policy's blocked legacy set and its active
+native handler had been pruned, while Core still used that exact command for
+durable attachment binding. Fake relay tests returned a successful binding
+directly and therefore missed the active-bundle contradiction.
+
+The correction restores only the exact metadata-binding command. It requires
+the current RCC instance, session, exact ChatGPT tab and conversation UUID,
+and a deterministic binding receipt; it does not restore the pruned legacy
+send/bootstrap routes. The command uses the existing registration lease fence
+and rejects duplicate endpoints and unfenced replacement.
+
+Core now distinguishes a first binding response explicitly marked
+`NOT_APPLIED` from an ambiguous or partially applied multi-bind. The former
+releases its new instance Claim; the latter remains UNKNOWN. A legacy UNKNOWN
+can be reconciled without replay only when the caller reconstructs the exact
+original request digest and the current same-instance RCC registration ledger
+contains none of the deterministic expected binding receipts. The original
+UNKNOWN receipt remains unchanged while only its exact execution Claim is
+retired. Any observed receipt, substituted node list, different digest,
+assignment, mailbox effect, or identity mismatch fails closed.
+
+Focused source verification currently passes: all active RCC JavaScript tests,
+RC inventory verification, and 63 orchestration/Project Run tests. Exact-head
+CI, RCC installed-payload publish/reload, the read-only recovery of operation
+`browser-bridge-project-run-node-sync-20261022-01`, a fresh node sync, Project
+Run bind, and one bounded Manager checkpoint remain.

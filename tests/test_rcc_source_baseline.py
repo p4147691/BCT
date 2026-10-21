@@ -72,6 +72,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         for command in (
             "ping", "state", "simple-relay-bind", "simple-relay-send",
             "simple-relay-return", "new-chat-send", "rename-conversation",
+            "conversation-bind",
             "rename-receipt", "result", "main-capture-get",
             "api-probe", "probe-tabs", "diagnose-activity",
             "diagnose-conversation-ui", "diagnose-composer", "probe",
@@ -79,7 +80,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         ):
             self.assertIn(f"message.command === '{command}'", background)
         for command in (
-            "clear-relay-state", "close-conversation-tab", "conversation-bind",
+            "clear-relay-state", "close-conversation-tab",
             "conversation-bootstrap-bind", "create-chat-tab", "create-chat-window",
             "ensure", "main-capture-install", "manager-promote", "move-tab",
             "recover-created-result", "recover-pending", "register", "reload-workers",

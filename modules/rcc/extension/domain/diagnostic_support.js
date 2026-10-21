@@ -153,6 +153,97 @@ async function mutateRegistrationsWithLeaseFence(targets, mutation) {
   });
 }
 
+async function resolveExactConversationCommand(message) {
+  const conversationKey = String(message?.conversationKey || '').trim();
+  const instanceId = String(message?.instanceId || '').trim();
+  const sessionId = String(message?.sessionId || '').trim();
+  const tabId = Number(message?.tabId);
+  if (!/^[a-z0-9-]{8,64}$/i.test(conversationKey)) {
+    throw new Error('CONVERSATION_BIND_KEY_INVALID');
+  }
+  if (!Number.isSafeInteger(tabId) || tabId <= 0) {
+    throw new Error('CONVERSATION_BIND_TAB_INVALID');
+  }
+  const state = await loadState();
+  if (instanceId !== String(state.settings?.instanceId || '')) {
+    throw new Error('CONVERSATION_BIND_INSTANCE_MISMATCH');
+  }
+  if (sessionId !== String(endpointSessionId || '')) {
+    throw new Error('CONVERSATION_BIND_SESSION_MISMATCH');
+  }
+  const tab = await browserGateway.getExactTab(tabId);
+  if (!isChatTab(tab)
+      || RelayCore.conversationKey(String(tab.url || '')) !== conversationKey) {
+    throw new Error('CONVERSATION_BIND_TARGET_MISMATCH');
+  }
+  return tab;
+}
+
+async function bindExactConversation(message) {
+  const role = RelayCore.normalizeRole(message?.to);
+  const tab = await resolveExactConversationCommand(message);
+  const conversationKey = String(message?.conversationKey || '').trim();
+  const bindingReceiptId = String(message?.bindingReceiptId || '').trim();
+  if (!/^RCB-[A-Z0-9]{12,40}$/.test(bindingReceiptId)) {
+    throw new Error('CONVERSATION_BINDING_RECEIPT_REQUIRED');
+  }
+  const registration = await mutateRegistrationsWithLeaseFence(
+    [{ role }, { tabId: tab.id, conversationKey }],
+    async (state) => {
+      const current = state.registrations?.[role] || null;
+      if (current) {
+        const conflict = Object.values(state.bindingSubmitLeases || {}).some((lease) =>
+          bindingLeaseTargetsConflict(lease, current));
+        if (conflict) throw new Error('PRE_SUBMIT_BINDING_LEASE_ACTIVE');
+      }
+      const promotingBootstrap = !!current
+        && current.authorization === 'ACT_CONVERSATION_BOOTSTRAP'
+        && !String(current.conversationKey || '')
+        && Number(current.tabId) === Number(tab.id)
+        && String(current.transportInstanceId || '') === String(state.settings.instanceId || '')
+        && String(current.sessionId || '') === String(endpointSessionId || '');
+      const changingEndpoint = !!current
+        && (String(current.conversationKey || '') !== conversationKey
+          || Number(current.tabId) !== Number(tab.id));
+      if (changingEndpoint && !promotingBootstrap) {
+        if (message.replaceStale !== true) throw new Error('LOGICAL_NODE_BINDING_CONFLICT');
+        if (String(message.expectedCurrentConversationKey || '') !== String(current.conversationKey || '')
+            || String(message.expectedCurrentBindingReceiptId || '') !== String(current.bindingReceiptId || '')) {
+          throw new Error('LOGICAL_NODE_BINDING_REPLACEMENT_FENCE_MISMATCH');
+        }
+      }
+      for (const [otherRole, other] of Object.entries(state.registrations || {})) {
+        if (otherRole !== role
+            && (String(other?.conversationKey || '') === conversationKey
+              || Number(other?.tabId) === Number(tab.id))) {
+          throw new Error('CONVERSATION_ALREADY_BOUND');
+        }
+      }
+      const next = {
+        ...(current || {}), role, tabId: Number(tab.id), conversationKey,
+        title: tab.title || current?.title || '',
+        transportInstanceId: String(state.settings.instanceId || ''),
+        sessionId: String(endpointSessionId || ''), bindingReceiptId,
+        authorization: 'ACT_CONVERSATION_BIND', updatedAt: Date.now()
+      };
+      state.registrations[role] = next;
+      return { ...next };
+    }
+  );
+  return {
+    ok: true,
+    registration,
+    binding: {
+      logicalNode: role,
+      conversationKey,
+      instanceId: registration.transportInstanceId,
+      sessionId: registration.sessionId,
+      tabId: Number(tab.id),
+      bindingReceiptId
+    }
+  };
+}
+
 async function resolveRegistration(roleValue) {
 
   const role = RelayCore.normalizeRole(roleValue);
@@ -209,4 +300,3 @@ async function resolveRegistration(roleValue) {
   );
 
 }
-

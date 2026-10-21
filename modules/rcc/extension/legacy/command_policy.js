@@ -6,7 +6,7 @@
     'new-chat-send',
   ]);
   const CONVERSATION_COMMANDS = new Set([
-    'rename-conversation',
+    'rename-conversation', 'conversation-bind',
   ]);
   const READ_ONLY_COMMANDS = new Set([
     'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
@@ -17,7 +17,7 @@
   // still subject to the external deploy/reload approval gate.
   const MAINTENANCE_COMMANDS = new Set(['reload-extension']);
   const LEGACY_MUTATION_COMMANDS = new Set([
-    'clear-relay-state', 'close-conversation-tab', 'conversation-bind',
+    'clear-relay-state', 'close-conversation-tab',
     'conversation-bootstrap-bind', 'create-chat-tab', 'create-chat-window',
     'ensure', 'main-capture-install', 'manager-promote', 'move-tab',
     'recover-created-result', 'recover-pending', 'register', 'reload-workers',
