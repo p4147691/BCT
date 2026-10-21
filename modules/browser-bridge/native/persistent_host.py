@@ -43,7 +43,7 @@ def core_reply(result, request_id, operation_type="bridge_read"):
             (not isinstance(content.get("output"), dict) or
              not isinstance(content["output"].get("text"), str))):
         return error_reply(request_id, "CORE_READ_OUTPUT_INVALID", "RECEIPT_ERROR")
-    if operation_type not in ("bridge_read", "receipt_lookup"):
+    if operation_type not in ("bridge_read", "bridge_write", "bridge_execute", "receipt_lookup"):
         return error_reply(request_id, "CORE_REQUEST_TYPE_INVALID", "RECEIPT_ERROR")
     return {"ok": True, "request_id": request_id, "result": content}
 
@@ -85,7 +85,9 @@ async def serve(inp, out):
                             if message["type"] == "receipt_lookup":
                                 result = await session.call_tool("bct_operation_get", {"work_id": WORK_ID, "operation_id": request_id})
                             else:
-                                result = await session.call_tool("bct_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
+                                tool = {"bridge_read": "bct_read", "bridge_write": "bct_write",
+                                        "bridge_execute": "bct_execute"}[message["type"]]
+                                result = await session.call_tool(tool, {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
                         except Exception:
                             # The request may have been committed before transport failed.
                             reply = error_reply(request_id, "DISPATCH_RESULT_AMBIGUOUS_NO_RETRY", "UNKNOWN")

@@ -34,3 +34,22 @@ document.getElementById("lookup").addEventListener("click", async () => {
   try { result.textContent = JSON.stringify(await chrome.runtime.sendMessage({type: "RECEIPT_LOOKUP", operationId: document.getElementById("operationId").value}), null, 2); }
   catch (error) { result.textContent = String(error); }
 });
+
+async function submitMutating(type, args) {
+  if (!globalThis.confirm("이 작업은 로컬 BCT에서 실제 변경/실행됩니다. 해당 Work 범위로 한 번 실행할까요?")) return;
+  result.textContent = "요청 중 — 오류·연결 끊김 시 자동 재전송하지 않음";
+  try { result.textContent = JSON.stringify(await chrome.runtime.sendMessage({type, confirmed: true, arguments: args}), null, 2); }
+  catch (error) { result.textContent = "UNKNOWN / NO RETRY: " + String(error); }
+}
+document.getElementById("write").addEventListener("click", () => {
+  const path = document.getElementById("writePath").value;
+  const content = document.getElementById("writeContent").value;
+  const sha = document.getElementById("expectedSha").value.trim();
+  submitMutating("WRITE_FIXTURE", {...{path, content}, ...(sha ? {expected_sha256: sha} : {expected_absent: true})});
+});
+document.getElementById("execute").addEventListener("click", () => {
+  let argv;
+  try { argv = JSON.parse(document.getElementById("execArgv").value); }
+  catch (_) { result.textContent = "argv JSON 형식 오류"; return; }
+  submitMutating("EXECUTE_FIXTURE", {cwd: document.getElementById("execCwd").value, argv});
+});
