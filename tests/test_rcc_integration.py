@@ -533,6 +533,130 @@ class RccIntegrationTests(unittest.TestCase):
             self.call("compose-blocked",{"command":"create-and-send",
                           "instance_id":"instance123","mode":"tab","window_id":11,"text":"hello"})
 
+    def _legacy_missing_instance_claim(self, operation_id="legacy-create-window"):
+        self.client.result = {"type": "host:result", "ok": False}
+        original = self.call(operation_id, {
+            "command": "create-chat-window", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_HOST_OUTCOME_UNVERIFIED:MISSING", original.error)
+        return original
+
+    @staticmethod
+    def _idle_rcc_state():
+        return {
+            "type": "host:result", "ok": True,
+            "state": {"instanceId": "instance123", "sessionId": "session-current"},
+        }
+
+    @staticmethod
+    def _missing_rcc_result(operation_id="legacy-create-window"):
+        return {
+            "type": "host:result", "ok": True, "relayId": operation_id,
+            "found": False, "completed": False, "pending": False,
+            "result": None, "pendingStatus": None,
+        }
+
+    def test_create_and_send_retires_only_proven_idle_legacy_instance_claim(self):
+        self._legacy_missing_instance_claim()
+        self.client.results = [
+            self._idle_rcc_state(), self._missing_rcc_result(),
+            self._new_chat_result("compose-after-idle-proof"),
+        ]
+        fresh = self.call("compose-after-idle-proof", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+        })
+        self.assertEqual(Outcome.APPLIED, fresh.outcome)
+        self.assertEqual(
+            ["create-chat-window", "state", "result", "new-chat-send"],
+            [call["command"] for call in self.client.calls],
+        )
+        original = self.bct.store.get_operation_for(
+            operation_id="legacy-create-window", work_id="rcc-work",
+            principal_id="codex",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_HOST_OUTCOME_UNVERIFIED:MISSING", original.error)
+        db = self.bct.store._connect()
+        try:
+            old_claim = db.execute(
+                "SELECT COUNT(*) FROM resource_claims "
+                "WHERE operation_id=? AND unresolved=1",
+                ("legacy-create-window",),
+            ).fetchone()[0]
+            event = db.execute(
+                "SELECT kind,data_json FROM events WHERE subject_id=? "
+                "ORDER BY event_id DESC LIMIT 1",
+                ("legacy-create-window",),
+            ).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(0, old_claim)
+        self.assertEqual("RCC_CLAIM_RETIRED", event[0])
+        self.assertTrue(json.loads(event[1])["original_effect_unchanged"])
+
+    def test_create_and_send_does_not_retire_when_old_rcc_result_is_pending(self):
+        self._legacy_missing_instance_claim()
+        pending = self._missing_rcc_result()
+        pending.update({"pending": True, "pendingStatus": {"state": "QUEUED"}})
+        self.client.results = [self._idle_rcc_state(), pending]
+        with self.assertRaisesRegex(Exception, "legacy-create-window:FINISHED:UNKNOWN"):
+            self.call("compose-after-pending-proof", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+            })
+        self.assertEqual(
+            ["create-chat-window", "state", "result"],
+            [call["command"] for call in self.client.calls],
+        )
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                ("legacy-create-window",),
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
+
+    def test_create_and_send_does_not_retire_on_rcc_identity_mismatch(self):
+        self._legacy_missing_instance_claim()
+        wrong_state = self._idle_rcc_state()
+        wrong_state["state"]["instanceId"] = "different-instance"
+        self.client.results = [wrong_state, self._missing_rcc_result()]
+        with self.assertRaisesRegex(Exception, "legacy-create-window:FINISHED:UNKNOWN"):
+            self.call("compose-after-wrong-instance", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+            })
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                ("legacy-create-window",),
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
+
+    def test_create_and_send_does_not_inspect_non_missing_unknown_claim(self):
+        self.client.result = {
+            "type": "host:result", "ok": False, "error": "SOME_OTHER_UNKNOWN",
+        }
+        original = self.call("legacy-other-unknown", {
+            "command": "create-chat-window", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertNotEqual("RCC_HOST_OUTCOME_UNVERIFIED:MISSING", original.error)
+        prior_calls = len(self.client.calls)
+        with self.assertRaisesRegex(Exception, "legacy-other-unknown:FINISHED:UNKNOWN"):
+            self.call("compose-after-other-unknown", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+            })
+        self.assertEqual(prior_calls, len(self.client.calls))
+
     def test_create_and_send_terminal_identity_mismatch_stays_unknown(self):
         wrong = self._new_chat_result("compose-bad-identity")
         wrong["windowId"] = 99

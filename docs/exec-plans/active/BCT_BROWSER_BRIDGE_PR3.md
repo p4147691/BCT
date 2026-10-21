@@ -282,3 +282,32 @@ The installed RCC payload was also rechecked read-only: all 48 RC3 files match
 the previous candidate inventory with no missing, extra, or changed file. RC4
 uses that exact 48-file aggregate as its rollback baseline rather than the
 obsolete pre-rebuild 39-file baseline.
+
+## 2026-10-21 ordinary-ChatGPT E2E blocker and bounded Claim correction
+
+The RC4 payload and its BCT `create-and-send` contract reached LIVE without
+changing the RCC instance. An ordinary ChatGPT conversation then selected the
+documented `bct_relay_browser` high-level call correctly and called it exactly
+once. No tab or message was created because Core rejected the operation before
+dispatch: the terminal historical operation `rcc-new-window-once-03` still held
+the broad `rcc-instance:<id>` Claim with
+`FINISHED / UNKNOWN / RCC_HOST_OUTCOME_UNVERIFIED:MISSING`.
+
+Read-only RCC inspection for that exact operation returned `found=false`,
+`completed=false`, `pending=false`, no result and no pending status while the
+same RCC instance and a non-empty current session were OPEN. This proves that
+the historical effect remains unknown but there is no current RCC execution to
+protect. The correction therefore does not reclassify or replay the old
+operation. Before a new `create-and-send` reservation only, Core may retire this
+one legacy broad Claim when all of the following are re-proved against the exact
+current instance: the old operation has the exact terminal shape above, no
+background executor exists, RCC identity matches, and the old operation has no
+pending or result record. Store rechecks the same facts and exact Claim tuple in
+the reservation transaction and records `RCC_CLAIM_RETIRED` with
+`original_effect_unchanged=true`.
+
+Any pending record, terminal result, instance mismatch, unavailable inspection,
+different UNKNOWN reason, active executor, non-terminal operation, or
+exact-resource Claim remains fenced. Focused RCC/Core/desktop Claim regression
+and exact-head CI must pass before Core deployment and the single ordinary-
+ChatGPT LIVE E2E are resumed.

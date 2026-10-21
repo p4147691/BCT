@@ -776,11 +776,53 @@ class Store:
         finally:
             db.close()
 
+    def retired_rcc_claim_candidate(self, instance_id: str) -> dict[str, Any] | None:
+        """Return one terminal legacy RCC-wide reservation eligible for live proof.
+
+        This is not evidence that the external effect did or did not happen.  It
+        only identifies the narrow historical shape whose *execution* may be
+        proved idle by the current RCC before a new operation reserves the same
+        instance.  Exact-resource claims and every non-terminal operation remain
+        ineligible.
+        """
+        resource = "rcc-instance:" + instance_id
+        db = self._connect()
+        try:
+            row = db.execute(
+                "SELECT c.operation_id,c.work_id,c.assignment_epoch,"
+                "o.capability,o.target,o.state,o.outcome,o.error,"
+                "o.assignment_epoch AS operation_epoch "
+                "FROM resource_claims c JOIN operations o "
+                "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
+                "WHERE c.resource_key=? AND c.unresolved=1",
+                (resource,),
+            ).fetchone()
+            if row is None:
+                return None
+            result = dict(row)
+            if (
+                result["state"] != OperationState.FINISHED.value
+                or result["outcome"] != Outcome.UNKNOWN.value
+                or result["capability"] != "relay_browser"
+                or result["target"] != instance_id
+                or result["error"] != "RCC_HOST_OUTCOME_UNVERIFIED:MISSING"
+                or result["operation_epoch"] != result["assignment_epoch"]
+            ):
+                return None
+            owner = db.execute(
+                "SELECT COUNT(*) FROM background_job_executors WHERE operation_id=?",
+                (result["operation_id"],),
+            ).fetchone()[0]
+            return None if owner else result
+        finally:
+            db.close()
+
     def begin_operation(self, *, operation_id: str, work: Work, principal_id: str,
                         request_digest: str, capability: str, target: str,
                         resources: tuple[str, ...], policy_revision: str,
                         background_job: dict[str, Any] | None = None,
                         retired_desktop_claim: tuple[str, str, int] | None = None,
+                        retired_rcc_claim: tuple[str, str, int, str] | None = None,
                         ) -> tuple[bool, OperationResult]:
         now = time.time()
         with self.transaction() as db:
@@ -838,6 +880,48 @@ class Store:
                                 "original_assignment_epoch": previous_epoch,
                                 "resource_key": resource,
                                 "reason": "TERMINAL_OPERATION_AGENT_IDLE",
+                                "original_effect_unchanged": True,
+                            })
+                            row = None
+                if row is not None and retired_rcc_claim is not None:
+                    previous_id, previous_work, previous_epoch, previous_instance = retired_rcc_claim
+                    broad_key = "rcc-instance:" + previous_instance
+                    if resource == broad_key and (
+                        row["operation_id"], row["work_id"], row["assignment_epoch"]
+                    ) == (previous_id, previous_work, previous_epoch):
+                        owner = db.execute(
+                            "SELECT capability,target,state,outcome,error,assignment_epoch "
+                            "FROM operations WHERE operation_id=? AND work_id=?",
+                            (previous_id, previous_work),
+                        ).fetchone()
+                        actor = db.execute(
+                            "SELECT COUNT(*) FROM background_job_executors "
+                            "WHERE operation_id=?", (previous_id,),
+                        ).fetchone()[0]
+                        if (
+                            owner is not None
+                            and owner["state"] == OperationState.FINISHED.value
+                            and owner["outcome"] == Outcome.UNKNOWN.value
+                            and owner["capability"] == "relay_browser"
+                            and owner["target"] == previous_instance
+                            and owner["error"] == "RCC_HOST_OUTCOME_UNVERIFIED:MISSING"
+                            and owner["assignment_epoch"] == previous_epoch
+                            and not actor
+                        ):
+                            released = db.execute(
+                                "UPDATE resource_claims SET unresolved=0 "
+                                "WHERE resource_key=? AND operation_id=? AND work_id=? "
+                                "AND assignment_epoch=? AND unresolved=1",
+                                (resource, previous_id, previous_work, previous_epoch),
+                            ).rowcount
+                            if released != 1:
+                                raise ConflictError("RCC_RETIRE_CLAIM_CHANGED")
+                            self._event(db, "RCC_CLAIM_RETIRED", previous_id, {
+                                "new_operation_id": operation_id,
+                                "original_work_id": previous_work,
+                                "original_assignment_epoch": previous_epoch,
+                                "resource_key": resource,
+                                "reason": "TERMINAL_OPERATION_RCC_NO_PENDING_RECORD",
                                 "original_effect_unchanged": True,
                             })
                             row = None

@@ -304,6 +304,7 @@ class OperationCoordinator:
         claim_started = time.perf_counter_ns()
         try:
             retired_desktop_claim = None
+            retired_rcc_claim = None
             if "desktop-control:interactive-session" in request.resources:
                 # A terminal desktop UNKNOWN is an effect receipt, not an
                 # indefinite execution lock. A live agent (not a monitor
@@ -326,12 +327,69 @@ class OperationCoordinator:
                                 candidate["operation_id"], candidate["work_id"],
                                 candidate["assignment_epoch"],
                             )
+            if (
+                capability == "relay_browser"
+                and request.arguments.get("command") == "create-and-send"
+                and request.resources == ("rcc-instance:" + request.target,)
+            ):
+                # A historical UNKNOWN is immutable effect evidence, not a
+                # permanent execution lease.  Before replacing the one legacy
+                # RCC-wide reservation, ask the exact current RCC instance for
+                # both identity and absence of any pending/result record.  No
+                # send/create command is issued here.
+                candidate = self.store.retired_rcc_claim_candidate(request.target)
+                relay = getattr(feature, "client", None)
+                if candidate is not None and relay is not None:
+                    proof_prefix = "rcc-retire-" + hashlib.sha256(
+                        operation_id.encode("utf-8")
+                    ).hexdigest()[:24]
+                    try:
+                        state_reply = relay.request(
+                            instance_id=request.target,
+                            request_id=proof_prefix + "-state",
+                            command="state",
+                            timeout_s=2.0,
+                        )
+                        result_reply = relay.request(
+                            instance_id=request.target,
+                            request_id=proof_prefix + "-result",
+                            command="result",
+                            text=candidate["operation_id"],
+                            timeout_s=2.0,
+                        )
+                    except Exception:
+                        state_reply = result_reply = None
+                    observed_state = (
+                        state_reply.get("state")
+                        if isinstance(state_reply, dict)
+                        and isinstance(state_reply.get("state"), dict)
+                        else {}
+                    )
+                    if (
+                        isinstance(result_reply, dict)
+                        and isinstance(state_reply, dict)
+                        and state_reply.get("ok") is True
+                        and observed_state.get("instanceId") == request.target
+                        and bool(str(observed_state.get("sessionId") or ""))
+                        and result_reply.get("ok") is True
+                        and result_reply.get("relayId") == candidate["operation_id"]
+                        and result_reply.get("found") is False
+                        and result_reply.get("completed") is False
+                        and result_reply.get("pending") is False
+                        and result_reply.get("result") is None
+                        and result_reply.get("pendingStatus") is None
+                    ):
+                        retired_rcc_claim = (
+                            candidate["operation_id"], candidate["work_id"],
+                            candidate["assignment_epoch"], request.target,
+                        )
             created, current = self.store.begin_operation(
                 operation_id=operation_id, work=work, principal_id=principal.principal_id,
                 request_digest=digest, capability=capability, target=request.target,
                 resources=request.resources, policy_revision=decision.policy_revision,
                 background_job=background_job,
                 retired_desktop_claim=retired_desktop_claim,
+                retired_rcc_claim=retired_rcc_claim,
             )
         finally:
             trace_stage("claim_reservation", tool_kind=capability,

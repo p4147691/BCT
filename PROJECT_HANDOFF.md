@@ -1335,3 +1335,12 @@ send button이 검증되지 않으면 Enter fallback을 금지하고, RCC 내부
 rollback baseline도 해당 48파일 aggregate
 `9ef3eb39080f68589c5e856147905bb47706171a1c9673362a988122a80d0e46`로 갱신했다. 과거 39파일
 pre-rebuild 기준으로 복구하지 않는다.
+
+일반 ChatGPT의 첫 `create-and-send` E2E는 도구 선택에는 성공했지만 효과 시작 전에 종료된 과거
+`create-chat-window` UNKNOWN의 전역 `rcc-instance:<id>` Claim에 차단됐다. 해당 정확한 operation을
+RCC에서 읽었을 때 result와 pending이 모두 없고 동일 instance/current session은 OPEN이었다. 따라서
+원본 UNKNOWN을 성공·미적용으로 바꾸거나 재전송하지 않고, 새 `create-and-send`가 시작되기 직전에만
+동일 RCC의 무실행 상태를 다시 입증하고 Store 트랜잭션에서 정확한 구 Claim 하나를 실행 잠금에서
+퇴역시키는 bounded 보완을 진행한다. pending/result/신원 불일치/다른 오류/실행자 존재 시에는 기존
+차단을 유지한다. 이 보완은 로컬 회귀와 exact-head CI 성공 뒤 Core에 배포하고, 일반 ChatGPT에서
+새 탭 1개·최초 메시지 1회·UUID·응답·Manager 반환을 실제 확인해야 완료다.
