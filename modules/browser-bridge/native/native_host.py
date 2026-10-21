@@ -51,7 +51,12 @@ def validate(message):
     expected = {"schema_version", "type", "request_id", "operation_id", "capability", "arguments"}
     if not isinstance(message, dict) or set(message) != expected:
         raise ValueError("REQUEST_SCHEMA_DENIED")
-    if message["schema_version"] != 1 or message["type"] not in ("bridge_read", "receipt_lookup") or message["capability"] != "read":
+    if message["schema_version"] != 1:
+        raise ValueError("SCHEMA_VERSION_DENIED")
+    operation_type = message["type"]
+    capabilities = {"bridge_read": "read", "bridge_write": "write",
+                    "bridge_execute": "execute", "receipt_lookup": "read"}
+    if operation_type not in capabilities or message["capability"] != capabilities[operation_type]:
         raise ValueError("CAPABILITY_DENIED")
     request_id = message["request_id"]
     if not isinstance(request_id, str) or len(request_id) != 32 or any(c not in "0123456789abcdef" for c in request_id):
@@ -59,9 +64,31 @@ def validate(message):
     if message["operation_id"] != request_id:
         raise ValueError("ID_MISMATCH")
     arguments = message["arguments"]
-    if message["type"] == "bridge_read":
-        if not isinstance(arguments, dict) or set(arguments) != {"path"} or not isinstance(arguments["path"], str) or not 0 < len(arguments["path"]) <= 1024:
+    if not isinstance(arguments, dict):
+        raise ValueError("ARGUMENTS_DENIED")
+    if operation_type == "bridge_read":
+        if set(arguments) != {"path"} or not isinstance(arguments["path"], str) or not 0 < len(arguments["path"]) <= 1024:
             raise ValueError("ARGUMENTS_DENIED")
+    elif operation_type == "bridge_write":
+        if set(arguments) not in ({"path", "content", "expected_absent"}, {"path", "content", "expected_sha256"}):
+            raise ValueError("WRITE_ARGUMENTS_DENIED")
+        if not isinstance(arguments["path"], str) or not 0 < len(arguments["path"]) <= 1024 or "\0" in arguments["path"]:
+            raise ValueError("WRITE_PATH_DENIED")
+        if not isinstance(arguments["content"], str) or len(arguments["content"].encode("utf-8")) > 32768:
+            raise ValueError("WRITE_CONTENT_DENIED")
+        if "expected_absent" in arguments and arguments["expected_absent"] is not True:
+            raise ValueError("WRITE_PRECONDITION_DENIED")
+        if "expected_sha256" in arguments and (not isinstance(arguments["expected_sha256"], str) or
+             len(arguments["expected_sha256"]) != 64 or
+             any(c not in "0123456789abcdef" for c in arguments["expected_sha256"])):
+            raise ValueError("WRITE_PRECONDITION_DENIED")
+    elif operation_type == "bridge_execute":
+        if set(arguments) != {"cwd", "argv"} or not isinstance(arguments["cwd"], str) or not 0 < len(arguments["cwd"]) <= 1024:
+            raise ValueError("EXECUTE_ARGUMENTS_DENIED")
+        argv = arguments["argv"]
+        if (not isinstance(argv, list) or not 1 <= len(argv) <= 24 or
+                any(not isinstance(v, str) or not v or len(v) > 2048 or "\0" in v for v in argv)):
+            raise ValueError("EXECUTE_ARGV_DENIED")
     elif arguments != {}:
         raise ValueError("RECEIPT_ARGUMENTS_DENIED")
     return request_id, arguments
@@ -84,7 +111,9 @@ async def dispatch(message):
                 if message["type"] == "receipt_lookup":
                     result = await session.call_tool("bct_operation_get", {"work_id": WORK_ID, "operation_id": request_id})
                 else:
-                    result = await session.call_tool("bct_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
+                    tool = {"bridge_read": "bct_read", "bridge_write": "bct_write",
+                            "bridge_execute": "bct_execute"}[message["type"]]
+                    result = await session.call_tool(tool, {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
                 return {"ok": not result.isError, "request_id": request_id, "result": result.structuredContent}
 
 

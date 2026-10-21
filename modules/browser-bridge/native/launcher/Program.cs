@@ -3,6 +3,22 @@ using System.Security.Cryptography;
 
 class Program {
   internal const string ApprovedOrigin = "chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/";
+  // Windows Chrome may provide a second, decimal --parent-window=HANDLE argument.
+  // It is metadata only, never used as authority or forwarded to Python.
+  private static bool ValidChromeNativeMessagingArgs(string[] args) {
+    if ((args.Length != 1 && args.Length != 2) ||
+        !string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)) return false;
+    if (args.Length == 1) return true;
+    const string prefix = "--parent-window=";
+    string arg = args[1];
+    if (!arg.StartsWith(prefix, StringComparison.Ordinal)) return false;
+    var digits = arg.AsSpan(prefix.Length);
+    if (digits.Length == 0 || digits.Length > 20) return false;
+    foreach (char digit in digits)
+      if (digit < '0' || digit > '9') return false;
+    return ulong.TryParse(digits, out _);
+  }
+
   static async Task<int> Main(string[] args) {
     // This has no Native Messaging authority and is reachable only through
     // explicit test arguments.  It keeps the future IPC acceptance mechanics
@@ -20,7 +36,7 @@ class Program {
     if (args.Length == 2 && args[0] == "--bridge-activation-policy-client")
       return await BridgeActivationPolicyFixture.RunClient(args[1]);
     // Neither a PATH search nor a caller-supplied origin may choose the host runtime.
-    if (args.Length != 1 || !string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)) return 4;
+    if (!ValidChromeNativeMessagingArgs(args)) return 4;
     if (!string.Equals(Environment.GetEnvironmentVariable("BCT_BRIDGE_EXTENSION_ORIGIN"), ApprovedOrigin, StringComparison.Ordinal)) return 4;
     var python = Environment.GetEnvironmentVariable("BCT_BRIDGE_PYTHON_EXE");
     if (string.IsNullOrWhiteSpace(python) || !Path.IsPathFullyQualified(python) ||

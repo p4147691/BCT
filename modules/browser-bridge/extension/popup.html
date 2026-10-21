@@ -1,1 +1,27 @@
-<!doctype html><html lang="ko"><meta charset="utf-8"><title>BCT Browser Bridge</title><body><label>승인된 fixture 경로 <input id="path" size="40"></label><button id="read">READ</button><label>기존 Operation ID <input id="operationId" size="36"></label><button id="lookup">영수증 조회</button><pre id="result"></pre><script src="popup.js"></script></body></html>
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>BCT Browser Bridge</title></head>
+<body>
+  <h3>BCT Browser Bridge (격리 후보)</h3>
+  <p>독립 확장은 승인한 ChatGPT 대화의 읽기 요청만 처리합니다.</p>
+  <button id="chatEnable">현재 대화에서 활성화</button>
+  <button id="chatDisable">현재 대화에서 비활성화</button>
+  <output id="chatStatus" aria-live="polite"></output>
+  <hr>
+  <label>승인된 fixture 경로 <input id="path" size="40"></label><button id="read">READ</button>
+  <label>기존 Operation ID <input id="operationId" size="36"></label><button id="lookup">영수증 조회</button>
+  <hr>
+  <p>WRITE / EXECUTE는 현재 BCT Work 범위에서만 실행됩니다. 결과 불명 시 재전송하지 마세요.</p>
+  <label>WRITE 파일 경로 <input id="writePath" size="40"></label>
+  <label>내용 <textarea id="writeContent" rows="3"></textarea></label>
+  <label>기존 SHA-256 (새 파일이면 비움) <input id="expectedSha" size="64"></label>
+  <button id="write">WRITE 한 번</button>
+  <hr>
+  <label>EXECUTE 작업 폴더 <input id="execCwd" size="40"></label>
+  <label>argv JSON 배열 <textarea id="execArgv" rows="3">["python","--version"]</textarea></label>
+  <button id="execute">EXECUTE 한 번</button>
+  <pre id="result"></pre>
+  <script src="chat_protocol.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

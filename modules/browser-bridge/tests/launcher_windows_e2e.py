@@ -58,6 +58,27 @@ class BuiltLauncherBoundaryTests(unittest.TestCase):
             self.assertEqual("AUTH_DENIED", reply["outcome"])
             self.assertEqual("a"*32, reply["request_id"])
 
+            # Verify the actual Windows Chrome native-messaging second argument.
+            with_parent = subprocess.run([exe, ORIGIN, "--parent-window=0"],
+                input=struct.pack("<I",len(payload))+payload,
+                capture_output=True, env=env, timeout=15)
+            self.assertEqual(4, with_parent.returncode, with_parent.stderr.decode(errors="replace"))
+            self.assertGreaterEqual(len(with_parent.stdout), 4)
+            size = struct.unpack("<I",with_parent.stdout[:4])[0]
+            parent_reply = json.loads(with_parent.stdout[4:4+size])
+            self.assertEqual("AUTH_DENIED", parent_reply["outcome"])
+            self.assertEqual("a"*32, parent_reply["request_id"])
+            for bad in ("--parent-window=", "--parent-window=-1",
+                        "--parent-window=0xAB", "--parent-window=12junk",
+                        "--other=0", "--parent-window=18446744073709551616"):
+                res = subprocess.run([exe, ORIGIN, bad], input=b"",
+                    capture_output=True, env=env, timeout=15)
+                self.assertEqual(4, res.returncode, bad)
+            extra = subprocess.run([exe, ORIGIN, "--parent-window=0", "extra"],
+                input=b"", capture_output=True, env=env, timeout=15)
+            self.assertEqual(4, extra.returncode)
+
+
 
 if __name__ == "__main__":
     unittest.main()
