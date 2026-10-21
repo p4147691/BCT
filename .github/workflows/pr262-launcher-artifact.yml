@@ -1,0 +1,34 @@
+name: PR262 isolated launcher artifact
+on:
+  push:
+    branches:
+      - ci/pr262-launcher-artifact-20261021
+jobs:
+  launcher:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0736bc2fbe74da3027381a38cf928d30a8cf0536
+          persist-credentials: false
+      - name: Verify exact source
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne '0736bc2fbe74da3027381a38cf928d30a8cf0536') { throw 'PIN_MISMATCH' }
+      - name: Publish launcher
+        shell: pwsh
+        run: dotnet publish modules/browser-bridge/native/launcher/BctBridgeHost.csproj -c Release -o ${{ runner.temp }}/pr262-launcher --nologo
+      - name: Verify SHA256
+        shell: pwsh
+        run: |
+          $f = Join-Path $env:RUNNER_TEMP 'pr262-launcher/BctBridgeHost.exe'
+          if (-not (Test-Path -LiteralPath $f)) { throw 'LAUNCHER_MISSING' }
+          (Get-FileHash -Algorithm SHA256 $f).Hash | Out-File (Join-Path $env:RUNNER_TEMP 'pr262-launcher/SHA256.txt') -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr262-launcher-0736bc2
+          path: ${{ runner.temp }}/pr262-launcher/
+          if-no-files-found: error
+          retention-days: 3
