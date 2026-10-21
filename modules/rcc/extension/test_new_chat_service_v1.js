@@ -62,6 +62,17 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
   assert.equal(executeCount, 1);
   assert.equal(statusCount, 1);
 
+  const readback = context.publicPersistedNewChatResult({
+    newChatReceipts: local.newChatReceiptsV1,
+  }, request.operationId);
+  assert.equal(readback.operationId, request.operationId);
+  assert.equal(readback.state, 'RESULT_PERSISTED');
+  assert.equal(readback.reply, 'NEW_CHAT_ACK');
+  assert.equal(readback.replayed, true);
+  assert.equal(context.publicPersistedNewChatResult({
+    newChatReceipts: local.newChatReceiptsV1,
+  }, 'missing-operation'), null);
+
   const duplicate = await context.sendNewChatAndAwaitResult(request);
   assert.equal(duplicate.ok, true);
   assert.equal(duplicate.replayed, true);

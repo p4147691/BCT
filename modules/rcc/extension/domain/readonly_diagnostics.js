@@ -220,13 +220,25 @@ async function handleNativeCommand(message) {
           const receipt = state.resultReceipts?.[relayId] || null;
 
 
+          const newChatReceipt = state.newChatReceipts?.[relayId] || null;
+
+
           const completed = publicResultFromReceipt(receipt) ||
 
 
-            (state.results || []).find((item) => String(item?.id || '') === relayId) || null;
+            (state.results || []).find((item) => String(item?.id || '') === relayId) ||
 
 
-          const pending = state.pending?.[relayId] || null;
+            publicPersistedNewChatResult(state, relayId) || null;
+
+
+          const pending = state.pending?.[relayId] ||
+
+
+            (newChatReceipt && !['RESULT_PERSISTED', 'NOT_APPLIED'].includes(
+
+
+              String(newChatReceipt.state || '')) ? newChatReceipt : null);
 
 
           postNative({ type: 'host:result', requestId, ok: true, relayId, found: !!completed,

@@ -106,6 +106,47 @@ def _exact_bootstrap_terminal_success(
     )
 
 
+def _exact_new_chat_terminal_success(
+    result: dict[str, Any], *, operation_id: str, instance_id: str
+) -> bool:
+    receipt = result.get("result") if isinstance(result.get("result"), dict) else {}
+    reply = receipt.get("reply")
+    text_sha256 = receipt.get("textSha256")
+    supplied_hash = receipt.get("resultHash")
+    try:
+        tab_id = _positive_int(receipt.get("tabId"), "RCC_NEW_CHAT_TAB_INVALID")
+        window_id = _positive_int(receipt.get("windowId"), "RCC_NEW_CHAT_WINDOW_INVALID")
+    except PreconditionError:
+        return False
+    if not (
+        result.get("ok") is True
+        and str(result.get("relayId") or "") == operation_id
+        and result.get("found") is True
+        and result.get("completed") is True
+        and result.get("pending") is False
+        and receipt.get("ok") is True
+        and receipt.get("command") == "new-chat-send"
+        and str(receipt.get("operationId") or "") == operation_id
+        and receipt.get("state") == "RESULT_PERSISTED"
+        and receipt.get("effectState") == "APPLIED_CONFIRMED"
+        and receipt.get("resultState") == "RESULT_PERSISTED"
+        and receipt.get("instanceId") == instance_id
+        and bool(str(receipt.get("sessionId") or "").strip())
+        and bool(str(receipt.get("conversationKey") or "").strip())
+        and isinstance(text_sha256, str)
+        and re.fullmatch(r"[a-f0-9]{64}", text_sha256) is not None
+        and isinstance(reply, str) and bool(reply.strip())
+        and isinstance(supplied_hash, str)
+        and re.fullmatch(r"[a-f0-9]{64}", supplied_hash) is not None
+    ):
+        return False
+    expected_hash = hashlib.sha256(json.dumps([
+        operation_id, instance_id, receipt["sessionId"], tab_id, window_id,
+        receipt["conversationKey"], text_sha256, reply,
+    ], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return supplied_hash == expected_hash
+
+
 class RelayBrowserFeature:
     capability = "relay_browser"
 
@@ -477,7 +518,7 @@ class RelayBrowserFeature:
                     _RENAME_INSPECTION_COMMAND, "reconcile-rename-conversation",
                     "reclassify-rename-claim", _OPERATOR_QUARANTINE_COMMAND,
                 }
-                else "recover-created-result"
+                else "result"
                 if values["command"] == "reconcile-create-and-send"
                 else "result"
                 if values["command"] in
@@ -666,6 +707,33 @@ class RelayBrowserFeature:
                  "original_outcome_preserved": "UNKNOWN",
                  "no_resend": True},
                 reconciled_operation_ids=(values["text"],),
+            )
+        if values["command"] == "reconcile-create-and-send":
+            relay_id = compose_parent_id or values["text"]
+            if not _exact_new_chat_terminal_success(
+                result, operation_id=relay_id, instance_id=values["instance_id"]
+            ):
+                raise ConfirmedFailure(
+                    "RCC_NEW_CHAT_RECEIPT_NOT_PROVEN", release_claims=True,
+                )
+            receipt = result["result"]
+            return FeatureResult(
+                Outcome.APPLIED,
+                {
+                    "instance_id": values["instance_id"],
+                    "command": "reconcile-create-and-send",
+                    "reconciled_operation_id": relay_id,
+                    "result_state": "RESULT_PERSISTED",
+                    "result_hash": receipt["resultHash"],
+                    "text_sha256": receipt["textSha256"],
+                    "tab_id": receipt["tabId"],
+                    "window_id": receipt["windowId"],
+                    "conversation_key": receipt["conversationKey"],
+                    "original_outcome_preserved": "UNKNOWN",
+                    "no_resend": True,
+                },
+                output={"result": _sanitize(result)},
+                reconciled_operation_ids=(relay_id,),
             )
         if values["command"] in _RECONCILE_COMMANDS:
             relay_id = values["text"]

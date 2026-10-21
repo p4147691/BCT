@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -474,7 +475,7 @@ class RccIntegrationTests(unittest.TestCase):
     @staticmethod
     def _new_chat_result(operation_id: str, *, state: str = "RESULT_PERSISTED"):
         complete = state == "RESULT_PERSISTED"
-        return {
+        result = {
             "type": "host:result", "ok": complete,
             "command": "new-chat-send", "operationId": operation_id,
             "state": state,
@@ -482,11 +483,18 @@ class RccIntegrationTests(unittest.TestCase):
             "instanceId": "instance123", "sessionId": "session1",
             "tabId": 10, "windowId": 11,
             "conversationKey": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d" if complete else "",
+            "textSha256": "b" * 64,
             "resultState": "RESULT_PERSISTED" if complete else "",
-            "resultHash": "a" * 64 if complete else "",
+            "resultHash": "" if complete else "",
             "reply": "OK" if complete else "",
             "stageTiming": {"beganAt": 1, "completedAt": 2},
         }
+        if complete:
+            result["resultHash"] = hashlib.sha256(json.dumps([
+                operation_id, "instance123", "session1", 10, 11,
+                result["conversationKey"], result["textSha256"], result["reply"],
+            ], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+        return result
 
     def test_create_and_send_tab_returns_exact_terminal_result_in_one_call(self):
         self.client.result = self._new_chat_result("compose-tab")
@@ -666,6 +674,76 @@ class RccIntegrationTests(unittest.TestCase):
             "mode": "tab", "window_id": 11, "text": "hello"})
         self.assertEqual(Outcome.UNKNOWN, result.outcome)
         self.assertEqual(["new-chat-send"], [c["command"] for c in self.client.calls])
+
+    def test_new_chat_unknown_reconciles_exact_persisted_receipt_without_resend(self):
+        wrong = self._new_chat_result("compose-reconcile")
+        wrong["windowId"] = 99
+        original = self.call("compose-reconcile", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        receipt = self._new_chat_result("compose-reconcile")
+        self.client.result = {
+            "type": "host:result", "ok": True, "relayId": "compose-reconcile",
+            "found": True, "completed": True, "pending": False,
+            "result": receipt,
+        }
+        reconciled = self.call("compose-reconcile-readback", {
+            "command": "reconcile-create-and-send", "instance_id": "instance123",
+            "relay_id": "compose-reconcile",
+        })
+        self.assertEqual(Outcome.APPLIED, reconciled.outcome)
+        self.assertTrue(reconciled.evidence["no_resend"])
+        self.assertEqual(receipt["resultHash"], reconciled.evidence["result_hash"])
+        self.assertEqual(1, sum(
+            call["command"] == "new-chat-send" for call in self.client.calls
+        ))
+        self.assertEqual("result", self.client.calls[-1]["command"])
+        original_after = self.bct.store.get_operation_for(
+            operation_id="compose-reconcile", work_id="rcc-work", principal_id="codex",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original_after.outcome)
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims "
+                "WHERE operation_id='compose-reconcile'"
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(0, unresolved)
+
+    def test_new_chat_tampered_receipt_keeps_unknown_claim(self):
+        wrong = self._new_chat_result("compose-tampered")
+        wrong["windowId"] = 99
+        original = self.call("compose-tampered", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        receipt = self._new_chat_result("compose-tampered")
+        receipt["reply"] = "tampered"
+        self.client.result = {
+            "type": "host:result", "ok": True, "relayId": "compose-tampered",
+            "found": True, "completed": True, "pending": False,
+            "result": receipt,
+        }
+        rejected = self.call("compose-tampered-readback", {
+            "command": "reconcile-create-and-send", "instance_id": "instance123",
+            "relay_id": "compose-tampered",
+        })
+        self.assertEqual(Outcome.FAILED, rejected.outcome)
+        self.assertEqual("RCC_NEW_CHAT_RECEIPT_NOT_PROVEN", rejected.error)
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims "
+                "WHERE operation_id='compose-tampered'"
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
 
     def test_conversation_rename_uses_exact_identity_and_duplicate_fence(self):
         self.client.result = {

@@ -311,3 +311,32 @@ different UNKNOWN reason, active executor, non-terminal operation, or
 exact-resource Claim remains fenced. Focused RCC/Core/desktop Claim regression
 and exact-head CI must pass before Core deployment and the single ordinary-
 ChatGPT LIVE E2E are resumed.
+
+## 2026-10-21 first-message effect and result-readback correction
+
+The bounded Claim correction reached LIVE as Core generation 173 at exact SHA
+`9c1675e2305b061b998b2c6ce8e1b34e93f8c825`. One `create-and-send` operation
+then created tab `594835024` in requested Chrome window `594834519`, submitted
+the canonical prompt exactly once, acquired conversation UUID
+`6ad8a8c2-3d74-83e8-9e08-96152cf39efb`, and displayed the exact terminal reply
+`RCC_NEW_CHAT_E2E_OK_20261021_2049`. RCC inventory and the ordinary ChatGPT UI
+both show one user turn and one assistant turn. No retry is authorized.
+
+BCT nevertheless recorded the operation as `FINISHED / UNKNOWN /
+RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH`. The exact defect is a product-boundary
+readback omission, not a missing browser effect: durable new-chat receipts are
+stored under `newChatReceiptsV1`, while the read-only native `result` command
+checked only legacy `resultReceipts/results`. The Core reconciliation gate also
+accepted only the old `RCC_COMPOSE_*` error family and routed the new operation
+through the legacy bootstrap receipt validator.
+
+The bounded correction exposes an already-persisted new-chat receipt through
+the existing read-only `result` command, accepts the `RCC_NEW_CHAT_*` UNKNOWN
+family for result-only recovery, verifies exact operation/instance/session/
+tab/window/conversation/text SHA/reply/result hash, and releases only the exact
+original execution Claim while preserving the original UNKNOWN receipt. It
+does not create a tab, submit text, change Browser Bridge, or add a transport.
+Local new-chat/RCC integration tests and RC inventory verification pass; the
+effectful delivery lane still requires exact-head CI, exact-SHA Core and RCC
+deployment, same-ID reload, and result-only reconciliation of the existing
+operation before acceptance.

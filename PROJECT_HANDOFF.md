@@ -1344,3 +1344,19 @@ RCC에서 읽었을 때 result와 pending이 모두 없고 동일 instance/curre
 퇴역시키는 bounded 보완을 진행한다. pending/result/신원 불일치/다른 오류/실행자 존재 시에는 기존
 차단을 유지한다. 이 보완은 로컬 회귀와 exact-head CI 성공 뒤 Core에 배포하고, 일반 ChatGPT에서
 새 탭 1개·최초 메시지 1회·UUID·응답·Manager 반환을 실제 확인해야 완료다.
+
+## RCC 신규 대화 실제 효과와 영수증 재조회 결함
+
+2026-10-21 exact operation `rcc-new-chat-live-e2e-9c1675e-20261021-02`는 요청한
+Chrome window `594834519`에 tab `594835024`를 한 번 만들고 원문을 한 번만 제출했다. 실제
+ChatGPT UI와 RCC inventory에서 UUID `6ad8a8c2-3d74-83e8-9e08-96152cf39efb`, user turn 1,
+assistant turn 1, 정확한 응답 `RCC_NEW_CHAT_E2E_OK_20261021_2049`를 확인했다. 이 효과는
+재전송하지 않는다.
+
+BCT가 이를 UNKNOWN으로 남긴 직접 원인은 새 영수증 저장소 `newChatReceiptsV1`를 기존 읽기
+전용 `result` 명령이 조회하지 않은 경로 단절이다. 후속 후보는 기존 `result` 명령에서 이 저장소의
+terminal receipt를 읽고, `RCC_NEW_CHAT_*` UNKNOWN만 exact operation·instance·session·tab·window·
+conversation·text hash·reply·result hash로 검증해 원본 UNKNOWN을 보존한 채 exact Claim만 정산한다.
+Browser Bridge나 새 통신 계층은 추가하지 않으며 같은 메시지를 다시 보내지 않는다. 현재 로컬 focused
+회귀와 RC inventory는 PASS이고, exact-head CI·Core/RCC 정확 SHA 배포·same-ID reload·기존 operation의
+result-only LIVE 정산이 남았다.

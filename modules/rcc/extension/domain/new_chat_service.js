@@ -48,6 +48,12 @@ function publicNewChatResult(receipt, replayed = false) {
   };
 }
 
+function publicPersistedNewChatResult(state, operationId) {
+  const receipt = state?.newChatReceipts?.[operationId] || null;
+  if (!receipt || receipt.state !== 'RESULT_PERSISTED') return null;
+  return publicNewChatResult(receipt, true);
+}
+
 function newChatOperationId(value) {
   const operationId = String(value || '').trim();
   if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(operationId)) {

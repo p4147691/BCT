@@ -117,7 +117,8 @@ class OperationCoordinator:
                     })
                 or (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
                  and (original.evidence.get("command") == "create-and-send"
-                      or str(original.error or "").startswith("RCC_COMPOSE_")))
+                      or str(original.error or "").startswith((
+                          "RCC_COMPOSE_", "RCC_NEW_CHAT_"))))
                 or (rcc_command == "result"
                     and original.outcome is Outcome.APPLIED
                     and original.evidence.get("command") == "send-to-tab")
@@ -155,7 +156,8 @@ class OperationCoordinator:
                 raise PreconditionError("RCC_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
             if rcc_command == "reconcile-create-and-send" and (
                 original.outcome is not Outcome.UNKNOWN
-                or not str(original.error or "").startswith("RCC_COMPOSE_")
+                or not str(original.error or "").startswith((
+                    "RCC_COMPOSE_", "RCC_NEW_CHAT_"))
             ):
                 raise PreconditionError("RCC_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
         request = replace(

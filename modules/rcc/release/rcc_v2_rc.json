@@ -5,7 +5,7 @@
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 49,
-    "aggregateSha256": "d83c600e7819f2cfc75d36b33d23ae9c85f6c905911a2035fa53756282f5024e",
+    "aggregateSha256": "f9ace91162a796a2cee10fc2bb04c4da33d2a1ace4d58bad3209510a59c847cb",
     "files": [
       {
         "path": "background.js",
@@ -154,13 +154,13 @@
       },
       {
         "path": "domain/new_chat_service.js",
-        "size": 8875,
-        "sha256": "cdfc00bbd787ebe6fe4d48169183cab77e1f2872401d0813535b0c1df2825653"
+        "size": 9117,
+        "sha256": "302dedf9ea8abdbe3bf7466358c7e82bc3ab0d71b666afb9c600882d2527b29e"
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 26502,
-        "sha256": "110d5d64267548ab172fa33b7d0a8bf19443f12d7bdfac064208128a924e516b"
+        "size": 26793,
+        "sha256": "f67611f137d8de65aed014b26d6feba0fffd14c67b4608d8d9a42046d6d01fff"
       },
       {
         "path": "domain/runtime_message_service.js",
