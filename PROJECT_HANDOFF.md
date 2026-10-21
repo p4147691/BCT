@@ -1475,3 +1475,27 @@ payload이며 aggregate는
 목록으로 교정한 뒤 release verifier로 현재 설치본의 missing/extra/mismatch 0과 rollback aggregate를
 다시 확인했다. 이 manifest 교정도 exact-head CI와 로컬 main 병합을 거쳐야 하며, 그 전에는 RCC를
 변경하거나 reload하지 않는다.
+
+## 2026-10-22 RCC delivery ledger 구조 재설정
+
+Project Run/RCC의 후속 국소 수정을 동결하고, 새 격리 작업본
+`D:\BCT\worktrees\rcc-delivery-ledger-v1-20261022`에서 호출 경로와 저장소를
+READ-only로 다시 대조했다. 현재는 Simple Relay와 durable orchestration이 같은 ChatGPT
+메시지 효과를 서로 다른 명령·binding·receipt·Claim 구조로 표현한다. LIVE DB에는
+오케스트레이션 전용 테이블 20여 개, 세션 20개 중 ACTIVE 11개, Assignment 28개 중
+UNKNOWN 7개가 남아 있다. 반면 Simple Relay는 exact 대화 UUID와 기존 DOM adapter로 실제
+왕복을 수행한 이력이 있다.
+
+새 기준은 한 Manager UUID, 한 Worker UUID, 한 `delivery_id`이다. 상태는
+`NOT_SENT -> SENT_WAITING -> REPLY_CAPTURED -> RETURNED`만 정상 진행으로 인정하고,
+사전 거부는 `NOT_APPLIED`, 확인된 Worker 실패는 `FAILED`, 효과 경계가 불명확하면
+`NEEDS_REVIEW`로 종료한다. RCC 세션·tab/window·attachment generation은 재접속용 관측값이며
+영구 권한이나 전역 차단 조건이 아니다. 상태기계와 실제 명령·storage·SQLite inventory의
+정적 계약 9개가 PASS했다.
+
+상세 계획은
+`docs/exec-plans/active/BCT_RCC_DELIVERY_LEDGER_V1_20261022.md`에 있다. 아직 새 전송
+코드는 없고 LIVE·설치 RCC·Chrome·기존 후보 `f573961d...`는 변경하지 않았다. 다음 단계는
+기존 exact-turn DOM adapter를 재사용하여 이 한 상태기계에만 연결된 Manager 1개/Worker 1개
+왕복을 source/test에서 구현하는 것이다. 두 번의 실제 왕복과 reload/단절 복구가 성공하기
+전에는 Wake-up·역할 전환·다중 Worker 또는 legacy 삭제를 시작하지 않는다.
