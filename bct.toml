@@ -116,6 +116,7 @@ files = [
   "src/bct/features/deploy.py",
   "src/bct/features/files.py",
   "src/bct/features/git.py",
+  "src/bct/features/git_authority.py",
   "src/bct/features/github.py",
   "src/bct/features/rcc.py",
   "src/bct/features/execution.py",
