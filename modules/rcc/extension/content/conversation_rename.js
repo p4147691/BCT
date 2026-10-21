@@ -109,6 +109,20 @@ function rowMenuButton(anchor) {
   return semantic[0] || (compact.length === 1 ? compact[0] : null);
 }
 
+function currentConversationMenuButton() {
+  const surface = document.querySelector(
+    '[data-testid="app-shell-header-context-menu-surface"]'
+  );
+  if (!surface || !isVisible(surface)) return null;
+  const buttons = Array.from(surface.querySelectorAll('button[aria-haspopup="menu"], button'))
+    .filter((button) => isVisible(button) && !button.disabled);
+  const matches = buttons.filter((button) => {
+    const text = renameSemanticText(button);
+    return /^(more|more options|options|menu|더보기|더 보기|옵션|메뉴)$/i.test(text);
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
 function dispatchRenameHover(node) {
   const common = { bubbles: true, cancelable: true, composed: true, view: window };
   if (typeof PointerEvent === 'function') {
@@ -185,16 +199,20 @@ function findRenameEditor(anchor) {
 
 async function openConversationRenameEditor(key) {
   if (currentConversationKey() !== key) throw renameUiError('RENAME_TARGET_STALE');
-  const anchor = await ensureConversationAnchor(key);
-  dispatchRenameHover(conversationRow(anchor) || anchor);
-  let menuButton = await waitForRenameUi(() => rowMenuButton(anchor), 1500);
+  let anchor = visibleExactConversationAnchor(key);
+  let menuButton = currentConversationMenuButton();
+  if (!menuButton) {
+    anchor = anchor || await ensureConversationAnchor(key);
+    dispatchRenameHover(conversationRow(anchor) || anchor);
+    menuButton = await waitForRenameUi(() => rowMenuButton(anchor), 1500);
+  }
   if (menuButton) {
     activateRenameUiElement(menuButton);
-  } else {
+  } else if (anchor) {
     openContextMenu(anchor);
   }
   let renameItem = await waitForRenameUi(findRenameMenuItem, 2500);
-  if (!renameItem && menuButton) {
+  if (!renameItem && anchor) {
     openContextMenu(anchor);
     renameItem = await waitForRenameUi(findRenameMenuItem, 2000);
   }

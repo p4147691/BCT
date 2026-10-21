@@ -1144,6 +1144,18 @@ UNKNOWN receipt는 바꾸지 않고 exact Claim만 원자적으로 해제한다.
 경로에서 거부한다. 그 다음 순서는 execute → relay_browser → orchestrate이며, 외부 postcondition
 증거 없이 mutation을 재실행하거나 Claim을 해제하지 않는다.
 
+## RCC 대화 이름 변경 UI 계약 보완
+
+2026-10-21 LIVE에서 exact N2 대화의 이름 변경이 `RENAME_ACTION_NOT_FOUND / NOT_APPLIED`로
+종결됐다. Core 경로·Claim·exact UUID 문제는 아니었다. ChatGPT 사이드바가 접히면 기존
+content 구현이 `/c/<uuid>` anchor를 찾지 못했고, 현재 메뉴의 한국어 표기가 `이름 바꾸기`에서
+`이름 변경`으로 달라진 실제 DOM 계약을 회귀가 다루지 못했다.
+
+수정 계약은 현재 URL의 conversation key가 exact target과 일치할 때
+`app-shell-header-context-menu-surface`의 단일 대화 메뉴를 우선 사용하고, 기존 sidebar row 메뉴는
+호환 fallback으로 남긴다. `이름 변경` 표기를 명시적으로 인식하며, 접힌 sidebar와 현재 한국어
+메뉴를 재현한 content 회귀를 포함한다. broad selector나 임의의 다른 대화 메뉴로 우회하지 않는다.
+
 ## Monitor BCT 전환 후 legacy 조직 조회 경계
 
 2026-10-20 읽기 전용 점검에서 `check_monitor_live_organization.py`가 찾는 ACT
