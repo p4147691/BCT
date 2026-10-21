@@ -1,6 +1,6 @@
 # BCT Persistent Project Run bridge
 
-Status: `ISOLATED_IMPLEMENTATION_IN_PROGRESS / LIVE_NOT_APPLIED`
+Status: `SLICE_2_SOURCE_IMPLEMENTED / CI_PENDING / LIVE_NOT_APPLIED`
 
 ## Problem confirmed on 2026-10-22
 
@@ -77,5 +77,26 @@ create tabs, send a second relay message, or mutate LIVE systems implicitly.
 - a scope permits multiple tagged Managers but has only one active run;
 - a foreign UUID, inactive attachment, stale attachment generation, inactive
   session node, different Work, or different Core manager cannot bind;
-- binding is idempotent only for identical exact identity;
+- binding is idempotent for the same Work/session and automatically advances
+  to a newer active attachment generation of the same exact conversation;
+- a stale inactive generation is rejected at bind/send time without making
+  the run permanently unusable;
 - project-scope reads never create a run, Claim, or browser side effect.
+
+## Slice 2 source integration
+
+The existing public `bct_orchestrate` capability now exposes three bounded
+operations rather than adding a new transport or public tool:
+
+- `project-run-plan`: records the selected tagged Manager and objective for
+  one existing conversation scope. It performs no RCC/Chrome effect.
+- `project-run-bind`: binds that run to an already active orchestration
+  session and its exact Manager attachment. Rebinding the same conversation
+  to its latest active generation is supported after reload or tab reattach.
+- `project-run-status`: returns the run bridge and scope members without
+  contacting RCC or Monitor.
+
+Focused verification: `5` Project Run tests and `53` orchestration tests pass,
+including the public capability path and generation advance regression.
+The next step is exact-head CI, followed by local-main integration and an
+explicitly bounded LIVE Manager checkpoint on the Browser Bridge scope.
