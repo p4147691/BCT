@@ -229,10 +229,10 @@ async function handleNativeCommand(message) {
             (state.results || []).find((item) => String(item?.id || '') === relayId) ||
 
 
-            publicPersistedNewChatResult(state, relayId) || null;
+            await recoverPersistedNewChatResult(state, relayId) || null;
 
 
-          const pending = state.pending?.[relayId] ||
+          const pending = completed ? null : state.pending?.[relayId] ||
 
 
             (newChatReceipt && !['RESULT_PERSISTED', 'NOT_APPLIED'].includes(

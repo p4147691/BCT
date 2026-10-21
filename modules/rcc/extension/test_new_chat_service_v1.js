@@ -84,6 +84,39 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
     context.sendNewChatAndAwaitResult({ ...request, text: 'different' }),
     /NEW_CHAT_OPERATION_ID_REUSE_MISMATCH/,
   );
+
+  const lateOperationId = 'new-chat-test-late-result';
+  const lateTextSha256 = await sha256('late prompt');
+  local.newChatReceiptsV1[lateOperationId] = {
+    operationId: lateOperationId, command: 'new-chat-send',
+    state: 'SUBMIT_UNKNOWN', instanceId: 'instance123', sessionId: 'session-1',
+    tabId: 71, windowId: 11, conversationKey, textSha256: lateTextSha256,
+    stageTiming: { beganAt: Date.now() },
+  };
+  const createsBeforeRecovery = createCount;
+  const submissionsBeforeRecovery = executeCount;
+  const statusesBeforeRecovery = statusCount;
+  const recovered = await context.recoverPersistedNewChatResult({
+    newChatReceipts: local.newChatReceiptsV1,
+  }, lateOperationId);
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.state, 'RESULT_PERSISTED');
+  assert.equal(recovered.reply, 'NEW_CHAT_ACK');
+  assert.equal(createCount, createsBeforeRecovery);
+  assert.equal(executeCount, submissionsBeforeRecovery);
+  assert.equal(statusCount, statusesBeforeRecovery + 1);
+  assert.equal(local.newChatReceiptsV1[lateOperationId].state, 'RESULT_PERSISTED');
+
+  local.newChatReceiptsV1['new-chat-test-pre-submit'] = {
+    operationId: 'new-chat-test-pre-submit', state: 'CREATED',
+    instanceId: 'instance123', sessionId: 'session-1', tabId: 71, windowId: 11,
+    textSha256: lateTextSha256,
+  };
+  assert.equal(await context.recoverPersistedNewChatResult({
+    newChatReceipts: local.newChatReceiptsV1,
+  }, 'new-chat-test-pre-submit'), null);
+  assert.equal(createCount, createsBeforeRecovery);
+  assert.equal(executeCount, submissionsBeforeRecovery);
   console.log('rcc new chat service v1: PASS');
 })().catch((error) => {
   console.error(error);

@@ -1,5 +1,19 @@
 # BCT 인수인계
 
+## 진행 — RCC 신규 대화 지연 결과의 무재전송 회수
+
+기존 `rcc-new-chat-live-e2e-9c1675e-20261021-02`는 탭·원문·응답이 실제로 각각 한 번만
+존재하지만, 응답이 호출 제한 시간 뒤에 끝나 영속 상태가 `SUBMIT_UNKNOWN`에 머물렀다. 첫
+readback 보완은 저장소를 읽기만 했기 때문에 이를 pending으로 반환했고 exact Claim을 정산하지
+못했다. 같은 operation을 다시 보내면 안 된다.
+
+후속 최소 수정은 `SUBMIT_INTENT`/`SUBMITTED`/`SUBMIT_UNKNOWN`이며 exact tab/window/text hash가
+있는 기존 영수증만 현재 DOM에서 한 번 재관측한다. 탭 생성과 메시지 제출 함수는 호출하지 않고,
+완료 응답이 확인된 경우에만 원본 operation ID 아래 `RESULT_PERSISTED`를 기록한다. focused 회귀는
+추가 생성 0회·추가 제출 0회·상태 조회 1회와 terminal 영수증을 확인했고 전체 RCC JS 및 Python
+통합 회귀가 통과했다. exact-head CI, candidate 배포, same-ID reload, 원본 operation 무재전송
+reconcile가 남았다.
+
 ## 진행 — RCC 신규 대화 영수증 회수와 유지보수 Claim 분리
 
 신규 대화 operation `rcc-new-chat-live-e2e-9c1675e-20261021-02`는 실제로 탭 하나와 원문 한

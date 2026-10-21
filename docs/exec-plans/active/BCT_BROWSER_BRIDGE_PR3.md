@@ -340,3 +340,23 @@ Local new-chat/RCC integration tests and RC inventory verification pass; the
 effectful delivery lane still requires exact-head CI, exact-SHA Core and RCC
 deployment, same-ID reload, and result-only reconciliation of the existing
 operation before acceptance.
+
+## 2026-10-21 late-result readback correction
+
+The first readback after the exact payload reload proved a second bounded gap.
+The original operation's durable record was `SUBMIT_UNKNOWN`, because the
+ChatGPT reply finished after the caller's bounded wait.  The generic `result`
+handler exposed that record only as pending and never re-observed the exact
+already-submitted tab, even though its page-session record and final reply were
+still present.  Repeating `create-and-send` is prohibited and unnecessary.
+
+The result-only path now permits one bounded DOM collection for the existing
+receipt only when its state is `SUBMIT_INTENT`, `SUBMITTED`, or
+`SUBMIT_UNKNOWN` and its exact tab, window, and text hash are present.  This
+path calls neither tab creation nor prompt submission.  A completed reply is
+persisted under the original operation ID and then passes the existing Core
+identity/hash reconciliation gate.  Pre-submit states remain ineligible.
+Focused tests prove one status observation, zero added tab creations, and zero
+added submissions; the full RCC JavaScript suite and Python RCC integration
+suite also pass locally.  Exact-head CI, payload publication, one same-ID
+reload, and no-resend LIVE reconciliation remain required.

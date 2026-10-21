@@ -54,6 +54,26 @@ function publicPersistedNewChatResult(state, operationId) {
   return publicNewChatResult(receipt, true);
 }
 
+// A create-and-send request can outlive the caller's bounded wait while the
+// exact ChatGPT tab keeps generating.  A later result lookup may finish that
+// receipt from the already-submitted tab, but it must never create a tab or
+// submit the prompt again.  Only states at or beyond SUBMIT_INTENT are eligible
+// and collectNewChatResult revalidates the exact tab/window/conversation/hash.
+async function recoverPersistedNewChatResult(state, operationId) {
+  const persisted = publicPersistedNewChatResult(state, operationId);
+  if (persisted) return persisted;
+  const receipt = state?.newChatReceipts?.[operationId] || null;
+  if (!receipt) return null;
+  if (!['SUBMIT_INTENT', 'SUBMITTED', 'SUBMIT_UNKNOWN'].includes(
+    String(receipt.state || ''),
+  )) return null;
+  if (!Number(receipt.tabId) || !Number(receipt.windowId)
+      || !/^[a-f0-9]{64}$/.test(String(receipt.textSha256 || ''))) return null;
+  const recovered = await collectNewChatResult(receipt, Date.now() + 1000);
+  return recovered?.state === 'RESULT_PERSISTED'
+    ? publicNewChatResult(recovered, true) : null;
+}
+
 function newChatOperationId(value) {
   const operationId = String(value || '').trim();
   if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(operationId)) {
