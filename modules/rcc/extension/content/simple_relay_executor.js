@@ -477,7 +477,15 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
   setEditorText(editor, text);
 
 
-  await submitEditor(editor);
+  const isNewChatBootstrap = tracking?.bootstrapCreatedTab === true;
+  await submitEditor(editor, {
+    expectedText: text,
+    // On ChatGPT's blank route a synthetic Enter can become a URL query
+    // instead of an actual user turn. New-chat bootstrap therefore accepts
+    // only the verified send button; existing-conversation relay keeps its
+    // bounded keyboard fallback for compatibility.
+    allowKeyboardFallback: !isNewChatBootstrap,
+  });
 
   const submittedAt = Date.now();
   const activatedRecord = tracking?.relayId ? {
@@ -576,6 +584,110 @@ async function readSimpleRelayV0Reply(message) {
   } catch (error) {
     return { ok: false, effectState: 'NOT_APPLIED',
       error: String(error?.message || error || 'SIMPLE_RELAY_NEW_REPLY_NOT_READY').slice(0, 200) };
+  }
+}
+
+async function newChatTextSha256(value) {
+  const digest = await crypto.subtle.digest(
+    'SHA-256', new TextEncoder().encode(String(value || '')),
+  );
+  return Array.from(new Uint8Array(digest), (item) =>
+    item.toString(16).padStart(2, '0')).join('');
+}
+
+// Bootstrap exactly one blank ChatGPT tab. The record is stored before the
+// click because ChatGPT replaces the blank document while assigning /c/<uuid>.
+// sessionStorage survives that same-origin navigation, so the replacement
+// document can prove the exact first user turn without a second submission.
+async function executeNewChatBootstrap(message) {
+  const relayId = String(message?.relayId || '').trim();
+  const text = String(message?.text || '');
+  const textSha256 = String(message?.textSha256 || '').trim();
+  if (!relayId || !text || text.length > 12000
+      || !/^[a-f0-9]{64}$/.test(textSha256)
+      || await newChatTextSha256(text) !== textSha256) {
+    return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
+      error: 'NEW_CHAT_BOOTSTRAP_ARGUMENT_INVALID' };
+  }
+  if (currentConversationKey() || getMessageUnits('user').length
+      || getConversationTurns().length) {
+    return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
+      error: 'NEW_CHAT_BOOTSTRAP_TAB_NOT_BLANK' };
+  }
+  const prior = loadRelayExecution();
+  if (prior?.relayId) {
+    if (prior.relayId === relayId && prior.requestTextSha256 === textSha256) {
+      return { ok: true, submitted: prior.phase !== 'submit-intent', replayed: true,
+        relayId, conversationKey: String(prior.conversationKey || '') };
+    }
+    return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
+      error: 'NEW_CHAT_BOOTSTRAP_TAB_BUSY' };
+  }
+  const record = {
+    relayId,
+    conversationKey: '',
+    submittedText: RelayCore.normalizeMessageText(text),
+    requestTextSha256: textSha256,
+    beforeTurnKeys: [],
+    routeTurnKey: '',
+    bootstrapCreatedTab: true,
+    phase: 'submit-intent',
+  };
+  saveRelayExecution(record);
+  try {
+    const submission = await sendPrompt(text, record, false);
+    const persisted = loadRelayExecution() || record;
+    persisted.requestTextSha256 = textSha256;
+    persisted.bootstrapCreatedTab = true;
+    saveRelayExecution(persisted);
+    return { ok: true, submitted: true, relayId,
+      conversationKey: String(persisted.conversationKey || currentConversationKey() || ''),
+      beforeAssistantCount: Number(submission?.beforeCount || 0) };
+  } catch (error) {
+    const persisted = loadRelayExecution();
+    const mayHaveSubmitted = persisted?.relayId === relayId
+      && ['submit-activated', 'submitted'].includes(String(persisted.phase || ''));
+    return { ok: false, submitted: false,
+      effectState: mayHaveSubmitted ? 'UNKNOWN' : 'NOT_APPLIED',
+      error: String(error?.message || error || 'NEW_CHAT_BOOTSTRAP_FAILED') };
+  }
+}
+
+async function readNewChatBootstrapStatus(message) {
+  const relayId = String(message?.relayId || '').trim();
+  const textSha256 = String(message?.textSha256 || '').trim();
+  const record = loadRelayExecution();
+  if (!relayId || record?.relayId !== relayId
+      || record?.requestTextSha256 !== textSha256
+      || record?.bootstrapCreatedTab !== true) {
+    return { ok: false, effectState: 'NOT_APPLIED',
+      error: 'NEW_CHAT_BOOTSTRAP_RECORD_MISSING' };
+  }
+  const conversationKey = currentConversationKey();
+  if (!conversationKey) {
+    return { ok: true, submitted: false, completed: false, conversationKey: '' };
+  }
+  const routed = resolveRoutedTurn(record);
+  if (!routed.ok || !routed.turnKey) {
+    return { ok: true, submitted: false, completed: false, conversationKey,
+      pendingReason: String(routed.reason || 'NEW_CHAT_ROUTE_PENDING') };
+  }
+  record.conversationKey = conversationKey;
+  record.routeTurnKey = routed.turnKey;
+  record.phase = 'submitted';
+  saveRelayExecution(record);
+  if (turnIsGenerating(routed.turn) || isGenerating()) {
+    return { ok: true, submitted: true, completed: false, conversationKey };
+  }
+  try {
+    const reply = recoverCompletedReplyFromDom(record);
+    record.phase = 'completed';
+    saveRelayExecution(record);
+    return { ok: true, submitted: true, completed: true,
+      conversationKey, reply };
+  } catch (error) {
+    return { ok: true, submitted: true, completed: false, conversationKey,
+      pendingReason: String(error?.message || error || 'NEW_CHAT_REPLY_PENDING') };
   }
 }
 

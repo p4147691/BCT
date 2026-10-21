@@ -113,6 +113,16 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'new-chat-send') {
+
+          const result = await sendNewChatAndAwaitResult(message);
+
+          postNative({ type: 'host:result', requestId, ...result });
+
+          return;
+
+        }
+
     if (message.command === 'rename-conversation') {
 
           const result = await renameConversation(message, requestId);
@@ -940,4 +950,3 @@ async function handleNativeCommand(message) {
     postNative({ type: 'host:result', requestId, ok: false, error: error.message });
   }
 }
-

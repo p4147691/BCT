@@ -10,7 +10,7 @@ const runtimeMessages = fs.readFileSync(path.join(root, 'domain/runtime_message_
 const content = fs.readFileSync(path.join(root, 'content/content_router.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
-for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'rename-conversation', 'state', 'result', 'probe-tabs']) {
+for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'new-chat-send', 'rename-conversation', 'state', 'result', 'probe-tabs']) {
   assert.equal(policy.nativeCommand(command).allowed, true, command);
 }
 for (const command of ['create-chat-tab', 'move-tab', 'register', 'send', 'send-wakeback', 'reload-workers', 'result-ack']) {
@@ -39,7 +39,7 @@ assert(runtimeHandler.indexOf('RccLegacyCommandPolicy.runtimeMessage(message?.ty
 for (const type of ['relay:manualSend', 'relay:autoDirective', 'relay:workerResult', 'relay:actNaturalCommand']) {
   assert(!runtimeHandler.includes(`message.type === '${type}'`), `${type} implementation must be pruned`);
 }
-for (const type of ['relay:simpleExecute', 'relay:simpleReadReply', 'relay:renameConversation', 'relay:activityProbe', 'relay:probe']) {
+for (const type of ['relay:simpleExecute', 'relay:simpleReadReply', 'relay:newChatExecute', 'relay:newChatStatus', 'relay:renameConversation', 'relay:activityProbe', 'relay:probe']) {
   assert(content.includes(`message.type === '${type}'`), `${type} active content route must remain`);
 }
 for (const type of ['relay:execute', 'relay:deliver', 'relay:bootstrap']) {

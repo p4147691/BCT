@@ -1312,3 +1312,22 @@ HWND 식별, 노드 번호, 선택 테두리, 최소화 표시는 변경하지 �
 표시 전용이고 복구 가능한 BWM 변경은 로컬 정본의 정확한 커밋과 로컬 게이트 뒤 백업을 만든 후,
 LIVE E2E와 같은 커밋의 GitHub CI를 병행할 수 있다. Core/RCC/Native Host, 프로토콜, DB/Claim,
 Chrome 변경, 메시지 전송은 계속 exact-head CI 성공 뒤 LIVE로 진행한다.
+
+## RCC 신규 대화 단일 작업 경계
+
+2026-10-21 `브라우저 브릿지` 대화망을 실제 UI와 RCC inventory로 대조했다. N2/N3의 기존 대화
+Simple Relay는 각각 두 차례 왕복과 정확한 표시가 확인됐다. N13에서 처음 생성됐던 blank tab
+`594834964`는 후속 read-only runtime에서 conversation
+`6ad88177-eaf0-83ee-81af-81b5e7512892`의 완료 대화로 전환된 사실이 확인됐다. 따라서 이를 빈 탭
+후보로 재사용하지 않는다. 미완료 범위는 새 operation으로 만든 탭의 첫 메시지부터
+응답·UUID·호출자 반환까지다.
+
+RC4는 BCT의 `create-and-send`를 RCC의 단일 `new-chat-send` 명령으로 연결한다. 호출자는 exact
+Chrome `window_id`, 원문, timeout만 제공한다. RCC가 기존 tabs.create Adapter, 반환 tab ID,
+첫 메시지 1회, conversation UUID, 응답 전문과 hash receipt를 한 operation ID로 관리한다. 같은
+operation ID 재호출은 저장된 결과만 반환하고 새 탭/메시지를 만들지 않는다. 신규 대화에서는
+send button이 검증되지 않으면 Enter fallback을 금지하고, RCC 내부 deadline을 외부 pipe보다
+2초 먼저 끝내 transport UNKNOWN 경합을 피한다. 기존 저수준 create/send 명령은 계속 차단한다.
+
+이 경로는 실제 Chrome 탭과 메시지를 만들므로 로컬 회귀와 RC 검증 → exact main CI 성공 →
+설치본 백업·same-ID reload → 일반 ChatGPT의 BCT Control 호출 LIVE E2E 순서를 유지한다.

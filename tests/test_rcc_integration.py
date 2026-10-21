@@ -472,198 +472,76 @@ class RccIntegrationTests(unittest.TestCase):
         )
 
     @staticmethod
-    def _compose_receipts(parent: str, *, mode: str = "tab", text: str = "hello"):
-        import hashlib
-        digest = hashlib.sha256(parent.encode("utf-8")).hexdigest()[:24]
-        create, send = "bct-compose-c-" + digest, "bct-compose-s-" + digest
-        base = {"instanceId": "instance123", "sessionId": "session1",
-                "tabId": 10, "windowId": 11}
-        created = {"type": "host:result", "ok": True, "created": True,
-                   "state": "PENDING_UNBOUND", **base,
-                   "creationReceipt": {**base, "bindingState": "PENDING_UNBOUND"}}
-        sent = {"type": "host:result", "ok": True, "state": "SUBMITTED",
-                "operationId": send, "createOperationId": create,
-                "tabId": 10, "windowId": 11, "conversationKey": "c-123"}
-        terminal = {"type": "host:result", "ok": True, "relayId": send,
-                    "found": True, "completed": True, "pending": False,
-                    "result": {"id": send, "ok": True, "ambiguous": False,
-                               "reply": "OK", "tabId": 10,
-                               "conversationKey": "c-123", "resultHash": "sha",
-                               "resultState": "RESULT_PERSISTED",
-                               "fingerprint": json.dumps(
-                                   [create, "instance123", "session1", 10, 11, text])}}
-        return create, send, created, sent, terminal
+    def _new_chat_result(operation_id: str, *, state: str = "RESULT_PERSISTED"):
+        complete = state == "RESULT_PERSISTED"
+        return {
+            "type": "host:result", "ok": complete,
+            "command": "new-chat-send", "operationId": operation_id,
+            "state": state,
+            "effectState": "APPLIED_CONFIRMED" if complete else "UNKNOWN",
+            "instanceId": "instance123", "sessionId": "session1",
+            "tabId": 10, "windowId": 11,
+            "conversationKey": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d" if complete else "",
+            "resultState": "RESULT_PERSISTED" if complete else "",
+            "resultHash": "a" * 64 if complete else "",
+            "reply": "OK" if complete else "",
+            "stageTiming": {"beganAt": 1, "completedAt": 2},
+        }
 
     def test_create_and_send_tab_returns_exact_terminal_result_in_one_call(self):
-        create, send, created, sent, terminal = self._compose_receipts("compose-tab")
-        self.client.results = [created, sent, terminal]
+        self.client.result = self._new_chat_result("compose-tab")
         first = self.call("compose-tab", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "text": "hello"})
+            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120})
         duplicate = self.call("compose-tab", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "text": "hello"})
+            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120})
         self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(["create-chat-tab","send-to-created-tab", "result"],
-                         [c["command"] for c in self.client.calls])
-        self.assertEqual([create, send], [c["request_id"] for c in self.client.calls[:2]])
-        self.assertEqual(create, first.evidence["create_operation_id"])
-        self.assertEqual(send, first.evidence["send_operation_id"])
-        self.assertEqual(10, self.client.calls[1]["extra"]["tabId"])
-        self.assertEqual("session1", self.client.calls[1]["extra"]["sessionId"])
-        self.assertEqual("OK", first.output["result"]["result"]["reply"])
-        self.client.results = [terminal]
-        read = self.call("compose-result", {
-            "command":"result-of-create-and-send",
-            "instance_id":"instance123", "relay_id":"compose-tab"})
-        self.assertEqual(Outcome.APPLIED, read.outcome)
-        self.assertEqual(send, self.client.calls[-1]["text"])
-        self.assertEqual("result", self.client.calls[-1]["command"])
-        self.assertEqual("OK", read.output["result"]["result"]["reply"])
-        with self.assertRaisesRegex(PreconditionError, "RCC_RESULT_ORIGINAL_SEND_REQUIRED"):
-            self.call("wrong-read", {
-                "command":"result-of-create-and-send", "instance_id":"instance123",
-                "relay_id":"compose-result"})
+        self.assertEqual(["new-chat-send"], [c["command"] for c in self.client.calls])
+        self.assertEqual("compose-tab", self.client.calls[0]["request_id"])
+        self.assertEqual(11, self.client.calls[0]["extra"]["windowId"])
+        self.assertEqual(118000, self.client.calls[0]["extra"]["responseTimeoutMs"])
+        self.assertEqual("new-chat-send", first.evidence["rcc_command"])
+        self.assertEqual("OK", first.output["result"]["reply"])
 
-    def test_create_and_send_independent_window_reuses_common_exact_send(self):
-        create, send, created, sent, terminal = self._compose_receipts("compose-window", mode="window")
-        self.client.results = [created,sent,terminal]
-        result = self.call("compose-window", {
-            "command":"create-and-send","instance_id":"instance123",
-            "mode":"window","text":"hello"})
-        self.assertEqual(Outcome.APPLIED,result.outcome)
-        self.assertEqual(["create-chat-window","send-to-created-tab", "result"],
-                         [c["command"] for c in self.client.calls])
-        self.assertEqual(11,result.evidence["window_id"])
-        self.assertEqual(create,self.client.calls[1]["extra"]["createOperationId"])
-        with self.assertRaisesRegex(PreconditionError,"RCC_COMPOSE_WINDOW_ID_FORBIDDEN"):
-            self.call("bad-window",{"command":"create-and-send",
-                      "instance_id":"instance123","mode":"window",
-                      "text":"hello","window_id":11})
+    def test_create_and_send_requires_exact_existing_window(self):
+        with self.assertRaisesRegex(PreconditionError, "RCC_COMPOSE_MODE_OR_TEXT_REQUIRED"):
+            self.call("compose-window", {"command": "create-and-send",
+                "instance_id": "instance123", "mode": "window", "text": "hello"})
+        with self.assertRaisesRegex(PreconditionError, "RCC_WINDOW_ID_REQUIRED"):
+            self.call("compose-no-window", {"command": "create-and-send",
+                "instance_id": "instance123", "mode": "tab", "text": "hello"})
+        with self.assertRaisesRegex(PreconditionError, "RCC_NEW_CHAT_TIMEOUT_TOO_SHORT"):
+            self.call("compose-short-timeout", {"command": "create-and-send",
+                "instance_id": "instance123", "mode": "tab", "window_id": 11,
+                "text": "hello", "timeout_s": 29})
+        self.assertEqual([], self.client.calls)
 
     def test_create_and_send_unknown_keeps_claim_and_never_resends(self):
-        create, send, created, _, terminal = self._compose_receipts("compose-unknown")
-        self.client.results = [created,{"ok":False,"state":"SUBMIT_UNKNOWN"},{
-            **terminal,"result":{**terminal["result"],"fingerprint":"[]"}}]
+        self.client.result = self._new_chat_result("compose-unknown", state="SUBMIT_UNKNOWN")
         result = self.call("compose-unknown",{
             "command":"create-and-send","instance_id":"instance123",
-            "mode":"tab","text":"hello"})
+            "mode":"tab","window_id":11,"text":"hello"})
         duplicate = self.call("compose-unknown",{
             "command":"create-and-send","instance_id":"instance123",
-            "mode":"tab","text":"hello"})
+            "mode":"tab","window_id":11,"text":"hello"})
         self.assertEqual(Outcome.UNKNOWN,result.outcome)
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(1,sum(c["command"]=="send-to-created-tab" for c in self.client.calls))
+        self.assertEqual(1,sum(c["command"]=="new-chat-send" for c in self.client.calls))
         with self.assertRaisesRegex(Exception,"compose-unknown:FINISHED:UNKNOWN"):
             self.call("compose-blocked",{"command":"create-and-send",
-                          "instance_id":"instance123","mode":"tab","text":"hello"})
+                          "instance_id":"instance123","mode":"tab","window_id":11,"text":"hello"})
 
-    def test_create_and_send_unknown_initial_ack_recovers_exact_terminal(self):
-        create, send, created, _, terminal = self._compose_receipts("compose-recovered")
-        self.client.results = [created,{"ok":False,"state":"SUBMIT_UNKNOWN"},terminal]
-        result = self.call("compose-recovered",{
-            "command":"create-and-send","instance_id":"instance123",
-            "mode":"tab","text":"hello"})
-        self.assertEqual(Outcome.APPLIED,result.outcome)
-        self.assertEqual("RESULT_PERSISTED",result.evidence["result_state"])
-        self.assertEqual(1,sum(c["command"]=="send-to-created-tab" for c in self.client.calls))
-        self.assertGreaterEqual(result.evidence["total_ms"],0)
-
-    def test_create_and_send_recovers_completed_exact_dom_without_resend(self):
-        create, send, created, sent, terminal = self._compose_receipts("compose-dom-recovery")
-        pending = {
-            "type": "host:result", "ok": True, "relayId": send,
-            "found": False, "completed": False, "pending": True,
-            "pendingStatus": {"networkStartedAt": 100, "networkCompletedAt": 200},
-        }
-        self.client.results = [created, sent, pending, terminal]
-        result = self.call("compose-dom-recovery", {
+    def test_create_and_send_terminal_identity_mismatch_stays_unknown(self):
+        wrong = self._new_chat_result("compose-bad-identity")
+        wrong["windowId"] = 99
+        self.client.result = wrong
+        result = self.call("compose-bad-identity", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "text": "hello",
-        })
-        self.assertEqual(Outcome.APPLIED, result.outcome)
-        self.assertEqual("OK", result.output["result"]["result"]["reply"])
-        commands = [call["command"] for call in self.client.calls]
-        self.assertEqual(
-            ["create-chat-tab", "send-to-created-tab", "result",
-             "recover-created-result"], commands,
-        )
-        self.assertEqual(1, commands.count("send-to-created-tab"))
-
-    def test_create_and_send_retries_read_only_dom_recovery_without_resend(self):
-        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(
-            self.client,
-            result_readback_timeout_s=0.5,
-            recovery_retry_interval_s=0.01,
-        )
-        _, send, created, sent, terminal = self._compose_receipts(
-            "compose-dom-recovery-retry"
-        )
-        pending = {
-            "type": "host:result", "ok": True, "relayId": send,
-            "found": False, "completed": False, "pending": True,
-            "pendingStatus": {"networkStartedAt": 100, "networkCompletedAt": 200},
-        }
-        self.client.results = [
-            created, sent, pending,
-            RelayEffectUnknown("DOM_NOT_STABLE_YET"),
-            pending, terminal,
-        ]
-        result = self.call("compose-dom-recovery-retry", {
-            "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "text": "hello",
-        })
-        self.assertEqual(Outcome.APPLIED, result.outcome)
-        commands = [call["command"] for call in self.client.calls]
-        self.assertEqual(2, commands.count("recover-created-result"))
-        self.assertEqual(1, commands.count("send-to-created-tab"))
-        recover_ids = [
-            call["request_id"] for call in self.client.calls
-            if call["command"] == "recover-created-result"
-        ]
-        self.assertEqual(2, len(set(recover_ids)))
-        self.assertEqual(2, result.evidence["recovery_attempts"])
-
-    def test_create_and_send_unknown_parent_reconciles_from_exact_child_receipt(self):
-        create, send, created, _, terminal = self._compose_receipts("compose-reconcile")
-        self.client.results = [created, {"ok": False, "state": "SUBMIT_UNKNOWN"}, {
-            **terminal, "result": {**terminal["result"], "fingerprint": "[]"},
-        }]
-        original = self.call("compose-reconcile", {
-            "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "text": "hello",
-        })
-        self.assertEqual(Outcome.UNKNOWN, original.outcome)
-
-        self.client.results = [terminal]
-        reconciled = self.call("compose-reconcile-proof", {
-            "command": "reconcile-create-and-send", "instance_id": "instance123",
-            "relay_id": "compose-reconcile",
-        })
-        self.assertEqual(Outcome.APPLIED, reconciled.outcome)
-        self.assertEqual("recover-created-result", self.client.calls[-1]["command"])
-        self.assertEqual("compose-reconcile", reconciled.evidence["reconciled_operation_id"])
-        self.assertEqual(send, reconciled.evidence["terminal_relay_id"])
-        self.assertEqual(create, json.loads(
-            reconciled.output["result"]["result"]["fingerprint"])[0])
-
-        self.client.result = {"type": "host:result", "ok": False,
-                              "state": "NOT_APPLIED"}
-        next_mutation = self.call("compose-after-reconcile", {
-            "command": "create-chat-tab", "instance_id": "instance123",
-        })
-        self.assertEqual(Outcome.NOT_APPLIED, next_mutation.outcome)
-
-    def test_create_receipt_mismatch_does_not_send(self):
-        _,_,created,_,_ = self._compose_receipts("compose-bad-identity")
-        created["creationReceipt"]["tabId"]=99
-        self.client.results=[created]
-        result=self.call("compose-bad-identity",{
-            "command":"create-and-send","instance_id":"instance123",
-            "mode":"tab","text":"hello"})
-        self.assertEqual(Outcome.UNKNOWN,result.outcome)
-        self.assertEqual(["create-chat-tab"],[c["command"] for c in self.client.calls])
+            "mode": "tab", "window_id": 11, "text": "hello"})
+        self.assertEqual(Outcome.UNKNOWN, result.outcome)
+        self.assertEqual(["new-chat-send"], [c["command"] for c in self.client.calls])
 
     def test_conversation_rename_uses_exact_identity_and_duplicate_fence(self):
         self.client.result = {

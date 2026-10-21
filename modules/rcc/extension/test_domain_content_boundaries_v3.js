@@ -15,6 +15,7 @@ const domainFiles = [
   'domain/endpoint_service.js',
   'domain/diagnostic_support.js',
   'domain/simple_relay_service.js',
+  'domain/new_chat_service.js',
   'domain/conversation_rename_service.js',
   'domain/readonly_diagnostics.js',
   'domain/runtime_message_service.js',
@@ -43,6 +44,7 @@ assert(!background.includes('chrome.'));
 const endpoint = read('domain/endpoint_service.js');
 const receipts = read('domain/simple_relay_receipts.js');
 const relay = read('domain/simple_relay_service.js');
+const newChat = read('domain/new_chat_service.js');
 const rename = read('domain/conversation_rename_service.js');
 const diagnostics = read('domain/readonly_diagnostics.js');
 const runtime = read('domain/runtime_message_service.js');
@@ -53,6 +55,7 @@ assert(receipts.includes('function publicSimpleRelayV0Receipt('));
 assert(relay.includes('async function bindSimpleRelayV0('));
 assert(relay.includes('async function sendSimpleRelayV0('));
 assert(relay.includes('async function returnSimpleRelayV0('));
+assert(newChat.includes('async function sendNewChatAndAwaitResult('));
 assert(rename.includes('async function runConversationRename('));
 assert(rename.includes("type: 'relay:renameConversation'"));
 assert(diagnostics.includes("message.command === 'diagnose-conversation-ui'"));
@@ -71,9 +74,15 @@ const activity = read('content/activity_reporter.js');
 assert(dom.includes('function resolveRoutedTurn('));
 assert(executor.includes('async function executeSimpleRelayV0('));
 assert(executor.includes('async function readSimpleRelayV0Reply('));
+assert(executor.includes('async function executeNewChatBootstrap('));
+assert(executor.includes('async function readNewChatBootstrapStatus('));
+assert(executor.includes('const isNewChatBootstrap = tracking?.bootstrapCreatedTab === true;'));
+assert(executor.includes('allowKeyboardFallback: !isNewChatBootstrap'));
 assert(conversationRename.includes('async function renameConversationUi('));
 assert(router.includes("message.type === 'relay:simpleExecute'"));
 assert(router.includes("message.type === 'relay:simpleReadReply'"));
+assert(router.includes("message.type === 'relay:newChatExecute'"));
+assert(router.includes("message.type === 'relay:newChatStatus'"));
 assert(router.includes("message.type === 'relay:renameConversation'"));
 assert(router.includes('RCC_CONTENT_SENDER_REJECTED'));
 assert(activity.includes('async function reportGenerationSignal('));

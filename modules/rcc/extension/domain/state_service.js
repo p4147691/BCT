@@ -12,12 +12,18 @@ const BINDING_SUBMIT_LEASES_KEY = 'bindingSubmitLeasesV1';
 // receipts; it never creates nodes, queues work, or promotes replies.
 const SIMPLE_RELAY_V0_BINDING_KEY = 'simpleRelayV0Binding';
 const SIMPLE_RELAY_V0_RECEIPTS_KEY = 'simpleRelayV0Receipts';
+// A new-chat operation is one product effect: create exactly one blank tab in
+// the requested Chrome window, submit exactly one first prompt, bind the UUID
+// created by ChatGPT, and persist the exact reply.  Keep its receipt separate
+// from the retired generic operation cache so a reload cannot make the caller
+// repeat either the tab creation or the first submission.
+const NEW_CHAT_RECEIPTS_KEY = 'newChatReceiptsV1';
 
 let bindingLeaseMutationChain = Promise.resolve();
 
 async function loadState() {
 
-  const data = await stateRepository.getLocal(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, RENAME_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY, SIMPLE_RELAY_V0_BINDING_KEY]);
+  const data = await stateRepository.getLocal(['registrations', 'settings', 'pending', 'results', 'processed', 'operations', RELAY_RESULT_RECEIPTS_KEY, RENAME_RECEIPTS_KEY, BINDING_SUBMIT_LEASES_KEY, SIMPLE_RELAY_V0_BINDING_KEY, NEW_CHAT_RECEIPTS_KEY]);
 
   const settings = data.settings || {};
 
@@ -65,9 +71,10 @@ async function loadState() {
 
     bindingSubmitLeases: data[BINDING_SUBMIT_LEASES_KEY] || {},
 
-    simpleRelayV0Binding: data[SIMPLE_RELAY_V0_BINDING_KEY] || null
+    simpleRelayV0Binding: data[SIMPLE_RELAY_V0_BINDING_KEY] || null,
+
+    newChatReceipts: data[NEW_CHAT_RECEIPTS_KEY] || {}
 
   };
 
 }
-

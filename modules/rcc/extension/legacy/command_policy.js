@@ -3,6 +3,7 @@
 
   const NEW_RELAY_COMMANDS = new Set([
     'simple-relay-bind', 'simple-relay-send', 'simple-relay-return',
+    'new-chat-send',
   ]);
   const CONVERSATION_COMMANDS = new Set([
     'rename-conversation',

@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-20-rcc-core-rename-v1';
+const RCC_BUILD_VERSION = '2026-10-21-rcc-new-chat-v1';
 
 function editorCandidates() {
 

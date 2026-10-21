@@ -13,9 +13,17 @@ const browserGateway = RccBrowserGateway.create(chrome, {
   chatUrls: CHAT_URLS,
   receiverFiles: RCC_CONTENT_FILES,
 });
+function getTabCreateAdapter() {
+  return RccBrowserTabCreateAdapter.create(
+    chrome, RccBrowserTabCreateContract, {
+      isChatTab: (tab) => browserGateway.isChatTab(tab),
+      conversationKey: (url) => RelayCore.conversationKey(url),
+    },
+  );
+}
 const observationGateway = RccObservationGateway.create(chrome);
 const lifecycle = RccLifecycle.create(chrome);
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
-const RCC_BACKGROUND_BUILD_ID = '2026-10-20-rcc-core-rename-v1';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-21-rcc-new-chat-v1';
 let nativeTransport = null;

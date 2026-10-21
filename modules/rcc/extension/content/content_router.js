@@ -160,6 +160,28 @@ if (message.type === 'relay:simpleReadReply') {
 
   }
 
+if (message.type === 'relay:newChatExecute') {
+
+    executeNewChatBootstrap(message).then(sendResponse).catch((error) => sendResponse({
+      ok: false, submitted: false, effectState: 'UNKNOWN', error: error.message
+    }));
+
+    return true;
+
+
+  }
+
+if (message.type === 'relay:newChatStatus') {
+
+    readNewChatBootstrapStatus(message).then(sendResponse).catch((error) => sendResponse({
+      ok: false, effectState: 'NOT_APPLIED', error: error.message
+    }));
+
+    return true;
+
+
+  }
+
 if (message.type === 'relay:renameConversation') {
 
     renameConversationUi(message).then(sendResponse).catch((error) => sendResponse({

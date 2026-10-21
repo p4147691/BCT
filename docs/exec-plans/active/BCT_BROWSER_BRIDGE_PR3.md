@@ -251,3 +251,30 @@ This remains an RCC/BCT chat-transport task and must not be implemented through
 Browser Bridge WRITE/EXECUTE, desktop input, or a new transport layer. The
 existing tab `594834964` must be reused or explicitly retired only after its
 current blank state is rechecked; do not create another tab merely to retry.
+
+## 2026-10-21 RCC new-chat integration checkpoint
+
+The existing-conversation path is independently proven in the ordinary
+ChatGPT UI: N2 and N3 each contain two exact Simple Relay V0 rounds with one
+manager request, one worker response, and no duplicate visible turn. The
+remaining gap was the first turn of a newly created conversation.
+
+Source candidate `RCC_REBUILD_V2_RC4` now exposes only one product operation,
+`relay_browser(command=create-and-send, mode=tab, window_id=<exact>, text=<text>)`.
+BCT sends one `new-chat-send` command. RCC owns the exact-window tab creation,
+returned tab identity, one first-message activation, assigned conversation
+UUID, terminal reply receipt, and idempotent replay. The old low-level
+create/send commands stay blocked. A durable `SUBMIT_INTENT` exists before the
+only click, blank-route bootstrap forbids the keyboard fallback that can turn
+the draft into a URL query, and the inner result deadline ends two seconds
+before the outer pipe deadline. A duplicate operation ID returns its stored
+receipt and never creates or submits again.
+
+Local verification covers the 49-file RC inventory, active loader/message/
+storage contracts, all RCC JavaScript tests, and the Python integration and
+source-baseline suites. Because this operation creates a tab and sends a real
+message, its delivery lane remains exact-commit CI before installation and
+LIVE E2E. A later read-only runtime observation shows the former blank tab
+`594834964` now belongs to conversation
+`6ad88177-eaf0-83ee-81af-81b5e7512892` and has completed activity. It is no
+longer a bootstrap candidate and must not be mutated or reused by this work.
