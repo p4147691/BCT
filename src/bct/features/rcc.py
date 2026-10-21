@@ -471,10 +471,16 @@ class RelayBrowserFeature:
                 request_sha256=extra["requestSha256"],
             )
             if delivery["state"] != DeliveryState.NOT_SENT.value:
-                return FeatureResult(Outcome.APPLIED, {
+                replay_outcome = {
+                    DeliveryState.RETURNED.value: Outcome.APPLIED,
+                    DeliveryState.NOT_APPLIED.value: Outcome.NOT_APPLIED,
+                    DeliveryState.FAILED.value: Outcome.FAILED,
+                    DeliveryState.NEEDS_REVIEW.value: Outcome.UNKNOWN,
+                }.get(delivery["state"], Outcome.APPLIED)
+                return FeatureResult(replay_outcome, {
                     "command": command, "delivery_id": delivery_id,
                     "delivery_state": delivery["state"], "replayed": True,
-                }, output={"delivery": delivery})
+                }, release_claims=True, output={"delivery": delivery})
         else:
             delivery = self.delivery_ledger.get_for_work(
                 delivery_id=delivery_id, work_id=work_id,
@@ -486,6 +492,30 @@ class RelayBrowserFeature:
                 "workerConversationKey": delivery["worker_conversation_key"],
                 "requestSha256": delivery["request_sha256"],
             })
+            if delivery["state"] in {
+                DeliveryState.RETURNED.value, DeliveryState.NOT_APPLIED.value,
+                DeliveryState.FAILED.value, DeliveryState.NEEDS_REVIEW.value,
+            }:
+                replay_outcome = {
+                    DeliveryState.RETURNED.value: Outcome.APPLIED,
+                    DeliveryState.NOT_APPLIED.value: Outcome.NOT_APPLIED,
+                    DeliveryState.FAILED.value: Outcome.FAILED,
+                    DeliveryState.NEEDS_REVIEW.value: Outcome.UNKNOWN,
+                }[delivery["state"]]
+                return FeatureResult(replay_outcome, {
+                    "command": command, "delivery_id": delivery_id,
+                    "delivery_state": delivery["state"], "replayed": True,
+                }, release_claims=True, output={"delivery": delivery})
+            if (command == "delivery-status"
+                    and delivery["state"] != DeliveryState.SENT_WAITING.value):
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_STATUS_STATE_INVALID", release_claims=True,
+                )
+            if (command == "delivery-return"
+                    and delivery["state"] != DeliveryState.REPLY_CAPTURED.value):
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_RETURN_STATE_INVALID", release_claims=True,
+                )
 
         try:
             result = self.client.request(

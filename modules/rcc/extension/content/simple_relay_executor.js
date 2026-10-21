@@ -527,6 +527,27 @@ async function executeSimpleRelayV0(message) {
   if (currentConversationKey() !== expectedConversationKey) {
     return { ok: false, submitted: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_CONVERSATION_MISMATCH' };
   }
+  const prior = loadRelayExecution();
+  if (prior?.relayId === relayId) {
+    if (prior.conversationKey !== expectedConversationKey
+        || prior.submittedText !== RelayCore.normalizeMessageText(text)) {
+      return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
+        error: 'SIMPLE_RELAY_OPERATION_ID_REUSE_MISMATCH' };
+    }
+    const routed = resolveRoutedTurn(prior);
+    if (routed.ok && routed.turnKey) {
+      prior.routeTurnKey = routed.turnKey;
+      prior.phase = 'submitted';
+      saveRelayExecution(prior);
+      return { ok: true, submitted: true, replayed: true, relayId,
+        conversationKey: expectedConversationKey,
+        beforeAssistantCount: Number(prior.beforeCount || 0) };
+    }
+    // The same id reached the activation boundary but its exact user turn is
+    // not currently provable. Never overwrite the page record or click again.
+    return { ok: false, submitted: false, effectState: 'UNKNOWN',
+      error: 'SIMPLE_RELAY_PRIOR_EFFECT_UNRESOLVED' };
+  }
   try {
     const record = {
       relayId,
