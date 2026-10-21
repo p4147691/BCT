@@ -140,4 +140,41 @@ assert.equal(geometryOverlay.style.top, "0%");
 assert.equal(geometryOverlay.style.width, "50%");
 assert.equal(geometryOverlay.style.height, "100%");
 assert.equal(geometryOverlay.querySelector(".monitor-thumbnail-tab-badge").textContent, "N4/9/7");
-console.log("PASS: open ChatGPT node overlay survives capture DOM replacement using exact Native geometry");
+
+// Two physical Chrome windows can occupy the same screen rectangle. Their
+// badges must use different corners instead of covering one another.
+const overlappingChrome = node("monitor-desktop-thumb-window");
+overlappingChrome.dataset.hwnd = "600";
+overlappingChrome.style.left = "50%";
+overlappingChrome.style.top = "0%";
+overlappingChrome.style.width = "50%";
+overlappingChrome.style.height = "100%";
+visual.append(overlappingChrome);
+locations.set("600", { hwnd: "600", desktopId: "desk-a", left: 500, top: 0, width: 500, height: 800, iconic: false, visible: true });
+const collisionResult = context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  state: null,
+  locations,
+  numbersForHwnd: (hwnd) => hwnd === "500" ? [14] : (hwnd === "600" ? [13] : []),
+});
+assert.equal(collisionResult.rendered, 2);
+assert.equal(collisionResult.repositioned, 1);
+assert.equal(collisionResult.unresolvedCollisions, 0);
+const collisionBadges = layer.querySelectorAll(".monitor-thumbnail-tab-badge");
+assert.deepEqual(new Set(collisionBadges.map((badge) => badge.textContent)), new Set(["N14", "N13"]));
+assert.deepEqual(new Set(collisionBadges.map((badge) => badge.dataset.anchor)), new Set(["top-left", "top-right"]));
+
+// Re-rendering the same topology is deterministic and does not accumulate
+// extra overlay nodes or drift the chosen anchors.
+const collisionRepeat = context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  state: null,
+  locations,
+  numbersForHwnd: (hwnd) => hwnd === "500" ? [14] : (hwnd === "600" ? [13] : []),
+});
+assert.equal(collisionRepeat.repositioned, 1);
+const repeatedAnchors = new Map(layer.querySelectorAll(".monitor-thumbnail-tab-badge")
+  .map((badge) => [badge.dataset.hwnd, badge.dataset.anchor]));
+const firstAnchors = new Map(collisionBadges.map((badge) => [badge.dataset.hwnd, badge.dataset.anchor]));
+assert.deepEqual(repeatedAnchors, firstAnchors);
+console.log("PASS: open ChatGPT node overlays survive capture replacement and avoid badge collisions");

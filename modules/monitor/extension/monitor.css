@@ -376,6 +376,9 @@
 .monitor-thumbnail-node-overlay { position:absolute; inset:0; z-index:2147480000; overflow:hidden; pointer-events:none; }
 .monitor-thumbnail-node-window { position:absolute; z-index:1; box-sizing:border-box; pointer-events:none; }
 .monitor-thumbnail-tab-badge { position:absolute; left:2px; top:2px; transform:none; z-index:2!important; pointer-events:none; }
+.monitor-thumbnail-tab-badge[data-anchor="top-right"] { left:auto; right:2px; top:2px; bottom:auto; }
+.monitor-thumbnail-tab-badge[data-anchor="bottom-left"] { left:2px; right:auto; top:auto; bottom:2px; }
+.monitor-thumbnail-tab-badge[data-anchor="bottom-right"] { left:auto; right:2px; top:auto; bottom:2px; }
 
 
 .monitor-worker-row.monitor-worker-working {
