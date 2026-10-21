@@ -35,6 +35,14 @@ class ModuleLayoutTests(unittest.TestCase):
             self.config["orchestration"],
         )
 
+    def test_live_rcc_uses_session_fence_instead_of_permanent_retirement(self):
+        orchestration = self.config["orchestration"]
+        self.assertEqual([], orchestration["excluded_new_assignment_instance_ids"])
+        self.assertEqual(
+            ["6174664e1c1b4e6db1d4729c841db3c9"],
+            orchestration["require_current_session_instance_ids"],
+        )
+
     def test_runtime_profile_has_no_legacy_source_paths(self):
         files = self.config["deployment"]["profiles"]["bct_runtime_v1"]["files"]
         self.assertIn("modules/status-ui/index.html", files)

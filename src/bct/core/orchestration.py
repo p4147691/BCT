@@ -74,6 +74,7 @@ class OrchestrationService:
         self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
         policy: "Policy | None" = None,
         excluded_new_assignment_instances: frozenset[str] = frozenset(),
+        require_current_session_instances: frozenset[str] = frozenset(),
     ):
         if not isinstance(manager_wake_receipt_v2_enabled, bool):
             raise ValueError("MANAGER_WAKE_RECEIPT_V2_ENABLED_INVALID")
@@ -81,6 +82,9 @@ class OrchestrationService:
         self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
         self.policy = policy
         self.excluded_new_assignment_instances = frozenset(excluded_new_assignment_instances)
+        self.require_current_session_instances = frozenset(
+            require_current_session_instances
+        )
 
     @property
     def manager_wake_receipt_v2_active(self) -> bool:
@@ -379,15 +383,30 @@ class OrchestrationService:
                 "retired_attachments": [dict(row) for row in stale],
             }
 
-    @staticmethod
-    def _assert_attachment_current_session(db, attachment) -> None:
+    def _attachment_session_is_current(self, db, attachment) -> bool:
         current = db.execute(
             "SELECT external_session_id FROM orchestration_rcc_instance_sessions "
             "WHERE instance_id=?", (attachment["instance_id"],),
         ).fetchone()
-        if current is None or str(current["external_session_id"]) != str(
+        if current is None:
+            # Compatibility for historical/isolated instances. Production
+            # instances that require a fresh observation are explicitly named
+            # by policy and remain unavailable until node-sync registers one.
+            return attachment["instance_id"] not in self.require_current_session_instances
+        return str(current["external_session_id"]) == str(
             attachment["external_session_id"]
-        ):
+        )
+
+    def _assert_attachment_current_session(self, db, attachment) -> None:
+        if self._attachment_session_is_current(db, attachment):
+            return
+        current = db.execute(
+            "SELECT 1 FROM orchestration_rcc_instance_sessions WHERE instance_id=?",
+            (attachment["instance_id"],),
+        ).fetchone()
+        if current is None:
+            raise ConflictError("ORCHESTRATION_RCC_SESSION_NOT_OBSERVED")
+        else:
             raise ConflictError("ORCHESTRATION_ATTACHMENT_SESSION_STALE")
 
     @staticmethod
@@ -716,16 +735,14 @@ class OrchestrationService:
             if node is None or not node["active"]:
                 raise ConflictError("ORCHESTRATION_MANAGER_NODE_NOT_ACTIVE")
             attachment = db.execute(
-                "SELECT 1 FROM orchestration_attachments a "
+                "SELECT a.* FROM orchestration_attachments a "
                 "WHERE a.node_id=? AND a.active=1 AND EXISTS ("
                 "SELECT 1 FROM orchestration_session_nodes sn "
                 "WHERE sn.session_id=? AND sn.node_id=a.node_id AND sn.active=1) "
-                "AND EXISTS (SELECT 1 FROM orchestration_rcc_instance_sessions rs "
-                "WHERE rs.instance_id=a.instance_id "
-                "AND rs.external_session_id=a.external_session_id)",
+                "ORDER BY a.generation DESC LIMIT 1",
                 (manager_node_id, session_id),
             ).fetchone()
-            if attachment is None:
+            if attachment is None or not self._attachment_session_is_current(db, attachment):
                 raise ConflictError("ORCHESTRATION_MANAGER_ATTACHMENT_MISSING")
             next_epoch = expected_epoch + 1
             db.execute(
@@ -998,17 +1015,13 @@ class OrchestrationService:
             "updated_at": row["updated_at"],
         }
 
-    @staticmethod
-    def _dispatch_attachment_row(db, *, session_id: str, attempt):
-        return db.execute(
+    def _dispatch_attachment_row(self, db, *, session_id: str, attempt):
+        row = db.execute(
             "SELECT a.* FROM orchestration_attachments a "
             "WHERE a.attachment_id=? AND a.generation=? AND a.node_id=? "
             "AND a.active=1 AND a.relay_role IS NOT NULL AND a.relay_role!='' "
             "AND EXISTS (SELECT 1 FROM orchestration_session_nodes sn "
             "WHERE sn.session_id=? AND sn.node_id=a.node_id AND sn.active=1) "
-            "AND EXISTS (SELECT 1 FROM orchestration_rcc_instance_sessions rs "
-            "WHERE rs.instance_id=a.instance_id "
-            "AND rs.external_session_id=a.external_session_id) "
             "AND EXISTS (SELECT 1 FROM connections c "
             "WHERE c.connection_id=? AND c.node_id=a.node_id "
             "AND c.generation=a.generation AND c.active=1)",
@@ -1018,6 +1031,9 @@ class OrchestrationService:
                 "orch:" + attempt["attachment_id"],
             ),
         ).fetchone()
+        if row is None or not self._attachment_session_is_current(db, row):
+            return None
+        return row
 
     def _finish_pre_dispatch_not_applied(
         self, db, *, session_id: str, assignment, attempt, now: float,
@@ -1597,22 +1613,21 @@ class OrchestrationService:
             ).fetchone()
             return self._assignment_value(db, updated)
 
-    @staticmethod
-    def _manager_attachment_row(db, *, session_id: str, manager_node_id: str):
-        return db.execute(
+    def _manager_attachment_row(self, db, *, session_id: str, manager_node_id: str):
+        row = db.execute(
             "SELECT a.* FROM orchestration_attachments a "
             "WHERE a.node_id=? AND a.active=1 AND a.relay_role IS NOT NULL "
             "AND a.relay_role!='' AND EXISTS (SELECT 1 FROM "
             "orchestration_session_nodes sn WHERE sn.session_id=? "
             "AND sn.node_id=a.node_id AND sn.active=1) AND EXISTS "
-            "(SELECT 1 FROM orchestration_rcc_instance_sessions rs "
-            "WHERE rs.instance_id=a.instance_id "
-            "AND rs.external_session_id=a.external_session_id) AND EXISTS "
             "(SELECT 1 FROM connections c WHERE c.connection_id='orch:' || a.attachment_id "
             "AND c.node_id=a.node_id AND c.generation=a.generation "
             "AND c.active=1) ORDER BY a.generation DESC LIMIT 1",
             (manager_node_id, session_id),
         ).fetchone()
+        if row is None or not self._attachment_session_is_current(db, row):
+            return None
+        return row
 
     def _record_manager_wake(
         self, db, *, session_id: str, assignment, generation: int,

@@ -420,12 +420,16 @@ class OrchestrationTests(unittest.TestCase):
             handle.write(
                 "\n[orchestration]\n"
                 'excluded_new_assignment_instance_ids=["instance123"]\n'
+                'require_current_session_instance_ids=["instance456"]\n'
             )
         restarted = BCT(
             state_path=self.root / "state.sqlite", policy_path=self.policy
         )
         self.assertIn(
             "instance123", restarted.orchestration.excluded_new_assignment_instances
+        )
+        self.assertIn(
+            "instance456", restarted.orchestration.require_current_session_instances
         )
         self.assertEqual(
             self.bct.orchestration.snapshot(
@@ -505,6 +509,26 @@ class OrchestrationTests(unittest.TestCase):
                 assignment_id="stale-session-assignment", manager_epoch=1,
                 worker_node_id="worker-b", attachment_id=stale["attachment_id"],
                 request={"instruction": "must not route to stale session"},
+                roots=[str(self.root)], actions=["read"],
+                acceptance={"blocked": True}, dependencies=[],
+            )
+
+    def test_policy_fenced_instance_requires_one_current_session_observation(self):
+        worker = self.attachment("worker-b")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "DELETE FROM orchestration_rcc_instance_sessions WHERE instance_id=?",
+                (self.relay.instance_id,),
+            )
+        self.bct.orchestration.require_current_session_instances = frozenset(
+            {self.relay.instance_id}
+        )
+        with self.assertRaisesRegex(ConflictError, "RCC_SESSION_NOT_OBSERVED"):
+            self.bct.orchestration.create_assignment(
+                work=self.bct.store.get_work("work"), session_id="session",
+                assignment_id="unobserved-current-session", manager_epoch=1,
+                worker_node_id="worker-b", attachment_id=worker["attachment_id"],
+                request={"instruction": "must wait for a current node sync"},
                 roots=[str(self.root)], actions=["read"],
                 acceptance={"blocked": True}, dependencies=[],
             )

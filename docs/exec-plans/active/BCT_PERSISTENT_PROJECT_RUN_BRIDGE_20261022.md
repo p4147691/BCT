@@ -125,6 +125,11 @@ The corrected contract is session-scoped:
   generation or permanent instance allow-list is required.
 
 The former stable-instance retirement remains available as an emergency
-policy mechanism, but the production list is now empty.  The release profile
-also explicitly includes `src/bct/project_run.py`; omitting it would have made
-the deployed orchestration import fail even though source tests passed.
+policy mechanism, but the production retirement list is now empty.  A separate
+bootstrap fence names the production instance: it rejects new routing until
+one exact current session has been observed, then automatically accepts that
+session and later same-ID reloads.  Historical instances without this policy
+retain their legacy behavior unless a registered session proves them stale.
+The release profile also explicitly includes `src/bct/project_run.py`; omitting
+it would have made the deployed orchestration import fail even though source
+tests passed.
