@@ -1,5 +1,17 @@
 # BCT 인수인계
 
+## 진행 — BWM 섬네일 노드 번호 충돌 회피
+
+같은 데스크톱에서 서로 겹친 두 Chrome 창의 노드 번호가 모두 각 투영 창의 좌상단을 사용해
+뒤 번호를 가리던 표시 결함을 수정한다. `monitor-bct-thumbnail-projection.js`의 단일 의미 계층은
+유지하고, 실제 투영 사각형과 배지 크기를 기준으로 좌상단·우상단·좌하단·우하단 중 먼저 비어
+있는 위치를 결정적으로 선택한다. 창/대화 identity, exact HWND 계약, 캡처 이미지와 갱신 주기는
+변경하지 않는다. 같은 topology를 다시 그려도 위치가 누적 이동하지 않아야 한다.
+
+격리 후보는 focused projection/구조/배포 회귀를 통과한 뒤 로컬 main 계약으로 병합하고 exact
+Monitor 설치본 배포와 same-ID reload 후 실제 겹친 창 표시를 확인한다. 상세는
+`docs/exec-plans/active/BCT_MONITOR_THUMBNAIL_BADGE_COLLISION_20261021.md`를 따른다.
+
 ## 진행 — 로컬 main 정본 전환
 
 운영 결정은 `D:\BCT\source`의 로컬 Git `main`을 공식 소스 정본으로 사용하고 GitHub는
