@@ -86,17 +86,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (!["READ_FIXTURE", "RECEIPT_LOOKUP"].includes(message?.type) ||
+  if (!["READ_FIXTURE", "WRITE_FIXTURE", "EXECUTE_FIXTURE", "RECEIPT_LOOKUP"].includes(message?.type) ||
       sender.url !== chrome.runtime.getURL("popup.html") || sender.frameId !== 0) return false;
   const lookup = message.type === "RECEIPT_LOOKUP";
-  if (!lookup && (typeof message.path !== "string" || !message.path || message.path.length > 1024)) {
-    sendResponse({ok: false, error: "INVALID_PATH"}); return false;
+  const kind = {"READ_FIXTURE": "bridge_read", "WRITE_FIXTURE": "bridge_write",
+                "EXECUTE_FIXTURE": "bridge_execute", "RECEIPT_LOOKUP": "receipt_lookup"}[message.type];
+  const capability = {"bridge_read": "read", "bridge_write": "write",
+                      "bridge_execute": "execute", "receipt_lookup": "read"}[kind];
+  const args = lookup ? {} : message.arguments ?? (kind === "bridge_read" ? {path: message.path} : null);
+  if (!lookup && (!args || typeof args !== "object" || Array.isArray(args))) {
+    sendResponse({ok: false, error: "INVALID_ARGUMENTS"}); return false;
   }
   if (lookup && !BctBridgeChat.validOperationId(message.operationId)) {
     sendResponse({ok: false, error: "INVALID_OPERATION_ID"}); return false;
   }
   const id = lookup ? message.operationId : identifier();
-  nativeRequest(id, lookup ? "receipt_lookup" : "bridge_read",
-    lookup ? {} : {path: message.path}, sendResponse);
+  if (!lookup && kind !== "bridge_read" && message.confirmed !== true) {
+    sendResponse({ok: false, error: "EXPLICIT_CONFIRMATION_REQUIRED"}); return false;
+  }
+  if (pending.has(id)) { sendResponse(unknown("OPERATION_ALREADY_IN_FLIGHT")); return false; }
+  pending.set(id, sendResponse);
+  try {
+    connect().postMessage({schema_version: 1, type: kind, request_id: id,
+      operation_id: id, capability, arguments: args});
+  } catch (_) {
+    const callback = pending.get(id); pending.delete(id);
+    if (callback) callback(unknown("POST_UNKNOWN_NO_RETRY"));
+  }
   return true;
 });

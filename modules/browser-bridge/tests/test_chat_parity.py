@@ -43,9 +43,14 @@ class ChatParityTests(unittest.TestCase):
 
     def test_existing_native_host_has_no_chat_execution_privilege(self):
         source = (ROOT / "native/native_host.py").read_text(encoding="utf-8")
-        self.assertIn('("bridge_read", "receipt_lookup")', source)
-        self.assertIn('"capability"] != "read"', source)
-        self.assertNotIn("bct_execute", source)
+        self.assertIn('"bridge_read": "read"', source)
+        self.assertIn('"bridge_write": "write"', source)
+        self.assertIn('"bridge_execute": "execute"', source)
+        self.assertIn('"bridge_read": "read"', source)
+        self.assertIn("bct_execute", source)
+        content = (ROOT / "extension/chat_content.js").read_text(encoding="utf-8")
+        self.assertNotIn("BRIDGE_CHAT_EXECUTE", content)
+        self.assertNotIn("BRIDGE_CHAT_WRITE", content)
 
 
 if __name__ == "__main__":

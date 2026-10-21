@@ -39,6 +39,27 @@ class BridgeHostTests(unittest.TestCase):
             with self.subTest(fields=fields):
                 with self.assertRaises(ValueError): host.validate({**valid(), **fields})
 
+    def test_write_execute_strict_contract(self):
+        write = {**valid(), "type": "bridge_write", "capability": "write",
+                 "arguments": {"path": r"C:\fixture\one.txt", "content": "hello",
+                               "expected_absent": True}}
+        execute = {**valid(), "type": "bridge_execute", "capability": "execute",
+                   "arguments": {"cwd": r"C:\fixture", "argv": ["python", "--version"]}}
+        self.assertEqual(write["request_id"], host.validate(write)[0])
+        self.assertEqual(execute["request_id"], host.validate(execute)[0])
+        for invalid in (
+            {**write, "arguments": {"path": "x", "content": "text"}},
+            {**write, "arguments": {"path": "x", "content": "text", "expected_absent": False}},
+            {**write, "arguments": {"path": "x", "content": "text", "expected_absent": True, "expected_sha256": "a"*64}},
+            {**execute, "arguments": {"cwd": "x", "argv": "whoami"}},
+            {**execute, "arguments": {"cwd": "x", "argv": []}},
+            {**execute, "arguments": {"cwd": "x", "argv": ["ok"], "extra": True}},
+            {**execute, "capability": "write"},
+            {**valid(), "type": "bridge_delete", "capability": "delete"},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                host.validate(invalid)
+
     def test_origin_fails_closed(self):
         with patch.object(host, "APPROVED_ORIGIN", ""):
             self.assertEqual(4, host.main(argv=["chrome-extension://fake/"], inp=io.BytesIO(frame(valid())), out=io.BytesIO()))
