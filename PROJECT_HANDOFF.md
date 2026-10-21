@@ -1176,6 +1176,20 @@ RCC를 reload했다. N2 exact UUID `6ad4bb5d-6624-83ee-b045-e57fdad5120e`에서 
 host reload만 분리 실행했다. 후속 Claim 정책 작업에서는 종료된 UNKNOWN 기록과 실제 실행 잠금을
 분리하고, create-window의 전역 Claim이 무관한 reload/rename을 영구 차단하지 않도록 다뤄야 한다.
 
+## Conversation Network A 유연성 결정
+
+2026-10-21 사용자 결정으로 대화망의 `Manager`는 실행 권한이나 필수 단일 자리가 아니라 자유로운
+안내 태그로 확정됐다. 첫 노드 자동 Manager, Manager 정확히 한 명, 후임 없는 이동 거부,
+Manager 부재 시 기능 보류를 구현하지 않는다. 600 ms 정지 길게 누르기는 태그를 빠르게 붙이는
+UI 편의 기능일 뿐이며 이동을 감지하면 취소한다.
+
+프로젝트와 대화망은 사용자 화면에서 하나의 `대화망 / 작업 범위`로 통일한다. 기존
+`conversation_network_projects.project_id`는 호환 저장 식별자로 재사용하고 별도 network registry를
+추가하지 않는다. 대화 UUID는 현재 범위 하나만 갖고 이전 membership은 복구 이력용 EXCLUDED로
+보존한다. N번호는 표시 별칭으로 계속 영구·비재사용한다. 우클릭은 실제 ChatGPT 제목 변경,
+범위, 역할, 식별 정보를 한 창에서 다루며 기존 쓰레기통 복구 UI에 이전 범위·역할을 함께 보존한다.
+구현·검증 현황은 `docs/exec-plans/active/BCT_CONVERSATION_NETWORK_FLEXIBLE_A_20261021.md`를 따른다.
+
 ## Monitor BCT 전환 후 legacy 조직 조회 경계
 
 2026-10-20 읽기 전용 점검에서 `check_monitor_live_organization.py`가 찾는 ACT

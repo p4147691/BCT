@@ -36205,7 +36205,7 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
 
 
 
-  const renderTrashRows=(source,container)=>{const records=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")===source).sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));if(!records.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";container.append(empty);return;}for(const ghost of records){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-record-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost),at=Number(ghost?.trashed_at_ms||0);info.textContent=`${location} · ${context} · ${at?new Date(at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"?"}`;const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashRecord(ghost.conversation_key);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorTrashRecord(ghost.conversation_key),140);});row.append(info);if(source==="list")appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);container.append(row);}};
+  const renderTrashRows=(source,container)=>{const records=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")===source).sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));if(!records.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";container.append(empty);return;}for(const ghost of records){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-record-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost),at=Number(ghost?.trashed_at_ms||0),scope=String(ghost?.network_name||"미소속"),roles=Array.isArray(ghost?.role_tags)&&ghost.role_tags.length?` · ${ghost.role_tags.join(", ")}`:"";info.textContent=`${String(ghost?.node_label||"")} ${context} · ${scope}${roles} · ${location} · ${at?new Date(at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"?"}`.trim();const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashRecord(ghost.conversation_key);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorTrashRecord(ghost.conversation_key),140);});row.append(info);if(source==="list")appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);container.append(row);}};
 
 
 
@@ -43341,6 +43341,15 @@ function closeMonitorBctRenameEditor() {
   monitorBctRenameEditor = null;
 }
 
+function openMonitorTrashRecovery() {
+  if (!monitorNodeTrash || !monitorClosedRecoveryMenu) return;
+  if (!monitorClosedConversationPickerOpen) monitorNodeTrash.click();
+}
+
+function monitorBctRoleTagsFromText(value) {
+  return [...new Set(String(value || "").split(",").map((item) => item.trim()).filter(Boolean))].slice(0, 24);
+}
+
 function openMonitorBctRenameEditor(node, row) {
   if (!monitorBctShell?.renameConversation || !node?.conversationKey || !node?.sessionId) {
     setMonitorStatus("이 창의 정확한 RCC 대화 신원을 확인할 수 없어 이름을 바꾸지 않았습니다.", false, 5000);
@@ -43353,28 +43362,73 @@ function openMonitorBctRenameEditor(node, row) {
   dialog.className = "monitor-bct-rename-dialog";
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-label", "ChatGPT 대화 이름 바꾸기");
+  dialog.setAttribute("aria-label", "대화 정보와 이름 변경");
   const head = document.createElement("div");
   head.className = "monitor-bct-rename-head";
   const heading = document.createElement("strong");
-  heading.textContent = `N${Number(row?.dataset?.nodeIndex || 0)} · ChatGPT 방 이름`;
+  heading.textContent = `${node.nodeLabel || "N?"} · 대화 정보`;
   const close = document.createElement("button");
   close.type = "button";
   close.className = "monitor-bct-rename-close";
   close.setAttribute("aria-label", "취소");
   close.textContent = "×";
   head.append(heading, close);
-  const input = document.createElement("input");
-  input.className = "monitor-bct-rename-input";
-  input.type = "text";
-  input.maxLength = 100;
-  input.value = String(node.title || "").trim();
-  input.autocomplete = "off";
+  let currentTitle = String(node.title || "").trim();
+  const facts = document.createElement("div");
+  facts.className = "monitor-bct-node-facts";
+  const fact = (label, value) => {
+    const line = document.createElement("div");
+    const key = document.createElement("b");
+    const text = document.createElement("span");
+    key.textContent = label;
+    text.textContent = value || "-";
+    line.append(key, text);
+    facts.append(line);
+  };
+  fact("대화 UUID", String(node.conversationKey || ""));
+  fact("현재 위치", row?.querySelector?.(".monitor-bct-node-location")?.textContent || "확인 중");
+  fact("연결", `창 ${node.windowId} · 탭 ${node.tabId}`);
+
+  const makeField = (labelText, value, maximum, placeholder = "") => {
+    const label = document.createElement("label");
+    label.className = "monitor-bct-info-field";
+    const caption = document.createElement("span");
+    caption.textContent = labelText;
+    const control = document.createElement("input");
+    control.className = "monitor-bct-rename-input";
+    control.type = "text";
+    control.maxLength = maximum;
+    control.value = value;
+    control.placeholder = placeholder;
+    control.autocomplete = "off";
+    label.append(caption, control);
+    return { label, control };
+  };
+  const titleField = makeField("ChatGPT 대화창 이름", currentTitle, 100);
+  const scopeField = makeField(
+    "대화망 / 작업 범위",
+    String(node.scopeName || "").trim(),
+    120,
+    "비우면 미소속",
+  );
+  const rolesField = makeField(
+    "역할 태그",
+    Array.isArray(node.roleTags) ? node.roleTags.join(", ") : "",
+    400,
+    "예: Manager, 구현, CI",
+  );
+  const roleHint = document.createElement("div");
+  roleHint.className = "monitor-bct-info-hint";
+  roleHint.textContent = "Manager는 안내용 역할 태그입니다. 0명 또는 여러 명이어도 기능과 권한은 제한되지 않습니다.";
   const error = document.createElement("div");
   error.className = "monitor-bct-rename-error";
   error.setAttribute("aria-live", "polite");
   const actions = document.createElement("div");
   actions.className = "monitor-bct-rename-actions";
+  const recovery = document.createElement("button");
+  recovery.type = "button";
+  recovery.className = "monitor-bct-open-recovery";
+  recovery.textContent = "복구 보관함";
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.textContent = "취소";
@@ -43382,15 +43436,24 @@ function openMonitorBctRenameEditor(node, row) {
   confirm.type = "submit";
   confirm.className = "is-primary";
   confirm.textContent = "확인";
-  actions.append(cancel, confirm);
-  dialog.append(head, input, error, actions);
+  actions.append(recovery, cancel, confirm);
+  dialog.append(head, facts, titleField.label, scopeField.label, rolesField.label, roleHint, error, actions);
   overlay.append(dialog);
   document.body.append(overlay);
-  monitorBctRenameEditor = { overlay, dialog, input, error, cancel, close, confirm, busy: false };
+  monitorBctRenameEditor = {
+    overlay, dialog, input: titleField.control, scopeInput: scopeField.control,
+    rolesInput: rolesField.control, error, recovery, cancel, close, confirm, busy: false,
+  };
 
   const cancelEditor = () => closeMonitorBctRenameEditor();
   close.addEventListener("click", cancelEditor);
   cancel.addEventListener("click", cancelEditor);
+  recovery.addEventListener("click", () => {
+    if (monitorBctRenameEditor?.busy) return;
+    overlay.remove();
+    monitorBctRenameEditor = null;
+    openMonitorTrashRecovery();
+  });
   overlay.addEventListener("pointerdown", (event) => {
     if (event.target === overlay) cancelEditor();
   });
@@ -43405,46 +43468,121 @@ function openMonitorBctRenameEditor(node, row) {
     const editor = monitorBctRenameEditor;
     if (!editor || editor.busy) return;
     const title = editor.input.value.trim();
+    const scopeName = editor.scopeInput.value.trim();
+    const roleTags = monitorBctRoleTagsFromText(editor.rolesInput.value);
     if (!title) {
       editor.error.textContent = "이름을 입력하세요.";
       editor.input.focus();
       return;
     }
-    if (title === String(node.title || "").trim()) {
-      editor.overlay.remove();
-      monitorBctRenameEditor = null;
-      return;
-    }
+    const titleChanged = title !== currentTitle;
+    const metadataChanged = scopeName !== String(node.scopeName || "").trim()
+      || JSON.stringify(roleTags) !== JSON.stringify(Array.isArray(node.roleTags) ? node.roleTags : []);
+    if (!titleChanged && !metadataChanged) return closeMonitorBctRenameEditor();
     editor.busy = true;
     editor.input.disabled = true;
+    editor.scopeInput.disabled = true;
+    editor.rolesInput.disabled = true;
+    editor.recovery.disabled = true;
     editor.cancel.disabled = true;
     editor.close.disabled = true;
     editor.confirm.disabled = true;
     editor.confirm.textContent = "변경 중…";
     editor.error.textContent = "";
+    let titleApplied = false;
     try {
-      await monitorBctShell.renameConversation(node, title);
-      row.querySelector(".monitor-bct-node-title").textContent = title;
+      if (titleChanged) {
+        await monitorBctShell.renameConversation(node, title);
+        row.querySelector(".monitor-bct-node-title").textContent = title;
+        currentTitle = title;
+        titleApplied = true;
+      }
+      await monitorBctShell.updateConversationScope(node, {
+        displayName: title,
+        scopeName,
+        roleTags,
+      });
       editor.overlay.remove();
       monitorBctRenameEditor = null;
-      setMonitorStatus(`ChatGPT 방 이름을 '${title}'(으)로 변경했습니다.`, true, 3500);
+      setMonitorStatus(`대화 정보${titleChanged ? "와 실제 ChatGPT 이름" : ""}을 저장했습니다.`, true, 3500);
       globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 600);
     } catch (renameError) {
       editor.busy = false;
       editor.input.disabled = false;
+      editor.scopeInput.disabled = false;
+      editor.rolesInput.disabled = false;
+      editor.recovery.disabled = false;
       editor.cancel.disabled = false;
       editor.close.disabled = false;
       editor.confirm.disabled = false;
       editor.confirm.textContent = "확인";
-      editor.error.textContent = monitorBctRenameErrorText(renameError);
-      editor.input.focus();
+      editor.error.textContent = titleApplied
+        ? `ChatGPT 이름은 변경됐지만 대화망 정보 저장에 실패했습니다 · ${renameError?.message || renameError}`
+        : monitorBctRenameErrorText(renameError);
+      (titleApplied ? editor.scopeInput : editor.input).focus();
     }
   });
-  input.focus();
-  input.select();
+  titleField.control.focus();
+  titleField.control.select();
 }
 
 let monitorBctNodeInteractionService = null;
+const monitorBctCollapsedScopes = new Set();
+let monitorBctSuppressedClickKey = "";
+
+function installMonitorBctManagerLongPress(row, node) {
+  let timer = 0;
+  let startX = 0;
+  let startY = 0;
+  const cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = 0;
+    row.classList.remove("monitor-bct-manager-hold");
+  };
+  row.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("button,input")) return;
+    startX = event.clientX;
+    startY = event.clientY;
+    row.classList.add("monitor-bct-manager-hold");
+    timer = setTimeout(() => {
+      timer = 0;
+      row.classList.remove("monitor-bct-manager-hold");
+      const key = monitorBctNodeSelectionKey(node);
+      monitorBctSuppressedClickKey = key;
+      globalThis.setTimeout(() => {
+        if (monitorBctSuppressedClickKey === key) monitorBctSuppressedClickKey = "";
+      }, 900);
+      if (!node.scopeName) {
+        setMonitorStatus("먼저 우클릭 정보창에서 이 대화의 작업 범위를 지정하세요.", false, 3500);
+        return;
+      }
+      const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
+      if (tags.includes("Manager")) {
+        setMonitorStatus(`${node.nodeLabel || "N?"}에는 이미 Manager 안내 태그가 있습니다.`, true, 2200);
+        return;
+      }
+      tags.push("Manager");
+      row.classList.add("is-manager");
+      void monitorBctShell.updateConversationScope(node, {
+        displayName: node.title,
+        scopeName: node.scopeName,
+        roleTags: tags,
+      }).then(() => {
+        setMonitorStatus(`${node.nodeLabel || "N?"}에 Manager 안내 태그를 붙였습니다.`, true, 2800);
+        globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 250);
+      }).catch((error) => {
+        row.classList.remove("is-manager");
+        setMonitorStatus(`Manager 태그 저장 실패 · ${error?.message || error}`, false, 4000);
+      });
+    }, 600);
+  });
+  row.addEventListener("pointermove", (event) => {
+    if (timer && Math.hypot(event.clientX - startX, event.clientY - startY) > 7) cancel();
+  });
+  row.addEventListener("pointerup", cancel);
+  row.addEventListener("pointercancel", cancel);
+  row.addEventListener("dragstart", cancel);
+}
 
 function getMonitorBctNodeInteractionService() {
   if (monitorBctNodeInteractionService) return monitorBctNodeInteractionService;
@@ -43495,7 +43633,36 @@ function renderMonitorBctWindowNodes(nodes) {
     empty.textContent = "현재 RCC에서 확인된 ChatGPT 창이 없습니다.";
     fragment.append(empty);
   }
-  nodes.forEach((node, index) => {
+  const groups = new Map();
+  for (const node of nodes) {
+    const key = node.scopeId || "__unassigned__";
+    if (!groups.has(key)) groups.set(key, {
+      key,
+      name: node.scopeName || "미소속 대화",
+      nodes: [],
+    });
+    groups.get(key).nodes.push(node);
+  }
+  for (const group of groups.values()) {
+    const groupHeader = document.createElement("button");
+    groupHeader.type = "button";
+    groupHeader.className = "monitor-bct-scope-heading";
+    groupHeader.dataset.scopeId = group.key;
+    groupHeader.setAttribute("aria-expanded", monitorBctCollapsedScopes.has(group.key) ? "false" : "true");
+    const groupCaret = document.createElement("span");
+    groupCaret.className = "monitor-bct-scope-caret";
+    groupCaret.setAttribute("aria-hidden", "true");
+    const groupText = document.createElement("span");
+    groupText.textContent = `${group.name} · ${group.nodes.length}`;
+    groupHeader.append(groupCaret, groupText);
+    groupHeader.addEventListener("click", () => {
+      if (monitorBctCollapsedScopes.has(group.key)) monitorBctCollapsedScopes.delete(group.key);
+      else monitorBctCollapsedScopes.add(group.key);
+      renderMonitorBctWindowNodes(nodes);
+    });
+    fragment.append(groupHeader);
+    if (monitorBctCollapsedScopes.has(group.key)) continue;
+    group.nodes.forEach((node, index) => {
     const row = document.createElement("article");
     row.className = "monitor-bct-node-row";
     row.dataset.tabId = String(node.tabId);
@@ -43505,6 +43672,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.dataset.nodeIndex = String(index + 1);
     row.dataset.nodeLabel = node.nodeLabel || "";
     row.dataset.conversationKey = node.conversationKey;
+    row.dataset.scopeId = node.scopeId || "";
     row.setAttribute("role", "button");
     row.setAttribute("aria-selected", "false");
     row.tabIndex = 0;
@@ -43514,7 +43682,7 @@ function renderMonitorBctWindowNodes(nodes) {
       ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
       : -1;
     row.title = node.conversationKey
-      ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 우클릭: 실제 ChatGPT 방 이름 변경 · 창 ${node.windowId} · 탭 ${node.tabId}`
+      ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 우클릭: 정보와 이름 변경 · 600ms 길게 누르기: Manager 안내 태그 · 창 ${node.windowId} · 탭 ${node.tabId}`
       : `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 창 ${node.windowId} · 탭 ${node.tabId}`;
 
     const number = document.createElement("span");
@@ -43541,7 +43709,15 @@ function renderMonitorBctWindowNodes(nodes) {
     presence.title = node.generating ? "응답 생성 중" : "열려 있음";
     globalThis.MonitorStatusIcon?.render?.(presence, { activity: node.generating ? "play" : "pause" });
     row.append(number, body, presence);
-    row.addEventListener("click", () => {
+    row.classList.toggle("is-manager", Array.isArray(node.roleTags) && node.roleTags.includes("Manager"));
+    installMonitorBctManagerLongPress(row, node);
+    row.addEventListener("click", (event) => {
+      if (monitorBctSuppressedClickKey === monitorBctNodeSelectionKey(node)) {
+        monitorBctSuppressedClickKey = "";
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
         getMonitorBctNodeInteractionService().select(hwnd);
@@ -43581,7 +43757,8 @@ function renderMonitorBctWindowNodes(nodes) {
       });
     }
     fragment.append(row);
-  });
+    });
+  }
   monitorWorkers.replaceChildren(fragment);
   syncMonitorBctNodeTargetHighlight();
   if (monitorBctNodeSummary) {
@@ -58146,6 +58323,7 @@ function monitorTrashRecordForKey(key,sourceKind="list"){
 
 
   const em=endpoint?.metadata||{}; const desktop=Number(ghost?.desktop||em.desktop_id||em.desktop_index||0), slot=Number(ghost?.slot||em.slot_index||0);
+  const bctNode=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).find((item)=>String(item?.conversationKey||"")===key)||{};
 
 
 
@@ -58161,7 +58339,7 @@ function monitorTrashRecordForKey(key,sourceKind="list"){
 
 
 
-  return {...ghost,conversation_key:key,profile_id:String(ghost?.profile_id||worker?.profile_id||endpoint?.profile_id||"").toUpperCase(),title:String(ghost?.title||endpoint?.title||""),meaningful_title:String(ghost?.meaningful_title||worker?.task_title||endpoint?.title||""),desktop:Number.isInteger(desktop)&&desktop>0?desktop:null,slot:Number.isInteger(slot)&&slot>0?slot:null,first_seen_ms:Number(ghost?.first_seen_ms||monitorGhostTime(endpoint?.first_seen_at)||0),closed_at_ms:Number(ghost?.closed_at_ms||monitorGhostTime(endpoint?.closed_at)||0),trash_source:sourceKind==="thumbnail"?"thumbnail":"list",trashed_at_ms:Date.now()};
+  return {...ghost,conversation_key:key,profile_id:String(ghost?.profile_id||worker?.profile_id||endpoint?.profile_id||"").toUpperCase(),title:String(ghost?.title||endpoint?.title||bctNode?.title||""),meaningful_title:String(ghost?.meaningful_title||worker?.task_title||endpoint?.title||bctNode?.title||""),node_label:String(bctNode?.nodeLabel||ghost?.node_label||""),network_id:String(bctNode?.scopeId||ghost?.network_id||""),network_name:String(bctNode?.scopeName||ghost?.network_name||""),role_tags:Array.isArray(bctNode?.roleTags)?[...bctNode.roleTags]:(Array.isArray(ghost?.role_tags)?ghost.role_tags:[]),desktop:Number.isInteger(desktop)&&desktop>0?desktop:null,slot:Number.isInteger(slot)&&slot>0?slot:null,first_seen_ms:Number(ghost?.first_seen_ms||monitorGhostTime(endpoint?.first_seen_at)||0),closed_at_ms:Number(ghost?.closed_at_ms||monitorGhostTime(endpoint?.closed_at)||0),trash_source:sourceKind==="thumbnail"?"thumbnail":"list",trashed_at_ms:Date.now()};
 
 
 

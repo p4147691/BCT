@@ -18,6 +18,11 @@ from bct import BCT
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
+from bct.conversation_network import (
+    ConversationNetworkError,
+    configure_conversation_scope,
+    upsert_conversation,
+)
 from bct.bottleneck_ack import BottleneckAckController, load_bottleneck_ack_policy
 from bct.service_runtime import acquire_runtime_writer_lock, current_process_identity
 
@@ -103,13 +108,41 @@ def run_monitor_conversation_rename(
         "title": title,
         "timeout_s": payload.get("timeout_s", 30.0),
     }
-    return bct.operations.run(
+    receipt = bct.operations.run(
         principal=principal,
         work_id=MONITOR_WORK_ID,
         operation_id=operation_id,
         capability="relay_browser",
         arguments=arguments,
     ).as_dict()
+    if str(receipt.get("outcome") or "").upper() == "APPLIED":
+        upsert_conversation(
+            bct.store,
+            conversation_key=arguments["conversation_key"],
+            display_name=title,
+        )
+    return receipt
+
+
+def run_monitor_conversation_scope_update(
+    bct: BCT, *, payload: dict[str, Any]
+) -> dict[str, object]:
+    """Persist one chat's display scope and advisory roles.
+
+    This is metadata only. It does not create a Work, acquire a Claim, elect a
+    privileged Manager, or perform any browser action.
+    """
+    allowed = {"conversation_key", "display_name", "scope_name", "role_tags"}
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError("MONITOR_CONVERSATION_SCOPE_FIELD_NOT_ALLOWED:" + ",".join(sorted(unknown)))
+    return configure_conversation_scope(
+        bct.store,
+        conversation_key=str(payload.get("conversation_key") or ""),
+        display_name=str(payload.get("display_name") or ""),
+        scope_name=str(payload.get("scope_name") or ""),
+        role_tags=payload.get("role_tags") or [],
+    )
 
 
 def run_monitor_rcc_reload(
@@ -368,6 +401,27 @@ def main() -> int:
         except (ValueError, BCTError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(result)
+
+    @mcp.custom_route(
+        "/monitor/conversation-network/update",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def monitor_conversation_network_update(request: Request) -> JSONResponse:
+        if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+            return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_INVALID"}, status_code=403)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("MONITOR_CONVERSATION_SCOPE_OBJECT_REQUIRED")
+            result = await asyncio.to_thread(
+                run_monitor_conversation_scope_update,
+                bct,
+                payload=payload,
+            )
+        except (ValueError, ConversationNetworkError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse({"status": "OK", "conversation": result})
 
     @mcp.custom_route("/shutdown", methods=["POST"], include_in_schema=False)
     async def shutdown(request: Request) -> JSONResponse:

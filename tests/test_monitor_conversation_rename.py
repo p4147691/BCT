@@ -11,6 +11,7 @@ from bct.runtime_server import (
     ensure_monitor_work,
     monitor_extension_origin_allowed,
     run_monitor_conversation_rename,
+    run_monitor_conversation_scope_update,
     run_monitor_rcc_reload,
 )
 from bct.service import BCT
@@ -58,7 +59,7 @@ class MonitorConversationRenameTests(unittest.TestCase):
             "instance_id": "instance123",
             "session_id": "session123",
             "tab_id": 17,
-            "conversation_key": "conversation-123",
+            "conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
             "title": "바뀐 실제 제목",
             "operation_id": "monitor-rename-1",
         }
@@ -84,6 +85,31 @@ class MonitorConversationRenameTests(unittest.TestCase):
         self.assertEqual(1, len(self.client.calls))
         self.assertEqual("monitor-rename-1", self.client.calls[0]["extra"]["operationId"])
         self.assertEqual("session123", self.client.calls[0]["extra"]["sessionId"])
+        with self.bct.store.transaction() as db:
+            stored = db.execute(
+                "SELECT display_name FROM conversation_network_conversations WHERE conversation_key=?",
+                (self.payload()["conversation_key"],),
+            ).fetchone()
+        self.assertEqual("바뀐 실제 제목", stored["display_name"])
+
+    def test_scope_update_has_no_manager_uniqueness_or_execution_claim(self):
+        first = run_monitor_conversation_scope_update(self.bct, payload={
+            "conversation_key": self.payload()["conversation_key"],
+            "display_name": "첫 대화",
+            "scope_name": "BCT 작업",
+            "role_tags": ["Manager", "구현"],
+        })
+        second = run_monitor_conversation_scope_update(self.bct, payload={
+            "conversation_key": "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+            "display_name": "둘째 대화",
+            "scope_name": "BCT 작업",
+            "role_tags": ["Manager", "검토"],
+        })
+        self.assertEqual("BCT 작업", first["scope_name"])
+        self.assertEqual("BCT 작업", second["scope_name"])
+        self.assertIn("Manager", first["role_tags"])
+        self.assertIn("Manager", second["role_tags"])
+        self.assertEqual([], self.bct.store.claim_diagnostics())
 
     def test_invalid_or_changed_request_is_rejected_without_dispatch(self):
         with self.assertRaisesRegex(ValueError, "MONITOR_RENAME_TITLE_INVALID"):
