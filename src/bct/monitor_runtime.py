@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from bct.conversation_network import ensure_observed_node_labels
-from bct.integrations.rcc import NamedPipeRelayClient, discover_instance_ids
+from bct.integrations.rcc import NamedPipeRelayClient, RelayEffectUnknown, RelayUnavailable, discover_instance_ids
 from bct.integrations.native_process import process_matches
 from bct.service_runtime import read_json
 from bct.trace_timing import recent_stages
@@ -43,12 +43,31 @@ def _session_states(root: Path) -> list[dict[str, Any]]:
 _RCC_HEALTH_LOCK = Lock()
 _RCC_HEALTH: dict[str, dict[str, Any]] = {}
 _RCC_RETRY_SECONDS = 30.0
+_RCC_TIMEOUT_RETRY_SECONDS = 5.0
 _RCC_CACHE_LIMIT = 32
 _RCC_INFLIGHT: set[str] = set()
 _RCC_FIRST_PROBES_PER_PASS = 2
 _RCC_RETRIES_PER_PASS = 1
 _RCC_FRESH_TIMEOUT_S = 0.25
 _RCC_RETRY_TIMEOUT_S = 0.12
+_RCC_TIMEOUT_RETRY_TIMEOUT_S = 0.35
+
+def _rcc_probe_status(exc: Exception) -> str:
+    # A read-only probe may expire while a healthy RCC is busy. Its timeout
+    # does not prove the pipe disconnected or the extension stopped.
+    if isinstance(exc, TimeoutError) or (
+        isinstance(exc, RelayEffectUnknown)
+        and str(exc) == "RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH"
+    ):
+        return "PROBE_TIMEOUT"
+    if isinstance(exc, RelayUnavailable) or (
+        isinstance(exc, RelayEffectUnknown)
+        and str(exc) == "RCC_PIPE_CLOSED_AFTER_DISPATCH"
+    ):
+        return "UNAVAILABLE"
+    # An invalid response or mismatched instance is an observation failure,
+    # not proof that the original RCC endpoint disconnected.
+    return "PROBE_ERROR"
 
 def _rcc_cached_row(instance_id: str, hint: dict[str, Any], now: float) -> dict[str, Any]:
     if not hint:
@@ -61,7 +80,8 @@ def _rcc_cached_row(instance_id: str, hint: dict[str, Any], now: float) -> dict[
         last_known_row = {}
     result: dict[str, Any] = {
         **last_known_row,
-        "instance_id": instance_id, "state": "UNAVAILABLE" if hint.get("unavailable") else "UNKNOWN",
+        "instance_id": instance_id,
+        "state": hint.get("probe_state", "UNAVAILABLE" if hint.get("unavailable") else "UNKNOWN"),
         "error": hint.get("error", "PROBE_IN_PROGRESS"),
         # A short RCC probe timeout is not evidence that every observed tab
         # disappeared. Preserve the last verified display snapshot while
@@ -116,7 +136,11 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                 instance_id=instance_id,
                 request_id=f"monitor-{time.time_ns():x}",
                 command="state",
-                timeout_s=(_RCC_RETRY_TIMEOUT_S if unavailable else _RCC_FRESH_TIMEOUT_S),
+                timeout_s=(
+                    _RCC_TIMEOUT_RETRY_TIMEOUT_S if unavailable and hint.get("probe_state") == "PROBE_TIMEOUT"
+                    else _RCC_RETRY_TIMEOUT_S if unavailable
+                    else _RCC_FRESH_TIMEOUT_S
+                ),
             )
             if not isinstance(result.get("state"), dict):
                 raise ValueError("RCC_MONITOR_STATE_INVALID")
@@ -167,14 +191,19 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                 }
         except Exception as exc:
             error = type(exc).__name__
+            probe_state = _rcc_probe_status(exc)
             results[instance_id] = {
-                "instance_id": instance_id, "state": "UNAVAILABLE",
+                "instance_id": instance_id, "state": probe_state,
                 "error": error, "tabs": [],
             }
             with _RCC_HEALTH_LOCK:
                 _RCC_HEALTH[instance_id] = {
                     "unavailable": True, "error": error,
-                    "retry_at": time.monotonic() + _RCC_RETRY_SECONDS,
+                    "probe_state": probe_state,
+                    "retry_at": time.monotonic() + (
+                        _RCC_TIMEOUT_RETRY_SECONDS if probe_state == "PROBE_TIMEOUT"
+                        else _RCC_RETRY_SECONDS
+                    ),
                     "last_known_state": hint.get("last_known_state"),
                     "last_seen_at": hint.get("last_seen_at"),
                     "last_known_row": hint.get("last_known_row"),
