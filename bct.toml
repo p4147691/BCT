@@ -116,6 +116,8 @@ files = [
   "src/bct/core/orchestration.py",
   "src/bct/core/consumption.py",
   "src/bct/core/durable_pr2.py",
+  "src/bct/core/delivery_state.py",
+  "src/bct/core/delivery_ledger.py",
   "src/bct/core/manager_decision.py",
   "src/bct/core/policy.py",
   "src/bct/core/rcc_result.py",
