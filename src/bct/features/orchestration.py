@@ -649,10 +649,13 @@ class OrchestrationFeature:
                 raise PreconditionError("ORCHESTRATION_CONVERSATION_NOT_OBSERVED")
             requested_keys.add(key)
             validated.append(dict(raw))
+        state = self._state(instance_id, timeout_s)
+        external_session_id = str(state["sessionId"])
         try:
             self.service.validate_sync_targets(
                 work=work, session_id=str(values["session_id"]),
                 instance_id=instance_id,
+                external_session_id=external_session_id,
                 targets=[
                     {
                         "conversation_key": str(item["conversation_key"]).strip(),
@@ -663,8 +666,6 @@ class OrchestrationFeature:
             )
         except ConflictError as exc:
             raise PreconditionError(str(exc)) from exc
-        state = self._state(instance_id, timeout_s)
-        external_session_id = str(state["sessionId"])
         endpoints: dict[str, list[dict[str, Any]]] = {}
         seen_tabs: set[int] = set()
         for endpoint in state.get("endpoints", []):
@@ -685,7 +686,7 @@ class OrchestrationFeature:
             endpoints.setdefault(key, []).append(endpoint)
         if any(str(item["conversation_key"]).strip() not in endpoints for item in validated):
             raise PreconditionError("ORCHESTRATION_CONVERSATION_NOT_OBSERVED")
-        mapped: list[dict[str, Any]] = []
+        bound_nodes: list[dict[str, Any]] = []
         for raw in validated:
             key = str(raw["conversation_key"]).strip()
             node_id = str(raw["node_id"]).strip()
@@ -722,6 +723,31 @@ class OrchestrationFeature:
                 and binding.get("bindingReceiptId") == binding_id
             ):
                 raise UnknownEffectError("ORCHESTRATION_BINDING_UNVERIFIED")
+            bound_nodes.append({
+                "raw": raw,
+                "key": key,
+                "node_id": node_id,
+                "relay_role": relay_role,
+                "binding_id": binding_id,
+                "candidates": candidates,
+            })
+
+        # All external binding receipts are now exact.  Make the observed RCC
+        # session authoritative before publishing its attachments so a normal
+        # same-ID reload cannot leave the preceding session routable.
+        activated = self.service.activate_instance_session(
+            work=work, session_id=str(values["session_id"]),
+            instance_id=instance_id,
+            external_session_id=external_session_id,
+        )
+        mapped: list[dict[str, Any]] = []
+        for target in bound_nodes:
+            raw = target["raw"]
+            key = str(target["key"])
+            node_id = str(target["node_id"])
+            relay_role = str(target["relay_role"])
+            binding_id = str(target["binding_id"])
+            candidates = target["candidates"]
             for index, endpoint in enumerate(candidates):
                 attachment_id = "att-" + _hash(
                     _canonical([instance_id, external_session_id, endpoint["tabId"]])
@@ -755,6 +781,7 @@ class OrchestrationFeature:
             "nodes": len(selections),
             "attachments": mapped,
             "deactivated_attachments": deactivated,
+            "superseded_session_attachments": activated["retired_attachments"],
         }
 
     def _recover_node_sync(

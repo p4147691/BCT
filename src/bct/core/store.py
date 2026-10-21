@@ -257,6 +257,15 @@ class Store:
                     PRIMARY KEY(attachment_id, generation),
                     FOREIGN KEY(node_id) REFERENCES nodes(node_id)
                 );
+                -- One stable extension instance survives same-ID reloads, but
+                -- only the most recently observed RCC session may receive new
+                -- work.  Attachment rows from older sessions remain as audit
+                -- history and are merely made inactive.
+                CREATE TABLE IF NOT EXISTS orchestration_rcc_instance_sessions (
+                    instance_id TEXT PRIMARY KEY,
+                    external_session_id TEXT NOT NULL,
+                    observed_at REAL NOT NULL, updated_at REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS orchestration_assignments (
                     assignment_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
                     created_manager_epoch INTEGER NOT NULL,

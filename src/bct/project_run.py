@@ -197,8 +197,13 @@ def bind_project_run_session(
         if str(session_row["state"]) not in {"ACTIVE", "PARTIAL"}:
             raise ProjectRunError("PROJECT_RUN_SESSION_NOT_ACTIVE")
         attachment_row = db.execute(
-            "SELECT node_id,conversation_key,active FROM orchestration_attachments "
-            "WHERE attachment_id=? AND generation=?", (attachment, generation),
+            "SELECT a.node_id,a.conversation_key,a.active "
+            "FROM orchestration_attachments a "
+            "WHERE a.attachment_id=? AND a.generation=? AND EXISTS ("
+            "SELECT 1 FROM orchestration_rcc_instance_sessions rs "
+            "WHERE rs.instance_id=a.instance_id "
+            "AND rs.external_session_id=a.external_session_id)",
+            (attachment, generation),
         ).fetchone()
         if attachment_row is None or not bool(attachment_row["active"]):
             raise ProjectRunError("PROJECT_RUN_MANAGER_ATTACHMENT_NOT_ACTIVE")

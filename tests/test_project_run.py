@@ -94,6 +94,10 @@ class ProjectRunTests(unittest.TestCase):
                  conversation_key, "https://chatgpt.com/c/" + conversation_key,
                  "MANAGER", "receipt", 1, 210.0),
             )
+            db.execute(
+                "INSERT INTO orchestration_rcc_instance_sessions VALUES(?,?,?,?)",
+                ("instance", "external", 210.0, 210.0),
+            )
 
     def test_binding_requires_exact_active_manager_attachment(self):
         start_project_run(
@@ -146,6 +150,11 @@ class ProjectRunTests(unittest.TestCase):
                 ("attach.manager", 2, "node.manager", "rcc", "instance", "external-2",
                  2, 1, MANAGER, "https://chatgpt.com/c/" + MANAGER,
                  "MANAGER", "receipt-2", 1, 230.0),
+            )
+            db.execute(
+                "UPDATE orchestration_rcc_instance_sessions SET "
+                "external_session_id='external-2',observed_at=230.0,updated_at=230.0 "
+                "WHERE instance_id='instance'"
             )
         with self.assertRaisesRegex(ProjectRunError, "ATTACHMENT_NOT_ACTIVE"):
             bind_project_run_session(
@@ -214,6 +223,10 @@ class ProjectRunOrchestrationFeatureTests(unittest.TestCase):
             window_id=1, conversation_key=MANAGER,
             endpoint="https://chatgpt.com/c/" + MANAGER, relay_role="MANAGER",
             binding_receipt_id="receipt",
+        )
+        self.bct.orchestration.activate_instance_session(
+            work=self.work, session_id="session.bridge", instance_id="instance",
+            external_session_id="external",
         )
         self.bct.orchestration.takeover_manager(
             work=self.work, session_id="session.bridge", expected_epoch=0,

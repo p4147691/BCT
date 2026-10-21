@@ -273,11 +273,15 @@ class OrchestrationService:
 
     def validate_sync_targets(
         self, *, work: Work, session_id: str, instance_id: str,
-        targets: list[dict[str, str]],
+        external_session_id: str, targets: list[dict[str, str]],
     ) -> None:
         """Reject conversation ownership conflicts before any RCC mutation."""
         instance_id = _bounded_text(
             instance_id, code="ORCHESTRATION_INSTANCE_ID_INVALID", limit=64
+        )
+        external_session_id = _bounded_text(
+            external_session_id,
+            code="ORCHESTRATION_EXTERNAL_SESSION_ID_INVALID", limit=96,
         )
         normalized: list[tuple[str, str]] = []
         for target in targets:
@@ -297,8 +301,9 @@ class OrchestrationService:
             for conversation_key, node_id in normalized:
                 other = db.execute(
                     "SELECT node_id FROM orchestration_attachments "
-                    "WHERE instance_id=? AND conversation_key=? AND active=1",
-                    (instance_id, conversation_key),
+                    "WHERE instance_id=? AND external_session_id=? "
+                    "AND conversation_key=? AND active=1",
+                    (instance_id, external_session_id, conversation_key),
                 ).fetchone()
                 if other is not None and other["node_id"] != node_id:
                     raise ConflictError(
@@ -306,6 +311,84 @@ class OrchestrationService:
                     )
         finally:
             db.close()
+
+    def activate_instance_session(
+        self, *, work: Work, session_id: str, instance_id: str,
+        external_session_id: str, observed_at: float | None = None,
+    ) -> dict[str, Any]:
+        """Fence one stable RCC instance to its latest observed session.
+
+        A same-ID extension reload changes ``external_session_id``.  Retiring
+        the stable instance forever made a normal reload unusable; retaining
+        every historical attachment as active let stale tabs remain routable.
+        This transition keeps the immutable rows while atomically deactivating
+        attachments from prior sessions.
+        """
+        instance_id = _bounded_text(
+            instance_id, code="ORCHESTRATION_INSTANCE_ID_INVALID", limit=64
+        )
+        external_session_id = _bounded_text(
+            external_session_id,
+            code="ORCHESTRATION_EXTERNAL_SESSION_ID_INVALID", limit=96,
+        )
+        now = float(time.time() if observed_at is None else observed_at)
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            stale = db.execute(
+                "SELECT * FROM orchestration_attachments WHERE instance_id=? "
+                "AND external_session_id!=? AND active=1 "
+                "ORDER BY attachment_id,generation",
+                (instance_id, external_session_id),
+            ).fetchall()
+            db.execute(
+                "INSERT INTO orchestration_rcc_instance_sessions "
+                "(instance_id,external_session_id,observed_at,updated_at) "
+                "VALUES(?,?,?,?) ON CONFLICT(instance_id) DO UPDATE SET "
+                "external_session_id=excluded.external_session_id,"
+                "observed_at=excluded.observed_at,updated_at=excluded.updated_at",
+                (instance_id, external_session_id, now, now),
+            )
+            for row in stale:
+                db.execute(
+                    "UPDATE orchestration_attachments SET active=0 "
+                    "WHERE attachment_id=? AND generation=? AND active=1",
+                    (row["attachment_id"], row["generation"]),
+                )
+                db.execute(
+                    "UPDATE connections SET active=0 WHERE connection_id=? "
+                    "AND generation=? AND active=1",
+                    ("orch:" + row["attachment_id"], row["generation"]),
+                )
+                self.store._event(
+                    db, "ORCHESTRATION_ATTACHMENT_INACTIVE", row["attachment_id"],
+                    {
+                        "instance_id": instance_id,
+                        "external_session_id": row["external_session_id"],
+                        "generation": row["generation"],
+                        "reason": "RCC_SESSION_SUPERSEDED",
+                    },
+                )
+            self.store._event(db, "ORCHESTRATION_RCC_SESSION_ACTIVATED", instance_id, {
+                "external_session_id": external_session_id,
+                "retired_attachments": len(stale),
+            })
+            return {
+                "instance_id": instance_id,
+                "external_session_id": external_session_id,
+                "retired_attachments": [dict(row) for row in stale],
+            }
+
+    @staticmethod
+    def _assert_attachment_current_session(db, attachment) -> None:
+        current = db.execute(
+            "SELECT external_session_id FROM orchestration_rcc_instance_sessions "
+            "WHERE instance_id=?", (attachment["instance_id"],),
+        ).fetchone()
+        if current is None or str(current["external_session_id"]) != str(
+            attachment["external_session_id"]
+        ):
+            raise ConflictError("ORCHESTRATION_ATTACHMENT_SESSION_STALE")
 
     @staticmethod
     def _node_sync_expected_bindings(db, *, instance_id: str) -> list[dict[str, Any]]:
@@ -636,7 +719,10 @@ class OrchestrationService:
                 "SELECT 1 FROM orchestration_attachments a "
                 "WHERE a.node_id=? AND a.active=1 AND EXISTS ("
                 "SELECT 1 FROM orchestration_session_nodes sn "
-                "WHERE sn.session_id=? AND sn.node_id=a.node_id AND sn.active=1)",
+                "WHERE sn.session_id=? AND sn.node_id=a.node_id AND sn.active=1) "
+                "AND EXISTS (SELECT 1 FROM orchestration_rcc_instance_sessions rs "
+                "WHERE rs.instance_id=a.instance_id "
+                "AND rs.external_session_id=a.external_session_id)",
                 (manager_node_id, session_id),
             ).fetchone()
             if attachment is None:
@@ -822,6 +908,7 @@ class OrchestrationService:
             ).fetchone()
             if attachment is None:
                 raise ConflictError("ORCHESTRATION_WORKER_ATTACHMENT_MISMATCH")
+            self._assert_attachment_current_session(db, attachment)
             if attachment["instance_id"] in self.excluded_new_assignment_instances:
                 raise ConflictError("ORCHESTRATION_RCC_RETIRED_FOR_NEW_ASSIGNMENTS")
             busy = db.execute(
@@ -919,6 +1006,9 @@ class OrchestrationService:
             "AND a.active=1 AND a.relay_role IS NOT NULL AND a.relay_role!='' "
             "AND EXISTS (SELECT 1 FROM orchestration_session_nodes sn "
             "WHERE sn.session_id=? AND sn.node_id=a.node_id AND sn.active=1) "
+            "AND EXISTS (SELECT 1 FROM orchestration_rcc_instance_sessions rs "
+            "WHERE rs.instance_id=a.instance_id "
+            "AND rs.external_session_id=a.external_session_id) "
             "AND EXISTS (SELECT 1 FROM connections c "
             "WHERE c.connection_id=? AND c.node_id=a.node_id "
             "AND c.generation=a.generation AND c.active=1)",
@@ -1348,6 +1438,7 @@ class OrchestrationService:
             ).fetchone()
             if attachment is None or not attachment["relay_role"]:
                 raise ConflictError("ORCHESTRATION_REPLACEMENT_ATTACHMENT_MISMATCH")
+            self._assert_attachment_current_session(db, attachment)
             if attachment["instance_id"] in self.excluded_new_assignment_instances:
                 raise ConflictError("ORCHESTRATION_RCC_RETIRED_FOR_NEW_ASSIGNMENTS")
             next_generation = generation + 1
@@ -1514,6 +1605,9 @@ class OrchestrationService:
             "AND a.relay_role!='' AND EXISTS (SELECT 1 FROM "
             "orchestration_session_nodes sn WHERE sn.session_id=? "
             "AND sn.node_id=a.node_id AND sn.active=1) AND EXISTS "
+            "(SELECT 1 FROM orchestration_rcc_instance_sessions rs "
+            "WHERE rs.instance_id=a.instance_id "
+            "AND rs.external_session_id=a.external_session_id) AND EXISTS "
             "(SELECT 1 FROM connections c WHERE c.connection_id='orch:' || a.attachment_id "
             "AND c.node_id=a.node_id AND c.generation=a.generation "
             "AND c.active=1) ORDER BY a.generation DESC LIMIT 1",

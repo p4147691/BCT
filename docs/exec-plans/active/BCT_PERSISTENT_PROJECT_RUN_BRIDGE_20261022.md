@@ -1,6 +1,6 @@
 # BCT Persistent Project Run bridge
 
-Status: `SLICE_2_SOURCE_IMPLEMENTED / CI_PENDING / LIVE_NOT_APPLIED`
+Status: `SLICE_2_SESSION_FENCE_IMPLEMENTED / CI_PENDING / LIVE_NOT_APPLIED`
 
 ## Problem confirmed on 2026-10-22
 
@@ -100,3 +100,31 @@ Focused verification: `5` Project Run tests and `53` orchestration tests pass,
 including the public capability path and generation advance regression.
 The next step is exact-head CI, followed by local-main integration and an
 explicitly bounded LIVE Manager checkpoint on the Browser Bridge scope.
+
+## Same-ID reload defect and session fence
+
+The pre-LIVE audit found that the current RCC extension uses the same stable
+instance ID across upgrades and reloads, while `bct.toml` still permanently
+retired that ID from new assignments.  At the same time, node sync only
+deactivated omitted attachments belonging to its own orchestration session;
+active attachment rows from older RCC sessions accumulated.  Removing the
+instance deny-list alone would therefore have made historical tabs routable.
+
+The corrected contract is session-scoped:
+
+- a successful read-only RCC state observation supplies the exact current
+  `external_session_id`;
+- all requested bindings must return matching receipts before Core activates
+  that session for the stable instance;
+- activating a newer session preserves older rows and receipts but marks their
+  attachments and connections inactive;
+- assignment, replacement, Manager takeover, dispatch, wake creation, and
+  Project Run binding only accept attachments belonging to the registered
+  current session;
+- a normal same-ID reload is recovered by the next `node-sync`; no user-edited
+  generation or permanent instance allow-list is required.
+
+The former stable-instance retirement remains available as an emergency
+policy mechanism, but the production list is now empty.  The release profile
+also explicitly includes `src/bct/project_run.py`; omitting it would have made
+the deployed orchestration import fail even though source tests passed.
