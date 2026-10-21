@@ -28,10 +28,12 @@ class RccSourceBaselineTests(unittest.TestCase):
             "browser/tab_create_contract.js", "browser/tab_create_adapter.js",
             "domain/state_service.js", "domain/simple_relay_receipts.js",
             "domain/endpoint_service.js", "domain/diagnostic_support.js",
-            "domain/simple_relay_service.js", "domain/new_chat_service.js",
+            "domain/simple_relay_service.js", "domain/orchestration_relay_service.js",
+            "domain/new_chat_service.js",
             "domain/conversation_rename_service.js", "domain/readonly_diagnostics.js",
             "domain/runtime_message_service.js", "content/conversation_dom.js",
-            "content/simple_relay_executor.js", "content/conversation_rename.js",
+            "content/simple_relay_executor.js", "content/orchestration_relay_executor.js",
+            "content/conversation_rename.js",
             "content/content_router.js", "content/activity_reporter.js",
         }
         self.assertTrue(critical.issubset(inventory))
@@ -47,8 +49,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.26", manifest["version"])
-        self.assertEqual("1.0.26 · RCC New Chat", manifest["version_name"])
+        self.assertEqual("1.0.27", manifest["version"])
+        self.assertEqual("1.0.27 · RCC Project Run Relay", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -61,7 +63,8 @@ class RccSourceBaselineTests(unittest.TestCase):
         self.assertEqual("ocbidbaplechjjdacmokhnfbdmgjkphf", extension_id)
         self.assertEqual([
             "relay_core.js", "content/conversation_dom.js",
-            "content/simple_relay_executor.js", "content/conversation_rename.js",
+            "content/simple_relay_executor.js", "content/orchestration_relay_executor.js",
+            "content/conversation_rename.js",
             "content/content_router.js",
             "content/activity_reporter.js", "content.js",
         ], manifest["content_scripts"][0]["js"])
@@ -72,7 +75,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         for command in (
             "ping", "state", "simple-relay-bind", "simple-relay-send",
             "simple-relay-return", "new-chat-send", "rename-conversation",
-            "conversation-bind",
+            "conversation-bind", "send",
             "rename-receipt", "result", "main-capture-get",
             "api-probe", "probe-tabs", "diagnose-activity",
             "diagnose-conversation-ui", "diagnose-composer", "probe",
@@ -84,12 +87,15 @@ class RccSourceBaselineTests(unittest.TestCase):
             "conversation-bootstrap-bind", "create-chat-tab", "create-chat-window",
             "ensure", "main-capture-install", "manager-promote", "move-tab",
             "recover-created-result", "recover-pending", "register", "reload-workers",
-            "result-ack", "send", "send-to-created-tab",
+            "result-ack", "send-to-created-tab",
             "send-to-tab", "send-wakeback",
         ):
             self.assertNotIn(f"message.command === '{command}'", background)
 
-        for message_type in ("relay:getPendingStatus", "relay:getState", "relay:activity"):
+        for message_type in (
+            "relay:getPendingStatus", "relay:getState", "relay:activity",
+            "relay:orchestrationAuthorize", "relay:orchestrationResult",
+        ):
             self.assertIn(f"message.type === '{message_type}'", runtime)
         for message_type in (
             "relay:manualSend", "relay:autoDirective", "relay:workerResult",
@@ -109,7 +115,8 @@ class RccSourceBaselineTests(unittest.TestCase):
         executor = (self.extension / "content" / "simple_relay_executor.js").read_text(encoding="utf-8")
         for message_type in (
             "relay:recoverExecution", "relay:activityProbe", "relay:probe",
-            "relay:simpleExecute", "relay:simpleReadReply", "relay:newChatExecute",
+            "relay:simpleExecute", "relay:simpleReadReply", "relay:orchestrationExecute",
+            "relay:newChatExecute",
             "relay:newChatStatus", "relay:renameConversation",
         ):
             self.assertIn(f"message.type === '{message_type}'", content)
@@ -156,7 +163,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-21-rcc-new-chat-v1"
+        marker = "2026-10-22-rcc-project-run-relay-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 

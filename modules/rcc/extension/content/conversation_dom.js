@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-21-rcc-new-chat-v1';
+const RCC_BUILD_VERSION = '2026-10-22-rcc-project-run-relay-v1';
 
 function editorCandidates() {
 

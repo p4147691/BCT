@@ -15,6 +15,7 @@ const domainFiles = [
   'domain/endpoint_service.js',
   'domain/diagnostic_support.js',
   'domain/simple_relay_service.js',
+  'domain/orchestration_relay_service.js',
   'domain/new_chat_service.js',
   'domain/conversation_rename_service.js',
   'domain/readonly_diagnostics.js',
@@ -23,6 +24,7 @@ const domainFiles = [
 const contentFiles = [
   'content/conversation_dom.js',
   'content/simple_relay_executor.js',
+  'content/orchestration_relay_executor.js',
   'content/conversation_rename.js',
   'content/content_router.js',
   'content/activity_reporter.js',

@@ -1441,3 +1441,27 @@ request digest와 RCC 등록 영수증 부재를 읽기 전용으로 입증할 �
 부분 적용이나 영수증 존재 시에는 계속 차단한다. 현재 active RCC JavaScript 전부와 RC inventory,
 orchestration/Project Run 63개 회귀가 통과했으며 exact-head CI와 RCC same-ID reload 및 LIVE
 recovery/node-sync/Manager checkpoint가 남았다.
+
+## 2026-10-22 Project Run 오케스트레이션 릴레이 후속
+
+exact feature `8f0077bd49d1d2825f57743f65d484cc6ceb1b6d`의 CI run `39669486198`이
+전체 통과한 뒤 로컬 main `250e89345e5e073a80beedf39339ce1599fbf1d3`, Core generation 178과
+49-file RCC payload에 적용했다. RCC instance와 기존 탭은 보존됐다. 첫 UNKNOWN node-sync는
+RCC 영수증 부재와 미적용을 확인해 원본 UNKNOWN을 보존한 채 exact Claim만 정산했고, 새
+node-sync operation으로 N13 Manager 및 N14/N3/N2 Worker의 exact UUID·tab·window·binding을
+확보했다. Project Run은 Manager epoch 1과 exact attachment로 READY가 됐다.
+
+첫 Manager checkpoint delivery `orch.send.74c08cbc7f95b24dff6fd06372b03094`는 사용자 메시지를
+보내기 전에 `RCC_NATIVE_COMMAND_LEGACY_MUTATION_DISABLED:send`로 `NOT_APPLIED` 종료됐다.
+`conversation-bind`와 마찬가지로 RCC 재구축 때 Core가 계속 쓰는 durable `send` 계약까지 제거한
+구조 불일치가 원인이다. 이 delivery는 재전송하지 않는다.
+
+후속 후보는 generic legacy mutation을 복구하지 않고 `send`만 `ORCHESTRATION`으로 분류한다.
+exact instance/session/tab/conversation/binding receipt/attachment generation을 전송 직전과 결과
+저장 때 다시 확인하고, intent를 먼저 영속화한다. 같은 delivery ID의 pending·terminal receipt가
+있으면 다시 제출하지 않으며, 확장 reload 뒤 예전 session 결과도 저장하지 않는다. 새 content
+executor는 exact user turn 1회 제출과 assistant 전문 회수만 담당하고 기존 RCC result polling
+형식으로 영수증을 남긴다. RCC 1.0.27 candidate는 51파일 aggregate
+`ff672173ffbf087833da6fe744f2135c9aa8a866666dfcfa20530b61c4105a5f`이며, JavaScript 전체 회귀,
+Project Run/RCC source baseline 19개와 release inventory 검증을 통과했다. exact-head CI, 로컬 main
+병합, same-ID reload, 새 attachment 재동기화와 새 Manager checkpoint LIVE 왕복은 아직 남았다.

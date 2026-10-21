@@ -158,6 +158,12 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
 
         }
+    if (message.type === 'relay:orchestrationAuthorize') {
+          return authorizeOrchestrationRelay(message, sender);
+        }
+    if (message.type === 'relay:orchestrationResult') {
+          return persistOrchestrationRelayResult(message, sender);
+        }
     throw new Error(`Unknown message type: ${message.type}`);
   })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;

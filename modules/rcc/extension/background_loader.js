@@ -21,6 +21,7 @@ importScripts('domain/simple_relay_receipts.js');
 importScripts('domain/endpoint_service.js');
 importScripts('domain/diagnostic_support.js');
 importScripts('domain/simple_relay_service.js');
+importScripts('domain/orchestration_relay_service.js');
 importScripts('domain/new_chat_service.js');
 importScripts('domain/conversation_rename_service.js');
 importScripts('domain/readonly_diagnostics.js');

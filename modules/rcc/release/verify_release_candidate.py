@@ -125,10 +125,12 @@ def _verify_contracts(
     policy_sets = {
         "nativeNewRelay": _set_values(policy, "NEW_RELAY_COMMANDS"),
         "nativeConversation": _set_values(policy, "CONVERSATION_COMMANDS"),
+        "nativeOrchestration": _set_values(policy, "ORCHESTRATION_COMMANDS"),
         "nativeReadOnly": _set_values(policy, "READ_ONLY_COMMANDS"),
         "nativeMaintenance": _set_values(policy, "MAINTENANCE_COMMANDS"),
         "nativeBlockedLegacy": _set_values(policy, "LEGACY_MUTATION_COMMANDS"),
         "runtimeReadOnly": _set_values(policy, "READ_ONLY_MESSAGES"),
+        "runtimeOrchestration": _set_values(policy, "ORCHESTRATION_MESSAGES"),
         "runtimeBlockedLegacy": _set_values(policy, "LEGACY_MUTATION_MESSAGES"),
     }
     for name, actual in policy_sets.items():
@@ -166,7 +168,9 @@ def _verify_contracts(
             raise VerificationError(f"native wire message missing: {message_type}")
     if sorted(wire["content"]) != sorted(matrix["contentAccepted"]):
         raise VerificationError("content wire matrix mismatch")
-    if sorted(wire["runtime"]) != sorted(matrix["runtimeReadOnly"]):
+    if sorted(wire["runtime"]) != sorted(
+        matrix["runtimeReadOnly"] + matrix["runtimeOrchestration"]
+    ):
         raise VerificationError("runtime wire matrix mismatch")
     content_chrome_source = "\n".join(
         (extension / relative).read_text(encoding="utf-8")
