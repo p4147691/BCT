@@ -3970,9 +3970,9 @@
 .monitor-bct-node-row.monitor-bct-drop-after::after { right:-3px; }
 .monitor-node-drag-ghost.monitor-bct-node-drag-ghost {
   display:flex;align-items:center;padding:0 9px;box-sizing:border-box;overflow:hidden;
-  border:2px solid rgba(159,231,255,.92);border-radius:8px;background:rgba(12,24,38,.92);
-  color:#fff;font:800 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif;white-space:nowrap;text-overflow:ellipsis;
-  box-shadow:0 0 0 1px rgba(8,15,24,.9),0 0 14px rgba(111,220,255,.55);
+  border:2px solid rgba(159,231,255,.74);border-radius:8px;background:rgba(12,24,38,.68);
+  color:rgba(255,255,255,.92);font:800 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif;white-space:nowrap;text-overflow:ellipsis;
+  box-shadow:0 0 0 1px rgba(8,15,24,.58),0 0 12px rgba(111,220,255,.32);
 }
 .monitor-bct-node-row.monitor-bct-node-switch-pending { opacity:.72; }
 .monitor-desktop-thumb-window.monitor-bct-node-target-highlighted,

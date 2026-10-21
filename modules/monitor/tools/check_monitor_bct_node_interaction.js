@@ -109,6 +109,9 @@ function loadModule() {
   assert.match(css, /monitor-bct-node-drag-active \.monitor-bct-scope-heading \{ pointer-events:none!important; \}/);
   assert.match(css, /monitor-bct-node-drag-active/);
   assert.match(css, /monitor-bct-node-drag-ghost/);
+  assert.match(css, /background:rgba\(12,24,38,\.68\)/,
+    'BCT drag ghost must remain translucent enough to reveal the insertion line');
+  assert.doesNotMatch(css, /monitor-bct-node-drag-ghost[\s\S]{0,240}background:rgba\(12,24,38,\.92\)/);
   const selectedRule = css.match(/\.monitor-bct-node-row\.is-selected\s*\{([^}]+)\}/)?.[1] || "";
   assert.doesNotMatch(selectedRule, /background:/);
 
