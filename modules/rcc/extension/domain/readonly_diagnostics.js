@@ -133,6 +133,16 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'conversation-bind') {
+
+          const result = await bindExactConversation(message);
+
+          postNative({ type: 'host:result', requestId, ...result });
+
+          return;
+
+        }
+
     if (message.command === 'rename-receipt') {
 
           // Inspection only: never perform or repeat an effect here.

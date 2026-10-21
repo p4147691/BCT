@@ -1422,3 +1422,22 @@ BWM의 단색 회색 plate는 capture 실패가 아니라 current desktop 카드
 exact main `c846b27e3e7432fba2d5d0062aa3e8749801e39e`와 CI run `39610757767`을
 LIVE 적용한 뒤 fresh capture에서 D1/D2 실제 이미지와 전체 UI를 확인했다. 남은 별도 현상은
 extension reload 직후 공식 Alt+M 초기화 전 blank shell이 잠시 남을 수 있는 초기화 race다.
+
+## 2026-10-22 Project Run 첫 LIVE 바인딩 회귀
+
+Project Run foundation exact HEAD `23be3a4b2f25978782d7b0997a344d1e4314087a`는 CI run
+`39661769198` SUCCESS 후 로컬 정본 main
+`23235e23e1e9c6facbba9b49d3f1d7d6762cf372`, Core generation 177로 적용됐다.
+Browser Bridge scope의 plan과 orchestration session은 생성됐지만 첫 node-sync
+`browser-bridge-project-run-node-sync-20261022-01`은
+`UNKNOWN / ORCHESTRATION_BINDING_UNVERIFIED`로 끝났다.
+
+원인은 RCC 모듈 분리 과정에서 `conversation-bind`를 정책상 레거시 차단 목록에 남기고 실제
+native handler도 제거했지만 Core의 durable node-sync 계약은 계속 해당 명령을 사용한 불일치다.
+후속 후보는 current instance/session/tab/conversation과 deterministic receipt를 모두 검증하는
+정확한 binding handler만 복구한다. 레거시 메시지 전송·bootstrap 경로는 되살리지 않는다.
+또한 첫 bind의 명시적 `NOT_APPLIED`를 UNKNOWN으로 만들지 않고, 이미 남은 UNKNOWN은 원본
+request digest와 RCC 등록 영수증 부재를 읽기 전용으로 입증할 때만 exact Claim을 정산한다.
+부분 적용이나 영수증 존재 시에는 계속 차단한다. 현재 active RCC JavaScript 전부와 RC inventory,
+orchestration/Project Run 63개 회귀가 통과했으며 exact-head CI와 RCC same-ID reload 및 LIVE
+recovery/node-sync/Manager checkpoint가 남았다.

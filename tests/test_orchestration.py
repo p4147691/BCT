@@ -31,6 +31,8 @@ class FakeRelay:
         self.lose_send_response = False
         self.return_submit_ack = False
         self.confirmed_not_applied = set()
+        self.bind_confirmed_not_applied = set()
+        self.bind_unverified = set()
         self.defer_wake_once = set()
         self.unknown_wake_once = set()
         self.result_mutator = None
@@ -80,6 +82,15 @@ class FakeRelay:
                 },
             }
         if command == "conversation-bind":
+            if to in self.bind_confirmed_not_applied:
+                self.bind_confirmed_not_applied.remove(to)
+                return {
+                    "ok": False, "effectState": "NOT_APPLIED",
+                    "error": "RCC_NATIVE_COMMAND_LEGACY_MUTATION_DISABLED:conversation-bind",
+                }
+            if to in self.bind_unverified:
+                self.bind_unverified.remove(to)
+                return {"ok": False, "error": "BINDING_RESPONSE_MALFORMED"}
             binding = {
                 "logicalNode": to,
                 "conversationKey": extra["conversationKey"],
@@ -312,6 +323,116 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertFalse(any(
             claim["operation_id"] == "preflight-conflict"
+            for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
+        ))
+
+    def test_first_confirmed_unapplied_binding_releases_instance_claim(self):
+        self.call("bind-not-applied-start", {
+            "operation": "session-start", "session_id": "bind-not-applied-session",
+            "objective": "classify an RCC policy rejection without false UNKNOWN",
+            "acceptance": {"no_binding_effect": True},
+        })
+        self.relay.endpoints.append(
+            self.relay.endpoint(501, 50, "conversation-e", "Worker E")
+        )
+        self.relay.bind_confirmed_not_applied.add("BCT_W3")
+        result = self.call("bind-not-applied-sync", {
+            "operation": "node-sync", "session_id": "bind-not-applied-session",
+            "instance_id": self.relay.instance_id,
+            "nodes": [{
+                "conversation_key": "conversation-e",
+                "node_id": "worker-e", "name": "Worker E",
+                "role": "WORKER", "relay_role": "BCT_W3",
+            }],
+        })
+        self.assertEqual(Outcome.FAILED, result.outcome)
+        self.assertIn("LEGACY_MUTATION_DISABLED", result.error)
+        self.assertNotIn("BCT_W3", self.relay.bindings)
+        self.assertFalse(any(
+            claim["operation_id"] == "bind-not-applied-sync"
+            for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
+        ))
+
+    def test_unverified_bind_can_be_proven_absent_without_replay(self):
+        self.call("unverified-bind-start", {
+            "operation": "session-start", "session_id": "unverified-bind-session",
+            "objective": "preserve UNKNOWN while proving its binding absent",
+            "acceptance": {"no_binding_replay": True},
+        })
+        self.relay.endpoints.append(
+            self.relay.endpoint(601, 60, "conversation-f", "Worker F")
+        )
+        nodes = [{
+            "conversation_key": "conversation-f",
+            "node_id": "worker-f", "name": "Worker F",
+            "role": "WORKER", "relay_role": "BCT_W4",
+        }]
+        self.relay.bind_unverified.add("BCT_W4")
+        original = self.call("unverified-bind-sync", {
+            "operation": "node-sync", "session_id": "unverified-bind-session",
+            "instance_id": self.relay.instance_id, "nodes": nodes,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertNotIn("BCT_W4", self.relay.bindings)
+
+        wrong = self.call("unverified-bind-wrong-recovery", {
+            "operation": "recover-node-sync",
+            "session_id": "unverified-bind-session",
+            "original_operation_id": "unverified-bind-sync",
+            "instance_id": self.relay.instance_id,
+            "original_nodes": [{**nodes[0], "name": "Substituted worker"}],
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, wrong.outcome)
+        self.assertIn("UNAPPLIED_ORIGINAL_INVALID", wrong.error)
+        self.assertTrue(any(
+            claim["operation_id"] == "unverified-bind-sync"
+            for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
+        ))
+
+        self.relay.bindings["BCT_W4"] = {
+            "logicalNode": "BCT_W4",
+            "conversationKey": "conversation-f",
+            "instanceId": self.relay.instance_id,
+            "sessionId": self.relay.session_id,
+            "tabId": 601,
+            "bindingReceiptId": "RCB-DIFFERENTPROOF123456789",
+        }
+        present = self.call("unverified-bind-present-recovery", {
+            "operation": "recover-node-sync",
+            "session_id": "unverified-bind-session",
+            "original_operation_id": "unverified-bind-sync",
+            "instance_id": self.relay.instance_id,
+            "original_nodes": nodes,
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, present.outcome)
+        self.assertIn("BINDING_EFFECT_PRESENT", present.error)
+        del self.relay.bindings["BCT_W4"]
+
+        before = len([
+            call for call in self.relay.calls
+            if call["command"] == "conversation-bind" and call["to"] == "BCT_W4"
+        ])
+        recovered = self.call("unverified-bind-recovery", {
+            "operation": "recover-node-sync",
+            "session_id": "unverified-bind-session",
+            "original_operation_id": "unverified-bind-sync",
+            "instance_id": self.relay.instance_id,
+            "original_nodes": nodes,
+        })
+        self.assertEqual(Outcome.APPLIED, recovered.outcome)
+        self.assertTrue(recovered.evidence["binding_effect_absent"])
+        after = len([
+            call for call in self.relay.calls
+            if call["command"] == "conversation-bind" and call["to"] == "BCT_W4"
+        ])
+        self.assertEqual(before, after, "absence reconciliation must not bind or send")
+        preserved = self.bct.store.get_operation_for(
+            operation_id="unverified-bind-sync",
+            work_id="work", principal_id=self.owner.principal_id,
+        )
+        self.assertEqual(Outcome.UNKNOWN, preserved.outcome)
+        self.assertFalse(any(
+            claim["operation_id"] == "unverified-bind-sync"
             for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
         ))
 

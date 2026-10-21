@@ -477,6 +477,50 @@ class OrchestrationService:
         finally:
             db.close()
 
+    def validate_unapplied_node_sync_recovery(
+        self, *, work: Work, session_id: str, original_operation_id: str,
+        instance_id: str, expected_request_digest: str,
+    ) -> None:
+        """Fence a read-only proof that a failed bind wrote no registration."""
+        db = self.store._connect()
+        try:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            original = db.execute(
+                "SELECT * FROM operations WHERE operation_id=? AND work_id=? "
+                "AND capability='orchestrate'",
+                (original_operation_id, work.work_id),
+            ).fetchone()
+            if original is None or not (
+                original["target"] == session_id
+                and original["state"] == "FINISHED"
+                and original["outcome"] == "UNKNOWN"
+                and original["error"] == "ORCHESTRATION_BINDING_UNVERIFIED"
+                and original["request_digest"] == expected_request_digest
+            ):
+                raise ConflictError(
+                    "ORCHESTRATION_NODE_SYNC_UNAPPLIED_ORIGINAL_INVALID"
+                )
+            claims = [row[0] for row in db.execute(
+                "SELECT resource_key FROM resource_claims WHERE operation_id=? "
+                "AND unresolved=1 ORDER BY resource_key",
+                (original_operation_id,),
+            ).fetchall()]
+            if claims != ["rcc-instance:" + instance_id]:
+                raise ConflictError("ORCHESTRATION_NODE_SYNC_CLAIM_MISMATCH")
+            if db.execute(
+                "SELECT 1 FROM orchestration_assignments WHERE session_id=? LIMIT 1",
+                (session_id,),
+            ).fetchone() is not None or db.execute(
+                "SELECT 1 FROM orchestration_mailbox WHERE session_id=? LIMIT 1",
+                (session_id,),
+            ).fetchone() is not None:
+                raise ConflictError(
+                    "ORCHESTRATION_NODE_SYNC_EXTERNAL_EFFECT_NOT_EXCLUDED"
+                )
+        finally:
+            db.close()
+
     def finish_node_sync_recovery(
         self, *, work: Work, session_id: str,
         original_operation_id: str, resolver_operation_id: str,
