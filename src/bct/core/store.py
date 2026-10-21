@@ -147,6 +147,29 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS conversation_network_monitor_rows_snapshot_label
                     ON conversation_network_monitor_rows(snapshot_id, node_label);
+                -- A project run is the small execution bridge for one existing
+                -- conversation scope.  It deliberately does not create a second
+                -- project/network object or grant authority to a role tag.
+                CREATE TABLE IF NOT EXISTS persistent_project_runs (
+                    run_id TEXT PRIMARY KEY, scope_id TEXT NOT NULL,
+                    objective TEXT NOT NULL, manager_conversation_key TEXT NOT NULL,
+                    work_id TEXT, orchestration_session_id TEXT,
+                    manager_node_id TEXT, manager_attachment_id TEXT,
+                    manager_attachment_generation INTEGER,
+                    state TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    FOREIGN KEY(scope_id) REFERENCES conversation_network_projects(project_id),
+                    FOREIGN KEY(manager_conversation_key)
+                        REFERENCES conversation_network_conversations(conversation_key),
+                    FOREIGN KEY(work_id) REFERENCES works(work_id),
+                    FOREIGN KEY(orchestration_session_id)
+                        REFERENCES orchestration_sessions(session_id)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS persistent_project_runs_active_scope
+                    ON persistent_project_runs(scope_id)
+                    WHERE state IN ('PLANNED','READY','DEGRADED');
+                CREATE UNIQUE INDEX IF NOT EXISTS persistent_project_runs_session
+                    ON persistent_project_runs(orchestration_session_id)
+                    WHERE orchestration_session_id IS NOT NULL;
                 CREATE TABLE IF NOT EXISTS works (
                     work_id TEXT PRIMARY KEY, request_summary TEXT NOT NULL, roots_json TEXT NOT NULL,
                     actions_json TEXT NOT NULL, owner_principal_id TEXT NOT NULL,
