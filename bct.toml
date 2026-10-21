@@ -51,8 +51,13 @@ source_root = "D:\\BCT\\source"
 # sessions created afterwards use Schema 2; existing sessions stay pinned to
 # their stored legacy receipt mode.
 manager_wake_receipt_v2_enabled = true
-# Existing receipts and recovery remain readable; only new worker assignment is denied.
-excluded_new_assignment_instance_ids = ["6174664e1c1b4e6db1d4729c841db3c9"]
+# Emergency-only stable-instance retirement. Normal same-ID reloads are fenced
+# by the exact current RCC session in SQLite, so they do not require a manual
+# allow/deny edit and historical attachments remain audit-only.
+excluded_new_assignment_instance_ids = []
+# This stable extension identity is eligible after one exact live session has
+# been observed by node-sync. A same-ID reload simply advances that session.
+require_current_session_instance_ids = ["6174664e1c1b4e6db1d4729c841db3c9"]
 
 [execution.sessions]
 state_root = "D:\\BCT\\data\\process-sessions"
@@ -141,6 +146,7 @@ files = [
   "src/bct/operating_paths.py",
   "src/bct/conversation_history.py",
   "src/bct/conversation_network.py",
+  "src/bct/project_run.py",
   "modules/mcp/ops/run_bct_core_supervisor.ps1",
   "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
   "modules/mcp/ops/invoke_bct_tunnel_cutover.ps1",

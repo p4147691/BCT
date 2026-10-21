@@ -420,12 +420,16 @@ class OrchestrationTests(unittest.TestCase):
             handle.write(
                 "\n[orchestration]\n"
                 'excluded_new_assignment_instance_ids=["instance123"]\n'
+                'require_current_session_instance_ids=["instance456"]\n'
             )
         restarted = BCT(
             state_path=self.root / "state.sqlite", policy_path=self.policy
         )
         self.assertIn(
             "instance123", restarted.orchestration.excluded_new_assignment_instances
+        )
+        self.assertIn(
+            "instance456", restarted.orchestration.require_current_session_instances
         )
         self.assertEqual(
             self.bct.orchestration.snapshot(
@@ -435,6 +439,99 @@ class OrchestrationTests(unittest.TestCase):
                 work=restarted.store.get_work("work"), session_id="session"
             )["session"]["session_id"],
         )
+
+    def test_same_instance_reload_retires_old_session_and_routes_only_current(self):
+        before = self.attachment("worker-b")
+        self.relay.session_id = "session456"
+        refreshed = self.call("sync-after-same-id-reload", {
+            "operation": "node-sync", "session_id": "session",
+            "instance_id": self.relay.instance_id,
+            "nodes": [
+                {"conversation_key": "conversation-a", "node_id": "manager",
+                 "name": "Manager", "role": "MANAGER", "relay_role": "BCT_MGR"},
+                {"conversation_key": "conversation-b", "node_id": "worker-b",
+                 "name": "Worker B", "role": "WORKER", "relay_role": "BCT_W1"},
+                {"conversation_key": "conversation-c", "node_id": "worker-c",
+                 "name": "Worker C", "role": "WORKER", "relay_role": "BCT_W2"},
+                {"conversation_key": "conversation-d", "node_id": "backup",
+                 "name": "Backup", "role": "MANAGER", "relay_role": "BCT_MGR2"},
+            ],
+        })
+        self.assertEqual(Outcome.APPLIED, refreshed.outcome)
+        self.assertTrue(refreshed.output["superseded_session_attachments"])
+        after = self.attachment("worker-b")
+        self.assertEqual("session456", after["external_session_id"])
+        self.assertNotEqual(before["attachment_id"], after["attachment_id"])
+        db = self.bct.store._connect()
+        try:
+            current = db.execute(
+                "SELECT external_session_id FROM orchestration_rcc_instance_sessions "
+                "WHERE instance_id=?", (self.relay.instance_id,),
+            ).fetchone()
+            old = db.execute(
+                "SELECT active FROM orchestration_attachments "
+                "WHERE attachment_id=? AND generation=?",
+                (before["attachment_id"], before["generation"]),
+            ).fetchone()
+            old_connection = db.execute(
+                "SELECT active FROM connections WHERE connection_id=?",
+                ("orch:" + before["attachment_id"],),
+            ).fetchone()
+        finally:
+            db.close()
+        self.assertEqual("session456", current["external_session_id"])
+        self.assertFalse(old["active"])
+        self.assertFalse(old_connection["active"])
+        created, assignment = self.bct.orchestration.create_assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="post-reload", manager_epoch=1,
+            worker_node_id="worker-b", attachment_id=after["attachment_id"],
+            request={"instruction": "continue after reload"},
+            roots=[str(self.root)], actions=["read"],
+            acceptance={"continued": True}, dependencies=[],
+        )
+        self.assertTrue(created)
+        self.assertEqual("QUEUED", assignment["state"])
+
+    def test_stale_session_attachment_cannot_receive_new_assignment(self):
+        stale = self.bct.orchestration.sync_attachment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            node_id="worker-b", name="Worker B stale", role="WORKER",
+            attachment_id="att-stale-session", instance_id=self.relay.instance_id,
+            external_session_id="superseded-session", tab_id=999, window_id=99,
+            conversation_key="conversation-b",
+            endpoint="https://chatgpt.com/c/conversation-b",
+            relay_role="BCT_OLD", binding_receipt_id="RCB-OLDSESSION",
+        )
+        with self.assertRaisesRegex(ConflictError, "ATTACHMENT_SESSION_STALE"):
+            self.bct.orchestration.create_assignment(
+                work=self.bct.store.get_work("work"), session_id="session",
+                assignment_id="stale-session-assignment", manager_epoch=1,
+                worker_node_id="worker-b", attachment_id=stale["attachment_id"],
+                request={"instruction": "must not route to stale session"},
+                roots=[str(self.root)], actions=["read"],
+                acceptance={"blocked": True}, dependencies=[],
+            )
+
+    def test_policy_fenced_instance_requires_one_current_session_observation(self):
+        worker = self.attachment("worker-b")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "DELETE FROM orchestration_rcc_instance_sessions WHERE instance_id=?",
+                (self.relay.instance_id,),
+            )
+        self.bct.orchestration.require_current_session_instances = frozenset(
+            {self.relay.instance_id}
+        )
+        with self.assertRaisesRegex(ConflictError, "RCC_SESSION_NOT_OBSERVED"):
+            self.bct.orchestration.create_assignment(
+                work=self.bct.store.get_work("work"), session_id="session",
+                assignment_id="unobserved-current-session", manager_epoch=1,
+                worker_node_id="worker-b", attachment_id=worker["attachment_id"],
+                request={"instruction": "must wait for a current node sync"},
+                roots=[str(self.root)], actions=["read"],
+                acceptance={"blocked": True}, dependencies=[],
+            )
 
     def test_scope_can_narrow_but_not_widen(self):
         worker = self.attachment("worker-b")
@@ -1335,6 +1432,10 @@ class OrchestrationTests(unittest.TestCase):
             conversation_key="conversation-b",
             endpoint="https://chatgpt.com/c/conversation-b", relay_role="BCT_W9",
             binding_receipt_id="RCB-ZZZZZZZZZZZZ",
+        )
+        self.bct.orchestration.activate_instance_session(
+            work=self.bct.store.get_work("work"), session_id="session",
+            instance_id="instance999", external_session_id="session999",
         )
         with self.assertRaisesRegex(
             ConflictError, "ORCHESTRATION_CONVERSATION_QUARANTINED:UNKNOWN"

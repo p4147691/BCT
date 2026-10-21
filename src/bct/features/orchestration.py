@@ -28,6 +28,12 @@ from bct.integrations.rcc import (
     RelayUnavailable,
     validate_instance_id,
 )
+from bct.project_run import (
+    ProjectRunError,
+    bind_project_run_session,
+    project_run_view,
+    start_project_run,
+)
 
 
 _OPERATIONS = {
@@ -36,6 +42,7 @@ _OPERATIONS = {
     "recover-node-sync", "recover-reconciled-wake",
     "chain-run", "chain-resume", "manager-wake", "status", "cancel",
     "inspect-result-receipt",
+    "project-run-plan", "project-run-bind", "project-run-status",
 }
 _RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 _RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
@@ -159,11 +166,37 @@ class OrchestrationFeature:
         operation = str(arguments.get("operation") or "").strip().casefold()
         if operation not in _OPERATIONS:
             raise PreconditionError("ORCHESTRATION_OPERATION_INVALID")
-        session_id = str(arguments.get("session_id") or "").strip()
+        project_run_without_session = operation in {
+            "project-run-plan", "project-run-status",
+        }
+        session_id = str(
+            arguments.get("run_id") if project_run_without_session
+            else arguments.get("session_id")
+            or ""
+        ).strip()
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,96}", session_id):
-            raise PreconditionError("ORCHESTRATION_SESSION_ID_INVALID")
+            raise PreconditionError(
+                "PROJECT_RUN_ID_INVALID" if project_run_without_session
+                else "ORCHESTRATION_SESSION_ID_INVALID"
+            )
         common = {"operation", "session_id"}
-        if operation == "session-start":
+        if operation == "project-run-plan":
+            _exact_keys(
+                arguments,
+                {"operation", "run_id", "scope_id", "objective",
+                 "manager_conversation_key"},
+                set(),
+            )
+        elif operation == "project-run-bind":
+            _exact_keys(
+                arguments,
+                common | {"run_id", "manager_node_id", "manager_attachment_id",
+                          "manager_attachment_generation"},
+                set(),
+            )
+        elif operation == "project-run-status":
+            _exact_keys(arguments, {"operation", "run_id"}, set())
+        elif operation == "session-start":
             _exact_keys(
                 arguments,
                 common | {"objective", "acceptance"},
@@ -255,6 +288,11 @@ class OrchestrationFeature:
         normalized["operation"] = operation
         normalized["session_id"] = session_id
         normalized["work_id"] = work.work_id
+        if "manager_attachment_generation" in normalized:
+            normalized["manager_attachment_generation"] = _positive_int(
+                normalized["manager_attachment_generation"],
+                "PROJECT_RUN_MANAGER_ATTACHMENT_GENERATION_INVALID",
+            )
         if "manager_epoch" in normalized:
             normalized["manager_epoch"] = _nonnegative_int(
                 normalized["manager_epoch"], "ORCHESTRATION_MANAGER_EPOCH_INVALID"
@@ -272,7 +310,23 @@ class OrchestrationFeature:
             if not math.isfinite(timeout_value):
                 raise PreconditionError("ORCHESTRATION_TIMEOUT_INVALID")
             normalized["timeout_s"] = timeout_value
-        if operation == "node-sync":
+        if operation == "project-run-plan":
+            resources = (
+                "conversation-scope:" + str(arguments.get("scope_id") or ""),
+                "project-run:" + str(arguments.get("run_id") or ""),
+            )
+        elif operation == "project-run-bind":
+            resources = (
+                "project-run:" + str(arguments.get("run_id") or ""),
+                "orchestration-command:" + session_id + ":project-run-bind",
+                "orchestration-attachment:"
+                + str(arguments.get("manager_attachment_id") or ""),
+            )
+        elif operation == "project-run-status":
+            resources = (
+                "project-run-inspection:" + str(arguments.get("run_id") or ""),
+            )
+        elif operation == "node-sync":
             resources = ("rcc-instance:" + validate_instance_id(
                 arguments.get("instance_id")
             ),)
@@ -595,10 +649,13 @@ class OrchestrationFeature:
                 raise PreconditionError("ORCHESTRATION_CONVERSATION_NOT_OBSERVED")
             requested_keys.add(key)
             validated.append(dict(raw))
+        state = self._state(instance_id, timeout_s)
+        external_session_id = str(state["sessionId"])
         try:
             self.service.validate_sync_targets(
                 work=work, session_id=str(values["session_id"]),
                 instance_id=instance_id,
+                external_session_id=external_session_id,
                 targets=[
                     {
                         "conversation_key": str(item["conversation_key"]).strip(),
@@ -609,8 +666,6 @@ class OrchestrationFeature:
             )
         except ConflictError as exc:
             raise PreconditionError(str(exc)) from exc
-        state = self._state(instance_id, timeout_s)
-        external_session_id = str(state["sessionId"])
         endpoints: dict[str, list[dict[str, Any]]] = {}
         seen_tabs: set[int] = set()
         for endpoint in state.get("endpoints", []):
@@ -631,7 +686,7 @@ class OrchestrationFeature:
             endpoints.setdefault(key, []).append(endpoint)
         if any(str(item["conversation_key"]).strip() not in endpoints for item in validated):
             raise PreconditionError("ORCHESTRATION_CONVERSATION_NOT_OBSERVED")
-        mapped: list[dict[str, Any]] = []
+        bound_nodes: list[dict[str, Any]] = []
         for raw in validated:
             key = str(raw["conversation_key"]).strip()
             node_id = str(raw["node_id"]).strip()
@@ -668,6 +723,31 @@ class OrchestrationFeature:
                 and binding.get("bindingReceiptId") == binding_id
             ):
                 raise UnknownEffectError("ORCHESTRATION_BINDING_UNVERIFIED")
+            bound_nodes.append({
+                "raw": raw,
+                "key": key,
+                "node_id": node_id,
+                "relay_role": relay_role,
+                "binding_id": binding_id,
+                "candidates": candidates,
+            })
+
+        # All external binding receipts are now exact.  Make the observed RCC
+        # session authoritative before publishing its attachments so a normal
+        # same-ID reload cannot leave the preceding session routable.
+        activated = self.service.activate_instance_session(
+            work=work, session_id=str(values["session_id"]),
+            instance_id=instance_id,
+            external_session_id=external_session_id,
+        )
+        mapped: list[dict[str, Any]] = []
+        for target in bound_nodes:
+            raw = target["raw"]
+            key = str(target["key"])
+            node_id = str(target["node_id"])
+            relay_role = str(target["relay_role"])
+            binding_id = str(target["binding_id"])
+            candidates = target["candidates"]
             for index, endpoint in enumerate(candidates):
                 attachment_id = "att-" + _hash(
                     _canonical([instance_id, external_session_id, endpoint["tabId"]])
@@ -701,6 +781,7 @@ class OrchestrationFeature:
             "nodes": len(selections),
             "attachments": mapped,
             "deactivated_attachments": deactivated,
+            "superseded_session_attachments": activated["retired_attachments"],
         }
 
     def _recover_node_sync(
@@ -2061,6 +2142,61 @@ class OrchestrationFeature:
         work = self._work(request)
         values = request.arguments
         operation = str(values["operation"])
+        if operation == "project-run-plan":
+            try:
+                created, run = start_project_run(
+                    self.service.store,
+                    run_id=str(values["run_id"]),
+                    scope_id=str(values["scope_id"]),
+                    objective=str(values["objective"]),
+                    manager_conversation_key=str(values["manager_conversation_key"]),
+                )
+            except ProjectRunError as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": operation, "run_id": run["run_id"],
+                 "scope_id": run["scope_id"], "run_state": run["state"],
+                 "created": created},
+                output={"project_run": run, "duplicate": not created},
+            )
+        if operation == "project-run-bind":
+            try:
+                run = bind_project_run_session(
+                    self.service.store,
+                    run_id=str(values["run_id"]),
+                    work_id=work.work_id,
+                    orchestration_session_id=str(values["session_id"]),
+                    manager_node_id=str(values["manager_node_id"]),
+                    manager_attachment_id=str(values["manager_attachment_id"]),
+                    manager_attachment_generation=int(
+                        values["manager_attachment_generation"]
+                    ),
+                )
+            except ProjectRunError as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": operation, "run_id": run["run_id"],
+                 "session_id": run["orchestration_session_id"],
+                 "run_state": run["state"],
+                 "manager_attachment_generation":
+                     run["manager_attachment_generation"]},
+                output={"project_run": run},
+            )
+        if operation == "project-run-status":
+            try:
+                run = project_run_view(
+                    self.service.store, run_id=str(values["run_id"])
+                )
+            except ProjectRunError as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": operation, "run_id": run["run_id"],
+                 "run_state": run["state"]},
+                output={"project_run": run},
+            )
         if operation == "session-start":
             created, session = self.service.start_session(
                 work=work, session_id=str(values["session_id"]),
