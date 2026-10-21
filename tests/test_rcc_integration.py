@@ -700,6 +700,7 @@ class RccIntegrationTests(unittest.TestCase):
             call["command"] == "new-chat-send" for call in self.client.calls
         ))
         self.assertEqual("result", self.client.calls[-1]["command"])
+        self.assertEqual("compose-reconcile", self.client.calls[-1]["text"])
         original_after = self.bct.store.get_operation_for(
             operation_id="compose-reconcile", work_id="rcc-work", principal_id="codex",
         )

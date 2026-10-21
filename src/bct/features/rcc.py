@@ -502,12 +502,12 @@ class RelayBrowserFeature:
         if values["command"] in {
             "result-of-create-and-send", "reconcile-create-and-send",
         }:
-            # The coordinator has already authorized the exact parent work,
-            # principal and instance; no arbitrary RCC child ID is accepted.
+            # The coordinator has already authorized this exact original
+            # operation under the same work, principal, and RCC instance.
+            # Query the durable receipt by that original ID.  Re-keying it to
+            # a synthetic child ID makes a successfully persisted new-chat
+            # receipt permanently unreachable.
             compose_parent_id = values["text"]
-            digest = hashlib.sha256(compose_parent_id.encode("utf-8")).hexdigest()[:24]
-            values = dict(values)
-            values["text"] = "bct-compose-s-" + digest
         if request.preconditions["mutating"]:
             extra["operationId"] = request.operation_id
             if values["command"] in {"create-chat-window", "create-chat-tab"}:
