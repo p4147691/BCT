@@ -20,7 +20,13 @@ from bct.core.models import (
 )
 from bct.integrations.github import GitHubClient
 
-from .git_authority import read_git_authority
+from .git_authority import (
+    SYNC_CONFLICT,
+    SYNC_IN_SYNC,
+    SYNC_PENDING,
+    classify_publish_sync,
+    read_git_authority,
+)
 
 from .common import resolve_in_work
 
@@ -188,15 +194,20 @@ class GitHubPushFeature:
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
             # No push was dispatched: offline access is a confirmed non-effect,
             # not an UNKNOWN remote mutation.
-            raise PreconditionError("GIT_REMOTE_PREFLIGHT_UNAVAILABLE") from exc
-        if before == expected_head:
+            raise PreconditionError("GIT_REMOTE_PREFLIGHT_UNAVAILABLE:" + SYNC_PENDING) from exc
+        sync_state = classify_publish_sync(
+            local_sha=expected_head,
+            remote_sha=before,
+            expected_remote_sha=values["expected_remote_sha"],
+        )
+        if sync_state == SYNC_IN_SYNC:
             return FeatureResult(Outcome.APPLIED, {
                 "repository": values["repository"], "branch": branch,
                 "local_sha": expected_head, "remote_sha": expected_head,
-                "already_current": True,
+                "already_current": True, "sync_state": SYNC_IN_SYNC,
             })
-        if before != values["expected_remote_sha"]:
-            raise PreconditionError("GIT_REMOTE_SHA_MISMATCH")
+        if sync_state == SYNC_CONFLICT:
+            raise PreconditionError("GIT_REMOTE_SHA_MISMATCH:" + SYNC_CONFLICT)
         if before is not None:
             fetch = _git(root, "fetch", "--no-tags", remote, f"refs/heads/{branch}")
             if fetch.returncode != 0:
@@ -220,10 +231,13 @@ class GitHubPushFeature:
             return FeatureResult(Outcome.APPLIED, {
                 "repository": values["repository"], "branch": branch,
                 "local_sha": expected_head, "remote_sha": after,
-                "already_current": False,
+                "already_current": False, "sync_state": SYNC_IN_SYNC,
             })
         if after == before:
-            raise ConfirmedFailure("GIT_PUSH_NOT_APPLIED:" + failure, release_claims=True)
+            raise ConfirmedFailure(
+                "GIT_PUSH_NOT_APPLIED:" + SYNC_PENDING + ":" + failure,
+                release_claims=True,
+            )
         raise UnknownEffectError("GIT_PUSH_REMOTE_STATE_UNEXPECTED")
 
 

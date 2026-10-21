@@ -1,5 +1,20 @@
 # BCT 인수인계
 
+## 진행 — 로컬 main 정본 전환
+
+운영 결정은 `D:\BCT\source`의 로컬 Git `main`을 공식 소스 정본으로 사용하고 GitHub는
+게시·백업·리뷰·CI 감사 원격으로 두는 것이다. 기존
+`BCT-LOCAL-GIT-AUTHORITY-INTEGRATION-ISOLATED-20261020-01`과
+`feat/local-authority-integrated-20261020`을 재사용해 후보를 GitHub main `09a5db7...` 위로
+충돌 없이 리베이스했다. `[git_authority] mode="local"`, exact local merge 계약,
+remote merge/sync 차단, `IN_SYNC`/`SYNC_PENDING`/`SYNC_CONFLICT` 게시 상태를 포함한다.
+
+작업본을 명시한 관련 회귀 41개, compileall, diff check가 PASS했다. 이전에 전역
+`PYTHONPATH`가 `D:\BCT\source`를 가리켜 다른 코드를 검사한 시행착오가 있었으므로, worktree
+검증은 반드시 해당 worktree의 `src`를 명시한다. 후보 커밋·PR·CI, 기준선 일회성 fast-forward,
+로컬 main 계약 병합, exact LIVE 배포, fast-forward GitHub 게시와 감사 CI가 남아 있다. 상세는
+`docs/exec-plans/active/BCT_LOCAL_GIT_AUTHORITY_ISOLATED_20261020.md`에 있다.
+
 ## 진행 — BWM 복구 버튼 공식 경로 연결
 
 BWM 상단의 `RCC 리로드`, `BCT 시작·복구`, `MCP 터널 복구`, `BC 도구 새로고침`을 source-only로
@@ -14,9 +29,7 @@ Core 4 shards, Browser Bridge는 전부 SUCCESS다. 설치본·Chrome·Native Ho
 재시작하지 않았다. main 반영과 LIVE 배포·버튼 클릭 수락시험이 남았다. 상세는
 `docs/exec-plans/active/BCT_MONITOR_RECOVERY_ACTIONS_20261021.md`에 있다.
 
-별도 `feat/local-authority-integrated-20261020` 작업은 HEAD `1d9ff592...`와 미커밋 `bct.toml`만
-로컬에 있고 원격 branch·PR·CI·main 반영이 없다. 따라서 `D:\BCT\source`는 계속 GitHub main의
-동기화 작업 사본이라는 현재 `AGENTS.md` 정책이 실제 운영 상태와 일치한다.
+별도 BWM 복구 버튼 LIVE E2E는 로컬 main 정본 전환 직후 같은 검증 SHA에서 연속 수행한다.
 
 ## 진행 — BWM UI·썸네일 HWND 수렴 보수
 

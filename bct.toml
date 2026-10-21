@@ -41,6 +41,11 @@ normal_actions = [
 ]
 approval_actions = ["delete", "credential_change"]
 
+[git_authority]
+mode = "local"
+repository = "p4147691/BCT"
+source_root = "D:\\BCT\\source"
+
 [orchestration]
 # Emergency stop for durable Manager/Worker collaboration. When enabled, only
 # sessions created afterwards use Schema 2; existing sessions stay pinned to

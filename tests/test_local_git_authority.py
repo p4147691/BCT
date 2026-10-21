@@ -11,6 +11,13 @@ from unittest.mock import patch
 
 from bct import BCT
 from bct.core.models import ConflictError, Outcome, PreconditionError, Principal
+from bct.features.git_authority import (
+    SYNC_CONFLICT,
+    SYNC_IN_SYNC,
+    SYNC_PENDING,
+    classify_publish_sync,
+    read_git_authority,
+)
 
 
 def git(path: Path, *args: str, ok: bool = True) -> str:
@@ -200,11 +207,13 @@ class LocalGitAuthorityTests(unittest.TestCase):
         git(self.source, "remote", "set-url", "origin", str(self.base/"unavailable.git"))
         offline = self.publish("offline-before-dispatch", self.initial)
         self.assertEqual(Outcome.NOT_APPLIED, offline.outcome, offline.as_dict())
+        self.assertIn(SYNC_PENDING, offline.error or "")
         self.assertFalse(self.bct.store.monitor_snapshot()["unresolved_claims"])
         self.assertEqual(self.initial, git(self.remote, "rev-parse", "refs/heads/main"))
         git(self.source, "remote", "set-url", "origin", str(self.remote))
         pushed = self.publish("sync-post-local-e2e", self.initial)
         self.assertEqual(Outcome.APPLIED, pushed.outcome, pushed.as_dict())
+        self.assertEqual(SYNC_IN_SYNC, pushed.evidence["sync_state"])
         self.assertEqual(head(self.source), git(self.remote, "rev-parse", "refs/heads/main"))
         # A failed stand-in CI audit does not revert an already accepted fake LIVE.
         current_before = head(self.source)
@@ -229,6 +238,7 @@ class LocalGitAuthorityTests(unittest.TestCase):
         local_current=head(self.source)
         rejected=self.publish("reject-divergent-push", self.initial)
         self.assertEqual(Outcome.NOT_APPLIED, rejected.outcome, rejected.as_dict())
+        self.assertIn(SYNC_CONFLICT, rejected.error or "")
         self.assertEqual(remote_current,git(self.remote,"rev-parse","refs/heads/main"))
         self.assertEqual(local_current,head(self.source))
         self.assertFalse(self.bct.store.monitor_snapshot()["unresolved_claims"])
@@ -261,6 +271,30 @@ class LocalGitAuthorityTests(unittest.TestCase):
         with self.assertRaises(PreconditionError):
             self.merge("local-not-enabled", branch, sha)
         self.assertEqual(self.initial, head(self.source))
+
+    def test_versioned_windows_authority_path_parses_when_absent_on_ci(self):
+        policy = self.base / "portable-policy.toml"
+        policy.write_text(
+            '[git_authority]\nmode="local"\nrepository="p4147691/BCT"\n'
+            'source_root="D:\\\\BCT\\\\source"\n',
+            encoding="utf-8",
+        )
+        authority = read_git_authority(policy)
+        self.assertEqual("local", authority.mode)
+        self.assertEqual("p4147691/BCT", authority.repository)
+
+    def test_publish_sync_classification_is_explicit(self):
+        local = "a" * 40
+        remote = "b" * 40
+        self.assertEqual(SYNC_IN_SYNC, classify_publish_sync(
+            local_sha=local, remote_sha=local, expected_remote_sha=remote,
+        ))
+        self.assertEqual(SYNC_PENDING, classify_publish_sync(
+            local_sha=local, remote_sha=remote, expected_remote_sha=remote,
+        ))
+        self.assertEqual(SYNC_CONFLICT, classify_publish_sync(
+            local_sha=local, remote_sha="c" * 40, expected_remote_sha=remote,
+        ))
 
 
 if __name__ == "__main__":
