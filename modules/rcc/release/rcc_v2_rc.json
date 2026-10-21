@@ -4,8 +4,8 @@
   "candidate": "RCC_REBUILD_V2_RC4",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
-    "fileCount": 49,
-    "aggregateSha256": "dcf27a7b32797d0bbc10405dee2ee9c743d638000ad4ae0673c11f791400ef2d",
+    "fileCount": 51,
+    "aggregateSha256": "ff672173ffbf087833da6fe744f2135c9aa8a866666dfcfa20530b61c4105a5f",
     "files": [
       {
         "path": "background.js",
@@ -14,8 +14,8 @@
       },
       {
         "path": "background_loader.js",
-        "size": 1246,
-        "sha256": "5f46c077db2a4d97c5159ddda0cd8b93b3b526cbfc44ab83cd46b8fdaf8b394f"
+        "size": 1302,
+        "sha256": "c80b77f4aacce079c028bd13c51fe5ea3258011807068cf20caad02780e253f2"
       },
       {
         "path": "boot/background_app.js",
@@ -24,8 +24,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1034,
-        "sha256": "061b8f35487a4985e26b56e0c2ab53ad8c9bb4f5f9979449412ee4b82e376f74"
+        "size": 1088,
+        "sha256": "c501006ae23ea9b3d2dbbe2493ffd3efaacc774658bc59f10303d15cf8157d04"
       },
       {
         "path": "browser/read_adapter.js",
@@ -84,8 +84,8 @@
       },
       {
         "path": "content.js",
-        "size": 320,
-        "sha256": "8467dbb36bf9318a5d76239cd46fd1337a76b192b48057cc71a644d0d43ff6ea"
+        "size": 454,
+        "sha256": "4dfc55e1a027919a34beee0df85e9578914b12ba7bc9d03f1fe5fc55f22374e2"
       },
       {
         "path": "content/activity_reporter.js",
@@ -94,13 +94,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 6720,
-        "sha256": "7c7edbc49a09a67e65a97b657c8eca1ac07cf041d5e2d3c5e2ad50c15fcdec4d"
+        "size": 6976,
+        "sha256": "3e2527d0634f99cad386d3f8838db0479243a9afedb8f0564b4750ae867e173d"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 16681,
-        "sha256": "ce5d5f4a8955320cd7a43618dbcfbff4de47fbad02fe512553a2bba28fa6e028"
+        "size": 16690,
+        "sha256": "c86463bd16f9b29c404d7fe6081054f1aee688778c034bea03eae4f78bafd4af"
       },
       {
         "path": "content/conversation_rename.js",
@@ -111,6 +111,11 @@
         "path": "content/simple_relay_executor.js",
         "size": 25805,
         "sha256": "598240447ceecb703c4d794918b61bee3ca6e6c3f32d0e35e28329200601e75c"
+      },
+      {
+        "path": "content/orchestration_relay_executor.js",
+        "size": 6632,
+        "sha256": "f749789062315f31b8e88b616f60e931edad5eb59674be8f94853cf23c2188b5"
       },
       {
         "path": "core/conversation.js",
@@ -158,14 +163,19 @@
         "sha256": "4ed84a67d8abd810943d0d49012ba0cbf211fd9aa57262e083e209a2454bf0b6"
       },
       {
+        "path": "domain/orchestration_relay_service.js",
+        "size": 13457,
+        "sha256": "96a0659b5e04e65fa959602dc6298f3db0542e46986f14541bddc2097ee68cf1"
+      },
+      {
         "path": "domain/readonly_diagnostics.js",
-        "size": 27065,
-        "sha256": "b1049ef56363f13d8a8542f96594969909a2c4699d5a2e392c15ff801892d12c"
+        "size": 28766,
+        "sha256": "2b2cb163ef92951fe470c74463f0ff1590fabb4d5b90cbd7c479dd42522edec1"
       },
       {
         "path": "domain/runtime_message_service.js",
-        "size": 4779,
-        "sha256": "ac30947109dd637abd9086a8c68b494bfe6821c824d0d272160e3f7051135e13"
+        "size": 5044,
+        "sha256": "ab7024b4794e408fb9cd3782b35508d9d5d14dae3347f48b219d0e24d257bc29"
       },
       {
         "path": "domain/simple_relay_receipts.js",
@@ -184,13 +194,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3033,
-        "sha256": "f83891c478beb321f2e4c09f38a06a5cf2c336601fa6eb0eb8348462f7ea9270"
+        "size": 3405,
+        "sha256": "ba8e3b2c7a54d4fbd533beffacf93af33c694ca7e7c3cd639948eb05ca5e9cbd"
       },
       {
         "path": "manifest.json",
-        "size": 1458,
-        "sha256": "78abf9edd6fa0cb4bd2a5b3ca0fae30c32230d1264bdba5ae97895139beb9125"
+        "size": 1544,
+        "sha256": "1b82f77f55c5789cf35d474cace7990a7408c9e16804790a6866d98a2e5227f4"
       },
       {
         "path": "network/directory.js",
@@ -279,6 +289,7 @@
       "domain/endpoint_service.js",
       "domain/diagnostic_support.js",
       "domain/simple_relay_service.js",
+      "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
       "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
@@ -290,6 +301,7 @@
       "relay_core.js",
       "content/conversation_dom.js",
       "content/simple_relay_executor.js",
+      "content/orchestration_relay_executor.js",
       "content/conversation_rename.js",
       "content/content_router.js",
       "content/activity_reporter.js",
@@ -307,6 +319,7 @@
       "domain/endpoint_service.js",
       "domain/diagnostic_support.js",
       "domain/simple_relay_service.js",
+      "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
       "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
@@ -357,6 +370,9 @@
         "rename-conversation",
         "conversation-bind"
       ],
+      "nativeOrchestration": [
+        "send"
+      ],
       "nativeReadOnly": [
         "ping",
         "state",
@@ -388,7 +404,6 @@
         "register",
         "reload-workers",
         "result-ack",
-        "send",
         "send-to-created-tab",
         "send-to-tab",
         "send-wakeback"
@@ -397,6 +412,10 @@
         "relay:getPendingStatus",
         "relay:getState",
         "relay:activity"
+      ],
+      "runtimeOrchestration": [
+        "relay:orchestrationAuthorize",
+        "relay:orchestrationResult"
       ],
       "runtimeBlockedLegacy": [
         "relay:actDirectTask",
@@ -423,6 +442,7 @@
         "relay:probe",
         "relay:simpleExecute",
         "relay:simpleReadReply",
+        "relay:orchestrationExecute",
         "relay:newChatExecute",
         "relay:newChatStatus",
         "relay:renameConversation"
@@ -464,6 +484,7 @@
       "nativeOutbound": [
         "host:ready",
         "host:endpoints",
+        "host:ack",
         "host:result"
       ],
       "content": [
@@ -472,6 +493,7 @@
         "relay:probe",
         "relay:simpleExecute",
         "relay:simpleReadReply",
+        "relay:orchestrationExecute",
         "relay:newChatExecute",
         "relay:newChatStatus",
         "relay:renameConversation"
@@ -479,7 +501,9 @@
       "runtime": [
         "relay:getPendingStatus",
         "relay:getState",
-        "relay:activity"
+        "relay:activity",
+        "relay:orchestrationAuthorize",
+        "relay:orchestrationResult"
       ]
     }
   },

@@ -143,6 +143,38 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'send') {
+          let result;
+          try {
+            result = await sendOrchestrationRelay(message, requestId);
+          } catch (error) {
+            const state = await loadState();
+            const effectState = (state.resultReceipts?.[requestId]
+              || state.pending?.[requestId]) ? 'UNKNOWN' : 'NOT_APPLIED';
+            postNative({ type: 'host:result', requestId, ok: false, effectState,
+              ambiguous: effectState === 'UNKNOWN',
+              error: String(error?.message || error || 'ORCHESTRATION_RELAY_FAILED') });
+            return;
+          }
+          if (result.ok === false) {
+            postNative({ type: 'host:result', requestId, relayId: result.relayId,
+              ok: false, effectState: String(result.effectState || 'UNKNOWN'),
+              ambiguous: result.effectState !== 'NOT_APPLIED', error: String(result.error || '') });
+          } else if (result.completed && result.completedResult) {
+            postNative({ type: 'host:result', requestId, relayId: result.relayId,
+              ok: true, reply: String(result.completedResult.reply || ''), replayed: true });
+          } else if (result.pending && result.submitted !== true) {
+            postNative({ type: 'host:result', requestId, relayId: result.relayId,
+              ok: false, effectState: 'UNKNOWN', ambiguous: true,
+              error: 'ORCHESTRATION_RELAY_DELIVERY_UNCONFIRMED' });
+          } else {
+            postNative({ type: 'host:ack', requestId, relayId: result.relayId,
+              ok: true, submitted: true, effectState: 'SUBMITTED',
+              replayed: result.duplicate === true });
+          }
+          return;
+        }
+
     if (message.command === 'rename-receipt') {
 
           // Inspection only: never perform or repeat an effect here.

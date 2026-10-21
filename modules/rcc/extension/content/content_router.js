@@ -149,6 +149,13 @@ if (message.type === 'relay:simpleExecute') {
 
   }
 
+if (message.type === 'relay:orchestrationExecute') {
+    executeOrchestrationContent(message).then(sendResponse).catch((error) => sendResponse({
+      ok: false, submitted: false, effectState: 'UNKNOWN', error: error.message
+    }));
+    return true;
+  }
+
 if (message.type === 'relay:simpleReadReply') {
 
     readSimpleRelayV0Reply(message).then(sendResponse).catch((error) => sendResponse({

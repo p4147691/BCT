@@ -8,6 +8,7 @@
   const CONVERSATION_COMMANDS = new Set([
     'rename-conversation', 'conversation-bind',
   ]);
+  const ORCHESTRATION_COMMANDS = new Set(['send']);
   const READ_ONLY_COMMANDS = new Set([
     'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
     'diagnose-activity', 'diagnose-composer', 'diagnose-conversation-ui',
@@ -21,7 +22,7 @@
     'conversation-bootstrap-bind', 'create-chat-tab', 'create-chat-window',
     'ensure', 'main-capture-install', 'manager-promote', 'move-tab',
     'recover-created-result', 'recover-pending', 'register', 'reload-workers',
-    'result-ack', 'send', 'send-to-created-tab',
+    'result-ack', 'send-to-created-tab',
     'send-to-tab', 'send-wakeback',
   ]);
   const LEGACY_MUTATION_MESSAGES = new Set([
@@ -35,11 +36,15 @@
   const READ_ONLY_MESSAGES = new Set([
     'relay:getPendingStatus', 'relay:getState', 'relay:activity',
   ]);
+  const ORCHESTRATION_MESSAGES = new Set([
+    'relay:orchestrationAuthorize', 'relay:orchestrationResult',
+  ]);
 
   function nativeCommand(command) {
     const value = String(command || '');
     if (NEW_RELAY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'NEW_RELAY' });
     if (CONVERSATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'CONVERSATION' });
+    if (ORCHESTRATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'ORCHESTRATION' });
     if (READ_ONLY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'LEGACY_READONLY' });
     if (MAINTENANCE_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'MAINTENANCE' });
     if (LEGACY_MUTATION_COMMANDS.has(value)) return Object.freeze({ allowed: false, kind: 'LEGACY_MUTATION' });
@@ -49,6 +54,7 @@
   function runtimeMessage(type) {
     const value = String(type || '');
     if (READ_ONLY_MESSAGES.has(value)) return Object.freeze({ allowed: true, kind: 'READONLY' });
+    if (ORCHESTRATION_MESSAGES.has(value)) return Object.freeze({ allowed: true, kind: 'ORCHESTRATION' });
     if (LEGACY_MUTATION_MESSAGES.has(value)) return Object.freeze({ allowed: false, kind: 'LEGACY_MUTATION' });
     return Object.freeze({ allowed: false, kind: 'UNSUPPORTED' });
   }

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "BCT RCC",
-  "version": "1.0.26",
-  "version_name": "1.0.26 · RCC New Chat",
-  "description": "BCT browser conversation control with idempotent new-chat bootstrap, conversation rename, and read-only diagnostics.",
+  "version": "1.0.27",
+  "version_name": "1.0.27 · RCC Project Run Relay",
+  "description": "BCT browser conversation control with fenced Project Run relay, idempotent new-chat bootstrap, conversation rename, and read-only diagnostics.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4tbpwYtZZDlryqHeNDMzVMk8LmBA54m3zghUXmOQ1MMJa5YOFlFhFeWCfZhPkhf18PQPCVGidRQABtbYyzXhPHUqzWNZVhcpGLLgiM0Q2o7KxDmjhx92YrcCQqxNOsubyPw799QONuUCLfzcb5Y0OAe76BtZjYgI3RXr35TcyxFN/tHfvERe2JbABO7l6PardLOcqnQvCQCMqeT50urQMQ+S9gqle+4tYadY0g8g3Px37v65AWtSs9/GJM2eOmP+PIPmprU69byCRBCULSIz/x5jSSD3v8n5Sgh/qeZ5k3LUU72hay+DKizvP0x7IYP4rAruonnP6j03OXoIkpl/zQIDAQAB",
   "permissions": [
     "scripting",
@@ -32,6 +32,7 @@
         "relay_core.js",
         "content/conversation_dom.js",
         "content/simple_relay_executor.js",
+        "content/orchestration_relay_executor.js",
         "content/conversation_rename.js",
         "content/content_router.js",
         "content/activity_reporter.js",
