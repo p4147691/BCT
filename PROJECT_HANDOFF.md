@@ -1162,6 +1162,20 @@ content 구현이 `/c/<uuid>` anchor를 찾지 못했고, 현재 메뉴의 한�
 `input:not([type])`을 포함하도록 보완했고, composer와 숨은 file input 배제 및 단일 dialog editor
 조건은 그대로 유지한다. 실제 UI 계약을 재현한 회귀로 이 경로를 고정한다.
 
+exact code SHA `598d2952298a11343829b899103c6ad1507ef204`는 GitHub Actions run
+`39545497251` 전체를 통과했다. 설치 payload의 `conversation_rename.js`만 exact hash
+`946b47eaa133e2d47b7b6867978466b8f5b771bae76946bd3c889f0d06e0d4a4`로 교체하고 same-ID
+RCC를 reload했다. N2 exact UUID `6ad4bb5d-6624-83ee-b045-e57fdad5120e`에서 임시 제목으로
+변경한 operation과 원래 제목으로 복원한 operation이 모두 `APPLIED`였으며 실제 ChatGPT 탭
+제목도 양방향 일치했다.
+
+배포 중 공식 Monitor reload operation은 별도 `create-chat-window` operation이 이미
+`FINISHED / UNKNOWN`인데도 남긴 전역 `rcc-instance:<id>` Claim 때문에
+`RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK`로 효과 시작 전 차단됐다. 원본 UNKNOWN 및 Claim은
+변경하지 않았고, 현재 RCC가 응답하며 실행 중인 호출이 없음을 대조한 뒤 이미 승인된 same-ID
+host reload만 분리 실행했다. 후속 Claim 정책 작업에서는 종료된 UNKNOWN 기록과 실제 실행 잠금을
+분리하고, create-window의 전역 Claim이 무관한 reload/rename을 영구 차단하지 않도록 다뤄야 한다.
+
 ## Monitor BCT 전환 후 legacy 조직 조회 경계
 
 2026-10-20 읽기 전용 점검에서 `check_monitor_live_organization.py`가 찾는 ACT
