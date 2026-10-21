@@ -278,3 +278,7 @@ LIVE E2E. A later read-only runtime observation shows the former blank tab
 `594834964` now belongs to conversation
 `6ad88177-eaf0-83ee-81af-81b5e7512892` and has completed activity. It is no
 longer a bootstrap candidate and must not be mutated or reused by this work.
+The installed RCC payload was also rechecked read-only: all 48 RC3 files match
+the previous candidate inventory with no missing, extra, or changed file. RC4
+uses that exact 48-file aggregate as its rollback baseline rather than the
+obsolete pre-rebuild 39-file baseline.

@@ -1,7 +1,7 @@
-# RCC Rebuild V2 Release Candidate — backup/rollback 절차
+# RCC Rebuild Release Candidate — backup/rollback 절차
 
-이 문서는 V2-4의 비-LIVE 검증 계약이다. 지금 실행하는 배포 스크립트가 아니며, V2-5의 별도
-명시 허용 전에는 설치본, Chrome, Native Host, binding을 변경하지 않는다.
+이 문서는 RCC 후보의 비-LIVE 검증 계약이다. 지금 실행하는 배포 스크립트가 아니며, 정확한
+main CI와 LIVE preflight가 통과하기 전에는 설치본, Chrome, Native Host, binding을 변경하지 않는다.
 
 ## 고정 대상
 
@@ -11,13 +11,13 @@
 - extension ID: `ocbidbaplechjjdacmokhnfbdmgjkphf`
 - Native Host: `com.ai_workspace_relay.host`
 
-## V2-5 배포 전 조건
+## 배포 전 조건
 
 1. GitHub `main`의 exact SHA와 해당 SHA의 BCT CI 성공을 확인한다.
 2. `verify_release_candidate.py --live-root D:\ChromeExtensions\RCC\extension`으로 후보와 현재
    rollback 기준선이 모두 일치하는지 확인한다. 불일치하면 중단하고 기준선을 임의 갱신하지 않는다.
 3. LIVE extension과 backup/staging의 resolved path가 각각 위 고정 root 안인지 확인한다.
-4. 현재 LIVE 전체 디렉터리를 새 operation 전용 backup 디렉터리에 복사하고, V2-4 rollback
+4. 현재 LIVE 전체 디렉터리를 새 operation 전용 backup 디렉터리에 복사하고, 후보의 rollback
    inventory와 파일 수·파일별 SHA-256·aggregate SHA-256을 다시 대조한다.
 5. 후보 파일만 포함한 staging 디렉터리를 만들고 candidate inventory와 exact 일치하는지 확인한다.
    Native Host executable/manifest, Chrome profile, storage와 binding은 staging 대상이 아니다.
@@ -38,4 +38,4 @@
 5. 복원 여부를 증명할 수 없으면 `UNKNOWN`으로 남기고 후보나 backup을 재복사하지 않는다.
 
 Native Host와 Chrome profile은 이번 payload 전환의 변경 대상이 아니므로 rollback에서도 덮어쓰거나
-재등록하지 않는다. backup은 V2-5 acceptance와 rollback 가능성이 모두 확인될 때까지 삭제하지 않는다.
+재등록하지 않는다. backup은 acceptance와 rollback 가능성이 모두 확인될 때까지 삭제하지 않는다.

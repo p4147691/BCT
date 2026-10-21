@@ -1331,3 +1331,7 @@ send button이 검증되지 않으면 Enter fallback을 금지하고, RCC 내부
 
 이 경로는 실제 Chrome 탭과 메시지를 만들므로 로컬 회귀와 RC 검증 → exact main CI 성공 →
 설치본 백업·same-ID reload → 일반 ChatGPT의 BCT Control 호출 LIVE E2E 순서를 유지한다.
+현재 LIVE RCC 48파일은 RC3 inventory와 missing/extra/mismatch 0으로 일치하며, RC4 manifest의
+rollback baseline도 해당 48파일 aggregate
+`9ef3eb39080f68589c5e856147905bb47706171a1c9673362a988122a80d0e46`로 갱신했다. 과거 39파일
+pre-rebuild 기준으로 복구하지 않는다.
