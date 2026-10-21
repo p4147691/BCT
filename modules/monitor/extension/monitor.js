@@ -43212,6 +43212,7 @@ const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeCo
 let monitorBctWindowNodesCache = null;
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
+let monitorBctPointerDrag = null;
 let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
@@ -43659,6 +43660,9 @@ function renderMonitorBctWindowNodes(nodes) {
   }
   for (const group of groups.values()) {
     group.nodes.sort(compareMonitorBctNodeDisplayOrder);
+    const groupSection = document.createElement("section");
+    groupSection.className = "monitor-bct-scope-group";
+    groupSection.dataset.scopeId = group.key;
     const groupHeader = document.createElement("button");
     groupHeader.type = "button";
     groupHeader.className = "monitor-bct-scope-heading";
@@ -43675,21 +43679,15 @@ function renderMonitorBctWindowNodes(nodes) {
       else monitorBctCollapsedScopes.add(group.key);
       renderMonitorBctWindowNodes(nodes);
     });
-    groupHeader.addEventListener("dragover", (event) => {
-      if (!monitorBctDraggedNodeKey) return;
-      event.preventDefault();
-      clearMonitorBctNodeDropFeedback();
-      groupHeader.classList.add("monitor-bct-scope-drop-target");
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    });
-    groupHeader.addEventListener("drop", (event) => {
-      if (!monitorBctDraggedNodeKey) return;
-      event.preventDefault();
-      event.stopPropagation();
-      void commitMonitorBctNodeDrop(group.key, "", "after");
-    });
-    fragment.append(groupHeader);
-    if (monitorBctCollapsedScopes.has(group.key)) continue;
+    const groupList = document.createElement("div");
+    groupList.className = "monitor-bct-node-list";
+    groupList.dataset.scopeId = group.key;
+    groupSection.append(groupHeader, groupList);
+    fragment.append(groupSection);
+    if (monitorBctCollapsedScopes.has(group.key)) {
+      groupList.hidden = true;
+      continue;
+    }
     group.nodes.forEach((node, index) => {
     const row = document.createElement("article");
     row.className = "monitor-bct-node-row";
@@ -43704,7 +43702,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.setAttribute("role", "button");
     row.setAttribute("aria-selected", "false");
     row.tabIndex = 0;
-    row.draggable = Boolean(node.conversationKey);
+    row.draggable = false;
     const mappedHwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
     const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
     const desktopPosition = nativeLocation
@@ -43740,52 +43738,11 @@ function renderMonitorBctWindowNodes(nodes) {
     row.append(number, body, presence);
     row.classList.toggle("is-manager", Array.isArray(node.roleTags) && node.roleTags.includes("Manager"));
     installMonitorBctManagerLongPress(row, node);
-    row.addEventListener("dragstart", (event) => {
-      if (!node.conversationKey || !event.dataTransfer) {
-        event.preventDefault();
-        return;
-      }
-      monitorBctDraggedNodeKey = node.conversationKey;
-      monitorBctSuppressedClickKey = monitorBctNodeSelectionKey(node);
-      row.classList.add("is-dragging");
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("application/x-bct-conversation-key", node.conversationKey);
-      event.dataTransfer.setData("text/plain", node.conversationKey);
-      monitorBctDragGhost?.remove?.();
-      monitorBctDragGhost = createMonitorNodeDragGhost(row, event);
-      monitorBctDragGhost.classList.add("monitor-bct-node-drag-ghost");
-      const blank = document.createElement("canvas");
-      blank.width = 1;
-      blank.height = 1;
-      event.dataTransfer.setDragImage(blank, 0, 0);
-      moveMonitorNodeDragGhost(monitorBctDragGhost, event.clientX, event.clientY);
-    });
-    row.addEventListener("drag", (event) => {
-      if (event.clientX || event.clientY) moveMonitorNodeDragGhost(monitorBctDragGhost, event.clientX, event.clientY);
-    });
-    row.addEventListener("dragover", (event) => {
-      if (!monitorBctDraggedNodeKey || monitorBctDraggedNodeKey === node.conversationKey) return;
-      event.preventDefault();
-      clearMonitorBctNodeDropFeedback();
-      const rect = row.getBoundingClientRect();
-      const before = event.clientY < rect.top + rect.height / 2 ||
-        (Math.abs(event.clientY - (rect.top + rect.height / 2)) < rect.height / 3 &&
-          event.clientX < rect.left + rect.width / 2);
-      row.classList.add(before ? "monitor-bct-drop-before" : "monitor-bct-drop-after");
-      row.dataset.dropPosition = before ? "before" : "after";
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    });
-    row.addEventListener("drop", (event) => {
-      if (!monitorBctDraggedNodeKey || monitorBctDraggedNodeKey === node.conversationKey) return;
-      event.preventDefault();
-      event.stopPropagation();
-      void commitMonitorBctNodeDrop(
-        node.scopeId || "__unassigned__",
-        node.conversationKey,
-        row.dataset.dropPosition === "before" ? "before" : "after",
-      );
-    });
-    row.addEventListener("dragend", () => finishMonitorBctNodeDrag());
+    row.addEventListener("dragstart", (event) => event.preventDefault());
+    row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
+    row.addEventListener("pointermove", updateMonitorBctNodePointerDrag);
+    row.addEventListener("pointerup", endMonitorBctNodePointerDrag);
+    row.addEventListener("pointercancel", cancelMonitorBctNodePointerDrag);
     row.addEventListener("click", (event) => {
       if (monitorBctSuppressedClickKey === monitorBctNodeSelectionKey(node)) {
         monitorBctSuppressedClickKey = "";
@@ -43831,8 +43788,13 @@ function renderMonitorBctWindowNodes(nodes) {
         openMonitorBctRenameEditor(node, row);
       });
     }
-    fragment.append(row);
+    groupList.append(row);
     });
+    const endSlot = document.createElement("div");
+    endSlot.className = "monitor-bct-node-list-end";
+    endSlot.setAttribute("aria-hidden", "true");
+    endSlot.textContent = "여기에 놓기";
+    groupList.append(endSlot);
   }
   monitorWorkers.replaceChildren(fragment);
   syncMonitorBctNodeTargetHighlight();
@@ -43844,14 +43806,102 @@ function renderMonitorBctWindowNodes(nodes) {
   }
 }
 
+function beginMonitorBctNodePointerDrag(event, row, node) {
+  if (event.button !== 0 || !node?.conversationKey || monitorBctPointerDrag) return;
+  monitorBctPointerDrag = {
+    pointerId: event.pointerId,
+    row,
+    node,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+    drop: null,
+  };
+}
+
+function monitorBctNodeDropAt(clientX, clientY, draggedKey) {
+  const hit = document.elementFromPoint(clientX, clientY);
+  const list = hit?.closest?.(".monitor-bct-node-list");
+  if (!list || !monitorWorkers?.contains?.(list)) return null;
+  const scopeId = String(list.dataset.scopeId || "__unassigned__");
+  const row = hit.closest?.(".monitor-bct-node-row");
+  if (row && String(row.dataset.conversationKey || "") === draggedKey) return null;
+  if (row) {
+    const rect = row.getBoundingClientRect();
+    const position = clientX < rect.left + rect.width / 2 ? "before" : "after";
+    row.classList.add(position === "before" ? "monitor-bct-drop-before" : "monitor-bct-drop-after");
+    row.dataset.dropPosition = position;
+    list.classList.add("monitor-bct-node-list-target");
+    return {
+      scopeId,
+      targetConversationKey: String(row.dataset.conversationKey || ""),
+      position,
+    };
+  }
+  list.classList.add("monitor-bct-node-list-target", "monitor-bct-list-drop-end");
+  return { scopeId, targetConversationKey: "", position: "after" };
+}
+
+function updateMonitorBctNodePointerDrag(event) {
+  const drag = monitorBctPointerDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 7) return;
+  if (!drag.active) {
+    drag.active = true;
+    monitorBctDraggedNodeKey = drag.node.conversationKey;
+    monitorBctSuppressedClickKey = monitorBctNodeSelectionKey(drag.node);
+    drag.row.classList.add("is-dragging");
+    document.documentElement.classList.add("monitor-bct-node-drag-active");
+    monitorWorkers?.querySelectorAll?.(".monitor-bct-node-list")
+      .forEach((list) => list.classList.add("monitor-bct-node-list-available"));
+    try { drag.row.setPointerCapture(event.pointerId); } catch (_) {}
+    monitorBctDragGhost?.remove?.();
+    monitorBctDragGhost = createMonitorNodeDragGhost(drag.row, event);
+    monitorBctDragGhost.classList.add("monitor-bct-node-drag-ghost");
+    monitorBctDragGhost.textContent = `${drag.node.nodeLabel || "N?"}  ${drag.node.title || "ChatGPT"}`;
+  }
+  event.preventDefault();
+  moveMonitorNodeDragGhost(monitorBctDragGhost, event.clientX, event.clientY);
+  clearMonitorBctNodeDropFeedback();
+  drag.drop = monitorBctNodeDropAt(event.clientX, event.clientY, drag.node.conversationKey);
+}
+
+function endMonitorBctNodePointerDrag(event) {
+  const drag = monitorBctPointerDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  monitorBctPointerDrag = null;
+  try { drag.row.releasePointerCapture(event.pointerId); } catch (_) {}
+  if (!drag.active) return;
+  event.preventDefault();
+  const drop = drag.drop;
+  if (!drop) {
+    finishMonitorBctNodeDrag();
+    return;
+  }
+  void commitMonitorBctNodeDrop(
+    drop.scopeId,
+    drop.targetConversationKey,
+    drop.position,
+  );
+}
+
+function cancelMonitorBctNodePointerDrag(event) {
+  const drag = monitorBctPointerDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  monitorBctPointerDrag = null;
+  try { drag.row.releasePointerCapture(event.pointerId); } catch (_) {}
+  if (drag.active) finishMonitorBctNodeDrag();
+}
+
 function clearMonitorBctNodeDropFeedback() {
   monitorWorkers?.querySelectorAll?.(
-    ".monitor-bct-drop-before,.monitor-bct-drop-after,.monitor-bct-scope-drop-target",
+    ".monitor-bct-drop-before,.monitor-bct-drop-after,.monitor-bct-node-list-target,.monitor-bct-list-drop-end",
   ).forEach((element) => {
     element.classList.remove(
       "monitor-bct-drop-before",
       "monitor-bct-drop-after",
-      "monitor-bct-scope-drop-target",
+      "monitor-bct-node-list-target",
+      "monitor-bct-list-drop-end",
     );
     if (element.dataset) delete element.dataset.dropPosition;
   });
@@ -43865,6 +43915,9 @@ function finishMonitorBctNodeDrag() {
     .forEach((row) => row.classList.remove("is-dragging"));
   monitorBctDragGhost?.remove?.();
   monitorBctDragGhost = null;
+  document.documentElement.classList.remove("monitor-bct-node-drag-active");
+  monitorWorkers?.querySelectorAll?.(".monitor-bct-node-list-available")
+    .forEach((list) => list.classList.remove("monitor-bct-node-list-available"));
   globalThis.setTimeout(() => {
     if (monitorBctSuppressedClickKey === suppressedKey) monitorBctSuppressedClickKey = "";
   }, 400);

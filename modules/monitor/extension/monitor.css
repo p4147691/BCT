@@ -3893,10 +3893,18 @@
 #monitorStructurePanel .monitor-org-desk-bundles>.monitor-org-bundle{width:var(--org-node-width)!important;min-width:var(--org-node-width)!important;max-width:var(--org-node-width)!important;height:var(--org-node-height)!important;min-height:var(--org-node-height)!important;max-height:var(--org-node-height)!important;box-sizing:border-box!important}
 
 
-/* BCT/RCC node grid defaults to three columns; narrow windows still degrade safely. */
-.monitor-bct-nodes[data-columns="3"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
+/* A conversation network owns its own node grid.  Its heading only folds the
+   list; all reorder and cross-network drop targets stay inside the list. */
+.monitor-bct-nodes[data-columns="3"] { grid-template-columns:minmax(0,1fr); }
+.monitor-bct-scope-group { grid-column:1 / -1;min-width:0; }
+.monitor-bct-node-list {
+  position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;min-width:0;min-height:5px;padding:4px 1px 7px;border-radius:6px;
+  transition:background 100ms ease,box-shadow 100ms ease;
+}
+.monitor-bct-node-list[hidden] { display:none!important; }
 .monitor-bct-scope-heading {
-  grid-column:1 / -1;display:flex;align-items:center;gap:7px;width:100%;min-width:0;
+  display:flex;align-items:center;gap:7px;width:100%;min-width:0;
   margin:3px 0 0;padding:5px 7px;border:0;border-bottom:1px solid rgba(255,255,255,.10);
   background:transparent;color:rgba(236,243,251,.86);font:800 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif;
   text-align:left;cursor:pointer;
@@ -3910,8 +3918,8 @@
 .monitor-bct-node-location { display:block; color:rgba(202,216,232,.64); font:600 10px/1.25 "Segoe UI","Malgun Gothic",sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .monitor-bct-node-presence,
 .monitor-bct-node-presence.is-busy { width:auto; height:auto; background:none; border-radius:0; box-shadow:none; font:800 12px/1 sans-serif; color:rgba(255,255,255,.92); }
-@media (max-width:790px) { .monitor-bct-nodes[data-columns="3"] { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:450px) { .monitor-bct-nodes { grid-template-columns:minmax(0,1fr)!important; } }
+@media (max-width:790px) { .monitor-bct-node-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:450px) { .monitor-bct-node-list { grid-template-columns:minmax(0,1fr)!important; } }
 
 
 /* Read-only minimized C-node labels are overlaid inside the thumbnail lower-right. */
@@ -3936,27 +3944,44 @@
 
 /* Exact BCT node selection: the linked native browser window remains visible
    even when the generic role/foreground styles are active. */
-.monitor-bct-node-row { cursor:pointer; }
+.monitor-bct-node-row,
+.monitor-bct-node-row * {
+  user-select:none!important;-webkit-user-select:none!important;-webkit-user-drag:none!important;
+}
+.monitor-bct-node-row { cursor:grab;touch-action:none; }
 .monitor-bct-node-row.is-selected {
   border-color:#ffd75a!important;
   box-shadow:0 0 0 1px rgba(255,215,90,.34),0 0 10px rgba(255,215,90,.12)!important;
 }
-.monitor-bct-node-row.is-dragging { opacity:.34!important; }
+.monitor-bct-node-row.is-dragging { opacity:.34!important;cursor:grabbing!important; }
+.monitor-bct-node-drag-active,
+.monitor-bct-node-drag-active * { cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important; }
+.monitor-bct-node-list-end {
+  display:none;min-height:34px;box-sizing:border-box;place-items:center;
+  border:1px solid rgba(159,231,255,.18);border-radius:7px;
+  color:rgba(203,239,255,.54);font:700 10px/1 "Segoe UI","Malgun Gothic",sans-serif;
+  pointer-events:none;
+}
+.monitor-bct-node-list-available .monitor-bct-node-list-end { display:grid;pointer-events:auto; }
+.monitor-bct-node-list-target { background:rgba(80,177,220,.045);box-shadow:inset 0 0 0 1px rgba(159,231,255,.10); }
 .monitor-bct-node-row.monitor-bct-drop-before,
 .monitor-bct-node-row.monitor-bct-drop-after { position:relative;overflow:visible; }
 .monitor-bct-node-row.monitor-bct-drop-before::before,
 .monitor-bct-node-row.monitor-bct-drop-after::after {
-  content:"";position:absolute;z-index:8;top:3px;bottom:3px;width:3px;border-radius:3px;
+  content:"";position:absolute;z-index:8;top:0;bottom:0;width:4px;border-radius:4px;
   background:#9fe7ff;box-shadow:0 0 0 1px rgba(9,20,32,.9),0 0 9px rgba(111,220,255,.95);
   pointer-events:none;
 }
-.monitor-bct-node-row.monitor-bct-drop-before::before { left:-5px; }
-.monitor-bct-node-row.monitor-bct-drop-after::after { right:-5px; }
-.monitor-bct-scope-heading.monitor-bct-scope-drop-target {
-  border-bottom-color:#9fe7ff;box-shadow:0 2px 0 #9fe7ff,0 5px 10px rgba(111,220,255,.32);
+.monitor-bct-node-row.monitor-bct-drop-before::before { left:-3px; }
+.monitor-bct-node-row.monitor-bct-drop-after::after { right:-3px; }
+.monitor-bct-node-list.monitor-bct-list-drop-end .monitor-bct-node-list-end {
+  display:grid;border-color:#9fe7ff;color:#fff;
+  box-shadow:inset 4px 0 0 #9fe7ff,0 0 10px rgba(111,220,255,.34);
 }
 .monitor-node-drag-ghost.monitor-bct-node-drag-ghost {
-  border:2px solid rgba(159,231,255,.92);border-radius:8px;background:rgba(12,24,38,.24);
+  display:flex;align-items:center;padding:0 9px;box-sizing:border-box;overflow:hidden;
+  border:2px solid rgba(159,231,255,.92);border-radius:8px;background:rgba(12,24,38,.92);
+  color:#fff;font:800 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif;white-space:nowrap;text-overflow:ellipsis;
   box-shadow:0 0 0 1px rgba(8,15,24,.9),0 0 14px rgba(111,220,255,.55);
 }
 .monitor-bct-node-row.monitor-bct-node-switch-pending { opacity:.72; }

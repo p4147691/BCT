@@ -87,7 +87,11 @@ function loadModule() {
   const css = fs.readFileSync(cssPath, "utf8");
   assert.match(monitor, /row\.addEventListener\("click"/);
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
-  assert.match(monitor, /row\.addEventListener\("dragstart"/);
+  assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
+  assert.match(monitor, /function updateMonitorBctNodePointerDrag/);
+  assert.match(monitor, /function monitorBctNodeDropAt/);
+  assert.match(monitor, /groupList\.className = "monitor-bct-node-list"/);
+  assert.doesNotMatch(monitor, /groupHeader\.addEventListener\("drop"/);
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
@@ -95,6 +99,8 @@ function loadModule() {
   assert.match(css, /monitor-bct-node-target-highlighted/);
   assert.match(css, /#ffd75a/);
   assert.match(css, /monitor-bct-drop-before/);
+  assert.match(css, /monitor-bct-node-list-end/);
+  assert.match(css, /monitor-bct-node-drag-active/);
   assert.match(css, /monitor-bct-node-drag-ghost/);
   const selectedRule = css.match(/\.monitor-bct-node-row\.is-selected\s*\{([^}]+)\}/)?.[1] || "";
   assert.doesNotMatch(selectedRule, /background:/);
