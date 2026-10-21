@@ -43532,6 +43532,7 @@ function openMonitorBctRenameEditor(node, row) {
 let monitorBctNodeInteractionService = null;
 const monitorBctCollapsedScopes = new Set();
 let monitorBctSuppressedClickKey = "";
+let monitorBctSuppressScopeClickUntil = 0;
 
 function installMonitorBctManagerLongPress(row, node) {
   let timer = 0;
@@ -43560,21 +43561,22 @@ function installMonitorBctManagerLongPress(row, node) {
         return;
       }
       const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
-      if (tags.includes("Manager")) {
-        setMonitorStatus(`${node.nodeLabel || "N?"}에는 이미 Manager 안내 태그가 있습니다.`, true, 2200);
-        return;
-      }
-      tags.push("Manager");
-      row.classList.add("is-manager");
+      const hadManager = tags.includes("Manager");
+      const nextTags = hadManager ? tags.filter((tag) => tag !== "Manager") : [...tags, "Manager"];
+      row.classList.toggle("is-manager", !hadManager);
       void monitorBctShell.updateConversationScope(node, {
         displayName: node.title,
         scopeName: node.scopeName,
-        roleTags: tags,
+        roleTags: nextTags,
       }).then(() => {
-        setMonitorStatus(`${node.nodeLabel || "N?"}에 Manager 안내 태그를 붙였습니다.`, true, 2800);
+        setMonitorStatus(
+          `${node.nodeLabel || "N?"}의 Manager 안내 태그를 ${hadManager ? "해제했습니다" : "붙였습니다"}.`,
+          true,
+          2800,
+        );
         globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 250);
       }).catch((error) => {
-        row.classList.remove("is-manager");
+        row.classList.toggle("is-manager", hadManager);
         setMonitorStatus(`Manager 태그 저장 실패 · ${error?.message || error}`, false, 4000);
       });
     }, 600);
@@ -43674,7 +43676,12 @@ function renderMonitorBctWindowNodes(nodes) {
     const groupText = document.createElement("span");
     groupText.textContent = `${group.name} · ${group.nodes.length}`;
     groupHeader.append(groupCaret, groupText);
-    groupHeader.addEventListener("click", () => {
+    groupHeader.addEventListener("click", (event) => {
+      if (monitorBctPointerDrag?.active || Date.now() < monitorBctSuppressScopeClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (monitorBctCollapsedScopes.has(group.key)) monitorBctCollapsedScopes.delete(group.key);
       else monitorBctCollapsedScopes.add(group.key);
       renderMonitorBctWindowNodes(nodes);
@@ -43709,7 +43716,7 @@ function renderMonitorBctWindowNodes(nodes) {
       ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
       : -1;
     row.title = node.conversationKey
-      ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 우클릭: 정보와 이름 변경 · 600ms 길게 누르기: Manager 안내 태그 · 창 ${node.windowId} · 탭 ${node.tabId}`
+      ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 우클릭: 정보와 이름 변경 · 600ms 길게 누르기: Manager 안내 태그 지정/해제 · 창 ${node.windowId} · 탭 ${node.tabId}`
       : `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 창 ${node.windowId} · 탭 ${node.tabId}`;
 
     const number = document.createElement("span");
@@ -43790,11 +43797,6 @@ function renderMonitorBctWindowNodes(nodes) {
     }
     groupList.append(row);
     });
-    const endSlot = document.createElement("div");
-    endSlot.className = "monitor-bct-node-list-end";
-    endSlot.setAttribute("aria-hidden", "true");
-    endSlot.textContent = "여기에 놓기";
-    groupList.append(endSlot);
   }
   monitorWorkers.replaceChildren(fragment);
   syncMonitorBctNodeTargetHighlight();
@@ -43817,18 +43819,55 @@ function beginMonitorBctNodePointerDrag(event, row, node) {
     active: false,
     drop: null,
   };
+  try { row.setPointerCapture(event.pointerId); } catch (_) {}
+}
+
+function monitorBctPointInsideScopeHeading(clientX, clientY) {
+  return [...(monitorWorkers?.querySelectorAll?.(".monitor-bct-scope-heading") || [])].some((heading) => {
+    const rect = heading.getBoundingClientRect();
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  });
+}
+
+function monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey) {
+  const rows = [...list.querySelectorAll(".monitor-bct-node-row")]
+    .filter((row) => String(row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
+    .map((row) => ({ row, rect: row.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.width > 0 && rect.height > 0);
+  if (!rows.length) return null;
+  const direct = hit?.closest?.(".monitor-bct-node-row");
+  if (direct && String(direct.dataset.conversationKey || "") !== draggedKey) {
+    const rect = direct.getBoundingClientRect();
+    return { row: direct, position: clientX < rect.left + rect.width / 2 ? "before" : "after" };
+  }
+
+  const line = rows.reduce((best, candidate) => {
+    const centerY = candidate.rect.top + candidate.rect.height / 2;
+    const distance = Math.abs(clientY - centerY);
+    return !best || distance < best.distance ? { distance, centerY } : best;
+  }, null);
+  const sameLine = rows
+    .filter(({ rect }) => Math.abs((rect.top + rect.height / 2) - line.centerY) <= 3)
+    .sort((left, right) => left.rect.left - right.rect.left);
+  const first = sameLine[0];
+  for (const candidate of sameLine) {
+    if (clientX < candidate.rect.left + candidate.rect.width / 2) {
+      return { row: candidate.row, position: "before" };
+    }
+  }
+  const last = sameLine[sameLine.length - 1] || first;
+  return last ? { row: last.row, position: "after" } : null;
 }
 
 function monitorBctNodeDropAt(clientX, clientY, draggedKey) {
+  if (monitorBctPointInsideScopeHeading(clientX, clientY)) return null;
   const hit = document.elementFromPoint(clientX, clientY);
   const list = hit?.closest?.(".monitor-bct-node-list");
   if (!list || !monitorWorkers?.contains?.(list)) return null;
   const scopeId = String(list.dataset.scopeId || "__unassigned__");
-  const row = hit.closest?.(".monitor-bct-node-row");
-  if (row && String(row.dataset.conversationKey || "") === draggedKey) return null;
-  if (row) {
-    const rect = row.getBoundingClientRect();
-    const position = clientX < rect.left + rect.width / 2 ? "before" : "after";
+  const insertion = monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey);
+  if (insertion) {
+    const { row, position } = insertion;
     row.classList.add(position === "before" ? "monitor-bct-drop-before" : "monitor-bct-drop-after");
     row.dataset.dropPosition = position;
     list.classList.add("monitor-bct-node-list-target");
@@ -43838,8 +43877,7 @@ function monitorBctNodeDropAt(clientX, clientY, draggedKey) {
       position,
     };
   }
-  list.classList.add("monitor-bct-node-list-target", "monitor-bct-list-drop-end");
-  return { scopeId, targetConversationKey: "", position: "after" };
+  return null;
 }
 
 function updateMonitorBctNodePointerDrag(event) {
@@ -43848,13 +43886,13 @@ function updateMonitorBctNodePointerDrag(event) {
   if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 7) return;
   if (!drag.active) {
     drag.active = true;
+    monitorBctSuppressScopeClickUntil = Date.now() + 1000;
     monitorBctDraggedNodeKey = drag.node.conversationKey;
     monitorBctSuppressedClickKey = monitorBctNodeSelectionKey(drag.node);
     drag.row.classList.add("is-dragging");
     document.documentElement.classList.add("monitor-bct-node-drag-active");
     monitorWorkers?.querySelectorAll?.(".monitor-bct-node-list")
       .forEach((list) => list.classList.add("monitor-bct-node-list-available"));
-    try { drag.row.setPointerCapture(event.pointerId); } catch (_) {}
     monitorBctDragGhost?.remove?.();
     monitorBctDragGhost = createMonitorNodeDragGhost(drag.row, event);
     monitorBctDragGhost.classList.add("monitor-bct-node-drag-ghost");
@@ -43895,13 +43933,12 @@ function cancelMonitorBctNodePointerDrag(event) {
 
 function clearMonitorBctNodeDropFeedback() {
   monitorWorkers?.querySelectorAll?.(
-    ".monitor-bct-drop-before,.monitor-bct-drop-after,.monitor-bct-node-list-target,.monitor-bct-list-drop-end",
+    ".monitor-bct-drop-before,.monitor-bct-drop-after,.monitor-bct-node-list-target",
   ).forEach((element) => {
     element.classList.remove(
       "monitor-bct-drop-before",
       "monitor-bct-drop-after",
       "monitor-bct-node-list-target",
-      "monitor-bct-list-drop-end",
     );
     if (element.dataset) delete element.dataset.dropPosition;
   });
@@ -43909,6 +43946,7 @@ function clearMonitorBctNodeDropFeedback() {
 
 function finishMonitorBctNodeDrag() {
   const suppressedKey = monitorBctSuppressedClickKey;
+  monitorBctSuppressScopeClickUntil = Date.now() + 350;
   monitorBctDraggedNodeKey = "";
   clearMonitorBctNodeDropFeedback();
   monitorWorkers?.querySelectorAll?.(".monitor-bct-node-row.is-dragging")

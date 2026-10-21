@@ -56,3 +56,19 @@ shards, and Browser Bridge.
 1. Deploy the exact accepted Core and Monitor payload only after the shared LIVE target is clear.
 2. Reload same-ID BWM and perform actual right-click, scope grouping, 600 ms Manager tag, rename,
    close/trash/recovery E2E. Until then this is not LIVE accepted.
+
+## 2026-10-21 node drag and Manager toggle follow-up
+
+- The stationary 600 ms gesture now toggles the advisory `Manager` tag both on and off. It still
+  changes no permission or routing authority.
+- Pointer ownership is captured by the source card on pointer-down so crossing a scope heading cannot
+  steal the drag. While a drag is active, headings do not receive pointer actions; a short post-drag
+  fence also prevents an accidental fold click.
+- Scope headings remain non-drop targets. The synthetic `여기에 놓기` card was removed. Dropping at
+  the end of a wrapped row now uses the real final node card's right-hand insertion line.
+- The node-interaction regression executes the heading rejection and wrapped-row append calculation,
+  and verifies the Manager add/remove contract. Focused conversation/Monitor tests are 33 PASS; the
+  complete local Python suite is 898 PASS. The previously documented missing native visual binary and
+  retired N-Codex label checks remain baseline-only and do not cover this change.
+- Source validation is complete; exact-head CI, installation publish/reload, and visual E2E remain the
+  delivery gates for this follow-up.

@@ -3956,13 +3956,7 @@
 .monitor-bct-node-row.is-dragging { opacity:.34!important;cursor:grabbing!important; }
 .monitor-bct-node-drag-active,
 .monitor-bct-node-drag-active * { cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important; }
-.monitor-bct-node-list-end {
-  display:none;min-height:34px;box-sizing:border-box;place-items:center;
-  border:1px solid rgba(159,231,255,.18);border-radius:7px;
-  color:rgba(203,239,255,.54);font:700 10px/1 "Segoe UI","Malgun Gothic",sans-serif;
-  pointer-events:none;
-}
-.monitor-bct-node-list-available .monitor-bct-node-list-end { display:grid;pointer-events:auto; }
+.monitor-bct-node-drag-active .monitor-bct-scope-heading { pointer-events:none!important; }
 .monitor-bct-node-list-target { background:rgba(80,177,220,.045);box-shadow:inset 0 0 0 1px rgba(159,231,255,.10); }
 .monitor-bct-node-row.monitor-bct-drop-before,
 .monitor-bct-node-row.monitor-bct-drop-after { position:relative;overflow:visible; }
@@ -3974,10 +3968,6 @@
 }
 .monitor-bct-node-row.monitor-bct-drop-before::before { left:-3px; }
 .monitor-bct-node-row.monitor-bct-drop-after::after { right:-3px; }
-.monitor-bct-node-list.monitor-bct-list-drop-end .monitor-bct-node-list-end {
-  display:grid;border-color:#9fe7ff;color:#fff;
-  box-shadow:inset 4px 0 0 #9fe7ff,0 0 10px rgba(111,220,255,.34);
-}
 .monitor-node-drag-ghost.monitor-bct-node-drag-ghost {
   display:flex;align-items:center;padding:0 9px;box-sizing:border-box;overflow:hidden;
   border:2px solid rgba(159,231,255,.92);border-radius:8px;background:rgba(12,24,38,.92);

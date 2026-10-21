@@ -94,16 +94,69 @@ function loadModule() {
   assert.doesNotMatch(monitor, /groupHeader\.addEventListener\("drop"/);
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
+  assert.match(monitor, /tags\.filter\(\(tag\) => tag !== "Manager"\)/);
+  assert.match(monitor, /row\.classList\.toggle\("is-manager", !hadManager\)/);
+  assert.match(monitor, /monitorBctPointInsideScopeHeading/);
+  assert.match(monitor, /monitorBctNodeInsertionAt/);
+  assert.match(monitor, /row\.setPointerCapture\(event\.pointerId\)/);
+  assert.doesNotMatch(monitor, /monitor-bct-node-list-end/);
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
   assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\)/);
   assert.match(css, /monitor-bct-node-target-highlighted/);
   assert.match(css, /#ffd75a/);
   assert.match(css, /monitor-bct-drop-before/);
-  assert.match(css, /monitor-bct-node-list-end/);
+  assert.doesNotMatch(css, /monitor-bct-node-list-end/);
+  assert.match(css, /monitor-bct-node-drag-active \.monitor-bct-scope-heading \{ pointer-events:none!important; \}/);
   assert.match(css, /monitor-bct-node-drag-active/);
   assert.match(css, /monitor-bct-node-drag-ghost/);
   const selectedRule = css.match(/\.monitor-bct-node-row\.is-selected\s*\{([^}]+)\}/)?.[1] || "";
   assert.doesNotMatch(selectedRule, /background:/);
+
+  const dropStart = monitor.indexOf("function monitorBctPointInsideScopeHeading(");
+  const dropEnd = monitor.indexOf("\nfunction updateMonitorBctNodePointerDrag(", dropStart);
+  assert.ok(dropStart > 0 && dropEnd > dropStart);
+  function dropRow(key, left, top) {
+    const classes = new Set();
+    return {
+      hidden: false,
+      dataset: { conversationKey: key },
+      getBoundingClientRect: () => ({ left, right: left + 80, top, bottom: top + 30, width: 80, height: 30 }),
+      classList: { add: (...names) => names.forEach((name) => classes.add(name)) },
+      classes,
+    };
+  }
+  const dropRows = [
+    dropRow("n1", 0, 40),
+    dropRow("n2", 90, 40),
+    dropRow("n3", 180, 40),
+    dropRow("n4", 0, 80),
+  ];
+  const listClasses = new Set();
+  const list = {
+    dataset: { scopeId: "scope-a" },
+    querySelectorAll: () => dropRows,
+    classList: { add: (...names) => names.forEach((name) => listClasses.add(name)) },
+  };
+  const dropContext = {
+    monitorWorkers: {
+      contains: (candidate) => candidate === list,
+      querySelectorAll: () => [{ getBoundingClientRect: () => ({ left: 0, right: 300, top: 0, bottom: 30 }) }],
+    },
+    document: { elementFromPoint: () => ({ closest: (selector) => selector === ".monitor-bct-node-list" ? list : null }) },
+    String, Array,
+  };
+  vm.createContext(dropContext);
+  vm.runInContext(monitor.slice(dropStart, dropEnd), dropContext);
+  assert.equal(dropContext.monitorBctNodeDropAt(100, 15, "dragged"), null, "scope heading is never a drop target");
+  dropContext.monitorWorkers.querySelectorAll = () => [];
+  const appendDrop = dropContext.monitorBctNodeDropAt(290, 92, "dragged");
+  assert.deepEqual(JSON.parse(JSON.stringify(appendDrop)), {
+    scopeId: "scope-a",
+    targetConversationKey: "n4",
+    position: "after",
+  });
+  assert.equal(dropRows[3].classes.has("monitor-bct-drop-after"), true);
+  assert.equal(listClasses.has("monitor-bct-node-list-target"), true);
 
   const selectionStart = monitor.indexOf("function syncMonitorBctNodeTargetHighlight(");
   const selectionEnd = monitor.indexOf("\nfunction applyMonitorBctNodeHighlight(", selectionStart);
@@ -140,6 +193,9 @@ function loadModule() {
     yellow_thumbnail_contract: true,
     exact_node_card_selection: true,
     exact_tab_focus: true,
+    manager_long_press_toggle: true,
+    title_is_not_drop_target: true,
+    wrapped_row_append_uses_last_node_edge: true,
   }));
 })().catch((error) => {
   console.error(error.stack || error);
