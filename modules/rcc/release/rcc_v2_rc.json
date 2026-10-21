@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC4",
+  "candidate": "RCC_REBUILD_V2_RC5",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
-    "fileCount": 51,
-    "aggregateSha256": "ff672173ffbf087833da6fe744f2135c9aa8a866666dfcfa20530b61c4105a5f",
+    "fileCount": 52,
+    "aggregateSha256": "10b85114421b7e5ce33da8cc00c027f8b278d7bddf87308de59aac60f326f998",
     "files": [
       {
         "path": "background.js",
@@ -14,8 +14,8 @@
       },
       {
         "path": "background_loader.js",
-        "size": 1302,
-        "sha256": "c80b77f4aacce079c028bd13c51fe5ea3258011807068cf20caad02780e253f2"
+        "size": 1354,
+        "sha256": "0e38c29bace3e1c56e0278b91e6a97c882872cd32218f773a1d9fa95a543d3d9"
       },
       {
         "path": "boot/background_app.js",
@@ -24,8 +24,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1088,
-        "sha256": "c501006ae23ea9b3d2dbbe2493ffd3efaacc774658bc59f10303d15cf8157d04"
+        "size": 1086,
+        "sha256": "453bad6b24ab86bcf7bf9526c3a833f13adf250cd06a9e873b7033b58929b33e"
       },
       {
         "path": "browser/read_adapter.js",
@@ -99,8 +99,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 16690,
-        "sha256": "c86463bd16f9b29c404d7fe6081054f1aee688778c034bea03eae4f78bafd4af"
+        "size": 16688,
+        "sha256": "6ff8ff36e4a293788dfb29bd144c285302419870f2e8fd4567896d72681f3c8e"
       },
       {
         "path": "content/conversation_rename.js",
@@ -108,14 +108,14 @@
         "sha256": "946b47eaa133e2d47b7b6867978466b8f5b771bae76946bd3c889f0d06e0d4a4"
       },
       {
-        "path": "content/simple_relay_executor.js",
-        "size": 25805,
-        "sha256": "598240447ceecb703c4d794918b61bee3ca6e6c3f32d0e35e28329200601e75c"
-      },
-      {
         "path": "content/orchestration_relay_executor.js",
         "size": 6632,
         "sha256": "f749789062315f31b8e88b616f60e931edad5eb59674be8f94853cf23c2188b5"
+      },
+      {
+        "path": "content/simple_relay_executor.js",
+        "size": 26813,
+        "sha256": "9ab2c7e9053f23011f8a1c58ef5fef1f8a050f53f883429d97d225b418ffb4d2"
       },
       {
         "path": "core/conversation.js",
@@ -148,6 +148,11 @@
         "sha256": "b0e20dacf40b09433c1d0c50d0240bbf6a36255f48ca1d301b4e36c549865c8b"
       },
       {
+        "path": "domain/delivery_ledger_service.js",
+        "size": 9971,
+        "sha256": "00375cdec22d490b56e2100be1adaa70108be2ac293d1ed46d3a031ef6a7f155"
+      },
+      {
         "path": "domain/diagnostic_support.js",
         "size": 12770,
         "sha256": "e3afe41d8e01b71657d3ee2394b5ccdb4ace77e28d54104346d8feb97cad169f"
@@ -169,8 +174,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 28766,
-        "sha256": "2b2cb163ef92951fe470c74463f0ff1590fabb4d5b90cbd7c479dd42522edec1"
+        "size": 29463,
+        "sha256": "1c3124a60f776f621bcf9c9f221f396c77b29796da6612ce2f5b7a724f62cb3f"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -194,13 +199,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3405,
-        "sha256": "ba8e3b2c7a54d4fbd533beffacf93af33c694ca7e7c3cd639948eb05ca5e9cbd"
+        "size": 3465,
+        "sha256": "4658ba096f0ffabf1797aa194f1b220331580cc3aa2ef00086d589c9a4aaaeac"
       },
       {
         "path": "manifest.json",
-        "size": 1544,
-        "sha256": "1b82f77f55c5789cf35d474cace7990a7408c9e16804790a6866d98a2e5227f4"
+        "size": 1541,
+        "sha256": "7893e2e0d45395d1cf110d2d68b5e153e060e65bcc3b21e6b28a3a5946e15ba4"
       },
       {
         "path": "network/directory.js",
@@ -289,6 +294,7 @@
       "domain/endpoint_service.js",
       "domain/diagnostic_support.js",
       "domain/simple_relay_service.js",
+      "domain/delivery_ledger_service.js",
       "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
       "domain/conversation_rename_service.js",
@@ -319,6 +325,7 @@
       "domain/endpoint_service.js",
       "domain/diagnostic_support.js",
       "domain/simple_relay_service.js",
+      "domain/delivery_ledger_service.js",
       "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
       "domain/conversation_rename_service.js",
@@ -364,6 +371,9 @@
         "simple-relay-bind",
         "simple-relay-send",
         "simple-relay-return",
+        "delivery-start",
+        "delivery-status",
+        "delivery-return",
         "new-chat-send"
       ],
       "nativeConversation": [
@@ -464,7 +474,8 @@
         "bindingSubmitLeasesV1",
         "simpleRelayV0Binding",
         "simpleRelayV0Receipts",
-        "newChatReceiptsV1"
+        "newChatReceiptsV1",
+        "deliveryLedgerMirrorV1"
       ],
       "chromeSession": [
         "rccEndpointSessionIdV1"

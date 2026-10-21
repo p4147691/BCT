@@ -127,7 +127,7 @@ class BCT:
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
             GitHubSyncMainFeature(policy_path),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
-            RelayBrowserFeature(),
+            RelayBrowserFeature(store=self.store),
             SystemInspectFeature(), ExecuteFeature(),
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),

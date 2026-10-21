@@ -14,6 +14,9 @@ const read = content.split('async function readSimpleRelayV0Reply(message) {')[1
   .split('function currentConversationKey()', 1)[0];
 
 assert(execute.includes('beforeTurnKeys: getConversationTurns().map(turnIdentity).filter(Boolean)'));
+assert(execute.includes('prior?.relayId === relayId'));
+assert(execute.includes('SIMPLE_RELAY_PRIOR_EFFECT_UNRESOLVED'));
+assert(execute.indexOf('prior?.relayId === relayId') < execute.indexOf('sendPrompt(text, record, false)'));
 assert(execute.includes('sendPrompt(text, record, false)'));
 assert(execute.includes('const routed = resolveRoutedTurn(persistedRecord)'));
 assert(execute.includes('persistedRecord.routeTurnKey = routed.turnKey'));

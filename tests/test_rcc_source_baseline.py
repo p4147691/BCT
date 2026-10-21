@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC4", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC5", release["candidate"])
         inventory = {item["path"]: item["sha256"]
                      for item in release["candidateInventory"]["files"]}
         critical = {
@@ -29,6 +29,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "domain/state_service.js", "domain/simple_relay_receipts.js",
             "domain/endpoint_service.js", "domain/diagnostic_support.js",
             "domain/simple_relay_service.js", "domain/orchestration_relay_service.js",
+            "domain/delivery_ledger_service.js",
             "domain/new_chat_service.js",
             "domain/conversation_rename_service.js", "domain/readonly_diagnostics.js",
             "domain/runtime_message_service.js", "content/conversation_dom.js",
@@ -49,8 +50,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.27", manifest["version"])
-        self.assertEqual("1.0.27 · RCC Project Run Relay", manifest["version_name"])
+        self.assertEqual("1.0.28", manifest["version"])
+        self.assertEqual("1.0.28 · Delivery Ledger V1", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -75,6 +76,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         for command in (
             "ping", "state", "simple-relay-bind", "simple-relay-send",
             "simple-relay-return", "new-chat-send", "rename-conversation",
+            "delivery-start", "delivery-status", "delivery-return",
             "conversation-bind", "send",
             "rename-receipt", "result", "main-capture-get",
             "api-probe", "probe-tabs", "diagnose-activity",
@@ -163,7 +165,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-22-rcc-project-run-relay-v1"
+        marker = "2026-10-22-rcc-delivery-ledger-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
