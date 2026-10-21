@@ -1494,8 +1494,16 @@ UNKNOWN 7개가 남아 있다. 반면 Simple Relay는 exact 대화 UUID와 기�
 정적 계약 9개가 PASS했다.
 
 상세 계획은
-`docs/exec-plans/active/BCT_RCC_DELIVERY_LEDGER_V1_20261022.md`에 있다. 아직 새 전송
-코드는 없고 LIVE·설치 RCC·Chrome·기존 후보 `f573961d...`는 변경하지 않았다. 다음 단계는
-기존 exact-turn DOM adapter를 재사용하여 이 한 상태기계에만 연결된 Manager 1개/Worker 1개
-왕복을 source/test에서 구현하는 것이다. 두 번의 실제 왕복과 reload/단절 복구가 성공하기
-전에는 Wake-up·역할 전환·다중 Worker 또는 legacy 삭제를 시작하지 않는다.
+`docs/exec-plans/active/BCT_RCC_DELIVERY_LEDGER_V1_20261022.md`에 있다. 격리 HEAD
+`a24c0350e429111b16c1a1ce2f398e71076fa19f`에는 기존 exact-turn DOM adapter만 재사용하는
+`delivery-start -> delivery-status -> delivery-return` 소스 경로가 구현됐다. 세 호출은 같은
+`delivery_id`와 exact Manager/Worker UUID를 사용하고 BCT의 `relay_deliveries` 한 행과 RCC의
+`deliveryLedgerMirrorV1` 한 mirror로만 진행한다. 진행 중 mirror는 terminal retention limit로
+제거되지 않으며 전체 RCC/desktop Claim을 사용하지 않는다.
+
+Python 상태·ledger·feature·기존 RCC transport 회귀 28개 PASS, 기존 orchestration 포함 85개
+PASS, RCC extension JavaScript 전체 suite PASS다. 기존 RC4 고정 hash 검사는 source 변경 때문에
+의도대로 불일치하며 새 release candidate를 만들기 전에는 갱신하지 않는다. LIVE·설치 RCC·Chrome·
+기존 후보 `f573961d...`는 변경하지 않았다. 다음 단계는 source 후보 review와 새 RC/전체 CI이며,
+그 뒤에만 exact Manager 1개/Worker 1개로 실제 왕복 두 번 및 reload/단절 복구를 검증한다.
+그 검증 전에는 Wake-up·역할 전환·다중 Worker 또는 legacy 삭제를 시작하지 않는다.
