@@ -10,22 +10,36 @@ overrides the scope.
 
 1. Before changing anything, record the intended files, permitted deployment
    boundary, E2E success criteria, and protected UNKNOWN operations/claims.
-2. Complete the focused regression, full test suite, static checks, and diff
-   check locally as one verification recipe before opening CI.
-3. Keep a coherent correction and its regression coverage in one PR. While CI
-   runs, prepare the exact-SHA deployment, rollback, and E2E inputs without
-   changing LIVE.
-4. After an exact-head CI pass, verify the exact SHA through deployment and
-   advance E2E only in order: deployment health, one round trip, durable
-   receipt/recovery, then the larger orchestration scenario.
-5. Use compact status or presence for routine health. Request full DOM or RCC
+2. Complete the focused regression, relevant local suite, static checks, and
+   diff check before any LIVE change. Use the full suite when the affected
+   boundary or repository gate requires it; do not make a reversible display
+   correction wait on unrelated shards.
+3. Use one of two explicit delivery lanes and record which lane applies:
+   - **Reversible local-display lane**: Monitor-only HTML/CSS/rendering changes
+     which do not alter Core/RCC/Native Host protocols, browser state, stored
+     data, claims, messages, credentials, or external systems may be committed
+     on the local authoritative main after local gates. Create a rollback
+     backup, then run the exact-commit LIVE E2E while pushing the same commit
+     and running CI in parallel. The work is complete only after both LIVE E2E
+     and CI pass; either failure is recorded and the LIVE payload is rolled
+     back when the display regression is material.
+   - **Effectful lane**: Core, RCC, Native Host, wire/schema/security, database,
+     claim, Chrome mutation, message send, or other externally visible effects
+     require exact-head CI success before LIVE deployment or E2E effects.
+4. Keep a coherent correction and its regression coverage in one exact commit
+   or PR. For the effectful lane, prepare deployment and rollback while CI runs
+   without changing LIVE. For the local-display lane, never let LIVE and CI
+   test different commits.
+5. Advance effectful E2E only in order: deployment health, one round trip,
+   durable receipt/recovery, then the larger orchestration scenario.
+6. Use compact status or presence for routine health. Request full DOM or RCC
    state only for a diagnosis, and label stale or uncertain observations rather
    than treating them as IDLE.
-6. On a failed external effect, preserve the receipt and collect evidence
+7. On a failed external effect, preserve the receipt and collect evidence
    (canonical text, DOM, ACK, active execution, pending receipt) before any
    retry. Never replay an UNKNOWN effect or release a protected claim merely
    to make progress.
-7. Parallelize read-only inspection, test preparation, and GitHub observation.
+8. Parallelize read-only inspection, test preparation, and GitHub observation.
    Keep shared worktree writes, browser sends, and LIVE mutations serialized.
 
 Report the final state with the exact tested SHA, test/CI evidence, LIVE

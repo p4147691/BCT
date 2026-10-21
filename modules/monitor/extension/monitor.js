@@ -52528,6 +52528,20 @@ function monitorWindowUsesFrozenCapture(item) {
   return monitorIsOwnWindowTitle(item?.title);
 }
 
+function monitorWindowCanRefreshPixels(item) {
+  // DWM keeps off-desktop windows alive but reports them as cloaked. WGC can
+  // return a formally successful, solid grey frame for those HWNDs. Never let
+  // that transient frame replace the last useful capture.
+  return Number(item?.cloaked || 0) === 0;
+}
+
+function monitorShouldKeepExistingCapture(existingState, existingSource, nextState) {
+  const source = String(existingSource || "");
+  return String(nextState || "") !== "captured"
+    && String(existingState || "") === "captured"
+    && (source.startsWith("blob:") || source.startsWith("data:image/"));
+}
+
 function monitorWindowFallbackDataUri(item = null) {
   const title = String(item?.title || "창 미리보기").trim() || "창 미리보기";
   const label = title.length > 18 ? `${title.slice(0, 17)}…` : title;
@@ -53158,7 +53172,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
     // Coverage is complete; concurrency is bounded inside ThumbnailService.
     // Placeholder frames remain visible only while a capture is unavailable.
     const captureItems = MONITOR_WINDOW_PIXEL_CAPTURE_ENABLED
-      ? items
+      ? items.filter(monitorWindowCanRefreshPixels)
       : [];
 
 
@@ -55661,7 +55675,9 @@ function reconcileFrame(container, frame, className) {
 
 
 
-    img.dataset.captureState = entry.captureState || "captured";
+    const nextCaptureState = entry.captureState || "captured";
+    const keepExistingCapture = monitorShouldKeepExistingCapture(img.dataset.captureState, img.src, nextCaptureState);
+    img.dataset.captureState = keepExistingCapture ? "captured" : nextCaptureState;
 
 
 
@@ -55829,7 +55845,7 @@ function reconcileFrame(container, frame, className) {
 
 
 
-    if (img.src !== entry.dataUri) img.src = entry.dataUri;
+    if (!keepExistingCapture && img.src !== entry.dataUri) img.src = entry.dataUri;
 
 
 

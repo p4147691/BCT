@@ -215,3 +215,39 @@ prove that imports resolve inside the current checkout rather than an older
 installed package; and the current machine's missing .NET SDK delays C#
 feedback until Windows CI. These are optimization candidates, not permission
 to skip coverage, trust another SHA's result or install tooling implicitly.
+
+## 2026-10-21 conversation-network audit
+
+The live `브라우저 브릿지` conversation network was checked read-only against
+the ordinary ChatGPT UI and current RCC tab inventory. Its durable order is
+N13 `현재 상황과 정본 운영`, N14 `브라우저 브릿지 상태 확인`, N3
+`오류 병목 감시 측정기`, and N2 `대화 기록 조회 구현`. N13 is a Manager
+label only; it is not exclusive authority.
+
+Verified completed evidence:
+
+- PR #262 head `0736bc2fbe74da3027381a38cf928d30a8cf0536` retains CI success and
+  an isolated physical WRITE/EXECUTE pass. It remains OPEN and is not installed
+  in the ordinary Chrome profile.
+- A blank ChatGPT tab was created in 0.68 seconds and remains preserved as tab
+  `594834964` in Chrome window `594834491`. No initial message was sent and no
+  conversation UUID was created, so there is no duplicate-send ambiguity.
+- Existing ordinary ChatGPT tabs are visible to RCC and retain exact tab,
+  window, and conversation identities.
+
+The unfinished product path is not tab creation performance. The earlier test
+used `chrome.exe --new-tab`, which cannot select an exact Chrome window, and
+then attempted a desktop-input fallback. The supported integration must expose
+one high-level BCT operation to ordinary ChatGPT conversations:
+
+1. accept an exact target Chrome window ID and initial canonical text;
+2. call the existing `chrome.tabs.create` adapter exactly once and retain its
+   returned tab ID;
+3. submit the initial message to that exact tab exactly once;
+4. capture the newly assigned conversation UUID;
+5. reuse RCC response collection, Manager return, and Wake-up receipts.
+
+This remains an RCC/BCT chat-transport task and must not be implemented through
+Browser Bridge WRITE/EXECUTE, desktop input, or a new transport layer. The
+existing tab `594834964` must be reused or explicitly retired only after its
+current blank state is rechecked; do not create another tab merely to retry.

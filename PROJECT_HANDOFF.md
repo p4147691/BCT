@@ -1295,3 +1295,20 @@ HWND, minimized, interaction, backpressure, deployment 회귀와 Monitor 구조 
 구 인라인 구현을 제거했다. 새 계약은 N4/N7/N9 동일 창 투영, 캡처 DOM 교체 후 유지, 열린 창은
 썸네일 내부·최소화 창은 하단 요약만 사용함을 검사한다. LIVE reload 뒤 shared runtime의
 `thumbnail_projection`에서 `matched=1`, `rendered=1`과 실제 화면 `N4/7/9`를 함께 확인해야 한다.
+
+## Monitor 비활성 데스크톱 회색 캡처 후속
+
+2026-10-21 BWM `2.0.23`에서 D2 썸네일이 단색 회색으로 바뀐 원인은 레이어나 노드 투영이 아니라
+Windows DWM 캡처 의미였다. 다른 가상 데스크톱의 정상 창은 Native 관측에서 `cloaked=2`이며,
+WGC가 이 HWND에 대해 오류가 아닌 단색 회색 프레임을 반환해 마지막 정상 캡처를 덮었다.
+
+Monitor는 이제 `cloaked=0` 창만 픽셀을 새로 캡처하고, 비활성 데스크톱 창에는 마지막 정상
+blob/data 캡처를 유지한다. 기존 정상 캡처가 없을 때만 안전한 정보 placeholder를 사용한다.
+HWND 식별, 노드 번호, 선택 테두리, 최소화 표시는 변경하지 않는다. 새 계약 검사와 Monitor
+관련 JavaScript 검사, Python Monitor/대화망 33개 회귀가 통과했다. 레거시
+`check_monitor_ncodex_rdp_route.js`는 이미 제거된 N-CODEX 문자열을 요구해 기존과 동일하게
+실패하며 이번 변경의 기능 실패가 아니다.
+
+표시 전용이고 복구 가능한 BWM 변경은 로컬 정본의 정확한 커밋과 로컬 게이트 뒤 백업을 만든 후,
+LIVE E2E와 같은 커밋의 GitHub CI를 병행할 수 있다. Core/RCC/Native Host, 프로토콜, DB/Claim,
+Chrome 변경, 메시지 전송은 계속 exact-head CI 성공 뒤 LIVE로 진행한다.
