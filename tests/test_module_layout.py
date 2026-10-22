@@ -56,6 +56,7 @@ class ModuleLayoutTests(unittest.TestCase):
             "src/bct/core/delivery_state.py",
             "src/bct/core/delivery_ledger.py",
             "src/bct/core/chat_stream_checkpoint.py",
+            "src/bct/core/chat_stream_rcc_watch.py",
             "src/bct/core/manager_decision.py",
             "src/bct/core/rcc_result.py",
             "src/bct/features/claim_reconciliation.py",

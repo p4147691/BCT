@@ -114,6 +114,7 @@ files = [
   "src/bct/core/project_memory.py",
   "src/bct/core/operations.py",
   "src/bct/core/chat_stream_checkpoint.py",
+  "src/bct/core/chat_stream_rcc_watch.py",
   "src/bct/core/orchestration.py",
   "src/bct/core/consumption.py",
   "src/bct/core/durable_pr2.py",

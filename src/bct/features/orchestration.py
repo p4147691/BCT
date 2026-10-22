@@ -21,6 +21,7 @@ from bct.core.models import (
 )
 from bct.core.orchestration import OrchestrationService
 from bct.core.chat_stream_checkpoint import ChatStreamCheckpoint
+from bct.core.chat_stream_rcc_watch import ChatStreamRccWatch
 from bct.core.manager_decision import DECISION_END, DECISION_SCHEMA, DECISION_START
 from bct.integrations.rcc import (
     NamedPipeRelayClient,
@@ -45,6 +46,7 @@ _OPERATIONS = {
     "inspect-result-receipt",
     "project-run-plan", "project-run-bind", "project-run-status",
     "chat-stream-checkpoint", "chat-stream-report", "chat-stream-resume-inspect",
+    "chat-stream-rcc-watch-bind", "chat-stream-rcc-watch-status",
 }
 _RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 _RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
@@ -285,7 +287,9 @@ class OrchestrationFeature:
                 "source_operation_id", "source_release_sha", "next_step"}, set())
         elif operation == "chat-stream-report":
             _exact_keys(arguments, common | {"incident_id", "signal"}, set())
-        elif operation in {"chat-stream-resume-inspect", "status"}:
+        elif operation == "chat-stream-rcc-watch-bind":
+            _exact_keys(arguments, common | {"instance_id", "conversation_key"}, set())
+        elif operation in {"chat-stream-rcc-watch-status", "chat-stream-resume-inspect", "status"}:
             _exact_keys(arguments, common, set())
         else:
             _exact_keys(
@@ -2276,7 +2280,17 @@ class OrchestrationFeature:
             service = ChatStreamCheckpoint(self.service.store)
             stream_id = str(values["session_id"])
             try:
-                if operation == "chat-stream-checkpoint":
+                if operation == "chat-stream-rcc-watch-bind":
+                    result = ChatStreamRccWatch(self.service.store, self.client).bind(
+                        work=work, stream_id=stream_id,
+                        instance_id=values["instance_id"],
+                        conversation_key=values["conversation_key"],
+                    )
+                elif operation == "chat-stream-rcc-watch-status":
+                    result = ChatStreamRccWatch(self.service.store, self.client).status(
+                        work=work, stream_id=stream_id,
+                    )
+                elif operation == "chat-stream-checkpoint":
                     result = service.save(
                         work=work, stream_id=stream_id,
                         sequence=values["sequence"], step_id=values["step_id"],

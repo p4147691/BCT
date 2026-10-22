@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-22-rcc-original-delivery-inspect-v1';
+const RCC_BUILD_VERSION = '2026-10-22-rcc-stream-observer-v1';
 
 function editorCandidates() {
 
@@ -416,6 +416,10 @@ function connectionProblem() {
     /connection\s+lost/i,
     /disconnected/i,
     /network\s+error/i,
+    /메시지\s*전송\s*시간이?\s*초과/i,
+    /시간이\s*초과되었습니다.*다시\s*시도/i,
+    /message\s+(?:sending|send)\s+timed\s+out/i,
+    /stream\s+recovery\s+polling\s+timed\s+out/i,
     /reconnecting/i,
     /you(?:'|’)re\s+offline|you\s+are\s+offline/i
   ];
