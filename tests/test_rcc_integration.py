@@ -8,6 +8,8 @@ from pathlib import Path
 
 from bct.core.models import AuthorizationError, Outcome, PreconditionError, Principal
 from bct.core.rcc_result import rcc_result_hash
+from bct.core.delivery_ledger import DeliveryLedger
+from bct.core.delivery_state import DeliveryEvent
 from bct.features.rcc import RelayBrowserFeature
 from bct.integrations.rcc import RelayEffectUnknown, RelayUnavailable
 from bct.service import BCT
@@ -44,7 +46,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.client = FakeRelayClient()
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=policy)
         self.bct.operations._features["relay_browser"] = RelayBrowserFeature(
-            self.client, result_readback_timeout_s=0.25,
+            self.client, store=self.bct.store, result_readback_timeout_s=0.25,
         )
         self.principal = Principal("codex", "test", frozenset({"relay_browser"}))
         self.bct.create_work(
@@ -436,16 +438,86 @@ class RccIntegrationTests(unittest.TestCase):
             db.close()
         self.assertEqual(1, unresolved)
 
-    def test_extension_reload_rejects_generating_chat(self):
+    def _delivery_for_reload(self, *, state="SENT_WAITING"):
+        manager = "11111111-1111-1111-1111-111111111111"
+        worker = "22222222-2222-2222-2222-222222222222"
+        ledger = DeliveryLedger(self.bct.store)
+        ledger.create_or_get(
+            delivery_id="reload-delivery-1", work_id="rcc-work",
+            instance_id="instance123", manager_conversation_key=manager,
+            worker_conversation_key=worker, request_sha256="a" * 64,
+        )
+        ledger.observe(delivery_id="reload-delivery-1", work_id="rcc-work",
+                       event=DeliveryEvent.WORKER_TURN_CONFIRMED)
+        if state in {"REPLY_CAPTURED", "RETURNED"}:
+            ledger.observe(delivery_id="reload-delivery-1", work_id="rcc-work",
+                           event=DeliveryEvent.WORKER_REPLY_CAPTURED,
+                           response_sha256="b" * 64, response_length=5)
+        if state == "RETURNED":
+            ledger.observe(delivery_id="reload-delivery-1", work_id="rcc-work",
+                           event=DeliveryEvent.MANAGER_TURN_CONFIRMED)
+        return manager, worker
+
+    def test_extension_reload_allows_ordinary_generating_chat(self):
         busy = self._idle_rcc_state()
-        busy["state"]["endpoints"] = [{"tabId": 10, "generating": True}]
+        busy["state"]["endpoints"] = [
+            {"tabId": 10, "conversationKey": "33333333-3333-3333-3333-333333333333",
+             "generating": True},
+        ]
+        self.client.results = [busy, {
+            "type": "host:result", "requestId": "reload-ordinary",
+            "ok": True, "reloading": True,
+        }]
+        applied = self.call("reload-ordinary", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, applied.outcome)
+        self.assertEqual(["state", "reload-extension"],
+                         [call["command"] for call in self.client.calls])
+
+    def test_extension_reload_fences_active_worker_delivery_generation(self):
+        _manager, worker = self._delivery_for_reload(state="SENT_WAITING")
+        busy = self._idle_rcc_state()
+        busy["state"]["endpoints"] = [
+            {"tabId": 10, "conversationKey": worker, "generating": True},
+        ]
         self.client.result = busy
-        rejected = self.call("reload-while-generating", {
+        rejected = self.call("reload-worker-delivery-generating", {
             "command": "reload-extension", "instance_id": "instance123",
         })
         self.assertEqual(Outcome.FAILED, rejected.outcome)
-        self.assertEqual("RCC_RELOAD_CHAT_GENERATING", rejected.error)
+        self.assertEqual("RCC_RELOAD_ACTIVE_DELIVERY_GENERATING", rejected.error)
         self.assertEqual(["state"], [call["command"] for call in self.client.calls])
+
+    def test_extension_reload_fences_active_manager_return_generation(self):
+        manager, _worker = self._delivery_for_reload(state="REPLY_CAPTURED")
+        busy = self._idle_rcc_state()
+        busy["state"]["endpoints"] = [
+            {"tabId": 10, "conversationKey": manager, "generating": True},
+        ]
+        self.client.result = busy
+        rejected = self.call("reload-manager-delivery-generating", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.FAILED, rejected.outcome)
+        self.assertEqual("RCC_RELOAD_ACTIVE_DELIVERY_GENERATING", rejected.error)
+
+    def test_extension_reload_does_not_block_ended_delivery_or_unrelated_chat(self):
+        manager, worker = self._delivery_for_reload(state="RETURNED")
+        busy = self._idle_rcc_state()
+        busy["state"]["endpoints"] = [
+            {"tabId": 10, "conversationKey": worker, "generating": True},
+            {"tabId": 11, "conversationKey": manager, "generating": True},
+        ]
+        self.client.results = [busy, {
+            "type": "host:result", "requestId": "reload-delivery-returned",
+            "ok": True, "reloading": True,
+        }]
+        applied = self.call("reload-delivery-returned", {
+            "command": "reload-extension", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, applied.outcome)
+
 
     def test_extension_reload_does_not_bypass_running_rcc_effect(self):
         created, _ = self.bct.operations.begin(
@@ -461,6 +533,42 @@ class RccIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "RCC_MAINTENANCE_ACTIVE_EXECUTION"):
             self.call("reload-during-running-effect", {
                 "command": "reload-extension", "instance_id": "instance123",
+            })
+        self.assertEqual([], self.client.calls)
+
+    def test_active_exact_delivery_claim_blocks_maintenance_reload(self):
+        created, _ = self.bct.operations.begin(
+            principal=self.principal, work_id="rcc-work",
+            operation_id="delivery-submit-reserved", capability="relay_browser",
+            arguments={
+                "command": "delivery-start", "instance_id": "instance123",
+                "delivery_id": "delivery-reserved",
+                "manager_conversation_key": "11111111-1111-1111-1111-111111111111",
+                "worker_conversation_key": "22222222-2222-2222-2222-222222222222",
+                "text": "bounded worker task",
+            },
+        )
+        self.assertTrue(created)
+        with self.assertRaisesRegex(Exception, "RCC_MAINTENANCE_ACTIVE_EXECUTION"):
+            self.call("reload-during-delivery-reservation", {
+                "command": "reload-extension", "instance_id": "instance123",
+            })
+        self.assertEqual([], self.client.calls)
+
+    def test_exact_delivery_cannot_start_during_reserved_reload(self):
+        created, _ = self.bct.operations.begin(
+            principal=self.principal, work_id="rcc-work",
+            operation_id="reload-maintenance-reserved", capability="relay_browser",
+            arguments={"command": "reload-extension", "instance_id": "instance123"},
+        )
+        self.assertTrue(created)
+        with self.assertRaisesRegex(Exception, "RCC_MAINTENANCE_IN_PROGRESS"):
+            self.call("delivery-during-maintenance", {
+                "command": "delivery-start", "instance_id": "instance123",
+                "delivery_id": "delivery-during-maintenance",
+                "manager_conversation_key": "11111111-1111-1111-1111-111111111111",
+                "worker_conversation_key": "22222222-2222-2222-2222-222222222222",
+                "text": "must not be submitted",
             })
         self.assertEqual([], self.client.calls)
 
