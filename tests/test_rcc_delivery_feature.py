@@ -6,6 +6,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from bct.core.delivery_state import DeliveryEvent
 from bct.core.models import ConfirmedFailure, Outcome, UnknownEffectError, Work
 from bct.core.store import Store
 from bct.features.rcc import RelayBrowserFeature
@@ -182,6 +183,105 @@ class DeliveryFeatureTests(unittest.TestCase):
                 delivery_id="delivery-001", work_id=self.work.work_id,
             )["state"],
         )
+
+
+    def _make_review_delivery(self):
+        manager = "6ad7f5b6-c834-83e8-9c00-ff70bab4204d"
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        original_sha = hashlib.sha256(b"one exact original").hexdigest()
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id,
+            instance_id=self.base["instance_id"], manager_conversation_key=manager,
+            worker_conversation_key=worker, request_sha256=original_sha,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+            observation={"error_code": "RELAY_EXACT_USER_TURN_NOT_CONFIRMED"},
+        )
+        return manager, worker, original_sha
+
+    def _recovery_proof(self):
+        manager, worker, original_sha = self._make_review_delivery()
+        reply = "Recovered completed worker reply"
+        return {
+            "ok": True, "deliveryId": self.base["delivery_id"],
+            "state": "NEEDS_REVIEW", "reconciled": False,
+            "managerConversationKey": manager, "workerConversationKey": worker,
+            "requestSha256": original_sha, "originalTurnKey": "exact:turn:user",
+            "recordPhase": "submit-activated", "workerTabId": 101,
+            "managerTabId": 102, "responseText": reply,
+            "responseSha256": hashlib.sha256(reply.encode()).hexdigest(),
+            "responseLength": len(reply)
+        }
+
+    def test_recovery_inspect_is_read_only_with_exact_original_proof(self):
+        proof = self._recovery_proof()
+        self.host.request = lambda **kwargs: (
+            self.host.calls.append(kwargs) or dict(proof)
+        )
+        result = self.execute(
+            {**self.base, "command": "delivery-recovery-inspect"},
+            "inspect-only-once"
+        )
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertFalse(result.evidence["reconciled"])
+        self.assertEqual(proof["responseSha256"], result.evidence["response_sha256"])
+        self.assertEqual(proof["responseText"], result.output["proof"]["responseText"])
+        original = self.feature.delivery_ledger.get_for_work(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id
+        )
+        self.assertEqual("NEEDS_REVIEW", original["state"])
+        self.assertIsNone(original["response_sha256"])
+        self.assertEqual("RELAY_EXACT_USER_TURN_NOT_CONFIRMED",
+                         original["observation"]["error_code"])
+        # No additional message: only one host inspection.
+        self.assertEqual(["delivery-recovery-inspect"],
+                         [c["command"] for c in self.host.calls])
+
+    def test_recovery_rejects_mutated_hash_identity_and_phase(self):
+        template = self._recovery_proof()
+        for index, (field, bad_value) in enumerate([
+            ("responseSha256", "0" * 64),
+            ("requestSha256", "0" * 64),
+            ("workerConversationKey", "9" * 36),
+            ("recordPhase", "submit-intent"),
+            ("originalTurnKey", ""),
+            ("reconciled", True),
+            ("responseLength", 0),
+        ]):
+            proof = dict(template)
+            proof[field] = bad_value
+            self.host.request = lambda **kwargs: proof
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(
+                    ConfirmedFailure, "RCC_DELIVERY_RECOVERY_PROOF_INSUFFICIENT"
+                ):
+                    self.execute(
+                        {**self.base, "command": "delivery-recovery-inspect"},
+                        f"recovery-bad-proof-{index}",
+                    )
+                self.assertEqual("NEEDS_REVIEW",
+                    self.feature.delivery_ledger.get_for_work(
+                        delivery_id=self.base["delivery_id"],
+                        work_id=self.work.work_id)["state"])
+
+    def test_recovery_cannot_inspect_non_review_delivery(self):
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            request_sha256="a" * 64,
+        )
+        with self.assertRaisesRegex(
+            ConfirmedFailure, "RCC_DELIVERY_RECOVERY_NOT_UNKNOWN"
+        ):
+            self.execute(
+                {**self.base, "command": "delivery-recovery-inspect"},
+                "recovery-nonreview",
+            )
+        self.assertEqual([], self.host.calls)
 
 
 if __name__ == "__main__":
