@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><link rel="stylesheet" href="../extension/monitor-ui-layout.css"></head>
+<body>
+<aside class="desktop-window-monitor" id="bwmRoot">
+  <header class="monitor-header"><div class="monitor-title-block">
+    <div class="monitor-title-line"><strong>BWM</strong><span class="monitor-version">2.0.x</span></div>
+    <div class="monitor-utility-actions">
+      <button id="monitorExtensionReload">확장 리로드</button>
+      <button id="monitorRccReload">RCC 리로드</button>
+      <button id="monitorBctRecover">BCT 시작·복구</button>
+      <button id="monitorMcpTunnelRecover">MCP 터널 복구</button>
+      <button id="monitorBctControlRefresh">BC 도구 새로고침</button>
+    </div>
+  </div></header>
+  <div class="monitor-worker-group-rows" style="display:grid;grid-template-columns:repeat(3,1fr)">
+    <div>N13</div><div>N14</div><div>N23</div>
+  </div>
+</aside>
+<script src="../extension/monitor-ui-layout.js"></script>
+<script>
+const values = new Map([["existingWorkerColumns",3]]);
+const listeners = [];
+const storage = {
+ local:{
+  get:async k => values.has(k) ? {[k]:values.get(k)} : {},
+  set:async data => {for(const [k,v] of Object.entries(data)){values.set(k,v);for(const cb of listeners)cb({[k]:{newValue:v}},"local")}},
+  remove:async k=>{values.delete(k);for(const cb of listeners)cb({[k]:{newValue:undefined}},"local")}
+ },
+ onChanged:{addListener:cb=>listeners.push(cb),removeListener:()=>{}}
+};
+(async()=>{
+ try{
+  const root=document.querySelector("#bwmRoot");
+  const oldRcc=root.querySelector("#monitorRccReload");
+  let preservedClicks=0;
+  oldRcc.onclick=()=>{preservedClicks++};
+  const engine=MonitorUiLayout.create(root,storage);
+  await engine.ready;
+  await engine.patch({toolbar:{placement:"inline",density:"compact",gap:2}});
+  oldRcc.click();
+  const toolbar=root.querySelector(".monitor-utility-actions");
+  const line=root.querySelector(".monitor-title-line");
+  const pass=toolbar.parentNode===line && oldRcc===root.querySelector("#monitorRccReload")
+    && preservedClicks===1 && values.get("existingWorkerColumns")===3
+    && getComputedStyle(toolbar).getPropertyValue("--bwm-ui-toolbar-gap").trim()==="2px";
+  document.body.dataset.verdict=pass?"PASS":"FAIL";
+  document.body.dataset.reason=pass?"BWM_BROWSER_UI_LAYOUT_PASS":"LAYOUT_DOM_ASSERT_FAILED";
+  engine.dispose();
+ }catch(error){document.body.dataset.verdict="FAIL";document.body.dataset.reason=String(error.message);}
+})();
+</script>
+</body></html>

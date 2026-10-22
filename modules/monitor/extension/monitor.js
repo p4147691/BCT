@@ -645,6 +645,11 @@ monitorRoot.innerHTML = `
 
 
 
+// Presentation-only layout: no controls or identities are recreated.
+const bwmUiLayoutControl = window.MonitorUiLayout?.create?.(
+  monitorRoot, chrome.storage, (error) => console.warn("BWM UI layout rejected", error)
+);
+
 // Runtime feature boundaries. Keep these explicit so future isolation does not
 // require deleting UI or startup code from the production path.
 const MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED = true;

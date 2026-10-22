@@ -1,0 +1,62 @@
+/* Presentation-only BWM configuration layer: no window/control/network changes. */
+.desktop-window-monitor .monitor-utility-actions {
+  gap: var(--bwm-ui-toolbar-gap, 4px);
+}
+.desktop-window-monitor .monitor-utility-actions > button[hidden] {
+  display: none !important;
+}
+.desktop-window-monitor .monitor-title-line:has(> .bwm-ui-toolbar-inline) {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.desktop-window-monitor .monitor-title-line > .bwm-ui-toolbar-inline {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.desktop-window-monitor .bwm-ui-toolbar-compact button {
+  padding: 1px 4px;
+  min-height: 20px;
+  font-size: 9px;
+}
+.desktop-window-monitor .bwm-ui-layout-open {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  min-height: 18px;
+  font: 600 9px/1.2 "Segoe UI", "Malgun Gothic", sans-serif;
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 5px;
+  color: rgba(255,255,255,.75);
+  background: transparent;
+  cursor: pointer;
+}
+.desktop-window-monitor .bwm-ui-layout-editor {
+  border: 1px solid rgba(255,255,255,.18);
+  padding: 9px;
+  background: #182231;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.desktop-window-monitor .bwm-ui-layout-editor[hidden] {
+  display: none !important;
+}
+.desktop-window-monitor .bwm-ui-layout-editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+  background: #0e1621;
+  color: #f5f8fc;
+  font: 11px/1.5 Consolas, monospace;
+}
+.desktop-window-monitor .bwm-ui-layout-editor-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.desktop-window-monitor .bwm-ui-layout-editor [role=status] {
+  color: #f5c68c;
+  font-size: 11px;
+}
