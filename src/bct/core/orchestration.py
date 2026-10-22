@@ -303,6 +303,21 @@ class OrchestrationService:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
             for conversation_key, node_id in normalized:
+                # A currently observed conversation is never implicitly
+                # borrowed from an independent ACTIVE/PARTIAL Work, even
+                # when both sessions happen to use the same global node ID.
+                foreign = db.execute(
+                    "SELECT s.work_id FROM orchestration_attachments a "
+                    "JOIN orchestration_session_nodes sn ON sn.node_id=a.node_id "
+                    "JOIN orchestration_sessions s ON s.session_id=sn.session_id "
+                    "WHERE a.instance_id=? AND a.external_session_id=? "
+                    "AND a.conversation_key=? AND a.active=1 AND sn.active=1 "
+                    "AND s.work_id!=? AND s.state IN ('ACTIVE','PARTIAL') "
+                    "LIMIT 1",
+                    (instance_id, external_session_id, conversation_key, work.work_id),
+                ).fetchone()
+                if foreign is not None:
+                    raise ConflictError("ORCHESTRATION_FOREIGN_WORK_TARGET_ACTIVE")
                 other = db.execute(
                     "SELECT node_id FROM orchestration_attachments "
                     "WHERE instance_id=? AND external_session_id=? "
@@ -325,8 +340,10 @@ class OrchestrationService:
         A same-ID extension reload changes ``external_session_id``.  Retiring
         the stable instance forever made a normal reload unusable; retaining
         every historical attachment as active let stale tabs remain routable.
-        This transition keeps the immutable rows while atomically deactivating
-        attachments from prior sessions.
+        This transition keeps immutable rows and deactivates only attachments
+        exclusively owned by the requesting orchestration session. Foreign
+        Work rows remain untouched; a stale RCC session is already fenced by
+        _attachment_session_is_current, regardless of its historical active flag.
         """
         instance_id = _bounded_text(
             instance_id, code="ORCHESTRATION_INSTANCE_ID_INVALID", limit=64
@@ -340,10 +357,19 @@ class OrchestrationService:
             session = self._session_row(db, session_id)
             self._assert_work(session, work)
             stale = db.execute(
-                "SELECT * FROM orchestration_attachments WHERE instance_id=? "
-                "AND external_session_id!=? AND active=1 "
-                "ORDER BY attachment_id,generation",
-                (instance_id, external_session_id),
+                "SELECT a.* FROM orchestration_attachments a "
+                "WHERE a.instance_id=? AND a.external_session_id!=? "
+                "AND a.active=1 AND EXISTS ("
+                "SELECT 1 FROM orchestration_session_nodes own "
+                "WHERE own.node_id=a.node_id AND own.session_id=? "
+                "AND own.active=1) "
+                "AND NOT EXISTS ("
+                "SELECT 1 FROM orchestration_session_nodes other "
+                "JOIN orchestration_sessions s ON s.session_id=other.session_id "
+                "WHERE other.node_id=a.node_id AND other.session_id!=? "
+                "AND other.active=1 AND s.state IN ('ACTIVE','PARTIAL')) "
+                "ORDER BY a.attachment_id,a.generation",
+                (instance_id, external_session_id, session_id, session_id),
             ).fetchall()
             db.execute(
                 "INSERT INTO orchestration_rcc_instance_sessions "
@@ -731,8 +757,13 @@ class OrchestrationService:
                 "SELECT a.* FROM orchestration_attachments a "
                 "WHERE a.instance_id=? AND a.active=1 AND EXISTS ("
                 "SELECT 1 FROM orchestration_session_nodes sn "
-                "WHERE sn.session_id=? AND sn.node_id=a.node_id AND sn.active=1)",
-                (instance_id, session_id),
+                "WHERE sn.session_id=? AND sn.node_id=a.node_id AND sn.active=1) "
+                "AND NOT EXISTS ("
+                "SELECT 1 FROM orchestration_session_nodes other "
+                "JOIN orchestration_sessions s ON s.session_id=other.session_id "
+                "WHERE other.node_id=a.node_id AND other.session_id!=? "
+                "AND other.active=1 AND s.state IN ('ACTIVE','PARTIAL'))",
+                (instance_id, session_id, session_id),
             ).fetchall()
             stale = [row for row in rows if row["attachment_id"] not in selected]
             for row in stale:
