@@ -12,6 +12,11 @@ class UncertainDelivery(RuntimeError):
     pass
 
 
+class StaleCDPConnection(RuntimeError):
+    """A send must never reattach to another CDP page-id namespace."""
+    pass
+
+
 class PersistentCDP:
     def __init__(self, argv, timeout=30):
         self.argv = tuple(argv)
@@ -63,8 +68,12 @@ class PersistentCDP:
             await self._close()
             raise
 
-    async def request(self, method, params=None):
+    async def request(self, method, params=None, *, expected_generation=None):
         async with self._lock:
+            if expected_generation is not None and (
+                not self.connected or self.generation != expected_generation
+            ):
+                raise StaleCDPConnection("CDP_CONNECTION_GENERATION_CHANGED")
             await self._connect()
             try:
                 return await self._exchange(method, params or {})
