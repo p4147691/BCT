@@ -20,6 +20,7 @@ from bct.core.models import (
     Work,
 )
 from bct.core.orchestration import OrchestrationService
+from bct.core.chat_stream_checkpoint import ChatStreamCheckpoint
 from bct.core.manager_decision import DECISION_END, DECISION_SCHEMA, DECISION_START
 from bct.integrations.rcc import (
     NamedPipeRelayClient,
@@ -43,6 +44,7 @@ _OPERATIONS = {
     "chain-run", "chain-resume", "manager-wake", "status", "cancel",
     "inspect-result-receipt",
     "project-run-plan", "project-run-bind", "project-run-status",
+    "chat-stream-checkpoint", "chat-stream-report", "chat-stream-resume-inspect",
 }
 _RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 _RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
@@ -278,7 +280,12 @@ class OrchestrationFeature:
             _exact_keys(
                 arguments, common | {"manager_epoch", "event_id"}, set()
             )
-        elif operation == "status":
+        elif operation == "chat-stream-checkpoint":
+            _exact_keys(arguments, common | {"sequence", "step_id",
+                "source_operation_id", "source_release_sha", "next_step"}, set())
+        elif operation == "chat-stream-report":
+            _exact_keys(arguments, common | {"incident_id", "signal"}, set())
+        elif operation in {"chat-stream-resume-inspect", "status"}:
             _exact_keys(arguments, common, set())
         else:
             _exact_keys(
@@ -384,6 +391,12 @@ class OrchestrationFeature:
             resources = (
                 "orchestration-wake-recovery:" + session_id + ":"
                 + str(arguments.get("assignment_id") or ""),
+            )
+        elif operation.startswith("chat-stream-"):
+            resources = (
+                "chat-stream:" + work.work_id + ":" + session_id
+                + (":read:inspect" if operation == "chat-stream-resume-inspect"
+                   else ":write:" + operation),
             )
         else:
             resources = ("orchestration-command:" + session_id + ":" + operation,)
@@ -2259,6 +2272,42 @@ class OrchestrationFeature:
         work = self._work(request)
         values = request.arguments
         operation = str(values["operation"])
+        if operation.startswith("chat-stream-"):
+            service = ChatStreamCheckpoint(self.service.store)
+            stream_id = str(values["session_id"])
+            try:
+                if operation == "chat-stream-checkpoint":
+                    result = service.save(
+                        work=work, stream_id=stream_id,
+                        sequence=values["sequence"], step_id=values["step_id"],
+                        source_operation_id=values["source_operation_id"],
+                        source_release_sha=values["source_release_sha"],
+                        next_step=values["next_step"],
+                    )
+                elif operation == "chat-stream-report":
+                    report = service.report_transport(
+                        work=work, stream_id=stream_id,
+                        incident_id=values["incident_id"], signal=values["signal"],
+                    )
+                    result = (
+                        {"client_report": report,
+                         "resume_inspection": service.inspect(
+                             work=work, stream_id=stream_id)}
+                        if values["signal"] == "CLIENT_RECONNECTED"
+                        else report
+                    )
+                else:
+                    result = service.inspect(work=work, stream_id=stream_id)
+            except (ValueError, KeyError, ConflictError) as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": operation, "session_id": stream_id,
+                 "work_id": work.work_id,
+                 "decision": result.get("decision", "RECORDED"),
+                 "will_execute": False},
+                release_claims=True, output={"chat_stream": result},
+            )
         if operation == "project-run-plan":
             try:
                 created, run = start_project_run(
