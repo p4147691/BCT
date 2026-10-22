@@ -21,6 +21,8 @@ from bct.core.models import (
 )
 from bct.core.orchestration import OrchestrationService
 from bct.core.manager_decision import DECISION_END, DECISION_SCHEMA, DECISION_START
+from bct.core.delivery_ledger import DeliveryLedger
+from bct.core.delivery_next import NextPreviewError, preview_next_delivery
 from bct.integrations.rcc import (
     NamedPipeRelayClient,
     RelayClient,
@@ -43,6 +45,7 @@ _OPERATIONS = {
     "chain-run", "chain-resume", "manager-wake", "status", "cancel",
     "inspect-result-receipt",
     "project-run-plan", "project-run-bind", "project-run-status",
+    "project-run-next-preview",
 }
 _RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 _RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
@@ -167,7 +170,7 @@ class OrchestrationFeature:
         if operation not in _OPERATIONS:
             raise PreconditionError("ORCHESTRATION_OPERATION_INVALID")
         project_run_without_session = operation in {
-            "project-run-plan", "project-run-status",
+            "project-run-plan", "project-run-status", "project-run-next-preview",
         }
         session_id = str(
             arguments.get("run_id") if project_run_without_session
@@ -196,6 +199,13 @@ class OrchestrationFeature:
             )
         elif operation == "project-run-status":
             _exact_keys(arguments, {"operation", "run_id"}, set())
+        elif operation == "project-run-next-preview":
+            _exact_keys(arguments, {"operation", "run_id", "delivery_id", "instance_id"},
+                        {"timeout_s"})
+            try:
+                validate_instance_id(arguments["instance_id"])
+            except ValueError as exc:
+                raise PreconditionError(str(exc)) from exc
         elif operation == "session-start":
             _exact_keys(
                 arguments,
@@ -326,6 +336,9 @@ class OrchestrationFeature:
             resources = (
                 "project-run-inspection:" + str(arguments.get("run_id") or ""),
             )
+        elif operation == "project-run-next-preview":
+            resources = ("project-run-inspection:" + str(arguments["run_id"])
+                         + ":delivery:" + str(arguments["delivery_id"]),)
         elif operation == "node-sync":
             resources = ("rcc-instance:" + validate_instance_id(
                 arguments.get("instance_id")
@@ -2252,6 +2265,80 @@ class OrchestrationFeature:
             "consumed_message_ids": consumed_message_ids,
         }
 
+    def _project_run_next_preview(self, request: FeatureRequest, work: Work) -> FeatureResult:
+        """Read one exact Manager decision; never submit the next delivery."""
+        values = request.arguments
+        run_id = str(values["run_id"])
+        parent_id = str(values["delivery_id"])
+        try:
+            run = project_run_view(self.service.store, run_id=run_id)
+            parent = DeliveryLedger(self.service.store).get_for_work(
+                delivery_id=parent_id, work_id=work.work_id,
+            )
+        except (ProjectRunError, KeyError, ConflictError) as exc:
+            raise ConfirmedFailure("PROJECT_RUN_NEXT_SOURCE_INVALID", release_claims=True) from exc
+        if run["state"] != "READY" or run["work_id"] != work.work_id:
+            raise ConfirmedFailure("PROJECT_RUN_NEXT_NOT_READY", release_claims=True)
+        if (parent["state"] != "RETURNED"
+                or parent["manager_conversation_key"] != run["manager_conversation_key"]
+                or parent["instance_id"] != str(values["instance_id"])):
+            raise ConfirmedFailure("PROJECT_RUN_NEXT_PARENT_MISMATCH", release_claims=True)
+        # A READY marker is not sufficient if the bound Manager epoch has ended.
+        db = self.service.store._connect()
+        try:
+            session = db.execute(
+                "SELECT work_id,state,manager_node_id FROM orchestration_sessions "
+                "WHERE session_id=?", (run["orchestration_session_id"],)
+            ).fetchone()
+        finally:
+            db.close()
+        if (session is None or session["work_id"] != work.work_id
+                or session["state"] not in {"ACTIVE", "PARTIAL"}
+                or session["manager_node_id"] != run["manager_node_id"]):
+            raise ConfirmedFailure("PROJECT_RUN_NEXT_MANAGER_EPOCH_INACTIVE", release_claims=True)
+        try:
+            host = self.client.request(
+                instance_id=str(values["instance_id"]),
+                request_id=request.operation_id,
+                command="delivery-manager-status",
+                extra={"deliveryId": parent_id, "workId": work.work_id},
+                timeout_s=min(float(values.get("timeout_s", 15.0)), 30.0),
+            )
+        except (RelayUnavailable, RelayEffectUnknown) as exc:
+            raise ConfirmedFailure("PROJECT_RUN_NEXT_READ_UNAVAILABLE", release_claims=True) from exc
+        if (not isinstance(host, dict) or host.get("deliveryId") != parent_id
+                or host.get("state") != "RETURNED"):
+            raise ConfirmedFailure("PROJECT_RUN_NEXT_HOST_IDENTITY_MISMATCH", release_claims=True)
+        if host.get("pending") is True:
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": "project-run-next-preview", "run_id": run_id,
+                 "parent_delivery_id": parent_id, "pending": True},
+                release_claims=True,
+                output={"next_delivery": None, "pending": True},
+            )
+        response = host.get("managerResponseText")
+        digest = host.get("managerResponseSha256")
+        if (host.get("ok") is not True or not isinstance(response, str)
+                or not isinstance(digest, str)
+                or host.get("managerResponseLength") != len(response)):
+            raise ConfirmedFailure("PROJECT_RUN_NEXT_MANAGER_RESPONSE_INVALID", release_claims=True)
+        try:
+            planned = preview_next_delivery(
+                run=run, parent=parent, manager_text=response,
+                manager_sha256=digest, work_id=work.work_id,
+            )
+        except NextPreviewError as exc:
+            raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        return FeatureResult(
+            Outcome.APPLIED,
+            {"operation": "project-run-next-preview", "run_id": run_id,
+             "parent_delivery_id": parent_id, "manager_reply_sha256": digest,
+             "kind": planned["kind"], "pending": False},
+            release_claims=True,
+            output=planned,
+        )
+
     def execute(self, request: FeatureRequest) -> FeatureResult:
         return self.execute_authorized(request, lambda _action: None)
 
@@ -2301,6 +2388,8 @@ class OrchestrationFeature:
                      run["manager_attachment_generation"]},
                 output={"project_run": run},
             )
+        if operation == "project-run-next-preview":
+            return self._project_run_next_preview(request, work)
         if operation == "project-run-status":
             try:
                 run = project_run_view(
