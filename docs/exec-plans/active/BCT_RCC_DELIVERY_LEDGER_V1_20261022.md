@@ -1,6 +1,6 @@
 # BCT RCC delivery ledger V1
 
-Status: `CHANGE_FREEZE / READ_ONLY_AUDIT_COMPLETE / STATE_MACHINE_CONTRACT_LOCKED / THIN_PATH_RC5_PACKAGED / LIVE_NOT_APPLIED`
+Status: `CHANGE_FREEZE / READ_ONLY_AUDIT_COMPLETE / STATE_MACHINE_CONTRACT_LOCKED / THIN_PATH_LIVE_ACCEPTED / PHASE7_READY`
 
 ## Why this reset exists
 
@@ -19,10 +19,10 @@ Project Run failures prove that the two models can disagree: the Core continued
 to require `conversation-bind` and `send` after the RCC legacy-pruning policy
 had removed or blocked those contracts.
 
-Current development candidate `f573961d8d10ea6cd44b123022d388f91746c848`,
-the installed RCC payload, the LIVE Core, Chrome and existing conversations are
-frozen during this reset. No reload, deploy or message send belongs to phases
-1-5.
+The installed RCC payload, the LIVE Core, Chrome and existing conversations
+were frozen during phases 1-5. The accepted source is local/remote main
+`9f35125516cf2f841aeed75ab53a9a5a02cc5a48`; the Phase 6 LIVE acceptance below
+is the first authorized runtime change after that freeze.
 
 ## Observed call graph (read-only audit)
 
@@ -99,9 +99,9 @@ It will not create a second content-script implementation.
 
 ### BCT SQLite
 
-The source schema adds one replacement table, `relay_deliveries`. The LIVE
-database does not contain it because this candidate is not deployed. The LIVE
-database currently contains the general audit tables `operations`,
+The source schema adds one replacement table, `relay_deliveries`. It is now
+present in the LIVE Core after the accepted Core deployment. The LIVE database
+also contains the general audit tables `operations`,
 `resource_claims`, `operation_effect_stages` and `operation_steps`, plus:
 
 - project directory/run: `conversation_network_projects`,
@@ -132,9 +132,9 @@ Claims. These historical rows are evidence and are not modified by this work.
 Current keys are `settings`, `registrations`, `pending`, `results`, `processed`,
 `operations`, `relayResultReceiptsV1`, `renameReceiptsV1`,
 `bindingSubmitLeasesV1`, `simpleRelayV0Binding`, `simpleRelayV0Receipts` and
-`newChatReceiptsV1`. The replacement source adds one bounded mirror,
-`deliveryLedgerMirrorV1`; it is not present in LIVE before deployment and first
-use.
+`newChatReceiptsV1`. The replacement adds one bounded mirror,
+`deliveryLedgerMirrorV1`; it is now present in the installed RCC and contains
+the two accepted LIVE delivery rows.
 
 ### Page/extension session state
 
@@ -268,12 +268,38 @@ The thin path is packaged as `RCC_REBUILD_V2_RC5` at source commit
 - extension version: `1.0.28 · Delivery Ledger V1`;
 - candidate inventory: 52 files, aggregate
   `10b85114421b7e5ce33da8cc00c027f8b278d7bddf87308de59aac60f326f998`;
-- preserved rollback baseline: 49 files, aggregate
-  `dcf27a7b32797d0bbc10405dee2ee9c743d638000ad4ae0673c11f791400ef2d`;
+- preserved rollback baseline: 51 files, aggregate
+  `ff672173ffbf087833da6fe744f2135c9aa8a866666dfcfa20530b61c4105a5f`;
 - focused Python/package regression: 45 PASS;
 - complete RCC extension JavaScript suite: PASS;
 - release-candidate inventory verifier and `git diff --check`: PASS.
 
-This receipt is source-only. It does not authorize or claim an RCC install,
-same-ID reload, Chrome message send, LIVE acceptance, wake-up, role failover,
-multiple Workers or legacy deletion.
+## Phase 6 LIVE acceptance receipt
+
+- exact main: `9f35125516cf2f841aeed75ab53a9a5a02cc5a48`;
+- main CI: run `39699667585`, all required jobs successful;
+- installed RCC: 52 files, aggregate
+  `10b85114421b7e5ce33da8cc00c027f8b278d7bddf87308de59aac60f326f998`;
+- exact pre-cutover backup: 51 files, aggregate
+  `ff672173ffbf087833da6fe744f2135c9aa8a866666dfcfa20530b61c4105a5f`;
+- RCC instance remained `6174664e1c1b4e6db1d4729c841db3c9`; deployment reload
+  changed the session from `167c955ef5434ea9b235524a33631f4d` to
+  `79d06def83014472acac2f33c36a5991`;
+- exact Manager: `6ad7f5b6-c834-83e8-9c00-ff70bab4204d`, tab `594834821`;
+- exact Worker: `6ad7ff62-fa64-83ee-a485-1138f1538e53`, tab `594834925`;
+- delivery `dlv-live-20261022-a` reached `RETURNED`; response length 22 and
+  SHA-256 `3e45566c6e014bc02618e1eb58eabdf28e418c6ae5e536a6594388131d771923`
+  exactly match `RCC-DLV1-OK-20261022-A`;
+- a deliberate recovery reload changed the session to
+  `9799625ceafc4dcaa2285b5a073d96fc`; the first delivery replayed as
+  `RETURNED` without another submit;
+- delivery `dlv-live-20261022-b` then reached `RETURNED`; response length 22
+  and SHA-256
+  `b128c4f68cfb53c3a1b443f430c05b3201b13bd2430633eeaf97104f8f4bc389`
+  exactly match `RCC-DLV1-OK-20261022-B`;
+- restarting delivery A with the identical immutable tuple returned the
+  existing terminal row with `replayed=true`; no new Worker turn was sent.
+
+Phase 6 is accepted. Wake-up, role failover and multiple Workers may now be
+designed on this one ledger. Legacy retirement remains forbidden until their
+callers are proven zero and the Phase 7 path is accepted.

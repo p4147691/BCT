@@ -1511,6 +1511,25 @@ baseline은 49파일 aggregate
 transport focused Python 45개, RCC extension JavaScript 전체 suite, RC inventory verifier와
 `git diff --check`가 PASS했다.
 
-LIVE·설치 RCC·Chrome·기존 후보 `f573961d...`는 변경하지 않았다. 다음 단계는 이 exact HEAD의
-PR/CI다. 그 뒤에만 exact Manager 1개/Worker 1개로 실제 왕복 두 번 및 reload/단절 복구를
-검증한다. 그 검증 전에는 Wake-up·역할 전환·다중 Worker 또는 legacy 삭제를 시작하지 않는다.
+PR #271은 로컬 정본 main에 병합되고 remote main까지 fast-forward되어 exact main
+`9f35125516cf2f841aeed75ab53a9a5a02cc5a48`이 됐다. main CI run `39699667585`의 scope,
+preflight, Browser Bridge와 Core 4개 shard가 모두 성공했다. RC5 52파일 aggregate
+`10b85114421b7e5ce33da8cc00c027f8b278d7bddf87308de59aac60f326f998`를 설치했으며,
+직전 51파일 설치본 aggregate
+`ff672173ffbf087833da6fe744f2135c9aa8a866666dfcfa20530b61c4105a5f`는 exact backup과
+보존 디렉터리에 남겼다.
+
+same-ID reload 뒤 RCC instance `6174664e1c1b4e6db1d4729c841db3c9`와 exact N13 Manager
+`6ad7f5b6-c834-83e8-9c00-ff70bab4204d` / N14 Worker
+`6ad7ff62-fa64-83ee-a485-1138f1538e53`로 두 번 연속 LIVE 왕복했다.
+`dlv-live-20261022-a`와 `dlv-live-20261022-b`는 각각
+`SENT_WAITING -> REPLY_CAPTURED -> RETURNED`를 통과했고, 응답 전문 22자의 SHA-256은
+각각 `3e45566c6e014bc02618e1eb58eabdf28e418c6ae5e536a6594388131d771923`와
+`b128c4f68cfb53c3a1b443f430c05b3201b13bd2430633eeaf97104f8f4bc389`로 기대 문자열과
+일치했다. 중간 recovery reload로 RCC session은 `9799625ceafc4dcaa2285b5a073d96fc`로
+바뀌었지만 첫 delivery는 `RETURNED/replayed=true`였고, 같은 delivery-start 재호출도 새 전송
+없이 기존 terminal row만 반환했다.
+
+따라서 Phase 6 얇은 왕복은 `LIVE_ACCEPTED`다. 다음 단계는 이 단일 ledger 위에 Wake-up,
+역할 전환, 다중 Worker를 하나씩 추가하는 Phase 7이다. 기존 orchestration/Simple Relay
+legacy 삭제는 Phase 7 수락과 caller-zero 증명 전까지 금지한다.
