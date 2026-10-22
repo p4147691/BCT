@@ -18,6 +18,8 @@ from bct import BCT
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
+from bct.core.chat_stream_rcc_watch import ChatStreamRccWatch
+from bct.integrations.rcc import NamedPipeRelayClient
 from bct.conversation_network import (
     arrange_conversations,
     ConversationNetworkError,
@@ -266,6 +268,7 @@ def main() -> int:
             "runs": 0,
         },
         "bottleneck_ack": bottleneck_ack.status(),
+        "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
     }
 
     recovery_stop = threading.Event()
@@ -331,6 +334,25 @@ def main() -> int:
             except Exception as exc:  # Never turn an observation fault into a relay retry.
                 state["bottleneck_ack"] = {"state": "UNKNOWN", "error": type(exc).__name__}
             recovery_stop.wait(2.0)
+
+    def chat_stream_rcc_watch_loop() -> None:
+        # No watches => no RCC request. No message submits or claims.
+        observer = ChatStreamRccWatch(bct.store, NamedPipeRelayClient())
+        while not recovery_stop.wait(15.0):
+            try:
+                events = observer.poll_once()
+                state["chat_stream_rcc_watch"] = {
+                    "state": "OBSERVED", "polls": int(
+                        state["chat_stream_rcc_watch"].get("polls", 0)) + 1,
+                    "last_events": len(events), "last_polled_at": time.time(),
+                }
+            except Exception as exc:
+                # Never turn a telemetry outage into a guessed reconnect.
+                state["chat_stream_rcc_watch"] = {
+                    "state": "UNAVAILABLE", "error": type(exc).__name__,
+                    "polls": int(state["chat_stream_rcc_watch"].get("polls", 0)) + 1,
+                    "last_events": 0,
+                }
 
     def status_snapshot() -> dict[str, Any]:
         """Expose one no-argument, read-only operator view for MCP clients."""
@@ -476,6 +498,11 @@ def main() -> int:
     recovery_thread = None
     dispatch_thread = None
     bottleneck_thread = None
+    chat_stream_watch_thread = threading.Thread(
+        target=chat_stream_rcc_watch_loop,
+        name="bct-chat-stream-rcc-watch", daemon=True,
+    )
+    chat_stream_watch_thread.start()
     if bct.manager_decision_recovery is not None:
         recovery_thread = threading.Thread(
             target=manager_decision_recovery_loop,
@@ -503,6 +530,7 @@ def main() -> int:
             dispatch_thread.join(timeout=3.0)
         if bottleneck_thread is not None:
             bottleneck_thread.join(timeout=3.0)
+        chat_stream_watch_thread.join(timeout=3.0)
         writer_lock.close()
     return 0 if server.started else 1
 
