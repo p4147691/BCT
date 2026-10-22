@@ -521,18 +521,18 @@
   "rollbackPlan": "modules/rcc/release/ROLLBACK.md",
   "rollbackPlanSha256": "1534025cccbeea24868f69dcce3cd40ddc79a6a520f72675a37ed2b727913a9e",
   "rollbackBaseline": {
-    "fileCount": 49,
-    "aggregateSha256": "dcf27a7b32797d0bbc10405dee2ee9c743d638000ad4ae0673c11f791400ef2d",
+    "fileCount": 51,
+    "aggregateSha256": "ff672173ffbf087833da6fe744f2135c9aa8a866666dfcfa20530b61c4105a5f",
     "files": [
-      {
-        "path": "background_loader.js",
-        "size": 1246,
-        "sha256": "5f46c077db2a4d97c5159ddda0cd8b93b3b526cbfc44ab83cd46b8fdaf8b394f"
-      },
       {
         "path": "background.js",
         "size": 158,
         "sha256": "585ae34ee0af8531362f384e4c11a903b1c23056ad61c15d0edec3c826fbe450"
+      },
+      {
+        "path": "background_loader.js",
+        "size": 1302,
+        "sha256": "c80b77f4aacce079c028bd13c51fe5ea3258011807068cf20caad02780e253f2"
       },
       {
         "path": "boot/background_app.js",
@@ -541,8 +541,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1034,
-        "sha256": "061b8f35487a4985e26b56e0c2ab53ad8c9bb4f5f9979449412ee4b82e376f74"
+        "size": 1088,
+        "sha256": "c501006ae23ea9b3d2dbbe2493ffd3efaacc774658bc59f10303d15cf8157d04"
       },
       {
         "path": "browser/read_adapter.js",
@@ -601,8 +601,8 @@
       },
       {
         "path": "content.js",
-        "size": 320,
-        "sha256": "8467dbb36bf9318a5d76239cd46fd1337a76b192b48057cc71a644d0d43ff6ea"
+        "size": 454,
+        "sha256": "4dfc55e1a027919a34beee0df85e9578914b12ba7bc9d03f1fe5fc55f22374e2"
       },
       {
         "path": "content/activity_reporter.js",
@@ -610,19 +610,24 @@
         "sha256": "e73c7469d87f35e677e5d37935b518dd6f5eff5155ce2fc9ae42f4ae2dc5aee8"
       },
       {
+        "path": "content/content_router.js",
+        "size": 6976,
+        "sha256": "3e2527d0634f99cad386d3f8838db0479243a9afedb8f0564b4750ae867e173d"
+      },
+      {
+        "path": "content/conversation_dom.js",
+        "size": 16690,
+        "sha256": "c86463bd16f9b29c404d7fe6081054f1aee688778c034bea03eae4f78bafd4af"
+      },
+      {
         "path": "content/conversation_rename.js",
         "size": 12444,
         "sha256": "946b47eaa133e2d47b7b6867978466b8f5b771bae76946bd3c889f0d06e0d4a4"
       },
       {
-        "path": "content/content_router.js",
-        "size": 6720,
-        "sha256": "7c7edbc49a09a67e65a97b657c8eca1ac07cf041d5e2d3c5e2ad50c15fcdec4d"
-      },
-      {
-        "path": "content/conversation_dom.js",
-        "size": 16681,
-        "sha256": "ce5d5f4a8955320cd7a43618dbcfbff4de47fbad02fe512553a2bba28fa6e028"
+        "path": "content/orchestration_relay_executor.js",
+        "size": 6632,
+        "sha256": "f749789062315f31b8e88b616f60e931edad5eb59674be8f94853cf23c2188b5"
       },
       {
         "path": "content/simple_relay_executor.js",
@@ -675,14 +680,19 @@
         "sha256": "4ed84a67d8abd810943d0d49012ba0cbf211fd9aa57262e083e209a2454bf0b6"
       },
       {
+        "path": "domain/orchestration_relay_service.js",
+        "size": 13457,
+        "sha256": "96a0659b5e04e65fa959602dc6298f3db0542e46986f14541bddc2097ee68cf1"
+      },
+      {
         "path": "domain/readonly_diagnostics.js",
-        "size": 27065,
-        "sha256": "b1049ef56363f13d8a8542f96594969909a2c4699d5a2e392c15ff801892d12c"
+        "size": 28766,
+        "sha256": "2b2cb163ef92951fe470c74463f0ff1590fabb4d5b90cbd7c479dd42522edec1"
       },
       {
         "path": "domain/runtime_message_service.js",
-        "size": 4779,
-        "sha256": "ac30947109dd637abd9086a8c68b494bfe6821c824d0d272160e3f7051135e13"
+        "size": 5044,
+        "sha256": "ab7024b4794e408fb9cd3782b35508d9d5d14dae3347f48b219d0e24d257bc29"
       },
       {
         "path": "domain/simple_relay_receipts.js",
@@ -701,13 +711,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3033,
-        "sha256": "f83891c478beb321f2e4c09f38a06a5cf2c336601fa6eb0eb8348462f7ea9270"
+        "size": 3405,
+        "sha256": "ba8e3b2c7a54d4fbd533beffacf93af33c694ca7e7c3cd639948eb05ca5e9cbd"
       },
       {
         "path": "manifest.json",
-        "size": 1458,
-        "sha256": "78abf9edd6fa0cb4bd2a5b3ca0fae30c32230d1264bdba5ae97895139beb9125"
+        "size": 1544,
+        "sha256": "1b82f77f55c5789cf35d474cace7990a7408c9e16804790a6866d98a2e5227f4"
       },
       {
         "path": "network/directory.js",
@@ -755,11 +765,6 @@
         "sha256": "fa7547aae4484abef5896737587cb5d865d3e8c05e85008fc78666344b59316d"
       },
       {
-        "path": "relay_core.js",
-        "size": 6801,
-        "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
-      },
-      {
         "path": "relay/contract.js",
         "size": 2859,
         "sha256": "b3a5da62b00859b9386850b7601accab856e32b53eaa263f1d4de9135bc44205"
@@ -768,6 +773,11 @@
         "path": "relay/envelope.js",
         "size": 3163,
         "sha256": "77a6d19cbb7fac2c7fb8bbe8e680607a9370a8d54d6b5f2aba84ffdcc6b17d10"
+      },
+      {
+        "path": "relay_core.js",
+        "size": 6801,
+        "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ]
   }
