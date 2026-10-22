@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "BCT Browser Bridge — Independent Node Channel (Lab)",
+  "version": "0.1.0",
+  "description": "Isolated, explicit read-only ChatGPT node inspector; no RCC, BCT Core, Native Messaging, CDP or message submission.",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "worker.js"
+  }
+}
