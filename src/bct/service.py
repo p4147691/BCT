@@ -44,6 +44,7 @@ from .features.desktop_session import (
 )
 from .integrations.github import GhCliClient, GitHubClient
 from .integrations.rcc import NamedPipeRelayClient
+from .integrations.cdp_connection import CDPConnectionManager
 
 
 def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
@@ -91,6 +92,7 @@ class BCT:
     def __init__(self, *, state_path: str | Path, policy_path: str | Path,
                  data_root: str | Path | None = None,
                  github_client: GitHubClient | None = None):
+        self.cdp_connections = CDPConnectionManager()  # lazy, no Chrome side effects
         self.store = Store(state_path)
         self.policy = Policy(policy_path)
         self.identity = IdentityService(self.store)
