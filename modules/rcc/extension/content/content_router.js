@@ -24,6 +24,46 @@ if (message.type === 'relay:recoverExecution') {
     return true;
   }
 
+// Read-only original-effect proof. Never synthesizes an execution record,
+// submits a prompt, or promotes an UNKNOWN delivery.
+if (message.type === 'relay:deliveryRecoveryProof') {
+  Promise.resolve().then(async () => {
+    const id = String(message.deliveryId || '');
+    const key = String(message.conversationKey || '').toLowerCase();
+    const expectedHash = String(message.requestSha256 || '');
+    const record = loadRelayExecution();
+    if (!id || !record || record.relayId !== id
+        || record.conversationKey !== key || currentConversationKey() !== key
+        || !['submit-activated', 'submitted', 'completed'].includes(String(record.phase || ''))
+        || !Array.isArray(record.beforeTurnKeys)
+        || !/^[a-f0-9]{64}$/.test(expectedHash)) {
+      return { ok: false, error: 'DELIVERY_RECOVERY_ORIGINAL_RECORD_UNPROVEN' };
+    }
+    const actualHash = await newChatTextSha256(record.submittedText);
+    if (actualHash !== expectedHash) {
+      return { ok: false, error: 'DELIVERY_RECOVERY_REQUEST_HASH_MISMATCH' };
+    }
+    const routed = resolveRoutedTurn(record);
+    if (!routed.ok || !routed.turnKey || !submittedPromptMatchesTurn(record, routed.turn)) {
+      return { ok: false, error: 'DELIVERY_RECOVERY_EXACT_USER_TURN_UNPROVEN' };
+    }
+    if (isGenerating() || turnGenerationInterrupted(routed.turn)) {
+      return { ok: false, error: 'DELIVERY_RECOVERY_REPLY_NOT_TERMINAL' };
+    }
+    const reply = recoverCompletedReplyFromDom(record);
+    if (typeof reply !== 'string' || !reply || reply.length > 12000) {
+      return { ok: false, error: 'DELIVERY_RECOVERY_REPLY_INVALID' };
+    }
+    return {
+      ok: true, deliveryId: id, conversationKey: key, requestSha256: actualHash,
+      turnKey: routed.turnKey, phase: record.phase, responseText: reply,
+      responseSha256: await newChatTextSha256(reply), responseLength: reply.length
+    };
+  }).then(sendResponse).catch((error) => sendResponse({
+    ok: false, error: String(error?.message || error || 'DELIVERY_RECOVERY_FAILED').slice(0, 128)
+  }));
+  return true;
+}
 if (message.type === 'relay:activityProbe') {
     sampleJsHeapTelemetry();
 
