@@ -7,7 +7,6 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from native_host import APPROVED_ORIGIN, MCP_URL, TOKEN_PATH, WORK_ID, read_frame, validate, write_frame
-from node_relay_native import node_request, approved_store, serve_node_session
 
 LAST_REQUEST_ID = None
 
@@ -55,7 +54,8 @@ async def serve(inp, out):
     if first is None:
         return 0
     LAST_REQUEST_ID = first.get("request_id") if isinstance(first, dict) else None
-    if node_request(first):
+    if isinstance(first, dict) and str(first.get("type") or "").startswith("node_relay_"):
+        from node_relay_native import approved_store, serve_node_session
         # Separate Bridge-native mailbox session; never share the BCT MCP
         # credential or widen the legacy file-read capability.
         try:

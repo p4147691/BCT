@@ -31,8 +31,8 @@ class PinnedNativeTransportTests(unittest.TestCase):
         original=(ROOT/"native"/"persistent_host.py").read_text(encoding="utf-8")
         self.assertIn('BCT_BRIDGE_NODE_RELAY_ENABLED',native)
         self.assertIn('BRIDGE_NODE_RELAY_DISABLED',native)
-        self.assertIn("if node_request(first):",original)
-        self.assertLess(original.index("if node_request(first):"),
+        self.assertIn('startswith("node_relay_")',original)
+        self.assertLess(original.index('startswith("node_relay_")'),
                         original.index("if not WORK_ID or not TOKEN_PATH.is_file():"))
         self.assertIn("serve_node_session",original)
 

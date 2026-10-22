@@ -154,7 +154,7 @@ class NativePersistentRelayTests(unittest.TestCase):
             "delivery_id":DELIVERY,"sender_node":"N23","sender_key":N23},13)])
         out=io.BytesIO()
         with patch.object(persistent_host,"APPROVED_ORIGIN","chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/"),patch.object(
-            persistent_host,"approved_store",return_value=self.store):
+            relay,"approved_store",return_value=self.store):
             # No test Core/MCP credential exists or is accessed.
             self.assertEqual(0,persistent_host.main.__name__=="main" and __import__("asyncio").run(
                 persistent_host.serve(inp,out)))
@@ -162,7 +162,7 @@ class NativePersistentRelayTests(unittest.TestCase):
         self.assertEqual(["QUEUED","QUEUED"],[x["receipt"]["state"] for x in received])
         self.assertTrue(all(x["ok"] for x in received))
         # Default production Native Host pathway does not open a mailbox.
-        with patch.object(persistent_host,"approved_store",side_effect=ValueError("disabled")):
+        with patch.object(relay,"approved_store",side_effect=ValueError("disabled")):
             out=io.BytesIO()
             self.assertEqual(4,__import__("asyncio").run(
                 persistent_host.serve(encoded([self.enqueue]),out)))
