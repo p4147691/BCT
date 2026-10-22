@@ -27,7 +27,7 @@ const context = {
     sends.push({ tabId, message });
     if (message.type === 'relay:simpleReadReply') {
       return { ok: true, conversationKey: message.conversationKey,
-        responseText: 'worker reply' };
+        responseText: tabId === 10 ? 'manager next' : 'worker reply' };
     }
     return { ok: true, submitted: true, conversationKey: message.conversationKey,
       beforeAssistantCount: 3 };
@@ -59,6 +59,35 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   const returnedAgain = await context.deliveryReturn({ deliveryId: 'delivery-001' });
   assert.equal(returnedAgain.replayed, true);
   assert.equal(sends.length, 3);
+  const manager = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
+  assert.equal(manager.state, 'RETURNED');
+  assert.equal(manager.managerResponseText, 'manager next');
+  assert.equal(manager.managerResponseLength, 12);
+  assert.equal(sends[3].tabId, 10);
+  assert.equal(sends[3].message.relayId, 'delivery-001');
+  assert.equal(sends[3].message.afterAssistantCount, 3);
+  const observedAgain = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
+  assert.equal(observedAgain.managerResponseSha256, manager.managerResponseSha256);
+  assert.equal(sends.filter(item => item.message.type === 'relay:simpleExecute').length, 2);
+  const terminal = storage.deliveryLedgerMirrorV1['delivery-001'];
+  const baselineCount = terminal.managerBeforeAssistantCount;
+  delete terminal.managerBeforeAssistantCount;
+  const noBaseline = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
+  assert.equal(noBaseline.ok, false);
+  assert.equal(noBaseline.error, 'DELIVERY_MANAGER_BASELINE_NOT_CAPTURED');
+  terminal.managerBeforeAssistantCount = baselineCount;
+  // A changed answer on the exact turn must never silently replace a captured decision.
+  const originalSend = context.sendToChatTab;
+  context.sendToChatTab = async (tabId, message) => {
+    if (tabId === 10 && message.type === 'relay:simpleReadReply') {
+      return { ok: true, conversationKey: message.conversationKey, responseText: 'tampered' };
+    }
+    return originalSend(tabId, message);
+  };
+  const changed = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
+  assert.equal(changed.ok, false);
+  assert.equal(changed.error, 'DELIVERY_MANAGER_REPLY_CHANGED');
+  context.sendToChatTab = originalSend;
   for (let index = 0; index < 66; index += 1) {
     await context.writeDeliveryLedgerMirror(`active-${index}`, {
       deliveryId: `active-${index}`, state: 'SENT_WAITING', updatedAt: index,

@@ -23,6 +23,12 @@ class FakeDeliveryHost:
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "SENT_WAITING", "workerTabId": 11,
                     "workerWindowId": 22}
+        if kwargs["command"] == "delivery-manager-status":
+            text = "manager next"
+            return {"ok": True, "deliveryId": delivery_id,
+                    "state": "RETURNED", "managerResponseText": text,
+                    "managerResponseSha256": hashlib.sha256(text.encode()).hexdigest(),
+                    "managerResponseLength": len(text)}
         if kwargs["command"] == "delivery-status":
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "REPLY_CAPTURED",
@@ -75,6 +81,60 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.assertTrue(all(
             call["extra"]["deliveryId"] == "delivery-001" for call in self.host.calls
         ))
+
+    def test_manager_reply_is_read_only_and_bound_to_returned_id(self) -> None:
+        self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "Manager, delegate once",
+        }, "manager-start")
+        pending = self.execute({**self.base, "command": "delivery-manager-status"},
+                               "manager-status-before-return")
+        self.assertTrue(pending.evidence["pending"])
+        self.assertEqual(1, len(self.host.calls))
+        self.execute({**self.base, "command": "delivery-status"}, "manager-worker-status")
+        self.execute({**self.base, "command": "delivery-return"}, "manager-return")
+        observed = self.execute({**self.base, "command": "delivery-manager-status"},
+                                "manager-read-1")
+        self.assertEqual("manager next", observed.output["result"]["managerResponseText"])
+        self.assertFalse(observed.evidence["pending"])
+        self.assertEqual("RETURNED", self.feature.delivery_ledger.get_for_work(
+            delivery_id="delivery-001", work_id=self.work.work_id)["state"])
+        observed2 = self.execute({**self.base, "command": "delivery-manager-status"},
+                                 "manager-read-2")
+        self.assertEqual(observed.evidence["manager_reply_sha256"],
+                         observed2.evidence["manager_reply_sha256"])
+        self.assertEqual(1, sum(call["command"] == "delivery-start"
+                                for call in self.host.calls))
+        self.assertEqual(1, sum(call["command"] == "delivery-return"
+                                for call in self.host.calls))
+
+    def test_manager_reply_hash_mismatch_never_changes_delivery(self) -> None:
+        self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "Once only",
+        }, "bad-hash-start")
+        self.execute({**self.base, "command": "delivery-status"}, "bad-hash-status")
+        self.execute({**self.base, "command": "delivery-return"}, "bad-hash-return")
+        original = self.host.request
+
+        def tampered(**kwargs):
+            result = original(**kwargs)
+            if kwargs["command"] == "delivery-manager-status":
+                result["managerResponseSha256"] = "0" * 64
+            return result
+
+        self.host.request = tampered
+        with self.assertRaisesRegex(ConfirmedFailure, "RCC_DELIVERY_MANAGER_REPLY_INVALID"):
+            self.execute({**self.base, "command": "delivery-manager-status"},
+                         "bad-hash-read")
+        self.assertEqual("RETURNED", self.feature.delivery_ledger.get_for_work(
+            delivery_id="delivery-001", work_id=self.work.work_id)["state"])
+        self.assertEqual(1, sum(call["command"] == "delivery-start"
+                                for call in self.host.calls))
 
     def test_duplicate_start_does_not_resend(self) -> None:
         args = {
