@@ -37,7 +37,7 @@ const storage = {
   oldRcc.onclick=()=>{preservedClicks++};
   const engine=MonitorUiLayout.create(root,storage);
   await engine.ready;
-  await engine.patch({toolbar:{placement:"inline",density:"compact",gap:2}});
+  engine.apply({version:1,toolbar:{placement:"inline",density:"compact",gap:2}});
   oldRcc.click();
   const toolbar=root.querySelector(".monitor-utility-actions");
   const line=root.querySelector(".monitor-title-line");

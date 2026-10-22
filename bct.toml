@@ -109,6 +109,7 @@ files = [
   "src/bct/mcp_server.py",
   "src/bct/trace_timing.py",
   "src/bct/monitor_runtime.py",
+  "src/bct/monitor_ui_layout.py",
   "src/bct/bottleneck_ack.py",
   "src/bct/manager_decision_recovery.py",
   "src/bct/worker_dispatch_recovery.py",
