@@ -132,5 +132,28 @@ const longPrompt = '[BCT_ORCHESTRATION_ASSIGNMENT_V1]\n' + 'bounded task '.repea
   document = el('main', {}, turn('wrong', 'different prompt'));
   assert.equal(context.api.resolveRoutedTurn(record(longPrompt, {routeTurnKey:'wrong'})).reason, 'ROUTE_TURN_USER_MISMATCH');
   await assert.rejects(directContext.direct(901, 'other-conversation', longPrompt), /IDENTITY_MISMATCH/);
+  // The new user unit may be present before ChatGPT mounts a turn wrapper.
+  const semanticOnly = (key, prompt) => el('div', {
+    'data-content-search-unit-key': key + ':user'
+  }, el('div', {'data-user-message-bubble': 'true'}, prompt));
+  document = el('main', {}, semanticOnly('fresh', longPrompt));
+  assert.equal(context.api.resolveRoutedTurn(record(longPrompt)).turnKey, 'fresh:user');
+  assert.equal(context.api.resolveRoutedTurn(record(longPrompt + 'modified')).ok, false,
+    'semantic fallback may not relax the exact user text check');
+  document = el('main', {},
+    semanticOnly('first', longPrompt), semanticOnly('second', longPrompt));
+  assert.equal(context.api.resolveRoutedTurn(record(longPrompt)).reason, 'ROUTE_TURN_AMBIGUOUS',
+    'distinct semantically keyed duplicate prompts fail closed');
+  assert.equal(context.api.resolveRoutedTurn(
+    record(longPrompt, {beforeTurnKeys: ['first:user']})).turnKey, 'second:user');
+  document = el('main', {}, turn('legacy', longPrompt),
+    semanticOnly('new', 'only second message'));
+  assert.equal(context.api.resolveRoutedTurn(
+    record('only second message', {beforeTurnKeys: ['legacy']})).turnKey, 'new:user');
+  document = el('main', {}, el('div', {}, el('div', {
+    'data-content-search-unit-key': 'wrong:assistant'
+  }, longPrompt)));
+  assert.equal(context.api.resolveRoutedTurn(record(longPrompt)).ok, false,
+    'assistant semantic key is never treated as a user turn');
   console.log('collapsed prompt identity tests: PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
