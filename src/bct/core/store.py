@@ -210,6 +210,26 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS relay_deliveries_work_state
                     ON relay_deliveries(work_id,state,updated_at);
+                -- UI stream reports are untrusted observations, separated from
+                -- authoritative operation effects. Immutable append-only steps.
+                CREATE TABLE IF NOT EXISTS chat_stream_checkpoints (
+                    work_id TEXT NOT NULL, stream_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL, step_id TEXT NOT NULL,
+                    source_operation_id TEXT NOT NULL, source_state TEXT NOT NULL,
+                    source_outcome TEXT, source_receipt_sha256 TEXT NOT NULL,
+                    source_release_sha TEXT NOT NULL, next_step TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY(work_id,stream_id,sequence),
+                    FOREIGN KEY(work_id) REFERENCES works(work_id),
+                    FOREIGN KEY(source_operation_id) REFERENCES operations(operation_id)
+                );
+                CREATE TABLE IF NOT EXISTS chat_stream_transport_reports (
+                    work_id TEXT NOT NULL, stream_id TEXT NOT NULL,
+                    incident_id TEXT NOT NULL, signal TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY(work_id,stream_id,incident_id),
+                    FOREIGN KEY(work_id) REFERENCES works(work_id)
+                );
                 CREATE TABLE IF NOT EXISTS events (
                     event_id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
                     subject_id TEXT NOT NULL, data_json TEXT NOT NULL, created_at REAL NOT NULL
