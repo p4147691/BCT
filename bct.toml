@@ -14,6 +14,7 @@ normal_actions = [
   "service_control",
   "relay_browser",
   "system_inspect",
+  "cdp_inspect",
   "execute",
   "process_session",
   "monitor",
@@ -40,6 +41,12 @@ normal_actions = [
   "vtl_validate",
 ]
 approval_actions = ["delete", "credential_change"]
+
+# Chrome DevTools MCP is opt-in and never launched by starting BCT.
+# Configure a pinned, trusted MCP command and enable only after review.
+[cdp]
+enabled = false
+argv = []
 
 [git_authority]
 mode = "local"
@@ -133,6 +140,8 @@ files = [
   "src/bct/features/github.py",
   "src/bct/features/rcc.py",
   "src/bct/features/execution.py",
+  "src/bct/features/cdp_persistent.py",
+  "src/bct/features/cdp_inspect.py",
   "src/bct/features/process_session.py",
   "src/bct/features/snapshot.py",
   "src/bct/features/monitor.py",
@@ -145,6 +154,7 @@ files = [
   "src/bct/integrations/github.py",
   "src/bct/integrations/rcc.py",
   "src/bct/integrations/native_process.py",
+  "src/bct/integrations/cdp_connection.py",
   "src/bct/integrations/desktop_session.py",
   "src/bct/operating_paths.py",
   "src/bct/conversation_history.py",

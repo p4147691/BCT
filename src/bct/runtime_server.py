@@ -503,6 +503,7 @@ def main() -> int:
             dispatch_thread.join(timeout=3.0)
         if bottleneck_thread is not None:
             bottleneck_thread.join(timeout=3.0)
+        bct.cdp_connections.close()
         writer_lock.close()
     return 0 if server.started else 1
 

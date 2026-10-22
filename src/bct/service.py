@@ -28,6 +28,7 @@ from .features.vtl import VtlValidateFeature
 from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
+from .features.cdp_inspect import CDPInspectFeature
 from .features.monitor import MonitorFeature
 from .features.claim_reconciliation import ReadOnlyClaimReconcileFeature
 from .features.orchestration import OrchestrationFeature
@@ -45,6 +46,24 @@ from .features.desktop_session import (
 from .integrations.github import GhCliClient, GitHubClient
 from .integrations.rcc import NamedPipeRelayClient
 from .integrations.cdp_connection import CDPConnectionManager
+
+
+def _cdp_mcp_command(policy_path: str | Path) -> tuple[str, ...] | None:
+    """Fail closed unless a reviewed local policy explicitly enables CDP."""
+    data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
+    section = data.get("cdp", {})
+    if not isinstance(section, dict):
+        raise ValueError("CDP_CONFIG_SECTION_INVALID")
+    enabled = section.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("CDP_CONFIG_ENABLED_INVALID")
+    if not enabled:
+        return None
+    argv = section.get("argv")
+    if (not isinstance(argv, list) or not argv
+            or any(not isinstance(a, str) or not a for a in argv)):
+        raise ValueError("CDP_CONFIG_ARGV_INVALID")
+    return tuple(argv)
 
 
 def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
@@ -93,6 +112,9 @@ class BCT:
                  data_root: str | Path | None = None,
                  github_client: GitHubClient | None = None):
         self.cdp_connections = CDPConnectionManager()  # lazy, no Chrome side effects
+        cdp_command = _cdp_mcp_command(policy_path)
+        if cdp_command is not None:
+            self.cdp_connections.configure(cdp_command)
         self.store = Store(state_path)
         self.policy = Policy(policy_path)
         self.identity = IdentityService(self.store)
@@ -133,6 +155,7 @@ class BCT:
             SystemInspectFeature(), ExecuteFeature(),
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
+            CDPInspectFeature(self.cdp_connections),
             ReadOnlyClaimReconcileFeature(self.store, desktop_session),
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),
