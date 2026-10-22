@@ -326,6 +326,94 @@ class OrchestrationTests(unittest.TestCase):
             for claim in self.bct.store.monitor_snapshot()["unresolved_claims"]
         ))
 
+    def test_node_sync_never_mutates_foreign_active_work_attachments(self):
+        # Two independent Work owners share an RCC instance, not authority.
+        from bct.core.models import ConflictError
+        self.bct.create_work(
+            work_id="foreign", request_summary="separate active owner",
+            roots=[str(self.root)], actions=["read", "orchestrate"],
+            principal=self.owner,
+        )
+        foreign = self.bct.store.get_work("foreign")
+        self.bct.orchestration.start_session(
+            work=foreign, session_id="foreign-session",
+            objective="foreign active Worker session",
+            acceptance={"preserve": True}, roots=[str(self.root)],
+            actions=["read", "orchestrate"],
+        )
+        # A foreign Work may not take over an ACTIVE current-session
+        # conversation by aliasing the original node ID.
+        before = len([x for x in self.relay.calls if x["command"] == "conversation-bind"])
+        with self.assertRaisesRegex(ConflictError, "FOREIGN_WORK_TARGET_ACTIVE"):
+            self.bct.orchestration.validate_sync_targets(
+                work=foreign, session_id="foreign-session",
+                instance_id=self.relay.instance_id,
+                external_session_id=self.relay.session_id,
+                targets=[{"conversation_key": "conversation-b", "node_id": "worker-b"}],
+            )
+        self.assertEqual(before, len([
+            x for x in self.relay.calls if x["command"] == "conversation-bind"
+        ]))
+        self.relay.endpoints.append(
+            self.relay.endpoint(501, 51, "conversation-foreign", "Foreign Worker")
+        )
+        created = self.bct.operations.run(
+            principal=self.owner, work_id="foreign", operation_id="foreign-sync",
+            capability="orchestrate", arguments={
+                "operation": "node-sync", "session_id": "foreign-session",
+                "instance_id": self.relay.instance_id,
+                "nodes": [{
+                    "conversation_key": "conversation-foreign",
+                    "node_id": "foreign-worker", "name": "Foreign Worker",
+                    "role": "WORKER", "relay_role": "BCT_FOREIGN",
+                }],
+            },
+        )
+        self.assertEqual(Outcome.APPLIED, created.outcome)
+        foreign_id = next(x["attachment_id"] for x in created.output["attachments"]
+                          if x["node_id"] == "foreign-worker")
+        foreign_before = self.bct.store.get_connection("orch:" + foreign_id)
+        self.assertTrue(foreign_before["active"])
+        # A same-ID RCC reload is observed by a *different* Work. Only
+        # that Work's stale attachments may be retired, not foreign Work.
+        self.relay.session_id = "session456"
+        refresh = self.call("owner-reload-with-foreign-work", {
+            "operation": "node-sync", "session_id": "session",
+            "instance_id": self.relay.instance_id,
+            "nodes": [{"conversation_key": "conversation-b",
+                       "node_id": "worker-b", "name": "Worker B",
+                       "role": "WORKER", "relay_role": "BCT_W1"}],
+        })
+        self.assertEqual(Outcome.APPLIED, refresh.outcome)
+        db = self.bct.store._connect()
+        try:
+            row = db.execute(
+                "SELECT active,external_session_id FROM orchestration_attachments "
+                "WHERE attachment_id=?", (foreign_id,)
+            ).fetchone()
+        finally:
+            db.close()
+        self.assertEqual("session123", row["external_session_id"])
+        self.assertTrue(row["active"], "foreign Work historical attachment unchanged")
+        self.assertTrue(self.bct.store.get_connection("orch:" + foreign_id)["active"])
+        # The historical row stays preserved but is not routable under the
+        # newly observed RCC session.
+        check_db = self.bct.store._connect()
+        try:
+            self.assertFalse(self.bct.orchestration._attachment_session_is_current(
+                check_db, {"instance_id":self.relay.instance_id,
+                           "external_session_id":row["external_session_id"]}
+            ))
+        finally:
+            check_db.close()
+        # A complete observation of the first Work must not deactivate the
+        # unrelated foreign Work's attachment either.
+        self.bct.orchestration.reconcile_observed_attachments(
+            work=self.bct.store.get_work("work"), session_id="session",
+            instance_id=self.relay.instance_id, active_attachment_ids=[]
+        )
+        self.assertTrue(self.bct.store.get_connection("orch:" + foreign_id)["active"])
+
     def test_first_confirmed_unapplied_binding_releases_instance_claim(self):
         self.call("bind-not-applied-start", {
             "operation": "session-start", "session_id": "bind-not-applied-session",
