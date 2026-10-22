@@ -908,13 +908,19 @@ class Store:
                     instance_id = resource[
                         len("rcc-instance:"):-len(":maintenance:reload-extension")
                     ]
+                    # Reserve reload against all *currently nonterminal* RCC
+                    # effects, including exact delivery resources. Finished
+                    # UNKNOWN history is retained but is not a live lock.
                     broad = db.execute(
                         "SELECT c.operation_id,c.work_id,c.assignment_epoch,"
                         "o.state,o.assignment_epoch AS operation_epoch "
                         "FROM resource_claims c JOIN operations o "
                         "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
-                        "WHERE c.resource_key=? AND c.unresolved=1",
-                        ("rcc-instance:" + instance_id,),
+                        "WHERE (c.resource_key=? OR c.resource_key LIKE ?) "
+                        "AND c.unresolved=1 AND o.state<>'FINISHED' "
+                        "ORDER BY o.created_at DESC LIMIT 1",
+                        ("rcc-instance:" + instance_id,
+                         "rcc-instance:" + instance_id + ":%"),
                     ).fetchone()
                     if broad is not None:
                         actor = db.execute(
@@ -927,13 +933,18 @@ class Store:
                             or actor
                         ):
                             raise ConflictError("RCC_MAINTENANCE_ACTIVE_EXECUTION")
-                elif resource.startswith("rcc-instance:") and resource.count(":") == 1:
+                elif (resource.startswith("rcc-instance:")
+                      and ":maintenance:reload-extension" not in resource
+                      and ":read:" not in resource):
+                    # Exact delivery/relay claims cannot begin while a
+                    # maintenance reload has already been reserved.
+                    instance_id = resource[len("rcc-instance:"):].split(":", 1)[0]
                     maintenance = db.execute(
                         "SELECT c.operation_id,o.state FROM resource_claims c "
                         "JOIN operations o ON c.operation_id=o.operation_id "
                         "AND c.work_id=o.work_id "
                         "WHERE c.resource_key=? AND c.unresolved=1",
-                        (resource + ":maintenance:reload-extension",),
+                        ("rcc-instance:" + instance_id + ":maintenance:reload-extension",),
                     ).fetchone()
                     if maintenance is not None:
                         raise ConflictError("RCC_MAINTENANCE_IN_PROGRESS")

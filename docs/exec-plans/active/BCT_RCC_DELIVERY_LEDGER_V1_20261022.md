@@ -336,3 +336,30 @@ Phase 7B will validate a structured next-Worker decision against membership
 and per-run authority, then create a **new** single delivery id for the next
 Worker. No free-form Assistant output is an execution authorization. Legacy
 Manager Wake and recovery loops remain outside this thin path.
+
+
+## RCC maintenance reload — active-effect guard, not ordinary chat generation
+
+The broad `RCC_RELOAD_CHAT_GENERATING` guard introduced at source commit
+`a080df72` blocked a reload whenever any ChatGPT tab was generating. That
+mistook an ordinary ChatGPT reply on the caller's own N23 tab for an RCC relay
+effect and made in-chat maintenance self-blocking.
+
+The revised guard leaves the exact BCT maintenance operation/Claim in place.
+A reload is forbidden while an active *nonterminal* RCC operation reserves the
+instance or any exact per-delivery/relay resource, and a new exact effect is
+forbidden while reload maintenance is reserved. FINISHED UNKNOWN histories
+remain records, not perpetual instance locks.
+
+Before the reload side effect, Core reads the exact RCC state/instance/session.
+An ordinary generating tab does **not** veto the reload. But a generating Worker
+whose exact delivery is `SENT_WAITING`, or a generating Manager whose exact
+delivery is `REPLY_CAPTURED`, is an ongoing relay and vetoes the reload.
+Only the authoritative `relay_deliveries` rows for this instance provide that
+identity; generic Monitor telemetry is not execution authority.
+
+This is a bounded, testable relaxation, not a bypass of tool safety checks,
+per-Work authorizations, exact URI matching, state transitions or the
+maintenance reservation. The accepted Phase 6 ledger history and the rollback
+payload remain unchanged. Tests cover ordinary generation, both active reply
+roles, terminal delivery, and races between exact delivery claims and reload.

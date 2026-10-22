@@ -786,13 +786,40 @@ class RelayBrowserFeature:
                 raise ConfirmedFailure(
                     "RCC_RELOAD_IDLE_PROOF_INVALID", release_claims=True
                 )
-            if any(
-                isinstance(endpoint, dict) and endpoint.get("generating") is True
-                for endpoint in endpoints
-            ):
-                raise ConfirmedFailure(
-                    "RCC_RELOAD_CHAT_GENERATING", release_claims=True
-                )
+            # Ordinary ChatGPT streaming is not an RCC submission.  Only an
+            # unfinished *exact* Delivery waiting for its Worker/Manager
+            # response may turn a generating page into an RCC reload fence.
+            # Store's active-operation/maintenance Claim gate independently
+            # protects writes crossing their actual execution boundary.
+            if self.delivery_ledger is not None:
+                generating_keys = {
+                    str(endpoint.get("conversationKey") or "").lower()
+                    for endpoint in endpoints if isinstance(endpoint, dict)
+                    and endpoint.get("generating") is True
+                }
+                if generating_keys:
+                    db = self.delivery_ledger.store._connect()
+                    try:
+                        live_rows = db.execute(
+                            "SELECT state,worker_conversation_key,"
+                            "manager_conversation_key FROM relay_deliveries "
+                            "WHERE instance_id=? AND state IN "
+                            "('SENT_WAITING','REPLY_CAPTURED')",
+                            (values["instance_id"],),
+                        ).fetchall()
+                    finally:
+                        db.close()
+                    if any(
+                        (row["state"] == "SENT_WAITING"
+                         and row["worker_conversation_key"] in generating_keys)
+                        or (row["state"] == "REPLY_CAPTURED"
+                            and row["manager_conversation_key"] in generating_keys)
+                        for row in live_rows
+                    ):
+                        raise ConfirmedFailure(
+                            "RCC_RELOAD_ACTIVE_DELIVERY_GENERATING",
+                            release_claims=True,
+                        )
         if values["command"] == "send":
             # Transport-only option: do not change the persisted request digest.
             # Legacy UNKNOWN sends must retain their exact original fingerprint
