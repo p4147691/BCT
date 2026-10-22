@@ -113,7 +113,7 @@ class MonitorRuntimeTests(unittest.TestCase):
                 first = _rcc_states(ids)
                 self.assertEqual(2, len(calls))
                 self.assertEqual("UNKNOWN", first[2]["state"])
-                self.assertTrue(all(t <= 0.25 for _, t in calls))
+                self.assertTrue(all(t <= 0.75 for _, t in calls))
                 second = _rcc_states(ids)
                 self.assertEqual(4, len(calls))
                 self.assertEqual("OPEN", second[2]["state"])
@@ -129,6 +129,44 @@ class MonitorRuntimeTests(unittest.TestCase):
                 self.assertEqual("OPEN", fourth[2]["state"])
                 self.assertEqual(ids, [row["instance_id"] for row in fourth])
                 self.assertEqual([], list(_RCC_INFLIGHT))
+            finally:
+                _RCC_HEALTH.clear()
+                _RCC_INFLIGHT.clear()
+
+    def test_short_monitor_timeout_recovers_without_long_false_disconnect(self):
+        from bct.monitor_runtime import (
+            _RCC_HEALTH, _RCC_INFLIGHT, _RCC_FRESH_TIMEOUT_S,
+            _RCC_RETRY_TIMEOUT_S, _RCC_RETRY_SECONDS,
+        )
+        import time
+        calls = []
+
+        class Client:
+            def request(self, **kwargs):
+                calls.append(kwargs["timeout_s"])
+                if len(calls) == 1:
+                    raise TimeoutError("monitor-only deadline")
+                return {"state": {"sessionId": "same-session",
+                                  "tabs": [], "endpoints": []}}
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+            _RCC_HEALTH.clear()
+            _RCC_INFLIGHT.clear()
+            try:
+                self.assertEqual(0.75, _RCC_FRESH_TIMEOUT_S)
+                self.assertEqual(0.50, _RCC_RETRY_TIMEOUT_S)
+                self.assertEqual(5.0, _RCC_RETRY_SECONDS)
+                self.assertEqual("UNAVAILABLE", _rcc_states(["instance-a"])[0]["state"])
+                self.assertEqual([0.75], calls)
+                self.assertLessEqual(
+                    _RCC_HEALTH["instance-a"]["retry_at"] - time.monotonic(), 5.0)
+                self.assertEqual("UNAVAILABLE", _rcc_states(["instance-a"])[0]["state"])
+                self.assertEqual([0.75], calls)  # bounded cache, no busy-loop
+                _RCC_HEALTH["instance-a"]["retry_at"] = 0
+                live = _rcc_states(["instance-a"])[0]
+                self.assertEqual("OPEN", live["state"])
+                self.assertEqual("same-session", live["session_id"])
+                self.assertEqual([0.75, 0.50], calls)
+                self.assertFalse(_RCC_INFLIGHT)
             finally:
                 _RCC_HEALTH.clear()
                 _RCC_INFLIGHT.clear()

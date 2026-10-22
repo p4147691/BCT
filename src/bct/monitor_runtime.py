@@ -46,13 +46,17 @@ def _session_states(root: Path) -> list[dict[str, Any]]:
 # In-process monitor-only health hints. Never used for relay routing or ACK.
 _RCC_HEALTH_LOCK = Lock()
 _RCC_HEALTH: dict[str, dict[str, Any]] = {}
-_RCC_RETRY_SECONDS = 30.0
+# A 120-250 ms *monitor-only* deadline frequently times out while the
+# same RCC answers direct state queries. It must not masquerade as a lost
+# Chrome session or suppress further observation for 30 seconds.
+# These budgets still cap polling and never authorize any new browser effect.
+_RCC_RETRY_SECONDS = 5.0
 _RCC_CACHE_LIMIT = 32
 _RCC_INFLIGHT: set[str] = set()
 _RCC_FIRST_PROBES_PER_PASS = 2
 _RCC_RETRIES_PER_PASS = 1
-_RCC_FRESH_TIMEOUT_S = 0.25
-_RCC_RETRY_TIMEOUT_S = 0.12
+_RCC_FRESH_TIMEOUT_S = 0.75
+_RCC_RETRY_TIMEOUT_S = 0.50
 
 def _rcc_cached_row(instance_id: str, hint: dict[str, Any], now: float) -> dict[str, Any]:
     if not hint:

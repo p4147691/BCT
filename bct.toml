@@ -161,6 +161,7 @@ files = [
   "src/bct/conversation_history.py",
   "src/bct/conversation_network.py",
   "src/bct/project_run.py",
+  "src/bct/relay_prompt.py",
   "modules/mcp/ops/run_bct_core_supervisor.ps1",
   "modules/mcp/ops/run_bct_tunnel_supervisor.ps1",
   "modules/mcp/ops/invoke_bct_tunnel_cutover.ps1",

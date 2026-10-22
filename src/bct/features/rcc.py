@@ -323,7 +323,7 @@ class RelayBrowserFeature:
         elif command == "delivery-start":
             allowed.update({
                 "delivery_id", "manager_conversation_key",
-                "worker_conversation_key", "text",
+                "worker_conversation_key", "text", "scope_id",
             })
             delivery_id = str(arguments.get("delivery_id") or "").strip()
             manager_key = str(arguments.get("manager_conversation_key") or "").strip().lower()
@@ -335,6 +335,23 @@ class RelayBrowserFeature:
                     or not re.fullmatch(key_pattern, worker_key)
                     or manager_key == worker_key or not body or len(body) > 12000):
                 raise PreconditionError("RCC_DELIVERY_START_INVALID")
+            # Opt in to BCT's canonical roster + editable Worker note without
+            # changing RCC's native command, return path or Delivery schema.
+            # Prepare the exact bytes once BEFORE hashing/fencing the effect.
+            if "scope_id" in arguments:
+                if self.delivery_ledger is None:
+                    raise PreconditionError("RCC_DELIVERY_COMPOSE_STORE_REQUIRED")
+                from bct.relay_prompt import compose_worker_delivery
+                try:
+                    body = compose_worker_delivery(
+                        store=self.delivery_ledger.store,
+                        scope_id=arguments["scope_id"],
+                        manager_conversation_key=manager_key,
+                        worker_conversation_key=worker_key,
+                        task=body,
+                    )
+                except ValueError as exc:
+                    raise PreconditionError(str(exc)) from exc
             prepared["text"] = body
             prepared["extra"].update({
                 "deliveryId": delivery_id,
