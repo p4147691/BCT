@@ -230,6 +230,17 @@ class Store:
                     PRIMARY KEY(work_id,stream_id,incident_id),
                     FOREIGN KEY(work_id) REFERENCES works(work_id)
                 );
+                -- Opt-in exact RCC conversation binding; ordinary endpoints
+                -- without a Work-scoped checkpoint are never watched.
+                CREATE TABLE IF NOT EXISTS chat_stream_rcc_watches (
+                    work_id TEXT NOT NULL, stream_id TEXT NOT NULL,
+                    instance_id TEXT NOT NULL, conversation_key TEXT NOT NULL,
+                    last_state TEXT NOT NULL, last_session_id TEXT NOT NULL,
+                    transition_counter INTEGER NOT NULL, last_signal TEXT NOT NULL,
+                    assignment_epoch INTEGER NOT NULL,
+                    PRIMARY KEY(work_id,stream_id),
+                    FOREIGN KEY(work_id) REFERENCES works(work_id)
+                );
                 CREATE TABLE IF NOT EXISTS events (
                     event_id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
                     subject_id TEXT NOT NULL, data_json TEXT NOT NULL, created_at REAL NOT NULL
