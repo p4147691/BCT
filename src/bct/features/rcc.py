@@ -44,7 +44,7 @@ _MUTATING_COMMANDS = {
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
-    "delivery-manager-status",
+    "delivery-manager-status", "delivery-recovery-inspect",
 }
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
@@ -343,7 +343,8 @@ class RelayBrowserFeature:
                 "requestSha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
                 "workId": work.work_id,
             })
-        elif command in {"delivery-status", "delivery-return", "delivery-manager-status"}:
+        elif command in {"delivery-status", "delivery-return", "delivery-manager-status",
+                        "delivery-recovery-inspect"}:
             allowed.add("delivery_id")
             delivery_id = str(arguments.get("delivery_id") or "").strip()
             if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", delivery_id):
@@ -494,7 +495,7 @@ class RelayBrowserFeature:
                 "workerConversationKey": delivery["worker_conversation_key"],
                 "requestSha256": delivery["request_sha256"],
             })
-            if command != "delivery-manager-status" and delivery["state"] in {
+            if command not in {"delivery-manager-status", "delivery-recovery-inspect"} and delivery["state"] in {
                 DeliveryState.RETURNED.value, DeliveryState.NOT_APPLIED.value,
                 DeliveryState.FAILED.value, DeliveryState.NEEDS_REVIEW.value,
             }:
@@ -508,6 +509,10 @@ class RelayBrowserFeature:
                     "command": command, "delivery_id": delivery_id,
                     "delivery_state": delivery["state"], "replayed": True,
                 }, release_claims=True, output={"delivery": delivery})
+            if command == "delivery-recovery-inspect" and delivery["state"] != DeliveryState.NEEDS_REVIEW.value:
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_RECOVERY_NOT_UNKNOWN", release_claims=True
+                )
             if command == "delivery-manager-status" and delivery["state"] != DeliveryState.RETURNED.value:
                 return FeatureResult(Outcome.APPLIED, {
                     "command": command, "delivery_id": delivery_id,
@@ -543,7 +548,7 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_TRANSPORT_UNKNOWN"},
                 )
-            if command in {"delivery-status", "delivery-manager-status"}:
+            if command in {"delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
                      if command == "delivery-manager-status"
@@ -559,7 +564,7 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_EFFECT_UNKNOWN"},
                 )
-            if command in {"delivery-status", "delivery-manager-status"}:
+            if command in {"delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
                      if command == "delivery-manager-status"
@@ -576,7 +581,7 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_ACK_ID_MISMATCH"},
                 )
-            if command in {"delivery-status", "delivery-manager-status"}:
+            if command in {"delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     "RCC_DELIVERY_READ_ID_MISMATCH", release_claims=True,
                 )
@@ -585,6 +590,39 @@ class RelayBrowserFeature:
             )
 
         state = str(result.get("state") or "")
+        if command == "delivery-recovery-inspect":
+            response = result.get("responseText")
+            digest = result.get("responseSha256")
+            length = result.get("responseLength")
+            turn_key = result.get("originalTurnKey")
+            if (result.get("ok") is not True
+                    or state != DeliveryState.NEEDS_REVIEW.value
+                    or result.get("deliveryId") != delivery_id
+                    or result.get("managerConversationKey") != delivery["manager_conversation_key"]
+                    or result.get("workerConversationKey") != delivery["worker_conversation_key"]
+                    or result.get("requestSha256") != delivery["request_sha256"]
+                    or result.get("reconciled") is not False
+                    or not isinstance(turn_key, str) or not turn_key or len(turn_key) > 256
+                    or result.get("recordPhase") not in
+                       {"submit-activated", "submitted", "completed"}
+                    or not isinstance(response, str) or not response or len(response) > 12000
+                    or hashlib.sha256(response.encode("utf-8")).hexdigest() != digest
+                    or length != len(response)
+                    or not isinstance(result.get("workerTabId"), int)
+                    or not isinstance(result.get("managerTabId"), int)):
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_RECOVERY_PROOF_INSUFFICIENT", release_claims=True
+                )
+            # This exact operation is the independent durable inspection
+            # receipt. The original NEEDS_REVIEW delivery is never updated.
+            return FeatureResult(Outcome.APPLIED, {
+                "command": command, "delivery_id": delivery_id,
+                "delivery_state": state, "reconciled": False,
+                "request_sha256": delivery["request_sha256"],
+                "response_sha256": digest, "response_length": length,
+                "original_turn_key": turn_key,
+            }, release_claims=True,
+                output={"original_delivery": delivery, "proof": _sanitize(result)})
         if command == "delivery-manager-status":
             if state != DeliveryState.RETURNED.value:
                 raise ConfirmedFailure(
@@ -745,7 +783,7 @@ class RelayBrowserFeature:
     def execute(self, request: FeatureRequest) -> FeatureResult:
         if request.arguments["command"] in {
             "delivery-start", "delivery-status", "delivery-return",
-            "delivery-manager-status",
+            "delivery-manager-status", "delivery-recovery-inspect",
         }:
             return self._execute_delivery(request)
         if request.arguments["command"] == "create-and-send":

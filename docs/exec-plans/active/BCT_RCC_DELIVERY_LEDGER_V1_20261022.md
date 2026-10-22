@@ -363,3 +363,18 @@ per-Work authorizations, exact URI matching, state transitions or the
 maintenance reservation. The accepted Phase 6 ledger history and the rollback
 payload remain unchanged. Tests cover ordinary generation, both active reply
 roles, terminal delivery, and races between exact delivery claims and reload.
+
+## Phase 7A original-effect no-resend inspection
+
+The `delivery-recovery-inspect` command is read-only. It reads the exact
+original `NEEDS_REVIEW` Delivery mirror, validates Manager/Worker UUIDs,
+request SHA-256 and the original relay fingerprint, then probes the Worker
+content script's persisted original relay execution record. It requires
+matching relay ID, Worker conversation, SHA-256 of submitted text, an exact
+unique user turn and a completed non-interrupted assistant reply. The Core
+validates reply hash/length, original turn key and receipt identity. The
+new BCT Operation receipt stores independent inspection evidence; neither
+this command nor its JS handler submits a message, changes original
+`relay_deliveries`, or authorizes `delivery-return` of the original UNKNOWN.
+Any missing/tampered proof fails closed. A later, separately reviewed
+reconciliation/return protocol is needed before a Manager message is sent.

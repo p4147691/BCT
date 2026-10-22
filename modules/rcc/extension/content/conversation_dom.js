@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-22-rcc-semantic-turn-proof-v2';
+const RCC_BUILD_VERSION = '2026-10-22-rcc-original-delivery-inspect-v1';
 
 function editorCandidates() {
 

@@ -13,7 +13,7 @@
   const READ_ONLY_COMMANDS = new Set([
     'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
     'diagnose-activity', 'diagnose-composer', 'diagnose-conversation-ui',
-    'api-probe', 'main-capture-get', 'delivery-manager-status',
+    'api-probe', 'main-capture-get', 'delivery-manager-status', 'delivery-recovery-inspect',
   ]);
   // This is lifecycle maintenance, not a product relay path. Its caller is
   // still subject to the external deploy/reload approval gate.

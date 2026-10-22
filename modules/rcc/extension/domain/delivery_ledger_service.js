@@ -273,3 +273,58 @@ async function deliveryManagerStatus(message) {
   return { ok: true, ...publicDeliveryReceipt(observed),
     managerResponseText: read.responseText };
 }
+
+ // Observe one exact historical original effect without writing the Delivery
+ // mirror. The normal return route MUST remain closed for NEEDS_REVIEW.
+async function deliveryRecoveryInspect(message) {
+  const id = deliveryId(message.deliveryId);
+  const managerKey = deliveryConversationKey(message.managerConversationKey);
+  const workerKey = deliveryConversationKey(message.workerConversationKey);
+  const expectedSha = String(message.requestSha256 || '');
+  const ledger = await readDeliveryLedgerMirror();
+  const original = ledger[id];
+  if (!original || original.state !== 'NEEDS_REVIEW'
+      || original.managerConversationKey !== managerKey
+      || original.workerConversationKey !== workerKey
+      || original.requestSha256 !== expectedSha) {
+    return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
+      error: 'DELIVERY_RECOVERY_ORIGINAL_MIRROR_MISMATCH' };
+  }
+  const fingerprint = await relaySha256(JSON.stringify([id, managerKey, workerKey, expectedSha]));
+  if (original.fingerprint !== fingerprint) {
+    return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
+      error: 'DELIVERY_RECOVERY_FINGERPRINT_MISMATCH' };
+  }
+  let tabs;
+  try {
+    tabs = deliveryTabs(await getChatTabs(), managerKey, workerKey);
+  } catch (error) {
+    return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
+      error: String(error?.message || error).slice(0, 128) };
+  }
+  const observed = await sendToChatTab(tabs.worker.id, {
+    type: 'relay:deliveryRecoveryProof', deliveryId: id,
+    conversationKey: workerKey, requestSha256: expectedSha
+  });
+  if (observed?.ok !== true || observed.deliveryId !== id
+      || observed.conversationKey !== workerKey
+      || observed.requestSha256 !== expectedSha
+      || !String(observed.turnKey || '')
+      || !['submit-activated','submitted','completed'].includes(String(observed.phase || ''))
+      || typeof observed.responseText !== 'string' || !observed.responseText
+      || observed.responseText.length > 12000
+      || observed.responseSha256 !== await relaySha256(observed.responseText)
+      || observed.responseLength !== observed.responseText.length) {
+    return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
+      error: String(observed?.error || 'DELIVERY_RECOVERY_PROOF_INVALID').slice(0, 128) };
+  }
+  return {
+    ok: true, deliveryId: id, state: 'NEEDS_REVIEW', reconciled: false,
+    managerConversationKey: managerKey, workerConversationKey: workerKey,
+    requestSha256: expectedSha, workerTabId: tabs.worker.id,
+    workerWindowId: tabs.worker.windowId, managerTabId: tabs.manager.id,
+    managerWindowId: tabs.manager.windowId, originalTurnKey: observed.turnKey,
+    recordPhase: observed.phase, responseText: observed.responseText,
+    responseSha256: observed.responseSha256, responseLength: observed.responseLength
+  };
+}
