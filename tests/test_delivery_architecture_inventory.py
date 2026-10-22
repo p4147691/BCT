@@ -49,6 +49,7 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
             "READ_ONLY_COMMANDS": {
                 "ping", "state", "result", "rename-receipt", "probe",
                 "probe-tabs", "diagnose-activity", "diagnose-composer",
+                "delivery-manager-status",
                 "diagnose-conversation-ui", "api-probe", "main-capture-get",
             },
             "MAINTENANCE_COMMANDS": {"reload-extension"},

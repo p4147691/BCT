@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-22-rcc-delivery-ledger-v1';
+const RCC_BUILD_VERSION = '2026-10-22-rcc-manager-observation-v1';
 
 function editorCandidates() {
 

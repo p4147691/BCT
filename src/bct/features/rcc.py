@@ -44,6 +44,7 @@ _MUTATING_COMMANDS = {
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
+    "delivery-manager-status",
 }
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
@@ -342,7 +343,7 @@ class RelayBrowserFeature:
                 "requestSha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
                 "workId": work.work_id,
             })
-        elif command in {"delivery-status", "delivery-return"}:
+        elif command in {"delivery-status", "delivery-return", "delivery-manager-status"}:
             allowed.add("delivery_id")
             delivery_id = str(arguments.get("delivery_id") or "").strip()
             if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", delivery_id):
@@ -438,7 +439,8 @@ class RelayBrowserFeature:
             resource += ":simple-relay:" + str(prepared["extra"]["from"])
         elif command == "simple-relay-return":
             resource += ":simple-relay:return:" + str(prepared["extra"]["sourceOperationId"])
-        elif command in {"delivery-start", "delivery-status", "delivery-return"}:
+        elif command in {"delivery-start", "delivery-status", "delivery-return",
+                         "delivery-manager-status"}:
             resource += ":delivery:" + str(prepared["extra"]["deliveryId"])
         if command == "rename-conversation":
             # Cosmetic effects must not claim the entire RCC instance.
@@ -492,7 +494,7 @@ class RelayBrowserFeature:
                 "workerConversationKey": delivery["worker_conversation_key"],
                 "requestSha256": delivery["request_sha256"],
             })
-            if delivery["state"] in {
+            if command != "delivery-manager-status" and delivery["state"] in {
                 DeliveryState.RETURNED.value, DeliveryState.NOT_APPLIED.value,
                 DeliveryState.FAILED.value, DeliveryState.NEEDS_REVIEW.value,
             }:
@@ -505,6 +507,11 @@ class RelayBrowserFeature:
                 return FeatureResult(replay_outcome, {
                     "command": command, "delivery_id": delivery_id,
                     "delivery_state": delivery["state"], "replayed": True,
+                }, release_claims=True, output={"delivery": delivery})
+            if command == "delivery-manager-status" and delivery["state"] != DeliveryState.RETURNED.value:
+                return FeatureResult(Outcome.APPLIED, {
+                    "command": command, "delivery_id": delivery_id,
+                    "delivery_state": delivery["state"], "pending": True,
                 }, release_claims=True, output={"delivery": delivery})
             if (command == "delivery-status"
                     and delivery["state"] != DeliveryState.SENT_WAITING.value):
@@ -536,9 +543,11 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_TRANSPORT_UNKNOWN"},
                 )
-            if command == "delivery-status":
+            if command in {"delivery-status", "delivery-manager-status"}:
                 raise ConfirmedFailure(
-                    "RCC_DELIVERY_STATUS_UNAVAILABLE", release_claims=True,
+                    ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
+                     if command == "delivery-manager-status"
+                     else "RCC_DELIVERY_STATUS_UNAVAILABLE"), release_claims=True,
                 ) from exc
             raise UnknownEffectError(
                 "RCC_DELIVERY_TRANSPORT_UNKNOWN", release_claims=True,
@@ -550,9 +559,11 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_EFFECT_UNKNOWN"},
                 )
-            if command == "delivery-status":
+            if command in {"delivery-status", "delivery-manager-status"}:
                 raise ConfirmedFailure(
-                    "RCC_DELIVERY_STATUS_UNAVAILABLE", release_claims=True,
+                    ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
+                     if command == "delivery-manager-status"
+                     else "RCC_DELIVERY_STATUS_UNAVAILABLE"), release_claims=True,
                 ) from exc
             raise UnknownEffectError(
                 "RCC_DELIVERY_EFFECT_UNKNOWN", release_claims=True,
@@ -565,15 +576,38 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_ACK_ID_MISMATCH"},
                 )
-            if command == "delivery-status":
+            if command in {"delivery-status", "delivery-manager-status"}:
                 raise ConfirmedFailure(
-                    "RCC_DELIVERY_STATUS_ID_MISMATCH", release_claims=True,
+                    "RCC_DELIVERY_READ_ID_MISMATCH", release_claims=True,
                 )
             raise UnknownEffectError(
                 "RCC_DELIVERY_ACK_ID_MISMATCH", release_claims=True,
             )
 
         state = str(result.get("state") or "")
+        if command == "delivery-manager-status":
+            if state != DeliveryState.RETURNED.value:
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_MANAGER_STATE_MISMATCH", release_claims=True,
+                )
+            pending = result.get("pending") is True
+            if not pending:
+                body = result.get("managerResponseText")
+                digest = result.get("managerResponseSha256")
+                length = result.get("managerResponseLength")
+                if (result.get("ok") is not True or not isinstance(body, str)
+                        or not body or len(body) > 12000
+                        or hashlib.sha256(body.encode("utf-8")).hexdigest() != digest
+                        or length != len(body)):
+                    raise ConfirmedFailure(
+                        "RCC_DELIVERY_MANAGER_REPLY_INVALID", release_claims=True,
+                    )
+            return FeatureResult(Outcome.APPLIED, {
+                "command": command, "delivery_id": delivery_id,
+                "delivery_state": state, "pending": pending,
+                "manager_reply_sha256": str(result.get("managerResponseSha256") or ""),
+            }, release_claims=True,
+                output={"delivery": delivery, "result": _sanitize(result)})
         observation = {
             "rcc_session_id": str(result.get("sessionId") or ""),
             "worker_tab_id": result.get("workerTabId"),
@@ -711,6 +745,7 @@ class RelayBrowserFeature:
     def execute(self, request: FeatureRequest) -> FeatureResult:
         if request.arguments["command"] in {
             "delivery-start", "delivery-status", "delivery-return",
+            "delivery-manager-status",
         }:
             return self._execute_delivery(request)
         if request.arguments["command"] == "create-and-send":

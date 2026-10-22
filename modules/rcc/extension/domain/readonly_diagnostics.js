@@ -130,6 +130,11 @@ async function handleNativeCommand(message) {
           postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
           return;
         }
+    if (message.command === 'delivery-manager-status') {
+          const result = await deliveryManagerStatus(message);
+          postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
+          return;
+        }
 
     if (message.command === 'new-chat-send') {
 

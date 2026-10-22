@@ -57,6 +57,9 @@ function publicDeliveryReceipt(receipt) {
     requestSha256: String(receipt.requestSha256 || ''),
     responseSha256: String(receipt.responseSha256 || ''),
     responseLength: Number.isInteger(receipt.responseLength) ? receipt.responseLength : null,
+    managerResponseSha256: String(receipt.managerResponseSha256 || ''),
+    managerResponseLength: Number.isInteger(receipt.managerResponseLength)
+      ? receipt.managerResponseLength : null,
     workerTabId: Number.isInteger(receipt.workerTabId) ? receipt.workerTabId : null,
     workerWindowId: Number.isInteger(receipt.workerWindowId) ? receipt.workerWindowId : null,
     managerTabId: Number.isInteger(receipt.managerTabId) ? receipt.managerTabId : null,
@@ -200,6 +203,8 @@ async function deliveryReturn(message) {
       && ack.conversationKey === receipt.managerConversationKey) {
     const returned = { ...receipt, state: 'RETURNED', responseText: undefined,
       managerTabId: tabs.manager.id, managerWindowId: tabs.manager.windowId,
+      managerBeforeAssistantCount: Number.isInteger(ack.beforeAssistantCount)
+        ? ack.beforeAssistantCount : null,
       updatedAt: Date.now() };
     await writeDeliveryLedgerMirror(id, returned);
     return { ok: true, ...publicDeliveryReceipt(returned) };
@@ -212,4 +217,59 @@ async function deliveryReturn(message) {
     error: String(ack?.error || 'DELIVERY_RETURN_ACK_INVALID').slice(0, 128) };
   await writeDeliveryLedgerMirror(id, unresolved);
   return { ok: false, ...publicDeliveryReceipt(unresolved) };
+}
+
+
+// Read the Manager's new completed reply for the exact return turn. This is a
+// read-only continuation of the same delivery, never a second message submit.
+async function deliveryManagerStatus(message) {
+  const id = deliveryId(message.deliveryId);
+  const ledger = await readDeliveryLedgerMirror();
+  const receipt = ledger[id];
+  if (!receipt) return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
+    error: 'DELIVERY_MIRROR_NOT_FOUND' };
+  if (receipt.state !== 'RETURNED') {
+    return { ok: true, pending: true, ...publicDeliveryReceipt(receipt) };
+  }
+  if (!Number.isInteger(receipt.managerBeforeAssistantCount)) {
+    return { ok: false, ...publicDeliveryReceipt(receipt),
+      error: 'DELIVERY_MANAGER_BASELINE_NOT_CAPTURED' };
+  }
+  let tabs;
+  try {
+    tabs = deliveryTabs(await getChatTabs(), receipt.managerConversationKey,
+      receipt.workerConversationKey);
+  } catch (error) {
+    return { ok: true, pending: true, ...publicDeliveryReceipt(receipt),
+      error: String(error?.message || error).slice(0, 128) };
+  }
+  let read;
+  try {
+    read = await sendToChatTab(tabs.manager.id, {
+      type: 'relay:simpleReadReply', conversationKey: receipt.managerConversationKey,
+      afterAssistantCount: receipt.managerBeforeAssistantCount, relayId: id,
+    });
+  } catch (error) {
+    return { ok: true, pending: true, ...publicDeliveryReceipt(receipt),
+      error: String(error?.message || error).slice(0, 128) };
+  }
+  if (read?.ok !== true || read.conversationKey !== receipt.managerConversationKey
+      || typeof read.responseText !== 'string' || !read.responseText) {
+    return { ok: true, pending: true, ...publicDeliveryReceipt(receipt),
+      error: String(read?.error || 'DELIVERY_MANAGER_REPLY_PENDING').slice(0, 128) };
+  }
+  if (read.responseText.length > 12000) {
+    return { ok: false, ...publicDeliveryReceipt(receipt),
+      error: 'DELIVERY_MANAGER_REPLY_TOO_LARGE' };
+  }
+  const hash = await relaySha256(read.responseText);
+  if (receipt.managerResponseSha256 && receipt.managerResponseSha256 !== hash) {
+    return { ok: false, ...publicDeliveryReceipt(receipt),
+      error: 'DELIVERY_MANAGER_REPLY_CHANGED' };
+  }
+  const observed = { ...receipt, managerResponseSha256: hash,
+    managerResponseLength: read.responseText.length, updatedAt: Date.now() };
+  await writeDeliveryLedgerMirror(id, observed);
+  return { ok: true, ...publicDeliveryReceipt(observed),
+    managerResponseText: read.responseText };
 }

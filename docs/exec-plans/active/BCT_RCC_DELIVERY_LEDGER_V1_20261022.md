@@ -75,7 +75,7 @@ conversation UUID.
 | new relay | `delivery-start`, `delivery-status`, `delivery-return`, `simple-relay-bind`, `simple-relay-send`, `simple-relay-return`, `new-chat-send` | the three `delivery-*` commands are the replacement; keep new-chat separate; retire the three Simple Relay commands only after acceptance |
 | conversation | `rename-conversation`, `conversation-bind` | keep rename; retire persisted relay binding after replacement acceptance |
 | orchestration | `send` | replace with the single delivery contract |
-| read-only | `ping`, `state`, `result`, `rename-receipt`, `probe`, `probe-tabs`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `api-probe`, `main-capture-get` | keep; consolidate diagnostics later without blocking delivery |
+| read-only | `delivery-manager-status`, `ping`, `state`, `result`, `rename-receipt`, `probe`, `probe-tabs`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `api-probe`, `main-capture-get` | keep; consolidate diagnostics later without blocking delivery |
 | maintenance | `reload-extension` | keep behind the existing explicit maintenance gate |
 
 Blocked legacy mutations remain blocked. In particular, this reset does not
@@ -303,3 +303,36 @@ The thin path is packaged as `RCC_REBUILD_V2_RC5` at source commit
 Phase 6 is accepted. Wake-up, role failover and multiple Workers may now be
 designed on this one ledger. Legacy retirement remains forbidden until their
 callers are proven zero and the Phase 7 path is accepted.
+
+
+## Phase 7A — Manager reply observation (isolated, not LIVE)
+
+The accepted Phase 6 `delivery-return` only proves that the Worker reply was
+submitted once to the exact Manager conversation; it does **not** prove that the
+Manager produced a new decision. Phase 7A introduces **one read-only command**:
+`delivery-manager-status`, keyed by the existing `delivery_id` and original Work.
+
+- A successful `delivery-return` now records the Manager's exact pre-reply
+  assistant count in the bounded RCC mirror. No second delivery or wake message
+  is sent.
+- `delivery-manager-status` reads the **completed response to that exact
+  submitted Manager turn** through the existing content DOM adapter. While
+  generating, unavailable, or reattaching, the result is pending and no submit
+  occurs.
+- It returns Manager text and SHA-256/length to the authorized BCT caller.
+  The Manager text is **not persisted as a new receipt in RCC storage**; its
+  SHA/length are retained only in the existing delivery mirror to detect drift.
+- Core verifies the text hash and identity and does **not** change the
+  `RETURNED` ledger state. This is observation, not a new state machine.
+- Prior Phase 6 deliveries without a Manager baseline cannot be retroactively
+  read as a new Manager decision. That is a safe explicit failure rather than
+  trying to infer an unbound ChatGPT turn.
+
+Gate: local Python + JavaScript tests, source/manifest compatibility, scoped
+CI, exact source deployment and a **fresh** 1:1 Manager response proof before
+any automatic Manager decision consumption or next-Worker dispatch.
+
+Phase 7B will validate a structured next-Worker decision against membership
+and per-run authority, then create a **new** single delivery id for the next
+Worker. No free-form Assistant output is an execution authorization. Legacy
+Manager Wake and recovery loops remain outside this thin path.
