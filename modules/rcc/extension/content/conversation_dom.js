@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-22-rcc-manager-observation-v1';
+const RCC_BUILD_VERSION = '2026-10-22-rcc-semantic-turn-proof-v2';
 
 function editorCandidates() {
 
@@ -119,15 +119,30 @@ function getConversationTurns() {
     seen.add(turn);
     turns.push(turn);
   }
+  // New ChatGPT DOM builds can expose a stable semantic user unit before
+  // its enclosing turn wrapper. Admit only the role-keyed user unit not
+  // already represented by a turn; exact-text/uniqueness gates still apply.
+  const wrapperSelector =
+    '[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]';
+  for (const unit of document.querySelectorAll(
+    '[data-content-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":user"]'
+  )) {
+    if (!unit.matches('[data-content-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":user"]')
+        || unit.closest(wrapperSelector) || messageUnitRole(unit) !== 'user'
+        || !turnIdentity(unit) || seen.has(unit)) continue;
+    seen.add(unit);
+    turns.push(unit);
+  }
   return turns;
 }
-
 
 function turnIdentity(turn) {
   if (!(turn instanceof Element)) return '';
   return turn.getAttribute('data-turn-key')
     || turn.getAttribute('data-content-search-turn-key')
     || turn.getAttribute('data-testid')
+    || turn.getAttribute('data-content-search-unit-key')
+    || turn.getAttribute('data-chatgpt-search-unit-key')
     || '';
 }
 
@@ -293,6 +308,10 @@ function assistantCandidatesForTurn(turn) {
 
 
 function turnUserText(turn) {
+  if (turn?.matches?.('[data-content-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":user"]')
+      && messageUnitRole(turn) === 'user') {
+    return messageUnitText(turn, 'user');
+  }
   const users = getMessageUnits('user', turn);
   if (users.length !== 1) return '';
   return messageUnitText(users[0], 'user');
