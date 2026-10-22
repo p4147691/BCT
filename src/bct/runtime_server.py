@@ -531,7 +531,10 @@ def main() -> int:
         if bottleneck_thread is not None:
             bottleneck_thread.join(timeout=3.0)
         chat_stream_watch_thread.join(timeout=3.0)
-        writer_lock.close()
+        try:
+            bct.cdp_connections.close()
+        finally:
+            writer_lock.close()
     return 0 if server.started else 1
 
 

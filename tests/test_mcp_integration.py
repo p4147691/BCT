@@ -149,6 +149,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_github_sync_main", "bct_read", "bct_service_control",
                         "bct_relay_browser",
                         "bct_system_inspect", "bct_execute", "bct_monitor",
+                        "bct_cdp_inspect",
                         "bct_process_session",
                         "bct_test", "bct_write", "bct_verify", "bct_orchestrate",
                         "bct_claim_reconcile",
