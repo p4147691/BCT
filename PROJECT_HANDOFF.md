@@ -1590,6 +1590,20 @@ UTF-8 정본 변경안도 격리 시험에 포함했다.
 파일이 아직 없으므로 revision은 `defaults`이고 실제 `completion_criteria`는 빈 기본값이다.
 이는 이후 설정 입력이 필요한 사실이며 전체 설정 수락으로 과장하지 않는다.
 
+추가 읽기 전용 확인에서 현재 scope 표시명은 `브라우저 브릿지`, Project Run 목표도 과거
+Browser Bridge 완료 문구로 확인됐다. 현재 영속 대화망의 전송 기술 선택이나 목표로 사용하면
+안 되는 값이다. 기존 scope identity와 기록은 보존하고, 메시지 설정의
+`project_display_name`·`project_goal` override가 있으면 Worker/Manager 문맥에서 우선하도록
+보완했다. `pending_same_work`는 현재 빈 배열이지만 구 Orchestration assignment 관찰값이므로
+프로젝트 전체의 미완료 업무가 없다는 증거로 사용하지 않는다.
+
+실제 파일을 쓰지 않은 프로젝트 override 후보의 SHA-256은
+`f32c30d1a10021b6053f23c611a39ff623f51040c294e9ebfd01f92fb1e83ba7`,
+`expected_absent=true`다. 후보에는 프로젝트명 `BCT 영속 대화망`, 현재 목표·완료 기준,
+RCC 단일 Delivery/CDP 보조/Browser Bridge 독립 경계를 넣었다. 임시 후보로 다시 조립한 결과
+Worker·Manager 양쪽 이름/목표/완료 기준이 정확히 일치했고 과거 Browser Bridge 목표 문구는
+없었으며 길이는 각각 1,981/2,260 UTF-16 단위였다. 운영 파일에는 쓰지 않았다.
+
 연관 Python 92개 PASS, `PYTHONUTF8=0` 환경의 설정/조립 18개 PASS,
 `compileall` 및 `git diff --check` PASS다. Windows 시스템 UTF-8 옵션이나 국가/언어 설정은
 변경하지 않았고 재부팅도 하지 않았다. 설치 파일 대조 결과 RCC payload는 현재
@@ -1597,7 +1611,8 @@ UTF-8 정본 변경안도 격리 시험에 포함했다.
 `2026-10-23-rcc-manager-return-wake-v1`이지만 이번 설정 작업에서는 reload하거나 메시지를
 보내지 않았다. PR #293의 RCC editor rebind 후보도 섞지 않았다.
 
-위 보완은 격리 로컬 checkpoint
-`48430c3`(`feat(relay): preview unified configurable messages`)로 확정했다. 남은 순서는 사용자와
-실제 기본값·프로젝트 override 미리보기 수락이다. 그 전에는 main/remote/Core/runtime
-config/Chrome을 변경하거나 N13/N14로 메시지를 보내지 않는다.
+기본 통합 보완은 격리 로컬 checkpoint
+`48430c3`(`feat(relay): preview unified configurable messages`)로 확정했다. 위 프로젝트
+표시명·목표 override 보완은 그 다음 격리 변경이며 검증 후 별도 checkpoint로 남긴다. 남은
+순서는 사용자와 실제 프로젝트 override 미리보기 수락이다. 그 전에는
+main/remote/Core/runtime config/Chrome을 변경하거나 N13/N14로 메시지를 보내지 않는다.

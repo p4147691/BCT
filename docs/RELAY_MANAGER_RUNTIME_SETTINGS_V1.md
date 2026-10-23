@@ -19,6 +19,8 @@
   },
   "projects": {
     "network.d3052e031bf748d8b1640b566a5bb86b": {
+      "project_display_name": "BCT 영속 대화망",
+      "project_goal": "사용자가 정한 목표 아래 Manager와 Worker가 설정 기반으로 실제 업무를 이어간다.",
       "worker_additional_instruction": "검증 근거와 남은 문제를 함께 보고하세요.",
       "manager_additional_instruction": "이번 프로젝트에 맞는 다음 판단 근거를 설명하세요."
     }
@@ -39,7 +41,13 @@
   pending_same_work의 중복 없는 부분집합과 표시 순서)
 - Manager 문맥 한도: manager_member_limit(0~40), include_pending,
   pending_limit(0~12)
-- 프로젝트별 정보: completion_criteria, project_context_note
+- 프로젝트별 정보: project_display_name, project_goal, completion_criteria,
+  project_context_note. 표시명·목표가 비어 있으면 기존 scope/Project Run 값을 사용하고,
+  값이 있으면 메시지 표현에만 우선 적용한다. scope identity나 기존 기록을 바꾸지 않는다.
+
+현재 `pending_same_work`는 같은 Work에 연결된 기존 Orchestration assignment의 미종료 상태를
+읽는 관찰값이다. 빈 배열은 그 저장소에 항목이 없다는 뜻이며 모든 형태의 남은 업무가 없다는
+완료 증거가 아니다. Manager는 프로젝트 목표·실제 Delivery 영수증과 함께 판단해야 한다.
 
 변경은 프로젝트별 overrides나 defaults에서만 하며, 실행 권한을 확대하지 않는다.
 Work/Delivery/scope ID, Manager·Worker UUID, 설정·결과 해시, Worker의 task와

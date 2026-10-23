@@ -52,6 +52,8 @@ _DEFAULTS = {
     "manager_member_limit": 20,
     "include_pending": True,
     "pending_limit": 6,
+    "project_display_name": "",
+    "project_goal": "",
     "completion_criteria": "",
     "project_context_note": "",
 }
@@ -61,7 +63,16 @@ _TEXT_KEYS = {
 }
 _OPTIONAL_TEXT_KEYS = {
     "worker_additional_instruction", "manager_additional_instruction",
-    "completion_criteria", "project_context_note",
+    "project_display_name", "project_goal", "completion_criteria",
+    "project_context_note",
+}
+_OPTIONAL_TEXT_LIMITS = {
+    "project_display_name": 200,
+    "worker_additional_instruction": 4000,
+    "manager_additional_instruction": 4000,
+    "project_goal": 4000,
+    "completion_criteria": 4000,
+    "project_context_note": 4000,
 }
 _ALLOWED = set(_DEFAULTS)
 _LAYOUT = {"context", "worker_result", "action"}
@@ -131,6 +142,16 @@ _CATALOG: dict[str, dict[str, Any]] = {
     "pending_limit": {
         "type": "integer", "description": "Manager 문맥의 미완료 업무 수",
         "minimum": 0, "maximum": 12,
+    },
+    "project_display_name": {
+        "type": "optional-text",
+        "description": "메시지에 표시할 프로젝트명; 비어 있으면 scope 표시명 사용",
+        "max_length": 200,
+    },
+    "project_goal": {
+        "type": "optional-text",
+        "description": "메시지에 전달할 프로젝트 목표; 비어 있으면 Project Run 목표 사용",
+        "max_length": 4000,
     },
     "completion_criteria": {
         "type": "optional-text", "description": "프로젝트별 완료 기준",
@@ -211,7 +232,7 @@ def _validated(values: Any) -> dict[str, Any]:
                 raise ValueError("RELAY_SETTINGS_TEXT_INVALID:" + key)
             result[key] = value
         elif key in _OPTIONAL_TEXT_KEYS:
-            if (not isinstance(value, str) or len(value) > 4000
+            if (not isinstance(value, str) or len(value) > _OPTIONAL_TEXT_LIMITS[key]
                     or "\x00" in value or "[BCT_" in value):
                 raise ValueError("RELAY_SETTINGS_TEXT_INVALID:" + key)
             result[key] = value

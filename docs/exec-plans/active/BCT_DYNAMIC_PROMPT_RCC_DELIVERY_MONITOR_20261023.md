@@ -12,6 +12,7 @@
 - Worker 결과는 이미 구현된 delivery-status → delivery-return → delivery-manager-status 경로로 전달. RETURNED는 Manager 대화에 사용자 턴을 보냈다는 의미이지 Manager가 후속 판단을 완료했다는 의미가 아님.
 - PR #289 이후 delivery-return은 Worker 결과 원문과 프로젝트 문맥·Manager 지시를 한 반환 메시지로 조합한다. 메시지 의미는 relay-message-settings.json 한곳에서 읽으며 과거 manager/worker-relay-note.txt를 자동 삽입하지 않는다. Manager는 특정 상태 단어가 아니라 자연어 판단과 실제 BCT 실행으로 다음 행동을 증명한다. 과거 Orchestration marker/schema는 현재 메시지 형식의 요구사항이 아니다.
 - delivery-preview는 실제 Delivery row나 RCC/Chrome 효과 없이 Worker 전달문과 Manager 반환문을 같은 조립기로 보여 준다.
+- 과거 scope 표시명·Project Run 목표가 현재 협업 목적과 다를 수 있으므로 project_display_name과 project_goal을 메시지 설정으로 덮어쓸 수 있다. 이는 메시지 문맥만 바꾸며 scope identity와 기존 기록을 수정하지 않는다.
 
 ## 고정 vs. 동적 지시
 

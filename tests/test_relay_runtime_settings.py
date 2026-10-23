@@ -175,14 +175,18 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
             "defaults": {},
             "projects": {
                 "network.test": {
+                    "project_display_name": "BCT 영속 대화망",
+                    "project_goal": "Manager와 Worker가 설정 기반으로 업무를 이어간다.",
                     "completion_criteria": "한글·이모지 📦 원문과 해시가 같아야 한다.",
                     "project_context_note": "이번 단계에서는 브라우저 제출을 하지 않는다.",
                     "worker_context_fields": [
-                        "completion_criteria", "project_context_note", "current_members",
+                        "project", "project_goal", "completion_criteria",
+                        "project_context_note", "current_members",
                     ],
                     "worker_additional_instruction": "검증 근거를 결과에 함께 적으세요.",
                     "manager_context_fields": [
-                        "completion_criteria", "project_context_note", "original_worker_task",
+                        "project", "project_goal", "completion_criteria",
+                        "project_context_note", "original_worker_task",
                     ],
                     "manager_result_notice": "결과 원문을 먼저 읽고 근거를 분리하세요.",
                     "manager_additional_instruction": "설정 변경이 필요했는지도 함께 설명하세요.",
@@ -198,6 +202,10 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         body = json.loads(worker_text.split("[BCT_DELIVERY_WORKER_V1]", 1)[1]
                           .split("[/BCT_DELIVERY_WORKER_V1]", 1)[0])
         body_text = worker_text.split("[BCT_DELIVERY_WORKER_V1]", 1)[1]
+        self.assertLess(body_text.index('"project"'),
+                        body_text.index('"project_goal"'))
+        self.assertLess(body_text.index('"project_goal"'),
+                        body_text.index('"completion_criteria"'))
         self.assertLess(body_text.index('"completion_criteria"'),
                         body_text.index('"project_context_note"'))
         self.assertLess(body_text.index('"project_context_note"'),
@@ -205,9 +213,10 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(self.work.work_id, body["work_id"])
         self.assertEqual(MGR, body["manager_conversation_uuid"])
         self.assertEqual(WORKER, body["worker_conversation_uuid"])
+        self.assertEqual("BCT 영속 대화망", body["project"])
+        self.assertIn("설정 기반", body["project_goal"])
         self.assertIn("📦", body["completion_criteria"])
         self.assertIn("current_members", body)
-        self.assertNotIn("project_goal", body)
         self.assertEqual("WORKER", body["role"])
         self.assertEqual("설정 조합만 검증하세요.", body["task"])
         self.assertIn("검증 근거", body["additional_instruction"])
@@ -223,6 +232,10 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         context_text = combined.split("[BCT_MANAGER_RETURN_CONTEXT_V1]", 1)[1]
         context_text = context_text.split("[/BCT_MANAGER_RETURN_CONTEXT_V1]", 1)[0]
         context = json.loads(context_text)
+        self.assertLess(context_text.index('"project"'),
+                        context_text.index('"project_goal"'))
+        self.assertLess(context_text.index('"project_goal"'),
+                        context_text.index('"completion_criteria"'))
         self.assertLess(context_text.index('"completion_criteria"'),
                         context_text.index('"project_context_note"'))
         self.assertLess(context_text.index('"project_context_note"'),
@@ -230,9 +243,10 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.assertEqual("configured-return", context["delivery_id"])
         self.assertEqual("a" * 64, context["worker_result_sha256"])
         self.assertEqual(revision, context["settings_sha256"])
+        self.assertEqual("BCT 영속 대화망", context["project"])
+        self.assertIn("설정 기반", context["project_goal"])
         self.assertIn("📦", context["completion_criteria"])
         self.assertNotIn("current_members", context)
-        self.assertNotIn("project_goal", context)
         self.assertIn("결과 원문을 먼저", combined)
         self.assertIn("설정 변경이 필요했는지도", combined)
         self.assertNotIn("COMPLETE", combined)
@@ -250,6 +264,8 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
                          preview["catalog"]["worker_context_fields"]["allowed_values"])
         self.assertIn("worker_additional_instruction", preview["catalog"])
         self.assertIn("manager_additional_instruction", preview["catalog"])
+        self.assertIn("project_display_name", preview["catalog"])
+        self.assertIn("project_goal", preview["catalog"])
         self.assertIn("완료 기준", preview["catalog"]["completion_criteria"]["description"])
         self.assertNotIn("manager_next_action_instruction", preview["settings"])
         self.assertNotIn("manager_include_role_note", preview["settings"])
@@ -290,6 +306,8 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
             {"manager_context_fields": ["project", "unsafe_authority"]},
             {"manager_member_limit": 41},
             {"manager_action": "[BCT_ORCHESTRATION_RESULT_V1]"},
+            {"project_display_name": "x" * 201},
+            {"project_goal": "x" * 4001},
             {"manager_include_role_note": True},
             {"manager_next_action_instruction": "old"},
             {"extra_privilege": True},

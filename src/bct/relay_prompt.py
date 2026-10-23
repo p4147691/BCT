@@ -79,8 +79,10 @@ def compose_worker_delivery(
     if work_id:
         work_goal = store.get_work(work_id).request_summary
     optional = {
-        "project": str((scope.get("project") or {}).get("display_name") or "")[:200],
-        "project_goal": str((run or {}).get("objective") or work_goal)[:4000],
+        "project": str(settings["project_display_name"] or
+                       (scope.get("project") or {}).get("display_name") or "")[:200],
+        "project_goal": str(settings["project_goal"] or
+                            (run or {}).get("objective") or work_goal)[:4000],
         "completion_criteria": settings["completion_criteria"],
         "project_context_note": settings["project_context_note"],
         "current_members": members,
@@ -165,8 +167,10 @@ def compose_manager_return_frame(
         "settings_sha256": settings["config_sha256"],
     }
     optional = {
-        "project": str((scope.get("project") or {}).get("display_name") or "")[:200],
-        "project_goal": str((run or {}).get("objective") or work.request_summary)[:4000],
+        "project": str(settings["project_display_name"] or
+                       (scope.get("project") or {}).get("display_name") or "")[:200],
+        "project_goal": str(settings["project_goal"] or
+                            (run or {}).get("objective") or work.request_summary)[:4000],
         "completion_criteria": settings["completion_criteria"],
         "project_context_note": settings["project_context_note"],
         "current_members": [
