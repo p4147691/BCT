@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC21_EXACT_ACTIVE_DRAFT_RETIREMENT",
+  "candidate": "RCC_REBUILD_V2_RC22_RECOVERED_EXECUTION_RETIREMENT",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1100,
-        "sha256": "5a11e24ea4c50990035240c59cd835c6bf035f76b2710765ad1167e72438dd4d"
+        "size": 1101,
+        "sha256": "8b817125cfead154f90772d3bb40caac70f0794007a49c99afa4ba000678ef81"
       },
       {
         "path": "browser/read_adapter.js",
@@ -92,13 +92,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 14561,
-        "sha256": "55cfd1752dfc02e50c4f1463a10d427eda10f32f661194b055048297f9df15b6"
+        "size": 16672,
+        "sha256": "6b8e4aae7126d3903ff0d8b2544014925044dc34d613ef2d70871b61fc6bf732"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 18941,
-        "sha256": "0d79ffb3ca0f053a57f1ba3cb8e2fbefedb2d4bd1c7364b97caf8325aca82647"
+        "size": 18942,
+        "sha256": "000c227b2c12ed35fa2a1547fa96fbb8290867ef10b1523dc7d2d01a07ebec3d"
       },
       {
         "path": "content/conversation_rename.js",
@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 30510,
-        "sha256": "b7f0a0952271c1982c899e48c71f7b571b65fda9a3d0b681218b831c10376c7a"
+        "size": 32961,
+        "sha256": "efd4615d7dc3e401b82ff9b58812f16a7d76f6090df93ef2ed9198c31ebbd40e"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -172,8 +172,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 30452,
-        "sha256": "1cc66476addcea718a77c841103d5d5e7bc17b8bae936d71518d856798f5defa"
+        "size": 30706,
+        "sha256": "1d3ef4646458310a5d060ab109e74f1c0453e2ac76c8212fa1b58e535e214e2e"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -197,13 +197,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3569,
-        "sha256": "cd406d9ee596cc28a4d4e2af4393b8af5be78bde61aa9fd132eb4904c9b396e0"
+        "size": 3599,
+        "sha256": "a400672b8f369f5b6b2f268718c659b39bff593614468aea22d4d8d914d0e05f"
       },
       {
         "path": "manifest.json",
-        "size": 1522,
-        "sha256": "e65a5f2d568f1e6e9af49612fde76ffcfd2ef748735254cc88014819d5cf1d65"
+        "size": 1523,
+        "sha256": "52033a876824013e708c2839a17e1f5179f659098d6af272c7fba8eefe53ab36"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "4d8b4688ee4e0240981b38fba6061892d71e85422fe41d1e20b9375ec8504391"
+    "aggregateSha256": "c2c818587f4d8d1f776e4b7a77a0ad45e44534dbfa5763dc3fce868af23d448e"
   },
   "activeLoaderGraph": {
     "background": [
@@ -376,6 +376,7 @@
         "delivery-status",
         "delivery-return",
         "retire-composer-draft",
+        "retire-recovered-execution",
         "new-chat-send"
       ],
       "nativeConversation": [

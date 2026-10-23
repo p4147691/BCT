@@ -34,6 +34,17 @@ class FakeDeliveryHost:
                     "state": "SENT_WAITING",
                 },
             }
+        if kwargs["command"] == "retire-recovered-execution":
+            extra = kwargs["extra"]
+            return {
+                "ok": True, "retired": True, "effectState": "APPLIED",
+                "deliveryId": extra["deliveryId"],
+                "conversationKey": extra["conversationKey"],
+                "requestSha256": extra["expectedRequestSha256"],
+                "responseSha256": extra["expectedResponseSha256"],
+                "responseLength": extra["expectedResponseLength"],
+                "executionAbsent": True,
+            }
         if kwargs["command"] == "delivery-start":
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "SENT_WAITING", "workerTabId": 11,
@@ -429,6 +440,56 @@ class DeliveryFeatureTests(unittest.TestCase):
                     "superseded_work_id": old_work.work_id,
                     "superseded_delivery_id": delivery_id,
                 }, "draft-retire-" + name)
+        self.assertEqual([], self.host.calls)
+
+    def test_exact_recovered_execution_retirement_requires_terminal_reply_identity(self) -> None:
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        request_sha = "a" * 64
+        response_text = "exact recovered response"
+        response_sha = hashlib.sha256(response_text.encode()).hexdigest()
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="recovered-delivery", work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key=worker, request_sha256=request_sha,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id="recovered-delivery", work_id=self.work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
+        retired = self.execute({
+            "instance_id": self.base["instance_id"],
+            "command": "retire-recovered-execution",
+            "conversation_key": worker,
+            "delivery_id": "recovered-delivery",
+            "expected_request_sha256": request_sha,
+            "expected_response_sha256": response_sha,
+            "expected_response_length": len(response_text),
+        }, "retire-recovered-exact")
+        self.assertEqual(Outcome.APPLIED, retired.outcome)
+        self.assertTrue(retired.evidence["execution_absent"])
+        self.assertEqual(response_sha, retired.evidence["response_sha256"])
+
+    def test_recovered_execution_retirement_rejects_non_review_delivery(self) -> None:
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="not-review", work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key=worker, request_sha256="a" * 64,
+        )
+        with self.assertRaisesRegex(
+            PreconditionError, "RCC_RECOVERED_RETIRE_IDENTITY_INVALID",
+        ):
+            self.execute({
+                "instance_id": self.base["instance_id"],
+                "command": "retire-recovered-execution",
+                "conversation_key": worker,
+                "delivery_id": "not-review",
+                "expected_request_sha256": "a" * 64,
+                "expected_response_sha256": "b" * 64,
+                "expected_response_length": 10,
+            }, "retire-recovered-not-review")
         self.assertEqual([], self.host.calls)
 
     def test_mismatched_delivery_reuse_is_confirmed_before_host_call(self) -> None:
