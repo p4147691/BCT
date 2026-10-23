@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .conversation_network import ConversationNetworkError, project_view, resolve_project_id
 from .core.models import Principal, Work
+from .mcp_catalogue_config import CatalogueSettings
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -32,6 +33,7 @@ _CAPABILITY_USAGE = {
     "system_inspect": "Use arguments.operation as process_list, process, or port. process_list accepts optional query and limit; process requires pid; port requires port.",
     "monitor": "Use arguments.operation as status or validate.",
     "cdp_inspect": "Read-only existing Chrome tab listing via a single approved Chrome DevTools MCP connection. Use arguments={\\\"operation\\\":\\\"list_pages\\\"}. Requires a work with cdp_inspect permission and locally enabled CDP policy; does not send messages, create tabs, or bypass Chrome consent.",
+    "browser_extension_manage": "Read-only Chrome extension inventory via CDP. arguments={\\\"operation\\\":\\\"inventory\\\"} (or pages). Work-scoped; create/update/delete not enabled in this initial common MCP adapter. CDP only. Do not infer Tampermonkey CRUD support from this tool yet.",
     "relay_browser": "For read-only RCC inspection use arguments={\"command\": \"state\", \"instance_id\": \"exact instance id\"}. To create one ordinary ChatGPT conversation and return its first reply, use command=create-and-send, mode=tab, the exact target window_id, text, and timeout_s up to 360. This is one idempotent operation: never call low-level create/send commands and never retry an UNKNOWN with a new operation ID. Prefer bct_status for routine status.",
     "relay_control": "Execute one enabled hot-read relay purpose using arguments={\"purpose\":\"selected purpose\",\"scope_id\":\"project scope\",\"context\":{...},\"expected_settings_sha256\":\"preview revision\"}. The fixed registry permits one existing BCT operation step per invocation. Settings never grant authority: the Work must contain the delegated capability such as relay_browser or cdp_inspect. Reuse operation_id only for the exact same frozen request and never retry UNKNOWN with a new ID.",
     "orchestrate": "Durable read-evidence manager/worker sessions. Use project-run-plan to select one advisory Manager conversation from an existing conversation scope, then start and sync a session, select a manager epoch, and project-run-bind the exact active RCC attachment. A later attachment generation for the same conversation may be rebound; stale generations are rejected only at the effect boundary. Use dispatch or chain-run for work. Browser mutations run in background; recover with bct_operation_get. Recovery never resends an UNKNOWN effect.",
@@ -101,8 +103,11 @@ def build_mcp(
         started_ns = time.perf_counter_ns()
         value = {
             "capabilities": list(capabilities),
-            "tools": [*_GENERAL_TOOLS, "bct_dispatch"] if compact_catalogue else [*_GENERAL_TOOLS, *[f"bct_{name}" for name in capabilities]],
+            "tools": [tool.name for tool in await server.list_tools()],
         }
+        settings = getattr(server, "catalogue_settings", None)
+        if settings is not None and settings.last_error:
+            value["catalogue_warning"] = settings.last_error
         handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
         _trace_stage(
             "handler_done", tool_kind="capabilities", handler_ms=handler_ms,
@@ -384,6 +389,9 @@ def build_mcp(
                         ),
                         structured_output=True,
                     )(make_executor(exposed))
+        settings_path = getattr(bct, "mcp_catalogue_path", None)
+        if settings_path is not None:
+            CatalogueSettings(settings_path).attach(server)
         return server
 
     for capability in capabilities:
@@ -397,6 +405,9 @@ def build_mcp(
             ),
             structured_output=True,
         )(make_executor(capability))
+    settings_path = getattr(bct, "mcp_catalogue_path", None)
+    if settings_path is not None:
+        CatalogueSettings(settings_path).attach(server)
     return server
 
 

@@ -30,6 +30,7 @@ from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
 from .features.cdp_inspect import CDPInspectFeature
+from .features.browser_extension_manage import BrowserExtensionManageFeature
 from .features.monitor import MonitorFeature
 from .features.claim_reconciliation import ReadOnlyClaimReconcileFeature
 from .features.orchestration import OrchestrationFeature
@@ -113,6 +114,8 @@ class BCT:
                  data_root: str | Path | None = None,
                  github_client: GitHubClient | None = None):
         self.cdp_connections = CDPConnectionManager()  # lazy, no Chrome side effects
+        self.mcp_catalogue_path = (Path(data_root) if data_root is not None
+                                   else Path(policy_path).parent) / 'mcp_tools.toml'
         cdp_command = _cdp_mcp_command(policy_path)
         if cdp_command is not None:
             self.cdp_connections.configure(cdp_command)
@@ -157,6 +160,7 @@ class BCT:
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
             CDPInspectFeature(self.cdp_connections),
+            BrowserExtensionManageFeature(self.cdp_connections),
             ReadOnlyClaimReconcileFeature(self.store, desktop_session),
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),
