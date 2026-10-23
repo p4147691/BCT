@@ -13,6 +13,7 @@ let response = {ok:true, captureEngine:'wgc-oneshot', dataUri:'data:image/jpeg;b
 const context = {
   MonitorThumbnailService:{create(options){adapters.push(options);return {requestSnapshot(){},invalidate(){},dispose(){},disposeAll(){},stats(){return {};}}; }},
   monitorRenderDiagnostics:{captureRuns:0,captureFailure:0,captureSuccess:0},
+  monitorWindowDesktopLocations:new Map([['123',{title:'Upper YouTube'}]]),
   monitorNative(){throw new Error('Legacy Control transport reached');},
   async monitorCoreNative(message){calls.push(message);return response;},
   monitorCaptureDataUriToObjectUrl(value){assert.equal(value,response.dataUri);return 'blob:test';},
@@ -26,6 +27,8 @@ vm.runInNewContext(`${source.slice(start,end)}; globalThis.__monitorCaptureSched
   assert.equal(calls[0].type,'captureWindow');
   assert.equal(calls[0].quality,52);
   assert.equal(result.value,'blob:test');
+  assert.equal(result.meta.captureTitle,'Upper YouTube');
+  assert.equal(typeof result.meta.capturedAt,'number');
   result.dispose();
   assert.deepEqual(revoked,['blob:test']);
   response={ok:true,captureEngine:'legacy',dataUri:'data:image/jpeg;base64,OLD'};

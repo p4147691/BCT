@@ -30,7 +30,7 @@ assert.match(source, /monitorCapturedAt/);
 assert.match(source, /captureView\.label/);
 assert.match(source, /MonitorUiLayout\.chooseCaptureView/);
 assert.match(source, /bwm-thumbnail-policy-changed/);
-assert.match(source, /nextCapturedAt: Number\(entry\.capturedAt/);
+assert.match(source, /nextCapturedAt: nextCaptureState==="captured"\?Number\(entry\.capturedAt/);
 assert.match(source, /refreshBackgroundThumbs\(/);
 
 const now = 5_000_000;

@@ -51488,6 +51488,14 @@ function monitorDesktopFrameGeneration(desktopId) {
 
 
 const MONITOR_FRAME_CACHE_LIMIT = 4;
+const MONITOR_DESKTOP_FRAME_CACHE_MAX_AGE_MS = 15000;
+const MONITOR_WINDOW_CAPTURE_MAX_AGE_MS = 30000;
+function monitorCaptureMatchesCurrentWindow(captureTitle,currentTitle,capturedAt,now=Date.now()){
+  const age=Number(now)-Number(capturedAt||0);
+  return Boolean(String(captureTitle||"").trim())
+    && String(captureTitle||"").trim()===String(currentTitle||"").trim()
+    && Number.isFinite(age)&&age>=0&&age<=MONITOR_WINDOW_CAPTURE_MAX_AGE_MS;
+}
 
 function monitorRevokeThumbWindowCaptureSource(source) {
   const value = String(source || "");
@@ -51551,6 +51559,8 @@ function createMonitorWindowCaptureService({ maxEntries, maxWidth, maxHeight, qu
   async capture({ hwnd, reason, maxWidth, maxHeight }) {
     return monitorCaptureScheduler.run(async () => {
       monitorRenderDiagnostics.captureRuns += 1;
+      const captureTitle=String(monitorWindowDesktopLocations.get(String(hwnd))?.title||"");
+      const capturedAt=Date.now();
       const capture = await monitorCoreNative({
         type: "captureWindow",
         hwnd,
@@ -51573,7 +51583,8 @@ function createMonitorWindowCaptureService({ maxEntries, maxWidth, maxHeight, qu
         meta: {
           captureEngine: capture.captureEngine,
           width: Number(capture.width || 0),
-          height: Number(capture.height || 0)
+          height: Number(capture.height || 0),
+          captureTitle,capturedAt
         }
       };
     });
@@ -51603,7 +51614,10 @@ const monitorThumbnailService = Object.freeze({
       if (shared.startsWith("data:image/")) return shared;
     }
     const captureProfile = monitorWindowUsesFrozenCapture(item) ? "frozen" : profile;
-    const result = await monitorWindowCaptureService(captureProfile).requestSnapshot(key, reason).catch(() => null);
+    const service = monitorWindowCaptureService(captureProfile);
+    const cached = service.getCached(key);
+    if(cached&&!monitorCaptureMatchesCurrentWindow(cached.meta?.captureTitle,item?.title,cached.meta?.capturedAt))service.invalidate(key);
+    const result = await service.requestSnapshot(key, reason).catch(() => null);
     return String(result?.value || "");
   },
   invalidate(hwnd) {
@@ -52675,22 +52689,8 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
 
   const cached = monitorFrameCache.get(cacheKey);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (cached) return cached;
+  if(cached&&Date.now()-Number(cached.at||0)<=MONITOR_DESKTOP_FRAME_CACHE_MAX_AGE_MS)return cached;
+  if(cached)monitorFrameCache.delete(cacheKey);
 
 
 
@@ -53403,7 +53403,13 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
 
 
-        if (frameEntry) { frameEntry.dataUri = dataUri; frameEntry.captureState = "captured"; frameEntry.capturedAt = Date.now(); }
+        if(frameEntry){
+  const meta=monitorWindowCaptureService("thumb").getCached(hwnd)?.meta;
+  if(monitorCaptureMatchesCurrentWindow(meta?.captureTitle,item?.title,meta?.capturedAt)){
+    frameEntry.dataUri=dataUri;frameEntry.captureState="captured";
+    frameEntry.capturedAt=Number(meta.capturedAt);frameEntry.captureTitle=String(meta.captureTitle);
+  }
+}
 
 
 
@@ -53525,7 +53531,13 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
 
 
-          if (frameEntry) { frameEntry.dataUri = dataUri; frameEntry.captureState = "captured"; frameEntry.capturedAt = Date.now(); }
+          if(frameEntry){
+  const meta=monitorWindowCaptureService("preview").getCached(hwnd)?.meta;
+  if(monitorCaptureMatchesCurrentWindow(meta?.captureTitle,item?.title,meta?.capturedAt)){
+    frameEntry.dataUri=dataUri;frameEntry.captureState="captured";
+    frameEntry.capturedAt=Number(meta.capturedAt);frameEntry.captureTitle=String(meta.captureTitle);
+  }
+}
 
 
 
@@ -55689,17 +55701,26 @@ function reconcileFrame(container, frame, className) {
 
 
 
-    const nextCaptureState = entry.captureState || "captured";
-    const couldKeep = monitorShouldKeepExistingCapture(img.dataset.captureState, img.src, nextCaptureState) || ["held","stale"].includes(img.dataset.captureState);
+    const captureTitle=String(entry.item?.title||"");
+    const frozen=entry.physicalSource==="monitor-frozen";
+    const freshEntry=frozen||monitorCaptureMatchesCurrentWindow(entry.captureTitle,captureTitle,entry.capturedAt);
+    const nextCaptureState=freshEntry?(entry.captureState||"placeholder"):"placeholder";
+    const previousFresh=monitorCaptureMatchesCurrentWindow(img.dataset.monitorCaptureTitle,captureTitle,img.dataset.monitorCapturedAt);
+    const couldKeep=previousFresh&&(
+      monitorShouldKeepExistingCapture(img.dataset.captureState,img.src,nextCaptureState)
+      ||["held","stale"].includes(img.dataset.captureState)
+    );
     const captureView = globalThis.MonitorUiLayout.chooseCaptureView({
       previousState: img.dataset.captureState,
       previousSource: couldKeep ? img.src : "",
       previousCapturedAt: Number(img.dataset.monitorCapturedAt || 0),
-      nextState: nextCaptureState, nextSource: entry.dataUri,
-      nextCapturedAt: Number(entry.capturedAt || 0), now: Date.now()
+      nextState: nextCaptureState, nextSource: nextCaptureState==="captured"?entry.dataUri:"",
+      nextCapturedAt: nextCaptureState==="captured"?Number(entry.capturedAt||Date.now()):0, now: Date.now()
     }, bwmUiLayoutControl?.read?.()?.captureFallback);
     img.dataset.captureState = captureView.state;
     img.dataset.monitorCapturedAt = String(captureView.capturedAt);
+    if(captureView.state==="captured"&&nextCaptureState==="captured")img.dataset.monitorCaptureTitle=captureTitle;
+    else if(!couldKeep)delete img.dataset.monitorCaptureTitle;
     img.dataset.captureFailureReason = nextCaptureState === "captured" ? "" :
       Number(entry.item?.cloaked || 0) !== 0 ? "CLOAKED" :
       !MONITOR_WINDOW_PIXEL_CAPTURE_ENABLED ? "CAPTURE_DISABLED" : "WGC_UNAVAILABLE";
