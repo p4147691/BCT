@@ -4,6 +4,7 @@
   const NEW_RELAY_COMMANDS = new Set([
     'simple-relay-bind', 'simple-relay-send', 'simple-relay-return',
     'delivery-start', 'delivery-cancel', 'delivery-status', 'delivery-return',
+    'retire-composer-draft',
     'new-chat-send',
   ]);
   const CONVERSATION_COMMANDS = new Set([

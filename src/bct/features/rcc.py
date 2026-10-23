@@ -43,6 +43,7 @@ _MUTATING_COMMANDS = {
     "rename-conversation", "reload-extension", "send", "send-to-tab", "create-and-send",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
+    "retire-composer-draft",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
@@ -419,6 +420,24 @@ class RelayBrowserFeature:
                 "deliveryId": delivery_id,
                 "workId": work.work_id,
             })
+        elif command == "retire-composer-draft":
+            allowed.update({
+                "conversation_key", "expected_draft_sha256", "resume_delivery_id",
+            })
+            conversation_key = str(arguments.get("conversation_key") or "").strip().lower()
+            expected_sha = str(arguments.get("expected_draft_sha256") or "").strip().lower()
+            resume_delivery_id = str(arguments.get("resume_delivery_id") or "").strip()
+            key_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+            if (not re.fullmatch(key_pattern, conversation_key)
+                    or not re.fullmatch(r"[a-f0-9]{64}", expected_sha)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", resume_delivery_id)):
+                raise PreconditionError("RCC_DRAFT_RETIRE_ARGUMENT_INVALID")
+            prepared["extra"].update({
+                "conversationKey": conversation_key,
+                "expectedDraftSha256": expected_sha,
+                "resumeDeliveryId": resume_delivery_id,
+                "workId": work.work_id,
+            })
         elif command == "send-to-tab":
             allowed.update({"session_id", "tab_id", "window_id", "conversation_key", "text"})
             session = str(arguments.get("session_id") or "").strip()
@@ -509,6 +528,8 @@ class RelayBrowserFeature:
         elif command in {"delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
                          "delivery-manager-status"}:
             resource += ":delivery:" + str(prepared["extra"]["deliveryId"])
+        elif command == "retire-composer-draft":
+            resource += ":composer-draft:" + prepared["extra"]["conversationKey"]
         if command == "rename-conversation":
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
@@ -988,6 +1009,57 @@ class RelayBrowserFeature:
             "delivery-manager-status", "delivery-recovery-inspect",
         }:
             return self._execute_delivery(request)
+        if request.arguments["command"] == "retire-composer-draft":
+            values = request.arguments
+            extra = dict(values["extra"])
+            if self.delivery_ledger is None:
+                raise ConfirmedFailure("RCC_DELIVERY_LEDGER_UNAVAILABLE", release_claims=True)
+            queued = self.delivery_ledger.get_for_work(
+                delivery_id=extra["resumeDeliveryId"], work_id=extra["workId"],
+            )
+            if (queued["state"] != DeliveryState.WAITING_TARGET.value
+                    or queued["worker_conversation_key"] != extra["conversationKey"]):
+                raise ConfirmedFailure(
+                    "RCC_DRAFT_RETIRE_RESUME_IDENTITY_INVALID", release_claims=True,
+                )
+            try:
+                result = self.client.request(
+                    instance_id=values["instance_id"], request_id=request.operation_id,
+                    command="retire-composer-draft", extra=extra,
+                    timeout_s=values["timeout_s"],
+                )
+            except RelayUnavailable as exc:
+                raise ConfirmedFailure(str(exc), release_claims=True) from exc
+            except RelayEffectUnknown as exc:
+                raise UnknownEffectError("RCC_DRAFT_RETIRE_EFFECT_UNKNOWN") from exc
+            resumed = result.get("resumedDelivery") if isinstance(
+                result.get("resumedDelivery"), dict) else {}
+            if (result.get("ok") is not True or result.get("retired") is not True
+                    or result.get("effectState") != "APPLIED"
+                    or result.get("conversationKey") != extra["conversationKey"]
+                    or result.get("draftSha256") != extra["expectedDraftSha256"]
+                    or result.get("composerEmpty") is not True
+                    or resumed.get("deliveryId") != extra["resumeDeliveryId"]
+                    or resumed.get("state") not in {
+                        DeliveryState.WAITING_TARGET.value,
+                        DeliveryState.SENT_WAITING.value,
+                        DeliveryState.REPLY_CAPTURED.value,
+                    }):
+                if result.get("effectState") == "NOT_APPLIED":
+                    return FeatureResult(Outcome.NOT_APPLIED, {
+                        "command": "retire-composer-draft",
+                        "conversation_key": extra["conversationKey"],
+                        "error": str(result.get("error") or "RCC_DRAFT_RETIRE_NOT_APPLIED")[:128],
+                    }, release_claims=True, output={"result": _sanitize(result)})
+                raise UnknownEffectError("RCC_DRAFT_RETIRE_ACK_UNVERIFIED")
+            return FeatureResult(Outcome.APPLIED, {
+                "command": "retire-composer-draft",
+                "conversation_key": extra["conversationKey"],
+                "retired_draft_sha256": extra["expectedDraftSha256"],
+                "retired_draft_length": result.get("draftLength"),
+                "resumed_delivery_id": extra["resumeDeliveryId"],
+                "resumed_delivery_state": resumed["state"],
+            }, output={"result": _sanitize(result)})
         if request.arguments["command"] == "create-and-send":
             return self._execute_create_and_send(request)
         values = request.arguments

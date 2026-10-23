@@ -35,6 +35,26 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.40 exact orphaned-draft retirement candidate
+
+RC20 adds one recovery-only command for a composer that still contains the
+exact draft recorded by a superseded BCT Delivery. Retirement requires the
+exact conversation UUID, the exact SHA-256 of the current normalized composer
+text, an idle target, no active local relay execution, and one exact queued
+Delivery for the same Worker. It clears the matched draft without activating a
+submit control, verifies the composer is empty, and then resumes only that
+queued Delivery. A mismatch is `NOT_APPLIED`; an unprovable clear remains
+`UNKNOWN` and is never retried automatically.
+
+- extension version: `1.0.40 Exact Draft Retirement`
+- runtime build: `2026-10-24-rcc-exact-draft-retirement-v1`
+- candidate: `RCC_REBUILD_V2_RC20_EXACT_DRAFT_RETIREMENT`
+- candidate inventory: 52 files, aggregate SHA-256
+  `e32afda15d62a36b437a1b01c658fe174ec10923fa3c4e87607d91ddbbda48ef`
+- rollback baseline in the release manifest remains the independently verified
+  RC17 payload; the current RC19 LIVE payload must also be preserved exactly
+  before an RC20 reload.
+
 ## BCT RCC 1.0.1 release payload
 
 Issue #57 adds bounded network-versus-DOM failure evidence without changing submission, duplicate,

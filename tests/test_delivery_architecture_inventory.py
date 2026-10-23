@@ -41,6 +41,7 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
                 "simple-relay-bind", "simple-relay-send",
                 "simple-relay-return", "new-chat-send",
                 "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
+                "retire-composer-draft",
             },
             "CONVERSATION_COMMANDS": {
                 "rename-conversation", "conversation-bind",
