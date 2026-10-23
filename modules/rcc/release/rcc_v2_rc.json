@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC11_EDITOR_REBIND",
+  "candidate": "RCC_REBUILD_V2_RC12_COMPOSER_PARAGRAPH",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1084,
-        "sha256": "ca69b1253076109645023292c380dcc1185f97040ac1242a41ead6ba499683e4"
+        "size": 1089,
+        "sha256": "cf9fde002d4d91a4e088b52e2eb6d07c9d0b3c2f4a052f752ad9ea214ce679ea"
       },
       {
         "path": "browser/read_adapter.js",
@@ -97,8 +97,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 17976,
-        "sha256": "88b7d274396ea14991505ae4d10a5cb4ffccad0c39b0637f76b09a3787973441"
+        "size": 17981,
+        "sha256": "bc679a9a518d0912a1984efb881f25ff689b17b78f76f9875f883c088fb5775b"
       },
       {
         "path": "content/conversation_rename.js",
@@ -112,8 +112,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 27479,
-        "sha256": "8409210bafd697bc41344a9f7e2905f182d6cba62df91f48c2ae2df4935339e8"
+        "size": 27529,
+        "sha256": "9ed076c6d304c904fb205f038099a7219d094547a5e9fa910fae817a090b2338"
       },
       {
         "path": "core/conversation.js",
@@ -202,8 +202,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1506,
-        "sha256": "25052b3ad95094efe8b22ef207d2ef939613d4468bc090a484e11c1f0a33fbf4"
+        "size": 1511,
+        "sha256": "d27b6dffaf0c4d78998b8c152094a721bfe31158c8ed10ec25e64d93d3ace60d"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "01315cdb43742c4aae86fa87a20220715f3fa9ee653b94c8329d2450f023c605"
+    "aggregateSha256": "b2fb906ab3974f6a323f605940f4f53fbd7d9cd5e93a58f3b649f852e4f39bd7"
   },
   "activeLoaderGraph": {
     "background": [
