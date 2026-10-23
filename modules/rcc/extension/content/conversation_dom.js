@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-23-rcc-idle-delivery-queue-v1';
+const RCC_BUILD_VERSION = '2026-10-23-rcc-terminal-idle-proof-v1';
 
 function editorCandidates() {
 
@@ -325,6 +325,16 @@ function turnCompletionState(turn) {
 }
 
 
+function latestConversationTurnHasTerminalProof() {
+  const turns = getConversationTurns();
+  const turn = turns.length ? turns[turns.length - 1] : null;
+  const assistant = lastAssistantNode();
+  if (!turn || !assistant) return false;
+  if (turn !== assistant && !turn.contains?.(assistant)) return false;
+  return turnCompletionState(turn) === 'complete' && hasCompletionAction();
+}
+
+
 function turnHasStopAction(turn) {
   return !!turn?.querySelector?.('button[data-testid="stop-button"],button[aria-label="Stop streaming"],button[aria-label="Stop"],button[aria-label="\uC911\uC9C0"],button[aria-label*="\uC751\uB2F5 \uC911\uC9C0"]');
 }
@@ -516,19 +526,22 @@ function isGenerating() {
   // depend on visibility; use DOM presence/status instead.
 
 
-  if (stopSelectors.some((selector) => !!document.querySelector(selector))) return true;
+  const stopPresent = stopSelectors.some((selector) => !!document.querySelector(selector));
 
 
   const node = lastAssistantNode();
 
 
-  if (!node) return false;
+  const streamPresent = !!node && (node.matches('.result-streaming, [data-message-status="streaming"]') ||
+    !!node.querySelector('.result-streaming, [data-message-status="streaming"]'));
 
+  if (!stopPresent && !streamPresent) return false;
 
-  return node.matches('.result-streaming, [data-message-status="streaming"]') ||
-
-
-    !!node.querySelector('.result-streaming, [data-message-status="streaming"]');
+  // ChatGPT can retain an inert stop/streaming marker after the exact latest
+  // turn has completed.  Ignore it only with two independent terminal signals
+  // on that same latest turn.  A send arrow or an empty composer is never
+  // sufficient to override a genuinely active generation.
+  return !latestConversationTurnHasTerminalProof();
 
 
 }

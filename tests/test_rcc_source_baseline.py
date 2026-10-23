@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC15_IDLE_DELIVERY_QUEUE", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC16_TERMINAL_IDLE_PROOF", release["candidate"])
         inventory = {item["path"]: item["sha256"]
                      for item in release["candidateInventory"]["files"]}
         critical = {
@@ -50,8 +50,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.35", manifest["version"])
-        self.assertEqual("1.0.35 Idle Delivery Queue", manifest["version_name"])
+        self.assertEqual("1.0.36", manifest["version"])
+        self.assertEqual("1.0.36 Terminal Idle Proof", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -166,7 +166,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-23-rcc-idle-delivery-queue-v1"
+        marker = "2026-10-23-rcc-terminal-idle-proof-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
@@ -236,6 +236,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_collapsed_prompt_identity.js", "collapsed prompt identity tests: PASS"),
             ("test_completion_marker_guard.js", "markerless completion lifecycle tests: PASS"),
             ("test_route_turn_deduplication.js", "route turn deduplication tests: PASS"),
+            ("test_terminal_idle_proof_v1.js", "terminal idle proof v1: PASS"),
             ("test_conversation_network_v7.js", "conversation network v7: PASS"),
         ):
             self._run_node(name, marker)
