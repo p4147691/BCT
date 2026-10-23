@@ -30,6 +30,7 @@ from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
 from .features.cdp_inspect import CDPInspectFeature
+from .features.cdp_send import CDPSendFeature
 from .features.monitor import MonitorFeature
 from .features.claim_reconciliation import ReadOnlyClaimReconcileFeature
 from .features.orchestration import OrchestrationFeature
@@ -157,6 +158,7 @@ class BCT:
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
             CDPInspectFeature(self.cdp_connections),
+            CDPSendFeature(self.cdp_connections),
             ReadOnlyClaimReconcileFeature(self.store, desktop_session),
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),

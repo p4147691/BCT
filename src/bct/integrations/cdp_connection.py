@@ -61,6 +61,14 @@ class CDPConnectionManager:
             "name": "list_pages", "arguments": {}
         }:
             return
+        if method == "tools/call" and params.get("name") == "evaluate_script":
+            from bct.integrations.cdp_send_script import validate_submit_function
+            supplied = params.get("arguments")
+            if (isinstance(supplied, dict)
+                    and set(supplied) == {"pageId", "function", "waitForStableDom"}
+                    and supplied["waitForStableDom"] is False
+                    and validate_submit_function(supplied["pageId"], supplied["function"])):
+                return
         raise PermissionError("CDP_MCP_OPERATION_NOT_AUTHORIZED")
 
     def _start_loop(self) -> None:
@@ -87,7 +95,7 @@ class CDPConnectionManager:
         self._thread = thread
         self._client = PersistentCDP(self._argv, timeout=self._timeout)
 
-    def request(self, method: str, params: dict | None = None) -> dict:
+    def request(self, method: str, params: dict | None = None, *, expected_generation: int | None = None) -> dict:
         normalized = {} if params is None else params
         if not isinstance(normalized, dict):
             raise ValueError("CDP_MCP_PARAMS_INVALID")
@@ -95,10 +103,18 @@ class CDPConnectionManager:
         with self._guard:
             if self._argv is None:
                 raise RuntimeError("CDP_MCP_NOT_CONFIGURED")
+            if expected_generation is not None and (
+                type(expected_generation) is not int or expected_generation < 1
+                or self._client is None or not self._client.connected
+                or self._client.generation != expected_generation
+            ):
+                from bct.features.cdp_persistent import StaleCDPConnection
+                raise StaleCDPConnection("CDP_CONNECTION_GENERATION_CHANGED")
             self._start_loop()
             assert self._loop is not None and self._client is not None
             future = asyncio.run_coroutine_threadsafe(
-                self._client.request(method, normalized), self._loop)
+                self._client.request(
+                    method, normalized, expected_generation=expected_generation), self._loop)
             try:
                 result = future.result(timeout=self._timeout + 10)
             except concurrent.futures.TimeoutError as exc:
