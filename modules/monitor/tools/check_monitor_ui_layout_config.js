@@ -141,6 +141,34 @@ async function main() {
   assert.equal(storage.mutations, 0, "configuration read does not mutate existing storage");
   assert.deepEqual(first.toolbar.children.map(x => x.id), layout.BUTTONS);
   assert.equal(first.toolbar.styleValues["--bwm-ui-toolbar-gap"], "2px");
+  assert.equal(first.root.styleValues["--bwm-node-title-size"], "12px");
+  assert.equal(first.root.styleValues["--bwm-node-card-min-height"], "36px");
+  assert.equal(first.root.styleValues["--bwm-node-gap"], "6px");
+  assert.equal(first.root.styleValues["--bwm-panel-padding"], "10px");
+  assert.equal(first.root.styleValues["--bwm-thumbnail-status-size"], "20px");
+  const adjusted = layout.normalize({version:1,toolbar:{},presentation:{
+    nodeTitleFontPx:14,nodeCardMinHeightPx:42,nodeGapPx:8,
+    panelPaddingPx:12,thumbnailStatusIconPx:24
+  }});
+  controller.apply(adjusted);
+  assert.equal(first.root.styleValues["--bwm-node-title-size"], "14px");
+  assert.equal(first.root.styleValues["--bwm-node-card-min-height"], "42px");
+  assert.equal(first.root.styleValues["--bwm-node-gap"], "8px");
+  assert.equal(first.root.styleValues["--bwm-panel-padding"], "12px");
+  assert.equal(first.root.styleValues["--bwm-thumbnail-status-size"], "24px");
+  for (const bad of [
+    {nodeTitleFontPx:true},
+    {nodeGapPx:45},
+    {nodeColumns:2},
+    {color:"red"},
+    {thumbnailStatusIconPx:"21"}
+  ]) {
+    assert.throws(() => layout.normalize({version:1,toolbar:{},presentation:bad}), /INVALID/);
+  }
+  const newer = {...controller.read(),presentation:adjusted.presentation};
+  nextRemote = {status:"READY", config:newer};
+  await controller.refreshRemote();
+  assert.equal(controller.read().presentation.nodeTitleFontPx, 14);
   let clicks = 0;
   const rccButton = first.buttons.get("monitorRccReload");
   rccButton.addEventListener("click", () => { ++clicks; });
