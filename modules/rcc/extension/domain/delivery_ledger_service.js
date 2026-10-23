@@ -441,6 +441,9 @@ async function retireCapturedWorkerExecution(receipt) {
     const retired = await sendToChatTab(workerTab.id, {
       type: 'relay:retireExecution', relayId: receipt.deliveryId,
       conversationKey: receipt.workerConversationKey,
+      expectedRequestSha256: receipt.requestSha256,
+      expectedResponseSha256: receipt.responseSha256,
+      expectedResponseLength: receipt.responseLength,
     });
     if (retired?.ok !== true || retired.retired !== true) return receipt;
   } catch (_) {
@@ -586,6 +589,9 @@ async function retireCapturedManagerExecution(receipt) {
     const retired = await sendToChatTab(managerTab.id, {
       type: 'relay:retireExecution', relayId: receipt.deliveryId,
       conversationKey: receipt.managerConversationKey,
+      expectedRequestSha256: receipt.managerReturnSha256,
+      expectedResponseSha256: receipt.managerResponseSha256,
+      expectedResponseLength: receipt.managerResponseLength,
     });
     if (retired?.ok !== true || retired.retired !== true) return receipt;
   } catch (_) {

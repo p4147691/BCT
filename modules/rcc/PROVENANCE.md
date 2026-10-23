@@ -35,6 +35,23 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.43 terminal retirement identity candidate
+
+RC23 carries RC22's exact request/response identity fence through the normal
+Delivery completion paths. Worker reply retirement now supplies the original
+request SHA, captured response SHA and response length. Manager reply
+retirement supplies the exact Manager-return SHA, captured Manager-response
+SHA and response length. This fixes a regression where a successfully captured
+terminal reply remained as the page's active execution and indefinitely queued
+the next Delivery as `TARGET_PRIOR_RELAY_ACTIVE`. Retirement still clears only
+the exact matching completed execution; it never edits the composer or submits
+another turn.
+
+- extension version: `1.0.43 Terminal Retirement Identity`
+- runtime build: `2026-10-24-rcc-terminal-retirement-identity-v1`
+- candidate: `RCC_REBUILD_V2_RC23_TERMINAL_RETIREMENT_IDENTITY`
+- candidate inventory: 52 files, aggregate `b6502bc16f408ca9c086096374a2316d82dc78e4a499dc91a2825ff52bb42f08`
+
 ## BCT RCC 1.0.42 recovered execution retirement candidate
 
 RC22 adds a distinct recovery path for a page-session execution whose exact
