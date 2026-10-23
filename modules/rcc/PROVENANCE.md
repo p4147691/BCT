@@ -35,6 +35,22 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.45 legacy Manager retirement candidate
+
+RC25 adds a bounded compatibility path for Manager-return receipts created
+before RC24 began persisting the normalized submitted-text SHA. On an explicit
+request-identity mismatch, the content script returns the SHA of the exact
+normalized active execution it owns. The background adopts that value only
+for a legacy receipt missing the new field and retries retirement once. The
+same relay ID, conversation UUID, completed response SHA and response length
+must still match; this path never submits or retries a chat message.
+
+- extension version: `1.0.45 Legacy Manager Retirement`
+- runtime build: `2026-10-24-rcc-legacy-manager-retirement-v1`
+- candidate: `RCC_REBUILD_V2_RC25_LEGACY_MANAGER_RETIREMENT`
+- candidate inventory: 52 files, aggregate `6c8a2b2ad4150c5b159746eb58099770ede73e6f37c06579c19532c934a143c1`
+- exact RC24 LIVE rollback inventory: 52 files, aggregate `4d5c89995beec26e294ecc776737205216c79fb9a93d44214b24189954fb9a88`
+
 ## BCT RCC 1.0.44 normalized submission identity candidate
 
 RC24 keeps the immutable source-message SHA for the durable Delivery fence and
