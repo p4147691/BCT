@@ -12,6 +12,7 @@ let targetComposerEmpty = true;
 const activeRelayIds = new Map();
 let failNextExecuteBusy = false;
 let failNextRetireAck = false;
+let orphanDraftSha256 = '';
 const context = {
   console, TextEncoder, crypto: webcrypto,
   RelayCore: {
@@ -44,6 +45,17 @@ const context = {
       }
       if (activeRelayIds.get(tabId) === message.relayId) activeRelayIds.delete(tabId);
       return { ok: true, retired: true, relayId: message.relayId };
+    }
+    if (message.type === 'relay:retireComposerDraft') {
+      controlCalls.push({ tabId, message });
+      if (!orphanDraftSha256 || message.expectedDraftSha256 !== orphanDraftSha256) {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_DRAFT_RETIRE_HASH_MISMATCH' };
+      }
+      targetComposerEmpty = true;
+      return { ok: true, retired: true, effectState: 'APPLIED',
+        conversationKey: message.conversationKey,
+        draftSha256: orphanDraftSha256, draftLength: 321, composerEmpty: true };
     }
     sends.push({ tabId, message });
     if (message.type === 'relay:simpleReadReply') {
@@ -248,12 +260,24 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   });
   assert.equal(occupied.state, 'WAITING_TARGET');
   assert.equal(occupied.waitingReason, 'TARGET_COMPOSER_OCCUPIED');
-  targetComposerEmpty = true;
-  const occupiedResumed = await context.resumeWaitingDeliveriesForEndpoint({
+  orphanDraftSha256 = 'a'.repeat(64);
+  const mismatch = await context.retireComposerDraftAndResume({
     conversationKey: identity.workerConversationKey,
-    generating: false, presence: 'OPEN',
+    expectedDraftSha256: 'b'.repeat(64),
+    resumeDeliveryId: 'delivery-occupied',
   });
-  assert.equal(occupiedResumed[0].state, 'SENT_WAITING');
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.effectState, 'NOT_APPLIED');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-occupied'].state, 'WAITING_TARGET');
+  const occupiedResumed = await context.retireComposerDraftAndResume({
+    conversationKey: identity.workerConversationKey,
+    expectedDraftSha256: orphanDraftSha256,
+    resumeDeliveryId: 'delivery-occupied',
+  });
+  assert.equal(occupiedResumed.ok, true);
+  assert.equal(occupiedResumed.retired, true);
+  assert.equal(occupiedResumed.resumedDelivery.state, 'SENT_WAITING');
+  assert.equal(occupiedResumed.draftLength, 321);
   await context.deliveryStatus({ deliveryId: 'delivery-occupied' });
 
   // If generation begins after the background readiness probe but before the

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC19_DELIVERY_PRESUBMIT_CANCEL",
+  "candidate": "RCC_REBUILD_V2_RC20_EXACT_DRAFT_RETIREMENT",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1096,
-        "sha256": "ef3ded748fb6ee373cf05aa98e00e901ae33468227b5f6b93ee22ca8b7dd43ec"
+        "size": 1093,
+        "sha256": "d08c25d15b3f2ac2bf323b1e6b5b520a01847fbf6dfbd4b42caa43160f2bfd9f"
       },
       {
         "path": "browser/read_adapter.js",
@@ -92,13 +92,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 10745,
-        "sha256": "26c2f69391cde2ea6550e52eae482ad90e65bd69cf1b5a411d9512294282cc46"
+        "size": 13154,
+        "sha256": "17554ef27f64672f26a7e034ee290bb834ab4e3edd1450f04dead3a471c5211f"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 18937,
-        "sha256": "3c2b29fa45a6a9f0016bde51e126d80b11ce09f0bd1fe91118bd3fb0a0eb8083"
+        "size": 18934,
+        "sha256": "44cd61c9024cf5dab74a00b2c72127da1d3be85682c5c5351c2ae093bada9968"
       },
       {
         "path": "content/conversation_rename.js",
@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 27783,
-        "sha256": "54a9f760a1a2ed342d58dced80088946fc4e3f537b50c83fb3486716ec41b7b7"
+        "size": 29860,
+        "sha256": "c19e3bf95d0b8bba59a73666bf8a5e14a767713c7e0455f9993eef87f2430de0"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -172,8 +172,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 30199,
-        "sha256": "d98342d0489bcd3a874aef8b4971fa3b0f24ea6b5f797b7530da37ac4aa147fa"
+        "size": 30452,
+        "sha256": "1cc66476addcea718a77c841103d5d5e7bc17b8bae936d71518d856798f5defa"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -197,13 +197,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3540,
-        "sha256": "328de408ac40ab6da86cd1fb41a331f369fc396eb8c4601bc1ed4ecb8c1f240d"
+        "size": 3569,
+        "sha256": "cd406d9ee596cc28a4d4e2af4393b8af5be78bde61aa9fd132eb4904c9b396e0"
       },
       {
         "path": "manifest.json",
-        "size": 1519,
-        "sha256": "710af723a141d850fb02419b8dab042ab3efc21d111327e37d5516a48c1e706b"
+        "size": 1515,
+        "sha256": "8e650eb7dc94beaca854cc4a6c5028e0e68d28cd5ec9190d24e45ed5955e78a4"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "b49ec89958e40c77a21af37d3a721e90b21a5e2837e3631210a5c702b6a88e3a"
+    "aggregateSha256": "e32afda15d62a36b437a1b01c658fe174ec10923fa3c4e87607d91ddbbda48ef"
   },
   "activeLoaderGraph": {
     "background": [
@@ -375,6 +375,7 @@
         "delivery-cancel",
         "delivery-status",
         "delivery-return",
+        "retire-composer-draft",
         "new-chat-send"
       ],
       "nativeConversation": [
@@ -461,6 +462,7 @@
         "relay:renameConversation",
         "relay:deliveryRecoveryProof",
         "relay:deliveryReadiness",
+        "relay:retireComposerDraft",
         "relay:retireExecution"
       ],
       "popupAccepted": [
@@ -516,6 +518,7 @@
         "relay:renameConversation",
         "relay:deliveryRecoveryProof",
         "relay:deliveryReadiness",
+        "relay:retireComposerDraft",
         "relay:retireExecution"
       ],
       "runtime": [

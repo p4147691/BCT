@@ -19,7 +19,19 @@ class FakeDeliveryHost:
 
     def request(self, **kwargs):
         self.calls.append(kwargs)
-        delivery_id = kwargs["extra"]["deliveryId"]
+        delivery_id = kwargs["extra"].get("deliveryId")
+        if kwargs["command"] == "retire-composer-draft":
+            extra = kwargs["extra"]
+            return {
+                "ok": True, "retired": True, "effectState": "APPLIED",
+                "conversationKey": extra["conversationKey"],
+                "draftSha256": extra["expectedDraftSha256"],
+                "draftLength": 321, "composerEmpty": True,
+                "resumedDelivery": {
+                    "deliveryId": extra["resumeDeliveryId"],
+                    "state": "SENT_WAITING",
+                },
+            }
         if kwargs["command"] == "delivery-start":
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "SENT_WAITING", "workerTabId": 11,
@@ -254,6 +266,62 @@ class DeliveryFeatureTests(unittest.TestCase):
                 {**self.base, "command": "delivery-cancel"}, "late-cancel",
             )
         self.assertEqual(["delivery-start"], [call["command"] for call in self.host.calls])
+
+    def test_exact_orphan_draft_retirement_resumes_only_bound_waiting_delivery(self) -> None:
+        def queued_then_retired(**kwargs):
+            if kwargs["command"] == "delivery-start":
+                self.host.calls.append(kwargs)
+                return {
+                    "ok": True, "deliveryId": kwargs["extra"]["deliveryId"],
+                    "state": "WAITING_TARGET", "queued": True,
+                    "waitingReason": "TARGET_COMPOSER_OCCUPIED",
+                }
+            return FakeDeliveryHost.request(self.host, **kwargs)
+
+        self.host.request = queued_then_retired
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        queued = self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": worker,
+            "text": "대기 중인 새 업무",
+        }, "draft-retire-start")
+        self.assertEqual("WAITING_TARGET", queued.evidence["delivery_state"])
+        draft_sha = hashlib.sha256("과거 BCT 초안".encode()).hexdigest()
+        retired = self.execute({
+            "instance_id": self.base["instance_id"],
+            "command": "retire-composer-draft",
+            "conversation_key": worker,
+            "expected_draft_sha256": draft_sha,
+            "resume_delivery_id": self.base["delivery_id"],
+        }, "draft-retire-exact")
+        self.assertEqual(Outcome.APPLIED, retired.outcome)
+        self.assertEqual(draft_sha, retired.evidence["retired_draft_sha256"])
+        self.assertEqual("SENT_WAITING", retired.evidence["resumed_delivery_state"])
+        self.assertEqual(
+            ["delivery-start", "retire-composer-draft"],
+            [call["command"] for call in self.host.calls],
+        )
+
+    def test_draft_retirement_rejects_wrong_waiting_delivery_before_host_call(self) -> None:
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            request_sha256=hashlib.sha256(b"queued").hexdigest(),
+        )
+        with self.assertRaisesRegex(
+            ConfirmedFailure, "RCC_DRAFT_RETIRE_RESUME_IDENTITY_INVALID",
+        ):
+            self.execute({
+                "instance_id": self.base["instance_id"],
+                "command": "retire-composer-draft",
+                "conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+                "expected_draft_sha256": "a" * 64,
+                "resume_delivery_id": self.base["delivery_id"],
+            }, "draft-retire-not-waiting")
+        self.assertEqual([], self.host.calls)
 
     def test_mismatched_delivery_reuse_is_confirmed_before_host_call(self) -> None:
         args = {

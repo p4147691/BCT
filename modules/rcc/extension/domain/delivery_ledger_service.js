@@ -327,6 +327,53 @@ async function deliveryCancel(message) {
   }
 }
 
+async function retireComposerDraftAndResume(message) {
+  const conversationKey = deliveryConversationKey(message.conversationKey);
+  const expectedDraftSha256 = String(message.expectedDraftSha256 || '').trim().toLowerCase();
+  const resumeDeliveryId = deliveryId(message.resumeDeliveryId);
+  if (!/^[a-f0-9]{64}$/.test(expectedDraftSha256)) {
+    return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+      error: 'DELIVERY_DRAFT_RETIRE_HASH_INVALID' };
+  }
+  const ledger = await readDeliveryLedgerMirror();
+  const queued = ledger[resumeDeliveryId];
+  if (!queued || queued.state !== 'WAITING_TARGET'
+      || queued.workerConversationKey !== conversationKey) {
+    return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+      error: 'DELIVERY_DRAFT_RETIRE_RESUME_IDENTITY_INVALID' };
+  }
+  let workerTab;
+  try {
+    workerTab = singleDeliveryTab(await getChatTabs(), conversationKey);
+  } catch (error) {
+    return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+      error: String(error?.message || error).slice(0, 128) };
+  }
+  const retired = await sendToChatTab(workerTab.id, {
+    type: 'relay:retireComposerDraft', conversationKey, expectedDraftSha256,
+  });
+  if (retired?.ok !== true || retired.retired !== true
+      || retired.effectState !== 'APPLIED'
+      || retired.conversationKey !== conversationKey
+      || retired.draftSha256 !== expectedDraftSha256
+      || retired.composerEmpty !== true) {
+    return {
+      ok: false, retired: false,
+      effectState: String(retired?.effectState || 'UNKNOWN'),
+      error: String(retired?.error || 'DELIVERY_DRAFT_RETIRE_ACK_INVALID').slice(0, 128),
+      actualDraftSha256: String(retired?.actualDraftSha256 || ''),
+    };
+  }
+  const resumed = await resumeWaitingDelivery(resumeDeliveryId);
+  return {
+    ok: true, retired: true, effectState: 'APPLIED', conversationKey,
+    draftSha256: expectedDraftSha256,
+    draftLength: Number.isInteger(retired.draftLength) ? retired.draftLength : null,
+    composerEmpty: true,
+    resumedDelivery: publicDeliveryReceipt(resumed),
+  };
+}
+
 async function retireCapturedWorkerExecution(receipt) {
   if (receipt.workerExecutionRetired === true) return receipt;
   let workerTab;
