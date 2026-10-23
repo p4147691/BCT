@@ -124,9 +124,16 @@
     const incomingSource = String(input?.nextSource || "");
     if (captured && (incomingSource.startsWith("blob:") || incomingSource.startsWith("data:image/"))) {
       const observedAt = Number(input?.nextCapturedAt || 0);
-      return {state:"captured",source:incomingSource,
-        capturedAt:Number.isFinite(observedAt) && observedAt > 0 && observedAt <= now ? observedAt : now,
-        label:""};
+      const timestamp = Number.isFinite(observedAt) && observedAt > 0 && observedAt <= now ? observedAt : now;
+      const age = now - timestamp;
+      // Returning a cached successful frame is not a new WGC capture.
+      if (policy.mode === "last_good" && age > policy.maxAgeSeconds * 1000) {
+        return {state:"placeholder",source:String(input?.fallbackSource || ""),capturedAt:0,label:""};
+      }
+      if (policy.mode === "last_good" && age > policy.staleAfterSeconds * 1000) {
+        return {state:"stale",source:incomingSource,capturedAt:timestamp,label:"오래된 화면"};
+      }
+      return {state:"captured",source:incomingSource,capturedAt:timestamp,label:""};
     }
     const previousState = String(input?.previousState || "");
     const previousSource = String(input?.previousSource || "");
@@ -187,7 +194,12 @@
         toolbar.appendChild(button); // existing real element and handler are retained
         button.hidden = next.toolbar.hidden.includes(id);
       }
+      const policyChanged = JSON.stringify(state.captureFallback) !== JSON.stringify(next.captureFallback);
       state = next;
+      if (policyChanged && typeof options.onCaptureFallbackChange === "function") {
+        try { options.onCaptureFallbackChange(copy(next.captureFallback)); }
+        catch (error) { if (typeof onError === "function") onError(error); }
+      }
       return copy(state);
     }
 

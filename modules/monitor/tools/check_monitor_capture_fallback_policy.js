@@ -28,12 +28,21 @@ assert.match(source, /Number\(entry\.item\?\.cloaked/);
 assert.match(source, /monitorCapturedAt/);
 assert.match(source, /captureView\.label/);
 assert.match(source, /MonitorUiLayout\.chooseCaptureView/);
+assert.match(source, /bwm-thumbnail-policy-changed/);
+assert.match(source, /nextCapturedAt: Number\(entry\.capturedAt/);
+assert.match(source, /refreshBackgroundThumbs\(/);
+
 const now = 5_000_000;
 const first = layout.chooseCaptureView({nextState:"captured",nextSource:"blob:real",now});
 assert.equal(first.state,"captured");
 const cached = layout.chooseCaptureView({nextState:"captured",
   nextSource:"blob:real",nextCapturedAt:now,now:now+40_000});
 assert.equal(cached.capturedAt,now,"cached frame may not renew the capture timestamp");
+assert.equal(cached.state,"stale", "a 40-second cached frame must be marked old");
+const obsoleteCache = layout.chooseCaptureView({nextState:"captured",
+  nextSource:"blob:real",nextCapturedAt:now,now:now+181_000});
+assert.equal(obsoleteCache.state,"placeholder");
+assert.equal(obsoleteCache.source,"");
 const fallback = "data:image/svg+xml,SMALL";
 const quick = layout.chooseCaptureView({previousState:first.state,previousSource:first.source,
   previousCapturedAt:now,nextState:"placeholder",nextSource:fallback,now:now+5_000});

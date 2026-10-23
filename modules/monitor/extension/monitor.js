@@ -647,7 +647,8 @@ monitorRoot.innerHTML = `
 
 // Presentation-only layout: no controls or identities are recreated.
 const bwmUiLayoutControl = window.MonitorUiLayout?.create?.(
-  monitorRoot, chrome.storage, (error) => console.warn("BWM UI layout rejected", error)
+  monitorRoot, chrome.storage, (error) => console.warn("BWM UI layout rejected", error),
+  { onCaptureFallbackChange: () => globalThis.dispatchEvent(new Event("bwm-thumbnail-policy-changed")) }
 );
 
 // Runtime feature boundaries. Keep these explicit so future isolation does not
@@ -55863,7 +55864,8 @@ function reconcileFrame(container, frame, className) {
 
 
 
-    if (img.src !== captureView.source) img.src = captureView.source;
+    const renderedSource = captureView.state === "placeholder" && !captureView.source ? monitorWindowFallbackDataUri(entry.item) : captureView.source;
+    if (img.src !== renderedSource) img.src = renderedSource;
     img.title = captureView.label ? String(entry.item.title || "") + " - " + captureView.label : String(entry.item.title || "");
     let ageLabel = previousAgeLabels.get(key);
     if (captureView.label) {
@@ -67779,6 +67781,13 @@ async function refreshObservedWindows() {
 
 
 
+globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
+  const ids = [...(monitorDesktopState.desktopIds || [])].filter(Boolean);
+  if (!ids.length || !monitorIsActiveDesktopRenderer()) return;
+  invalidateMonitorDesktopFrames(...ids);
+  void refreshSelectedThumb().catch(() => false);
+  void refreshBackgroundThumbs(...ids).catch(() => []);
+});
 async function refreshDesktopThumbBatch() {
 
 

@@ -84,6 +84,10 @@ remain unchanged. No automatic desktop switching or unbounded retry.
 The timestamp is updated ONLY on an actual fresh capture, never when
 reusing an older image. The label/expiry is re-evaluated on the next
 existing frame reconciliation, not from a new high-frequency polling loop.
+Cached WGC frames retain their original capture timestamp and cannot restart the
+retention window. Config mode changes fire a single bounded existing thumbnail
+refresh request after exact configuration validation; no new capture timer,
+desktop activation or RCC transition is introduced.
 
 Per-window DOM metadata captureFailureReason is observational and distinguishes
 CLOAKED / CAPTURE_DISABLED / WGC_UNAVAILABLE; it does not claim to prove
