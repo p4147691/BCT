@@ -543,8 +543,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1090,
-        "sha256": "dc1a660a735b50cded77fd11f75a6bc8cb41ee6d8a7c5d276c61894c06c0528f"
+        "size": 1084,
+        "sha256": "ca69b1253076109645023292c380dcc1185f97040ac1242a41ead6ba499683e4"
       },
       {
         "path": "browser/read_adapter.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 17982,
-        "sha256": "c7649131845aeb2679f7de02266901e5f52e75a8b62f154d51f825cca7263d67"
+        "size": 17976,
+        "sha256": "88b7d274396ea14991505ae4d10a5cb4ffccad0c39b0637f76b09a3787973441"
       },
       {
         "path": "content/conversation_rename.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 26813,
-        "sha256": "9ab2c7e9053f23011f8a1c58ef5fef1f8a050f53f883429d97d225b418ffb4d2"
+        "size": 27479,
+        "sha256": "8409210bafd697bc41344a9f7e2905f182d6cba62df91f48c2ae2df4935339e8"
       },
       {
         "path": "core/conversation.js",
@@ -723,8 +723,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1512,
-        "sha256": "7f02f4fd85e0fc3420d28ef5d0059f7ab0ef5dd23f933368e0d5783543d09075"
+        "size": 1506,
+        "sha256": "25052b3ad95094efe8b22ef207d2ef939613d4468bc090a484e11c1f0a33fbf4"
       },
       {
         "path": "network/directory.js",
@@ -788,6 +788,6 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "43065d4974f32f461accf300a0ae1cc06c687eeb6d5fa6515c89119e3dd30b7d"
+    "aggregateSha256": "01315cdb43742c4aae86fa87a20220715f3fa9ee653b94c8329d2450f023c605"
   }
 }
