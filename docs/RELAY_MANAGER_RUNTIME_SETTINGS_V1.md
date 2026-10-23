@@ -24,9 +24,25 @@
   }
 }
 
-지원 필드: worker_intro, worker_return_instruction, manager_intro, manager_action,
-manager_sections(정확히 context/worker_result/action), include_pending, pending_limit(0~12).
+지원 필드:
+
+- Worker 문구: worker_intro, worker_context_notice, worker_return_instruction
+- Worker 선택 문맥: worker_context_fields(project, project_goal, completion_criteria,
+  project_context_note, current_members, role_note의 중복 없는 부분집합과 표시 순서)
+- Manager 문구: manager_intro, manager_result_notice, manager_action,
+  manager_decision_instruction
+- Manager 구성: manager_sections(정확히 context/worker_result/action),
+  manager_context_fields(project, project_goal, completion_criteria,
+  project_context_note, current_members, project_run_state, original_worker_task,
+  pending_same_work의 중복 없는 부분집합과 표시 순서)
+- Manager 문맥 한도: manager_include_role_note, manager_member_limit(0~40),
+  include_pending, pending_limit(0~12)
+- 프로젝트별 정보: completion_criteria, project_context_note
+
 변경은 프로젝트별 overrides나 defaults에서만 하며, 실행 권한을 확대하지 않는다.
+Work/Delivery/scope ID, Manager·Worker UUID, 설정·결과 해시, Worker의 task와
+return_instruction, Manager 반환의 Worker 결과 전문은 설정으로 제거할 수 없는 고정
+계약이다. BCT marker와 UTF-16 입력 상한도 런타임 표현 설정이 아니다.
 
 ## Windows 언어/UTF-8 호환 계약
 
@@ -73,6 +89,11 @@ manager_sections(정확히 context/worker_result/action), include_pending, pendi
 BCT execute 및 write는 작업에 실제로 위임된 허용 경로·capability가 있어야 한다.
 이 명령은 권한을 확대하거나 다른 Work의 파일에 접근하지 않는다.
 
+읽기 전용 조회 결과의 catalog는 각 필드의 형식과 용도를 함께 보여 주며,
+apply_boundary=NEXT_UNSENT_MESSAGE는 이미 해시가 확정된 Delivery를 바꾸지 않는다는 뜻이다.
+따라서 위 지원 필드의 일상적인 조정은 소스 수정, main 병합, CI, Core 재배포 또는
+Chrome 확장 재로드 없이 다음에 확정하는 메시지부터 반영한다.
+
 ## 전달 계약
 - BCT relay_browser → 기존 RCC delivery-start/status/return/manager-status.
 - 이번 Worker 업무 처리 결과 전문은 저장된 원문 그대로 Manager 메시지에 삽입한다.
@@ -84,3 +105,9 @@ BCT execute 및 write는 작업에 실제로 위임된 허용 경로·capability
 
 V1은 메시지 구성/관찰 옵션을 먼저 설정화한 기반이다.
 기존 검증·영수증 조회 방식의 추가 설정화는 각 알고리즘에 안전한 선택지가 구현된 범위에 한해 순차적으로 확장한다.
+
+현재 설정화 범위는 Worker 지시와 Manager 반환 메시지의 문구·선택 문맥·표시 순서다.
+브라우저 제출, 응답 관찰, 영수증 판정, UNKNOWN 복구, 후속 effect executor의 동작을
+메시지 표현 설정과 혼합하지 않는다. 그런 동작은 별도의 검증된 선택지가 생긴 뒤 같은
+조회·제안·CAS 인터페이스로 확장하며, 현재 이 문서의 메시지 설정만으로 구현됐다고
+주장하지 않는다.

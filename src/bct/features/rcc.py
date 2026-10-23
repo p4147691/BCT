@@ -351,6 +351,7 @@ class RelayBrowserFeature:
                         manager_conversation_key=manager_key,
                         worker_conversation_key=worker_key,
                         task=body,
+                        work_id=work.work_id,
                     )
                 except ValueError as exc:
                     raise PreconditionError(str(exc)) from exc

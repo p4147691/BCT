@@ -1547,3 +1547,30 @@ same-ID reload 뒤 RCC instance `6174664e1c1b4e6db1d4729c841db3c9`와 exact N13 
 따라서 Phase 6 얇은 왕복은 `LIVE_ACCEPTED`다. 다음 단계는 이 단일 ledger 위에 Wake-up,
 역할 전환, 다중 Worker를 하나씩 추가하는 Phase 7이다. 기존 orchestration/Simple Relay
 legacy 삭제는 Phase 7 수락과 caller-zero 증명 전까지 금지한다.
+
+## 2026-10-23 메시지 설정 기반 우선 분리
+
+사용자와 작업 순서를 다시 맞췄다. N13/N14 LIVE 통신 실험보다 먼저, Worker 지시와
+Manager 반환 메시지의 세부 값을 런타임 설정으로 바꾸고 실제 대화 중 조정 가능한 기반을
+완성한다. 이 단계에서는 Browser Bridge, Chrome 메시지 제출, RCC reload, main 병합·push,
+GitHub CI를 수행하지 않는다.
+
+격리 브랜치 `feat/relay-message-settings-v2-20261023`는 main
+`78229889782514ca1391d099d0a29cd227a6dbd6`에서 시작했다. 기존 V1의 문구·Manager 섹션·
+pending 설정에 다음을 추가했다.
+
+- Worker 권한 경계 안내문과 선택 문맥/표시 순서
+- 프로젝트 목표, 프로젝트별 완료 기준과 추가 문맥
+- Manager 결과 안내문과 COMPLETE/FOLLOW_UP 실제 실행 지시
+- Manager 선택 문맥/표시 순서, 역할 노트 포함 여부, 구성원 표시 한도
+- AI가 소스를 읽지 않아도 형식·허용값·적용 시점을 볼 수 있는 설정 catalog
+
+Work/Delivery/scope/Manager/Worker identity, 설정·요청·결과 hash, Worker task와 반환 지시,
+이번 Worker 결과 전문, BCT marker, UTF-16 상한, UNKNOWN 무재전송은 설정으로 제거할 수
+없는 고정 계약이다. 기존 설정 파일은 그대로 유효하며 변경은 기존 preview → partial patch →
+BCT write CAS → 다음 미제출 메시지 경계를 재사용한다. UTF-8/UTF-16/CP949 입력 호환과
+UTF-8 정본 변경안도 격리 시험에 포함했다.
+
+관련 Python 회귀 91개가 PASS했다. 아직 commit, main 통합, Core LIVE 적용, 운영 설정 파일
+변경, N13/N14 메시지 전송은 하지 않았다. 별도 PR #293의 RCC editor rebind 후보도 이 설정
+브랜치에 섞지 않았고, main 병합·RC11 reload를 보류한다.

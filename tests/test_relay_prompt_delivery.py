@@ -94,6 +94,9 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.assertEqual("delivery-start", start["command"])
         body = self.parse_body(start["text"])
         self.assertEqual("network.test", body["scope_id"])
+        self.assertEqual(self.work.work_id, body["work_id"])
+        self.assertEqual("브라우저 작업", body["project"])
+        self.assertEqual("bounded one delivery", body["project_goal"])
         self.assertEqual([MGR, WORKER],
                          [x["conversation_uuid"] for x in body["current_members"]])
         self.assertEqual(["Manager"], body["current_members"][0]["role_tags"])
