@@ -45,7 +45,7 @@ _MUTATING_COMMANDS = {
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
-    "delivery-manager-status", "delivery-recovery-inspect",
+    "delivery-manager-status", "delivery-recovery-inspect", "delivery-preview",
 }
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
@@ -321,6 +321,38 @@ class RelayBrowserFeature:
             if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", source_operation_id):
                 raise PreconditionError("RCC_SIMPLE_RELAY_SOURCE_OPERATION_INVALID")
             prepared["extra"]["sourceOperationId"] = source_operation_id
+        elif command == "delivery-preview":
+            allowed.update({
+                "delivery_id", "manager_conversation_key",
+                "worker_conversation_key", "text", "scope_id",
+                "worker_result_preview",
+            })
+            delivery_id = str(arguments.get("delivery_id") or "").strip()
+            manager_key = str(arguments.get("manager_conversation_key") or "").strip().lower()
+            worker_key = str(arguments.get("worker_conversation_key") or "").strip().lower()
+            body = str(arguments.get("text") or "")
+            scope_id = str(arguments.get("scope_id") or "")
+            worker_result_preview = str(arguments.get("worker_result_preview") or "")
+            key_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+            if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", delivery_id)
+                    or not re.fullmatch(key_pattern, manager_key)
+                    or not re.fullmatch(key_pattern, worker_key)
+                    or manager_key == worker_key or not body or "\x00" in body
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,96}", scope_id)
+                    or not worker_result_preview.strip() or "\x00" in worker_result_preview
+                    or utf16_units(worker_result_preview) > 12000):
+                raise PreconditionError("RCC_DELIVERY_PREVIEW_INVALID")
+            if self.delivery_ledger is None:
+                raise PreconditionError("RCC_DELIVERY_COMPOSE_STORE_REQUIRED")
+            prepared["text"] = body
+            prepared["extra"].update({
+                "deliveryId": delivery_id,
+                "managerConversationKey": manager_key,
+                "workerConversationKey": worker_key,
+                "scopeId": scope_id,
+                "workerResultPreview": worker_result_preview,
+                "workId": work.work_id,
+            })
         elif command == "delivery-start":
             allowed.update({
                 "delivery_id", "manager_conversation_key",
@@ -351,6 +383,7 @@ class RelayBrowserFeature:
                         manager_conversation_key=manager_key,
                         worker_conversation_key=worker_key,
                         task=body,
+                        work_id=work.work_id,
                     )
                 except ValueError as exc:
                     raise PreconditionError(str(exc)) from exc
@@ -468,7 +501,8 @@ class RelayBrowserFeature:
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
                 prepared["extra"]["conversationKey"])
-        elif (command in _READ_COMMANDS or command in _RECONCILE_COMMANDS
+        elif (command in _READ_COMMANDS or command == "delivery-preview"
+              or command in _RECONCILE_COMMANDS
               or command in {_RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND}):
             resource += ":read:" + command
         return FeatureRequest(
@@ -842,6 +876,38 @@ class RelayBrowserFeature:
         )
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments["command"] == "delivery-preview":
+            if self.delivery_ledger is None:
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_LEDGER_UNAVAILABLE", release_claims=True
+                )
+            from bct.relay_prompt import preview_delivery_messages
+            values = request.arguments
+            extra = values["extra"]
+            try:
+                preview = preview_delivery_messages(
+                    store=self.delivery_ledger.store,
+                    work_id=extra["workId"], delivery_id=extra["deliveryId"],
+                    scope_id=extra["scopeId"],
+                    manager_conversation_key=extra["managerConversationKey"],
+                    worker_conversation_key=extra["workerConversationKey"],
+                    task=values["text"],
+                    worker_result_preview=extra["workerResultPreview"],
+                )
+            except (ValueError, OSError, UnicodeError) as exc:
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_PREVIEW_INVALID", release_claims=True
+                ) from exc
+            return FeatureResult(
+                Outcome.APPLIED,
+                {
+                    "command": "delivery-preview",
+                    "effect": "NONE_PREVIEW_ONLY",
+                    "settings_sha256": preview["settings_sha256"],
+                },
+                release_claims=True,
+                output={"preview": preview},
+            )
         if request.arguments["command"] in {
             "delivery-start", "delivery-status", "delivery-return",
             "delivery-manager-status", "delivery-recovery-inspect",

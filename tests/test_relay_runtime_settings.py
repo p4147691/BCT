@@ -12,7 +12,10 @@ from bct.core.models import Work
 from bct.core.store import Store
 from bct.conversation_network import upsert_project, upsert_conversation, set_membership
 from bct.core.delivery_ledger import DeliveryLedger
-from bct.relay_settings import read_relay_settings, utf16_units, propose_relay_settings_patch
+from bct.relay_settings import (
+    preview_relay_settings, propose_relay_settings_patch,
+    read_relay_settings, utf16_units,
+)
 from bct.relay_prompt import compose_worker_delivery, compose_manager_return_frame
 
 MGR = "6ad7f5b6-c834-83e8-9c00-ff70bab4204d"
@@ -56,6 +59,7 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
             store=self.store, scope_id="network.test",
             manager_conversation_key=MGR, worker_conversation_key=WORKER,
             task="이번 작업 결과를 보고해",
+            work_id=self.work.work_id,
         )
         self.assertIn("조치 전문", worker)
         self.assertIn("이번 작업 결과를 보고해", worker)
@@ -85,8 +89,8 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.settings.write_text('{"version":1,"version":1,"defaults":{},"projects":{}}')
         with self.assertRaisesRegex(ValueError, "INVALID_JSON"):
             read_relay_settings()
-        self.settings.write_text('{"version":1,"defaults":{"pending_limit":-1},"projects":{}}')
-        with self.assertRaisesRegex(ValueError, "PENDING_LIMIT_INVALID"):
+        self.settings.write_text('{"version":1,"defaults":{"manager_member_limit":-1},"projects":{}}')
+        with self.assertRaisesRegex(ValueError, "MEMBER_LIMIT_INVALID"):
             read_relay_settings()
 
     def test_default_and_unicode_files_and_project_override(self):
@@ -98,6 +102,24 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(["context", "action", "worker_result"],
                          read_relay_settings("network.test")["manager_sections"])
         self.assertEqual(2, utf16_units("📦"))
+
+    def test_legacy_cp949_input_proposes_canonical_utf8_without_console_dependency(self):
+        legacy = {
+            "version": 1,
+            "defaults": {"project_context_note": "국가 및 언어 설정과 무관한 한글"},
+            "projects": {},
+        }
+        self.settings.write_bytes(
+            json.dumps(legacy, ensure_ascii=False).encode("cp949")
+        )
+        self.assertIn("무관한 한글", read_relay_settings()["project_context_note"])
+        proposed = propose_relay_settings_patch(
+            changes={"completion_criteria": "한글과 개행\n보존"},
+        )
+        canonical = proposed["new_content"].encode("utf-8")
+        self.assertEqual(proposed["new_sha256"], hashlib.sha256(canonical).hexdigest())
+        decoded = json.loads(canonical.decode("utf-8"))
+        self.assertEqual("한글과 개행\n보존", decoded["defaults"]["completion_criteria"])
 
     def test_ledger_preserves_scope_and_task_only_for_new_scoped_deliveries(self):
         ledger = DeliveryLedger(self.store)
@@ -128,44 +150,150 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
             scope_id="network.test",
             changes={
                 "manager_action": "new manager directive during the same project",
-                "pending_limit": 2,
+                "manager_member_limit": 2,
             },
         )
         self.assertEqual("NONE_PREVIEW_ONLY", proposed["effect"])
         self.assertEqual(digest, proposed["expected_sha256"])
         self.assertFalse(proposed["expected_absent"])
         self.assertEqual(original, self.settings.read_bytes())
-        self.assertEqual(2, proposed["effective_preview"]["pending_limit"])
+        self.assertEqual(2, proposed["effective_preview"]["manager_member_limit"])
         encoded = proposed["new_content"].encode("utf-8")
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), proposed["new_sha256"])
         self.settings.write_bytes(encoded)
         current = read_relay_settings("network.test")
         self.assertEqual("new manager directive during the same project",
                          current["manager_action"])
-        self.assertEqual(2, current["pending_limit"])
+        self.assertEqual(2, current["manager_member_limit"])
         self.assertEqual("original scope action",
                          read_relay_settings()["manager_action"])
         self.assertIn("조치 전문", current["worker_return_instruction"])
+
+    def test_message_context_values_are_hot_configurable_but_identity_stays_fixed(self):
+        self.settings.write_text(json.dumps({
+            "version": 1,
+            "defaults": {},
+            "projects": {
+                "network.test": {
+                    "project_display_name": "BCT 영속 대화망",
+                    "project_goal": "Manager와 Worker가 설정 기반으로 업무를 이어간다.",
+                    "completion_criteria": "한글·이모지 📦 원문과 해시가 같아야 한다.",
+                    "project_context_note": "이번 단계에서는 브라우저 제출을 하지 않는다.",
+                    "worker_context_fields": [
+                        "project", "project_goal", "completion_criteria",
+                        "project_context_note", "current_members",
+                    ],
+                    "worker_additional_instruction": "검증 근거를 결과에 함께 적으세요.",
+                    "manager_context_fields": [
+                        "project", "project_goal", "completion_criteria",
+                        "project_context_note", "original_worker_task",
+                    ],
+                    "manager_result_notice": "결과 원문을 먼저 읽고 근거를 분리하세요.",
+                    "manager_additional_instruction": "설정 변경이 필요했는지도 함께 설명하세요.",
+                    "manager_member_limit": 0,
+                },
+            },
+        }, ensure_ascii=False), encoding="utf-8")
+        worker_text = compose_worker_delivery(
+            store=self.store, scope_id="network.test", work_id=self.work.work_id,
+            manager_conversation_key=MGR, worker_conversation_key=WORKER,
+            task="설정 조합만 검증하세요.",
+        )
+        body = json.loads(worker_text.split("[BCT_DELIVERY_WORKER_V1]", 1)[1]
+                          .split("[/BCT_DELIVERY_WORKER_V1]", 1)[0])
+        body_text = worker_text.split("[BCT_DELIVERY_WORKER_V1]", 1)[1]
+        self.assertLess(body_text.index('"project"'),
+                        body_text.index('"project_goal"'))
+        self.assertLess(body_text.index('"project_goal"'),
+                        body_text.index('"completion_criteria"'))
+        self.assertLess(body_text.index('"completion_criteria"'),
+                        body_text.index('"project_context_note"'))
+        self.assertLess(body_text.index('"project_context_note"'),
+                        body_text.index('"current_members"'))
+        self.assertEqual(self.work.work_id, body["work_id"])
+        self.assertEqual(MGR, body["manager_conversation_uuid"])
+        self.assertEqual(WORKER, body["worker_conversation_uuid"])
+        self.assertEqual("BCT 영속 대화망", body["project"])
+        self.assertIn("설정 기반", body["project_goal"])
+        self.assertIn("📦", body["completion_criteria"])
+        self.assertIn("current_members", body)
+        self.assertEqual("WORKER", body["role"])
+        self.assertEqual("설정 조합만 검증하세요.", body["task"])
+        self.assertIn("검증 근거", body["additional_instruction"])
+
+        before, after, revision = compose_manager_return_frame(
+            store=self.store, work_id=self.work.work_id,
+            delivery_id="configured-return", scope_id="network.test",
+            original_task="설정 조합만 검증하세요.",
+            manager_conversation_key=MGR, worker_conversation_key=WORKER,
+            worker_result_sha256="a" * 64,
+        )
+        combined = before + "Worker 결과 원문" + after
+        context_text = combined.split("[BCT_MANAGER_RETURN_CONTEXT_V1]", 1)[1]
+        context_text = context_text.split("[/BCT_MANAGER_RETURN_CONTEXT_V1]", 1)[0]
+        context = json.loads(context_text)
+        self.assertLess(context_text.index('"project"'),
+                        context_text.index('"project_goal"'))
+        self.assertLess(context_text.index('"project_goal"'),
+                        context_text.index('"completion_criteria"'))
+        self.assertLess(context_text.index('"completion_criteria"'),
+                        context_text.index('"project_context_note"'))
+        self.assertLess(context_text.index('"project_context_note"'),
+                        context_text.index('"original_worker_task"'))
+        self.assertEqual("configured-return", context["delivery_id"])
+        self.assertEqual("a" * 64, context["worker_result_sha256"])
+        self.assertEqual(revision, context["settings_sha256"])
+        self.assertEqual("BCT 영속 대화망", context["project"])
+        self.assertIn("설정 기반", context["project_goal"])
+        self.assertIn("📦", context["completion_criteria"])
+        self.assertNotIn("current_members", context)
+        self.assertIn("결과 원문을 먼저", combined)
+        self.assertIn("설정 변경이 필요했는지도", combined)
+        self.assertNotIn("COMPLETE", combined)
+        self.assertNotIn("FOLLOW_UP", combined)
+
+    def test_preview_describes_runtime_fields_and_next_unsent_boundary(self):
+        preview = preview_relay_settings("network.test")
+        self.assertEqual("NEXT_UNSENT_MESSAGE", preview["apply_boundary"])
+        self.assertEqual(
+            "NEXT_UNASSEMBLED_MANAGER_RETURN",
+            preview["apply_boundaries"]["manager_return"],
+        )
+        self.assertEqual("ordered-list", preview["catalog"]["worker_context_fields"]["type"])
+        self.assertNotIn("role_note",
+                         preview["catalog"]["worker_context_fields"]["allowed_values"])
+        self.assertIn("worker_additional_instruction", preview["catalog"])
+        self.assertIn("manager_additional_instruction", preview["catalog"])
+        self.assertIn("project_display_name", preview["catalog"])
+        self.assertIn("project_goal", preview["catalog"])
+        self.assertIn("완료 기준", preview["catalog"]["completion_criteria"]["description"])
+        self.assertNotIn("manager_next_action_instruction", preview["settings"])
+        self.assertNotIn("manager_include_role_note", preview["settings"])
+        self.assertFalse(
+            preview["message_sources"]["legacy_relay_note_files_automatically_injected"]
+        )
+        self.assertTrue(any("UNKNOWN" in item for item in preview["immutable_contract"]))
 
     def test_manager_patch_preview_first_creation_then_remove_override(self):
         self.assertFalse(self.settings.exists())
         initial = propose_relay_settings_patch(
             scope_id="network.test",
-            changes={"include_pending": False},
+            changes={"manager_additional_instruction": "첫 프로젝트 override"},
         )
         self.assertTrue(initial["expected_absent"])
         self.assertIsNone(initial["expected_sha256"])
         self.assertFalse(self.settings.exists())  # preview never writes
         self.settings.write_text(initial["new_content"], encoding="utf-8")
-        self.assertFalse(read_relay_settings("network.test")["include_pending"])
-        self.assertTrue(read_relay_settings()["include_pending"])
+        self.assertEqual("첫 프로젝트 override",
+                         read_relay_settings("network.test")["manager_additional_instruction"])
+        self.assertEqual("", read_relay_settings()["manager_additional_instruction"])
         reset = propose_relay_settings_patch(
             scope_id="network.test",
-            changes={"include_pending": None},
+            changes={"manager_additional_instruction": None},
         )
         self.assertFalse(reset["expected_absent"])
         self.settings.write_text(reset["new_content"], encoding="utf-8")
-        self.assertTrue(read_relay_settings("network.test")["include_pending"])
+        self.assertEqual("", read_relay_settings("network.test")["manager_additional_instruction"])
         raw = json.loads(self.settings.read_text(encoding="utf-8"))
         self.assertNotIn("network.test", raw["projects"])
 
@@ -173,9 +301,17 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.write(manager_action="unchanged")
         original = self.settings.read_bytes()
         for candidate in [
-            {"pending_limit": 900},
+            {"pending_limit": 1},
+            {"include_pending": False},
             {"manager_sections": ["worker_result", "worker_result", "action"]},
+            {"worker_context_fields": ["project", "project", "role_note"]},
+            {"manager_context_fields": ["project", "unsafe_authority"]},
+            {"manager_member_limit": 41},
             {"manager_action": "[BCT_ORCHESTRATION_RESULT_V1]"},
+            {"project_display_name": "x" * 201},
+            {"project_goal": "x" * 4001},
+            {"manager_include_role_note": True},
+            {"manager_next_action_instruction": "old"},
             {"extra_privilege": True},
             {},
         ]:
@@ -190,7 +326,7 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.settings.write_text('{"invalid":true}', encoding="utf-8")
         original = self.settings.read_bytes()
         with self.assertRaises(ValueError):
-            propose_relay_settings_patch(changes={"pending_limit": 4})
+            propose_relay_settings_patch(changes={"manager_member_limit": 4})
         self.assertEqual(original, self.settings.read_bytes())
 
 
