@@ -36,6 +36,24 @@ manager_sections(정확히 context/worker_result/action), include_pending, pendi
 5. 변경된 설정은 다음에 확정하는 Worker 지시 또는 Manager 반환에만 적용하고, 기존 제출은 변경하지 않는다.
 6. 문제가 생기면 보존한 이전 정상값을 CAS로 복원한다.
 
+## AI Manager 부분 수정 미리보기 (추가 설정 서버 없음)
+
+이 명령은 파일에 쓰지 않으며, 변경된 설정 전문과 BCT write에 사용할 정확한 CAS 인자를 반환한다.
+
+    python -m bct.relay_settings propose network.d3052e031bf748d8b1640b566a5bb86b "{\"pending_limit\": 3}"
+
+- stdout의 expected_absent=true이면 BCT write에서 expected_absent=true로 신규 파일을 생성한다.
+- stdout의 expected_sha256 값이 있으면 BCT write에서 expected_sha256에 동일한 해시를 전달한다.
+- stdout의 new_content 전체를 write.content로 보낸다. 예상치 못한 수정이 들어가면 쓰기를 거절한다.
+- new_sha256 및 effective_preview는 적용 예상 결과를 점검하는 용도다. effect=NONE_PREVIEW_ONLY는 실질적 변경이 없다는 뜻이다.
+- 값이 null이면 해당 기본값 또는 프로젝트 override를 제거하고, 내장 기본 설정이 적용된다.
+- 파일을 저장한 다음 같은 범위에서 기존 python -m bct.relay_settings <scope_id> 조회로 반영 상태를 확인한다.
+- 롤백은 저장 전에 보존한 이전 정상 원문을 BCT write의 새로운 expected_sha256으로 한 번 복원한다. 이미 제출한 Worker 지시/Manager 반환에 소급하지 않는다.
+
+이 흐름은 "설정 확인 → 변경안 만들기 → 기존 BCT write CAS → 다음 미제출 업무"이다.
+BCT execute 및 write는 작업에 실제로 위임된 허용 경로·capability가 있어야 한다.
+이 명령은 권한을 확대하거나 다른 Work의 파일에 접근하지 않는다.
+
 ## 전달 계약
 - BCT relay_browser → 기존 RCC delivery-start/status/return/manager-status.
 - 이번 Worker 업무 처리 결과 전문은 저장된 원문 그대로 Manager 메시지에 삽입한다.

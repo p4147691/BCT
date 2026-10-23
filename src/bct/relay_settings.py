@@ -141,7 +141,92 @@ def preview_relay_settings(scope_id: str = "") -> dict[str, Any]:
     return {"version": 1, "settings": value, "revision": value["config_sha256"]}
 
 
-if __name__ == "__main__":
+def propose_relay_settings_patch(
+    *, scope_id: str = "", changes: dict[str, Any],
+) -> dict[str, Any]:
+    """Preview one partial update without any disk write.
+
+    Send new_content and the exact precondition to the existing BCT write
+    capability. It alone owns atomic replacement and optimistic CAS.
+    This adds no new executable write engine or BCT authorization system.
+    """
+    if not isinstance(scope_id, str) or (scope_id and not _SCOPE.fullmatch(scope_id)):
+        raise ValueError("RELAY_SETTINGS_SCOPE_INVALID")
+    if not isinstance(changes, dict) or not 1 <= len(changes) <= len(_ALLOWED):
+        raise ValueError("RELAY_SETTINGS_PATCH_INVALID")
+    if set(changes) - _ALLOWED:
+        raise ValueError("RELAY_SETTINGS_KEYS_INVALID")
+    path = Path(os.environ.get("BCT_RELAY_SETTINGS_PATH", str(_DEFAULT_PATH)))
+    raw, revision = _read_unicode(path)
+    if revision != "defaults":
+        read_relay_settings(scope_id)  # rejects malformed settings before patch
+    raw = raw if revision != "defaults" else {
+        "version": 1, "defaults": {}, "projects": {},
+    }
+    updated = json.loads(json.dumps(raw, ensure_ascii=False))
+    target = (
+        updated["projects"].setdefault(scope_id, {})
+        if scope_id else updated["defaults"]
+    )
+    if not isinstance(target, dict):
+        raise ValueError("RELAY_SETTINGS_TARGET_INVALID")
+    for key, value in changes.items():
+        if value is None:
+            target.pop(key, None)
+        else:
+            _validated({key: value})
+            target[key] = value
+    if scope_id and not target:
+        updated["projects"].pop(scope_id, None)
+    _validated(updated["defaults"])
+    for key, value in updated["projects"].items():
+        if not isinstance(key, str) or not _SCOPE.fullmatch(key):
+            raise ValueError("RELAY_SETTINGS_PROJECT_INVALID")
+        _validated(value)
+    content = json.dumps(
+        updated, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False
+    ) + "\n"
+    if len(content.encode("utf-8")) > 65_536:
+        raise ValueError("RELAY_SETTINGS_TOO_LARGE")
+    candidate_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    effective = dict(_DEFAULTS)
+    effective.update(_validated(updated["defaults"]))
+    if scope_id:
+        effective.update(_validated(updated["projects"].get(scope_id, {})))
+    return {
+        "path": str(path),
+        "scope_id": scope_id,
+        "expected_absent": revision == "defaults",
+        "expected_sha256": None if revision == "defaults" else revision,
+        "new_sha256": candidate_sha,
+        "new_content": content,
+        "effective_preview": effective,
+        "changed": revision != candidate_sha,
+        "effect": "NONE_PREVIEW_ONLY",
+    }
+
+
+def _cli() -> None:
+    """For AI Managers: old scope preview or propose scope JSON-patch.
+
+    This CLI NEVER writes. The existing BCT write operation enforces roots,
+    ownership, current SHA and atomicity before modifying a settings file.
+    """
     import sys
-    requested_scope = sys.argv[1] if len(sys.argv) > 1 else ""
-    print(json.dumps(preview_relay_settings(requested_scope), ensure_ascii=False, indent=2))
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    args = sys.argv[1:]
+    if args and args[0] == "propose":
+        if len(args) != 3:
+            raise ValueError("RELAY_SETTINGS_CLI_PROPOSE_ARGS")
+        changes = json.loads(args[2], object_pairs_hook=_pairs_unique)
+        answer = propose_relay_settings_patch(scope_id=args[1], changes=changes)
+    elif len(args) <= 1:
+        answer = preview_relay_settings(args[0] if args else "")
+    else:
+        raise ValueError("RELAY_SETTINGS_CLI_ARGS_INVALID")
+    print(json.dumps(answer, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    _cli()

@@ -12,7 +12,7 @@ from bct.core.models import Work
 from bct.core.store import Store
 from bct.conversation_network import upsert_project, upsert_conversation, set_membership
 from bct.core.delivery_ledger import DeliveryLedger
-from bct.relay_settings import read_relay_settings, utf16_units
+from bct.relay_settings import read_relay_settings, utf16_units, propose_relay_settings_patch
 from bct.relay_prompt import compose_worker_delivery, compose_manager_return_frame
 
 MGR = "6ad7f5b6-c834-83e8-9c00-ff70bab4204d"
@@ -118,6 +118,80 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         )
         self.assertFalse(same)
         self.assertEqual(row["observation"], again["observation"])
+
+
+    def test_manager_patch_preview_keeps_other_fields_and_preserves_work_scope(self):
+        self.write(manager_action="original scope action", scope=True)
+        original = self.settings.read_bytes()
+        digest = hashlib.sha256(original).hexdigest()
+        proposed = propose_relay_settings_patch(
+            scope_id="network.test",
+            changes={
+                "manager_action": "new manager directive during the same project",
+                "pending_limit": 2,
+            },
+        )
+        self.assertEqual("NONE_PREVIEW_ONLY", proposed["effect"])
+        self.assertEqual(digest, proposed["expected_sha256"])
+        self.assertFalse(proposed["expected_absent"])
+        self.assertEqual(original, self.settings.read_bytes())
+        self.assertEqual(2, proposed["effective_preview"]["pending_limit"])
+        encoded = proposed["new_content"].encode("utf-8")
+        self.assertEqual(hashlib.sha256(encoded).hexdigest(), proposed["new_sha256"])
+        self.settings.write_bytes(encoded)
+        current = read_relay_settings("network.test")
+        self.assertEqual("new manager directive during the same project",
+                         current["manager_action"])
+        self.assertEqual(2, current["pending_limit"])
+        self.assertEqual("original scope action",
+                         read_relay_settings()["manager_action"])
+        self.assertIn("조치 전문", current["worker_return_instruction"])
+
+    def test_manager_patch_preview_first_creation_then_remove_override(self):
+        self.assertFalse(self.settings.exists())
+        initial = propose_relay_settings_patch(
+            scope_id="network.test",
+            changes={"include_pending": False},
+        )
+        self.assertTrue(initial["expected_absent"])
+        self.assertIsNone(initial["expected_sha256"])
+        self.assertFalse(self.settings.exists())  # preview never writes
+        self.settings.write_text(initial["new_content"], encoding="utf-8")
+        self.assertFalse(read_relay_settings("network.test")["include_pending"])
+        self.assertTrue(read_relay_settings()["include_pending"])
+        reset = propose_relay_settings_patch(
+            scope_id="network.test",
+            changes={"include_pending": None},
+        )
+        self.assertFalse(reset["expected_absent"])
+        self.settings.write_text(reset["new_content"], encoding="utf-8")
+        self.assertTrue(read_relay_settings("network.test")["include_pending"])
+        raw = json.loads(self.settings.read_text(encoding="utf-8"))
+        self.assertNotIn("network.test", raw["projects"])
+
+    def test_manager_patch_rejects_invalid_type_and_reserved_markers_before_write(self):
+        self.write(manager_action="unchanged")
+        original = self.settings.read_bytes()
+        for candidate in [
+            {"pending_limit": 900},
+            {"manager_sections": ["worker_result", "worker_result", "action"]},
+            {"manager_action": "[BCT_ORCHESTRATION_RESULT_V1]"},
+            {"extra_privilege": True},
+            {},
+        ]:
+            with self.subTest(candidate=candidate):
+                with self.assertRaises(ValueError):
+                    propose_relay_settings_patch(
+                        scope_id="network.test", changes=candidate,
+                    )
+                self.assertEqual(original, self.settings.read_bytes())
+
+    def test_manager_patch_rejects_malformed_original_instead_of_repairing(self):
+        self.settings.write_text('{"invalid":true}', encoding="utf-8")
+        original = self.settings.read_bytes()
+        with self.assertRaises(ValueError):
+            propose_relay_settings_patch(changes={"pending_limit": 4})
+        self.assertEqual(original, self.settings.read_bytes())
 
 
 if __name__ == "__main__":
