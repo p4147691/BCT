@@ -1548,6 +1548,31 @@ same-ID reload 뒤 RCC instance `6174664e1c1b4e6db1d4729c841db3c9`와 exact N13 
 역할 전환, 다중 Worker를 하나씩 추가하는 Phase 7이다. 기존 orchestration/Simple Relay
 legacy 삭제는 Phase 7 수락과 caller-zero 증명 전까지 금지한다.
 
+## 2026-10-23 RC10 LIVE와 편집기 재결합 결손
+
+Core generation 197 / main `78229889782514ca1391d099d0a29cd227a6dbd6`에서 검증된
+RC10 52파일을 전체 디렉터리 단위로 설치하고 same-ID reload를 정확히 한 번 수행했다.
+RCC instance는 `6174664e1c1b4e6db1d4729c841db3c9`로 유지되고 session은
+`8333ce0fb6bd44b2b17fc9c88b7932a9`, build는
+`2026-10-23-rcc-manager-return-wake-v1`이 됐다. RC10 aggregate는
+`43065d4974f32f461accf300a0ae1cc06c687eeb6d5fa6515c89119e3dd30b7d`이며,
+직전 RC9와 RC10 전환 전 설치본은 exact backup/quarantine으로 보존했다.
+
+첫 실제 RC10 Delivery `relay-supervisor-utf8-review-20261023-a`는 N14 편집기에 정확한
+2747자 원문을 채웠으나 클릭 전에 `RELAY_EDITOR_TEXT_MISMATCH`로 `NEEDS_REVIEW`가 됐다.
+재전송하지 않았고 읽기 전용 recovery proof도 부족 판정했다. DOM 대조에서 사용자 턴과 새
+generation은 없었으며, 남은 초안의 단락 재구성 길이·개행·전후 문자열은 BCT 정본과 일치했다.
+미제출 초안만 비워 두었고 UNKNOWN Delivery/영수증은 보존했다.
+
+원인은 ChatGPT가 input 이벤트 뒤 ProseMirror 편집기 root 객체를 교체해, 정확한 현재 원문이
+유지돼도 예전 DOM 객체 동일성 검사가 거짓 실패할 수 있는 결손이다. 격리 RC11 후보는 현재
+편집기에 정규화된 기대 전문이 완전히 같을 때만 새 root를 승계한다. 글자 하나가 다르거나
+기대 원문 없이 객체가 바뀌면 계속 제출을 거절한다. 후보는 extension `1.0.31 Editor Rebind`,
+build `2026-10-23-rcc-editor-rebind-v1`, 52파일 aggregate
+`01315cdb43742c4aae86fa87a20220715f3fa9ee653b94c8329d2450f023c605`이고 RC10을 정확한
+rollback baseline으로 둔다. 새 동적 회귀를 포함한 focused Python 31개가 PASS했다. 이
+시점의 RC11은 아직 main/CI/LIVE가 아니므로 exact CI와 안전한 단일 reload 전에는 RC10
+운영 상태로 보고한다.
 ## 2026-10-23 메시지 설정 기반 우선 분리
 
 사용자와 작업 순서를 다시 맞췄다. N13/N14 LIVE 통신 실험보다 먼저, Worker 지시와
