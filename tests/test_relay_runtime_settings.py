@@ -89,8 +89,8 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.settings.write_text('{"version":1,"version":1,"defaults":{},"projects":{}}')
         with self.assertRaisesRegex(ValueError, "INVALID_JSON"):
             read_relay_settings()
-        self.settings.write_text('{"version":1,"defaults":{"pending_limit":-1},"projects":{}}')
-        with self.assertRaisesRegex(ValueError, "PENDING_LIMIT_INVALID"):
+        self.settings.write_text('{"version":1,"defaults":{"manager_member_limit":-1},"projects":{}}')
+        with self.assertRaisesRegex(ValueError, "MEMBER_LIMIT_INVALID"):
             read_relay_settings()
 
     def test_default_and_unicode_files_and_project_override(self):
@@ -150,21 +150,21 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
             scope_id="network.test",
             changes={
                 "manager_action": "new manager directive during the same project",
-                "pending_limit": 2,
+                "manager_member_limit": 2,
             },
         )
         self.assertEqual("NONE_PREVIEW_ONLY", proposed["effect"])
         self.assertEqual(digest, proposed["expected_sha256"])
         self.assertFalse(proposed["expected_absent"])
         self.assertEqual(original, self.settings.read_bytes())
-        self.assertEqual(2, proposed["effective_preview"]["pending_limit"])
+        self.assertEqual(2, proposed["effective_preview"]["manager_member_limit"])
         encoded = proposed["new_content"].encode("utf-8")
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), proposed["new_sha256"])
         self.settings.write_bytes(encoded)
         current = read_relay_settings("network.test")
         self.assertEqual("new manager directive during the same project",
                          current["manager_action"])
-        self.assertEqual(2, current["pending_limit"])
+        self.assertEqual(2, current["manager_member_limit"])
         self.assertEqual("original scope action",
                          read_relay_settings()["manager_action"])
         self.assertIn("조치 전문", current["worker_return_instruction"])
@@ -278,21 +278,22 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.assertFalse(self.settings.exists())
         initial = propose_relay_settings_patch(
             scope_id="network.test",
-            changes={"include_pending": False},
+            changes={"manager_additional_instruction": "첫 프로젝트 override"},
         )
         self.assertTrue(initial["expected_absent"])
         self.assertIsNone(initial["expected_sha256"])
         self.assertFalse(self.settings.exists())  # preview never writes
         self.settings.write_text(initial["new_content"], encoding="utf-8")
-        self.assertFalse(read_relay_settings("network.test")["include_pending"])
-        self.assertTrue(read_relay_settings()["include_pending"])
+        self.assertEqual("첫 프로젝트 override",
+                         read_relay_settings("network.test")["manager_additional_instruction"])
+        self.assertEqual("", read_relay_settings()["manager_additional_instruction"])
         reset = propose_relay_settings_patch(
             scope_id="network.test",
-            changes={"include_pending": None},
+            changes={"manager_additional_instruction": None},
         )
         self.assertFalse(reset["expected_absent"])
         self.settings.write_text(reset["new_content"], encoding="utf-8")
-        self.assertTrue(read_relay_settings("network.test")["include_pending"])
+        self.assertEqual("", read_relay_settings("network.test")["manager_additional_instruction"])
         raw = json.loads(self.settings.read_text(encoding="utf-8"))
         self.assertNotIn("network.test", raw["projects"])
 
@@ -300,7 +301,8 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.write(manager_action="unchanged")
         original = self.settings.read_bytes()
         for candidate in [
-            {"pending_limit": 900},
+            {"pending_limit": 1},
+            {"include_pending": False},
             {"manager_sections": ["worker_result", "worker_result", "action"]},
             {"worker_context_fields": ["project", "project", "role_note"]},
             {"manager_context_fields": ["project", "unsafe_authority"]},
@@ -324,7 +326,7 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.settings.write_text('{"invalid":true}', encoding="utf-8")
         original = self.settings.read_bytes()
         with self.assertRaises(ValueError):
-            propose_relay_settings_patch(changes={"pending_limit": 4})
+            propose_relay_settings_patch(changes={"manager_member_limit": 4})
         self.assertEqual(original, self.settings.read_bytes())
 
 

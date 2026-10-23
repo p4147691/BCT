@@ -137,25 +137,6 @@ def compose_manager_return_frame(
             view = {}
         scope = view.get("scope") or {}
         run = view.get("active_run")
-    pending = []
-    if ("pending_same_work" in settings["manager_context_fields"]
-            and settings["include_pending"] and settings["pending_limit"] > 0):
-        db = store._connect()
-        try:
-            db.execute("PRAGMA query_only=ON")
-            rows = db.execute(
-                "SELECT a.assignment_id,a.state FROM orchestration_assignments a "
-                "JOIN orchestration_sessions s ON s.session_id=a.session_id "
-                "WHERE s.work_id=? AND a.state NOT IN ('APPLIED','FAILED','NOT_APPLIED','CANCELLED') "
-                "ORDER BY a.updated_at DESC LIMIT ?",
-                (work_id, settings["pending_limit"]),
-            ).fetchall()
-            pending = [
-                {"assignment_id": str(row["assignment_id"]), "state": str(row["state"])}
-                for row in rows
-            ]
-        finally:
-            db.close()
     context = {
         "schema": 1,
         "work_id": work_id,
@@ -180,7 +161,6 @@ def compose_manager_return_frame(
         ],
         "project_run_state": str((run or {}).get("state") or ""),
         "original_worker_task": original_task[:8000],
-        "pending_same_work": pending,
     }
     for field in settings["manager_context_fields"]:
         context[field] = optional[field]

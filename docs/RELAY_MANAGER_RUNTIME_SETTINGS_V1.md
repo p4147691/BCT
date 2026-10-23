@@ -13,8 +13,6 @@
   "version": 1,
   "defaults": {
     "manager_action": "결과를 검토하고 다음 업무가 필요하면 BCT의 단일 Delivery 경로로 실제 전송하세요.",
-    "include_pending": true,
-    "pending_limit": 6,
     "manager_sections": ["context", "worker_result", "action"]
   },
   "projects": {
@@ -38,16 +36,15 @@
 - Manager 구성: manager_sections(정확히 context/worker_result/action),
   manager_context_fields(project, project_goal, completion_criteria,
   project_context_note, current_members, project_run_state, original_worker_task,
-  pending_same_work의 중복 없는 부분집합과 표시 순서)
-- Manager 문맥 한도: manager_member_limit(0~40), include_pending,
-  pending_limit(0~12)
+  중복 없는 부분집합과 표시 순서)
+- Manager 문맥 한도: manager_member_limit(0~40)
 - 프로젝트별 정보: project_display_name, project_goal, completion_criteria,
   project_context_note. 표시명·목표가 비어 있으면 기존 scope/Project Run 값을 사용하고,
   값이 있으면 메시지 표현에만 우선 적용한다. scope identity나 기존 기록을 바꾸지 않는다.
 
-현재 `pending_same_work`는 같은 Work에 연결된 기존 Orchestration assignment의 미종료 상태를
-읽는 관찰값이다. 빈 배열은 그 저장소에 항목이 없다는 뜻이며 모든 형태의 남은 업무가 없다는
-완료 증거가 아니다. Manager는 프로젝트 목표·실제 Delivery 영수증과 함께 판단해야 한다.
+구 Orchestration assignment를 읽던 `pending_same_work`, `include_pending`, `pending_limit`은
+현재 메시지 설정과 Manager 반환에서 제거했다. 향후 보류 업무 문맥은 구 상태를 재사용하지
+않고 Delivery Ledger와 현재 Work를 기준으로 정의한 뒤 별도 설정 항목으로 추가한다.
 
 변경은 프로젝트별 overrides나 defaults에서만 하며, 실행 권한을 확대하지 않는다.
 Work/Delivery/scope ID, Manager·Worker UUID, 설정·결과 해시, Worker의 task와
@@ -90,7 +87,7 @@ return_instruction, Manager 반환의 Worker 결과 전문은 설정으로 제�
 
 이 명령은 파일에 쓰지 않으며, 변경된 설정 전문과 BCT write에 사용할 정확한 CAS 인자를 반환한다.
 
-    python -m bct.relay_settings propose network.d3052e031bf748d8b1640b566a5bb86b "{\"pending_limit\": 3}"
+    python -m bct.relay_settings propose network.d3052e031bf748d8b1640b566a5bb86b "{\"project_context_note\": \"현재 검증 단계\"}"
 
 - stdout의 expected_absent=true이면 BCT write에서 expected_absent=true로 신규 파일을 생성한다.
 - stdout의 expected_sha256 값이 있으면 BCT write에서 expected_sha256에 동일한 해시를 전달한다.

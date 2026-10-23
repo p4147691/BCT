@@ -47,11 +47,9 @@ _DEFAULTS = {
     "manager_context_fields": [
         "project", "project_goal", "completion_criteria",
         "project_context_note", "current_members", "project_run_state",
-        "original_worker_task", "pending_same_work",
+        "original_worker_task",
     ],
     "manager_member_limit": 20,
-    "include_pending": True,
-    "pending_limit": 6,
     "project_display_name": "",
     "project_goal": "",
     "completion_criteria": "",
@@ -83,7 +81,6 @@ _WORKER_CONTEXT = {
 _MANAGER_CONTEXT = {
     "project", "project_goal", "completion_criteria", "project_context_note",
     "current_members", "project_run_state", "original_worker_task",
-    "pending_same_work",
 }
 
 _CATALOG: dict[str, dict[str, Any]] = {
@@ -135,13 +132,6 @@ _CATALOG: dict[str, dict[str, Any]] = {
     "manager_member_limit": {
         "type": "integer", "description": "Manager 문맥에 포함할 현재 구성원 수",
         "minimum": 0, "maximum": 40,
-    },
-    "include_pending": {
-        "type": "boolean", "description": "같은 Work의 미완료 업무 조회 여부",
-    },
-    "pending_limit": {
-        "type": "integer", "description": "Manager 문맥의 미완료 업무 수",
-        "minimum": 0, "maximum": 12,
     },
     "project_display_name": {
         "type": "optional-text",
@@ -248,14 +238,6 @@ def _validated(values: Any) -> dict[str, Any]:
                     or len(set(value)) != len(value) or not set(value) <= allowed):
                 raise ValueError("RELAY_SETTINGS_CONTEXT_FIELDS_INVALID:" + key)
             result[key] = list(value)
-        elif key == "include_pending":
-            if not isinstance(value, bool):
-                raise ValueError("RELAY_SETTINGS_BOOLEAN_INVALID:" + key)
-            result[key] = value
-        elif key == "pending_limit":
-            if type(value) is not int or value < 0 or value > 12:
-                raise ValueError("RELAY_SETTINGS_PENDING_LIMIT_INVALID")
-            result[key] = value
         elif key == "manager_member_limit":
             if type(value) is not int or value < 0 or value > 40:
                 raise ValueError("RELAY_SETTINGS_MEMBER_LIMIT_INVALID")

@@ -1594,8 +1594,9 @@ UTF-8 정본 변경안도 격리 시험에 포함했다.
 Browser Bridge 완료 문구로 확인됐다. 현재 영속 대화망의 전송 기술 선택이나 목표로 사용하면
 안 되는 값이다. 기존 scope identity와 기록은 보존하고, 메시지 설정의
 `project_display_name`·`project_goal` override가 있으면 Worker/Manager 문맥에서 우선하도록
-보완했다. `pending_same_work`는 현재 빈 배열이지만 구 Orchestration assignment 관찰값이므로
-프로젝트 전체의 미완료 업무가 없다는 증거로 사용하지 않는다.
+보완했다. 사용자의 명시적 결정에 따라 구 Orchestration assignment를 읽던
+`pending_same_work`와 `include_pending`/`pending_limit`은 현재 메시지 설정 및 Manager 반환에서
+제거했다. 향후 보류 업무는 Delivery Ledger와 현재 Work 기준으로 새로 정의한다.
 
 실제 파일을 쓰지 않은 프로젝트 override 후보의 SHA-256은
 `f32c30d1a10021b6053f23c611a39ff623f51040c294e9ebfd01f92fb1e83ba7`,
