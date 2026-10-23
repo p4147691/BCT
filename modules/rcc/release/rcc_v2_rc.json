@@ -553,7 +553,7 @@
       {
         "path": "boot/platform_context.js",
         "size": 1099,
-        "sha256": "e36b36a2c8ce00d8380e766000fef418d2e0c0547b701aa7b36bc15d7ad8a3ff"
+        "sha256": "c59349d2760cc29d93e5698728bd3a1da3fc15d7bd4362d61cb14bba459fd993"
       },
       {
         "path": "browser/read_adapter.js",
@@ -622,13 +622,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 10745,
-        "sha256": "26c2f69391cde2ea6550e52eae482ad90e65bd69cf1b5a411d9512294282cc46"
+        "size": 16672,
+        "sha256": "6b8e4aae7126d3903ff0d8b2544014925044dc34d613ef2d70871b61fc6bf732"
       },
       {
         "path": "content/conversation_dom.js",
         "size": 18940,
-        "sha256": "663dcc620aff38e759814d3a29a6adb3de33cd235bc316b05ee55b473b24abfd"
+        "sha256": "738e6e3e2f55e445b8a524d9399c03a06b890c7d6611e2ae7ee541e99f956599"
       },
       {
         "path": "content/conversation_rename.js",
@@ -677,8 +677,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 25474,
-        "sha256": "90309a1e47a5962152f572faf40ed9e7138c4064c1293fcccc2e3ae30b430eef"
+        "size": 33301,
+        "sha256": "eeee00e447ff645b8ec7306687329c0e105f085d1d3c5f7b08dc3760344af497"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -702,8 +702,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 29966,
-        "sha256": "1c843ce98327eb7cf825e1d6708e8aa86c9c752e25ddb7895ad84e99e629d16f"
+        "size": 30706,
+        "sha256": "1d3ef4646458310a5d060ab109e74f1c0453e2ac76c8212fa1b58e535e214e2e"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -727,13 +727,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3521,
-        "sha256": "dfdb3a10b65a84c73679ea0e782bfd6a8dff83fd57ba0d57197a5ce99581c8d3"
+        "size": 3599,
+        "sha256": "a400672b8f369f5b6b2f268718c659b39bff593614468aea22d4d8d914d0e05f"
       },
       {
         "path": "manifest.json",
         "size": 1521,
-        "sha256": "160607510ade8a7489a269fc71e6bdc3b00ff326d483cd450cc2185b24de2c32"
+        "sha256": "8b9bb01e3734dac55450e0c7022704da80f286812105ec5d9d1fc15f68420ad7"
       },
       {
         "path": "network/directory.js",
@@ -797,6 +797,6 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "54fcf3cbbd9763fee84f20660af41d03cdaceb261d9e56fd2838629de02f45ec"
+    "aggregateSha256": "b6502bc16f408ca9c086096374a2316d82dc78e4a499dc91a2825ff52bb42f08"
   }
 }

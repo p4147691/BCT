@@ -50,6 +50,7 @@ unchanged.
 - runtime build: `2026-10-24-rcc-normalized-submission-identity-v1`
 - candidate: `RCC_REBUILD_V2_RC24_NORMALIZED_SUBMISSION_IDENTITY`
 - candidate inventory: 52 files, aggregate `4d5c89995beec26e294ecc776737205216c79fb9a93d44214b24189954fb9a88`
+- exact RC23 LIVE rollback inventory: 52 files, aggregate `b6502bc16f408ca9c086096374a2316d82dc78e4a499dc91a2825ff52bb42f08`
 
 ## BCT RCC 1.0.43 terminal retirement identity candidate
 

@@ -26,6 +26,10 @@ class RccReleaseCandidateTests(unittest.TestCase):
         self.assertFalse(receipt["stagedCandidateVerified"])
         self.assertGreater(receipt["candidateFileCount"], 30)
         self.assertGreater(receipt["rollbackFileCount"], 20)
+        self.assertEqual(
+            "b6502bc16f408ca9c086096374a2316d82dc78e4a499dc91a2825ff52bb42f08",
+            receipt["rollbackAggregateSha256"],
+        )
 
     def test_inventory_digest_is_order_independent_and_tamper_evident(self):
         files = [
