@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-23-rcc-terminal-idle-proof-v1';
+const RCC_BUILD_VERSION = '2026-10-23-rcc-new-chat-terminal-retirement-v1';
 
 function editorCandidates() {
 
