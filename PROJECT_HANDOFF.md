@@ -1597,6 +1597,7 @@ UTF-8 정본 변경안도 격리 시험에 포함했다.
 `2026-10-23-rcc-manager-return-wake-v1`이지만 이번 설정 작업에서는 reload하거나 메시지를
 보내지 않았다. PR #293의 RCC editor rebind 후보도 섞지 않았다.
 
-남은 순서는 격리 diff 검토와 로컬 checkpoint 확정, 그 다음 사용자와 실제 기본값·프로젝트
-override 미리보기 수락이다. 그 전에는 main/remote/Core/runtime config/Chrome을 변경하거나
-N13/N14로 메시지를 보내지 않는다.
+위 보완은 격리 로컬 checkpoint
+`48430c3`(`feat(relay): preview unified configurable messages`)로 확정했다. 남은 순서는 사용자와
+실제 기본값·프로젝트 override 미리보기 수락이다. 그 전에는 main/remote/Core/runtime
+config/Chrome을 변경하거나 N13/N14로 메시지를 보내지 않는다.
