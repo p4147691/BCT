@@ -163,6 +163,7 @@ files = [
   "src/bct/conversation_network.py",
   "src/bct/project_run.py",
   "src/bct/relay_control.py",
+  "src/bct/relay_executor.py",
   "src/bct/relay_settings.py",
   "src/bct/relay_prompt.py",
   "modules/mcp/ops/run_bct_core_supervisor.ps1",

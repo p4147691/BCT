@@ -11,6 +11,7 @@ from .core.policy import Policy
 from .core.store import Store
 from .core.orchestration import OrchestrationService
 from .manager_decision_recovery import ManagerDecisionRecovery
+from .relay_executor import RelayControlFeature
 from .worker_dispatch_recovery import WorkerDispatchRecovery
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.git import GitCommitFeature
@@ -180,6 +181,9 @@ class BCT:
             VtlValidateFeature(policy_path, data_root=data_root),
         ):
             self.operations.register(feature)
+        self.operations.register(RelayControlFeature(
+            store=self.store, features=self.operations._features,
+        ))
         self.operations.register(VerificationFeature(self.operations._features, self.store))
 
     def create_work(self, *, work_id: str, request_summary: str, roots: list[str],
