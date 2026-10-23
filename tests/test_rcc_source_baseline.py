@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC13_COMPOSER_TARGET", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC14_COMPOSER_SETTLE", release["candidate"])
         inventory = {item["path"]: item["sha256"]
                      for item in release["candidateInventory"]["files"]}
         critical = {
@@ -50,8 +50,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.33", manifest["version"])
-        self.assertEqual("1.0.33 Composer Target", manifest["version_name"])
+        self.assertEqual("1.0.34", manifest["version"])
+        self.assertEqual("1.0.34 Composer Settle", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -166,7 +166,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-23-rcc-composer-target-v1"
+        marker = "2026-10-23-rcc-composer-settle-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
@@ -217,7 +217,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         for name, marker in (
             ("test_simple_relay_v0.js", "simple_relay_v0: PASS"),
             ("test_simple_relay_route_adapter_v5.js", "simple relay route adapter v5: PASS"),
-            ("test_editor_rebind_submission_v1.js", "editor rebind and paragraph draft v2: PASS"),
+            ("test_editor_rebind_submission_v1.js", "editor rebind, paragraph draft, and settle fence v3: PASS"),
             ("test_legacy_command_policy_v6.js", "legacy command policy v6: PASS"),
             ("test_conversation_rename_service_v1.js", "conversation rename service v1: PASS"),
             ("test_new_chat_service_v1.js", "rcc new chat service v1: PASS"),

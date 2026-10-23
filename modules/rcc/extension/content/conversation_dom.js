@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-23-rcc-composer-target-v1';
+const RCC_BUILD_VERSION = '2026-10-23-rcc-composer-settle-v1';
 
 function editorCandidates() {
 

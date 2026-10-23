@@ -141,7 +141,11 @@ async function submitEditor(editor, options = {}) {
     if (expected === null) return liveEditor === editor ? editor : null;
     return liveEditor && editorDraftText(liveEditor) === expected ? liveEditor : null;
   };
-  if (!currentVerifiedEditor()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  // execCommand and ChatGPT's controlled ProseMirror update do not always
+  // settle in the same task.  The draft can be transiently unreadable here
+  // and become the exact expected paragraphs before the send button is ready.
+  // Keep the exact-text fence, but let the existing bounded observer wait for
+  // both the settled draft and the enabled button instead of failing early.
   // Wait for ChatGPT to swap its empty-composer voice control for the enabled send arrow.
   const button = await waitForReadySendButton(editor, waitMs, options);
   if (button) {
