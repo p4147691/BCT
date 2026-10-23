@@ -28,12 +28,27 @@ DEFAULT = {
         "density": "compact",
         "gap": 2,
     },
+    # Presentation only. Never source node identity, status, columns, capture or actions.
+    "presentation": {
+        "nodeTitleFontPx": 12,
+        "nodeCardMinHeightPx": 36,
+        "nodeGapPx": 6,
+        "panelPaddingPx": 10,
+        "thumbnailStatusIconPx": 20,
+    },
+}
+PRESENTATION_LIMITS = {
+    "nodeTitleFontPx": (10, 16),
+    "nodeCardMinHeightPx": (30, 56),
+    "nodeGapPx": (2, 14),
+    "panelPaddingPx": (5, 16),
+    "thumbnailStatusIconPx": (16, 32),
 }
 MAX_BYTES = 4096
 
 
 def normalize_layout(payload: Any) -> dict[str, Any]:
-    if not isinstance(payload, dict) or set(payload) != {"version", "toolbar"}:
+    if not isinstance(payload, dict) or not {"version", "toolbar"}.issubset(payload) or set(payload) - {"version", "toolbar", "presentation"}:
         raise ValueError("BWM_UI_LAYOUT_SCHEMA_INVALID")
     if type(payload["version"]) is not int or payload["version"] != 1:
         raise ValueError("BWM_UI_LAYOUT_VERSION_INVALID")
@@ -56,6 +71,15 @@ def normalize_layout(payload: Any) -> dict[str, Any]:
         or not set(hidden).issubset(BUTTONS)
     ):
         raise ValueError("BWM_UI_LAYOUT_VALUE_INVALID")
+    extra = payload.get("presentation", {})
+    if not isinstance(extra, dict) or set(extra) - set(PRESENTATION_LIMITS):
+        raise ValueError("BWM_PRESENTATION_FIELDS_INVALID")
+    presentation = {**DEFAULT["presentation"], **extra}
+    if any(
+        type(presentation[key]) is not int or not low <= presentation[key] <= high
+        for key, (low, high) in PRESENTATION_LIMITS.items()
+    ):
+        raise ValueError("BWM_PRESENTATION_VALUE_INVALID")
     return {
         "version": 1,
         "toolbar": {
@@ -65,6 +89,7 @@ def normalize_layout(payload: Any) -> dict[str, Any]:
             "density": config["density"],
             "gap": gap,
         },
+        "presentation": presentation,
     }
 
 

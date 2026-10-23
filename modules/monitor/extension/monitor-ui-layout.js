@@ -19,7 +19,21 @@
       hidden: Object.freeze([]),
       density: "compact",
       gap: 2
+    }),
+    presentation: Object.freeze({
+      nodeTitleFontPx: 12,
+      nodeCardMinHeightPx: 36,
+      nodeGapPx: 6,
+      panelPaddingPx: 10,
+      thumbnailStatusIconPx: 20
     })
+  });
+  const PRESENTATION_LIMITS = Object.freeze({
+    nodeTitleFontPx: [10, 16],
+    nodeCardMinHeightPx: [30, 56],
+    nodeGapPx: [2, 14],
+    panelPaddingPx: [5, 16],
+    thumbnailStatusIconPx: [16, 32]
   });
   const has = (obj, name) => Object.prototype.hasOwnProperty.call(obj, name);
   const plain = (value) => value !== null && typeof value === "object" &&
@@ -29,7 +43,7 @@
 
   function normalize(raw) {
     if (!plain(raw) || raw.version !== 1 || !plain(raw.toolbar) ||
-        Object.keys(raw).some((key) => !["version", "toolbar"].includes(key)) ||
+        Object.keys(raw).some((key) => !["version", "toolbar", "presentation"].includes(key)) ||
         Object.keys(raw.toolbar).some((key) =>
           !["placement", "order", "hidden", "density", "gap"].includes(key))) {
       throw new TypeError("UI_LAYOUT_SCHEMA_INVALID");
@@ -50,20 +64,31 @@
         hidden.some((id) => !BUTTONS.includes(id))) {
       throw new TypeError("UI_LAYOUT_VALUE_NOT_ALLOWED");
     }
+    const values = has(raw, "presentation") ? raw.presentation : {};
+    if (!plain(values) || Object.keys(values).some((key) => !has(PRESENTATION_LIMITS, key))) {
+      throw new TypeError("UI_PRESENTATION_FIELDS_INVALID");
+    }
+    const presentation = { ...DEFAULT.presentation, ...values };
+    if (Object.entries(PRESENTATION_LIMITS).some(([key, bounds]) =>
+      !Number.isInteger(presentation[key]) ||
+      presentation[key] < bounds[0] || presentation[key] > bounds[1])) {
+      throw new TypeError("UI_PRESENTATION_VALUES_INVALID");
+    }
     return { version: 1, toolbar: {
       placement, order: [...order], hidden: [...hidden], density, gap
-    } };
+    }, presentation };
   }
 
   function merge(current, patch) {
-    if (!plain(patch) || Object.keys(patch).some((key) => !["version", "toolbar"].includes(key)) ||
+    if (!plain(patch) || Object.keys(patch).some((key) => !["version", "toolbar", "presentation"].includes(key)) ||
         (has(patch, "version") && patch.version !== 1) ||
-        (has(patch, "toolbar") && !plain(patch.toolbar))) {
+        (has(patch, "toolbar") && !plain(patch.toolbar)) ||
+        (has(patch, "presentation") && !plain(patch.presentation))) {
       throw new TypeError("UI_LAYOUT_PATCH_INVALID");
     }
     return normalize({ version: 1, toolbar: {
       ...current.toolbar, ...(patch.toolbar || {})
-    } });
+    }, presentation: { ...current.presentation, ...(patch.presentation || {}) } });
   }
 
   function create(root, storage, onError, options = {}) {
@@ -95,6 +120,16 @@
       toolbar.classList.toggle("bwm-ui-toolbar-inline", next.toolbar.placement === "inline");
       toolbar.classList.toggle("bwm-ui-toolbar-compact", next.toolbar.density === "compact");
       toolbar.style.setProperty("--bwm-ui-toolbar-gap", next.toolbar.gap + "px");
+      const presentationVars = {
+        nodeTitleFontPx: "--bwm-node-title-size",
+        nodeCardMinHeightPx: "--bwm-node-card-min-height",
+        nodeGapPx: "--bwm-node-gap",
+        panelPaddingPx: "--bwm-panel-padding",
+        thumbnailStatusIconPx: "--bwm-thumbnail-status-size"
+      };
+      for (const [key, variable] of Object.entries(presentationVars)) {
+        root.style.setProperty(variable, next.presentation[key] + "px");
+      }
       for (const id of next.toolbar.order) {
         const button = nodes.get(id);
         toolbar.appendChild(button); // existing real element and handler are retained

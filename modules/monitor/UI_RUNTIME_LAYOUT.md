@@ -28,3 +28,29 @@ existing regressions, CI, local-main exact merge, GitHub publication,
 backed-up exact-file monitor staged deployment and versioned loaded runtime
 observation. Core release changes must pass effectful service delivery gates.
 Future layout-only changes use BCT file write + readback and no code changes.
+
+## V3: Additional presentation-only settings (allowlisted)
+
+Existing JSON files without the optional presentation object remain valid and
+retain original visual defaults. BCT /monitor/ui-layout normalizes the fields.
+
+Optional presentation JSON mapping:
+    nodeTitleFontPx: 12
+    nodeCardMinHeightPx: 36
+    nodeGapPx: 6
+    panelPaddingPx: 10
+    thumbnailStatusIconPx: 20
+
+Accepted integer ranges: title 10..16, card min-height 30..56, list gap
+2..14, panel horizontal padding 5..16, thumbnail (non-warning) status SVG
+16..32. CSS custom properties are applied only under the BWM Monitor root.
+
+Node columns (existing 3), browser tab identity, Native HWND, window control,
+capture pixels, work/role/attention status, warnings, ACK and task completion
+must not be affected. Unsupported values fail closed. Do not expose script,
+CSS, code, URL, state-machine or authority mutations as UI configuration.
+
+Once initially deployed, normal BCT exact-hash writes to the existing
+D:\BCT\data\bwm-ui-layout.json file followed by Core API readback change
+presentation without main/CI/redeploy. Isolated Chrome computed-style E2E
+checks presentation rendering where live extension page inspection is blocked.

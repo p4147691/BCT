@@ -49,6 +49,33 @@ class MonitorUiLayoutTests(unittest.TestCase):
                 _layout, status = load_layout(Path(tmp))
                 self.assertEqual(status, "INVALID_FALLBACK")
 
+    def test_presentation_values_bounded_and_backward_compatible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original = {"version": 1, "toolbar": dict(DEFAULT["toolbar"])}
+            (Path(tmp) / FILENAME).write_text(json.dumps(original), encoding="utf-8")
+            output = read_layout(Path(tmp))
+        self.assertEqual(output["presentation"], DEFAULT["presentation"])
+        changed = {**original, "presentation": {
+            "nodeTitleFontPx": 14,
+            "nodeCardMinHeightPx": 42,
+            "nodeGapPx": 9,
+            "panelPaddingPx": 12,
+            "thumbnailStatusIconPx": 23,
+        }}
+        self.assertEqual(normalize_layout(changed)["presentation"], changed["presentation"])
+        for extra in (
+            {"nodeGapPx": -1},
+            {"nodeCardMinHeightPx": 400},
+            {"nodeTitleFontPx": True},
+            {"nodeColumns": 2},
+            {"statusColor": "green"},
+            {"customCss": "*{display:none}"},
+            {"thumbnailStatusIconPx": "22"},
+        ):
+            with self.subTest(extra=extra):
+                with self.assertRaises(ValueError):
+                    normalize_layout({**original, "presentation": extra})
+
     def test_codec_explicit_avoids_mojibake(self):
         for s in ("한글·ABC·日本語·✓", "😀\n한글"):
             for b in (s.encode("utf-8"), b"\xef\xbb\xbf" + s.encode("utf-8"), s.encode("utf-16")):

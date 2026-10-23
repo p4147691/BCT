@@ -63,3 +63,23 @@
 .desktop-window-monitor #bwmUiLayoutOpen {
   display: none !important;
 }
+
+/* Allowlisted runtime presentation controls only; never modify physical capture,
+   status semantics, node identities, drag targets, or the user's 3 columns. */
+.desktop-window-monitor .monitor-section.monitor-ai-section {
+  padding-left: var(--bwm-panel-padding, 10px);
+  padding-right: var(--bwm-panel-padding, 10px);
+}
+.desktop-window-monitor .monitor-bct-node-list {
+  gap: var(--bwm-node-gap, 6px);
+}
+.desktop-window-monitor .monitor-bct-node-row {
+  min-height: var(--bwm-node-card-min-height, 36px);
+}
+.desktop-window-monitor .monitor-bct-node-title {
+  font-size: var(--bwm-node-title-size, 12px);
+}
+.desktop-window-monitor .monitor-window-pause-overlay-thumb > .monitor-status-icon:not(.monitor-status-icon-warning) {
+  width: var(--bwm-thumbnail-status-size, 20px);
+  height: var(--bwm-thumbnail-status-size, 20px);
+}
