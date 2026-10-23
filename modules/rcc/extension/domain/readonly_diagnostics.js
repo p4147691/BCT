@@ -878,11 +878,11 @@ async function handleNativeCommand(message) {
 
                     '#prompt-textarea',
 
-                    'div[contenteditable="true"][role="textbox"]',
-
                     'div[contenteditable="true"][data-virtualkeyboard="true"]',
 
-                    'textarea[name="prompt-textarea"]'
+                    'textarea[name="prompt-textarea"]',
+
+                    'form div[contenteditable="true"][role="textbox"]'
 
                   ];
 

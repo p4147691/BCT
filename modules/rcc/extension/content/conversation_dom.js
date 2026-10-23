@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-23-rcc-composer-paragraph-v1';
+const RCC_BUILD_VERSION = '2026-10-23-rcc-composer-target-v1';
 
 function editorCandidates() {
 
@@ -9,13 +9,13 @@ function editorCandidates() {
     '#prompt-textarea',
 
 
-    'div[contenteditable="true"][role="textbox"]',
-
-
     'div[contenteditable="true"][data-virtualkeyboard="true"]',
 
 
-    'textarea[name="prompt-textarea"]'
+    'textarea[name="prompt-textarea"]',
+
+
+    'form div[contenteditable="true"][role="textbox"]'
 
 
   ];

@@ -5,6 +5,9 @@ const vm = require('node:vm');
 const source = fs.readFileSync(
   require('node:path').join(__dirname, 'content/simple_relay_executor.js'), 'utf8'
 );
+const domSource = fs.readFileSync(
+  require('node:path').join(__dirname, 'content/conversation_dom.js'), 'utf8'
+);
 
 function slice(sourceText, start, end) {
   const first = sourceText.indexOf(start);
@@ -59,6 +62,36 @@ assert.equal(
   draftContext.editorDraftTextForTest(proseMirrorDraft),
   '첫째\n\n둘째 😀',
   'blank ProseMirror paragraphs reconstruct one source blank line',
+);
+
+const artifactEditor = {id: 'artifact-editor'};
+const promptEditor = {id: 'prompt-editor'};
+const selectorMatches = new Map([
+  ['#prompt-textarea', null],
+  ['div[contenteditable="true"][data-virtualkeyboard="true"]', promptEditor],
+  ['textarea[name="prompt-textarea"]', null],
+  ['form div[contenteditable="true"][role="textbox"]', promptEditor],
+  ['div[contenteditable="true"][role="textbox"]', artifactEditor],
+]);
+const targetContext = vm.createContext({
+  document: {querySelector: selector => selectorMatches.get(selector) || null},
+});
+vm.runInContext(
+  slice(domSource, 'function editorCandidates()', 'function conversationObserveRoot()')
+    + ';globalThis.getEditorForTest = getEditor; globalThis.editorCandidatesForTest = editorCandidates;',
+  targetContext
+);
+assert.equal(
+  targetContext.getEditorForTest(),
+  promptEditor,
+  'the prompt-specific virtual-keyboard editor wins over an earlier artifact textbox',
+);
+assert.equal(
+  Array.from(targetContext.editorCandidatesForTest()).includes(
+    'div[contenteditable="true"][role="textbox"]'
+  ),
+  false,
+  'an unscoped rich-text textbox is never a composer fallback',
 );
 
 (async () => {
