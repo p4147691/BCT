@@ -98,3 +98,13 @@ Post-install changing this object needs only an exact-hash BCT write to the
 existing D:/BCT/data/bwm-ui-layout.json file. Neither main/CI/Core deploy nor
 extension reload is needed for *future settings* changes. New capture engines,
 capture authorization semantics and endpoint contracts remain code changes.
+
+
+## V3/V4 Core compatibility gate
+
+Core /monitor/ui-layout without the capture_fallback=1 query key returns
+only the original version, toolbar, presentation fields for installed BWM
+2.0.28. An upgraded BWM explicitly opts in to the additional validated
+captureFallback schema. A staged deployment therefore does not break
+existing runtime UI settings. This is presentation-only; no RCC or policy
+contracts change.

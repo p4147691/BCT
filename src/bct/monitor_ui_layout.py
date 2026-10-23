@@ -138,3 +138,13 @@ def load_layout(data_root: Path) -> tuple[dict[str, Any], str]:
         return read_layout(data_root), "READY"
     except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError):
         return normalize_layout(DEFAULT), "INVALID_FALLBACK"
+
+
+def project_for_client(config: dict[str, Any], *, capture_fallback_capable: bool) -> dict[str, Any]:
+    # Installed BWM 2.0.28 rejects unknown top-level fields and will reject
+    # the whole layout if captureFallback is sent unconditionally.
+    # New UI code opts in explicitly. Never depend on a mutable UA string.
+    normalized = normalize_layout(config)
+    if capture_fallback_capable:
+        return normalized
+    return {key: value for key, value in normalized.items() if key != "captureFallback"}

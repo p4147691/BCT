@@ -7,7 +7,7 @@ from pathlib import Path
 
 from bct.monitor_ui_layout import (
     BUTTONS, DEFAULT, FILENAME, decode_unicode_document,
-    load_layout, normalize_layout, read_layout,
+    load_layout, normalize_layout, read_layout, project_for_client,
 )
 
 
@@ -100,6 +100,19 @@ class MonitorUiLayoutTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
                     normalize_layout({**legacy, "captureFallback": invalid})
+
+    def test_client_schema_projection_preserves_existing_monitor(self):
+        normalized = normalize_layout(DEFAULT)
+        older = project_for_client(normalized, capture_fallback_capable=False)
+        upgraded = project_for_client(normalized, capture_fallback_capable=True)
+        self.assertEqual(set(older), {"version", "toolbar", "presentation"})
+        self.assertEqual(older["toolbar"], normalized["toolbar"])
+        self.assertEqual(older["presentation"], normalized["presentation"])
+        self.assertNotIn("captureFallback", older)
+        self.assertEqual(upgraded, normalized)
+        self.assertEqual(upgraded["captureFallback"]["mode"], "last_good")
+        with self.assertRaises(ValueError):
+            project_for_client({**normalized, "unknown": "eval"}, capture_fallback_capable=True)
 
     def test_codec_explicit_avoids_mojibake(self):
         for s in ("한글·ABC·日本語·✓", "😀\n한글"):
