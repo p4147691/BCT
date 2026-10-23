@@ -168,7 +168,7 @@ class CompactRuntimeHTTPTests(unittest.TestCase):
 
 
 class CompactClaimContractTests(unittest.TestCase):
-    def test_persisted_unknown_blocks_claim_and_retry(self):
+    def test_persisted_unknown_is_retired_for_new_attempt_but_not_replayed(self):
         import tempfile
         from pathlib import Path
         from bct.core.models import Outcome, Work
@@ -192,12 +192,15 @@ class CompactClaimContractTests(unittest.TestCase):
                 operation_id="unknown-1", work_id="compact-unknown",
                 principal_id="owner").outcome)
             self.assertTrue(store.claim_diagnostics())
-            with self.assertRaises(Exception):
-                store.begin_operation(
-                    operation_id="another-1", work=work, principal_id="owner",
-                    request_digest="digest-2", capability="write", target="fixture",
-                    resources=("resource:fixture",), policy_revision="test",
-                )
+            started, _ = store.begin_operation(
+                operation_id="another-1", work=work, principal_id="owner",
+                request_digest="digest-2", capability="write", target="fixture",
+                resources=("resource:fixture",), policy_revision="test",
+            )
+            self.assertTrue(started)
+            self.assertEqual(Outcome.UNKNOWN, store.get_operation_for(
+                operation_id="unknown-1", work_id="compact-unknown",
+                principal_id="owner").outcome)
             feature = ReadOnlyClaimReconcileFeature(store)
             request = feature.prepare(work=work, arguments={
                 "original_operation_id": "unknown-1", "reason": "unproven",
@@ -278,13 +281,16 @@ class CompactUnknownHTTPTests(unittest.TestCase):
                                     "operation_id": "blocked-read",
                                     "arguments": {"path": target},
                                 })
-                                self.assertTrue(blocked.isError or
-                                                (blocked.structuredContent or {}).get("outcome") != "APPLIED")
+                                self.assertFalse(blocked.isError)
+                                self.assertEqual("APPLIED", blocked.structuredContent["outcome"])
                                 original = await client.call_tool("bct_operation_get", {
                                     "work_id": "unknown-http-work", "operation_id": "original-unknown",
                                 })
                                 self.assertEqual("UNKNOWN", original.structuredContent["outcome"])
-                                self.assertTrue(store.claim_diagnostics())
+                                self.assertFalse(any(
+                                    row["operation_id"] == "original-unknown"
+                                    for row in store.claim_diagnostics()
+                                ))
                                 # Mutating UNKNOWN must remain non-reconcilable; covered by
                                 # the focused policy test, not cleared here.
                                 retry = await client.call_tool("bct_dispatch", {
@@ -292,8 +298,8 @@ class CompactUnknownHTTPTests(unittest.TestCase):
                                     "operation_id": "blocked-read",
                                     "arguments": {"path": target},
                                 })
-                                self.assertTrue(retry.isError or
-                                                (retry.structuredContent or {}).get("outcome") != "APPLIED")
+                                self.assertFalse(retry.isError)
+                                self.assertEqual("APPLIED", retry.structuredContent["outcome"])
                                 self.assertEqual("UNKNOWN", store.get_operation_for(
                                     operation_id="original-unknown",
                                     work_id="unknown-http-work",

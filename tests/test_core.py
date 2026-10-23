@@ -225,17 +225,21 @@ class CoreTests(unittest.TestCase):
             self.bct.store.get_operation_for(operation_id="op-1", work_id="work-1",
                                              principal_id=self.other.principal_id)
 
-    def test_unknown_effect_blocks_new_operation_for_same_resource(self):
+    def test_finished_unknown_does_not_block_next_operation(self):
         feature = UnknownFeature()
         self.replace_feature(feature)
         first = self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-1",
                                         capability="write", arguments={"resource": "x"})
         self.assertEqual(Outcome.UNKNOWN, first.outcome)
-        with self.assertRaises(ConflictError):
-            self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-2",
-                                    capability="write", arguments={"resource": "x"})
-        self.assertEqual(1, feature.calls)
-
+        second = self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-2",
+                                         capability="write", arguments={"resource": "x"})
+        self.assertEqual(Outcome.UNKNOWN, second.outcome)
+        self.assertEqual(2, feature.calls)
+        replay = self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-1",
+                                         capability="write", arguments={"resource": "x"})
+        self.assertTrue(replay.duplicate)
+        self.assertEqual(Outcome.UNKNOWN, replay.outcome)
+        self.assertEqual(2, feature.calls)
     def test_concurrent_writer_for_same_resource_is_denied(self):
         feature = BlockingFeature()
         self.replace_feature(feature)
@@ -296,37 +300,57 @@ class CoreTests(unittest.TestCase):
             capability="write", arguments={"resource": "shared"},
         ).outcome)
 
-    def test_unknown_claim_reports_review_without_retry(self):
+    def test_terminal_unknown_retirement_keeps_original_receipt(self):
         feature = UnknownFeature()
         self.replace_feature(feature)
         self.bct.operations.run(principal=self.owner, work_id="work-1",
                                 operation_id="unknown-owner", capability="write",
                                 arguments={"resource": "unknown-resource"})
-        with self.assertRaisesRegex(
-            ConflictError, "RESOURCE_ALREADY_CLAIMED:SAME_WORK:unknown-owner:FINISHED:UNKNOWN:REVIEW_UNRESOLVED"
-        ):
-            self.bct.operations.run(principal=self.owner, work_id="work-1",
-                                    operation_id="blocked-unknown", capability="write",
-                                    arguments={"resource": "unknown-resource"})
-        self.assertEqual(1, feature.calls)
-
-    def test_foreign_claim_does_not_expose_owner_or_resource(self):
-        self.replace_feature(UnknownFeature())
-        self.bct.operations.run(principal=self.owner, work_id="work-1",
-                                operation_id="secret-owner", capability="write",
-                                arguments={"resource": "secret-resource"})
+        result = self.bct.operations.run(principal=self.owner, work_id="work-1",
+                                         operation_id="successor", capability="write",
+                                         arguments={"resource": "unknown-resource"})
+        self.assertEqual(Outcome.UNKNOWN, result.outcome)
+        original = self.bct.store.get_operation_for(
+            operation_id="unknown-owner", work_id="work-1",
+            principal_id=self.owner.principal_id,
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual(2, feature.calls)
+    def test_foreign_running_claim_does_not_expose_owner_or_resource(self):
+        feature = BlockingFeature()
+        self.replace_feature(feature)
         self.bct.create_work(work_id="other-work", request_summary="other",
                              roots=[str(self.root)], actions=["write"], principal=self.other)
-        with self.assertRaises(ConflictError) as caught:
-            self.bct.operations.run(principal=self.other, work_id="other-work",
-                                    operation_id="foreign-contender", capability="write",
-                                    arguments={"resource": "secret-resource"})
-        self.assertEqual("RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK", str(caught.exception))
-        self.assertEqual(1, self.bct.store.get_operation_for(
-            operation_id="secret-owner", work_id="work-1",
-            principal_id=self.owner.principal_id,
-        ).evidence.get("calls", 1))
+        t = threading.Thread(target=lambda: self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="secret-owner",
+            capability="write", arguments={"resource": "secret-resource"},
+        ))
+        t.start()
+        self.assertTrue(feature.started.wait(5))
+        try:
+            with self.assertRaises(ConflictError) as caught:
+                self.bct.operations.run(principal=self.other, work_id="other-work",
+                                        operation_id="foreign-contender", capability="write",
+                                        arguments={"resource": "secret-resource"})
+            self.assertEqual("RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK", str(caught.exception))
+        finally:
+            feature.release.set()
+            t.join(5)
+        self.assertFalse(t.is_alive())
 
+    def test_finished_foreign_unknown_releases_only_exact_resource_claim(self):
+        self.replace_feature(UnknownFeature())
+        self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="old-unknown",
+                                capability="write", arguments={"resource": "shared"})
+        self.bct.create_work(work_id="other-work", request_summary="other",
+                             roots=[str(self.root)], actions=["write"], principal=self.other)
+        next_result = self.bct.operations.run(principal=self.other, work_id="other-work",
+                                              operation_id="fresh-work", capability="write",
+                                              arguments={"resource": "shared"})
+        self.assertEqual(Outcome.UNKNOWN, next_result.outcome)
+        old = self.bct.store.get_operation_for(operation_id="old-unknown", work_id="work-1",
+                                                principal_id=self.owner.principal_id)
+        self.assertEqual(Outcome.UNKNOWN, old.outcome)
     def test_node_properties_and_connection_are_independent_of_work(self):
         node = self.bct.identity.create_node(node_id="node-1", name="EXEC1", role="EXEC", group="A")
         connection = self.bct.identity.replace_connection(
@@ -352,14 +376,22 @@ class CoreTests(unittest.TestCase):
                 instance="tab-3", endpoint="conversation-3", expected_generation=1,
             )
 
-    def test_handoff_requires_no_unresolved_operation(self):
+    def test_handoff_retires_finished_unknown_without_losing_receipt(self):
         self.replace_feature(UnknownFeature())
         self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-1",
                                 capability="write", arguments={"resource": "x"})
-        with self.assertRaises(ConflictError):
-            self.bct.identity.handoff_work(work_id="work-1", old_principal_id="owner",
-                                           new_principal_id="other", expected_epoch=1)
-
+        handed = self.bct.identity.handoff_work(work_id="work-1", old_principal_id="owner",
+                                                new_principal_id="other", expected_epoch=1)
+        self.assertEqual("other", handed.owner_principal_id)
+        self.assertEqual(2, handed.assignment_epoch)
+        db = self.bct.store._connect()
+        try:
+            row = db.execute("SELECT unresolved FROM resource_claims "
+                             "WHERE operation_id='op-1'").fetchone()
+        finally:
+            db.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(0, row[0])
     def test_handoff_after_terminal_released_operation(self):
         self.replace_feature(CountingFeature())
         self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-1",
