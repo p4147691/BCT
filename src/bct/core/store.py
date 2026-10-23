@@ -803,6 +803,17 @@ class Store:
                 raise KeyError("WORK_NOT_FOUND")
             if row["owner_principal_id"] != old_principal_id or row["assignment_epoch"] != expected_epoch:
                 raise ConflictError("WORK_HANDOFF_FENCE_MISMATCH")
+            # Handoff is about active ownership, not archived UNKNOWN receipts.
+            # Retire only this work's terminal, executor-free reservations.
+            rows = db.execute(
+                "SELECT resource_key FROM resource_claims WHERE work_id=? AND unresolved=1",
+                (work_id,),
+            ).fetchall()
+            for claimed in rows:
+                self._retire_finished_idle_claim(
+                    db, claimed["resource_key"],
+                    successor_operation_id="work-handoff:" + work_id,
+                )
             unresolved = db.execute(
                 "SELECT COUNT(*) FROM resource_claims WHERE work_id=? AND unresolved=1", (work_id,)
             ).fetchone()[0]
@@ -902,6 +913,57 @@ class Store:
         finally:
             db.close()
 
+    def _retire_finished_idle_claim(self, db, resource: str, *,
+                                    successor_operation_id: str) -> bool:
+        """Retire a terminal reservation; preserve its UNKNOWN receipt and any Lease.
+
+        A FINISHED operation is historical evidence. A separate still-attached
+        background executor or the desktop Agent's exclusive Lease is not.
+        This CAS applies only to the exact resource requested by the next
+        operation or handoff; RUNNING and other active claims never change.
+        """
+        if resource == "desktop-control:interactive-session" or resource.startswith("rcc-instance:"):
+            # Desktop-Agent Lease and in-flight RCC submissions have their own
+            # exact live-state proof and retirement paths. FINISHED does not
+            # establish that a remote RCC effect has completed.
+            return False
+        row = db.execute(
+            "SELECT c.operation_id,c.work_id,c.assignment_epoch,o.state,"
+            "o.assignment_epoch AS operation_epoch FROM resource_claims c "
+            "JOIN operations o ON c.operation_id=o.operation_id "
+            "AND c.work_id=o.work_id "
+            "WHERE c.resource_key=? AND c.unresolved=1",
+            (resource,),
+        ).fetchone()
+        if row is None or row["state"] != OperationState.FINISHED.value:
+            return False
+        if row["assignment_epoch"] != row["operation_epoch"]:
+            return False
+        actor = db.execute(
+            "SELECT COUNT(*) FROM background_job_executors "
+            "WHERE operation_id=?",
+            (row["operation_id"],),
+        ).fetchone()[0]
+        if actor:
+            return False
+        retired = db.execute(
+            "UPDATE resource_claims SET unresolved=0 "
+            "WHERE resource_key=? AND operation_id=? AND work_id=? "
+            "AND assignment_epoch=? AND unresolved=1",
+            (resource, row["operation_id"], row["work_id"], row["assignment_epoch"]),
+        ).rowcount
+        if retired != 1:
+            raise ConflictError("TERMINAL_CLAIM_RETIRE_CHANGED")
+        self._event(db, "TERMINAL_CLAIM_RETIRED", row["operation_id"], {
+            "new_operation_id": successor_operation_id,
+            "original_work_id": row["work_id"],
+            "original_assignment_epoch": row["assignment_epoch"],
+            "resource_key": resource,
+            "reason": "FINISHED_NO_ATTACHED_EXECUTOR",
+            "original_effect_unchanged": True,
+        })
+        return True
+
     def begin_operation(self, *, operation_id: str, work: Work, principal_id: str,
                         request_digest: str, capability: str, target: str,
                         resources: tuple[str, ...], policy_revision: str,
@@ -980,6 +1042,10 @@ class Store:
                     if maintenance is not None:
                         raise ConflictError("RCC_MAINTENANCE_IN_PROGRESS")
                 row = db.execute("SELECT * FROM resource_claims WHERE resource_key=? AND unresolved=1", (resource,)).fetchone()
+                if row is not None and self._retire_finished_idle_claim(
+                    db, resource, successor_operation_id=operation_id,
+                ):
+                    row = None
                 if row is not None and resource == "desktop-control:interactive-session" and retired_desktop_claim is not None:
                     previous_id, previous_work, previous_epoch = retired_desktop_claim
                     if (row["operation_id"], row["work_id"], row["assignment_epoch"]) == (previous_id, previous_work, previous_epoch):
