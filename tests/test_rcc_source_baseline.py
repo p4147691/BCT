@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC21_EXACT_ACTIVE_DRAFT_RETIREMENT", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC22_RECOVERED_EXECUTION_RETIREMENT", release["candidate"])
         inventory = {item["path"]: item["sha256"]
                      for item in release["candidateInventory"]["files"]}
         critical = {
@@ -50,8 +50,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.41", manifest["version"])
-        self.assertEqual("1.0.41 Exact Active Draft Retirement", manifest["version_name"])
+        self.assertEqual("1.0.42", manifest["version"])
+        self.assertEqual("1.0.42 Recovered Execution Retirement", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -77,7 +77,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "ping", "state", "simple-relay-bind", "simple-relay-send",
             "simple-relay-return", "new-chat-send", "rename-conversation",
             "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
-            "retire-composer-draft",
+            "retire-composer-draft", "retire-recovered-execution",
             "delivery-manager-status",
             "conversation-bind", "send",
             "rename-receipt", "result", "main-capture-get",
@@ -168,7 +168,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-24-rcc-exact-active-draft-retirement-v1"
+        marker = "2026-10-24-rcc-recovered-execution-retirement-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 

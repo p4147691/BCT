@@ -386,6 +386,53 @@ async function retireComposerDraftAndResume(message) {
   };
 }
 
+async function retireRecoveredExecution(message) {
+  const id = deliveryId(message.deliveryId);
+  const conversationKey = deliveryConversationKey(message.conversationKey);
+  const expectedRequestSha256 = String(message.expectedRequestSha256 || '').trim().toLowerCase();
+  const expectedResponseSha256 = String(message.expectedResponseSha256 || '').trim().toLowerCase();
+  const expectedResponseLength = Number(message.expectedResponseLength);
+  if (!/^[a-f0-9]{64}$/.test(expectedRequestSha256)
+      || !/^[a-f0-9]{64}$/.test(expectedResponseSha256)
+      || !Number.isInteger(expectedResponseLength) || expectedResponseLength <= 0) {
+    return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+      error: 'DELIVERY_RECOVERED_RETIRE_ARGUMENT_INVALID' };
+  }
+  const ledger = await readDeliveryLedgerMirror();
+  const receipt = ledger[id];
+  if (!receipt || receipt.state !== 'NEEDS_REVIEW'
+      || receipt.workerConversationKey !== conversationKey
+      || receipt.requestSha256 !== expectedRequestSha256) {
+    return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+      error: 'DELIVERY_RECOVERED_RETIRE_IDENTITY_INVALID' };
+  }
+  let workerTab;
+  try { workerTab = singleDeliveryTab(await getChatTabs(), conversationKey); }
+  catch (error) {
+    return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+      error: String(error?.message || error).slice(0, 128) };
+  }
+  const retired = await sendToChatTab(workerTab.id, {
+    type: 'relay:retireExecution', relayId: id, conversationKey,
+    expectedRequestSha256, expectedResponseSha256, expectedResponseLength,
+  });
+  if (retired?.ok !== true || retired.retired !== true
+      || retired.effectState !== 'APPLIED' || retired.relayId !== id
+      || retired.conversationKey !== conversationKey
+      || retired.requestSha256 !== expectedRequestSha256
+      || retired.responseSha256 !== expectedResponseSha256
+      || retired.responseLength !== expectedResponseLength
+      || retired.executionAbsent !== true) {
+    return { ok: false, retired: false,
+      effectState: String(retired?.effectState || 'UNKNOWN'),
+      error: String(retired?.error || 'DELIVERY_RECOVERED_RETIRE_ACK_INVALID').slice(0, 128) };
+  }
+  return { ok: true, retired: true, effectState: 'APPLIED', deliveryId: id,
+    conversationKey, requestSha256: expectedRequestSha256,
+    responseSha256: expectedResponseSha256, responseLength: expectedResponseLength,
+    executionAbsent: true };
+}
+
 async function retireCapturedWorkerExecution(receipt) {
   if (receipt.workerExecutionRetired === true) return receipt;
   let workerTab;

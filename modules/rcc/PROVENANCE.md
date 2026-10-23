@@ -35,6 +35,23 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.42 recovered execution retirement candidate
+
+RC22 adds a distinct recovery path for a page-session execution whose exact
+user turn and completed reply have already been recovered while its durable
+Delivery remains terminal `NEEDS_REVIEW`. The command requires the exact Work,
+Delivery, Worker UUID and request SHA in Core and the RCC mirror, plus the
+independently observed exact response SHA and length. Content re-recovers the
+same completed reply from the routed DOM turn before clearing only the matching
+execution record. It does not alter the composer or click a submit control.
+This keeps completed-turn retirement separate from RC21's unsubmitted draft
+retirement and preserves `NOT_APPLIED`/`UNKNOWN` no-retry boundaries.
+
+- extension version: `1.0.42 Recovered Execution Retirement`
+- runtime build: `2026-10-24-rcc-recovered-execution-retirement-v1`
+- candidate: `RCC_REBUILD_V2_RC22_RECOVERED_EXECUTION_RETIREMENT`
+- candidate inventory: regenerated from the exact committed payload before release
+
 ## BCT RCC 1.0.41 exact active-draft retirement candidate
 
 RC21 extends the RC20 draft-only recovery with an explicit, fail-closed fence

@@ -131,6 +131,12 @@ async function handleNativeCommand(message) {
           return;
         }
 
+    if (message.command === 'retire-recovered-execution') {
+          const result = await retireRecoveredExecution(message);
+          postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
+          return;
+        }
+
     if (message.command === 'delivery-status') {
           const result = await deliveryStatus(message);
           postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });

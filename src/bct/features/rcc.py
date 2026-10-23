@@ -43,7 +43,7 @@ _MUTATING_COMMANDS = {
     "rename-conversation", "reload-extension", "send", "send-to-tab", "create-and-send",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
-    "retire-composer-draft",
+    "retire-composer-draft", "retire-recovered-execution",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
@@ -459,6 +459,44 @@ class RelayBrowserFeature:
                 "supersededDeliveryId": superseded_delivery_id,
                 "workId": work.work_id,
             })
+        elif command == "retire-recovered-execution":
+            allowed.update({
+                "conversation_key", "delivery_id", "expected_request_sha256",
+                "expected_response_sha256", "expected_response_length",
+            })
+            conversation_key = str(arguments.get("conversation_key") or "").strip().lower()
+            delivery_id = str(arguments.get("delivery_id") or "").strip()
+            request_sha = str(arguments.get("expected_request_sha256") or "").strip().lower()
+            response_sha = str(arguments.get("expected_response_sha256") or "").strip().lower()
+            try:
+                response_length = int(arguments.get("expected_response_length"))
+            except (TypeError, ValueError) as exc:
+                raise PreconditionError("RCC_RECOVERED_RETIRE_ARGUMENT_INVALID") from exc
+            key_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+            if (not re.fullmatch(key_pattern, conversation_key)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", delivery_id)
+                    or not re.fullmatch(r"[a-f0-9]{64}", request_sha)
+                    or not re.fullmatch(r"[a-f0-9]{64}", response_sha)
+                    or response_length <= 0):
+                raise PreconditionError("RCC_RECOVERED_RETIRE_ARGUMENT_INVALID")
+            if self.delivery_ledger is None:
+                raise PreconditionError("RCC_DELIVERY_LEDGER_UNAVAILABLE")
+            try:
+                recovered = self.delivery_ledger.get_for_work(
+                    delivery_id=delivery_id, work_id=work.work_id,
+                )
+            except (KeyError, ConflictError) as exc:
+                raise PreconditionError("RCC_RECOVERED_RETIRE_DELIVERY_NOT_FOUND") from exc
+            if (recovered["state"] != DeliveryState.NEEDS_REVIEW.value
+                    or recovered["worker_conversation_key"] != conversation_key
+                    or recovered["request_sha256"] != request_sha):
+                raise PreconditionError("RCC_RECOVERED_RETIRE_IDENTITY_INVALID")
+            prepared["extra"].update({
+                "conversationKey": conversation_key, "deliveryId": delivery_id,
+                "expectedRequestSha256": request_sha,
+                "expectedResponseSha256": response_sha,
+                "expectedResponseLength": response_length, "workId": work.work_id,
+            })
         elif command == "send-to-tab":
             allowed.update({"session_id", "tab_id", "window_id", "conversation_key", "text"})
             session = str(arguments.get("session_id") or "").strip()
@@ -551,6 +589,8 @@ class RelayBrowserFeature:
             resource += ":delivery:" + str(prepared["extra"]["deliveryId"])
         elif command == "retire-composer-draft":
             resource += ":composer-draft:" + prepared["extra"]["conversationKey"]
+        elif command == "retire-recovered-execution":
+            resource += ":recovered-execution:" + prepared["extra"]["deliveryId"]
         if command == "rename-conversation":
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
@@ -1104,6 +1144,53 @@ class RelayBrowserFeature:
                 "superseded_delivery_id": extra["supersededDeliveryId"],
                 "resumed_delivery_id": extra["resumeDeliveryId"],
                 "resumed_delivery_state": resumed["state"],
+            }, output={"result": _sanitize(result)})
+        if request.arguments["command"] == "retire-recovered-execution":
+            values = request.arguments
+            extra = dict(values["extra"])
+            if self.delivery_ledger is None:
+                raise ConfirmedFailure("RCC_DELIVERY_LEDGER_UNAVAILABLE", release_claims=True)
+            recovered = self.delivery_ledger.get_for_work(
+                delivery_id=extra["deliveryId"], work_id=extra["workId"],
+            )
+            if (recovered["state"] != DeliveryState.NEEDS_REVIEW.value
+                    or recovered["worker_conversation_key"] != extra["conversationKey"]
+                    or recovered["request_sha256"] != extra["expectedRequestSha256"]):
+                raise ConfirmedFailure(
+                    "RCC_RECOVERED_RETIRE_IDENTITY_INVALID", release_claims=True,
+                )
+            try:
+                result = self.client.request(
+                    instance_id=values["instance_id"], request_id=request.operation_id,
+                    command="retire-recovered-execution", extra=extra,
+                    timeout_s=values["timeout_s"],
+                )
+            except RelayUnavailable as exc:
+                raise ConfirmedFailure(str(exc), release_claims=True) from exc
+            except RelayEffectUnknown as exc:
+                raise UnknownEffectError("RCC_RECOVERED_RETIRE_EFFECT_UNKNOWN") from exc
+            if (result.get("ok") is not True or result.get("retired") is not True
+                    or result.get("effectState") != "APPLIED"
+                    or result.get("deliveryId") != extra["deliveryId"]
+                    or result.get("conversationKey") != extra["conversationKey"]
+                    or result.get("requestSha256") != extra["expectedRequestSha256"]
+                    or result.get("responseSha256") != extra["expectedResponseSha256"]
+                    or result.get("responseLength") != extra["expectedResponseLength"]
+                    or result.get("executionAbsent") is not True):
+                if result.get("effectState") == "NOT_APPLIED":
+                    return FeatureResult(Outcome.NOT_APPLIED, {
+                        "command": "retire-recovered-execution",
+                        "delivery_id": extra["deliveryId"],
+                        "error": str(result.get("error") or "RCC_RECOVERED_RETIRE_NOT_APPLIED")[:128],
+                    }, release_claims=True, output={"result": _sanitize(result)})
+                raise UnknownEffectError("RCC_RECOVERED_RETIRE_ACK_UNVERIFIED")
+            return FeatureResult(Outcome.APPLIED, {
+                "command": "retire-recovered-execution",
+                "delivery_id": extra["deliveryId"],
+                "conversation_key": extra["conversationKey"],
+                "response_sha256": extra["expectedResponseSha256"],
+                "response_length": extra["expectedResponseLength"],
+                "execution_absent": True,
             }, output={"result": _sanitize(result)})
         if request.arguments["command"] == "create-and-send":
             return self._execute_create_and_send(request)

@@ -44,6 +44,13 @@ const context = {
         return { ok: false, retired: false, error: 'TEST_RETIRE_ACK_LOST' };
       }
       if (activeRelayIds.get(tabId) === message.relayId) activeRelayIds.delete(tabId);
+      if (message.expectedResponseSha256) {
+        return { ok: true, retired: true, effectState: 'APPLIED',
+          relayId: message.relayId, conversationKey: message.conversationKey,
+          requestSha256: message.expectedRequestSha256,
+          responseSha256: message.expectedResponseSha256,
+          responseLength: message.expectedResponseLength, executionAbsent: true };
+      }
       return { ok: true, retired: true, relayId: message.relayId };
     }
     if (message.type === 'relay:retireComposerDraft') {
@@ -289,6 +296,26 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(occupiedResumed.draftLength, 321);
   assert.equal(occupiedResumed.retiredExecutionId, 'delivery-superseded');
   await context.deliveryStatus({ deliveryId: 'delivery-occupied' });
+
+  const recoveredRequestSha = 'c'.repeat(64);
+  const recoveredResponseSha = 'd'.repeat(64);
+  await context.writeDeliveryLedgerMirror('delivery-recovered', {
+    deliveryId: 'delivery-recovered', state: 'NEEDS_REVIEW',
+    managerConversationKey: identity.managerConversationKey,
+    workerConversationKey: identity.workerConversationKey,
+    requestSha256: recoveredRequestSha, updatedAt: Date.now(),
+  });
+  activeRelayIds.set(20, 'delivery-recovered');
+  const recoveredRetired = await context.retireRecoveredExecution({
+    deliveryId: 'delivery-recovered',
+    conversationKey: identity.workerConversationKey,
+    expectedRequestSha256: recoveredRequestSha,
+    expectedResponseSha256: recoveredResponseSha,
+    expectedResponseLength: 76,
+  });
+  assert.equal(recoveredRetired.ok, true);
+  assert.equal(recoveredRetired.executionAbsent, true);
+  assert.equal(recoveredRetired.responseSha256, recoveredResponseSha);
 
   // If generation begins after the background readiness probe but before the
   // content activation boundary, the content guard returns to the queue.
