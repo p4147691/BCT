@@ -1839,8 +1839,14 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   잔존 Claim으로 바꾸는 Core 결함이 드러났다. 외부 제출 효과가 없음을 확인한 뒤 새 R3 ID로
   감독자가 한 번 보조했다. 물리 왕복 6/6은 PASS지만 완전 무인 체인은 아직 미수락이다.
 - 누락 Delivery 조회를 `RCC_DELIVERY_NOT_FOUND` 확정 실패로 처리해 Claim을 해제하는 소스
-  수정과 회귀시험을 추가했다. 관련 40건은 PASS했으며 정본 통합·CI·Core 적용은 후속 영수증으로
-  구분한다. 과거 exact `relay_browser` UNKNOWN의 증거가
+  수정과 회귀시험을 추가했다. 과거 exact `relay_browser` UNKNOWN의 증거가
   `KeyError / 'DELIVERY_NOT_FOUND'`와 정확히 일치할 때만 원본 영수증을 보존하고 Claim을 해제하는
-  reconciliation proof도 추가했다. 다른 UNKNOWN은 계속 차단한다. OS UTF-8/국가·언어 설정과
-  재부팅은 변경하지 않았다.
+  reconciliation proof와 상위 실행 조정기 연결도 추가했다. 다른 UNKNOWN은 계속 차단한다.
+- 기능 commit `51e4651`(PR #314), `ed890d8`(PR #315), `dab7a72`(PR #316)을 통합했다.
+  최종 코드 main `0eb476c0b27662f83ac51476a74fe0269f02e1d1`의 CI #40039068874는 전체
+  SUCCESS다. Core generation 210 / manifest
+  `ca25e030911ecd842754c9a7e09f8c6a2f3bde3cd1532c98a51ca8342199cd98`로 LIVE 배포됐다.
+- reconciliation operation `n13-chain-r3-missing-delivery-claim-reconcile-20261024-01`은
+  APPLIED, proof `RELAY_DELIVERY_NOT_FOUND_BEFORE_RCC_DISPATCH`다. 원래 UNKNOWN 영수증은
+  보존되고 해당 Claim만 해제됐다. RCC는 같은 RC25 build/session과 8개 탭으로 OPEN이며 별도
+  reload나 메시지 재전송은 없었다. OS UTF-8/국가·언어 설정과 재부팅도 변경하지 않았다.
