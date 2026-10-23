@@ -54,3 +54,47 @@ Once initially deployed, normal BCT exact-hash writes to the existing
 D:\BCT\data\bwm-ui-layout.json file followed by Core API readback change
 presentation without main/CI/redeploy. Isolated Chrome computed-style E2E
 checks presentation rendering where live extension page inspection is blocked.
+
+
+## V4: Capture failure presentation settings
+Presentation-only optional JSON object named captureFallback. Backward compatible:
+old bwm-ui-layout.json without the object is automatically normalized to
+
+    captureFallback: {
+      mode: last_good,
+      staleAfterSeconds: 20,
+      maxAgeSeconds: 180
+    }
+
+Accepted modes:
+- last_good: keep the previous successfully captured HWND image while fresh
+  enough, mark it "이전 화면" immediately when a later WGC read cannot refresh
+  it; mark "오래된 화면" after staleAfterSeconds, and fall back to a small
+  transparent SVG indicator after maxAgeSeconds.
+- compact: always use the small, transparent placeholder when new pixels
+  cannot be obtained. The underlying HWND retains its physical rectangle
+  and mouse/drag targeting, even though placeholder pixels no longer cover it.
+- legacy: show the previous full-size fallback card, for display rollback.
+
+Accept integer seconds only: staleAfterSeconds 5..120, maxAgeSeconds
+30..600, and staleAfterSeconds < maxAgeSeconds. This sets display policy
+only. WGC one-shot, capture scheduler/worker, HWND identity, Native statuses,
+window geometry, physical z order, event transport, RCC and completion semantics
+remain unchanged. No automatic desktop switching or unbounded retry.
+The timestamp is updated ONLY on an actual fresh capture, never when
+reusing an older image. The label/expiry is re-evaluated on the next
+existing frame reconciliation, not from a new high-frequency polling loop.
+Cached WGC frames retain their original capture timestamp and cannot restart the
+retention window. Config mode changes fire a single bounded existing thumbnail
+refresh request after exact configuration validation; no new capture timer,
+desktop activation or RCC transition is introduced.
+
+Per-window DOM metadata captureFailureReason is observational and distinguishes
+CLOAKED / CAPTURE_DISABLED / WGC_UNAVAILABLE; it does not claim to prove
+the specific failure cause in an earlier screenshot.
+
+The runtime config is read from the existing Core /monitor/ui-layout endpoint.
+Post-install changing this object needs only an exact-hash BCT write to the
+existing D:/BCT/data/bwm-ui-layout.json file. Neither main/CI/Core deploy nor
+extension reload is needed for *future settings* changes. New capture engines,
+capture authorization semantics and endpoint contracts remain code changes.

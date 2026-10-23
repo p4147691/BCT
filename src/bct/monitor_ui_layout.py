@@ -29,6 +29,11 @@ DEFAULT = {
         "gap": 2,
     },
     # Presentation only. Never source node identity, status, columns, capture or actions.
+    "captureFallback": {
+        "mode": "last_good",
+        "staleAfterSeconds": 20,
+        "maxAgeSeconds": 180,
+    },
     "presentation": {
         "nodeTitleFontPx": 12,
         "nodeCardMinHeightPx": 36,
@@ -48,7 +53,7 @@ MAX_BYTES = 4096
 
 
 def normalize_layout(payload: Any) -> dict[str, Any]:
-    if not isinstance(payload, dict) or not {"version", "toolbar"}.issubset(payload) or set(payload) - {"version", "toolbar", "presentation"}:
+    if not isinstance(payload, dict) or not {"version", "toolbar"}.issubset(payload) or set(payload) - {"version", "toolbar", "presentation", "captureFallback"}:
         raise ValueError("BWM_UI_LAYOUT_SCHEMA_INVALID")
     if type(payload["version"]) is not int or payload["version"] != 1:
         raise ValueError("BWM_UI_LAYOUT_VERSION_INVALID")
@@ -80,6 +85,19 @@ def normalize_layout(payload: Any) -> dict[str, Any]:
         for key, (low, high) in PRESENTATION_LIMITS.items()
     ):
         raise ValueError("BWM_PRESENTATION_VALUE_INVALID")
+    fallback_extra = payload.get("captureFallback", {})
+    if not isinstance(fallback_extra, dict) or set(fallback_extra) - {
+        "mode", "staleAfterSeconds", "maxAgeSeconds"
+    }:
+        raise ValueError("BWM_CAPTURE_FALLBACK_FIELDS_INVALID")
+    fallback = {**DEFAULT["captureFallback"], **fallback_extra}
+    if (fallback["mode"] not in ("last_good", "compact", "legacy")
+            or type(fallback["staleAfterSeconds"]) is not int
+            or type(fallback["maxAgeSeconds"]) is not int
+            or not 5 <= fallback["staleAfterSeconds"] <= 120
+            or not 30 <= fallback["maxAgeSeconds"] <= 600
+            or fallback["staleAfterSeconds"] >= fallback["maxAgeSeconds"]):
+        raise ValueError("BWM_CAPTURE_FALLBACK_VALUE_INVALID")
     return {
         "version": 1,
         "toolbar": {
@@ -90,6 +108,7 @@ def normalize_layout(payload: Any) -> dict[str, Any]:
             "gap": gap,
         },
         "presentation": presentation,
+        "captureFallback": fallback,
     }
 
 

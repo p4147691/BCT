@@ -20,6 +20,11 @@
       density: "compact",
       gap: 2
     }),
+    captureFallback: Object.freeze({
+      mode: "last_good",
+      staleAfterSeconds: 20,
+      maxAgeSeconds: 180
+    }),
     presentation: Object.freeze({
       nodeTitleFontPx: 12,
       nodeCardMinHeightPx: 36,
@@ -43,7 +48,7 @@
 
   function normalize(raw) {
     if (!plain(raw) || raw.version !== 1 || !plain(raw.toolbar) ||
-        Object.keys(raw).some((key) => !["version", "toolbar", "presentation"].includes(key)) ||
+        Object.keys(raw).some((key) => !["version", "toolbar", "presentation", "captureFallback"].includes(key)) ||
         Object.keys(raw.toolbar).some((key) =>
           !["placement", "order", "hidden", "density", "gap"].includes(key))) {
       throw new TypeError("UI_LAYOUT_SCHEMA_INVALID");
@@ -74,21 +79,75 @@
       presentation[key] < bounds[0] || presentation[key] > bounds[1])) {
       throw new TypeError("UI_PRESENTATION_VALUES_INVALID");
     }
+    const fallbackExtra = has(raw, "captureFallback") ? raw.captureFallback : {};
+    if (!plain(fallbackExtra) ||
+        Object.keys(fallbackExtra).some((key) => !["mode","staleAfterSeconds","maxAgeSeconds"].includes(key))) {
+      throw new TypeError("UI_CAPTURE_FALLBACK_FIELDS_INVALID");
+    }
+    const captureFallback = {...DEFAULT.captureFallback, ...fallbackExtra};
+    if (!["last_good","compact","legacy"].includes(captureFallback.mode) ||
+        !Number.isInteger(captureFallback.staleAfterSeconds) ||
+        !Number.isInteger(captureFallback.maxAgeSeconds) ||
+        captureFallback.staleAfterSeconds < 5 || captureFallback.staleAfterSeconds > 120 ||
+        captureFallback.maxAgeSeconds < 30 || captureFallback.maxAgeSeconds > 600 ||
+        captureFallback.staleAfterSeconds >= captureFallback.maxAgeSeconds) {
+      throw new TypeError("UI_CAPTURE_FALLBACK_VALUE_INVALID");
+    }
     return { version: 1, toolbar: {
       placement, order: [...order], hidden: [...hidden], density, gap
-    }, presentation };
+    }, presentation, captureFallback };
   }
 
   function merge(current, patch) {
-    if (!plain(patch) || Object.keys(patch).some((key) => !["version", "toolbar", "presentation"].includes(key)) ||
+    if (!plain(patch) || Object.keys(patch).some((key) => !["version", "toolbar", "presentation", "captureFallback"].includes(key)) ||
         (has(patch, "version") && patch.version !== 1) ||
         (has(patch, "toolbar") && !plain(patch.toolbar)) ||
-        (has(patch, "presentation") && !plain(patch.presentation))) {
+        (has(patch, "presentation") && !plain(patch.presentation)) ||
+        (has(patch, "captureFallback") && !plain(patch.captureFallback))) {
       throw new TypeError("UI_LAYOUT_PATCH_INVALID");
     }
     return normalize({ version: 1, toolbar: {
       ...current.toolbar, ...(patch.toolbar || {})
-    }, presentation: { ...current.presentation, ...(patch.presentation || {}) } });
+    },
+      presentation: { ...current.presentation, ...(patch.presentation || {}) },
+      captureFallback: { ...current.captureFallback, ...(patch.captureFallback || {}) }
+    });
+  }
+
+  // Pure presentation policy. Never interprets a frame as proof that the HWND
+  // is open/closed, that an operation succeeded, or that a worker finished.
+  function chooseCaptureView(input, settings) {
+    const policy = normalize({version:1,toolbar:{},
+      captureFallback: settings || {}}).captureFallback;
+    const now = Number.isFinite(input?.now) ? Number(input.now) : Date.now();
+    const captured = String(input?.nextState || "") === "captured";
+    const incomingSource = String(input?.nextSource || "");
+    if (captured && (incomingSource.startsWith("blob:") || incomingSource.startsWith("data:image/"))) {
+      const observedAt = Number(input?.nextCapturedAt || 0);
+      const timestamp = Number.isFinite(observedAt) && observedAt > 0 && observedAt <= now ? observedAt : now;
+      const age = now - timestamp;
+      // Returning a cached successful frame is not a new WGC capture.
+      if (policy.mode === "last_good" && age > policy.maxAgeSeconds * 1000) {
+        return {state:"placeholder",source:String(input?.fallbackSource || ""),capturedAt:0,label:""};
+      }
+      if (policy.mode === "last_good" && age > policy.staleAfterSeconds * 1000) {
+        return {state:"stale",source:incomingSource,capturedAt:timestamp,label:"오래된 화면"};
+      }
+      return {state:"captured",source:incomingSource,capturedAt:timestamp,label:""};
+    }
+    const previousState = String(input?.previousState || "");
+    const previousSource = String(input?.previousSource || "");
+    const capturedAt = Number(input?.previousCapturedAt || 0);
+    const age = now - capturedAt;
+    const useful = ["captured","held","stale"].includes(previousState) &&
+      (previousSource.startsWith("blob:") || previousSource.startsWith("data:image/")) &&
+      capturedAt > 0 && age >= 0 && age <= policy.maxAgeSeconds * 1000;
+    if (policy.mode === "last_good" && useful) {
+      const stale = age > policy.staleAfterSeconds * 1000;
+      return {state: stale ? "stale" : "held",source:previousSource,
+        capturedAt,label:stale ? "오래된 화면" : "이전 화면"};
+    }
+    return {state:"placeholder",source:incomingSource,capturedAt:0,label:""};
   }
 
   function create(root, storage, onError, options = {}) {
@@ -135,7 +194,12 @@
         toolbar.appendChild(button); // existing real element and handler are retained
         button.hidden = next.toolbar.hidden.includes(id);
       }
+      const policyChanged = JSON.stringify(state.captureFallback) !== JSON.stringify(next.captureFallback);
       state = next;
+      if (policyChanged && typeof options.onCaptureFallbackChange === "function") {
+        try { options.onCaptureFallbackChange(copy(next.captureFallback)); }
+        catch (error) { if (typeof onError === "function") onError(error); }
+      }
       return copy(state);
     }
 
@@ -212,5 +276,6 @@
     });
   }
 
-  global.MonitorUiLayout = Object.freeze({ KEY, ENDPOINT, BUTTONS, DEFAULT, normalize, merge, create });
+  global.MonitorUiLayout = Object.freeze({ KEY, ENDPOINT, BUTTONS, DEFAULT,
+    normalize, merge, chooseCaptureView, create });
 })(typeof globalThis !== "undefined" ? globalThis : this);

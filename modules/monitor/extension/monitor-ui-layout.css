@@ -83,3 +83,25 @@
   width: var(--bwm-thumbnail-status-size, 20px);
   height: var(--bwm-thumbnail-status-size, 20px);
 }
+
+
+/* UI-only capture provenance; no window coordinates, node meaning, or click changes. */
+.desktop-window-monitor .monitor-window-capture-age-label {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  box-sizing: border-box;
+  max-width: 140px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(12, 20, 32, .92);
+  border: 1px solid rgba(214, 232, 255, .60);
+  font: 700 10px/15px "Segoe UI", "Malgun Gothic", sans-serif;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.desktop-window-monitor .monitor-window-capture-stale {
+  filter: saturate(.65);
+}

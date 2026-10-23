@@ -76,6 +76,31 @@ class MonitorUiLayoutTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     normalize_layout({**original, "presentation": extra})
 
+    def test_capture_fallback_config_backward_compatible_and_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            legacy = {"version": 1, "toolbar": dict(DEFAULT["toolbar"])}
+            (Path(tmp) / FILENAME).write_text(json.dumps(legacy), encoding="utf-8")
+            normalized = read_layout(Path(tmp))
+        self.assertEqual(normalized["captureFallback"], DEFAULT["captureFallback"])
+        for mode in ("last_good", "compact", "legacy"):
+            config = {**legacy, "captureFallback": {
+                "mode": mode, "staleAfterSeconds": 25, "maxAgeSeconds": 240
+            }}
+            self.assertEqual(normalize_layout(config)["captureFallback"]["mode"], mode)
+        for invalid in (
+            {"mode": "execute"},
+            {"staleAfterSeconds": True},
+            {"staleAfterSeconds": 601},
+            {"maxAgeSeconds": 20000},
+            {"maxAgeSeconds": 10},
+            {"staleAfterSeconds": 100, "maxAgeSeconds": 50},
+            {"captureHwnd": "123"},
+            {"nativeCaptureAction": "reload"}
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    normalize_layout({**legacy, "captureFallback": invalid})
+
     def test_codec_explicit_avoids_mojibake(self):
         for s in ("한글·ABC·日本語·✓", "😀\n한글"):
             for b in (s.encode("utf-8"), b"\xef\xbb\xbf" + s.encode("utf-8"), s.encode("utf-16")):

@@ -647,7 +647,8 @@ monitorRoot.innerHTML = `
 
 // Presentation-only layout: no controls or identities are recreated.
 const bwmUiLayoutControl = window.MonitorUiLayout?.create?.(
-  monitorRoot, chrome.storage, (error) => console.warn("BWM UI layout rejected", error)
+  monitorRoot, chrome.storage, (error) => console.warn("BWM UI layout rejected", error),
+  { onCaptureFallbackChange: () => globalThis.dispatchEvent(new Event("bwm-thumbnail-policy-changed")) }
 );
 
 // Runtime feature boundaries. Keep these explicit so future isolation does not
@@ -52548,6 +52549,12 @@ function monitorShouldKeepExistingCapture(existingState, existingSource, nextSta
 }
 
 function monitorWindowFallbackDataUri(item = null) {
+  const policy = bwmUiLayoutControl?.read?.()?.captureFallback;
+  if (policy?.mode !== "legacy") {
+    // Transparent canvas keeps exact HWND geometry and drag target.
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270"><rect x="8" y="8" width="214" height="52" rx="8" fill="#1b2431" fill-opacity=".94" stroke="#56687e"/><rect x="19" y="19" width="26" height="28" rx="4" fill="#3b82f6"/><path d="M26 28h13m-13 6h13m-13 6h10" stroke="#fff" stroke-width="2"/><text x="55" y="39" fill="#e8edf5" font-family="Segoe UI,sans-serif" font-size="17">Preview unavailable</text></svg>';
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  }
   const title = String(item?.title || "창 미리보기").trim() || "창 미리보기";
   const label = title.length > 18 ? `${title.slice(0, 17)}…` : title;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270"><rect width="480" height="270" fill="#161a20"/><rect x="18" y="18" width="444" height="234" rx="14" fill="#202630" stroke="#475160" stroke-width="2"/><rect x="42" y="52" width="46" height="46" rx="8" fill="#3b82f6"/><path d="M53 65h24v5H53zm0 10h24v5H53zm0 10h16v5H53z" fill="#fff"/><text x="106" y="82" fill="#e8edf5" font-family="Segoe UI, sans-serif" font-size="22">${label.replace(/[&<>]/g, character => ({"&":"&amp;","<":"&lt;",">":"&gt;"})[character])}</text><text x="42" y="132" fill="#9aa6b5" font-family="Segoe UI, sans-serif" font-size="16">미리보기 대신 앱 정보 표시</text></svg>`;
@@ -53187,6 +53194,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
 
     const frames = items.map((item) => ({
+              capturedAt: monitorWindowUsesFrozenCapture(item) && String(item?.frozenDataUri || "").startsWith("data:image/") ? Date.now() : 0,
 
 
 
@@ -53395,7 +53403,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
 
 
-        if (frameEntry) { frameEntry.dataUri = dataUri; frameEntry.captureState = "captured"; }
+        if (frameEntry) { frameEntry.dataUri = dataUri; frameEntry.captureState = "captured"; frameEntry.capturedAt = Date.now(); }
 
 
 
@@ -53517,7 +53525,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
 
 
-          if (frameEntry) { frameEntry.dataUri = dataUri; frameEntry.captureState = "captured"; }
+          if (frameEntry) { frameEntry.dataUri = dataUri; frameEntry.captureState = "captured"; frameEntry.capturedAt = Date.now(); }
 
 
 
@@ -55484,6 +55492,7 @@ function reconcileFrame(container, frame, className) {
 
 
   const existing = new Map([...container.querySelectorAll(`.${className}`)].map(img => [img.dataset.hwnd, img]));
+  const previousAgeLabels = new Map([...container.querySelectorAll(".monitor-window-capture-age-label")].map(label => [label.dataset.hwnd, label]));
 
 
 
@@ -55681,16 +55690,21 @@ function reconcileFrame(container, frame, className) {
 
 
     const nextCaptureState = entry.captureState || "captured";
-    const keepExistingCapture = monitorShouldKeepExistingCapture(img.dataset.captureState, img.src, nextCaptureState);
-    img.dataset.captureState = keepExistingCapture ? "captured" : nextCaptureState;
-
-
-
-
-
-
-
-    img.classList.toggle("monitor-window-capture-placeholder", img.dataset.captureState !== "captured");
+    const couldKeep = monitorShouldKeepExistingCapture(img.dataset.captureState, img.src, nextCaptureState) || ["held","stale"].includes(img.dataset.captureState);
+    const captureView = globalThis.MonitorUiLayout.chooseCaptureView({
+      previousState: img.dataset.captureState,
+      previousSource: couldKeep ? img.src : "",
+      previousCapturedAt: Number(img.dataset.monitorCapturedAt || 0),
+      nextState: nextCaptureState, nextSource: entry.dataUri,
+      nextCapturedAt: Number(entry.capturedAt || 0), now: Date.now()
+    }, bwmUiLayoutControl?.read?.()?.captureFallback);
+    img.dataset.captureState = captureView.state;
+    img.dataset.monitorCapturedAt = String(captureView.capturedAt);
+    img.dataset.captureFailureReason = nextCaptureState === "captured" ? "" :
+      Number(entry.item?.cloaked || 0) !== 0 ? "CLOAKED" :
+      !MONITOR_WINDOW_PIXEL_CAPTURE_ENABLED ? "CAPTURE_DISABLED" : "WGC_UNAVAILABLE";
+    img.classList.toggle("monitor-window-capture-placeholder", captureView.state === "placeholder");
+    img.classList.toggle("monitor-window-capture-stale", captureView.state === "stale");
 
 
 
@@ -55850,7 +55864,25 @@ function reconcileFrame(container, frame, className) {
 
 
 
-    if (!keepExistingCapture && img.src !== entry.dataUri) img.src = entry.dataUri;
+    const renderedSource = captureView.state === "placeholder" && !captureView.source ? monitorWindowFallbackDataUri(entry.item) : captureView.source;
+    if (img.src !== renderedSource) img.src = renderedSource;
+    img.title = captureView.label ? String(entry.item.title || "") + " - " + captureView.label : String(entry.item.title || "");
+    let ageLabel = previousAgeLabels.get(key);
+    if (captureView.label) {
+      if (!ageLabel) {
+        ageLabel = document.createElement("span");
+        ageLabel.className = "monitor-window-capture-age-label";
+        ageLabel.dataset.hwnd = key;
+        container.append(ageLabel);
+      }
+      ageLabel.textContent = captureView.label;
+      ageLabel.style.left = "calc(" + img.style.left + " + 3px)";
+      ageLabel.style.top = "calc(" + img.style.top + " + " + img.style.height + " - 20px)";
+      ageLabel.style.zIndex = String(Number(nativeZIndex) + 1);
+    } else {
+      ageLabel?.remove();
+    }
+    previousAgeLabels.delete(key);
 
 
 
@@ -56202,7 +56234,8 @@ function reconcileFrame(container, frame, className) {
 
 
 
-  if (monitorSelectedHwnds.size) applyMonitorWindowHighlight(monitorHighlightedHwnd, { preserve: true });
+  for (const unownedAgeLabel of previousAgeLabels.values()) { if (!observedHwnds.has(String(unownedAgeLabel.dataset.hwnd || ""))) unownedAgeLabel.remove(); }
+if (monitorSelectedHwnds.size) applyMonitorWindowHighlight(monitorHighlightedHwnd, { preserve: true });
 
 
 
@@ -67748,6 +67781,13 @@ async function refreshObservedWindows() {
 
 
 
+globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
+  const ids = [...(monitorDesktopState.desktopIds || [])].filter(Boolean);
+  if (!ids.length || !monitorIsActiveDesktopRenderer()) return;
+  invalidateMonitorDesktopFrames(...ids);
+  void refreshSelectedThumb().catch(() => false);
+  void refreshBackgroundThumbs(...ids).catch(() => []);
+});
 async function refreshDesktopThumbBatch() {
 
 

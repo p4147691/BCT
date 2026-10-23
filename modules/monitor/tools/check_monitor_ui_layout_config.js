@@ -125,6 +125,43 @@ async function main() {
   assert.match(css, /flex-wrap:\s*nowrap\s*!important/, "toolbar must not wrap over node list");
   assert.match(css, /overflow-x:\s*auto/, "narrow header must clip/scroll, not overlay nodes");
   assert.match(css, /#bwmUiLayoutEditor/, "stale editor must be hidden");
+  const fallback = layout.DEFAULT.captureFallback;
+  const now = 1_000_000;
+  const good = layout.chooseCaptureView({nextState:"captured",
+    nextSource:"blob:good",now},fallback);
+  assert.equal(good.state, "captured");
+  assert.equal(good.capturedAt,now);
+  const held = layout.chooseCaptureView({previousState:good.state,
+    previousSource:good.source,previousCapturedAt:good.capturedAt,
+    nextState:"placeholder",nextSource:"data:image/svg+xml,SMALL",
+    now:now+5_000},fallback);
+  assert.equal(held.state,"held");
+  assert.equal(held.source,"blob:good");
+  assert.equal(held.label,"이전 화면");
+  const stale = layout.chooseCaptureView({previousState:held.state,
+    previousSource:held.source,previousCapturedAt:held.capturedAt,
+    nextState:"placeholder",nextSource:"data:image/svg+xml,SMALL",
+    now:now+30_000},fallback);
+  assert.equal(stale.state,"stale");
+  assert.equal(stale.label,"오래된 화면");
+  const expired = layout.chooseCaptureView({previousState:stale.state,
+    previousSource:stale.source,previousCapturedAt:stale.capturedAt,
+    nextState:"placeholder",nextSource:"data:image/svg+xml,SMALL",
+    now:now+181_000},fallback);
+  assert.equal(expired.state,"placeholder");
+  assert.equal(expired.source,"data:image/svg+xml,SMALL");
+  assert.equal(layout.chooseCaptureView({previousState:"captured",
+    previousSource:"blob:good",previousCapturedAt:now,nextState:"placeholder",
+    nextSource:"data:image/svg+xml,SMALL",now:now+1_000},
+    {mode:"compact"}).state,"placeholder");
+  assert.equal(layout.chooseCaptureView({previousState:"captured",
+    previousSource:"blob:good",previousCapturedAt:now,nextState:"placeholder",
+    nextSource:"data:image/svg+xml,SMALL",now:now+1_000},
+    {mode:"legacy"}).state,"placeholder");
+  assert.throws(()=>layout.normalize({version:1,toolbar:{},
+    captureFallback:{mode:"script"}}),/INVALID/);
+  assert.throws(()=>layout.normalize({version:1,toolbar:{},
+    captureFallback:{staleAfterSeconds:90,maxAgeSeconds:30}}),/INVALID/);
   const storage = makeStorage();
   const first = makeRoot();
   let nextRemote = { status: "READY", config: {
@@ -132,7 +169,10 @@ async function main() {
       order: [...layout.BUTTONS], hidden: [] }
   }};
   const fetcher = async () => ({ ok: true, json: async () => nextRemote });
-  const controller = layout.create(first.root, storage, null, { fetcher, pollMs: 0 });
+  const policyChanges = [];
+  const controller = layout.create(first.root, storage, null, {
+    fetcher, pollMs: 0, onCaptureFallbackChange: (config) => policyChanges.push(config)
+  });
   await controller.ready;
   assert.equal(first.toolbar.parentNode, first.line);
   assert.equal(first.root.querySelector("#bwmUiLayoutOpen"), null, "no user editor");
@@ -169,6 +209,15 @@ async function main() {
   nextRemote = {status:"READY", config:newer};
   await controller.refreshRemote();
   assert.equal(controller.read().presentation.nodeTitleFontPx, 14);
+  const switched = {...controller.read(),captureFallback:{
+    mode:"compact",staleAfterSeconds:20,maxAgeSeconds:180
+  }};
+  nextRemote = {status:"READY",config:switched};
+  await controller.refreshRemote();
+  assert.equal(policyChanges.length,1,"mode update must trigger one bounded redraw");
+  assert.equal(policyChanges[0].mode,"compact");
+  await controller.refreshRemote();
+  assert.equal(policyChanges.length,1,"unchanged policy cannot retrigger redraw");
   let clicks = 0;
   const rccButton = first.buttons.get("monitorRccReload");
   rccButton.addEventListener("click", () => { ++clicks; });
