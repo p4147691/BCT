@@ -87,9 +87,15 @@ function findReadySendButton(editor = null, options = {}) {
 function waitForReadySendButton(editor = null, timeoutMs = 8000, options = {}) {
   const findVerified = () => {
     if (typeof options?.expectedText === 'string') {
-      if (getEditor() !== editor ||
-          editorDraftText(editor) !== RelayCore.normalizeMessageText(options.expectedText)) return null;
+      // ChatGPT can replace the ProseMirror root after the input event. The
+      // current editor is still safe to use only when it contains the exact
+      // normalized draft we inserted; object identity is not an effect proof.
+      const liveEditor = getEditor();
+      if (!liveEditor ||
+          editorDraftText(liveEditor) !== RelayCore.normalizeMessageText(options.expectedText)) return null;
+      return findReadySendButton(liveEditor, options);
     }
+    if (getEditor() !== editor) return null;
     return findReadySendButton(editor, options);
   };
   const existing = findVerified();
@@ -130,19 +136,24 @@ async function submitEditor(editor, options = {}) {
   const waitMs = Number(options?.waitMs || 8000);
   const expected = typeof options?.expectedText === 'string'
     ? RelayCore.normalizeMessageText(options.expectedText) : null;
-  const matchesDraft = () => expected === null ||
-    (getEditor() === editor && editorDraftText(editor) === expected);
-  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  const currentVerifiedEditor = () => {
+    const liveEditor = getEditor();
+    if (expected === null) return liveEditor === editor ? editor : null;
+    return liveEditor && editorDraftText(liveEditor) === expected ? liveEditor : null;
+  };
+  if (!currentVerifiedEditor()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
   // Wait for ChatGPT to swap its empty-composer voice control for the enabled send arrow.
   const button = await waitForReadySendButton(editor, waitMs, options);
   if (button) {
-    if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+    let liveEditor = currentVerifiedEditor();
+    if (!liveEditor) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
     // A React render may replace or disable the button after the observer resolved.
-    if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
+    if (findReadySendButton(liveEditor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     const bindingAttestation = typeof options?.beforeSubmit === 'function'
       ? await options.beforeSubmit() : null;
-    if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
-    if (findReadySendButton(editor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
+    liveEditor = currentVerifiedEditor();
+    if (!liveEditor) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+    if (findReadySendButton(liveEditor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     const activationAttestation = typeof options?.beforeActivation === 'function'
       ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
       : bindingAttestation;
@@ -151,7 +162,8 @@ async function submitEditor(editor, options = {}) {
     return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now(),
       bindingAttestation: activationAttestation };
   }
-  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  let liveEditor = currentVerifiedEditor();
+  if (!liveEditor) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
 
   if (!allowKeyboardFallback) {
     throw new Error('RELAY_SEND_BUTTON_NOT_READY');
@@ -162,13 +174,14 @@ async function submitEditor(editor, options = {}) {
   // route can become ?prompt-textarea=... instead of sending a user turn.
   const bindingAttestation = typeof options?.beforeSubmit === 'function'
     ? await options.beforeSubmit() : null;
-  if (!matchesDraft()) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  liveEditor = currentVerifiedEditor();
+  if (!liveEditor) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
   const activationAttestation = typeof options?.beforeActivation === 'function'
     ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
     : bindingAttestation;
-  editor.focus();
+  liveEditor.focus();
   for (const type of ['keydown', 'keypress', 'keyup']) {
-    editor.dispatchEvent(new KeyboardEvent(type, {
+    liveEditor.dispatchEvent(new KeyboardEvent(type, {
       key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
       bubbles: true, cancelable: true
     }));

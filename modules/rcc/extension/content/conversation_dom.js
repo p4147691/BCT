@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-23-rcc-manager-return-wake-v1';
+const RCC_BUILD_VERSION = '2026-10-23-rcc-editor-rebind-v1';
 
 function editorCandidates() {
 
