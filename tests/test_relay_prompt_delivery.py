@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from dataclasses import replace
@@ -37,7 +38,7 @@ class StubExistingRcc:
             return {"ok": True, "deliveryId": delivery, "state": "RETURNED",
                     "managerTabId": 300, "managerWindowId": 200}
         if which == "delivery-manager-status":
-            body = "COMPLETE"
+            body = "목표를 충족했고 남은 위험이 없어 여기서 정리합니다."
             return {"ok": True, "deliveryId": delivery, "state": "RETURNED",
                     "managerResponseText": body,
                     "managerResponseSha256": hashlib.sha256(body.encode()).hexdigest(),
@@ -66,10 +67,18 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.cfg = Path(self.tmp.name) / "notes"
         self.cfg.mkdir()
         (self.cfg / "worker-relay-note.txt").write_text(
-            "업무 완료 후 정확하게 확인하고 4줄로 보고하세요.", encoding="utf-8")
+            "LEGACY_WORKER_NOTE COMPLETE FOLLOW_UP 4줄 JSON", encoding="utf-8")
+        (self.cfg / "manager-relay-note.txt").write_text(
+            "LEGACY_MANAGER_NOTE COMPLETE FOLLOW_UP", encoding="utf-8")
         self.patch = patch("bct.features.orchestration._RELAY_NOTES_DIR", self.cfg)
         self.patch.start()
         self.addCleanup(self.patch.stop)
+        self.settings = Path(self.tmp.name) / "relay-message-settings.json"
+        self.settings_env = patch.dict(
+            os.environ, {"BCT_RELAY_SETTINGS_PATH": str(self.settings)}
+        )
+        self.settings_env.start()
+        self.addCleanup(self.settings_env.stop)
         self.base = {
             "instance_id": "6174664e1c1b4e6db1d4729c841db3c9",
             "delivery_id": "prompt-delivery-1", "manager_conversation_key": MGR,
@@ -87,7 +96,7 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         end = "[/BCT_DELIVERY_WORKER_V1]"
         return json.loads(text.split(start, 1)[1].split(end, 1)[0])
 
-    def test_current_roster_and_fixed_note_use_original_rcc_delivery_return(self):
+    def test_current_roster_and_single_settings_source_use_delivery_return(self):
         result = self.run_delivery({"command":"delivery-start", **self.base}, "start-1")
         self.assertEqual(Outcome.APPLIED, result.outcome)
         start = self.host.calls[0]
@@ -100,7 +109,9 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.assertEqual([MGR, WORKER],
                          [x["conversation_uuid"] for x in body["current_members"]])
         self.assertEqual(["Manager"], body["current_members"][0]["role_tags"])
-        self.assertIn("4줄", body["role_note"])
+        self.assertNotIn("role_note", body)
+        self.assertIn("전체 원문", body["return_instruction"])
+        self.assertNotIn("LEGACY_WORKER_NOTE", start["text"])
         self.assertEqual(self.base["text"], body["task"])
         self.assertEqual(hashlib.sha256(start["text"].encode("utf-8")).hexdigest(),
                          start["extra"]["requestSha256"])
@@ -115,7 +126,7 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         decision = self.run_delivery(
             {"command":"delivery-manager-status","instance_id":self.base["instance_id"],
              "delivery_id":self.base["delivery_id"]}, "manager-status-1")
-        self.assertEqual("COMPLETE", decision.output["result"]["managerResponseText"])
+        self.assertIn("목표를 충족", decision.output["result"]["managerResponseText"])
         self.assertEqual(
             ["delivery-start","delivery-status","delivery-return","delivery-manager-status"],
             [x["command"] for x in self.host.calls])
@@ -134,10 +145,15 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
             self.feature.prepare(work=self.work,arguments={"command":"delivery-start",**self.base})
         self.assertEqual([],self.host.calls)
 
-    def test_notes_dynamic_but_same_delivery_id_does_not_resend(self):
+    def test_runtime_settings_change_only_a_new_delivery(self):
         self.run_delivery({"command":"delivery-start",**self.base}, "start-1")
-        (self.cfg/"worker-relay-note.txt").write_text(
-            "다음 작업부터 적용되는 새로운 고정 지시.",encoding="utf-8")
+        self.settings.write_text(json.dumps({
+            "version": 1,
+            "defaults": {
+                "worker_additional_instruction": "다음 작업부터 적용되는 새로운 추가 지시.",
+            },
+            "projects": {},
+        }, ensure_ascii=False), encoding="utf-8")
         same = {"command":"delivery-start",**self.base}
         # A changed prompt must be fenced by the persisted Delivery hash,
         # never sent again under an existing delivery_id.
@@ -147,8 +163,36 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.assertEqual(1,len(self.host.calls))
         other={**same, "delivery_id":"prompt-delivery-2"}
         self.run_delivery(other,"new-start")
-        self.assertIn("새로운 고정 지시",self.host.calls[-1]["text"])
+        self.assertIn("새로운 추가 지시",self.host.calls[-1]["text"])
         self.assertEqual(2,len(self.host.calls))
+
+    def test_delivery_preview_composes_both_messages_without_rcc_or_ledger_effect(self):
+        result = self.run_delivery({
+            "command": "delivery-preview",
+            **self.base,
+            "worker_result_preview": "실제 Worker 결과 전문 예시 📦",
+        }, "preview-1")
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual([], self.host.calls)
+        preview = result.output["preview"]
+        self.assertEqual("NONE_PREVIEW_ONLY", preview["effect"])
+        self.assertIn(self.base["text"], preview["worker_message"]["text"])
+        manager_text = preview["manager_return_message"]["text"]
+        self.assertEqual(1, manager_text.count("실제 Worker 결과 전문 예시 📦"))
+        self.assertIn("bounded one delivery", manager_text)
+        self.assertIn("단일 Delivery 경로", manager_text)
+        self.assertNotIn("LEGACY_MANAGER_NOTE", manager_text)
+        self.assertNotIn("COMPLETE", manager_text)
+        self.assertNotIn("FOLLOW_UP", manager_text)
+        self.assertTrue(preview["worker_message"]["fits_current_limit"])
+        self.assertTrue(preview["manager_return_message"]["fits_current_limit"])
+        db = self.store._connect()
+        try:
+            self.assertEqual(0, db.execute(
+                "SELECT COUNT(*) FROM relay_deliveries"
+            ).fetchone()[0])
+        finally:
+            db.close()
 
     def test_missing_scope_and_invalid_identity_fail_pre_submit(self):
         for update in ({"scope_id":"network.not-found"},
@@ -179,7 +223,10 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.assertIn(self.base["text"], payload["managerReturnHeader"])
         self.assertIn("[BCT_CURRENT_WORKER_RESULT_FULL]", payload["managerReturnHeader"])
         self.assertIn("[/BCT_CURRENT_WORKER_RESULT_FULL]", payload["managerReturnFooter"])
-        self.assertIn("COMPLETE 또는 FOLLOW_UP", payload["managerReturnFooter"])
+        self.assertIn("단일 Delivery 경로", payload["managerReturnFooter"])
+        self.assertNotIn("LEGACY_MANAGER_NOTE", payload["managerReturnFooter"])
+        self.assertNotIn("COMPLETE", payload["managerReturnFooter"])
+        self.assertNotIn("FOLLOW_UP", payload["managerReturnFooter"])
         self.assertIn("managerReturnSettingsSha256", payload)
         persisted = self.feature.delivery_ledger.get_for_work(
             delivery_id=self.base["delivery_id"], work_id=self.work.work_id,

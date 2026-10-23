@@ -178,14 +178,14 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
                     "completion_criteria": "한글·이모지 📦 원문과 해시가 같아야 한다.",
                     "project_context_note": "이번 단계에서는 브라우저 제출을 하지 않는다.",
                     "worker_context_fields": [
-                        "completion_criteria", "project_context_note", "role_note",
+                        "completion_criteria", "project_context_note", "current_members",
                     ],
+                    "worker_additional_instruction": "검증 근거를 결과에 함께 적으세요.",
                     "manager_context_fields": [
                         "completion_criteria", "project_context_note", "original_worker_task",
                     ],
                     "manager_result_notice": "결과 원문을 먼저 읽고 근거를 분리하세요.",
-                    "manager_decision_instruction": "이번 검증에서는 COMPLETE만 판정하세요.",
-                    "manager_include_role_note": False,
+                    "manager_additional_instruction": "설정 변경이 필요했는지도 함께 설명하세요.",
                     "manager_member_limit": 0,
                 },
             },
@@ -201,30 +201,32 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.assertLess(body_text.index('"completion_criteria"'),
                         body_text.index('"project_context_note"'))
         self.assertLess(body_text.index('"project_context_note"'),
-                        body_text.index('"role_note"'))
+                        body_text.index('"current_members"'))
         self.assertEqual(self.work.work_id, body["work_id"])
         self.assertEqual(MGR, body["manager_conversation_uuid"])
         self.assertEqual(WORKER, body["worker_conversation_uuid"])
         self.assertIn("📦", body["completion_criteria"])
-        self.assertNotIn("current_members", body)
+        self.assertIn("current_members", body)
         self.assertNotIn("project_goal", body)
         self.assertEqual("WORKER", body["role"])
         self.assertEqual("설정 조합만 검증하세요.", body["task"])
+        self.assertIn("검증 근거", body["additional_instruction"])
 
-        with patch(
-            "bct.features.orchestration._relay_note",
-            return_value="CONFIG_ROLE_NOTE_SHOULD_NOT_APPEAR",
-        ):
-            before, after, revision = compose_manager_return_frame(
-                store=self.store, work_id=self.work.work_id,
-                delivery_id="configured-return", scope_id="network.test",
-                original_task="설정 조합만 검증하세요.",
-                manager_conversation_key=MGR, worker_conversation_key=WORKER,
-                worker_result_sha256="a" * 64,
-            )
+        before, after, revision = compose_manager_return_frame(
+            store=self.store, work_id=self.work.work_id,
+            delivery_id="configured-return", scope_id="network.test",
+            original_task="설정 조합만 검증하세요.",
+            manager_conversation_key=MGR, worker_conversation_key=WORKER,
+            worker_result_sha256="a" * 64,
+        )
         combined = before + "Worker 결과 원문" + after
-        context = json.loads(combined.split("[BCT_MANAGER_RETURN_CONTEXT_V1]", 1)[1]
-                             .split("[/BCT_MANAGER_RETURN_CONTEXT_V1]", 1)[0])
+        context_text = combined.split("[BCT_MANAGER_RETURN_CONTEXT_V1]", 1)[1]
+        context_text = context_text.split("[/BCT_MANAGER_RETURN_CONTEXT_V1]", 1)[0]
+        context = json.loads(context_text)
+        self.assertLess(context_text.index('"completion_criteria"'),
+                        context_text.index('"project_context_note"'))
+        self.assertLess(context_text.index('"project_context_note"'),
+                        context_text.index('"original_worker_task"'))
         self.assertEqual("configured-return", context["delivery_id"])
         self.assertEqual("a" * 64, context["worker_result_sha256"])
         self.assertEqual(revision, context["settings_sha256"])
@@ -232,17 +234,28 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.assertNotIn("current_members", context)
         self.assertNotIn("project_goal", context)
         self.assertIn("결과 원문을 먼저", combined)
-        self.assertIn("COMPLETE만", combined)
-        self.assertNotIn("CONFIG_ROLE_NOTE_SHOULD_NOT_APPEAR", combined)
+        self.assertIn("설정 변경이 필요했는지도", combined)
+        self.assertNotIn("COMPLETE", combined)
+        self.assertNotIn("FOLLOW_UP", combined)
 
     def test_preview_describes_runtime_fields_and_next_unsent_boundary(self):
         preview = preview_relay_settings("network.test")
         self.assertEqual("NEXT_UNSENT_MESSAGE", preview["apply_boundary"])
+        self.assertEqual(
+            "NEXT_UNASSEMBLED_MANAGER_RETURN",
+            preview["apply_boundaries"]["manager_return"],
+        )
         self.assertEqual("ordered-list", preview["catalog"]["worker_context_fields"]["type"])
-        self.assertIn("role_note",
-                      preview["catalog"]["worker_context_fields"]["allowed_values"])
+        self.assertNotIn("role_note",
+                         preview["catalog"]["worker_context_fields"]["allowed_values"])
+        self.assertIn("worker_additional_instruction", preview["catalog"])
+        self.assertIn("manager_additional_instruction", preview["catalog"])
         self.assertIn("완료 기준", preview["catalog"]["completion_criteria"]["description"])
-        self.assertIn("manager_decision_instruction", preview["settings"])
+        self.assertNotIn("manager_next_action_instruction", preview["settings"])
+        self.assertNotIn("manager_include_role_note", preview["settings"])
+        self.assertFalse(
+            preview["message_sources"]["legacy_relay_note_files_automatically_injected"]
+        )
         self.assertTrue(any("UNKNOWN" in item for item in preview["immutable_contract"]))
 
     def test_manager_patch_preview_first_creation_then_remove_override(self):
@@ -277,6 +290,8 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
             {"manager_context_fields": ["project", "unsafe_authority"]},
             {"manager_member_limit": 41},
             {"manager_action": "[BCT_ORCHESTRATION_RESULT_V1]"},
+            {"manager_include_role_note": True},
+            {"manager_next_action_instruction": "old"},
             {"extra_privilege": True},
             {},
         ]:

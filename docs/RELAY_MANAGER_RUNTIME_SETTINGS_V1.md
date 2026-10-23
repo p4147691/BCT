@@ -12,37 +12,44 @@
 {
   "version": 1,
   "defaults": {
-    "manager_action": "이번 업무 결과 전문을 검토하고 후속 업무가 필요하면 BCT를 통해 실제 전송하세요.",
+    "manager_action": "결과를 검토하고 다음 업무가 필요하면 BCT의 단일 Delivery 경로로 실제 전송하세요.",
     "include_pending": true,
     "pending_limit": 6,
     "manager_sections": ["context", "worker_result", "action"]
   },
   "projects": {
     "network.d3052e031bf748d8b1640b566a5bb86b": {
-      "worker_return_instruction": "이번 업무에서 실제로 처리한 조치와 결과를 전문으로 반환하세요."
+      "worker_additional_instruction": "검증 근거와 남은 문제를 함께 보고하세요.",
+      "manager_additional_instruction": "이번 프로젝트에 맞는 다음 판단 근거를 설명하세요."
     }
   }
 }
 
 지원 필드:
 
-- Worker 문구: worker_intro, worker_context_notice, worker_return_instruction
+- Worker 문구: worker_intro, worker_context_notice, worker_return_instruction,
+  worker_additional_instruction
 - Worker 선택 문맥: worker_context_fields(project, project_goal, completion_criteria,
-  project_context_note, current_members, role_note의 중복 없는 부분집합과 표시 순서)
+  project_context_note, current_members의 중복 없는 부분집합과 표시 순서)
 - Manager 문구: manager_intro, manager_result_notice, manager_action,
-  manager_decision_instruction
+  manager_additional_instruction
 - Manager 구성: manager_sections(정확히 context/worker_result/action),
   manager_context_fields(project, project_goal, completion_criteria,
   project_context_note, current_members, project_run_state, original_worker_task,
   pending_same_work의 중복 없는 부분집합과 표시 순서)
-- Manager 문맥 한도: manager_include_role_note, manager_member_limit(0~40),
-  include_pending, pending_limit(0~12)
+- Manager 문맥 한도: manager_member_limit(0~40), include_pending,
+  pending_limit(0~12)
 - 프로젝트별 정보: completion_criteria, project_context_note
 
 변경은 프로젝트별 overrides나 defaults에서만 하며, 실행 권한을 확대하지 않는다.
 Work/Delivery/scope ID, Manager·Worker UUID, 설정·결과 해시, Worker의 task와
 return_instruction, Manager 반환의 Worker 결과 전문은 설정으로 제거할 수 없는 고정
 계약이다. BCT marker와 UTF-16 입력 상한도 런타임 표현 설정이 아니다.
+
+새 Delivery 메시지의 의미를 만드는 운영 설정원은 이 JSON 하나다. 과거
+`manager-relay-note.txt`와 `worker-relay-note.txt`는 구 Orchestration 경로의 호환 자료이며
+새 Worker 전달문이나 Manager 반환문에 자동 삽입하지 않는다. 계속 사용할 문구는 위의
+`worker_additional_instruction` 또는 `manager_additional_instruction`으로 명시적으로 옮긴다.
 
 ## Windows 언어/UTF-8 호환 계약
 
@@ -91,17 +98,30 @@ BCT execute 및 write는 작업에 실제로 위임된 허용 경로·capability
 
 읽기 전용 조회 결과의 catalog는 각 필드의 형식과 용도를 함께 보여 주며,
 apply_boundary=NEXT_UNSENT_MESSAGE는 이미 해시가 확정된 Delivery를 바꾸지 않는다는 뜻이다.
+세부 적용 시점은 Worker 지시 확정 전, Manager 반환 조립 전, 다음 안전한 읽기이며 이미
+준비하거나 제출한 메시지는 고정된다.
 따라서 위 지원 필드의 일상적인 조정은 소스 수정, main 병합, CI, Core 재배포 또는
 Chrome 확장 재로드 없이 다음에 확정하는 메시지부터 반영한다.
+
+`relay_browser delivery-preview`는 실제 Delivery row를 만들거나 RCC·Chrome을 호출하지 않고
+현재 프로젝트 문맥과 설정으로 Worker 전달문 및 Worker 결과 예시를 포함한 Manager 반환문을
+동시에 조립한다. 결과의 `effect=NONE_PREVIEW_ONLY`, 원문, UTF-16 길이와 SHA-256을 확인한 뒤
+설정을 조정한다. 실제 제출 전에 이 미리보기를 사용하며 미리보기 자체를 전송 영수증으로
+해석하지 않는다.
 
 ## 전달 계약
 - BCT relay_browser → 기존 RCC delivery-start/status/return/manager-status.
 - 이번 Worker 업무 처리 결과 전문은 저장된 원문 그대로 Manager 메시지에 삽입한다.
-- Manager 메시지의 맥락·행동 지시와 결과 전문을 하나로 제출하며 별도 정상 Wake 메시지를 보내지 않는다.
+- Manager 메시지의 맥락·행동 지시와 결과 전문을 하나로 제출하며 별도 정상 깨우기 메시지를 보내지 않는다.
 - 현재 사용자에게 허용된 Work 범위와 대화 UUID를 다시 확인한다.
 - 정확한 원문·대상·Delivery ID는 제출 후 불변이고 불확실하면 재전송하지 않는다.
 - 본 구현의 긴 전문이 현재 입력 한도를 넘을 경우 잘라서 보내지 않고 명확하게 실패한다.
-- 실제 후속 Worker 제출은 Manager가 접근할 수 있는 기존 BCT 도구로 실행하고 확인해야 한다. 일반적인 FOLLOW_UP 문장만으로 자동 전송했다고 주장하지 않는다.
+- 실제 후속 Worker 제출은 Manager가 접근할 수 있는 기존 BCT 도구로 실행하고 확인해야 한다. 대화에 특정 상태 단어를 쓰는 것만으로 자동 전송하거나 완료했다고 주장하지 않는다.
+
+CDP는 이 설정 기능에서 금지하거나 폐기하는 대상이 아니다. 탭 조사, DOM 확인, 정밀 제어와
+검증에 유용하면 사용한다. 다만 동일한 대화 메시지를 RCC와 CDP에서 경쟁적으로 제출하거나
+영수증이 분리된 두 번째 자동 릴레이를 만들지 않는다. Browser Bridge도 독립 제품으로 보존하며
+이번 N13/N14 Delivery 설정 수락의 필수 경로로 시험하지 않는다.
 
 V1은 메시지 구성/관찰 옵션을 먼저 설정화한 기반이다.
 기존 검증·영수증 조회 방식의 추가 설정화는 각 알고리즘에 안전한 선택지가 구현된 범위에 한해 순차적으로 확장한다.

@@ -1556,14 +1556,24 @@ Manager 반환 메시지의 세부 값을 런타임 설정으로 바꾸고 실�
 GitHub CI를 수행하지 않는다.
 
 격리 브랜치 `feat/relay-message-settings-v2-20261023`는 main
-`78229889782514ca1391d099d0a29cd227a6dbd6`에서 시작했다. 기존 V1의 문구·Manager 섹션·
-pending 설정에 다음을 추가했다.
+`78229889782514ca1391d099d0a29cd227a6dbd6`에서 시작했고 기존 1차 설정 commit은
+`0f70ac70e12b4f7cbc7d55887f3820ba298bd2f7`이다. 현재 격리 변경은 그 위에서 사용자의
+최신 메시지 계약과 다시 대조한 보완이며 아직 main이나 LIVE에 통합하지 않았다.
 
-- Worker 권한 경계 안내문과 선택 문맥/표시 순서
-- 프로젝트 목표, 프로젝트별 완료 기준과 추가 문맥
-- Manager 결과 안내문과 COMPLETE/FOLLOW_UP 실제 실행 지시
-- Manager 선택 문맥/표시 순서, 역할 노트 포함 여부, 구성원 표시 한도
-- AI가 소스를 읽지 않아도 형식·허용값·적용 시점을 볼 수 있는 설정 catalog
+- 새 Delivery 메시지의 의미 설정원은
+  `D:\BCT\runtime\config\relay-message-settings.json` 하나다. 과거
+  `manager-relay-note.txt`와 `worker-relay-note.txt`는 구 Orchestration 호환 자료로 남기되
+  현재 Worker 전달문과 Manager 반환문에 자동 삽입하지 않는다.
+- Worker 안내·반환 지시·추가 지시·선택 문맥/순서와 Manager 안내·자연어 실제 행동 지시·
+  추가 지시·선택 문맥/순서·구성원/대기 업무 표시 한도를 조회·부분 변경할 수 있다.
+- Manager에게 특정 `COMPLETE`/`FOLLOW_UP` 문구를 요구하지 않는다. 남은 일이 있으면
+  BCT 단일 Delivery 경로로 실제 새 업무를 보내고 자연어로 판단과 실행을 설명하며, 없으면
+  목표 충족 근거와 남은 위험을 설명한다.
+- `delivery-preview`는 실제 Delivery row, RCC 또는 Chrome 효과 없이 동일한 조립기로 Worker
+  전달문과 Worker 결과 예시를 포함한 Manager 반환문을 함께 보여 준다. 원문 SHA-256,
+  UTF-16 길이와 현재 상한 적합 여부도 반환한다.
+- 적용 경계는 새 Worker 메시지 확정 전, 아직 조립하지 않은 Manager 반환 전, 다음 안전한
+  관찰이다. 이미 준비·제출한 메시지는 고정하고 설정 변경으로 재전송하지 않는다.
 
 Work/Delivery/scope/Manager/Worker identity, 설정·요청·결과 hash, Worker task와 반환 지시,
 이번 Worker 결과 전문, BCT marker, UTF-16 상한, UNKNOWN 무재전송은 설정으로 제거할 수
@@ -1571,6 +1581,22 @@ Work/Delivery/scope/Manager/Worker identity, 설정·요청·결과 hash, Worker
 BCT write CAS → 다음 미제출 메시지 경계를 재사용한다. UTF-8/UTF-16/CP949 입력 호환과
 UTF-8 정본 변경안도 격리 시험에 포함했다.
 
-관련 Python 회귀 91개가 PASS했다. 아직 commit, main 통합, Core LIVE 적용, 운영 설정 파일
-변경, N13/N14 메시지 전송은 하지 않았다. 별도 PR #293의 RCC editor rebind 후보도 이 설정
-브랜치에 섞지 않았고, main 병합·RC11 reload를 보류한다.
+실제 운영 DB를 SQLite read-only/query-only로 열어 N13 Manager
+`6ad7f5b6-c834-83e8-9c00-ff70bab4204d`, N14 Worker
+`6ad7ff62-fa64-83ee-a485-1138f1538e53`, scope
+`network.d3052e031bf748d8b1640b566a5bb86b`를 사용한 무효과 미리보기를 수행했다.
+`effect=NONE_PREVIEW_ONLY`, 구성원 5명, 레거시 상태 단어/노트 0건, Worker 결과 예시 1회,
+두 메시지 모두 12,000 UTF-16 상한 이내였다. Delivery/Chrome/RCC 효과는 없었다. 운영 설정
+파일이 아직 없으므로 revision은 `defaults`이고 실제 `completion_criteria`는 빈 기본값이다.
+이는 이후 설정 입력이 필요한 사실이며 전체 설정 수락으로 과장하지 않는다.
+
+연관 Python 92개 PASS, `PYTHONUTF8=0` 환경의 설정/조립 18개 PASS,
+`compileall` 및 `git diff --check` PASS다. Windows 시스템 UTF-8 옵션이나 국가/언어 설정은
+변경하지 않았고 재부팅도 하지 않았다. 설치 파일 대조 결과 RCC payload는 현재
+`1.0.30 Manager Return Wake` / build
+`2026-10-23-rcc-manager-return-wake-v1`이지만 이번 설정 작업에서는 reload하거나 메시지를
+보내지 않았다. PR #293의 RCC editor rebind 후보도 섞지 않았다.
+
+남은 순서는 격리 diff 검토와 로컬 checkpoint 확정, 그 다음 사용자와 실제 기본값·프로젝트
+override 미리보기 수락이다. 그 전에는 main/remote/Core/runtime config/Chrome을 변경하거나
+N13/N14로 메시지를 보내지 않는다.

@@ -1,12 +1,13 @@
 """Shared BCT prompt composition for an existing Project Run Delivery.
 
 Not a transport, role privilege, or a new message queue. Read the one
-canonical ACTIVE conversation roster and human-editable role note each time
-a *new* delivery is prepared. The resulting exact bytes are SHA-fenced by
-the existing Delivery Ledger. No implicit resend on roster changes.
+canonical ACTIVE conversation roster and the one relay-message settings
+document each time a *new* message is prepared. The resulting exact bytes are
+SHA-fenced by the existing Delivery Ledger. No implicit resend on changes.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 
@@ -27,8 +28,6 @@ def compose_worker_delivery(
     Roles never grant a BCT capability; the coordinator separately checks
     Work policy, live RCC route and immutable operation/Delivery ID.
     """
-    from bct.features.orchestration import _relay_note
-
     if not isinstance(scope_id, str) or not _SCOPE.fullmatch(scope_id):
         raise ValueError("DELIVERY_COMPOSE_SCOPE_INVALID")
     manager = str(manager_conversation_key or "").lower()
@@ -85,7 +84,6 @@ def compose_worker_delivery(
         "completion_criteria": settings["completion_criteria"],
         "project_context_note": settings["project_context_note"],
         "current_members": members,
-        "role_note": _relay_note("worker"),
     }
     body = {
         "schema": 1,
@@ -102,6 +100,8 @@ def compose_worker_delivery(
         "task": task,
         "return_instruction": settings["worker_return_instruction"],
     })
+    if settings["worker_additional_instruction"]:
+        body["additional_instruction"] = settings["worker_additional_instruction"]
     prompt = (
         settings["worker_intro"] + "\n" + settings["worker_context_notice"] + "\n"
         "[BCT_DELIVERY_WORKER_V1]"
@@ -119,13 +119,11 @@ def compose_manager_return_frame(
     scope_id: str = "", original_task: str = "",
     worker_result_sha256: str = "",
 ) -> tuple[str, str, str]:
-    """Prepare one Manager Wake around the FULL current-turn Worker result.
+    """Prepare one Manager return around the FULL current-turn Worker result.
 
     RCC owns the captured response. It inserts that text between these
     frames, hash-fences the single message, and submits exactly once.
     """
-    from bct.features.orchestration import _relay_note
-
     settings = read_relay_settings(scope_id)
     work = store.get_work(work_id)
     scope = {}
@@ -186,17 +184,17 @@ def compose_manager_return_frame(
         "context": (
             settings["manager_intro"]
             + "\n[BCT_MANAGER_RETURN_CONTEXT_V1]"
-            + json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
             + "[/BCT_MANAGER_RETURN_CONTEXT_V1]\n"
         ),
         "worker_result": "\n[BCT_CURRENT_WORKER_RESULT_FULL]\n",
-        "action": (
-            "\n" + settings["manager_result_notice"] + "\n"
-            + settings["manager_action"] + "\n"
-            + (_relay_note("manager") + "\n"
-               if settings["manager_include_role_note"] else "")
-            + settings["manager_decision_instruction"] + "\n"
-        ),
+        "action": "\n" + "\n".join(
+            item for item in (
+                settings["manager_result_notice"],
+                settings["manager_action"],
+                settings["manager_additional_instruction"],
+            ) if item
+        ) + "\n",
     }
     before = []
     after = []
@@ -209,3 +207,57 @@ def compose_manager_return_frame(
         else:
             current.append(pieces[section])
     return "".join(before), "".join(after), settings["config_sha256"]
+
+
+def preview_delivery_messages(
+    *, store, work_id: str, delivery_id: str, scope_id: str,
+    manager_conversation_key: str, worker_conversation_key: str,
+    task: str, worker_result_preview: str,
+) -> dict[str, object]:
+    """Compose both exact messages without creating a Delivery or calling RCC."""
+    if (not isinstance(worker_result_preview, str)
+            or not worker_result_preview.strip() or "\x00" in worker_result_preview
+            or utf16_units(worker_result_preview) > 12000):
+        raise ValueError("DELIVERY_PREVIEW_WORKER_RESULT_INVALID")
+    expected_revision = read_relay_settings(scope_id)["config_sha256"]
+    worker_message = compose_worker_delivery(
+        store=store, work_id=work_id, scope_id=scope_id,
+        manager_conversation_key=manager_conversation_key,
+        worker_conversation_key=worker_conversation_key, task=task,
+    )
+    header, footer, manager_revision = compose_manager_return_frame(
+        store=store, work_id=work_id, delivery_id=delivery_id,
+        manager_conversation_key=manager_conversation_key,
+        worker_conversation_key=worker_conversation_key,
+        scope_id=scope_id, original_task=task,
+        worker_result_sha256=hashlib.sha256(
+            worker_result_preview.encode("utf-8")
+        ).hexdigest(),
+    )
+    if manager_revision != expected_revision or expected_revision not in worker_message:
+        raise ValueError("DELIVERY_PREVIEW_SETTINGS_CHANGED")
+    manager_message = header + worker_result_preview + footer
+    return {
+        "effect": "NONE_PREVIEW_ONLY",
+        "settings_sha256": expected_revision,
+        "scope_id": scope_id,
+        "work_id": work_id,
+        "delivery_id": delivery_id,
+        "manager_conversation_uuid": str(manager_conversation_key).lower(),
+        "worker_conversation_uuid": str(worker_conversation_key).lower(),
+        "worker_message": {
+            "text": worker_message,
+            "sha256": hashlib.sha256(worker_message.encode("utf-8")).hexdigest(),
+            "utf16_units": utf16_units(worker_message),
+            "fits_current_limit": utf16_units(worker_message) <= 12000,
+        },
+        "manager_return_message": {
+            "text": manager_message,
+            "sha256": hashlib.sha256(manager_message.encode("utf-8")).hexdigest(),
+            "utf16_units": utf16_units(manager_message),
+            "fits_current_limit": utf16_units(manager_message) <= 12000,
+            "worker_result_sha256": hashlib.sha256(
+                worker_result_preview.encode("utf-8")
+            ).hexdigest(),
+        },
+    }
