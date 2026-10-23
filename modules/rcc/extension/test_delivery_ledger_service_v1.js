@@ -88,6 +88,70 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(changed.ok, false);
   assert.equal(changed.error, 'DELIVERY_MANAGER_REPLY_CHANGED');
   context.sendToChatTab = originalSend;
+
+  // New manager return is ONE user turn containing the FULL current Worker result.
+  // The Worker tab may disappear after its response is captured.
+  const tabsBefore = context.getChatTabs;
+  const sendBefore = context.sendToChatTab;
+  const actualWorkerResult = '이번 차 전체 처리 결과 📦\n검증 확인';
+  context.sendToChatTab = async (tabId, message) => {
+    if (tabId === 20 && message.type === 'relay:simpleReadReply') {
+      return { ok: true, conversationKey: message.conversationKey,
+        responseText: actualWorkerResult };
+    }
+    return sendBefore(tabId, message);
+  };
+  const nextIdentity = { ...identity, deliveryId: 'delivery-002' };
+  const nextStart = await context.deliveryStart(nextIdentity);
+  assert.equal(nextStart.state, 'SENT_WAITING');
+  const nextCaptured = await context.deliveryStatus({ deliveryId: 'delivery-002' });
+  assert.equal(nextCaptured.state, 'REPLY_CAPTURED');
+  assert.equal(nextCaptured.responseLength, actualWorkerResult.length);
+  context.getChatTabs = async () => [{
+    id: 10, windowId: 100,
+    url: 'https://chatgpt.com/c/11111111-1111-1111-1111-111111111111',
+  }];
+  const header = 'Manager 지시\n[BCT_CURRENT_WORKER_RESULT_FULL]\n';
+  const footer = '\n[/BCT_CURRENT_WORKER_RESULT_FULL]\n후속 작업 판단';
+  const countBefore = sends.length;
+  const framed = await context.deliveryReturn({
+    deliveryId: 'delivery-002', managerReturnHeader: header,
+    managerReturnFooter: footer, managerReturnSettingsSha256: 'defaults',
+  });
+  assert.equal(framed.state, 'RETURNED');
+  assert.equal(sends.length, countBefore + 1);
+  assert.equal(sends.at(-1).tabId, 10);
+  assert.equal(sends.at(-1).message.text, header + actualWorkerResult + footer);
+  assert.equal(framed.managerReturnSha256,
+    await context.relaySha256(header + actualWorkerResult + footer));
+  assert.equal(framed.managerReturnLength, (header + actualWorkerResult + footer).length);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-002'].responseText, actualWorkerResult);
+  const checkWithoutWorker = await context.deliveryManagerStatus({ deliveryId: 'delivery-002' });
+  assert.equal(checkWithoutWorker.managerResponseText, 'manager next');
+  const unchangedCount = sends.length;
+  const duplicateReturn = await context.deliveryReturn({
+    deliveryId: 'delivery-002', managerReturnHeader: 'changed',
+    managerReturnFooter: 'changed',
+  });
+  assert.equal(duplicateReturn.replayed, true);
+  assert.equal(sends.length, unchangedCount);
+  // A frame that cannot carry the full result must fail BEFORE an additional submit.
+  context.getChatTabs = tabsBefore;
+  const bigIdentity = { ...identity, deliveryId: 'delivery-003' };
+  await context.deliveryStart(bigIdentity);
+  await context.deliveryStatus({ deliveryId: 'delivery-003' });
+  const beforeOversize = sends.length;
+  const oversize = await context.deliveryReturn({
+    deliveryId: 'delivery-003',
+    managerReturnHeader: 'X'.repeat(12000) + '[BCT_CURRENT_WORKER_RESULT_FULL]',
+    managerReturnFooter: '[/BCT_CURRENT_WORKER_RESULT_FULL]',
+  });
+  assert.equal(oversize.ok, false);
+  assert.equal(oversize.error, 'DELIVERY_MANAGER_RETURN_TOO_LARGE');
+  assert.equal(sends.length, beforeOversize);
+  context.sendToChatTab = sendBefore;
+  context.getChatTabs = tabsBefore;
+
   for (let index = 0; index < 66; index += 1) {
     await context.writeDeliveryLedgerMirror(`active-${index}`, {
       deliveryId: `active-${index}`, state: 'SENT_WAITING', updatedAt: index,

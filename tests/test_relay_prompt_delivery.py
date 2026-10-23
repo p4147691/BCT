@@ -158,5 +158,32 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.assertEqual([],self.host.calls)
 
 
+    def test_manager_return_frame_uses_same_delivery_and_original_worker_task(self):
+        self.run_delivery({"command": "delivery-start", **self.base}, "wake-start")
+        self.run_delivery({
+            "command": "delivery-status", "instance_id": self.base["instance_id"],
+            "delivery_id": self.base["delivery_id"],
+        }, "wake-status")
+        ret = self.run_delivery({
+            "command": "delivery-return", "instance_id": self.base["instance_id"],
+            "delivery_id": self.base["delivery_id"],
+        }, "wake-return")
+        self.assertEqual("RETURNED", ret.evidence["delivery_state"])
+        commands = [item["command"] for item in self.host.calls]
+        self.assertEqual(["delivery-start", "delivery-status", "delivery-return"], commands)
+        payload = self.host.calls[-1]["extra"]
+        self.assertIn("[BCT_MANAGER_RETURN_CONTEXT_V1]", payload["managerReturnHeader"])
+        self.assertIn(self.base["text"], payload["managerReturnHeader"])
+        self.assertIn("[BCT_CURRENT_WORKER_RESULT_FULL]", payload["managerReturnHeader"])
+        self.assertIn("[/BCT_CURRENT_WORKER_RESULT_FULL]", payload["managerReturnFooter"])
+        self.assertIn("COMPLETE 또는 FOLLOW_UP", payload["managerReturnFooter"])
+        self.assertIn("managerReturnSettingsSha256", payload)
+        persisted = self.feature.delivery_ledger.get_for_work(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id,
+        )
+        self.assertEqual(self.base["text"], persisted["observation"]["original_task"])
+
+
+
 if __name__ == "__main__":
     unittest.main()

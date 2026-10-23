@@ -47,6 +47,13 @@ function deliveryTabs(tabs, managerConversationKey, workerConversationKey) {
   return { manager: manager[0], worker: worker[0] };
 }
 
+function singleDeliveryTab(tabs, conversationKey) {
+  const matches = tabs.filter((tab) =>
+    RelayCore.conversationKey(tab.url || '') === conversationKey);
+  if (matches.length !== 1) throw new Error('DELIVERY_ENDPOINT_NOT_UNIQUE_OR_OPEN');
+  return matches[0];
+}
+
 function publicDeliveryReceipt(receipt) {
   if (!receipt || typeof receipt !== 'object') return null;
   return {
@@ -57,6 +64,10 @@ function publicDeliveryReceipt(receipt) {
     requestSha256: String(receipt.requestSha256 || ''),
     responseSha256: String(receipt.responseSha256 || ''),
     responseLength: Number.isInteger(receipt.responseLength) ? receipt.responseLength : null,
+    managerReturnSha256: String(receipt.managerReturnSha256 || ''),
+    managerReturnSettingsSha256: String(receipt.managerReturnSettingsSha256 || ''),
+    managerReturnLength: Number.isInteger(receipt.managerReturnLength)
+      ? receipt.managerReturnLength : null,
     managerResponseSha256: String(receipt.managerResponseSha256 || ''),
     managerResponseLength: Number.isInteger(receipt.managerResponseLength)
       ? receipt.managerResponseLength : null,
@@ -140,15 +151,14 @@ async function deliveryStatus(message) {
     return { ok: !['NOT_APPLIED', 'NEEDS_REVIEW', 'FAILED'].includes(receipt.state),
       ...publicDeliveryReceipt(receipt) };
   }
-  let tabs;
+  let workerTab;
   try {
-    tabs = deliveryTabs(await getChatTabs(), receipt.managerConversationKey,
-      receipt.workerConversationKey);
+    workerTab = singleDeliveryTab(await getChatTabs(), receipt.workerConversationKey);
   } catch (error) {
     return { ok: true, pending: true, ...publicDeliveryReceipt(receipt),
       error: String(error?.message || error).slice(0, 128) };
   }
-  const read = await sendToChatTab(tabs.worker.id, {
+  const read = await sendToChatTab(workerTab.id, {
     type: 'relay:simpleReadReply', conversationKey: receipt.workerConversationKey,
     afterAssistantCount: receipt.beforeAssistantCount, relayId: id,
   });
@@ -161,7 +171,7 @@ async function deliveryStatus(message) {
     responseText: read.responseText,
     responseSha256: await relaySha256(read.responseText),
     responseLength: read.responseText.length,
-    workerTabId: tabs.worker.id, workerWindowId: tabs.worker.windowId,
+    workerTabId: workerTab.id, workerWindowId: workerTab.windowId,
     updatedAt: Date.now() };
   await writeDeliveryLedgerMirror(id, captured);
   return { ok: true, ...publicDeliveryReceipt(captured) };
@@ -179,30 +189,59 @@ async function deliveryReturn(message) {
     return { ok: false, ...publicDeliveryReceipt(receipt),
       error: 'DELIVERY_REPLY_NOT_CAPTURED' };
   }
-  let tabs;
+  let managerTab;
   try {
-    tabs = deliveryTabs(await getChatTabs(), receipt.managerConversationKey,
-      receipt.workerConversationKey);
+    managerTab = singleDeliveryTab(await getChatTabs(), receipt.managerConversationKey);
   } catch (error) {
     return { ok: false, ...publicDeliveryReceipt(receipt),
       error: String(error?.message || error).slice(0, 128) };
   }
+  // The full current-turn Worker result is always included verbatim.
+  // The BCT frame is computed before this submit and never authorized to
+  // replace, omit, or truncate the captured Worker result.
+  const header = message.managerReturnHeader;
+  const footer = message.managerReturnFooter;
+  const framed = typeof header === 'string' && typeof footer === 'string';
+  if ((header !== undefined || footer !== undefined) && !framed) {
+    return { ok: false, ...publicDeliveryReceipt(receipt),
+      error: 'DELIVERY_MANAGER_FRAME_INVALID' };
+  }
+  if (framed && (!header.includes('[BCT_CURRENT_WORKER_RESULT_FULL]')
+      || !footer.includes('[/BCT_CURRENT_WORKER_RESULT_FULL]'))) {
+    return { ok: false, ...publicDeliveryReceipt(receipt),
+      error: 'DELIVERY_MANAGER_FRAME_MARKERS_INVALID' };
+  }
+  const returnText = framed ? header + receipt.responseText + footer : receipt.responseText;
+  if (returnText.length > 12000) {
+    return { ok: false, ...publicDeliveryReceipt(receipt),
+      error: 'DELIVERY_MANAGER_RETURN_TOO_LARGE' };
+  }
+  const returnHash = await relaySha256(returnText);
+  if (receipt.managerReturnSha256 && receipt.managerReturnSha256 !== returnHash) {
+    return { ok: false, ...publicDeliveryReceipt(receipt),
+      error: 'DELIVERY_MANAGER_RETURN_HASH_CONFLICT' };
+  }
+  const intent = { ...receipt, managerReturnSha256: returnHash,
+    managerReturnLength: returnText.length,
+    managerReturnSettingsSha256: String(message.managerReturnSettingsSha256 || ''),
+    updatedAt: Date.now() };
+  await writeDeliveryLedgerMirror(id, intent);
   let ack;
   try {
-    ack = await sendToChatTab(tabs.manager.id, {
+    ack = await sendToChatTab(managerTab.id, {
       type: 'relay:simpleExecute', relayId: id,
-      conversationKey: receipt.managerConversationKey, text: receipt.responseText,
+      conversationKey: receipt.managerConversationKey, text: returnText,
     });
   } catch (error) {
-    const unresolved = { ...receipt, state: 'NEEDS_REVIEW', updatedAt: Date.now(),
+    const unresolved = { ...intent, state: 'NEEDS_REVIEW', updatedAt: Date.now(),
       error: String(error?.message || error || 'DELIVERY_RETURN_UNKNOWN').slice(0, 128) };
     await writeDeliveryLedgerMirror(id, unresolved);
     return { ok: false, ...publicDeliveryReceipt(unresolved) };
   }
   if (ack?.ok === true && ack.submitted === true
       && ack.conversationKey === receipt.managerConversationKey) {
-    const returned = { ...receipt, state: 'RETURNED', responseText: undefined,
-      managerTabId: tabs.manager.id, managerWindowId: tabs.manager.windowId,
+    const returned = { ...intent, state: 'RETURNED',
+      managerTabId: managerTab.id, managerWindowId: managerTab.windowId,
       managerBeforeAssistantCount: Number.isInteger(ack.beforeAssistantCount)
         ? ack.beforeAssistantCount : null,
       updatedAt: Date.now() };
@@ -213,7 +252,7 @@ async function deliveryReturn(message) {
   // a later operation with the same delivery id.  It does not fail the worker
   // turn and does not authorize a new delivery id.
   const state = ack?.effectState === 'NOT_APPLIED' ? 'REPLY_CAPTURED' : 'NEEDS_REVIEW';
-  const unresolved = { ...receipt, state, updatedAt: Date.now(),
+  const unresolved = { ...intent, state, updatedAt: Date.now(),
     error: String(ack?.error || 'DELIVERY_RETURN_ACK_INVALID').slice(0, 128) };
   await writeDeliveryLedgerMirror(id, unresolved);
   return { ok: false, ...publicDeliveryReceipt(unresolved) };
@@ -235,17 +274,16 @@ async function deliveryManagerStatus(message) {
     return { ok: false, ...publicDeliveryReceipt(receipt),
       error: 'DELIVERY_MANAGER_BASELINE_NOT_CAPTURED' };
   }
-  let tabs;
+  let managerTab;
   try {
-    tabs = deliveryTabs(await getChatTabs(), receipt.managerConversationKey,
-      receipt.workerConversationKey);
+    managerTab = singleDeliveryTab(await getChatTabs(), receipt.managerConversationKey);
   } catch (error) {
     return { ok: true, pending: true, ...publicDeliveryReceipt(receipt),
       error: String(error?.message || error).slice(0, 128) };
   }
   let read;
   try {
-    read = await sendToChatTab(tabs.manager.id, {
+    read = await sendToChatTab(managerTab.id, {
       type: 'relay:simpleReadReply', conversationKey: receipt.managerConversationKey,
       afterAssistantCount: receipt.managerBeforeAssistantCount, relayId: id,
     });
