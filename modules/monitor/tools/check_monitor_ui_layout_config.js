@@ -125,6 +125,43 @@ async function main() {
   assert.match(css, /flex-wrap:\s*nowrap\s*!important/, "toolbar must not wrap over node list");
   assert.match(css, /overflow-x:\s*auto/, "narrow header must clip/scroll, not overlay nodes");
   assert.match(css, /#bwmUiLayoutEditor/, "stale editor must be hidden");
+  const fallback = layout.DEFAULT.captureFallback;
+  const now = 1_000_000;
+  const good = layout.chooseCaptureView({nextState:"captured",
+    nextSource:"blob:good",now},fallback);
+  assert.equal(good.state, "captured");
+  assert.equal(good.capturedAt,now);
+  const held = layout.chooseCaptureView({previousState:good.state,
+    previousSource:good.source,previousCapturedAt:good.capturedAt,
+    nextState:"placeholder",nextSource:"data:image/svg+xml,SMALL",
+    now:now+5_000},fallback);
+  assert.equal(held.state,"held");
+  assert.equal(held.source,"blob:good");
+  assert.equal(held.label,"이전 화면");
+  const stale = layout.chooseCaptureView({previousState:held.state,
+    previousSource:held.source,previousCapturedAt:held.capturedAt,
+    nextState:"placeholder",nextSource:"data:image/svg+xml,SMALL",
+    now:now+30_000},fallback);
+  assert.equal(stale.state,"stale");
+  assert.equal(stale.label,"오래된 화면");
+  const expired = layout.chooseCaptureView({previousState:stale.state,
+    previousSource:stale.source,previousCapturedAt:stale.capturedAt,
+    nextState:"placeholder",nextSource:"data:image/svg+xml,SMALL",
+    now:now+181_000},fallback);
+  assert.equal(expired.state,"placeholder");
+  assert.equal(expired.source,"data:image/svg+xml,SMALL");
+  assert.equal(layout.chooseCaptureView({previousState:"captured",
+    previousSource:"blob:good",previousCapturedAt:now,nextState:"placeholder",
+    nextSource:"data:image/svg+xml,SMALL",now:now+1_000},
+    {mode:"compact"}).state,"placeholder");
+  assert.equal(layout.chooseCaptureView({previousState:"captured",
+    previousSource:"blob:good",previousCapturedAt:now,nextState:"placeholder",
+    nextSource:"data:image/svg+xml,SMALL",now:now+1_000},
+    {mode:"legacy"}).state,"placeholder");
+  assert.throws(()=>layout.normalize({version:1,toolbar:{},
+    captureFallback:{mode:"script"}}),/INVALID/);
+  assert.throws(()=>layout.normalize({version:1,toolbar:{},
+    captureFallback:{staleAfterSeconds:90,maxAgeSeconds:30}}),/INVALID/);
   const storage = makeStorage();
   const first = makeRoot();
   let nextRemote = { status: "READY", config: {

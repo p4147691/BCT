@@ -25,7 +25,9 @@ assert.equal(policy.monitorShouldKeepExistingCapture("placeholder", "data:image/
 assert.equal(policy.monitorShouldKeepExistingCapture("captured", "blob:good", "captured"), false);
 
 assert.match(source, /items\.filter\(monitorWindowCanRefreshPixels\)/, "cloaked HWNDs are excluded from WGC refresh");
-assert.match(source, /if \(!keepExistingCapture && img\.src !== entry\.dataUri\) img\.src = entry\.dataUri;/, "placeholder cannot overwrite the last captured pixels");
+assert.match(source, /MonitorUiLayout\.chooseCaptureView\(/, "bounded age-aware fallback decision is consulted");
+assert.match(source, /if \(img\.src !== captureView\.source\) img\.src = captureView\.source;/, "validated fallback source is rendered");
+assert.match(source, /monitorCapturedAt/, "last successful pixels have an age fence");
 assert.match(css, /\.monitor-desktop-thumb\.current\{background:rgba\(255,255,255,\.06\)!important;/, "current desktop card stays dark and transparent");
 assert.doesNotMatch(css, /\.monitor-desktop-thumb\.current\{background:rgba\(208,213,219,\.96\)/, "solid grey current-desktop fill is removed");
 
