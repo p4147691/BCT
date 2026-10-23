@@ -504,6 +504,16 @@ class DeliveryFeatureTests(unittest.TestCase):
             self.execute({**args, "text": "different message"}, "reuse-mismatch")
         self.assertEqual(1, len(self.host.calls))
 
+    def test_missing_delivery_status_is_confirmed_before_host_call(self) -> None:
+        with self.assertRaisesRegex(ConfirmedFailure, "RCC_DELIVERY_NOT_FOUND") as caught:
+            self.execute({
+                "instance_id": self.base["instance_id"],
+                "delivery_id": "delivery-never-created",
+                "command": "delivery-status",
+            }, "missing-delivery-status")
+        self.assertTrue(caught.exception.release_claims)
+        self.assertEqual([], self.host.calls)
+
     def test_status_transport_failure_is_retryable_but_return_failure_is_review(self) -> None:
         args = {
             **self.base, "command": "delivery-start",
