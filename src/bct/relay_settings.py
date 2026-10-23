@@ -8,7 +8,16 @@ import re
 from pathlib import Path
 from typing import Any
 
+from bct.relay_control import (
+    effective_control,
+    empty_control,
+    merge_patch,
+    resolved_preview,
+    validate_control,
+)
+
 _DEFAULT_PATH = Path("D:/BCT/runtime/config/relay-message-settings.json")
+_MAX_SETTINGS_BYTES = 262_144
 _SCOPE = re.compile(r"[A-Za-z0-9_.:-]{1,96}\Z")
 _DEFAULTS = {
     "worker_intro": "BCT가 구성한 협업 업무입니다.",
@@ -185,7 +194,7 @@ def _read_unicode(path: Path) -> tuple[dict[str, Any], str]:
         raw = path.read_bytes()
     except FileNotFoundError:
         return {}, "defaults"
-    if len(raw) > 65_536:
+    if len(raw) > _MAX_SETTINGS_BYTES:
         raise ValueError("RELAY_SETTINGS_TOO_LARGE")
     if raw.startswith((b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")):
         text = raw.decode("utf-32")
@@ -245,6 +254,33 @@ def _validated(values: Any) -> dict[str, Any]:
     return result
 
 
+def _validated_document(raw: Any) -> dict[str, Any]:
+    """Validate the shared message + control settings document.
+
+    ``control`` is optional so every existing version-1 settings file remains
+    valid.  Adding it does not change message composition until a separate
+    executor is intentionally connected in a future change.
+    """
+    if (not isinstance(raw, dict)
+            or set(raw) - {"version", "defaults", "projects", "control"}
+            or type(raw.get("version")) is not int or raw.get("version") != 1
+            or not isinstance(raw.get("defaults"), dict)
+            or not isinstance(raw.get("projects"), dict)):
+        raise ValueError("RELAY_SETTINGS_SCHEMA_INVALID")
+    normalized = {
+        "version": 1,
+        "defaults": _validated(raw["defaults"]),
+        "projects": {},
+    }
+    for ident, item in raw["projects"].items():
+        if not isinstance(ident, str) or not _SCOPE.fullmatch(ident):
+            raise ValueError("RELAY_SETTINGS_PROJECT_INVALID")
+        normalized["projects"][ident] = _validated(item)
+    if "control" in raw:
+        normalized["control"] = validate_control(raw["control"], scope_pattern=_SCOPE)
+    return normalized
+
+
 def read_relay_settings(scope_id: str = "") -> dict[str, Any]:
     """Read on EACH unsent delivery, never mutate an existing prepared intent.
 
@@ -255,17 +291,11 @@ def read_relay_settings(scope_id: str = "") -> dict[str, Any]:
         raise ValueError("RELAY_SETTINGS_SCOPE_INVALID")
     path = Path(os.environ.get("BCT_RELAY_SETTINGS_PATH", str(_DEFAULT_PATH)))
     raw, digest = _read_unicode(path)
-    if digest != "defaults" and (set(raw) != {"version", "defaults", "projects"}
-                or type(raw["version"]) is not int or raw["version"] != 1
-                or not isinstance(raw["projects"], dict)):
-        raise ValueError("RELAY_SETTINGS_SCHEMA_INVALID")
+    if digest != "defaults":
+        raw = _validated_document(raw)
     base = dict(_DEFAULTS)
     base.update(_validated(raw.get("defaults", {})))
     projects = raw.get("projects", {})
-    for ident, item in projects.items():
-        if not isinstance(ident, str) or not _SCOPE.fullmatch(ident):
-            raise ValueError("RELAY_SETTINGS_PROJECT_INVALID")
-        _validated(item)
     if scope_id and scope_id in projects:
         base.update(_validated(projects[scope_id]))
     base["config_sha256"] = digest
@@ -296,6 +326,62 @@ def preview_relay_settings(scope_id: str = "") -> dict[str, Any]:
     }
 
 
+def read_relay_control(scope_id: str = "") -> dict[str, Any]:
+    """Read and validate the effective preview-only flow configuration."""
+    if scope_id and (not isinstance(scope_id, str) or not _SCOPE.fullmatch(scope_id)):
+        raise ValueError("RELAY_SETTINGS_SCOPE_INVALID")
+    path = Path(os.environ.get("BCT_RELAY_SETTINGS_PATH", str(_DEFAULT_PATH)))
+    raw, digest = _read_unicode(path)
+    if digest == "defaults":
+        control = empty_control()
+    else:
+        document = _validated_document(raw)
+        control = document.get("control", empty_control())
+    result = effective_control(control, scope_id)
+    result["config_sha256"] = digest
+    result["scope_id"] = scope_id
+    return result
+
+
+def preview_relay_control(scope_id: str = "") -> dict[str, Any]:
+    """Resolve configured routes and function calls without executing any."""
+    if scope_id and (not isinstance(scope_id, str) or not _SCOPE.fullmatch(scope_id)):
+        raise ValueError("RELAY_SETTINGS_SCOPE_INVALID")
+    path = Path(os.environ.get("BCT_RELAY_SETTINGS_PATH", str(_DEFAULT_PATH)))
+    raw, digest = _read_unicode(path)
+    if digest == "defaults":
+        control = empty_control()
+    else:
+        document = _validated_document(raw)
+        control = document.get("control", empty_control())
+    return {
+        "version": 1,
+        "revision": digest,
+        "path": str(path),
+        "control": effective_control(control, scope_id),
+        "resolved_preview": resolved_preview(control, scope_id=scope_id),
+        "catalog": {
+            "function": {
+                "required": ["driver", "call", "effect"],
+                "effect_values": ["pure", "read", "external"],
+                "optional": ["arguments", "timeout_seconds", "description"],
+            },
+            "route": {
+                "required": ["entry", "max_steps", "steps"],
+                "step_required": ["use"],
+                "step_optional": ["arguments", "save_as", "guard", "next"],
+                "transition_terminal": "END",
+                "loops": "ALLOWED_BUT_BOUNDED_BY_MAX_STEPS",
+            },
+            "templates": "Strings may contain executor-resolved ${...} references; preview preserves them exactly.",
+        },
+        "apply_boundary": "NEXT_UNSTARTED_FLOW",
+        "prepared_or_started_flow": "FROZEN",
+        "execution_connected": False,
+        "effect": "NONE_PREVIEW_ONLY",
+    }
+
+
 def propose_relay_settings_patch(
     *, scope_id: str = "", changes: dict[str, Any],
 ) -> dict[str, Any]:
@@ -314,7 +400,7 @@ def propose_relay_settings_patch(
     path = Path(os.environ.get("BCT_RELAY_SETTINGS_PATH", str(_DEFAULT_PATH)))
     raw, revision = _read_unicode(path)
     if revision != "defaults":
-        read_relay_settings(scope_id)  # rejects malformed settings before patch
+        raw = _validated_document(raw)  # rejects malformed settings before patch
     raw = raw if revision != "defaults" else {
         "version": 1, "defaults": {}, "projects": {},
     }
@@ -333,15 +419,11 @@ def propose_relay_settings_patch(
             target[key] = value
     if scope_id and not target:
         updated["projects"].pop(scope_id, None)
-    _validated(updated["defaults"])
-    for key, value in updated["projects"].items():
-        if not isinstance(key, str) or not _SCOPE.fullmatch(key):
-            raise ValueError("RELAY_SETTINGS_PROJECT_INVALID")
-        _validated(value)
+    updated = _validated_document(updated)
     content = json.dumps(
         updated, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False
     ) + "\n"
-    if len(content.encode("utf-8")) > 65_536:
+    if len(content.encode("utf-8")) > _MAX_SETTINGS_BYTES:
         raise ValueError("RELAY_SETTINGS_TOO_LARGE")
     candidate_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
     effective = dict(_DEFAULTS)
@@ -361,6 +443,67 @@ def propose_relay_settings_patch(
     }
 
 
+def propose_relay_control_patch(
+    *, scope_id: str = "", changes: dict[str, Any],
+) -> dict[str, Any]:
+    """Preview a nested flow-control merge patch and return exact CAS bytes.
+
+    An empty ``scope_id`` changes the reusable global function/route profile.
+    A non-empty scope changes only that project's overlay.  This function never
+    executes a configured call and never writes the settings file.
+    """
+    if not isinstance(scope_id, str) or (scope_id and not _SCOPE.fullmatch(scope_id)):
+        raise ValueError("RELAY_SETTINGS_SCOPE_INVALID")
+    if not isinstance(changes, dict) or not changes:
+        raise ValueError("RELAY_CONTROL_PATCH_INVALID")
+    allowed = {"enabled", "variables", "functions", "routes", "selected_routes"}
+    if set(changes) - allowed:
+        raise ValueError("RELAY_CONTROL_PATCH_KEYS_INVALID")
+    path = Path(os.environ.get("BCT_RELAY_SETTINGS_PATH", str(_DEFAULT_PATH)))
+    raw, revision = _read_unicode(path)
+    if revision == "defaults":
+        raw = {"version": 1, "defaults": {}, "projects": {}}
+    else:
+        raw = _validated_document(raw)
+    updated = json.loads(json.dumps(raw, ensure_ascii=False, allow_nan=False))
+    control = updated.setdefault("control", empty_control())
+    if scope_id:
+        target = control.setdefault("projects", {}).get(scope_id, {})
+        patched = merge_patch(target, changes)
+        if patched:
+            control["projects"][scope_id] = patched
+        else:
+            control["projects"].pop(scope_id, None)
+    else:
+        profile = {key: control[key] for key in allowed if key in control}
+        patched = merge_patch(profile, changes)
+        for key in allowed:
+            control.pop(key, None)
+        control.update(patched)
+    updated["control"] = validate_control(control, scope_pattern=_SCOPE)
+    updated = _validated_document(updated)
+    content = json.dumps(
+        updated, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False
+    ) + "\n"
+    if len(content.encode("utf-8")) > _MAX_SETTINGS_BYTES:
+        raise ValueError("RELAY_SETTINGS_TOO_LARGE")
+    candidate_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return {
+        "path": str(path),
+        "scope_id": scope_id,
+        "expected_absent": revision == "defaults",
+        "expected_sha256": None if revision == "defaults" else revision,
+        "new_sha256": candidate_sha,
+        "new_content": content,
+        "effective_preview": resolved_preview(
+            updated["control"], scope_id=scope_id
+        ),
+        "changed": revision != candidate_sha,
+        "execution_connected": False,
+        "effect": "NONE_PREVIEW_ONLY",
+    }
+
+
 def _cli() -> None:
     """For AI Managers: old scope preview or propose scope JSON-patch.
 
@@ -376,6 +519,17 @@ def _cli() -> None:
             raise ValueError("RELAY_SETTINGS_CLI_PROPOSE_ARGS")
         changes = json.loads(args[2], object_pairs_hook=_pairs_unique)
         answer = propose_relay_settings_patch(scope_id=args[1], changes=changes)
+    elif args and args[0] == "control":
+        if len(args) > 2:
+            raise ValueError("RELAY_SETTINGS_CLI_CONTROL_ARGS")
+        answer = preview_relay_control(args[1] if len(args) == 2 else "")
+    elif args and args[0] == "propose-control":
+        if len(args) != 3:
+            raise ValueError("RELAY_SETTINGS_CLI_PROPOSE_CONTROL_ARGS")
+        changes = json.loads(args[2], object_pairs_hook=_pairs_unique)
+        answer = propose_relay_control_patch(
+            scope_id="" if args[1] == "-" else args[1], changes=changes,
+        )
     elif len(args) <= 1:
         answer = preview_relay_settings(args[0] if args else "")
     else:

@@ -1643,3 +1643,29 @@ Worker·Manager 양쪽 이름/목표/완료 기준이 정확히 일치했고 과
 `cf7472d`(`feat(relay): override stale project message context`)로 확정했다. 남은 순서는
 사용자와 실제 프로젝트 override 미리보기 수락이다. 그 전에는
 main/remote/Core/runtime config/Chrome을 변경하거나 N13/N14로 메시지를 보내지 않는다.
+
+## 2026-10-23 릴레이 제어 설정 기반
+
+사용자와 범위를 다시 확정했다. 이번 단계는 노드 실행이 아니라, 경로·호출 함수·인자·단계
+순서·메시지 참조를 운영 중 설정으로 바꿀 수 있게 만드는 기반이다. 최초 설정 엔진과 새로운
+실행 어댑터는 정상 소스 통합 대상이지만, 통합 뒤 이미 등록된 선택지의 조합과 값 변경은
+`relay-message-settings.json`의 `control` 구역 부분 수정으로 처리한다. 특정 전송 기술이나
+API를 금지하지 않으며, 같은 메시지의 외부 효과를 중복 실행하지 않는 경계는 유지한다.
+
+격리 브랜치 `feat/relay-control-settings-v1`에 다음을 구현했다.
+
+- `src/bct/relay_control.py`: 재사용 function, route graph, 목적별 route 선택, project 깊은
+  override, bounded JSON, loop `max_steps`와 참조 무결성을 검증한다.
+- `src/bct/relay_settings.py`: 기존 메시지 문서를 보존하면서 `control` 조회·resolved preview·
+  중첩 merge-patch 변경안과 기존 BCT write용 exact SHA CAS 바이트를 만든다.
+- 설정이 주장만으로 외부 기능을 실행하지 않도록 V1은 항상
+  `execution_connected=false / effect=NONE_PREVIEW_ONLY`다. 실행 registry와 executor는 이후
+  별도 변경이며, 그때도 현재 Work 권한과 외부 효과 fence를 통과해야 한다.
+- 기존 설정 파일이 없거나 `control`이 없어도 비활성 기본값으로 호환된다. 잘못된 graph,
+  존재하지 않는 함수/route 참조, 비유한 수, 중복 JSON key, 과대 값은 쓰기 전에 실패한다.
+- Windows 시스템 UTF-8 옵션에 의존하지 않는다. `PYTHONUTF8=0`에서 한글·이모지 CLI 출력과
+  UTF-8 정본 SHA를 시험하며, UTF-8/UTF-8 BOM/UTF-16/과거 CP949 입력 호환을 유지한다.
+
+관련 설정·메시지 회귀 27건과 전체 Python 회귀 1,003건, `compileall`, `py_compile`,
+`git diff --check`가 격리 작업본에서 PASS했다. 실제 운영 설정 파일 쓰기, RCC reload,
+Chrome 제출, N13/N14 제어는 수행하지 않았다. 구현과 실행 수락을 혼합하지 말 것.
