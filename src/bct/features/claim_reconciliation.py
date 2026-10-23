@@ -42,6 +42,15 @@ def _proven_no_effect(metadata: dict) -> tuple[bool, str]:
         # ledger mismatch to ConfirmedFailure. DeliveryLedger.create_or_get
         # raises before RelayBrowserFeature invokes the RCC client.
         return True, "RELAY_DELIVERY_ID_REUSE_REJECTED_BEFORE_RCC_DISPATCH"
+    if (capability == "relay_browser"
+            and metadata.get("evidence") == {
+                "phase": "UNEXPECTED", "type": "KeyError"
+            }
+            and metadata.get("error") == "'DELIVERY_NOT_FOUND'"):
+        # Legacy receipt from before RelayBrowserFeature converted a missing
+        # ledger row to ConfirmedFailure. The lookup failed before the RCC
+        # client could be called, so no browser effect crossed the boundary.
+        return True, "RELAY_DELIVERY_NOT_FOUND_BEFORE_RCC_DISPATCH"
     return False, ""
 
 

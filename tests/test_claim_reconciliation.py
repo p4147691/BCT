@@ -138,6 +138,29 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
             result.evidence["proof"],
         )
 
+    def test_legacy_missing_delivery_claim_is_proven_pre_dispatch(self):
+        self._unknown("legacy-missing-delivery", "relay_browser")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE operations SET evidence_json=?,error=? WHERE operation_id=?",
+                ('{"phase":"UNEXPECTED","type":"KeyError"}',
+                 "'DELIVERY_NOT_FOUND'", "legacy-missing-delivery"),
+            )
+        feature = ReadOnlyClaimReconcileFeature(self.store)
+        request = feature.prepare(work=self.work, arguments={
+            "original_operation_id": "legacy-missing-delivery",
+            "reason": "missing ledger row failed before RCC dispatch",
+        })
+        request = type(request)(
+            request.capability, request.target, request.arguments, request.resources,
+            {"work_id": "work", "principal_id": "owner"}, "resolver",
+        )
+        result = feature.execute(request)
+        self.assertEqual(
+            "RELAY_DELIVERY_NOT_FOUND_BEFORE_RCC_DISPATCH",
+            result.evidence["proof"],
+        )
+
     def test_other_relay_control_unknown_remains_protected(self):
         self._unknown("other-relay-unknown", "relay_control")
         feature = ReadOnlyClaimReconcileFeature(self.store)

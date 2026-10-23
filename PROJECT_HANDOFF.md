@@ -1840,4 +1840,7 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   감독자가 한 번 보조했다. 물리 왕복 6/6은 PASS지만 완전 무인 체인은 아직 미수락이다.
 - 누락 Delivery 조회를 `RCC_DELIVERY_NOT_FOUND` 확정 실패로 처리해 Claim을 해제하는 소스
   수정과 회귀시험을 추가했다. 관련 40건은 PASS했으며 정본 통합·CI·Core 적용은 후속 영수증으로
-  구분한다. OS UTF-8/국가·언어 설정과 재부팅은 변경하지 않았다.
+  구분한다. 과거 exact `relay_browser` UNKNOWN의 증거가
+  `KeyError / 'DELIVERY_NOT_FOUND'`와 정확히 일치할 때만 원본 영수증을 보존하고 Claim을 해제하는
+  reconciliation proof도 추가했다. 다른 UNKNOWN은 계속 차단한다. OS UTF-8/국가·언어 설정과
+  재부팅은 변경하지 않았다.
