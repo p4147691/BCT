@@ -1774,7 +1774,8 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
 - 후보는 `RCC_REBUILD_V2_RC15_IDLE_DELIVERY_QUEUE`, 확장 `1.0.35 Idle Delivery Queue`, build
   `2026-10-23-rcc-idle-delivery-queue-v1`, 52파일 aggregate
   `1cf6166cf7056e5c747c1df32a201870fad48880a85e6af45af0f5efa0537dd2`다. RC14 rollback
-  aggregate `fc89773104403dbab9efb1b070f7397f9ff21f57bef42bf6bb3979b7151eaf9d`는 보존했다.
+  aggregate `cee7fcac7cb72322dc80bad059d2f96e85794360af94f099182e99483b94b23f`는 현재 LIVE와
+  보존 staging 52파일이 전부 일치함을 확인해 rollback 정본으로 승격했다.
 - 격리 검증은 RCC Node 34개, 관련 Python 45개, 전체 Python 1,018개를 통과했다. Python은
   `PYTHONUTF8=0`과 worktree의 명시적 `PYTHONPATH`로 실행했고 `compileall`, JS syntax,
   release verifier, `git diff --check`도 PASS했다. Windows 국가/언어·Beta UTF-8 설정과 재부팅은
