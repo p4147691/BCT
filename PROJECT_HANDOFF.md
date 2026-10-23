@@ -1694,3 +1694,59 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
 `py_compile` 및 `git diff --check` PASS다. Windows 국가/언어·Beta UTF-8 설정과 재부팅은
 건드리지 않았다. 이 기록 자체는 main/Core/runtime 설정 또는 물리 N13/N14 대화 수락을 뜻하지
 않으며, 그 상태는 exact Git/CI/deploy/config 영수증으로 별도 확인한다.
+
+
+## 14. RC14 설정 hot edit·두 차례 물리 왕복 및 전달 ID 충돌 안전 보완 — 2026-10-23
+
+- RCC 운영은 build `2026-10-23-rcc-composer-settle-v1`(RC14), instance
+  `6174664e1c1b4e6db1d4729c841db3c9`, session
+  `b47f2f7e6aca4821b9460eccf0e9d713`이다. N13 Manager
+  `6ad7f5b6-c834-83e8-9c00-ff70bab4204d`와 빈 입력창의 N3 Worker
+  `6ad5afa4-b1e0-83ee-8692-aec4bb51523e`를 사용했다. N14·N26의 기존 초안과 과거
+  UNKNOWN Delivery는 건드리거나 재전송하지 않았다.
+- 두 Worker 제출 모두 제출 전 빈 입력창·중지 버튼 없음·전송 버튼 비활성 상태를 확인했다.
+  실제 operation 완료가 약 0.34초/0.40초여서 RCC의 8초 Enter fallback 전에 활성화된 전송
+  버튼 클릭 경로가 사용됐고, 이후 입력창이 비고 정확한 전체 원문이 새 사용자 턴으로 생성된
+  것을 DOM/UI로 확인했다. 단순 초안 입력이나 ACK를 제출 성공으로 판정하지 않았다.
+- 1차 Delivery `relay-control-live-e2e-n3-rc14-round1-20261023-01`은 Worker 결과
+  SHA `16b596cdb016203a5a20b834a26cc14146575d530f2a5a520fd4f4965b6a1b08`를 회수해
+  N13에 한 번 반환했고 Manager 응답까지 확인했다.
+- 설정 파일 전체를 고치지 않고 exact-SHA BCT write CAS로 프로젝트 지시를 hot edit했다.
+  2차 Worker는 새 설정 SHA `6029222c292efd0dbe6ce9410627774c3ac84c3f076232e6e7b3efb5b4e86628`와
+  `BCT_RUNTIME_SETTING_ROUND2`를 실제 사용자 메시지에서 확인했다. 동시에 N13이
+  `worker.delivery.status.timeout_seconds`를 20→25로 CAS 변경했고, 먼저 들어간 프로젝트
+  변경을 보존한 채 최종 설정 SHA가 `51a411ba2d2c7539e67560ed58c41e6f259673aedf197bbba3c5d1aac330a5d4`가
+  됐다. 낡은 SHA write는 `RELAY_CONTROL_SETTINGS_REVISION_CHANGED`로 안전하게 거절됐다.
+- 2차 Delivery `relay-control-live-e2e-n3-rc14-round2-20261023-01`은 Worker 결과
+  1,612자/SHA `fb51a37737e477df937be4266b363a8b121eec90752057cd7fecda526a345c19`를
+  회수했다. Manager 반환은 4,464자/SHA
+  `73f9c4b85e20cdef65c1261ab5901280b64d1232725f68b2ac7fb0a5adfbb1af`로 실제 N13 사용자
+  턴을 만들었고, Manager 응답 1,860자/SHA
+  `bbedf8f6e0212b72feef09321ef09c1ea9d37975d1d8c69dbc8b4772969b93b6`까지 회수했다.
+  따라서 감독자 경로의 설정 변경을 사이에 둔 서로 다른 두 업무 왕복은 PASS다.
+- N13이 감독자와 같은 2차 Delivery ID로 자체 제출을 시도한 operation
+  `relay-control-n3-round2-submit-20261023-01`은 Ledger 동일성 검사에서
+  `DELIVERY_ID_REUSE_MISMATCH`로 RCC 호출 전에 거절됐다. 새 Delivery row나 두 번째 물리
+  메시지는 없었다. 다만 구 코드는 이 pre-dispatch 충돌을 UNKNOWN Claim으로 남기는 결함이
+  있었다.
+- PR #302 기능 commit `01cca61b3f7fbcf7ef5f8189ae0fd2a841ff10ad`, PR CI
+  #39954417173, main CI #39955215719가 모두 SUCCESS다. 로컬/원격 main merge SHA는
+  `4db4aaaa36da6a93c8a37f54d0383510dd3ea572`다. `PYTHONUTF8=0` 전체 Python
+  1,015건 PASS다.
+- 새 코드는 immutable Delivery ID mismatch를 `NOT_APPLIED` pre-dispatch failure로 처리해
+  Claim을 즉시 해제한다. 기존의 정확한 legacy UNKNOWN 한 건은 operation/evidence/error가
+  모두 일치할 때만 `claim_reconcile`이 원본 UNKNOWN 영수증을 보존하고 Claim만 해제한다.
+  reconcile operation
+  `relay-control-n3-round2-reuse-claim-reconcile-20261023-01`은 FINISHED/APPLIED,
+  proof `RELAY_DELIVERY_ID_REUSE_REJECTED_BEFORE_RCC_DISPATCH`다.
+- deploy operation
+  `relay-delivery-reuse-claim-fix-deploy-4db4aaaa-20261023`은 FINISHED/APPLIED다.
+  Core는 generation 201, release SHA `4db4aaaa36da6a93c8a37f54d0383510dd3ea572`,
+  health OK/READY다. RCC/Chrome 재로드는 하지 않았다.
+- 시험용 Worker 추가 지시는 최종 반환 후 CAS로 제거했고, timeout 25는 유지했다. 현재 runtime
+  설정 SHA는 `8c00ffe40b77978be1a4f7a40c064ad79464d657e0f51e850c76d7c9d4969036`이며
+  `BCT_RUNTIME_SETTING_ROUND2`는 0건이다. 이 cleanup에도 main/CI/Core/RCC 재배포가 없었다.
+- 수락 경계: 설정 hot edit, 감독자가 수행한 2회 N3 물리 왕복, Manager 실제 결과 회수는 PASS.
+  N13 자체 CAS 변경도 PASS. 그러나 N13이 스스로 고유한 새 Delivery를 선택해 후속 Worker를
+  성공적으로 dispatch한 것은 아니다. 이번 자체 시도는 중복 ID라 pre-dispatch 차단됐으므로
+  자율 후속 실행·장기 연속 실행과 N14 고정 수락은 별도 미완료다.
