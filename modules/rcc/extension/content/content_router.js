@@ -76,6 +76,10 @@ if (message.type === 'relay:activityProbe') {
 
       generating: isGenerating(),
 
+      composerEmpty: !editorDraftText(getEditor()),
+
+      activeRelayId: String(loadRelayExecution()?.relayId || ''),
+
       connection: connectionProblem(),
 
 
@@ -88,6 +92,159 @@ if (message.type === 'relay:activityProbe') {
     return;
 
 
+  }
+
+if (message.type === 'relay:deliveryReadiness') {
+    const expectedConversationKey = String(message.conversationKey || '').trim().toLowerCase();
+    const actualConversationKey = currentConversationKey();
+    const editor = getEditor();
+    const active = loadRelayExecution();
+    sendResponse({
+      ok: !!expectedConversationKey && actualConversationKey === expectedConversationKey,
+      conversationKey: actualConversationKey,
+      generating: isGenerating(),
+      composerEmpty: !!editor && !editorDraftText(editor),
+      activeRelayId: String(active?.relayId || ''),
+      activeRelayPhase: String(active?.phase || ''),
+      sendReady: isSendReady(),
+    });
+    return;
+  }
+
+// Retire only one exact orphaned BCT draft.  This never clicks a submit
+// control and refuses user-authored or currently active relay content.  The
+// caller must already know the SHA-256 recorded for the superseded Delivery.
+if (message.type === 'relay:retireComposerDraft') {
+  Promise.resolve().then(async () => {
+    const expectedConversationKey = String(message.conversationKey || '').trim().toLowerCase();
+    const expectedDraftSha256 = String(message.expectedDraftSha256 || '').trim().toLowerCase();
+    const supersededDeliveryId = String(message.supersededDeliveryId || '').trim();
+    const actualConversationKey = currentConversationKey();
+    if (!expectedConversationKey || actualConversationKey !== expectedConversationKey
+        || !/^[a-f0-9]{64}$/.test(expectedDraftSha256)
+        || !/^[A-Za-z0-9_.:-]{1,80}$/.test(supersededDeliveryId)) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_DRAFT_RETIRE_IDENTITY_INVALID' };
+    }
+    if (isGenerating()) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_DRAFT_RETIRE_TARGET_GENERATING' };
+    }
+    const active = loadRelayExecution();
+    if (active?.relayId) {
+      if (String(active.relayId || '') !== supersededDeliveryId
+          || String(active.conversationKey || '').trim().toLowerCase() !== expectedConversationKey
+          || String(active.phase || '') !== 'submit-activated') {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_DRAFT_RETIRE_ACTIVE_IDENTITY_MISMATCH' };
+      }
+      const activeTextSha256 = await newChatTextSha256(active.submittedText || '');
+      if (activeTextSha256 !== expectedDraftSha256) {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_DRAFT_RETIRE_ACTIVE_HASH_MISMATCH', activeTextSha256 };
+      }
+      const routed = resolveRoutedTurn(active);
+      if (routed?.ok === true || routed?.reason !== 'ROUTE_TURN_NOT_RESOLVED') {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_DRAFT_RETIRE_ACTIVE_ROUTE_NOT_ABSENT',
+          routedReason: String(routed?.reason || 'ROUTE_TURN_PRESENT') };
+      }
+    }
+    const editor = getEditor();
+    const draft = editor ? editorDraftText(editor) : '';
+    if (!editor || !draft) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_DRAFT_RETIRE_COMPOSER_EMPTY' };
+    }
+    const actualDraftSha256 = await newChatTextSha256(draft);
+    if (actualDraftSha256 !== expectedDraftSha256) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_DRAFT_RETIRE_HASH_MISMATCH', actualDraftSha256 };
+    }
+    setEditorText(editor, '');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const liveEditor = getEditor();
+    if (!liveEditor || editorDraftText(liveEditor)) {
+      throw new Error('RELAY_DRAFT_RETIRE_CLEAR_UNPROVEN');
+    }
+    let retiredExecutionId = '';
+    if (active?.relayId) {
+      retiredExecutionId = supersededDeliveryId;
+      retiredRelayExecutions.add(retiredExecutionId);
+      clearRelayExecution(retiredExecutionId);
+      if (loadRelayExecution()?.relayId) {
+        throw new Error('RELAY_DRAFT_RETIRE_EXECUTION_CLEAR_UNPROVEN');
+      }
+    }
+    return {
+      ok: true, retired: true, effectState: 'APPLIED',
+      conversationKey: actualConversationKey,
+      draftSha256: actualDraftSha256,
+      draftLength: draft.length,
+      retiredExecutionId,
+      composerEmpty: true,
+    };
+  }).then(sendResponse).catch((error) => sendResponse({
+    ok: false, retired: false, effectState: 'UNKNOWN',
+    error: String(error?.message || error || 'RELAY_DRAFT_RETIRE_UNKNOWN').slice(0, 128),
+  }));
+  return true;
+}
+
+if (message.type === 'relay:retireExecution') {
+  Promise.resolve().then(async () => {
+    const relayId = String(message.relayId || '').trim();
+    const expectedConversationKey = String(message.conversationKey || '').trim().toLowerCase();
+    const expectedRequestSha256 = String(message.expectedRequestSha256 || '').trim().toLowerCase();
+    const expectedResponseSha256 = String(message.expectedResponseSha256 || '').trim().toLowerCase();
+    const expectedResponseLength = Number(message.expectedResponseLength);
+    const active = loadRelayExecution();
+    if (!relayId || active?.relayId !== relayId
+        || (expectedConversationKey && (currentConversationKey() !== expectedConversationKey
+          || String(active.conversationKey || '').trim().toLowerCase() !== expectedConversationKey))) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_RETIRE_ID_MISMATCH' };
+    }
+    const requestSha256 = await newChatTextSha256(String(active.submittedText || ''));
+    if (!/^[a-f0-9]{64}$/.test(expectedRequestSha256)
+        || requestSha256 !== expectedRequestSha256) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_RETIRE_REQUEST_IDENTITY_MISMATCH', requestSha256 };
+    }
+    let responseText;
+    try {
+      responseText = recoverCompletedReplyFromDom(active);
+    } catch (error) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: String(error?.message || error || 'RELAY_RETIRE_REPLY_NOT_CAPTURED').slice(0, 128) };
+    }
+    if (!responseText) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_RETIRE_REPLY_NOT_CAPTURED' };
+    }
+    const responseSha256 = await newChatTextSha256(responseText);
+    if ((expectedResponseSha256 && (!/^[a-f0-9]{64}$/.test(expectedResponseSha256)
+          || responseSha256 !== expectedResponseSha256))
+        || (Number.isInteger(expectedResponseLength) && expectedResponseLength >= 0
+          && responseText.length !== expectedResponseLength)) {
+      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_RETIRE_RESPONSE_IDENTITY_MISMATCH', responseSha256,
+        responseLength: responseText.length };
+    }
+    retiredRelayExecutions.add(relayId);
+    clearRelayExecution(relayId);
+    if (loadRelayExecution()?.relayId) throw new Error('RELAY_RETIRE_CLEAR_UNPROVEN');
+    if (typeof scheduleRelayGenerationStateCheck === 'function') {
+      scheduleRelayGenerationStateCheck(true);
+    }
+    return { ok: true, retired: true, effectState: 'APPLIED', relayId,
+      conversationKey: expectedConversationKey || currentConversationKey(),
+      requestSha256, responseSha256, responseLength: responseText.length, executionAbsent: true };
+  }).then(sendResponse).catch((error) => sendResponse({
+    ok: false, retired: false, effectState: 'UNKNOWN',
+    error: String(error?.message || error || 'RELAY_RETIRE_FAILED').slice(0, 128),
+  }));
+  return true;
   }
 
 if (message.type === 'relay:probe') {

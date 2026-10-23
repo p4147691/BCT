@@ -6,6 +6,13 @@ const { webcrypto } = require('crypto');
 
 const storage = {};
 const sends = [];
+const controlCalls = [];
+let targetGenerating = false;
+let targetComposerEmpty = true;
+const activeRelayIds = new Map();
+let failNextExecuteBusy = false;
+let failNextRetireAck = false;
+let orphanDraftSha256 = '';
 const context = {
   console, TextEncoder, crypto: webcrypto,
   RelayCore: {
@@ -24,11 +31,51 @@ const context = {
     ];
   },
   async sendToChatTab(tabId, message) {
+    if (message.type === 'relay:deliveryReadiness') {
+      controlCalls.push({ tabId, message });
+      return { ok: true, conversationKey: message.conversationKey,
+        generating: targetGenerating, composerEmpty: targetComposerEmpty,
+        activeRelayId: activeRelayIds.get(tabId) || '' };
+    }
+    if (message.type === 'relay:retireExecution') {
+      controlCalls.push({ tabId, message });
+      if (failNextRetireAck) {
+        failNextRetireAck = false;
+        return { ok: false, retired: false, error: 'TEST_RETIRE_ACK_LOST' };
+      }
+      if (activeRelayIds.get(tabId) === message.relayId) activeRelayIds.delete(tabId);
+      if (message.expectedResponseSha256) {
+        return { ok: true, retired: true, effectState: 'APPLIED',
+          relayId: message.relayId, conversationKey: message.conversationKey,
+          requestSha256: message.expectedRequestSha256,
+          responseSha256: message.expectedResponseSha256,
+          responseLength: message.expectedResponseLength, executionAbsent: true };
+      }
+      return { ok: true, retired: true, relayId: message.relayId };
+    }
+    if (message.type === 'relay:retireComposerDraft') {
+      controlCalls.push({ tabId, message });
+      if (!orphanDraftSha256 || message.expectedDraftSha256 !== orphanDraftSha256) {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_DRAFT_RETIRE_HASH_MISMATCH' };
+      }
+      targetComposerEmpty = true;
+      return { ok: true, retired: true, effectState: 'APPLIED',
+        conversationKey: message.conversationKey,
+        draftSha256: orphanDraftSha256, draftLength: 321, composerEmpty: true,
+        retiredExecutionId: message.supersededDeliveryId };
+    }
     sends.push({ tabId, message });
     if (message.type === 'relay:simpleReadReply') {
       return { ok: true, conversationKey: message.conversationKey,
         responseText: tabId === 10 ? 'manager next' : 'worker reply' };
     }
+    if (message.type === 'relay:simpleExecute' && failNextExecuteBusy) {
+      failNextExecuteBusy = false;
+      return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_TARGET_GENERATING' };
+    }
+    activeRelayIds.set(tabId, message.relayId);
     return { ok: true, submitted: true, conversationKey: message.conversationKey,
       beforeAssistantCount: 3 };
   },
@@ -63,6 +110,11 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(manager.state, 'RETURNED');
   assert.equal(manager.managerResponseText, 'manager next');
   assert.equal(manager.managerResponseLength, 12);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-001'].managerExecutionRetired, true);
+  assert.equal(activeRelayIds.has(10), false);
+  assert.equal(controlCalls.filter(item => item.tabId === 10
+    && item.message.type === 'relay:retireExecution'
+    && item.message.relayId === 'delivery-001').length, 1);
   assert.equal(sends[3].tabId, 10);
   assert.equal(sends[3].message.relayId, 'delivery-001');
   assert.equal(sends[3].message.afterAssistantCount, 3);
@@ -126,8 +178,15 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
     await context.relaySha256(header + actualWorkerResult + footer));
   assert.equal(framed.managerReturnLength, (header + actualWorkerResult + footer).length);
   assert.equal(storage.deliveryLedgerMirrorV1['delivery-002'].responseText, actualWorkerResult);
+  failNextRetireAck = true;
   const checkWithoutWorker = await context.deliveryManagerStatus({ deliveryId: 'delivery-002' });
   assert.equal(checkWithoutWorker.managerResponseText, 'manager next');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-002'].managerExecutionRetired, undefined);
+  assert.equal(activeRelayIds.get(10), 'delivery-002');
+  const retiredOnReadback = await context.deliveryManagerStatus({ deliveryId: 'delivery-002' });
+  assert.equal(retiredOnReadback.managerResponseText, 'manager next');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-002'].managerExecutionRetired, true);
+  assert.equal(activeRelayIds.has(10), false);
   const unchangedCount = sends.length;
   const duplicateReturn = await context.deliveryReturn({
     deliveryId: 'delivery-002', managerReturnHeader: 'changed',
@@ -152,12 +211,141 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   context.sendToChatTab = sendBefore;
   context.getChatTabs = tabsBefore;
 
+  // A visible send control never overrides a generating/busy signal. The
+  // exact payload remains durable outside the composer and resumes once.
+  targetGenerating = true;
+  const queuedIdentity = { ...identity, deliveryId: 'delivery-queued' };
+  const beforeQueuedSubmit = sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length;
+  const queued = await context.deliveryStart(queuedIdentity);
+  assert.equal(queued.ok, true);
+  assert.equal(queued.state, 'WAITING_TARGET');
+  assert.equal(queued.queued, true);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-queued'].requestText, text);
+  assert.equal(sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length, beforeQueuedSubmit);
+
+  // A changed user instruction can retire an exact queued Delivery only
+  // before a physical submit. Cancellation clears the retained plaintext and
+  // later endpoint activity must not resurrect it.
+  const cancelIdentity = { ...identity, deliveryId: 'delivery-cancelled' };
+  const cancelQueued = await context.deliveryStart(cancelIdentity);
+  assert.equal(cancelQueued.state, 'WAITING_TARGET');
+  const beforeCancelSubmit = sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length;
+  const cancelled = await context.deliveryCancel({ deliveryId: 'delivery-cancelled' });
+  assert.equal(cancelled.ok, true);
+  assert.equal(cancelled.cancelled, true);
+  assert.equal(cancelled.state, 'NOT_APPLIED');
+  assert.equal(cancelled.error, 'DELIVERY_CANCELLED_PRE_SUBMIT');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-cancelled'].requestText, '');
+  const cancelledAgain = await context.deliveryCancel({ deliveryId: 'delivery-cancelled' });
+  assert.equal(cancelledAgain.replayed, true);
+  assert.equal(cancelledAgain.cancelled, true);
+  targetGenerating = false;
+  const resumed = await context.resumeWaitingDeliveriesForEndpoint({
+    conversationKey: identity.workerConversationKey,
+    generating: false, presence: 'OPEN',
+  });
+  assert.equal(resumed[0].state, 'SENT_WAITING');
+  assert.equal(sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length, beforeCancelSubmit + 1);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-cancelled'].state, 'NOT_APPLIED');
+
+  assert.equal(sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length, beforeQueuedSubmit + 1);
+  const resumedCaptured = await context.deliveryStatus({ deliveryId: 'delivery-queued' });
+  assert.equal(resumedCaptured.state, 'REPLY_CAPTURED');
+  const lateCancel = await context.deliveryCancel({ deliveryId: 'delivery-queued' });
+  assert.equal(lateCancel.ok, false);
+  assert.equal(lateCancel.cancelled, false);
+  assert.equal(lateCancel.error, 'DELIVERY_CANCEL_STATE_INVALID');
+
+  // An occupied composer is also queued and never overwritten.
+  targetComposerEmpty = false;
+  const occupied = await context.deliveryStart({
+    ...identity, deliveryId: 'delivery-occupied',
+  });
+  assert.equal(occupied.state, 'WAITING_TARGET');
+  assert.equal(occupied.waitingReason, 'TARGET_COMPOSER_OCCUPIED');
+  orphanDraftSha256 = 'a'.repeat(64);
+  await context.writeDeliveryLedgerMirror('delivery-superseded', {
+    deliveryId: 'delivery-superseded', state: 'NEEDS_REVIEW',
+    managerConversationKey: identity.managerConversationKey,
+    workerConversationKey: identity.workerConversationKey,
+    requestSha256: orphanDraftSha256, updatedAt: Date.now(),
+  });
+  const mismatch = await context.retireComposerDraftAndResume({
+    conversationKey: identity.workerConversationKey,
+    expectedDraftSha256: 'b'.repeat(64),
+    resumeDeliveryId: 'delivery-occupied',
+    supersededDeliveryId: 'delivery-superseded',
+  });
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.effectState, 'NOT_APPLIED');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-occupied'].state, 'WAITING_TARGET');
+  const occupiedResumed = await context.retireComposerDraftAndResume({
+    conversationKey: identity.workerConversationKey,
+    expectedDraftSha256: orphanDraftSha256,
+    resumeDeliveryId: 'delivery-occupied',
+    supersededDeliveryId: 'delivery-superseded',
+  });
+  assert.equal(occupiedResumed.ok, true);
+  assert.equal(occupiedResumed.retired, true);
+  assert.equal(occupiedResumed.resumedDelivery.state, 'SENT_WAITING');
+  assert.equal(occupiedResumed.draftLength, 321);
+  assert.equal(occupiedResumed.retiredExecutionId, 'delivery-superseded');
+  await context.deliveryStatus({ deliveryId: 'delivery-occupied' });
+
+  const recoveredRequestSha = 'c'.repeat(64);
+  const recoveredResponseSha = 'd'.repeat(64);
+  await context.writeDeliveryLedgerMirror('delivery-recovered', {
+    deliveryId: 'delivery-recovered', state: 'NEEDS_REVIEW',
+    managerConversationKey: identity.managerConversationKey,
+    workerConversationKey: identity.workerConversationKey,
+    requestSha256: recoveredRequestSha, updatedAt: Date.now(),
+  });
+  activeRelayIds.set(20, 'delivery-recovered');
+  const recoveredRetired = await context.retireRecoveredExecution({
+    deliveryId: 'delivery-recovered',
+    conversationKey: identity.workerConversationKey,
+    expectedRequestSha256: recoveredRequestSha,
+    expectedResponseSha256: recoveredResponseSha,
+    expectedResponseLength: 76,
+  });
+  assert.equal(recoveredRetired.ok, true);
+  assert.equal(recoveredRetired.executionAbsent, true);
+  assert.equal(recoveredRetired.responseSha256, recoveredResponseSha);
+
+  // If generation begins after the background readiness probe but before the
+  // content activation boundary, the content guard returns to the queue.
+  failNextExecuteBusy = true;
+  const raced = await context.deliveryStart({
+    ...identity, deliveryId: 'delivery-raced-busy',
+  });
+  assert.equal(raced.state, 'WAITING_TARGET');
+  assert.equal(raced.waitingReason, 'RELAY_TARGET_GENERATING');
+
+  // A later delivery never overtakes an older waiting delivery for the same
+  // Worker, even when the endpoint becomes idle between the two starts.
+  targetGenerating = true;
+  const fifoFirst = await context.deliveryStart({
+    ...identity, deliveryId: 'delivery-fifo-first',
+  });
+  const fifoSecond = await context.deliveryStart({
+    ...identity, deliveryId: 'delivery-fifo-second',
+  });
+  assert.equal(fifoFirst.state, 'WAITING_TARGET');
+  assert.equal(fifoSecond.state, 'WAITING_TARGET');
+  assert.equal(fifoSecond.waitingReason, 'TARGET_QUEUE_PREDECESSOR');
+
   for (let index = 0; index < 66; index += 1) {
     await context.writeDeliveryLedgerMirror(`active-${index}`, {
       deliveryId: `active-${index}`, state: 'SENT_WAITING', updatedAt: index,
     });
   }
   assert.equal(Object.values(storage.deliveryLedgerMirrorV1)
-    .filter((item) => item.state === 'SENT_WAITING').length, 66);
+    .filter((item) => item.state === 'SENT_WAITING'
+      && String(item.deliveryId || '').startsWith('active-')).length, 66);
   console.log('delivery ledger service v1: PASS');
 })().catch((error) => { console.error(error); process.exit(1); });

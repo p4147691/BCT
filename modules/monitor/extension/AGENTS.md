@@ -1,7 +1,10 @@
 # BCT Monitor module instructions
 
-- Official source: GitHub `p4147691/BCT` main. Local main checkout:
-  `D:\BCT\source\modules\monitor`.
+- Official source authority: local Git main under D:/BCT/source/modules/monitor.
+  GitHub p4147691/BCT is publication, backup, CI and review, never a
+  remote-to-local source override.
+- Never overwrite runtime with an older source or source with installed bytes.
+  Reconcile both exact SHA histories and deploy only with an expected-live-SHA guard.
 - Installed payload: `D:\ChromeExtensions\DesktopWindow-Monitor`.
 - Native host authority is the registered manifest path, not the newest-looking directory.
 - Monitor owns observation, exact window controls and presentation only. BCT Core owns identity,

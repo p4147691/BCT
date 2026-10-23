@@ -4,7 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bct.core.models import Outcome, Work
+from bct.core.models import Outcome, Principal, Work
+from bct.core.operations import OperationCoordinator
+from bct.core.policy import Policy
 from bct.core.store import Store
 from bct.features.claim_reconciliation import ReadOnlyClaimReconcileFeature
 
@@ -15,7 +17,7 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
         self.store = Store(Path(self.tmp.name) / "state.sqlite")
         self.work = self.store.create_work(Work(
             "work", "fixture", (self.tmp.name,),
-            frozenset({"read", "write", "claim_reconcile"}), "owner",
+            frozenset({"read", "write", "claim_reconcile", "relay_browser"}), "owner",
         ))
 
     def tearDown(self):
@@ -112,6 +114,79 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(Exception, "EXACT_NO_EFFECT_UNKNOWN_REQUIRED"):
             feature.execute(request)
+
+    def test_legacy_relay_delivery_reuse_claim_is_proven_pre_dispatch(self):
+        self._unknown("legacy-relay-reuse", "relay_control")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE operations SET evidence_json=?,error=? WHERE operation_id=?",
+                ('{"phase":"UNEXPECTED","type":"ConflictError"}',
+                 "DELIVERY_ID_REUSE_MISMATCH", "legacy-relay-reuse"),
+            )
+        feature = ReadOnlyClaimReconcileFeature(self.store)
+        request = feature.prepare(work=self.work, arguments={
+            "original_operation_id": "legacy-relay-reuse",
+            "reason": "immutable delivery identity rejected before RCC dispatch",
+        })
+        request = type(request)(
+            request.capability, request.target, request.arguments, request.resources,
+            {"work_id": "work", "principal_id": "owner"}, "resolver",
+        )
+        result = feature.execute(request)
+        self.assertEqual(
+            "RELAY_DELIVERY_ID_REUSE_REJECTED_BEFORE_RCC_DISPATCH",
+            result.evidence["proof"],
+        )
+
+    def test_other_relay_control_unknown_remains_protected(self):
+        self._unknown("other-relay-unknown", "relay_control")
+        feature = ReadOnlyClaimReconcileFeature(self.store)
+        request = feature.prepare(work=self.work, arguments={
+            "original_operation_id": "other-relay-unknown",
+            "reason": "must remain protected",
+        })
+        request = type(request)(
+            request.capability, request.target, request.arguments, request.resources,
+            {"work_id": "work", "principal_id": "owner"}, "resolver",
+        )
+        with self.assertRaisesRegex(Exception, "EXACT_NO_EFFECT_UNKNOWN_REQUIRED"):
+            feature.execute(request)
+
+    def test_coordinator_reconciles_exact_legacy_relay_claim_under_delegated_policy(self):
+        self._unknown("legacy-relay-coordinator", "relay_control")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE operations SET evidence_json=?,error=? WHERE operation_id=?",
+                ('{"phase":"UNEXPECTED","type":"ConflictError"}',
+                 "DELIVERY_ID_REUSE_MISMATCH", "legacy-relay-coordinator"),
+            )
+        policy_path = Path(self.tmp.name) / "policy.toml"
+        policy_path.write_text(
+            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            encoding="utf-8",
+        )
+        coordinator = OperationCoordinator(
+            store=self.store, policy=Policy(policy_path),
+        )
+        coordinator.register(ReadOnlyClaimReconcileFeature(self.store))
+        result = coordinator.run(
+            principal=Principal(
+                "owner", "fixture",
+                frozenset({"claim_reconcile", "relay_browser"}),
+            ),
+            work_id="work", operation_id="legacy-relay-resolver",
+            capability="claim_reconcile", arguments={
+                "original_operation_id": "legacy-relay-coordinator",
+                "reason": "immutable delivery identity rejected before RCC dispatch",
+            },
+        )
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        original = self.store.get_operation_for(
+            operation_id="legacy-relay-coordinator",
+            work_id="work", principal_id="owner",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual([], self.store.claim_diagnostics())
 
     def test_effect_journal_is_ordered_and_redacted(self):
         self._unknown("journal", "read")

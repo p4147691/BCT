@@ -19,6 +19,7 @@ Principal 정책을 다시 통과해야 한다.
 | --- | --- | --- |
 | `message / compose.worker` | BCT 표준 Worker 메시지 구성 | pure |
 | `rcc / delivery.start` | `relay_browser`의 `delivery-start` | external |
+| `rcc / delivery.cancel` | `relay_browser`의 `delivery-cancel` | external |
 | `rcc / delivery.status` | `relay_browser`의 `delivery-status` | read |
 | `rcc / delivery.return` | `relay_browser`의 `delivery-return` | external |
 | `rcc / delivery.manager_status` | `relay_browser`의 `delivery-manager-status` | read |

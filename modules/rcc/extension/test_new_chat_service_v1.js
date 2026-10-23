@@ -7,6 +7,8 @@ const local = {};
 let createCount = 0;
 let executeCount = 0;
 let statusCount = 0;
+let retireCount = 0;
+let retireSucceeds = true;
 const conversationKey = '6ad7f5b6-c834-83e8-9c00-ff70bab4204d';
 const sha256 = async (value) => {
   const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value)));
@@ -33,6 +35,12 @@ const context = vm.createContext({
       if (message.type === 'relay:newChatExecute') {
         executeCount += 1;
         return { ok: true, submitted: true };
+      }
+      if (message.type === 'relay:retireExecution') {
+        retireCount += 1;
+        return retireSucceeds
+          ? { ok: true, retired: true, relayId: message.relayId }
+          : { ok: false, retired: false, error: 'test retirement loss' };
       }
       statusCount += 1;
       return { ok: true, submitted: true, completed: true,
@@ -61,6 +69,7 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
   assert.equal(createCount, 1);
   assert.equal(executeCount, 1);
   assert.equal(statusCount, 1);
+  assert.equal(retireCount, 1);
 
   const readback = context.publicPersistedNewChatResult({
     newChatReceipts: local.newChatReceiptsV1,
@@ -79,6 +88,17 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
   assert.equal(createCount, 1);
   assert.equal(executeCount, 1);
   assert.equal(statusCount, 1);
+  assert.equal(retireCount, 2);
+
+  // Cleanup transport loss must not downgrade an already persisted result.
+  retireSucceeds = false;
+  const persistedDespiteRetirementLoss = await context.recoverPersistedNewChatResult({
+    newChatReceipts: local.newChatReceiptsV1,
+  }, request.operationId);
+  assert.equal(persistedDespiteRetirementLoss.state, 'RESULT_PERSISTED');
+  assert.equal(persistedDespiteRetirementLoss.reply, 'NEW_CHAT_ACK');
+  assert.equal(retireCount, 3);
+  retireSucceeds = true;
 
   await assert.rejects(
     context.sendNewChatAndAwaitResult({ ...request, text: 'different' }),
@@ -113,6 +133,7 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
   assert.equal(createCount, createsBeforeRecovery);
   assert.equal(executeCount, submissionsBeforeRecovery);
   assert.equal(statusCount, statusesBeforeRecovery + 1);
+  assert.equal(retireCount, 4);
   assert.equal(local.newChatReceiptsV1[lateOperationId].state, 'RESULT_PERSISTED');
   assert.equal(context.publicPendingNewChatStatus(
     local.newChatReceiptsV1[lateOperationId],
@@ -128,6 +149,7 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
   }, 'new-chat-test-pre-submit'), null);
   assert.equal(createCount, createsBeforeRecovery);
   assert.equal(executeCount, submissionsBeforeRecovery);
+  assert.equal(retireCount, 4);
   console.log('rcc new chat service v1: PASS');
 })().catch((error) => {
   console.error(error);

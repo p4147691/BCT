@@ -13,6 +13,7 @@ from bct.core.rcc_result import rcc_result_hash
 from bct.core.store import Store
 from bct.core.models import (
     ConfirmedFailure,
+    ConflictError,
     FeatureRequest,
     FeatureResult,
     Outcome,
@@ -41,7 +42,8 @@ _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "rename-conversation", "reload-extension", "send", "send-to-tab", "create-and-send",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
-    "delivery-start", "delivery-status", "delivery-return",
+    "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
+    "retire-composer-draft", "retire-recovered-execution",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
@@ -369,6 +371,13 @@ class RelayBrowserFeature:
                     or manager_key == worker_key or not body or utf16_units(body) > 12000):
                 raise PreconditionError("RCC_DELIVERY_START_INVALID")
             original_task = body
+            from bct.relay_settings import read_relay_settings
+            try:
+                delivery_settings = read_relay_settings(
+                    str(arguments.get("scope_id") or "")
+                )
+            except (ValueError, OSError, UnicodeError) as exc:
+                raise PreconditionError("RCC_DELIVERY_SETTINGS_INVALID") from exc
             # Opt in to BCT's canonical roster + editable Worker note without
             # changing RCC's native command, return path or Delivery schema.
             # Prepare the exact bytes once BEFORE hashing/fencing the effect.
@@ -396,8 +405,12 @@ class RelayBrowserFeature:
                 "workerConversationKey": worker_key,
                 "requestSha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
                 "workId": work.work_id,
+                "targetBusyPolicy": delivery_settings["target_busy_policy"],
+                "composerWakeMode": delivery_settings["composer_wake_mode"],
+                "sendButtonWaitMs": delivery_settings["send_button_wait_ms"],
+                "deliverySettingsSha256": delivery_settings["config_sha256"],
             })
-        elif command in {"delivery-status", "delivery-return", "delivery-manager-status",
+        elif command in {"delivery-cancel", "delivery-status", "delivery-return", "delivery-manager-status",
                         "delivery-recovery-inspect"}:
             allowed.add("delivery_id")
             delivery_id = str(arguments.get("delivery_id") or "").strip()
@@ -406,6 +419,83 @@ class RelayBrowserFeature:
             prepared["extra"].update({
                 "deliveryId": delivery_id,
                 "workId": work.work_id,
+            })
+        elif command == "retire-composer-draft":
+            allowed.update({
+                "conversation_key", "expected_draft_sha256", "resume_delivery_id",
+                "superseded_work_id", "superseded_delivery_id",
+            })
+            conversation_key = str(arguments.get("conversation_key") or "").strip().lower()
+            expected_sha = str(arguments.get("expected_draft_sha256") or "").strip().lower()
+            resume_delivery_id = str(arguments.get("resume_delivery_id") or "").strip()
+            superseded_work_id = str(arguments.get("superseded_work_id") or "").strip()
+            superseded_delivery_id = str(arguments.get("superseded_delivery_id") or "").strip()
+            key_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+            if (not re.fullmatch(key_pattern, conversation_key)
+                    or not re.fullmatch(r"[a-f0-9]{64}", expected_sha)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", resume_delivery_id)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", superseded_work_id)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", superseded_delivery_id)):
+                raise PreconditionError("RCC_DRAFT_RETIRE_ARGUMENT_INVALID")
+            if self.delivery_ledger is None:
+                raise PreconditionError("RCC_DELIVERY_LEDGER_UNAVAILABLE")
+            try:
+                superseded_work = self.delivery_ledger.store.get_work(superseded_work_id)
+                superseded = self.delivery_ledger.get_for_work(
+                    delivery_id=superseded_delivery_id, work_id=superseded_work_id,
+                )
+            except (KeyError, ConflictError) as exc:
+                raise PreconditionError("RCC_DRAFT_RETIRE_SUPERSEDED_NOT_FOUND") from exc
+            if (superseded_work.owner_principal_id != work.owner_principal_id
+                    or superseded["state"] != DeliveryState.NEEDS_REVIEW.value
+                    or superseded["worker_conversation_key"] != conversation_key
+                    or superseded["request_sha256"] != expected_sha):
+                raise PreconditionError("RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID")
+            prepared["extra"].update({
+                "conversationKey": conversation_key,
+                "expectedDraftSha256": expected_sha,
+                "resumeDeliveryId": resume_delivery_id,
+                "supersededWorkId": superseded_work_id,
+                "supersededDeliveryId": superseded_delivery_id,
+                "workId": work.work_id,
+            })
+        elif command == "retire-recovered-execution":
+            allowed.update({
+                "conversation_key", "delivery_id", "expected_request_sha256",
+                "expected_response_sha256", "expected_response_length",
+            })
+            conversation_key = str(arguments.get("conversation_key") or "").strip().lower()
+            delivery_id = str(arguments.get("delivery_id") or "").strip()
+            request_sha = str(arguments.get("expected_request_sha256") or "").strip().lower()
+            response_sha = str(arguments.get("expected_response_sha256") or "").strip().lower()
+            try:
+                response_length = int(arguments.get("expected_response_length"))
+            except (TypeError, ValueError) as exc:
+                raise PreconditionError("RCC_RECOVERED_RETIRE_ARGUMENT_INVALID") from exc
+            key_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+            if (not re.fullmatch(key_pattern, conversation_key)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", delivery_id)
+                    or not re.fullmatch(r"[a-f0-9]{64}", request_sha)
+                    or not re.fullmatch(r"[a-f0-9]{64}", response_sha)
+                    or response_length <= 0):
+                raise PreconditionError("RCC_RECOVERED_RETIRE_ARGUMENT_INVALID")
+            if self.delivery_ledger is None:
+                raise PreconditionError("RCC_DELIVERY_LEDGER_UNAVAILABLE")
+            try:
+                recovered = self.delivery_ledger.get_for_work(
+                    delivery_id=delivery_id, work_id=work.work_id,
+                )
+            except (KeyError, ConflictError) as exc:
+                raise PreconditionError("RCC_RECOVERED_RETIRE_DELIVERY_NOT_FOUND") from exc
+            if (recovered["state"] != DeliveryState.NEEDS_REVIEW.value
+                    or recovered["worker_conversation_key"] != conversation_key
+                    or recovered["request_sha256"] != request_sha):
+                raise PreconditionError("RCC_RECOVERED_RETIRE_IDENTITY_INVALID")
+            prepared["extra"].update({
+                "conversationKey": conversation_key, "deliveryId": delivery_id,
+                "expectedRequestSha256": request_sha,
+                "expectedResponseSha256": response_sha,
+                "expectedResponseLength": response_length, "workId": work.work_id,
             })
         elif command == "send-to-tab":
             allowed.update({"session_id", "tab_id", "window_id", "conversation_key", "text"})
@@ -494,9 +584,13 @@ class RelayBrowserFeature:
             resource += ":simple-relay:" + str(prepared["extra"]["from"])
         elif command == "simple-relay-return":
             resource += ":simple-relay:return:" + str(prepared["extra"]["sourceOperationId"])
-        elif command in {"delivery-start", "delivery-status", "delivery-return",
+        elif command in {"delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
                          "delivery-manager-status"}:
             resource += ":delivery:" + str(prepared["extra"]["deliveryId"])
+        elif command == "retire-composer-draft":
+            resource += ":composer-draft:" + prepared["extra"]["conversationKey"]
+        elif command == "retire-recovered-execution":
+            resource += ":recovered-execution:" + prepared["extra"]["deliveryId"]
         if command == "rename-conversation":
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
@@ -520,16 +614,26 @@ class RelayBrowserFeature:
         work_id = extra["workId"]
 
         if command == "delivery-start":
-            _created, delivery = self.delivery_ledger.create_or_get(
-                delivery_id=delivery_id,
-                work_id=work_id,
-                instance_id=values["instance_id"],
-                manager_conversation_key=extra["managerConversationKey"],
-                worker_conversation_key=extra["workerConversationKey"],
-                request_sha256=extra["requestSha256"],
-                scope_id=str(extra.get("scopeId") or ""),
-                original_task=str(extra.get("originalTask") or ""),
-            )
+            try:
+                _created, delivery = self.delivery_ledger.create_or_get(
+                    delivery_id=delivery_id,
+                    work_id=work_id,
+                    instance_id=values["instance_id"],
+                    manager_conversation_key=extra["managerConversationKey"],
+                    worker_conversation_key=extra["workerConversationKey"],
+                    request_sha256=extra["requestSha256"],
+                    scope_id=str(extra.get("scopeId") or ""),
+                    original_task=str(extra.get("originalTask") or ""),
+                )
+            except ConflictError as exc:
+                if str(exc) != "DELIVERY_ID_REUSE_MISMATCH":
+                    raise
+                # The immutable ledger identity is checked before the RCC
+                # client is called.  A mismatched reuse is therefore a proven
+                # pre-dispatch rejection, not an UNKNOWN browser effect.
+                raise ConfirmedFailure(
+                    "DELIVERY_ID_REUSE_MISMATCH", release_claims=True,
+                ) from exc
             if delivery["state"] != DeliveryState.NOT_SENT.value:
                 replay_outcome = {
                     DeliveryState.RETURNED.value: Outcome.APPLIED,
@@ -552,7 +656,7 @@ class RelayBrowserFeature:
                 "workerConversationKey": delivery["worker_conversation_key"],
                 "requestSha256": delivery["request_sha256"],
             })
-            if command not in {"delivery-manager-status", "delivery-recovery-inspect"} and delivery["state"] in {
+            if command not in {"delivery-cancel", "delivery-manager-status", "delivery-recovery-inspect"} and delivery["state"] in {
                 DeliveryState.RETURNED.value, DeliveryState.NOT_APPLIED.value,
                 DeliveryState.FAILED.value, DeliveryState.NEEDS_REVIEW.value,
             }:
@@ -575,8 +679,19 @@ class RelayBrowserFeature:
                     "command": command, "delivery_id": delivery_id,
                     "delivery_state": delivery["state"], "pending": True,
                 }, release_claims=True, output={"delivery": delivery})
+            if (command == "delivery-cancel"
+                    and delivery["state"] not in {
+                        DeliveryState.WAITING_TARGET.value,
+                        DeliveryState.NOT_APPLIED.value,
+                    }):
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_CANCEL_STATE_INVALID", release_claims=True,
+                )
             if (command == "delivery-status"
-                    and delivery["state"] != DeliveryState.SENT_WAITING.value):
+                    and delivery["state"] not in {
+                        DeliveryState.WAITING_TARGET.value,
+                        DeliveryState.SENT_WAITING.value,
+                    }):
                 raise ConfirmedFailure(
                     "RCC_DELIVERY_STATUS_STATE_INVALID", release_claims=True,
                 )
@@ -640,7 +755,7 @@ class RelayBrowserFeature:
                     "command": command, "delivery_id": delivery_id,
                     "delivery_state": delivery["state"], "not_submitted": True,
                 }, release_claims=True, output={"delivery": delivery})
-            if command in {"delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
+            if command in {"delivery-cancel", "delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
                      if command == "delivery-manager-status"
@@ -656,7 +771,7 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_EFFECT_UNKNOWN"},
                 )
-            if command in {"delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
+            if command in {"delivery-cancel", "delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
                      if command == "delivery-manager-status"
@@ -673,7 +788,7 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_ACK_ID_MISMATCH"},
                 )
-            if command in {"delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
+            if command in {"delivery-cancel", "delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     "RCC_DELIVERY_READ_ID_MISMATCH", release_claims=True,
                 )
@@ -738,10 +853,34 @@ class RelayBrowserFeature:
                 "manager_reply_sha256": str(result.get("managerResponseSha256") or ""),
             }, release_claims=True,
                 output={"delivery": delivery, "result": _sanitize(result)})
+        if command == "delivery-cancel":
+            if (result.get("ok") is not True or result.get("cancelled") is not True
+                    or state != DeliveryState.NOT_APPLIED.value
+                    or result.get("error") != "DELIVERY_CANCELLED_PRE_SUBMIT"):
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_CANCEL_PROOF_INVALID", release_claims=True,
+                )
+            updated = self.delivery_ledger.observe(
+                delivery_id=delivery_id, work_id=work_id,
+                event=DeliveryEvent.PRE_SUBMIT_REJECTED,
+                observation={
+                    "host_state": state,
+                    "error_code": "DELIVERY_CANCELLED_PRE_SUBMIT",
+                    "rcc_session_id": str(result.get("sessionId") or ""),
+                },
+            )
+            return FeatureResult(Outcome.APPLIED, {
+                "command": command, "delivery_id": delivery_id,
+                "delivery_state": state, "cancelled": True,
+            }, release_claims=True,
+                output={"delivery": updated, "result": _sanitize(result)})
         observation = {
             "manager_return_sha256": str(result.get("managerReturnSha256") or ""),
             "manager_return_length": result.get("managerReturnLength"),
-            "settings_sha256": str(result.get("managerReturnSettingsSha256") or ""),
+            "settings_sha256": str(
+                result.get("managerReturnSettingsSha256")
+                or result.get("deliverySettingsSha256") or ""
+            ),
             "rcc_session_id": str(result.get("sessionId") or ""),
             "worker_tab_id": result.get("workerTabId"),
             "worker_window_id": result.get("workerWindowId"),
@@ -751,7 +890,9 @@ class RelayBrowserFeature:
             "error_code": str(result.get("error") or "")[:128],
         }
         event = None
-        if state == DeliveryState.SENT_WAITING.value:
+        if state == DeliveryState.WAITING_TARGET.value:
+            event = DeliveryEvent.TARGET_QUEUED
+        elif state == DeliveryState.SENT_WAITING.value:
             event = DeliveryEvent.WORKER_TURN_CONFIRMED
         elif state == DeliveryState.REPLY_CAPTURED.value:
             event = DeliveryEvent.WORKER_REPLY_CAPTURED
@@ -765,6 +906,18 @@ class RelayBrowserFeature:
             event = DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN
         if event is None:
             raise ConfirmedFailure("RCC_DELIVERY_STATE_INVALID", release_claims=True)
+
+        # RCC can resume a queued target from its browser activity event and
+        # capture a very fast reply before BCT performs its next read. Preserve
+        # the authoritative ordered ledger by recording the proven submission
+        # boundary before the captured-reply boundary.
+        if (delivery["state"] == DeliveryState.WAITING_TARGET.value
+                and state == DeliveryState.REPLY_CAPTURED.value):
+            delivery = self.delivery_ledger.observe(
+                delivery_id=delivery_id, work_id=work_id,
+                event=DeliveryEvent.WORKER_TURN_CONFIRMED,
+                observation=observation,
+            )
 
         response_sha256 = str(result.get("responseSha256") or "") or None
         response_length = result.get("responseLength")
@@ -790,7 +943,11 @@ class RelayBrowserFeature:
         return FeatureResult(Outcome.APPLIED, {
             "command": command, "delivery_id": delivery_id,
             "delivery_state": state,
-            "pending": state == DeliveryState.SENT_WAITING.value,
+            "pending": state in {
+                DeliveryState.WAITING_TARGET.value,
+                DeliveryState.SENT_WAITING.value,
+            },
+            "queued": state == DeliveryState.WAITING_TARGET.value,
         }, output={"delivery": updated, "result": _sanitize(result)})
 
     def _execute_create_and_send(self, request: FeatureRequest) -> FeatureResult:
@@ -909,10 +1066,132 @@ class RelayBrowserFeature:
                 output={"preview": preview},
             )
         if request.arguments["command"] in {
-            "delivery-start", "delivery-status", "delivery-return",
+            "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
             "delivery-manager-status", "delivery-recovery-inspect",
         }:
             return self._execute_delivery(request)
+        if request.arguments["command"] == "retire-composer-draft":
+            values = request.arguments
+            extra = dict(values["extra"])
+            if self.delivery_ledger is None:
+                raise ConfirmedFailure("RCC_DELIVERY_LEDGER_UNAVAILABLE", release_claims=True)
+            queued = self.delivery_ledger.get_for_work(
+                delivery_id=extra["resumeDeliveryId"], work_id=extra["workId"],
+            )
+            if (queued["state"] != DeliveryState.WAITING_TARGET.value
+                    or queued["worker_conversation_key"] != extra["conversationKey"]):
+                raise ConfirmedFailure(
+                    "RCC_DRAFT_RETIRE_RESUME_IDENTITY_INVALID", release_claims=True,
+                )
+            try:
+                current_work = self.delivery_ledger.store.get_work(extra["workId"])
+                superseded_work = self.delivery_ledger.store.get_work(extra["supersededWorkId"])
+                superseded = self.delivery_ledger.get_for_work(
+                    delivery_id=extra["supersededDeliveryId"],
+                    work_id=extra["supersededWorkId"],
+                )
+            except (KeyError, ConflictError) as exc:
+                raise ConfirmedFailure(
+                    "RCC_DRAFT_RETIRE_SUPERSEDED_NOT_FOUND", release_claims=True,
+                ) from exc
+            if (current_work.owner_principal_id != superseded_work.owner_principal_id
+                    or superseded["state"] != DeliveryState.NEEDS_REVIEW.value
+                    or superseded["worker_conversation_key"] != extra["conversationKey"]
+                    or superseded["request_sha256"] != extra["expectedDraftSha256"]):
+                raise ConfirmedFailure(
+                    "RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID", release_claims=True,
+                )
+            try:
+                result = self.client.request(
+                    instance_id=values["instance_id"], request_id=request.operation_id,
+                    command="retire-composer-draft", extra=extra,
+                    timeout_s=values["timeout_s"],
+                )
+            except RelayUnavailable as exc:
+                raise ConfirmedFailure(str(exc), release_claims=True) from exc
+            except RelayEffectUnknown as exc:
+                raise UnknownEffectError("RCC_DRAFT_RETIRE_EFFECT_UNKNOWN") from exc
+            resumed = result.get("resumedDelivery") if isinstance(
+                result.get("resumedDelivery"), dict) else {}
+            if (result.get("ok") is not True or result.get("retired") is not True
+                    or result.get("effectState") != "APPLIED"
+                    or result.get("conversationKey") != extra["conversationKey"]
+                    or result.get("draftSha256") != extra["expectedDraftSha256"]
+                    or str(result.get("supersededDeliveryId") or "")
+                       != extra["supersededDeliveryId"]
+                    or str(result.get("retiredExecutionId") or "")
+                       not in {"", extra["supersededDeliveryId"]}
+                    or result.get("composerEmpty") is not True
+                    or resumed.get("deliveryId") != extra["resumeDeliveryId"]
+                    or resumed.get("state") not in {
+                        DeliveryState.WAITING_TARGET.value,
+                        DeliveryState.SENT_WAITING.value,
+                        DeliveryState.REPLY_CAPTURED.value,
+                    }):
+                if result.get("effectState") == "NOT_APPLIED":
+                    return FeatureResult(Outcome.NOT_APPLIED, {
+                        "command": "retire-composer-draft",
+                        "conversation_key": extra["conversationKey"],
+                        "error": str(result.get("error") or "RCC_DRAFT_RETIRE_NOT_APPLIED")[:128],
+                    }, release_claims=True, output={"result": _sanitize(result)})
+                raise UnknownEffectError("RCC_DRAFT_RETIRE_ACK_UNVERIFIED")
+            return FeatureResult(Outcome.APPLIED, {
+                "command": "retire-composer-draft",
+                "conversation_key": extra["conversationKey"],
+                "retired_draft_sha256": extra["expectedDraftSha256"],
+                "retired_draft_length": result.get("draftLength"),
+                "retired_execution_id": str(result.get("retiredExecutionId") or ""),
+                "superseded_delivery_id": extra["supersededDeliveryId"],
+                "resumed_delivery_id": extra["resumeDeliveryId"],
+                "resumed_delivery_state": resumed["state"],
+            }, output={"result": _sanitize(result)})
+        if request.arguments["command"] == "retire-recovered-execution":
+            values = request.arguments
+            extra = dict(values["extra"])
+            if self.delivery_ledger is None:
+                raise ConfirmedFailure("RCC_DELIVERY_LEDGER_UNAVAILABLE", release_claims=True)
+            recovered = self.delivery_ledger.get_for_work(
+                delivery_id=extra["deliveryId"], work_id=extra["workId"],
+            )
+            if (recovered["state"] != DeliveryState.NEEDS_REVIEW.value
+                    or recovered["worker_conversation_key"] != extra["conversationKey"]
+                    or recovered["request_sha256"] != extra["expectedRequestSha256"]):
+                raise ConfirmedFailure(
+                    "RCC_RECOVERED_RETIRE_IDENTITY_INVALID", release_claims=True,
+                )
+            try:
+                result = self.client.request(
+                    instance_id=values["instance_id"], request_id=request.operation_id,
+                    command="retire-recovered-execution", extra=extra,
+                    timeout_s=values["timeout_s"],
+                )
+            except RelayUnavailable as exc:
+                raise ConfirmedFailure(str(exc), release_claims=True) from exc
+            except RelayEffectUnknown as exc:
+                raise UnknownEffectError("RCC_RECOVERED_RETIRE_EFFECT_UNKNOWN") from exc
+            if (result.get("ok") is not True or result.get("retired") is not True
+                    or result.get("effectState") != "APPLIED"
+                    or result.get("deliveryId") != extra["deliveryId"]
+                    or result.get("conversationKey") != extra["conversationKey"]
+                    or result.get("requestSha256") != extra["expectedRequestSha256"]
+                    or result.get("responseSha256") != extra["expectedResponseSha256"]
+                    or result.get("responseLength") != extra["expectedResponseLength"]
+                    or result.get("executionAbsent") is not True):
+                if result.get("effectState") == "NOT_APPLIED":
+                    return FeatureResult(Outcome.NOT_APPLIED, {
+                        "command": "retire-recovered-execution",
+                        "delivery_id": extra["deliveryId"],
+                        "error": str(result.get("error") or "RCC_RECOVERED_RETIRE_NOT_APPLIED")[:128],
+                    }, release_claims=True, output={"result": _sanitize(result)})
+                raise UnknownEffectError("RCC_RECOVERED_RETIRE_ACK_UNVERIFIED")
+            return FeatureResult(Outcome.APPLIED, {
+                "command": "retire-recovered-execution",
+                "delivery_id": extra["deliveryId"],
+                "conversation_key": extra["conversationKey"],
+                "response_sha256": extra["expectedResponseSha256"],
+                "response_length": extra["expectedResponseLength"],
+                "execution_absent": True,
+            }, output={"result": _sanitize(result)})
         if request.arguments["command"] == "create-and-send":
             return self._execute_create_and_send(request)
         values = request.arguments

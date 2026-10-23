@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bct.conversation_network import upsert_project, upsert_conversation, set_membership
-from bct.core.models import Outcome, PreconditionError, Work
+from bct.core.models import ConfirmedFailure, Outcome, PreconditionError, Work
 from bct.core.store import Store
 from bct.features.rcc import RelayBrowserFeature
 
@@ -157,8 +157,7 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         same = {"command":"delivery-start",**self.base}
         # A changed prompt must be fenced by the persisted Delivery hash,
         # never sent again under an existing delivery_id.
-        from bct.core.models import ConflictError
-        with self.assertRaisesRegex(ConflictError,"DELIVERY_ID_REUSE_MISMATCH"):
+        with self.assertRaisesRegex(ConfirmedFailure,"DELIVERY_ID_REUSE_MISMATCH"):
             self.run_delivery(same,"start-changed")
         self.assertEqual(1,len(self.host.calls))
         other={**same, "delivery_id":"prompt-delivery-2"}

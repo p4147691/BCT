@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC14_COMPOSER_SETTLE", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC22_RECOVERED_EXECUTION_RETIREMENT", release["candidate"])
         inventory = {item["path"]: item["sha256"]
                      for item in release["candidateInventory"]["files"]}
         critical = {
@@ -50,8 +50,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.34", manifest["version"])
-        self.assertEqual("1.0.34 Composer Settle", manifest["version_name"])
+        self.assertEqual("1.0.42", manifest["version"])
+        self.assertEqual("1.0.42 Recovered Execution Retirement", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -76,7 +76,8 @@ class RccSourceBaselineTests(unittest.TestCase):
         for command in (
             "ping", "state", "simple-relay-bind", "simple-relay-send",
             "simple-relay-return", "new-chat-send", "rename-conversation",
-            "delivery-start", "delivery-status", "delivery-return",
+            "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
+            "retire-composer-draft", "retire-recovered-execution",
             "delivery-manager-status",
             "conversation-bind", "send",
             "rename-receipt", "result", "main-capture-get",
@@ -118,6 +119,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         executor = (self.extension / "content" / "simple_relay_executor.js").read_text(encoding="utf-8")
         for message_type in (
             "relay:recoverExecution", "relay:activityProbe", "relay:probe",
+            "relay:retireComposerDraft",
             "relay:simpleExecute", "relay:simpleReadReply", "relay:orchestrationExecute",
             "relay:newChatExecute",
             "relay:newChatStatus", "relay:renameConversation",
@@ -166,7 +168,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-23-rcc-composer-settle-v1"
+        marker = "2026-10-24-rcc-recovered-execution-retirement-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
@@ -236,6 +238,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_collapsed_prompt_identity.js", "collapsed prompt identity tests: PASS"),
             ("test_completion_marker_guard.js", "markerless completion lifecycle tests: PASS"),
             ("test_route_turn_deduplication.js", "route turn deduplication tests: PASS"),
+            ("test_terminal_idle_proof_v1.js", "terminal idle proof v1: PASS"),
             ("test_conversation_network_v7.js", "conversation network v7: PASS"),
         ):
             self._run_node(name, marker)

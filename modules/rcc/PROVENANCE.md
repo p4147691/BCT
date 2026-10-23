@@ -35,6 +35,62 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.42 recovered execution retirement candidate
+
+RC22 adds a distinct recovery path for a page-session execution whose exact
+user turn and completed reply have already been recovered while its durable
+Delivery remains terminal `NEEDS_REVIEW`. The command requires the exact Work,
+Delivery, Worker UUID and request SHA in Core and the RCC mirror, plus the
+independently observed exact response SHA and length. Content re-recovers the
+same completed reply from the routed DOM turn before clearing only the matching
+execution record. It does not alter the composer or click a submit control.
+This keeps completed-turn retirement separate from RC21's unsubmitted draft
+retirement and preserves `NOT_APPLIED`/`UNKNOWN` no-retry boundaries.
+
+- extension version: `1.0.42 Recovered Execution Retirement`
+- runtime build: `2026-10-24-rcc-recovered-execution-retirement-v1`
+- candidate: `RCC_REBUILD_V2_RC22_RECOVERED_EXECUTION_RETIREMENT`
+- candidate inventory: regenerated from the exact committed payload before release
+
+## BCT RCC 1.0.41 exact active-draft retirement candidate
+
+RC21 extends the RC20 draft-only recovery with an explicit, fail-closed fence
+for the stale page-session execution that can accompany the exact orphaned
+draft. BCT must prove the superseded Work has the same owner, its exact
+Delivery is terminal `NEEDS_REVIEW`, and its Worker UUID and request SHA match
+the current composer. RCC independently requires the matching mirror entry.
+Content retirement accepts only that Delivery's `submit-activated` record,
+the exact submitted-text hash, an idle target, and proof that no routed user
+turn exists. It never retires `submitted` or `completed` records and never
+clicks a submit control. It verifies both the composer and the page execution
+are absent before resuming only the bound queued Delivery. Any mismatch is
+`NOT_APPLIED`; an unprovable clear remains `UNKNOWN` and is not retried.
+
+- extension version: `1.0.41 Exact Active Draft Retirement`
+- runtime build: `2026-10-24-rcc-exact-active-draft-retirement-v1`
+- candidate: `RCC_REBUILD_V2_RC21_EXACT_ACTIVE_DRAFT_RETIREMENT`
+- candidate inventory: regenerated from the exact committed payload before release
+
+## BCT RCC 1.0.40 exact orphaned-draft retirement candidate
+
+RC20 adds one recovery-only command for a composer that still contains the
+exact draft recorded by a superseded BCT Delivery. Retirement requires the
+exact conversation UUID, the exact SHA-256 of the current normalized composer
+text, an idle target, no active local relay execution, and one exact queued
+Delivery for the same Worker. It clears the matched draft without activating a
+submit control, verifies the composer is empty, and then resumes only that
+queued Delivery. A mismatch is `NOT_APPLIED`; an unprovable clear remains
+`UNKNOWN` and is never retried automatically.
+
+- extension version: `1.0.40 Exact Draft Retirement`
+- runtime build: `2026-10-24-rcc-exact-draft-retirement-v1`
+- candidate: `RCC_REBUILD_V2_RC20_EXACT_DRAFT_RETIREMENT`
+- candidate inventory: 52 files, aggregate SHA-256
+  `e32afda15d62a36b437a1b01c658fe174ec10923fa3c4e87607d91ddbbda48ef`
+- rollback baseline in the release manifest remains the independently verified
+  RC17 payload; the current RC19 LIVE payload must also be preserved exactly
+  before an RC20 reload.
+
 ## BCT RCC 1.0.1 release payload
 
 Issue #57 adds bounded network-versus-DOM failure evidence without changing submission, duplicate,

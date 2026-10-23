@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from bct.core.delivery_state import DeliveryEvent
-from bct.core.models import ConfirmedFailure, Outcome, UnknownEffectError, Work
+from bct.core.models import ConfirmedFailure, Outcome, PreconditionError, UnknownEffectError, Work
 from bct.core.store import Store
 from bct.features.rcc import RelayBrowserFeature
 from bct.integrations.rcc import RelayUnavailable
@@ -19,7 +19,32 @@ class FakeDeliveryHost:
 
     def request(self, **kwargs):
         self.calls.append(kwargs)
-        delivery_id = kwargs["extra"]["deliveryId"]
+        delivery_id = kwargs["extra"].get("deliveryId")
+        if kwargs["command"] == "retire-composer-draft":
+            extra = kwargs["extra"]
+            return {
+                "ok": True, "retired": True, "effectState": "APPLIED",
+                "conversationKey": extra["conversationKey"],
+                "draftSha256": extra["expectedDraftSha256"],
+                "draftLength": 321, "composerEmpty": True,
+                "retiredExecutionId": extra["supersededDeliveryId"],
+                "supersededDeliveryId": extra["supersededDeliveryId"],
+                "resumedDelivery": {
+                    "deliveryId": extra["resumeDeliveryId"],
+                    "state": "SENT_WAITING",
+                },
+            }
+        if kwargs["command"] == "retire-recovered-execution":
+            extra = kwargs["extra"]
+            return {
+                "ok": True, "retired": True, "effectState": "APPLIED",
+                "deliveryId": extra["deliveryId"],
+                "conversationKey": extra["conversationKey"],
+                "requestSha256": extra["expectedRequestSha256"],
+                "responseSha256": extra["expectedResponseSha256"],
+                "responseLength": extra["expectedResponseLength"],
+                "executionAbsent": True,
+            }
         if kwargs["command"] == "delivery-start":
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "SENT_WAITING", "workerTabId": 11,
@@ -35,6 +60,10 @@ class FakeDeliveryHost:
                     "state": "REPLY_CAPTURED",
                     "responseSha256": hashlib.sha256(b"reply").hexdigest(),
                     "responseLength": 5}
+        if kwargs["command"] == "delivery-cancel":
+            return {"ok": True, "deliveryId": delivery_id,
+                    "state": "NOT_APPLIED", "cancelled": True,
+                    "error": "DELIVERY_CANCELLED_PRE_SUBMIT"}
         return {"ok": True, "deliveryId": delivery_id,
                 "state": "RETURNED", "managerTabId": 33,
                 "managerWindowId": 44}
@@ -147,6 +176,332 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.execute(args, "outer-start-1")
         replay = self.execute(args, "outer-start-2")
         self.assertTrue(replay.evidence["replayed"])
+        self.assertEqual(1, len(self.host.calls))
+
+    def test_busy_worker_is_durably_queued_then_resumed_in_order(self) -> None:
+        phase = {"status": 0}
+
+        def queued_host(**kwargs):
+            self.host.calls.append(kwargs)
+            delivery_id = kwargs["extra"]["deliveryId"]
+            if kwargs["command"] == "delivery-start":
+                return {"ok": True, "deliveryId": delivery_id,
+                        "state": "WAITING_TARGET", "queued": True,
+                        "waitingReason": "TARGET_GENERATING"}
+            phase["status"] += 1
+            if phase["status"] == 1:
+                return {"ok": True, "deliveryId": delivery_id,
+                        "state": "SENT_WAITING", "pending": True,
+                        "resumed": True, "workerTabId": 11,
+                        "workerWindowId": 22}
+            return {"ok": True, "deliveryId": delivery_id,
+                    "state": "REPLY_CAPTURED",
+                    "responseSha256": hashlib.sha256(b"reply").hexdigest(),
+                    "responseLength": 5}
+
+        self.host.request = queued_host
+        args = {
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "처리 중이면 입력하지 말고 보관",
+        }
+        queued = self.execute(args, "queued-start")
+        self.assertEqual(Outcome.APPLIED, queued.outcome)
+        self.assertEqual("WAITING_TARGET", queued.evidence["delivery_state"])
+        self.assertTrue(queued.evidence["queued"])
+        replay = self.execute(args, "queued-replay")
+        self.assertTrue(replay.evidence["replayed"])
+        self.assertEqual(1, len(self.host.calls))
+        resumed = self.execute({**self.base, "command": "delivery-status"},
+                               "queued-resume")
+        self.assertEqual("SENT_WAITING", resumed.evidence["delivery_state"])
+        captured = self.execute({**self.base, "command": "delivery-status"},
+                                "queued-capture")
+        self.assertEqual("REPLY_CAPTURED", captured.evidence["delivery_state"])
+        self.assertEqual(
+            ["delivery-start", "delivery-status", "delivery-status"],
+            [call["command"] for call in self.host.calls],
+        )
+        policy = self.host.calls[0]["extra"]
+        self.assertEqual("queue_until_idle", policy["targetBusyPolicy"])
+        self.assertEqual("trailing_space_once", policy["composerWakeMode"])
+        self.assertEqual(1000, policy["sendButtonWaitMs"])
+
+    def test_queued_delivery_can_be_cancelled_before_physical_submit(self) -> None:
+        def queued_or_cancelled(**kwargs):
+            self.host.calls.append(kwargs)
+            delivery_id = kwargs["extra"]["deliveryId"]
+            if kwargs["command"] == "delivery-start":
+                return {"ok": True, "deliveryId": delivery_id,
+                        "state": "WAITING_TARGET", "queued": True,
+                        "waitingReason": "TARGET_GENERATING"}
+            return {"ok": True, "deliveryId": delivery_id,
+                    "state": "NOT_APPLIED", "cancelled": True,
+                    "error": "DELIVERY_CANCELLED_PRE_SUBMIT"}
+
+        self.host.request = queued_or_cancelled
+        queued = self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "아직 제출하지 말고 대기",
+        }, "cancel-start")
+        self.assertEqual("WAITING_TARGET", queued.evidence["delivery_state"])
+        cancelled = self.execute(
+            {**self.base, "command": "delivery-cancel"}, "cancel-before-submit",
+        )
+        self.assertEqual(Outcome.APPLIED, cancelled.outcome)
+        self.assertTrue(cancelled.evidence["cancelled"])
+        stored = self.feature.delivery_ledger.get_for_work(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+        )
+        self.assertEqual("NOT_APPLIED", stored["state"])
+        self.assertEqual(
+            "DELIVERY_CANCELLED_PRE_SUBMIT", stored["observation"]["error_code"],
+        )
+        self.assertEqual(
+            ["delivery-start", "delivery-cancel"],
+            [call["command"] for call in self.host.calls],
+        )
+
+    def test_delivery_cancel_rejects_after_submit_before_host_call(self) -> None:
+        self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "이미 제출된 업무",
+        }, "late-cancel-start")
+        with self.assertRaisesRegex(
+            ConfirmedFailure, "RCC_DELIVERY_CANCEL_STATE_INVALID",
+        ):
+            self.execute(
+                {**self.base, "command": "delivery-cancel"}, "late-cancel",
+            )
+        self.assertEqual(["delivery-start"], [call["command"] for call in self.host.calls])
+
+    def test_exact_orphan_draft_retirement_resumes_only_bound_waiting_delivery(self) -> None:
+        def queued_then_retired(**kwargs):
+            if kwargs["command"] == "delivery-start":
+                self.host.calls.append(kwargs)
+                return {
+                    "ok": True, "deliveryId": kwargs["extra"]["deliveryId"],
+                    "state": "WAITING_TARGET", "queued": True,
+                    "waitingReason": "TARGET_COMPOSER_OCCUPIED",
+                }
+            return FakeDeliveryHost.request(self.host, **kwargs)
+
+        self.host.request = queued_then_retired
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        queued = self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": worker,
+            "text": "대기 중인 새 업무",
+        }, "draft-retire-start")
+        self.assertEqual("WAITING_TARGET", queued.evidence["delivery_state"])
+        draft_sha = hashlib.sha256("과거 BCT 초안".encode()).hexdigest()
+        old_work = self.store.create_work(Work(
+            "old-work", "superseded relay", (self.temp.name,),
+            frozenset({"relay_browser"}), self.work.owner_principal_id,
+        ))
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="old-delivery", work_id=old_work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key=worker, request_sha256=draft_sha,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id="old-delivery", work_id=old_work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
+        retired = self.execute({
+            "instance_id": self.base["instance_id"],
+            "command": "retire-composer-draft",
+            "conversation_key": worker,
+            "expected_draft_sha256": draft_sha,
+            "resume_delivery_id": self.base["delivery_id"],
+            "superseded_work_id": old_work.work_id,
+            "superseded_delivery_id": "old-delivery",
+        }, "draft-retire-exact")
+        self.assertEqual(Outcome.APPLIED, retired.outcome)
+        self.assertEqual(draft_sha, retired.evidence["retired_draft_sha256"])
+        self.assertEqual("old-delivery", retired.evidence["retired_execution_id"])
+        self.assertEqual("SENT_WAITING", retired.evidence["resumed_delivery_state"])
+        self.assertEqual(
+            ["delivery-start", "retire-composer-draft"],
+            [call["command"] for call in self.host.calls],
+        )
+
+    def test_draft_retirement_rejects_wrong_waiting_delivery_before_host_call(self) -> None:
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            request_sha256=hashlib.sha256(b"queued").hexdigest(),
+        )
+        old_work = self.store.create_work(Work(
+            "old-work", "superseded relay", (self.temp.name,),
+            frozenset({"relay_browser"}), self.work.owner_principal_id,
+        ))
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="old-delivery", work_id=old_work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            request_sha256="a" * 64,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id="old-delivery", work_id=old_work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
+        with self.assertRaisesRegex(
+            ConfirmedFailure, "RCC_DRAFT_RETIRE_RESUME_IDENTITY_INVALID",
+        ):
+            self.execute({
+                "instance_id": self.base["instance_id"],
+                "command": "retire-composer-draft",
+                "conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+                "expected_draft_sha256": "a" * 64,
+                "resume_delivery_id": self.base["delivery_id"],
+                "superseded_work_id": old_work.work_id,
+                "superseded_delivery_id": "old-delivery",
+            }, "draft-retire-not-waiting")
+        self.assertEqual([], self.host.calls)
+
+    def test_draft_retirement_rejects_cross_owner_superseded_delivery(self) -> None:
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        draft_sha = "a" * 64
+        foreign = self.store.create_work(Work(
+            "foreign-work", "foreign superseded relay", (self.temp.name,),
+            frozenset({"relay_browser"}), "different-owner",
+        ))
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="foreign-delivery", work_id=foreign.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key=worker, request_sha256=draft_sha,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id="foreign-delivery", work_id=foreign.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
+        with self.assertRaisesRegex(
+            PreconditionError, "RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID",
+        ):
+            self.execute({
+                "instance_id": self.base["instance_id"],
+                "command": "retire-composer-draft",
+                "conversation_key": worker,
+                "expected_draft_sha256": draft_sha,
+                "resume_delivery_id": self.base["delivery_id"],
+                "superseded_work_id": foreign.work_id,
+                "superseded_delivery_id": "foreign-delivery",
+            }, "draft-retire-cross-owner")
+        self.assertEqual([], self.host.calls)
+
+    def test_draft_retirement_rejects_superseded_state_worker_or_hash_mismatch(self) -> None:
+        manager = "6ad7f5b6-c834-83e8-9c00-ff70bab4204d"
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        other_worker = "7ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        expected_sha = "a" * 64
+        old_work = self.store.create_work(Work(
+            "old-work", "superseded relay", (self.temp.name,),
+            frozenset({"relay_browser"}), self.work.owner_principal_id,
+        ))
+        cases = (
+            ("wrong-state", worker, expected_sha, False),
+            ("wrong-worker", other_worker, expected_sha, True),
+            ("wrong-hash", worker, "b" * 64, True),
+        )
+        for name, stored_worker, stored_sha, mark_review in cases:
+            delivery_id = "old-" + name
+            self.feature.delivery_ledger.create_or_get(
+                delivery_id=delivery_id, work_id=old_work.work_id,
+                instance_id=self.base["instance_id"],
+                manager_conversation_key=manager,
+                worker_conversation_key=stored_worker, request_sha256=stored_sha,
+            )
+            if mark_review:
+                self.feature.delivery_ledger.observe(
+                    delivery_id=delivery_id, work_id=old_work.work_id,
+                    event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+                )
+            with self.subTest(name=name), self.assertRaisesRegex(
+                PreconditionError, "RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID",
+            ):
+                self.execute({
+                    "instance_id": self.base["instance_id"],
+                    "command": "retire-composer-draft",
+                    "conversation_key": worker,
+                    "expected_draft_sha256": expected_sha,
+                    "resume_delivery_id": self.base["delivery_id"],
+                    "superseded_work_id": old_work.work_id,
+                    "superseded_delivery_id": delivery_id,
+                }, "draft-retire-" + name)
+        self.assertEqual([], self.host.calls)
+
+    def test_exact_recovered_execution_retirement_requires_terminal_reply_identity(self) -> None:
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        request_sha = "a" * 64
+        response_text = "exact recovered response"
+        response_sha = hashlib.sha256(response_text.encode()).hexdigest()
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="recovered-delivery", work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key=worker, request_sha256=request_sha,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id="recovered-delivery", work_id=self.work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
+        retired = self.execute({
+            "instance_id": self.base["instance_id"],
+            "command": "retire-recovered-execution",
+            "conversation_key": worker,
+            "delivery_id": "recovered-delivery",
+            "expected_request_sha256": request_sha,
+            "expected_response_sha256": response_sha,
+            "expected_response_length": len(response_text),
+        }, "retire-recovered-exact")
+        self.assertEqual(Outcome.APPLIED, retired.outcome)
+        self.assertTrue(retired.evidence["execution_absent"])
+        self.assertEqual(response_sha, retired.evidence["response_sha256"])
+
+    def test_recovered_execution_retirement_rejects_non_review_delivery(self) -> None:
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="not-review", work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key=worker, request_sha256="a" * 64,
+        )
+        with self.assertRaisesRegex(
+            PreconditionError, "RCC_RECOVERED_RETIRE_IDENTITY_INVALID",
+        ):
+            self.execute({
+                "instance_id": self.base["instance_id"],
+                "command": "retire-recovered-execution",
+                "conversation_key": worker,
+                "delivery_id": "not-review",
+                "expected_request_sha256": "a" * 64,
+                "expected_response_sha256": "b" * 64,
+                "expected_response_length": 10,
+            }, "retire-recovered-not-review")
+        self.assertEqual([], self.host.calls)
+
+    def test_mismatched_delivery_reuse_is_confirmed_before_host_call(self) -> None:
+        args = {
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "first exact message",
+        }
+        self.execute(args, "reuse-original")
+        with self.assertRaisesRegex(ConfirmedFailure, "DELIVERY_ID_REUSE_MISMATCH"):
+            self.execute({**args, "text": "different message"}, "reuse-mismatch")
         self.assertEqual(1, len(self.host.calls))
 
     def test_status_transport_failure_is_retryable_but_return_failure_is_review(self) -> None:

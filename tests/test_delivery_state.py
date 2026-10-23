@@ -26,6 +26,29 @@ class DeliveryStateTests(unittest.TestCase):
         state = advance_delivery_state(state, DeliveryEvent.MANAGER_TURN_CONFIRMED)
         self.assertEqual(state, DeliveryState.RETURNED)
 
+    def test_busy_target_waits_without_crossing_submission_boundary(self) -> None:
+        state = advance_delivery_state(
+            DeliveryState.NOT_SENT, DeliveryEvent.TARGET_QUEUED,
+        )
+        self.assertEqual(state, DeliveryState.WAITING_TARGET)
+        self.assertNotIn(state, {
+            DeliveryState.SENT_WAITING, DeliveryState.NOT_APPLIED,
+            DeliveryState.NEEDS_REVIEW,
+        })
+        state = advance_delivery_state(
+            state, DeliveryEvent.WORKER_TURN_CONFIRMED,
+        )
+        self.assertEqual(state, DeliveryState.SENT_WAITING)
+
+    def test_busy_policy_can_reject_before_submit(self) -> None:
+        state = advance_delivery_state(
+            DeliveryState.NOT_SENT, DeliveryEvent.TARGET_QUEUED,
+        )
+        state = advance_delivery_state(
+            state, DeliveryEvent.PRE_SUBMIT_REJECTED,
+        )
+        self.assertEqual(state, DeliveryState.NOT_APPLIED)
+
     def test_same_observation_is_idempotent(self) -> None:
         self.assertEqual(
             advance_delivery_state(
@@ -48,6 +71,7 @@ class DeliveryStateTests(unittest.TestCase):
     def test_ambiguous_boundary_never_becomes_success_or_retry(self) -> None:
         for state in (
             DeliveryState.NOT_SENT,
+            DeliveryState.WAITING_TARGET,
             DeliveryState.SENT_WAITING,
             DeliveryState.REPLY_CAPTURED,
         ):
