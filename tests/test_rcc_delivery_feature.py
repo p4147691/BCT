@@ -149,6 +149,18 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.assertTrue(replay.evidence["replayed"])
         self.assertEqual(1, len(self.host.calls))
 
+    def test_mismatched_delivery_reuse_is_confirmed_before_host_call(self) -> None:
+        args = {
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "first exact message",
+        }
+        self.execute(args, "reuse-original")
+        with self.assertRaisesRegex(ConfirmedFailure, "DELIVERY_ID_REUSE_MISMATCH"):
+            self.execute({**args, "text": "different message"}, "reuse-mismatch")
+        self.assertEqual(1, len(self.host.calls))
+
     def test_status_transport_failure_is_retryable_but_return_failure_is_review(self) -> None:
         args = {
             **self.base, "command": "delivery-start",

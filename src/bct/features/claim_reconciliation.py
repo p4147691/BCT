@@ -33,6 +33,15 @@ def _proven_no_effect(metadata: dict) -> tuple[bool, str]:
         # subprocess.Popen did not return a process object. On Windows this
         # exact exception is raised before CreateProcess succeeds.
         return True, "EXECUTE_CREATEPROCESS_FILE_NOT_FOUND"
+    if (capability == "relay_control"
+            and metadata.get("evidence") == {
+                "phase": "UNEXPECTED", "type": "ConflictError"
+            }
+            and metadata.get("error") == "DELIVERY_ID_REUSE_MISMATCH"):
+        # Legacy receipt from before delivery-start converted this immutable
+        # ledger mismatch to ConfirmedFailure. DeliveryLedger.create_or_get
+        # raises before RelayBrowserFeature invokes the RCC client.
+        return True, "RELAY_DELIVERY_ID_REUSE_REJECTED_BEFORE_RCC_DISPATCH"
     return False, ""
 
 

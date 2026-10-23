@@ -51,6 +51,13 @@ class OperationCoordinator:
         # gain a newly introduced action, so derive its scope from the original
         # select authority.  The exact original operation, owner, target,
         # outcome, and error are still checked below before any feature I/O.
+        claim_original = (
+            self.store.get_operation_metadata_for(
+                operation_id=str(arguments.get("original_operation_id") or ""),
+                work_id=work_id, principal_id=principal.principal_id,
+            )
+            if capability == "claim_reconcile" else None
+        )
         policy_action = (
             delegated
             if capability == "relay_control"
@@ -59,11 +66,14 @@ class OperationCoordinator:
             if capability == "desktop_chrome_tab_reconcile"
             else "desktop_window_activate"
             if capability == "desktop_window_activate_reconcile"
-            else self.store.get_operation_metadata_for(
-                operation_id=str(arguments.get("original_operation_id") or ""),
-                work_id=work_id, principal_id=principal.principal_id,
-            )["capability"]
-            if capability == "claim_reconcile"
+            else "relay_browser"
+            if (capability == "claim_reconcile"
+                and claim_original["capability"] == "relay_control"
+                and claim_original.get("evidence") == {
+                    "phase": "UNEXPECTED", "type": "ConflictError"
+                }
+                and claim_original.get("error") == "DELIVERY_ID_REUSE_MISMATCH")
+            else claim_original["capability"] if capability == "claim_reconcile"
             else capability
         )
         decision = self.policy.decide(principal=principal, work=work, action=policy_action,
@@ -185,7 +195,7 @@ class OperationCoordinator:
             )
             if original["capability"] not in {
                 "read", "system_inspect", "github_pr_status", "execute",
-                "desktop_uia_element_action",
+                "desktop_uia_element_action", "relay_control",
             }:
                 raise PreconditionError("CLAIM_RECONCILE_CAPABILITY_NOT_SUPPORTED")
             request = replace(request, preconditions={
