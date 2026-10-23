@@ -13,6 +13,7 @@ from bct.core.rcc_result import rcc_result_hash
 from bct.core.store import Store
 from bct.core.models import (
     ConfirmedFailure,
+    ConflictError,
     FeatureRequest,
     FeatureResult,
     Outcome,
@@ -520,16 +521,26 @@ class RelayBrowserFeature:
         work_id = extra["workId"]
 
         if command == "delivery-start":
-            _created, delivery = self.delivery_ledger.create_or_get(
-                delivery_id=delivery_id,
-                work_id=work_id,
-                instance_id=values["instance_id"],
-                manager_conversation_key=extra["managerConversationKey"],
-                worker_conversation_key=extra["workerConversationKey"],
-                request_sha256=extra["requestSha256"],
-                scope_id=str(extra.get("scopeId") or ""),
-                original_task=str(extra.get("originalTask") or ""),
-            )
+            try:
+                _created, delivery = self.delivery_ledger.create_or_get(
+                    delivery_id=delivery_id,
+                    work_id=work_id,
+                    instance_id=values["instance_id"],
+                    manager_conversation_key=extra["managerConversationKey"],
+                    worker_conversation_key=extra["workerConversationKey"],
+                    request_sha256=extra["requestSha256"],
+                    scope_id=str(extra.get("scopeId") or ""),
+                    original_task=str(extra.get("originalTask") or ""),
+                )
+            except ConflictError as exc:
+                if str(exc) != "DELIVERY_ID_REUSE_MISMATCH":
+                    raise
+                # The immutable ledger identity is checked before the RCC
+                # client is called.  A mismatched reuse is therefore a proven
+                # pre-dispatch rejection, not an UNKNOWN browser effect.
+                raise ConfirmedFailure(
+                    "DELIVERY_ID_REUSE_MISMATCH", release_claims=True,
+                ) from exc
             if delivery["state"] != DeliveryState.NOT_SENT.value:
                 replay_outcome = {
                     DeliveryState.RETURNED.value: Outcome.APPLIED,
