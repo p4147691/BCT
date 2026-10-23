@@ -1,0 +1,10 @@
+# Example only. Copy to D:\BCT\data\mcp_tools.toml AFTER deployment.
+# Settings adjust visibility/description of registered tools, not authority.
+# ChatGPT/Codex clients must refresh MCP tools/list to observe changes.
+[tools.bct_browser_extension_manage]
+enabled = true
+description = "Chrome 확장 조회 및 Tampermonkey 5.5.1 생성·조회·수정·삭제. BCT Work/Operation과 해시 검증 필수."
+
+[tools.bct_cdp_inspect]
+enabled = true
+description = "기존 Chrome 페이지 목록을 읽기 전용으로 조회합니다."

@@ -19,6 +19,7 @@ class CDPConnectionManager:
         ("tools/list", None),
         ("ping", None),
         ("tools/call", "list_pages"),
+        ("tools/call", "list_extensions"),
     }
 
     def __init__(self) -> None:
@@ -57,9 +58,11 @@ class CDPConnectionManager:
     def _validate(method: str, params: dict) -> None:
         if method in {"tools/list", "ping"} and params == {}:
             return
-        if method == "tools/call" and params == {
-            "name": "list_pages", "arguments": {}
-        }:
+        if (method == "tools/call"
+                and isinstance(params, dict)
+                and params.get("name") in {"list_pages", "list_extensions"}
+                and params.get("arguments") == {}
+                and set(params) == {"name", "arguments"}):
             return
         raise PermissionError("CDP_MCP_OPERATION_NOT_AUTHORIZED")
 

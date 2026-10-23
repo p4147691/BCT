@@ -15,6 +15,7 @@ normal_actions = [
   "relay_browser",
   "system_inspect",
   "cdp_inspect",
+  "browser_extension_manage",
   "execute",
   "process_session",
   "monitor",
@@ -45,8 +46,23 @@ approval_actions = ["delete", "credential_change"]
 # Chrome DevTools MCP is opt-in and never launched by starting BCT.
 # Configure a pinned, trusted MCP command and enable only after review.
 [cdp]
-enabled = false
-argv = []
+enabled = true
+argv = [
+  "C:\\Program Files\\nodejs\\node.exe",
+  "D:\\TOOLS\\BrowserAutomationSDK\\node_modules\\chrome-devtools-mcp\\build\\src\\bin\\chrome-devtools-mcp.js",
+  "--autoConnect",
+  "--categoryExtensions=true",
+  "--no-performance-crux",
+  "--no-usage-statistics",
+]
+
+# CDP browser extension manager: no Chrome launch/restart on BCT startup.
+# Only typed Tampermonkey 5.5.1 operations; no arbitrary JavaScript exposed.
+[browser_extension_manage]
+enabled = true
+profile_root = "C:\\Users\\시우세영\\AppData\\Local\\Google\\Chrome\\User Data"
+puppeteer_module = "D:\\TOOLS\\BrowserAutomationSDK\\node_modules\\puppeteer"
+node_executable = "C:\\Program Files\\nodejs\\node.exe"
 
 [git_authority]
 mode = "local"
@@ -144,6 +160,8 @@ files = [
   "src/bct/features/execution.py",
   "src/bct/features/cdp_persistent.py",
   "src/bct/features/cdp_inspect.py",
+  "src/bct/features/browser_extension_manage.py",
+  "scripts/browser_extension_manage.cjs",
   "src/bct/features/process_session.py",
   "src/bct/features/snapshot.py",
   "src/bct/features/monitor.py",
@@ -158,6 +176,7 @@ files = [
   "src/bct/integrations/native_process.py",
   "src/bct/integrations/cdp_connection.py",
   "src/bct/integrations/desktop_session.py",
+  "src/bct/mcp_catalogue_config.py",
   "src/bct/operating_paths.py",
   "src/bct/conversation_history.py",
   "src/bct/conversation_network.py",
