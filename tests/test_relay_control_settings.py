@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -278,6 +279,12 @@ class RelayControlSettingsTests(unittest.TestCase):
         self.assertIn("📦", output)
         parsed = json.loads(output)
         self.assertFalse(parsed["execution_connected"])
+
+    def test_production_release_includes_control_module(self):
+        root = Path(__file__).resolve().parents[1]
+        config = tomllib.loads((root / "bct.toml").read_text(encoding="utf-8"))
+        files = config["deployment"]["profiles"]["bct_runtime_v1"]["files"]
+        self.assertEqual(1, files.count("src/bct/relay_control.py"))
 
 
 if __name__ == "__main__":
