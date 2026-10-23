@@ -11,6 +11,7 @@ let targetGenerating = false;
 let targetComposerEmpty = true;
 const activeRelayIds = new Map();
 let failNextExecuteBusy = false;
+let failNextRetireAck = false;
 const context = {
   console, TextEncoder, crypto: webcrypto,
   RelayCore: {
@@ -37,6 +38,10 @@ const context = {
     }
     if (message.type === 'relay:retireExecution') {
       controlCalls.push({ tabId, message });
+      if (failNextRetireAck) {
+        failNextRetireAck = false;
+        return { ok: false, retired: false, error: 'TEST_RETIRE_ACK_LOST' };
+      }
       if (activeRelayIds.get(tabId) === message.relayId) activeRelayIds.delete(tabId);
       return { ok: true, retired: true, relayId: message.relayId };
     }
@@ -85,6 +90,11 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(manager.state, 'RETURNED');
   assert.equal(manager.managerResponseText, 'manager next');
   assert.equal(manager.managerResponseLength, 12);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-001'].managerExecutionRetired, true);
+  assert.equal(activeRelayIds.has(10), false);
+  assert.equal(controlCalls.filter(item => item.tabId === 10
+    && item.message.type === 'relay:retireExecution'
+    && item.message.relayId === 'delivery-001').length, 1);
   assert.equal(sends[3].tabId, 10);
   assert.equal(sends[3].message.relayId, 'delivery-001');
   assert.equal(sends[3].message.afterAssistantCount, 3);
@@ -148,8 +158,15 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
     await context.relaySha256(header + actualWorkerResult + footer));
   assert.equal(framed.managerReturnLength, (header + actualWorkerResult + footer).length);
   assert.equal(storage.deliveryLedgerMirrorV1['delivery-002'].responseText, actualWorkerResult);
+  failNextRetireAck = true;
   const checkWithoutWorker = await context.deliveryManagerStatus({ deliveryId: 'delivery-002' });
   assert.equal(checkWithoutWorker.managerResponseText, 'manager next');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-002'].managerExecutionRetired, undefined);
+  assert.equal(activeRelayIds.get(10), 'delivery-002');
+  const retiredOnReadback = await context.deliveryManagerStatus({ deliveryId: 'delivery-002' });
+  assert.equal(retiredOnReadback.managerResponseText, 'manager next');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-002'].managerExecutionRetired, true);
+  assert.equal(activeRelayIds.has(10), false);
   const unchangedCount = sends.length;
   const duplicateReturn = await context.deliveryReturn({
     deliveryId: 'delivery-002', managerReturnHeader: 'changed',

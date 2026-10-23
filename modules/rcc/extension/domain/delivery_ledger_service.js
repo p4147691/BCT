@@ -436,12 +436,31 @@ async function deliveryReturn(message) {
 }
 
 
+async function retireCapturedManagerExecution(receipt) {
+  if (receipt.managerExecutionRetired === true) return receipt;
+  let managerTab;
+  try {
+    managerTab = singleDeliveryTab(await getChatTabs(), receipt.managerConversationKey);
+    const retired = await sendToChatTab(managerTab.id, {
+      type: 'relay:retireExecution', relayId: receipt.deliveryId,
+      conversationKey: receipt.managerConversationKey,
+    });
+    if (retired?.ok !== true || retired.retired !== true) return receipt;
+  } catch (_) {
+    return receipt;
+  }
+  return writeDeliveryLedgerMirror(receipt.deliveryId, {
+    ...receipt, managerExecutionRetired: true, updatedAt: Date.now(),
+  });
+}
+
+
 // Read the Manager's new completed reply for the exact return turn. This is a
 // read-only continuation of the same delivery, never a second message submit.
 async function deliveryManagerStatus(message) {
   const id = deliveryId(message.deliveryId);
   const ledger = await readDeliveryLedgerMirror();
-  const receipt = ledger[id];
+  let receipt = ledger[id];
   if (!receipt) return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
     error: 'DELIVERY_MIRROR_NOT_FOUND' };
   if (receipt.state !== 'RETURNED') {
@@ -485,7 +504,8 @@ async function deliveryManagerStatus(message) {
   const observed = { ...receipt, managerResponseSha256: hash,
     managerResponseLength: read.responseText.length, updatedAt: Date.now() };
   await writeDeliveryLedgerMirror(id, observed);
-  return { ok: true, ...publicDeliveryReceipt(observed),
+  receipt = await retireCapturedManagerExecution(observed);
+  return { ok: true, ...publicDeliveryReceipt(receipt),
     managerResponseText: read.responseText };
 }
 
