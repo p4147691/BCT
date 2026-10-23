@@ -646,9 +646,18 @@ class RelayBrowserFeature:
                     "delivery_state": delivery["state"], "replayed": True,
                 }, release_claims=True, output={"delivery": delivery})
         else:
-            delivery = self.delivery_ledger.get_for_work(
-                delivery_id=delivery_id, work_id=work_id,
-            )
+            try:
+                delivery = self.delivery_ledger.get_for_work(
+                    delivery_id=delivery_id, work_id=work_id,
+                )
+            except KeyError as exc:
+                # Status/cancel/return requests for an ID that was never
+                # recorded cannot have produced a browser-side effect.  Keep
+                # this a confirmed pre-dispatch failure so the operation does
+                # not become UNKNOWN or retain an unnecessary resource claim.
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_NOT_FOUND", release_claims=True,
+                ) from exc
             if delivery["instance_id"] != values["instance_id"]:
                 raise ConfirmedFailure("RCC_DELIVERY_INSTANCE_MISMATCH", release_claims=True)
             extra.update({

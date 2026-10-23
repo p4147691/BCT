@@ -1825,3 +1825,19 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   read-back으로 대조해 결과를 복구하고 exact Claim만 해제했으며, 원본 UNKNOWN 영수증은
   보존했다. CDP 시간초과나 Browser Bridge 회귀는 이번 RCC Delivery 수락 근거로 사용하지
   않았다.
+
+## 19. RC25 LIVE 및 6회 연속 릴레이 검증 — 2026-10-24
+
+- RCC RC25 `2026-10-24-rcc-legacy-manager-retirement-v1`을 기존 8개 탭을 유지한 채
+  exact 배치·same-ID reload·readback했고 모두 APPLIED다. main은
+  `9e5abc6188276bee7e861d88933cb48af79cefeb`, main CI #40032600826은 SUCCESS다.
+- N13 Manager가 N14/N26에 번갈아 만든 여섯 Delivery는 모두 실제 Worker 응답을 회수하고
+  N13으로 `RETURNED`됐다. 설정 SHA는
+  `89b1e27a5533d0f77843477fc10801224e4b771249c008c0b720ee7a61f54214`이며, 설정된
+  `worker.submit → worker.status → manager.return → manager.status` 단일 경로를 사용했다.
+- R3 전에 존재하지 않는 Delivery 상태 조회가 `KeyError('DELIVERY_NOT_FOUND')`를 UNKNOWN과
+  잔존 Claim으로 바꾸는 Core 결함이 드러났다. 외부 제출 효과가 없음을 확인한 뒤 새 R3 ID로
+  감독자가 한 번 보조했다. 물리 왕복 6/6은 PASS지만 완전 무인 체인은 아직 미수락이다.
+- 누락 Delivery 조회를 `RCC_DELIVERY_NOT_FOUND` 확정 실패로 처리해 Claim을 해제하는 소스
+  수정과 회귀시험을 추가했다. 관련 40건은 PASS했으며 정본 통합·CI·Core 적용은 후속 영수증으로
+  구분한다. OS UTF-8/국가·언어 설정과 재부팅은 변경하지 않았다.
