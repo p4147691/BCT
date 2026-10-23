@@ -1783,3 +1783,45 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
 - 아직 main 병합, GitHub CI, Core 배포, RC15 staging/운영 reload, 실제 busy→idle 물리 제출 E2E는
   수행하지 않았다. 현재 운영은 Core generation 201 / SHA `4db4aaaa...`, RCC RC14로 유지된다.
   N14·N26 기존 초안과 과거 UNKNOWN Delivery도 건드리거나 재전송하지 않았다.
+
+## 16. RC15~RC17 idle 대기열 LIVE 수락 — 2026-10-24
+
+- RC15 대기열 구현은 main merge SHA
+  `00d767e500b5bb02a5bdec2a0bf1211186a083c4`로 통합됐고 Core generation 202,
+  manifest `13b6009a705592e7a2160db09bb8ab8d7b548e05863ed4684433d91624e6cacb`에
+  배포됐다. 현재 Core는 이 exact release로 OK/READY다.
+- RC16은 ChatGPT의 과거 정지 버튼 흔적을 현재 생성 상태로 오인하던 terminal-idle 판정을
+  수정했다. 기능 커밋 `463c320224f899069dd0029dcfceafbd98b60cd5`, PR #305 CI
+  #39970464426, main merge `c75690aac774749da929dea4ad6d4ec39c3569e6`, main CI
+  #39971355901이 모두 SUCCESS다.
+- RC16 적용 뒤에도 새 대화의 완료된 `relayActiveExecutionV1`가 page sessionStorage에 남아
+  `TARGET_PRIOR_RELAY_ACTIVE`로 대기열을 막는 별도 결함을 확인했다. RC17은 exact
+  `RESULT_PERSISTED` 영수증과 동일 operation/tab/window/conversation 및 완료 DOM 응답을 다시
+  증명한 경우에만 해당 실행을 retire한다. 정리 ACK가 유실돼도 이미 저장된 결과는 낮추거나
+  삭제하지 않는다.
+- RC17 기능 커밋 `edb6cfa880885e8c66a3adfae1f2829788cb5439`, PR #306 CI
+  #39974990432, main merge `ed4dc7b5c5897541a1d01c79dcc096b1bda2a57b`, main CI
+  #39976209390이 모두 SUCCESS다. RCC Node 35건, `PYTHONUTF8=0` 전체 Python 1,018건,
+  release verifier가 PASS했다. OS UTF-8/국가·언어 설정과 재부팅은 건드리지 않았다.
+- 운영 RCC는 build `2026-10-23-rcc-new-chat-terminal-retirement-v1`, instance
+  `6174664e1c1b4e6db1d4729c841db3c9`, session
+  `15afb321f5f04135a68949e21ce2649f`로 LIVE다. RC16 exact backup은
+  `D:\ChromeExtensions\RCC\rcc-rc16-pre-rc17-20261024-01`에 보존했다. N13·N14·N26과
+  기존 초안은 보존됐다.
+- Delivery `rcc15.busy.queue.live.20261023.01`은 busy 상태에서 입력창 밖
+  `WAITING_TARGET`으로 보존된 뒤, exact 선행 실행 retire와 terminal-idle 증명 후
+  `SENT_WAITING`으로 자동 재개됐다. N27
+  `6adb6da7-b4e8-83ec-bfce-b01f772c8013`의 정확한 새 사용자 턴과 응답
+  `BCT_QUEUE_RESUMED_AFTER_IDLE_20261023`을 DOM/UI와 Delivery Ledger에서 확인했고,
+  응답 SHA는 `fedbbea56d058f21c2afb19976088352277c44c5e813ae8308aa8ec212c5286c`다.
+  이전 응답은 중단되지 않았으며 입력창은 최종적으로 비어 있었다.
+- 같은 Delivery의 결과를 유휴가 증명된 N13 Manager에 한 번 반환했다. operation
+  `rcc-rc17-return-captured-worker-to-manager-20261024-01`은 APPLIED/RETURNED이고,
+  `delivery-manager-status`가 동일 37 UTF-16 단위 응답 전문과 SHA를 회수해 이번 단순 물리
+  왕복은 PASS다. 이 시험 Delivery는 `scope_id` 없이 만든 대기열 수락용이어서 Manager 반환은
+  Worker 결과 원문만 포함했으며, 설정 기반 긴 Manager 문맥 합성이나 Manager가 고유한 새
+  Delivery로 후속 Worker를 실제 실행한 증거로 확대 해석하지 않는다.
+- N27 최초 `create-and-send`의 원래 UNKNOWN은 재시도하지 않았다. 실제 탭의 정확한 첫 응답을
+  read-back으로 대조해 결과를 복구하고 exact Claim만 해제했으며, 원본 UNKNOWN 영수증은
+  보존했다. CDP 시간초과나 Browser Bridge 회귀는 이번 RCC Delivery 수락 근거로 사용하지
+  않았다.
