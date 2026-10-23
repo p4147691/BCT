@@ -13,6 +13,14 @@
       <button id="monitorBctControlRefresh">BC 도구 새로고침</button>
     </div>
   </div></header>
+  <section class="monitor-section monitor-ai-section">
+    <div class="monitor-bct-node-list" id="testNodeList" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="monitor-bct-node-row" id="testNodeCard"><span class="monitor-bct-node-title" id="testNodeTitle">N13 Manager</span></div>
+      <div class="monitor-bct-node-row"><span class="monitor-bct-node-title">N14 Worker</span></div>
+      <div class="monitor-bct-node-row"><span class="monitor-bct-node-title">N23 Worker</span></div>
+    </div>
+    <div class="monitor-window-pause-overlay-thumb" id="testStatusIcon"><svg class="monitor-status-icon"></svg></div>
+  </section>
   <div class="monitor-worker-group-rows" style="display:grid;grid-template-columns:repeat(3,1fr)">
     <div>N13</div><div>N14</div><div>N23</div>
   </div>
@@ -37,13 +45,21 @@ const storage = {
   oldRcc.onclick=()=>{preservedClicks++};
   const engine=MonitorUiLayout.create(root,storage);
   await engine.ready;
-  await engine.patch({toolbar:{placement:"inline",density:"compact",gap:2}});
+  engine.apply({version:1,toolbar:{placement:"inline",density:"compact",gap:2},
+    presentation:{nodeTitleFontPx:14,nodeCardMinHeightPx:44,nodeGapPx:9,
+      panelPaddingPx:12,thumbnailStatusIconPx:24}});
   oldRcc.click();
   const toolbar=root.querySelector(".monitor-utility-actions");
   const line=root.querySelector(".monitor-title-line");
   const pass=toolbar.parentNode===line && oldRcc===root.querySelector("#monitorRccReload")
     && preservedClicks===1 && values.get("existingWorkerColumns")===3
-    && getComputedStyle(toolbar).getPropertyValue("--bwm-ui-toolbar-gap").trim()==="2px";
+    && getComputedStyle(toolbar).getPropertyValue("--bwm-ui-toolbar-gap").trim()==="2px"
+    && getComputedStyle(document.querySelector("#testNodeTitle")).fontSize==="14px"
+    && getComputedStyle(document.querySelector("#testNodeCard")).minHeight==="44px"
+    && getComputedStyle(document.querySelector("#testNodeList")).gap==="9px"
+    && getComputedStyle(document.querySelector(".monitor-ai-section")).paddingLeft==="12px"
+    && getComputedStyle(document.querySelector("#testStatusIcon svg")).width==="24px"
+    && getComputedStyle(document.querySelector(".monitor-worker-group-rows")).gridTemplateColumns!=="none";
   document.body.dataset.verdict=pass?"PASS":"FAIL";
   document.body.dataset.reason=pass?"BWM_BROWSER_UI_LAYOUT_PASS":"LAYOUT_DOM_ASSERT_FAILED";
   engine.dispose();

@@ -118,86 +118,91 @@ function makeStorage() {
     }
   };
 }
-const tick = () => new Promise((resolve) => setImmediate(resolve));
+
 async function main() {
-  globalThis.document = { createElement: () => new FakeElement() };
-  assert.equal(layout.KEY, "bwm.monitor.ui.layout.v1");
+  globalThis.document = { visibilityState: "visible", createElement: () => new FakeElement() };
+  const css = require("node:fs").readFileSync(path.join(__dirname, "..", "extension", "monitor-ui-layout.css"), "utf8");
+  assert.match(css, /flex-wrap:\s*nowrap\s*!important/, "toolbar must not wrap over node list");
+  assert.match(css, /overflow-x:\s*auto/, "narrow header must clip/scroll, not overlay nodes");
+  assert.match(css, /#bwmUiLayoutEditor/, "stale editor must be hidden");
   const storage = makeStorage();
   const first = makeRoot();
-  const controller = layout.create(first.root, storage);
+  let nextRemote = { status: "READY", config: {
+    version: 1, toolbar: { placement: "inline", density: "compact", gap: 2,
+      order: [...layout.BUTTONS], hidden: [] }
+  }};
+  const fetcher = async () => ({ ok: true, json: async () => nextRemote });
+  const controller = layout.create(first.root, storage, null, { fetcher, pollMs: 0 });
   await controller.ready;
-  assert.equal(first.toolbar.parentNode, first.block);
-  assert.equal(first.root.querySelector("#bwmUiLayoutOpen") !== null, true);
-  assert.equal(storage.data.get("existingWorkerColumnsPreference"), 3);
-  assert.equal(storage.mutations, 0, "startup must not write");
-  let clicks = 0;
-  first.buttons.get("monitorRccReload").addEventListener("click", () => { clicks++; });
-  const order = [...layout.BUTTONS].reverse();
-  const previous = first.buttons.get("monitorRccReload");
-  await controller.patch({toolbar: {
-    placement: "inline", density: "compact", gap: 2,
-    order, hidden: ["monitorMcpTunnelRecover"]
-  }});
-  assert.equal(controller.read().toolbar.placement, "inline");
   assert.equal(first.toolbar.parentNode, first.line);
-  assert.ok(first.line.children.indexOf(first.toolbar) < first.line.children.indexOf(first.root.querySelector("#bwmUiLayoutOpen")));
-  assert.deepEqual(first.toolbar.children.map((c) => c.id), order);
+  assert.equal(first.root.querySelector("#bwmUiLayoutOpen"), null, "no user editor");
+  assert.equal(first.root.querySelector("#bwmUiLayoutEditor"), null, "no overlay");
+  assert.equal(storage.data.get("existingWorkerColumnsPreference"), 3);
+  assert.equal(storage.mutations, 0, "configuration read does not mutate existing storage");
+  assert.deepEqual(first.toolbar.children.map(x => x.id), layout.BUTTONS);
   assert.equal(first.toolbar.styleValues["--bwm-ui-toolbar-gap"], "2px");
+  assert.equal(first.root.styleValues["--bwm-node-title-size"], "12px");
+  assert.equal(first.root.styleValues["--bwm-node-card-min-height"], "36px");
+  assert.equal(first.root.styleValues["--bwm-node-gap"], "6px");
+  assert.equal(first.root.styleValues["--bwm-panel-padding"], "10px");
+  assert.equal(first.root.styleValues["--bwm-thumbnail-status-size"], "20px");
+  const adjusted = layout.normalize({version:1,toolbar:{},presentation:{
+    nodeTitleFontPx:14,nodeCardMinHeightPx:42,nodeGapPx:8,
+    panelPaddingPx:12,thumbnailStatusIconPx:24
+  }});
+  controller.apply(adjusted);
+  assert.equal(first.root.styleValues["--bwm-node-title-size"], "14px");
+  assert.equal(first.root.styleValues["--bwm-node-card-min-height"], "42px");
+  assert.equal(first.root.styleValues["--bwm-node-gap"], "8px");
+  assert.equal(first.root.styleValues["--bwm-panel-padding"], "12px");
+  assert.equal(first.root.styleValues["--bwm-thumbnail-status-size"], "24px");
+  for (const bad of [
+    {nodeTitleFontPx:true},
+    {nodeGapPx:45},
+    {nodeColumns:2},
+    {color:"red"},
+    {thumbnailStatusIconPx:"21"}
+  ]) {
+    assert.throws(() => layout.normalize({version:1,toolbar:{},presentation:bad}), /INVALID/);
+  }
+  const newer = {...controller.read(),presentation:adjusted.presentation};
+  nextRemote = {status:"READY", config:newer};
+  await controller.refreshRemote();
+  assert.equal(controller.read().presentation.nodeTitleFontPx, 14);
+  let clicks = 0;
+  const rccButton = first.buttons.get("monitorRccReload");
+  rccButton.addEventListener("click", () => { ++clicks; });
+  rccButton.click();
+  assert.equal(clicks, 1);
+  const reverse = [...layout.BUTTONS].reverse();
+  nextRemote = { status: "READY", config: { version: 1, toolbar: {
+    placement: "inline", density: "normal", gap: 4,
+    order: reverse, hidden: ["monitorMcpTunnelRecover"]
+  }}};
+  await controller.refreshRemote();
+  assert.equal(first.buttons.get("monitorRccReload"), rccButton);
+  rccButton.click();
+  assert.equal(clicks, 2, "real button handlers retained");
+  assert.deepEqual(first.toolbar.children.map(x => x.id), reverse);
   assert.equal(first.buttons.get("monitorMcpTunnelRecover").hidden, true);
-  assert.equal(first.buttons.get("monitorRccReload"), previous);
-  previous.click();
-  assert.equal(clicks, 1, "existing click listener retained");
   assert.equal(storage.data.get("existingWorkerColumnsPreference"), 3);
+  nextRemote = { status: "READY", config: { version: 1, toolbar: { placement: "javascript:bad" } } };
+  await controller.refreshRemote();
+  assert.deepEqual(first.toolbar.children.map(x => x.id), reverse, "bad remote config ignored");
+  assert.equal(first.toolbar.parentNode, first.line);
+  await assert.rejects(async () => layout.normalize({
+    version:1,toolbar:{order:["random"],hidden:[]}
+  }), /NOT_ALLOWED/);
+  await assert.rejects(async () => layout.normalize({
+    version:1,toolbar:{density:"normal",gap:-1}
+  }), /NOT_ALLOWED/);
   const second = makeRoot();
-  const secondController = layout.create(second.root, storage);
-  await secondController.ready;
-  assert.equal(second.toolbar.parentNode, second.line, "persistent across monitor screens");
-  assert.deepEqual(secondController.read().toolbar.order, order);
-  const before = storage.mutations;
-  await assert.rejects(() => controller.patch({toolbar:{placement:"javascript:alert(1)"}}), /NOT_ALLOWED/);
-  await assert.rejects(() => controller.patch({toolbar:{unknown: true}}), /NOT_ALLOWED/);
-  await assert.rejects(() => controller.patch({toolbar:{hidden:["monitorBadAction"]}}), /NOT_ALLOWED/);
-  await assert.rejects(() => controller.patch({__proto__: null, toolbar: {hidden: ["other"]}}), /NOT_ALLOWED/);
-  assert.equal(storage.mutations, before, "invalid patches never persist");
-  const editor = controller.showEditor();
-  assert.equal(editor.hidden, false);
-  const field = editor.querySelector("#bwmUiLayoutJson");
-  const next = controller.read();
-  next.toolbar.hidden = [];
-  field.value = JSON.stringify(next);
-  field.listeners.get("input")[0]();
-  editor.querySelector("#bwmUiLayoutApply").click();
-  await tick();
-  assert.deepEqual(controller.read().toolbar.hidden, []);
-  assert.deepEqual(secondController.read().toolbar.hidden, [], "storage event sync");
-  await controller.reset();
-  assert.equal(first.toolbar.parentNode, first.block, "reset restores original parent");
-  assert.equal(second.toolbar.parentNode, second.block);
-  assert.deepEqual(first.toolbar.children.map((c) => c.id), [...layout.BUTTONS]);
-  assert.equal(storage.data.has(layout.KEY), false);
-  assert.equal(storage.data.get("existingWorkerColumnsPreference"), 3);
+  const other = layout.create(second.root, storage, null, { fetcher, pollMs: 0 });
+  await other.ready;
+  assert.equal(second.toolbar.parentNode, second.line, "safe default when Core remote invalid");
+  assert.equal(second.root.querySelector("#bwmUiLayoutOpen"), null);
   controller.dispose();
-  secondController.dispose();
-  assert.equal(first.root.querySelector("#bwmUiLayoutOpen"), null);
-  // A stale initial storage read must not undo a newer storage change.
-  const raceStorage = makeStorage();
-  let resolveOldGet;
-  raceStorage.local.get = () => new Promise((resolve) => { resolveOldGet = resolve; });
-  const raceView = makeRoot();
-  const raceController = layout.create(raceView.root, raceStorage);
-  await raceStorage.local.set({[layout.KEY]: {version:1, toolbar:{placement:"inline"}}});
-  resolveOldGet({});
-  await raceController.ready;
-  assert.equal(raceView.toolbar.parentNode, raceView.line);
-  raceController.dispose();
-  const broken = makeRoot();
-  const errors = [];
-  storage.data.set(layout.KEY, {version: 1, toolbar: {placement:"bad"}});
-  const third = layout.create(broken.root, storage, (err) => errors.push(err.message));
-  await third.ready;
-  assert.equal(errors.includes("UI_LAYOUT_VALUE_NOT_ALLOWED"), true);
-  assert.equal(broken.toolbar.parentNode, broken.block);
-  third.dispose();
-  console.log("BWM_UI_LAYOUT_ENGINE_PASS: persistence, real node reparenting, identity/listeners, validation, editor, rollback, storage sync, 3-column preservation");
+  other.dispose();
+  console.log("BWM_UI_LAYOUT_ENGINE_PASS: inline/default, no editor, no overlay, guarded remote, genuine button identity/listeners, 3-column preserved");
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });
