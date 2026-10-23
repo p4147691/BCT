@@ -71,6 +71,31 @@ function publicPendingNewChatStatus(receipt) {
   };
 }
 
+// A persisted new-chat result is the durable authority that its exact browser
+// effect finished.  Retire only that same page-session execution record so a
+// later Delivery is not mistaken for an overlap with the completed bootstrap.
+// The content script independently revalidates the relay ID and completed DOM
+// reply before it clears sessionStorage.  Retirement is best-effort: losing
+// this cleanup response must never erase or downgrade the persisted result.
+async function retirePersistedNewChatExecution(receipt) {
+  if (!receipt || receipt.state !== 'RESULT_PERSISTED'
+      || !String(receipt.operationId || '')
+      || !String(receipt.conversationKey || '')
+      || !Number(receipt.tabId) || !Number(receipt.windowId)) return false;
+  try {
+    const tab = await newChatLiveTab(receipt);
+    if (RelayCore.conversationKey(String(tab.url || ''))
+        !== String(receipt.conversationKey || '')) return false;
+    const retired = await browserGateway.sendWithReceiver(Number(tab.id), {
+      type: 'relay:retireExecution', relayId: receipt.operationId,
+    });
+    return retired?.ok === true && retired?.retired === true
+      && retired?.relayId === receipt.operationId;
+  } catch (_) {
+    return false;
+  }
+}
+
 // A create-and-send request can outlive the caller's bounded wait while the
 // exact ChatGPT tab keeps generating.  A later result lookup may finish that
 // receipt from the already-submitted tab, but it must never create a tab or
@@ -78,7 +103,12 @@ function publicPendingNewChatStatus(receipt) {
 // and collectNewChatResult revalidates the exact tab/window/conversation/hash.
 async function recoverPersistedNewChatResult(state, operationId) {
   const persisted = publicPersistedNewChatResult(state, operationId);
-  if (persisted) return persisted;
+  if (persisted) {
+    await retirePersistedNewChatExecution(
+      state?.newChatReceipts?.[operationId] || null,
+    );
+    return persisted;
+  }
   const receipt = state?.newChatReceipts?.[operationId] || null;
   if (!receipt) return null;
   if (!['SUBMIT_INTENT', 'SUBMITTED', 'SUBMIT_UNKNOWN'].includes(
@@ -149,7 +179,7 @@ async function collectNewChatResult(receipt, deadline) {
               receipt.tabId, receipt.windowId, conversationKey,
               receipt.textSha256, reply,
             ]));
-            return writeNewChatReceipt(receipt.operationId, {
+            const persisted = await writeNewChatReceipt(receipt.operationId, {
               ...receipt,
               state: 'RESULT_PERSISTED',
               conversationKey,
@@ -157,6 +187,8 @@ async function collectNewChatResult(receipt, deadline) {
               resultHash,
               stageTiming: { ...(receipt.stageTiming || {}), completedAt: Date.now() },
             });
+            await retirePersistedNewChatExecution(persisted);
+            return persisted;
           }
         } else if (status?.effectState === 'NOT_APPLIED') {
           lastError = String(status.error || 'NEW_CHAT_STATUS_NOT_APPLIED');
@@ -201,6 +233,9 @@ async function sendNewChatAndAwaitResult(message) {
     }
     if (existing.state === 'RESULT_PERSISTED' || existing.state === 'NOT_APPLIED'
         || existing.state === 'SUBMIT_UNKNOWN' || existing.state === 'CREATE_UNKNOWN') {
+      if (existing.state === 'RESULT_PERSISTED') {
+        await retirePersistedNewChatExecution(existing);
+      }
       return publicNewChatResult(existing, true);
     }
     if (!Number(existing.tabId)) {
