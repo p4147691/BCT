@@ -423,19 +423,40 @@ class RelayBrowserFeature:
         elif command == "retire-composer-draft":
             allowed.update({
                 "conversation_key", "expected_draft_sha256", "resume_delivery_id",
+                "superseded_work_id", "superseded_delivery_id",
             })
             conversation_key = str(arguments.get("conversation_key") or "").strip().lower()
             expected_sha = str(arguments.get("expected_draft_sha256") or "").strip().lower()
             resume_delivery_id = str(arguments.get("resume_delivery_id") or "").strip()
+            superseded_work_id = str(arguments.get("superseded_work_id") or "").strip()
+            superseded_delivery_id = str(arguments.get("superseded_delivery_id") or "").strip()
             key_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
             if (not re.fullmatch(key_pattern, conversation_key)
                     or not re.fullmatch(r"[a-f0-9]{64}", expected_sha)
-                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", resume_delivery_id)):
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", resume_delivery_id)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", superseded_work_id)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", superseded_delivery_id)):
                 raise PreconditionError("RCC_DRAFT_RETIRE_ARGUMENT_INVALID")
+            if self.delivery_ledger is None:
+                raise PreconditionError("RCC_DELIVERY_LEDGER_UNAVAILABLE")
+            try:
+                superseded_work = self.delivery_ledger.store.get_work(superseded_work_id)
+                superseded = self.delivery_ledger.get_for_work(
+                    delivery_id=superseded_delivery_id, work_id=superseded_work_id,
+                )
+            except (KeyError, ConflictError) as exc:
+                raise PreconditionError("RCC_DRAFT_RETIRE_SUPERSEDED_NOT_FOUND") from exc
+            if (superseded_work.owner_principal_id != work.owner_principal_id
+                    or superseded["state"] != DeliveryState.NEEDS_REVIEW.value
+                    or superseded["worker_conversation_key"] != conversation_key
+                    or superseded["request_sha256"] != expected_sha):
+                raise PreconditionError("RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID")
             prepared["extra"].update({
                 "conversationKey": conversation_key,
                 "expectedDraftSha256": expected_sha,
                 "resumeDeliveryId": resume_delivery_id,
+                "supersededWorkId": superseded_work_id,
+                "supersededDeliveryId": superseded_delivery_id,
                 "workId": work.work_id,
             })
         elif command == "send-to-tab":
@@ -1023,6 +1044,24 @@ class RelayBrowserFeature:
                     "RCC_DRAFT_RETIRE_RESUME_IDENTITY_INVALID", release_claims=True,
                 )
             try:
+                current_work = self.delivery_ledger.store.get_work(extra["workId"])
+                superseded_work = self.delivery_ledger.store.get_work(extra["supersededWorkId"])
+                superseded = self.delivery_ledger.get_for_work(
+                    delivery_id=extra["supersededDeliveryId"],
+                    work_id=extra["supersededWorkId"],
+                )
+            except (KeyError, ConflictError) as exc:
+                raise ConfirmedFailure(
+                    "RCC_DRAFT_RETIRE_SUPERSEDED_NOT_FOUND", release_claims=True,
+                ) from exc
+            if (current_work.owner_principal_id != superseded_work.owner_principal_id
+                    or superseded["state"] != DeliveryState.NEEDS_REVIEW.value
+                    or superseded["worker_conversation_key"] != extra["conversationKey"]
+                    or superseded["request_sha256"] != extra["expectedDraftSha256"]):
+                raise ConfirmedFailure(
+                    "RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID", release_claims=True,
+                )
+            try:
                 result = self.client.request(
                     instance_id=values["instance_id"], request_id=request.operation_id,
                     command="retire-composer-draft", extra=extra,
@@ -1038,6 +1077,10 @@ class RelayBrowserFeature:
                     or result.get("effectState") != "APPLIED"
                     or result.get("conversationKey") != extra["conversationKey"]
                     or result.get("draftSha256") != extra["expectedDraftSha256"]
+                    or str(result.get("supersededDeliveryId") or "")
+                       != extra["supersededDeliveryId"]
+                    or str(result.get("retiredExecutionId") or "")
+                       not in {"", extra["supersededDeliveryId"]}
                     or result.get("composerEmpty") is not True
                     or resumed.get("deliveryId") != extra["resumeDeliveryId"]
                     or resumed.get("state") not in {
@@ -1057,6 +1100,8 @@ class RelayBrowserFeature:
                 "conversation_key": extra["conversationKey"],
                 "retired_draft_sha256": extra["expectedDraftSha256"],
                 "retired_draft_length": result.get("draftLength"),
+                "retired_execution_id": str(result.get("retiredExecutionId") or ""),
+                "superseded_delivery_id": extra["supersededDeliveryId"],
                 "resumed_delivery_id": extra["resumeDeliveryId"],
                 "resumed_delivery_state": resumed["state"],
             }, output={"result": _sanitize(result)})

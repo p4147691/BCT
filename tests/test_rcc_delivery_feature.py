@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from bct.core.delivery_state import DeliveryEvent
-from bct.core.models import ConfirmedFailure, Outcome, UnknownEffectError, Work
+from bct.core.models import ConfirmedFailure, Outcome, PreconditionError, UnknownEffectError, Work
 from bct.core.store import Store
 from bct.features.rcc import RelayBrowserFeature
 from bct.integrations.rcc import RelayUnavailable
@@ -27,6 +27,8 @@ class FakeDeliveryHost:
                 "conversationKey": extra["conversationKey"],
                 "draftSha256": extra["expectedDraftSha256"],
                 "draftLength": 321, "composerEmpty": True,
+                "retiredExecutionId": extra["supersededDeliveryId"],
+                "supersededDeliveryId": extra["supersededDeliveryId"],
                 "resumedDelivery": {
                     "deliveryId": extra["resumeDeliveryId"],
                     "state": "SENT_WAITING",
@@ -288,15 +290,32 @@ class DeliveryFeatureTests(unittest.TestCase):
         }, "draft-retire-start")
         self.assertEqual("WAITING_TARGET", queued.evidence["delivery_state"])
         draft_sha = hashlib.sha256("과거 BCT 초안".encode()).hexdigest()
+        old_work = self.store.create_work(Work(
+            "old-work", "superseded relay", (self.temp.name,),
+            frozenset({"relay_browser"}), self.work.owner_principal_id,
+        ))
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="old-delivery", work_id=old_work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key=worker, request_sha256=draft_sha,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id="old-delivery", work_id=old_work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
         retired = self.execute({
             "instance_id": self.base["instance_id"],
             "command": "retire-composer-draft",
             "conversation_key": worker,
             "expected_draft_sha256": draft_sha,
             "resume_delivery_id": self.base["delivery_id"],
+            "superseded_work_id": old_work.work_id,
+            "superseded_delivery_id": "old-delivery",
         }, "draft-retire-exact")
         self.assertEqual(Outcome.APPLIED, retired.outcome)
         self.assertEqual(draft_sha, retired.evidence["retired_draft_sha256"])
+        self.assertEqual("old-delivery", retired.evidence["retired_execution_id"])
         self.assertEqual("SENT_WAITING", retired.evidence["resumed_delivery_state"])
         self.assertEqual(
             ["delivery-start", "retire-composer-draft"],
@@ -311,6 +330,21 @@ class DeliveryFeatureTests(unittest.TestCase):
             worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
             request_sha256=hashlib.sha256(b"queued").hexdigest(),
         )
+        old_work = self.store.create_work(Work(
+            "old-work", "superseded relay", (self.temp.name,),
+            frozenset({"relay_browser"}), self.work.owner_principal_id,
+        ))
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="old-delivery", work_id=old_work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            request_sha256="a" * 64,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id="old-delivery", work_id=old_work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
         with self.assertRaisesRegex(
             ConfirmedFailure, "RCC_DRAFT_RETIRE_RESUME_IDENTITY_INVALID",
         ):
@@ -320,7 +354,81 @@ class DeliveryFeatureTests(unittest.TestCase):
                 "conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
                 "expected_draft_sha256": "a" * 64,
                 "resume_delivery_id": self.base["delivery_id"],
+                "superseded_work_id": old_work.work_id,
+                "superseded_delivery_id": "old-delivery",
             }, "draft-retire-not-waiting")
+        self.assertEqual([], self.host.calls)
+
+    def test_draft_retirement_rejects_cross_owner_superseded_delivery(self) -> None:
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        draft_sha = "a" * 64
+        foreign = self.store.create_work(Work(
+            "foreign-work", "foreign superseded relay", (self.temp.name,),
+            frozenset({"relay_browser"}), "different-owner",
+        ))
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="foreign-delivery", work_id=foreign.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key=worker, request_sha256=draft_sha,
+        )
+        self.feature.delivery_ledger.observe(
+            delivery_id="foreign-delivery", work_id=foreign.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
+        with self.assertRaisesRegex(
+            PreconditionError, "RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID",
+        ):
+            self.execute({
+                "instance_id": self.base["instance_id"],
+                "command": "retire-composer-draft",
+                "conversation_key": worker,
+                "expected_draft_sha256": draft_sha,
+                "resume_delivery_id": self.base["delivery_id"],
+                "superseded_work_id": foreign.work_id,
+                "superseded_delivery_id": "foreign-delivery",
+            }, "draft-retire-cross-owner")
+        self.assertEqual([], self.host.calls)
+
+    def test_draft_retirement_rejects_superseded_state_worker_or_hash_mismatch(self) -> None:
+        manager = "6ad7f5b6-c834-83e8-9c00-ff70bab4204d"
+        worker = "6ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        other_worker = "7ad4bb5d-6624-83ee-b045-e57fdad5120e"
+        expected_sha = "a" * 64
+        old_work = self.store.create_work(Work(
+            "old-work", "superseded relay", (self.temp.name,),
+            frozenset({"relay_browser"}), self.work.owner_principal_id,
+        ))
+        cases = (
+            ("wrong-state", worker, expected_sha, False),
+            ("wrong-worker", other_worker, expected_sha, True),
+            ("wrong-hash", worker, "b" * 64, True),
+        )
+        for name, stored_worker, stored_sha, mark_review in cases:
+            delivery_id = "old-" + name
+            self.feature.delivery_ledger.create_or_get(
+                delivery_id=delivery_id, work_id=old_work.work_id,
+                instance_id=self.base["instance_id"],
+                manager_conversation_key=manager,
+                worker_conversation_key=stored_worker, request_sha256=stored_sha,
+            )
+            if mark_review:
+                self.feature.delivery_ledger.observe(
+                    delivery_id=delivery_id, work_id=old_work.work_id,
+                    event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+                )
+            with self.subTest(name=name), self.assertRaisesRegex(
+                PreconditionError, "RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID",
+            ):
+                self.execute({
+                    "instance_id": self.base["instance_id"],
+                    "command": "retire-composer-draft",
+                    "conversation_key": worker,
+                    "expected_draft_sha256": expected_sha,
+                    "resume_delivery_id": self.base["delivery_id"],
+                    "superseded_work_id": old_work.work_id,
+                    "superseded_delivery_id": delivery_id,
+                }, "draft-retire-" + name)
         self.assertEqual([], self.host.calls)
 
     def test_mismatched_delivery_reuse_is_confirmed_before_host_call(self) -> None:

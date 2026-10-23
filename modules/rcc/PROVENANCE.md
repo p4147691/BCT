@@ -35,6 +35,25 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.41 exact active-draft retirement candidate
+
+RC21 extends the RC20 draft-only recovery with an explicit, fail-closed fence
+for the stale page-session execution that can accompany the exact orphaned
+draft. BCT must prove the superseded Work has the same owner, its exact
+Delivery is terminal `NEEDS_REVIEW`, and its Worker UUID and request SHA match
+the current composer. RCC independently requires the matching mirror entry.
+Content retirement accepts only that Delivery's `submit-activated` record,
+the exact submitted-text hash, an idle target, and proof that no routed user
+turn exists. It never retires `submitted` or `completed` records and never
+clicks a submit control. It verifies both the composer and the page execution
+are absent before resuming only the bound queued Delivery. Any mismatch is
+`NOT_APPLIED`; an unprovable clear remains `UNKNOWN` and is not retried.
+
+- extension version: `1.0.41 Exact Active Draft Retirement`
+- runtime build: `2026-10-24-rcc-exact-active-draft-retirement-v1`
+- candidate: `RCC_REBUILD_V2_RC21_EXACT_ACTIVE_DRAFT_RETIREMENT`
+- candidate inventory: regenerated from the exact committed payload before release
+
 ## BCT RCC 1.0.40 exact orphaned-draft retirement candidate
 
 RC20 adds one recovery-only command for a composer that still contains the

@@ -118,9 +118,11 @@ if (message.type === 'relay:retireComposerDraft') {
   Promise.resolve().then(async () => {
     const expectedConversationKey = String(message.conversationKey || '').trim().toLowerCase();
     const expectedDraftSha256 = String(message.expectedDraftSha256 || '').trim().toLowerCase();
+    const supersededDeliveryId = String(message.supersededDeliveryId || '').trim();
     const actualConversationKey = currentConversationKey();
     if (!expectedConversationKey || actualConversationKey !== expectedConversationKey
-        || !/^[a-f0-9]{64}$/.test(expectedDraftSha256)) {
+        || !/^[a-f0-9]{64}$/.test(expectedDraftSha256)
+        || !/^[A-Za-z0-9_.:-]{1,80}$/.test(supersededDeliveryId)) {
       return { ok: false, retired: false, effectState: 'NOT_APPLIED',
         error: 'RELAY_DRAFT_RETIRE_IDENTITY_INVALID' };
     }
@@ -130,8 +132,23 @@ if (message.type === 'relay:retireComposerDraft') {
     }
     const active = loadRelayExecution();
     if (active?.relayId) {
-      return { ok: false, retired: false, effectState: 'NOT_APPLIED',
-        error: 'RELAY_DRAFT_RETIRE_ACTIVE_EXECUTION' };
+      if (String(active.relayId || '') !== supersededDeliveryId
+          || String(active.conversationKey || '').trim().toLowerCase() !== expectedConversationKey
+          || String(active.phase || '') !== 'submit-activated') {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_DRAFT_RETIRE_ACTIVE_IDENTITY_MISMATCH' };
+      }
+      const activeTextSha256 = await newChatTextSha256(active.submittedText || '');
+      if (activeTextSha256 !== expectedDraftSha256) {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_DRAFT_RETIRE_ACTIVE_HASH_MISMATCH', activeTextSha256 };
+      }
+      const routed = resolveRoutedTurn(active);
+      if (routed?.ok === true || routed?.reason !== 'ROUTE_TURN_NOT_RESOLVED') {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_DRAFT_RETIRE_ACTIVE_ROUTE_NOT_ABSENT',
+          routedReason: String(routed?.reason || 'ROUTE_TURN_PRESENT') };
+      }
     }
     const editor = getEditor();
     const draft = editor ? editorDraftText(editor) : '';
@@ -150,11 +167,21 @@ if (message.type === 'relay:retireComposerDraft') {
     if (!liveEditor || editorDraftText(liveEditor)) {
       throw new Error('RELAY_DRAFT_RETIRE_CLEAR_UNPROVEN');
     }
+    let retiredExecutionId = '';
+    if (active?.relayId) {
+      retiredExecutionId = supersededDeliveryId;
+      retiredRelayExecutions.add(retiredExecutionId);
+      clearRelayExecution(retiredExecutionId);
+      if (loadRelayExecution()?.relayId) {
+        throw new Error('RELAY_DRAFT_RETIRE_EXECUTION_CLEAR_UNPROVEN');
+      }
+    }
     return {
       ok: true, retired: true, effectState: 'APPLIED',
       conversationKey: actualConversationKey,
       draftSha256: actualDraftSha256,
       draftLength: draft.length,
+      retiredExecutionId,
       composerEmpty: true,
     };
   }).then(sendResponse).catch((error) => sendResponse({

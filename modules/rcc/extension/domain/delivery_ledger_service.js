@@ -331,16 +331,24 @@ async function retireComposerDraftAndResume(message) {
   const conversationKey = deliveryConversationKey(message.conversationKey);
   const expectedDraftSha256 = String(message.expectedDraftSha256 || '').trim().toLowerCase();
   const resumeDeliveryId = deliveryId(message.resumeDeliveryId);
+  const supersededDeliveryId = deliveryId(message.supersededDeliveryId);
   if (!/^[a-f0-9]{64}$/.test(expectedDraftSha256)) {
     return { ok: false, retired: false, effectState: 'NOT_APPLIED',
       error: 'DELIVERY_DRAFT_RETIRE_HASH_INVALID' };
   }
   const ledger = await readDeliveryLedgerMirror();
   const queued = ledger[resumeDeliveryId];
+  const superseded = ledger[supersededDeliveryId];
   if (!queued || queued.state !== 'WAITING_TARGET'
       || queued.workerConversationKey !== conversationKey) {
     return { ok: false, retired: false, effectState: 'NOT_APPLIED',
       error: 'DELIVERY_DRAFT_RETIRE_RESUME_IDENTITY_INVALID' };
+  }
+  if (!superseded || superseded.state !== 'NEEDS_REVIEW'
+      || superseded.workerConversationKey !== conversationKey
+      || superseded.requestSha256 !== expectedDraftSha256) {
+    return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+      error: 'DELIVERY_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID' };
   }
   let workerTab;
   try {
@@ -351,11 +359,13 @@ async function retireComposerDraftAndResume(message) {
   }
   const retired = await sendToChatTab(workerTab.id, {
     type: 'relay:retireComposerDraft', conversationKey, expectedDraftSha256,
+    supersededDeliveryId,
   });
   if (retired?.ok !== true || retired.retired !== true
       || retired.effectState !== 'APPLIED'
       || retired.conversationKey !== conversationKey
       || retired.draftSha256 !== expectedDraftSha256
+      || !['', supersededDeliveryId].includes(String(retired.retiredExecutionId || ''))
       || retired.composerEmpty !== true) {
     return {
       ok: false, retired: false,
@@ -369,6 +379,8 @@ async function retireComposerDraftAndResume(message) {
     ok: true, retired: true, effectState: 'APPLIED', conversationKey,
     draftSha256: expectedDraftSha256,
     draftLength: Number.isInteger(retired.draftLength) ? retired.draftLength : null,
+    retiredExecutionId: String(retired.retiredExecutionId || ''),
+    supersededDeliveryId,
     composerEmpty: true,
     resumedDelivery: publicDeliveryReceipt(resumed),
   };

@@ -55,7 +55,8 @@ const context = {
       targetComposerEmpty = true;
       return { ok: true, retired: true, effectState: 'APPLIED',
         conversationKey: message.conversationKey,
-        draftSha256: orphanDraftSha256, draftLength: 321, composerEmpty: true };
+        draftSha256: orphanDraftSha256, draftLength: 321, composerEmpty: true,
+        retiredExecutionId: message.supersededDeliveryId };
     }
     sends.push({ tabId, message });
     if (message.type === 'relay:simpleReadReply') {
@@ -261,10 +262,17 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(occupied.state, 'WAITING_TARGET');
   assert.equal(occupied.waitingReason, 'TARGET_COMPOSER_OCCUPIED');
   orphanDraftSha256 = 'a'.repeat(64);
+  await context.writeDeliveryLedgerMirror('delivery-superseded', {
+    deliveryId: 'delivery-superseded', state: 'NEEDS_REVIEW',
+    managerConversationKey: identity.managerConversationKey,
+    workerConversationKey: identity.workerConversationKey,
+    requestSha256: orphanDraftSha256, updatedAt: Date.now(),
+  });
   const mismatch = await context.retireComposerDraftAndResume({
     conversationKey: identity.workerConversationKey,
     expectedDraftSha256: 'b'.repeat(64),
     resumeDeliveryId: 'delivery-occupied',
+    supersededDeliveryId: 'delivery-superseded',
   });
   assert.equal(mismatch.ok, false);
   assert.equal(mismatch.effectState, 'NOT_APPLIED');
@@ -273,11 +281,13 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
     conversationKey: identity.workerConversationKey,
     expectedDraftSha256: orphanDraftSha256,
     resumeDeliveryId: 'delivery-occupied',
+    supersededDeliveryId: 'delivery-superseded',
   });
   assert.equal(occupiedResumed.ok, true);
   assert.equal(occupiedResumed.retired, true);
   assert.equal(occupiedResumed.resumedDelivery.state, 'SENT_WAITING');
   assert.equal(occupiedResumed.draftLength, 321);
+  assert.equal(occupiedResumed.retiredExecutionId, 'delivery-superseded');
   await context.deliveryStatus({ deliveryId: 'delivery-occupied' });
 
   // If generation begins after the background readiness probe but before the
