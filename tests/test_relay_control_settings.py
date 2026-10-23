@@ -44,6 +44,13 @@ def control_profile():
                 "arguments": {"text": "${worker_message.text}"},
                 "timeout_seconds": 30,
             },
+            "cancel.rcc": {
+                "driver": "rcc",
+                "call": "delivery.cancel",
+                "effect": "external",
+                "arguments": {"delivery_id": "${delivery_id}"},
+                "timeout_seconds": 30,
+            },
             "submit.api": {
                 "driver": "chrome_api",
                 "call": "tabs.sendMessage",

@@ -204,6 +204,24 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(storage.deliveryLedgerMirrorV1['delivery-queued'].requestText, text);
   assert.equal(sends.filter(
     item => item.message.type === 'relay:simpleExecute').length, beforeQueuedSubmit);
+
+  // A changed user instruction can retire an exact queued Delivery only
+  // before a physical submit. Cancellation clears the retained plaintext and
+  // later endpoint activity must not resurrect it.
+  const cancelIdentity = { ...identity, deliveryId: 'delivery-cancelled' };
+  const cancelQueued = await context.deliveryStart(cancelIdentity);
+  assert.equal(cancelQueued.state, 'WAITING_TARGET');
+  const beforeCancelSubmit = sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length;
+  const cancelled = await context.deliveryCancel({ deliveryId: 'delivery-cancelled' });
+  assert.equal(cancelled.ok, true);
+  assert.equal(cancelled.cancelled, true);
+  assert.equal(cancelled.state, 'NOT_APPLIED');
+  assert.equal(cancelled.error, 'DELIVERY_CANCELLED_PRE_SUBMIT');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-cancelled'].requestText, '');
+  const cancelledAgain = await context.deliveryCancel({ deliveryId: 'delivery-cancelled' });
+  assert.equal(cancelledAgain.replayed, true);
+  assert.equal(cancelledAgain.cancelled, true);
   targetGenerating = false;
   const resumed = await context.resumeWaitingDeliveriesForEndpoint({
     conversationKey: identity.workerConversationKey,
@@ -211,9 +229,17 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   });
   assert.equal(resumed[0].state, 'SENT_WAITING');
   assert.equal(sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length, beforeCancelSubmit + 1);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-cancelled'].state, 'NOT_APPLIED');
+
+  assert.equal(sends.filter(
     item => item.message.type === 'relay:simpleExecute').length, beforeQueuedSubmit + 1);
   const resumedCaptured = await context.deliveryStatus({ deliveryId: 'delivery-queued' });
   assert.equal(resumedCaptured.state, 'REPLY_CAPTURED');
+  const lateCancel = await context.deliveryCancel({ deliveryId: 'delivery-queued' });
+  assert.equal(lateCancel.ok, false);
+  assert.equal(lateCancel.cancelled, false);
+  assert.equal(lateCancel.error, 'DELIVERY_CANCEL_STATE_INVALID');
 
   // An occupied composer is also queued and never overwritten.
   targetComposerEmpty = false;

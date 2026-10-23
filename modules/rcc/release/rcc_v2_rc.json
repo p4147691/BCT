@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC18_MANAGER_TERMINAL_RETIREMENT",
+  "candidate": "RCC_REBUILD_V2_RC19_DELIVERY_PRESUBMIT_CANCEL",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1098,
-        "sha256": "50755a917ad0820d5bc48ad9d37c5737d7ff0716036f4f145bad48f3af6e181c"
+        "size": 1096,
+        "sha256": "ef3ded748fb6ee373cf05aa98e00e901ae33468227b5f6b93ee22ca8b7dd43ec"
       },
       {
         "path": "browser/read_adapter.js",
@@ -97,8 +97,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 18939,
-        "sha256": "24601a01cf19d64e4ece21b0e319b2a6266fb364da159806d437d16db98dd90a"
+        "size": 18937,
+        "sha256": "3c2b29fa45a6a9f0016bde51e126d80b11ce09f0bd1fe91118bd3fb0a0eb8083"
       },
       {
         "path": "content/conversation_rename.js",
@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 26204,
-        "sha256": "6687a2377e3aa4d7c0a861f0c63f7a518f7820597ec0a90f16b38c4dcb26cf52"
+        "size": 27783,
+        "sha256": "54a9f760a1a2ed342d58dced80088946fc4e3f537b50c83fb3486716ec41b7b7"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -172,8 +172,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 29966,
-        "sha256": "1c843ce98327eb7cf825e1d6708e8aa86c9c752e25ddb7895ad84e99e629d16f"
+        "size": 30199,
+        "sha256": "d98342d0489bcd3a874aef8b4971fa3b0f24ea6b5f797b7530da37ac4aa147fa"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -197,13 +197,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3521,
-        "sha256": "dfdb3a10b65a84c73679ea0e782bfd6a8dff83fd57ba0d57197a5ce99581c8d3"
+        "size": 3540,
+        "sha256": "328de408ac40ab6da86cd1fb41a331f369fc396eb8c4601bc1ed4ecb8c1f240d"
       },
       {
         "path": "manifest.json",
-        "size": 1520,
-        "sha256": "746a0fca026609e2494b19081198b5263b7bd829ed8d5271ee065708d5d71075"
+        "size": 1519,
+        "sha256": "710af723a141d850fb02419b8dab042ab3efc21d111327e37d5516a48c1e706b"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "6a055cbbd0b8f67d0aa4b73fbef1594edbff1fc6bea839a2bada6f286c75681c"
+    "aggregateSha256": "b49ec89958e40c77a21af37d3a721e90b21a5e2837e3631210a5c702b6a88e3a"
   },
   "activeLoaderGraph": {
     "background": [
@@ -372,6 +372,7 @@
         "simple-relay-send",
         "simple-relay-return",
         "delivery-start",
+        "delivery-cancel",
         "delivery-status",
         "delivery-return",
         "new-chat-send"

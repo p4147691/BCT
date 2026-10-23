@@ -34,6 +34,10 @@ def runtime_registry_catalog() -> dict[tuple[str, str], dict[str, str]]:
             "kind": "operation", "effect": "external", "capability": "relay_browser",
             "command": "delivery-start", "timeout_argument": "timeout_s",
         },
+        ("rcc", "delivery.cancel"): {
+            "kind": "operation", "effect": "external", "capability": "relay_browser",
+            "command": "delivery-cancel", "timeout_argument": "timeout_s",
+        },
         ("rcc", "delivery.status"): {
             "kind": "operation", "effect": "read", "capability": "relay_browser",
             "command": "delivery-status", "timeout_argument": "timeout_s",

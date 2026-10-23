@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-24-rcc-manager-terminal-retirement-v1';
+const RCC_BUILD_VERSION = '2026-10-24-rcc-delivery-presubmit-cancel-v1';
 
 function editorCandidates() {
 

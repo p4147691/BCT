@@ -40,7 +40,7 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
             "NEW_RELAY_COMMANDS": {
                 "simple-relay-bind", "simple-relay-send",
                 "simple-relay-return", "new-chat-send",
-                "delivery-start", "delivery-status", "delivery-return",
+                "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
             },
             "CONVERSATION_COMMANDS": {
                 "rename-conversation", "conversation-bind",
