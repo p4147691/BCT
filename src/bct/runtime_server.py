@@ -384,8 +384,10 @@ def main() -> int:
     @mcp.custom_route("/monitor/ui-layout", methods=["GET"], include_in_schema=False)
     async def monitor_ui_layout(request: Request) -> JSONResponse:
         # Local presentation settings only; no action API and no credential data.
-        from bct.monitor_ui_layout import load_layout
+        from bct.monitor_ui_layout import load_layout, project_for_client
         config, status = await asyncio.to_thread(load_layout, runtime_root.parent / "data")
+        config = project_for_client(config,
+                                    capture_fallback_capable=request.query_params.get("capture_fallback") == "1")
         return JSONResponse({"schema": 1, "status": status, "config": config},
                             headers={"Cache-Control": "no-store"})
 

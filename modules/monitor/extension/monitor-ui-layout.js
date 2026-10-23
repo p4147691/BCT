@@ -3,7 +3,7 @@
 (function (global) {
   "use strict";
   const KEY = "bwm.monitor.ui.layout.v1";
-  const ENDPOINT = "http://127.0.0.1:18790/monitor/ui-layout";
+  const ENDPOINT = "http://127.0.0.1:18790/monitor/ui-layout?capture_fallback=1";
   const BUTTONS = Object.freeze([
     "monitorExtensionReload",
     "monitorRccReload",

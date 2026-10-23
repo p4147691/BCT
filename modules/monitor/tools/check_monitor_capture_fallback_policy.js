@@ -5,6 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 require(path.join(__dirname, "..", "extension", "monitor-ui-layout.js"));
 const layout = globalThis.MonitorUiLayout;
+assert.match(layout.ENDPOINT, /capture_fallback=1/, "new Monitor must request extended schema");
 const source = fs.readFileSync(path.join(__dirname, "..", "extension", "monitor.js"), "utf8");
 const css = fs.readFileSync(path.join(__dirname, "..", "extension", "monitor-ui-layout.css"), "utf8");
 const start = source.indexOf("function monitorWindowFallbackDataUri(");
