@@ -593,14 +593,33 @@ async function retireCapturedManagerExecution(receipt) {
   let managerTab;
   try {
     managerTab = singleDeliveryTab(await getChatTabs(), receipt.managerConversationKey);
-    const retired = await sendToChatTab(managerTab.id, {
+    const retireMessage = {
       type: 'relay:retireExecution', relayId: receipt.deliveryId,
       conversationKey: receipt.managerConversationKey,
       expectedRequestSha256: receipt.managerReturnSubmittedSha256
         || receipt.managerReturnSha256,
       expectedResponseSha256: receipt.managerResponseSha256,
       expectedResponseLength: receipt.managerResponseLength,
-    });
+    };
+    let retired = await sendToChatTab(managerTab.id, retireMessage);
+    // Receipts created before submitted-text identity was persisted contain
+    // only the pre-normalization return hash.  The content script stores the
+    // exact normalized text it actually submitted and returns that hash on an
+    // explicit identity mismatch.  Adopt it only for this legacy shape and
+    // retry retirement once; the relay id, conversation and captured response
+    // identity are still independently checked by relay:retireExecution.
+    const legacySubmittedSha256 = String(retired?.requestSha256 || '').trim().toLowerCase();
+    if (!receipt.managerReturnSubmittedSha256
+        && retired?.effectState === 'NOT_APPLIED'
+        && retired?.error === 'RELAY_RETIRE_REQUEST_IDENTITY_MISMATCH'
+        && /^[a-f0-9]{64}$/.test(legacySubmittedSha256)) {
+      retired = await sendToChatTab(managerTab.id, {
+        ...retireMessage, expectedRequestSha256: legacySubmittedSha256,
+      });
+      if (retired?.ok === true && retired.retired === true) {
+        receipt = { ...receipt, managerReturnSubmittedSha256: legacySubmittedSha256 };
+      }
+    }
     if (retired?.ok !== true || retired.retired !== true) return receipt;
   } catch (_) {
     return receipt;

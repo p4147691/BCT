@@ -207,6 +207,51 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(retiredOnReadback.managerResponseText, 'manager next');
   assert.equal(storage.deliveryLedgerMirrorV1['delivery-002'].managerExecutionRetired, true);
   assert.equal(activeRelayIds.has(10), false);
+
+  // A terminal Manager receipt created by an older RCC has no normalized
+  // submission hash. The first retirement remains NOT_APPLIED, then the
+  // content-proven normalized identity is adopted and retired exactly once.
+  context.getChatTabs = tabsBefore;
+  const legacyText = 'legacy return with trailing whitespace\n';
+  const legacyIdentity = { ...identity, deliveryId: 'delivery-legacy', text: legacyText,
+    requestSha256: await context.relaySha256(legacyText) };
+  await context.deliveryStart(legacyIdentity);
+  await context.deliveryStatus({ deliveryId: 'delivery-legacy' });
+  const legacyReturn = await context.deliveryReturn({ deliveryId: 'delivery-legacy',
+    managerReturnHeader: '[BCT_CURRENT_WORKER_RESULT_FULL]\n',
+    managerReturnFooter: '\n[/BCT_CURRENT_WORKER_RESULT_FULL]\n' });
+  const legacyReceipt = storage.deliveryLedgerMirrorV1['delivery-legacy'];
+  const legacySubmittedSha256 = legacyReceipt.managerReturnSubmittedSha256;
+  assert.notEqual(legacySubmittedSha256, legacyReturn.managerReturnSha256);
+  delete legacyReceipt.managerReturnSubmittedSha256;
+  const sendBeforeLegacyRetire = context.sendToChatTab;
+  const legacyRetireRequests = [];
+  context.sendToChatTab = async (tabId, message) => {
+    if (tabId === 10 && message.type === 'relay:retireExecution'
+        && message.relayId === 'delivery-legacy') {
+      legacyRetireRequests.push(message.expectedRequestSha256);
+      if (message.expectedRequestSha256 !== legacySubmittedSha256) {
+        return { ok: false, retired: false, effectState: 'NOT_APPLIED',
+          error: 'RELAY_RETIRE_REQUEST_IDENTITY_MISMATCH',
+          requestSha256: legacySubmittedSha256 };
+      }
+      activeRelayIds.delete(10);
+      return { ok: true, retired: true, effectState: 'APPLIED',
+        relayId: message.relayId, conversationKey: message.conversationKey,
+        requestSha256: legacySubmittedSha256,
+        responseSha256: message.expectedResponseSha256,
+        responseLength: message.expectedResponseLength, executionAbsent: true };
+    }
+    return sendBeforeLegacyRetire(tabId, message);
+  };
+  const legacyObserved = await context.deliveryManagerStatus({ deliveryId: 'delivery-legacy' });
+  assert.equal(legacyObserved.managerResponseText, 'manager next');
+  assert.deepEqual(legacyRetireRequests,
+    [legacyReturn.managerReturnSha256, legacySubmittedSha256]);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-legacy'].managerExecutionRetired, true);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-legacy'].managerReturnSubmittedSha256,
+    legacySubmittedSha256);
+  context.sendToChatTab = sendBeforeLegacyRetire;
   const unchangedCount = sends.length;
   const duplicateReturn = await context.deliveryReturn({
     deliveryId: 'delivery-002', managerReturnHeader: 'changed',
