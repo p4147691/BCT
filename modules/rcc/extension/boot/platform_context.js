@@ -26,5 +26,5 @@ const observationGateway = RccObservationGateway.create(chrome);
 const lifecycle = RccLifecycle.create(chrome);
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
-const RCC_BACKGROUND_BUILD_ID = '2026-10-24-rcc-terminal-retirement-identity-v1';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-24-rcc-normalized-submission-identity-v1';
 let nativeTransport = null;

@@ -23,6 +23,10 @@ function deliveryId(value) {
   return id;
 }
 
+async function deliverySubmittedSha256(value) {
+  return relaySha256(RelayCore.normalizeMessageText(String(value || '')));
+}
+
 async function readDeliveryLedgerMirror() {
   const data = await stateRepository.getLocal(DELIVERY_LEDGER_MIRROR_KEY);
   const value = data[DELIVERY_LEDGER_MIRROR_KEY];
@@ -274,6 +278,7 @@ async function deliveryStartUnlocked(message) {
   const intent = {
     version: 1, deliveryId: id, fingerprint, managerConversationKey,
     workerConversationKey, requestSha256, requestText: text,
+    requestSubmittedSha256: await deliverySubmittedSha256(text),
     ...submitPolicy, state: 'WAITING_TARGET', waitingReason: 'SUBMISSION_PENDING',
     createdAt: now, queuedAt: now, updatedAt: now,
   };
@@ -441,7 +446,8 @@ async function retireCapturedWorkerExecution(receipt) {
     const retired = await sendToChatTab(workerTab.id, {
       type: 'relay:retireExecution', relayId: receipt.deliveryId,
       conversationKey: receipt.workerConversationKey,
-      expectedRequestSha256: receipt.requestSha256,
+      expectedRequestSha256: receipt.requestSubmittedSha256
+        || await deliverySubmittedSha256(receipt.requestText),
       expectedResponseSha256: receipt.responseSha256,
       expectedResponseLength: receipt.responseLength,
     });
@@ -542,6 +548,7 @@ async function deliveryReturn(message) {
       error: 'DELIVERY_MANAGER_RETURN_HASH_CONFLICT' };
   }
   const intent = { ...receipt, managerReturnSha256: returnHash,
+    managerReturnSubmittedSha256: await deliverySubmittedSha256(returnText),
     managerReturnLength: returnText.length,
     managerReturnSettingsSha256: String(message.managerReturnSettingsSha256 || ''),
     updatedAt: Date.now() };
@@ -589,7 +596,8 @@ async function retireCapturedManagerExecution(receipt) {
     const retired = await sendToChatTab(managerTab.id, {
       type: 'relay:retireExecution', relayId: receipt.deliveryId,
       conversationKey: receipt.managerConversationKey,
-      expectedRequestSha256: receipt.managerReturnSha256,
+      expectedRequestSha256: receipt.managerReturnSubmittedSha256
+        || receipt.managerReturnSha256,
       expectedResponseSha256: receipt.managerResponseSha256,
       expectedResponseLength: receipt.managerResponseLength,
     });

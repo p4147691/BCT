@@ -35,6 +35,22 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.44 normalized submission identity candidate
+
+RC24 keeps the immutable source-message SHA for the durable Delivery fence and
+also records the SHA of the exact normalized text owned by the page execution.
+Terminal Worker and Manager retirement now uses that submitted-text identity.
+This covers frames whose source ends in a newline or trailing whitespace: the
+user turn remains exact after ChatGPT composer normalization, while retirement
+no longer compares the normalized page record to the different source hash.
+Existing source hashes, response hashes, lengths and no-retry boundaries remain
+unchanged.
+
+- extension version: `1.0.44 Normalized Submission Identity`
+- runtime build: `2026-10-24-rcc-normalized-submission-identity-v1`
+- candidate: `RCC_REBUILD_V2_RC24_NORMALIZED_SUBMISSION_IDENTITY`
+- candidate inventory: 52 files, aggregate `4d5c89995beec26e294ecc776737205216c79fb9a93d44214b24189954fb9a88`
+
 ## BCT RCC 1.0.43 terminal retirement identity candidate
 
 RC23 carries RC22's exact request/response identity fence through the normal

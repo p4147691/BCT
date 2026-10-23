@@ -17,6 +17,10 @@ const context = {
   console, TextEncoder, crypto: webcrypto,
   RelayCore: {
     conversationKey(url) { return String(url).split('/c/')[1] || ''; },
+    normalizeMessageText(value) {
+      return String(value || '').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ')
+        .split('\n').map((line) => line.replace(/[ \t]+$/g, '')).join('\n').trim();
+    },
   },
   stateRepository: {
     async getLocal(key) { return { [key]: storage[key] }; },
@@ -68,7 +72,7 @@ const context = {
     sends.push({ tabId, message });
     if (message.type === 'relay:simpleReadReply') {
       return { ok: true, conversationKey: message.conversationKey,
-        responseText: tabId === 10 ? 'manager next' : 'worker reply' };
+        responseText: tabId === 10 ? 'manager next' : 'worker reply\n' };
     }
     if (message.type === 'relay:simpleExecute' && failNextExecuteBusy) {
       failNextExecuteBusy = false;
@@ -85,7 +89,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/simple_relay_receipts.js', 
 vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js', 'utf8'), context);
 
 (async () => {
-  const text = 'one exact message';
+  const text = 'one exact message\n';
   const requestSha256 = await context.relaySha256(text);
   const identity = {
     deliveryId: 'delivery-001', text, requestSha256,
@@ -99,7 +103,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(sends.length, 1);
   const captured = await context.deliveryStatus({ deliveryId: 'delivery-001' });
   assert.equal(captured.state, 'REPLY_CAPTURED');
-  assert.equal(captured.responseLength, 12);
+  assert.equal(captured.responseLength, 13);
   const returned = await context.deliveryReturn({ deliveryId: 'delivery-001' });
   assert.equal(returned.state, 'RETURNED');
   assert.equal(sends.length, 3);
@@ -118,13 +122,17 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   const managerRetire = controlCalls.find(item => item.tabId === 10
     && item.message.type === 'relay:retireExecution'
     && item.message.relayId === 'delivery-001').message;
-  assert.equal(managerRetire.expectedRequestSha256, returned.managerReturnSha256);
+  assert.equal(managerRetire.expectedRequestSha256,
+    storage.deliveryLedgerMirrorV1['delivery-001'].managerReturnSubmittedSha256);
+  assert.notEqual(managerRetire.expectedRequestSha256, returned.managerReturnSha256);
   assert.equal(managerRetire.expectedResponseSha256, manager.managerResponseSha256);
   assert.equal(managerRetire.expectedResponseLength, manager.managerResponseLength);
   const workerRetire = controlCalls.find(item => item.tabId === 20
     && item.message.type === 'relay:retireExecution'
     && item.message.relayId === 'delivery-001').message;
-  assert.equal(workerRetire.expectedRequestSha256, requestSha256);
+  assert.equal(workerRetire.expectedRequestSha256,
+    await context.relaySha256(context.RelayCore.normalizeMessageText(text)));
+  assert.notEqual(workerRetire.expectedRequestSha256, requestSha256);
   assert.equal(workerRetire.expectedResponseSha256, captured.responseSha256);
   assert.equal(workerRetire.expectedResponseLength, captured.responseLength);
   assert.equal(sends[3].tabId, 10);
@@ -176,7 +184,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
     url: 'https://chatgpt.com/c/11111111-1111-1111-1111-111111111111',
   }];
   const header = 'Manager 지시\n[BCT_CURRENT_WORKER_RESULT_FULL]\n';
-  const footer = '\n[/BCT_CURRENT_WORKER_RESULT_FULL]\n후속 작업 판단';
+  const footer = '\n[/BCT_CURRENT_WORKER_RESULT_FULL]\n후속 작업 판단\n';
   const countBefore = sends.length;
   const framed = await context.deliveryReturn({
     deliveryId: 'delivery-002', managerReturnHeader: header,
