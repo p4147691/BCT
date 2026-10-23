@@ -33,6 +33,34 @@ vm.runInContext(
   context
 );
 
+const draftContext = vm.createContext({
+  RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+});
+vm.runInContext(
+  slice(source, 'function editorDraftText(', 'function waitForExactUserSubmission(')
+    + ';globalThis.editorDraftTextForTest = editorDraftText;',
+  draftContext
+);
+
+const paragraph = (innerText, textContent) => ({tagName: 'P', innerText, textContent});
+const proseMirrorDraft = {
+  tagName: 'DIV',
+  children: [
+    paragraph('첫째', '첫째'),
+    // A real ProseMirror empty paragraph exposes a layout newline through
+    // innerText even though its logical textContent is empty.
+    paragraph('\n', ''),
+    paragraph('둘째 😀', '둘째 😀'),
+  ],
+  innerText: '첫째\n\n\n둘째 😀',
+  textContent: '첫째둘째 😀',
+};
+assert.equal(
+  draftContext.editorDraftTextForTest(proseMirrorDraft),
+  '첫째\n\n둘째 😀',
+  'blank ProseMirror paragraphs reconstruct one source blank line',
+);
+
 (async () => {
   const accepted = await context.submitEditorForTest(original, {
     expectedText: expected,
@@ -55,7 +83,7 @@ vm.runInContext(
     'without an exact expected draft, replacement identity stays forbidden'
   );
   assert.equal(clicked, 1);
-  console.log('editor rebind submission v1: PASS');
+  console.log('editor rebind and paragraph draft v2: PASS');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

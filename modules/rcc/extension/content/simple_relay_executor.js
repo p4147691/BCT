@@ -432,15 +432,16 @@ function editorDraftText(editor) {
   let raw = '';
   if (editor.tagName === 'TEXTAREA') raw = editor.value;
   else {
-    // ProseMirror renders one inserted newline as adjacent paragraphs, while
-    // innerText exposes a blank line between those blocks. Reconstruct the
-    // draft from its direct paragraph blocks so the exact pre-submit fence
-    // compares the text that was inserted rather than browser layout spacing.
+    // ProseMirror renders inserted newlines as adjacent paragraphs.  A blank
+    // paragraph is <p><br></p>; its innerText is a layout newline even though
+    // its logical text is empty.  Join direct block textContent so one blank
+    // paragraph reconstructs exactly one blank source line instead of adding
+    // an extra browser-layout newline at the pre-submit fence.
     const children = Array.from(editor.children || []);
     const paragraphDraft = children.length > 0
       && children.every((node) => ['P', 'DIV'].includes(String(node.tagName || '').toUpperCase()));
     raw = paragraphDraft
-      ? children.map((node) => node.innerText || node.textContent || '').join('\n')
+      ? children.map((node) => node.textContent || '').join('\n')
       : (editor.innerText || editor.textContent || '');
   }
   return RelayCore.normalizeMessageText(raw);
