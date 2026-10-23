@@ -175,10 +175,11 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.feature.client = self.host
         self.execute({**self.base, "command": "delivery-status"}, "outer-status-2")
         self.feature.client = Down()
-        with self.assertRaisesRegex(UnknownEffectError, "RCC_DELIVERY_TRANSPORT_UNKNOWN"):
-            self.execute({**self.base, "command": "delivery-return"}, "outer-return")
+        not_sent = self.execute({**self.base, "command": "delivery-return"}, "outer-return")
+        self.assertEqual("NOT_APPLIED", not_sent.outcome.value)
+        self.assertTrue(not_sent.evidence["not_submitted"])
         self.assertEqual(
-            "NEEDS_REVIEW",
+            "REPLY_CAPTURED",
             self.feature.delivery_ledger.get_for_work(
                 delivery_id="delivery-001", work_id=self.work.work_id,
             )["state"],

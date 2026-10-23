@@ -18,6 +18,7 @@ _SHA256 = re.compile(r"[a-f0-9]{64}")
 _OBSERVATION_KEYS = frozenset({
     "rcc_session_id", "worker_tab_id", "worker_window_id",
     "manager_tab_id", "manager_window_id", "host_state", "error_code",
+    "manager_return_sha256", "manager_return_length", "settings_sha256",
 })
 
 
@@ -51,9 +52,12 @@ class DeliveryLedger:
     def create_or_get(self, *, delivery_id: str, work_id: str, instance_id: str,
                       manager_conversation_key: str,
                       worker_conversation_key: str,
-                      request_sha256: str) -> tuple[bool, dict[str, Any]]:
+                      request_sha256: str, scope_id: str = "",
+                      original_task: str = "") -> tuple[bool, dict[str, Any]]:
         _validate_identity(delivery_id, manager_conversation_key,
                            worker_conversation_key, request_sha256)
+        if (scope_id and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,96}", scope_id)) or len(original_task) > 8000:
+            raise ValueError("DELIVERY_SCOPE_OR_TASK_INVALID")
         now = time.time()
         with self.store.transaction() as db:
             existing = db.execute(
@@ -75,7 +79,10 @@ class DeliveryLedger:
                 "INSERT INTO relay_deliveries VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (delivery_id, work_id, instance_id, manager_conversation_key,
                  worker_conversation_key, request_sha256,
-                 DeliveryState.NOT_SENT.value, None, None, "{}", now, now),
+                 DeliveryState.NOT_SENT.value, None, None,
+                 (json.dumps({"scope_id": scope_id, "original_task": original_task},
+                             ensure_ascii=False, sort_keys=True) if scope_id else "{}"),
+                 now, now),
             )
             row = db.execute(
                 "SELECT * FROM relay_deliveries WHERE delivery_id=?", (delivery_id,),

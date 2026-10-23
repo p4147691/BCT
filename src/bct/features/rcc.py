@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 from bct.core.delivery_ledger import DeliveryLedger
+from bct.relay_settings import utf16_units
 from bct.core.delivery_state import DeliveryEvent, DeliveryState
 from bct.core.rcc_result import rcc_result_hash
 from bct.core.store import Store
@@ -323,7 +324,7 @@ class RelayBrowserFeature:
         elif command == "delivery-start":
             allowed.update({
                 "delivery_id", "manager_conversation_key",
-                "worker_conversation_key", "text",
+                "worker_conversation_key", "text", "scope_id",
             })
             delivery_id = str(arguments.get("delivery_id") or "").strip()
             manager_key = str(arguments.get("manager_conversation_key") or "").strip().lower()
@@ -333,8 +334,28 @@ class RelayBrowserFeature:
             if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", delivery_id)
                     or not re.fullmatch(key_pattern, manager_key)
                     or not re.fullmatch(key_pattern, worker_key)
-                    or manager_key == worker_key or not body or len(body) > 12000):
+                    or manager_key == worker_key or not body or utf16_units(body) > 12000):
                 raise PreconditionError("RCC_DELIVERY_START_INVALID")
+            original_task = body
+            # Opt in to BCT's canonical roster + editable Worker note without
+            # changing RCC's native command, return path or Delivery schema.
+            # Prepare the exact bytes once BEFORE hashing/fencing the effect.
+            if "scope_id" in arguments:
+                if self.delivery_ledger is None:
+                    raise PreconditionError("RCC_DELIVERY_COMPOSE_STORE_REQUIRED")
+                from bct.relay_prompt import compose_worker_delivery
+                try:
+                    body = compose_worker_delivery(
+                        store=self.delivery_ledger.store,
+                        scope_id=arguments["scope_id"],
+                        manager_conversation_key=manager_key,
+                        worker_conversation_key=worker_key,
+                        task=body,
+                    )
+                except ValueError as exc:
+                    raise PreconditionError(str(exc)) from exc
+                prepared["extra"]["scopeId"] = arguments["scope_id"]
+                prepared["extra"]["originalTask"] = original_task
             prepared["text"] = body
             prepared["extra"].update({
                 "deliveryId": delivery_id,
@@ -472,6 +493,8 @@ class RelayBrowserFeature:
                 manager_conversation_key=extra["managerConversationKey"],
                 worker_conversation_key=extra["workerConversationKey"],
                 request_sha256=extra["requestSha256"],
+                scope_id=str(extra.get("scopeId") or ""),
+                original_task=str(extra.get("originalTask") or ""),
             )
             if delivery["state"] != DeliveryState.NOT_SENT.value:
                 replay_outcome = {
@@ -529,6 +552,33 @@ class RelayBrowserFeature:
                     "RCC_DELIVERY_RETURN_STATE_INVALID", release_claims=True,
                 )
 
+        if command == "delivery-return" and delivery["observation"].get("scope_id"):
+            from bct.relay_prompt import compose_manager_return_frame
+            context = delivery["observation"]
+            try:
+                header, footer, settings_sha = compose_manager_return_frame(
+                    store=self.delivery_ledger.store, work_id=work_id,
+                    delivery_id=delivery_id,
+                    manager_conversation_key=delivery["manager_conversation_key"],
+                    worker_conversation_key=delivery["worker_conversation_key"],
+                    scope_id=context.get("scope_id") or "",
+                    original_task=context.get("original_task") or "",
+                    worker_result_sha256=delivery.get("response_sha256") or "",
+                )
+            except (ValueError, OSError, UnicodeError) as exc:
+                raise ConfirmedFailure(
+                    "RCC_MANAGER_RETURN_SETTINGS_INVALID", release_claims=True
+                ) from exc
+            if utf16_units(header) + utf16_units(footer) >= 12000:
+                raise ConfirmedFailure(
+                    "RCC_MANAGER_RETURN_FRAME_TOO_LARGE", release_claims=True
+                )
+            extra.update({
+                "managerReturnHeader": header,
+                "managerReturnFooter": footer,
+                "managerReturnSettingsSha256": settings_sha,
+            })
+
         try:
             result = self.client.request(
                 instance_id=values["instance_id"],
@@ -539,15 +589,23 @@ class RelayBrowserFeature:
                 timeout_s=values["timeout_s"],
             )
         except RelayUnavailable as exc:
-            # Status is read-only and may be retried. Start/return cross a UI
-            # effect boundary, so transport loss makes that delivery terminal
-            # for automatic execution rather than authorizing a resend.
-            if command in {"delivery-start", "delivery-return"}:
-                self.delivery_ledger.observe(
+            # The named pipe was never written: no Chrome submission happened.
+            # Keep captured Worker text returnable, do not mark a false UNKNOWN.
+            if command == "delivery-start":
+                unchanged = self.delivery_ledger.observe(
                     delivery_id=delivery_id, work_id=work_id,
-                    event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
-                    observation={"error_code": "RCC_DELIVERY_TRANSPORT_UNKNOWN"},
+                    event=DeliveryEvent.PRE_SUBMIT_REJECTED,
+                    observation={"error_code": "RCC_PIPE_PRE_SUBMIT_UNAVAILABLE"},
                 )
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": command, "delivery_id": delivery_id,
+                    "delivery_state": unchanged["state"], "not_submitted": True,
+                }, release_claims=True, output={"delivery": unchanged})
+            if command == "delivery-return":
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": command, "delivery_id": delivery_id,
+                    "delivery_state": delivery["state"], "not_submitted": True,
+                }, release_claims=True, output={"delivery": delivery})
             if command in {"delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
@@ -607,7 +665,7 @@ class RelayBrowserFeature:
                        {"submit-activated", "submitted", "completed"}
                     or not isinstance(response, str) or not response or len(response) > 12000
                     or hashlib.sha256(response.encode("utf-8")).hexdigest() != digest
-                    or length != len(response)
+                    or length != utf16_units(response)
                     or not isinstance(result.get("workerTabId"), int)
                     or not isinstance(result.get("managerTabId"), int)):
                 raise ConfirmedFailure(
@@ -636,7 +694,7 @@ class RelayBrowserFeature:
                 if (result.get("ok") is not True or not isinstance(body, str)
                         or not body or len(body) > 12000
                         or hashlib.sha256(body.encode("utf-8")).hexdigest() != digest
-                        or length != len(body)):
+                        or length != utf16_units(body)):
                     raise ConfirmedFailure(
                         "RCC_DELIVERY_MANAGER_REPLY_INVALID", release_claims=True,
                     )
@@ -647,6 +705,9 @@ class RelayBrowserFeature:
             }, release_claims=True,
                 output={"delivery": delivery, "result": _sanitize(result)})
         observation = {
+            "manager_return_sha256": str(result.get("managerReturnSha256") or ""),
+            "manager_return_length": result.get("managerReturnLength"),
+            "settings_sha256": str(result.get("managerReturnSettingsSha256") or ""),
             "rcc_session_id": str(result.get("sessionId") or ""),
             "worker_tab_id": result.get("workerTabId"),
             "worker_window_id": result.get("workerWindowId"),

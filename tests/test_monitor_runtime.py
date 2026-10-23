@@ -9,6 +9,7 @@ from bct.core.models import Principal, Work
 from bct.core.store import Store
 from bct.monitor_runtime import _rcc_states, build_monitor_state
 from bct.conversation_network import configure_conversation_scope, upsert_conversation
+from bct.integrations.rcc import RelayUnavailable, RelayEffectUnknown
 
 
 class MonitorRuntimeTests(unittest.TestCase):
@@ -80,7 +81,7 @@ class MonitorRuntimeTests(unittest.TestCase):
                 ident = kwargs["instance_id"]
                 calls.append(ident)
                 if ident == "bad-instance":
-                    raise TimeoutError("no response")
+                    raise RelayUnavailable("RCC_PIPE_UNAVAILABLE")
                 return {"state": {"sessionId": "live", "tabs": [], "endpoints": []}}
         with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
             _RCC_HEALTH.clear()
@@ -92,7 +93,7 @@ class MonitorRuntimeTests(unittest.TestCase):
                 self.assertTrue(second[0]["cached"])
                 self.assertEqual("OPEN", second[1]["state"])
                 self.assertFalse("cached" in second[1])
-                self.assertEqual("TimeoutError", first[0]["error"])
+                self.assertEqual("RelayUnavailable", first[0]["error"])
             finally:
                 _RCC_HEALTH.clear()
 
@@ -103,7 +104,7 @@ class MonitorRuntimeTests(unittest.TestCase):
             def request(self, **kwargs):
                 calls.append((kwargs["instance_id"], kwargs["timeout_s"]))
                 if kwargs["instance_id"].startswith("bad"):
-                    raise TimeoutError("down")
+                    raise RelayUnavailable("RCC_PIPE_UNAVAILABLE")
                 return {"state": {"sessionId": "healthy", "tabs": [], "endpoints": []}}
         ids = ["bad-a", "bad-b", "good-c", "bad-d"]
         with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
@@ -133,6 +134,80 @@ class MonitorRuntimeTests(unittest.TestCase):
                 _RCC_HEALTH.clear()
                 _RCC_INFLIGHT.clear()
 
+    def test_short_monitor_timeout_recovers_without_long_false_disconnect(self):
+        from bct.monitor_runtime import (
+            _RCC_HEALTH, _RCC_INFLIGHT, _RCC_FRESH_TIMEOUT_S,
+            _RCC_TIMEOUT_RETRY_TIMEOUT_S, _RCC_TIMEOUT_RETRY_SECONDS,
+        )
+        import time
+        calls = []
+
+        class Client:
+            def request(self, **kwargs):
+                calls.append(kwargs["timeout_s"])
+                if len(calls) == 1:
+                    raise RelayEffectUnknown("RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH")
+                return {"state": {"sessionId": "same-session",
+                                  "tabs": [], "endpoints": []}}
+
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+            _RCC_HEALTH.clear()
+            _RCC_INFLIGHT.clear()
+            try:
+                self.assertEqual(0.25, _RCC_FRESH_TIMEOUT_S)
+                self.assertEqual(0.35, _RCC_TIMEOUT_RETRY_TIMEOUT_S)
+                self.assertEqual(5.0, _RCC_TIMEOUT_RETRY_SECONDS)
+                self.assertEqual("PROBE_TIMEOUT", _rcc_states(["instance-a"])[0]["state"])
+                self.assertEqual([0.25], calls)
+                self.assertLessEqual(
+                    _RCC_HEALTH["instance-a"]["retry_at"] - time.monotonic(), 5.0)
+                cache = _rcc_states(["instance-a"])[0]
+                self.assertEqual("PROBE_TIMEOUT", cache["state"])
+                self.assertTrue(cache["cached"])
+                self.assertEqual([0.25], calls)
+                _RCC_HEALTH["instance-a"]["retry_at"] = 0
+                live = _rcc_states(["instance-a"])[0]
+                self.assertEqual("OPEN", live["state"])
+                self.assertEqual("same-session", live["session_id"])
+                self.assertEqual([0.25, 0.35], calls)
+                self.assertFalse(_RCC_INFLIGHT)
+            finally:
+                _RCC_HEALTH.clear()
+                _RCC_INFLIGHT.clear()
+
+    def test_real_pipe_failure_retains_longer_backoff(self):
+        from bct.monitor_runtime import _RCC_HEALTH, _RCC_INFLIGHT, _RCC_RETRY_SECONDS
+        class Client:
+            def request(self, **kwargs):
+                raise RelayUnavailable("RCC_PIPE_UNAVAILABLE")
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+            _RCC_HEALTH.clear()
+            _RCC_INFLIGHT.clear()
+            try:
+                self.assertEqual(30.0, _RCC_RETRY_SECONDS)
+                self.assertEqual("UNAVAILABLE", _rcc_states(["pipe-a"])[0]["state"])
+                cached = _rcc_states(["pipe-a"])[0]
+                self.assertTrue(cached["cached"])
+                self.assertGreater(cached["retry_in_ms"], 10000)
+            finally:
+                _RCC_HEALTH.clear()
+                _RCC_INFLIGHT.clear()
+
+    def test_invalid_rcc_probe_is_probe_error_not_disconnect(self):
+        from bct.monitor_runtime import _RCC_HEALTH, _RCC_INFLIGHT
+        class Client:
+            def request(self, **kwargs):
+                return {"state": "invalid"}
+        with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+            _RCC_HEALTH.clear()
+            _RCC_INFLIGHT.clear()
+            try:
+                self.assertEqual("PROBE_ERROR", _rcc_states(["invalid-rcc"])[0]["state"])
+                self.assertEqual("PROBE_ERROR", _rcc_states(["invalid-rcc"])[0]["state"])
+            finally:
+                _RCC_HEALTH.clear()
+                _RCC_INFLIGHT.clear()
+
     def test_last_known_state_never_masquerades_as_live(self):
         from bct.monitor_runtime import _RCC_HEALTH, _RCC_INFLIGHT
         class Client:
@@ -140,7 +215,7 @@ class MonitorRuntimeTests(unittest.TestCase):
             def request(self, **kwargs):
                 self.calls += 1
                 if self.calls > 1:
-                    raise TimeoutError("down")
+                    raise RelayUnavailable("RCC_PIPE_UNAVAILABLE")
                 return {"state": {"sessionId": "healthy", "tabs": [], "endpoints": []}}
         client = Client()
         with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=client):
@@ -189,8 +264,8 @@ class MonitorRuntimeTests(unittest.TestCase):
                 timed_out = _rcc_states(["service-a"])[0]
                 deferred = _rcc_states(["service-a"])[0]
                 self.assertEqual("OPEN", live["state"])
-                self.assertEqual("UNAVAILABLE", timed_out["state"])
-                self.assertEqual("UNAVAILABLE", deferred["state"])
+                self.assertEqual("PROBE_TIMEOUT", timed_out["state"])
+                self.assertEqual("PROBE_TIMEOUT", deferred["state"])
                 self.assertTrue(deferred["cached"])
                 self.assertEqual("verified-session", deferred["session_id"])
                 self.assertEqual("verified-build", deferred["background_build_id"])
