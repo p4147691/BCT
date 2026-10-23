@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC22_RECOVERED_EXECUTION_RETIREMENT",
+  "candidate": "RCC_REBUILD_V2_RC23_TERMINAL_RETIREMENT_IDENTITY",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1101,
-        "sha256": "8b817125cfead154f90772d3bb40caac70f0794007a49c99afa4ba000678ef81"
+        "size": 1099,
+        "sha256": "c59349d2760cc29d93e5698728bd3a1da3fc15d7bd4362d61cb14bba459fd993"
       },
       {
         "path": "browser/read_adapter.js",
@@ -97,8 +97,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 18942,
-        "sha256": "000c227b2c12ed35fa2a1547fa96fbb8290867ef10b1523dc7d2d01a07ebec3d"
+        "size": 18940,
+        "sha256": "738e6e3e2f55e445b8a524d9399c03a06b890c7d6611e2ae7ee541e99f956599"
       },
       {
         "path": "content/conversation_rename.js",
@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 32961,
-        "sha256": "efd4615d7dc3e401b82ff9b58812f16a7d76f6090df93ef2ed9198c31ebbd40e"
+        "size": 33301,
+        "sha256": "eeee00e447ff645b8ec7306687329c0e105f085d1d3c5f7b08dc3760344af497"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -202,8 +202,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1523,
-        "sha256": "52033a876824013e708c2839a17e1f5179f659098d6af272c7fba8eefe53ab36"
+        "size": 1521,
+        "sha256": "8b9bb01e3734dac55450e0c7022704da80f286812105ec5d9d1fc15f68420ad7"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "c2c818587f4d8d1f776e4b7a77a0ad45e44534dbfa5763dc3fce868af23d448e"
+    "aggregateSha256": "b6502bc16f408ca9c086096374a2316d82dc78e4a499dc91a2825ff52bb42f08"
   },
   "activeLoaderGraph": {
     "background": [

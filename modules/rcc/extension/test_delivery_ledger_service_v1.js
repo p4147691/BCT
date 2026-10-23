@@ -115,6 +115,18 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(controlCalls.filter(item => item.tabId === 10
     && item.message.type === 'relay:retireExecution'
     && item.message.relayId === 'delivery-001').length, 1);
+  const managerRetire = controlCalls.find(item => item.tabId === 10
+    && item.message.type === 'relay:retireExecution'
+    && item.message.relayId === 'delivery-001').message;
+  assert.equal(managerRetire.expectedRequestSha256, returned.managerReturnSha256);
+  assert.equal(managerRetire.expectedResponseSha256, manager.managerResponseSha256);
+  assert.equal(managerRetire.expectedResponseLength, manager.managerResponseLength);
+  const workerRetire = controlCalls.find(item => item.tabId === 20
+    && item.message.type === 'relay:retireExecution'
+    && item.message.relayId === 'delivery-001').message;
+  assert.equal(workerRetire.expectedRequestSha256, requestSha256);
+  assert.equal(workerRetire.expectedResponseSha256, captured.responseSha256);
+  assert.equal(workerRetire.expectedResponseLength, captured.responseLength);
   assert.equal(sends[3].tabId, 10);
   assert.equal(sends[3].message.relayId, 'delivery-001');
   assert.equal(sends[3].message.afterAssistantCount, 3);

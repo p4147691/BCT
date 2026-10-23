@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-24-rcc-recovered-execution-retirement-v1';
+const RCC_BUILD_VERSION = '2026-10-24-rcc-terminal-retirement-identity-v1';
 
 function editorCandidates() {
 
