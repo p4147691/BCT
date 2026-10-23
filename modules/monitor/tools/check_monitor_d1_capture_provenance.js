@@ -1,0 +1,18 @@
+"use strict";
+const fs=require("node:fs"),vm=require("node:vm"),assert=require("node:assert/strict"),path=require("node:path");
+const source=fs.readFileSync(path.join(__dirname,"../extension/monitor.js"),"utf8");
+const start=source.indexOf("const MONITOR_WINDOW_CAPTURE_MAX_AGE_MS");
+const end=source.indexOf("function monitorRevokeThumbWindowCaptureSource(",start);
+assert(start>0&&end>start,"versioned local source has capture provenance helper");
+const ctx={};vm.runInNewContext(source.slice(start,end)+";globalThis.valid=monitorCaptureMatchesCurrentWindow;",ctx);
+const valid=ctx.valid;const now=100000;
+assert(valid("A","A",now-1000,now));
+assert(!valid("A","B",now-1000,now));
+assert(!valid("A","A",now-30001,now));
+assert(!valid("A","A",0,now));
+assert(!valid("A","A",now+1,now));
+assert(source.includes('bwmUiLayoutControl?.read?.()?.captureFallback'),"canonical captureFallback settings must survive");
+assert(source.includes('const couldKeep=previousFresh&&('),"stale pixels must not survive title/age changes");
+assert(source.includes('nextSource: nextCaptureState==="captured"?entry.dataUri:""'),"untrusted frame must not reach policy chooser");
+assert.equal((source.match(/frameEntry.captureTitle=String\(meta.captureTitle\);/g)||[]).length,2);
+console.log("PASS: canonical fallback policy preserved and title/age capture frames fail closed");
