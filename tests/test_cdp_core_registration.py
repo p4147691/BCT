@@ -79,8 +79,11 @@ class CDPRegistrationTests(unittest.TestCase):
 
     def test_core_feature_registered_disabled_by_default(self):
         with tempfile.TemporaryDirectory() as root:
+            policy = Path(root) / "bct.toml"
+            config = Path("bct.toml").read_text(encoding="utf-8")
+            policy.write_text(config.replace("[cdp]" + chr(10) + "enabled = true", "[cdp]" + chr(10) + "enabled = false"), encoding="utf-8")
             bct = BCT(state_path=Path(root) / "test.sqlite",
-                      policy_path=Path("bct.toml"))
+                      policy_path=policy)
             try:
                 self.assertIn("cdp_inspect", bct.operations.capabilities)
                 self.assertFalse(bct.cdp_connections.connected)

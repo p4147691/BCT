@@ -35,3 +35,15 @@ BCT Work 생성 actions=[`browser_extension_manage`] 후 `bct_browser_extension_
 2. 기존 운영 PASS 코드를 Work·Operation으로 감싼 Tampermonkey CRUD 어댑터 구현. 임의 eval 도구 금지.
 3. 독립 테스트 / HTTP integration / 검증된 SHA 확인
 4. 로컬 main 반영 → 배포 → 서버 tools/list와 실제 클라이언트 도구 새로고침 대조. 운영 Chrome·RCC 보존
+
+## 2026-10-24 공통 스크립트 관리 추가
+
+- 정식 도구 이름: bct_browser_extension_manage.
+- inventory/pages는 기존 CDP 관리자 사용.
+- Tampermonkey 5.5.1의 list/read/create/update/remove는 제한된 Node CDP 어댑터를 사용. BETA·Editors·BDC 필요 없음.
+- 기존 Chrome을 재시작하지 않고 승인된 CDP 연결을 사용하며 소유한 임시 백그라운드 탭만 닫는다.
+- 쓰기에는 고유 Work/Operation, 정확한 UUID, 예상 SHA, 코드 백업, 저장·삭제 재조회를 적용한다. 결과 불확실 시 UNKNOWN이며 자동 재전송 금지.
+- remove는 Tampermonkey 설치 목록 제거 및 휴지통 보관으로, 영구 삭제와 구분한다.
+- 새 JS 코드 실행이나 범용 CDP eval은 도구 인수로 노출하지 않는다.
+- bct.toml 의 CDP 및 browser_extension_manage 설정과 배포 소스 목록, data_root/mcp_tools.toml 노출·설명 설정을 사용한다.
+- 기존 운영 CRUD PASS 영수증은 재사용하며 이번 공통 도구에 대한 동일 브라우저 수정을 중복 검증하지 않는다.

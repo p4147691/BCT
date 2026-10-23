@@ -160,7 +160,7 @@ class BCT:
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
             CDPInspectFeature(self.cdp_connections),
-            BrowserExtensionManageFeature(self.cdp_connections),
+            BrowserExtensionManageFeature(self.cdp_connections, policy_path=policy_path, data_root=data_root),
             ReadOnlyClaimReconcileFeature(self.store, desktop_session),
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),

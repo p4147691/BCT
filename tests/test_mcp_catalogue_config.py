@@ -142,7 +142,7 @@ class BrowserExtensionReadFeatureTests(unittest.TestCase):
                     frozenset({"browser_extension_manage"}), "user")
         for operation in ("create", "update", "delete", "evaluate_script"):
             with self.subTest(operation=operation):
-                with self.assertRaisesRegex(PreconditionError, "ONLY_READ"):
+                with self.assertRaisesRegex(PreconditionError, "NOT_ENABLED|NOT_SUPPORTED"):
                     feature.prepare(work=work, arguments={"operation": operation})
         manager.request.assert_not_called()
 
