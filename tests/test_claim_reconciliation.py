@@ -211,6 +211,42 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
         self.assertEqual(Outcome.UNKNOWN, original.outcome)
         self.assertEqual([], self.store.claim_diagnostics())
 
+    def test_coordinator_reconciles_exact_legacy_missing_delivery_claim(self):
+        self._unknown("legacy-missing-delivery-coordinator", "relay_browser")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE operations SET evidence_json=?,error=? WHERE operation_id=?",
+                ('{"phase":"UNEXPECTED","type":"KeyError"}',
+                 "'DELIVERY_NOT_FOUND'", "legacy-missing-delivery-coordinator"),
+            )
+        policy_path = Path(self.tmp.name) / "policy.toml"
+        policy_path.write_text(
+            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            encoding="utf-8",
+        )
+        coordinator = OperationCoordinator(
+            store=self.store, policy=Policy(policy_path),
+        )
+        coordinator.register(ReadOnlyClaimReconcileFeature(self.store))
+        result = coordinator.run(
+            principal=Principal(
+                "owner", "fixture",
+                frozenset({"claim_reconcile", "relay_browser"}),
+            ),
+            work_id="work", operation_id="legacy-missing-delivery-resolver",
+            capability="claim_reconcile", arguments={
+                "original_operation_id": "legacy-missing-delivery-coordinator",
+                "reason": "missing ledger row failed before RCC dispatch",
+            },
+        )
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        original = self.store.get_operation_for(
+            operation_id="legacy-missing-delivery-coordinator",
+            work_id="work", principal_id="owner",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual([], self.store.claim_diagnostics())
+
     def test_effect_journal_is_ordered_and_redacted(self):
         self._unknown("journal", "read")
         self.store.record_effect_stage(
