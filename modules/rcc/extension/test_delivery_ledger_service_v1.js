@@ -6,6 +6,11 @@ const { webcrypto } = require('crypto');
 
 const storage = {};
 const sends = [];
+const controlCalls = [];
+let targetGenerating = false;
+let targetComposerEmpty = true;
+const activeRelayIds = new Map();
+let failNextExecuteBusy = false;
 const context = {
   console, TextEncoder, crypto: webcrypto,
   RelayCore: {
@@ -24,11 +29,28 @@ const context = {
     ];
   },
   async sendToChatTab(tabId, message) {
+    if (message.type === 'relay:deliveryReadiness') {
+      controlCalls.push({ tabId, message });
+      return { ok: true, conversationKey: message.conversationKey,
+        generating: targetGenerating, composerEmpty: targetComposerEmpty,
+        activeRelayId: activeRelayIds.get(tabId) || '' };
+    }
+    if (message.type === 'relay:retireExecution') {
+      controlCalls.push({ tabId, message });
+      if (activeRelayIds.get(tabId) === message.relayId) activeRelayIds.delete(tabId);
+      return { ok: true, retired: true, relayId: message.relayId };
+    }
     sends.push({ tabId, message });
     if (message.type === 'relay:simpleReadReply') {
       return { ok: true, conversationKey: message.conversationKey,
         responseText: tabId === 10 ? 'manager next' : 'worker reply' };
     }
+    if (message.type === 'relay:simpleExecute' && failNextExecuteBusy) {
+      failNextExecuteBusy = false;
+      return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
+        error: 'RELAY_TARGET_GENERATING' };
+    }
+    activeRelayIds.set(tabId, message.relayId);
     return { ok: true, submitted: true, conversationKey: message.conversationKey,
       beforeAssistantCount: 3 };
   },
@@ -152,12 +174,74 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   context.sendToChatTab = sendBefore;
   context.getChatTabs = tabsBefore;
 
+  // A visible send control never overrides a generating/busy signal. The
+  // exact payload remains durable outside the composer and resumes once.
+  targetGenerating = true;
+  const queuedIdentity = { ...identity, deliveryId: 'delivery-queued' };
+  const beforeQueuedSubmit = sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length;
+  const queued = await context.deliveryStart(queuedIdentity);
+  assert.equal(queued.ok, true);
+  assert.equal(queued.state, 'WAITING_TARGET');
+  assert.equal(queued.queued, true);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-queued'].requestText, text);
+  assert.equal(sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length, beforeQueuedSubmit);
+  targetGenerating = false;
+  const resumed = await context.resumeWaitingDeliveriesForEndpoint({
+    conversationKey: identity.workerConversationKey,
+    generating: false, presence: 'OPEN',
+  });
+  assert.equal(resumed[0].state, 'SENT_WAITING');
+  assert.equal(sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length, beforeQueuedSubmit + 1);
+  const resumedCaptured = await context.deliveryStatus({ deliveryId: 'delivery-queued' });
+  assert.equal(resumedCaptured.state, 'REPLY_CAPTURED');
+
+  // An occupied composer is also queued and never overwritten.
+  targetComposerEmpty = false;
+  const occupied = await context.deliveryStart({
+    ...identity, deliveryId: 'delivery-occupied',
+  });
+  assert.equal(occupied.state, 'WAITING_TARGET');
+  assert.equal(occupied.waitingReason, 'TARGET_COMPOSER_OCCUPIED');
+  targetComposerEmpty = true;
+  const occupiedResumed = await context.resumeWaitingDeliveriesForEndpoint({
+    conversationKey: identity.workerConversationKey,
+    generating: false, presence: 'OPEN',
+  });
+  assert.equal(occupiedResumed[0].state, 'SENT_WAITING');
+  await context.deliveryStatus({ deliveryId: 'delivery-occupied' });
+
+  // If generation begins after the background readiness probe but before the
+  // content activation boundary, the content guard returns to the queue.
+  failNextExecuteBusy = true;
+  const raced = await context.deliveryStart({
+    ...identity, deliveryId: 'delivery-raced-busy',
+  });
+  assert.equal(raced.state, 'WAITING_TARGET');
+  assert.equal(raced.waitingReason, 'RELAY_TARGET_GENERATING');
+
+  // A later delivery never overtakes an older waiting delivery for the same
+  // Worker, even when the endpoint becomes idle between the two starts.
+  targetGenerating = true;
+  const fifoFirst = await context.deliveryStart({
+    ...identity, deliveryId: 'delivery-fifo-first',
+  });
+  const fifoSecond = await context.deliveryStart({
+    ...identity, deliveryId: 'delivery-fifo-second',
+  });
+  assert.equal(fifoFirst.state, 'WAITING_TARGET');
+  assert.equal(fifoSecond.state, 'WAITING_TARGET');
+  assert.equal(fifoSecond.waitingReason, 'TARGET_QUEUE_PREDECESSOR');
+
   for (let index = 0; index < 66; index += 1) {
     await context.writeDeliveryLedgerMirror(`active-${index}`, {
       deliveryId: `active-${index}`, state: 'SENT_WAITING', updatedAt: index,
     });
   }
   assert.equal(Object.values(storage.deliveryLedgerMirrorV1)
-    .filter((item) => item.state === 'SENT_WAITING').length, 66);
+    .filter((item) => item.state === 'SENT_WAITING'
+      && String(item.deliveryId || '').startsWith('active-')).length, 66);
   console.log('delivery ledger service v1: PASS');
 })().catch((error) => { console.error(error); process.exit(1); });

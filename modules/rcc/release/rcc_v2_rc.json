@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC14_COMPOSER_SETTLE",
+  "candidate": "RCC_REBUILD_V2_RC15_IDLE_DELIVERY_QUEUE",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -17,13 +17,13 @@
       },
       {
         "path": "boot/background_app.js",
-        "size": 1313,
-        "sha256": "dad95831e0b5d8239ec489a02362621356f245c460a23ca19e4bfd062d4296da"
+        "size": 1549,
+        "sha256": "f617a6eb8b5a48989d019b275aa2139b10f05a681a3da62c846627c72de8e88e"
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1086,
-        "sha256": "74529857660d452fef49cd3994c923a6a7f0f23a5b824768cf87efc96a1fdba7"
+        "size": 1090,
+        "sha256": "3ab02ec8350845fe886082a57963a0ed0fd30afabde7b0bce57af3ff28fb484e"
       },
       {
         "path": "browser/read_adapter.js",
@@ -87,18 +87,18 @@
       },
       {
         "path": "content/activity_reporter.js",
-        "size": 12825,
-        "sha256": "e73c7469d87f35e677e5d37935b518dd6f5eff5155ce2fc9ae42f4ae2dc5aee8"
+        "size": 12987,
+        "sha256": "cb1d081207df53400778ba0a7785a40beb8d93c1ee513f9ea0dc7c702551be75"
       },
       {
         "path": "content/content_router.js",
-        "size": 9034,
-        "sha256": "ed25c1e9562417380f052cddeb4e8dfa9a5769e0b949dc413f44b7b9af5ef4bb"
+        "size": 10745,
+        "sha256": "26c2f69391cde2ea6550e52eae482ad90e65bd69cf1b5a411d9512294282cc46"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 17983,
-        "sha256": "89f3cbcff3a0ce3510693d50397967b3ac69d5cc42ec76fa752fc0d052718461"
+        "size": 18148,
+        "sha256": "75e6073857cb9a78dc678ba9a4810d820c6c002b9d9dde743fafc18500816f07"
       },
       {
         "path": "content/conversation_rename.js",
@@ -112,8 +112,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 27836,
-        "sha256": "397400ab2352a4c6155a624bd5a9c2bd4975b27aecf1e9ab7e3f8a100e2dbc9f"
+        "size": 32798,
+        "sha256": "25f494a1c616c81bbe2cb12e5fedb225e258187715ae484ff562e45e37e461f6"
       },
       {
         "path": "core/conversation.js",
@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 17555,
-        "sha256": "fd42a0e25d462b1219fbf973cac54b43571b9f70124b240097043ce3162cba6b"
+        "size": 25474,
+        "sha256": "90309a1e47a5962152f572faf40ed9e7138c4064c1293fcccc2e3ae30b430eef"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -177,8 +177,8 @@
       },
       {
         "path": "domain/runtime_message_service.js",
-        "size": 5044,
-        "sha256": "ab7024b4794e408fb9cd3782b35508d9d5d14dae3347f48b219d0e24d257bc29"
+        "size": 5483,
+        "sha256": "d9426dc1b6d4eb66d5ee6de5064a8515e9c9fb652938de884ecad4182033660b"
       },
       {
         "path": "domain/simple_relay_receipts.js",
@@ -202,8 +202,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1508,
-        "sha256": "50a6117dbda94a0c314d896b050ee0177d7397c7efa735b15d2e05537414b7c8"
+        "size": 1512,
+        "sha256": "ffcd53aa81c2c8d419b274c3b213813df9df6927512fcd41c3d401525b5973e9"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "cee7fcac7cb72322dc80bad059d2f96e85794360af94f099182e99483b94b23f"
+    "aggregateSha256": "1cf6166cf7056e5c747c1df32a201870fad48880a85e6af45af0f5efa0537dd2"
   },
   "activeLoaderGraph": {
     "background": [
@@ -458,7 +458,9 @@
         "relay:newChatExecute",
         "relay:newChatStatus",
         "relay:renameConversation",
-        "relay:deliveryRecoveryProof"
+        "relay:deliveryRecoveryProof",
+        "relay:deliveryReadiness",
+        "relay:retireExecution"
       ],
       "popupAccepted": [
         "relay:getState"
@@ -511,7 +513,9 @@
         "relay:newChatExecute",
         "relay:newChatStatus",
         "relay:renameConversation",
-        "relay:deliveryRecoveryProof"
+        "relay:deliveryRecoveryProof",
+        "relay:deliveryReadiness",
+        "relay:retireExecution"
       ],
       "runtime": [
         "relay:getPendingStatus",

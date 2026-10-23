@@ -21,6 +21,7 @@ const original = {text: expected, focus() { this.focused = true; }};
 const replacement = {text: expected, focus() { this.focused = true; }};
 let current = replacement;
 let clicked = 0;
+let generating = false;
 const button = {click() { clicked += 1; }};
 let waitBehavior = async () => button;
 
@@ -30,6 +31,12 @@ const context = vm.createContext({
   editorDraftText: editor => editor.text,
   waitForReadySendButton: (...args) => waitBehavior(...args),
   findReadySendButton: editor => editor === current ? button : null,
+  isGenerating: () => generating,
+  focusEditorAtEnd: editor => {
+    editor.focus();
+    return true;
+  },
+  wakeEditorWithTrailingSpace: () => true,
 });
 vm.runInContext(
   slice(source, 'async function submitEditor(', 'async function waitForReply(')
@@ -37,9 +44,51 @@ vm.runInContext(
   context
 );
 
+const cleanupEditor = {text: ''};
+const cleanupContext = vm.createContext({
+  RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+  isGenerating: () => false,
+  waitForEditor: async () => cleanupEditor,
+  getEditor: () => cleanupEditor,
+  editorDraftText: editor => String(editor.text || '').trim(),
+  getAssistantNodes: () => [],
+  lastAssistantText: () => '',
+  setEditorText: (editor, value) => { editor.text = value; },
+  submitEditor: async () => { throw new Error('RELAY_TARGET_GENERATING'); },
+  currentConversationKey: () => '22222222-2222-2222-2222-222222222222',
+  waitForExactUserSubmission: async () => 'unused',
+  saveRelayExecution() {},
+  waitForReply: async () => 'unused',
+});
+vm.runInContext(
+  slice(source, 'async function sendPrompt(', '// V0 is a one-way')
+    + ';globalThis.sendPromptForTest = sendPrompt;',
+  cleanupContext
+);
+
 const draftContext = vm.createContext({
   RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
 });
+
+const caretDocument = {activeElement: null};
+const caretContext = vm.createContext({
+  document: caretDocument,
+  window: {getSelection() { throw new Error('textarea must not use DOM selection'); }},
+});
+vm.runInContext(
+  slice(source, 'function focusEditorAtEnd(', 'function wakeEditorWithTrailingSpace(')
+    + ';globalThis.focusEditorAtEndForTest = focusEditorAtEnd;',
+  caretContext
+);
+const textarea = {
+  tagName: 'TEXTAREA', value: expected, selectionStart: 0, selectionEnd: 0,
+  focus() { caretDocument.activeElement = this; },
+  contains() { return false; },
+  setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
+};
+assert.equal(caretContext.focusEditorAtEndForTest(textarea), true);
+assert.equal(textarea.selectionStart, expected.length);
+assert.equal(textarea.selectionEnd, expected.length);
 vm.runInContext(
   slice(source, 'function editorDraftText(', 'function waitForExactUserSubmission(')
     + ';globalThis.editorDraftTextForTest = editorDraftText;',
@@ -96,6 +145,15 @@ assert.equal(
 );
 
 (async () => {
+  await assert.rejects(
+    cleanupContext.sendPromptForTest('queued payload', {
+      submitPolicy: {allowKeyboardFallback: false},
+    }, false),
+    /RELAY_TARGET_GENERATING/,
+  );
+  assert.equal(cleanupEditor.text, '',
+    'a proven pre-activation failure removes only the exact BCT draft before queueing');
+
   const accepted = await context.submitEditorForTest(original, {
     expectedText: expected,
     beforeSubmit: async () => ({binding: true}),
@@ -119,6 +177,16 @@ assert.equal(
     /RELAY_EDITOR_TEXT_MISMATCH/
   );
   assert.equal(clicked, 2, 'a changed replacement draft is never submitted');
+
+  current = replacement;
+  generating = true;
+  await assert.rejects(
+    context.submitEditorForTest(original, {expectedText: expected}),
+    /RELAY_TARGET_GENERATING/,
+    'a visible send button never overrides active generation'
+  );
+  generating = false;
+  assert.equal(clicked, 2, 'generation guard prevents a stop/send race click');
 
   current = replacement;
   await assert.rejects(

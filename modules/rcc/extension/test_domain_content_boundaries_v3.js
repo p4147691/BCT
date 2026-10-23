@@ -64,6 +64,7 @@ assert(diagnostics.includes("message.command === 'diagnose-conversation-ui'"));
 assert(runtime.includes("message.type === 'relay:getPendingStatus'"));
 assert(runtime.includes('lifecycle.runtimeSenderKind(sender)'));
 assert(runtime.includes('RCC_RUNTIME_SENDER_REJECTED'));
+assert(runtime.includes('resumeWaitingDeliveriesForEndpoint(endpoint)'));
 for (const relative of domainFiles) {
   assert(!read(relative).includes('chrome.'), `${relative} must use platform services`);
 }
@@ -79,12 +80,16 @@ assert(executor.includes('async function readSimpleRelayV0Reply('));
 assert(executor.includes('async function executeNewChatBootstrap('));
 assert(executor.includes('async function readNewChatBootstrapStatus('));
 assert(executor.includes('const isNewChatBootstrap = tracking?.bootstrapCreatedTab === true;'));
-assert(executor.includes('allowKeyboardFallback: !isNewChatBootstrap'));
+assert(executor.includes('submitPolicy.allowKeyboardFallback !== false'));
+assert(executor.includes("if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING')"));
+assert(executor.includes('focusEditorAtEnd(liveEditor)'));
 assert(conversationRename.includes('async function renameConversationUi('));
 assert(router.includes("message.type === 'relay:simpleExecute'"));
 assert(router.includes("message.type === 'relay:simpleReadReply'"));
 assert(router.includes("message.type === 'relay:newChatExecute'"));
 assert(router.includes("message.type === 'relay:newChatStatus'"));
+assert(router.includes("message.type === 'relay:deliveryReadiness'"));
+assert(router.includes("message.type === 'relay:retireExecution'"));
 assert(router.includes("message.type === 'relay:renameConversation'"));
 assert(router.includes('RCC_CONTENT_SENDER_REJECTED'));
 assert(activity.includes('async function reportGenerationSignal('));

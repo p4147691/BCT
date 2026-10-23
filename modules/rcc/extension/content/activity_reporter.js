@@ -321,12 +321,12 @@ function relayGenerationMutationRelevant(mutation) {
     if (!['class','data-message-status','data-testid','aria-label','data-talvt-turn-state','data-content-search-unit-key'].includes(String(mutation.attributeName || ''))) return false;
     if (!target) return false;
     return target.matches(
-      'button[data-testid="stop-button"],button[aria-label="Stop streaming"],button[aria-label="Stop"],button[aria-label="중지"],button[aria-label*="응답 중지"],[data-message-author-role="assistant"],[data-content-search-unit-key$=":assistant"],[data-talvt-turn-state],.result-streaming,[data-message-status]'
+      'button[data-testid="stop-button"],button[data-testid*="stop" i],button[aria-label="Stop streaming"],button[aria-label="Stop"],button[aria-label*="stop" i],button[aria-label="중지"],button[aria-label*="중지"],button[aria-label*="멈춤"],[data-message-author-role="assistant"],[data-content-search-unit-key$=":assistant"],[data-talvt-turn-state],.result-streaming,[data-message-status]'
     ) || !!target.closest('[data-message-author-role="assistant"],[data-content-search-unit-key$=":assistant"],[data-turn-key]');
   }
 
   if (mutation.type !== 'childList') return false;
-  const selector = 'button[data-testid="stop-button"],button[aria-label="Stop streaming"],button[aria-label="Stop"],button[aria-label="중지"],button[aria-label*="응답 중지"],[data-message-author-role="assistant"],[data-content-search-unit-key$=":assistant"],[data-talvt-turn-state],.result-streaming,[data-message-status]';
+  const selector = 'button[data-testid="stop-button"],button[data-testid*="stop" i],button[aria-label="Stop streaming"],button[aria-label="Stop"],button[aria-label*="stop" i],button[aria-label="중지"],button[aria-label*="중지"],button[aria-label*="멈춤"],[data-message-author-role="assistant"],[data-content-search-unit-key$=":assistant"],[data-talvt-turn-state],.result-streaming,[data-message-status]';
   return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => {
     if (!(node instanceof Element)) return false;
     return node.matches(selector) || !!node.querySelector(selector);
