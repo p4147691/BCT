@@ -196,6 +196,7 @@ class OperationCoordinator:
             if original["capability"] not in {
                 "read", "system_inspect", "github_pr_status", "execute",
                 "desktop_uia_element_action", "relay_control",
+                "relay_browser",
             }:
                 raise PreconditionError("CLAIM_RECONCILE_CAPABILITY_NOT_SUPPORTED")
             request = replace(request, preconditions={
