@@ -22,12 +22,13 @@ const replacement = {text: expected, focus() { this.focused = true; }};
 let current = replacement;
 let clicked = 0;
 const button = {click() { clicked += 1; }};
+let waitBehavior = async () => button;
 
 const context = vm.createContext({
   RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
   getEditor: () => current,
   editorDraftText: editor => editor.text,
-  waitForReadySendButton: async () => button,
+  waitForReadySendButton: (...args) => waitBehavior(...args),
   findReadySendButton: editor => editor === current ? button : null,
 });
 vm.runInContext(
@@ -102,12 +103,22 @@ assert.equal(
   assert.equal(accepted.method, 'send-button');
   assert.equal(clicked, 1, 'the verified replacement editor submits exactly once');
 
+  current = {text: expected + ' transient', focus() {}};
+  waitBehavior = async () => {
+    current = replacement;
+    return button;
+  };
+  const settled = await context.submitEditorForTest(original, {expectedText: expected});
+  assert.equal(settled.method, 'send-button');
+  assert.equal(clicked, 2, 'a transient draft mismatch waits for the exact settled draft');
+
+  waitBehavior = async () => button;
   current = {text: expected + ' changed', focus() {}};
   await assert.rejects(
     context.submitEditorForTest(original, {expectedText: expected}),
     /RELAY_EDITOR_TEXT_MISMATCH/
   );
-  assert.equal(clicked, 1, 'a changed replacement draft is never submitted');
+  assert.equal(clicked, 2, 'a changed replacement draft is never submitted');
 
   current = replacement;
   await assert.rejects(
@@ -115,8 +126,8 @@ assert.equal(
     /RELAY_EDITOR_TEXT_MISMATCH/,
     'without an exact expected draft, replacement identity stays forbidden'
   );
-  assert.equal(clicked, 1);
-  console.log('editor rebind and paragraph draft v2: PASS');
+  assert.equal(clicked, 2);
+  console.log('editor rebind, paragraph draft, and settle fence v3: PASS');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
