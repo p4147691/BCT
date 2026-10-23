@@ -72,7 +72,7 @@ conversation UUID.
 
 | Policy class | Commands | Decision |
 | --- | --- | --- |
-| new relay | `delivery-start`, `delivery-status`, `delivery-return`, `simple-relay-bind`, `simple-relay-send`, `simple-relay-return`, `new-chat-send` | the three `delivery-*` commands are the replacement; keep new-chat separate; retire the three Simple Relay commands only after acceptance |
+| new relay | `delivery-start`, `delivery-cancel`, `delivery-status`, `delivery-return`, `simple-relay-bind`, `simple-relay-send`, `simple-relay-return`, `new-chat-send` | `delivery-cancel` is limited to a queued `WAITING_TARGET` delivery before physical submit; keep new-chat separate; retire the three Simple Relay commands only after acceptance |
 | conversation | `rename-conversation`, `conversation-bind` | keep rename; retire persisted relay binding after replacement acceptance |
 | orchestration | `send` | replace with the single delivery contract |
 | read-only | `delivery-manager-status`, `ping`, `state`, `result`, `rename-receipt`, `probe`, `probe-tabs`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `api-probe`, `main-capture-get` | keep; consolidate diagnostics later without blocking delivery |

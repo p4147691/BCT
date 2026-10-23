@@ -35,6 +35,10 @@ class FakeDeliveryHost:
                     "state": "REPLY_CAPTURED",
                     "responseSha256": hashlib.sha256(b"reply").hexdigest(),
                     "responseLength": 5}
+        if kwargs["command"] == "delivery-cancel":
+            return {"ok": True, "deliveryId": delivery_id,
+                    "state": "NOT_APPLIED", "cancelled": True,
+                    "error": "DELIVERY_CANCELLED_PRE_SUBMIT"}
         return {"ok": True, "deliveryId": delivery_id,
                 "state": "RETURNED", "managerTabId": 33,
                 "managerWindowId": 44}
@@ -198,6 +202,58 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.assertEqual("queue_until_idle", policy["targetBusyPolicy"])
         self.assertEqual("trailing_space_once", policy["composerWakeMode"])
         self.assertEqual(1000, policy["sendButtonWaitMs"])
+
+    def test_queued_delivery_can_be_cancelled_before_physical_submit(self) -> None:
+        def queued_or_cancelled(**kwargs):
+            self.host.calls.append(kwargs)
+            delivery_id = kwargs["extra"]["deliveryId"]
+            if kwargs["command"] == "delivery-start":
+                return {"ok": True, "deliveryId": delivery_id,
+                        "state": "WAITING_TARGET", "queued": True,
+                        "waitingReason": "TARGET_GENERATING"}
+            return {"ok": True, "deliveryId": delivery_id,
+                    "state": "NOT_APPLIED", "cancelled": True,
+                    "error": "DELIVERY_CANCELLED_PRE_SUBMIT"}
+
+        self.host.request = queued_or_cancelled
+        queued = self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "아직 제출하지 말고 대기",
+        }, "cancel-start")
+        self.assertEqual("WAITING_TARGET", queued.evidence["delivery_state"])
+        cancelled = self.execute(
+            {**self.base, "command": "delivery-cancel"}, "cancel-before-submit",
+        )
+        self.assertEqual(Outcome.APPLIED, cancelled.outcome)
+        self.assertTrue(cancelled.evidence["cancelled"])
+        stored = self.feature.delivery_ledger.get_for_work(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+        )
+        self.assertEqual("NOT_APPLIED", stored["state"])
+        self.assertEqual(
+            "DELIVERY_CANCELLED_PRE_SUBMIT", stored["observation"]["error_code"],
+        )
+        self.assertEqual(
+            ["delivery-start", "delivery-cancel"],
+            [call["command"] for call in self.host.calls],
+        )
+
+    def test_delivery_cancel_rejects_after_submit_before_host_call(self) -> None:
+        self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "이미 제출된 업무",
+        }, "late-cancel-start")
+        with self.assertRaisesRegex(
+            ConfirmedFailure, "RCC_DELIVERY_CANCEL_STATE_INVALID",
+        ):
+            self.execute(
+                {**self.base, "command": "delivery-cancel"}, "late-cancel",
+            )
+        self.assertEqual(["delivery-start"], [call["command"] for call in self.host.calls])
 
     def test_mismatched_delivery_reuse_is_confirmed_before_host_call(self) -> None:
         args = {

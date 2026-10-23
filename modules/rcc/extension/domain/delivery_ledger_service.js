@@ -291,6 +291,42 @@ async function deliveryStart(message) {
   return operation;
 }
 
+async function deliveryCancel(message) {
+  const id = deliveryId(message.deliveryId);
+  // A concurrent resume may already be proving or activating the physical
+  // submit. Wait for that exact attempt and cancel only if it still proves
+  // WAITING_TARGET. This command never guesses across the submit boundary.
+  while (deliveryResumeLocks.has(id)) {
+    try { await deliveryResumeLocks.get(id); } catch (_) {}
+  }
+  const operation = (async () => {
+    const ledger = await readDeliveryLedgerMirror();
+    const receipt = ledger[id];
+    if (!receipt) return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
+      cancelled: false, error: 'DELIVERY_MIRROR_NOT_FOUND' };
+    if (receipt.state === 'NOT_APPLIED'
+        && receipt.error === 'DELIVERY_CANCELLED_PRE_SUBMIT') {
+      return { ok: true, replayed: true, cancelled: true,
+        ...publicDeliveryReceipt(receipt) };
+    }
+    if (receipt.state !== 'WAITING_TARGET') {
+      return { ok: false, cancelled: false, ...publicDeliveryReceipt(receipt),
+        error: 'DELIVERY_CANCEL_STATE_INVALID' };
+    }
+    const cancelled = await writeDeliveryLedgerMirror(id, {
+      ...receipt, state: 'NOT_APPLIED', requestText: '', waitingReason: '',
+      error: 'DELIVERY_CANCELLED_PRE_SUBMIT', cancelledAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    return { ok: true, cancelled: true, ...publicDeliveryReceipt(cancelled) };
+  })();
+  deliveryResumeLocks.set(id, operation);
+  try { return await operation; }
+  finally {
+    if (deliveryResumeLocks.get(id) === operation) deliveryResumeLocks.delete(id);
+  }
+}
+
 async function retireCapturedWorkerExecution(receipt) {
   if (receipt.workerExecutionRetired === true) return receipt;
   let workerTab;
