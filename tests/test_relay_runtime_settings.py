@@ -266,6 +266,15 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.assertIn("manager_additional_instruction", preview["catalog"])
         self.assertIn("project_display_name", preview["catalog"])
         self.assertIn("project_goal", preview["catalog"])
+        self.assertEqual("queue_until_idle",
+                         preview["settings"]["target_busy_policy"])
+        self.assertEqual("trailing_space_once",
+                         preview["settings"]["composer_wake_mode"])
+        self.assertEqual(1000, preview["settings"]["send_button_wait_ms"])
+        self.assertEqual(
+            "NEXT_UNSENT_WORKER_MESSAGE",
+            preview["apply_boundaries"]["delivery_policy"],
+        )
         self.assertIn("완료 기준", preview["catalog"]["completion_criteria"]["description"])
         self.assertNotIn("manager_next_action_instruction", preview["settings"])
         self.assertNotIn("manager_include_role_note", preview["settings"])
@@ -307,6 +316,9 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
             {"worker_context_fields": ["project", "project", "role_note"]},
             {"manager_context_fields": ["project", "unsafe_authority"]},
             {"manager_member_limit": 41},
+            {"target_busy_policy": "submit_while_generating"},
+            {"composer_wake_mode": "physical_space_key"},
+            {"send_button_wait_ms": 8001},
             {"manager_action": "[BCT_ORCHESTRATION_RESULT_V1]"},
             {"project_display_name": "x" * 201},
             {"project_goal": "x" * 4001},

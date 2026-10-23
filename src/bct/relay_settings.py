@@ -20,6 +20,9 @@ _DEFAULT_PATH = Path("D:/BCT/runtime/config/relay-message-settings.json")
 _MAX_SETTINGS_BYTES = 262_144
 _SCOPE = re.compile(r"[A-Za-z0-9_.:-]{1,96}\Z")
 _DEFAULTS = {
+    "target_busy_policy": "queue_until_idle",
+    "composer_wake_mode": "trailing_space_once",
+    "send_button_wait_ms": 1000,
     "worker_intro": "BCT가 구성한 협업 업무입니다.",
     "worker_context_notice": (
         "다음 정보는 현재 프로젝트의 협업 문맥입니다. 구성원과 역할은 업무를 "
@@ -82,6 +85,10 @@ _OPTIONAL_TEXT_LIMITS = {
     "project_context_note": 4000,
 }
 _ALLOWED = set(_DEFAULTS)
+_ENUM_SETTINGS = {
+    "target_busy_policy": {"queue_until_idle", "reject"},
+    "composer_wake_mode": {"trailing_space_once", "none"},
+}
 _LAYOUT = {"context", "worker_result", "action"}
 _WORKER_CONTEXT = {
     "project", "project_goal", "completion_criteria", "project_context_note",
@@ -93,6 +100,22 @@ _MANAGER_CONTEXT = {
 }
 
 _CATALOG: dict[str, dict[str, Any]] = {
+    "target_busy_policy": {
+        "type": "enum",
+        "description": "대상 대화가 응답 생성 중일 때 처리 방식",
+        "allowed_values": ["queue_until_idle", "reject"],
+    },
+    "composer_wake_mode": {
+        "type": "enum",
+        "description": "원문 입력 후 전송 버튼이 즉시 나타나지 않을 때 한 번 수행할 편집기 깨우기",
+        "allowed_values": ["trailing_space_once", "none"],
+    },
+    "send_button_wait_ms": {
+        "type": "integer",
+        "description": "즉시 확인 후 전송 버튼 DOM 변화를 기다리는 최대 시간(ms)",
+        "minimum": 0,
+        "maximum": 8000,
+    },
     "worker_intro": {
         "type": "text", "description": "Worker 메시지의 첫 안내문", "max_length": 2200,
     },
@@ -170,6 +193,7 @@ _IMMUTABLE_CONTRACT = [
     "full current-turn Worker result section",
     "UTF-16 message ceiling",
     "no implicit resend after UNKNOWN or config changes",
+    "never submit while target generation is active or activate a stop control",
 ]
 
 _APPLY_BOUNDARIES = {
@@ -177,6 +201,7 @@ _APPLY_BOUNDARIES = {
     "manager_return": "NEXT_UNASSEMBLED_MANAGER_RETURN",
     "observation": "NEXT_SAFE_READ",
     "prepared_or_submitted_message": "FROZEN",
+    "delivery_policy": "NEXT_UNSENT_WORKER_MESSAGE",
 }
 
 
@@ -250,6 +275,14 @@ def _validated(values: Any) -> dict[str, Any]:
         elif key == "manager_member_limit":
             if type(value) is not int or value < 0 or value > 40:
                 raise ValueError("RELAY_SETTINGS_MEMBER_LIMIT_INVALID")
+            result[key] = value
+        elif key in _ENUM_SETTINGS:
+            if not isinstance(value, str) or value not in _ENUM_SETTINGS[key]:
+                raise ValueError("RELAY_SETTINGS_ENUM_INVALID:" + key)
+            result[key] = value
+        elif key == "send_button_wait_ms":
+            if type(value) is not int or value < 0 or value > 8000:
+                raise ValueError("RELAY_SETTINGS_SEND_WAIT_INVALID")
             result[key] = value
     return result
 

@@ -145,13 +145,26 @@ function handleRuntimeMessage(message, sender, sendResponse) {
           else endpoint.telemetry.readiness = previousReadiness || 'IDLE';
 
 
-          if (previous && previous.generating === endpoint.generating && endpointComparable(previous) === endpointComparable(endpoint) && JSON.stringify(previous?.telemetry || null) === JSON.stringify(endpoint.telemetry || null)) return { ok: true, unchanged: true };
+          if (previous && previous.generating === endpoint.generating
+              && endpointComparable(previous) === endpointComparable(endpoint)
+              && JSON.stringify(previous?.telemetry || null) === JSON.stringify(endpoint.telemetry || null)) {
+            if (!endpoint.generating
+                && typeof resumeWaitingDeliveriesForEndpoint === 'function') {
+              await resumeWaitingDeliveriesForEndpoint(endpoint);
+            }
+            return { ok: true, unchanged: true };
+          }
 
 
           endpointPresence.set(tab.id, endpoint);
 
 
           await publishEndpointDelta(endpoint, 'activity');
+
+          if (!endpoint.generating
+              && typeof resumeWaitingDeliveriesForEndpoint === 'function') {
+            await resumeWaitingDeliveriesForEndpoint(endpoint);
+          }
 
 
           return { ok: true, generating: endpoint.generating };

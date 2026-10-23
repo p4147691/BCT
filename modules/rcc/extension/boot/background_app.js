@@ -10,7 +10,13 @@ async function handleNativeConnected(connection) {
   (async () => {
     const tabs = (await getChatTabs()).filter(isChatTab);
     await ensureRelayReceivers(tabs);
-    await publishEndpointSnapshot('native-connect', tabs);
+    const endpoints = await publishEndpointSnapshot('native-connect', tabs);
+    for (const endpoint of endpoints) {
+      if (!endpoint.generating
+          && typeof resumeWaitingDeliveriesForEndpoint === 'function') {
+        await resumeWaitingDeliveriesForEndpoint(endpoint);
+      }
+    }
   })().catch(() => {});
 }
 

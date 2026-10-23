@@ -370,6 +370,13 @@ class RelayBrowserFeature:
                     or manager_key == worker_key or not body or utf16_units(body) > 12000):
                 raise PreconditionError("RCC_DELIVERY_START_INVALID")
             original_task = body
+            from bct.relay_settings import read_relay_settings
+            try:
+                delivery_settings = read_relay_settings(
+                    str(arguments.get("scope_id") or "")
+                )
+            except (ValueError, OSError, UnicodeError) as exc:
+                raise PreconditionError("RCC_DELIVERY_SETTINGS_INVALID") from exc
             # Opt in to BCT's canonical roster + editable Worker note without
             # changing RCC's native command, return path or Delivery schema.
             # Prepare the exact bytes once BEFORE hashing/fencing the effect.
@@ -397,6 +404,10 @@ class RelayBrowserFeature:
                 "workerConversationKey": worker_key,
                 "requestSha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
                 "workId": work.work_id,
+                "targetBusyPolicy": delivery_settings["target_busy_policy"],
+                "composerWakeMode": delivery_settings["composer_wake_mode"],
+                "sendButtonWaitMs": delivery_settings["send_button_wait_ms"],
+                "deliverySettingsSha256": delivery_settings["config_sha256"],
             })
         elif command in {"delivery-status", "delivery-return", "delivery-manager-status",
                         "delivery-recovery-inspect"}:
@@ -587,7 +598,10 @@ class RelayBrowserFeature:
                     "delivery_state": delivery["state"], "pending": True,
                 }, release_claims=True, output={"delivery": delivery})
             if (command == "delivery-status"
-                    and delivery["state"] != DeliveryState.SENT_WAITING.value):
+                    and delivery["state"] not in {
+                        DeliveryState.WAITING_TARGET.value,
+                        DeliveryState.SENT_WAITING.value,
+                    }):
                 raise ConfirmedFailure(
                     "RCC_DELIVERY_STATUS_STATE_INVALID", release_claims=True,
                 )
@@ -752,7 +766,10 @@ class RelayBrowserFeature:
         observation = {
             "manager_return_sha256": str(result.get("managerReturnSha256") or ""),
             "manager_return_length": result.get("managerReturnLength"),
-            "settings_sha256": str(result.get("managerReturnSettingsSha256") or ""),
+            "settings_sha256": str(
+                result.get("managerReturnSettingsSha256")
+                or result.get("deliverySettingsSha256") or ""
+            ),
             "rcc_session_id": str(result.get("sessionId") or ""),
             "worker_tab_id": result.get("workerTabId"),
             "worker_window_id": result.get("workerWindowId"),
@@ -762,7 +779,9 @@ class RelayBrowserFeature:
             "error_code": str(result.get("error") or "")[:128],
         }
         event = None
-        if state == DeliveryState.SENT_WAITING.value:
+        if state == DeliveryState.WAITING_TARGET.value:
+            event = DeliveryEvent.TARGET_QUEUED
+        elif state == DeliveryState.SENT_WAITING.value:
             event = DeliveryEvent.WORKER_TURN_CONFIRMED
         elif state == DeliveryState.REPLY_CAPTURED.value:
             event = DeliveryEvent.WORKER_REPLY_CAPTURED
@@ -776,6 +795,18 @@ class RelayBrowserFeature:
             event = DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN
         if event is None:
             raise ConfirmedFailure("RCC_DELIVERY_STATE_INVALID", release_claims=True)
+
+        # RCC can resume a queued target from its browser activity event and
+        # capture a very fast reply before BCT performs its next read. Preserve
+        # the authoritative ordered ledger by recording the proven submission
+        # boundary before the captured-reply boundary.
+        if (delivery["state"] == DeliveryState.WAITING_TARGET.value
+                and state == DeliveryState.REPLY_CAPTURED.value):
+            delivery = self.delivery_ledger.observe(
+                delivery_id=delivery_id, work_id=work_id,
+                event=DeliveryEvent.WORKER_TURN_CONFIRMED,
+                observation=observation,
+            )
 
         response_sha256 = str(result.get("responseSha256") or "") or None
         response_length = result.get("responseLength")
@@ -801,7 +832,11 @@ class RelayBrowserFeature:
         return FeatureResult(Outcome.APPLIED, {
             "command": command, "delivery_id": delivery_id,
             "delivery_state": state,
-            "pending": state == DeliveryState.SENT_WAITING.value,
+            "pending": state in {
+                DeliveryState.WAITING_TARGET.value,
+                DeliveryState.SENT_WAITING.value,
+            },
+            "queued": state == DeliveryState.WAITING_TARGET.value,
         }, output={"delivery": updated, "result": _sanitize(result)})
 
     def _execute_create_and_send(self, request: FeatureRequest) -> FeatureResult:

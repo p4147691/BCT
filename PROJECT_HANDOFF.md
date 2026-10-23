@@ -1750,3 +1750,35 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   N13 자체 CAS 변경도 PASS. 그러나 N13이 스스로 고유한 새 Delivery를 선택해 후속 Worker를
   성공적으로 dispatch한 것은 아니다. 이번 자체 시도는 중복 ID라 pre-dispatch 차단됐으므로
   자율 후속 실행·장기 연속 실행과 N14 고정 수락은 별도 미완료다.
+
+
+## 15. RC15 idle Delivery 대기열 후보 — 2026-10-23
+
+- 사용자와 제출 경계를 다시 확정했다. 전송 화살표 표시만으로 idle을 판정하지 않는다. 정확한
+  Worker 대화 UUID, 생성 중 아님(중지/streaming 신호 없음), 빈 입력창, 선행 Relay 없음이 함께
+  성립해야 Manager→Worker 메시지를 입력하고, 활성화된 양의 send selector만 클릭한다. Delivery
+  경로에서는 Enter fallback과 정지 버튼 활성화를 허용하지 않는다.
+- 격리 브랜치 `feat/rcc-idle-delivery-queue-20261023`에 RCC RC15 후보를 구현했다. busy·입력창
+  점유·선행 Relay 상태에서는 원문을 입력창 밖 `deliveryLedgerMirrorV1`의
+  `WAITING_TARGET`에 보존한다. 같은 Worker에서는 FIFO이며, activity idle 전환·Native 재연결·
+  정확한 이전 실행 retire 때 첫 항목만 자동 재개한다. UNKNOWN은 자동 재제출하지 않는다.
+- readiness 확인과 입력 사이의 경합도 content 쪽에서 다시 막는다. 클릭 전 실패로 BCT가 넣은
+  정확한 초안이 남았으면 그 초안만 비우고 대기 상태로 돌아간다. 빈 입력창 복구를 증명하지
+  못하면 `RELAY_DRAFT_CLEAR_UNPROVEN`/NEEDS_REVIEW로 닫아 중복 제출하지 않는다. 입력 뒤에는
+  포커스와 커렛 끝을 확인하며, 설정에 따라 trailing space를 한 번 넣어 제어형 편집기를 깨울 수
+  있다.
+- runtime 설정에 `target_busy_policy`, `composer_wake_mode`, `send_button_wait_ms`를 추가했다.
+  각 Delivery 시작 때 정확한 설정 SHA와 함께 고정되고, 이후 값 변경은 기존 exact-SHA CAS 설정
+  편집으로 다음 미제출 Worker 메시지부터 적용된다. 지원된 값 조정에는 새 main/CI/Core/RCC
+  배포가 필요하지 않지만, 이번 새 상태·실행기는 최초 1회 정상 통합과 배포가 필요하다.
+- 후보는 `RCC_REBUILD_V2_RC15_IDLE_DELIVERY_QUEUE`, 확장 `1.0.35 Idle Delivery Queue`, build
+  `2026-10-23-rcc-idle-delivery-queue-v1`, 52파일 aggregate
+  `1cf6166cf7056e5c747c1df32a201870fad48880a85e6af45af0f5efa0537dd2`다. RC14 rollback
+  aggregate `fc89773104403dbab9efb1b070f7397f9ff21f57bef42bf6bb3979b7151eaf9d`는 보존했다.
+- 격리 검증은 RCC Node 34개, 관련 Python 45개, 전체 Python 1,018개를 통과했다. Python은
+  `PYTHONUTF8=0`과 worktree의 명시적 `PYTHONPATH`로 실행했고 `compileall`, JS syntax,
+  release verifier, `git diff --check`도 PASS했다. Windows 국가/언어·Beta UTF-8 설정과 재부팅은
+  건드리지 않았다.
+- 아직 main 병합, GitHub CI, Core 배포, RC15 staging/운영 reload, 실제 busy→idle 물리 제출 E2E는
+  수행하지 않았다. 현재 운영은 Core generation 201 / SHA `4db4aaaa...`, RCC RC14로 유지된다.
+  N14·N26 기존 초안과 과거 UNKNOWN Delivery도 건드리거나 재전송하지 않았다.

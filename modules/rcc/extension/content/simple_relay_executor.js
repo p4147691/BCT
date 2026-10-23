@@ -19,6 +19,7 @@ function setEditorText(editor, text) {
     editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
 
 
+    focusEditorAtEnd(editor);
     return;
 
 
@@ -47,8 +48,50 @@ function setEditorText(editor, text) {
 
 
   editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+  focusEditorAtEnd(editor);
 
 
+}
+
+function focusEditorAtEnd(editor) {
+  if (!editor || editor.isConnected === false) return false;
+  editor.focus();
+  const focused = document.activeElement === editor || editor.contains?.(document.activeElement);
+  if (!focused) return false;
+  if (editor.tagName === 'TEXTAREA') {
+    const end = String(editor.value || '').length;
+    try { editor.setSelectionRange(end, end); } catch (_) { return false; }
+    return editor.selectionStart === end && editor.selectionEnd === end;
+  }
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return selection.rangeCount === 1
+    && selection.getRangeAt(0).collapsed
+    && editor.contains(selection.getRangeAt(0).endContainer);
+}
+
+function wakeEditorWithTrailingSpace(editor) {
+  if (!focusEditorAtEnd(editor)) return false;
+  if (editor.tagName === 'TEXTAREA') {
+    const value = String(editor.value || '') + ' ';
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    if (setter) setter.call(editor, value);
+    else editor.value = value;
+    editor.dispatchEvent(new InputEvent('input', {
+      bubbles: true, inputType: 'insertText', data: ' ',
+    }));
+    return focusEditorAtEnd(editor);
+  }
+  const inserted = document.execCommand('insertText', false, ' ');
+  if (!inserted) return false;
+  editor.dispatchEvent(new InputEvent('input', {
+    bubbles: true, inputType: 'insertText', data: ' ',
+  }));
+  return focusEditorAtEnd(editor);
 }
 
 
@@ -133,7 +176,7 @@ function waitForReadySendButton(editor = null, timeoutMs = 8000, options = {}) {
 
 async function submitEditor(editor, options = {}) {
   const allowKeyboardFallback = options?.allowKeyboardFallback !== false;
-  const waitMs = Number(options?.waitMs || 8000);
+  const waitMs = Math.max(0, Math.min(8000, Number(options?.waitMs ?? 8000)));
   const expected = typeof options?.expectedText === 'string'
     ? RelayCore.normalizeMessageText(options.expectedText) : null;
   const currentVerifiedEditor = () => {
@@ -141,6 +184,19 @@ async function submitEditor(editor, options = {}) {
     if (expected === null) return liveEditor === editor ? editor : null;
     return liveEditor && editorDraftText(liveEditor) === expected ? liveEditor : null;
   };
+  if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
+  let liveEditor = getEditor();
+  if (!liveEditor || !focusEditorAtEnd(liveEditor)) {
+    throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
+  }
+  if (currentVerifiedEditor() && !findReadySendButton(liveEditor, options)
+      && options?.composerWakeMode === 'trailing_space_once') {
+    if (!wakeEditorWithTrailingSpace(liveEditor)) {
+      throw new Error('RELAY_EDITOR_WAKE_FAILED');
+    }
+    liveEditor = currentVerifiedEditor();
+    if (!liveEditor) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
+  }
   // execCommand and ChatGPT's controlled ProseMirror update do not always
   // settle in the same task.  The draft can be transiently unreadable here
   // and become the exact expected paragraphs before the send button is ready.
@@ -149,24 +205,32 @@ async function submitEditor(editor, options = {}) {
   // Wait for ChatGPT to swap its empty-composer voice control for the enabled send arrow.
   const button = await waitForReadySendButton(editor, waitMs, options);
   if (button) {
-    let liveEditor = currentVerifiedEditor();
+    if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
+    liveEditor = currentVerifiedEditor();
     if (!liveEditor) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
     // A React render may replace or disable the button after the observer resolved.
     if (findReadySendButton(liveEditor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     const bindingAttestation = typeof options?.beforeSubmit === 'function'
       ? await options.beforeSubmit() : null;
+    if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
     liveEditor = currentVerifiedEditor();
     if (!liveEditor) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
     if (findReadySendButton(liveEditor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     const activationAttestation = typeof options?.beforeActivation === 'function'
       ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
       : bindingAttestation;
+    if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
+    liveEditor = currentVerifiedEditor();
+    if (!liveEditor || !focusEditorAtEnd(liveEditor)) {
+      throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
+    }
+    if (findReadySendButton(liveEditor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     const readyAt = Date.now();
     button.click();
     return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now(),
       bindingAttestation: activationAttestation };
   }
-  let liveEditor = currentVerifiedEditor();
+  liveEditor = currentVerifiedEditor();
   if (!liveEditor) throw new Error('RELAY_EDITOR_TEXT_MISMATCH');
 
   if (!allowKeyboardFallback) {
@@ -183,7 +247,8 @@ async function submitEditor(editor, options = {}) {
   const activationAttestation = typeof options?.beforeActivation === 'function'
     ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
     : bindingAttestation;
-  liveEditor.focus();
+  if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
+  if (!focusEditorAtEnd(liveEditor)) throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
   for (const type of ['keydown', 'keypress', 'keyup']) {
     liveEditor.dispatchEvent(new KeyboardEvent(type, {
       key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
@@ -484,6 +549,8 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
 
   const editor = await waitForEditor();
 
+  if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
+
   if (editorDraftText(editor)) throw new Error('RELAY_COMPOSER_NOT_EMPTY');
 
 
@@ -496,14 +563,37 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
 
 
   const isNewChatBootstrap = tracking?.bootstrapCreatedTab === true;
-  await submitEditor(editor, {
-    expectedText: text,
-    // On ChatGPT's blank route a synthetic Enter can become a URL query
-    // instead of an actual user turn. New-chat bootstrap therefore accepts
-    // only the verified send button; existing-conversation relay keeps its
-    // bounded keyboard fallback for compatibility.
-    allowKeyboardFallback: !isNewChatBootstrap,
-  });
+  const submitPolicy = tracking?.submitPolicy && typeof tracking.submitPolicy === 'object'
+    ? tracking.submitPolicy : {};
+  try {
+    await submitEditor(editor, {
+      expectedText: text,
+      // On ChatGPT's blank route a synthetic Enter can become a URL query
+      // instead of an actual user turn. New-chat bootstrap therefore accepts
+      // only the verified send button; existing-conversation relay keeps its
+      // bounded keyboard fallback for compatibility.
+      allowKeyboardFallback: isNewChatBootstrap
+        ? false : submitPolicy.allowKeyboardFallback !== false,
+      composerWakeMode: String(submitPolicy.composerWakeMode || 'none'),
+      waitMs: submitPolicy.sendButtonWaitMs,
+    });
+  } catch (error) {
+    // submitEditor only returns after activating the control. Any throw here
+    // is pre-activation, so remove only the exact draft this call inserted.
+    // If that cleanup cannot be proven, the effect becomes UNKNOWN and the
+    // durable queue must not submit another copy automatically.
+    const liveEditor = getEditor();
+    const expectedDraft = RelayCore.normalizeMessageText(text);
+    if (!liveEditor || editorDraftText(liveEditor) !== expectedDraft) {
+      throw new Error('RELAY_DRAFT_CLEAR_UNPROVEN');
+    }
+    setEditorText(liveEditor, '');
+    const clearedEditor = getEditor();
+    if (!clearedEditor || editorDraftText(clearedEditor)) {
+      throw new Error('RELAY_DRAFT_CLEAR_UNPROVEN');
+    }
+    throw error;
+  }
 
   const submittedAt = Date.now();
   const activatedRecord = tracking?.relayId ? {
@@ -539,8 +629,16 @@ async function executeSimpleRelayV0(message) {
   const expectedConversationKey = String(message?.conversationKey || '').trim().toLowerCase();
   const relayId = String(message?.relayId || '').trim();
   const text = String(message?.text || '');
+  const composerWakeMode = String(message?.composerWakeMode || 'none');
+  const sendButtonWaitMs = Number(message?.sendButtonWaitMs ?? 1000);
   if (!relayId || !expectedConversationKey || !text || text.length > 12000) {
     return { ok: false, submitted: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_ARGUMENT_INVALID' };
+  }
+  if (!['none', 'trailing_space_once'].includes(composerWakeMode)
+      || !Number.isInteger(sendButtonWaitMs) || sendButtonWaitMs < 0
+      || sendButtonWaitMs > 8000) {
+    return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
+      error: 'SIMPLE_RELAY_SUBMIT_POLICY_INVALID' };
   }
   if (currentConversationKey() !== expectedConversationKey) {
     return { ok: false, submitted: false, effectState: 'NOT_APPLIED', error: 'SIMPLE_RELAY_CONVERSATION_MISMATCH' };
@@ -573,6 +671,11 @@ async function executeSimpleRelayV0(message) {
       submittedText: RelayCore.normalizeMessageText(text),
       beforeTurnKeys: getConversationTurns().map(turnIdentity).filter(Boolean),
       routeTurnKey: '',
+      submitPolicy: {
+        allowKeyboardFallback: false,
+        composerWakeMode,
+        sendButtonWaitMs,
+      },
     };
     const submission = await sendPrompt(text, record, false);
     if (currentConversationKey() !== expectedConversationKey) {
@@ -589,8 +692,15 @@ async function executeSimpleRelayV0(message) {
     return { ok: true, submitted: true, relayId, conversationKey: expectedConversationKey,
       beforeAssistantCount: Number(submission?.beforeCount || 0) };
   } catch (error) {
-    return { ok: false, submitted: false, effectState: 'UNKNOWN',
-      error: String(error?.message || error || 'SIMPLE_RELAY_SUBMIT_FAILED') };
+    const code = String(error?.message || error || 'SIMPLE_RELAY_SUBMIT_FAILED');
+    const notApplied = [
+      'RELAY_TARGET_GENERATING', 'Target ChatGPT tab is already generating',
+      'RELAY_COMPOSER_NOT_EMPTY', 'RELAY_SEND_BUTTON_NOT_READY',
+      'RELAY_EDITOR_FOCUS_OR_CARET_INVALID', 'RELAY_EDITOR_WAKE_FAILED',
+      'RELAY_EDITOR_TEXT_MISMATCH', 'RELAY_SEND_BUTTON_CHANGED',
+    ].includes(code);
+    return { ok: false, submitted: false,
+      effectState: notApplied ? 'NOT_APPLIED' : 'UNKNOWN', error: code };
   }
 }
 

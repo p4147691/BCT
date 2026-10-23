@@ -149,6 +149,56 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.assertTrue(replay.evidence["replayed"])
         self.assertEqual(1, len(self.host.calls))
 
+    def test_busy_worker_is_durably_queued_then_resumed_in_order(self) -> None:
+        phase = {"status": 0}
+
+        def queued_host(**kwargs):
+            self.host.calls.append(kwargs)
+            delivery_id = kwargs["extra"]["deliveryId"]
+            if kwargs["command"] == "delivery-start":
+                return {"ok": True, "deliveryId": delivery_id,
+                        "state": "WAITING_TARGET", "queued": True,
+                        "waitingReason": "TARGET_GENERATING"}
+            phase["status"] += 1
+            if phase["status"] == 1:
+                return {"ok": True, "deliveryId": delivery_id,
+                        "state": "SENT_WAITING", "pending": True,
+                        "resumed": True, "workerTabId": 11,
+                        "workerWindowId": 22}
+            return {"ok": True, "deliveryId": delivery_id,
+                    "state": "REPLY_CAPTURED",
+                    "responseSha256": hashlib.sha256(b"reply").hexdigest(),
+                    "responseLength": 5}
+
+        self.host.request = queued_host
+        args = {
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "처리 중이면 입력하지 말고 보관",
+        }
+        queued = self.execute(args, "queued-start")
+        self.assertEqual(Outcome.APPLIED, queued.outcome)
+        self.assertEqual("WAITING_TARGET", queued.evidence["delivery_state"])
+        self.assertTrue(queued.evidence["queued"])
+        replay = self.execute(args, "queued-replay")
+        self.assertTrue(replay.evidence["replayed"])
+        self.assertEqual(1, len(self.host.calls))
+        resumed = self.execute({**self.base, "command": "delivery-status"},
+                               "queued-resume")
+        self.assertEqual("SENT_WAITING", resumed.evidence["delivery_state"])
+        captured = self.execute({**self.base, "command": "delivery-status"},
+                                "queued-capture")
+        self.assertEqual("REPLY_CAPTURED", captured.evidence["delivery_state"])
+        self.assertEqual(
+            ["delivery-start", "delivery-status", "delivery-status"],
+            [call["command"] for call in self.host.calls],
+        )
+        policy = self.host.calls[0]["extra"]
+        self.assertEqual("queue_until_idle", policy["targetBusyPolicy"])
+        self.assertEqual("trailing_space_once", policy["composerWakeMode"])
+        self.assertEqual(1000, policy["sendButtonWaitMs"])
+
     def test_mismatched_delivery_reuse_is_confirmed_before_host_call(self) -> None:
         args = {
             **self.base, "command": "delivery-start",

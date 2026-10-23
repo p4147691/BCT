@@ -76,6 +76,10 @@ if (message.type === 'relay:activityProbe') {
 
       generating: isGenerating(),
 
+      composerEmpty: !editorDraftText(getEditor()),
+
+      activeRelayId: String(loadRelayExecution()?.relayId || ''),
+
       connection: connectionProblem(),
 
 
@@ -88,6 +92,46 @@ if (message.type === 'relay:activityProbe') {
     return;
 
 
+  }
+
+if (message.type === 'relay:deliveryReadiness') {
+    const expectedConversationKey = String(message.conversationKey || '').trim().toLowerCase();
+    const actualConversationKey = currentConversationKey();
+    const editor = getEditor();
+    const active = loadRelayExecution();
+    sendResponse({
+      ok: !!expectedConversationKey && actualConversationKey === expectedConversationKey,
+      conversationKey: actualConversationKey,
+      generating: isGenerating(),
+      composerEmpty: !!editor && !editorDraftText(editor),
+      activeRelayId: String(active?.relayId || ''),
+      activeRelayPhase: String(active?.phase || ''),
+      sendReady: isSendReady(),
+    });
+    return;
+  }
+
+if (message.type === 'relay:retireExecution') {
+    const relayId = String(message.relayId || '').trim();
+    const active = loadRelayExecution();
+    if (!relayId || active?.relayId !== relayId) {
+      sendResponse({ ok: false, retired: false, error: 'RELAY_RETIRE_ID_MISMATCH' });
+      return;
+    }
+    try {
+      const responseText = recoverCompletedReplyFromDom(active);
+      if (!responseText) throw new Error('RELAY_RETIRE_REPLY_NOT_CAPTURED');
+      retiredRelayExecutions.add(relayId);
+      clearRelayExecution(relayId);
+      if (typeof scheduleRelayGenerationStateCheck === 'function') {
+        scheduleRelayGenerationStateCheck(true);
+      }
+      sendResponse({ ok: true, retired: true, relayId });
+    } catch (error) {
+      sendResponse({ ok: false, retired: false,
+        error: String(error?.message || error || 'RELAY_RETIRE_FAILED').slice(0, 128) });
+    }
+    return;
   }
 
 if (message.type === 'relay:probe') {

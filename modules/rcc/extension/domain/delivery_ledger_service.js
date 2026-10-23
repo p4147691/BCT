@@ -1,4 +1,13 @@
 const DELIVERY_LEDGER_MIRROR_KEY = 'deliveryLedgerMirrorV1';
+const deliveryResumeLocks = new Map();
+let deliveryLedgerWriteTail = Promise.resolve();
+let deliveryStartTail = Promise.resolve();
+const DELIVERY_WAITABLE_ERRORS = new Set([
+  'RELAY_TARGET_GENERATING', 'Target ChatGPT tab is already generating',
+  'RELAY_COMPOSER_NOT_EMPTY', 'RELAY_SEND_BUTTON_NOT_READY',
+  'RELAY_EDITOR_FOCUS_OR_CARET_INVALID', 'RELAY_EDITOR_WAKE_FAILED',
+  'RELAY_EDITOR_TEXT_MISMATCH', 'RELAY_SEND_BUTTON_CHANGED',
+]);
 
 function deliveryConversationKey(value) {
   const key = String(value || '').trim().toLowerCase();
@@ -21,19 +30,23 @@ async function readDeliveryLedgerMirror() {
 }
 
 async function writeDeliveryLedgerMirror(id, receipt) {
-  const ledger = await readDeliveryLedgerMirror();
-  ledger[id] = receipt;
-  const entries = Object.entries(ledger)
-    .sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0));
-  const activeStates = new Set(['NOT_SENT', 'SENT_WAITING', 'REPLY_CAPTURED']);
-  // Never evict a delivery that still owns the only reply text or duplicate
-  // submission fence. Bound only terminal audit mirrors; BCT owns durable
-  // history for those terminal rows.
-  const active = entries.filter(([, value]) => activeStates.has(value?.state));
-  const terminal = entries.filter(([, value]) => !activeStates.has(value?.state)).slice(0, 64);
-  const keep = [...active, ...terminal];
-  await stateRepository.setLocal({ [DELIVERY_LEDGER_MIRROR_KEY]: Object.fromEntries(keep) });
-  return receipt;
+  const operation = deliveryLedgerWriteTail.then(async () => {
+    const ledger = await readDeliveryLedgerMirror();
+    ledger[id] = receipt;
+    const entries = Object.entries(ledger)
+      .sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0));
+    const activeStates = new Set(['NOT_SENT', 'WAITING_TARGET', 'SENT_WAITING', 'REPLY_CAPTURED']);
+    // Never evict a delivery that still owns the only reply text or duplicate
+    // submission fence. Bound only terminal audit mirrors; BCT owns durable
+    // history for those terminal rows.
+    const active = entries.filter(([, value]) => activeStates.has(value?.state));
+    const terminal = entries.filter(([, value]) => !activeStates.has(value?.state)).slice(0, 64);
+    const keep = [...active, ...terminal];
+    await stateRepository.setLocal({ [DELIVERY_LEDGER_MIRROR_KEY]: Object.fromEntries(keep) });
+    return receipt;
+  });
+  deliveryLedgerWriteTail = operation.catch(() => {});
+  return operation;
 }
 
 function deliveryTabs(tabs, managerConversationKey, workerConversationKey) {
@@ -62,6 +75,7 @@ function publicDeliveryReceipt(receipt) {
     managerConversationKey: String(receipt.managerConversationKey || ''),
     workerConversationKey: String(receipt.workerConversationKey || ''),
     requestSha256: String(receipt.requestSha256 || ''),
+    deliverySettingsSha256: String(receipt.deliverySettingsSha256 || ''),
     responseSha256: String(receipt.responseSha256 || ''),
     responseLength: Number.isInteger(receipt.responseLength) ? receipt.responseLength : null,
     managerReturnSha256: String(receipt.managerReturnSha256 || ''),
@@ -75,16 +89,160 @@ function publicDeliveryReceipt(receipt) {
     workerWindowId: Number.isInteger(receipt.workerWindowId) ? receipt.workerWindowId : null,
     managerTabId: Number.isInteger(receipt.managerTabId) ? receipt.managerTabId : null,
     managerWindowId: Number.isInteger(receipt.managerWindowId) ? receipt.managerWindowId : null,
+    queued: receipt.state === 'WAITING_TARGET',
+    waitingReason: String(receipt.waitingReason || ''),
+    queuedAt: Number(receipt.queuedAt || 0) || null,
     error: String(receipt.error || ''),
   };
 }
 
-async function deliveryStart(message) {
+function deliverySubmitPolicy(message) {
+  const targetBusyPolicy = String(message.targetBusyPolicy || 'queue_until_idle');
+  const composerWakeMode = String(message.composerWakeMode || 'trailing_space_once');
+  const sendButtonWaitMs = Number(message.sendButtonWaitMs ?? 1000);
+  const deliverySettingsSha256 = String(message.deliverySettingsSha256 || 'defaults');
+  if (!['queue_until_idle', 'reject'].includes(targetBusyPolicy)
+      || !['trailing_space_once', 'none'].includes(composerWakeMode)
+      || !Number.isInteger(sendButtonWaitMs) || sendButtonWaitMs < 0
+      || sendButtonWaitMs > 8000
+      || (deliverySettingsSha256 !== 'defaults'
+        && !/^[a-f0-9]{64}$/.test(deliverySettingsSha256))) {
+    throw new Error('DELIVERY_SUBMIT_POLICY_INVALID');
+  }
+  return { targetBusyPolicy, composerWakeMode, sendButtonWaitMs,
+    deliverySettingsSha256 };
+}
+
+async function inspectDeliveryReadiness(tab, receipt) {
+  const value = await sendToChatTab(tab.id, {
+    type: 'relay:deliveryReadiness',
+    conversationKey: receipt.workerConversationKey,
+  });
+  if (value?.ok !== true || value.conversationKey !== receipt.workerConversationKey) {
+    return { ready: false, terminal: true, reason: 'DELIVERY_TARGET_IDENTITY_MISMATCH' };
+  }
+  if (value.generating === true) {
+    return { ready: false, terminal: false, reason: 'TARGET_GENERATING' };
+  }
+  if (value.composerEmpty !== true) {
+    return { ready: false, terminal: false, reason: 'TARGET_COMPOSER_OCCUPIED' };
+  }
+  const activeRelayId = String(value.activeRelayId || '');
+  if (activeRelayId && activeRelayId !== receipt.deliveryId) {
+    return { ready: false, terminal: false, reason: 'TARGET_PRIOR_RELAY_ACTIVE' };
+  }
+  return { ready: true, terminal: false, reason: 'TARGET_IDLE' };
+}
+
+async function waitOrRejectDelivery(receipt, reason) {
+  if (receipt.targetBusyPolicy === 'reject') {
+    const rejected = { ...receipt, state: 'NOT_APPLIED', waitingReason: '',
+      error: reason, requestText: '', updatedAt: Date.now() };
+    return writeDeliveryLedgerMirror(receipt.deliveryId, rejected);
+  }
+  const queued = { ...receipt, state: 'WAITING_TARGET',
+    queuedAt: Number(receipt.queuedAt || 0) || Date.now(),
+    waitingReason: reason, error: '', updatedAt: Date.now() };
+  return writeDeliveryLedgerMirror(receipt.deliveryId, queued);
+}
+
+async function attemptDeliverySubmission(receipt, workerTab) {
+  let readiness;
+  try {
+    readiness = await inspectDeliveryReadiness(workerTab, receipt);
+  } catch (error) {
+    return waitOrRejectDelivery(receipt,
+      'TARGET_READINESS_UNAVAILABLE:' + String(error?.message || error || 'unknown').slice(0, 80));
+  }
+  if (!readiness.ready) {
+    if (readiness.terminal) {
+      const failed = { ...receipt, state: 'NOT_APPLIED', waitingReason: '',
+        requestText: '', error: readiness.reason, updatedAt: Date.now() };
+      return writeDeliveryLedgerMirror(receipt.deliveryId, failed);
+    }
+    return waitOrRejectDelivery(receipt, readiness.reason);
+  }
+  let ack;
+  try {
+    ack = await sendToChatTab(workerTab.id, {
+      type: 'relay:simpleExecute', relayId: receipt.deliveryId,
+      conversationKey: receipt.workerConversationKey, text: receipt.requestText,
+      composerWakeMode: receipt.composerWakeMode,
+      sendButtonWaitMs: receipt.sendButtonWaitMs,
+    });
+  } catch (error) {
+    const unresolved = { ...receipt, state: 'NEEDS_REVIEW', waitingReason: '',
+      requestText: '',
+      error: String(error?.message || error || 'DELIVERY_TRANSPORT_UNKNOWN').slice(0, 128),
+      updatedAt: Date.now() };
+    return writeDeliveryLedgerMirror(receipt.deliveryId, unresolved);
+  }
+  if (ack?.ok === true && ack.submitted === true
+      && ack.conversationKey === receipt.workerConversationKey) {
+    const submitted = { ...receipt, state: 'SENT_WAITING', waitingReason: '', error: '',
+      requestText: '',
+      beforeAssistantCount: Number(ack.beforeAssistantCount || 0),
+      workerTabId: workerTab.id, workerWindowId: workerTab.windowId,
+      updatedAt: Date.now() };
+    return writeDeliveryLedgerMirror(receipt.deliveryId, submitted);
+  }
+  const error = String(ack?.error || 'DELIVERY_ACK_INVALID').slice(0, 128);
+  if (ack?.effectState === 'NOT_APPLIED' && DELIVERY_WAITABLE_ERRORS.has(error)) {
+    return waitOrRejectDelivery(receipt, error);
+  }
+  const state = ack?.effectState === 'NOT_APPLIED' ? 'NOT_APPLIED' : 'NEEDS_REVIEW';
+  const unresolved = { ...receipt, state, waitingReason: '',
+    requestText: '',
+    updatedAt: Date.now(), error };
+  return writeDeliveryLedgerMirror(receipt.deliveryId, unresolved);
+}
+
+async function resumeWaitingDelivery(deliveryIdValue) {
+  const id = deliveryId(deliveryIdValue);
+  if (deliveryResumeLocks.has(id)) return deliveryResumeLocks.get(id);
+  const operation = (async () => {
+    const ledger = await readDeliveryLedgerMirror();
+    const receipt = ledger[id];
+    if (!receipt || receipt.state !== 'WAITING_TARGET') return receipt || null;
+    let workerTab;
+    try {
+      workerTab = singleDeliveryTab(await getChatTabs(), receipt.workerConversationKey);
+    } catch (_) {
+      return waitOrRejectDelivery(receipt, 'TARGET_TAB_NOT_UNIQUELY_OPEN');
+    }
+    return attemptDeliverySubmission(receipt, workerTab);
+  })().finally(() => deliveryResumeLocks.delete(id));
+  deliveryResumeLocks.set(id, operation);
+  return operation;
+}
+
+async function resumeWaitingDeliveriesForEndpoint(endpoint) {
+  if (!endpoint || endpoint.generating === true || endpoint.presence === 'OFFLINE') return [];
+  const conversationKey = String(endpoint.conversationKey || '').trim().toLowerCase();
+  if (!conversationKey) return [];
+  const ledger = await readDeliveryLedgerMirror();
+  const waiting = Object.values(ledger)
+    .filter((item) => item?.state === 'WAITING_TARGET'
+      && item.workerConversationKey === conversationKey)
+    .sort((a, b) => Number(a.queuedAt || a.updatedAt || 0)
+      - Number(b.queuedAt || b.updatedAt || 0));
+  if (!waiting.length) return [];
+  // FIFO per Worker. A later item cannot overtake the first queued Delivery.
+  return [await resumeWaitingDelivery(waiting[0].deliveryId)];
+}
+
+async function deliveryStartUnlocked(message) {
   const id = deliveryId(message.deliveryId);
   const managerConversationKey = deliveryConversationKey(message.managerConversationKey);
   const workerConversationKey = deliveryConversationKey(message.workerConversationKey);
   const text = String(message.text || '');
   const requestSha256 = String(message.requestSha256 || '').trim();
+  let submitPolicy;
+  try { submitPolicy = deliverySubmitPolicy(message); }
+  catch (error) {
+    return { ok: false, deliveryId: id, state: 'NOT_APPLIED',
+      error: String(error?.message || error).slice(0, 128) };
+  }
   if (managerConversationKey === workerConversationKey || !text || text.length > 12000
       || !/^[a-f0-9]{64}$/.test(requestSha256)
       || await relaySha256(text) !== requestSha256) {
@@ -108,45 +266,61 @@ async function deliveryStart(message) {
     return { ok: false, deliveryId: id, state: 'NOT_APPLIED',
       error: String(error?.message || error).slice(0, 128) };
   }
+  const priorActive = Object.values(ledger).find((item) =>
+    item?.workerConversationKey === workerConversationKey
+      && (['NOT_SENT', 'WAITING_TARGET', 'SENT_WAITING'].includes(item.state)
+        || (item.state === 'REPLY_CAPTURED' && item.workerExecutionRetired !== true)));
+  const now = Date.now();
   const intent = {
     version: 1, deliveryId: id, fingerprint, managerConversationKey,
-    workerConversationKey, requestSha256, state: 'NOT_SENT', updatedAt: Date.now(),
+    workerConversationKey, requestSha256, requestText: text,
+    ...submitPolicy, state: 'WAITING_TARGET', waitingReason: 'SUBMISSION_PENDING',
+    createdAt: now, queuedAt: now, updatedAt: now,
   };
   await writeDeliveryLedgerMirror(id, intent);
-  let ack;
+  const receipt = priorActive
+    ? await waitOrRejectDelivery(intent, 'TARGET_QUEUE_PREDECESSOR')
+    : await resumeWaitingDelivery(id);
+  return { ok: !['NOT_APPLIED', 'NEEDS_REVIEW', 'FAILED'].includes(receipt.state),
+    ...publicDeliveryReceipt(receipt) };
+}
+
+async function deliveryStart(message) {
+  const operation = deliveryStartTail.then(() => deliveryStartUnlocked(message));
+  deliveryStartTail = operation.catch(() => {});
+  return operation;
+}
+
+async function retireCapturedWorkerExecution(receipt) {
+  if (receipt.workerExecutionRetired === true) return receipt;
+  let workerTab;
   try {
-    ack = await sendToChatTab(tabs.worker.id, {
-      type: 'relay:simpleExecute', relayId: id,
-      conversationKey: workerConversationKey, text,
+    workerTab = singleDeliveryTab(await getChatTabs(), receipt.workerConversationKey);
+    const retired = await sendToChatTab(workerTab.id, {
+      type: 'relay:retireExecution', relayId: receipt.deliveryId,
+      conversationKey: receipt.workerConversationKey,
     });
-  } catch (error) {
-    const receipt = { ...intent, state: 'NEEDS_REVIEW', updatedAt: Date.now(),
-      error: String(error?.message || error || 'DELIVERY_TRANSPORT_UNKNOWN').slice(0, 128) };
-    await writeDeliveryLedgerMirror(id, receipt);
-    return { ok: false, ...publicDeliveryReceipt(receipt) };
+    if (retired?.ok !== true || retired.retired !== true) return receipt;
+  } catch (_) {
+    return receipt;
   }
-  if (ack?.ok === true && ack.submitted === true
-      && ack.conversationKey === workerConversationKey) {
-    const receipt = { ...intent, state: 'SENT_WAITING',
-      beforeAssistantCount: Number(ack.beforeAssistantCount || 0),
-      workerTabId: tabs.worker.id, workerWindowId: tabs.worker.windowId,
-      updatedAt: Date.now() };
-    await writeDeliveryLedgerMirror(id, receipt);
-    return { ok: true, ...publicDeliveryReceipt(receipt) };
-  }
-  const state = ack?.effectState === 'NOT_APPLIED' ? 'NOT_APPLIED' : 'NEEDS_REVIEW';
-  const receipt = { ...intent, state, updatedAt: Date.now(),
-    error: String(ack?.error || 'DELIVERY_ACK_INVALID').slice(0, 128) };
-  await writeDeliveryLedgerMirror(id, receipt);
-  return { ok: false, ...publicDeliveryReceipt(receipt) };
+  return writeDeliveryLedgerMirror(receipt.deliveryId, {
+    ...receipt, workerExecutionRetired: true, updatedAt: Date.now(),
+  });
 }
 
 async function deliveryStatus(message) {
   const id = deliveryId(message.deliveryId);
   const ledger = await readDeliveryLedgerMirror();
-  const receipt = ledger[id];
+  let receipt = ledger[id];
   if (!receipt) return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
     error: 'DELIVERY_MIRROR_NOT_FOUND' };
+  if (receipt.state === 'REPLY_CAPTURED' && receipt.workerExecutionRetired !== true) {
+    receipt = await retireCapturedWorkerExecution(receipt);
+  }
+  if (receipt.state === 'WAITING_TARGET') {
+    return { ok: true, pending: true, ...publicDeliveryReceipt(receipt) };
+  }
   if (receipt.state !== 'SENT_WAITING') {
     return { ok: !['NOT_APPLIED', 'NEEDS_REVIEW', 'FAILED'].includes(receipt.state),
       ...publicDeliveryReceipt(receipt) };
@@ -174,7 +348,8 @@ async function deliveryStatus(message) {
     workerTabId: workerTab.id, workerWindowId: workerTab.windowId,
     updatedAt: Date.now() };
   await writeDeliveryLedgerMirror(id, captured);
-  return { ok: true, ...publicDeliveryReceipt(captured) };
+  const retired = await retireCapturedWorkerExecution(captured);
+  return { ok: true, ...publicDeliveryReceipt(retired) };
 }
 
 async function deliveryReturn(message) {
@@ -231,6 +406,8 @@ async function deliveryReturn(message) {
     ack = await sendToChatTab(managerTab.id, {
       type: 'relay:simpleExecute', relayId: id,
       conversationKey: receipt.managerConversationKey, text: returnText,
+      composerWakeMode: receipt.composerWakeMode,
+      sendButtonWaitMs: receipt.sendButtonWaitMs,
     });
   } catch (error) {
     const unresolved = { ...intent, state: 'NEEDS_REVIEW', updatedAt: Date.now(),

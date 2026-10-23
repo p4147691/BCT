@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-23-rcc-composer-settle-v1';
+const RCC_BUILD_VERSION = '2026-10-23-rcc-idle-delivery-queue-v1';
 
 function editorCandidates() {
 
@@ -486,14 +486,22 @@ function isGenerating() {
 
     'button[data-testid="stop-button"]',
 
+    'button[data-testid*="stop" i]',
+
 
     'button[aria-label="Stop streaming"]',
 
 
     'button[aria-label="Stop"]',
 
+    'button[aria-label*="stop" i]',
+
 
     'button[aria-label="\uC911\uC9C0"]',
+
+    'button[aria-label*="\uC911\uC9C0"]',
+
+    'button[aria-label*="\uBA48\uCDA4"]',
 
 
     'button[aria-label*="\uC751\uB2F5 \uC911\uC9C0"]'

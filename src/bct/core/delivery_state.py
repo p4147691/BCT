@@ -5,6 +5,7 @@ from enum import StrEnum
 
 class DeliveryState(StrEnum):
     NOT_SENT = "NOT_SENT"
+    WAITING_TARGET = "WAITING_TARGET"
     SENT_WAITING = "SENT_WAITING"
     REPLY_CAPTURED = "REPLY_CAPTURED"
     RETURNED = "RETURNED"
@@ -14,6 +15,7 @@ class DeliveryState(StrEnum):
 
 
 class DeliveryEvent(StrEnum):
+    TARGET_QUEUED = "TARGET_QUEUED"
     WORKER_TURN_CONFIRMED = "WORKER_TURN_CONFIRMED"
     WORKER_REPLY_CAPTURED = "WORKER_REPLY_CAPTURED"
     MANAGER_TURN_CONFIRMED = "MANAGER_TURN_CONFIRMED"
@@ -27,8 +29,14 @@ class DeliveryTransitionError(ValueError):
 
 
 _TRANSITIONS = {
+    (DeliveryState.NOT_SENT, DeliveryEvent.TARGET_QUEUED):
+        DeliveryState.WAITING_TARGET,
     (DeliveryState.NOT_SENT, DeliveryEvent.WORKER_TURN_CONFIRMED):
         DeliveryState.SENT_WAITING,
+    (DeliveryState.WAITING_TARGET, DeliveryEvent.WORKER_TURN_CONFIRMED):
+        DeliveryState.SENT_WAITING,
+    (DeliveryState.WAITING_TARGET, DeliveryEvent.PRE_SUBMIT_REJECTED):
+        DeliveryState.NOT_APPLIED,
     (DeliveryState.SENT_WAITING, DeliveryEvent.WORKER_REPLY_CAPTURED):
         DeliveryState.REPLY_CAPTURED,
     (DeliveryState.REPLY_CAPTURED, DeliveryEvent.MANAGER_TURN_CONFIRMED):
@@ -40,6 +48,7 @@ _TRANSITIONS = {
 }
 
 _EVENT_RESULT = {
+    DeliveryEvent.TARGET_QUEUED: DeliveryState.WAITING_TARGET,
     DeliveryEvent.WORKER_TURN_CONFIRMED: DeliveryState.SENT_WAITING,
     DeliveryEvent.WORKER_REPLY_CAPTURED: DeliveryState.REPLY_CAPTURED,
     DeliveryEvent.MANAGER_TURN_CONFIRMED: DeliveryState.RETURNED,
