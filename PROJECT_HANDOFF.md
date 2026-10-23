@@ -1613,6 +1613,7 @@ Worker·Manager 양쪽 이름/목표/완료 기준이 정확히 일치했고 과
 
 기본 통합 보완은 격리 로컬 checkpoint
 `48430c3`(`feat(relay): preview unified configurable messages`)로 확정했다. 위 프로젝트
-표시명·목표 override 보완은 그 다음 격리 변경이며 검증 후 별도 checkpoint로 남긴다. 남은
-순서는 사용자와 실제 프로젝트 override 미리보기 수락이다. 그 전에는
+표시명·목표 override 보완은 checkpoint
+`cf7472d`(`feat(relay): override stale project message context`)로 확정했다. 남은 순서는
+사용자와 실제 프로젝트 override 미리보기 수락이다. 그 전에는
 main/remote/Core/runtime config/Chrome을 변경하거나 N13/N14로 메시지를 보내지 않는다.
