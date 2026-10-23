@@ -129,7 +129,7 @@ class RelayControlSettingsTests(unittest.TestCase):
         self.assertFalse(current["enabled"])
         self.assertEqual({}, current["functions"])
         preview = preview_relay_control(SCOPE)
-        self.assertFalse(preview["execution_connected"])
+        self.assertTrue(preview["execution_connected"])
         self.assertEqual("NONE_PREVIEW_ONLY", preview["effect"])
         self.assertEqual("NEXT_UNSTARTED_FLOW", preview["apply_boundary"])
 
@@ -163,7 +163,7 @@ class RelayControlSettingsTests(unittest.TestCase):
                 "selected_routes": {"worker_roundtrip": "roundtrip.api"},
             }
         )
-        self.assertFalse(proposal["execution_connected"])
+        self.assertTrue(proposal["execution_connected"])
         self.assertEqual(
             before_message["new_sha256"], proposal["expected_sha256"]
         )
@@ -278,13 +278,14 @@ class RelayControlSettingsTests(unittest.TestCase):
         self.assertIn("한국어", output)
         self.assertIn("📦", output)
         parsed = json.loads(output)
-        self.assertFalse(parsed["execution_connected"])
+        self.assertTrue(parsed["execution_connected"])
 
     def test_production_release_includes_control_module(self):
         root = Path(__file__).resolve().parents[1]
         config = tomllib.loads((root / "bct.toml").read_text(encoding="utf-8"))
         files = config["deployment"]["profiles"]["bct_runtime_v1"]["files"]
         self.assertEqual(1, files.count("src/bct/relay_control.py"))
+        self.assertEqual(1, files.count("src/bct/relay_executor.py"))
 
 
 if __name__ == "__main__":

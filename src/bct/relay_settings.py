@@ -327,7 +327,7 @@ def preview_relay_settings(scope_id: str = "") -> dict[str, Any]:
 
 
 def read_relay_control(scope_id: str = "") -> dict[str, Any]:
-    """Read and validate the effective preview-only flow configuration."""
+    """Read and validate the effective hot-read flow configuration."""
     if scope_id and (not isinstance(scope_id, str) or not _SCOPE.fullmatch(scope_id)):
         raise ValueError("RELAY_SETTINGS_SCOPE_INVALID")
     path = Path(os.environ.get("BCT_RELAY_SETTINGS_PATH", str(_DEFAULT_PATH)))
@@ -343,8 +343,34 @@ def read_relay_control(scope_id: str = "") -> dict[str, Any]:
     return result
 
 
+def _runtime_control_preview(control: dict[str, Any], scope_id: str) -> dict[str, Any]:
+    """Annotate the data-only preview with the fixed executor registry."""
+    from bct.relay_executor import registry_preview
+
+    result = resolved_preview(control, scope_id=scope_id)
+    effective = effective_control(control, scope_id)
+    availability = registry_preview(effective["functions"])
+    for selected in result["selected_routes"].values():
+        for step in selected["steps"].values():
+            item = availability[step["use"]]
+            step["resolved_function"]["runtime_availability"] = (
+                "REGISTERED" if item["executable"] else "UNAVAILABLE"
+            )
+            step["resolved_function"]["delegated_capability"] = item["capability"]
+    result.update({
+        "execution_connected": True,
+        "effect": "NONE_PREVIEW_ONLY",
+        "registry": availability,
+        "configured_functions_executable": all(
+            item["executable"] for item in availability.values()
+        ),
+        "execution_contract": "ONE_REGISTERED_OPERATION_STEP_PER_INVOCATION",
+    })
+    return result
+
+
 def preview_relay_control(scope_id: str = "") -> dict[str, Any]:
-    """Resolve configured routes and function calls without executing any."""
+    """Resolve routes and registry availability without executing any."""
     if scope_id and (not isinstance(scope_id, str) or not _SCOPE.fullmatch(scope_id)):
         raise ValueError("RELAY_SETTINGS_SCOPE_INVALID")
     path = Path(os.environ.get("BCT_RELAY_SETTINGS_PATH", str(_DEFAULT_PATH)))
@@ -359,7 +385,7 @@ def preview_relay_control(scope_id: str = "") -> dict[str, Any]:
         "revision": digest,
         "path": str(path),
         "control": effective_control(control, scope_id),
-        "resolved_preview": resolved_preview(control, scope_id=scope_id),
+        "resolved_preview": _runtime_control_preview(control, scope_id),
         "catalog": {
             "function": {
                 "required": ["driver", "call", "effect"],
@@ -377,7 +403,7 @@ def preview_relay_control(scope_id: str = "") -> dict[str, Any]:
         },
         "apply_boundary": "NEXT_UNSTARTED_FLOW",
         "prepared_or_started_flow": "FROZEN",
-        "execution_connected": False,
+        "execution_connected": True,
         "effect": "NONE_PREVIEW_ONLY",
     }
 
@@ -495,11 +521,11 @@ def propose_relay_control_patch(
         "expected_sha256": None if revision == "defaults" else revision,
         "new_sha256": candidate_sha,
         "new_content": content,
-        "effective_preview": resolved_preview(
-            updated["control"], scope_id=scope_id
+        "effective_preview": _runtime_control_preview(
+            updated["control"], scope_id
         ),
         "changed": revision != candidate_sha,
-        "execution_connected": False,
+        "execution_connected": True,
         "effect": "NONE_PREVIEW_ONLY",
     }
 

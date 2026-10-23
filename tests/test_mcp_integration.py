@@ -147,7 +147,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
                         "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push",
                         "bct_github_sync_main", "bct_read", "bct_service_control",
-                        "bct_relay_browser",
+                        "bct_relay_browser", "bct_relay_control",
                         "bct_system_inspect", "bct_execute", "bct_monitor",
                         "bct_cdp_inspect",
                         "bct_process_session",

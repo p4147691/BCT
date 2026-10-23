@@ -38,12 +38,23 @@ class OperationCoordinator:
         if feature is None:
             raise KeyError("FEATURE_NOT_REGISTERED:" + capability)
         work = self.store.get_work(work_id)
+        if capability == "relay_control":
+            # Relay settings select an already-registered capability; they do
+            # not create a new authority.  Identify the static registry target
+            # without composing messages or preparing the child effect, then
+            # authorize that existing capability first.
+            delegated = str(feature.delegated_capability(arguments))
+            if delegated not in self._features or delegated == capability:
+                raise PreconditionError("RELAY_CONTROL_DELEGATED_CAPABILITY_INVALID")
         # A Chrome-tab reconcile is a read-only proof step for an already
         # authorized select in this exact work.  Historical work records cannot
         # gain a newly introduced action, so derive its scope from the original
         # select authority.  The exact original operation, owner, target,
         # outcome, and error are still checked below before any feature I/O.
         policy_action = (
+            delegated
+            if capability == "relay_control"
+            else
             "desktop_chrome_tab_select"
             if capability == "desktop_chrome_tab_reconcile"
             else "desktop_window_activate"
@@ -164,6 +175,9 @@ class OperationCoordinator:
             feature.prepare(work=work, arguments=arguments),
             operation_id=operation_id,
         )
+        if (capability == "relay_control"
+                and request.preconditions.get("delegated_capability") != delegated):
+            raise PreconditionError("RELAY_CONTROL_DELEGATED_CAPABILITY_CHANGED")
         if capability == "claim_reconcile":
             original = self.store.get_operation_metadata_for(
                 operation_id=request.arguments["original_operation_id"],

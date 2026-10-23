@@ -1669,3 +1669,28 @@ API를 금지하지 않으며, 같은 메시지의 외부 효과를 중복 실�
 관련 설정·메시지 회귀 27건과 전체 Python 회귀 1,003건, `compileall`, `py_compile`,
 `git diff --check`가 격리 작업본에서 PASS했다. 실제 운영 설정 파일 쓰기, RCC reload,
 Chrome 제출, N13/N14 제어는 수행하지 않았다. 구현과 실행 수락을 혼합하지 말 것.
+
+## 2026-10-23 릴레이 제어 실행기 V1
+
+preview-only였던 `control`을 기존 BCT 기능에 연결했다. `relay_control`은 설정의
+`driver/call` 문자열을 임의 코드로 실행하지 않고 `relay_executor.py`의 고정 레지스트리에서만
+해석한다. 현재 등록 범위는 표준 Worker 메시지 구성, RCC Delivery start/status/return/
+manager-status/preview와 RCC state/direct-tab send, CDP `list_pages`다. 등록되지 않은 Chrome
+API나 CDP mutation 이름은 실행 전에 거절한다.
+
+설정은 권한을 부여하지 않는다. OperationCoordinator가 메시지를 구성하거나 하위 effect를
+준비하기 전에 선택된 기존 capability(`relay_browser` 또는 `cdp_inspect`)를 현재 Work와
+Principal 정책으로 승인한다. 승인 뒤 exact 설정 SHA와 해석된 하위 요청을 한 operation에
+고정한다. 한 호출에는 pure 단계 여러 개와 기존 BCT operation 단계 하나만 허용해, 제출·조회·
+반환을 목적별 영수증으로 분리하고 같은 메시지 이중 효과를 막는다. 하위 기능의 기존 evidence
+key와 UNKNOWN/Claim/Delivery Ledger 계약은 보존한다.
+
+운영자가 바꿀 수 있는 범위는 등록 함수 alias·기본 인자·timeout·메시지 참조·목적별 route·
+프로젝트 override다. 이는 다음 시작 operation부터 hot-read되며 main/CI/Core 재배포가 필요
+없다. 새 어댑터, capability 또는 effect 규칙은 여전히 정상 소스 통합 대상이다. `guard`와 한
+route 안의 복수 operation 단계는 V1에서 fail-closed다.
+
+격리 검증은 `PYTHONUTF8=0`에서 최종 전체 Python 1,011건 PASS, 관련 설정/실행/MCP 18건 PASS,
+`py_compile` 및 `git diff --check` PASS다. Windows 국가/언어·Beta UTF-8 설정과 재부팅은
+건드리지 않았다. 이 기록 자체는 main/Core/runtime 설정 또는 물리 N13/N14 대화 수락을 뜻하지
+않으며, 그 상태는 exact Git/CI/deploy/config 영수증으로 별도 확인한다.

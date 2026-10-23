@@ -1,9 +1,8 @@
-"""Declarative, preview-only relay control plans stored in runtime settings.
+"""Declarative relay control plans stored in runtime settings.
 
-This module validates data.  It deliberately does not import or call RCC, CDP,
-Chrome, BCT capabilities, or a browser.  A later executor may resolve a
-configured driver/call pair against an explicit runtime registry and must still
-enforce the Work's permissions and external-effect fences.
+This module only validates and previews data.  ``relay_executor`` separately
+resolves a configured driver/call pair against a fixed registry while the
+OperationCoordinator still enforces Work permissions and effect receipts.
 """
 from __future__ import annotations
 
@@ -306,6 +305,7 @@ def merge_patch(target: Any, patch: Any, *, depth: int = 0) -> Any:
 
 
 def resolved_preview(control: dict[str, Any], *, scope_id: str) -> dict[str, Any]:
+    """Return a data-only preview; relay_settings adds runtime registry truth."""
     effective = effective_control(control, scope_id)
     selected: dict[str, Any] = {}
     for purpose, route_name in effective["selected_routes"].items():
@@ -313,8 +313,9 @@ def resolved_preview(control: dict[str, Any], *, scope_id: str) -> dict[str, Any
         steps: dict[str, Any] = {}
         for step_id, step in route["steps"].items():
             function = effective["functions"][step["use"]]
-            merged_arguments = _copy(function.get("arguments", {}))
-            merged_arguments.update(_copy(step.get("arguments", {})))
+            merged_arguments = merge_patch(
+                function.get("arguments", {}), step.get("arguments", {})
+            )
             steps[step_id] = {
                 **_copy(step),
                 "resolved_function": {
