@@ -1547,3 +1547,74 @@ same-ID reload 뒤 RCC instance `6174664e1c1b4e6db1d4729c841db3c9`와 exact N13 
 따라서 Phase 6 얇은 왕복은 `LIVE_ACCEPTED`다. 다음 단계는 이 단일 ledger 위에 Wake-up,
 역할 전환, 다중 Worker를 하나씩 추가하는 Phase 7이다. 기존 orchestration/Simple Relay
 legacy 삭제는 Phase 7 수락과 caller-zero 증명 전까지 금지한다.
+
+## 2026-10-23 메시지 설정 기반 우선 분리
+
+사용자와 작업 순서를 다시 맞췄다. N13/N14 LIVE 통신 실험보다 먼저, Worker 지시와
+Manager 반환 메시지의 세부 값을 런타임 설정으로 바꾸고 실제 대화 중 조정 가능한 기반을
+완성한다. 이 단계에서는 Browser Bridge, Chrome 메시지 제출, RCC reload, main 병합·push,
+GitHub CI를 수행하지 않는다.
+
+격리 브랜치 `feat/relay-message-settings-v2-20261023`는 main
+`78229889782514ca1391d099d0a29cd227a6dbd6`에서 시작했고 기존 1차 설정 commit은
+`0f70ac70e12b4f7cbc7d55887f3820ba298bd2f7`이다. 현재 격리 변경은 그 위에서 사용자의
+최신 메시지 계약과 다시 대조한 보완이며 아직 main이나 LIVE에 통합하지 않았다.
+
+- 새 Delivery 메시지의 의미 설정원은
+  `D:\BCT\runtime\config\relay-message-settings.json` 하나다. 과거
+  `manager-relay-note.txt`와 `worker-relay-note.txt`는 구 Orchestration 호환 자료로 남기되
+  현재 Worker 전달문과 Manager 반환문에 자동 삽입하지 않는다.
+- Worker 안내·반환 지시·추가 지시·선택 문맥/순서와 Manager 안내·자연어 실제 행동 지시·
+  추가 지시·선택 문맥/순서·구성원/대기 업무 표시 한도를 조회·부분 변경할 수 있다.
+- Manager에게 특정 `COMPLETE`/`FOLLOW_UP` 문구를 요구하지 않는다. 남은 일이 있으면
+  BCT 단일 Delivery 경로로 실제 새 업무를 보내고 자연어로 판단과 실행을 설명하며, 없으면
+  목표 충족 근거와 남은 위험을 설명한다.
+- `delivery-preview`는 실제 Delivery row, RCC 또는 Chrome 효과 없이 동일한 조립기로 Worker
+  전달문과 Worker 결과 예시를 포함한 Manager 반환문을 함께 보여 준다. 원문 SHA-256,
+  UTF-16 길이와 현재 상한 적합 여부도 반환한다.
+- 적용 경계는 새 Worker 메시지 확정 전, 아직 조립하지 않은 Manager 반환 전, 다음 안전한
+  관찰이다. 이미 준비·제출한 메시지는 고정하고 설정 변경으로 재전송하지 않는다.
+
+Work/Delivery/scope/Manager/Worker identity, 설정·요청·결과 hash, Worker task와 반환 지시,
+이번 Worker 결과 전문, BCT marker, UTF-16 상한, UNKNOWN 무재전송은 설정으로 제거할 수
+없는 고정 계약이다. 기존 설정 파일은 그대로 유효하며 변경은 기존 preview → partial patch →
+BCT write CAS → 다음 미제출 메시지 경계를 재사용한다. UTF-8/UTF-16/CP949 입력 호환과
+UTF-8 정본 변경안도 격리 시험에 포함했다.
+
+실제 운영 DB를 SQLite read-only/query-only로 열어 N13 Manager
+`6ad7f5b6-c834-83e8-9c00-ff70bab4204d`, N14 Worker
+`6ad7ff62-fa64-83ee-a485-1138f1538e53`, scope
+`network.d3052e031bf748d8b1640b566a5bb86b`를 사용한 무효과 미리보기를 수행했다.
+`effect=NONE_PREVIEW_ONLY`, 구성원 5명, 레거시 상태 단어/노트 0건, Worker 결과 예시 1회,
+두 메시지 모두 12,000 UTF-16 상한 이내였다. Delivery/Chrome/RCC 효과는 없었다. 운영 설정
+파일이 아직 없으므로 revision은 `defaults`이고 실제 `completion_criteria`는 빈 기본값이다.
+이는 이후 설정 입력이 필요한 사실이며 전체 설정 수락으로 과장하지 않는다.
+
+추가 읽기 전용 확인에서 현재 scope 표시명은 `브라우저 브릿지`, Project Run 목표도 과거
+Browser Bridge 완료 문구로 확인됐다. 현재 영속 대화망의 전송 기술 선택이나 목표로 사용하면
+안 되는 값이다. 기존 scope identity와 기록은 보존하고, 메시지 설정의
+`project_display_name`·`project_goal` override가 있으면 Worker/Manager 문맥에서 우선하도록
+보완했다. 사용자의 명시적 결정에 따라 구 Orchestration assignment를 읽던
+`pending_same_work`와 `include_pending`/`pending_limit`은 현재 메시지 설정 및 Manager 반환에서
+제거했다. 향후 보류 업무는 Delivery Ledger와 현재 Work 기준으로 새로 정의한다.
+
+실제 파일을 쓰지 않은 프로젝트 override 후보의 SHA-256은
+`f32c30d1a10021b6053f23c611a39ff623f51040c294e9ebfd01f92fb1e83ba7`,
+`expected_absent=true`다. 후보에는 프로젝트명 `BCT 영속 대화망`, 현재 목표·완료 기준,
+RCC 단일 Delivery/CDP 보조/Browser Bridge 독립 경계를 넣었다. 임시 후보로 다시 조립한 결과
+Worker·Manager 양쪽 이름/목표/완료 기준이 정확히 일치했고 과거 Browser Bridge 목표 문구는
+없었으며 길이는 각각 1,981/2,260 UTF-16 단위였다. 운영 파일에는 쓰지 않았다.
+
+연관 Python 92개 PASS, `PYTHONUTF8=0` 환경의 설정/조립 18개 PASS,
+`compileall` 및 `git diff --check` PASS다. Windows 시스템 UTF-8 옵션이나 국가/언어 설정은
+변경하지 않았고 재부팅도 하지 않았다. 설치 파일 대조 결과 RCC payload는 현재
+`1.0.30 Manager Return Wake` / build
+`2026-10-23-rcc-manager-return-wake-v1`이지만 이번 설정 작업에서는 reload하거나 메시지를
+보내지 않았다. PR #293의 RCC editor rebind 후보도 섞지 않았다.
+
+기본 통합 보완은 격리 로컬 checkpoint
+`48430c3`(`feat(relay): preview unified configurable messages`)로 확정했다. 위 프로젝트
+표시명·목표 override 보완은 checkpoint
+`cf7472d`(`feat(relay): override stale project message context`)로 확정했다. 남은 순서는
+사용자와 실제 프로젝트 override 미리보기 수락이다. 그 전에는
+main/remote/Core/runtime config/Chrome을 변경하거나 N13/N14로 메시지를 보내지 않는다.

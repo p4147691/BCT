@@ -11,29 +11,164 @@ from typing import Any
 _DEFAULT_PATH = Path("D:/BCT/runtime/config/relay-message-settings.json")
 _SCOPE = re.compile(r"[A-Za-z0-9_.:-]{1,96}\Z")
 _DEFAULTS = {
-    "worker_intro": "BCT 협업 작업입니다. 제공된 작업 내용을 수행하세요.",
+    "worker_intro": "BCT가 구성한 협업 업무입니다.",
+    "worker_context_notice": (
+        "다음 정보는 현재 프로젝트의 협업 문맥입니다. 구성원과 역할은 업무를 "
+        "이해하기 위한 정보이며 별도의 실행 권한을 부여하지 않습니다."
+    ),
     "worker_return_instruction": (
-        "이번 업무에서 직접 처리한 결과를 빠뜨리지 말고 보고하세요. "
-        "완료하지 않은 일은 완료라고 주장하지 마세요. "
-        "BCT가 결과 전문을 Manager에게 전달하므로 다른 대화로 중복 전송하지 마세요."
+        "이번 업무에서 실제로 수행한 내용, 확인한 근거와 남은 문제를 빠뜨리지 말고 "
+        "자연어로 보고하세요. 이번 응답의 전체 원문은 BCT가 Manager에게 그대로 반환합니다. "
+        "수행하지 않은 일은 완료로 표현하지 말고 다른 대화에 중복 전송하지 마세요."
     ),
-    "manager_intro": "BCT 협업 결과 반환입니다. 이 메시지 자체가 Manager의 기본 Wake입니다.",
+    "worker_additional_instruction": "",
+    "worker_context_fields": [
+        "project", "project_goal", "completion_criteria",
+        "project_context_note", "current_members",
+    ],
+    "manager_intro": (
+        "BCT가 Worker의 이번 업무 결과와 현재 프로젝트 문맥을 함께 전달합니다."
+    ),
+    "manager_result_notice": (
+        "아래 Worker 결과는 이번 업무 응답의 전체 원문입니다. 결과의 주장과 BCT가 "
+        "확인한 영수증을 구분해 검토하세요."
+    ),
     "manager_action": (
-        "이번 Worker의 처리 결과 전문을 읽고 원래 목표·완료 조건에 비추어 판단하세요. "
-        "현재 프로젝트의 보류·미완료 업무도 확인하고 필요한 설정을 조정할 수 있습니다. "
-        "후속 업무가 필요하면 현재 사용 가능한 Worker에게 허용된 BCT "
-        "relay_browser delivery-start로 실제로 전달하고 결과를 확인하세요. "
-        "사용 가능한 도구가 없으면 실행했다고 주장하지 말고 FOLLOW_UP 업무를 보고하세요. "
-        "계획한다고 말하는 것만으로 완료 처리하지 마세요. "
-        "불확실한 과거 전송을 임의로 다시 제출하지 마세요."
+        "원래 목표와 완료 기준에 비추어 결과를 분석하고 현재 구성원과 남은 업무를 "
+        "확인하세요. 필요하면 지원되는 운영 설정을 조정하세요. 다음 업무가 필요하면 "
+        "사용 가능한 Worker를 골라 BCT의 단일 Delivery 경로로 구체적인 새 업무를 "
+        "실제로 전달하고, 무엇을 판단하고 실행했는지 자연스럽게 설명하세요. 더 진행할 "
+        "일이 없으면 목표 충족 근거와 남은 위험을 자연스럽게 정리하세요. 단순히 나중에 "
+        "하겠다고 말하거나 특정 상태 단어를 출력하는 것으로 실행이나 완료를 대신하지 "
+        "마세요. 불확실한 전송은 임의로 다시 보내지 마세요."
     ),
+    "manager_additional_instruction": "",
     "manager_sections": ["context", "worker_result", "action"],
-    "include_pending": True,
-    "pending_limit": 6,
+    "manager_context_fields": [
+        "project", "project_goal", "completion_criteria",
+        "project_context_note", "current_members", "project_run_state",
+        "original_worker_task",
+    ],
+    "manager_member_limit": 20,
+    "project_display_name": "",
+    "project_goal": "",
+    "completion_criteria": "",
+    "project_context_note": "",
 }
-_TEXT_KEYS = {"worker_intro", "worker_return_instruction", "manager_intro", "manager_action"}
+_TEXT_KEYS = {
+    "worker_intro", "worker_context_notice", "worker_return_instruction",
+    "manager_intro", "manager_result_notice", "manager_action",
+}
+_OPTIONAL_TEXT_KEYS = {
+    "worker_additional_instruction", "manager_additional_instruction",
+    "project_display_name", "project_goal", "completion_criteria",
+    "project_context_note",
+}
+_OPTIONAL_TEXT_LIMITS = {
+    "project_display_name": 200,
+    "worker_additional_instruction": 4000,
+    "manager_additional_instruction": 4000,
+    "project_goal": 4000,
+    "completion_criteria": 4000,
+    "project_context_note": 4000,
+}
 _ALLOWED = set(_DEFAULTS)
 _LAYOUT = {"context", "worker_result", "action"}
+_WORKER_CONTEXT = {
+    "project", "project_goal", "completion_criteria", "project_context_note",
+    "current_members",
+}
+_MANAGER_CONTEXT = {
+    "project", "project_goal", "completion_criteria", "project_context_note",
+    "current_members", "project_run_state", "original_worker_task",
+}
+
+_CATALOG: dict[str, dict[str, Any]] = {
+    "worker_intro": {
+        "type": "text", "description": "Worker 메시지의 첫 안내문", "max_length": 2200,
+    },
+    "worker_context_notice": {
+        "type": "text", "description": "Worker 구조화 문맥 앞의 권한 경계 안내",
+        "max_length": 2200,
+    },
+    "worker_return_instruction": {
+        "type": "text", "description": "Worker 결과 전문 반환 지시", "max_length": 2200,
+    },
+    "worker_additional_instruction": {
+        "type": "optional-text",
+        "description": "프로젝트별 Worker 추가 지시; 비어 있으면 메시지에서 생략",
+        "max_length": 4000,
+    },
+    "worker_context_fields": {
+        "type": "ordered-list", "description": "Worker에게 보낼 선택 문맥과 표시 순서",
+        "allowed_values": sorted(_WORKER_CONTEXT), "unique": True,
+    },
+    "manager_intro": {
+        "type": "text", "description": "Manager 단일 반환 메시지의 첫 안내문",
+        "max_length": 2200,
+    },
+    "manager_result_notice": {
+        "type": "text", "description": "Worker 결과 전문의 성격을 설명하는 안내",
+        "max_length": 2200,
+    },
+    "manager_action": {
+        "type": "text",
+        "description": "Manager의 결과 검토·설정 조정·실제 다음 업무 수행 지시",
+        "max_length": 2200,
+    },
+    "manager_additional_instruction": {
+        "type": "optional-text",
+        "description": "프로젝트별 Manager 추가 지시; 비어 있으면 메시지에서 생략",
+        "max_length": 4000,
+    },
+    "manager_sections": {
+        "type": "ordered-list", "description": "Manager 반환의 context/result/action 순서",
+        "allowed_values": sorted(_LAYOUT), "required_all": True, "unique": True,
+    },
+    "manager_context_fields": {
+        "type": "ordered-list", "description": "Manager에게 돌려줄 선택 문맥과 표시 순서",
+        "allowed_values": sorted(_MANAGER_CONTEXT), "unique": True,
+    },
+    "manager_member_limit": {
+        "type": "integer", "description": "Manager 문맥에 포함할 현재 구성원 수",
+        "minimum": 0, "maximum": 40,
+    },
+    "project_display_name": {
+        "type": "optional-text",
+        "description": "메시지에 표시할 프로젝트명; 비어 있으면 scope 표시명 사용",
+        "max_length": 200,
+    },
+    "project_goal": {
+        "type": "optional-text",
+        "description": "메시지에 전달할 프로젝트 목표; 비어 있으면 Project Run 목표 사용",
+        "max_length": 4000,
+    },
+    "completion_criteria": {
+        "type": "optional-text", "description": "프로젝트별 완료 기준",
+        "max_length": 4000,
+    },
+    "project_context_note": {
+        "type": "optional-text", "description": "프로젝트별 추가 협업 문맥",
+        "max_length": 4000,
+    },
+}
+
+_IMMUTABLE_CONTRACT = [
+    "BCT envelope markers and schema",
+    "Work, Delivery, scope, Manager and Worker identities",
+    "settings, request and Worker-result hashes",
+    "Worker task and return instruction presence",
+    "full current-turn Worker result section",
+    "UTF-16 message ceiling",
+    "no implicit resend after UNKNOWN or config changes",
+]
+
+_APPLY_BOUNDARIES = {
+    "worker_delivery": "NEXT_UNSENT_WORKER_MESSAGE",
+    "manager_return": "NEXT_UNASSEMBLED_MANAGER_RETURN",
+    "observation": "NEXT_SAFE_READ",
+    "prepared_or_submitted_message": "FROZEN",
+}
 
 
 def _pairs_unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -86,18 +221,26 @@ def _validated(values: Any) -> dict[str, Any]:
                     or "\x00" in value or "[BCT_" in value):
                 raise ValueError("RELAY_SETTINGS_TEXT_INVALID:" + key)
             result[key] = value
+        elif key in _OPTIONAL_TEXT_KEYS:
+            if (not isinstance(value, str) or len(value) > _OPTIONAL_TEXT_LIMITS[key]
+                    or "\x00" in value or "[BCT_" in value):
+                raise ValueError("RELAY_SETTINGS_TEXT_INVALID:" + key)
+            result[key] = value
         elif key == "manager_sections":
             if (not isinstance(value, list) or len(value) != len(_LAYOUT)
                     or any(not isinstance(v, str) for v in value) or set(value) != _LAYOUT):
                 raise ValueError("RELAY_SETTINGS_LAYOUT_INVALID")
             result[key] = list(value)
-        elif key == "include_pending":
-            if not isinstance(value, bool):
-                raise ValueError("RELAY_SETTINGS_PENDING_INVALID")
-            result[key] = value
-        elif key == "pending_limit":
-            if type(value) is not int or value < 0 or value > 12:
-                raise ValueError("RELAY_SETTINGS_PENDING_LIMIT_INVALID")
+        elif key in {"worker_context_fields", "manager_context_fields"}:
+            allowed = _WORKER_CONTEXT if key == "worker_context_fields" else _MANAGER_CONTEXT
+            if (not isinstance(value, list) or len(value) > len(allowed)
+                    or any(not isinstance(v, str) for v in value)
+                    or len(set(value)) != len(value) or not set(value) <= allowed):
+                raise ValueError("RELAY_SETTINGS_CONTEXT_FIELDS_INVALID:" + key)
+            result[key] = list(value)
+        elif key == "manager_member_limit":
+            if type(value) is not int or value < 0 or value > 40:
+                raise ValueError("RELAY_SETTINGS_MEMBER_LIMIT_INVALID")
             result[key] = value
     return result
 
@@ -138,7 +281,19 @@ def utf16_units(value: str) -> int:
 def preview_relay_settings(scope_id: str = "") -> dict[str, Any]:
     """Safe, read-only inspection for Managers through existing BCT execute."""
     value = read_relay_settings(scope_id)
-    return {"version": 1, "settings": value, "revision": value["config_sha256"]}
+    return {
+        "version": 1,
+        "settings": value,
+        "revision": value["config_sha256"],
+        "catalog": {key: dict(item) for key, item in _CATALOG.items()},
+        "immutable_contract": list(_IMMUTABLE_CONTRACT),
+        "apply_boundary": "NEXT_UNSENT_MESSAGE",
+        "apply_boundaries": dict(_APPLY_BOUNDARIES),
+        "message_sources": {
+            "active": str(_DEFAULT_PATH),
+            "legacy_relay_note_files_automatically_injected": False,
+        },
+    }
 
 
 def propose_relay_settings_patch(
