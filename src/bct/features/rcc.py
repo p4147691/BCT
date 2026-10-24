@@ -799,6 +799,10 @@ class RelayBrowserFeature:
                     "command": command, "delivery_id": delivery_id,
                     "delivery_state": delivery["state"], "not_submitted": True,
                 }, release_claims=True, output={"delivery": delivery})
+            if command == "delivery-response-read":
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": command, "delivery_id": delivery_id, "code": "UNAVAILABLE",
+                }, release_claims=True, output={"code": "UNAVAILABLE", "delivery_id": delivery_id})
             if command in {"delivery-cancel", "delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
@@ -815,6 +819,10 @@ class RelayBrowserFeature:
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_EFFECT_UNKNOWN"},
                 )
+            if command == "delivery-response-read":
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": command, "delivery_id": delivery_id, "code": "UNAVAILABLE",
+                }, release_claims=True, output={"code": "UNAVAILABLE", "delivery_id": delivery_id})
             if command in {"delivery-cancel", "delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     ("RCC_DELIVERY_MANAGER_STATUS_UNAVAILABLE"
@@ -826,12 +834,20 @@ class RelayBrowserFeature:
             ) from exc
 
         if result.get("deliveryId") != delivery_id:
+            if command == "delivery-response-read":
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": command, "delivery_id": delivery_id, "code": "UNAVAILABLE",
+                }, release_claims=True, output={"code": "UNAVAILABLE", "delivery_id": delivery_id})
             if command in {"delivery-start", "delivery-return"}:
                 self.delivery_ledger.observe(
                     delivery_id=delivery_id, work_id=work_id,
                     event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
                     observation={"error_code": "RCC_DELIVERY_ACK_ID_MISMATCH"},
                 )
+            if command == "delivery-response-read":
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": command, "delivery_id": delivery_id, "code": "UNAVAILABLE",
+                }, release_claims=True, output={"code": "UNAVAILABLE", "delivery_id": delivery_id})
             if command in {"delivery-cancel", "delivery-status", "delivery-manager-status", "delivery-recovery-inspect"}:
                 raise ConfirmedFailure(
                     "RCC_DELIVERY_READ_ID_MISMATCH", release_claims=True,
