@@ -1877,7 +1877,7 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   국가/언어·Beta UTF-8 설정과 재부팅은 건드리지 않았다. busy→idle 스트레스 큐, Claim/Lease
   충돌, 정밀 바이트 원문 대조, 사용자 포커스 전후 비교는 별도 수락시험으로 남아 있다.
 
-## 21. RC26 Manager 반환 idle 대기열 후보 — 2026-10-24
+## 21. RC26 Manager 반환 idle 대기열 — source main 통합, LIVE pending — 2026-10-24
 
 - N35 협업에서 확인한 반복 결함은 Manager가 자기 응답을 생성 중인 같은 턴 안에서 Worker
   결과 반환을 호출해 `Target ChatGPT tab is already generating`으로 거절되는 것이다. Worker
@@ -1892,12 +1892,17 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   `1.0.46 Manager Return Idle Queue`, build
   `2026-10-24-rcc-manager-return-idle-queue-v1`, aggregate
   `45bf2f0cb8389936fd6033d2258f88bd06e12b1c2f177640dd396af236b6b415`다. 기능 commit은
-  `c54466c`, 현재 PR head는 `eba72cd`다.
-- 로컬 검증은 관련 Python 58건, RCC Node 37파일, CI core shard 2의 261건, release/source
-  baseline verifier, Python compile, JS syntax와 `git diff --check`가 PASS했다. 최초 PR CI
-  #40048308693의 core shard 2 실패는 이번 변경과 무관한 기존 main의 stale verification test를
-  격리 main worktree에서 동일 재현했다. 앞선 terminal UNKNOWN claim 은퇴 계약에 맞게 테스트를
-  수정했고 원래 UNKNOWN 영수증 보존과 다음 검증 실행을 함께 확인한다.
-- PR CI의 최신 재실행은 GitHub-hosted runner checkout 정체로 아직 미확정이다. 따라서 RC26은
-  아직 main/Core/RCC LIVE가 아니며 운영 확장 reload와 무인 busy→idle Manager 반환 수락시험도
-  수행하지 않았다. OS UTF-8/국가·언어 설정과 재부팅은 변경하지 않는다.
+  `c54466c`, 최종 PR head는 `f7ed2ae`, main merge SHA는 `fcc625e`다.
+- 로컬 검증은 관련 Python 58건, RCC Node 37파일, CI core shard 2의 261건과 shard 3의 258건,
+  release/source baseline verifier, Python compile, JS syntax와 `git diff --check`가 PASS했다.
+  PR #318 CI #40051118822와 exact merge SHA `fcc625e`의 main CI #40051599308은 scope,
+  preflight, Browser/RCC 및 Core 4개 shard가 모두 SUCCESS다.
+- 앞선 terminal UNKNOWN Claim 은퇴 정책을 대조하는 과정에서 안전 경계를 보완했다. 실행자가
+  없고 종료된 일반 파일/GitHub Claim은 새 독립 Operation 예약 때 원본 영수증을 보존한 채
+  실행 잠금에서 은퇴할 수 있다. 반면 RCC instance, desktop interactive session, deployment,
+  service와 동일 orchestration attachment/run은 외부 효과가 불확실하므로 정확한 reconciliation
+  전까지 같은 자원의 재실행을 계속 차단한다. exact orchestration Claim은 무관한 작업 전체를
+  차단하지 않는다.
+- RC26 소스는 main에 통합됐지만 아직 Core/RCC LIVE가 아니다. 운영 확장 reload와 무인
+  busy→idle Manager 반환 수락시험은 수행하지 않았다. OS UTF-8/국가·언어 설정과 재부팅은
+  변경하지 않는다.
