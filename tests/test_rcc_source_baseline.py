@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC28_MANAGER_RECONCILIATION_PENDING_PROOF", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC29_MANAGER_RECONCILIATION_RELOAD_PROOF", release["candidate"])
         inventory = {item["path"]: item["sha256"]
                      for item in release["candidateInventory"]["files"]}
         critical = {
@@ -50,8 +50,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.48", manifest["version"])
-        self.assertEqual("1.0.48 Manager Reconciliation Pending Proof", manifest["version_name"])
+        self.assertEqual("1.0.49", manifest["version"])
+        self.assertEqual("1.0.49 Manager Reconciliation Reload Proof", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -169,7 +169,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-24-rcc-manager-reconciliation-pending-v1"
+        marker = "2026-10-24-rcc-manager-reconciliation-reload-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
