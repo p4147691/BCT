@@ -256,6 +256,28 @@ class Store:
                     PRIMARY KEY(work_id,stream_id),
                     FOREIGN KEY(work_id) REFERENCES works(work_id)
                 );
+                -- External CI observation is deliberately not a Work state or
+                -- resource claim: waiting for GitHub must never lock Git/deploy.
+                CREATE TABLE IF NOT EXISTS github_run_inbox (
+                    subscription_id TEXT PRIMARY KEY, repository TEXT NOT NULL,
+                    run_id INTEGER NOT NULL, head_sha TEXT NOT NULL,
+                    workflow TEXT NOT NULL, context_json TEXT NOT NULL,
+                    url TEXT, state TEXT NOT NULL, conclusion TEXT,
+                    error_summary TEXT, next_step TEXT NOT NULL, trigger TEXT NOT NULL,
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL, terminal_at REAL,
+                    UNIQUE(repository,run_id,head_sha)
+                );
+                CREATE TABLE IF NOT EXISTS github_run_inbox_recipients (
+                    subscription_id TEXT NOT NULL, work_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL, conversation_uuid TEXT, notify_user INTEGER NOT NULL,
+                    notify_manager INTEGER NOT NULL, unread INTEGER NOT NULL DEFAULT 1,
+                    delivery_state TEXT NOT NULL DEFAULT 'READY_IN_INBOX',
+                    next_step TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(subscription_id,work_id,node_id),
+                    FOREIGN KEY(subscription_id) REFERENCES github_run_inbox(subscription_id),
+                    FOREIGN KEY(work_id) REFERENCES works(work_id)
+                );
+                CREATE INDEX IF NOT EXISTS github_run_inbox_state ON github_run_inbox(state,updated_at);
                 CREATE TABLE IF NOT EXISTS events (
                     event_id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
                     subject_id TEXT NOT NULL, data_json TEXT NOT NULL, created_at REAL NOT NULL
@@ -499,6 +521,16 @@ class Store:
                     "ALTER TABLE conversation_network_conversations ADD COLUMN "
                     "display_order INTEGER NOT NULL DEFAULT 0"
                 )
+            inbox_recipient_columns = {
+                row["name"] for row in db.execute(
+                    "PRAGMA table_info(github_run_inbox_recipients)"
+                ).fetchall()
+            }
+            if "next_step" not in inbox_recipient_columns:
+                db.execute(
+                    "ALTER TABLE github_run_inbox_recipients ADD COLUMN "
+                    "next_step TEXT NOT NULL DEFAULT ''"
+                )
             wake_columns = {
                 row["name"] for row in db.execute(
                     "PRAGMA table_info(orchestration_manager_wakes)"
@@ -664,6 +696,78 @@ class Store:
                     frozenset(json.loads(row["actions_json"])), row["owner_principal_id"],
                     row["assignment_epoch"], row["state"])
 
+    def register_github_run_inbox(self, *, subscription_id: str, repository: str, run_id: int,
+                                  head_sha: str, workflow: str, context: dict[str, Any],
+                                  work_id: str, node_id: str, conversation_uuid: str | None,
+                                  notify_user: bool, notify_manager: bool, next_step: str,
+                                  trigger: str | None = None) -> tuple[dict[str, Any], bool]:
+        """Durably merge an exact run subscription without acquiring a Work claim."""
+        now = time.time()
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM github_run_inbox WHERE repository=? AND run_id=? AND head_sha=?",
+                             (repository, run_id, head_sha)).fetchone()
+            created = row is None
+            if created:
+                db.execute("INSERT INTO github_run_inbox VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                    subscription_id, repository, run_id, head_sha, workflow, json.dumps(context, sort_keys=True),
+                    None, "WAITING_EXTERNAL", None, None, next_step, trigger or f"github-run:{run_id}:terminal", now, now, None))
+            else:
+                subscription_id = str(row["subscription_id"])
+            terminal = row is not None and str(row["state"]) != "WAITING_EXTERNAL"
+            db.execute("INSERT INTO github_run_inbox_recipients(subscription_id,work_id,node_id,conversation_uuid,notify_user,notify_manager,unread,next_step) "
+                       "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(subscription_id,work_id,node_id) DO UPDATE SET "
+                       "notify_user=MAX(notify_user,excluded.notify_user),notify_manager=MAX(notify_manager,excluded.notify_manager),"
+                       "next_step=excluded.next_step,unread=CASE WHEN (SELECT state FROM github_run_inbox WHERE subscription_id=excluded.subscription_id)='WAITING_EXTERNAL' THEN github_run_inbox_recipients.unread ELSE 1 END",
+                       (subscription_id, work_id, node_id, conversation_uuid, int(notify_user), int(notify_manager), int(terminal), next_step))
+            result = db.execute("SELECT * FROM github_run_inbox WHERE subscription_id=?", (subscription_id,)).fetchone()
+        return self._github_inbox_row(result), created
+
+    def finish_github_run_inbox(self, *, subscription_id: str, state: str, conclusion: str | None,
+                                url: str | None, error_summary: str | None) -> dict[str, Any]:
+        if state not in {"SUCCESS", "FAILED", "CANCELLED", "TIMED_OUT"}:
+            raise ValueError("GITHUB_INBOX_STATE_INVALID")
+        now = time.time()
+        with self.transaction() as db:
+            changed = db.execute("UPDATE github_run_inbox SET state=?,conclusion=?,url=?,error_summary=?,updated_at=?,terminal_at=? "
+                                 "WHERE subscription_id=? AND state='WAITING_EXTERNAL'", (state, conclusion, url, error_summary, now, now, subscription_id)).rowcount
+            if changed:
+                db.execute("UPDATE github_run_inbox_recipients SET unread=1 WHERE subscription_id=?", (subscription_id,))
+            row = db.execute("SELECT * FROM github_run_inbox WHERE subscription_id=?", (subscription_id,)).fetchone()
+        if row is None: raise KeyError("GITHUB_INBOX_NOT_FOUND")
+        return self._github_inbox_row(row)
+
+    def get_github_run_inbox(self, *, node_id: str | None = None, work_id: str | None = None,
+                             acknowledge: bool = False, limit: int = 80) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 80))
+        clauses, values = [], []
+        if node_id: clauses.append("r.node_id=?"); values.append(node_id)
+        if work_id: clauses.append("r.work_id=?"); values.append(work_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self.transaction() if acknowledge else self._readonly() as db:
+            rows = db.execute("SELECT i.*,r.work_id,r.node_id,r.conversation_uuid,r.notify_user,r.notify_manager,r.unread,r.delivery_state,r.next_step AS recipient_next_step "
+                              "FROM github_run_inbox i JOIN github_run_inbox_recipients r ON r.subscription_id=i.subscription_id" + where +
+                              " ORDER BY i.updated_at DESC LIMIT ?", (*values, limit)).fetchall()
+            if acknowledge and rows:
+                db.executemany("UPDATE github_run_inbox_recipients SET unread=0 WHERE subscription_id=? AND work_id=? AND node_id=? AND subscription_id IN (SELECT subscription_id FROM github_run_inbox WHERE state!='WAITING_EXTERNAL')",
+                               [(r["subscription_id"], r["work_id"], r["node_id"]) for r in rows])
+        return [self._github_inbox_row(row) for row in rows]
+
+    @contextmanager
+    def _readonly(self):
+        db = self._connect()
+        try: yield db
+        finally: db.close()
+
+    @staticmethod
+    def _github_inbox_row(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row); value["context"] = json.loads(value.pop("context_json"));
+        if "recipient_next_step" in value:
+            value["next_step"] = value.pop("recipient_next_step")
+        for key in ("notify_user", "notify_manager", "unread"):
+            if key in value: value[key] = bool(value[key])
+        value["next_step_advisory_only"] = True
+        return value
+
     def monitor_snapshot(self, *, event_limit: int = 50) -> dict[str, Any]:
         """Return a bounded, read-only projection for the local BCT monitor."""
         limit = max(1, min(int(event_limit), 200))
@@ -700,6 +804,10 @@ class Store:
                 "SELECT assignment_id,session_id,created_manager_epoch,state,current_generation,updated_at "
                 "FROM orchestration_assignments ORDER BY updated_at DESC LIMIT 100"
             ).fetchall()]
+            inbox = [self._github_inbox_row(row) for row in db.execute(
+                "SELECT i.*,r.work_id,r.node_id,r.conversation_uuid,r.notify_user,r.notify_manager,r.unread,r.delivery_state,r.next_step AS recipient_next_step "
+                "FROM github_run_inbox i JOIN github_run_inbox_recipients r ON r.subscription_id=i.subscription_id "
+                "ORDER BY i.updated_at DESC LIMIT 80").fetchall()]
         finally:
             db.close()
         for node in nodes:
@@ -716,6 +824,7 @@ class Store:
             "events": events,
             "orchestration_sessions": orchestration_sessions,
             "orchestration_assignments": orchestration_assignments,
+            "github_run_inbox": inbox,
         }
 
     def claim_diagnostics(self) -> list[dict[str, Any]]:

@@ -29,6 +29,7 @@ _CAPABILITY_USAGE = {
     "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; this requires verify and every child capability in work scope.",
     "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled. Requires each child action in work scope. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
     "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",
+    "github_run_watch": "Register one exact Actions run for a detached, advisory-only Inbox completion. It never merges, pushes, deploys, or changes Work state; retrieve terminal results with bct_inbox_get.",
     "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use operation=directory_tree; combine related reads with operation=batch and items containing unique id, path, and optional directory_tree bounds.",
     "system_inspect": "Use arguments.operation as process_list, process, or port. process_list accepts optional query and limit; process requires pid; port requires port.",
     "monitor": "Use arguments.operation as status or validate.",
@@ -133,6 +134,7 @@ def build_mcp(
             for key in (
                 "works", "operations", "events", "nodes", "connections",
                 "orchestration_sessions", "orchestration_assignments",
+                "github_run_inbox",
             ):
                 rows = monitor.get(key)
                 if isinstance(rows, list):
@@ -245,6 +247,20 @@ def build_mcp(
             await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
             wait_ms += (time.perf_counter_ns()-sleep_start)/1e6
 
+    @server.tool(description="Read only a node's durable GitHub completion Inbox. acknowledge is idempotent and only marks returned rows read.", structured_output=True)
+    async def bct_inbox_get(initiator_node_id: str, work_id: str,
+                            acknowledge: bool = False, limit: int = 80) -> dict[str, Any]:
+        # MCP has one local principal.  Requiring an owned Work keeps this read
+        # scoped to the caller's Work rather than exposing a node-wide inbox.
+        work = await asyncio.to_thread(bct.store.get_work, work_id)
+        if work.owner_principal_id != principal.principal_id:
+            raise PermissionError("INBOX_WORK_ACCESS_DENIED")
+        rows = await asyncio.to_thread(
+            bct.store.get_github_run_inbox, node_id=initiator_node_id,
+            work_id=work_id, acknowledge=acknowledge, limit=limit,
+        )
+        return {"items": rows, "wake": "AUTO_WAKE_NOT_CONFIGURED"}
+
     @server.tool(
         description="Return the verified current Windows interactive-session Agent status.",
         structured_output=True,
@@ -310,6 +326,8 @@ def build_mcp(
                 selected = "verify"
                 arguments = {key: value for key, value in arguments.items() if key != "operation"}
             background = (
+                selected == "github_run_watch"
+                or
                 selected == "deploy"
                 or selected == "verify"
                 or selected == "vtl_validate"

@@ -8,6 +8,7 @@ normal_actions = [
   "github_push",
   "github_pr_create",
   "github_pr_status",
+  "github_run_watch",
   "github_pr_merge",
   "github_sync_main",
   "deploy",
@@ -69,6 +70,11 @@ node_executable = "C:\\Program Files\\nodejs\\node.exe"
 mode = "local"
 repository = "p4147691/BCT"
 source_root = "D:\\BCT\\source"
+
+[github_inbox]
+initial_seconds = 5
+max_seconds = 30
+timeout_seconds = 300
 
 [orchestration]
 # Emergency stop for durable Manager/Worker collaboration. When enabled, only
@@ -158,6 +164,7 @@ files = [
   "src/bct/features/git.py",
   "src/bct/features/git_authority.py",
   "src/bct/features/github.py",
+  "src/bct/features/github_inbox.py",
   "src/bct/features/rcc.py",
   "src/bct/features/execution.py",
   "src/bct/features/cdp_persistent.py",

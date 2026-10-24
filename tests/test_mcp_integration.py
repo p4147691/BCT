@@ -56,7 +56,7 @@ class MCPIntegrationTests(unittest.TestCase):
         )
         capabilities = [
             "read", "write", "test", "git_commit", "github_push", "github_pr_create",
-            "github_pr_status", "github_pr_merge", "github_sync_main", "deploy", "service_control",
+            "github_pr_status", "github_pr_merge", "github_sync_main", "github_run_watch", "deploy", "service_control",
             "relay_browser", "system_inspect", "execute", "monitor",
             "process_session", "verify", "orchestrate",
             "claim_reconcile",
@@ -146,7 +146,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     names = {tool.name for tool in catalogue.tools}
                     expected_capability_tools = {
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
-                        "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push",
+                        "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push", "bct_github_run_watch",
                         "bct_github_sync_main", "bct_read", "bct_service_control",
                         "bct_relay_browser", "bct_relay_control",
                         "bct_system_inspect", "bct_execute", "bct_monitor",
@@ -175,7 +175,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
-                            "bct_work_create", "bct_operation_get",
+                            "bct_work_create", "bct_operation_get", "bct_inbox_get",
                         },
                         names,
                     )
@@ -184,7 +184,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
-                            "bct_work_create", "bct_operation_get",
+                            "bct_work_create", "bct_operation_get", "bct_inbox_get",
                         },
                         set(capabilities.structuredContent["tools"]),
                     )
