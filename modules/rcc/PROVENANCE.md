@@ -35,6 +35,27 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.52 Manager response frame proof candidate
+
+RC32 closes the remaining RC30 terminal-readback gap found by the LIVE ABA
+acceptance. ChatGPT may render Markdown in an old Manager user turn without
+the submitted backticks, so its visible-text hash can differ from the exact
+submitted-text hash retained by the Delivery. The read-only recovery now uses
+the immutable Manager return frame as a second exact identity: Delivery id,
+Manager and Worker conversation UUIDs, and Worker result SHA-256 must all
+match in exactly one user turn. The already captured Manager response
+SHA-256 and UTF-16 length must still match before the body is persisted.
+Ambiguous turns, changed responses, incomplete replies, or missing frame
+identity remain rejected. Recovery never edits the composer, clicks Send, or
+repeats a Delivery.
+
+- extension version: `1.0.52 Manager Response Frame Proof`
+- runtime build: `2026-10-24-rcc-manager-response-frame-proof-v1`
+- candidate: `RCC_REBUILD_V2_RC32_MANAGER_RESPONSE_FRAME_PROOF`
+- rollback baseline: exact RC31 Manager response durable payload
+- operational acceptance still requires an exact same-ID reload and read-only
+  recovery of the completed N33 Manager reply from the RC29 ABA Delivery.
+
 ## BCT RCC 1.0.51 Manager response durable candidate
 
 RC31 persists the exact Manager response body together with its SHA-256 and
