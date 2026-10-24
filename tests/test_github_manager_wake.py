@@ -90,5 +90,33 @@ class WakeTests(unittest.TestCase):
         self.assertNotEqual(a.token,b.token)
         self.assertEqual(len(b.subscription_ids),4)
 
+
+class RecoveryAdapterTests(WakeTests):
+    def test_restart_rediscovers_pending_and_coalesces(self):
+        from bct.github_manager_wake import GithubWakeRecoveryAdapter
+        busy = lambda: [dict(node_id="manager",epoch=3,conversation_uuid="uuid",idle=False)]
+        self.assertEqual(GithubWakeRecoveryAdapter(self.store,busy).run_once()["busy"],1)
+        count = []
+        def fake(*args):
+            count.append(args)
+            return dict(ok=True,delivery_id=args[2],exact_turn_confirmed=True)
+        provider = lambda: [dict(node_id="manager",epoch=3,conversation_uuid="uuid",idle=True)]
+        fence = lambda *args: self.assertEqual(args,("manager",3,"uuid"))
+        a=GithubWakeRecoveryAdapter(self.store,provider,fake,fence)
+        self.assertEqual(a.run_once()["submitted"],1)
+        # Fresh coordinator instance on the same SQLite represents restart.
+        b=GithubWakeRecoveryAdapter(self.store,provider,fake,fence)
+        self.assertEqual(b.run_once()["submitted"],1)
+        self.assertEqual(len(count),1)
+        with self.store.transaction() as db:
+            self.assertEqual(db.execute("SELECT SUM(unread) FROM github_run_inbox_recipients").fetchone()[0],3)
+
+    def test_epoch_mismatch_before_wake(self):
+        from bct.github_manager_wake import GithubWakeRecoveryAdapter
+        def bad(*_): raise PermissionError("epoch mismatch")
+        provider=lambda:[dict(node_id="manager",epoch=3,conversation_uuid="uuid",idle=True)]
+        with self.assertRaises(PermissionError):
+            GithubWakeRecoveryAdapter(self.store,provider,lambda *x:None,bad).run_once()
+
 if __name__=="__main__":
     unittest.main()

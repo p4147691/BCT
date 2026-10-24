@@ -95,3 +95,44 @@ class GithubManagerWake:
             db.execute("UPDATE github_manager_wake_attempts SET state='SUBMITTED' "
                        "WHERE token=? AND state='UNKNOWN'", (plan.token,))
         return "SUBMITTED"
+
+class GithubWakeRecoveryAdapter:
+    """Recovery-cycle adapter. Disabled unless a trusted existing relay is injected.
+
+    Identity and idle observation are supplied by the existing Manager owner;
+    failure to observe them means no submission, never a guessed wake.
+    """
+    def __init__(self, store: Any, manager_candidates: Callable[[], list[dict[str, Any]]],
+                 existing_relay: Callable[[str, str, str], dict[str, Any]] | None = None,
+                 assert_manager_epoch: Callable[[str, int, str], None] | None = None):
+        self.coordinator = GithubManagerWake(store)
+        self.manager_candidates = manager_candidates
+        self.existing_relay = existing_relay
+        self.assert_manager_epoch = assert_manager_epoch
+
+    def run_once(self) -> dict[str, Any]:
+        result = {"plans": 0, "submitted": 0, "busy": 0, "unknown": 0}
+        for candidate in self.manager_candidates():
+            # Authority/epoch/idle must originate from a trusted current observation.
+            if not candidate.get("idle", False):
+                result["busy"] += 1
+                continue
+            if not (self.assert_manager_epoch and self.existing_relay):
+                continue
+            self.assert_manager_epoch(candidate["node_id"], candidate["epoch"],
+                                      candidate["conversation_uuid"])
+            plan = self.coordinator.plan(
+                manager_node_id=candidate["node_id"],
+                manager_epoch=candidate["epoch"],
+                conversation_uuid=candidate["conversation_uuid"], idle=True)
+            if plan is None:
+                continue
+            result["plans"] += 1
+            outcome = self.coordinator.dispatch(plan,
+                assert_manager_epoch=self.assert_manager_epoch,
+                existing_relay=self.existing_relay)
+            if outcome == "SUBMITTED":
+                result["submitted"] += 1
+            elif outcome == "UNKNOWN":
+                result["unknown"] += 1
+        return result
