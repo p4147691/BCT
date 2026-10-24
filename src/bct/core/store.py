@@ -1022,7 +1022,10 @@ class Store:
         finally:
             db.close()
 
-    def retired_rcc_claim_candidate(self, instance_id: str) -> dict[str, Any] | None:
+    def retired_rcc_claim_candidate(
+        self, instance_id: str, *, original_work_id: str = "",
+        original_operation_id: str = "", principal_id: str = "",
+    ) -> dict[str, Any] | None:
         """Return one terminal legacy RCC-wide reservation eligible for live proof.
 
         This is not evidence that the external effect did or did not happen.  It
@@ -1036,7 +1039,7 @@ class Store:
         try:
             row = db.execute(
                 "SELECT c.operation_id,c.work_id,c.assignment_epoch,"
-                "o.capability,o.target,o.state,o.outcome,o.error,"
+                "o.principal_id,o.capability,o.target,o.state,o.outcome,o.error,"
                 "o.assignment_epoch AS operation_epoch "
                 "FROM resource_claims c JOIN operations o "
                 "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
@@ -1051,10 +1054,29 @@ class Store:
                 or result["outcome"] != Outcome.UNKNOWN.value
                 or result["capability"] != "relay_browser"
                 or result["target"] != instance_id
-                or result["error"] != "RCC_HOST_OUTCOME_UNVERIFIED:MISSING"
                 or result["operation_epoch"] != result["assignment_epoch"]
             ):
                 return None
+            explicit_handoff = bool(original_work_id or original_operation_id or principal_id)
+            if explicit_handoff:
+                if (not original_work_id or not original_operation_id or not principal_id
+                        or result["work_id"] != original_work_id
+                        or result["operation_id"] != original_operation_id
+                        or result["principal_id"] != principal_id
+                        or result["error"] not in {
+                            "RCC_HOST_OUTCOME_UNVERIFIED:MISSING",
+                            "RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH",
+                        }):
+                    return None
+                result["retirement_reason"] = (
+                    "TERMINAL_OPERATION_RCC_NO_PENDING_RECORD_EFFECT_UNKNOWN"
+                    if result["error"] == "RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH"
+                    else "TERMINAL_OPERATION_RCC_NO_PENDING_RECORD"
+                )
+            elif result["error"] != "RCC_HOST_OUTCOME_UNVERIFIED:MISSING":
+                return None
+            else:
+                result["retirement_reason"] = "TERMINAL_OPERATION_RCC_NO_PENDING_RECORD"
             return result
         finally:
             db.close()
@@ -1109,7 +1131,7 @@ class Store:
                         resources: tuple[str, ...], policy_revision: str,
                         background_job: dict[str, Any] | None = None,
                         retired_desktop_claim: tuple[str, str, int] | None = None,
-                        retired_rcc_claim: tuple[str, str, int, str] | None = None,
+                        retired_rcc_claim: tuple[str, str, int, str, str] | None = None,
                         ) -> tuple[bool, OperationResult]:
         now = time.time()
         with self.transaction() as db:
@@ -1216,13 +1238,14 @@ class Store:
                             })
                             row = None
                 if row is not None and retired_rcc_claim is not None:
-                    previous_id, previous_work, previous_epoch, previous_instance = retired_rcc_claim
+                    (previous_id, previous_work, previous_epoch, previous_instance,
+                     retirement_reason) = retired_rcc_claim
                     broad_key = "rcc-instance:" + previous_instance
                     if resource == broad_key and (
                         row["operation_id"], row["work_id"], row["assignment_epoch"]
                     ) == (previous_id, previous_work, previous_epoch):
                         owner = db.execute(
-                            "SELECT capability,target,state,outcome,error,assignment_epoch "
+                            "SELECT principal_id,capability,target,state,outcome,error,assignment_epoch "
                             "FROM operations WHERE operation_id=? AND work_id=?",
                             (previous_id, previous_work),
                         ).fetchone()
@@ -1232,8 +1255,12 @@ class Store:
                             and owner["outcome"] == Outcome.UNKNOWN.value
                             and owner["capability"] == "relay_browser"
                             and owner["target"] == previous_instance
-                            and owner["error"] == "RCC_HOST_OUTCOME_UNVERIFIED:MISSING"
+                            and owner["error"] in {
+                                "RCC_HOST_OUTCOME_UNVERIFIED:MISSING",
+                                "RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH",
+                            }
                             and owner["assignment_epoch"] == previous_epoch
+                            and owner["principal_id"] == principal_id
                         ):
                             released = db.execute(
                                 "UPDATE resource_claims SET unresolved=0 "
@@ -1245,11 +1272,15 @@ class Store:
                                 raise ConflictError("RCC_RETIRE_CLAIM_CHANGED")
                             self._event(db, "RCC_CLAIM_RETIRED", previous_id, {
                                 "new_operation_id": operation_id,
+                                "successor_work_id": work.work_id,
                                 "original_work_id": previous_work,
                                 "original_assignment_epoch": previous_epoch,
+                                "original_principal_id": principal_id,
+                                "same_principal_verified": True,
                                 "resource_key": resource,
-                                "reason": "TERMINAL_OPERATION_RCC_NO_PENDING_RECORD",
+                                "reason": retirement_reason,
                                 "original_effect_unchanged": True,
+                                "no_resend_original": True,
                             })
                             row = None
                 if row is not None:

@@ -863,6 +863,120 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual(Outcome.UNKNOWN, result.outcome)
         self.assertEqual(["new-chat-send"], [c["command"] for c in self.client.calls])
 
+    def _terminal_mismatch_original(self, operation_id="handoff-terminal-mismatch"):
+        wrong = self._new_chat_result(operation_id)
+        wrong["windowId"] = 99
+        self.client.result = wrong
+        original = self.call(operation_id, {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "window_id": 11, "text": "old request", "timeout_s": 120,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH", original.error)
+        return operation_id
+
+    def _successor_work(self, *, work_id="rcc-successor", principal=None):
+        principal = principal or self.principal
+        self.bct.create_work(
+            work_id=work_id, request_summary="independent successor",
+            roots=[str(self.root)], actions=["relay_browser"], principal=principal,
+        )
+        return principal
+
+    def _call_successor(self, operation_id, arguments, *, work_id="rcc-successor", principal=None):
+        return self.bct.operations.run(
+            principal=principal or self.principal, work_id=work_id,
+            operation_id=operation_id, capability="relay_browser", arguments=arguments,
+        )
+
+    def test_same_principal_successor_retires_exact_terminal_mismatch_claim_after_idle_proof(self):
+        original_id = self._terminal_mismatch_original()
+        self._successor_work()
+        self.client.results = [
+            self._idle_rcc_state(), self._missing_rcc_result(original_id),
+            self._new_chat_result("successor-independent"),
+        ]
+        successor = self._call_successor("successor-independent", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "window_id": 11, "text": "new independent request", "timeout_s": 120,
+            "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
+        })
+        self.assertEqual(Outcome.APPLIED, successor.outcome)
+        self.assertEqual(
+            ["new-chat-send", "state", "result", "new-chat-send"],
+            [call["command"] for call in self.client.calls],
+        )
+        db = self.bct.store._connect()
+        try:
+            old_claim = db.execute(
+                "SELECT COUNT(*) FROM resource_claims WHERE operation_id=? AND unresolved=1",
+                (original_id,),
+            ).fetchone()[0]
+            original = db.execute(
+                "SELECT outcome FROM operations WHERE operation_id=?", (original_id,)
+            ).fetchone()[0]
+            event = db.execute(
+                "SELECT kind,data_json FROM events WHERE subject_id=? ORDER BY event_id DESC LIMIT 1",
+                (original_id,),
+            ).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(0, old_claim)
+        self.assertEqual("UNKNOWN", original)
+        self.assertEqual("RCC_CLAIM_RETIRED", event[0])
+        audit = json.loads(event[1])
+        self.assertEqual("successor-independent", audit["new_operation_id"])
+        self.assertEqual("rcc-successor", audit["successor_work_id"])
+        self.assertTrue(audit["same_principal_verified"])
+        self.assertEqual("TERMINAL_OPERATION_RCC_NO_PENDING_RECORD_EFFECT_UNKNOWN", audit["reason"])
+        self.assertTrue(audit["no_resend_original"])
+
+    def test_terminal_mismatch_handoff_rejects_foreign_principal_without_probe_or_release(self):
+        original_id = self._terminal_mismatch_original()
+        foreign = Principal("foreign", "test", frozenset({"relay_browser"}))
+        self._successor_work(principal=foreign)
+        calls_before = len(self.client.calls)
+        with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK"):
+            self._call_successor("foreign-independent", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "window_id": 11, "text": "new independent request", "timeout_s": 120,
+                "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
+            }, principal=foreign)
+        self.assertEqual(calls_before, len(self.client.calls))
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?", (original_id,)
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
+
+    def test_terminal_mismatch_handoff_keeps_claim_when_rcc_reports_pending(self):
+        original_id = self._terminal_mismatch_original()
+        self._successor_work()
+        pending = self._missing_rcc_result(original_id)
+        pending.update({"pending": True, "pendingStatus": {"state": "QUEUED"}})
+        self.client.results = [self._idle_rcc_state(), pending]
+        with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK"):
+            self._call_successor("successor-pending", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "window_id": 11, "text": "new independent request", "timeout_s": 120,
+                "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
+            })
+        self.assertEqual(
+            ["new-chat-send", "state", "result"],
+            [call["command"] for call in self.client.calls],
+        )
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?", (original_id,)
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
+
     def test_new_chat_unknown_reconciles_exact_persisted_receipt_without_resend(self):
         wrong = self._new_chat_result("compose-reconcile")
         wrong["windowId"] = 99

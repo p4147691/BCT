@@ -274,7 +274,12 @@ class RelayBrowserFeature:
         elif command in {"create-chat-window", "reload-extension"}:
             pass
         elif command == "create-and-send":
-            allowed.update({"mode", "text", "window_id"})
+            # A successor may name one exact historical broad RCC claim that
+            # it is prepared to retire after a fresh, read-only RCC proof.
+            # These references are never sent to RCC and never authorize a
+            # retry of the old operation; they only bind the local handoff.
+            allowed.update({"mode", "text", "window_id", "predecessor_work_id",
+                            "predecessor_operation_id"})
             mode = str(arguments.get("mode") or "").strip().lower()
             message = str(arguments.get("text") or "")
             if mode != "tab" or not message:
@@ -285,6 +290,19 @@ class RelayBrowserFeature:
             prepared["extra"]["mode"] = mode
             prepared["extra"]["windowId"] = _positive_int(
                 arguments.get("window_id"), "RCC_WINDOW_ID_REQUIRED")
+            predecessor_work = str(arguments.get("predecessor_work_id") or "").strip()
+            predecessor_operation = str(arguments.get("predecessor_operation_id") or "").strip()
+            if bool(predecessor_work) != bool(predecessor_operation):
+                raise PreconditionError("RCC_SUCCESSOR_HANDOFF_REFERENCE_REQUIRED")
+            if predecessor_work or predecessor_operation:
+                if (len(predecessor_work) > 200 or len(predecessor_operation) > 200
+                        or any(ch.isspace() for ch in predecessor_work)
+                        or any(ch.isspace() for ch in predecessor_operation)):
+                    raise PreconditionError("RCC_SUCCESSOR_HANDOFF_REFERENCE_INVALID")
+                prepared["extra"]["successorClaimHandoff"] = {
+                    "originalWorkId": predecessor_work,
+                    "originalOperationId": predecessor_operation,
+                }
         elif command == "create-chat-tab":
             allowed.add("window_id")
             if arguments.get("window_id") is not None:
