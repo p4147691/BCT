@@ -1168,6 +1168,12 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
+    internal static void EmitMonitorEvent(Dictionary<string, object> message)
+    {
+        Stream output = NativeOutput;
+        if (output != null) Write(output, message);
+    }
+
     private static object Handle(Dictionary<string, object> request)
 
 
@@ -1178,7 +1184,9 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-        string type = GetString(request, "type");
+        string type = GetString(request, "type");
+
+        if (type == "monitorDragPreviewStart" || type == "monitorDragPreviewStop") return MonitorDragPreviewOverlay.Handle(request);
 
 
 

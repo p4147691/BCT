@@ -34,7 +34,11 @@ function fixture(){
   return [];
  }};
  const commits=[];
- const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
+ const nativeCalls=[];
+ const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorDesktopState:{hostWindowHwnd:"42"},document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
+  monitorBctNativePreviewToken:"",monitorBctNativePreviewSequence:0,
+  monitorNative(message){nativeCalls.push(message);return Promise.resolve({ok:true});},
+  stopMonitorBctNativePreview(){nativeCalls.push({type:"monitorDragPreviewStop"});},
   monitorBctNodeSelectionKey:n=>n.conversationKey,
   createMonitorNodeDragGhost(){const g={classList:cl(),style:{},removed:false,remove(){this.removed=true;}};ghost.push(g);return g;},
   moveMonitorNodeDragGhost(g,x,y){g.style.transform="translate3d("+x+"px,"+y+"px,0)";},
@@ -54,7 +58,7 @@ function fixture(){
   for(const k of ["pointermove","pointerup","pointercancel"])assert.equal(doc.m.has(k),false);
   assert.equal(win.m.has("blur"),false);assert.equal(rows[0].m.has("lostpointercapture"),false);
  }
- return {ctx,rows,list,doc,win,ghost,commits,begin,move,up,clean};
+ return {ctx,rows,list,doc,win,ghost,commits,nativeCalls,begin,move,up,clean};
 }
 for(const [x,key,place] of [[-12,"first","before"],[312,"second","after"]]){
  const f=fixture(), p=f.ctx.monitorBctNodeDropAt(x,55,"dragged");
