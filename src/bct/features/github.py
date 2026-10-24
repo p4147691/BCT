@@ -382,7 +382,12 @@ class GitHubPullRequestStatusFeature:
             {"repository": repository, "number": number,
              "expected_head": expected_head, "required_checks": required,
              **({"wait_seconds": wait} if wait else {})},
-            (f"github-pr:{repository.casefold()}:{number}",),
+            # A status poll is observational.  Keep it away from the exact
+            # mutation resource so a long wait cannot block a ready merge or
+            # another bounded write to the PR.  Identical status readers still
+            # deduplicate on the expected head, while the mutation feature
+            # below keeps the original exclusive github-pr resource.
+            (f"github-pr-read:{repository.casefold()}:{number}:{expected_head}",),
             {"expected_head": expected_head},
         )
 
@@ -444,7 +449,10 @@ class GitHubPullRequestMergeFeature:
         merged_arguments["method"] = method
         return FeatureRequest(
             self.capability, status.target, merged_arguments,
-            (status.resources[0], f"github-base:{merged_arguments['repository'].casefold()}"),
+            (
+                f"github-pr:{merged_arguments['repository'].casefold()}:{merged_arguments['number']}",
+                f"github-base:{merged_arguments['repository'].casefold()}",
+            ),
             status.preconditions,
         )
 

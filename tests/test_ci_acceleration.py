@@ -30,11 +30,11 @@ class CIScopeTests(unittest.TestCase):
         self.assertFalse(plan.bridge)
         self.assertFalse(plan.vtl)
 
-    def test_desktop_change_runs_core_bridge_and_vtl(self):
+    def test_desktop_change_runs_core_and_vtl_but_not_independent_transport(self):
         plan = scope.classify(["src/bct/features/desktop_session.py"])
         self.assertFalse(plan.docs_only)
         self.assertTrue(plan.core)
-        self.assertTrue(plan.bridge)
+        self.assertFalse(plan.bridge)
         self.assertTrue(plan.vtl)
 
     def test_browser_contract_runs_between_bounded_cleanup_and_rebuild(self):
@@ -63,14 +63,19 @@ class CIScopeTests(unittest.TestCase):
     def test_unknown_non_document_path_fails_closed(self):
         plan = scope.classify(["new-platform-boundary.bin"])
         self.assertTrue(plan.core)
-        self.assertTrue(plan.bridge)
+        self.assertFalse(plan.bridge)
 
     def test_ci_change_exercises_every_gate(self):
         plan = scope.classify([".github/workflows/ci.yml"])
         self.assertTrue(plan.core)
-        self.assertTrue(plan.bridge)
+        self.assertFalse(plan.bridge)
         self.assertTrue(plan.vtl)
 
+    def test_bridge_baseline_change_runs_only_its_own_gate(self):
+        plan = scope.classify(["tests/test_browser_module_baselines.py"])
+        self.assertFalse(plan.core)
+        self.assertTrue(plan.bridge)
+        self.assertFalse(plan.vtl)
 
 class CIShardTests(unittest.TestCase):
     def test_every_discovered_module_is_assigned_once_and_deterministically(self):
@@ -88,12 +93,9 @@ class CIShardTests(unittest.TestCase):
     def test_shard_union_matches_unittest_discovery_count(self):
         test_root = ROOT / "tests"
         inventory = sharding.discover_inventory(test_root)
-        cases = [
-            case
-            for shard in sharding.shard_plan(list(inventory.modules), 4)
-            for module in shard
-            for case in module.cases
-        ]
+        cases = [case for shard in sharding.test_shard_plan(
+            sharding.test_units(inventory), 4
+        ) for unit in shard for case in unit.cases]
         identities = [case.id() for case in cases]
         self.assertEqual(inventory.unique_test_ids, len(identities))
         self.assertEqual(len(identities), len(set(identities)))
@@ -115,6 +117,58 @@ class CIShardTests(unittest.TestCase):
         }
         self.assertNotEqual(
             locations["test_deployment_service"], locations["test_orchestration"]
+        )
+
+    def test_slow_tests_from_one_module_are_distributed_by_measured_duration(self):
+        class SlowCase(unittest.TestCase):
+            def test_a(self):
+                pass
+
+            def test_b(self):
+                pass
+
+            def test_c(self):
+                pass
+
+        cases = tuple(SlowCase(name) for name in ("test_a", "test_b", "test_c"))
+        inventory = sharding.TestInventory(
+            modules=(sharding.TestModule("slow", cases, 3.0),),
+            discovered_instances=3, unique_test_ids=3,
+            duplicate_instances_removed=0,
+        )
+        durations = {case.id(): 30.0 - index for index, case in enumerate(cases)}
+        plan = sharding.test_shard_plan(
+            sharding.test_units(inventory, durations), 3
+        )
+        self.assertEqual([1, 1, 1], [len(shard) for shard in plan])
+
+    def test_real_named_pipe_module_stays_in_one_serial_unit(self):
+        inventory = sharding.discover_inventory(ROOT / "tests")
+        units = [
+            unit for unit in sharding.test_units(inventory)
+            if unit.module == "test_rcc_native_pipe_acl_windows"
+        ]
+        self.assertEqual(1, len(units))
+        self.assertGreater(len(units[0].cases), 1)
+        self.assertEqual(
+            sorted(case.id() for case in units[0].cases),
+            sorted(case.id() for case in next(
+                module for module in inventory.modules
+                if module.name == "test_rcc_native_pipe_acl_windows"
+            ).cases),
+        )
+
+    def test_seed_is_optional_bounded_and_covers_the_known_slowest_tests(self):
+        path = ROOT / "scripts" / "ci_test_duration_seed.json"
+        measured = sharding.load_durations([path, path.with_name("missing.json")])
+        self.assertGreaterEqual(len(measured), 7)
+        self.assertLessEqual(len(measured), 100)
+        self.assertGreater(
+            measured[
+                "test_deployment_service.DeploymentServiceTests."
+                "test_new_release_restarts_and_broken_release_rolls_back"
+            ],
+            30.0,
         )
 
 

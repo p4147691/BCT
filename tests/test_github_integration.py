@@ -194,6 +194,30 @@ class GitHubIntegrationTests(unittest.TestCase):
         self.assertTrue(merged_again.evidence["already_merged"])
         self.assertEqual(1, fake.merge_calls)
 
+    def test_status_wait_resource_never_blocks_the_pr_mutation_resource(self):
+        root = self.make_repo()
+        head = git(root, "rev-parse", "HEAD")
+        fake = FakeGitHub(branch_sha=head)
+        bct = self.make_bct(root, fake)
+        work = bct.store.get_work(root.name)
+        status_feature = bct.operations._features["github_pr_status"]
+        merge_feature = bct.operations._features["github_pr_merge"]
+        common = {
+            "repository": "owner/project", "number": 1,
+            "expected_head": head, "required_checks": ["test"],
+        }
+        status = status_feature.prepare(
+            work=work, arguments={**common, "wait_seconds": 300},
+        )
+        merge = merge_feature.prepare(
+            work=work, arguments={**common, "method": "squash"},
+        )
+        self.assertEqual(
+            (f"github-pr-read:owner/project:1:{head}",), status.resources,
+        )
+        self.assertIn("github-pr:owner/project:1", merge.resources)
+        self.assertTrue(set(status.resources).isdisjoint(merge.resources))
+
     def test_response_loss_is_reconciled_without_duplicate_pr_or_merge(self):
         root = self.make_repo()
         head = git(root, "rev-parse", "HEAD")
