@@ -118,6 +118,27 @@ class MonitorConversationRenameTests(unittest.TestCase):
         self.assertIn("Manager", second["role_tags"])
         self.assertEqual([], self.bct.store.claim_diagnostics())
 
+    def test_scope_update_rejects_a_stale_role_revision(self):
+        payload = {
+            "conversation_key": self.payload()["conversation_key"],
+            "display_name": "첫 대화",
+            "scope_name": "BCT 작업",
+            "role_tags": ["Manager"],
+        }
+        first = run_monitor_conversation_scope_update(self.bct, payload=payload)
+        current = run_monitor_conversation_scope_update(self.bct, payload={
+            **payload,
+            "role_tags": ["Manager", "구현"],
+            "expected_role_tags_sha256": first["role_tags_sha256"],
+        })
+        with self.assertRaisesRegex(ValueError, "CONVERSATION_NETWORK_ROLE_TAGS_CONFLICT"):
+            run_monitor_conversation_scope_update(self.bct, payload={
+                **payload,
+                "role_tags": ["Manager", "오래된 편집"],
+                "expected_role_tags_sha256": first["role_tags_sha256"],
+            })
+        self.assertNotEqual(first["role_tags_sha256"], current["role_tags_sha256"])
+
     def test_order_update_is_metadata_only_and_keeps_claims_empty(self):
         keys = [
             self.payload()["conversation_key"],

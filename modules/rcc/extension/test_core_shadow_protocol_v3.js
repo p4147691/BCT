@@ -9,6 +9,7 @@ const loader = fs.readFileSync('background_loader.js', 'utf8');
 const activity = content.split("message.type === 'relay:activityProbe'")[1]
   .split("message.type === 'relay:probe'")[0];
 assert(activity.includes('generating: isGenerating()'));
+assert(activity.includes('reasoning: currentReasoningObservation()'));
 assert(activity.includes('connection: connectionProblem()'));
 assert(activity.includes('telemetry: typeof telemetry === \'object\''));
 
@@ -16,6 +17,7 @@ const snapshot = background.split('async function endpointFromTabWithActivity(')
   .split('async function captureEndpointSnapshot(', 1)[0];
 assert(snapshot.includes('browserGateway.probeActivity(tab.id)'));
 assert(snapshot.includes('endpoint.generating = !!probe?.generating'));
+assert(snapshot.includes("endpoint.reasoning = probe?.reasoning"));
 assert(snapshot.includes('endpoint.telemetry = probe?.telemetry'));
 assert(snapshot.includes('endpoint.connection = probe?.connection'));
 assert(!snapshot.includes('executeScript'));

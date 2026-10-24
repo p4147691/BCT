@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-24-rcc-manager-response-frame-proof-v1';
+const RCC_BUILD_VERSION = '2026-10-24-rcc-reasoning-observation-v1';
 
 function editorCandidates() {
 
@@ -557,6 +557,31 @@ function isGenerating() {
   return !latestConversationTurnHasTerminalProof();
 
 
+}
+
+
+function currentReasoningObservation() {
+  const buttons = Array.from(document.querySelectorAll('button[aria-label]'));
+  const selector = buttons.find((button) => {
+    const label = String(button.getAttribute('aria-label') || '').trim();
+    return /chatgpt/i.test(label) && /model|\uBAA8\uB378/i.test(label);
+  });
+  if (!selector) {
+    return { status: 'UNAVAILABLE', level: '', source: 'chatgpt-model-selector' };
+  }
+  const exact = selector.querySelector('[data-effort-only="true"]');
+  const lines = String(selector.innerText || selector.textContent || '')
+    .split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  const level = String(exact?.textContent || lines.at(-1) || '').trim();
+  if (!level || level.length > 32 || /[\r\n\0]/.test(level)) {
+    return { status: 'UNAVAILABLE', level: '', source: 'chatgpt-model-selector' };
+  }
+  return {
+    status: 'OBSERVED',
+    level,
+    source: 'chatgpt-model-selector',
+    observedAt: Date.now(),
+  };
 }
 
 

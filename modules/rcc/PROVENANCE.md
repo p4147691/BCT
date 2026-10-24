@@ -35,6 +35,22 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.53 Reasoning observation candidate
+
+RC33 adds one read-only observation to the existing endpoint activity probe.
+It reads the reasoning label that ChatGPT currently exposes in its model
+selector and reports the value only when the exact semantic control and a
+bounded label are present. Missing or changed UI yields `UNAVAILABLE` and
+never blocks Delivery, Wake, or node use. This release does not change a
+model or reasoning level and does not introduce a preferred-value store.
+
+- extension version: `1.0.53 Reasoning Observation`
+- runtime build: `2026-10-24-rcc-reasoning-observation-v1`
+- candidate: `RCC_REBUILD_V2_RC33_REASONING_OBSERVATION`
+- rollback baseline: exact RC31 Manager response durable payload
+- operational acceptance requires an exact same-ID reload, preserved tabs,
+  and a fresh observed reasoning label on at least one existing ChatGPT tab.
+
 ## BCT RCC 1.0.52 Manager response frame proof candidate
 
 RC32 closes the remaining RC30 terminal-readback gap found by the LIVE ABA

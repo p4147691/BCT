@@ -335,7 +335,9 @@ class MonitorRuntimeTests(unittest.TestCase):
             def request(self, **kwargs):
                 return {"state": {
                     "sessionId": "live", "tabs": [{"id": 12, "windowId": 34, "title": "Manager", "url": f"https://chatgpt.com/c/{conversation}"}],
-                    "endpoints": [{"tabId": 12, "conversationKey": conversation, "presence": "OPEN"}],
+                    "endpoints": [{"tabId": 12, "conversationKey": conversation, "presence": "OPEN",
+                                   "reasoning": {"status": "OBSERVED", "level": "High",
+                                                 "source": "chatgpt-model-selector", "observedAt": 1234}}],
                 }}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -355,6 +357,11 @@ class MonitorRuntimeTests(unittest.TestCase):
         self.assertEqual("N1", tab["node_label"])
         self.assertEqual("릴레이 운영", tab["conversation_scope"]["scope_name"])
         self.assertEqual(["Manager", "배포"], tab["conversation_scope"]["role_tags"])
+        self.assertRegex(
+            tab["conversation_scope"]["role_tags_sha256"], r"^[0-9a-f]{64}$"
+        )
+        self.assertEqual("OBSERVED", tab["reasoning"]["status"])
+        self.assertEqual("High", tab["reasoning"]["level"])
 
     def test_observed_conversation_is_registered_once_for_display_only(self):
         conversation = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"

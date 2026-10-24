@@ -33,6 +33,7 @@ from .features.process_session import ProcessSessionFeature
 from .features.cdp_inspect import CDPInspectFeature
 from .features.browser_extension_manage import BrowserExtensionManageFeature
 from .features.monitor import MonitorFeature
+from .features.conversation_network import ConversationNetworkUpdateFeature
 from .features.claim_reconciliation import ReadOnlyClaimReconcileFeature
 from .features.orchestration import OrchestrationFeature
 from .features.desktop_session import (
@@ -164,6 +165,7 @@ class BCT:
             SystemInspectFeature(), ExecuteFeature(),
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
+            ConversationNetworkUpdateFeature(self.store),
             CDPInspectFeature(self.cdp_connections),
             BrowserExtensionManageFeature(self.cdp_connections, policy_path=policy_path, data_root=data_root),
             ReadOnlyClaimReconcileFeature(self.store, desktop_session),

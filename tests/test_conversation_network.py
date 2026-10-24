@@ -8,7 +8,7 @@ from pathlib import Path
 from bct.conversation_network import (
     ConversationNetworkError, arrange_conversations, configure_conversation_scope,
     conversation_display_order_directory, conversation_scope_directory,
-    project_view, record_monitor_snapshot,
+    patch_conversation_role_tags, project_view, record_monitor_snapshot,
     resolve_project_id, set_membership, upsert_conversation, upsert_project,
 )
 from bct.core.store import Store
@@ -154,6 +154,107 @@ class ConversationNetworkTests(unittest.TestCase):
             ))
         self.assertEqual(1, len(active))
         self.assertGreaterEqual(len(old), 1)
+
+    def test_role_patch_uses_utf8_digest_and_updates_the_shared_store(self):
+        configured = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="오류 병목 감시 측정기",
+            scope_name="BCT RCC",
+            role_tags=["Manager", "검색", "검증 🧪"],
+            now=300.0,
+        )
+        first_digest = configured["role_tags_sha256"]
+        self.assertRegex(first_digest, r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            first_digest,
+            conversation_scope_directory(
+                self.store, conversation_keys=[MANAGER]
+            )[MANAGER]["role_tags_sha256"],
+        )
+
+        patched = patch_conversation_role_tags(
+            self.store,
+            project_id=configured["scope_id"],
+            node_label="N1",
+            add=["CI"],
+            remove=["검색"],
+            expected_role_tags_sha256=first_digest,
+            now=301.0,
+        )
+        self.assertTrue(patched["changed"])
+        self.assertCountEqual(["Manager", "검증 🧪", "CI"], patched["role_tags"])
+        current = conversation_scope_directory(
+            self.store, conversation_keys=[MANAGER]
+        )[MANAGER]
+        self.assertEqual(patched["role_tags_sha256"], current["role_tags_sha256"])
+        self.assertCountEqual(patched["role_tags"], current["role_tags"])
+
+    def test_stale_role_digest_rejects_without_overwriting_newer_edit(self):
+        configured = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="오류 병목 감시 측정기",
+            scope_name="BCT RCC",
+            role_tags=["Manager"],
+            now=300.0,
+        )
+        changed = patch_conversation_role_tags(
+            self.store,
+            project_id=configured["scope_id"],
+            node_label="N1",
+            add=["검토"],
+            expected_role_tags_sha256=configured["role_tags_sha256"],
+            now=301.0,
+        )
+        with self.assertRaisesRegex(
+            ConversationNetworkError, "CONVERSATION_NETWORK_ROLE_TAGS_CONFLICT"
+        ):
+            patch_conversation_role_tags(
+                self.store,
+                project_id=configured["scope_id"],
+                node_label="N1",
+                add=["CI"],
+                expected_role_tags_sha256=configured["role_tags_sha256"],
+                now=302.0,
+            )
+        current = conversation_scope_directory(
+            self.store, conversation_keys=[MANAGER]
+        )[MANAGER]
+        self.assertCountEqual(["Manager", "검토"], current["role_tags"])
+        self.assertEqual(changed["role_tags_sha256"], current["role_tags_sha256"])
+
+    def test_scope_editor_can_compare_and_swap_role_tags(self):
+        configured = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="오류 병목 감시 측정기",
+            scope_name="BCT RCC",
+            role_tags=["Manager"],
+            now=300.0,
+        )
+        updated = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="오류 병목 감시 측정기",
+            scope_name="BCT RCC",
+            role_tags=["Manager", "조정"],
+            expected_role_tags_sha256=configured["role_tags_sha256"],
+            now=301.0,
+        )
+        self.assertNotEqual(configured["role_tags_sha256"], updated["role_tags_sha256"])
+        with self.assertRaisesRegex(
+            ConversationNetworkError, "CONVERSATION_NETWORK_ROLE_TAGS_CONFLICT"
+        ):
+            configure_conversation_scope(
+                self.store,
+                conversation_key=MANAGER,
+                display_name="오류 병목 감시 측정기",
+                scope_name="BCT RCC",
+                role_tags=["Manager", "이전 편집"],
+                expected_role_tags_sha256=configured["role_tags_sha256"],
+                now=302.0,
+            )
 
     def test_blank_scope_means_unassigned_without_reusing_node_number(self):
         before = upsert_conversation(

@@ -163,6 +163,17 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                     tab_index = endpoint.get("tabIndex")
                 if not isinstance(tab_index, int) or isinstance(tab_index, bool) or tab_index < 0:
                     tab_index = None
+                reasoning = endpoint.get("reasoning")
+                if not isinstance(reasoning, dict):
+                    reasoning = {}
+                reasoning_status = str(reasoning.get("status") or "").strip().upper()
+                reasoning_level = str(reasoning.get("level") or "").strip()
+                reasoning_source = str(reasoning.get("source") or "").strip()
+                if (reasoning_status != "OBSERVED" or not reasoning_level \
+                        or len(reasoning_level) > 32 or len(reasoning_source) > 64):
+                    reasoning_status = "UNAVAILABLE"
+                    reasoning_level = ""
+                    reasoning_source = ""
                 tabs.append({
                     "tab_id": item["id"],
                     "window_id": item.get("windowId"),
@@ -173,6 +184,12 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                     "presence": str(endpoint.get("presence") or "UNKNOWN"),
                     "active": bool(endpoint.get("tabActive")),
                     "generating": bool(endpoint.get("generating")),
+                    "reasoning": {
+                        "status": reasoning_status,
+                        "level": reasoning_level,
+                        "source": reasoning_source,
+                        "observed_at": reasoning.get("observedAt"),
+                    },
                     "telemetry": {
                         "generation_started_at": (endpoint.get("telemetry") or {}).get("generationStartedAt"),
                         "generation_finished_at": (endpoint.get("telemetry") or {}).get("generationFinishedAt"),

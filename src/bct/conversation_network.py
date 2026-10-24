@@ -32,6 +32,8 @@ _UUID = re.compile(
 _COMPLETENESS = frozenset({"COMPLETE", "PARTIAL", "UNAVAILABLE"})
 _PRESENCE = frozenset({"OPEN", "CLOSED", "UNKNOWN"})
 _ACTIVITY = frozenset({"ACTIVE", "HOLD", "EXCLUDED"})
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_NODE_LABEL = re.compile(r"N([1-9][0-9]*)\Z", re.I)
 
 
 class ConversationNetworkError(ValueError):
@@ -76,6 +78,29 @@ def _canonical(value: object) -> str:
 
 def _node_label(number: int) -> str:
     return f"N{number}"
+
+
+def role_tags_sha256(tags: list[str] | tuple[str, ...]) -> str:
+    """Return the UTF-8 digest for one canonical advisory-role list."""
+    ordered = sorted((str(tag) for tag in tags), key=lambda value: (value.casefold(), value))
+    return hashlib.sha256(_canonical(ordered).encode("utf-8")).hexdigest()
+
+
+def _active_role_tags(db, conversation_key: str) -> tuple[str, list[str]]:
+    membership = db.execute(
+        "SELECT project_id FROM conversation_network_memberships "
+        "WHERE conversation_key=? AND activity='ACTIVE' ORDER BY updated_at DESC LIMIT 1",
+        (conversation_key,),
+    ).fetchone()
+    if membership is None:
+        return "", []
+    project_id = str(membership["project_id"])
+    tags = [str(row["tag"]) for row in db.execute(
+        "SELECT tag FROM conversation_network_membership_tags "
+        "WHERE project_id=? AND conversation_key=? ORDER BY tag COLLATE NOCASE,tag",
+        (project_id, conversation_key),
+    )]
+    return project_id, tags
 
 
 def upsert_project(store: Store, *, project_id: str, display_name: str,
@@ -271,6 +296,7 @@ def configure_conversation_scope(
     display_name: str,
     scope_name: str = "",
     role_tags: list[str] | tuple[str, ...] = (),
+    expected_role_tags_sha256: str | None = None,
     now: float | None = None,
 ) -> dict[str, object]:
     """Set the one current user-facing scope and advisory tags for a chat.
@@ -285,8 +311,16 @@ def configure_conversation_scope(
     if "\x00" in scope or len(scope) > 120:
         raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_NAME_INVALID")
     tags = _role_tags(role_tags)
+    if expected_role_tags_sha256 is not None:
+        expected_role_tags_sha256 = str(expected_role_tags_sha256).strip().lower()
+        if not _SHA256.fullmatch(expected_role_tags_sha256):
+            raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_SHA256_INVALID")
     when = float(time.time() if now is None else now)
     with store.transaction() as db:
+        _current_scope, current_tags = _active_role_tags(db, key)
+        if (expected_role_tags_sha256 is not None
+                and role_tags_sha256(current_tags) != expected_role_tags_sha256):
+            raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_CONFLICT")
         conversation = db.execute(
             "SELECT conversation_key FROM conversation_network_conversations WHERE conversation_key=?",
             (key,),
@@ -370,6 +404,7 @@ def configure_conversation_scope(
         "scope_id": project_id,
         "scope_name": scope,
         "role_tags": tags if project_id else [],
+        "role_tags_sha256": role_tags_sha256(tags if project_id else []),
     }
 
 
@@ -417,7 +452,89 @@ def conversation_scope_directory(
         current = selected.get(key)
         if current is not None and str(row["project_id"]) == current["scope_id"]:
             current["role_tags"].append(str(row["tag"]))
+    for current in selected.values():
+        current["role_tags_sha256"] = role_tags_sha256(current["role_tags"])
     return selected
+
+
+def patch_conversation_role_tags(
+    store: Store,
+    *,
+    project_id: str,
+    node_label: str,
+    add: list[str] | tuple[str, ...] = (),
+    remove: list[str] | tuple[str, ...] = (),
+    expected_role_tags_sha256: str,
+    now: float | None = None,
+) -> dict[str, object]:
+    """Patch advisory roles for one exact project member with optimistic CAS.
+
+    Node labels are accepted only as human-facing selectors inside one exact
+    project. The stored and routed identity remains the conversation UUID.
+    """
+    project = _identifier(project_id, "CONVERSATION_NETWORK_PROJECT_ID_INVALID")
+    match = _NODE_LABEL.fullmatch(str(node_label or "").strip())
+    if match is None:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_NODE_LABEL_INVALID")
+    node_number = int(match.group(1))
+    additions = _role_tags(add)
+    removals = _role_tags(remove)
+    if not additions and not removals:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_PATCH_EMPTY")
+    if set(additions) & set(removals):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_PATCH_OVERLAP")
+    expected = str(expected_role_tags_sha256 or "").strip().lower()
+    if not _SHA256.fullmatch(expected):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_SHA256_INVALID")
+    when = float(time.time() if now is None else now)
+    with store.transaction() as db:
+        row = db.execute(
+            "SELECT m.conversation_key,c.display_name FROM conversation_network_memberships m "
+            "JOIN conversation_network_node_labels n ON n.conversation_key=m.conversation_key "
+            "JOIN conversation_network_conversations c ON c.conversation_key=m.conversation_key "
+            "WHERE m.project_id=? AND m.activity='ACTIVE' AND n.node_number=?",
+            (project, node_number),
+        ).fetchone()
+        if row is None:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_MEMBER_NOT_FOUND")
+        conversation_key = str(row["conversation_key"])
+        current = [str(item["tag"]) for item in db.execute(
+            "SELECT tag FROM conversation_network_membership_tags "
+            "WHERE project_id=? AND conversation_key=? ORDER BY tag COLLATE NOCASE,tag",
+            (project, conversation_key),
+        )]
+        current_digest = role_tags_sha256(current)
+        if current_digest != expected:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_CONFLICT")
+        updated = [tag for tag in current if tag not in removals]
+        for tag in additions:
+            if tag not in updated:
+                updated.append(tag)
+        updated.sort(key=lambda value: (value.casefold(), value))
+        changed = updated != current
+        if changed:
+            db.execute(
+                "DELETE FROM conversation_network_membership_tags WHERE project_id=? AND conversation_key=?",
+                (project, conversation_key),
+            )
+            db.executemany(
+                "INSERT INTO conversation_network_membership_tags(project_id,conversation_key,tag,created_at) "
+                "VALUES(?,?,?,?)",
+                [(project, conversation_key, tag, when) for tag in updated],
+            )
+            db.execute(
+                "UPDATE conversation_network_memberships SET updated_at=? "
+                "WHERE project_id=? AND conversation_key=?",
+                (when, project, conversation_key),
+            )
+    return {
+        "project_id": project,
+        "node_label": _node_label(node_number),
+        "display_name": str(row["display_name"]),
+        "role_tags": updated,
+        "role_tags_sha256": role_tags_sha256(updated),
+        "changed": changed,
+    }
 
 
 def conversation_display_order_directory(
@@ -669,6 +786,7 @@ def project_view(store: Store, *, project_id: str) -> dict[str, object]:
             "node_label": _node_label(int(member["node_number"])),
             "display_name": str(member["display_name"]), "activity": str(member["activity"]),
             "role_tags": tags_by_key.get(key, []), "monitor_match": match,
+            "role_tags_sha256": role_tags_sha256(tags_by_key.get(key, [])),
             "monitor": None if monitor is None else {
                 "node_label": str(monitor["node_label"]), "title": str(monitor["title"]),
                 "presence": str(monitor["presence"]),
