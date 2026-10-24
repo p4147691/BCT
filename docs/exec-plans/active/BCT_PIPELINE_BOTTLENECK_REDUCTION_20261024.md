@@ -83,4 +83,7 @@ exact main, and confirm main CI.  The authoritative worktree currently contains
 the unrelated untracked Monitor native build output
 `modules/monitor/native/1.9.20.175-cross-window-preview/`; its owning work must
 resolve it.  Do not delete, move, ignore, or bypass that output merely to merge
-this PR.  No Core deployment is required because runtime behavior is unchanged.
+this PR.  The CI/scope changes take effect on main publication.  The narrower
+`github_pr_status` read Claim is Core runtime code, so it requires a separately
+fenced Core deployment after main CI before claiming LIVE acceptance; do not
+deploy over another active Core owner merely to finish this plan.
