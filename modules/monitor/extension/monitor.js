@@ -43219,6 +43219,7 @@ let monitorBctWindowNodesCache = null;
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;
+let monitorBctNodeReorderPending = false;
 let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
@@ -43815,7 +43816,7 @@ function renderMonitorBctWindowNodes(nodes) {
 }
 
 function beginMonitorBctNodePointerDrag(event, row, node) {
-  if (event.button !== 0 || !node?.conversationKey || monitorBctPointerDrag) return;
+  if (event.button !== 0 || !node?.conversationKey || monitorBctPointerDrag || monitorBctNodeReorderPending) return;
   monitorBctPointerDrag = {
     pointerId: event.pointerId,
     row,
@@ -44013,6 +44014,10 @@ function finishMonitorBctNodeDrag() {
 }
 
 async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationKey, position) {
+  if (monitorBctNodeReorderPending) {
+    finishMonitorBctNodeDrag();
+    return;
+  }
   const draggedKey = monitorBctDraggedNodeKey;
   const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
   const dragged = snapshot.find((node) => node.conversationKey === draggedKey);
@@ -44033,7 +44038,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   destination.splice(insertion, 0, dragged);
   const movedAcrossScopes = (dragged.scopeId || "") !== destinationScopeId;
   const nextOrders = new Map(destination.map((node, index) => [node.conversationKey, index + 1]));
-  monitorBctWindowNodesCache = snapshot.map((node) => {
+  const optimisticSnapshot = snapshot.map((node) => {
     if (!nextOrders.has(node.conversationKey)) return node;
     return Object.freeze({
       ...node,
@@ -44042,8 +44047,10 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       displayOrder: nextOrders.get(node.conversationKey),
     });
   });
+  monitorBctNodeReorderPending = true;
+  monitorBctWindowNodesCache = optimisticSnapshot;
   finishMonitorBctNodeDrag();
-  renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+  renderMonitorBctWindowNodes(optimisticSnapshot);
   try {
     await monitorBctShell.reorderConversations(destination, {
       scopeId: destinationScopeId,
@@ -44055,9 +44062,14 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       2200,
     );
   } catch (error) {
-    monitorBctWindowNodesCache = snapshot;
-    renderMonitorBctWindowNodes(snapshot);
+    // A newer RCC refresh replaces this exact snapshot. Never overwrite it.
+    if (monitorBctWindowNodesCache === optimisticSnapshot) {
+      monitorBctWindowNodesCache = snapshot;
+      renderMonitorBctWindowNodes(snapshot);
+    }
     setMonitorStatus(`노드 순서 저장 실패 · ${error?.message || error}`, false, 4200);
+  } finally {
+    monitorBctNodeReorderPending = false;
   }
 }
 
