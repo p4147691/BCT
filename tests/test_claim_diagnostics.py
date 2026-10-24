@@ -189,8 +189,15 @@ class ClaimDiagnosticsTests(unittest.TestCase):
                 self.assertFalse(item["can_auto_release"])
                 self.assertEqual("UNKNOWN_EFFECT", item["diagnosis"])
 
-    def test_finished_unknown_rcc_and_desktop_keep_strict_live_proof(self):
-        for resource in ("rcc-instance:example", "desktop-control:interactive-session"):
+    def test_finished_unknown_external_effects_keep_strict_live_proof(self):
+        for resource in (
+            "rcc-instance:example",
+            "desktop-control:interactive-session",
+            "deployment:d:/bct/runtime",
+            "service:bct-core",
+            "orchestration-attachment:worker-1",
+            "orchestration-run:session-1:assignment-1",
+        ):
             with self.subTest(resource=resource):
                 name = "guarded-" + str(len(self.store.claim_diagnostics()))
                 self.claim(name, resource=resource)
