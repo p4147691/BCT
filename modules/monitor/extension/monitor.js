@@ -52667,6 +52667,24 @@ function monitorShouldKeepExistingCapture(existingState, existingSource, nextSta
     && (source.startsWith("blob:") || source.startsWith("data:image/"));
 }
 
+function monitorChooseCaptureView(input, settings) {
+  // The layout module owns the normal last-good policy. Keep a minimal,
+  // non-throwing fallback so a partially copied presentation payload cannot
+  // abort the whole thumbnail render loop before the deployment gate rejects
+  // that inconsistent payload.
+  const chooser = globalThis.MonitorUiLayout?.chooseCaptureView;
+  if (typeof chooser === "function") return chooser(input, settings);
+  const now = Number.isFinite(input?.now) ? Number(input.now) : Date.now();
+  const source = String(input?.nextSource || "");
+  if (String(input?.nextState || "") === "captured" &&
+      (source.startsWith("blob:") || source.startsWith("data:image/"))) {
+    const observedAt = Number(input?.nextCapturedAt || 0);
+    return {state:"captured",source,capturedAt:
+      Number.isFinite(observedAt) && observedAt > 0 && observedAt <= now ? observedAt : now,label:""};
+  }
+  return {state:"placeholder",source:"",capturedAt:0,label:""};
+}
+
 function monitorWindowFallbackDataUri(item = null) {
   const policy = bwmUiLayoutControl?.read?.()?.captureFallback;
   if (policy?.mode !== "legacy") {
@@ -55815,7 +55833,7 @@ function reconcileFrame(container, frame, className) {
       monitorShouldKeepExistingCapture(img.dataset.captureState,img.src,nextCaptureState)
       ||["held","stale"].includes(img.dataset.captureState)
     );
-    const captureView = globalThis.MonitorUiLayout.chooseCaptureView({
+    const captureView = monitorChooseCaptureView({
       previousState: img.dataset.captureState,
       previousSource: couldKeep ? img.src : "",
       previousCapturedAt: Number(img.dataset.monitorCapturedAt || 0),

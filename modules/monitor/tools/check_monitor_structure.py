@@ -25,6 +25,7 @@ def main():
         ext/'AGENTS.md', ext/'MONITOR_STRUCTURE.md', ext/'MONITOR_JS_MAP.md',
         ext/'MONITOR_MODULE_BOUNDARIES.md', ext/'MONITOR_ORGANIZATION_MODEL.md', ext/'MONITOR_JS_INDEX.md',
         ext/'manifest.json', ext/'desktop.html', ext/'monitor.js', ext/'monitor.css',
+        ext/'monitor-ui-layout.js', ext/'monitor-ui-layout.css',
         ext/'monitor-provider-launch-queue.js', ext/'monitor-act-transport.js',
         ext/'monitor-bct-node-interaction.js', ext/'monitor-bct-thumbnail-projection.js',
         ext/'browser'/'tab-focus-adapter.js',
@@ -59,10 +60,14 @@ def main():
     if html.exists():
         t = html.read_text(encoding='utf-8', errors='replace')
         scripts = re.findall(r'<script\s+src="([^"]+)"', t)
+        stylesheets = re.findall(r'<link\s+[^>]*href="([^"]+\.css(?:\?[^"#]*)?)"', t)
         loaded_js.update(s.split('?')[0] for s in scripts)
         missing_scripts = [s for s in scripts if not (ext/s.split('?')[0]).exists()]
+        missing_stylesheets = [s for s in stylesheets if not (ext/s.split('?')[0]).exists()]
         facts['desktop_scripts'] = scripts
+        facts['desktop_stylesheets'] = stylesheets
         if missing_scripts: errors.append({'kind':'missing_script','scripts':missing_scripts})
+        if missing_stylesheets: errors.append({'kind':'missing_stylesheet','stylesheets':missing_stylesheets})
         if 'monitor-provider-launch-queue.js' not in scripts:
             errors.append({'kind':'provider_queue_not_loaded'})
         if 'monitor-act-transport.js' not in scripts:
@@ -73,6 +78,35 @@ def main():
                 errors.append({'kind':'act_transport_loaded_after_monitor'})
         if 'monitor-naver-launch-queue.js' in scripts:
             errors.append({'kind':'legacy_provider_queue_name_loaded'})
+
+        monitor_text = (ext/'monitor.js').read_text(encoding='utf-8', errors='replace') if (ext/'monitor.js').exists() else ''
+        layout_js = (ext/'monitor-ui-layout.js').read_text(encoding='utf-8', errors='replace') if (ext/'monitor-ui-layout.js').exists() else ''
+        layout_css = (ext/'monitor-ui-layout.css').read_text(encoding='utf-8', errors='replace') if (ext/'monitor-ui-layout.css').exists() else ''
+        if 'MonitorUiLayout' in monitor_text and 'chooseCaptureView' in monitor_text:
+            monitor_script = next((s for s in scripts if s.split('?')[0] == 'monitor.js'), None)
+            layout_script = next((s for s in scripts if s.split('?')[0] == 'monitor-ui-layout.js'), None)
+            contract = {
+                'layout_script_loaded_before_monitor': bool(
+                    monitor_script and layout_script and scripts.index(layout_script) < scripts.index(monitor_script)),
+                'choose_capture_view_declared': bool(re.search(
+                    r'function\s+chooseCaptureView\s*\(', layout_js)),
+                'choose_capture_view_exported': bool(re.search(
+                    r'MonitorUiLayout\s*=\s*Object\.freeze\([^)]*chooseCaptureView', layout_js, re.S)),
+                'layout_stylesheet_loaded': any(
+                    s.split('?')[0] == 'monitor-ui-layout.css' for s in stylesheets),
+                'capture_age_label_styled': '.monitor-window-capture-age-label' in layout_css,
+                'stale_capture_styled': '.monitor-window-capture-stale' in layout_css,
+                'renderer_has_nonthrowing_fallback': bool(re.search(
+                    r'function\s+monitorChooseCaptureView\s*\([\s\S]*?typeof\s+chooser\s*===\s*"function"',
+                    monitor_text)),
+            }
+            facts['monitor_ui_layout_dependency_contract'] = contract
+            broken = [name for name, present in contract.items() if not present]
+            if broken:
+                errors.append({
+                    'kind':'monitor_ui_layout_dependency_contract_broken',
+                    'missing':broken,
+                })
 
     manifest = ext/'manifest.json'
     if manifest.exists():

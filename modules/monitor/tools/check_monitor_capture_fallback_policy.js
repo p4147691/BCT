@@ -11,11 +11,22 @@ const css = fs.readFileSync(path.join(__dirname, "..", "extension", "monitor-ui-
 const start = source.indexOf("function monitorWindowFallbackDataUri(");
 const end = source.indexOf("async function captureDesktopFrame(", start);
 assert.ok(start > 0 && end > start, "fallback image is independently bounded");
-const ctx = { encodeURIComponent, bwmUiLayoutControl: { read: () => ({
+const chooseStart = source.indexOf("function monitorChooseCaptureView(");
+assert.ok(chooseStart > 0 && chooseStart < start, "renderer compatibility fallback is independently bounded");
+const ctx = { encodeURIComponent, Date, Number, String, MonitorUiLayout: layout,
+  bwmUiLayoutControl: { read: () => ({
   captureFallback: {mode:"last_good", staleAfterSeconds:20, maxAgeSeconds:180}
 })}};
 vm.createContext(ctx);
-vm.runInContext(source.slice(start,end)+"; globalThis.draw = monitorWindowFallbackDataUri;",ctx);
+vm.runInContext(source.slice(chooseStart,end)+
+  "; globalThis.draw = monitorWindowFallbackDataUri; globalThis.choose = monitorChooseCaptureView;",ctx);
+const compatible = ctx.choose({nextState:"captured",nextSource:"blob:compatible",now:100});
+assert.equal(compatible.state,"captured");
+ctx.MonitorUiLayout = {};
+const partialPayload = ctx.choose({nextState:"captured",nextSource:"blob:partial",now:200});
+assert.equal(partialPayload.state,"captured", "partial layout payload must not abort thumbnail rendering");
+assert.equal(ctx.choose({nextState:"placeholder",nextSource:"",now:200}).state,"placeholder");
+ctx.MonitorUiLayout = layout;
 const compact = decodeURIComponent(ctx.draw({title:"YouTube - Chrome"}).split(",",2)[1]);
 assert.match(compact, /<svg.*width="480".*height="270"/);
 assert.match(compact, /<rect x="8" y="8" width="214" height="52"/);
@@ -28,7 +39,7 @@ assert.match(source, /captureFailureReason = nextCaptureState === "captured"/);
 assert.match(source, /Number\(entry\.item\?\.cloaked/);
 assert.match(source, /monitorCapturedAt/);
 assert.match(source, /captureView\.label/);
-assert.match(source, /MonitorUiLayout\.chooseCaptureView/);
+assert.match(source, /monitorChooseCaptureView/);
 assert.match(source, /bwm-thumbnail-policy-changed/);
 assert.match(source, /nextCapturedAt: nextCaptureState==="captured"\?Number\(entry\.capturedAt/);
 assert.match(source, /refreshBackgroundThumbs\(/);
