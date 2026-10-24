@@ -1,6 +1,6 @@
 # BCT pipeline bottleneck reduction — 2026-10-24
 
-Status: IMPLEMENTED IN ISOLATED WORKTREE / REMOTE CI AND MAIN INTEGRATION PENDING
+Status: PR EXACT-HEAD CI PASS / CLEAN LOCAL-MAIN INTEGRATION PENDING
 
 ## Goal
 
@@ -52,6 +52,10 @@ the source authority and keep LIVE deployment and browser state unchanged.
 - Full measured-history run: 222.046 seconds; shards 219.229 / 205.348 /
   217.449 / 217.593 seconds.
 - `compileall` and `git diff --check`: PASS.
+- PR #329 exact-head CI run `40091211509` at
+  `59ccd7c554b3da14008c1ea384020606ec079cd6`: PASS.  All four Core shards,
+  scope, preflight, and duration-history passed; the unrelated experimental
+  transport E2E was correctly skipped.  The optional duration cache was saved.
 
 The first PR #329 run found one correctness boundary that local runs had not
 exposed: real named-pipe ACL tests from the same module were executing in
@@ -74,6 +78,9 @@ evidence only; they never count as validation success.
 
 ## Remaining acceptance
 
-Commit the isolated changes, run exact-head GitHub CI, integrate into local
-main only from a clean authority worktree, publish that exact main, and confirm
-main CI.  No Core deployment is required because runtime behavior is unchanged.
+Integrate into local main only from a clean authority worktree, publish that
+exact main, and confirm main CI.  The authoritative worktree currently contains
+the unrelated untracked Monitor native build output
+`modules/monitor/native/1.9.20.175-cross-window-preview/`; its owning work must
+resolve it.  Do not delete, move, ignore, or bypass that output merely to merge
+this PR.  No Core deployment is required because runtime behavior is unchanged.
