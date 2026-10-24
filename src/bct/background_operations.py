@@ -16,7 +16,7 @@ from .service_runtime import atomic_json, process_identity, read_json
 
 BACKGROUND_CAPABILITIES = frozenset({
     "deploy", "service_control", "verify", "github_pr_status", "orchestrate",
-    "vtl_validate",
+    "vtl_validate", "github_run_watch",
 })
 
 _ORCHESTRATION_RESTARTABLE = frozenset({
@@ -105,7 +105,7 @@ def _spawn_worker(bct: Any, *, job_path: Path, operation_id: str,
 
 
 def recover_orphaned_orchestration_operations(bct: Any) -> list[dict[str, Any]]:
-    """Restart exact durable orchestration jobs whose proven worker is gone.
+    """Restart exact durable orchestration or Inbox jobs whose proven worker is gone.
 
     This runs on Core startup.  It never invents a new operation or request and
     never removes an unproven live claim.  Old claim files are renamed as audit
@@ -115,10 +115,14 @@ def recover_orphaned_orchestration_operations(bct: Any) -> list[dict[str, Any]]:
     jobs = runtime_root / "background-operations"
     jobs.mkdir(parents=True, exist_ok=True)
     durable_operation_ids: set[str] = set()
-    for stored_job in bct.store.running_background_jobs(capability="orchestrate"):
+    for stored_job in bct.store.running_background_jobs():
+        capability = str(stored_job.get("capability") or "")
         arguments = stored_job.get("arguments")
-        if not isinstance(arguments, dict) or str(arguments.get("operation")) \
-                not in _ORCHESTRATION_RESTARTABLE:
+        restartable = capability == "github_run_watch" or (
+            capability == "orchestrate" and isinstance(arguments, dict)
+            and str(arguments.get("operation")) in _ORCHESTRATION_RESTARTABLE
+        )
+        if not restartable:
             continue
         key = hashlib.sha256(
             str(stored_job["operation_id"]).encode("utf-8")
@@ -138,13 +142,17 @@ def recover_orphaned_orchestration_operations(bct: Any) -> list[dict[str, Any]]:
     for job_path in sorted(jobs.glob("*.job.json")):
         try:
             job = read_json(job_path)
-            if job is None or job.get("capability") != "orchestrate":
+            if job is None or job.get("capability") not in {"orchestrate", "github_run_watch"}:
                 continue
             if str(job.get("operation_id") or "") not in durable_operation_ids:
                 continue
             arguments = job.get("arguments")
-            if not isinstance(arguments, dict) or str(arguments.get("operation")) \
-                    not in _ORCHESTRATION_RESTARTABLE:
+            capability = str(job.get("capability"))
+            restartable = capability == "github_run_watch" or (
+                capability == "orchestrate" and isinstance(arguments, dict)
+                and str(arguments.get("operation")) in _ORCHESTRATION_RESTARTABLE
+            )
+            if not restartable:
                 continue
             principal_value = job.get("principal")
             if not isinstance(principal_value, dict):
@@ -215,7 +223,7 @@ def recover_orphaned_orchestration_operations(bct: Any) -> list[dict[str, Any]]:
             _spawn_worker(
                 bct, job_path=job_path,
                 operation_id=str(job["operation_id"]),
-                capability="orchestrate", job_sha256=job_sha256,
+                capability=capability, job_sha256=job_sha256,
             )
             recovered.append({
                 "operation_id": str(job["operation_id"]),
@@ -284,8 +292,9 @@ def launch_background_operation(
         raise RuntimeError("BACKGROUND_JOB_NOT_DURABLE")
     atomic_json(job_path, _execution_job(bct, job))
     if not created:
-        if capability == "orchestrate" and str(arguments.get("operation")) \
-                in _ORCHESTRATION_RESTARTABLE:
+        if (capability == "github_run_watch" or (
+                capability == "orchestrate" and str(arguments.get("operation"))
+                in _ORCHESTRATION_RESTARTABLE)):
             recover_orphaned_orchestration_operations(bct)
         return replace(bct.store.get_operation_for(
             operation_id=operation_id, work_id=work_id,

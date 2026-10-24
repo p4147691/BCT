@@ -346,6 +346,7 @@ def build_monitor_state(
             "process_sessions": len(sessions),
             "orchestration_sessions": len(snapshot["orchestration_sessions"]),
             "orchestration_assignments": len(snapshot["orchestration_assignments"]),
+            "github_inbox": len(snapshot.get("github_run_inbox", [])),
         },
         "rcc": {
             "instances": rcc,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import re
 from typing import Any, Protocol
 
 
@@ -54,6 +55,26 @@ class GhCliClient:
     def get_ref_sha(self, repository: str, branch: str) -> str:
         value = self._api(f"repos/{repository}/git/ref/heads/{branch}")
         return str(value["object"]["sha"]).lower()
+
+    def get_workflow_run(self, repository: str, run_id: int) -> dict[str, Any]:
+        """Read one Actions run; validate path components before invoking gh."""
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+            raise ValueError("GITHUB_REPOSITORY_INVALID")
+        if not isinstance(run_id, int) or run_id < 1:
+            raise ValueError("GITHUB_RUN_ID_INVALID")
+        value = self._api(f"repos/{repository}/actions/runs/{run_id}")
+        if not isinstance(value, dict):
+            raise RuntimeError("GITHUB_WORKFLOW_RUN_INVALID")
+        return value
+
+    def get_workflow_jobs(self, repository: str, run_id: int) -> list[dict[str, Any]]:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or not isinstance(run_id, int) or run_id < 1:
+            raise ValueError("GITHUB_WORKFLOW_RUN_PATH_INVALID")
+        value = self._api(f"repos/{repository}/actions/runs/{run_id}/jobs", "-f", "per_page=100")
+        jobs = value.get("jobs") if isinstance(value, dict) else None
+        if not isinstance(jobs, list) or len(jobs) > 100:
+            raise RuntimeError("GITHUB_WORKFLOW_JOBS_INVALID")
+        return [job for job in jobs if isinstance(job, dict)]
 
     def list_pull_requests(self, repository: str, *, head: str, base: str) -> list[dict[str, Any]]:
         owner = repository.split("/", 1)[0]

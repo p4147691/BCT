@@ -598,6 +598,7 @@ monitorRoot.innerHTML = `
 
     <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
     <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
+    <div id="monitorGithubInbox" class="monitor-bct-node-empty" aria-live="polite"></div>
 
 
 
@@ -7188,6 +7189,7 @@ const monitorService = document.getElementById("monitorService");
 
 
 const monitorWorkers = document.getElementById("monitorWorkers");
+const monitorGithubInbox = document.getElementById("monitorGithubInbox");
 
 
 
@@ -44118,6 +44120,7 @@ async function refreshMonitorBctWindowNodes() {
   if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
   try {
     const state = await monitorBctShell.monitorState();
+    renderMonitorGithubInbox(state);
     monitorBctWindowNodesCache = monitorBctShell.displayWindowNodes
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
@@ -44138,6 +44141,52 @@ async function refreshMonitorBctWindowNodes() {
   } finally {
     monitorBctWindowNodeRefreshBusy = false;
     if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = false;
+  }
+}
+
+function renderMonitorGithubInbox(state) {
+  if (!monitorGithubInbox) return;
+  const items = Array.isArray(state?.github_run_inbox) ? state.github_run_inbox.slice(0, 12) : [];
+  monitorGithubInbox.replaceChildren();
+  if (!items.length) {
+    monitorGithubInbox.textContent = "GitHub Inbox: no waiting or terminal results";
+    return;
+  }
+  const heading = document.createElement("strong");
+  const unreadCount = items.filter((item) => item?.unread === true).length;
+  heading.textContent = `GitHub 완료 Inbox (${unreadCount} 미확인)`;
+  monitorGithubInbox.append(heading);
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "monitor-bct-node-empty";
+    const primary = document.createElement("strong");
+    const stateLabel = String(item?.state || "UNKNOWN");
+    const project = String(item?.repository || "");
+    const kind = String(item?.context?.kind || item?.context?.type || "CI");
+    primary.textContent = `${item?.unread ? "● " : ""}${stateLabel} · ${project} · ${kind} #${String(item?.run_id || "")}`;
+    const details = document.createElement("div");
+    const sha = String(item?.head_sha || "");
+    const when = Number(item?.created_at || 0);
+    const age = Number.isFinite(when) && when > 0 ? ` · ${Math.max(0, Math.floor(Date.now()/1000 - when))}초 경과` : "";
+    details.textContent = `Work ${String(item?.work_id || "")} · ${String(item?.node_id || "")} · ${sha.slice(0, 12)}${age}`;
+    const action = document.createElement("div");
+    action.textContent = `다음: ${String(item?.next_step || "참고용 결과 확인").slice(0, 240)}`;
+    row.append(primary, details, action);
+    if (item?.error_summary) {
+      const error = document.createElement("div");
+      error.textContent = `실패: ${String(item.error_summary).slice(0, 260)}`;
+      row.append(error);
+    }
+    const target = String(item?.url || "");
+    if (/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/[1-9][0-9]*$/.test(target)) {
+      const link = document.createElement("a");
+      link.href = target;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "GitHub 결과 보기";
+      row.append(link);
+    }
+    monitorGithubInbox.append(row);
   }
 }
 

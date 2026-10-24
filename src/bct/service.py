@@ -24,6 +24,7 @@ from .features.github import (
     GitHubPushFeature,
     GitHubSyncMainFeature,
 )
+from .features.github_inbox import GitHubRunInboxFeature
 from .features.tests import TestFeature
 from .features.verification import VerificationFeature
 from .features.vtl import VtlValidateFeature
@@ -159,6 +160,7 @@ class BCT:
             FileReadFeature(self.store), FileWriteFeature(), TestFeature(), GitCommitFeature(policy_path),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
+            GitHubRunInboxFeature(self.store, github, policy_path),
             GitHubSyncMainFeature(policy_path),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             relay_browser,
