@@ -21,6 +21,7 @@ _MAX_SETTINGS_BYTES = 262_144
 _SCOPE = re.compile(r"[A-Za-z0-9_.:-]{1,96}\Z")
 _DEFAULTS = {
     "target_busy_policy": "queue_until_idle",
+    "continuation_mode": "manual",
     "composer_wake_mode": "trailing_space_once",
     "send_button_wait_ms": 1000,
     "worker_intro": "BCT가 구성한 협업 업무입니다.",
@@ -87,6 +88,7 @@ _OPTIONAL_TEXT_LIMITS = {
 _ALLOWED = set(_DEFAULTS)
 _ENUM_SETTINGS = {
     "target_busy_policy": {"queue_until_idle", "reject"},
+    "continuation_mode": {"manual", "auto_return"},
     "composer_wake_mode": {"trailing_space_once", "none"},
 }
 _LAYOUT = {"context", "worker_result", "action"}
@@ -104,6 +106,14 @@ _CATALOG: dict[str, dict[str, Any]] = {
         "type": "enum",
         "description": "대상 대화가 응답 생성 중일 때 처리 방식",
         "allowed_values": ["queue_until_idle", "reject"],
+    },
+    "continuation_mode": {
+        "type": "enum",
+        "description": (
+            "전송 시 고정되는 Worker 결과 반환 방식. auto_return은 BCT가 업무를 판단하지 않고 "
+            "완료된 이번 응답 원문을 같은 Delivery의 Manager에게 한 번 반환"
+        ),
+        "allowed_values": ["manual", "auto_return"],
     },
     "composer_wake_mode": {
         "type": "enum",
@@ -202,6 +212,7 @@ _APPLY_BOUNDARIES = {
     "observation": "NEXT_SAFE_READ",
     "prepared_or_submitted_message": "FROZEN",
     "delivery_policy": "NEXT_UNSENT_WORKER_MESSAGE",
+    "continuation_policy": "NEXT_UNSENT_WORKER_MESSAGE",
 }
 
 

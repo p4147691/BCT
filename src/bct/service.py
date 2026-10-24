@@ -11,6 +11,7 @@ from .core.policy import Policy
 from .core.store import Store
 from .core.orchestration import OrchestrationService
 from .manager_decision_recovery import ManagerDecisionRecovery
+from .delivery_continuation_recovery import DeliveryContinuationRecovery
 from .relay_executor import RelayControlFeature
 from .worker_dispatch_recovery import WorkerDispatchRecovery
 from .features.files import FileReadFeature, FileWriteFeature
@@ -131,6 +132,10 @@ class BCT:
             require_current_session_instances=_require_current_session_instances(policy_path),
         )
         relay = NamedPipeRelayClient()
+        relay_browser = RelayBrowserFeature(relay, store=self.store)
+        self.delivery_continuation_recovery = DeliveryContinuationRecovery(
+            self.store, relay_browser,
+        )
         self.worker_dispatch_recovery = (
             WorkerDispatchRecovery(self.orchestration, relay)
             if self.orchestration.manager_wake_receipt_v2_active else None
@@ -155,7 +160,7 @@ class BCT:
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
             GitHubSyncMainFeature(policy_path),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
-            RelayBrowserFeature(store=self.store),
+            relay_browser,
             SystemInspectFeature(), ExecuteFeature(),
             ProcessSessionFeature(policy_path, data_root=data_root),
             MonitorFeature(policy_path),
