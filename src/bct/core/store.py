@@ -29,8 +29,9 @@ def _claim_requires_live_retirement_proof(resource: str) -> bool:
 
     This is not a manual reconciliation gate. The coordinator probes the
     current desktop/RCC owner before reservation and supplies the exact
-    retirement candidate when it is idle. Every other FINISHED, executor-free
-    Claim retires atomically without such a probe.
+    retirement candidate when it is idle. Every other FINISHED Claim retires
+    atomically without such a probe. A background-executor row is historical
+    metadata once the owning Operation is FINISHED; it is not a second lock.
     """
     return (
         resource == "desktop-control:interactive-session"
@@ -777,20 +778,18 @@ class Store:
                 or ":read:" in resource_key
             )
             scope = "EXACT_RESOURCE" if exact_scope else "SHARED_RESOURCE"
-            # A FINISHED operation without an attached executor is historical,
-            # not a live reservation, for resources retired atomically by
-            # begin_operation. Preserve UNKNOWN/replay fences independently.
-            # RCC and desktop have separate live-ownership proof requirements.
-            terminal_without_executor = (
-                state == "FINISHED"
-                and row["executor_pid"] is None
-            )
+            # FINISHED is the execution boundary. An executor row remains
+            # useful provenance, but must not silently turn a terminal receipt
+            # back into a live lock. Preserve UNKNOWN/replay fences
+            # independently. RCC and desktop shared owners still require their
+            # separate current-state probes.
+            terminal_operation = state == "FINISHED"
             requires_live_state_check = (
-                terminal_without_executor
+                terminal_operation
                 and _claim_requires_live_retirement_proof(resource_key)
             )
             retires_on_next_reservation = (
-                terminal_without_executor and not requires_live_state_check
+                terminal_operation and not requires_live_state_check
             )
             output.append({
                 "resource_key": resource_key,
@@ -820,7 +819,7 @@ class Store:
                 "diagnosis": diagnosis,
                 "scope": scope,
                 "blocks_unrelated_work": (
-                    scope == "SHARED_RESOURCE" and not terminal_without_executor
+                    scope == "SHARED_RESOURCE" and not terminal_operation
                 ),
                 # Report whether the historical claim can actually reject the
                 # next distinct reservation. Exact terminal claims are
@@ -847,7 +846,8 @@ class Store:
             if row["owner_principal_id"] != old_principal_id or row["assignment_epoch"] != expected_epoch:
                 raise ConflictError("WORK_HANDOFF_FENCE_MISMATCH")
             # Handoff is about active ownership, not archived UNKNOWN receipts.
-            # Retire only this work's terminal, executor-free reservations.
+            # Retire this work's terminal reservations. Executor rows are
+            # provenance after FINISHED, not independent execution ownership.
             rows = db.execute(
                 "SELECT resource_key FROM resource_claims WHERE work_id=? AND unresolved=1",
                 (work_id,),
@@ -863,9 +863,7 @@ class Store:
                 "AND c.work_id=o.work_id "
                 "WHERE c.work_id=? AND c.unresolved=1 AND ("
                 "o.operation_id IS NULL OR o.state<>? "
-                "OR o.assignment_epoch<>c.assignment_epoch OR EXISTS("
-                "SELECT 1 FROM background_job_executors x "
-                "WHERE x.operation_id=c.operation_id))",
+                "OR o.assignment_epoch<>c.assignment_epoch)",
                 (work_id, OperationState.FINISHED.value),
             ).fetchone()[0]
             if unresolved:
@@ -911,14 +909,6 @@ class Store:
                     or result["capability"] not in self._RETIRED_DESKTOP_CAPABILITIES
                     or result["operation_epoch"] != result["assignment_epoch"]):
                 return None
-            # A still-associated background executor requires an independent
-            # liveness check; it cannot be inferred idle from the UI monitor.
-            owner = db.execute(
-                "SELECT COUNT(*) FROM background_job_executors WHERE operation_id=?",
-                (result["operation_id"],),
-            ).fetchone()[0]
-            if owner:
-                return None
             return result
         finally:
             db.close()
@@ -956,11 +946,7 @@ class Store:
                 or result["operation_epoch"] != result["assignment_epoch"]
             ):
                 return None
-            owner = db.execute(
-                "SELECT COUNT(*) FROM background_job_executors WHERE operation_id=?",
-                (result["operation_id"],),
-            ).fetchone()[0]
-            return None if owner else result
+            return result
         finally:
             db.close()
 
@@ -968,8 +954,10 @@ class Store:
                                     successor_operation_id: str) -> bool:
         """Retire a terminal reservation; preserve its UNKNOWN receipt and any Lease.
 
-        A FINISHED operation is historical evidence. A separate still-attached
-        background executor or the desktop Agent's exclusive Lease is not.
+        A FINISHED operation is historical evidence. Its background-executor
+        row is audit metadata, not a second execution state. The desktop
+        Agent's exclusive Lease and the RCC's current state remain independent
+        live ownership and are proved by their dedicated probe paths.
         This CAS applies only to the exact resource requested by the next
         operation or handoff; RUNNING and other active claims never change.
         """
@@ -989,13 +977,6 @@ class Store:
             return False
         if row["assignment_epoch"] != row["operation_epoch"]:
             return False
-        actor = db.execute(
-            "SELECT COUNT(*) FROM background_job_executors "
-            "WHERE operation_id=?",
-            (row["operation_id"],),
-        ).fetchone()[0]
-        if actor:
-            return False
         retired = db.execute(
             "UPDATE resource_claims SET unresolved=0 "
             "WHERE resource_key=? AND operation_id=? AND work_id=? "
@@ -1009,7 +990,7 @@ class Store:
             "original_work_id": row["work_id"],
             "original_assignment_epoch": row["assignment_epoch"],
             "resource_key": resource,
-            "reason": "FINISHED_NO_ATTACHED_EXECUTOR",
+            "reason": "FINISHED_OPERATION",
             "original_effect_unchanged": True,
         })
         return True
@@ -1104,15 +1085,10 @@ class Store:
                             "WHERE operation_id=? AND work_id=?",
                             (previous_id, previous_work),
                         ).fetchone()
-                        actor = db.execute(
-                            "SELECT COUNT(*) FROM background_job_executors "
-                            "WHERE operation_id=?", (previous_id,),
-                        ).fetchone()[0]
                         if (owner is not None
                                 and owner["state"] == OperationState.FINISHED.value
                                 and owner["assignment_epoch"] == previous_epoch
-                                and owner["capability"] in self._RETIRED_DESKTOP_CAPABILITIES
-                                and not actor):
+                                and owner["capability"] in self._RETIRED_DESKTOP_CAPABILITIES):
                             released = db.execute(
                                 "UPDATE resource_claims SET unresolved=0 "
                                 "WHERE resource_key=? AND operation_id=? AND work_id=? "
@@ -1141,10 +1117,6 @@ class Store:
                             "FROM operations WHERE operation_id=? AND work_id=?",
                             (previous_id, previous_work),
                         ).fetchone()
-                        actor = db.execute(
-                            "SELECT COUNT(*) FROM background_job_executors "
-                            "WHERE operation_id=?", (previous_id,),
-                        ).fetchone()[0]
                         if (
                             owner is not None
                             and owner["state"] == OperationState.FINISHED.value
@@ -1153,7 +1125,6 @@ class Store:
                             and owner["target"] == previous_instance
                             and owner["error"] == "RCC_HOST_OUTCOME_UNVERIFIED:MISSING"
                             and owner["assignment_epoch"] == previous_epoch
-                            and not actor
                         ):
                             released = db.execute(
                                 "UPDATE resource_claims SET unresolved=0 "

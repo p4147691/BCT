@@ -1907,18 +1907,19 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   busy→idle Manager 반환 수락시험은 수행하지 않았다. OS UTF-8/국가·언어 설정과 재부팅은
   변경하지 않는다.
 
-## 22. 종료 UNKNOWN/Claim 비차단 정책 교정 — 2026-10-24 source candidate
+## 22. 종료 UNKNOWN/Claim 비차단 정책 교정 — 2026-10-24
 
 이 절은 21절의 “deployment/service/exact orchestration UNKNOWN은 reconciliation 전까지 같은
 자원을 계속 차단한다”는 정책을 폐기하고 대체한다. 당시 정책은 중복 외부 효과의 위험을 진행
 중단보다 과대평가했고, 넓고 모호한 UNKNOWN과 어려운 reconciliation을 영구 잠금처럼 사용해
 독립적인 새 업무까지 막는 구조적 병목을 만들었다.
 
-- `FINISHED`이며 연결된 background executor가 없는 Operation/Assignment/Claim은 과거 증거다.
+- `FINISHED` Operation/Assignment/Claim은 과거 증거다. 남아 있는 background executor 행은
+  실행 상태가 아니라 감사 메타데이터이며, 종료 영수증을 다시 live lock으로 만들지 않는다.
   원본 outcome·evidence·effect journal은 보존하지만, 새 operation ID의 구분되는 후속 업무나
   Work handoff를 영구 차단하지 않는다. 같은 operation ID는 계속 기존 영수증을 반환하므로
   동일 외부 효과의 기계적 재실행 경로가 아니다.
-- 실제 차단 근거는 현재 실행 상태다. `RUNNING`, 활성 executor, Worker의
+- 실제 차단 근거는 현재 실행 상태다. `RUNNING`, Worker의
   `QUEUED/DISPATCHING/ACKNOWLEDGED`, 현재 desktop Lease/emergency stop, 현재 RCC pending/result
   같은 관찰 가능한 현재 소유권만 차단한다. desktop interactive session과 과거형 broad
   `rcc-instance:<id>` Claim은 수동 reconciliation을 요구하지 않고 다음 예약 시 BCT가 현재 idle을
@@ -1937,8 +1938,10 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   별도 단계를 허용한다. 진단 API는 다음 예약에서 자동 퇴역할 Claim을 더 이상
   `blocks_same_resource=true`로 표시하지 않는다.
 
-격리 브랜치 `fix/terminal-unknown-nonblocking-20261024`에서 `PYTHONUTF8=0`으로 GitHub와 같은
-4개 core shard의 고유 시험 874건이 모두 PASS했고, 관련 집중 회귀 132건과 `py_compile`,
-`git diff --check`도 PASS했다. 이 시점은 source candidate이며 아직 main 병합, GitHub CI,
-Core LIVE 배포 또는 N35/N33/N34 재수락을 뜻하지 않는다. RCC 소스/reload, Chrome, Windows
-국가·언어/Beta UTF-8 설정과 재부팅은 변경하지 않았다.
+첫 교정은 PR #319로 main `972ce50cc3a7274c9a9215ffec6ea6be5b3888d5`에 병합됐고 main CI
+#40056276355가 전부 SUCCESS였다. Core generation 213에 exact SHA로 LIVE 배포한 뒤 운영
+진단에서 과거 executor 행이 남은 일부 `FINISHED UNKNOWN`이 여전히 same-resource blocker로
+표시되는 잔여 결함을 발견했다. 후속 교정은 executor 행을 보존하되 terminal execution lock으로
+사용하지 않으며, desktop/RCC broad 자원은 기존 자동 current-state probe를 계속 요구한다.
+`PYTHONUTF8=0` 전체 4-shard 고유 시험 874건과 Python compile, `git diff --check`가 PASS했다.
+RCC 소스/reload, Chrome, Windows 국가·언어/Beta UTF-8 설정과 재부팅은 변경하지 않았다.
