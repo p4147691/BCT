@@ -33,6 +33,12 @@ class UnknownFeature(CountingFeature):
         raise UnknownEffectError("lost result after dispatch")
 
 
+class UnexpectedFeature(CountingFeature):
+    def execute(self, request):
+        self.calls += 1
+        raise RuntimeError("local feature contract failure")
+
+
 class UnknownChromeTabFeature:
     capability = "desktop_chrome_tab_select"
 
@@ -239,6 +245,27 @@ class CoreTests(unittest.TestCase):
                                          capability="write", arguments={"resource": "x"})
         self.assertTrue(replay.duplicate)
         self.assertEqual(Outcome.UNKNOWN, replay.outcome)
+        self.assertEqual(2, feature.calls)
+
+    def test_generic_feature_exception_is_failed_not_unknown_and_releases_claim(self):
+        feature = UnexpectedFeature()
+        self.replace_feature(feature)
+        failed = self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="contract-failure",
+            capability="write", arguments={"resource": "x"},
+        )
+        self.assertEqual(Outcome.FAILED, failed.outcome)
+        self.assertEqual("FEATURE_CONTRACT_FAILURE", failed.evidence["phase"])
+        self.assertTrue(failed.evidence["unknown_requires_explicit_signal"])
+        self.assertFalse(any(
+            item["operation_id"] == "contract-failure"
+            for item in self.bct.store.claim_diagnostics()
+        ))
+        successor = self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="after-contract-failure",
+            capability="write", arguments={"resource": "x"},
+        )
+        self.assertEqual(Outcome.FAILED, successor.outcome)
         self.assertEqual(2, feature.calls)
     def test_concurrent_writer_for_same_resource_is_denied(self):
         feature = BlockingFeature()

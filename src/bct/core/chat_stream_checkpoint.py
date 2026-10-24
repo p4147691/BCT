@@ -1,7 +1,8 @@
 """Durable, non-executing checkpoint/continuation planning for UI stream outages.
 
 A client-reported stream failure is NOT evidence of a BCT effect. Never
-retransmit, release claims, or mutate the original operation here.
+retransmit or mutate the original operation here. A FINISHED UNKNOWN remains
+visible history, but is not a permanent lock on later distinct stream steps.
 """
 from __future__ import annotations
 
@@ -118,7 +119,8 @@ class ChatStreamCheckpoint:
             if last is not None:
                 prev = self._source_row(db, work, last["source_operation_id"])
                 if (_receipt_digest(prev) != last["source_receipt_sha256"]
-                        or prev["state"] != "FINISHED" or prev["outcome"] != "APPLIED"):
+                        or prev["state"] != "FINISHED"
+                        or prev["outcome"] not in {"APPLIED", "UNKNOWN"}):
                     raise ConflictError("STREAM_PREVIOUS_EFFECT_NOT_ACCEPTED")
             db.execute(
                 "INSERT INTO chat_stream_checkpoints VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -173,6 +175,7 @@ class ChatStreamCheckpoint:
             ).fetchall()
             steps = []
             blocked = None
+            terminal_unknown_history = False
             for row in rows:
                 try:
                     original = self._source_row(db, work, row["source_operation_id"])
@@ -184,13 +187,16 @@ class ChatStreamCheckpoint:
                 except ConflictError:
                     same, state, outcome = False, None, None
                 decision = ("RECEIPT_CHANGED_OR_UNAVAILABLE" if not same else
-                            "STOP_UNKNOWN_NO_RESEND" if outcome == "UNKNOWN" else
                             "WAIT_ORIGINAL_EXECUTION" if state != "FINISHED" else
+                            "READY_WITH_TERMINAL_UNKNOWN_HISTORY"
+                                if outcome == "UNKNOWN" else
                             "READY_TO_PROPOSE_NEXT_STEP" if outcome == "APPLIED" else
                             "REVIEW_NOT_APPLIED_OR_FAILED")
                 steps.append({**self._snapshot(row), "receipt_verified": same,
                               "decision": decision})
-                if blocked is None and decision != "READY_TO_PROPOSE_NEXT_STEP":
+                if decision == "READY_WITH_TERMINAL_UNKNOWN_HISTORY":
+                    terminal_unknown_history = True
+                elif blocked is None and decision != "READY_TO_PROPOSE_NEXT_STEP":
                     blocked = decision
         finally:
             db.close()
@@ -198,7 +204,14 @@ class ChatStreamCheckpoint:
             decision = "NO_DURABLE_CHECKPOINT"
             next_step = None
         else:
-            decision = blocked or "READY_TO_PROPOSE_NEXT_STEP"
+            decision = (
+                blocked
+                or (
+                    "READY_WITH_TERMINAL_UNKNOWN_HISTORY"
+                    if terminal_unknown_history
+                    else "READY_TO_PROPOSE_NEXT_STEP"
+                )
+            )
             next_step = steps[-1]["next_step"] if blocked is None else None
         return {
             "stream_id": stream_id, "work_id": work.work_id,

@@ -988,6 +988,24 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(duplicate.duplicate)
         self.assertEqual(before, after)
+        sent = next(
+            call for call in self.relay.calls
+            if call["command"] == "send" and "one-delivery" in call["text"]
+        )
+        start = sent["text"].index(ASSIGNMENT_START) + len(ASSIGNMENT_START)
+        end = sent["text"].index(ASSIGNMENT_END, start)
+        envelope = json.loads(sent["text"][start:end])
+        self.assertEqual(
+            [
+                "session_id", "assignment_id", "assignment_generation",
+                "request_digest",
+            ],
+            envelope["duplicate_handling"]["identity"],
+        )
+        self.assertIn(
+            "외부 효과를 기계적으로 반복하지 말고",
+            envelope["duplicate_handling"]["instruction"],
+        )
 
     def test_manager_wake_is_durable_exact_and_not_duplicated(self):
         worker = self.attachment("worker-b")
@@ -1450,7 +1468,7 @@ class OrchestrationTests(unittest.TestCase):
             ).outcome,
         )
 
-    def test_exact_result_reconciles_unknown_without_resend(self):
+    def test_finished_unknown_does_not_delay_or_block_distinct_dispatch(self):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
         self.relay.lose_send_response = True
@@ -1468,24 +1486,21 @@ class OrchestrationTests(unittest.TestCase):
         ])
         self.relay.hide_results = False
         self.relay.lose_send_response = False
-        with self.assertRaises(ConflictError):
-            self.call("blocked-same-conversation", {
-                "operation": "dispatch", "session_id": "session",
-                "manager_epoch": 1, "assignment_id": "must-be-quarantined",
-                "worker_node_id": "worker-b",
-                "attachment_id": worker["attachment_id"],
-                "instruction": "must not bypass unknown quarantine",
-                "acceptance": {"never": True},
-            })
-        reconciled = self.call("reconcile-lost-dispatch", {
-            "operation": "reconcile", "session_id": "session",
-            "manager_epoch": 1, "assignment_id": "lost-result",
-            "original_operation_id": "lost-dispatch", "timeout_s": 2,
+        successor = self.call("distinct-after-finished-unknown", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "new-independent-work",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "perform a distinct task after the prior operation ended",
+            "acceptance": {"new_result": True},
         })
-        self.assertEqual(Outcome.APPLIED, reconciled.outcome)
-        self.assertEqual(sends_before, len([
+        self.assertEqual(Outcome.APPLIED, successor.outcome, successor.as_dict())
+        sends_after_successor = len([
             call for call in self.relay.calls if call["command"] == "send"
-        ]))
+        ])
+        self.assertEqual(sends_before + 1, sends_after_successor)
+        # The old receipt remains immutable history.  Starting distinct work
+        # neither waits for its reconciliation nor re-sends the old assignment.
         original = self.bct.store.get_operation_for(
             operation_id="lost-dispatch", work_id="work", principal_id="owner"
         )
@@ -1497,13 +1512,53 @@ class OrchestrationTests(unittest.TestCase):
             item for item in snapshot["assignments"]
             if item["assignment_id"] == "lost-result"
         )
-        self.assertEqual("APPLIED", assignment["state"])
-        # This original fixture is LEGACY_RETURN_V1; its reconciliation
-        # must not silently create new Schema 2-style Manager notifications.
+        self.assertEqual("UNKNOWN", assignment["state"])
         self.assertFalse([
             wake for wake in snapshot["manager_wakes"]
             if wake["assignment_id"] == "lost-result"
         ])
+
+    def test_finished_unknown_without_receipt_still_allows_new_work(self):
+        worker = self.attachment("worker-b")
+        self.relay.hide_results = True
+        self.relay.lose_send_response = True
+        unknown = self.call("missing-old-receipt", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "missing-old-result",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "perform an old task whose receipt becomes unavailable",
+            "acceptance": {"old": True}, "timeout_s": 5,
+        })
+        self.assertEqual(Outcome.UNKNOWN, unknown.outcome)
+        old_delivery = next(
+            call["request_id"] for call in self.relay.calls
+            if call["command"] == "send"
+            and "missing-old-result" in call["text"]
+        )
+        self.relay.results.pop(old_delivery, None)
+        self.relay.hide_results = False
+        self.relay.lose_send_response = False
+        sends_before = len([
+            call for call in self.relay.calls if call["command"] == "send"
+        ])
+        successor = self.call("new-work-with-old-receipt-missing", {
+            "operation": "dispatch", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "new-work-after-missing-receipt",
+            "worker_node_id": "worker-b",
+            "attachment_id": worker["attachment_id"],
+            "instruction": "perform new work without waiting for historical cleanup",
+            "acceptance": {"new": True},
+        })
+        self.assertEqual(Outcome.APPLIED, successor.outcome, successor.as_dict())
+        self.assertEqual(sends_before + 1, len([
+            call for call in self.relay.calls if call["command"] == "send"
+        ]))
+        historical = self.bct.orchestration.assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="missing-old-result",
+        )
+        self.assertEqual("UNKNOWN", historical["state"])
 
     def _prepare_schema2_lost_worker_result(self, suffix: str):
         # This fixture turns the already-created test session into Schema 2
@@ -1620,7 +1675,7 @@ class OrchestrationTests(unittest.TestCase):
             )["manager_wakes"] if x["assignment_id"] == assignment_id
         ]))
 
-    def test_unknown_conversation_quarantine_is_global_across_rcc_instances(self):
+    def test_terminal_unknown_is_nonblocking_but_active_assignment_still_fences(self):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
         self.relay.lose_send_response = True
@@ -1646,16 +1701,26 @@ class OrchestrationTests(unittest.TestCase):
             work=self.bct.store.get_work("work"), session_id="session",
             instance_id="instance999", external_session_id="session999",
         )
+        created, queued = self.bct.orchestration.create_assignment(
+            work=self.bct.store.get_work("work"), session_id="session",
+            assignment_id="cross-instance-second", manager_epoch=1,
+            worker_node_id="worker-b", attachment_id=second["attachment_id"],
+            request={"instruction": "perform distinct work after terminal history"},
+            roots=[str(self.root)], actions=["read"],
+            acceptance={"new": True}, dependencies=[],
+        )
+        self.assertTrue(created)
+        self.assertEqual("QUEUED", queued["state"])
         with self.assertRaisesRegex(
-            ConflictError, "ORCHESTRATION_CONVERSATION_QUARANTINED:UNKNOWN"
+            ConflictError, "ORCHESTRATION_CONVERSATION_QUARANTINED:QUEUED"
         ):
             self.bct.orchestration.create_assignment(
                 work=self.bct.store.get_work("work"), session_id="session",
-                assignment_id="cross-instance-second", manager_epoch=1,
+                assignment_id="cross-instance-third", manager_epoch=1,
                 worker_node_id="worker-b", attachment_id=second["attachment_id"],
-                request={"instruction": "must not replay via another RCC instance"},
+                request={"instruction": "must wait for the active assignment"},
                 roots=[str(self.root)], actions=["read"],
-                acceptance={"never": True}, dependencies=[],
+                acceptance={"active_fence": True}, dependencies=[],
             )
 
     def test_incomplete_rcc_receipt_never_applies_worker_result(self):

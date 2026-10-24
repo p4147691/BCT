@@ -172,7 +172,18 @@ class VerificationFeature:
             except UnknownEffectError:
                 result = FeatureResult(Outcome.UNKNOWN, {"code": "VERIFY_STEP_EFFECT_UNKNOWN"}, release_claims=False)
             except Exception as exc:
-                result = FeatureResult(Outcome.UNKNOWN, {"code": "VERIFY_STEP_UNEXPECTED", "type": type(exc).__name__}, release_claims=False)
+                # These bounded verification children are read/test/status
+                # observations. A generic implementation error is a failed
+                # check, not proof of an uncertain external mutation.
+                result = FeatureResult(
+                    Outcome.FAILED,
+                    {
+                        "code": "VERIFY_STEP_CONTRACT_FAILURE",
+                        "type": type(exc).__name__,
+                        "unknown_requires_explicit_signal": True,
+                    },
+                    release_claims=True,
+                )
             evidence.append({"id": step["id"], "capability": child.capability,
                              "outcome": result.outcome.value, "evidence": result.evidence,
                              "elapsed_ms": round((time.monotonic() - tick) * 1000, 3)})

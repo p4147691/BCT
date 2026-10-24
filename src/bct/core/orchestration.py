@@ -9,7 +9,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .models import ConflictError, Outcome, PreconditionError, Work
+from .models import ConflictError, OperationState, Outcome, PreconditionError, Work
 from .store import Store
 
 if TYPE_CHECKING:
@@ -1003,22 +1003,63 @@ class OrchestrationService:
             self._assert_attachment_current_session(db, attachment)
             if attachment["instance_id"] in self.excluded_new_assignment_instances:
                 raise ConflictError("ORCHESTRATION_RCC_RETIRED_FOR_NEW_ASSIGNMENTS")
-            busy = db.execute(
-                "SELECT a.assignment_id,a.state FROM orchestration_assignments a "
+            busy_rows = db.execute(
+                "SELECT a.assignment_id,a.state,a.request_json "
+                "FROM orchestration_assignments a "
                 "JOIN orchestration_assignment_attempts t ON "
                 "t.assignment_id=a.assignment_id AND t.generation=a.current_generation "
                 "JOIN orchestration_attachments x ON x.attachment_id=t.attachment_id "
                 "AND x.generation=t.attachment_generation "
                 "WHERE x.conversation_key=? "
                 "AND a.state IN ('QUEUED','DISPATCHING','ACKNOWLEDGED',"
-                "'DISPATCH_UNKNOWN','UNKNOWN') LIMIT 1",
+                "'DISPATCH_UNKNOWN','UNKNOWN') ORDER BY a.updated_at",
                 (attachment["conversation_key"],),
-            ).fetchone()
-            if busy is not None:
-                raise ConflictError(
-                    "ORCHESTRATION_CONVERSATION_QUARANTINED:"
-                    + str(busy["state"])
+            ).fetchall()
+            bypassed_terminal_unknowns: list[dict[str, Any]] = []
+            for busy in busy_rows:
+                state = str(busy["state"])
+                if state in {"QUEUED", "DISPATCHING", "ACKNOWLEDGED"}:
+                    raise ConflictError(
+                        "ORCHESTRATION_CONVERSATION_QUARANTINED:" + state
+                    )
+                prior_request = _load(busy["request_json"])
+                prior_operation_id = str(
+                    prior_request.get("_outer_operation_id") or ""
                 )
+                prior_operation = None
+                executor = None
+                if prior_operation_id:
+                    prior_operation = db.execute(
+                        "SELECT state,outcome FROM operations WHERE operation_id=? "
+                        "AND work_id=? AND capability='orchestrate'",
+                        (prior_operation_id, work.work_id),
+                    ).fetchone()
+                    executor = db.execute(
+                        "SELECT 1 FROM background_job_executors "
+                        "WHERE operation_id=? LIMIT 1",
+                        (prior_operation_id,),
+                    ).fetchone()
+                terminal_history = state == "UNKNOWN" or (
+                    state == "DISPATCH_UNKNOWN"
+                    and prior_operation is not None
+                    and prior_operation["state"] == OperationState.FINISHED.value
+                )
+                if not terminal_history or executor is not None or (
+                    prior_operation is not None
+                    and prior_operation["state"] != OperationState.FINISHED.value
+                ):
+                    raise ConflictError(
+                        "ORCHESTRATION_CONVERSATION_QUARANTINED:" + state
+                    )
+                bypassed_terminal_unknowns.append({
+                    "assignment_id": str(busy["assignment_id"]),
+                    "state": state,
+                    "operation_id": prior_operation_id or None,
+                    "operation_outcome": (
+                        None if prior_operation is None
+                        else str(prior_operation["outcome"] or "") or None
+                    ),
+                })
             for dependency in dependencies:
                 row = db.execute(
                     "SELECT session_id FROM orchestration_assignments "
@@ -1052,6 +1093,19 @@ class OrchestrationService:
                 "session_id": session_id, "manager_epoch": manager_epoch,
                 "worker_node_id": worker_node_id,
             })
+            for historical in bypassed_terminal_unknowns:
+                self.store._event(
+                    db, "ORCHESTRATION_TERMINAL_UNKNOWN_BYPASSED", assignment_id,
+                    {
+                        "session_id": session_id,
+                        "conversation_key": attachment["conversation_key"],
+                        "historical_assignment_id": historical["assignment_id"],
+                        "historical_assignment_state": historical["state"],
+                        "historical_operation_id": historical["operation_id"],
+                        "historical_operation_outcome": historical["operation_outcome"],
+                        "original_receipt_preserved": True,
+                    },
+                )
             row = db.execute(
                 "SELECT * FROM orchestration_assignments WHERE assignment_id=?",
                 (assignment_id,),

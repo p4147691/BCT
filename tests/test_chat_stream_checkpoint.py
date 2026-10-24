@@ -64,7 +64,7 @@ class ChatStreamCheckpointTests(unittest.TestCase):
         finally:
             db.close()
 
-    def test_unknown_never_becomes_authorized_after_client_reconnect(self):
+    def test_finished_unknown_is_history_not_a_lock_after_client_reconnect(self):
         self.receipt(outcome="UNKNOWN")
         self.save()
         self.service.report_transport(work=self.work, stream_id="long-chat-A",
@@ -72,15 +72,15 @@ class ChatStreamCheckpointTests(unittest.TestCase):
         self.service.report_transport(work=self.work, stream_id="long-chat-A",
             incident_id="client-connected-2", signal="CLIENT_RECONNECTED")
         result = self.view()
-        self.assertEqual("STOP_UNKNOWN_NO_RESEND", result["decision"])
-        self.assertIsNone(result["next_step_proposal"])
+        self.assertEqual("READY_WITH_TERMINAL_UNKNOWN_HISTORY", result["decision"])
+        self.assertEqual("inspect reply", result["next_step_proposal"])
         self.assertEqual(["STREAM_TIMEOUT", "CLIENT_RECONNECTED"],
             [x["signal"] for x in result["client_transport_reports"]])
         self.assertTrue(all(x["unverified_client_report"]
-            for x in result["client_transport_reports"]))
+                            for x in result["client_transport_reports"]))
         self.receipt("effect-b")
-        with self.assertRaisesRegex(ConflictError, "STREAM_PREVIOUS_EFFECT_NOT_ACCEPTED"):
-            self.save("effect-b", sequence=1, step_id="return")
+        continued = self.save("effect-b", sequence=1, step_id="return")
+        self.assertEqual(1, continued["sequence"])
 
     def test_missing_running_and_failed_operations_fail_closed(self):
         with self.assertRaisesRegex(ConflictError, "STREAM_SOURCE_RECEIPT_NOT_OWNED"):
@@ -93,17 +93,16 @@ class ChatStreamCheckpointTests(unittest.TestCase):
                        "WHERE operation_id='effect-a'")
         self.assertEqual("RECEIPT_CHANGED_OR_UNAVAILABLE", self.view()["decision"])
 
-    def test_persisted_unknown_blocks_subsequent_step_even_after_reload(self):
+    def test_persisted_unknown_allows_subsequent_distinct_step_after_reload(self):
         self.receipt()
         self.save()
         self.receipt("effect-b", "UNKNOWN")
         self.save("effect-b", sequence=1, step_id="manager-return",
                   next_step="finish safely")
-        self.assertEqual("STOP_UNKNOWN_NO_RESEND", self.view()["decision"])
+        self.assertEqual("READY_WITH_TERMINAL_UNKNOWN_HISTORY", self.view()["decision"])
         self.receipt("effect-c")
-        with self.assertRaisesRegex(ConflictError, "STREAM_PREVIOUS_EFFECT_NOT_ACCEPTED"):
-            self.save("effect-c", sequence=2, step_id="next")
-        self.assertEqual(2, len(self.view()["steps"]))
+        self.save("effect-c", sequence=2, step_id="next")
+        self.assertEqual(3, len(self.view()["steps"]))
 
     def test_source_tampering_and_duplicate_mutation_never_rewrites(self):
         self.receipt()
