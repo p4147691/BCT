@@ -20,6 +20,10 @@ class RccSourceBaselineTests(unittest.TestCase):
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
         self.assertEqual("RCC_REBUILD_V2_RC32_MANAGER_RESPONSE_FRAME_PROOF", release["candidate"])
+        self.assertEqual(
+            "44bd45596ed2267d2bf777163a7d8344a88d74186b02fe5c26a1928da043ec92",
+            release["rollbackBaseline"]["aggregateSha256"],
+        )
         inventory = {item["path"]: item["sha256"]
                      for item in release["candidateInventory"]["files"]}
         critical = {
