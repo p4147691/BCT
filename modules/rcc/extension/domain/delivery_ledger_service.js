@@ -490,6 +490,34 @@ async function retireCapturedWorkerExecution(receipt) {
   });
 }
 
+async function deliveryResponseRead(message) {
+  const id = deliveryId(message.deliveryId);
+  let ledger;
+  try {
+    ledger = await readDeliveryLedgerMirror();
+  } catch (_error) {
+    return {ok:false, deliveryId:id, code:'UNAVAILABLE'};
+  }
+  const receipt = ledger[id];
+  if (!receipt) return {ok:false, deliveryId:id, code:'NOT_RETAINED'};
+  if (receipt.managerConversationKey !== message.managerConversationKey
+      || receipt.workerConversationKey !== message.workerConversationKey
+      || receipt.requestSha256 !== message.requestSha256) {
+    return {ok:false, deliveryId:id, code:'ACCESS_DENIED'};
+  }
+  if (typeof receipt.responseText !== 'string' || !receipt.responseText) {
+    return {ok:false, deliveryId:id, code:'NOT_FOUND'};
+  }
+  const responseText = receipt.responseText;
+  const responseSha256 = await relaySha256(responseText);
+  const responseLength = responseText.length;
+  if (responseSha256 !== receipt.responseSha256
+      || responseLength !== receipt.responseLength) {
+    return {ok:false, deliveryId:id, code:'INTEGRITY_MISMATCH'};
+  }
+  return {ok:true, deliveryId:id, responseText, responseSha256, responseLength};
+}
+
 async function deliveryStatus(message) {
   const id = deliveryId(message.deliveryId);
   const ledger = await readDeliveryLedgerMirror();

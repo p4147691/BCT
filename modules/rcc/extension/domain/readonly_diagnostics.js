@@ -148,6 +148,11 @@ async function handleNativeCommand(message) {
           postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
           return;
         }
+    if (message.command === 'delivery-response-read') {
+          const result = await deliveryResponseRead(message);
+          postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
+          return;
+        }
     if (message.command === 'delivery-recovery-inspect') {
           const result = await deliveryRecoveryInspect(message);
           postNative({ type: 'host:result', requestId, sessionId: endpointSessionId, ...result });
