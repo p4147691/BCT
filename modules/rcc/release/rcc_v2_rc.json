@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC26_MANAGER_RETURN_IDLE_QUEUE",
+  "candidate": "RCC_REBUILD_V2_RC27_MANAGER_RETURN_EFFECT_RECONCILIATION",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1096,
-        "sha256": "9f9e609e13c36e7a15b78c1c2dc7bc1a5ca070c87e31a440b16e712f4dc71aed"
+        "size": 1095,
+        "sha256": "bcf0545d03e5f9bfecfa5010a4d1b65d420b818574b4c29c7359cb92ca63ff2d"
       },
       {
         "path": "browser/read_adapter.js",
@@ -92,13 +92,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 16672,
-        "sha256": "6b8e4aae7126d3903ff0d8b2544014925044dc34d613ef2d70871b61fc6bf732"
+        "size": 18522,
+        "sha256": "952086dc8fd14373735cb7265687512bacacc4f0b51ae5c48a91128355fbb3f6"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 18937,
-        "sha256": "6589f03fcc6f5674b92a6f430c1d65692735c89f93eba502c0f1c141bc719ff8"
+        "size": 18936,
+        "sha256": "99e5fe6fa9c9d6b7b7a3634e65ed13cf2854931409c68a24b78b655cc866bed1"
       },
       {
         "path": "content/conversation_rename.js",
@@ -112,8 +112,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 32798,
-        "sha256": "25f494a1c616c81bbe2cb12e5fedb225e258187715ae484ff562e45e37e461f6"
+        "size": 33645,
+        "sha256": "b5a708bbea6833fbcf83a1983cac432ed02628f6e5888fe06aeade32979effb8"
       },
       {
         "path": "core/conversation.js",
@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 39078,
-        "sha256": "e96197f852514ecbc8a719a8a428cf712c70ff7eae33909a9b656fb3b1e62b17"
+        "size": 41118,
+        "sha256": "4890610a5656a6f31dc12d70633cf1b60e2b3a858c30150e12ccbaee33a1ba25"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -202,8 +202,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1518,
-        "sha256": "473d61cff42d8d34b460a4f68cdcdbbc2c989b065e9ca2402051c4ba1dd5a8b8"
+        "size": 1529,
+        "sha256": "d4ef5d7abcb2ca1a4ffa6fceea10d800abc9d6932a7828ec687bde963af901ce"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "45bf2f0cb8389936fd6033d2258f88bd06e12b1c2f177640dd396af236b6b415"
+    "aggregateSha256": "b85c69992461d6a39cf61143139abc28d672b64fd7bb23e399bcf066e00d2960"
   },
   "activeLoaderGraph": {
     "background": [
@@ -462,6 +462,7 @@
         "relay:newChatStatus",
         "relay:renameConversation",
         "relay:deliveryRecoveryProof",
+        "relay:exactUserTurnProof",
         "relay:deliveryReadiness",
         "relay:retireComposerDraft",
         "relay:retireExecution"
@@ -518,6 +519,7 @@
         "relay:newChatStatus",
         "relay:renameConversation",
         "relay:deliveryRecoveryProof",
+        "relay:exactUserTurnProof",
         "relay:deliveryReadiness",
         "relay:retireComposerDraft",
         "relay:retireExecution"

@@ -39,6 +39,12 @@ class FakeRelayFeature:
                 response_sha256=hashlib.sha256(b"worker result").hexdigest(),
                 response_length=13,
             )
+        elif command == "delivery-manager-status":
+            row = self.ledger.observe(
+                delivery_id=delivery_id, work_id=work_id,
+                event=DeliveryEvent.MANAGER_TURN_RECONCILED,
+                observation={"manager_return_reconciled": True},
+            )
         else:
             row = self.ledger.observe(
                 delivery_id=delivery_id, work_id=work_id,
@@ -97,6 +103,32 @@ class DeliveryContinuationRecoveryTests(unittest.TestCase):
         self.assertEqual("SENT_WAITING", self.ledger.get_for_work(
             delivery_id="manual-1", work_id=self.work.work_id,
         )["state"])
+
+    def test_return_unknown_with_exact_effect_is_reconciled_not_blocked(self):
+        self.create("auto-reconcile", "auto_return")
+        self.ledger.observe(
+            delivery_id="auto-reconcile", work_id=self.work.work_id,
+            event=DeliveryEvent.WORKER_REPLY_CAPTURED,
+            response_sha256=hashlib.sha256(b"worker result").hexdigest(),
+            response_length=13,
+        )
+        self.ledger.observe(
+            delivery_id="auto-reconcile", work_id=self.work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+            observation={
+                "host_state": "REPLY_CAPTURED",
+                "error_code": "RCC_DELIVERY_EFFECT_UNKNOWN",
+            },
+        )
+        result = self.recovery.run_once()
+        self.assertEqual(1, result["checked"])
+        self.assertEqual(1, result["returned"])
+        self.assertEqual(["delivery-manager-status"], self.feature.calls)
+        row = self.ledger.get_for_work(
+            delivery_id="auto-reconcile", work_id=self.work.work_id,
+        )
+        self.assertEqual("RETURNED", row["state"])
+        self.assertTrue(row["observation"]["manager_return_reconciled"])
 
     def test_completed_work_is_never_touched(self):
         self.create("finished-1", "auto_return")

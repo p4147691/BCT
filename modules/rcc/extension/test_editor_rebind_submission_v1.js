@@ -154,6 +154,39 @@ assert.equal(
   assert.equal(cleanupEditor.text, '',
     'a proven pre-activation failure removes only the exact BCT draft before queueing');
 
+  const uncertainEditor = {text: ''};
+  let recoveredRecord = null;
+  const uncertainContext = vm.createContext({
+    RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+    isGenerating: () => false,
+    waitForEditor: async () => uncertainEditor,
+    getEditor: () => uncertainEditor,
+    editorDraftText: editor => String(editor.text || '').trim(),
+    getAssistantNodes: () => [],
+    lastAssistantText: () => '',
+    setEditorText: (editor, value) => { editor.text = value; },
+    submitEditor: async () => {
+      uncertainEditor.text = '';
+      throw new Error('provider activation acknowledgement lost');
+    },
+    currentConversationKey: () => '22222222-2222-2222-2222-222222222222',
+    waitForExactUserSubmission: async () => 'semantic:user:exact-return',
+    saveRelayExecution: value => { recoveredRecord = value; },
+    waitForReply: async () => 'unused',
+  });
+  vm.runInContext(
+    slice(source, 'async function sendPrompt(', '// V0 is a one-way')
+      + ';globalThis.sendPromptForTest = sendPrompt;',
+    uncertainContext
+  );
+  const recoveredSubmit = await uncertainContext.sendPromptForTest('exact return', {
+    relayId: 'return-001', submittedText: 'exact return', beforeTurnKeys: ['old-turn'],
+    conversationKey: '22222222-2222-2222-2222-222222222222',
+  }, false);
+  assert.equal(recoveredSubmit.recoveredAfterSubmitError, true);
+  assert.equal(recoveredRecord.phase, 'submitted');
+  assert.equal(recoveredRecord.routeTurnKey, 'semantic:user:exact-return');
+
   const accepted = await context.submitEditorForTest(original, {
     expectedText: expected,
     beforeSubmit: async () => ({binding: true}),

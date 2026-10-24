@@ -584,6 +584,48 @@ class DeliveryFeatureTests(unittest.TestCase):
             )["state"],
         )
 
+    def test_exact_manager_turn_reconciles_return_unknown(self) -> None:
+        args = {
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "exact manager return recovery",
+        }
+        self.execute(args, "reconcile-start")
+        self.execute({**self.base, "command": "delivery-status"}, "reconcile-status")
+        self.feature.delivery_ledger.observe(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+            observation={
+                "host_state": "REPLY_CAPTURED",
+                "error_code": "RCC_DELIVERY_EFFECT_UNKNOWN",
+            },
+        )
+        original = self.host.request
+
+        def reconciled(**kwargs):
+            if kwargs["command"] == "delivery-manager-status":
+                return {
+                    "ok": True, "reconciled": True,
+                    "deliveryId": self.base["delivery_id"],
+                    "state": "RETURNED", "pending": True,
+                    "managerTabId": 33, "managerWindowId": 44,
+                }
+            return original(**kwargs)
+
+        self.host.request = reconciled
+        result = self.execute(
+            {**self.base, "command": "delivery-manager-status"},
+            "reconcile-manager-status",
+        )
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("RETURNED", result.evidence["delivery_state"])
+        row = self.feature.delivery_ledger.get_for_work(
+            delivery_id=self.base["delivery_id"], work_id=self.work.work_id,
+        )
+        self.assertEqual("RETURNED", row["state"])
+        self.assertTrue(row["observation"]["manager_return_reconciled"])
+
 
     def _make_review_delivery(self):
         manager = "6ad7f5b6-c834-83e8-9c00-ff70bab4204d"

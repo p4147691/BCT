@@ -30,7 +30,8 @@ class DeliveryContinuationRecovery:
         try:
             rows = db.execute(
                 "SELECT d.* FROM relay_deliveries d JOIN works w ON w.work_id=d.work_id "
-                "WHERE w.state='ACTIVE' AND d.state IN ('SENT_WAITING','REPLY_CAPTURED') "
+                "WHERE w.state='ACTIVE' AND d.state IN "
+                "('SENT_WAITING','REPLY_CAPTURED','NEEDS_REVIEW') "
                 "ORDER BY d.updated_at,d.delivery_id",
             ).fetchall()
         finally:
@@ -42,8 +43,16 @@ class DeliveryContinuationRecovery:
                 observation = json.loads(value.get("observation_json") or "{}")
             except (TypeError, ValueError):
                 continue
+            return_unknown = (
+                value.get("state") == DeliveryState.NEEDS_REVIEW.value
+                and bool(value.get("response_sha256"))
+                and observation.get("host_state") == DeliveryState.REPLY_CAPTURED.value
+                and observation.get("error_code") == "RCC_DELIVERY_EFFECT_UNKNOWN"
+            )
             if (isinstance(observation, dict)
-                    and observation.get("continuation_mode") == "auto_return"):
+                    and observation.get("continuation_mode") == "auto_return"
+                    and (value.get("state") != DeliveryState.NEEDS_REVIEW.value
+                         or return_unknown)):
                 value["observation"] = observation
                 answer.append(value)
                 if len(answer) >= limit:
@@ -82,6 +91,14 @@ class DeliveryContinuationRecovery:
                 try:
                     work = self.store.get_work(str(row["work_id"]))
                     state = str(row["state"])
+                    if state == DeliveryState.NEEDS_REVIEW.value:
+                        reconciled = self._execute(
+                            work=work, row=row, command="delivery-manager-status",
+                        )
+                        state = str(reconciled.evidence.get("delivery_state") or state)
+                        if state == DeliveryState.RETURNED.value:
+                            summary["returned"] += 1
+                        continue
                     if state == DeliveryState.SENT_WAITING.value:
                         observed = self._execute(
                             work=work, row=row, command="delivery-status",

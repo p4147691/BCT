@@ -19,7 +19,7 @@ _OBSERVATION_KEYS = frozenset({
     "rcc_session_id", "worker_tab_id", "worker_window_id",
     "manager_tab_id", "manager_window_id", "host_state", "error_code",
     "manager_return_sha256", "manager_return_length", "settings_sha256",
-    "continuation_mode",
+    "continuation_mode", "manager_return_reconciled",
 })
 
 

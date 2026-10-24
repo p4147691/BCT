@@ -35,6 +35,21 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.47 Manager return effect reconciliation candidate
+
+RC27 removes a false `UNKNOWN` bottleneck observed during the live N33/N35
+Wake chain. When ChatGPT consumes the exact Manager-return draft but the
+activation acknowledgement is lost, RCC now proves that one and only one new
+normalized Manager user turn contains the exact framed return. That read-only
+proof records the original turn and assistant baseline and promotes the same
+Delivery to `RETURNED`; it never clicks or submits a second copy. Existing
+`NEEDS_REVIEW` Manager returns may use the same exact proof, while missing or
+duplicate matches remain unresolved.
+
+- extension version: `1.0.47 Manager Return Effect Reconciliation`
+- runtime build: `2026-10-24-rcc-manager-return-reconcile-v1`
+- candidate: `RCC_REBUILD_V2_RC27_MANAGER_RETURN_EFFECT_RECONCILIATION`
+
 ## BCT RCC 1.0.45 legacy Manager retirement candidate
 
 RC25 adds a bounded compatibility path for Manager-return receipts created

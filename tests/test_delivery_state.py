@@ -88,6 +88,23 @@ class DeliveryStateTests(unittest.TestCase):
                         terminal, DeliveryEvent.WORKER_TURN_CONFIRMED,
                     )
 
+    def test_exact_manager_turn_proof_reconciles_return_unknown(self) -> None:
+        state = advance_delivery_state(
+            DeliveryState.REPLY_CAPTURED,
+            DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+        )
+        self.assertEqual(state, DeliveryState.NEEDS_REVIEW)
+        state = advance_delivery_state(
+            state, DeliveryEvent.MANAGER_TURN_RECONCILED,
+        )
+        self.assertEqual(state, DeliveryState.RETURNED)
+        self.assertEqual(
+            advance_delivery_state(
+                state, DeliveryEvent.MANAGER_TURN_RECONCILED,
+            ),
+            DeliveryState.RETURNED,
+        )
+
     def test_skipped_and_backward_transitions_are_rejected(self) -> None:
         invalid = (
             (DeliveryState.NOT_SENT, DeliveryEvent.WORKER_REPLY_CAPTURED),

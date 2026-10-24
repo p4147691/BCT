@@ -685,7 +685,11 @@ class RelayBrowserFeature:
                 raise ConfirmedFailure(
                     "RCC_DELIVERY_RECOVERY_NOT_UNKNOWN", release_claims=True
                 )
-            if command == "delivery-manager-status" and delivery["state"] != DeliveryState.RETURNED.value:
+            if (command == "delivery-manager-status"
+                    and delivery["state"] not in {
+                        DeliveryState.RETURNED.value,
+                        DeliveryState.NEEDS_REVIEW.value,
+                    }):
                 return FeatureResult(Outcome.APPLIED, {
                     "command": command, "delivery_id": delivery_id,
                     "delivery_state": delivery["state"], "pending": True,
@@ -845,6 +849,23 @@ class RelayBrowserFeature:
             if state != DeliveryState.RETURNED.value:
                 raise ConfirmedFailure(
                     "RCC_DELIVERY_MANAGER_STATE_MISMATCH", release_claims=True,
+                )
+            if delivery["state"] == DeliveryState.NEEDS_REVIEW.value:
+                if result.get("reconciled") is not True:
+                    raise ConfirmedFailure(
+                        "RCC_DELIVERY_MANAGER_RECONCILIATION_UNPROVEN",
+                        release_claims=True,
+                    )
+                delivery = self.delivery_ledger.observe(
+                    delivery_id=delivery_id, work_id=work_id,
+                    event=DeliveryEvent.MANAGER_TURN_RECONCILED,
+                    observation={
+                        "host_state": state,
+                        "manager_return_reconciled": True,
+                        "manager_tab_id": result.get("managerTabId"),
+                        "manager_window_id": result.get("managerWindowId"),
+                        "error_code": "",
+                    },
                 )
             pending = result.get("pending") is True
             if not pending:
