@@ -952,11 +952,12 @@ class RelayBrowserFeature:
         return FeatureResult(Outcome.APPLIED, {
             "command": command, "delivery_id": delivery_id,
             "delivery_state": state,
-            "pending": state in {
+            "pending": result.get("pending") is True or state in {
                 DeliveryState.WAITING_TARGET.value,
                 DeliveryState.SENT_WAITING.value,
             },
-            "queued": state == DeliveryState.WAITING_TARGET.value,
+            "queued": result.get("queued") is True
+                      or state == DeliveryState.WAITING_TARGET.value,
         }, output={"delivery": updated, "result": _sanitize(result)})
 
     def _execute_create_and_send(self, request: FeatureRequest) -> FeatureResult:

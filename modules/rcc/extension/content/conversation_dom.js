@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-24-rcc-legacy-manager-retirement-v1';
+const RCC_BUILD_VERSION = '2026-10-24-rcc-manager-return-idle-queue-v1';
 
 function editorCandidates() {
 
