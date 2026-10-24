@@ -170,3 +170,53 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         self.assertEqual("FINISHED_CLAIMED",row["diagnosis"])
         self.assertFalse(row["can_auto_release"])
         self.assertEqual("APPLIED",row["outcome"])
+
+    def test_finished_unknown_shared_claim_is_not_a_live_lock(self):
+        for resource in ("file:c:/config.toml", "github-pr:p4147691/bct:274"):
+            with self.subTest(resource=resource):
+                name = "retired-" + str(len(self.store.claim_diagnostics()))
+                self.claim(name, resource=resource)
+                self.store.finish_operation(
+                    operation_id=name, outcome=Outcome.UNKNOWN,
+                    evidence={"untouched": True}, error="uncertain",
+                    release_claims=False,
+                )
+                item = next(x for x in self.store.claim_diagnostics()
+                            if x["operation_id"] == name)
+                self.assertEqual("SHARED_RESOURCE", item["scope"])
+                self.assertFalse(item["blocks_unrelated_work"])
+                self.assertFalse(item["replay_allowed"])
+                self.assertFalse(item["can_auto_release"])
+                self.assertEqual("UNKNOWN_EFFECT", item["diagnosis"])
+
+    def test_finished_unknown_rcc_and_desktop_keep_strict_live_proof(self):
+        for resource in ("rcc-instance:example", "desktop-control:interactive-session"):
+            with self.subTest(resource=resource):
+                name = "guarded-" + str(len(self.store.claim_diagnostics()))
+                self.claim(name, resource=resource)
+                self.store.finish_operation(
+                    operation_id=name, outcome=Outcome.UNKNOWN,
+                    evidence={}, error="uncertain", release_claims=False,
+                )
+                item = next(x for x in self.store.claim_diagnostics()
+                            if x["operation_id"] == name)
+                self.assertTrue(item["blocks_unrelated_work"])
+                self.assertFalse(item["replay_allowed"])
+
+    def test_finished_shared_claim_with_attached_executor_is_conservative(self):
+        name = "attached"
+        self.claim(name, resource="file:c:/active.toml")
+        self.store.finish_operation(
+            operation_id=name, outcome=Outcome.UNKNOWN, evidence={},
+            error="uncertain", release_claims=False,
+        )
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO background_jobs(operation_id,job_json,created_at)"
+                " VALUES(?,?,?)", (name, "{}", 1.0))
+            db.execute(
+                "INSERT INTO background_job_executors(operation_id,pid,fingerprint,claimed_at)"
+                " VALUES(?,?,?,?)", (name, 12345, "existing", 2.0))
+        item = self.store.claim_diagnostics()[0]
+        self.assertTrue(item["blocks_unrelated_work"])
+        self.assertFalse(item["can_auto_release"])

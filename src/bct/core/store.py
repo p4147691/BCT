@@ -762,6 +762,16 @@ class Store:
                 or ":read:" in resource_key
             )
             scope = "EXACT_RESOURCE" if exact_scope else "SHARED_RESOURCE"
+            # A FINISHED operation without an attached executor is historical,
+            # not a live reservation, for resources retired atomically by
+            # begin_operation. Preserve UNKNOWN/replay fences independently.
+            # RCC and desktop have separate live-ownership proof requirements.
+            retires_on_next_reservation = (
+                state == "FINISHED"
+                and row["executor_pid"] is None
+                and resource_key != "desktop-control:interactive-session"
+                and not resource_key.startswith("rcc-instance:")
+            )
             output.append({
                 "resource_key": resource_key,
                 "operation_id": row["operation_id"],
@@ -789,7 +799,9 @@ class Store:
                 },
                 "diagnosis": diagnosis,
                 "scope": scope,
-                "blocks_unrelated_work": scope == "SHARED_RESOURCE",
+                "blocks_unrelated_work": (
+                    scope == "SHARED_RESOURCE" and not retires_on_next_reservation
+                ),
                 "replay_allowed": False if outcome == "UNKNOWN" else None,
                 "can_auto_release": False,
             })
