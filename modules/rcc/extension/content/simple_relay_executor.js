@@ -578,13 +578,34 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
       waitMs: submitPolicy.sendButtonWaitMs,
     });
   } catch (error) {
-    // submitEditor only returns after activating the control. Any throw here
-    // is pre-activation, so remove only the exact draft this call inserted.
-    // If that cleanup cannot be proven, the effect becomes UNKNOWN and the
-    // durable queue must not submit another copy automatically.
+    // A provider event handler can consume the exact draft and create the user
+    // turn before the synthetic click/keyboard call reports an error.  The
+    // vanished draft is therefore not proof of failure.  First look for the
+    // one exact new user turn fenced by this operation; only an exact DOM
+    // match promotes the effect.  This closes the old
+    // RELAY_DRAFT_CLEAR_UNPROVEN false-UNKNOWN without clicking twice.
     const liveEditor = getEditor();
     const expectedDraft = RelayCore.normalizeMessageText(text);
     if (!liveEditor || editorDraftText(liveEditor) !== expectedDraft) {
+      if (tracking?.relayId && Array.isArray(tracking.beforeTurnKeys)) {
+        const recovered = {
+          ...tracking,
+          relayId: tracking.relayId,
+          conversationKey: currentConversationKey(),
+          beforeCount,
+          beforeText,
+          phase: 'submit-activated',
+          submittedAt: Date.now(),
+        };
+        try {
+          const routeTurnKey = await waitForExactUserSubmission(recovered, 2000);
+          recovered.routeTurnKey = routeTurnKey;
+          recovered.phase = 'submitted';
+          saveRelayExecution(recovered);
+          return { submitted: true, beforeCount, beforeText,
+            recoveredAfterSubmitError: true };
+        } catch (_) {}
+      }
       throw new Error('RELAY_DRAFT_CLEAR_UNPROVEN');
     }
     setEditorText(liveEditor, '');

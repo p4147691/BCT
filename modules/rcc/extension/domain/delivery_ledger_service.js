@@ -650,7 +650,55 @@ async function attemptManagerReturn(receipt, managerTab) {
   const unresolved = { ...receipt, state, updatedAt: Date.now(),
     managerReturnQueued: false, managerReturnWaitingReason: '', error };
   await writeDeliveryLedgerMirror(receipt.deliveryId, unresolved);
+  if (state === 'NEEDS_REVIEW') {
+    const reconciled = await reconcileManagerReturnEffect(unresolved, managerTab);
+    if (reconciled.state === 'RETURNED') {
+      return { ok: true, reconciled: true, ...publicDeliveryReceipt(reconciled) };
+    }
+  }
   return { ok: false, ...publicDeliveryReceipt(unresolved) };
+}
+
+async function reconcileManagerReturnEffect(receipt, suppliedManagerTab = null) {
+  if (!receipt || receipt.state !== 'NEEDS_REVIEW' || !receipt.managerReturnText
+      || !/^[a-f0-9]{64}$/.test(String(receipt.managerReturnSubmittedSha256 || ''))) {
+    return receipt;
+  }
+  let managerTab = suppliedManagerTab;
+  try {
+    managerTab = managerTab || singleDeliveryTab(
+      await getChatTabs(), receipt.managerConversationKey);
+  } catch (_) {
+    return receipt;
+  }
+  let proof;
+  try {
+    proof = await sendToChatTab(managerTab.id, {
+      type: 'relay:exactUserTurnProof', deliveryId: receipt.deliveryId,
+      conversationKey: receipt.managerConversationKey,
+      text: receipt.managerReturnText,
+      submittedSha256: receipt.managerReturnSubmittedSha256,
+    });
+  } catch (_) {
+    return receipt;
+  }
+  if (proof?.ok !== true || proof.deliveryId !== receipt.deliveryId
+      || proof.conversationKey !== receipt.managerConversationKey
+      || proof.submittedSha256 !== receipt.managerReturnSubmittedSha256
+      || !String(proof.turnKey || '')
+      || !Number.isInteger(proof.beforeAssistantCount)
+      || proof.beforeAssistantCount < 0) {
+    return receipt;
+  }
+  return writeDeliveryLedgerMirror(receipt.deliveryId, {
+    ...receipt, state: 'RETURNED', managerTabId: managerTab.id,
+    managerWindowId: managerTab.windowId,
+    managerBeforeAssistantCount: proof.beforeAssistantCount,
+    managerReturnTurnKey: String(proof.turnKey),
+    managerReturnReconciled: true, managerReturnQueued: false,
+    managerReturnWaitingReason: '', managerReturnText: '', error: '',
+    updatedAt: Date.now(),
+  });
 }
 
 async function resumeQueuedManagerReturn(deliveryIdValue) {
@@ -723,6 +771,9 @@ async function deliveryManagerStatus(message) {
   let receipt = ledger[id];
   if (!receipt) return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
     error: 'DELIVERY_MIRROR_NOT_FOUND' };
+  if (receipt.state === 'NEEDS_REVIEW') {
+    receipt = await reconcileManagerReturnEffect(receipt);
+  }
   if (receipt.state !== 'RETURNED') {
     return { ok: true, pending: true, ...publicDeliveryReceipt(receipt) };
   }
@@ -765,7 +816,8 @@ async function deliveryManagerStatus(message) {
     managerResponseLength: read.responseText.length, updatedAt: Date.now() };
   await writeDeliveryLedgerMirror(id, observed);
   receipt = await retireCapturedManagerExecution(observed);
-  return { ok: true, ...publicDeliveryReceipt(receipt),
+  return { ok: true, reconciled: receipt.managerReturnReconciled === true,
+    ...publicDeliveryReceipt(receipt),
     managerResponseText: read.responseText };
 }
 

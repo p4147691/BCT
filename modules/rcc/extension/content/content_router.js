@@ -64,6 +64,40 @@ if (message.type === 'relay:deliveryRecoveryProof') {
   }));
   return true;
 }
+// Exact read-only proof for a Manager return whose activation ACK was lost.
+// The full framed return contains a Delivery id and result hash, so require one
+// and only one normalized user turn.  This never clicks or edits the composer.
+if (message.type === 'relay:exactUserTurnProof') {
+  Promise.resolve().then(async () => {
+    const id = String(message.deliveryId || '');
+    const key = String(message.conversationKey || '').trim().toLowerCase();
+    const text = RelayCore.normalizeMessageText(String(message.text || ''));
+    const expectedHash = String(message.submittedSha256 || '').trim().toLowerCase();
+    if (!id || !key || currentConversationKey() !== key || !text || text.length > 12000
+        || !/^[a-f0-9]{64}$/.test(expectedHash)
+        || await newChatTextSha256(text) !== expectedHash) {
+      return { ok: false, error: 'RELAY_EXACT_USER_TURN_ARGUMENT_INVALID' };
+    }
+    const record = { submittedText: text, conversationKey: key };
+    const matches = getConversationTurns().filter((turn) =>
+      submittedPromptMatchesTurn(record, turn));
+    if (matches.length !== 1) {
+      return { ok: false, error: matches.length > 1
+        ? 'RELAY_EXACT_USER_TURN_AMBIGUOUS' : 'RELAY_EXACT_USER_TURN_NOT_FOUND' };
+    }
+    const turn = matches[0];
+    const beforeAssistantCount = getAssistantNodes().filter((node) => {
+      if (!node || turn.contains?.(node)) return false;
+      return !!(node.compareDocumentPosition?.(turn) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }).length;
+    return { ok: true, deliveryId: id, conversationKey: key,
+      submittedSha256: expectedHash, turnKey: turnIdentity(turn),
+      beforeAssistantCount };
+  }).then(sendResponse).catch((error) => sendResponse({
+    ok: false, error: String(error?.message || error || 'RELAY_EXACT_USER_TURN_PROOF_FAILED').slice(0, 128)
+  }));
+  return true;
+}
 if (message.type === 'relay:activityProbe') {
     sampleJsHeapTelemetry();
 

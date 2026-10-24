@@ -19,6 +19,7 @@ class DeliveryEvent(StrEnum):
     WORKER_TURN_CONFIRMED = "WORKER_TURN_CONFIRMED"
     WORKER_REPLY_CAPTURED = "WORKER_REPLY_CAPTURED"
     MANAGER_TURN_CONFIRMED = "MANAGER_TURN_CONFIRMED"
+    MANAGER_TURN_RECONCILED = "MANAGER_TURN_RECONCILED"
     PRE_SUBMIT_REJECTED = "PRE_SUBMIT_REJECTED"
     WORKER_TURN_FAILED = "WORKER_TURN_FAILED"
     EFFECT_BOUNDARY_UNPROVEN = "EFFECT_BOUNDARY_UNPROVEN"
@@ -52,6 +53,7 @@ _EVENT_RESULT = {
     DeliveryEvent.WORKER_TURN_CONFIRMED: DeliveryState.SENT_WAITING,
     DeliveryEvent.WORKER_REPLY_CAPTURED: DeliveryState.REPLY_CAPTURED,
     DeliveryEvent.MANAGER_TURN_CONFIRMED: DeliveryState.RETURNED,
+    DeliveryEvent.MANAGER_TURN_RECONCILED: DeliveryState.RETURNED,
     DeliveryEvent.PRE_SUBMIT_REJECTED: DeliveryState.NOT_APPLIED,
     DeliveryEvent.WORKER_TURN_FAILED: DeliveryState.FAILED,
     DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN: DeliveryState.NEEDS_REVIEW,
@@ -71,8 +73,8 @@ def advance_delivery_state(
     """Advance one logical delivery without retries, skips, or rollback.
 
     Re-observing the event that establishes the current state is idempotent.
-    An unprovable effect boundary terminates any still-active delivery in
-    NEEDS_REVIEW and never converts it to success or NOT_APPLIED.
+    An unprovable effect boundary enters NEEDS_REVIEW.  A later exact proof of
+    the Manager user turn may reconcile only that boundary to RETURNED.
     """
     try:
         state = DeliveryState(current)
@@ -82,6 +84,9 @@ def advance_delivery_state(
 
     if _EVENT_RESULT[observed] == state:
         return state
+    if (state == DeliveryState.NEEDS_REVIEW
+            and observed == DeliveryEvent.MANAGER_TURN_RECONCILED):
+        return DeliveryState.RETURNED
     if state in TERMINAL_DELIVERY_STATES:
         raise DeliveryTransitionError("DELIVERY_TERMINAL_STATE_IMMUTABLE")
     if observed == DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN:

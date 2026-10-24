@@ -13,6 +13,7 @@ const activeRelayIds = new Map();
 let failNextExecuteBusy = false;
 let failNextRetireAck = false;
 let orphanDraftSha256 = '';
+let failNextExecuteUnknownApplied = false;
 const context = {
   console, TextEncoder, crypto: webcrypto,
   RelayCore: {
@@ -69,6 +70,14 @@ const context = {
         draftSha256: orphanDraftSha256, draftLength: 321, composerEmpty: true,
         retiredExecutionId: message.supersededDeliveryId };
     }
+    if (message.type === 'relay:exactUserTurnProof') {
+      controlCalls.push({ tabId, message });
+      return { ok: true, deliveryId: message.deliveryId,
+        conversationKey: message.conversationKey,
+        submittedSha256: message.submittedSha256,
+        turnKey: 'semantic:user:' + message.deliveryId,
+        beforeAssistantCount: 3 };
+    }
     sends.push({ tabId, message });
     if (message.type === 'relay:simpleReadReply') {
       return { ok: true, conversationKey: message.conversationKey,
@@ -78,6 +87,11 @@ const context = {
       failNextExecuteBusy = false;
       return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
         error: 'RELAY_TARGET_GENERATING' };
+    }
+    if (message.type === 'relay:simpleExecute' && failNextExecuteUnknownApplied) {
+      failNextExecuteUnknownApplied = false;
+      return { ok: false, submitted: false, effectState: 'UNKNOWN',
+        error: 'RELAY_DRAFT_CLEAR_UNPROVEN' };
     }
     activeRelayIds.set(tabId, message.relayId);
     return { ok: true, submitted: true, conversationKey: message.conversationKey,
@@ -128,6 +142,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.notEqual(managerRetire.expectedRequestSha256, returned.managerReturnSha256);
   assert.equal(managerRetire.expectedResponseSha256, manager.managerResponseSha256);
   assert.equal(managerRetire.expectedResponseLength, manager.managerResponseLength);
+
   const workerRetire = controlCalls.find(item => item.tabId === 20
     && item.message.type === 'relay:retireExecution'
     && item.message.relayId === 'delivery-001').message;
@@ -161,6 +176,23 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(changed.ok, false);
   assert.equal(changed.error, 'DELIVERY_MANAGER_REPLY_CHANGED');
   context.sendToChatTab = originalSend;
+
+  // A lost activation ACK is reconciled from one exact Manager user turn.
+  const reconcileIdentity = { ...identity, deliveryId: 'delivery-return-reconciled' };
+  await context.deliveryStart(reconcileIdentity);
+  await context.deliveryStatus({ deliveryId: reconcileIdentity.deliveryId });
+  failNextExecuteUnknownApplied = true;
+  const returnReconciled = await context.deliveryReturn({
+    deliveryId: reconcileIdentity.deliveryId,
+  });
+  assert.equal(returnReconciled.ok, true);
+  assert.equal(returnReconciled.state, 'RETURNED');
+  assert.equal(returnReconciled.reconciled, true);
+  assert.equal(storage.deliveryLedgerMirrorV1[reconcileIdentity.deliveryId]
+    .managerReturnReconciled, true);
+  assert.equal(controlCalls.some(item => item.tabId === 10
+    && item.message.type === 'relay:exactUserTurnProof'
+    && item.message.deliveryId === reconcileIdentity.deliveryId), true);
 
   // New manager return is ONE user turn containing the FULL current Worker result.
   // The Worker tab may disappear after its response is captured.
