@@ -69,6 +69,33 @@ class WorkerResultInbox:
             if not rows:break
             result.extend(rows);after=rows[-1]["delivery_id"]
         return result
+    def pending_summaries(self, *, manager_uuid: str, priority_by_delivery: dict | None = None,
+                          after: str = "", limit: int = 100):
+        """Bounded read-only list. Summaries are caller-provided safe metadata, never raw result text."""
+        priority_by_delivery = priority_by_delivery or {}
+        rows = self.pending(manager_uuid=manager_uuid, after=after, limit=limit)
+        summaries = []
+        for row in rows:
+            meta = priority_by_delivery.get(row["delivery_id"], {})
+            if not isinstance(meta, dict):
+                meta = {}
+            priority = meta.get("priority", 0)
+            if type(priority) is not int or not 0 <= priority <= 9:
+                priority = 0
+            summary = str(meta.get("summary", ""))[:120]
+            summaries.append({"delivery_id": row["delivery_id"], "work_id": row["work_id"],
+                              "priority": priority, "summary": summary,
+                              "result_sha256": row["result_sha256"],
+                              "capture_state": row["capture_state"]})
+        return sorted(summaries, key=lambda x: (-x["priority"], x["delivery_id"]))
+
+    def wake_signal(self, *, manager_uuid: str):
+        """One coalesced non-sending signal; never embeds any result body."""
+        items = self.pending_all(manager_uuid=manager_uuid)
+        return {"signal": "RESULTS_PENDING" if items else "NONE",
+                "wake_count": 1 if items else 0, "pending_count": len(items),
+                "effect": "NONE_NO_SEND"}
+
     def decide(self, *, delivery_id, manager_uuid, decision, receipt_id, reason, observed_sha):
         if decision not in DECISIONS or not receipt_id or not reason:
             raise ValueError("DECISION_REQUIRED")
