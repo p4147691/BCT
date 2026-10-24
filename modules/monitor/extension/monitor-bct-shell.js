@@ -93,6 +93,11 @@
             roleTags: Object.freeze(Array.isArray(scope?.role_tags)
               ? scope.role_tags.map((value) => String(value || "").trim()).filter(Boolean)
               : []),
+            roleTagsSha256: String(scope?.role_tags_sha256 || "").trim().toLowerCase(),
+            reasoningLevel: String(tab?.reasoning?.status || "").trim().toUpperCase() === "OBSERVED"
+              ? String(tab?.reasoning?.level || "").trim()
+              : "",
+            reasoningSource: String(tab?.reasoning?.source || "").trim(),
             displayOrder: Number.isSafeInteger(Number(scope?.display_order))
               ? Math.max(0, Number(scope.display_order))
               : 0,
@@ -210,11 +215,17 @@
       const roleTags = Array.isArray(values?.roleTags)
         ? values.roleTags.map((value) => String(value || "").trim()).filter(Boolean)
         : [];
+      const expectedRoleTagsSha256 = String(
+        values?.expectedRoleTagsSha256 || node?.roleTagsSha256 || ""
+      ).trim().toLowerCase();
       if (!conversationKey || !displayName || displayName.length > 120 || scopeName.length > 120) {
         throw new Error("BCT_CONVERSATION_SCOPE_IDENTITY_INVALID");
       }
       if (roleTags.length > 24 || roleTags.some((value) => value.length > 48)) {
         throw new Error("BCT_CONVERSATION_SCOPE_TAGS_INVALID");
+      }
+      if (expectedRoleTagsSha256 && !/^[0-9a-f]{64}$/.test(expectedRoleTagsSha256)) {
+        throw new Error("BCT_CONVERSATION_SCOPE_TAGS_REVISION_INVALID");
       }
       const response = await fetcher(URLS.updateConversationScope, {
         method: "POST",
@@ -225,6 +236,9 @@
           display_name: displayName,
           scope_name: scopeName,
           role_tags: roleTags,
+          ...(expectedRoleTagsSha256
+            ? { expected_role_tags_sha256: expectedRoleTagsSha256 }
+            : {}),
         }),
       });
       const result = await response?.json?.().catch(() => null);

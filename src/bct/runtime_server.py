@@ -135,7 +135,10 @@ def run_monitor_conversation_scope_update(
     This is metadata only. It does not create a Work, acquire a Claim, elect a
     privileged Manager, or perform any browser action.
     """
-    allowed = {"conversation_key", "display_name", "scope_name", "role_tags"}
+    allowed = {
+        "conversation_key", "display_name", "scope_name", "role_tags",
+        "expected_role_tags_sha256",
+    }
     unknown = set(payload) - allowed
     if unknown:
         raise ValueError("MONITOR_CONVERSATION_SCOPE_FIELD_NOT_ALLOWED:" + ",".join(sorted(unknown)))
@@ -145,6 +148,7 @@ def run_monitor_conversation_scope_update(
         display_name=str(payload.get("display_name") or ""),
         scope_name=str(payload.get("scope_name") or ""),
         role_tags=payload.get("role_tags") or [],
+        expected_role_tags_sha256=payload.get("expected_role_tags_sha256"),
     )
 
 

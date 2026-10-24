@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC32_MANAGER_RESPONSE_FRAME_PROOF",
+  "candidate": "RCC_REBUILD_V2_RC33_REASONING_OBSERVATION",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1099,
-        "sha256": "9551784b496ffa2c5fb174e10123c1e485156ce7c8b3141d1d3de6a4c8929a60"
+        "size": 1092,
+        "sha256": "d350c303e31e33255ca6452845c6fd5b09742f5dd97756fda69da173fbcd25f7"
       },
       {
         "path": "browser/read_adapter.js",
@@ -92,13 +92,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 23675,
-        "sha256": "8707ae71cab34cb94348694ec47a3bab754632d104760a924ca7108a4b18cbfc"
+        "size": 23724,
+        "sha256": "a89f5b3faccb6d4bd75c28a4bb2adfb8c18132636c303bf722cb5b57c1cb1b7d"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 19378,
-        "sha256": "6b2a4a33b8ba044f445bf76ed906e9cea3ea16e2df8708700b4af229726eafba"
+        "size": 20347,
+        "sha256": "452a8d03de0d2a22379226539d0bb0516f03188b44a059054584ffe549a3ddad"
       },
       {
         "path": "content/conversation_rename.js",
@@ -157,8 +157,8 @@
       },
       {
         "path": "domain/endpoint_service.js",
-        "size": 7625,
-        "sha256": "b95769a353ae8a1ffaa57ab31e54e8dac6dfdfe466ea83ac3ee090c32a95bd08"
+        "size": 8075,
+        "sha256": "bfc2926bec212a398513afc4f2fc57a02c4d670d236966d81dd0a8ee881b6776"
       },
       {
         "path": "domain/new_chat_service.js",
@@ -202,8 +202,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1521,
-        "sha256": "52ced7391b2183d1f61aa524c2c1661683f05dd3b228b58bb2818af7caaba656"
+        "size": 1514,
+        "sha256": "adb9e5a24a9998b841172f297f56247dd9579d27102ac2b3ee8a7c51a427a37f"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "aae0585037b9e938d9c59484ac6991eb7b1da0d00bf04255007223cddce76ee9"
+    "aggregateSha256": "0b6d1e3489745ce9e787014d232829af3bd833cea8608766365b32a27b8a87de"
   },
   "activeLoaderGraph": {
     "background": [

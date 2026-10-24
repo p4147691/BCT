@@ -24,6 +24,7 @@ class ModuleLayoutTests(unittest.TestCase):
 
     def test_desktop_clipboard_is_enabled_in_default_policy(self):
         self.assertIn("desktop_clipboard", self.config["policy"]["normal_actions"])
+        self.assertIn("conversation_network_update", self.config["policy"]["normal_actions"])
 
     def test_manager_wake_receipt_v2_enabled_for_approved_live_rollout(self):
         self.assertIs(
@@ -64,6 +65,7 @@ class ModuleLayoutTests(unittest.TestCase):
             "src/bct/worker_dispatch_recovery.py",
             "src/bct/delivery_continuation_recovery.py",
             "src/bct/features/desktop_session.py",
+            "src/bct/features/conversation_network.py",
             "src/bct/integrations/desktop_session.py",
             "src/bct/project_run.py",
         ):

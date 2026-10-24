@@ -43369,6 +43369,22 @@ function monitorBctRoleTagsFromText(value) {
   return [...new Set(String(value || "").split(",").map((item) => item.trim()).filter(Boolean))].slice(0, 24);
 }
 
+function monitorBctNodeRoleSummary(node) {
+  const tags = Array.isArray(node?.roleTags)
+    ? node.roleTags.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (!tags.length) return "";
+  const shown = tags.slice(0, 3);
+  return `${shown.join(" · ")}${tags.length > shown.length ? ` · +${tags.length - shown.length}` : ""}`;
+}
+
+function monitorBctNodeLocationText(node, desktopPosition) {
+  const location = desktopPosition >= 0 ? `D${desktopPosition + 1}` : "위치 확인 중";
+  const roles = monitorBctNodeRoleSummary(node);
+  const reasoning = String(node?.reasoningLevel || "").trim();
+  return [location, roles, reasoning].filter(Boolean).join(" · ");
+}
+
 function openMonitorBctRenameEditor(node, row) {
   if (!monitorBctShell?.renameConversation || !node?.conversationKey || !node?.sessionId) {
     setMonitorStatus("이 창의 정확한 RCC 대화 신원을 확인할 수 없어 이름을 바꾸지 않았습니다.", false, 5000);
@@ -43407,6 +43423,7 @@ function openMonitorBctRenameEditor(node, row) {
   fact("대화 UUID", String(node.conversationKey || ""));
   fact("현재 위치", row?.querySelector?.(".monitor-bct-node-location")?.textContent || "확인 중");
   fact("연결", `창 ${node.windowId} · 탭 ${node.tabId}`);
+  fact("실제 추론 수준", String(node.reasoningLevel || "확인 불가"));
 
   const makeField = (labelText, value, maximum, placeholder = "") => {
     const label = document.createElement("label");
@@ -43753,7 +43770,10 @@ function renderMonitorBctWindowNodes(nodes) {
     body.append(title);
     const location = document.createElement("small");
     location.className = "monitor-bct-node-location";
-    location.textContent = desktopPosition >= 0 ? "D" + (desktopPosition + 1) : "위치 확인 중";
+    location.textContent = monitorBctNodeLocationText(node, desktopPosition);
+    location.title = Array.isArray(node.roleTags) && node.roleTags.length
+      ? `${desktopPosition >= 0 ? `D${desktopPosition + 1}` : "위치 확인 중"} · ${node.roleTags.join(" · ")}`
+      : location.textContent;
     body.append(location);
 
     const presence = document.createElement("span");
@@ -56454,7 +56474,15 @@ function syncMonitorBctNodeLocationLabels() {
       ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))
       : -1;
     const position = row.querySelector(".monitor-bct-node-location");
-    if (position) position.textContent = index >= 0 ? "D" + (index + 1) : "위치 확인 중";
+    const node = monitorBctWindowNodesCache.find((item) =>
+      String(item?.conversationKey || "") === String(row.dataset.conversationKey || "")
+    );
+    if (position) {
+      position.textContent = monitorBctNodeLocationText(node, index);
+      position.title = Array.isArray(node?.roleTags) && node.roleTags.length
+        ? `${index >= 0 ? `D${index + 1}` : "위치 확인 중"} · ${node.roleTags.join(" · ")}`
+        : position.textContent;
+    }
     row.dataset.desktopNumber = index >= 0 ? String(index + 1) : "";
   }
 }

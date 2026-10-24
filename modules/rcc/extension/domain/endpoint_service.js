@@ -105,6 +105,8 @@ function endpointComparable(endpoint) {
 
     endpoint?.url || '',
 
+    endpoint?.reasoning ? JSON.stringify(endpoint.reasoning) : '',
+
     bounds.left ?? null, bounds.top ?? null, bounds.width ?? null, bounds.height ?? null,
 
     bounds.state || '', bounds.focused === true,
@@ -160,6 +162,9 @@ async function endpointFromTabWithActivity(tab, presence = 'OPEN', reason = '') 
 
     endpoint.generating = !!probe?.generating;
 
+    endpoint.reasoning = probe?.reasoning && typeof probe.reasoning === 'object'
+      ? probe.reasoning : null;
+
     endpoint.telemetry = probe?.telemetry && typeof probe.telemetry === 'object' ? probe.telemetry : null;
     endpoint.connection = probe?.connection && typeof probe.connection === 'object' ? probe.connection : null;
 
@@ -168,6 +173,10 @@ async function endpointFromTabWithActivity(tab, presence = 'OPEN', reason = '') 
     const previous = endpointPresence.get(tab.id);
 
     if (typeof previous?.generating === 'boolean') endpoint.generating = previous.generating;
+
+    if (previous?.reasoning && typeof previous.reasoning === 'object') {
+      endpoint.reasoning = previous.reasoning;
+    }
 
     if (previous?.telemetry && typeof previous.telemetry === 'object') endpoint.telemetry = previous.telemetry;
     if (previous?.connection && typeof previous.connection === 'object') endpoint.connection = previous.connection;
@@ -194,6 +203,10 @@ async function captureEndpointSnapshot(reason = 'snapshot', tabsValue = null) {
     const prior = previous.get(endpoint.tabId);
 
     if (typeof endpoint.generating !== 'boolean' && typeof prior?.generating === 'boolean') endpoint.generating = prior.generating;
+
+    if (!endpoint.reasoning && prior?.reasoning && typeof prior.reasoning === 'object') {
+      endpoint.reasoning = prior.reasoning;
+    }
 
     if (prior?.telemetry && typeof prior.telemetry === 'object') endpoint.telemetry = { ...prior.telemetry, ...(endpoint.telemetry && typeof endpoint.telemetry === 'object' ? endpoint.telemetry : {}) };
 

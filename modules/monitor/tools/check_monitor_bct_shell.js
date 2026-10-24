@@ -32,7 +32,8 @@ const monitorState = {
       tabs: [
         { tab_id: 22, window_id: 12, title: "둘", url: "https://chatgpt.com/", presence: "OPEN", active: false, generating: true },
         { tab_id: 11, window_id: 10, title: "하나", url: "https://chatgpt.com/c/chat-one", node_label: "N7", presence: "OPEN", active: true, generating: false,
-          conversation_scope: { scope_id: "network.monitor", scope_name: "모니터 관리", role_tags: ["Manager", "검토"], display_order: 2 } },
+          reasoning: { status: "OBSERVED", level: "High", source: "chatgpt-model-selector" },
+          conversation_scope: { scope_id: "network.monitor", scope_name: "모니터 관리", role_tags: ["Manager", "검토"], role_tags_sha256: "a".repeat(64), display_order: 2 } },
         { tab_id: 33, window_id: 12, title: "다른 사이트", url: "https://www.youtube.com/watch?v=test", presence: "OPEN", active: false, generating: false },
       ],
     }],
@@ -83,6 +84,7 @@ const context = {
         display_name: "새 이름",
         scope_name: "모니터 관리",
         role_tags: ["Manager", "검토"],
+        expected_role_tags_sha256: "a".repeat(64),
       });
       return {
         ok: true,
@@ -168,6 +170,8 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /addEventListener\("contextmenu"/);
   assert.match(monitorSource, /monitorBctShell\.renameConversation\(node, title\)/);
   assert.match(monitorSource, /monitorBctShell\.updateConversationScope\(node,/);
+  assert.match(monitorSource, /monitorBctNodeRoleSummary/);
+  assert.match(monitorSource, /monitorBctNodeLocationText/);
   assert.match(monitorSource, /Manager는 안내용 역할 태그입니다/);
   assert.match(monitorSource, /setTimeout\(\(\) => \{[\s\S]*?\}, 600\)/);
   assert.match(monitorSource, /network_name:String\(bctNode\?\.scopeName/);
@@ -194,6 +198,8 @@ vm.runInContext(source, context);
   assert.equal(nodes[0].scopeName, "모니터 관리");
   assert.equal(nodes[0].displayOrder, 2);
   assert.deepEqual(Array.from(nodes[0].roleTags), ["Manager", "검토"]);
+  assert.equal(nodes[0].reasoningLevel, "High");
+  assert.equal(nodes[1].reasoningLevel, "");
   assert.equal(nodes[1].conversationKey, "");
   assert.equal(nodes[1].url, "https://chatgpt.com/");
   assert.ok(nodes.every((node) => /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:[/?#]|$)/i.test(node.url)));

@@ -212,6 +212,8 @@ if (message.type === 'relay:activityProbe') {
 
       activeRelayId: String(loadRelayExecution()?.relayId || ''),
 
+      reasoning: currentReasoningObservation(),
+
       connection: connectionProblem(),
 
 
