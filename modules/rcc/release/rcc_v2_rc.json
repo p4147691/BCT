@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC31_MANAGER_RESPONSE_DURABLE",
+  "candidate": "RCC_REBUILD_V2_RC32_MANAGER_RESPONSE_FRAME_PROOF",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1095,
-        "sha256": "419ba1608a918d96947a5b6d4730f82103a21bd273adb6b7f889c10a8d8da5dc"
+        "size": 1099,
+        "sha256": "9551784b496ffa2c5fb174e10123c1e485156ce7c8b3141d1d3de6a4c8929a60"
       },
       {
         "path": "browser/read_adapter.js",
@@ -92,13 +92,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 21707,
-        "sha256": "13de4ca0763908fb012e259f6744b51798eb6970b0071f2e1fbd192a83321759"
+        "size": 23675,
+        "sha256": "8707ae71cab34cb94348694ec47a3bab754632d104760a924ca7108a4b18cbfc"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 19374,
-        "sha256": "f8e29c4e83b779764b2f3fc64014ce409e29c914080674d2b247c5a8875762bf"
+        "size": 19378,
+        "sha256": "6b2a4a33b8ba044f445bf76ed906e9cea3ea16e2df8708700b4af229726eafba"
       },
       {
         "path": "content/conversation_rename.js",
@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 44594,
-        "sha256": "ee1a1196cd291618ab22dd4216dbfd97a7a1a3d9821555d485e799418ed194f9"
+        "size": 44708,
+        "sha256": "43d847fdcb82e3c4ce51cc4bd1e35ddc30afdc87d211b69ab3a5fb62b5c91470"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -202,8 +202,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1517,
-        "sha256": "888294fbba28724ae06d58ef70ce83546b5443d906fbbab51c50e54e66f4607a"
+        "size": 1521,
+        "sha256": "52ced7391b2183d1f61aa524c2c1661683f05dd3b228b58bb2818af7caaba656"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "44bd45596ed2267d2bf777163a7d8344a88d74186b02fe5c26a1928da043ec92"
+    "aggregateSha256": "aae0585037b9e938d9c59484ac6991eb7b1da0d00bf04255007223cddce76ee9"
   },
   "activeLoaderGraph": {
     "background": [

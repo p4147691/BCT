@@ -107,6 +107,10 @@ if (message.type === 'relay:exactReplyProof') {
     const id = String(message.deliveryId || '');
     const key = String(message.conversationKey || '').trim().toLowerCase();
     const submittedSha256 = String(message.submittedSha256 || '').trim().toLowerCase();
+    const workerConversationKey = String(
+      message.workerConversationKey || '').trim().toLowerCase();
+    const workerResultSha256 = String(
+      message.workerResultSha256 || '').trim().toLowerCase();
     const expectedResponseSha256 = String(
       message.expectedResponseSha256 || '').trim().toLowerCase();
     const expectedResponseLength = Number(message.expectedResponseLength);
@@ -117,7 +121,41 @@ if (message.type === 'relay:exactReplyProof') {
         || expectedResponseLength <= 0 || expectedResponseLength > 12000) {
       return { ok: false, error: 'RELAY_EXACT_REPLY_ARGUMENT_INVALID' };
     }
-    const matches = await exactUserTurnsBySubmittedSha256(submittedSha256);
+    let matches = await exactUserTurnsBySubmittedSha256(submittedSha256);
+    let identityProof = 'submitted_sha256';
+    // ChatGPT renders Markdown in an old user turn, so the visible DOM can
+    // legitimately omit backticks that were present in the exact submitted
+    // text.  RC30 terminal receipts no longer retain that text.  In that
+    // legacy shape, use the immutable return-frame identity which was part of
+    // the submitted user turn: Delivery id, both conversation ids, and the
+    // captured Worker result hash.  Require exactly one matching turn; this is
+    // read-only and does not weaken duplicate-turn detection.
+    if (matches.length === 0
+        && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+          workerConversationKey)
+        && /^[a-f0-9]{64}$/.test(workerResultSha256)) {
+      matches = getConversationTurns().filter((candidate) => {
+        const rendered = turnUserText(candidate);
+        const open = '[BCT_MANAGER_RETURN_CONTEXT_V1]';
+        const close = '[/BCT_MANAGER_RETURN_CONTEXT_V1]';
+        const start = rendered.indexOf(open);
+        const end = rendered.indexOf(close, start + open.length);
+        if (start < 0 || end <= start) return false;
+        let context;
+        try {
+          context = JSON.parse(rendered.slice(start + open.length, end).trim());
+        } catch (_) {
+          return false;
+        }
+        return context?.delivery_id === id
+          && String(context?.manager_conversation_uuid || '').toLowerCase() === key
+          && String(context?.worker_conversation_uuid || '').toLowerCase()
+            === workerConversationKey
+          && String(context?.worker_result_sha256 || '').toLowerCase()
+            === workerResultSha256;
+      });
+      identityProof = 'manager_return_frame';
+    }
     if (matches.length !== 1) {
       return { ok: false, error: matches.length > 1
         ? 'RELAY_EXACT_REPLY_USER_TURN_AMBIGUOUS' : 'RELAY_EXACT_REPLY_USER_TURN_NOT_FOUND' };
@@ -150,7 +188,8 @@ if (message.type === 'relay:exactReplyProof') {
     }
     return { ok: true, deliveryId: id, conversationKey: key,
       submittedSha256, responseText, responseSha256,
-      responseLength: responseText.length, turnKey: turnIdentity(turn) };
+      responseLength: responseText.length, turnKey: turnIdentity(turn),
+      identityProof };
   }).then(sendResponse).catch((error) => sendResponse({
     ok: false, error: String(error?.message || error
       || 'RELAY_EXACT_REPLY_PROOF_FAILED').slice(0, 128)

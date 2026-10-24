@@ -186,6 +186,10 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
     'manager next');
   assert.equal(controlCalls.filter(item =>
     item.message.type === 'relay:exactReplyProof').length, exactProofsBefore + 1);
+  const exactProof = controlCalls.filter(item =>
+    item.message.type === 'relay:exactReplyProof').at(-1).message;
+  assert.equal(exactProof.workerConversationKey, identity.workerConversationKey);
+  assert.equal(exactProof.workerResultSha256, captured.responseSha256);
   const recoveredReceipt = storage.deliveryLedgerMirrorV1['delivery-001'];
   const baselineCount = recoveredReceipt.managerBeforeAssistantCount;
   delete recoveredReceipt.managerBeforeAssistantCount;

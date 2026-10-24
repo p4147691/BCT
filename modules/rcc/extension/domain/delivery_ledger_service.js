@@ -824,6 +824,8 @@ async function deliveryManagerStatus(message) {
         conversationKey: receipt.managerConversationKey,
         submittedSha256: receipt.managerReturnSubmittedSha256
           || receipt.managerReturnSha256,
+        workerConversationKey: receipt.workerConversationKey,
+        workerResultSha256: receipt.responseSha256,
         expectedResponseSha256: receipt.managerResponseSha256,
         expectedResponseLength: receipt.managerResponseLength,
       });
