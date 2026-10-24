@@ -25,6 +25,21 @@ class DeliveryContinuationRecovery:
         self.relay_feature = relay_feature
         self._run_lock = threading.Lock()
 
+    def plan_worker_result_inbox(self, *, inbox, manager_uuid: str,
+                                 manager_epoch: int, idle: bool,
+                                 verified_bindings: dict, fake_dispatch=None) -> dict:
+        """Optional explicit Core recovery entrypoint, NO SEND, no implicit fallback.
+
+        Requires current verified bindings from the caller; cannot infer manager
+        authority from role tags or a stale Delivery/Chrome tab observation.
+        Normal run_once remains unchanged to avoid duplicate Manager returns.
+        """
+        from bct.worker_result_recovery import WorkerResultRecovery
+        return WorkerResultRecovery(inbox).run_once(
+            manager_uuid=manager_uuid, manager_epoch=manager_epoch,
+            idle=idle, bindings=verified_bindings, fake_dispatch=fake_dispatch,
+        )
+
     def _candidates(self, *, limit: int) -> list[dict[str, Any]]:
         db = self.store._connect()
         try:
