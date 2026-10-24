@@ -35,6 +35,18 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.50 Manager terminal-status candidate
+
+RC30 treats a durably captured Manager response plus a successfully retired
+page execution as the terminal status readback. Later status calls return the
+persisted response SHA-256 and length with `pending=false` instead of trying to
+read an already retired page route and reporting
+`SIMPLE_RELAY_ROUTE_RECORD_MISSING`. It never changes or resubmits a message.
+
+- extension version: `1.0.50 Manager Terminal Status`
+- runtime build: `2026-10-24-rcc-manager-terminal-status-v1`
+- candidate: `RCC_REBUILD_V2_RC30_MANAGER_TERMINAL_STATUS`
+
 ## BCT RCC 1.0.49 Manager reconciliation reload-proof candidate
 
 RC29 recovers a `RETURNED` Manager wake whose exact-turn reconciliation marker

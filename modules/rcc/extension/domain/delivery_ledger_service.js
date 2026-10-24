@@ -787,6 +787,17 @@ async function deliveryManagerStatus(message) {
     return { ok: false, reconciled, ...publicDeliveryReceipt(receipt),
       error: 'DELIVERY_MANAGER_BASELINE_NOT_CAPTURED' };
   }
+  // Once the exact Manager reply has been captured and its page execution has
+  // been retired, the durable receipt is the terminal readback. Re-reading the
+  // retired content-script route can only produce ROUTE_RECORD_MISSING and
+  // must not turn a completed Wake back into a pending one.
+  if (receipt.managerExecutionRetired === true
+      && /^[a-f0-9]{64}$/.test(String(receipt.managerResponseSha256 || ''))
+      && Number.isInteger(receipt.managerResponseLength)
+      && receipt.managerResponseLength > 0) {
+    return { ok: true, pending: false, reconciled,
+      ...publicDeliveryReceipt(receipt) };
+  }
   let managerTab;
   try {
     managerTab = singleDeliveryTab(await getChatTabs(), receipt.managerConversationKey);

@@ -154,8 +154,12 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(sends[3].tabId, 10);
   assert.equal(sends[3].message.relayId, 'delivery-001');
   assert.equal(sends[3].message.afterAssistantCount, 3);
+  const sendsBeforeTerminalRead = sends.length;
   const observedAgain = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
   assert.equal(observedAgain.managerResponseSha256, manager.managerResponseSha256);
+  assert.equal(observedAgain.pending, false);
+  assert.equal(observedAgain.error, '');
+  assert.equal(sends.length, sendsBeforeTerminalRead);
   assert.equal(sends.filter(item => item.message.type === 'relay:simpleExecute').length, 2);
   const terminal = storage.deliveryLedgerMirrorV1['delivery-001'];
   const baselineCount = terminal.managerBeforeAssistantCount;
@@ -165,6 +169,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(noBaseline.error, 'DELIVERY_MANAGER_BASELINE_NOT_CAPTURED');
   terminal.managerBeforeAssistantCount = baselineCount;
   // A changed answer on the exact turn must never silently replace a captured decision.
+  terminal.managerExecutionRetired = false;
   const originalSend = context.sendToChatTab;
   context.sendToChatTab = async (tabId, message) => {
     if (tabId === 10 && message.type === 'relay:simpleReadReply') {
@@ -175,6 +180,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   const changed = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
   assert.equal(changed.ok, false);
   assert.equal(changed.error, 'DELIVERY_MANAGER_REPLY_CHANGED');
+  terminal.managerExecutionRetired = true;
   context.sendToChatTab = originalSend;
 
   // A lost activation ACK is reconciled from one exact Manager user turn.
