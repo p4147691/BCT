@@ -47,7 +47,7 @@ _MUTATING_COMMANDS = {
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
-    "delivery-manager-status", "delivery-recovery-inspect", "delivery-preview",
+    "delivery-manager-status", "delivery-recovery-inspect", "delivery-response-read", "delivery-preview",
 }
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
@@ -596,7 +596,7 @@ class RelayBrowserFeature:
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
                 prepared["extra"]["conversationKey"])
-        elif (command in _READ_COMMANDS or command == "delivery-preview"
+        elif (command in _READ_COMMANDS or command in {"delivery-preview", "delivery-response-read"}
               or command in _RECONCILE_COMMANDS
               or command in {_RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND}):
             resource += ":read:" + command
@@ -652,6 +652,10 @@ class RelayBrowserFeature:
                 delivery = self.delivery_ledger.get_for_work(
                     delivery_id=delivery_id, work_id=work_id,
                 )
+            except ConflictError as exc:
+                raise ConfirmedFailure(
+                    "RCC_DELIVERY_ACCESS_DENIED", release_claims=True,
+                ) from exc
             except KeyError as exc:
                 # Status/cancel/return requests for an ID that was never
                 # recorded cannot have produced a browser-side effect.  Keep
@@ -667,7 +671,7 @@ class RelayBrowserFeature:
                 "workerConversationKey": delivery["worker_conversation_key"],
                 "requestSha256": delivery["request_sha256"],
             })
-            if command not in {"delivery-cancel", "delivery-manager-status", "delivery-recovery-inspect"} and delivery["state"] in {
+            if command not in {"delivery-cancel", "delivery-manager-status", "delivery-recovery-inspect", "delivery-response-read"} and delivery["state"] in {
                 DeliveryState.RETURNED.value, DeliveryState.NOT_APPLIED.value,
                 DeliveryState.FAILED.value, DeliveryState.NEEDS_REVIEW.value,
             }:
@@ -837,6 +841,32 @@ class RelayBrowserFeature:
             )
 
         state = str(result.get("state") or "")
+        if command == "delivery-response-read":
+            if result.get("ok") is not True:
+                code = str(result.get("code") or "UNAVAILABLE")
+                if code not in {"NOT_FOUND", "NOT_RETAINED", "UNAVAILABLE",
+                                "ACCESS_DENIED", "INTEGRITY_MISMATCH"}:
+                    code = "UNAVAILABLE"
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": command, "delivery_id": delivery_id, "code": code,
+                }, release_claims=True, output={"code": code, "delivery_id": delivery_id})
+            body = result.get("responseText")
+            digest = result.get("responseSha256")
+            length = result.get("responseLength")
+            if (not isinstance(body, str) or not body
+                    or len(body.encode("utf-16-le", errors="surrogatepass")) // 2 != length
+                    or hashlib.sha256(body.encode("utf-8")).hexdigest() != digest):
+                raise ConfirmedFailure("RCC_DELIVERY_READ_INTEGRITY_INVALID", release_claims=True)
+            if (digest != delivery["response_sha256"] or length != delivery["response_length"]):
+                raise ConfirmedFailure("RCC_DELIVERY_READ_LEDGER_MISMATCH", release_claims=True)
+            return FeatureResult(Outcome.APPLIED, {
+                "command": command, "delivery_id": delivery_id,
+                "response_sha256": digest, "response_length": length,
+                "ledger_match": True,
+            }, release_claims=True, output={
+                "delivery_id": delivery_id, "responseText": body,
+                "responseSha256": digest, "responseLength": length, "ledgerMatch": True,
+            })
         if command == "delivery-recovery-inspect":
             response = result.get("responseText")
             digest = result.get("responseSha256")
@@ -1134,7 +1164,7 @@ class RelayBrowserFeature:
             )
         if request.arguments["command"] in {
             "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
-            "delivery-manager-status", "delivery-recovery-inspect",
+            "delivery-manager-status", "delivery-recovery-inspect", "delivery-response-read",
         }:
             return self._execute_delivery(request)
         if request.arguments["command"] == "retire-composer-draft":
