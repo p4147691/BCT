@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC29_MANAGER_RECONCILIATION_RELOAD_PROOF",
+  "candidate": "RCC_REBUILD_V2_RC30_MANAGER_TERMINAL_STATUS",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1100,
-        "sha256": "85b888160dc392995615a408d1b4e3b00e9fefebee2d294808400a2878e98bb5"
+        "size": 1094,
+        "sha256": "eb03c91d0fb5bfbdc27986834ed3ff17d6c9cc10594edefeeae05613b1550091"
       },
       {
         "path": "browser/read_adapter.js",
@@ -97,8 +97,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 19379,
-        "sha256": "e3f853bf1c195b7b4031ccd8e7212aa1025af81d4120b6a3f7984b0fb2839a00"
+        "size": 19373,
+        "sha256": "f5ad308c8b9f8144c0d6049cd92238cfcc3813015c27a08587627de968ceff2d"
       },
       {
         "path": "content/conversation_rename.js",
@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 41486,
-        "sha256": "14e0b862ebe332b1854a2474938a7b890e6377d5668b21b628798df81d5250da"
+        "size": 42106,
+        "sha256": "cd9cc38c81c40fc52ac6c093a20d03b834260d4ad3c5bef2fdac0e3757ec0d64"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -202,8 +202,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1528,
-        "sha256": "c3cfd67a5f8c1ac71e512553f1ff459dcdc530a9dc4e0701a260575b02a73afb"
+        "size": 1516,
+        "sha256": "605cf2b6ec0283dc4321756d620086a3ce41af739df80bc02f6dd4d2214f7ae2"
       },
       {
         "path": "network/directory.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "51780f22101f306efbe8fd01978a3e0dd1644993bd8e324d3c9c4d40c70b3839"
+    "aggregateSha256": "b3f527fc42e03af4691f13b14b1174828820bfa5f7c3162dc232580173049372"
   },
   "activeLoaderGraph": {
     "background": [
@@ -554,8 +554,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1101,
-        "sha256": "c9e8deb40c1957efb3a74738bcac62d8e80c6b2e56c6517449f978a8f34f28bf"
+        "size": 1100,
+        "sha256": "85b888160dc392995615a408d1b4e3b00e9fefebee2d294808400a2878e98bb5"
       },
       {
         "path": "browser/read_adapter.js",
@@ -624,13 +624,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 18522,
-        "sha256": "952086dc8fd14373735cb7265687512bacacc4f0b51ae5c48a91128355fbb3f6"
+        "size": 18571,
+        "sha256": "4909cefa6d3b3d75526ad0bd87a693b9a3c55e1b6dd9061190f6c439fd534ac7"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 18942,
-        "sha256": "9ced1aac523471349eb89e81b57cc775d2ec8ed1a8ef3ce0e239878f96ddbab3"
+        "size": 19379,
+        "sha256": "e3f853bf1c195b7b4031ccd8e7212aa1025af81d4120b6a3f7984b0fb2839a00"
       },
       {
         "path": "content/conversation_rename.js",
@@ -679,8 +679,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 41211,
-        "sha256": "3751dee993a8dc28467afa0e4e3583de9ae8eede3c139e5327db40a2bf6e0588"
+        "size": 41486,
+        "sha256": "14e0b862ebe332b1854a2474938a7b890e6377d5668b21b628798df81d5250da"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -734,8 +734,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1529,
-        "sha256": "9a53cc9f9c5b3f1d4b0e22557721d2524832e82992f264dd5ec19775ac0711ac"
+        "size": 1528,
+        "sha256": "c3cfd67a5f8c1ac71e512553f1ff459dcdc530a9dc4e0701a260575b02a73afb"
       },
       {
         "path": "network/directory.js",
@@ -799,6 +799,6 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "9aaaa6333b8e569a7d41527580c8606bfe3b253cc56780f13d67cb94821ec9bd"
+    "aggregateSha256": "51780f22101f306efbe8fd01978a3e0dd1644993bd8e324d3c9c4d40c70b3839"
   }
 }

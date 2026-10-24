@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-24-rcc-manager-reconciliation-reload-v1';
+const RCC_BUILD_VERSION = '2026-10-24-rcc-manager-terminal-status-v1';
 
 function editorCandidates() {
 
