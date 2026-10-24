@@ -344,9 +344,14 @@ def main() -> int:
 
     def delivery_continuation_recovery_loop() -> None:
         recovery = bct.delivery_continuation_recovery
+        # Shared recovery cycle hook; no manager identity provider or relay is
+        # wired in production yet, so this never submits a live message.
+        from .github_manager_wake import GithubWakeRecoveryAdapter
+        github_wake = GithubWakeRecoveryAdapter(bct.store, manager_candidates=lambda: [])
         while not recovery_stop.is_set():
             try:
                 outcome = recovery.run_once(limit=8)
+                outcome["github_manager_wake"] = github_wake.run_once()
                 state["delivery_continuation_recovery"] = {
                     "enabled": True,
                     "runs": int(state["delivery_continuation_recovery"].get("runs", 0)) + 1,
