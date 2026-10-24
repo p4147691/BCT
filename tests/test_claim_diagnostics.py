@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from bct.core.store import Store
-from bct.core.models import Principal, Work, Outcome
+from bct.core.models import ConflictError, Principal, Work, Outcome
 
 
 class ClaimDiagnosticsTests(unittest.TestCase):
@@ -207,8 +207,24 @@ class ClaimDiagnosticsTests(unittest.TestCase):
                 )
                 item = next(x for x in self.store.claim_diagnostics()
                             if x["operation_id"] == name)
-                self.assertTrue(item["blocks_unrelated_work"])
+                if resource.startswith("orchestration-"):
+                    self.assertEqual("EXACT_RESOURCE", item["scope"])
+                    self.assertFalse(item["blocks_unrelated_work"])
+                else:
+                    self.assertEqual("SHARED_RESOURCE", item["scope"])
+                    self.assertTrue(item["blocks_unrelated_work"])
                 self.assertFalse(item["replay_allowed"])
+                with self.assertRaises(ConflictError):
+                    self.store.begin_operation(
+                        operation_id=name + "-replay",
+                        work=self.work,
+                        principal_id="fixture-owner",
+                        request_digest=name + "-replay",
+                        capability="read",
+                        target="fixture",
+                        resources=(resource,),
+                        policy_revision="fixture",
+                    )
 
     def test_finished_shared_claim_with_attached_executor_is_conservative(self):
         name = "attached"
