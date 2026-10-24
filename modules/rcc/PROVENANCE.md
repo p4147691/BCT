@@ -35,6 +35,19 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.51 Manager response durable candidate
+
+RC31 persists the exact Manager response body together with its SHA-256 and
+UTF-16 length in both the RCC receipt and the Core Delivery ledger. Repeated
+status reads use the Core copy without reopening the page route. For RC30 and
+older receipts that retained only the digest and length, a read-only exact-turn
+proof can recover the body from the existing Manager conversation; it never
+edits the composer, clicks, submits, or recreates a page execution.
+
+- extension version: `1.0.51 Manager Response Durable`
+- runtime build: `2026-10-24-rcc-manager-response-durable-v1`
+- candidate: `RCC_REBUILD_V2_RC31_MANAGER_RESPONSE_DURABLE`
+
 ## BCT RCC 1.0.50 Manager terminal-status candidate
 
 RC30 treats a durably captured Manager response plus a successfully retired

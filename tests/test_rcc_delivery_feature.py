@@ -169,9 +169,22 @@ class DeliveryFeatureTests(unittest.TestCase):
                                  "manager-read-2")
         self.assertEqual(observed.evidence["manager_reply_sha256"],
                          observed2.evidence["manager_reply_sha256"])
+        self.assertTrue(observed2.evidence["durable_replay"])
+        self.assertEqual("manager next", observed2.output["result"]["managerResponseText"])
+        persisted = self.feature.delivery_ledger.get_for_work(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+        )["observation"]
+        self.assertEqual("manager next", persisted["manager_response_text"])
+        self.assertEqual(
+            hashlib.sha256(b"manager next").hexdigest(),
+            persisted["manager_response_sha256"],
+        )
+        self.assertEqual(len("manager next"), persisted["manager_response_length"])
         self.assertEqual(1, sum(call["command"] == "delivery-start"
                                 for call in self.host.calls))
         self.assertEqual(1, sum(call["command"] == "delivery-return"
+                                for call in self.host.calls))
+        self.assertEqual(1, sum(call["command"] == "delivery-manager-status"
                                 for call in self.host.calls))
 
     def test_manager_reply_hash_mismatch_never_changes_delivery(self) -> None:

@@ -78,6 +78,16 @@ const context = {
         turnKey: 'semantic:user:' + message.deliveryId,
         beforeAssistantCount: 3 };
     }
+    if (message.type === 'relay:exactReplyProof') {
+      controlCalls.push({ tabId, message });
+      const responseText = 'manager next';
+      return { ok: true, deliveryId: message.deliveryId,
+        conversationKey: message.conversationKey,
+        submittedSha256: message.submittedSha256, responseText,
+        responseSha256: await context.relaySha256(responseText),
+        responseLength: responseText.length,
+        turnKey: 'semantic:user:' + message.deliveryId };
+    }
     sends.push({ tabId, message });
     if (message.type === 'relay:simpleReadReply') {
       return { ok: true, conversationKey: message.conversationKey,
@@ -129,6 +139,8 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(manager.state, 'RETURNED');
   assert.equal(manager.managerResponseText, 'manager next');
   assert.equal(manager.managerResponseLength, 12);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-001'].managerResponseText,
+    'manager next');
   assert.equal(storage.deliveryLedgerMirrorV1['delivery-001'].managerExecutionRetired, true);
   assert.equal(activeRelayIds.has(10), false);
   assert.equal(controlCalls.filter(item => item.tabId === 10
@@ -157,19 +169,32 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   const sendsBeforeTerminalRead = sends.length;
   const observedAgain = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
   assert.equal(observedAgain.managerResponseSha256, manager.managerResponseSha256);
+  assert.equal(observedAgain.managerResponseText, 'manager next');
   assert.equal(observedAgain.pending, false);
   assert.equal(observedAgain.error, '');
   assert.equal(sends.length, sendsBeforeTerminalRead);
   assert.equal(sends.filter(item => item.message.type === 'relay:simpleExecute').length, 2);
   const terminal = storage.deliveryLedgerMirrorV1['delivery-001'];
-  const baselineCount = terminal.managerBeforeAssistantCount;
-  delete terminal.managerBeforeAssistantCount;
+  // RC30 terminal receipts retained only the response digest and length. An
+  // exact, read-only DOM proof recovers the old reply once and persists it.
+  delete terminal.managerResponseText;
+  const exactProofsBefore = controlCalls.filter(item =>
+    item.message.type === 'relay:exactReplyProof').length;
+  const recoveredTerminal = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
+  assert.equal(recoveredTerminal.managerResponseText, 'manager next');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-001'].managerResponseText,
+    'manager next');
+  assert.equal(controlCalls.filter(item =>
+    item.message.type === 'relay:exactReplyProof').length, exactProofsBefore + 1);
+  const recoveredReceipt = storage.deliveryLedgerMirrorV1['delivery-001'];
+  const baselineCount = recoveredReceipt.managerBeforeAssistantCount;
+  delete recoveredReceipt.managerBeforeAssistantCount;
   const noBaseline = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
   assert.equal(noBaseline.ok, false);
   assert.equal(noBaseline.error, 'DELIVERY_MANAGER_BASELINE_NOT_CAPTURED');
-  terminal.managerBeforeAssistantCount = baselineCount;
+  recoveredReceipt.managerBeforeAssistantCount = baselineCount;
   // A changed answer on the exact turn must never silently replace a captured decision.
-  terminal.managerExecutionRetired = false;
+  recoveredReceipt.managerExecutionRetired = false;
   const originalSend = context.sendToChatTab;
   context.sendToChatTab = async (tabId, message) => {
     if (tabId === 10 && message.type === 'relay:simpleReadReply') {
@@ -180,7 +205,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   const changed = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
   assert.equal(changed.ok, false);
   assert.equal(changed.error, 'DELIVERY_MANAGER_REPLY_CHANGED');
-  terminal.managerExecutionRetired = true;
+  recoveredReceipt.managerExecutionRetired = true;
   context.sendToChatTab = originalSend;
 
   // A lost activation ACK is reconciled from one exact Manager user turn.

@@ -694,6 +694,31 @@ class RelayBrowserFeature:
                     "command": command, "delivery_id": delivery_id,
                     "delivery_state": delivery["state"], "pending": True,
                 }, release_claims=True, output={"delivery": delivery})
+            if (command == "delivery-manager-status"
+                    and delivery["state"] == DeliveryState.RETURNED.value):
+                cached = delivery["observation"]
+                cached_body = cached.get("manager_response_text")
+                cached_digest = cached.get("manager_response_sha256")
+                cached_length = cached.get("manager_response_length")
+                if (isinstance(cached_body, str) and cached_body
+                        and isinstance(cached_digest, str)
+                        and hashlib.sha256(cached_body.encode("utf-8")).hexdigest()
+                            == cached_digest
+                        and cached_length == utf16_units(cached_body)):
+                    result = {
+                        "ok": True, "pending": False,
+                        "deliveryId": delivery_id, "state": delivery["state"],
+                        "managerResponseText": cached_body,
+                        "managerResponseSha256": cached_digest,
+                        "managerResponseLength": cached_length,
+                    }
+                    return FeatureResult(Outcome.APPLIED, {
+                        "command": command, "delivery_id": delivery_id,
+                        "delivery_state": delivery["state"], "pending": False,
+                        "manager_reply_sha256": cached_digest,
+                        "durable_replay": True,
+                    }, release_claims=True,
+                        output={"delivery": delivery, "result": result})
             if (command == "delivery-cancel"
                     and delivery["state"] not in {
                         DeliveryState.WAITING_TARGET.value,
@@ -879,6 +904,15 @@ class RelayBrowserFeature:
                     raise ConfirmedFailure(
                         "RCC_DELIVERY_MANAGER_REPLY_INVALID", release_claims=True,
                     )
+                delivery = self.delivery_ledger.observe(
+                    delivery_id=delivery_id, work_id=work_id,
+                    event=DeliveryEvent.MANAGER_TURN_CONFIRMED,
+                    observation={
+                        "manager_response_text": body,
+                        "manager_response_sha256": digest,
+                        "manager_response_length": length,
+                    },
+                )
             return FeatureResult(Outcome.APPLIED, {
                 "command": command, "delivery_id": delivery_id,
                 "delivery_state": state, "pending": pending,
