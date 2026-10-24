@@ -1,6 +1,6 @@
 # BCT pipeline bottleneck reduction — 2026-10-24
 
-Status: PR EXACT-HEAD CI PASS / CLEAN LOCAL-MAIN INTEGRATION PENDING
+Status: COMPLETE / MAIN CI PASS / CORE LIVE
 
 ## Goal
 
@@ -56,6 +56,11 @@ the source authority and keep LIVE deployment and browser state unchanged.
   `59ccd7c554b3da14008c1ea384020606ec079cd6`: PASS.  All four Core shards,
   scope, preflight, and duration-history passed; the unrelated experimental
   transport E2E was correctly skipped.  The optional duration cache was saved.
+- Final PR #329 head `7843ecd5957963b604939d91788068e575541261`
+  passed CI run `40092411261`; GitHub recorded the PR as merged by local-main
+  merge commit `af619b09a3dbc4ad32b1b955434b708a9a3aa0ca`.
+- Exact merged-main CI run `40097722529`: PASS.  Scope, preflight, all four
+  Core shards, and duration-history completed successfully.
 
 The first PR #329 run found one correctness boundary that local runs had not
 exposed: real named-pipe ACL tests from the same module were executing in
@@ -76,14 +81,24 @@ evidence only; they never count as validation success.
   optimization.  Reconsider only if separate deployment targets with separate
   state and ownership are introduced.
 
-## Remaining acceptance
+## LIVE closeout
 
-Integrate into local main only from a clean authority worktree, publish that
-exact main, and confirm main CI.  The authoritative worktree currently contains
-the unrelated untracked Monitor native build output
-`modules/monitor/native/1.9.20.175-cross-window-preview/`; its owning work must
-resolve it.  Do not delete, move, ignore, or bypass that output merely to merge
-this PR.  The CI/scope changes take effect on main publication.  The narrower
-`github_pr_status` read Claim is Core runtime code, so it requires a separately
-fenced Core deployment after main CI before claiming LIVE acceptance; do not
-deploy over another active Core owner merely to finish this plan.
+- The unrelated untracked Monitor native output was preserved by an atomic
+  same-volume move, then restored byte-for-byte to its original path after the
+  deployment.  Four files / 1,488,896 bytes remain user-owned and untracked.
+- The first deployment operation
+  `pipeline-bottleneck-core-deploy-af619b0-20261024-01` stopped before any
+  effect with `NOT_APPLIED / DEPLOYMENT_SOURCE_NOT_CLEAN`; it was not retried
+  under the same operation ID.
+- Deployment operation
+  `pipeline-bottleneck-core-deploy-af619b0-20261024-02` applied exact main
+  `af619b09a3dbc4ad32b1b955434b708a9a3aa0ca`, manifest
+  `bd600fdb62fc1741d346c458732a503191f0ef0eac92c53a94641babc9f1073b`,
+  as Core generation 220.  Post-deploy health was `OK`.
+- Fresh authenticated LIVE operation
+  `pipeline-bottleneck-live-pr329-status-01` returned `APPLIED`, observed the
+  merged PR, and verified all seven requested checks as successful through the
+  deployed `github_pr_status` path.
+- Local `main` and `origin/main` both resolve to `af619b09a3dbc4ad32b1b955434b708a9a3aa0ca`.
+
+No Project Run, RCC, Chrome session, or browser message delivery was changed.
