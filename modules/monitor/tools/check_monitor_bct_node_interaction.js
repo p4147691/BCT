@@ -137,13 +137,15 @@ function loadModule() {
   const listClasses = new Set();
   const list = {
     dataset: { scopeId: "scope-a" },
+    hidden: false,
+    getBoundingClientRect: () => ({ left: 0, right: 300, top: 40, bottom: 120, width: 300, height: 80 }),
     querySelectorAll: () => dropRows,
     classList: { add: (...names) => names.forEach((name) => listClasses.add(name)) },
   };
   const dropContext = {
     monitorWorkers: {
       contains: (candidate) => candidate === list,
-      querySelectorAll: () => [{ getBoundingClientRect: () => ({ left: 0, right: 300, top: 0, bottom: 30 }) }],
+      querySelectorAll: (selector) => selector === ".monitor-bct-node-list" ? [list] : [{ getBoundingClientRect: () => ({ left: 0, right: 300, top: 0, bottom: 30 }) }],
     },
     document: { elementFromPoint: () => ({ closest: (selector) => selector === ".monitor-bct-node-list" ? list : null }) },
     String, Array,
@@ -151,7 +153,7 @@ function loadModule() {
   vm.createContext(dropContext);
   vm.runInContext(monitor.slice(dropStart, dropEnd), dropContext);
   assert.equal(dropContext.monitorBctNodeDropAt(100, 15, "dragged"), null, "scope heading is never a drop target");
-  dropContext.monitorWorkers.querySelectorAll = () => [];
+  dropContext.monitorWorkers.querySelectorAll = (selector) => selector === ".monitor-bct-node-list" ? [list] : [];
   const appendDrop = dropContext.monitorBctNodeDropAt(290, 92, "dragged");
   assert.deepEqual(JSON.parse(JSON.stringify(appendDrop)), {
     scopeId: "scope-a",

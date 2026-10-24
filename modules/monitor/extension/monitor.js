@@ -43649,6 +43649,9 @@ function compareMonitorBctNodeDisplayOrder(left, right) {
 
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
+  // A background refresh may replace the captured row while the mouse is down.
+  // Cancel before detaching it, so no ghost or draggable visual state survives.
+  if (monitorBctPointerDrag) cancelMonitorBctNodePointerDrag({ pointerId: monitorBctPointerDrag.pointerId });
   const fragment = document.createDocumentFragment();
   if (!nodes.length) {
     const empty = document.createElement("div");
@@ -43753,9 +43756,6 @@ function renderMonitorBctWindowNodes(nodes) {
     installMonitorBctManagerLongPress(row, node);
     row.addEventListener("dragstart", (event) => event.preventDefault());
     row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
-    row.addEventListener("pointermove", updateMonitorBctNodePointerDrag);
-    row.addEventListener("pointerup", endMonitorBctNodePointerDrag);
-    row.addEventListener("pointercancel", cancelMonitorBctNodePointerDrag);
     row.addEventListener("click", (event) => {
       if (monitorBctSuppressedClickKey === monitorBctNodeSelectionKey(node)) {
         monitorBctSuppressedClickKey = "";
@@ -43825,7 +43825,25 @@ function beginMonitorBctNodePointerDrag(event, row, node) {
     active: false,
     drop: null,
   };
+  // Document capture receives pointerup even beyond the row or the list.
+  document.addEventListener("pointermove", updateMonitorBctNodePointerDrag, true);
+  document.addEventListener("pointerup", endMonitorBctNodePointerDrag, true);
+  document.addEventListener("pointercancel", cancelMonitorBctNodePointerDrag, true);
+  window.addEventListener("blur", cancelMonitorBctNodePointerDrag);
+  row.addEventListener("lostpointercapture", cancelMonitorBctNodePointerDrag);
   try { row.setPointerCapture(event.pointerId); } catch (_) {}
+}
+
+function monitorBctStopDragInput(drag) {
+  if (monitorBctPointerDrag !== drag) return;
+  monitorBctPointerDrag = null;
+  document.removeEventListener("pointermove", updateMonitorBctNodePointerDrag, true);
+  document.removeEventListener("pointerup", endMonitorBctNodePointerDrag, true);
+  document.removeEventListener("pointercancel", cancelMonitorBctNodePointerDrag, true);
+  window.removeEventListener("blur", cancelMonitorBctNodePointerDrag);
+  drag.row?.removeEventListener("lostpointercapture", cancelMonitorBctNodePointerDrag);
+  drag.row?.classList.remove("is-dragging");
+  try { if (drag.row?.hasPointerCapture?.(drag.pointerId)) drag.row.releasePointerCapture(drag.pointerId); } catch (_) {}
 }
 
 function monitorBctPointInsideScopeHeading(clientX, clientY) {
@@ -43842,7 +43860,8 @@ function monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey) {
     .filter(({ rect }) => rect.width > 0 && rect.height > 0);
   if (!rows.length) return null;
   const direct = hit?.closest?.(".monitor-bct-node-row");
-  if (direct && String(direct.dataset.conversationKey || "") !== draggedKey) {
+  if (direct && hit?.closest?.(".monitor-bct-node-list") === list &&
+      String(direct.dataset.conversationKey || "") !== draggedKey) {
     const rect = direct.getBoundingClientRect();
     return { row: direct, position: clientX < rect.left + rect.width / 2 ? "before" : "after" };
   }
@@ -43865,11 +43884,34 @@ function monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey) {
   return last ? { row: last.row, position: "after" } : null;
 }
 
+// Keep the hit-zone and the visual insertion line governed by the SAME resolver.
+const MONITOR_BCT_DROP_EDGE_X_PX = 22;
+const MONITOR_BCT_DROP_EDGE_Y_PX = 10;
+function monitorBctNodeDropListAt(clientX, clientY, hit) {
+  const direct = hit?.closest?.(".monitor-bct-node-list");
+  const candidates = [...(monitorWorkers?.querySelectorAll?.(".monitor-bct-node-list") || [])]
+    .filter((list) => !list.hidden && monitorWorkers.contains(list))
+    .map((list) => {
+      const rect = list.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 ||
+          clientX < rect.left - MONITOR_BCT_DROP_EDGE_X_PX ||
+          clientX > rect.right + MONITOR_BCT_DROP_EDGE_X_PX ||
+          clientY < rect.top - MONITOR_BCT_DROP_EDGE_Y_PX ||
+          clientY > rect.bottom + MONITOR_BCT_DROP_EDGE_Y_PX) return null;
+      const dx = Math.max(rect.left - clientX, 0, clientX - rect.right);
+      const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom);
+      return { list, distance: dx * dx + dy * dy };
+    }).filter(Boolean);
+  if (direct && candidates.some((candidate) => candidate.list === direct)) return direct;
+  candidates.sort((a, b) => a.distance - b.distance);
+  return candidates[0]?.list || null;
+}
+
 function monitorBctNodeDropAt(clientX, clientY, draggedKey) {
   if (monitorBctPointInsideScopeHeading(clientX, clientY)) return null;
   const hit = document.elementFromPoint(clientX, clientY);
-  const list = hit?.closest?.(".monitor-bct-node-list");
-  if (!list || !monitorWorkers?.contains?.(list)) return null;
+  const list = monitorBctNodeDropListAt(clientX, clientY, hit);
+  if (!list) return null;
   const scopeId = String(list.dataset.scopeId || "__unassigned__");
   const insertion = monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey);
   if (insertion) {
@@ -43913,11 +43955,15 @@ function updateMonitorBctNodePointerDrag(event) {
 function endMonitorBctNodePointerDrag(event) {
   const drag = monitorBctPointerDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
-  monitorBctPointerDrag = null;
-  try { drag.row.releasePointerCapture(event.pointerId); } catch (_) {}
+  // Re-evaluate at pointerup. The last preview is never authority if the
+  // pointer moved out of the hit-zone without another pointermove event.
+  clearMonitorBctNodeDropFeedback();
+  const drop = drag.active
+    ? monitorBctNodeDropAt(event.clientX, event.clientY, drag.node.conversationKey)
+    : null;
+  monitorBctStopDragInput(drag);
   if (!drag.active) return;
   event.preventDefault();
-  const drop = drag.drop;
   if (!drop) {
     finishMonitorBctNodeDrag();
     return;
@@ -43931,9 +43977,8 @@ function endMonitorBctNodePointerDrag(event) {
 
 function cancelMonitorBctNodePointerDrag(event) {
   const drag = monitorBctPointerDrag;
-  if (!drag || event.pointerId !== drag.pointerId) return;
-  monitorBctPointerDrag = null;
-  try { drag.row.releasePointerCapture(event.pointerId); } catch (_) {}
+  if (!drag || (event?.pointerId != null && event.pointerId !== drag.pointerId)) return;
+  monitorBctStopDragInput(drag);
   if (drag.active) finishMonitorBctNodeDrag();
 }
 
