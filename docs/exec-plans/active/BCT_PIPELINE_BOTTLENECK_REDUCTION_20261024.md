@@ -41,14 +41,24 @@ the source authority and keep LIVE deployment and browser state unchanged.
 
 ## Verification
 
-- Focused planner/GitHub tests: 18 PASS.
-- Final UTF-8-forced four-process local run: 884 unique tests PASS.
+- Focused planner/GitHub tests: 19 PASS after the isolation correction.
+- Windows named-pipe isolation module: 8 PASS in one serial unit.
+- Final UTF-8-forced four-process local run: 885 unique tests PASS.
+- GitHub-calibrated seed wall clock: 227.852 seconds; shards 219.572 /
+  225.245 / 208.083 / 168.179 seconds.
 - Seed-only wall clock: 247.567 seconds; shards 232.590 / 237.709 /
   244.258 / 234.594 seconds.
 - Prior no-history test-granularity run: 267.356 seconds.
 - Full measured-history run: 222.046 seconds; shards 219.229 / 205.348 /
   217.449 / 217.593 seconds.
 - `compileall` and `git diff --check`: PASS.
+
+The first PR #329 run found one correctness boundary that local runs had not
+exposed: real named-pipe ACL tests from the same module were executing in
+different hosted Runner processes.  One disposable fake server did not reach
+its expected EOF and left its EXE open.  Only that OS-resource module is now an
+atomic serial scheduling unit.  The failed run's timing artifacts are scheduling
+evidence only; they never count as validation success.
 
 ## Deferred deliberately
 

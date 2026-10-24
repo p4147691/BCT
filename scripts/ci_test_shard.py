@@ -44,8 +44,16 @@ class TestInventory:
 class TestUnit:
     identity: str
     module: str
-    case: unittest.TestCase
+    cases: tuple[unittest.TestCase, ...]
     weight: float
+
+
+# These tests create and tear down real process/OS resources whose guarantees
+# were originally proven with module-serial execution.  Keep only those narrow
+# modules indivisible; ordinary pure tests remain eligible for fine balancing.
+_ATOMIC_MODULES = frozenset({
+    "test_rcc_native_pipe_acl_windows",
+})
 
 
 def _flatten(suite: unittest.TestSuite) -> Iterator[unittest.TestCase]:
@@ -147,12 +155,21 @@ def test_units(
     units: list[TestUnit] = []
     for module in inventory.modules:
         fallback = max(1.0, module.weight / max(1, module.test_count))
+        if module.name in _ATOMIC_MODULES:
+            identities = tuple(case.id() for case in module.cases)
+            units.append(TestUnit(
+                identity="module:" + module.name,
+                module=module.name,
+                cases=module.cases,
+                weight=sum(measured.get(identity, fallback) for identity in identities),
+            ))
+            continue
         for case in module.cases:
             identity = case.id()
             units.append(TestUnit(
                 identity=identity,
                 module=module.name,
-                case=case,
+                cases=(case,),
                 weight=measured.get(identity, fallback),
             ))
     return units
@@ -206,9 +223,9 @@ def manifest(
             {
                 "index": index,
                 "estimated_weight": sum(unit.weight for unit in shard),
-                "test_count": len(shard),
+                "test_count": sum(len(unit.cases) for unit in shard),
                 "modules": sorted({unit.module for unit in shard}),
-                "tests": [unit.identity for unit in shard],
+                "tests": [case.id() for unit in shard for case in unit.cases],
             }
             for index, shard in enumerate(shards)
         ],
@@ -226,7 +243,7 @@ def run(
     if not 0 <= shard_index < shard_count:
         raise ValueError("shard_index outside shard_count")
     selected = shards[shard_index]
-    cases = [unit.case for unit in selected]
+    cases = [case for unit in selected for case in unit.cases]
     print(json.dumps({
         "shard": shard_index,
         "shard_count": shard_count,

@@ -93,9 +93,9 @@ class CIShardTests(unittest.TestCase):
     def test_shard_union_matches_unittest_discovery_count(self):
         test_root = ROOT / "tests"
         inventory = sharding.discover_inventory(test_root)
-        cases = [unit.case for shard in sharding.test_shard_plan(
+        cases = [case for shard in sharding.test_shard_plan(
             sharding.test_units(inventory), 4
-        ) for unit in shard]
+        ) for unit in shard for case in unit.cases]
         identities = [case.id() for case in cases]
         self.assertEqual(inventory.unique_test_ids, len(identities))
         self.assertEqual(len(identities), len(set(identities)))
@@ -141,6 +141,22 @@ class CIShardTests(unittest.TestCase):
             sharding.test_units(inventory, durations), 3
         )
         self.assertEqual([1, 1, 1], [len(shard) for shard in plan])
+
+    def test_real_named_pipe_module_stays_in_one_serial_unit(self):
+        inventory = sharding.discover_inventory(ROOT / "tests")
+        units = [
+            unit for unit in sharding.test_units(inventory)
+            if unit.module == "test_rcc_native_pipe_acl_windows"
+        ]
+        self.assertEqual(1, len(units))
+        self.assertGreater(len(units[0].cases), 1)
+        self.assertEqual(
+            sorted(case.id() for case in units[0].cases),
+            sorted(case.id() for case in next(
+                module for module in inventory.modules
+                if module.name == "test_rcc_native_pipe_acl_windows"
+            ).cases),
+        )
 
     def test_seed_is_optional_bounded_and_covers_the_known_slowest_tests(self):
         path = ROOT / "scripts" / "ci_test_duration_seed.json"
