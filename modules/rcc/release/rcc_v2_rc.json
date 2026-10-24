@@ -147,8 +147,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 44708,
-        "sha256": "43d847fdcb82e3c4ce51cc4bd1e35ddc30afdc87d211b69ab3a5fb62b5c91470"
+        "size": 45861,
+        "sha256": "035e5442d9f87b578815d545ae6e7a5558537c6369d50da2c4e20377d73c6f02"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -172,8 +172,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 30706,
-        "sha256": "1d3ef4646458310a5d060ab109e74f1c0453e2ac76c8212fa1b58e535e214e2e"
+        "size": 30951,
+        "sha256": "8b923940c07c0a8480ed456f9e28191e1ec3603804fdc59970fc1b91dec39b9b"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "0b6d1e3489745ce9e787014d232829af3bd833cea8608766365b32a27b8a87de"
+    "aggregateSha256": "b286f253fa3411380416d5a991504d8f3b04bb437969458ee65674b68e6eb885"
   },
   "activeLoaderGraph": {
     "background": [
