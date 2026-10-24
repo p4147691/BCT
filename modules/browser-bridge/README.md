@@ -39,3 +39,16 @@ git diff --check
 ```
 
 Real Chrome E2E is intentionally not part of CI or these checks.  It needs the explicit approval listed in `docs/CHROME_E2E.md`.
+
+## Opt-in Node Native mailbox (development, disabled by default)
+
+The pinned Bridge extension now has a separate Native Messaging port
+for `node_relay_*` messages, serviced by the existing
+`persistent_host.py` through `node_relay_native.py`. An explicitly
+provisioned encrypted SQLite mailbox preserves synthetic node-to-node
+message/ACK/response receipts across Host process restarts, without
+using RCC or a BCT MCP call. This route is disabled in production by
+default and has **no ChatGPT DOM submission capability**. Source,
+physical Windows child-process tests and activation limitations are in
+`docs/NODE_NATIVE_PERSISTENT_V01.md`. Existing production installation
+and identity are not changed by the source addition.

@@ -54,6 +54,18 @@ async def serve(inp, out):
     if first is None:
         return 0
     LAST_REQUEST_ID = first.get("request_id") if isinstance(first, dict) else None
+    if isinstance(first, dict) and str(first.get("type") or "").startswith("node_relay_"):
+        from node_relay_native import approved_store, serve_node_session
+        # Separate Bridge-native mailbox session; never share the BCT MCP
+        # credential or widen the legacy file-read capability.
+        try:
+            store = approved_store()
+        except (ValueError, OSError, RuntimeError):
+            write_frame(out, error_reply(LAST_REQUEST_ID,
+                                         "BRIDGE_NODE_RELAY_NOT_APPROVED",
+                                         "AUTH_DENIED"))
+            return 4
+        return await asyncio.to_thread(serve_node_session, first, inp, out, store)
     if not WORK_ID or not TOKEN_PATH.is_file():
         write_frame(out, error_reply(LAST_REQUEST_ID, "HOST_AUTH_NOT_CONFIGURED", "AUTH_DENIED"))
         return 4
