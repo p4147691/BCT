@@ -20,6 +20,7 @@ _GLOBAL_CI_PATHS = {
     "pyproject.toml",
     "scripts/ci_scope.py",
     "scripts/ci_test_shard.py",
+    "scripts/ci_test_duration_seed.json",
     "scripts/vtl_readonly_smoke.py",
     "tests/test_ci_acceleration.py",
 }
@@ -28,6 +29,9 @@ _DESKTOP_PATHS = {
     "src/bct/integrations/desktop_session.py",
     "src/bct/mcp_server.py",
     "tests/test_desktop_session.py",
+}
+_BROWSER_BRIDGE_PATHS = {
+    "tests/test_browser_module_baselines.py",
 }
 
 
@@ -52,12 +56,16 @@ def classify(paths: list[str]) -> CIPlan:
 
     active = {path for path in changed if not _documentation(path)}
     global_change = bool(active & _GLOBAL_CI_PATHS)
-    bridge_only = all(path.startswith("modules/browser-bridge/") for path in active)
-    core = global_change or not bridge_only
-    bridge = core or any(
-        path.startswith("modules/browser-bridge/")
-        or path.startswith("src/bct/")
+    bridge_only = all(
+        path.startswith("modules/browser-bridge/") or path in _BROWSER_BRIDGE_PATHS
         for path in active
+    )
+    core = global_change or not bridge_only
+    # The browser-bridge tree is an independent transport experiment, not a
+    # BCT Core dependency or relay authority.  Its expensive Windows E2E must
+    # run only when that tree (or its exact source-baseline test) changes.
+    bridge = bool(active & _BROWSER_BRIDGE_PATHS) or any(
+        path.startswith("modules/browser-bridge/") for path in active
     )
     vtl = global_change or bool(active & _DESKTOP_PATHS) or any(
         "desktop_session" in path or path.startswith("scripts/vtl_")
