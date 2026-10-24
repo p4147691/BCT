@@ -292,7 +292,7 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         )
         self.assertEqual(Outcome.UNKNOWN, original.outcome)
 
-    def test_finished_shared_claim_with_attached_executor_is_conservative(self):
+    def test_finished_shared_claim_with_executor_metadata_is_not_a_live_lock(self):
         name = "attached"
         self.claim(name, resource="file:c:/active.toml")
         self.store.finish_operation(
@@ -307,5 +307,23 @@ class ClaimDiagnosticsTests(unittest.TestCase):
                 "INSERT INTO background_job_executors(operation_id,pid,fingerprint,claimed_at)"
                 " VALUES(?,?,?,?)", (name, 12345, "existing", 2.0))
         item = self.store.claim_diagnostics()[0]
-        self.assertTrue(item["blocks_unrelated_work"])
+        self.assertFalse(item["blocks_unrelated_work"])
+        self.assertFalse(item["blocks_same_resource"])
+        self.assertTrue(item["retires_on_next_reservation"])
         self.assertFalse(item["can_auto_release"])
+        successor = self.store.create_work(Work(
+            "successor-work", "successor", (self.tmp.name,),
+            frozenset({"read"}), "fixture-owner",
+        ))
+        created, _ = self.store.begin_operation(
+            operation_id="successor", work=successor,
+            principal_id="fixture-owner", request_digest="successor",
+            capability="read", target="fixture",
+            resources=("file:c:/active.toml",), policy_revision="fixture",
+        )
+        self.assertTrue(created)
+        original = self.store.get_operation_for(
+            operation_id=name, work_id=self.work.work_id,
+            principal_id="fixture-owner",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)

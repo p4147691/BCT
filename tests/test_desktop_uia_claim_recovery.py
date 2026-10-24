@@ -385,7 +385,7 @@ class CrossWorkDesktopReacquisitionTests(unittest.TestCase):
                 resources=(CLAIM,),policy_revision="fixture")
 
 
-    def test_executor_association_blocks_retirement_even_when_finished(self):
+    def test_executor_metadata_does_not_block_finished_operation_retirement(self):
         self.original()
         with self.store.transaction() as db:
             db.execute(
@@ -394,9 +394,9 @@ class CrossWorkDesktopReacquisitionTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO background_job_executors VALUES(?,?,?,?)",
                 ("prior-uia", 321, "attached-worker", 101.0))
-        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
-            self.acquire()
-        self.assertEqual(0, self.agent.calls)
+        created, _ = self.acquire()
+        self.assertTrue(created)
+        self.assertEqual(1, self.agent.calls)
 
     def test_old_assignment_epoch_change_blocks_stale_proof(self):
         self.original()
