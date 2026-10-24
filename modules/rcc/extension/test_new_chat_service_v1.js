@@ -9,6 +9,7 @@ let executeCount = 0;
 let statusCount = 0;
 let retireCount = 0;
 let retireSucceeds = true;
+let blockedExecution = null;
 const conversationKey = '6ad7f5b6-c834-83e8-9c00-ff70bab4204d';
 const sha256 = async (value) => {
   const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value)));
@@ -34,6 +35,7 @@ const context = vm.createContext({
     sendWithReceiver: async (_tabId, message) => {
       if (message.type === 'relay:newChatExecute') {
         executeCount += 1;
+        if (blockedExecution) return blockedExecution;
         return { ok: true, submitted: true };
       }
       if (message.type === 'relay:retireExecution') {
@@ -150,6 +152,31 @@ vm.runInContext(fs.readFileSync('domain/new_chat_service.js', 'utf8'), context,
   assert.equal(createCount, createsBeforeRecovery);
   assert.equal(executeCount, submissionsBeforeRecovery);
   assert.equal(retireCount, 4);
+
+  blockedExecution = {
+    ok: false, submitted: false, effectState: 'NOT_APPLIED',
+    surfaceKind: 'CODEX_TASK',
+    surfaceEvidence: { schema: 1, hasEditor: true, markers: ['CODEX_ENVIRONMENT_KO'] },
+    error: 'NEW_CHAT_SURFACE_CODEX_TASK',
+  };
+  const statusesBeforeBlocked = statusCount;
+  const blocked = await context.sendNewChatAndAwaitResult({
+    ...request, operationId: 'new-chat-test-codex-surface', text: 'do not inject',
+  });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.state, 'NOT_APPLIED');
+  assert.equal(blocked.effectState, 'NOT_APPLIED');
+  assert.equal(blocked.surfaceKind, 'CODEX_TASK');
+  assert.deepEqual(JSON.parse(JSON.stringify(blocked.surfaceEvidence)), {
+    schema: 1, hasEditor: true, markers: ['CODEX_ENVIRONMENT_KO'],
+  });
+  assert.equal(blocked.error, 'NEW_CHAT_SURFACE_CODEX_TASK');
+  assert.equal(statusCount, statusesBeforeBlocked);
+  const blockedReplay = await context.sendNewChatAndAwaitResult({
+    ...request, operationId: 'new-chat-test-codex-surface', text: 'do not inject',
+  });
+  assert.equal(blockedReplay.replayed, true);
+  assert.equal(executeCount, 2);
   console.log('rcc new chat service v1: PASS');
 })().catch((error) => {
   console.error(error);

@@ -43,6 +43,8 @@ function publicNewChatResult(receipt, replayed = false) {
     resultHash: String(receipt?.resultHash || ''),
     resultState: complete ? 'RESULT_PERSISTED' : '',
     reply: complete ? String(receipt?.reply || '') : '',
+    surfaceKind: String(receipt?.surfaceKind || ''),
+    surfaceEvidence: receipt?.surfaceEvidence || null,
     stageTiming: receipt?.stageTiming || null,
     error: complete ? '' : String(receipt?.error || receipt?.state || 'UNKNOWN'),
   };
@@ -285,10 +287,26 @@ async function sendNewChatAndAwaitResult(message) {
     stageTiming: { ...receipt.stageTiming, submitAttemptedAt: Date.now() },
   });
   try {
-    await browserGateway.sendWithReceiver(receipt.tabId, {
+    const execution = await browserGateway.sendWithReceiver(receipt.tabId, {
       type: 'relay:newChatExecute', relayId: operationId,
       text, textSha256,
     });
+    // A classified non-Chat surface is a terminal no-effect result.  Retain
+    // its minimal evidence so callers can preserve the tab without trying to
+    // submit into it again.  Other transport losses remain recoverable through
+    // the exact tab/UUID/DOM path below.
+    if (execution?.effectState === 'NOT_APPLIED' && execution?.submitted === false) {
+      const failed = await writeNewChatReceipt(operationId, {
+        ...receipt,
+        state: 'NOT_APPLIED',
+        surfaceKind: String(execution.surfaceKind || ''),
+        surfaceEvidence: execution.surfaceEvidence && typeof execution.surfaceEvidence === 'object'
+          ? execution.surfaceEvidence : null,
+        error: String(execution.error || 'NEW_CHAT_SURFACE_NOT_APPLIED'),
+        stageTiming: { ...receipt.stageTiming, surfaceClassifiedAt: Date.now() },
+      });
+      return publicNewChatResult(failed);
+    }
   } catch (_) {
     // Expected when ChatGPT replaces the blank document with /c/<uuid>.
     // Exact DOM recovery below is the only authority after activation.

@@ -765,6 +765,85 @@ async function newChatTextSha256(value) {
     item.toString(16).padStart(2, '0')).join('');
 }
 
+// A tab at chatgpt.com/ is not necessarily the regular Chat surface.  In
+// particular, the desktop product can route that URL to a Codex task composer.
+// New-chat bootstrap is a Chat-only protocol (it relies on /c/<uuid> and
+// ordinary user/assistant turns), so classify before storing a relay record or
+// touching the editor.  Unknown is deliberately fail-closed: a future product
+// surface must not receive a Chat relay merely because it has a textbox.
+function classifyNewChatSurface() {
+  const root = document.body;
+  const text = String(root?.innerText || root?.textContent || '').replace(/\s+/g, ' ').trim();
+  const hasEditor = [
+    '#prompt-textarea',
+    'div[contenteditable="true"][data-virtualkeyboard="true"]',
+    'textarea[name="prompt-textarea"]',
+    'form div[contenteditable="true"][role="textbox"]',
+  ].some((selector) => !!document.querySelector(selector));
+  const codexMarkers = [
+    ['CODEX_WORKING_DIRECTORY_KO', '작업 위치'],
+    ['CODEX_ENVIRONMENT_KO', '환경 선택'],
+    ['CODEX_APPROVAL_KO', '승인 요청'],
+    ['CODEX_WORKING_DIRECTORY_EN', 'Working directory'],
+    ['CODEX_ENVIRONMENT_EN', 'Environment'],
+    ['CODEX_APPROVAL_EN', 'Approval request'],
+  ].filter(([, marker]) => text.includes(marker)).map(([id]) => id);
+  if (codexMarkers.length) {
+    return Object.freeze({
+      kind: 'CODEX_TASK',
+      evidence: Object.freeze({ schema: 1, hasEditor, markers: Object.freeze(codexMarkers) }),
+    });
+  }
+
+  // Positive evidence is intentionally narrow.  The welcome phrase and the
+  // ordinary Chat navigation are both rendered by the regular Chat home; an
+  // editor alone is shared with other product surfaces and is insufficient.
+  const generalWelcome = [
+    '무엇을 도와드릴까요?', '무엇이든 물어보세요',
+    'What can I help with?', 'How can I help you today?',
+  ].some((marker) => text.includes(marker));
+  const generalNavigation = [
+    '새 채팅', '대화 검색', 'New chat', 'Search chats',
+  ].some((marker) => text.includes(marker));
+  if (hasEditor && generalWelcome && generalNavigation) {
+    return Object.freeze({
+      kind: 'GENERAL_CHAT',
+      evidence: Object.freeze({ schema: 1, hasEditor, markers: Object.freeze([
+        'GENERAL_CHAT_WELCOME', 'GENERAL_CHAT_NAVIGATION',
+      ]) }),
+    });
+  }
+  return Object.freeze({
+    kind: 'UNKNOWN',
+    evidence: Object.freeze({ schema: 1, hasEditor, markers: Object.freeze([]) }),
+  });
+}
+
+async function waitForNewChatSurface(timeoutMs = 4000) {
+  const initial = classifyNewChatSurface();
+  if (initial.kind !== 'UNKNOWN' || !document.body || typeof MutationObserver !== 'function') {
+    return initial;
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const observe = () => {
+      const surface = classifyNewChatSurface();
+      if (surface.kind !== 'UNKNOWN') finish(surface);
+    };
+    const observer = new MutationObserver(observe);
+    const timer = setTimeout(() => finish(classifyNewChatSurface()), timeoutMs);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    observe();
+  });
+}
+
 // Bootstrap exactly one blank ChatGPT tab. The record is stored before the
 // click because ChatGPT replaces the blank document while assigning /c/<uuid>.
 // sessionStorage survives that same-origin navigation, so the replacement
@@ -778,6 +857,13 @@ async function executeNewChatBootstrap(message) {
       || await newChatTextSha256(text) !== textSha256) {
     return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
       error: 'NEW_CHAT_BOOTSTRAP_ARGUMENT_INVALID' };
+  }
+  const surface = await waitForNewChatSurface();
+  if (surface.kind !== 'GENERAL_CHAT') {
+    return { ok: false, submitted: false, effectState: 'NOT_APPLIED',
+      surfaceKind: surface.kind, surfaceEvidence: surface.evidence,
+      error: surface.kind === 'CODEX_TASK'
+        ? 'NEW_CHAT_SURFACE_CODEX_TASK' : 'NEW_CHAT_SURFACE_UNKNOWN' };
   }
   if (currentConversationKey() || getMessageUnits('user').length
       || getConversationTurns().length) {
