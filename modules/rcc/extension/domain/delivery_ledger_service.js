@@ -777,15 +777,16 @@ async function deliveryManagerStatus(message) {
   if (receipt.state !== 'RETURNED') {
     return { ok: true, pending: true, ...publicDeliveryReceipt(receipt) };
   }
+  const reconciled = receipt.managerReturnReconciled === true;
   if (!Number.isInteger(receipt.managerBeforeAssistantCount)) {
-    return { ok: false, ...publicDeliveryReceipt(receipt),
+    return { ok: false, reconciled, ...publicDeliveryReceipt(receipt),
       error: 'DELIVERY_MANAGER_BASELINE_NOT_CAPTURED' };
   }
   let managerTab;
   try {
     managerTab = singleDeliveryTab(await getChatTabs(), receipt.managerConversationKey);
   } catch (error) {
-    return { ok: true, pending: true, ...publicDeliveryReceipt(receipt),
+    return { ok: true, pending: true, reconciled, ...publicDeliveryReceipt(receipt),
       error: String(error?.message || error).slice(0, 128) };
   }
   let read;
@@ -795,28 +796,28 @@ async function deliveryManagerStatus(message) {
       afterAssistantCount: receipt.managerBeforeAssistantCount, relayId: id,
     });
   } catch (error) {
-    return { ok: true, pending: true, ...publicDeliveryReceipt(receipt),
+    return { ok: true, pending: true, reconciled, ...publicDeliveryReceipt(receipt),
       error: String(error?.message || error).slice(0, 128) };
   }
   if (read?.ok !== true || read.conversationKey !== receipt.managerConversationKey
       || typeof read.responseText !== 'string' || !read.responseText) {
-    return { ok: true, pending: true, ...publicDeliveryReceipt(receipt),
+    return { ok: true, pending: true, reconciled, ...publicDeliveryReceipt(receipt),
       error: String(read?.error || 'DELIVERY_MANAGER_REPLY_PENDING').slice(0, 128) };
   }
   if (read.responseText.length > 12000) {
-    return { ok: false, ...publicDeliveryReceipt(receipt),
+    return { ok: false, reconciled, ...publicDeliveryReceipt(receipt),
       error: 'DELIVERY_MANAGER_REPLY_TOO_LARGE' };
   }
   const hash = await relaySha256(read.responseText);
   if (receipt.managerResponseSha256 && receipt.managerResponseSha256 !== hash) {
-    return { ok: false, ...publicDeliveryReceipt(receipt),
+    return { ok: false, reconciled, ...publicDeliveryReceipt(receipt),
       error: 'DELIVERY_MANAGER_REPLY_CHANGED' };
   }
   const observed = { ...receipt, managerResponseSha256: hash,
     managerResponseLength: read.responseText.length, updatedAt: Date.now() };
   await writeDeliveryLedgerMirror(id, observed);
   receipt = await retireCapturedManagerExecution(observed);
-  return { ok: true, reconciled: receipt.managerReturnReconciled === true,
+  return { ok: true, reconciled,
     ...publicDeliveryReceipt(receipt),
     managerResponseText: read.responseText };
 }

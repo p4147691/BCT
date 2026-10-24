@@ -194,6 +194,39 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
     && item.message.type === 'relay:exactUserTurnProof'
     && item.message.deliveryId === reconcileIdentity.deliveryId), true);
 
+  // If exact turn reconciliation succeeds but Manager reply readback is still
+  // pending, preserve that proof so Core can promote the same Delivery without
+  // resending the return message.
+  const pendingIdentity = { ...identity, deliveryId: 'delivery-return-pending-readback' };
+  await context.deliveryStart(pendingIdentity);
+  await context.deliveryStatus({ deliveryId: pendingIdentity.deliveryId });
+  const pendingOriginalSend = context.sendToChatTab;
+  context.sendToChatTab = async (tabId, message) => {
+    if (message.type === 'relay:exactUserTurnProof') {
+      return { ok: false, error: 'RELAY_EXACT_USER_TURN_NOT_FOUND' };
+    }
+    return pendingOriginalSend(tabId, message);
+  };
+  failNextExecuteUnknownApplied = true;
+  const pendingUnknown = await context.deliveryReturn({
+    deliveryId: pendingIdentity.deliveryId,
+  });
+  assert.equal(pendingUnknown.state, 'NEEDS_REVIEW');
+  context.sendToChatTab = async (tabId, message) => {
+    if (message.type === 'relay:simpleReadReply') {
+      return { ok: false, error: 'SIMPLE_RELAY_ROUTE_RECORD_MISSING' };
+    }
+    return pendingOriginalSend(tabId, message);
+  };
+  const pendingReconciled = await context.deliveryManagerStatus({
+    deliveryId: pendingIdentity.deliveryId,
+  });
+  assert.equal(pendingReconciled.ok, true);
+  assert.equal(pendingReconciled.pending, true);
+  assert.equal(pendingReconciled.state, 'RETURNED');
+  assert.equal(pendingReconciled.reconciled, true);
+  context.sendToChatTab = pendingOriginalSend;
+
   // New manager return is ONE user turn containing the FULL current Worker result.
   // The Worker tab may disappear after its response is captured.
   const tabsBefore = context.getChatTabs;
