@@ -406,6 +406,7 @@ class RelayBrowserFeature:
                 "requestSha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
                 "workId": work.work_id,
                 "targetBusyPolicy": delivery_settings["target_busy_policy"],
+                "continuationMode": delivery_settings["continuation_mode"],
                 "composerWakeMode": delivery_settings["composer_wake_mode"],
                 "sendButtonWaitMs": delivery_settings["send_button_wait_ms"],
                 "deliverySettingsSha256": delivery_settings["config_sha256"],
@@ -624,6 +625,7 @@ class RelayBrowserFeature:
                     request_sha256=extra["requestSha256"],
                     scope_id=str(extra.get("scopeId") or ""),
                     original_task=str(extra.get("originalTask") or ""),
+                    continuation_mode=str(extra.get("continuationMode") or "manual"),
                 )
             except ConflictError as exc:
                 if str(exc) != "DELIVERY_ID_REUSE_MISMATCH":

@@ -129,6 +129,7 @@ files = [
   "src/bct/bottleneck_ack.py",
   "src/bct/manager_decision_recovery.py",
   "src/bct/worker_dispatch_recovery.py",
+  "src/bct/delivery_continuation_recovery.py",
   "src/bct/background_operations.py",
   "src/bct/operation_worker.py",
   "src/bct/process_session_worker.py",

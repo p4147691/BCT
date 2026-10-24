@@ -62,6 +62,7 @@ class ModuleLayoutTests(unittest.TestCase):
             "src/bct/features/claim_reconciliation.py",
             "src/bct/manager_decision_recovery.py",
             "src/bct/worker_dispatch_recovery.py",
+            "src/bct/delivery_continuation_recovery.py",
             "src/bct/features/desktop_session.py",
             "src/bct/integrations/desktop_session.py",
             "src/bct/project_run.py",

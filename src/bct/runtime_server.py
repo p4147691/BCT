@@ -267,6 +267,9 @@ def main() -> int:
             "enabled": bct.worker_dispatch_recovery is not None,
             "runs": 0,
         },
+        "delivery_continuation_recovery": {
+            "enabled": True, "runs": 0,
+        },
         "bottleneck_ack": bottleneck_ack.status(),
         "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
     }
@@ -333,6 +336,27 @@ def main() -> int:
                 )
             except Exception as exc:  # Never turn an observation fault into a relay retry.
                 state["bottleneck_ack"] = {"state": "UNKNOWN", "error": type(exc).__name__}
+            recovery_stop.wait(2.0)
+
+    def delivery_continuation_recovery_loop() -> None:
+        recovery = bct.delivery_continuation_recovery
+        while not recovery_stop.is_set():
+            try:
+                outcome = recovery.run_once(limit=8)
+                state["delivery_continuation_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["delivery_continuation_recovery"].get("runs", 0)) + 1,
+                    "last_outcome": outcome,
+                    "last_error": None,
+                    "last_run_at": time.time(),
+                }
+            except Exception as exc:
+                state["delivery_continuation_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["delivery_continuation_recovery"].get("runs", 0)) + 1,
+                    "last_error": type(exc).__name__ + ":" + str(exc),
+                    "last_run_at": time.time(),
+                }
             recovery_stop.wait(2.0)
 
     def chat_stream_rcc_watch_loop() -> None:
@@ -508,6 +532,11 @@ def main() -> int:
     recovery_thread = None
     dispatch_thread = None
     bottleneck_thread = None
+    delivery_continuation_thread = threading.Thread(
+        target=delivery_continuation_recovery_loop,
+        name="bct-delivery-continuation-recovery", daemon=True,
+    )
+    delivery_continuation_thread.start()
     chat_stream_watch_thread = threading.Thread(
         target=chat_stream_rcc_watch_loop,
         name="bct-chat-stream-rcc-watch", daemon=True,
@@ -540,6 +569,7 @@ def main() -> int:
             dispatch_thread.join(timeout=3.0)
         if bottleneck_thread is not None:
             bottleneck_thread.join(timeout=3.0)
+        delivery_continuation_thread.join(timeout=3.0)
         chat_stream_watch_thread.join(timeout=3.0)
         try:
             bct.cdp_connections.close()
