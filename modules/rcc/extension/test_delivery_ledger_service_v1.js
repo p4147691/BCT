@@ -225,6 +225,22 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(pendingReconciled.pending, true);
   assert.equal(pendingReconciled.state, 'RETURNED');
   assert.equal(pendingReconciled.reconciled, true);
+  // A service-worker reload must not strand an already RETURNED mirror if an
+  // older writer omitted the reconciliation marker and the full return text
+  // was already cleared. Re-prove the exact DOM turn by submitted hash only.
+  delete storage.deliveryLedgerMirrorV1[pendingIdentity.deliveryId]
+    .managerReturnReconciled;
+  const reloadedReconciled = await context.deliveryManagerStatus({
+    deliveryId: pendingIdentity.deliveryId,
+  });
+  assert.equal(reloadedReconciled.state, 'RETURNED');
+  assert.equal(reloadedReconciled.reconciled, true);
+  assert.equal(storage.deliveryLedgerMirrorV1[pendingIdentity.deliveryId]
+    .managerReturnReconciled, true);
+  const hashOnlyProof = controlCalls.filter(item => item.tabId === 10
+    && item.message.type === 'relay:exactUserTurnProof'
+    && item.message.deliveryId === pendingIdentity.deliveryId).at(-1);
+  assert.equal(hashOnlyProof.message.text, '');
   context.sendToChatTab = pendingOriginalSend;
 
   // New manager return is ONE user turn containing the FULL current Worker result.

@@ -73,14 +73,15 @@ if (message.type === 'relay:exactUserTurnProof') {
     const key = String(message.conversationKey || '').trim().toLowerCase();
     const text = RelayCore.normalizeMessageText(String(message.text || ''));
     const expectedHash = String(message.submittedSha256 || '').trim().toLowerCase();
-    if (!id || !key || currentConversationKey() !== key || !text || text.length > 12000
+    if (!id || !key || currentConversationKey() !== key || text.length > 12000
         || !/^[a-f0-9]{64}$/.test(expectedHash)
-        || await newChatTextSha256(text) !== expectedHash) {
+        || (text && await newChatTextSha256(text) !== expectedHash)) {
       return { ok: false, error: 'RELAY_EXACT_USER_TURN_ARGUMENT_INVALID' };
     }
-    const record = { submittedText: text, conversationKey: key };
-    const matches = getConversationTurns().filter((turn) =>
-      submittedPromptMatchesTurn(record, turn));
+    const matches = text
+      ? getConversationTurns().filter((turn) =>
+        submittedPromptMatchesTurn({ submittedText: text, conversationKey: key }, turn))
+      : await exactUserTurnsBySubmittedSha256(expectedHash);
     if (matches.length !== 1) {
       return { ok: false, error: matches.length > 1
         ? 'RELAY_EXACT_USER_TURN_AMBIGUOUS' : 'RELAY_EXACT_USER_TURN_NOT_FOUND' };

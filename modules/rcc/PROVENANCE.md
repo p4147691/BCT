@@ -35,6 +35,17 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.49 Manager reconciliation reload-proof candidate
+
+RC29 recovers a `RETURNED` Manager wake whose exact-turn reconciliation marker
+is absent after a service-worker reload. It matches exactly one rendered
+Manager user turn by the already persisted submitted-text SHA-256, restores
+the proof marker, and never edits the composer or resubmits the message.
+
+- extension version: `1.0.49 Manager Reconciliation Reload Proof`
+- runtime build: `2026-10-24-rcc-manager-reconciliation-reload-v1`
+- candidate: `RCC_REBUILD_V2_RC29_MANAGER_RECONCILIATION_RELOAD_PROOF`
+
 ## BCT RCC 1.0.48 Manager reconciliation pending-proof candidate
 
 RC28 preserves `reconciled=true` after one exact Manager user turn has already

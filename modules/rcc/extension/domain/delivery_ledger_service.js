@@ -660,8 +660,12 @@ async function attemptManagerReturn(receipt, managerTab) {
 }
 
 async function reconcileManagerReturnEffect(receipt, suppliedManagerTab = null) {
-  if (!receipt || receipt.state !== 'NEEDS_REVIEW' || !receipt.managerReturnText
-      || !/^[a-f0-9]{64}$/.test(String(receipt.managerReturnSubmittedSha256 || ''))) {
+  const submittedSha256 = String(receipt?.managerReturnSubmittedSha256 || '');
+  const unknownReturn = receipt?.state === 'NEEDS_REVIEW' && !!receipt.managerReturnText;
+  const returnedWithoutProof = receipt?.state === 'RETURNED'
+    && receipt.managerReturnReconciled !== true;
+  if (!receipt || (!unknownReturn && !returnedWithoutProof)
+      || !/^[a-f0-9]{64}$/.test(submittedSha256)) {
     return receipt;
   }
   let managerTab = suppliedManagerTab;
@@ -676,8 +680,8 @@ async function reconcileManagerReturnEffect(receipt, suppliedManagerTab = null) 
     proof = await sendToChatTab(managerTab.id, {
       type: 'relay:exactUserTurnProof', deliveryId: receipt.deliveryId,
       conversationKey: receipt.managerConversationKey,
-      text: receipt.managerReturnText,
-      submittedSha256: receipt.managerReturnSubmittedSha256,
+      text: receipt.managerReturnText || '',
+      submittedSha256,
     });
   } catch (_) {
     return receipt;
@@ -771,7 +775,8 @@ async function deliveryManagerStatus(message) {
   let receipt = ledger[id];
   if (!receipt) return { ok: false, deliveryId: id, state: 'NEEDS_REVIEW',
     error: 'DELIVERY_MIRROR_NOT_FOUND' };
-  if (receipt.state === 'NEEDS_REVIEW') {
+  if (receipt.state === 'NEEDS_REVIEW'
+      || (receipt.state === 'RETURNED' && receipt.managerReturnReconciled !== true)) {
     receipt = await reconcileManagerReturnEffect(receipt);
   }
   if (receipt.state !== 'RETURNED') {

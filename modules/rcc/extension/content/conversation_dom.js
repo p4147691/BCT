@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-24-rcc-manager-reconciliation-pending-v1';
+const RCC_BUILD_VERSION = '2026-10-24-rcc-manager-reconciliation-reload-v1';
 
 function editorCandidates() {
 
@@ -315,6 +315,19 @@ function turnUserText(turn) {
   const users = getMessageUnits('user', turn);
   if (users.length !== 1) return '';
   return messageUnitText(users[0], 'user');
+}
+
+
+async function exactUserTurnsBySubmittedSha256(expectedHash) {
+  const hash = String(expectedHash || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(hash)) return [];
+  const matches = [];
+  for (const turn of getConversationTurns()) {
+    const rendered = turnUserText(turn);
+    if (!rendered || rendered.length > 12000) continue;
+    if (await newChatTextSha256(rendered) === hash) matches.push(turn);
+  }
+  return matches;
 }
 
 

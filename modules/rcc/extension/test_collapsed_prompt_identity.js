@@ -68,6 +68,8 @@ function turn(key, prompt, options = {}) {
 }
 let document = el('main', {});
 const context = vm.createContext({Element, RelayCore,
+  newChatTextSha256: async value => require('node:crypto').createHash('sha256')
+    .update(String(value), 'utf8').digest('hex'),
   currentConversationKey: () => 'conversation-test',
   getComputedStyle: () => ({visibility: 'visible', display: 'block'}),
   get document() { return document; }});
@@ -78,7 +80,7 @@ function slice(source, start, end) {
 }
 vm.runInContext(slice(content, 'function canonicalMessageUnit(', 'function getAssistantNodes(')
   + slice(content, 'function turnUserText(', 'function isVisible(')
-  + ';globalThis.api={messageUnitText,resolveRoutedTurn};', context);
+  + ';globalThis.api={getConversationTurns,messageUnitText,turnUserText,resolveRoutedTurn,exactUserTurnsBySubmittedSha256};', context);
 const directContext = vm.createContext({RelayCore, isChatTab: () => true,
   getComputedStyle: () => ({visibility: 'visible', display: 'block'}),
   get document() { return document; },
@@ -126,6 +128,14 @@ const longPrompt = '[BCT_ORCHESTRATION_ASSIGNMENT_V1]\n' + 'bounded task '.repea
   }
   document = el('main', {}, turn('a', longPrompt), turn('b', longPrompt));
   assert.equal(context.api.resolveRoutedTurn(record(longPrompt)).reason, 'ROUTE_TURN_AMBIGUOUS');
+  const longPromptTurns = context.api.getConversationTurns();
+  const longPromptHash = await context.newChatTextSha256(
+    context.api.turnUserText(longPromptTurns[0]));
+  assert.equal(longPromptTurns.length, 2);
+  assert.equal(await context.newChatTextSha256(
+    context.api.turnUserText(longPromptTurns[0])), longPromptHash);
+  assert.equal((await context.api.exactUserTurnsBySubmittedSha256(longPromptHash)).length, 2,
+    'hash-only reconciliation must retain the same uniqueness fence');
   await assert.rejects(directContext.direct(901, 'conversation-test', longPrompt), /TURN_AMBIGUOUS/);
   assert.equal(context.api.resolveRoutedTurn(record(longPrompt, {beforeTurnKeys:['a']})).turnKey, 'b');
   assert.equal(context.api.resolveRoutedTurn(record(longPrompt, {conversationKey:'wrong'})).reason, 'CONVERSATION_IDENTITY_CHANGED');
@@ -150,6 +160,9 @@ const longPrompt = '[BCT_ORCHESTRATION_ASSIGNMENT_V1]\n' + 'bounded task '.repea
     semanticOnly('new', 'only second message'));
   assert.equal(context.api.resolveRoutedTurn(
     record('only second message', {beforeTurnKeys: ['legacy']})).turnKey, 'new:user');
+  const secondHash = await context.newChatTextSha256('only second message');
+  assert.equal((await context.api.exactUserTurnsBySubmittedSha256(secondHash))[0]
+    .getAttribute('data-content-search-unit-key'), 'new:user');
   document = el('main', {}, el('div', {}, el('div', {
     'data-content-search-unit-key': 'wrong:assistant'
   }, longPrompt)));
