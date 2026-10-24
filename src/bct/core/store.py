@@ -225,6 +225,28 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS relay_deliveries_work_state
                     ON relay_deliveries(work_id,state,updated_at);
+                -- A requested ChatGPT reasoning level is an absolute, convergent
+                -- setting intent.  It is deliberately separate from relay
+                -- deliveries and resource claims: a delayed/failed UI change
+                -- must never block messages or unrelated work.
+                CREATE TABLE IF NOT EXISTS reasoning_change_requests (
+                    request_id TEXT PRIMARY KEY,
+                    work_id TEXT NOT NULL,
+                    instance_id TEXT NOT NULL,
+                    conversation_key TEXT NOT NULL,
+                    target_level TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    observed_before TEXT,
+                    observed_after TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    error TEXT,
+                    next_attempt_at REAL NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    FOREIGN KEY(work_id) REFERENCES works(work_id)
+                );
+                CREATE INDEX IF NOT EXISTS reasoning_change_pending
+                    ON reasoning_change_requests(state,created_at);
                 -- UI stream reports are untrusted observations, separated from
                 -- authoritative operation effects. Immutable append-only steps.
                 CREATE TABLE IF NOT EXISTS chat_stream_checkpoints (

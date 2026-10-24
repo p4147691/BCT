@@ -31,6 +31,7 @@ from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
 from .features.cdp_inspect import CDPInspectFeature
+from .features.cdp_reasoning import CDPReasoningFeature
 from .features.browser_extension_manage import BrowserExtensionManageFeature
 from .features.monitor import MonitorFeature
 from .features.conversation_network import ConversationNetworkUpdateFeature
@@ -50,6 +51,7 @@ from .features.desktop_session import (
 from .integrations.github import GhCliClient, GitHubClient
 from .integrations.rcc import NamedPipeRelayClient
 from .integrations.cdp_connection import CDPConnectionManager
+from .reasoning_control import ReasoningChangeRecovery
 
 
 def _cdp_mcp_command(policy_path: str | Path) -> tuple[str, ...] | None:
@@ -133,6 +135,9 @@ class BCT:
             require_current_session_instances=_require_current_session_instances(policy_path),
         )
         relay = NamedPipeRelayClient()
+        self.reasoning_change_recovery = ReasoningChangeRecovery(
+            self.store, self.cdp_connections, relay,
+        )
         relay_browser = RelayBrowserFeature(relay, store=self.store)
         self.delivery_continuation_recovery = DeliveryContinuationRecovery(
             self.store, relay_browser,
@@ -167,6 +172,7 @@ class BCT:
             MonitorFeature(policy_path),
             ConversationNetworkUpdateFeature(self.store),
             CDPInspectFeature(self.cdp_connections),
+            CDPReasoningFeature(self.reasoning_change_recovery),
             BrowserExtensionManageFeature(self.cdp_connections, policy_path=policy_path, data_root=data_root),
             ReadOnlyClaimReconcileFeature(self.store, desktop_session),
             OrchestrationFeature(self.orchestration),

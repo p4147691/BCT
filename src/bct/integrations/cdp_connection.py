@@ -64,6 +64,25 @@ class CDPConnectionManager:
                 and params.get("arguments") == {}
                 and set(params) == {"name", "arguments"}):
             return
+        if method == "tools/call" and params.get("name") == "evaluate_script":
+            from bct.reasoning_control import validate_reasoning_function
+            supplied = params.get("arguments")
+            if (isinstance(supplied, dict)
+                    and set(supplied) == {"pageId", "function", "waitForStableDom"}
+                    and supplied["waitForStableDom"] is False
+                    and validate_reasoning_function(
+                        supplied["pageId"], supplied["function"]
+                    )):
+                return
+        if method == "tools/call" and params.get("name") == "press_key":
+            supplied = params.get("arguments")
+            if (isinstance(supplied, dict)
+                    and set(supplied) == {"pageId", "key", "includeSnapshot"}
+                    and type(supplied["pageId"]) is int
+                    and supplied["pageId"] > 0
+                    and supplied["key"] in {"ArrowLeft", "ArrowRight", "Escape"}
+                    and supplied["includeSnapshot"] is False):
+                return
         raise PermissionError("CDP_MCP_OPERATION_NOT_AUTHORIZED")
 
     def _start_loop(self) -> None:

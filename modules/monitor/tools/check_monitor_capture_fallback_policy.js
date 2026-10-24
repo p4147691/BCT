@@ -20,6 +20,11 @@ const compact = decodeURIComponent(ctx.draw({title:"YouTube - Chrome"}).split(",
 assert.match(compact, /<svg.*width="480".*height="270"/);
 assert.match(compact, /<rect x="8" y="8" width="214" height="52"/);
 assert.doesNotMatch(compact, /<rect x="18" y="18" width="444"/, "large fallback must be hidden by default");
+const cloaked = decodeURIComponent(ctx.draw({title:"N36 <검증> & Chrome",cloaked:2}).split(",",2)[1]);
+assert.match(cloaked, /<rect width="480" height="270"/, "off-desktop window must keep a visible full-window boundary");
+assert.match(cloaked, /N36 &lt;검증&gt; &amp; Chrome/, "off-desktop card must identify the exact escaped window title");
+assert.match(cloaked, /다른 데스크톱에서 열림/, "off-desktop card must explain why live pixels are absent");
+assert.doesNotMatch(cloaked, /Preview unavailable/, "off-desktop state must not look like a generic capture failure");
 ctx.bwmUiLayoutControl.read = () => ({captureFallback:{mode:"legacy"}});
 const legacy = decodeURIComponent(ctx.draw({title:"YouTube - Chrome"}).split(",",2)[1]);
 assert.match(legacy, /<rect x="18" y="18" width="444"/, "explicit rollback mode preserves legacy");

@@ -86,6 +86,7 @@ class CDPRegistrationTests(unittest.TestCase):
                       policy_path=policy)
             try:
                 self.assertIn("cdp_inspect", bct.operations.capabilities)
+                self.assertIn("cdp_reasoning", bct.operations.capabilities)
                 self.assertFalse(bct.cdp_connections.connected)
                 with self.assertRaisesRegex(RuntimeError, "NOT_CONFIGURED"):
                     bct.cdp_connections.request("tools/list")

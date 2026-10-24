@@ -274,6 +274,7 @@ def main() -> int:
         "delivery_continuation_recovery": {
             "enabled": True, "runs": 0,
         },
+        "reasoning_change_recovery": {"enabled": True, "runs": 0},
         "bottleneck_ack": bottleneck_ack.status(),
         "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
     }
@@ -358,6 +359,29 @@ def main() -> int:
                 state["delivery_continuation_recovery"] = {
                     "enabled": True,
                     "runs": int(state["delivery_continuation_recovery"].get("runs", 0)) + 1,
+                    "last_error": type(exc).__name__ + ":" + str(exc),
+                    "last_run_at": time.time(),
+                }
+            recovery_stop.wait(2.0)
+
+    def reasoning_change_recovery_loop() -> None:
+        recovery = bct.reasoning_change_recovery
+        while not recovery_stop.is_set():
+            try:
+                outcome = recovery.run_once(limit=4)
+                state["reasoning_change_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["reasoning_change_recovery"].get("runs", 0)) + 1,
+                    "last_outcome": outcome,
+                    "last_error": None,
+                    "last_run_at": time.time(),
+                }
+            except Exception as exc:
+                # A presentation-setting failure is isolated from relay and
+                # remains inspectable on its own durable request row.
+                state["reasoning_change_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["reasoning_change_recovery"].get("runs", 0)) + 1,
                     "last_error": type(exc).__name__ + ":" + str(exc),
                     "last_run_at": time.time(),
                 }
@@ -541,6 +565,11 @@ def main() -> int:
         name="bct-delivery-continuation-recovery", daemon=True,
     )
     delivery_continuation_thread.start()
+    reasoning_change_thread = threading.Thread(
+        target=reasoning_change_recovery_loop,
+        name="bct-reasoning-change-recovery", daemon=True,
+    )
+    reasoning_change_thread.start()
     chat_stream_watch_thread = threading.Thread(
         target=chat_stream_rcc_watch_loop,
         name="bct-chat-stream-rcc-watch", daemon=True,
@@ -574,6 +603,7 @@ def main() -> int:
         if bottleneck_thread is not None:
             bottleneck_thread.join(timeout=3.0)
         delivery_continuation_thread.join(timeout=3.0)
+        reasoning_change_thread.join(timeout=3.0)
         chat_stream_watch_thread.join(timeout=3.0)
         try:
             bct.cdp_connections.close()

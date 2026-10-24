@@ -52670,6 +52670,16 @@ function monitorShouldKeepExistingCapture(existingState, existingSource, nextSta
 function monitorWindowFallbackDataUri(item = null) {
   const policy = bwmUiLayoutControl?.read?.()?.captureFallback;
   if (policy?.mode !== "legacy") {
+    if (Number(item?.cloaked || 0) !== 0) {
+      // Windows on another virtual desktop are cloaked, so WGC cannot provide
+      // trustworthy pixels.  Keep their exact geometry visible instead of
+      // letting a nearly transparent placeholder look like an empty desktop.
+      const title = String(item?.title || "다른 데스크톱의 창").trim() || "다른 데스크톱의 창";
+      const label = title.length > 28 ? `${title.slice(0, 27)}…` : title;
+      const escapedLabel = label.replace(/[&<>]/g, character => ({"&":"&amp;","<":"&lt;",">":"&gt;"})[character]);
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270"><rect width="480" height="270" rx="8" fill="#121923" fill-opacity=".92" stroke="#6b7f98" stroke-width="3"/><rect width="480" height="42" rx="8" fill="#27364a"/><circle cx="22" cy="21" r="6" fill="#7f93aa"/><text x="40" y="27" fill="#eef4fb" font-family="Segoe UI,Malgun Gothic,sans-serif" font-size="17" font-weight="600">${escapedLabel}</text><rect x="24" y="72" width="54" height="54" rx="10" fill="#3b82f6"/><path d="M38 88h26m-26 10h26m-26 10h18" stroke="#fff" stroke-width="4"/><text x="96" y="94" fill="#dce7f3" font-family="Segoe UI,Malgun Gothic,sans-serif" font-size="18">다른 데스크톱에서 열림</text><text x="96" y="120" fill="#97a9bd" font-family="Segoe UI,Malgun Gothic,sans-serif" font-size="14">창 위치는 유지되며 화면 미리보기만 사용할 수 없음</text></svg>`;
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    }
     // Transparent canvas keeps exact HWND geometry and drag target.
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270"><rect x="8" y="8" width="214" height="52" rx="8" fill="#1b2431" fill-opacity=".94" stroke="#56687e"/><rect x="19" y="19" width="26" height="28" rx="4" fill="#3b82f6"/><path d="M26 28h13m-13 6h13m-13 6h10" stroke="#fff" stroke-width="2"/><text x="55" y="39" fill="#e8edf5" font-family="Segoe UI,sans-serif" font-size="17">Preview unavailable</text></svg>';
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);

@@ -36,6 +36,38 @@ therefore use a separately verified CDP/UI input path, exact conversation
 identity, idle-state checks, and post-change readback. Failure must be terminal
 for that change only and must not block relay work.
 
+## Reasoning mutation candidate and off-desktop thumbnail checkpoint — 2026-10-25
+
+- Isolated branch `fix/monitor-offdesktop-thumbnail-fallback-20261025` adds a
+  narrow `cdp_reasoning` request/status capability.  The durable row stores an
+  absolute target for one exact RCC instance and conversation UUID; it is not
+  a relay Delivery or resource Claim and cannot block messages.
+- RCC observation must prove the exact endpoint OPEN and idle before CDP input.
+  The CDP adapter accepts only the generated reasoning prepare/readback scripts
+  and ArrowLeft/ArrowRight/Escape.  Each attempt reads the actual current level
+  first, moves toward the absolute target, closes the menu, and verifies the
+  exact resulting label.
+- Busy targets remain pending without CDP input.  Transient connection/readback
+  failures use bounded exponential backoff and fail after five attempts;
+  selector/position/focus contract failures become terminal immediately.  A
+  failed setting request remains inspectable but never blocks relay or another
+  BCT capability.
+- Manual official-CDP acceptance changed N33 and N34 from High to Medium and
+  restored both to High.  N33 also traversed all five observed labels (Instant,
+  Medium, High, Extra High, Pro) and was restored.  No ChatGPT message was sent.
+- Cloaked windows on another virtual desktop now receive an opaque full-window
+  explanatory thumbnail instead of a nearly transparent generic placeholder.
+  Exact HWND geometry and drag behavior are unchanged.
+- Focused Python tests (14), Monitor fallback policy, Monitor structure and JS
+  syntax, Python compile, and `git diff --check` pass with `PYTHONUTF8=0`,
+  explicit UTF-8 stdout, and the worktree `src` first on `PYTHONPATH`.  The full
+  Python suite was also run once and passed 1,080 tests in 709.345 seconds; do
+  not repeat it interactively unless the final exact-head verification needs it.
+- Source integration, CI, Core deployment, Monitor publication/reload, and LIVE
+  invocation through the new BCT capability remain pending.  Existing Core,
+  RCC, Monitor, Chrome tabs, Windows language/Beta UTF-8 setting, and reboot
+  state were not changed at this checkpoint.
+
 ## Verification required before integration
 
 - Python focused and full suites with `PYTHONUTF8=0` and the worktree `src` at
