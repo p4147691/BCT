@@ -35,6 +35,18 @@ not copy pending sends or re-run an old browser operation.  After the legacy ext
 and the new exact instance passed state and preserved-tab acceptance, the steady-state Native Host
 contract was reduced to the BCT ID only.
 
+## BCT RCC 1.0.48 Manager reconciliation pending-proof candidate
+
+RC28 preserves `reconciled=true` after one exact Manager user turn has already
+promoted a return to `RETURNED`, even when the later Manager-answer readback is
+still pending or its old page execution record is absent. This closes the
+observed split where RCC had proven the return but Core retained
+`NEEDS_REVIEW`. It does not submit, click, or recreate the Manager message.
+
+- extension version: `1.0.48 Manager Reconciliation Pending Proof`
+- runtime build: `2026-10-24-rcc-manager-reconciliation-pending-v1`
+- candidate: `RCC_REBUILD_V2_RC28_MANAGER_RECONCILIATION_PENDING_PROOF`
+
 ## BCT RCC 1.0.47 Manager return effect reconciliation candidate
 
 RC27 removes a false `UNKNOWN` bottleneck observed during the live N33/N35
