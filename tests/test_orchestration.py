@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from bct import BCT
 from bct.core.models import (
@@ -17,6 +20,19 @@ RESULT_START = "[BCT_ORCHESTRATION_RESULT_V1]"
 RESULT_END = "[/BCT_ORCHESTRATION_RESULT_V1]"
 ASSIGNMENT_START = "[BCT_ORCHESTRATION_ASSIGNMENT_V1]"
 ASSIGNMENT_END = "[/BCT_ORCHESTRATION_ASSIGNMENT_V1]"
+
+
+class AdvancingClock:
+    """Advance bounded polling time without making timeout tests sleep."""
+
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def monotonic(self) -> float:
+        return self.value
+
+    def sleep(self, duration: float) -> None:
+        self.value += duration
 
 
 class FakeRelay:
@@ -255,6 +271,16 @@ class OrchestrationTests(unittest.TestCase):
             principal=self.owner, work_id="work", operation_id=operation_id,
             capability="orchestrate", arguments=arguments,
         )
+
+    def fast_timeout_clock(self):
+        clock = AdvancingClock()
+        isolated_time = SimpleNamespace(
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            time=time.time,
+            time_ns=time.time_ns,
+        )
+        return patch("bct.features.orchestration.time", isolated_time)
 
     def attachment(self, node_id):
         snapshot = self.bct.orchestration.snapshot(
@@ -1472,14 +1498,16 @@ class OrchestrationTests(unittest.TestCase):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
         self.relay.lose_send_response = True
-        unknown = self.call("lost-dispatch", {
-            "operation": "dispatch", "session_id": "session",
-            "manager_epoch": 1, "assignment_id": "lost-result",
-            "worker_node_id": "worker-b",
-            "attachment_id": worker["attachment_id"],
-            "instruction": "return a durable result despite response loss",
-            "acceptance": {"reconciled": True}, "timeout_s": 5,
-        })
+        clock_patch = self.fast_timeout_clock()
+        with clock_patch:
+            unknown = self.call("lost-dispatch", {
+                "operation": "dispatch", "session_id": "session",
+                "manager_epoch": 1, "assignment_id": "lost-result",
+                "worker_node_id": "worker-b",
+                "attachment_id": worker["attachment_id"],
+                "instruction": "return a durable result despite response loss",
+                "acceptance": {"reconciled": True}, "timeout_s": 5,
+            })
         self.assertEqual(Outcome.UNKNOWN, unknown.outcome)
         sends_before = len([
             call for call in self.relay.calls if call["command"] == "send"
@@ -1679,14 +1707,16 @@ class OrchestrationTests(unittest.TestCase):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
         self.relay.lose_send_response = True
-        unknown = self.call("cross-instance-unknown", {
-            "operation": "dispatch", "session_id": "session",
-            "manager_epoch": 1, "assignment_id": "cross-instance-first",
-            "worker_node_id": "worker-b",
-            "attachment_id": worker["attachment_id"],
-            "instruction": "leave an ambiguous external effect",
-            "acceptance": {"once": True}, "timeout_s": 5,
-        })
+        clock_patch = self.fast_timeout_clock()
+        with clock_patch:
+            unknown = self.call("cross-instance-unknown", {
+                "operation": "dispatch", "session_id": "session",
+                "manager_epoch": 1, "assignment_id": "cross-instance-first",
+                "worker_node_id": "worker-b",
+                "attachment_id": worker["attachment_id"],
+                "instruction": "leave an ambiguous external effect",
+                "acceptance": {"once": True}, "timeout_s": 5,
+            })
         self.assertEqual(Outcome.UNKNOWN, unknown.outcome)
         second = self.bct.orchestration.sync_attachment(
             work=self.bct.store.get_work("work"), session_id="session",
@@ -1833,14 +1863,16 @@ class OrchestrationTests(unittest.TestCase):
         worker = self.attachment("worker-b")
         self.relay.hide_results = True
         self.relay.lose_send_response = True
-        dispatched = self.call("untrusted-reconcile-original", {
-            "operation": "dispatch", "session_id": "session",
-            "manager_epoch": 1, "assignment_id": "untrusted-reconcile-task",
-            "worker_node_id": "worker-b",
-            "attachment_id": worker["attachment_id"],
-            "instruction": "persist a result for strict reconciliation",
-            "acceptance": {"strict": True}, "timeout_s": 5,
-        })
+        clock_patch = self.fast_timeout_clock()
+        with clock_patch:
+            dispatched = self.call("untrusted-reconcile-original", {
+                "operation": "dispatch", "session_id": "session",
+                "manager_epoch": 1, "assignment_id": "untrusted-reconcile-task",
+                "worker_node_id": "worker-b",
+                "attachment_id": worker["attachment_id"],
+                "instruction": "persist a result for strict reconciliation",
+                "acceptance": {"strict": True}, "timeout_s": 5,
+            })
         self.assertEqual(Outcome.UNKNOWN, dispatched.outcome)
         self.relay.hide_results = False
         self.relay.lose_send_response = False
@@ -2486,7 +2518,9 @@ class OrchestrationTests(unittest.TestCase):
         }
         self.relay.lose_send_response = True
         self.relay.hide_results = True
-        unknown = self.call("restart-late-dispatch", arguments)
+        clock_patch = self.fast_timeout_clock()
+        with clock_patch:
+            unknown = self.call("restart-late-dispatch", arguments)
         self.assertEqual(Outcome.UNKNOWN, unknown.outcome)
         sends_before = len([
             call for call in self.relay.calls if call["command"] == "send"
