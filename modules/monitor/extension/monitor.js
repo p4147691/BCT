@@ -43219,6 +43219,15 @@ let monitorBctWindowNodesCache = null;
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;
+let monitorBctNativePreviewToken = "";
+let monitorBctNativePreviewSequence = 0;
+
+function stopMonitorBctNativePreview() {
+  const token = monitorBctNativePreviewToken;
+  monitorBctNativePreviewToken = "";
+  if (token) void monitorNative({ type:"monitorDragPreviewStop", token }).catch(() => {});
+}
+
 let monitorBctNodeReorderPending = false;
 let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
@@ -43946,6 +43955,14 @@ function updateMonitorBctNodePointerDrag(event) {
     monitorBctDragGhost = createMonitorNodeDragGhost(drag.row, event);
     monitorBctDragGhost.classList.add("monitor-bct-node-drag-ghost");
     monitorBctDragGhost.textContent = `${drag.node.nodeLabel || "N?"}  ${drag.node.title || "ChatGPT"}`;
+    const previewToken = `${Date.now()}-${event.pointerId}-${++monitorBctNativePreviewSequence}`;
+    monitorBctNativePreviewToken = previewToken;
+    void monitorNative({
+      type:"monitorDragPreviewStart",
+      token:previewToken,
+      label:monitorBctDragGhost.textContent,
+      sourceHwnd:String(monitorDesktopState?.hostWindowHwnd || ""),
+    }).catch(() => {}); // An older installed Host keeps the DOM-only preview.
   }
   event.preventDefault();
   moveMonitorNodeDragGhost(monitorBctDragGhost, event.clientX, event.clientY);
@@ -43997,6 +44014,7 @@ function clearMonitorBctNodeDropFeedback() {
 }
 
 function finishMonitorBctNodeDrag() {
+  stopMonitorBctNativePreview();
   const suppressedKey = monitorBctSuppressedClickKey;
   monitorBctSuppressScopeClickUntil = Date.now() + 350;
   monitorBctDraggedNodeKey = "";
@@ -46548,6 +46566,13 @@ function ensureMonitorNativePort() {
 
     if (response?.event === true && response?.type === "windowMoveSizeEnd") { scheduleMonitorWindowLifecycleEvent(response); return; }
     if (response?.event === true && response?.type === "windowForegroundChanged") { handleMonitorForegroundChangedEvent(response); return; }
+    if (response?.event === true && response?.type === "monitorDragPreviewReleased") {
+      const drag = monitorBctPointerDrag;
+      if (drag?.active && response?.token === monitorBctNativePreviewToken) {
+        cancelMonitorBctNodePointerDrag({ pointerId:drag.pointerId });
+      }
+      return;
+    }
 
 
 
@@ -51703,7 +51728,10 @@ const monitorThumbnailService = Object.freeze({
   }
 });
 
-window.addEventListener("pagehide", () => monitorThumbnailService.disposeAll(), { once:true });
+window.addEventListener("pagehide", () => {
+  stopMonitorBctNativePreview();
+  monitorThumbnailService.disposeAll();
+}, { once:true });
 
 async function monitorGetWindowCapture(hwnd, profile = "thumb") {
   return monitorThumbnailService.requestSnapshot(hwnd, "desktop-frame", profile);
