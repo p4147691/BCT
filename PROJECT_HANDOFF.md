@@ -1945,3 +1945,35 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
 사용하지 않으며, desktop/RCC broad 자원은 기존 자동 current-state probe를 계속 요구한다.
 `PYTHONUTF8=0` 전체 4-shard 고유 시험 874건과 Python compile, `git diff --check`가 PASS했다.
 RCC 소스/reload, Chrome, Windows 국가·언어/Beta UTF-8 설정과 재부팅은 변경하지 않았다.
+
+## 23. N33 Manager Monitor 노드 드래그 경계 교정 및 LIVE 수락 — 2026-10-24
+
+- N33을 Manager, N34/N35를 Worker로 둔 실제 RCC Delivery에서 두 Worker가 독립적으로 같은
+  결함을 확인했다. drag preview와 pointerup 판정의 경계 계산 불일치, 문서 바깥 pointer 종료
+  누락, 취소 뒤 ghost/placeholder/class 잔존, 비동기 저장 실패 rollback이 더 최신 refresh를
+  덮을 수 있는 race였다. Browser Bridge는 전송 경로나 수락 근거로 사용하지 않았다.
+- 공통 edge resolver(X 22px/Y 10px), document capture move/up/cancel, blur 및
+  lostpointercapture cleanup, rerender 전 cancel, drag/save 중복 방지, 최신 cache를 덮지 않는
+  조건부 rollback을 적용했다. feature commit `98badac70a3d84b23af615fc7a31c8ed4151a643`,
+  최종 main `2f91b77310ec088ea0aff5a3317f686a85c4209a`다.
+- 경계 11건, async save race 3건, 기존 interaction, Monitor structure/syntax, BCT Monitor
+  Python 32건이 PASS했다. 전체 Monitor JS 25개 중 24개가 PASS했고 유일한 제외는 로컬 Native
+  executable 부재인 기존 환경 항목이다. exact main CI #40061488875는 SUCCESS다.
+- Core는 generation 215 / release `2f91b77310ec088ea0aff5a3317f686a85c4209a`로
+  OK/READY다. 운영 Monitor는 `2.0.30`, 배포 token/ACK
+  `1237da15228d464fa3932baa0f863460`, `monitor.js` SHA-256
+  `0981b2814570bad8b2091fc5196db030baddd770ba5c2979796252b3e133d188`로 LIVE다.
+- 격리된 실제 Chrome/Puppeteer mouse 시험 8/8과 운영 창의 실제 물리 pointer 시험을 모두
+  통과했다. N35를 노드 영역에서 멀리 벗어난 위치에 놓으면 preview/순서 변경 없이 원래
+  `N33-N35-N34` 위치로 복귀했고 ghost·drag class·freeze가 남지 않았다. N34를 왼쪽 가까운
+  경계에 놓으면 `N34-N33-N35`로 실제 이동·저장됐고, 오른쪽 가까운 경계로 다시 드래그해
+  원래 순서까지 복원했다.
+- reload 직후 보이던 빈 Monitor 창은 확장 reload 전환 중의 일시적 stale page였고 새 runtime
+  창이 `BCT Window Monitor · 2.0.30`으로 복구됨을 확인했다. 진단 중 Chrome이 표시한 원격
+  디버깅 동의는 허용하지 않고 취소했으며 최종 창에는 동의창·debug banner가 남지 않았다.
+  OS 국가/언어·Beta UTF-8 설정과 재부팅은 변경하지 않았고 테스트는 명시적 UTF-8 경계로
+  수행했다.
+- N34 결과는 RETURNED였다. N35의 Manager 반환 operation은
+  `RCC_DELIVERY_EFFECT_UNKNOWN`/NEEDS_REVIEW로 보존됐지만 N33 실제 사용자 턴과 전체 Worker
+  원문 도착을 UI에서 확인했으므로 재전송하지 않았다. 이 과거 종료 UNKNOWN은 이후 별도 LIVE
+  수락을 차단하지 않았다.
