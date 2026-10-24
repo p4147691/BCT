@@ -556,8 +556,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1094,
-        "sha256": "eb03c91d0fb5bfbdc27986834ed3ff17d6c9cc10594edefeeae05613b1550091"
+        "size": 1095,
+        "sha256": "419ba1608a918d96947a5b6d4730f82103a21bd273adb6b7f889c10a8d8da5dc"
       },
       {
         "path": "browser/read_adapter.js",
@@ -626,13 +626,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 18571,
-        "sha256": "4909cefa6d3b3d75526ad0bd87a693b9a3c55e1b6dd9061190f6c439fd534ac7"
+        "size": 21707,
+        "sha256": "13de4ca0763908fb012e259f6744b51798eb6970b0071f2e1fbd192a83321759"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 19373,
-        "sha256": "f5ad308c8b9f8144c0d6049cd92238cfcc3813015c27a08587627de968ceff2d"
+        "size": 19374,
+        "sha256": "f8e29c4e83b779764b2f3fc64014ce409e29c914080674d2b247c5a8875762bf"
       },
       {
         "path": "content/conversation_rename.js",
@@ -681,8 +681,8 @@
       },
       {
         "path": "domain/delivery_ledger_service.js",
-        "size": 42106,
-        "sha256": "cd9cc38c81c40fc52ac6c093a20d03b834260d4ad3c5bef2fdac0e3757ec0d64"
+        "size": 44594,
+        "sha256": "ee1a1196cd291618ab22dd4216dbfd97a7a1a3d9821555d485e799418ed194f9"
       },
       {
         "path": "domain/diagnostic_support.js",
@@ -736,8 +736,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1516,
-        "sha256": "605cf2b6ec0283dc4321756d620086a3ce41af739df80bc02f6dd4d2214f7ae2"
+        "size": 1517,
+        "sha256": "888294fbba28724ae06d58ef70ce83546b5443d906fbbab51c50e54e66f4607a"
       },
       {
         "path": "network/directory.js",
@@ -801,6 +801,6 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "b3f527fc42e03af4691f13b14b1174828820bfa5f7c3162dc232580173049372"
+    "aggregateSha256": "44bd45596ed2267d2bf777163a7d8344a88d74186b02fe5c26a1928da043ec92"
   }
 }
