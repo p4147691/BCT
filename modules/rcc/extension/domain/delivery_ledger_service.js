@@ -100,6 +100,12 @@ function publicDeliveryReceipt(receipt) {
   };
 }
 
+function managerResponseTextMatchesReceipt(receipt) {
+  const text = receipt?.managerResponseText;
+  return typeof text === 'string' && !!text && text.length <= 12000
+    && text.length === receipt.managerResponseLength;
+}
+
 function deliverySubmitPolicy(message) {
   const targetBusyPolicy = String(message.targetBusyPolicy || 'queue_until_idle');
   const composerWakeMode = String(message.composerWakeMode || 'trailing_space_once');
@@ -795,8 +801,49 @@ async function deliveryManagerStatus(message) {
       && /^[a-f0-9]{64}$/.test(String(receipt.managerResponseSha256 || ''))
       && Number.isInteger(receipt.managerResponseLength)
       && receipt.managerResponseLength > 0) {
+    if (managerResponseTextMatchesReceipt(receipt)
+        && await relaySha256(receipt.managerResponseText) === receipt.managerResponseSha256) {
+      return { ok: true, pending: false, reconciled,
+        ...publicDeliveryReceipt(receipt), managerResponseText: receipt.managerResponseText };
+    }
+    // RC30 and older terminal receipts kept only the response digest and
+    // length. Recover the exact reply from the one Manager user turn whose
+    // normalized submitted hash is already fenced by this Delivery. This is
+    // read-only and never recreates a page-session execution or submits text.
+    let managerTab;
+    try {
+      managerTab = singleDeliveryTab(await getChatTabs(), receipt.managerConversationKey);
+    } catch (error) {
+      return { ok: false, pending: false, reconciled, ...publicDeliveryReceipt(receipt),
+        error: String(error?.message || error).slice(0, 128) };
+    }
+    let proof;
+    try {
+      proof = await sendToChatTab(managerTab.id, {
+        type: 'relay:exactReplyProof', deliveryId: id,
+        conversationKey: receipt.managerConversationKey,
+        submittedSha256: receipt.managerReturnSubmittedSha256
+          || receipt.managerReturnSha256,
+        expectedResponseSha256: receipt.managerResponseSha256,
+        expectedResponseLength: receipt.managerResponseLength,
+      });
+    } catch (error) {
+      return { ok: false, pending: false, reconciled, ...publicDeliveryReceipt(receipt),
+        error: String(error?.message || error).slice(0, 128) };
+    }
+    if (proof?.ok !== true || proof.deliveryId !== id
+        || proof.conversationKey !== receipt.managerConversationKey
+        || proof.responseSha256 !== receipt.managerResponseSha256
+        || proof.responseLength !== receipt.managerResponseLength
+        || typeof proof.responseText !== 'string' || !proof.responseText) {
+      return { ok: false, pending: false, reconciled, ...publicDeliveryReceipt(receipt),
+        error: String(proof?.error || 'DELIVERY_MANAGER_REPLY_PROOF_INVALID').slice(0, 128) };
+    }
+    receipt = await writeDeliveryLedgerMirror(id, {
+      ...receipt, managerResponseText: proof.responseText, updatedAt: Date.now(),
+    });
     return { ok: true, pending: false, reconciled,
-      ...publicDeliveryReceipt(receipt) };
+      ...publicDeliveryReceipt(receipt), managerResponseText: proof.responseText };
   }
   let managerTab;
   try {
@@ -829,8 +876,9 @@ async function deliveryManagerStatus(message) {
     return { ok: false, reconciled, ...publicDeliveryReceipt(receipt),
       error: 'DELIVERY_MANAGER_REPLY_CHANGED' };
   }
-  const observed = { ...receipt, managerResponseSha256: hash,
-    managerResponseLength: read.responseText.length, updatedAt: Date.now() };
+  const observed = { ...receipt, managerResponseText: read.responseText,
+    managerResponseSha256: hash, managerResponseLength: read.responseText.length,
+    updatedAt: Date.now() };
   await writeDeliveryLedgerMirror(id, observed);
   receipt = await retireCapturedManagerExecution(observed);
   return { ok: true, reconciled,

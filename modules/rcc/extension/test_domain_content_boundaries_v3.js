@@ -86,6 +86,7 @@ assert(executor.includes('focusEditorAtEnd(liveEditor)'));
 assert(conversationRename.includes('async function renameConversationUi('));
 assert(router.includes("message.type === 'relay:simpleExecute'"));
 assert(router.includes("message.type === 'relay:simpleReadReply'"));
+assert(router.includes("message.type === 'relay:exactReplyProof'"));
 assert(router.includes("message.type === 'relay:newChatExecute'"));
 assert(router.includes("message.type === 'relay:newChatStatus'"));
 assert(router.includes("message.type === 'relay:deliveryReadiness'"));

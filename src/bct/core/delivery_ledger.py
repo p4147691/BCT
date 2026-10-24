@@ -20,6 +20,8 @@ _OBSERVATION_KEYS = frozenset({
     "manager_tab_id", "manager_window_id", "host_state", "error_code",
     "manager_return_sha256", "manager_return_length", "settings_sha256",
     "continuation_mode", "manager_return_reconciled",
+    "manager_response_sha256", "manager_response_length",
+    "manager_response_text",
 })
 
 

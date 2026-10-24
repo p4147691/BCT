@@ -99,6 +99,64 @@ if (message.type === 'relay:exactUserTurnProof') {
   }));
   return true;
 }
+// Recover one already completed Manager reply after its page-session route was
+// deliberately retired. Identity comes from the exact submitted user-turn
+// hash plus the previously captured reply hash/length. This is read-only.
+if (message.type === 'relay:exactReplyProof') {
+  Promise.resolve().then(async () => {
+    const id = String(message.deliveryId || '');
+    const key = String(message.conversationKey || '').trim().toLowerCase();
+    const submittedSha256 = String(message.submittedSha256 || '').trim().toLowerCase();
+    const expectedResponseSha256 = String(
+      message.expectedResponseSha256 || '').trim().toLowerCase();
+    const expectedResponseLength = Number(message.expectedResponseLength);
+    if (!id || !key || currentConversationKey() !== key
+        || !/^[a-f0-9]{64}$/.test(submittedSha256)
+        || !/^[a-f0-9]{64}$/.test(expectedResponseSha256)
+        || !Number.isInteger(expectedResponseLength)
+        || expectedResponseLength <= 0 || expectedResponseLength > 12000) {
+      return { ok: false, error: 'RELAY_EXACT_REPLY_ARGUMENT_INVALID' };
+    }
+    const matches = await exactUserTurnsBySubmittedSha256(submittedSha256);
+    if (matches.length !== 1) {
+      return { ok: false, error: matches.length > 1
+        ? 'RELAY_EXACT_REPLY_USER_TURN_AMBIGUOUS' : 'RELAY_EXACT_REPLY_USER_TURN_NOT_FOUND' };
+    }
+    const turn = matches[0];
+    if (turnGenerationInterrupted(turn)) {
+      return { ok: false, error: 'RELAY_EXACT_REPLY_INTERRUPTED' };
+    }
+    const completeState = turnCompletionState(turn) === 'complete';
+    const completionUiReady = !!turn.querySelector(
+      'button[data-testid="copy-turn-action-button"],button[data-testid*="copy"],button[aria-label="Copy"],button[aria-label="복사"],button[aria-label="복사하기"]'
+    );
+    if (!(completeState && completionUiReady) && turnIsGenerating(turn)) {
+      return { ok: false, error: 'RELAY_EXACT_REPLY_STILL_GENERATING' };
+    }
+    const selected = RelayCore.selectAssistantCandidate(assistantCandidatesForTurn(turn));
+    if (!selected.ok || typeof selected.candidate?.text !== 'string'
+        || !selected.candidate.text || selected.candidate.text.length > 12000) {
+      return { ok: false, error: 'RELAY_EXACT_REPLY_DOM_UNKNOWN' };
+    }
+    if (!completeState && !completionUiReady) {
+      return { ok: false, error: 'RELAY_EXACT_REPLY_FINAL_STATE_UNKNOWN' };
+    }
+    const responseText = selected.candidate.text;
+    const responseSha256 = await newChatTextSha256(responseText);
+    if (responseSha256 !== expectedResponseSha256
+        || responseText.length !== expectedResponseLength) {
+      return { ok: false, error: 'RELAY_EXACT_REPLY_IDENTITY_MISMATCH',
+        responseSha256, responseLength: responseText.length };
+    }
+    return { ok: true, deliveryId: id, conversationKey: key,
+      submittedSha256, responseText, responseSha256,
+      responseLength: responseText.length, turnKey: turnIdentity(turn) };
+  }).then(sendResponse).catch((error) => sendResponse({
+    ok: false, error: String(error?.message || error
+      || 'RELAY_EXACT_REPLY_PROOF_FAILED').slice(0, 128)
+  }));
+  return true;
+}
 if (message.type === 'relay:activityProbe') {
     sampleJsHeapTelemetry();
 
