@@ -1850,3 +1850,29 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
   APPLIED, proof `RELAY_DELIVERY_NOT_FOUND_BEFORE_RCC_DISPATCH`다. 원래 UNKNOWN 영수증은
   보존되고 해당 Claim만 해제됐다. RCC는 같은 RC25 build/session과 8개 탭으로 OPEN이며 별도
   reload나 메시지 재전송은 없었다. OS UTF-8/국가·언어 설정과 재부팅도 변경하지 않았다.
+
+## 20. N35·N33·N34 설정 조정과 3회 실제 협업 왕복 — 2026-10-24
+
+- N35 Manager와 N33/N34 Worker의 테스트 scope에서 최초 `-01` 두 건은
+  `RELAY_DRAFT_CLEAR_UNPROVEN`/`NEEDS_REVIEW`로 보존하고 같은 Delivery를 재전송하지 않았다.
+  exact-SHA BCT write CAS로 N35 scope의 `send_button_wait_ms`만 1,000→8,000ms로 바꿨으며
+  설정 SHA는 `14312ac6e381e331693cd1c64902e1e6ad3b0a228f2e5609c18f0d54497d7688`이다.
+  소스/main/CI/Core 배포/RCC reload와 OS UTF-8 설정 변경은 없었다.
+- N33 1차 `n35-to-n33-checklist-20261024-02`(834자/SHA
+  `7ce504aea7a4d3c74b80f75f47433f3ea3de555d987305b13f47c6651b9d8c87`), N34 1차
+  `n35-to-n34-checklist-20261024-02`(1,678자/SHA
+  `2dec4304a6683b78c5eec94773b0522a17de2db3b0a72b70db73f94fc8eacfc3`), N33 후속
+  `n35-to-n33-followup-checklist-20261024-01`(2,761자/SHA
+  `2878c0f4718b86675b04e44a78c84c8800b719110a7402b8c5adbd20c2ad8283`)이 모두 실제
+  사용자 턴·응답 캡처·N35 전체 원문 반환을 거쳐 `RETURNED`가 됐다. 최종 N35 응답 SHA는
+  `f65c718787ba526e1accd6600b3ead695399d18fed3d6aedbace2c62acf526e2`다.
+- N35가 두 Worker 결과를 비교해 N33에 별도 후속 통합 업무를 실제 제출하고 회수했으므로 업무
+  분배→결과 회수→비교→후속 재배정의 3회 물리 왕복은 PASS다. 다만 같은 N35 생성 턴 안에서
+  `manager.return.delivery`를 호출하면 `Target ChatGPT tab is already generating` /
+  `RCC_DELIVERY_RESULT_INVALID`로 거절된다. N35 idle 뒤 감독자가 같은 캡처 결과의 return만 새
+  Operation으로 실행하면 정상 반환됐다. Worker Delivery 중복 제출은 없었지만 return Operation은
+  busy 실패 뒤 재실행했다. Manager turn 종료 후 자동 wake/idle 반환 스케줄링과 Manager 자체
+  설정 write 권한은 아직 미완료이므로 완전 무인 연속 실행으로 판정하지 않는다.
+- CLI 한글은 해당 Python 프로세스에만 `PYTHONUTF8=1`을 적용해 정상 출력했다. Windows
+  국가/언어·Beta UTF-8 설정과 재부팅은 건드리지 않았다. busy→idle 스트레스 큐, Claim/Lease
+  충돌, 정밀 바이트 원문 대조, 사용자 포커스 전후 비교는 별도 수락시험으로 남아 있다.
