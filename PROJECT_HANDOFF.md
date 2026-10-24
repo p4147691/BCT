@@ -1876,3 +1876,28 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
 - CLI 한글은 해당 Python 프로세스에만 `PYTHONUTF8=1`을 적용해 정상 출력했다. Windows
   국가/언어·Beta UTF-8 설정과 재부팅은 건드리지 않았다. busy→idle 스트레스 큐, Claim/Lease
   충돌, 정밀 바이트 원문 대조, 사용자 포커스 전후 비교는 별도 수락시험으로 남아 있다.
+
+## 21. RC26 Manager 반환 idle 대기열 후보 — 2026-10-24
+
+- N35 협업에서 확인한 반복 결함은 Manager가 자기 응답을 생성 중인 같은 턴 안에서 Worker
+  결과 반환을 호출해 `Target ChatGPT tab is already generating`으로 거절되는 것이다. Worker
+  Delivery나 반환 원문 자체의 손실은 아니며, Manager가 idle이 된 뒤 동일 캡처 결과를 새 반환
+  Operation으로 제출하면 성공했다.
+- PR #318은 새 전송기를 만들지 않고 기존 RCC Delivery Ledger의 busy→idle 큐를 Manager 반환에
+  재사용한다. Manager가 generating이면 정확한 반환 원문을 입력창 밖 Ledger에 보존하고 pending
+  상태로 수락한다. idle endpoint activity에서는 이전 Manager 실행의 결과를 먼저 캡처·retire한
+  뒤 FIFO 첫 반환만 한 번 재개한다. Worker Delivery와 동일하게 UNKNOWN 자동 재제출은 하지
+  않는다.
+- 후보는 `RCC_REBUILD_V2_RC26_MANAGER_RETURN_IDLE_QUEUE`, 확장
+  `1.0.46 Manager Return Idle Queue`, build
+  `2026-10-24-rcc-manager-return-idle-queue-v1`, aggregate
+  `45bf2f0cb8389936fd6033d2258f88bd06e12b1c2f177640dd396af236b6b415`다. 기능 commit은
+  `c54466c`, 현재 PR head는 `eba72cd`다.
+- 로컬 검증은 관련 Python 58건, RCC Node 37파일, CI core shard 2의 261건, release/source
+  baseline verifier, Python compile, JS syntax와 `git diff --check`가 PASS했다. 최초 PR CI
+  #40048308693의 core shard 2 실패는 이번 변경과 무관한 기존 main의 stale verification test를
+  격리 main worktree에서 동일 재현했다. 앞선 terminal UNKNOWN claim 은퇴 계약에 맞게 테스트를
+  수정했고 원래 UNKNOWN 영수증 보존과 다음 검증 실행을 함께 확인한다.
+- PR CI의 최신 재실행은 GitHub-hosted runner checkout 정체로 아직 미확정이다. 따라서 RC26은
+  아직 main/Core/RCC LIVE가 아니며 운영 확장 reload와 무인 busy→idle Manager 반환 수락시험도
+  수행하지 않았다. OS UTF-8/국가·언어 설정과 재부팅은 변경하지 않는다.

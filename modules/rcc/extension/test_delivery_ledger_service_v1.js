@@ -110,6 +110,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   const returnedAgain = await context.deliveryReturn({ deliveryId: 'delivery-001' });
   assert.equal(returnedAgain.replayed, true);
   assert.equal(sends.length, 3);
+
   const manager = await context.deliveryManagerStatus({ deliveryId: 'delivery-001' });
   assert.equal(manager.state, 'RETURNED');
   assert.equal(manager.managerResponseText, 'manager next');
@@ -381,6 +382,33 @@ vm.runInContext(fs.readFileSync(__dirname + '/domain/delivery_ledger_service.js'
   assert.equal(recoveredRetired.ok, true);
   assert.equal(recoveredRetired.executionAbsent, true);
   assert.equal(recoveredRetired.responseSha256, recoveredResponseSha);
+
+  // A Manager that is still generating keeps the exact return outside the
+  // composer and resumes it once after the endpoint reports idle.
+  activeRelayIds.delete(10);
+  targetGenerating = false;
+  const queuedReturnIdentity = { ...identity, deliveryId: 'delivery-return-queued' };
+  await context.deliveryStart(queuedReturnIdentity);
+  await context.deliveryStatus({ deliveryId: 'delivery-return-queued' });
+  targetGenerating = true;
+  const beforeQueuedReturn = sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length;
+  const queuedReturn = await context.deliveryReturn({ deliveryId: 'delivery-return-queued' });
+  assert.equal(queuedReturn.ok, true);
+  assert.equal(queuedReturn.state, 'REPLY_CAPTURED');
+  assert.equal(queuedReturn.pending, true);
+  assert.equal(queuedReturn.queued, true);
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-return-queued'].managerReturnQueued, true);
+  assert.equal(sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length, beforeQueuedReturn);
+  targetGenerating = false;
+  const resumedReturn = await context.resumeWaitingDeliveriesForEndpoint({
+    conversationKey: identity.managerConversationKey, generating: false, presence: 'OPEN',
+  });
+  assert.equal(resumedReturn[0].state, 'RETURNED');
+  assert.equal(storage.deliveryLedgerMirrorV1['delivery-return-queued'].managerReturnQueued, false);
+  assert.equal(sends.filter(
+    item => item.message.type === 'relay:simpleExecute').length, beforeQueuedReturn + 1);
 
   // If generation begins after the background readiness probe but before the
   // content activation boundary, the content guard returns to the queue.

@@ -112,6 +112,40 @@ class DeliveryFeatureTests(unittest.TestCase):
             call["extra"]["deliveryId"] == "delivery-001" for call in self.host.calls
         ))
 
+    def test_busy_manager_return_is_queued_without_false_failure(self) -> None:
+        self.execute({
+            **self.base, "command": "delivery-start",
+            "manager_conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "worker_conversation_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            "text": "return after manager idle",
+        }, "busy-return-start")
+        self.execute({**self.base, "command": "delivery-status"}, "busy-return-status")
+        original = self.host.request
+
+        def queued(**kwargs):
+            if kwargs["command"] == "delivery-return":
+                return {
+                    "ok": True, "pending": True, "queued": True,
+                    "deliveryId": "delivery-001", "state": "REPLY_CAPTURED",
+                    "responseSha256": hashlib.sha256(b"reply").hexdigest(),
+                    "responseLength": 5,
+                    "managerReturnSha256": "a" * 64,
+                    "managerReturnLength": 123,
+                    "error": "",
+                }
+            return original(**kwargs)
+
+        self.host.request = queued
+        result = self.execute({**self.base, "command": "delivery-return"},
+                              "busy-return-queued")
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("REPLY_CAPTURED", result.evidence["delivery_state"])
+        self.assertTrue(result.evidence["pending"])
+        self.assertTrue(result.evidence["queued"])
+        self.assertEqual("REPLY_CAPTURED", self.feature.delivery_ledger.get_for_work(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+        )["state"])
+
     def test_manager_reply_is_read_only_and_bound_to_returned_id(self) -> None:
         self.execute({
             **self.base, "command": "delivery-start",

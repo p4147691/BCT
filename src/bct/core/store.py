@@ -24,6 +24,19 @@ _CLAIM_UNKNOWN_STAGE = {
 }
 
 
+def _claim_requires_explicit_reconciliation(resource: str) -> bool:
+    """Return whether a terminal claim still fences a possible external effect."""
+    return (
+        resource == "desktop-control:interactive-session"
+        or resource.startswith((
+            "rcc-instance:",
+            "deployment:",
+            "service:",
+            "orchestration-",
+        ))
+    )
+
+
 def _claim_unknown_detail(error: str | None, outcome: str | None,
                           capability: str | None) -> dict[str, str | None]:
     if outcome != "UNKNOWN":
@@ -769,8 +782,7 @@ class Store:
             retires_on_next_reservation = (
                 state == "FINISHED"
                 and row["executor_pid"] is None
-                and resource_key != "desktop-control:interactive-session"
-                and not resource_key.startswith("rcc-instance:")
+                and not _claim_requires_explicit_reconciliation(resource_key)
             )
             output.append({
                 "resource_key": resource_key,
@@ -934,10 +946,10 @@ class Store:
         This CAS applies only to the exact resource requested by the next
         operation or handoff; RUNNING and other active claims never change.
         """
-        if resource == "desktop-control:interactive-session" or resource.startswith("rcc-instance:"):
-            # Desktop-Agent Lease and in-flight RCC submissions have their own
-            # exact live-state proof and retirement paths. FINISHED does not
-            # establish that a remote RCC effect has completed.
+        if _claim_requires_explicit_reconciliation(resource):
+            # Desktop, RCC, deployment/service and orchestration mutations have
+            # dedicated live-state or receipt reconciliation. FINISHED alone
+            # does not prove that their external effect is absent or complete.
             return False
         row = db.execute(
             "SELECT c.operation_id,c.work_id,c.assignment_epoch,o.state,"

@@ -93,9 +93,9 @@ function publicDeliveryReceipt(receipt) {
     workerWindowId: Number.isInteger(receipt.workerWindowId) ? receipt.workerWindowId : null,
     managerTabId: Number.isInteger(receipt.managerTabId) ? receipt.managerTabId : null,
     managerWindowId: Number.isInteger(receipt.managerWindowId) ? receipt.managerWindowId : null,
-    queued: receipt.state === 'WAITING_TARGET',
-    waitingReason: String(receipt.waitingReason || ''),
-    queuedAt: Number(receipt.queuedAt || 0) || null,
+    queued: receipt.state === 'WAITING_TARGET' || receipt.managerReturnQueued === true,
+    waitingReason: String(receipt.managerReturnWaitingReason || receipt.waitingReason || ''),
+    queuedAt: Number(receipt.managerReturnQueuedAt || receipt.queuedAt || 0) || null,
     error: String(receipt.error || ''),
   };
 }
@@ -118,11 +118,15 @@ function deliverySubmitPolicy(message) {
 }
 
 async function inspectDeliveryReadiness(tab, receipt) {
+  return inspectConversationReadiness(tab, receipt, receipt.workerConversationKey);
+}
+
+async function inspectConversationReadiness(tab, receipt, conversationKey) {
   const value = await sendToChatTab(tab.id, {
     type: 'relay:deliveryReadiness',
-    conversationKey: receipt.workerConversationKey,
+    conversationKey,
   });
-  if (value?.ok !== true || value.conversationKey !== receipt.workerConversationKey) {
+  if (value?.ok !== true || value.conversationKey !== conversationKey) {
     return { ready: false, terminal: true, reason: 'DELIVERY_TARGET_IDENTITY_MISMATCH' };
   }
   if (value.generating === true) {
@@ -224,7 +228,27 @@ async function resumeWaitingDeliveriesForEndpoint(endpoint) {
   if (!endpoint || endpoint.generating === true || endpoint.presence === 'OFFLINE') return [];
   const conversationKey = String(endpoint.conversationKey || '').trim().toLowerCase();
   if (!conversationKey) return [];
-  const ledger = await readDeliveryLedgerMirror();
+  let ledger = await readDeliveryLedgerMirror();
+  // A Manager reply created by a prior return owns the page-session relay
+  // marker until its completed response is captured and retired.  Do this
+  // before resuming the next queued return so one Manager turn cannot block
+  // the next forever merely because nobody polled after it became idle.
+  const returned = Object.values(ledger)
+    .filter((item) => item?.state === 'RETURNED'
+      && item.managerConversationKey === conversationKey
+      && item.managerExecutionRetired !== true)
+    .sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0));
+  for (const item of returned) await deliveryManagerStatus({ deliveryId: item.deliveryId });
+  ledger = await readDeliveryLedgerMirror();
+  const waitingReturns = Object.values(ledger)
+    .filter((item) => item?.state === 'REPLY_CAPTURED'
+      && item.managerConversationKey === conversationKey
+      && item.managerReturnQueued === true)
+    .sort((a, b) => Number(a.managerReturnQueuedAt || a.updatedAt || 0)
+      - Number(b.managerReturnQueuedAt || b.updatedAt || 0));
+  if (waitingReturns.length) {
+    return [await resumeQueuedManagerReturn(waitingReturns[0].deliveryId)];
+  }
   const waiting = Object.values(ledger)
     .filter((item) => item?.state === 'WAITING_TARGET'
       && item.workerConversationKey === conversationKey)
@@ -551,40 +575,101 @@ async function deliveryReturn(message) {
     managerReturnSubmittedSha256: await deliverySubmittedSha256(returnText),
     managerReturnLength: returnText.length,
     managerReturnSettingsSha256: String(message.managerReturnSettingsSha256 || ''),
+    managerReturnText: returnText,
     updatedAt: Date.now() };
   await writeDeliveryLedgerMirror(id, intent);
+  return attemptManagerReturn(intent, managerTab);
+}
+
+async function waitOrRejectManagerReturn(receipt, reason) {
+  if (receipt.targetBusyPolicy === 'reject') {
+    return writeDeliveryLedgerMirror(receipt.deliveryId, {
+      ...receipt, managerReturnQueued: false, managerReturnWaitingReason: '',
+      error: reason, updatedAt: Date.now(),
+    });
+  }
+  return writeDeliveryLedgerMirror(receipt.deliveryId, {
+    ...receipt, managerReturnQueued: true,
+    managerReturnQueuedAt: Number(receipt.managerReturnQueuedAt || 0) || Date.now(),
+    managerReturnWaitingReason: reason, error: '', updatedAt: Date.now(),
+  });
+}
+
+async function attemptManagerReturn(receipt, managerTab) {
+  let readiness;
+  try {
+    readiness = await inspectConversationReadiness(
+      managerTab, receipt, receipt.managerConversationKey);
+  } catch (error) {
+    const queued = await waitOrRejectManagerReturn(receipt,
+      'TARGET_READINESS_UNAVAILABLE:' + String(error?.message || error || 'unknown').slice(0, 80));
+    return { ok: queued.managerReturnQueued === true, pending: queued.managerReturnQueued === true,
+      ...publicDeliveryReceipt(queued) };
+  }
+  if (!readiness.ready) {
+    const queued = await waitOrRejectManagerReturn(receipt, readiness.reason);
+    return { ok: queued.managerReturnQueued === true, pending: queued.managerReturnQueued === true,
+      ...publicDeliveryReceipt(queued) };
+  }
   let ack;
   try {
     ack = await sendToChatTab(managerTab.id, {
-      type: 'relay:simpleExecute', relayId: id,
-      conversationKey: receipt.managerConversationKey, text: returnText,
+      type: 'relay:simpleExecute', relayId: receipt.deliveryId,
+      conversationKey: receipt.managerConversationKey, text: receipt.managerReturnText,
       composerWakeMode: receipt.composerWakeMode,
       sendButtonWaitMs: receipt.sendButtonWaitMs,
     });
   } catch (error) {
-    const unresolved = { ...intent, state: 'NEEDS_REVIEW', updatedAt: Date.now(),
+    const unresolved = { ...receipt, state: 'NEEDS_REVIEW', updatedAt: Date.now(),
+      managerReturnQueued: false, managerReturnWaitingReason: '',
       error: String(error?.message || error || 'DELIVERY_RETURN_UNKNOWN').slice(0, 128) };
-    await writeDeliveryLedgerMirror(id, unresolved);
+    await writeDeliveryLedgerMirror(receipt.deliveryId, unresolved);
     return { ok: false, ...publicDeliveryReceipt(unresolved) };
   }
   if (ack?.ok === true && ack.submitted === true
       && ack.conversationKey === receipt.managerConversationKey) {
-    const returned = { ...intent, state: 'RETURNED',
+    const returned = { ...receipt, state: 'RETURNED',
       managerTabId: managerTab.id, managerWindowId: managerTab.windowId,
+      managerReturnQueued: false, managerReturnWaitingReason: '', managerReturnText: '',
       managerBeforeAssistantCount: Number.isInteger(ack.beforeAssistantCount)
         ? ack.beforeAssistantCount : null,
       updatedAt: Date.now() };
-    await writeDeliveryLedgerMirror(id, returned);
+    await writeDeliveryLedgerMirror(receipt.deliveryId, returned);
     return { ok: true, ...publicDeliveryReceipt(returned) };
   }
   // An explicit pre-submit rejection leaves the captured reply returnable by
   // a later operation with the same delivery id.  It does not fail the worker
   // turn and does not authorize a new delivery id.
+  const error = String(ack?.error || 'DELIVERY_RETURN_ACK_INVALID').slice(0, 128);
+  if (ack?.effectState === 'NOT_APPLIED' && DELIVERY_WAITABLE_ERRORS.has(error)) {
+    const queued = await waitOrRejectManagerReturn(receipt, error);
+    return { ok: queued.managerReturnQueued === true, pending: queued.managerReturnQueued === true,
+      ...publicDeliveryReceipt(queued) };
+  }
   const state = ack?.effectState === 'NOT_APPLIED' ? 'REPLY_CAPTURED' : 'NEEDS_REVIEW';
-  const unresolved = { ...intent, state, updatedAt: Date.now(),
-    error: String(ack?.error || 'DELIVERY_RETURN_ACK_INVALID').slice(0, 128) };
-  await writeDeliveryLedgerMirror(id, unresolved);
+  const unresolved = { ...receipt, state, updatedAt: Date.now(),
+    managerReturnQueued: false, managerReturnWaitingReason: '', error };
+  await writeDeliveryLedgerMirror(receipt.deliveryId, unresolved);
   return { ok: false, ...publicDeliveryReceipt(unresolved) };
+}
+
+async function resumeQueuedManagerReturn(deliveryIdValue) {
+  const id = deliveryId(deliveryIdValue);
+  if (deliveryResumeLocks.has(id)) return deliveryResumeLocks.get(id);
+  const operation = (async () => {
+    const ledger = await readDeliveryLedgerMirror();
+    const receipt = ledger[id];
+    if (!receipt || receipt.state !== 'REPLY_CAPTURED'
+        || receipt.managerReturnQueued !== true || !receipt.managerReturnText) {
+      return receipt || null;
+    }
+    let managerTab;
+    try { managerTab = singleDeliveryTab(await getChatTabs(), receipt.managerConversationKey); }
+    catch (_) { return waitOrRejectManagerReturn(receipt, 'TARGET_TAB_NOT_UNIQUELY_OPEN'); }
+    return attemptManagerReturn(receipt, managerTab);
+  })().finally(() => deliveryResumeLocks.delete(id));
+  deliveryResumeLocks.set(id, operation);
+  return operation;
 }
 
 
