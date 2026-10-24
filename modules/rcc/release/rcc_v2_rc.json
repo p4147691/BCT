@@ -112,8 +112,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 33645,
-        "sha256": "b5a708bbea6833fbcf83a1983cac432ed02628f6e5888fe06aeade32979effb8"
+        "size": 37275,
+        "sha256": "f404c6e8727994b3186eb5c968eadc79c54c7d58472f7890967a4522836d1e07"
       },
       {
         "path": "core/conversation.js",
@@ -162,8 +162,8 @@
       },
       {
         "path": "domain/new_chat_service.js",
-        "size": 12381,
-        "sha256": "6421f574ad7b79d352016d922e02a2bf37a9a28ac395a98f09b73f43e279e1f8"
+        "size": 13400,
+        "sha256": "0cb8eb4d9a8b3fdc3c9e24e5a53d1ac78cc304da29d8efe054bc6b23a6142b91"
       },
       {
         "path": "domain/orchestration_relay_service.js",
@@ -267,7 +267,7 @@
       }
     ],
     "fileCount": 52,
-    "aggregateSha256": "b286f253fa3411380416d5a991504d8f3b04bb437969458ee65674b68e6eb885"
+    "aggregateSha256": "41328b211a464b99705319757b075bbc38ea33d73198d8f1b82a37ee4e5ac7e3"
   },
   "activeLoaderGraph": {
     "background": [

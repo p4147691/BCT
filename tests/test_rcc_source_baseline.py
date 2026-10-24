@@ -228,6 +228,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_legacy_command_policy_v6.js", "legacy command policy v6: PASS"),
             ("test_conversation_rename_service_v1.js", "conversation rename service v1: PASS"),
             ("test_new_chat_service_v1.js", "rcc new chat service v1: PASS"),
+            ("test_chat_surface_gate_v1.js", "rcc chat surface gate v1: PASS"),
             ("test_architecture_boundaries_v35.js", "rcc architecture boundaries v3.5: PASS"),
             ("test_platform_boundaries_v2.js", "rcc platform boundaries v2: PASS"),
             ("test_domain_content_boundaries_v3.js", "rcc domain/content boundaries v3: PASS"),
