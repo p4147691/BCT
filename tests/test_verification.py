@@ -72,7 +72,7 @@ class VerificationTests(unittest.TestCase):
                 self.call(principal=replace(self.principal, capabilities=frozenset({"verify"})))
             execute.assert_not_called()
 
-    def test_fail_fast_and_unknown_claims_preserved(self):
+    def test_fail_fast_preserves_unknown_receipt_without_blocking_successor(self):
         reader = self.bct.operations._features["read"]
         tester = self.bct.operations._features["test"]
         with patch.object(reader, "execute", return_value=FeatureResult(Outcome.UNKNOWN, {"code": "lost"}, release_claims=False)), patch.object(tester, "execute") as execute:
@@ -82,8 +82,12 @@ class VerificationTests(unittest.TestCase):
         journal = self.bct.store.get_operation_steps(operation_id="verify-1")
         self.assertEqual("UNKNOWN", journal[0]["outcome"])
         self.assertEqual("SKIPPED", journal[1]["state"])
-        with self.assertRaises(ConflictError):
-            self.call(operation="cannot-bypass")
+        successor = self.call(operation="cannot-bypass")
+        self.assertEqual(Outcome.APPLIED, successor.outcome)
+        original = self.bct.store.get_operation_for(
+            operation_id="verify-1", work_id="work", principal_id="owner",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
 
     def test_test_failure_stops_later_steps(self):
         with patch.object(self.bct.operations._features["test"], "execute", return_value=FeatureResult(Outcome.APPLIED, {"status": "FAIL"})) as execute:
