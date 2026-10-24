@@ -98,6 +98,24 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual("FAILED", journal[0]["outcome"])
         self.assertEqual("SKIPPED", journal[1]["state"])
 
+    def test_unexpected_verification_error_is_failed_not_unknown(self):
+        reader = self.bct.operations._features["read"]
+        tester = self.bct.operations._features["test"]
+        with patch.object(
+            reader, "execute", side_effect=RuntimeError("local reader defect")
+        ), patch.object(tester, "execute") as execute:
+            result = self.call(operation="verification-contract-failure")
+        self.assertEqual(Outcome.FAILED, result.outcome)
+        self.assertEqual(
+            "VERIFY_STEP_CONTRACT_FAILURE",
+            result.evidence["steps"][0]["evidence"]["code"],
+        )
+        execute.assert_not_called()
+        self.assertFalse(any(
+            item["operation_id"] == "verification-contract-failure"
+            for item in self.bct.store.claim_diagnostics()
+        ))
+
     def test_abrupt_worker_loss_leaves_exact_checkpoint_without_replay(self):
         steps = [self.steps[0], self.steps[1], {**self.steps[0], "id": "later"}]
         with patch.object(self.bct.operations._features["test"], "execute",

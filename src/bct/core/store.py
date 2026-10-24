@@ -24,16 +24,17 @@ _CLAIM_UNKNOWN_STAGE = {
 }
 
 
-def _claim_requires_explicit_reconciliation(resource: str) -> bool:
-    """Return whether a terminal claim still fences a possible external effect."""
+def _claim_requires_live_retirement_proof(resource: str) -> bool:
+    """Whether a shared runtime owner needs one automatic current-state probe.
+
+    This is not a manual reconciliation gate. The coordinator probes the
+    current desktop/RCC owner before reservation and supplies the exact
+    retirement candidate when it is idle. Every other FINISHED, executor-free
+    Claim retires atomically without such a probe.
+    """
     return (
         resource == "desktop-control:interactive-session"
-        or resource.startswith((
-            "rcc-instance:",
-            "deployment:",
-            "service:",
-            "orchestration-",
-        ))
+        or (resource.startswith("rcc-instance:") and resource.count(":") == 1)
     )
 
 
@@ -757,8 +758,9 @@ class Store:
             detail = _claim_unknown_detail(row["error"], outcome, row["capability"])
             identity_status, identity_verified = _claim_executor_identity(
                 row["executor_pid"], row["executor_fingerprint"])
-            # Unknown external effects must retain their protection, even if
-            # the operation is FINISHED or its executor has exited.
+            # Preserve UNKNOWN as the historical outcome. Blocking is decided
+            # separately from current execution/ownership evidence below; the
+            # label itself is never treated as a permanent lock.
             if outcome == "UNKNOWN":
                 diagnosis = "UNKNOWN_EFFECT"
             elif state == "FINISHED":
@@ -779,10 +781,16 @@ class Store:
             # not a live reservation, for resources retired atomically by
             # begin_operation. Preserve UNKNOWN/replay fences independently.
             # RCC and desktop have separate live-ownership proof requirements.
-            retires_on_next_reservation = (
+            terminal_without_executor = (
                 state == "FINISHED"
                 and row["executor_pid"] is None
-                and not _claim_requires_explicit_reconciliation(resource_key)
+            )
+            requires_live_state_check = (
+                terminal_without_executor
+                and _claim_requires_live_retirement_proof(resource_key)
+            )
+            retires_on_next_reservation = (
+                terminal_without_executor and not requires_live_state_check
             )
             output.append({
                 "resource_key": resource_key,
@@ -812,9 +820,20 @@ class Store:
                 "diagnosis": diagnosis,
                 "scope": scope,
                 "blocks_unrelated_work": (
-                    scope == "SHARED_RESOURCE" and not retires_on_next_reservation
+                    scope == "SHARED_RESOURCE" and not terminal_without_executor
                 ),
+                # Report whether the historical claim can actually reject the
+                # next distinct reservation. Exact terminal claims are
+                # retired inside begin_operation, so calling them blockers in
+                # diagnostics would recreate the ambiguity this projection is
+                # meant to remove.
+                "blocks_same_resource": not retires_on_next_reservation,
+                "requires_live_state_check": requires_live_state_check,
+                "retires_on_next_reservation": retires_on_next_reservation,
                 "replay_allowed": False if outcome == "UNKNOWN" else None,
+                # Kept for compatibility: the diagnostics/read path itself
+                # never mutates claims. See retires_on_next_reservation for
+                # the automatic successor behavior.
                 "can_auto_release": False,
             })
         return output
@@ -839,7 +858,15 @@ class Store:
                     successor_operation_id="work-handoff:" + work_id,
                 )
             unresolved = db.execute(
-                "SELECT COUNT(*) FROM resource_claims WHERE work_id=? AND unresolved=1", (work_id,)
+                "SELECT COUNT(*) FROM resource_claims c "
+                "LEFT JOIN operations o ON c.operation_id=o.operation_id "
+                "AND c.work_id=o.work_id "
+                "WHERE c.work_id=? AND c.unresolved=1 AND ("
+                "o.operation_id IS NULL OR o.state<>? "
+                "OR o.assignment_epoch<>c.assignment_epoch OR EXISTS("
+                "SELECT 1 FROM background_job_executors x "
+                "WHERE x.operation_id=c.operation_id))",
+                (work_id, OperationState.FINISHED.value),
             ).fetchone()[0]
             if unresolved:
                 raise ConflictError("WORK_HAS_UNRESOLVED_OPERATION")
@@ -946,10 +973,9 @@ class Store:
         This CAS applies only to the exact resource requested by the next
         operation or handoff; RUNNING and other active claims never change.
         """
-        if _claim_requires_explicit_reconciliation(resource):
-            # Desktop, RCC, deployment/service and orchestration mutations have
-            # dedicated live-state or receipt reconciliation. FINISHED alone
-            # does not prove that their external effect is absent or complete.
+        if _claim_requires_live_retirement_proof(resource):
+            # These shared runtime resources use the coordinator's fresh
+            # current-state probe and exact CAS paths below.
             return False
         row = db.execute(
             "SELECT c.operation_id,c.work_id,c.assignment_epoch,o.state,"

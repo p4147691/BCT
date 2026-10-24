@@ -987,7 +987,7 @@ class RccIntegrationTests(unittest.TestCase):
                          "currentSessionId": "session-after-reload"},
         }
 
-    def test_rename_unknown_fences_exact_conversation_not_entire_instance(self):
+    def test_terminal_rename_unknown_is_history_not_a_conversation_lock(self):
         self.client.result = {"type": "host:result", "ok": False}
         first = self.call("unknown-first", {
             "command": "rename-conversation", "instance_id": "instance123",
@@ -1001,20 +1001,29 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.UNKNOWN, first.outcome)
         self.assertEqual(Outcome.UNKNOWN, second.outcome)
-        with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED"):
-            self.call("unknown-duplicate-target", {
-                "command": "rename-conversation", "instance_id": "instance123",
-                "session_id": "original-session", "tab_id": 114,
-                "conversation_key": "conv-abc", "title": "다시 변경",
-            })
+        third = self.call("unknown-duplicate-target", {
+            "command": "rename-conversation", "instance_id": "instance123",
+            "session_id": "original-session", "tab_id": 114,
+            "conversation_key": "conv-abc", "title": "다시 변경",
+        })
+        self.assertEqual(Outcome.UNKNOWN, third.outcome)
+        original = self.bct.store.get_operation_for(
+            operation_id="unknown-first", work_id="rcc-work",
+            principal_id="codex",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
         db = self.bct.store._connect()
         try:
-            keys = [x[0] for x in db.execute(
-                "SELECT resource_key FROM resource_claims WHERE unresolved=1")]
+            claims = [tuple(x) for x in db.execute(
+                "SELECT operation_id,resource_key FROM resource_claims "
+                "WHERE unresolved=1 ORDER BY operation_id")]
         finally:
             db.close()
-        self.assertEqual(2, len(keys))
-        self.assertTrue(all(":rename:" in x for x in keys))
+        self.assertEqual(
+            {"unknown-duplicate-target", "unknown-other"},
+            {item[0] for item in claims},
+        )
+        self.assertTrue(all(":rename:" in item[1] for item in claims))
 
     def test_rename_reconcile_exact_terminal_and_rotated_session(self):
         self._rename_recovery_fixture()

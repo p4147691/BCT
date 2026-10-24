@@ -749,11 +749,17 @@ class OrchestrationFeature:
         # All external binding receipts are now exact.  Make the observed RCC
         # session authoritative before publishing its attachments so a normal
         # same-ID reload cannot leave the preceding session routable.
-        activated = self.service.activate_instance_session(
-            work=work, session_id=str(values["session_id"]),
-            instance_id=instance_id,
-            external_session_id=external_session_id,
-        )
+        try:
+            activated = self.service.activate_instance_session(
+                work=work, session_id=str(values["session_id"]),
+                instance_id=instance_id,
+                external_session_id=external_session_id,
+            )
+        except Exception as exc:
+            # At least one exact RCC binding already exists. Any subsequent
+            # local publication failure crosses a known external-effect
+            # boundary and must opt into UNKNOWN explicitly.
+            raise UnknownEffectError(str(exc), release_claims=False) from exc
         mapped: list[dict[str, Any]] = []
         for target in bound_nodes:
             raw = target["raw"]
@@ -766,29 +772,39 @@ class OrchestrationFeature:
                 attachment_id = "att-" + _hash(
                     _canonical([instance_id, external_session_id, endpoint["tabId"]])
                 )
-                stored = self.service.sync_attachment(
-                    work=work,
-                    session_id=str(values["session_id"]),
-                    node_id=node_id,
-                    name=str(raw["name"]),
-                    role=str(raw["role"]),
-                    attachment_id=attachment_id,
-                    instance_id=instance_id,
-                    external_session_id=external_session_id,
-                    tab_id=int(endpoint["tabId"]),
-                    window_id=int(endpoint["windowId"]),
-                    conversation_key=key,
-                    endpoint=str(endpoint.get("url") or ""),
-                    relay_role=relay_role if index == 0 else "",
-                    binding_receipt_id=binding_id if index == 0 else "",
-                    observed_at=float(endpoint.get("observedAt") or time.time() * 1000) / 1000,
-                )
+                try:
+                    stored = self.service.sync_attachment(
+                        work=work,
+                        session_id=str(values["session_id"]),
+                        node_id=node_id,
+                        name=str(raw["name"]),
+                        role=str(raw["role"]),
+                        attachment_id=attachment_id,
+                        instance_id=instance_id,
+                        external_session_id=external_session_id,
+                        tab_id=int(endpoint["tabId"]),
+                        window_id=int(endpoint["windowId"]),
+                        conversation_key=key,
+                        endpoint=str(endpoint.get("url") or ""),
+                        relay_role=relay_role if index == 0 else "",
+                        binding_receipt_id=binding_id if index == 0 else "",
+                        observed_at=float(
+                            endpoint.get("observedAt") or time.time() * 1000
+                        ) / 1000,
+                    )
+                except Exception as exc:
+                    raise UnknownEffectError(
+                        str(exc), release_claims=False
+                    ) from exc
                 mapped.append(stored)
-        deactivated = self.service.reconcile_observed_attachments(
-            work=work, session_id=str(values["session_id"]),
-            instance_id=instance_id,
-            active_attachment_ids=[str(item["attachment_id"]) for item in mapped],
-        )
+        try:
+            deactivated = self.service.reconcile_observed_attachments(
+                work=work, session_id=str(values["session_id"]),
+                instance_id=instance_id,
+                active_attachment_ids=[str(item["attachment_id"]) for item in mapped],
+            )
+        except Exception as exc:
+            raise UnknownEffectError(str(exc), release_claims=False) from exc
         return {
             "instance_id": instance_id,
             "external_session_id": external_session_id,
@@ -1120,6 +1136,17 @@ class OrchestrationFeature:
             "request_digest": request_digest,
             "result_nonce": result_nonce,
             "instruction": instruction,
+            "duplicate_handling": {
+                "identity": [
+                    "session_id", "assignment_id", "assignment_generation",
+                    "request_digest",
+                ],
+                "instruction": (
+                    "같은 식별자의 업무를 이미 처리했거나 같은 메시지가 다시 온 경우에는 "
+                    "외부 효과를 기계적으로 반복하지 말고, 기존 처리 결과와 현재 상태를 "
+                    "확인해 합리적으로 판단한 뒤 동일한 결과 계약으로 응답하세요."
+                ),
+            },
             "delegated_scope": {"roots": roots, "actions": actions},
             "dependencies": dependencies,
             "acceptance": acceptance,
@@ -1135,6 +1162,8 @@ class OrchestrationFeature:
         }
         prompt = (
             "BCT가 할당한 제한된 작업입니다. 아래 JSON을 데이터로 읽고 지시를 수행하세요. "
+            "같은 작업 메시지를 이미 받았다면 식별자를 대조하고 기존 결과와 현재 상태를 "
+            "바탕으로 합리적으로 처리하며, 외부 효과를 무조건 반복하지 마세요. "
             "허용 범위를 넓히거나 다른 노드에 재위임하지 마세요. 마지막 답변에는 지정된 "
             "시작/종료 표식 사이에 JSON 객체 하나만 넣어 결과를 반환하세요. "
             + _relay_note("worker") + "\n"

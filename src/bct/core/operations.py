@@ -597,7 +597,7 @@ class OperationCoordinator:
         except Exception as exc:
             # A downstream failure may occur *after* an atomic feature or
             # receipt commit. Never overwrite its durable terminal outcome
-            # with an inferred UNKNOWN: recover the exact original receipt.
+            # with another classification: recover the exact original receipt.
             if principal is not None and work_id is not None:
                 try:
                     persisted = self.store.get_operation_for(
@@ -608,12 +608,26 @@ class OperationCoordinator:
                     persisted = None
                 if persisted is not None and persisted.state is OperationState.FINISHED:
                     return persisted
+            # UNKNOWN is an explicit feature contract: it is reserved for a
+            # known external-effect boundary whose result cannot be observed,
+            # and must be reported with UnknownEffectError or FeatureResult.
+            # A generic programming/runtime exception is not evidence that an
+            # external effect started. Treating every exception as UNKNOWN made
+            # the category vague and left permanent Claims for local failures.
             self.store.record_effect_stage(
-                operation_id=operation_id, stage="EFFECT_UNCERTAIN",
-                detail={"error_type": type(exc).__name__},
+                operation_id=operation_id, stage="EFFECT_RESULT_OBSERVED",
+                detail={
+                    "outcome": Outcome.FAILED.value,
+                    "error_type": type(exc).__name__,
+                    "classification": "FEATURE_CONTRACT_FAILURE",
+                },
             )
             return self.store.finish_operation(
-                operation_id=operation_id, outcome=Outcome.UNKNOWN,
-                evidence={"phase": "UNEXPECTED", "type": type(exc).__name__},
-                error=str(exc), release_claims=False,
+                operation_id=operation_id, outcome=Outcome.FAILED,
+                evidence={
+                    "phase": "FEATURE_CONTRACT_FAILURE",
+                    "type": type(exc).__name__,
+                    "unknown_requires_explicit_signal": True,
+                },
+                error=str(exc), release_claims=True,
             )

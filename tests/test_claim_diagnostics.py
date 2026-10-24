@@ -189,17 +189,13 @@ class ClaimDiagnosticsTests(unittest.TestCase):
                 self.assertFalse(item["can_auto_release"])
                 self.assertEqual("UNKNOWN_EFFECT", item["diagnosis"])
 
-    def test_finished_unknown_external_effects_keep_strict_live_proof(self):
+    def test_shared_runtime_claims_require_automatic_live_probe(self):
         for resource in (
             "rcc-instance:example",
             "desktop-control:interactive-session",
-            "deployment:d:/bct/runtime",
-            "service:bct-core",
-            "orchestration-attachment:worker-1",
-            "orchestration-run:session-1:assignment-1",
         ):
             with self.subTest(resource=resource):
-                name = "guarded-" + str(len(self.store.claim_diagnostics()))
+                name = "live-probe-" + str(len(self.store.claim_diagnostics()))
                 self.claim(name, resource=resource)
                 self.store.finish_operation(
                     operation_id=name, outcome=Outcome.UNKNOWN,
@@ -207,24 +203,94 @@ class ClaimDiagnosticsTests(unittest.TestCase):
                 )
                 item = next(x for x in self.store.claim_diagnostics()
                             if x["operation_id"] == name)
-                if resource.startswith("orchestration-"):
-                    self.assertEqual("EXACT_RESOURCE", item["scope"])
-                    self.assertFalse(item["blocks_unrelated_work"])
-                else:
-                    self.assertEqual("SHARED_RESOURCE", item["scope"])
-                    self.assertTrue(item["blocks_unrelated_work"])
-                self.assertFalse(item["replay_allowed"])
+                self.assertTrue(item["requires_live_state_check"])
+                self.assertFalse(item["retires_on_next_reservation"])
+                self.assertTrue(item["blocks_same_resource"])
                 with self.assertRaises(ConflictError):
                     self.store.begin_operation(
-                        operation_id=name + "-replay",
+                        operation_id=name + "-without-live-probe",
                         work=self.work,
                         principal_id="fixture-owner",
-                        request_digest=name + "-replay",
+                        request_digest=name + "-without-live-probe",
                         capability="read",
                         target="fixture",
                         resources=(resource,),
                         policy_revision="fixture",
                     )
+
+    def test_finished_unknown_exact_effects_retire_for_distinct_successor(self):
+        resources = (
+            "rcc-instance:example:direct-tab:12",
+            "rcc-instance:example:delivery:delivery-1",
+            "deployment:d:/bct/runtime",
+            "service:bct-core",
+            "orchestration-attachment:worker-1",
+            "orchestration-run:session-1:assignment-1",
+        )
+        for index, resource in enumerate(resources):
+            with self.subTest(resource=resource):
+                original_id = f"historical-{index}"
+                successor_id = f"successor-{index}"
+                self.claim(original_id, resource=resource)
+                self.store.finish_operation(
+                    operation_id=original_id, outcome=Outcome.UNKNOWN,
+                    evidence={"preserved": True}, error="uncertain",
+                    release_claims=False,
+                )
+                item = next(x for x in self.store.claim_diagnostics()
+                            if x["operation_id"] == original_id)
+                self.assertFalse(item["blocks_unrelated_work"])
+                self.assertFalse(item["requires_live_state_check"])
+                self.assertTrue(item["retires_on_next_reservation"])
+                self.assertFalse(item["blocks_same_resource"])
+                created, _ = self.store.begin_operation(
+                    operation_id=successor_id,
+                    work=self.work,
+                    principal_id="fixture-owner",
+                    request_digest=successor_id,
+                    capability="read",
+                    target="fixture",
+                    resources=(resource,),
+                    policy_revision="fixture",
+                )
+                self.assertTrue(created)
+                original = self.store.get_operation_for(
+                    operation_id=original_id,
+                    work_id=self.work.work_id,
+                    principal_id="fixture-owner",
+                )
+                self.assertEqual(Outcome.UNKNOWN, original.outcome)
+                self.assertEqual({"preserved": True}, original.evidence)
+                self.store.finish_operation(
+                    operation_id=successor_id, outcome=Outcome.APPLIED,
+                    evidence={}, error=None, release_claims=True,
+                )
+
+    def test_handoff_preserves_shared_runtime_claim_and_unknown_receipt(self):
+        self.claim("old-rcc", resource="rcc-instance:example")
+        self.store.finish_operation(
+            operation_id="old-rcc", outcome=Outcome.UNKNOWN,
+            evidence={"preserved": True}, error="uncertain",
+            release_claims=False,
+        )
+        handed = self.store.handoff_work(
+            work_id=self.work.work_id,
+            old_principal_id="fixture-owner",
+            new_principal_id="next-owner",
+            expected_epoch=1,
+        )
+        self.assertEqual("next-owner", handed.owner_principal_id)
+        self.assertEqual(2, handed.assignment_epoch)
+        claim = next(
+            x for x in self.store.claim_diagnostics()
+            if x["operation_id"] == "old-rcc"
+        )
+        self.assertTrue(claim["requires_live_state_check"])
+        original = self.store.get_operation_for(
+            operation_id="old-rcc", work_id=self.work.work_id,
+            principal_id="next-owner",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
 
     def test_finished_shared_claim_with_attached_executor_is_conservative(self):
         name = "attached"

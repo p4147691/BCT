@@ -333,8 +333,6 @@ class DeploymentServiceTests(unittest.TestCase):
         deployed = self.deploy("deploy-before-unknown", self.head, None)
         self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
         self.make_unknown_deploy_claim("deploy-unknown")
-        with self.assertRaisesRegex(ConflictError, "deploy-unknown"):
-            self.deploy("deploy-blocked", self.head, self.head)
 
         reconciled = self.reconcile("deploy-reconcile", "deploy-unknown")
         self.assertEqual(Outcome.APPLIED, reconciled.outcome, reconciled.as_dict())
@@ -353,8 +351,14 @@ class DeploymentServiceTests(unittest.TestCase):
 
         rejected = self.reconcile("deploy-reconcile-mismatch", "deploy-unknown-mismatch")
         self.assertEqual(Outcome.NOT_APPLIED, rejected.outcome, rejected.as_dict())
-        with self.assertRaisesRegex(ConflictError, "deploy-unknown-mismatch"):
-            self.deploy("deploy-still-blocked", self.head, self.head)
+        successor = self.deploy("deploy-after-mismatch", self.head, self.head)
+        self.assertEqual(Outcome.APPLIED, successor.outcome, successor.as_dict())
+        original = self.bct.store.get_operation_for(
+            operation_id="deploy-unknown-mismatch",
+            work_id="deployment",
+            principal_id=self.principal.principal_id,
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
 
     def test_rollback_reconciliation_releases_only_verified_previous_live_state(self):
         deployed = self.deploy("deploy-before-rollback-unknown", self.head, None)

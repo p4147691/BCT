@@ -126,16 +126,17 @@ class ChatStreamRccWatchTests(unittest.TestCase):
         finally:
             db.close()
 
-    def test_unknown_still_blocks_after_reconnect(self):
+    def test_terminal_unknown_is_reported_without_blocking_after_reconnect(self):
         self.source(outcome="UNKNOWN")
         self.bind()
         self.fake.set_connection(disconnected=True)
         self.watch.poll_once()
         self.fake.set_connection(disconnected=False)
         events = self.watch.poll_once()
-        self.assertEqual("STOP_UNKNOWN_NO_RESEND",
+        self.assertEqual("READY_WITH_TERMINAL_UNKNOWN_HISTORY",
                          events[0]["resume_inspection"]["decision"])
-        self.assertIsNone(events[0]["resume_inspection"]["next_step_proposal"])
+        self.assertEqual("inspect manager output",
+                         events[0]["resume_inspection"]["next_step_proposal"])
 
     def test_outage_and_missing_or_ambiguous_endpoint_are_not_reconnect(self):
         self.source()

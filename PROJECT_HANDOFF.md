@@ -1906,3 +1906,39 @@ route 안의 복수 operation 단계는 V1에서 fail-closed다.
 - RC26 소스는 main에 통합됐지만 아직 Core/RCC LIVE가 아니다. 운영 확장 reload와 무인
   busy→idle Manager 반환 수락시험은 수행하지 않았다. OS UTF-8/국가·언어 설정과 재부팅은
   변경하지 않는다.
+
+## 22. 종료 UNKNOWN/Claim 비차단 정책 교정 — 2026-10-24 source candidate
+
+이 절은 21절의 “deployment/service/exact orchestration UNKNOWN은 reconciliation 전까지 같은
+자원을 계속 차단한다”는 정책을 폐기하고 대체한다. 당시 정책은 중복 외부 효과의 위험을 진행
+중단보다 과대평가했고, 넓고 모호한 UNKNOWN과 어려운 reconciliation을 영구 잠금처럼 사용해
+독립적인 새 업무까지 막는 구조적 병목을 만들었다.
+
+- `FINISHED`이며 연결된 background executor가 없는 Operation/Assignment/Claim은 과거 증거다.
+  원본 outcome·evidence·effect journal은 보존하지만, 새 operation ID의 구분되는 후속 업무나
+  Work handoff를 영구 차단하지 않는다. 같은 operation ID는 계속 기존 영수증을 반환하므로
+  동일 외부 효과의 기계적 재실행 경로가 아니다.
+- 실제 차단 근거는 현재 실행 상태다. `RUNNING`, 활성 executor, Worker의
+  `QUEUED/DISPATCHING/ACKNOWLEDGED`, 현재 desktop Lease/emergency stop, 현재 RCC pending/result
+  같은 관찰 가능한 현재 소유권만 차단한다. desktop interactive session과 과거형 broad
+  `rcc-instance:<id>` Claim은 수동 reconciliation을 요구하지 않고 다음 예약 시 BCT가 현재 idle을
+  자동 조회해 원자적으로 퇴역시킨다.
+- UNKNOWN은 알려진 외부 효과 경계를 통과했으나 결과를 관찰할 수 없을 때 기능이
+  `UnknownEffectError` 또는 명시적 `FeatureResult(UNKNOWN)`으로 선택해야 한다. 일반 Python 예외,
+  로컬 계약 오류, 읽기/검증 구현 오류를 UNKNOWN으로 추정하지 않으며 `FAILED`와 Claim 해제로
+  닫는다. 이미 원자적으로 저장된 정확한 terminal receipt가 있으면 그것을 그대로 복구한다.
+- 같은 대화의 종료 `UNKNOWN/DISPATCH_UNKNOWN` Assignment가 있어도 새 고유 Assignment를 만들 수
+  있다. 과거 receipt는 변경하지 않고 `ORCHESTRATION_TERMINAL_UNKNOWN_BYPASSED` 사건을 기록한다.
+  반대로 실제 active Assignment는 계속 막는다.
+- Worker 전달 envelope에는 `session_id + assignment_id + assignment_generation + request_digest`
+  중복 식별자와, 같은 메시지를 다시 받으면 기존 처리 결과·현재 상태를 비교해 합리적으로
+  판단하고 외부 효과를 기계적으로 반복하지 말라는 자연어 규칙을 넣었다.
+- stream checkpoint도 종료 UNKNOWN을 `READY_WITH_TERMINAL_UNKNOWN_HISTORY`로 표시하고 다음
+  별도 단계를 허용한다. 진단 API는 다음 예약에서 자동 퇴역할 Claim을 더 이상
+  `blocks_same_resource=true`로 표시하지 않는다.
+
+격리 브랜치 `fix/terminal-unknown-nonblocking-20261024`에서 `PYTHONUTF8=0`으로 GitHub와 같은
+4개 core shard의 고유 시험 874건이 모두 PASS했고, 관련 집중 회귀 132건과 `py_compile`,
+`git diff --check`도 PASS했다. 이 시점은 source candidate이며 아직 main 병합, GitHub CI,
+Core LIVE 배포 또는 N35/N33/N34 재수락을 뜻하지 않는다. RCC 소스/reload, Chrome, Windows
+국가·언어/Beta UTF-8 설정과 재부팅은 변경하지 않았다.
