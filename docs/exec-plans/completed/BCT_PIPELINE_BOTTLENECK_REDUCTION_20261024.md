@@ -99,6 +99,9 @@ evidence only; they never count as validation success.
   `pipeline-bottleneck-live-pr329-status-01` returned `APPLIED`, observed the
   merged PR, and verified all seven requested checks as successful through the
   deployed `github_pr_status` path.
-- Local `main` and `origin/main` both resolve to `af619b09a3dbc4ad32b1b955434b708a9a3aa0ca`.
+- Functional integration and the deployed Core resolve to
+  `af619b09a3dbc4ad32b1b955434b708a9a3aa0ca`.  Subsequent closeout-only
+  documentation commits do not change the deployment profile and therefore do
+  not require another Core deployment.
 
 No Project Run, RCC, Chrome session, or browser message delivery was changed.
