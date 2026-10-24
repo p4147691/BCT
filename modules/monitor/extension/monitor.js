@@ -43676,6 +43676,52 @@ function compareMonitorBctNodeDisplayOrder(left, right) {
     || left.tabId - right.tabId;
 }
 
+
+const monitorBctCollapsedWindowCards = new Set();
+function monitorBctSharedWindowGroups(nodes) {
+  const groups=[], byWindow=new Map();
+  for (const source of Array.isArray(nodes) ? nodes : []) {
+    const members=Array.isArray(source?.__window_group_members) ? source.__window_group_members : [source];
+    for (const node of members) {
+      const windowId=Number(node?.windowId),tabId=Number(node?.tabId);
+      const instanceId=String(node?.instanceId||""),sessionId=String(node?.sessionId||"");
+      if (!instanceId||!sessionId||!Number.isSafeInteger(windowId)||windowId<=0||
+          !Number.isSafeInteger(tabId)||tabId<=0) continue;
+      const key=[instanceId,sessionId,windowId].join(":");
+      let group=byWindow.get(key);
+      if (!group) {
+        group={key,windowId,entries:[],byConversation:new Map(),tabCount:0};
+        byWindow.set(key,group);groups.push(group);
+      }
+      const identity=String(node.conversationKey||"").trim().toLowerCase()||("pending-tab:"+tabId);
+      let entry=group.byConversation.get(identity);
+      if (!entry) {entry={node,attachments:[]};group.byConversation.set(identity,entry);group.entries.push(entry);}
+      if (entry.attachments.some((item)=>item.tabId===tabId)) continue;
+      entry.attachments.push(node);group.tabCount+=1;
+      const prefer=(node.instanceState==="OPEN"&&!node.displayStale&&
+        (entry.node.displayStale||entry.node.instanceState!=="OPEN"))||
+        (node.active===true&&entry.node.active!==true&&node.instanceState==="OPEN"&&!node.displayStale);
+      if(prefer)entry.node=node;
+    }
+  }
+  for(const group of groups) {
+    group.__window_group_members=group.entries.map((entry)=>entry.node);
+    group.entries.sort((a,b)=>compareMonitorBctNodeDisplayOrder(a.node,b.node));
+  }
+  return groups;
+}
+async function monitorFocusBctSharedWindowTab(node) {
+  const tabId=Number(node?.tabId),windowId=Number(node?.windowId);
+  const conversationKey=String(node?.conversationKey||"").trim();
+  if(node?.instanceState!=="OPEN"||node?.displayStale===true||node?.instanceCached===true)
+    return {ok:false,status:"NOT_APPLIED",error:"BCT_TAB_OBSERVATION_STALE"};
+  if(!Number.isSafeInteger(tabId)||tabId<=0||!Number.isSafeInteger(windowId)||windowId<=0||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationKey))
+    return {ok:false,status:"NOT_APPLIED",error:"BCT_TAB_IDENTITY_INVALID"};
+  // Existing MonitorTabFocusAdapter guards the exact URL UUID/window/tab and postcondition.
+  return chrome.runtime.sendMessage({type:"monitor-focus-exact-chat-tab",tabId,windowId,conversationKey});
+}
+
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
   // A background refresh may replace the captured row while the mouse is down.
@@ -43689,8 +43735,16 @@ function renderMonitorBctWindowNodes(nodes) {
     fragment.append(empty);
   }
   const groups = new Map();
+  // Group by actual Chrome window even when tabs have different advisory scopes.
+  const sharedWindowScope = new Map();
+  for (const group of monitorBctSharedWindowGroups(nodes)) {
+    if (group.tabCount < 2) continue;
+    const active = group.entries.find((entry) => entry.node.active)?.node || group.entries[0]?.node;
+    sharedWindowScope.set(group.key, active?.scopeId || "__unassigned__");
+  }
   for (const node of nodes) {
-    const key = node.scopeId || "__unassigned__";
+    const windowKey = [node.instanceId, node.sessionId, node.windowId].join(":");
+    const key = sharedWindowScope.get(windowKey) || node.scopeId || "__unassigned__";
     if (!groups.has(key)) groups.set(key, {
       key,
       name: node.scopeName || "미소속 대화",
@@ -43733,7 +43787,33 @@ function renderMonitorBctWindowNodes(nodes) {
       groupList.hidden = true;
       continue;
     }
-    group.nodes.forEach((node, index) => {
+    let displayIndex=0;
+    for(const chromeGroup of monitorBctSharedWindowGroups(group.nodes)) {
+      const isShared=chromeGroup.tabCount>1;
+      let rowContainer=groupList;
+      if(isShared) {
+        const card=document.createElement("section");
+        card.className="monitor-bct-window-card";
+        card.dataset.windowId=String(chromeGroup.windowId);
+        card.dataset.memberCount=String(chromeGroup.entries.length);
+        const heading=document.createElement("button");
+        heading.type="button";heading.className="monitor-bct-window-card-heading";
+        heading.textContent="Chrome 창 · "+chromeGroup.tabCount+"개 탭";
+        const tabRows=document.createElement("div");
+        tabRows.className="monitor-bct-window-tab-rows";
+        const collapsed=monitorBctCollapsedWindowCards.has(chromeGroup.key);
+        heading.setAttribute("aria-expanded",String(!collapsed));tabRows.hidden=collapsed;
+        heading.addEventListener("click",(event)=>{
+          event.preventDefault();
+          if(monitorBctCollapsedWindowCards.has(chromeGroup.key))monitorBctCollapsedWindowCards.delete(chromeGroup.key);
+          else monitorBctCollapsedWindowCards.add(chromeGroup.key);
+          const closed=monitorBctCollapsedWindowCards.has(chromeGroup.key);
+          heading.setAttribute("aria-expanded",String(!closed));tabRows.hidden=closed;
+        });
+        card.append(heading,tabRows);groupList.append(card);rowContainer=tabRows;
+      }
+      for(const entry of chromeGroup.entries) {
+        const node=entry.node,index=displayIndex++;
     const row = document.createElement("article");
     row.className = "monitor-bct-node-row";
     row.dataset.tabId = String(node.tabId);
@@ -43745,7 +43825,9 @@ function renderMonitorBctWindowNodes(nodes) {
     row.dataset.conversationKey = node.conversationKey;
     row.dataset.scopeId = node.scopeId || "";
     row.setAttribute("role", "button");
-    row.setAttribute("aria-selected", "false");
+    row.setAttribute("aria-selected", String(node.active===true));
+    if(isShared)row.classList.add("monitor-bct-window-tab-row");
+    if(node.displayStale||node.instanceState!=="OPEN")row.classList.add("monitor-bct-window-tab-stale");
     row.tabIndex = 0;
     row.draggable = false;
     const mappedHwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
@@ -43757,6 +43839,7 @@ function renderMonitorBctWindowNodes(nodes) {
       ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 우클릭: 정보와 이름 변경 · 600ms 길게 누르기: Manager 안내 태그 지정/해제 · 창 ${node.windowId} · 탭 ${node.tabId}`
       : `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 창 ${node.windowId} · 탭 ${node.tabId}`;
 
+    if (isShared) row.title = "클릭: 정확한 대화 탭 선택 · 창 " + node.windowId + " · 탭 " + node.tabId;
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
     number.textContent = node.nodeLabel || "N?";
@@ -43777,22 +43860,45 @@ function renderMonitorBctWindowNodes(nodes) {
       ? `${desktopPosition >= 0 ? `D${desktopPosition + 1}` : "위치 확인 중"} · ${node.roleTags.join(" · ")}`
       : location.textContent;
     body.append(location);
-
+    if(entry.attachments.length>1) {
+      const count=document.createElement("small");
+      count.className="monitor-bct-window-tab-attachments";
+      count.textContent=entry.attachments.length+"개 연결 탭";body.append(count);
+    }
+    if (isShared && node.scopeId && node.scopeId !== group.key && node.scopeName) {
+      const otherScope = document.createElement("small");
+      otherScope.className = "monitor-bct-window-tab-attachments";
+      otherScope.textContent = node.scopeName;
+      body.append(otherScope);
+    }
+    const isGenerating = entry.attachments.some((item) =>
+      item.instanceState === "OPEN" && !item.displayStale && item.generating === true);
     const presence = document.createElement("span");
-    presence.className = `monitor-bct-node-presence${node.generating ? " is-busy" : ""}`;
-    presence.setAttribute("aria-label", node.generating ? "응답 생성 중" : "열려 있음");
-    presence.title = node.generating ? "응답 생성 중" : "열려 있음";
-    globalThis.MonitorStatusIcon?.render?.(presence, { activity: node.generating ? "play" : "pause" });
+    presence.className = `monitor-bct-node-presence${isGenerating ? " is-busy" : ""}`;
+    const stale=node.displayStale===true||node.instanceState!=="OPEN";
+    presence.setAttribute("aria-label",stale?"관측 지연":isGenerating?"응답 생성 중":"열려 있음");
+    presence.title=stale?"관측 지연":isGenerating?"응답 생성 중":"열려 있음";
+    globalThis.MonitorStatusIcon?.render?.(presence, { activity: !stale && isGenerating ? "play" : "pause" });
     row.append(number, body, presence);
     row.classList.toggle("is-manager", Array.isArray(node.roleTags) && node.roleTags.includes("Manager"));
     installMonitorBctManagerLongPress(row, node);
     row.addEventListener("dragstart", (event) => event.preventDefault());
-    row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
+    if(!isShared)row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
     row.addEventListener("click", (event) => {
       if (monitorBctSuppressedClickKey === monitorBctNodeSelectionKey(node)) {
         monitorBctSuppressedClickKey = "";
         event.preventDefault();
         event.stopPropagation();
+        return;
+      }
+      if(isShared) {
+        event.preventDefault();event.stopPropagation();
+        if (event.detail > 1) return; // avoid a second focus on double-click
+        void monitorFocusBctSharedWindowTab(node).then((receipt)=>{
+          if(!receipt?.ok||receipt.status!=="APPLIED")throw new Error(receipt?.error||"정확한 탭 선택 미확정");
+          monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(node);
+          setMonitorStatus((node.nodeLabel||"N?")+" 탭을 선택했습니다.",true,1800);
+        }).catch((error)=>setMonitorStatus("탭 선택 실패 · "+(error?.message||error),false,3500));
         return;
       }
       void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
@@ -43804,8 +43910,8 @@ function renderMonitorBctWindowNodes(nodes) {
       });
     });
     row.addEventListener("dblclick", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+      event.preventDefault();event.stopPropagation();
+      if(isShared)return;
       row.classList.add("monitor-bct-node-switch-pending");
       void resolveMonitorBctNodeHwnd(node).then((hwnd) => (
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node),
@@ -43833,8 +43939,9 @@ function renderMonitorBctWindowNodes(nodes) {
         openMonitorBctRenameEditor(node, row);
       });
     }
-    groupList.append(row);
-    });
+    rowContainer.append(row);
+      }
+    }
   }
   monitorWorkers.replaceChildren(fragment);
   syncMonitorBctNodeTargetHighlight();
@@ -43887,12 +43994,12 @@ function monitorBctPointInsideScopeHeading(clientX, clientY) {
 
 function monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey) {
   const rows = [...list.querySelectorAll(".monitor-bct-node-row")]
-    .filter((row) => String(row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
+    .filter((row) => (!row.parentElement || row.parentElement === list) && String(row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
     .map((row) => ({ row, rect: row.getBoundingClientRect() }))
     .filter(({ rect }) => rect.width > 0 && rect.height > 0);
   if (!rows.length) return null;
   const direct = hit?.closest?.(".monitor-bct-node-row");
-  if (direct && hit?.closest?.(".monitor-bct-node-list") === list &&
+  if (direct && (!direct.parentElement || direct.parentElement === list) && hit?.closest?.(".monitor-bct-node-list") === list &&
       String(direct.dataset.conversationKey || "") !== draggedKey) {
     const rect = direct.getBoundingClientRect();
     return { row: direct, position: clientX < rect.left + rect.width / 2 ? "before" : "after" };

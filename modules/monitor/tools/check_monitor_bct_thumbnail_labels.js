@@ -47,8 +47,8 @@ assert.match(source,/monitorBctProjectionConvergenceAttempt >= MONITOR_BCT_PROJE
 assert.match(source,/function monitorDisplayHwndForBrowserWindowId\(/);
 assert.match(source,/resolveMonitorBctNodeDisplayHwnd\(node\)\.then/);
 assert.match(source,/resolveMonitorBctNodeHwnd\(node\)\.then/);
-assert.match(source,/location\.textContent = desktopPosition >= 0/);
-assert.match(source,/MonitorStatusIcon\?\.render\?\.\(presence, \{ activity: node\.generating \? "play" : "pause" \}\)/);
+assert.match(source,/location\.textContent = monitorBctNodeLocationText\(node, desktopPosition\)/);
+assert.match(source,/MonitorStatusIcon\?\.render\?\.\(presence, \{ activity: !stale && isGenerating \? "play" : "pause" \}\)/);
 assert.doesNotMatch(source,/presence\.textContent\s*=/);
 assert.doesNotMatch(source,/id="monitorLocalLlmOpen"/);
 assert.doesNotMatch(source,/id="monitorNodeCols[23]"/);
