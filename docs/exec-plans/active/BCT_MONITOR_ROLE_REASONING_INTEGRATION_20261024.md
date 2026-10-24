@@ -46,3 +46,35 @@ for that change only and must not block relay work.
 - Core and Monitor/RCC rollout reported independently. Browser reload occurs
   only when existing ChatGPT tabs are idle and exact same-ID preservation can
   be checked.
+
+## Verified integration and rollout state
+
+- Feature commit `fa502800358bb7bbcea761e42087c39f15337e77` passed exact-head
+  CI run `40095612901`. Local-authority main merge
+  `73fcb4adc14e4883aa60750b471041b2fddf1a52` passed push CI run
+  `40096059555`.
+- Core generation 219 runs exact main `73fcb4a` with manifest
+  `c0a4b98f569ad9b451cf4f05d2fde31c3f58cf7fb5d046eb38810ca2f5c53544`.
+  A long-lived MCP request delayed the old Core shutdown, so the initial
+  deployment receipt correctly ended `UNKNOWN`. The old PID later exited;
+  the bounded Core Supervisor started the already activated immutable release,
+  and a separate exact LIVE reconciliation operation finished `APPLIED` and
+  released the original deployment Claims. Do not retry that deploy effect.
+- Authenticated Streamable HTTP LIVE acceptance exposed
+  `bct_conversation_network_update`. It added and removed the temporary N34
+  tag `BCT-런타임검증` against exact digests under `PYTHONUTF8=0`; both
+  operations were `APPLIED`, and final tags/digest were restored exactly.
+  Future role edits use this runtime store and do not require Git, CI, Core
+  deployment, or extension reload.
+- Monitor installed payload 2.0.32 contains the role/digest display changes and
+  passed the installed structure and BCT-shell checks. Its deployment token is
+  published but runtime observation/reload remains `PENDING`; do not call it
+  LIVE until the same-ID Monitor runtime reports 2.0.32 and the exact token.
+- RCC RC33 exact 52-file aggregate
+  `0b6d1e3489745ce9e787014d232829af3bd833cea8608766365b32a27b8a87de`
+  was activated only after every observed tab was idle. One same-ID reload
+  operation finished `APPLIED`; extension instance and tab IDs were preserved
+  while the session advanced to `76a9b285dc29413d98fca5b0c08cf390`.
+  Repeated read-only observations reported N32/N36 `Medium` and N33/N34/N35
+  `High`, all from `chatgpt-model-selector`. No message was sent. Exact RC31
+  runtime and RC32 installed-folder backups remain available for rollback.
