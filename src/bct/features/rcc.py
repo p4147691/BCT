@@ -1911,7 +1911,10 @@ class RelayBrowserFeature:
                 and result.get("instanceId") == values["instance_id"]
                 and result.get("sessionId") == extra["sessionId"]
                 and result.get("tabId") == extra["tabId"]
-                and result.get("windowId") == extra["windowId"]
+                # windowId is reported context, not the tab identity: a tab
+                # may move between Chrome windows while retaining tabId.
+                and isinstance(result.get("windowId"), int)
+                and result.get("windowId") > 0
                 and result.get("state") == "SUBMITTED"
                 and result.get("submitted") is True
             )

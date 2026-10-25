@@ -174,6 +174,16 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'send-to-tab') {
+
+          const result = await sendToExactExistingTab(message, requestId);
+
+          postNative({ type: 'host:result', requestId, ...result });
+
+          return;
+
+        }
+
     if (message.command === 'rename-conversation') {
 
           const result = await renameConversation(message, requestId);

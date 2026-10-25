@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC33_REASONING_OBSERVATION",
+  "candidate": "RCC_REBUILD_V2_RC34_EXACT_TAB_RECEIPT",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -12,8 +12,8 @@
       },
       {
         "path": "background_loader.js",
-        "size": 1354,
-        "sha256": "0e38c29bace3e1c56e0278b91e6a97c882872cd32218f773a1d9fa95a543d3d9"
+        "size": 1405,
+        "sha256": "f829788c2935f2d7a77c29a0cb63753fc64cade4c7be2821c0a7627e4d3cf912"
       },
       {
         "path": "boot/background_app.js",
@@ -97,8 +97,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 20347,
-        "sha256": "452a8d03de0d2a22379226539d0bb0516f03188b44a059054584ffe549a3ddad"
+        "size": 20940,
+        "sha256": "36e629fcf9775b3392f25b9f62eeb1f673035710591c5a5530021b24f82fe10f"
       },
       {
         "path": "content/conversation_rename.js",
@@ -112,8 +112,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 37275,
-        "sha256": "f404c6e8727994b3186eb5c968eadc79c54c7d58472f7890967a4522836d1e07"
+        "size": 37347,
+        "sha256": "26072a55c82e94ed93390ccf164a6ac8b4eced0235bdcfb946a956769f086548"
       },
       {
         "path": "core/conversation.js",
@@ -161,6 +161,11 @@
         "sha256": "bfc2926bec212a398513afc4f2fc57a02c4d670d236966d81dd0a8ee881b6776"
       },
       {
+        "path": "domain/exact_tab_send_service.js",
+        "size": 8036,
+        "sha256": "ffbb8e7aa3ef98f8fe5f9a1b2ba1387ce3bd5368120c76a9ac8750635e2e09d9"
+      },
+      {
         "path": "domain/new_chat_service.js",
         "size": 13400,
         "sha256": "0cb8eb4d9a8b3fdc3c9e24e5a53d1ac78cc304da29d8efe054bc6b23a6142b91"
@@ -172,8 +177,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 30951,
-        "sha256": "8b923940c07c0a8480ed456f9e28191e1ec3603804fdc59970fc1b91dec39b9b"
+        "size": 31173,
+        "sha256": "4742fd91148566812f427031d5c4e523f8f3f152a7fdeadfccae21feb516663f"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -197,8 +202,8 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3599,
-        "sha256": "a400672b8f369f5b6b2f268718c659b39bff593614468aea22d4d8d914d0e05f"
+        "size": 3882,
+        "sha256": "fe6a05662a34de5ae29aeb4873b0c83c29c326dc8db43ec9d3718b7f4bcfaf09"
       },
       {
         "path": "manifest.json",
@@ -266,8 +271,8 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "fileCount": 52,
-    "aggregateSha256": "41328b211a464b99705319757b075bbc38ea33d73198d8f1b82a37ee4e5ac7e3"
+    "fileCount": 53,
+    "aggregateSha256": "29a89e241dac6c48d362de9a1207dfd15c8906d938b00ecb43424b9f39c3d313"
   },
   "activeLoaderGraph": {
     "background": [
@@ -297,6 +302,7 @@
       "domain/delivery_ledger_service.js",
       "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
+      "domain/exact_tab_send_service.js",
       "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
       "domain/runtime_message_service.js",
@@ -330,7 +336,8 @@
       "domain/new_chat_service.js",
       "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
-      "domain/runtime_message_service.js"
+      "domain/runtime_message_service.js",
+      "domain/exact_tab_send_service.js"
     ]
   },
   "optionalBrowserPayload": [
@@ -420,7 +427,6 @@
         "reload-workers",
         "result-ack",
         "send-to-created-tab",
-        "send-to-tab",
         "send-wakeback"
       ],
       "runtimeReadOnly": [
@@ -452,21 +458,21 @@
         "relay:workerResult"
       ],
       "contentAccepted": [
-        "relay:recoverExecution",
         "relay:activityProbe",
-        "relay:probe",
-        "relay:simpleExecute",
-        "relay:simpleReadReply",
-        "relay:orchestrationExecute",
+        "relay:deliveryReadiness",
+        "relay:deliveryRecoveryProof",
+        "relay:exactReplyProof",
+        "relay:exactUserTurnProof",
         "relay:newChatExecute",
         "relay:newChatStatus",
+        "relay:orchestrationExecute",
+        "relay:probe",
+        "relay:recoverExecution",
         "relay:renameConversation",
-        "relay:deliveryRecoveryProof",
-        "relay:exactUserTurnProof",
-        "relay:exactReplyProof",
-        "relay:deliveryReadiness",
         "relay:retireComposerDraft",
-        "relay:retireExecution"
+        "relay:retireExecution",
+        "relay:simpleExecute",
+        "relay:simpleReadReply"
       ],
       "popupAccepted": [
         "relay:getState"
@@ -486,7 +492,8 @@
         "simpleRelayV0Binding",
         "simpleRelayV0Receipts",
         "newChatReceiptsV1",
-        "deliveryLedgerMirrorV1"
+        "deliveryLedgerMirrorV1",
+        "exactTabSendReceiptsV1"
       ],
       "chromeSession": [
         "rccEndpointSessionIdV1"

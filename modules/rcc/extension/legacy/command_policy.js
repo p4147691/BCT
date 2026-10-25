@@ -10,6 +10,9 @@
   const CONVERSATION_COMMANDS = new Set([
     'rename-conversation', 'conversation-bind',
   ]);
+  // A bounded operator action against one exact, already-open Chrome tab.
+  // It neither creates, moves, closes, nor discovers a replacement tab.
+  const EXACT_TAB_COMMANDS = new Set(['send-to-tab']);
   const ORCHESTRATION_COMMANDS = new Set(['send']);
   const READ_ONLY_COMMANDS = new Set([
     'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
@@ -24,8 +27,7 @@
     'conversation-bootstrap-bind', 'create-chat-tab', 'create-chat-window',
     'ensure', 'main-capture-install', 'manager-promote', 'move-tab',
     'recover-created-result', 'recover-pending', 'register', 'reload-workers',
-    'result-ack', 'send-to-created-tab',
-    'send-to-tab', 'send-wakeback',
+    'result-ack', 'send-to-created-tab', 'send-wakeback',
   ]);
   const LEGACY_MUTATION_MESSAGES = new Set([
     'relay:actDirectTask', 'relay:actLocalExecution', 'relay:actWorkerOperation',
@@ -46,6 +48,7 @@
     const value = String(command || '');
     if (NEW_RELAY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'NEW_RELAY' });
     if (CONVERSATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'CONVERSATION' });
+    if (EXACT_TAB_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'EXACT_TAB' });
     if (ORCHESTRATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'ORCHESTRATION' });
     if (READ_ONLY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'LEGACY_READONLY' });
     if (MAINTENANCE_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'MAINTENANCE' });

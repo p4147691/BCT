@@ -394,7 +394,17 @@ function resolveRoutedTurn(record) {
     // A first message starts on the blank route and ChatGPT may replace the
     // provisional document/route while the exact submitted turn is rendering.
     // Rebind only a genuinely blank bootstrap with one exact new user turn.
-    if (record?.bootstrapCreatedTab !== true || !currentKey || before.size !== 0 || matches.length !== 1) {
+    // The route UUID can appear before that user turn is mounted in the DOM;
+    // that narrow, initial gap is pending rather than an identity failure.
+    const bootstrapRebind = record?.bootstrapCreatedTab === true
+      && currentKey && before.size === 0;
+    // A blank-route submission can acquire its UUID before the exact user
+    // turn is mounted. Do not classify that interim state as a different
+    // conversation. Never promote without one unique exact matching turn.
+    if (bootstrapRebind && matches.length === 0 && turns.length === 0) {
+      return { ok: false, terminal: false, reason: 'BOOTSTRAP_ROUTE_TURN_PENDING' };
+    }
+    if (!bootstrapRebind || matches.length !== 1) {
       return { ok: false, terminal: true, reason: 'CONVERSATION_IDENTITY_CHANGED' };
     }
     record.conversationKey = currentKey;

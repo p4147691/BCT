@@ -591,7 +591,7 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
         const recovered = {
           ...tracking,
           relayId: tracking.relayId,
-          conversationKey: currentConversationKey(),
+          conversationKey: tracking?.bootstrapCreatedTab === true ? '' : currentConversationKey(),
           beforeCount,
           beforeText,
           phase: 'submit-activated',
@@ -620,7 +620,7 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
   const activatedRecord = tracking?.relayId ? {
     ...tracking,
     relayId: tracking.relayId,
-    conversationKey: currentConversationKey(),
+    conversationKey: isNewChatBootstrap ? '' : currentConversationKey(),
     beforeCount,
     beforeText,
     phase: 'submit-activated',
