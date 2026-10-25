@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import secrets
 import time
 from typing import Any
 
@@ -30,7 +31,9 @@ from bct.integrations.rcc import (
 )
 
 
-_READ_COMMANDS = {"state", "presence", "result", "result-of-create-and-send"}
+_READ_COMMANDS = {
+    "state", "presence", "result", "result-of-create-and-send", "target-discover",
+}
 _RECONCILE_COMMANDS = {
     "reconcile-send-to-created-tab", "reconcile-create-and-send",
     "reconcile-send",
@@ -52,6 +55,19 @@ _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
+
+
+def _target_snapshot_fingerprint(tabs: list[dict[str, Any]]) -> str:
+    """Return a stable fingerprint for the RCC-visible Chrome target topology."""
+    identity = sorted(
+        (
+            int(tab.get("tabId") or 0), int(tab.get("windowId") or 0),
+            str(tab.get("conversationKey") or ""),
+        )
+        for tab in tabs
+        if isinstance(tab, dict)
+    )
+    return hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def _positive_int(value: object, code: str) -> int:
@@ -168,6 +184,114 @@ class RelayBrowserFeature:
         self.delivery_ledger = DeliveryLedger(store) if store is not None else None
         self.result_readback_timeout_s = result_readback_timeout_s
         self.recovery_retry_interval_s = max(0.01, recovery_retry_interval_s)
+        # Target references deliberately live only in this Core process.  A
+        # restart is therefore another safe expiry boundary, never a reason to
+        # revive a stale numeric Chrome/RCC identifier.
+        self._target_refs: dict[str, dict[str, Any]] = {}
+        self._target_epochs: dict[tuple[str, str], str] = {}
+        self._target_snapshots: dict[tuple[str, str], str] = {}
+
+    def _read_target_state(self, *, instance_id: str, request_id: str) -> tuple[str, list[dict[str, Any]]]:
+        """Read and validate the one RCC state snapshot used for a target ref.
+
+        This is intentionally called from ``prepare`` for a mutating command:
+        validation happens before Operations reserves the external-effect
+        claim, so an expired/wrong transport reference cannot become UNKNOWN.
+        """
+        try:
+            response = self.client.request(
+                instance_id=instance_id, request_id=request_id, command="state",
+                timeout_s=2.0,
+            )
+        except (RelayUnavailable, RelayEffectUnknown) as exc:
+            raise PreconditionError("RCC_TARGET_REFERENCE_STATE_UNAVAILABLE") from exc
+        state = response.get("state") if isinstance(response, dict) else None
+        if not (
+            isinstance(response, dict) and response.get("ok") is True
+            and isinstance(state, dict) and state.get("instanceId") == instance_id
+            and isinstance(state.get("sessionId"), str) and state["sessionId"].strip()
+            and isinstance(state.get("tabs"), list)
+        ):
+            raise PreconditionError("RCC_TARGET_REFERENCE_STATE_INVALID")
+        tabs = [tab for tab in state["tabs"] if isinstance(tab, dict)]
+        return state["sessionId"].strip(), tabs
+
+    def _refresh_target_epoch(
+        self, *, instance_id: str, session_id: str, tabs: list[dict[str, Any]]
+    ) -> str:
+        identity = (instance_id, session_id)
+        snapshot = _target_snapshot_fingerprint(tabs)
+        if self._target_snapshots.get(identity) != snapshot:
+            self._target_snapshots[identity] = snapshot
+            self._target_epochs[identity] = secrets.token_urlsafe(18)
+        return self._target_epochs[identity]
+
+    def _issue_target_refs(
+        self, *, work_id: str, instance_id: str, session_id: str, tabs: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        epoch = self._refresh_target_epoch(
+            instance_id=instance_id, session_id=session_id, tabs=tabs,
+        )
+        targets: list[dict[str, Any]] = []
+        windows: set[int] = set()
+        for tab in tabs:
+            try:
+                tab_id = _positive_int(tab.get("tabId"), "RCC_TARGET_DISCOVERY_INVALID")
+                window_id = _positive_int(tab.get("windowId"), "RCC_TARGET_DISCOVERY_INVALID")
+            except PreconditionError:
+                continue
+            windows.add(window_id)
+            token = "rcc-target-v1." + secrets.token_urlsafe(32)
+            self._target_refs[token] = {
+                "workId": work_id, "instanceId": instance_id, "sessionId": session_id,
+                "windowId": window_id, "tabId": tab_id, "epoch": epoch,
+            }
+            targets.append({
+                "target_ref": token, "target_kind": "tab", "tab_id": tab_id,
+                "window_id": window_id,
+                "conversation_key": str(tab.get("conversationKey") or ""),
+            })
+        for window_id in sorted(windows):
+            token = "rcc-target-v1." + secrets.token_urlsafe(32)
+            self._target_refs[token] = {
+                "workId": work_id, "instanceId": instance_id, "sessionId": session_id,
+                "windowId": window_id, "tabId": None, "epoch": epoch,
+            }
+            targets.append({
+                "target_ref": token, "target_kind": "window", "window_id": window_id,
+            })
+        return targets
+
+    def _resolve_target_ref(
+        self, *, work: Work, instance_id: str, target_ref: object, require_tab: bool
+    ) -> dict[str, Any]:
+        token = str(target_ref or "").strip()
+        if not token:
+            raise PreconditionError("RCC_TARGET_REFERENCE_REQUIRED")
+        record = self._target_refs.get(token)
+        if record is None:
+            raise PreconditionError("RCC_TARGET_REFERENCE_UNKNOWN_OR_EXPIRED")
+        if record["workId"] != work.work_id or record["instanceId"] != instance_id:
+            raise PreconditionError("RCC_TARGET_REFERENCE_BINDING_MISMATCH")
+        request_id = "rcc-target-check-" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+        session_id, tabs = self._read_target_state(instance_id=instance_id, request_id=request_id)
+        if session_id != record["sessionId"]:
+            raise PreconditionError("RCC_TARGET_REFERENCE_SESSION_EXPIRED")
+        epoch = self._refresh_target_epoch(
+            instance_id=instance_id, session_id=session_id, tabs=tabs,
+        )
+        if epoch != record["epoch"]:
+            raise PreconditionError("RCC_TARGET_REFERENCE_EPOCH_EXPIRED")
+        if require_tab and record["tabId"] is None:
+            raise PreconditionError("RCC_TARGET_REFERENCE_TAB_REQUIRED")
+        matching = [
+            tab for tab in tabs
+            if int(tab.get("windowId") or 0) == record["windowId"]
+            and (record["tabId"] is None or int(tab.get("tabId") or 0) == record["tabId"])
+        ]
+        if not matching:
+            raise PreconditionError("RCC_TARGET_REFERENCE_TARGET_EXPIRED")
+        return dict(record)
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         command = str(arguments.get("command") or "").strip().lower()
@@ -270,11 +394,14 @@ class RelayBrowserFeature:
                     "originalTimeoutS": float(arguments.get("original_timeout_s", 30.0)),
                 })
         elif command in _READ_COMMANDS:
-            pass
+            if command == "target-discover":
+                prepared["extra"]["workId"] = work.work_id
         elif command in {"create-chat-window", "reload-extension"}:
             pass
         elif command == "create-and-send":
-            allowed.update({"mode", "text", "window_id"})
+            if any(key in arguments for key in {"window_id", "tab_id", "session_id"}):
+                raise PreconditionError("RCC_LEGACY_NUMERIC_TARGET_REJECTED")
+            allowed.update({"mode", "text", "target_ref"})
             mode = str(arguments.get("mode") or "").strip().lower()
             message = str(arguments.get("text") or "")
             if mode != "tab" or not message:
@@ -283,8 +410,14 @@ class RelayBrowserFeature:
                 raise PreconditionError("RCC_NEW_CHAT_TIMEOUT_TOO_SHORT")
             prepared["text"] = message
             prepared["extra"]["mode"] = mode
-            prepared["extra"]["windowId"] = _positive_int(
-                arguments.get("window_id"), "RCC_WINDOW_ID_REQUIRED")
+            target = self._resolve_target_ref(
+                work=work, instance_id=instance_id,
+                target_ref=arguments.get("target_ref"), require_tab=False,
+            )
+            prepared["extra"].update({
+                "windowId": target["windowId"], "targetRef": str(arguments["target_ref"]),
+                "targetEpoch": target["epoch"],
+            })
         elif command == "create-chat-tab":
             allowed.add("window_id")
             if arguments.get("window_id") is not None:
@@ -1145,6 +1278,34 @@ class RelayBrowserFeature:
             output={"result": _sanitize(result)},
         )
 
+    def _execute_target_discover(self, request: FeatureRequest) -> FeatureResult:
+        """Issue opaque target handles from one exact RCC state snapshot.
+
+        This command is read-only.  The numeric Chrome IDs are returned only as
+        observation evidence; later mutations receive the opaque handle, not
+        those numbers.
+        """
+        instance_id = request.arguments["instance_id"]
+        request_id = "rcc-target-discover-" + hashlib.sha256(
+            request.operation_id.encode("utf-8")
+        ).hexdigest()[:24]
+        session_id, tabs = self._read_target_state(
+            instance_id=instance_id, request_id=request_id,
+        )
+        targets = self._issue_target_refs(
+            work_id=request.arguments["extra"]["workId"], instance_id=instance_id,
+            session_id=session_id, tabs=tabs,
+        )
+        if not targets:
+            return FeatureResult(Outcome.NOT_APPLIED, {
+                "command": "target-discover", "instance_id": instance_id,
+                "session_id": session_id, "reason": "RCC_TARGET_DISCOVERY_EMPTY",
+            }, output={"targets": []})
+        return FeatureResult(Outcome.APPLIED, {
+            "command": "target-discover", "instance_id": instance_id,
+            "session_id": session_id, "target_count": len(targets),
+        }, output={"targets": targets})
+
     def execute(self, request: FeatureRequest) -> FeatureResult:
         if request.arguments["command"] == "delivery-preview":
             if self.delivery_ledger is None:
@@ -1305,6 +1466,8 @@ class RelayBrowserFeature:
                 "response_length": extra["expectedResponseLength"],
                 "execution_absent": True,
             }, output={"result": _sanitize(result)})
+        if request.arguments["command"] == "target-discover":
+            return self._execute_target_discover(request)
         if request.arguments["command"] == "create-and-send":
             return self._execute_create_and_send(request)
         values = request.arguments
