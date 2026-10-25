@@ -10342,7 +10342,7 @@ function renderMonitorRoleAdmin() {
 
 
 
-  
+
 
 
 
@@ -26029,7 +26029,7 @@ function monitorHwndIsGenerating(hwnd, state) {
 
 
 
-  
+
 
 
 
@@ -29873,7 +29873,7 @@ function resolveWorkerWorkState(worker, state) {
 
 
 
-  
+
 
 
 
@@ -39416,7 +39416,7 @@ function performMonitorWorkerRender(state) {
 
 
 
-    
+
 
 
 
@@ -51621,7 +51621,7 @@ const monitorWallpaperActuals = new Map();
 
 
 
-const monitorWallpaperFallbacks = new Map();
+// No separate legacy wallpaper substitution cache.
 
 
 
@@ -51640,7 +51640,7 @@ const monitorWallpaperFallbacks = new Map();
 const MONITOR_WALLPAPER_CACHE_MS = 15000;
 
 const MONITOR_WALLPAPER_CACHE_LIMIT = 3;
-const MONITOR_WALLPAPER_FALLBACK_LIMIT = 2;
+
 const MONITOR_WALLPAPER_ACTUAL_LIMIT = 8;
 const MONITOR_WALLPAPER_MAX_WIDTH = 960;
 const MONITOR_WALLPAPER_MAX_HEIGHT = 600;
@@ -52167,165 +52167,7 @@ async function getObservedWallpaper(desktopId, force = false) {
 
 
 
-  const fallback = monitorWallpaperFallbacks.get(desktopId);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (fallback) {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const info = await monitorNative({ type: "getDesktopWallpaperInfo", desktopId }).catch(() => null);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if (!info?.ready) {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-      if (fallback.dataUri) monitorRememberWallpaperEntry(monitorWallpaperCache, desktopId, fallback.dataUri, MONITOR_WALLPAPER_CACHE_LIMIT);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-      return fallback.dataUri || cached?.dataUri || "";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    monitorWallpaperFallbacks.delete(desktopId);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    force = true;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  // Wallpaper fallback removed: only a genuine Native result is accepted.
 
   try {
 
@@ -52414,7 +52256,7 @@ async function getObservedWallpaper(desktopId, force = false) {
 
 
 
-  } catch (_) { return cached?.dataUri || ""; }
+  } catch (_) { return ""; }
 
 
 
@@ -52527,13 +52369,11 @@ async function applyObservedWallpaper(desktopId, force = false) {
 
 
     monitorPreviewWallpaper.dataset.desktopId = String(desktopId || "");
-
-
-
-
-
-
-
+    monitorPreviewWallpaper.dataset.captureState = "captured";
+  } else {
+    monitorPreviewWallpaper.style.backgroundImage = "";
+    monitorPreviewWallpaper.dataset.desktopId = String(desktopId || "");
+    monitorPreviewWallpaper.dataset.captureState = "failed";
   }
 
 
@@ -54969,7 +54809,7 @@ function syncMonitorDesktopNumberBadge(img, hwnd) {
 
 
 
-  
+
 
 
 
@@ -56584,7 +56424,7 @@ if (monitorSelectedHwnds.size) applyMonitorWindowHighlight(monitorHighlightedHwn
 
 
 
-  
+
 
 
 
@@ -73259,7 +73099,7 @@ async function undoDeletedDesktopTrash() {
 
 
 
-    if(restoredId&&snapshot.wallpaperDataUri){monitorRememberWallpaperEntry(monitorWallpaperCache, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_CACHE_LIMIT);monitorRememberWallpaperEntry(monitorWallpaperFallbacks, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_FALLBACK_LIMIT);}
+    if(restoredId&&snapshot.wallpaperDataUri){monitorRememberWallpaperEntry(monitorWallpaperCache, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_CACHE_LIMIT);}
 
 
 
@@ -73571,7 +73411,7 @@ async function removeVirtualDesktopPreview(index, options={}) {
 
 
 
-    monitorFrameCache.clear(); monitorWallpaperCache.delete(desktopId); monitorWallpaperActuals.delete(desktopId); monitorWallpaperFallbacks.delete(desktopId);
+    monitorFrameCache.clear(); monitorWallpaperCache.delete(desktopId); monitorWallpaperActuals.delete(desktopId);
 
 
 
@@ -74243,7 +74083,7 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
 
 
-    if (restoredId && snapshot.wallpaperDataUri) { monitorRememberWallpaperEntry(monitorWallpaperCache, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_CACHE_LIMIT); monitorRememberWallpaperEntry(monitorWallpaperFallbacks, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_FALLBACK_LIMIT); }
+    if (restoredId && snapshot.wallpaperDataUri) { monitorRememberWallpaperEntry(monitorWallpaperCache, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_CACHE_LIMIT);  }
 
 
 
@@ -74947,7 +74787,7 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
 
 
-      monitorRememberWallpaperEntry(monitorWallpaperFallbacks, createdId, sourceWallpaper, MONITOR_WALLPAPER_FALLBACK_LIMIT);
+
 
 
 
