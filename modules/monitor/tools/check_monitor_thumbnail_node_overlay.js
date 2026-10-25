@@ -33,6 +33,7 @@ function node(className = "") {
         this.owner.className = [...names].join(" ");
       },
       owner: null,
+      add(name) { const names=new Set(String(this.owner.className||'').split(/\s+/).filter(Boolean));names.add(name);this.owner.className=[...names].join(' '); },
     },
     append(child) {
       if (child.parentElement) child.parentElement.children = child.parentElement.children.filter((item) => item !== child);
@@ -178,3 +179,55 @@ const repeatedAnchors = new Map(layer.querySelectorAll(".monitor-thumbnail-tab-b
 const firstAnchors = new Map(collisionBadges.map((badge) => [badge.dataset.hwnd, badge.dataset.anchor]));
 assert.deepEqual(repeatedAnchors, firstAnchors);
 console.log("PASS: open ChatGPT node overlays survive capture replacement and avoid badge collisions");
+
+
+// Native Z-order and selected per-tab badges must not be conflated.
+visual.append(chrome);
+chrome.dataset.nativeZIndex="9000";
+overlappingChrome.dataset.nativeZIndex="9800";
+const sourceNodes=new Map([
+ ["500", [{number:37,key:"one:tab37",activity:"pause"},{number:38,key:"one:tab38",activity:"play"},{number:39,key:"one:tab39",activity:"pause"}]],
+ ["600", [{number:40,key:"two:tab40",activity:"pause"},{number:41,key:"two:tab41",activity:"complete"}]]
+]);
+const selectedView=context.MonitorBctThumbnailProjection.render({
+ container:visual,state:null,locations,
+ numbersForHwnd:()=>[],
+ nodesForHwnd:(hwnd)=>sourceNodes.get(hwnd)||[],
+ selectedNodeKey:"one:tab38"
+});
+assert.equal(selectedView.rendered,2);
+assert.equal(selectedView.zStackedWindows,2);
+assert.equal(selectedView.hiddenWindows,0);
+assert.equal(selectedView.zOrderConfirmed,true);
+const ordered=layer.querySelectorAll(".monitor-thumbnail-z-row");
+assert.deepEqual(ordered.map(item=>item.dataset.hwnd),["600","500"],"front Z HWND before rear");
+const nodes=layer.querySelectorAll(".monitor-thumbnail-node-chip");
+assert.equal(nodes.length,5);
+const chosen=nodes.find(x=>x.dataset.nodeKey==="one:tab38");
+assert.ok(chosen.className.includes("is-selected"),"only N38 highlighted");
+assert.equal(nodes.filter(x=>x.className.includes("is-selected")).length,1);
+assert.equal(chosen.children[0].textContent,"▶");
+context.MonitorBctThumbnailProjection.highlight(visual,"two:tab41");
+assert.equal(nodes.filter(x=>x.className.includes("is-selected")).length,1);
+assert.ok(nodes.find(x=>x.dataset.nodeKey==="two:tab41").className.includes("is-selected"));
+console.log("PASS: exact N38 highlighting, native Z order, multi-tab activity");
+
+const rear = [["700",8700],["800",8600],["900",8500]];
+for (const [hwnd,z] of rear) {
+ const img=node("monitor-desktop-thumb-window");
+ img.dataset.hwnd=hwnd; img.dataset.nativeZIndex=String(z);
+ Object.assign(img.style,{left:"50%",top:"0%",width:"50%",height:"100%"});
+ visual.append(img);
+ locations.set(hwnd,{hwnd,desktopId:"desk-a",left:500,top:0,width:500,height:800,iconic:false,visible:true});
+ sourceNodes.set(hwnd,[{number:Number(hwnd),key:"rear:"+hwnd,activity:"pause"}]);
+}
+const crowded=context.MonitorBctThumbnailProjection.render({
+ container:visual,state:null,locations,numbersForHwnd:()=>[],
+ nodesForHwnd:hwnd=>sourceNodes.get(hwnd)||[],selectedNodeKey:"rear:900"
+});
+assert.equal(crowded.zStackedWindows,5);
+assert.equal(crowded.hiddenWindows,1);
+const rows=layer.querySelectorAll(".monitor-thumbnail-z-row");
+assert.deepEqual(rows.map(x=>x.dataset.hwnd),["600","500","700","900"]);
+assert.ok(rows.at(-1).querySelector(".monitor-thumbnail-node-chip").className.includes("is-selected"));
+console.log("PASS: crowded 5 HWND Z rail with selected rear visible");

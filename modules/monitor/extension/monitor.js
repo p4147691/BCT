@@ -28965,6 +28965,9 @@ function syncMonitorBctNodeTargetHighlight() {
     row.classList.toggle("is-selected", selected);
     row.setAttribute("aria-selected", selected ? "true" : "false");
   }
+  for(const visual of document.querySelectorAll(".monitor-desktop-thumb-visual")){
+    globalThis.MonitorBctThumbnailProjection?.highlight?.(visual,monitorBctSelectedNodeKey);
+  }
 }
 
 function monitorBctNodeSelectionKey(value) {
@@ -28981,6 +28984,7 @@ function applyMonitorBctNodeHighlight(hwnd) {
   monitorBctNodeHighlightedHwnd = String(hwnd || "");
   applyMonitorWindowHighlight(hwnd, { bctNode: true });
   syncMonitorBctNodeTargetHighlight();
+  syncMonitorAllDesktopThumbnailNodeBadges();
 }
 
 function applyMonitorWindowHighlight(hwnd, options = {}) {
@@ -43897,6 +43901,8 @@ function renderMonitorBctWindowNodes(nodes) {
         void monitorFocusBctSharedWindowTab(node).then((receipt)=>{
           if(!receipt?.ok||receipt.status!=="APPLIED")throw new Error(receipt?.error||"정확한 탭 선택 미확정");
           monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(node);
+        syncMonitorBctNodeTargetHighlight();
+        syncMonitorAllDesktopThumbnailNodeBadges();
           setMonitorStatus((node.nodeLabel||"N?")+" 탭을 선택했습니다.",true,1800);
         }).catch((error)=>setMonitorStatus("탭 선택 실패 · "+(error?.message||error),false,3500));
         return;
@@ -56629,12 +56635,22 @@ function syncMonitorThumbnailTabBadges(container, className) {
     state: monitorLastAiState,
     locations: monitorWindowDesktopLocations,
     highlightedHwnd: monitorBctNodeHighlightedHwnd,
+    selectedNodeKey: monitorBctSelectedNodeKey,
+    nodesForHwnd: (hwnd,state) => (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+      .filter(node=>monitorDisplayHwndForBrowserWindowId(node.windowId,state,node.instanceId,node.sessionId)===String(hwnd))
+      .map(node=>{
+        const match=/^N(\d+)$/.exec(String(node.nodeLabel||"").trim());
+        const stale=node.displayStale===true||node.instanceState!=="OPEN";
+        return {number:match?Number(match[1]):0,key:monitorBctNodeSelectionKey(node),
+          activity:stale?"":node.generating===true?"play":"pause"};
+      }).filter(node=>node.number>0),
     numbersForHwnd: monitorBadgeNodeNumbersForHwnd,
   });
   container.dataset.monitorNodeOverlayStatus = String(diagnostics.status || "UNKNOWN");
   container.dataset.monitorNodeOverlayCandidates = String(Number(diagnostics.candidates) || 0);
   container.dataset.monitorNodeOverlayMatched = String(Number(diagnostics.matched) || 0);
   container.dataset.monitorNodeOverlayRendered = String(Number(diagnostics.rendered) || 0);
+  container.dataset.monitorNodeZStacked = String(Number(diagnostics.zStackedWindows) || 0);
   scheduleMonitorThumbnailProjectionReceipt();
   return diagnostics;
 }

@@ -122,6 +122,65 @@
     return { repositioned, unresolved };
   }
 
+
+  const expanded = new WeakMap();
+  function highlight(container,key) {
+    if(!container)return;
+    for(const chip of container.querySelectorAll(".monitor-thumbnail-node-chip")) {
+      chip.classList.toggle("is-selected",Boolean(key) && String(chip.dataset.nodeKey||"")===String(key));
+    }
+  }
+  function stackOverlaps(container,layer,entries,images,selectedKey,renderOptions) {
+    if(entries.length<2)return {stacked:0,hiddenWindows:0};
+    const bounds=container.getBoundingClientRect?.();
+    const w=positiveNumber(bounds?.width)||container.clientWidth||320;
+    const h=positiveNumber(bounds?.height)||container.clientHeight||180;
+    const rect=(item)=>{
+      const g=item.geometry,l=pixels(g.left,w),t=pixels(g.top,h);
+      return {left:l,top:t,right:l+pixels(g.width,w),bottom:t+pixels(g.height,h)};
+    };
+    const group=entries.filter((a,i)=>entries.some((b,j)=>
+      i!==j && rectanglesOverlap(rect(a),rect(b),0)));
+    if(group.length<2)return {stacked:0,hiddenWindows:0};
+    const sorted=group.map((entry,i)=>({
+      ...entry,order:i,z:positiveNumber(images.get(entry.hwnd)?.dataset?.nativeZIndex)
+    })).sort((a,b)=>(b.z-a.z)||(a.order-b.order));
+    const trusted=sorted.every(e=>e.z>0);
+    const full=expanded.get(container)===true;
+    const selected=String(selectedKey||"");
+    const shown=sorted.filter((entry,i)=>full||i<3||(selected && entry.badge.querySelectorAll(".monitor-thumbnail-node-chip").some(c=>c.dataset.nodeKey===selected)));
+    const doc=container.ownerDocument||root.document;
+    const rail=doc.createElement("span");
+    rail.className="monitor-thumbnail-z-rail";
+    rail.dataset.zOrderConfirmed=String(trusted);
+    for(const item of shown){
+      const row=doc.createElement("span");
+      row.className="monitor-thumbnail-z-row";
+      row.dataset.hwnd=item.hwnd;
+      const index=doc.createElement("span");
+      index.className="monitor-thumbnail-z-index";
+      index.textContent=trusted?String(sorted.indexOf(item)+1):"?";
+      row.append(index);
+      row.append(item.badge);
+      rail.append(row);
+    }
+    const missing=sorted.length-shown.length;
+    if(missing||full){
+      const more=doc.createElement("button");
+      more.type="button";
+      more.className="monitor-thumbnail-z-more";
+      more.textContent=full?"접기":"+"+missing+"창";
+      more.addEventListener?.("pointerdown",e=>e.stopPropagation());
+      more.addEventListener?.("click",e=>{
+        e.stopPropagation();
+        expanded.set(container,!full);
+        render(renderOptions);
+      });
+      rail.append(more);
+    }
+    layer.append(rail);
+    return {stacked:sorted.length,hiddenWindows:missing,zOrderConfirmed:trusted};
+  }
   function render(options = {}) {
     const container = options.container;
     if (!container) return Object.freeze({ status: "NO_CONTAINER", candidates: 0, matched: 0, rendered: 0 });
@@ -163,6 +222,7 @@
     let matched = 0;
     let rendered = 0;
     const renderedEntries = [];
+    const detailed = typeof options.nodesForHwnd === 'function';
     const skipped = { hidden: 0, minimized: 0, noNumbers: 0, noGeometry: 0 };
 
     for (const hwnd of candidates) {
@@ -177,9 +237,10 @@
         skipped.minimized += 1;
         continue;
       }
-      const numbers = [...new Set(numbersForHwnd(hwnd, state)
-        .map(Number)
-        .filter((number) => Number.isSafeInteger(number) && number > 0))];
+      const detailedNodes=detailed ? options.nodesForHwnd(hwnd,state) : null;
+      const rows=Array.isArray(detailedNodes)?detailedNodes.filter(n=>Number.isSafeInteger(Number(n?.number))&&Number(n.number)>0):[];
+      const numbers=detailed ? [...new Set(rows.map(n=>Number(n.number)))]
+        : [...new Set(numbersForHwnd(hwnd,state).map(Number).filter(n=>Number.isSafeInteger(n)&&n>0))];
       if (!numbers.length) {
         skipped.noNumbers += 1;
         continue;
@@ -203,8 +264,39 @@
       const badge = documentObject.createElement("span");
       badge.className = "monitor-node-number-badge monitor-thumbnail-tab-badge";
       badge.dataset.hwnd = hwnd;
-      badge.textContent = `N${numbers.join("/")}`;
-      badge.title = `BCT 노드 ${numbers.join(" / ")}`;
+      if(detailed){
+        badge.classList.add("monitor-thumbnail-node-chip-list");
+        const chosen=String(options.selectedNodeKey||"");
+        const selected=rows.find(n=>String(n.key||"")===chosen);
+        const displayed=rows.slice(0,3);
+        if(selected && !displayed.includes(selected))displayed[Math.max(0,displayed.length-1)]=selected;
+        for(const item of displayed){
+          const chip=documentObject.createElement("span");
+          chip.className="monitor-thumbnail-node-chip";
+          chip.dataset.nodeKey=String(item.key||"");
+          chip.dataset.number=String(item.number);
+          chip.textContent="N"+item.number;
+          chip.classList.toggle("is-selected",Boolean(chosen)&&chip.dataset.nodeKey===chosen);
+          const activity=String(item.activity||"");
+          if(["play","pause","complete"].includes(activity)){
+            const status=documentObject.createElement("span");
+            status.className="monitor-thumbnail-chip-status";
+            status.textContent=activity==="play"?"▶":activity==="pause"?"Ⅱ":"□";
+            chip.append(status);
+          }
+          badge.append(chip);
+        }
+        if(rows.length>displayed.length){
+          const more=documentObject.createElement("span");
+          more.className="monitor-thumbnail-node-overflow";
+          more.textContent="+"+(rows.length-displayed.length)+"노드";
+          badge.append(more);
+        }
+        badge.title="BCT 노드 "+numbers.join(" / ");
+      }else{
+        badge.textContent="N"+numbers.join("/");
+        badge.title="BCT 노드 "+numbers.join(" / ");
+      }
       windowLayer.append(badge);
       layer.append(windowLayer);
       renderedEntries.push({ badge, geometry, hwnd });
@@ -212,7 +304,9 @@
     }
 
     const arrangement = arrangeBadges(container, renderedEntries);
-
+    const stack = detailed ? stackOverlaps(container,layer,renderedEntries,imagesByHwnd,options.selectedNodeKey,options)
+      : {stacked:0,hiddenWindows:0,zOrderConfirmed:false};
+    if(detailed)highlight(container,options.selectedNodeKey);
     return Object.freeze({
       status: rendered ? "RENDERED" : (matched ? "NO_GEOMETRY" : "NO_MATCH"),
       desktopId,
@@ -221,9 +315,12 @@
       rendered,
       repositioned: arrangement.repositioned,
       unresolvedCollisions: arrangement.unresolved,
+      zStackedWindows:stack.stacked,
+      hiddenWindows:stack.hiddenWindows,
+      zOrderConfirmed:stack.zOrderConfirmed,
       skipped: Object.freeze(skipped),
     });
   }
 
-  root.MonitorBctThumbnailProjection = Object.freeze({ render });
+  root.MonitorBctThumbnailProjection = Object.freeze({ render, highlight });
 })(globalThis);

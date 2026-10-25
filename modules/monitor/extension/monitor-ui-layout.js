@@ -128,7 +128,7 @@
       const age = now - timestamp;
       // Returning a cached successful frame is not a new WGC capture.
       if (policy.mode === "last_good" && age > policy.maxAgeSeconds * 1000) {
-        return {state:"placeholder",source:String(input?.fallbackSource || ""),capturedAt:0,label:""};
+        return {state:"placeholder",source:String(input?.fallbackSource || ""),capturedAt:0,label:"캡처 만료 · 대체 화면"};
       }
       if (policy.mode === "last_good" && age > policy.staleAfterSeconds * 1000) {
         return {state:"stale",source:incomingSource,capturedAt:timestamp,label:"오래된 화면"};
@@ -147,7 +147,7 @@
       return {state: stale ? "stale" : "held",source:previousSource,
         capturedAt,label:stale ? "오래된 화면" : "이전 화면"};
     }
-    return {state:"placeholder",source:incomingSource,capturedAt:0,label:""};
+    return {state:"placeholder",source:incomingSource,capturedAt:0,label:"캡처 불가 · 대체 화면"};
   }
 
   function create(root, storage, onError, options = {}) {
