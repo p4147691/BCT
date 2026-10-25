@@ -52305,6 +52305,8 @@ async function applyObservedWallpaper(desktopId, force = false) {
 
 
   const token = ++monitorWallpaperToken;
+  const wallpaperState = globalThis.MonitorWallpaperState;
+  const request = wallpaperState?.begin?.(desktopId);
 
 
 
@@ -52337,6 +52339,9 @@ async function applyObservedWallpaper(desktopId, force = false) {
 
 
   if (token !== monitorWallpaperToken) return;
+  const recorded = request ? wallpaperState.resolve(desktopId, request.generation,
+    {ok:Boolean(dataUri),dataUri,error:dataUri ? "" : "NATIVE_WALLPAPER_UNAVAILABLE"}) : null;
+  if (request && !recorded?.applied) return;
 
 
 
