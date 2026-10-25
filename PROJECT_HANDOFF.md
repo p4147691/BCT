@@ -1977,3 +1977,20 @@ RCC 소스/reload, Chrome, Windows 국가·언어/Beta UTF-8 설정과 재부팅
   `RCC_DELIVERY_EFFECT_UNKNOWN`/NEEDS_REVIEW로 보존됐지만 N33 실제 사용자 턴과 전체 Worker
   원문 도착을 UI에서 확인했으므로 재전송하지 않았다. 이 과거 종료 UNKNOWN은 이후 별도 LIVE
   수락을 차단하지 않았다.
+
+## 24. 새 Chat 생성 안전성 통합 — 2026-10-25
+
+- PR #338은 main `02fc57dd6133d6aec1aab2893c52b96b30cf1118`에 병합됐다. 새 Chat
+  생성·전송 결합 경로는 fresh RCC state에서 발급된 opaque `target_ref`만 받는다. 이전
+  HWND/window/tab/session 숫자를 대신 넣으면 Claim 전 `RCC_LEGACY_NUMERIC_TARGET_REJECTED`로
+  거절하며, session·topology·Core 재시작 변화도 참조 만료 경계다.
+- 생성 대상은 일반 Chat 표면일 때만 입력한다. Codex task composer 또는 판정 불가 표면은
+  `NOT_APPLIED` 영수증과 표면 근거만 남기며 프롬프트를 주입하지 않는다. Codex를 일반 Chat
+  relay로 우회 사용하지 않는다; 별도 adapter 설계가 필요한 후속 범위다.
+- 동일 principal의 명시적 후속 Work만, 정확한 predecessor work/operation·instance·epoch와
+  fresh RCC idle/result proof가 모두 맞을 때 `RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH`의
+  정확한 broad claim 하나를 retire할 수 있다. 원 UNKNOWN 효과와 영수증은 보존하며 원 요청을
+  재전송하지 않는다. 다른 principal·다른 대상·pending 결과는 계속 차단된다.
+- 통합 PR 검증은 RCC integration 64건, Chat surface gate, new Chat service, release-candidate
+  check 및 `git diff --check` PASS다. main CI #40151446661은 병합 후 진행 중이다. LIVE Core
+  배포·재시작과 Monitor native 산출물 변경은 아직 하지 않았다.
