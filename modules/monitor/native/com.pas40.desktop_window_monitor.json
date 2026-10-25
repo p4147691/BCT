@@ -1,7 +1,7 @@
 {
   "name": "com.pas40.desktop_window_monitor",
   "description": "DesktopWindow file shell native host",
-  "path": "D:\\ChromeExtensions\\DesktopWindow-Monitor\\native\\1.9.20.173-dwm-ui\\DesktopWindowMonitorHost.exe",
+  "path": "D:\\ChromeExtensions\\DesktopWindow-Monitor\\native\\1.9.20.128-hidden-all\\DesktopWindowMonitorHost.exe",
   "type": "stdio",
   "allowed_origins": [
     "chrome-extension://kaigandfpieiogfbfaemoimenmipedck/"

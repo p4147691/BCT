@@ -39,6 +39,16 @@ function Invoke-MonitorStructureGate {
 }
 
 Invoke-MonitorStructureGate
+# Prevent publishing an extension whose file and control Native Messaging
+# manifests both point at the newer control-only executable. No writes occur.
+$nativeRoleChecker = Join-Path $runtimeRoot 'tools\check_monitor_native_host_roles.py'
+if (!(Test-Path -LiteralPath $nativeRoleChecker -PathType Leaf)) {
+  throw 'Monitor Native host role preflight missing'
+}
+$nativeRoleResult = @(& $pythonCommand.Source $nativeRoleChecker --root $runtimeRoot --probe 2>&1)
+if ($LASTEXITCODE -ne 0) {
+  throw ("Monitor Native host role preflight failed:" + [Environment]::NewLine + ($nativeRoleResult -join [Environment]::NewLine))
+}
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $currentVersion = [string]$manifest.version
 $match = [regex]::Match($currentVersion, '^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$')
