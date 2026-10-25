@@ -19,6 +19,7 @@ $outputExe = Join-Path $output "DesktopWindowMonitorHost.exe"
 $hostSource = Join-Path $source "MonitorDesktopHost.cs"
 $visualSource = Join-Path $source "DesktopVisualSnapshot.cs"
 $dragPreviewSource = Join-Path $source "MonitorDragPreviewOverlay.cs"
+$wallpaperWatchSource = Join-Path $source "MonitorWallpaperRegistryWatcher.cs"
 $automationClient = Join-Path $framework "UIAutomationClient.dll"
 $automationTypes = Join-Path $framework "UIAutomationTypes.dll"
 & $compiler /nologo /target:exe /platform:anycpu /optimize+ `
@@ -26,6 +27,7 @@ $automationTypes = Join-Path $framework "UIAutomationTypes.dll"
     $hostSource `
     $visualSource `
     $dragPreviewSource `
+    $wallpaperWatchSource `
     /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll `
     /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll `
     "/reference:$automationClient" `

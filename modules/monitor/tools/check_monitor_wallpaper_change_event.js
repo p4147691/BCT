@@ -3,8 +3,13 @@ const fs=require("fs"),assert=require("node:assert/strict"),vm=require("node:vm"
 const js=fs.readFileSync("modules/monitor/extension/monitor.js","utf8");
 const native=fs.readFileSync("modules/monitor/native/src/MonitorDesktopHost.cs","utf8");
 assert.match(native,/StartWallpaperChangeEvents\(\);/);
-assert.match(native,/SystemEvents\.UserPreferenceChanged\s*\+=/);
-assert.match(native,/UserPreferenceCategory\.Desktop/);
+const registryWatcher=fs.readFileSync("modules/monitor/native/src/MonitorWallpaperRegistryWatcher.cs","utf8");
+assert.match(native,/MonitorWallpaperRegistryWatcher\.Start\(/,"Native startup must use the OS registry watcher");
+assert.doesNotMatch(native,/SystemEvents\.UserPreferenceChanged\s*\+=/,"no unreliable wallpaper-only Windows 11 event dependency");
+assert.match(registryWatcher,/RegNotifyChangeKeyValue\(/,"blocking registry notifications, not polling");
+assert.match(registryWatcher,/VirtualDesktops\\Desktops/,"per-virtual-desktop wallpaper key watched");
+assert.match(registryWatcher,/Control Panel\\Desktop/,"global wallpaper key watched");
+assert.doesNotMatch(registryWatcher,/setInterval|Timer\s*\(/,"no polling");
 assert.match(native,/"type", "desktopWallpaperChanged"/);
 const start=js.indexOf('    if (response?.event === true && response?.type === "desktopWallpaperChanged")');
 const end=js.indexOf('    if (response?.event === true && response?.type === "monitorDragPreviewReleased")',start);

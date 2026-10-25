@@ -1172,23 +1172,22 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
     // Notify on Windows desktop wallpaper changes; no file polling.
     private static void StartWallpaperChangeEvents()
     {
-        try
+        // Windows 11 wallpaper-only changes do not consistently raise
+        // SystemEvents.UserPreferenceChanged. Listen for registry value changes
+        // with a blocking Win32 notification, not periodic polling.
+        MonitorWallpaperRegistryWatcher.Start(keyPath =>
         {
-            SystemEvents.UserPreferenceChanged += (sender, args) =>
+            try
             {
-                if (args.Category != UserPreferenceCategory.Desktop) return;
-                try
-                {
-                    EmitMonitorEvent(new Dictionary<string, object> {
-                        { "type", "desktopWallpaperChanged" },
-                        { "event", true },
-                        { "at", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
-                    });
-                }
-                catch { }
-            };
-        }
-        catch { }
+                EmitMonitorEvent(new Dictionary<string, object> {
+                    { "type", "desktopWallpaperChanged" },
+                    { "event", true },
+                    { "source", "registry-notify" },
+                    { "at", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
+                });
+            }
+            catch { }
+        });
     }
 
     internal static void EmitMonitorEvent(Dictionary<string, object> message)
