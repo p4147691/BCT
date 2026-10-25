@@ -56640,9 +56640,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
       .filter(node=>monitorDisplayHwndForBrowserWindowId(node.windowId,state,node.instanceId,node.sessionId)===String(hwnd))
       .map(node=>{
         const match=/^N(\d+)$/.exec(String(node.nodeLabel||"").trim());
-        const stale=node.displayStale===true||node.instanceState!=="OPEN";
-        return {number:match?Number(match[1]):0,key:monitorBctNodeSelectionKey(node),
-          activity:stale?"":node.generating===true?"play":"pause"};
+        return {number:match?Number(match[1]):0,key:monitorBctNodeSelectionKey(node)};
       }).filter(node=>node.number>0),
     numbersForHwnd: monitorBadgeNodeNumbersForHwnd,
   });

@@ -4000,7 +4000,6 @@
 .monitor-thumbnail-node-chip-list{display:flex!important;flex-wrap:wrap;gap:2px;align-content:flex-start;width:max-content;height:auto;max-width:100%;line-height:1.1;overflow:visible;}
 .monitor-thumbnail-node-chip{display:inline-flex;align-items:center;gap:2px;padding:2px 4px;border:1px solid rgba(180,207,249,.8);border-radius:4px;background:rgba(12,26,45,.92);color:#f9fbff;font-size:10px;font-weight:700;white-space:nowrap;}
 .monitor-thumbnail-node-chip.is-selected{background:#ffe17b!important;color:#191100!important;border:2px solid #ffbd38!important;box-shadow:0 0 0 1px #110d03,0 0 10px rgba(255,209,69,.95);text-shadow:none!important;font-weight:900;}
-.monitor-thumbnail-chip-status{font-size:8px;line-height:1;opacity:.9;}
 .monitor-thumbnail-node-overflow{font-size:9px;color:#fff;background:#32455b;border-radius:3px;padding:2px 4px;white-space:nowrap;}
 .monitor-thumbnail-z-rail{position:absolute;top:3px;left:3px;max-width:min(80%,200px);max-height:88%;overflow:hidden;display:flex;flex-direction:column;gap:2px;z-index:2147480001;pointer-events:none;}
 .monitor-thumbnail-z-row{display:flex;align-items:flex-start;gap:2px;padding:1px 2px;background:rgba(11,20,34,.83);border:1px solid rgba(170,195,225,.45);border-radius:4px;min-height:16px;box-sizing:border-box;}

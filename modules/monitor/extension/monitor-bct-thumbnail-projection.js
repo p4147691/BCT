@@ -286,13 +286,8 @@
           chip.dataset.number=String(item.number);
           chip.textContent="N"+item.number;
           chip.classList.toggle("is-selected",Boolean(chosen)&&chip.dataset.nodeKey===chosen);
-          const activity=String(item.activity||"");
-          if(["play","pause","complete"].includes(activity)){
-            const status=documentObject.createElement("span");
-            status.className="monitor-thumbnail-chip-status";
-            status.textContent=activity==="play"?"▶":activity==="pause"?"Ⅱ":"□";
-            chip.append(status);
-          }
+          // Exact conversation identity only. Work-state icon belongs to the
+          // browser-window center overlay, never inside an N badge.
           badge.append(chip);
         }
         if(rows.length>displayed.length){
