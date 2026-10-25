@@ -78,11 +78,11 @@ class RccIntegrationTests(unittest.TestCase):
             },
         }
 
-    def _fresh_window_target(self) -> str:
+    def _fresh_window_target(self, *, work_id="rcc-work") -> str:
         self.client.target_state = self._target_state()
         feature = self.bct.operations._features["relay_browser"]
         targets = feature._issue_target_refs(
-            work_id="rcc-work", instance_id="instance123", session_id="session1",
+            work_id=work_id, instance_id="instance123", session_id="session1",
             tabs=self.client.target_state["state"]["tabs"],
         )
         return next(target["target_ref"] for target in targets
@@ -957,9 +957,10 @@ class RccIntegrationTests(unittest.TestCase):
         wrong = self._new_chat_result(operation_id)
         wrong["windowId"] = 99
         self.client.result = wrong
+        target_ref = self._fresh_window_target()
         original = self.call(operation_id, {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "old request", "timeout_s": 120,
+            "mode": "tab", "target_ref": target_ref, "text": "old request", "timeout_s": 120,
         })
         self.assertEqual(Outcome.UNKNOWN, original.outcome)
         self.assertEqual("RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH", original.error)
@@ -986,14 +987,15 @@ class RccIntegrationTests(unittest.TestCase):
             self._idle_rcc_state(), self._missing_rcc_result(original_id),
             self._new_chat_result("successor-independent"),
         ]
+        target_ref = self._fresh_window_target(work_id="rcc-successor")
         successor = self._call_successor("successor-independent", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "new independent request", "timeout_s": 120,
+            "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
             "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
         })
         self.assertEqual(Outcome.APPLIED, successor.outcome)
         self.assertEqual(
-            ["new-chat-send", "state", "result", "new-chat-send"],
+            ["state", "new-chat-send", "state", "state", "result", "new-chat-send"],
             [call["command"] for call in self.client.calls],
         )
         db = self.bct.store._connect()
@@ -1025,14 +1027,18 @@ class RccIntegrationTests(unittest.TestCase):
         original_id = self._terminal_mismatch_original()
         foreign = Principal("foreign", "test", frozenset({"relay_browser"}))
         self._successor_work(principal=foreign)
+        target_ref = self._fresh_window_target(work_id="rcc-successor")
         calls_before = len(self.client.calls)
         with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK"):
             self._call_successor("foreign-independent", {
                 "command": "create-and-send", "instance_id": "instance123",
-                "mode": "tab", "window_id": 11, "text": "new independent request", "timeout_s": 120,
+                "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
                 "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
             }, principal=foreign)
-        self.assertEqual(calls_before, len(self.client.calls))
+        # The opaque target is revalidated before the inherited claim fence is
+        # evaluated.  It is read-only; no successor effect was dispatched.
+        self.assertEqual(calls_before + 1, len(self.client.calls))
+        self.assertEqual("state", self.client.calls[-1]["command"])
         db = self.bct.store._connect()
         try:
             unresolved = db.execute(
@@ -1048,14 +1054,15 @@ class RccIntegrationTests(unittest.TestCase):
         pending = self._missing_rcc_result(original_id)
         pending.update({"pending": True, "pendingStatus": {"state": "QUEUED"}})
         self.client.results = [self._idle_rcc_state(), pending]
+        target_ref = self._fresh_window_target(work_id="rcc-successor")
         with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK"):
             self._call_successor("successor-pending", {
                 "command": "create-and-send", "instance_id": "instance123",
-                "mode": "tab", "window_id": 11, "text": "new independent request", "timeout_s": 120,
+                "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
                 "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
             })
         self.assertEqual(
-            ["new-chat-send", "state", "result"],
+            ["state", "new-chat-send", "state", "state", "result"],
             [call["command"] for call in self.client.calls],
         )
         db = self.bct.store._connect()
