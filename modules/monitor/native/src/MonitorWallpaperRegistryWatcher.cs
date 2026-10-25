@@ -12,7 +12,6 @@ internal static class MonitorWallpaperRegistryWatcher
     private const uint NameChanged = 0x00000001;
     private const uint ValueChanged = 0x00000004;
     private const int Success = 0;
-    private static long lastObservedEventTicks;
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, EntryPoint = "RegOpenKeyExW")]
     private static extern int RegOpenKeyEx(IntPtr key, string path, int options, int access, out IntPtr opened);
@@ -54,15 +53,11 @@ internal static class MonitorWallpaperRegistryWatcher
                 // once AFTER the previous change; no periodic reads, sleeps or retries.
                 int result = RegNotifyChangeKeyValue(key, true, NameChanged | ValueChanged, IntPtr.Zero, false);
                 if (result != Success) return;
-                long now = DateTime.UtcNow.Ticks;
-                long previous = Interlocked.Read(ref lastObservedEventTicks);
-                // Windows may change several theme values together. Coalesce duplicate
-                // native signals only; the next distinct change is still observed.
-                if (now - previous > TimeSpan.TicksPerMillisecond * 150 &&
-                    Interlocked.CompareExchange(ref lastObservedEventTicks, now, previous) == previous)
-                {
-                    try { changed(keyPath); } catch { /* do not crash Native host */ }
-                }
+                // Deliver every real registry change. The Monitor's per-desktop
+                // generation fence rejects outdated image responses. Suppressing the
+                // second registry notification could otherwise discard the FINAL
+                // wallpaper value when global and virtual-desktop writes are close.
+                try { changed(keyPath); } catch { /* do not crash Native host */ }
             }
         }
         finally { RegCloseKey(key); }

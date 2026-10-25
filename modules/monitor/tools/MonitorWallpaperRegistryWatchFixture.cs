@@ -22,6 +22,11 @@ internal static class WallpaperRegistryWatcherFixture
                 if (!received.WaitOne(3500)) throw new Exception("REGISTRY_NOTIFICATION_NOT_RECEIVED");
                 if (events != 1) throw new Exception("UNEXPECTED_WATCH_NOTIFICATION_COUNT:"+events);
                 if (from != Fixture) throw new Exception("WATCHED_KEY_IDENTITY_MISMATCH");
+                received.Reset();
+                Thread.Sleep(50); // Test-only: registration should be armed; below previous 150ms window.
+                created.SetValue("Wallpaper", "BCT_E2E_SECOND_"+Guid.NewGuid().ToString("N"),RegistryValueKind.String);
+                if (!received.WaitOne(3500)) throw new Exception("SECOND_NOTIFICATION_NOT_RECEIVED");
+                if (events != 2) throw new Exception("SEQUENTIAL_WALLPAPER_EVENTS_DROPPED:"+events);
                 Console.WriteLine("PASS Native Registry notification delivered on exact owned fixture key; notifications="+events);
             }
         }
