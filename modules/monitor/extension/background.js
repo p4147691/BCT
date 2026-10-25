@@ -91,6 +91,9 @@ function ensureDesktopShellNativePort() {
   const port = chrome.runtime.connectNative(HOST_NAME);
   desktopShellNativePort = port;
   port.onMessage.addListener((response) => {
+    // Native emits unsolicited desktop/window events on this same channel.
+    // They must never consume the next pending file-list or mutation reply.
+    if (response?.event === true) return;
     const pending = desktopShellNativePending.shift();
     if (pending) pending.resolve(response);
   });
