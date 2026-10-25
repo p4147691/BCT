@@ -148,10 +148,19 @@
     const trusted=sorted.every(e=>e.z>0);
     const full=expanded.get(container)===true;
     const selected=String(selectedKey||"");
-    const shown=sorted.filter((entry,i)=>full||i<3||(selected && entry.badge.querySelectorAll(".monitor-thumbnail-node-chip").some(c=>c.dataset.nodeKey===selected)));
+    // Reserve room for the overflow control. A small D1 thumbnail must not
+    // clip the exact selected node behind a fourth row.
+    const capacity=Math.max(1,Math.min(3,Math.floor(((h*0.88)-20)/19)));
+    const selectedEntry=selected ? sorted.find(entry=>
+      entry.badge.querySelectorAll(".monitor-thumbnail-node-chip").some(c=>c.dataset.nodeKey===selected)) : null;
+    const front=sorted.slice(0,selectedEntry && sorted.indexOf(selectedEntry)>=capacity
+      ? Math.max(0,capacity-1) : capacity);
+    const shown=full ? sorted : sorted.filter(entry=>front.includes(entry)||entry===selectedEntry);
+
     const doc=container.ownerDocument||root.document;
     const rail=doc.createElement("span");
     rail.className="monitor-thumbnail-z-rail";
+    rail.classList.toggle("is-expanded",full);
     rail.dataset.zOrderConfirmed=String(trusted);
     for(const item of shown){
       const row=doc.createElement("span");

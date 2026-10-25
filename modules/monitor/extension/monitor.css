@@ -4008,3 +4008,5 @@
 .monitor-thumbnail-z-row .monitor-thumbnail-tab-badge{position:relative!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;display:flex!important;transform:none!important;max-width:100%;}
 .monitor-thumbnail-z-more{pointer-events:auto;align-self:start;cursor:pointer;background:#243b53;color:white;border:1px solid #91a6c1;border-radius:3px;font:700 10px sans-serif;padding:2px 5px;}
 .monitor-thumbnail-z-rail[data-z-order-confirmed="false"]::before{content:"Z?";font:700 9px sans-serif;color:#ffdc84;}
+
+.monitor-thumbnail-z-rail.is-expanded{overflow-y:auto;pointer-events:auto;scrollbar-width:thin;}

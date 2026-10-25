@@ -226,8 +226,8 @@ const crowded=context.MonitorBctThumbnailProjection.render({
  nodesForHwnd:hwnd=>sourceNodes.get(hwnd)||[],selectedNodeKey:"rear:900"
 });
 assert.equal(crowded.zStackedWindows,5);
-assert.equal(crowded.hiddenWindows,1);
+assert.equal(crowded.hiddenWindows,2,"bounded rail reserves space for hidden count");
 const rows=layer.querySelectorAll(".monitor-thumbnail-z-row");
-assert.deepEqual(rows.map(x=>x.dataset.hwnd),["600","500","700","900"]);
+assert.deepEqual(rows.map(x=>x.dataset.hwnd),["600","500","900"],"selected rear remains visible within three rows");
 assert.ok(rows.at(-1).querySelector(".monitor-thumbnail-node-chip").className.includes("is-selected"));
 console.log("PASS: crowded 5 HWND Z rail with selected rear visible");
