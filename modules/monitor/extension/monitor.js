@@ -52119,7 +52119,8 @@ async function getObservedWallpaper(desktopId, force = false) {
 
 
   const actual = monitorWallpaperActuals.get(desktopId);
-  if (actual?.dataUri) {
+  // Explicit refresh must consult Native, not reuse an indefinitely retained image.
+  if (!force && actual?.dataUri) {
     monitorWallpaperActuals.delete(desktopId);
     monitorWallpaperActuals.set(desktopId, actual);
     return actual.dataUri;
