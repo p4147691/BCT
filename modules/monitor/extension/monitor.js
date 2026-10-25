@@ -46749,12 +46749,42 @@ function ensureMonitorNativePort() {
     if (response?.event === true && response?.type === "windowMoveSizeEnd") { scheduleMonitorWindowLifecycleEvent(response); return; }
     if (response?.event === true && response?.type === "windowForegroundChanged") { handleMonitorForegroundChangedEvent(response); return; }
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {
-      const desktopId = String(monitorDesktopState?.currentDesktopId || "");
-      if (desktopId) {
-        monitorWallpaperActuals.delete(desktopId);
-        monitorWallpaperCache.delete(desktopId);
-        void applyObservedWallpaper(desktopId, true);
+      const explicitId = String(response?.desktopId || "").trim();
+      // Windows preference events do not identify a specific virtual desktop.
+      // Refresh only thumbnails actually displayed by this Monitor instance.
+      const desktopIds = explicitId ? [explicitId] :
+        [...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual") || [])]
+          .map(visual => String(visual.dataset.desktopId || "").trim()).filter(Boolean);
+      if (!desktopIds.length) {
+        const selected = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
+        if (selected) desktopIds.push(selected);
       }
+      if (monitorDesktopThumbs) monitorDesktopThumbs.dataset.wallpaperEventAt = String(Date.now());
+      void globalThis.MonitorWallpaperEventRefresh?.notify?.({
+        desktopIds,
+        invalidate: id => { monitorWallpaperActuals.delete(id); monitorWallpaperCache.delete(id); },
+        read: id => getObservedWallpaper(id, true),
+        display: (id, source, outcome) => {
+          for (const visual of monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual") || []) {
+            if (String(visual.dataset.desktopId || "") !== id) continue;
+            visual.style.backgroundImage = source ? "url(" + JSON.stringify(source) + ")" : "";
+            visual.dataset.wallpaperCapture = outcome.status;
+          }
+          if (String(monitorPreviewWallpaper?.dataset.desktopId || "") === id) {
+            monitorPreviewWallpaper.style.backgroundImage = source ? "url(" + JSON.stringify(source) + ")" : "";
+            monitorPreviewWallpaper.dataset.captureState = outcome.status;
+          }
+        },
+        onObserved: outcome => {
+          if (monitorDesktopThumbs) {
+            monitorDesktopThumbs.dataset.wallpaperLastResult = outcome.status;
+            monitorDesktopThumbs.dataset.wallpaperLastDesktopId = outcome.desktopId;
+            monitorDesktopThumbs.dataset.wallpaperLastReason = outcome.reason;
+          }
+        },
+      }).catch(error => {
+        if (monitorDesktopThumbs) monitorDesktopThumbs.dataset.wallpaperLastReason = String(error?.message || "EVENT_REFRESH_ERROR");
+      });
       return;
     }
 
