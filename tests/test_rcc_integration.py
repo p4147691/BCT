@@ -21,9 +21,13 @@ class FakeRelayClient:
         self.result: dict = {"type": "host:result", "ok": True}
         self.results: list[dict | Exception] = []
         self.error: Exception | None = None
+        self.target_state: dict | None = None
 
     def request(self, **values):
         self.calls.append(values)
+        if (str(values.get("request_id") or "").startswith("rcc-target-")
+                and self.target_state is not None):
+            return dict(self.target_state)
         if self.results:
             result = self.results.pop(0)
             if isinstance(result, Exception):
@@ -62,6 +66,27 @@ class RccIntegrationTests(unittest.TestCase):
             principal=self.principal, work_id="rcc-work", operation_id=operation_id,
             capability="relay_browser", arguments=arguments,
         )
+
+    @staticmethod
+    def _target_state(*, session_id="session1", tab_id=10, window_id=11):
+        return {
+            "type": "host:result", "ok": True,
+            "state": {
+                "instanceId": "instance123", "sessionId": session_id,
+                "tabs": [{"tabId": tab_id, "windowId": window_id,
+                          "conversationKey": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d"}],
+            },
+        }
+
+    def _fresh_window_target(self, *, work_id="rcc-work") -> str:
+        self.client.target_state = self._target_state()
+        feature = self.bct.operations._features["relay_browser"]
+        targets = feature._issue_target_refs(
+            work_id=work_id, instance_id="instance123", session_id="session1",
+            tabs=self.client.target_state["state"]["tabs"],
+        )
+        return next(target["target_ref"] for target in targets
+                    if target["target_kind"] == "window")
 
     def _generic_unknown_send(self):
         request = {
@@ -409,9 +434,10 @@ class RccIntegrationTests(unittest.TestCase):
     def test_extension_reload_coexists_with_finished_unknown_effect_claim(self):
         wrong = self._new_chat_result("compose-before-reload")
         wrong["windowId"] = 99
+        target_ref = self._fresh_window_target()
         original = self.call("compose-before-reload", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+            "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
         })
         self.assertEqual(Outcome.UNKNOWN, original.outcome)
         self.client.results = [
@@ -520,12 +546,13 @@ class RccIntegrationTests(unittest.TestCase):
 
 
     def test_extension_reload_does_not_bypass_running_rcc_effect(self):
+        target_ref = self._fresh_window_target()
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
             operation_id="compose-still-running", capability="relay_browser",
             arguments={
                 "command": "create-and-send", "instance_id": "instance123",
-                "mode": "tab", "window_id": 11, "text": "hello",
+                "mode": "tab", "target_ref": target_ref, "text": "hello",
                 "timeout_s": 120,
             },
         )
@@ -534,7 +561,7 @@ class RccIntegrationTests(unittest.TestCase):
             self.call("reload-during-running-effect", {
                 "command": "reload-extension", "instance_id": "instance123",
             })
-        self.assertEqual([], self.client.calls)
+        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
 
     def test_active_exact_delivery_claim_blocks_maintenance_reload(self):
         created, _ = self.bct.operations.begin(
@@ -581,13 +608,14 @@ class RccIntegrationTests(unittest.TestCase):
             },
         )
         self.assertTrue(created)
+        target_ref = self._fresh_window_target()
         with self.assertRaisesRegex(Exception, "RCC_MAINTENANCE_IN_PROGRESS"):
             self.call("compose-during-reload", {
                 "command": "create-and-send", "instance_id": "instance123",
-                "mode": "tab", "window_id": 11, "text": "hello",
+                "mode": "tab", "target_ref": target_ref, "text": "hello",
                 "timeout_s": 120,
             })
-        self.assertEqual([], self.client.calls)
+        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
 
     def test_bootstrap_send_requires_exact_creation_identity(self):
         with self.assertRaisesRegex(PreconditionError, "RCC_BOOTSTRAP_IDENTITY_REQUIRED"):
@@ -683,50 +711,104 @@ class RccIntegrationTests(unittest.TestCase):
             ], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
         return result
 
+    def test_target_discovery_issues_opaque_window_and_tab_refs(self):
+        self.client.target_state = self._target_state()
+        discovered = self.call("target-discovery-1", {
+            "command": "target-discover", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, discovered.outcome)
+        targets = discovered.output["targets"]
+        self.assertEqual({"tab", "window"}, {target["target_kind"] for target in targets})
+        self.assertTrue(all(str(target["target_ref"]).startswith("rcc-target-v1.")
+                            for target in targets))
+        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
+
+    def test_create_and_send_rejects_raw_window_before_operation_claim(self):
+        with self.assertRaisesRegex(PreconditionError, "RCC_LEGACY_NUMERIC_TARGET_REJECTED"):
+            self.call("raw-window-rejected", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "window_id": 11, "text": "never send",
+            })
+        self.assertEqual([], self.client.calls)
+        with self.assertRaises(KeyError):
+            self.bct.store.get_operation_for(
+                operation_id="raw-window-rejected", work_id="rcc-work", principal_id="codex",
+            )
+
+    def test_create_and_send_rejects_reference_after_session_rollover_before_claim(self):
+        target_ref = self._fresh_window_target()
+        self.client.target_state = self._target_state(session_id="session2")
+        with self.assertRaisesRegex(PreconditionError, "RCC_TARGET_REFERENCE_SESSION_EXPIRED"):
+            self.call("stale-target-rejected", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "target_ref": target_ref, "text": "never send",
+            })
+        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
+        with self.assertRaises(KeyError):
+            self.bct.store.get_operation_for(
+                operation_id="stale-target-rejected", work_id="rcc-work", principal_id="codex",
+            )
+
+    def test_create_and_send_rejects_reference_after_target_epoch_changes_before_claim(self):
+        target_ref = self._fresh_window_target()
+        self.client.target_state = self._target_state(tab_id=12, window_id=11)
+        with self.assertRaisesRegex(PreconditionError, "RCC_TARGET_REFERENCE_EPOCH_EXPIRED"):
+            self.call("epoch-target-rejected", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "target_ref": target_ref, "text": "never send",
+            })
+        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
+
     def test_create_and_send_tab_returns_exact_terminal_result_in_one_call(self):
         self.client.result = self._new_chat_result("compose-tab")
+        target_ref = self._fresh_window_target()
         first = self.call("compose-tab", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120})
+            "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120})
         duplicate = self.call("compose-tab", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120})
+            "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120})
         self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(["new-chat-send"], [c["command"] for c in self.client.calls])
-        self.assertEqual("compose-tab", self.client.calls[0]["request_id"])
-        self.assertEqual(11, self.client.calls[0]["extra"]["windowId"])
-        self.assertEqual(118000, self.client.calls[0]["extra"]["responseTimeoutMs"])
+        self.assertEqual(["state", "new-chat-send", "state"], [c["command"] for c in self.client.calls])
+        self.assertEqual("compose-tab", self.client.calls[1]["request_id"])
+        self.assertEqual(11, self.client.calls[1]["extra"]["windowId"])
+        self.assertEqual(118000, self.client.calls[1]["extra"]["responseTimeoutMs"])
         self.assertEqual("new-chat-send", first.evidence["rcc_command"])
         self.assertEqual("OK", first.output["result"]["reply"])
 
     def test_create_and_send_requires_exact_existing_window(self):
+        target_ref = self._fresh_window_target()
         with self.assertRaisesRegex(PreconditionError, "RCC_COMPOSE_MODE_OR_TEXT_REQUIRED"):
             self.call("compose-window", {"command": "create-and-send",
                 "instance_id": "instance123", "mode": "window", "text": "hello"})
-        with self.assertRaisesRegex(PreconditionError, "RCC_WINDOW_ID_REQUIRED"):
+        with self.assertRaisesRegex(PreconditionError, "RCC_TARGET_REFERENCE_REQUIRED"):
             self.call("compose-no-window", {"command": "create-and-send",
                 "instance_id": "instance123", "mode": "tab", "text": "hello"})
+        with self.assertRaisesRegex(PreconditionError, "RCC_LEGACY_NUMERIC_TARGET_REJECTED"):
+            self.call("compose-legacy-window", {"command": "create-and-send",
+                "instance_id": "instance123", "mode": "tab", "window_id": 11, "text": "hello"})
         with self.assertRaisesRegex(PreconditionError, "RCC_NEW_CHAT_TIMEOUT_TOO_SHORT"):
             self.call("compose-short-timeout", {"command": "create-and-send",
-                "instance_id": "instance123", "mode": "tab", "window_id": 11,
+                "instance_id": "instance123", "mode": "tab", "target_ref": target_ref,
                 "text": "hello", "timeout_s": 29})
         self.assertEqual([], self.client.calls)
 
     def test_create_and_send_unknown_keeps_claim_and_never_resends(self):
         self.client.result = self._new_chat_result("compose-unknown", state="SUBMIT_UNKNOWN")
+        target_ref = self._fresh_window_target()
         result = self.call("compose-unknown",{
             "command":"create-and-send","instance_id":"instance123",
-            "mode":"tab","window_id":11,"text":"hello"})
+            "mode":"tab","target_ref":target_ref,"text":"hello"})
         duplicate = self.call("compose-unknown",{
             "command":"create-and-send","instance_id":"instance123",
-            "mode":"tab","window_id":11,"text":"hello"})
+            "mode":"tab","target_ref":target_ref,"text":"hello"})
         self.assertEqual(Outcome.UNKNOWN,result.outcome)
         self.assertTrue(duplicate.duplicate)
         self.assertEqual(1,sum(c["command"]=="new-chat-send" for c in self.client.calls))
         with self.assertRaisesRegex(Exception,"compose-unknown:FINISHED:UNKNOWN"):
             self.call("compose-blocked",{"command":"create-and-send",
-                          "instance_id":"instance123","mode":"tab","window_id":11,"text":"hello"})
+                          "instance_id":"instance123","mode":"tab","target_ref":target_ref,"text":"hello"})
 
     def _legacy_missing_instance_claim(self, operation_id="legacy-create-window"):
         self.client.result = {"type": "host:result", "ok": False}
@@ -755,17 +837,18 @@ class RccIntegrationTests(unittest.TestCase):
 
     def test_create_and_send_retires_only_proven_idle_legacy_instance_claim(self):
         self._legacy_missing_instance_claim()
+        target_ref = self._fresh_window_target()
         self.client.results = [
             self._idle_rcc_state(), self._missing_rcc_result(),
             self._new_chat_result("compose-after-idle-proof"),
         ]
         fresh = self.call("compose-after-idle-proof", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+            "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
         })
         self.assertEqual(Outcome.APPLIED, fresh.outcome)
         self.assertEqual(
-            ["create-chat-window", "state", "result", "new-chat-send"],
+            ["create-chat-window", "state", "state", "result", "new-chat-send"],
             [call["command"] for call in self.client.calls],
         )
         original = self.bct.store.get_operation_for(
@@ -794,16 +877,17 @@ class RccIntegrationTests(unittest.TestCase):
 
     def test_create_and_send_does_not_retire_when_old_rcc_result_is_pending(self):
         self._legacy_missing_instance_claim()
+        target_ref = self._fresh_window_target()
         pending = self._missing_rcc_result()
         pending.update({"pending": True, "pendingStatus": {"state": "QUEUED"}})
         self.client.results = [self._idle_rcc_state(), pending]
         with self.assertRaisesRegex(Exception, "legacy-create-window:FINISHED:UNKNOWN"):
             self.call("compose-after-pending-proof", {
                 "command": "create-and-send", "instance_id": "instance123",
-                "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+                "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
             })
         self.assertEqual(
-            ["create-chat-window", "state", "result"],
+            ["create-chat-window", "state", "state", "result"],
             [call["command"] for call in self.client.calls],
         )
         db = self.bct.store._connect()
@@ -818,13 +902,14 @@ class RccIntegrationTests(unittest.TestCase):
 
     def test_create_and_send_does_not_retire_on_rcc_identity_mismatch(self):
         self._legacy_missing_instance_claim()
+        target_ref = self._fresh_window_target()
         wrong_state = self._idle_rcc_state()
         wrong_state["state"]["instanceId"] = "different-instance"
         self.client.results = [wrong_state, self._missing_rcc_result()]
         with self.assertRaisesRegex(Exception, "legacy-create-window:FINISHED:UNKNOWN"):
             self.call("compose-after-wrong-instance", {
                 "command": "create-and-send", "instance_id": "instance123",
-                "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+                "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
             })
         db = self.bct.store._connect()
         try:
@@ -846,29 +931,156 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual(Outcome.UNKNOWN, original.outcome)
         self.assertNotEqual("RCC_HOST_OUTCOME_UNVERIFIED:MISSING", original.error)
         prior_calls = len(self.client.calls)
+        target_ref = self._fresh_window_target()
         with self.assertRaisesRegex(Exception, "legacy-other-unknown:FINISHED:UNKNOWN"):
             self.call("compose-after-other-unknown", {
                 "command": "create-and-send", "instance_id": "instance123",
-                "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+                "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
             })
-        self.assertEqual(prior_calls, len(self.client.calls))
+        # Target freshness is read before the inherited UNKNOWN claim fence is
+        # evaluated.  It is read-only; no new-chat effect was dispatched.
+        self.assertEqual(prior_calls + 1, len(self.client.calls))
+        self.assertEqual("state", self.client.calls[-1]["command"])
 
     def test_create_and_send_terminal_identity_mismatch_stays_unknown(self):
         wrong = self._new_chat_result("compose-bad-identity")
         wrong["windowId"] = 99
         self.client.result = wrong
+        target_ref = self._fresh_window_target()
         result = self.call("compose-bad-identity", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "hello"})
+            "mode": "tab", "target_ref": target_ref, "text": "hello"})
         self.assertEqual(Outcome.UNKNOWN, result.outcome)
-        self.assertEqual(["new-chat-send"], [c["command"] for c in self.client.calls])
+        self.assertEqual(["state", "new-chat-send"], [c["command"] for c in self.client.calls])
+
+    def _terminal_mismatch_original(self, operation_id="handoff-terminal-mismatch"):
+        wrong = self._new_chat_result(operation_id)
+        wrong["windowId"] = 99
+        self.client.result = wrong
+        target_ref = self._fresh_window_target()
+        original = self.call(operation_id, {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "target_ref": target_ref, "text": "old request", "timeout_s": 120,
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH", original.error)
+        return operation_id
+
+    def _successor_work(self, *, work_id="rcc-successor", principal=None):
+        principal = principal or self.principal
+        self.bct.create_work(
+            work_id=work_id, request_summary="independent successor",
+            roots=[str(self.root)], actions=["relay_browser"], principal=principal,
+        )
+        return principal
+
+    def _call_successor(self, operation_id, arguments, *, work_id="rcc-successor", principal=None):
+        return self.bct.operations.run(
+            principal=principal or self.principal, work_id=work_id,
+            operation_id=operation_id, capability="relay_browser", arguments=arguments,
+        )
+
+    def test_same_principal_successor_retires_exact_terminal_mismatch_claim_after_idle_proof(self):
+        original_id = self._terminal_mismatch_original()
+        self._successor_work()
+        self.client.results = [
+            self._idle_rcc_state(), self._missing_rcc_result(original_id),
+            self._new_chat_result("successor-independent"),
+        ]
+        target_ref = self._fresh_window_target(work_id="rcc-successor")
+        successor = self._call_successor("successor-independent", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
+            "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
+        })
+        self.assertEqual(Outcome.APPLIED, successor.outcome)
+        self.assertEqual(
+            ["state", "new-chat-send", "state", "state", "result", "new-chat-send"],
+            [call["command"] for call in self.client.calls],
+        )
+        db = self.bct.store._connect()
+        try:
+            old_claim = db.execute(
+                "SELECT COUNT(*) FROM resource_claims WHERE operation_id=? AND unresolved=1",
+                (original_id,),
+            ).fetchone()[0]
+            original = db.execute(
+                "SELECT outcome FROM operations WHERE operation_id=?", (original_id,)
+            ).fetchone()[0]
+            event = db.execute(
+                "SELECT kind,data_json FROM events WHERE subject_id=? ORDER BY event_id DESC LIMIT 1",
+                (original_id,),
+            ).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(0, old_claim)
+        self.assertEqual("UNKNOWN", original)
+        self.assertEqual("RCC_CLAIM_RETIRED", event[0])
+        audit = json.loads(event[1])
+        self.assertEqual("successor-independent", audit["new_operation_id"])
+        self.assertEqual("rcc-successor", audit["successor_work_id"])
+        self.assertTrue(audit["same_principal_verified"])
+        self.assertEqual("TERMINAL_OPERATION_RCC_NO_PENDING_RECORD_EFFECT_UNKNOWN", audit["reason"])
+        self.assertTrue(audit["no_resend_original"])
+
+    def test_terminal_mismatch_handoff_rejects_foreign_principal_without_probe_or_release(self):
+        original_id = self._terminal_mismatch_original()
+        foreign = Principal("foreign", "test", frozenset({"relay_browser"}))
+        self._successor_work(principal=foreign)
+        target_ref = self._fresh_window_target(work_id="rcc-successor")
+        calls_before = len(self.client.calls)
+        with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK"):
+            self._call_successor("foreign-independent", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
+                "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
+            }, principal=foreign)
+        # The opaque target is revalidated before the inherited claim fence is
+        # evaluated.  It is read-only; no successor effect was dispatched.
+        self.assertEqual(calls_before + 1, len(self.client.calls))
+        self.assertEqual("state", self.client.calls[-1]["command"])
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?", (original_id,)
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
+
+    def test_terminal_mismatch_handoff_keeps_claim_when_rcc_reports_pending(self):
+        original_id = self._terminal_mismatch_original()
+        self._successor_work()
+        pending = self._missing_rcc_result(original_id)
+        pending.update({"pending": True, "pendingStatus": {"state": "QUEUED"}})
+        self.client.results = [self._idle_rcc_state(), pending]
+        target_ref = self._fresh_window_target(work_id="rcc-successor")
+        with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK"):
+            self._call_successor("successor-pending", {
+                "command": "create-and-send", "instance_id": "instance123",
+                "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
+                "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
+            })
+        self.assertEqual(
+            ["state", "new-chat-send", "state", "state", "result"],
+            [call["command"] for call in self.client.calls],
+        )
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?", (original_id,)
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(1, unresolved)
 
     def test_new_chat_unknown_reconciles_exact_persisted_receipt_without_resend(self):
         wrong = self._new_chat_result("compose-reconcile")
         wrong["windowId"] = 99
+        target_ref = self._fresh_window_target()
         original = self.call("compose-reconcile", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+            "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
         })
         self.assertEqual(Outcome.UNKNOWN, original.outcome)
         receipt = self._new_chat_result("compose-reconcile")
@@ -906,9 +1118,10 @@ class RccIntegrationTests(unittest.TestCase):
     def test_new_chat_tampered_receipt_keeps_unknown_claim(self):
         wrong = self._new_chat_result("compose-tampered")
         wrong["windowId"] = 99
+        target_ref = self._fresh_window_target()
         original = self.call("compose-tampered", {
             "command": "create-and-send", "instance_id": "instance123",
-            "mode": "tab", "window_id": 11, "text": "hello", "timeout_s": 120,
+            "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
         })
         self.assertEqual(Outcome.UNKNOWN, original.outcome)
         receipt = self._new_chat_result("compose-tampered")

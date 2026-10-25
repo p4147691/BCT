@@ -364,7 +364,13 @@ class OperationCoordinator:
                 # RCC-wide reservation, ask the exact current RCC instance for
                 # both identity and absence of any pending/result record.  No
                 # send/create command is issued here.
-                candidate = self.store.retired_rcc_claim_candidate(request.target)
+                handoff = request.arguments.get("extra", {}).get("successorClaimHandoff", {})
+                candidate = self.store.retired_rcc_claim_candidate(
+                    request.target,
+                    original_work_id=str(handoff.get("originalWorkId") or ""),
+                    original_operation_id=str(handoff.get("originalOperationId") or ""),
+                    principal_id=principal.principal_id if handoff else "",
+                )
                 relay = getattr(feature, "client", None)
                 if candidate is not None and relay is not None:
                     proof_prefix = "rcc-retire-" + hashlib.sha256(
@@ -409,6 +415,7 @@ class OperationCoordinator:
                         retired_rcc_claim = (
                             candidate["operation_id"], candidate["work_id"],
                             candidate["assignment_epoch"], request.target,
+                            candidate["retirement_reason"],
                         )
             created, current = self.store.begin_operation(
                 operation_id=operation_id, work=work, principal_id=principal.principal_id,
