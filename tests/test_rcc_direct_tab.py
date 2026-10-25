@@ -19,8 +19,9 @@ class DirectTabPrepareTests(unittest.TestCase):
         base=self.args.copy()
         request=self.feature.prepare(work=self.work,arguments=base)
         class FakeHost:
-            def __init__(self,wrong=False):
+            def __init__(self,wrong=False, moved_window=False):
                 self.wrong=wrong
+                self.moved_window=moved_window
                 self.calls=[]
             def request(self,**kwargs):
                 self.calls.append(kwargs)
@@ -28,7 +29,7 @@ class DirectTabPrepareTests(unittest.TestCase):
                         "instanceId":kwargs["instance_id"],
                         "sessionId":base["session_id"],
                         "tabId":base["tab_id"]+(1 if self.wrong else 0),
-                        "windowId":base["window_id"],"submitted":True}
+                        "windowId":base["window_id"]+(1 if self.moved_window else 0),"submitted":True}
         good=FakeHost()
         self.feature.client=good
         result=self.feature.execute(request)
@@ -39,6 +40,10 @@ class DirectTabPrepareTests(unittest.TestCase):
         self.feature.client=bad
         with self.assertRaises(UnknownEffectError):
             self.feature.execute(request)
+        moved=FakeHost(moved_window=True)
+        self.feature.client=moved
+        moved_result=self.feature.execute(request)
+        self.assertEqual(Outcome.APPLIED,moved_result.outcome)
 
     def test_blank_requires_explicit_identity(self):
         for change in [{"session_id":""},{"tab_id":0},{"window_id":0},{"text":""},{"conversation_key":"bad"},{"extra":"untrusted"}]:

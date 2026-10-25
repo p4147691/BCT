@@ -24,6 +24,7 @@ importScripts('domain/simple_relay_service.js');
 importScripts('domain/delivery_ledger_service.js');
 importScripts('domain/orchestration_relay_service.js');
 importScripts('domain/new_chat_service.js');
+importScripts('domain/exact_tab_send_service.js');
 importScripts('domain/conversation_rename_service.js');
 importScripts('domain/readonly_diagnostics.js');
 importScripts('domain/runtime_message_service.js');

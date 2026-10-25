@@ -38,6 +38,36 @@ assert.equal(accepted.ok, true);
 assert.equal(accepted.turnKey, 'turn-1');
 assert.equal(rebound.conversationKey, 'conversation-new');
 
+// A bootstrap receiver may persist an interim route UUID before the user
+// turn mounts. That cannot be treated as a different conversation, and
+// cannot be called SUBMITTED until the unique exact turn is present.
+turns = [];
+const provisional = record({conversationKey: 'route-before-user-turn'});
+const provisionalPending = context.resolveRoutedTurn(provisional);
+assert.equal(provisionalPending.ok, false);
+assert.equal(provisionalPending.terminal, false);
+assert.equal(provisionalPending.reason, 'BOOTSTRAP_ROUTE_TURN_PENDING');
+turns = [{key: 'turn-proven', text: 'exact prompt'}];
+const provisionalAccepted = context.resolveRoutedTurn(provisional);
+assert.equal(provisionalAccepted.ok, true);
+assert.equal(provisionalAccepted.turnKey, 'turn-proven');
+assert.equal(provisional.conversationKey, 'conversation-new');
+
+// ChatGPT can publish its UUID before it mounts the first user turn.  Only a
+// truly blank bootstrap may wait through that transient state; it must still
+// require the one exact turn before binding the new conversation UUID.
+turns = [];
+const blankBootstrap = record({conversationKey: ''});
+const pending = context.resolveRoutedTurn(blankBootstrap);
+assert.equal(pending.ok, false);
+assert.equal(pending.terminal, false);
+assert.equal(pending.reason, 'BOOTSTRAP_ROUTE_TURN_PENDING');
+assert.equal(blankBootstrap.conversationKey, '');
+turns = [{key: 'turn-after-route', text: 'exact prompt'}];
+const boundAfterPending = context.resolveRoutedTurn(blankBootstrap);
+assert.equal(boundAfterPending.ok, true);
+assert.equal(blankBootstrap.conversationKey, 'conversation-new');
+
 assert.equal(context.resolveRoutedTurn(record({bootstrapCreatedTab: false})).reason,
   'CONVERSATION_IDENTITY_CHANGED');
 assert.equal(context.resolveRoutedTurn(record({beforeTurnKeys: ['old-turn']})).reason,
@@ -47,4 +77,4 @@ assert.equal(context.resolveRoutedTurn(record()).reason, 'CONVERSATION_IDENTITY_
 turns = [{key: 'turn-1', text: 'different prompt'}];
 assert.equal(context.resolveRoutedTurn(record()).reason, 'CONVERSATION_IDENTITY_CHANGED');
 
-console.log('Issue57 bootstrap identity rebind: 5 fences PASS');
+console.log('Issue57 bootstrap identity rebind: pending route plus 5 fences PASS');

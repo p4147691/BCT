@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC33_REASONING_OBSERVATION", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC34_EXACT_TAB_RECEIPT", release["candidate"])
         self.assertEqual(
             "44bd45596ed2267d2bf777163a7d8344a88d74186b02fe5c26a1928da043ec92",
             release["rollbackBaseline"]["aggregateSha256"],
@@ -82,7 +82,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "simple-relay-return", "new-chat-send", "rename-conversation",
             "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
             "retire-composer-draft", "retire-recovered-execution",
-            "delivery-manager-status",
+            "delivery-manager-status", "send-to-tab",
             "conversation-bind", "send",
             "rename-receipt", "result", "main-capture-get",
             "api-probe", "probe-tabs", "diagnose-activity",
@@ -95,8 +95,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "conversation-bootstrap-bind", "create-chat-tab", "create-chat-window",
             "ensure", "main-capture-install", "manager-promote", "move-tab",
             "recover-created-result", "recover-pending", "register", "reload-workers",
-            "result-ack", "send-to-created-tab",
-            "send-to-tab", "send-wakeback",
+            "result-ack", "send-to-created-tab", "send-wakeback",
         ):
             self.assertNotIn(f"message.command === '{command}'", background)
 
