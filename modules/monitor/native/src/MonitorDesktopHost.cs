@@ -567,7 +567,8 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-        StartMoveSizeEndEvents();
+        StartMoveSizeEndEvents();
+        StartWallpaperChangeEvents();
 
 
 
@@ -1168,6 +1169,28 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
+    // Notify on Windows desktop wallpaper changes; no file polling.
+    private static void StartWallpaperChangeEvents()
+    {
+        try
+        {
+            SystemEvents.UserPreferenceChanged += (sender, args) =>
+            {
+                if (args.Category != UserPreferenceCategory.Desktop) return;
+                try
+                {
+                    EmitMonitorEvent(new Dictionary<string, object> {
+                        { "type", "desktopWallpaperChanged" },
+                        { "event", true },
+                        { "at", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
+                    });
+                }
+                catch { }
+            };
+        }
+        catch { }
+    }
+
     internal static void EmitMonitorEvent(Dictionary<string, object> message)
     {
         Stream output = NativeOutput;

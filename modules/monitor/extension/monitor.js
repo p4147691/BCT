@@ -46748,6 +46748,16 @@ function ensureMonitorNativePort() {
 
     if (response?.event === true && response?.type === "windowMoveSizeEnd") { scheduleMonitorWindowLifecycleEvent(response); return; }
     if (response?.event === true && response?.type === "windowForegroundChanged") { handleMonitorForegroundChangedEvent(response); return; }
+    if (response?.event === true && response?.type === "desktopWallpaperChanged") {
+      const desktopId = String(monitorDesktopState?.currentDesktopId || "");
+      if (desktopId) {
+        monitorWallpaperActuals.delete(desktopId);
+        monitorWallpaperCache.delete(desktopId);
+        void applyObservedWallpaper(desktopId, true);
+      }
+      return;
+    }
+
     if (response?.event === true && response?.type === "monitorDragPreviewReleased") {
       const drag = monitorBctPointerDrag;
       if (drag?.active && response?.token === monitorBctNativePreviewToken) {
