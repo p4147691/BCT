@@ -4,6 +4,7 @@ const fs=require("node:fs"),vm=require("node:vm"),path=require("node:path");
 const modules=[
   "monitor-thumbnail-contract.js",
   "monitor-desktop-visual-source.js",
+  "monitor-thumbnail-layer-policy.js",
   "monitor-thumbnail-background-layer.js",
   "monitor-thumbnail-window-layer.js",
   "monitor-desktop-thumbnail-v2.js"
@@ -53,7 +54,8 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   assert.equal(visual1.style.backgroundColor,"#10893E");
   assert.equal(visual1.dataset.wallpaperSource,"native-solid-color");
   assert.equal(r.wallpaper(visual1,D1,{...solid,desktopId:D2}),false);
-  assert.equal(visual1.style.backgroundColor,"");
+  assert.equal(visual1.style.backgroundColor,"#10893E","a rejected reply must not erase the last accepted background");
+  assert.equal(visual1.dataset.wallpaperCapture,"retained");
   assert.equal(r.wallpaper(visual1,D1,source(D1)),true);
   assert.equal(visual1.style.backgroundColor,"");
   const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -84,7 +86,7 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   assert.equal(visual2.dataset.wallpaperCapture,"captured");
   const falsePhoto={ok:true,desktopId:D1,wallpaper:{dataUri:"data:image/svg+xml;base64,FAKE"}};
   assert.equal(r.wallpaper(visual1,D1,falsePhoto),false);
-  assert.equal(visual1.style.backgroundImage,"");
+  assert.match(visual1.style.backgroundImage,/VALID_BYTES/,"invalid photo data must retain the last accepted background");
   assert.equal(r.wallpaper(visual1,D1,source(D1)),true);
   let decorations=0;
   const frame={meta:{desktopId:D1,previewVirtualLeft:0,previewVirtualTop:0,previewVirtualWidth:100,previewVirtualHeight:100,observedWindowHwnds:["123","124"]},
@@ -106,6 +108,7 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   assert.equal(backgroundFailed.frameReady,true);
   assert.equal(backgroundFailed.ok,false,"a valid window frame must not hide a wallpaper failure");
   assert.equal(backgroundFailed.compositeReady,false);
+  assert.match(visual1.style.backgroundImage,/VALID_BYTES/,"transient Native failure must retain last-good pixels");
   currentRequest=async message=>source(message.desktopId);
   assert.equal((await r.refresh(visual1,D1,{forceWallpaper:true})).ok,true);
   currentFrame=async()=>null;

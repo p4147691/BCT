@@ -1644,6 +1644,10 @@ function syncMonitorBctNodeTargetHighlight() {
 
 //@@FN_START:syncMonitorMinimizedNodeBadges
 function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("summary") === false) {
+    for (const host of monitorDesktopThumbs.querySelectorAll(".monitor-desktop-minimized-nodes")) host.remove();
+    return;
+  }
   const slotsByDesktop = monitorMinimizedNodeSlotsByDesktop(state);
 
   for (const button of monitorDesktopThumbs.children) {

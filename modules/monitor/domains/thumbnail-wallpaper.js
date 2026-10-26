@@ -810,8 +810,14 @@ function monitorThumbnailBackgroundRuntimeDiagnostics() {
   const visuals = [...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual") || [])];
   return visuals.map((visual) => ({
     desktop_id:String(visual.dataset.desktopId || ""),
+    layer_mode:String(visual.dataset.monitorThumbnailLayerMode || globalThis.MonitorDesktopThumbnailV2?.mode || "unknown"),
+    card_renderer:String(monitorDesktopThumbs?.dataset?.thumbnailCardRenderer || "unknown"),
+    card_renderer_reason:String(monitorDesktopThumbs?.dataset?.thumbnailCardRendererReason || ""),
+    card_renderer_error:String(monitorDesktopThumbs?.dataset?.thumbnailCardRendererError || "").slice(0,120),
     capture:String(visual.dataset.wallpaperCapture || "unobserved"),
     source:String(visual.dataset.wallpaperSource || "none"),
+    accepted_kind:String(visual.dataset.wallpaperAcceptedKind || ""),
+    accepted_at_ms:Number(visual.dataset.wallpaperAcceptedAt || 0),
     failure_reason:String(visual.dataset.wallpaperFailureReason || "").slice(0,120),
     thumbnail_ready:String(visual.dataset.monitorThumbnailReady || ""),
     composite_ready:String(visual.dataset.monitorThumbnailCompositeReady || ""),
@@ -1025,6 +1031,16 @@ function syncMonitorAllDesktopThumbnailNodeBadges() {
 function syncMonitorThumbnailTabBadges(container, className) {
 
   if (className !== "monitor-desktop-thumb-window") return;
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("semantic") === false) {
+    container.querySelectorAll(
+      ".monitor-thumbnail-node-overlay, .monitor-thumbnail-tab-badge, .monitor-window-desktop-badge-thumb, .monitor-window-desktop-badge"
+    ).forEach((node) => node.remove());
+    container.dataset.monitorNodeOverlayStatus = "DISABLED_BY_LAYER_POLICY";
+    container.dataset.monitorNodeOverlayCandidates = "0";
+    container.dataset.monitorNodeOverlayMatched = "0";
+    container.dataset.monitorNodeOverlayRendered = "0";
+    return {status:"DISABLED_BY_LAYER_POLICY",candidates:0,matched:0,rendered:0};
+  }
   const projection = globalThis.MonitorBctThumbnailProjection;
   if (!projection?.render) {
     container.dataset.monitorNodeOverlayStatus = "MODULE_MISSING";

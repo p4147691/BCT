@@ -157,10 +157,10 @@ console.log(JSON.stringify({base,newNode,moved,swappedDefault,normalizedDefault,
         and 'if(String(node?.location_authority||"")!=="ACT_NATIVE_OBSERVER") continue;' not in text
     )
     minimized_lightweight_projection = (
-        'function renderLightweightDesktopCards()' in text
+        re.search(r'function renderLightweightDesktopCards\([^)]*\)', text) is not None
         and 'minimizedNodes.className = "monitor-desktop-minimized-nodes";' in text
         and 'label.append(badge, text, minimizedNodes); button.append(visual, label);' in text
-        and 'syncMonitorMinimizedNodeBadges();\n  return true;' in text
+        and 'syncMonitorMinimizedNodeBadges();' in text
     )
     command_rail_ok = 'const workers=monitorStructureDeskNodeGrid(group.workers||[],desktopId);' in text and 'lowerDeskCount===1' in text and 'is-single-lower-desk' in text
     command_canvas_ok = 'roleRow.className="monitor-org-command-canvas";' in text and 'monitor-org-command-"+slotName' in text

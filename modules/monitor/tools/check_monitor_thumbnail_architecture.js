@@ -4,6 +4,7 @@ const ext=path.join(__dirname,"..","extension");
 const names=[
   "monitor-thumbnail-contract.js",
   "monitor-desktop-visual-source.js",
+  "monitor-thumbnail-layer-policy.js",
   "monitor-thumbnail-background-layer.js",
   "monitor-thumbnail-window-layer.js",
   "monitor-desktop-thumbnail-v2.js"

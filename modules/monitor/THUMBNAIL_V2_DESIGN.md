@@ -1,5 +1,16 @@
 # Monitor 썸네일 V2 — 입력/출력 단일 경계 (격리 후보)
 
+## 현재 수락 단계: background-only
+
+현재 운영 구성은 `MonitorThumbnailLayerPolicy`의 `background-only` 모드를 사용한다. 이는 별도 폴백 렌더러가 아니라 정식 V2 합성기의 단계별 수락 정책이다.
+
+- `background`: 활성. 정확한 데스크톱 GUID에 대응하는 Native 사진 또는 Windows 단색 근거만 렌더링한다.
+- `windows`: 임시 비활성. HWND 캡처와 상태 장식을 호출하지 않는다.
+- `semantic`: 임시 비활성. 노드/탭 의미 배지를 렌더링하지 않는다.
+- `summary`: 임시 비활성. 최소화 노드 요약을 렌더링하지 않는다.
+
+배경 읽기가 일시적으로 실패하면 실패 상태와 이유는 그대로 기록하되, 이미 수락한 마지막 사진/단색 픽셀은 회색 기본색으로 지우지 않는다. 새 카드 생성 경로는 canonical/lightweight 어느 쪽이든 모든 카드의 동일한 `refreshBackground` 포트를 호출한다. 다음 레이어는 배경 LIVE 수락 뒤 정책만 확장하고, 배경 소유권이나 별도 우회 경로를 추가하지 않는다.
+
 ## 책임
 - `monitor-desktop-thumbnail-v2.js`가 **하단 D1/D2 타일의 갱신 생명주기와 시각 렌더링**을 소유한다. 상단/큰 미리보기, 노드 의미·클릭·드래그·대화 송수신은 변경하지 않는다.
 - `monitor.js`의 `refreshDesktopThumb(visual, GUID)`는 V2의 단일 `refresh()` 결과만 전달한다. Native `desktopWallpaperChanged`는 V2의 background refresh event만 요청한다. 기존 `reconcileFrame`은 큰 미리보기용으로만 남는다.

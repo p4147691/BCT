@@ -19,6 +19,9 @@
           generation:0,
           status:"unobserved",
           reason:"",
+          accepted:false,
+          acceptedKind:"",
+          acceptedAt:0,
           inflight:null,
           forcedDrain:null,
           forceQueued:false
@@ -38,17 +41,27 @@
       } else if (snapshot.ok && snapshot.kind === "photo") {
         visual.style.backgroundColor = "";
         visual.style.backgroundImage = "url(" + JSON.stringify(snapshot.dataUri) + ")";
-      } else {
+      } else if (!state.accepted) {
         visual.style.backgroundImage = "";
         visual.style.backgroundColor = "";
       }
-      state.status = snapshot.ok ? "captured" : "failed";
+      if (snapshot.ok) {
+        state.accepted = true;
+        state.acceptedKind = snapshot.kind;
+        state.acceptedAt = Date.now();
+      }
+      state.status = snapshot.ok ? "captured" : state.accepted ? "retained" : "failed";
       state.reason = snapshot.ok ? "" : snapshot.reason;
       visual.dataset.wallpaperCapture = state.status;
-      visual.dataset.wallpaperSource = snapshot.ok
-        ? (snapshot.kind === "solid" ? "native-solid-color" : "native-guid-file") : "none";
+      if (snapshot.ok) {
+        visual.dataset.wallpaperSource = snapshot.kind === "solid" ? "native-solid-color" : "native-guid-file";
+      } else if (!state.accepted) {
+        visual.dataset.wallpaperSource = "none";
+      }
       visual.dataset.wallpaperFailureReason = state.reason;
       visual.dataset.wallpaperDesktopId = state.desktopId;
+      visual.dataset.wallpaperAcceptedKind = state.acceptedKind;
+      visual.dataset.wallpaperAcceptedAt = state.acceptedAt ? String(state.acceptedAt) : "";
       return snapshot.ok;
     }
 

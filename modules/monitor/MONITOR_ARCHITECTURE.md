@@ -1,5 +1,11 @@
 # Monitor architecture and migration order
 
+## Thumbnail staged composition
+
+The bottom desktop thumbnails are composed through one V2 facade and an explicit `MonitorThumbnailLayerPolicy`: `background`, `windows`, `semantic`, and `summary`. The temporary production mode is `background-only`, so only the Native-backed wallpaper owner may write the visual while later layers remain dormant. This is a staged acceptance mode of the canonical renderer, not a second rendering path.
+
+Wallpaper failure is observable through datasets and runtime diagnostics. After one valid photo or solid-color result, a later transient read failure retains those last-good pixels while still returning a failed acceptance result. Both canonical and lightweight card creation must enter through `MonitorDesktopThumbnailV2.refreshBackground`.
+
 ## Objective
 
 `extension/monitor.js` is a generated compatibility bundle, not an editing surface. New work moves one accepted responsibility at a time behind a narrow injected API. A file split without owned state, an interface and an independent test does not count as modularization.

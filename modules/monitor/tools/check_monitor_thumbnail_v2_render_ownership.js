@@ -10,7 +10,7 @@ const html=fs.readFileSync(path.join(ext,"desktop.html"),"utf8");
 
 // This is an architectural fail-closed gate, not a cosmetic regression test.
 // Old thumbnail screenshot/cache paths must never regain DOM write authority.
-const ordered=["monitor-thumbnail-contract.js","monitor-desktop-visual-source.js","monitor-thumbnail-background-layer.js","monitor-thumbnail-window-layer.js","monitor-desktop-thumbnail-v2.js","monitor.js"];
+const ordered=["monitor-thumbnail-contract.js","monitor-desktop-visual-source.js","monitor-thumbnail-layer-policy.js","monitor-thumbnail-background-layer.js","monitor-thumbnail-window-layer.js","monitor-desktop-thumbnail-v2.js","monitor.js"];
 let previous=-1;
 for(const name of ordered){
  const position=html.indexOf('<script src="'+name+'"></script>');
@@ -34,6 +34,7 @@ assert.doesNotMatch(monitor,/if\s*\(dataUri\)\s*img\.src/);
 assert.doesNotMatch(monitor,/document\.querySelectorAll\([^;\n]+\.monitor-desktop-thumb-window[^;\n]+\)\s*\)\s*apply\(img\)/);
 assert.match(v2,/backgrounds\.create\(\{contract,visualSource\}\)/);
 assert.match(v2,/windows\.create\(\{contract\}\)/);
+assert.match(v2,/policy\.allows\("windows"\)/);
 assert.doesNotMatch(v2,/backgroundImage\s*=|createElement\("img"\)/,
   "the compositor must not steal layer implementation details");
 assert.match(background,/visual\.style\.backgroundImage = "url\("/);

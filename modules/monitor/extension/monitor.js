@@ -7595,10 +7595,14 @@ const monitorNativePending = new Map();
 let monitorNativeRequestSequence = 0;
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorNative });
+const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_ONLY
+);
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,
   readFrame: desktopId => captureDesktopFrame(desktopId, "thumb"),
   afterWindowRender: decorateMonitorThumbnailWindows,
+  layerPolicy: monitorThumbnailLayerPolicy,
 });
 
 function monitorCaptureDataUriToObjectUrl(dataUri) {
@@ -9485,6 +9489,16 @@ if (monitorSelectedHwnds.size) applyMonitorWindowHighlight(monitorHighlightedHwn
 function syncMonitorThumbnailTabBadges(container, className) {
 
   if (className !== "monitor-desktop-thumb-window") return;
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("semantic") === false) {
+    container.querySelectorAll(
+      ".monitor-thumbnail-node-overlay, .monitor-thumbnail-tab-badge, .monitor-window-desktop-badge-thumb, .monitor-window-desktop-badge"
+    ).forEach((node) => node.remove());
+    container.dataset.monitorNodeOverlayStatus = "DISABLED_BY_LAYER_POLICY";
+    container.dataset.monitorNodeOverlayCandidates = "0";
+    container.dataset.monitorNodeOverlayMatched = "0";
+    container.dataset.monitorNodeOverlayRendered = "0";
+    return {status:"DISABLED_BY_LAYER_POLICY",candidates:0,matched:0,rendered:0};
+  }
   const projection = globalThis.MonitorBctThumbnailProjection;
   if (!projection?.render) {
     container.dataset.monitorNodeOverlayStatus = "MODULE_MISSING";
@@ -10854,8 +10868,14 @@ function monitorThumbnailBackgroundRuntimeDiagnostics() {
   const visuals = [...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual") || [])];
   return visuals.map((visual) => ({
     desktop_id:String(visual.dataset.desktopId || ""),
+    layer_mode:String(visual.dataset.monitorThumbnailLayerMode || globalThis.MonitorDesktopThumbnailV2?.mode || "unknown"),
+    card_renderer:String(monitorDesktopThumbs?.dataset?.thumbnailCardRenderer || "unknown"),
+    card_renderer_reason:String(monitorDesktopThumbs?.dataset?.thumbnailCardRendererReason || ""),
+    card_renderer_error:String(monitorDesktopThumbs?.dataset?.thumbnailCardRendererError || "").slice(0,120),
     capture:String(visual.dataset.wallpaperCapture || "unobserved"),
     source:String(visual.dataset.wallpaperSource || "none"),
+    accepted_kind:String(visual.dataset.wallpaperAcceptedKind || ""),
+    accepted_at_ms:Number(visual.dataset.wallpaperAcceptedAt || 0),
     failure_reason:String(visual.dataset.wallpaperFailureReason || "").slice(0,120),
     thumbnail_ready:String(visual.dataset.monitorThumbnailReady || ""),
     composite_ready:String(visual.dataset.monitorThumbnailCompositeReady || ""),
@@ -10865,6 +10885,10 @@ function monitorThumbnailBackgroundRuntimeDiagnostics() {
 }
 
 function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("summary") === false) {
+    for (const host of monitorDesktopThumbs.querySelectorAll(".monitor-desktop-minimized-nodes")) host.remove();
+    return;
+  }
   const slotsByDesktop = monitorMinimizedNodeSlotsByDesktop(state);
 
   for (const button of monitorDesktopThumbs.children) {
@@ -11282,7 +11306,7 @@ async function refreshWindowsCurrentState() {
   }
 }
 
-function renderLightweightDesktopCards() {
+function renderLightweightDesktopCards(reason = "EXPLICIT") {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) { monitorDesktopThumbs.replaceChildren(); return true; }
 
   const ids = Array.isArray(monitorDesktopState.desktopIds) ? monitorDesktopState.desktopIds.filter(Boolean) : [];
@@ -11290,6 +11314,9 @@ function renderLightweightDesktopCards() {
   if (!ids.length) return false;
 
   monitorDesktopThumbs.replaceChildren();
+  monitorDesktopThumbs.dataset.thumbnailCardRenderer = "lightweight";
+  monitorDesktopThumbs.dataset.thumbnailCardRendererReason = String(reason || "EXPLICIT");
+  const createdVisuals = [];
 
   ids.forEach((desktopId, index) => {
 
@@ -11331,12 +11358,17 @@ function renderLightweightDesktopCards() {
     });
 
     monitorDesktopThumbs.append(button);
-
-    if (index === monitorDesktopState.selectedIndex) void refreshDesktopThumb(visual, desktopId);
+    createdVisuals.push({visual, desktopId});
 
   });
 
   syncMonitorMinimizedNodeBadges();
+  requestAnimationFrame(() => {
+    const renderer = globalThis.MonitorDesktopThumbnailV2;
+    for (const entry of createdVisuals) {
+      if (entry.visual.isConnected) void renderer?.refreshBackground?.(entry.visual, entry.desktopId).catch(() => null);
+    }
+  });
   return true;
 
 }
@@ -11415,18 +11447,23 @@ function renderVirtualDesktops(state) {
   try {
 
     syncDesktopSwitcher();
+    monitorDesktopThumbs.dataset.thumbnailCardRenderer = "canonical";
+    monitorDesktopThumbs.dataset.thumbnailCardRendererReason = "";
+    monitorDesktopThumbs.dataset.thumbnailCardRendererError = "";
 
   } catch (error) {
 
     console.warn("DesktopWindow Monitor desktop card renderer failed; using lightweight fallback", error);
 
-    renderLightweightDesktopCards();
+    monitorDesktopThumbs.dataset.thumbnailCardRendererError = String(error?.message || error || "RENDER_EXCEPTION");
+    renderLightweightDesktopCards("RENDER_EXCEPTION");
 
   }
 
   if (desktopIds.length && monitorDesktopThumbs.querySelectorAll(".monitor-desktop-thumb[data-desktop-id]").length < desktopIds.length) {
 
-    renderLightweightDesktopCards();
+    monitorDesktopThumbs.dataset.thumbnailCardRendererError = "";
+    renderLightweightDesktopCards("CARD_COUNT_MISMATCH");
 
   }
 

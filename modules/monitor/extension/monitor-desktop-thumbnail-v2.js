@@ -3,31 +3,42 @@
 // background and HWND pixels live in separate modules behind injected ports.
 (function installMonitorDesktopThumbnailV2(root) {
   const contract=root.MonitorThumbnailContract;
+  const policies=root.MonitorThumbnailLayerPolicy;
   const backgrounds=root.MonitorThumbnailBackgroundLayer;
   const windows=root.MonitorThumbnailWindowLayer;
   let instance=null;
 
-  function configure({visualSource,readFrame=null,afterWindowRender=null}={}){
+  function configure({visualSource,readFrame=null,afterWindowRender=null,layerPolicy=null}={}){
+    const policy=layerPolicy?.allows
+      ? layerPolicy
+      : policies?.create?.(policies?.MODES?.FULL||"full")||Object.freeze({mode:"full",allows:()=>true,enabledLayers:["background","windows","semantic","summary"]});
     const background=backgrounds.create({contract,visualSource});
     const windowLayer=windows.create({contract});
     const attached=new WeakMap();
+    function clearDisabledLayers(visual){
+      if(policy.allows("windows")||policy.allows("semantic"))return;
+      for(const child of [...(visual?.children||[])])child.remove?.();
+    }
     function resolve(visual,desktopId){
       const backgroundState=background.resolve(visual,desktopId);
-      const windowState=windowLayer.resolve(visual,desktopId);
-      if(!backgroundState||!windowState)return null;
+      if(!backgroundState)return null;
+      clearDisabledLayers(visual);
+      const windowState=policy.allows("windows")?windowLayer.resolve(visual,desktopId):null;
+      if(policy.allows("windows")&&!windowState)return null;
       let control=attached.get(visual);
       if(!control||control.desktopId!==backgroundState.desktopId){
         control={desktopId:backgroundState.desktopId,active:null,activeOptions:null,queued:null,lastResult:null};
         attached.set(visual,control);
         visual.dataset.monitorThumbnailRenderer="v2";
-        visual.dataset.monitorThumbnailLayers="background,windows,overlay";
+        visual.dataset.monitorThumbnailLayerMode=String(policy.mode||"full");
+        visual.dataset.monitorThumbnailLayers=(policy.enabledLayers||[]).join(",");
       }
       return {desktopId:backgroundState.desktopId,background:backgroundState,windows:windowState,control};
     }
 
     const normalizeOptions=options=>({
       forceWallpaper:options?.forceWallpaper===true||options?.force===true,
-      includeWindows:options?.includeWindows!==false
+      includeWindows:policy.allows("windows")&&options?.includeWindows!==false
     });
     const mergeOptions=(left,right)=>({
       forceWallpaper:Boolean(left?.forceWallpaper||right?.forceWallpaper),
@@ -115,15 +126,17 @@
       return await refresh(visual,desktopId,{...options,includeWindows:false});
     }
     instance=Object.freeze({
+      mode:String(policy.mode||"full"),
+      allowsLayer:layer=>policy.allows(layer),
       resolve,
       wallpaper:(visual,desktopId,reply,generation)=>background.apply(visual,desktopId,reply,generation),
       refresh,
       refreshBackground,
       refreshWallpaper:async(visual,desktopId,options)=>(await refreshBackground(visual,desktopId,options)).wallpaperReady,
-      beginFrame:windowLayer.beginFrame,
-      removeWindow:windowLayer.removeWindow,
-      windowFrame:windowLayer.windowFrame,
-      frameFailure:windowLayer.frameFailure,
+      beginFrame:(...args)=>policy.allows("windows")?windowLayer.beginFrame(...args):null,
+      removeWindow:(...args)=>policy.allows("windows")?windowLayer.removeWindow(...args):false,
+      windowFrame:(...args)=>policy.allows("windows")?windowLayer.windowFrame(...args):false,
+      frameFailure:(...args)=>policy.allows("windows")?windowLayer.frameFailure(...args):false,
       invalidate:(visual,desktopId)=>background.invalidate(visual,desktopId)
     });
     return instance;
@@ -131,6 +144,8 @@
 
   const api={
     configure,
+    get mode(){return instance?.mode||"unconfigured";},
+    allowsLayer:layer=>instance?.allowsLayer(layer)??true,
     resolve:(...args)=>instance?.resolve(...args)??null,
     wallpaper:(...args)=>instance?.wallpaper(...args)??false,
     refresh:(...args)=>instance?.refresh(...args)??Promise.resolve(Object.freeze({ok:false,wallpaperReady:false,frameReady:false,reason:"NOT_CONFIGURED"})),

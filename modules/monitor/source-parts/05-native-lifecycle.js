@@ -268,10 +268,14 @@ const monitorNativePending = new Map();
 let monitorNativeRequestSequence = 0;
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorNative });
+const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_ONLY
+);
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,
   readFrame: desktopId => captureDesktopFrame(desktopId, "thumb"),
   afterWindowRender: decorateMonitorThumbnailWindows,
+  layerPolicy: monitorThumbnailLayerPolicy,
 });
 
 /*@@MONITOR_FUNCTION:monitorCaptureDataUriToObjectUrl@@*/

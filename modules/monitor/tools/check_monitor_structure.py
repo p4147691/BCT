@@ -30,6 +30,7 @@ def main():
         ext/'monitor-provider-launch-queue.js', ext/'monitor-act-transport.js',
         ext/'monitor-bct-node-interaction.js', ext/'monitor-bct-thumbnail-projection.js',
         ext/'monitor-thumbnail-contract.js', ext/'monitor-desktop-visual-source.js',
+        ext/'monitor-thumbnail-layer-policy.js',
         ext/'monitor-thumbnail-background-layer.js', ext/'monitor-thumbnail-window-layer.js',
         ext/'monitor-desktop-thumbnail-v2.js',
         ext/'features'/'sketch'/'monitor-sketch-feature.js',
@@ -312,6 +313,7 @@ def main():
                     'detail':(checked.stdout+checked.stderr)[-600:]})
         thumbnail_checks = [
             root/'tools'/'check_monitor_thumbnail_architecture.js',
+            root/'tools'/'check_monitor_thumbnail_background_only_mode.js',
             root/'tools'/'check_monitor_thumbnail_v2_cleanroom.js',
             root/'tools'/'check_monitor_thumbnail_v2_native_ports.js',
             root/'tools'/'check_monitor_thumbnail_v2_render_ownership.js',

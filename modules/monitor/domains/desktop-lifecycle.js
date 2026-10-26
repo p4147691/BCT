@@ -1534,7 +1534,7 @@ async function removeVirtualDesktopPreview(index, options={}) {
 //@@FN_END:removeVirtualDesktopPreview
 
 //@@FN_START:renderLightweightDesktopCards
-function renderLightweightDesktopCards() {
+function renderLightweightDesktopCards(reason = "EXPLICIT") {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) { monitorDesktopThumbs.replaceChildren(); return true; }
 
   const ids = Array.isArray(monitorDesktopState.desktopIds) ? monitorDesktopState.desktopIds.filter(Boolean) : [];
@@ -1542,6 +1542,9 @@ function renderLightweightDesktopCards() {
   if (!ids.length) return false;
 
   monitorDesktopThumbs.replaceChildren();
+  monitorDesktopThumbs.dataset.thumbnailCardRenderer = "lightweight";
+  monitorDesktopThumbs.dataset.thumbnailCardRendererReason = String(reason || "EXPLICIT");
+  const createdVisuals = [];
 
   ids.forEach((desktopId, index) => {
 
@@ -1583,12 +1586,17 @@ function renderLightweightDesktopCards() {
     });
 
     monitorDesktopThumbs.append(button);
-
-    if (index === monitorDesktopState.selectedIndex) void refreshDesktopThumb(visual, desktopId);
+    createdVisuals.push({visual, desktopId});
 
   });
 
   syncMonitorMinimizedNodeBadges();
+  requestAnimationFrame(() => {
+    const renderer = globalThis.MonitorDesktopThumbnailV2;
+    for (const entry of createdVisuals) {
+      if (entry.visual.isConnected) void renderer?.refreshBackground?.(entry.visual, entry.desktopId).catch(() => null);
+    }
+  });
   return true;
 
 }
@@ -1803,18 +1811,23 @@ function renderVirtualDesktops(state) {
   try {
 
     syncDesktopSwitcher();
+    monitorDesktopThumbs.dataset.thumbnailCardRenderer = "canonical";
+    monitorDesktopThumbs.dataset.thumbnailCardRendererReason = "";
+    monitorDesktopThumbs.dataset.thumbnailCardRendererError = "";
 
   } catch (error) {
 
     console.warn("DesktopWindow Monitor desktop card renderer failed; using lightweight fallback", error);
 
-    renderLightweightDesktopCards();
+    monitorDesktopThumbs.dataset.thumbnailCardRendererError = String(error?.message || error || "RENDER_EXCEPTION");
+    renderLightweightDesktopCards("RENDER_EXCEPTION");
 
   }
 
   if (desktopIds.length && monitorDesktopThumbs.querySelectorAll(".monitor-desktop-thumb[data-desktop-id]").length < desktopIds.length) {
 
-    renderLightweightDesktopCards();
+    monitorDesktopThumbs.dataset.thumbnailCardRendererError = "";
+    renderLightweightDesktopCards("CARD_COUNT_MISMATCH");
 
   }
 
