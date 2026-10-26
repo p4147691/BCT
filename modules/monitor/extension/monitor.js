@@ -8883,12 +8883,15 @@ function monitorNativeLaunchIsolated(message) {
 
 function monitorNativeVisualRead(message) {
 
-  // Wallpaper bytes must not wait behind the long-lived control port's mixed
-  // UI/control traffic. This is a bounded, read-only Native connection: each
-  // snapshot gets its own reply stream and cannot be paired with another
-  // command's reply.
-  return MonitorNativeTrace.request("control-visual-read", message, () =>
-    monitorControlNativeIsolatedRequest(message));
+  // Chrome's official one-shot Native Messaging API gives this read one host
+  // process and one response. Wallpaper bytes therefore never enter the
+  // long-lived control port's mixed FIFO.
+  return MonitorNativeTrace.request("control-visual-read", message, () => new Promise((resolve, reject) => {
+    chrome.runtime.sendNativeMessage(MONITOR_CONTROL_HOST, message, (response) => {
+      const error = chrome.runtime.lastError?.message;
+      if (error) reject(new Error(error)); else resolve(response);
+    });
+  }));
 
 }
 
