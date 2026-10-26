@@ -43,11 +43,14 @@
 - auto-reload 지원 runtime 의미: startup/focus deployment check에서 새 token을 감지하면 기존 `monitor-reload-extension` 경로로 열린 Monitor 전체 reload를 요청하고, 재기동 뒤 같은 token을 ACK한다.
 - bootstrap 예외: 이 동작이 아직 로드되지 않은 legacy runtime은 token을 ACK만 할 수 있다. 따라서 ACK 단독은 reload 증거가 아니며, 최초 전환은 runtime build marker/instance telemetry로 확인한다.
 
-### Sketchpad UI — ACTIVE INLINE / REVIEW
-- 현재 실행 구현: `monitor.js`의 `monitorSketchpad` / `MONITOR_SKETCH_STORAGE_KEY` 계열
+### Sketchpad UI — SOURCE EXTRACTED / LIVE PENDING
+- 현재 소스 구현: `features/sketch/monitor-sketch-feature.js`와 `.css`. DOM, canvas 상태, 도구, undo/redo, 이벤트와 persistence 호출의 단일 소유자다.
+- `monitor.js`에는 `MonitorSketchFeature.create(...)` composition과 `layout(...)` 호출만 남으며, 그림판 구현 함수·DOM 생성·CSS는 남지 않는다.
+- persistence/timer/layout은 주입 포트로만 받고, 기능 내부는 Monitor 전역이나 Chrome/Native API를 직접 읽지 않는다.
+- 독립 검증: `..\tools\check_monitor_sketch_feature.js`; 구조 검사가 load order, 단일 소유권과 문법을 함께 고정한다.
+- 운영 설치와 실제 펜/지우개/도형/글자/undo/redo/접기/재시작 복원 수락 전이므로 LIVE 완료로 보고하지 않는다.
 - 이전에 별도로 존재하던 `monitor-sketchpad.js`는 load graph에 등록되지 않은 중복 구현이라 `backup\legacy-ui\monitor-sketchpad-unloaded-20260921.js`로 격리했다.
-- 구 구현용 `.monitor-side-sketchpad` / `.monitor-sketchpad-title` / `.monitor-sketchpad-actions` CSS는 active 스타일에 현재 계산 결과를 보존해 합친 뒤 제거했다. live CSS에는 active sketchpad 규칙만 남긴다.
-- 향후 분리 시 새 구현을 또 만들지 말고 **현재 inline 구현을 그대로 이동**하고, `desktop.html` load graph와 structure checker를 함께 갱신한다.
+- 위 legacy 파일을 다시 로드하거나 두 번째 그림판 경로로 복구하지 않는다.
 
 ## monitor.js 내부 후보
 
@@ -98,12 +101,11 @@
 - 이어서 정의 외 참조가 전혀 없던 단순 top-level 선언 16개(옛 URL 상수, 미사용 poll 상수, legacy storage key, 미사용 structure/workplace/thumb 상태 등)를 제거했다.
 - 이 판정은 정적 이름 참조 감사이므로 이후 큰 변경 뒤 다시 실행한다. 동적 문자열 호출 가능성이 있는 코드에는 자동 삭제 규칙으로 쓰지 않는다.
 
-### Sketchpad — REVIEW / NEAR READY
-- 측정 구간 약 251줄, top-level 함수 7개 중 5개는 구간 내부 전용이고 2개가 외부에서 참조된다.
-- canvas 저장/복원/펜/지우개 자체는 독립성이 높다.
-- 다만 현재 element/collapse 상태가 Monitor 배치와 `syncMonitorSideNote()`, panel/switcher layout에 직접 연결돼 있다.
-- **현재 UI 조정이 끝나기 전에는 파일 이동 금지.**
-- READY 조건: 생성/저장/그리기 책임과 외부 layout callback을 분리하고, 외부에는 element/collapse/layout-change 정도의 좁은 API만 남긴다. 새 구현을 만들지 말고 현재 inline 구현을 그대로 이동한다.
+### Sketchpad — SOURCE EXTRACTED / LIVE PENDING
+- 기존 inline 구현 28개 함수와 bootstrap event/state를 새 구현을 덧붙이지 않고 `features/sketch/`로 이동했다.
+- 외부에는 `create`, `element`, `layout`, `destroy`, read-only `snapshot`만 노출한다.
+- `syncMonitorSideNote()`는 Sketch DOM/state를 읽지 않고 `layout({ boardCollapsed, rootRect, noteLeft })`만 호출한다.
+- 다음 단계는 배포가 아니라 먼저 이번 source commit을 보존한 뒤, 별도 설치/LIVE 수락에서 실제 입력과 복원을 확인하는 것이다.
 
 ### Notes / local history — NOT READY
 - 측정 구간 약 5,051줄, top-level 함수 34개 중 15개가 구간 밖에서 직접 참조된다.
@@ -116,11 +118,12 @@
 - 측정 구간에서 top-level 함수 60개 중 23개가 외부 참조를 갖는다.
 - 다음 검토는 `diagnostics`와 `structure/organization`을 서로 다른 구간으로 다시 계측한 뒤 진행한다.
 
-### Structure / Organization — MODEL DEFINED / IMPLEMENTATION IN PROGRESS
+### Structure / Organization — PARKED / UNUSED
 - 행동 정본: `MONITOR_ORGANIZATION_MODEL.md`.
 - Phase A에서 Desk worker -> Desk manager 기본 `MANAGES` edge를 `monitorStructureDefaultParents()`에 추가했고, explicit reparent/detach가 default보다 우선함을 검증했다.
 - `monitorStructureBuildSavePayload()`가 worker-manager edge와 detached child를 ACT payload로 직렬화하는 것도 검증했다.
-- 아직 organization 코드를 별도 모듈로 대규모 이동하지 않는다. manager/desk/node UI와 ACT round-trip이 안정화된 뒤 pure model과 projection UI 경계를 다시 잰다.
+- 현재 사용 계획이 없으므로 compatibility 코드를 보존한 채 active basic-feature migration에서 제외한다. 새 기능을 추가하거나 대규모 이동하지 않는다.
+- 사용을 다시 결정할 때만 pure model/projection UI로 옮길지 제거할지 별도 판단한다.
 - Node identity / endpoint projection / Shared state / Native mutation 경계는 기존 KEEP TOGETHER 판정을 유지한다.
 
 

@@ -1,0 +1,126 @@
+.monitor-sketchpad {
+  position: fixed; z-index: 1198; display: flex; flex-direction: column;
+  min-width: 180px; min-height: 180px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.16); border-radius: 12px;
+  background: rgba(16,22,31,.82); color: #f5f8fc;
+  box-shadow: 0 10px 28px rgba(0,0,0,.18); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+}
+.monitor-sketchpad[hidden] { display:none !important; }
+.monitor-sketch-title {
+  flex:0 0 auto; height:30px; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:0 7px 0 10px; border-bottom:1px solid rgba(255,255,255,.10);
+  color:rgba(255,255,255,.72); font:700 12px/1 "Segoe UI","Malgun Gothic",sans-serif;
+}
+.monitor-sketch-tools {
+  position:relative;
+  flex:0 0 auto; display:grid; gap:4px; padding:5px 7px 6px;
+  border-bottom:1px solid rgba(255,255,255,.10);
+}
+.monitor-sketch-tool-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; }
+.monitor-sketch-history-row { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.monitor-sketch-text-tool-label { font:700 16px/1 "Malgun Gothic","Segoe UI",sans-serif; }
+.monitor-sketch-text-size-menu {
+  position:absolute; z-index:8; left:7px; top:calc(100% + 4px);
+  display:grid; grid-template-columns:repeat(3,34px); gap:4px;
+  padding:4px; border:1px solid rgba(255,255,255,.18); border-radius:7px;
+  background:rgba(16,22,31,.96); box-shadow:0 7px 18px rgba(0,0,0,.34);
+}
+.monitor-sketch-text-size-menu[hidden] { display:none !important; }
+.monitor-sketch-text-size-menu .monitor-sketch-icon-btn { width:34px; }
+.monitor-sketch-text-size-label { font:700 12px/1 "Malgun Gothic","Segoe UI",sans-serif; }
+.monitor-sketch-text-size-label.small { font-size:10px; }
+.monitor-sketch-text-size-label.medium { font-size:14px; }
+.monitor-sketch-text-size-label.large { font-size:18px; }
+.monitor-sketch-icon-btn {
+  display:grid; place-items:center; width:100%; min-width:0; height:27px; padding:0;
+  border:1px solid rgba(255,255,255,.13); border-radius:6px;
+  background:rgba(255,255,255,.055); color:rgba(255,255,255,.84); cursor:pointer;
+}
+.monitor-sketch-icon-btn svg {
+  width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.monitor-sketch-icon-btn:hover,
+.monitor-sketch-icon-btn:focus-visible { background:rgba(255,255,255,.13); border-color:rgba(255,255,255,.27); color:#fff; }
+.monitor-sketch-icon-btn.active { background:rgba(117,184,255,.22); border-color:rgba(117,184,255,.72); color:#fff; }
+.monitor-sketch-icon-btn:disabled { opacity:.28; cursor:default; background:rgba(255,255,255,.025); }
+.monitor-sketch-danger:hover { background:rgba(255,100,100,.14); border-color:rgba(255,130,130,.42); }
+.monitor-sketch-collapse { width:26px; min-width:26px; height:24px; }
+.monitor-sketch-collapse svg { transition:transform .12s ease; }
+.monitor-sketch-collapse.is-collapsed svg { transform:rotate(180deg); }
+.monitor-sketch-canvas-wrap { position:relative; flex:1 1 auto; min-height:0; padding:8px; background:rgba(5,8,12,.12); }
+#monitorSketchCanvas {
+  position:relative; z-index:1;
+  display:block; flex:1 1 auto; width:100%; height:100%; min-height:0; box-sizing:border-box; border-radius:8px;
+  cursor:none; touch-action:none;
+  background-color:#ffffff;
+  background-image:none;
+  background-size:auto;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.18);
+}
+#monitorSketchOverlay {
+  position:absolute; z-index:2; left:8px; top:8px;
+  width:calc(100% - 16px); height:calc(100% - 16px);
+  box-sizing:border-box; border-radius:8px;
+  pointer-events:none; background:transparent;
+}
+
+.monitor-sketch-cursor {
+  position:absolute; z-index:4; pointer-events:none; opacity:0;
+  transition:opacity .06s linear;
+}
+.monitor-sketch-cursor.visible { opacity:1; }
+.monitor-sketch-cursor.pen {
+  width:30px; height:8px;
+  transform:translate(0,-50%) rotate(-45deg);
+  transform-origin:0 50%;
+  clip-path:polygon(0 50%, 18% 0, 100% 0, 100% 100%, 18% 100%);
+  background:linear-gradient(90deg,#111 0 6%,#d8a66d 6% 18%,#f2c84b 18% 82%,#e78da1 82% 100%);
+  filter:drop-shadow(0 0 1px rgba(0,0,0,.8));
+}
+.monitor-sketch-cursor.shape {
+  width:14px; height:14px;
+  transform:translate(-50%,-50%);
+  background:
+    linear-gradient(#000,#000) center/1px 14px no-repeat,
+    linear-gradient(#000,#000) center/14px 1px no-repeat;
+  filter:drop-shadow(0 0 1px rgba(255,255,255,.95));
+}
+
+.monitor-sketch-cursor.text {
+  width:8px; height:var(--monitor-sketch-text-caret-height,20px);
+  transform:translate(-2px,0);
+  border-left:2px solid #111;
+  box-sizing:border-box;
+  filter:drop-shadow(0 0 1px rgba(255,255,255,.95));
+}
+.monitor-sketch-text-input {
+  position:absolute; z-index:5;
+  min-width:32px; min-height:1em; height:1em; margin:0;
+  padding:0; padding-inline:0; padding-block:0; text-indent:0;
+  border:0; border-radius:0; outline:1px dashed rgba(38,95,150,.72); outline-offset:0;
+  appearance:none; -webkit-appearance:none;
+  box-sizing:border-box; overflow:hidden; background:rgba(255,255,255,.96); color:#000;
+  font-family:"Malgun Gothic","Segoe UI",sans-serif; line-height:1; vertical-align:top;
+}
+.monitor-sketch-text-input[hidden] { display:none !important; }
+
+.monitor-sketch-cursor.eraser {
+  transform:translate(-50%,-50%);
+  border:1px solid rgba(0,0,0,.9);
+  border-radius:50%;
+  box-sizing:border-box;
+  background:rgba(255,255,255,.12);
+  box-shadow:0 0 0 1px rgba(255,255,255,.65);
+}
+
+.monitor-sketchpad.collapsed {
+  width:50px !important; min-width:50px !important; height:40px !important; min-height:40px !important;
+  overflow:hidden; border:0; border-radius:0; background:transparent; box-shadow:none;
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+}
+.monitor-sketchpad.collapsed .monitor-sketch-title { height:40px; padding:0; border:0; justify-content:center; }
+.monitor-sketchpad.collapsed .monitor-sketch-title > span:first-child,
+.monitor-sketchpad.collapsed .monitor-sketch-tools,
+.monitor-sketchpad.collapsed .monitor-sketch-canvas-wrap { display:none !important; }
+.monitor-sketchpad.collapsed #monitorSketchCollapse { display:grid !important; width:30px; margin:0 auto; }

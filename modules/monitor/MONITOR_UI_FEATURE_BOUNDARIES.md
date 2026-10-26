@@ -1,6 +1,12 @@
 # Monitor UI feature boundaries
 
-Status: target ownership map. The current ten `domains/*.js` files are transitional edit owners, not the final screen modules.
+Status: active ownership map. The current ten `domains/*.js` files are transitional edit owners, not the final screen modules. Sketch is the first fully extracted screen feature; Thumbnail remains the reference layered renderer.
+
+Current migration state:
+
+- `SketchFeature`: source extracted to `extension/features/sketch/`; isolated contract passes; installed/LIVE acceptance is pending.
+- `OrganizationFeature`: `PARKED/UNUSED`. Its compatibility code remains preserved but is outside the active basic-feature sequence. It is not migrated or extended unless the user explicitly reactivates it.
+- `DiagnosticsFeature` and `RecoveryFeature`: preserved and deferred until the basic Sketch, Notes, Node panel and desktop surfaces are stable.
 
 ## Screen composition
 
@@ -47,7 +53,7 @@ MonitorApp (composition only)
 | Thumbnail | pixels and semantic overlays inside one desktop tile | per-tile refresh/generation state | visual source, frame reader and node-overlay snapshot |
 | Recovery | closed/deleted/reboot recovery surfaces | recoverable records and pending restores | storage, launch and ACT recovery ports |
 | Diagnostics | diagnostics panel and log views | selected diagnostics tab and bounded command state | read-only health readers and explicit repair commands |
-| Organization | organization overlay and hierarchy editor | draft graph, history and placement | ACT organization read/commit port |
+| Organization (parked) | preserved organization overlay and hierarchy editor | draft graph, history and placement | ACT organization read/commit port |
 
 ## Non-visual ports
 
@@ -83,24 +89,24 @@ Rules:
 
 The existing edit domains intentionally do not dictate the final layout:
 
-- `sketch-notes.js` splits into `SketchFeature` and `NotesFeature`.
+- Sketch DOM, CSS, mutable state and persistence now live in `extension/features/sketch/`; `sketch-notes.js` retains Notes only plus the narrow composition layout call.
 - `node-identity.js`, `conversations.js` and relevant `shared-ui.js` code converge into `NodePanelFeature`.
 - `thumbnail-wallpaper.js` plus the three standalone thumbnail layers become `ThumbnailFeature`.
 - desktop visual code in `thumbnail-wallpaper.js`, `desktop-lifecycle.js` and `shared-ui.js` separates into `DesktopStageFeature` and `DesktopStripFeature`.
 - recovery code leaves `desktop-lifecycle.js` and `conversations.js` for `RecoveryFeature`.
-- `diagnostics-shell.js` becomes `DiagnosticsFeature`; organization stays separate.
+- `diagnostics-shell.js` becomes `DiagnosticsFeature`; Organization remains parked and separate.
 - `native-transport.js` becomes ports only and owns no screen feature.
 - the broad `shared-ui.js` file is emptied as ownership moves; it is not a permanent module.
 
 ## Extraction order
 
 1. Keep Thumbnail as the reference implementation and complete LIVE photo/solid/D1-D2 acceptance.
-2. Extract Sketch because it is visually isolated and has the smallest external surface.
+2. Extract Sketch because it is visually isolated and has the smallest external surface. **Source complete; LIVE pending.**
 3. Extract Notes with separate model, persistence and editor projection.
 4. Extract Node panel, including shared Chrome rows and GitHub Inbox, without mixing organization authority into it.
 5. Split Desktop stage from Desktop strip; reuse Thumbnail rather than moving its internals back into either feature.
 6. Extract Recovery and Header commands after node/desktop identity ports are stable.
 7. Extract Diagnostics.
-8. Migrate or remove Organization last.
+8. Organization is not in the active migration queue. If it is ever reactivated, decide then whether to migrate or remove it.
 
 This order shrinks the compatibility bundle after every accepted feature while keeping one working Monitor throughout the migration.

@@ -222,7 +222,6 @@ const bwmUiLayoutControl = window.MonitorUiLayout?.create?.(
 // require deleting UI or startup code from the production path.
 const MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED = true;
 const MONITOR_FEATURE_MEMO_ENABLED = true;
-const MONITOR_FEATURE_SKETCH_ENABLED = true;
 const MONITOR_FEATURE_RECOVERY_ENABLED = true;
 const MONITOR_ACTIVE_STARTUP_ENABLED = true;
 const MONITOR_ACT_STARTUP_TEST_ENABLED = false;
@@ -292,219 +291,24 @@ monitorDesktopSwitcher.innerHTML = `<button id="monitorDesktopScrollLeft" class=
 
 document.body.prepend(monitorPreviewWallpaper, monitorWindowLayer, monitorTransitionFlash);
 
-const monitorSketchpad = document.createElement("aside");
-monitorSketchpad.className = "monitor-sketchpad";
-monitorSketchpad.setAttribute("aria-label", "간단 그림판");
-monitorSketchpad.innerHTML = `<div class="monitor-sketch-title"><span>그림</span><button id="monitorSketchCollapse" type="button" class="monitor-sketch-icon-btn monitor-sketch-collapse" title="그림판 접기" aria-label="그림판 접기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14l6-6 6 6"/></svg></button></div><div class="monitor-sketch-tools" role="toolbar" aria-label="그림판 도구"><div class="monitor-sketch-tool-row"><button id="monitorSketchPen" type="button" class="monitor-sketch-icon-btn active" title="펜" aria-label="펜"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l4.5-1 10-10-3.5-3.5-10 10L4 20zM13.8 6.7l3.5 3.5"/></svg></button><button id="monitorSketchEraser" type="button" class="monitor-sketch-icon-btn" title="지우개" aria-label="지우개"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17l-3-3 8.5-8.5a2 2 0 012.8 0l3.2 3.2a2 2 0 010 2.8L12 18H8l-1-1zM10 18h10"/></svg></button><button id="monitorSketchLine" type="button" class="monitor-sketch-icon-btn" title="직선" aria-label="직선"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L19 5"/></svg></button><button id="monitorSketchRect" type="button" class="monitor-sketch-icon-btn" title="사각형" aria-label="사각형"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="6" width="14" height="12" rx="1"/></svg></button></div><div class="monitor-sketch-tool-row monitor-sketch-history-row"><button id="monitorSketchText" type="button" class="monitor-sketch-icon-btn" title="글자 · 길게 눌러 크기 선택" aria-label="글자" aria-haspopup="menu" aria-expanded="false"><span class="monitor-sketch-text-tool-label">가</span></button><button id="monitorSketchUndo" type="button" class="monitor-sketch-icon-btn" title="되돌리기" aria-label="되돌리기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7L4 12l5 5M5 12h8a6 6 0 016 6"/></svg></button><button id="monitorSketchRedo" type="button" class="monitor-sketch-icon-btn" title="다시하기" aria-label="다시하기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 7l5 5-5 5M19 12h-8a6 6 0 00-6 6"/></svg></button><button id="monitorSketchClear" type="button" class="monitor-sketch-icon-btn monitor-sketch-danger" title="전체 지우기" aria-label="전체 지우기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M8 10v8M12 10v8M16 10v8M7 7l1 13h8l1-13"/></svg></button></div><div id="monitorSketchTextSizeMenu" class="monitor-sketch-text-size-menu" role="menu" aria-label="글자 크기" hidden><button id="monitorSketchTextSmall" type="button" class="monitor-sketch-icon-btn monitor-sketch-text-size-btn" role="menuitem" title="작은 글자" aria-label="작은 글자"><span class="monitor-sketch-text-size-label small">가</span></button><button id="monitorSketchTextMedium" type="button" class="monitor-sketch-icon-btn monitor-sketch-text-size-btn active" role="menuitem" title="보통 글자" aria-label="보통 글자"><span class="monitor-sketch-text-size-label medium">가</span></button><button id="monitorSketchTextLarge" type="button" class="monitor-sketch-icon-btn monitor-sketch-text-size-btn" role="menuitem" title="큰 글자" aria-label="큰 글자"><span class="monitor-sketch-text-size-label large">가</span></button></div></div><div class="monitor-sketch-canvas-wrap"><canvas id="monitorSketchCanvas" width="900" height="1200" aria-label="자유 낙서 영역"></canvas><canvas id="monitorSketchOverlay" width="900" height="1200" aria-hidden="true"></canvas><div id="monitorSketchCursor" class="monitor-sketch-cursor pen" aria-hidden="true"></div><input id="monitorSketchTextInput" class="monitor-sketch-text-input" type="text" maxlength="120" autocomplete="off" spellcheck="false" aria-label="그림판 글자 입력" hidden></div>`;
-document.body.append(monitorDesktopSwitcher, monitorSketchpad, monitorNote, monitorRoot);
+const monitorSketchStoragePort = Object.freeze({
+  get(key) { try { return localStorage.getItem(key); } catch (_) { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); return true; } catch (_) { return false; } },
+  remove(key) { try { localStorage.removeItem(key); return true; } catch (_) { return false; } },
+});
+const monitorSketchFeature = globalThis.MonitorSketchFeature?.create({
+  document,
+  storage: monitorSketchStoragePort,
+  ImageCtor: Image,
+  requestFrame: requestAnimationFrame,
+  setTimer: setTimeout,
+  clearTimer: clearTimeout,
+  onLayoutChange: () => syncMonitorSideNote(),
+});
+if (!monitorSketchFeature) throw new Error("MONITOR_SKETCH_FEATURE_MISSING");
+document.body.append(monitorDesktopSwitcher, monitorSketchFeature.element, monitorNote, monitorRoot);
 if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED && !MONITOR_FEATURE_RECOVERY_ENABLED) monitorDesktopSwitcher.style.setProperty("display", "none", "important");
 if (!MONITOR_FEATURE_MEMO_ENABLED) monitorNote.style.setProperty("display", "none", "important");
-if (!MONITOR_FEATURE_SKETCH_ENABLED) monitorSketchpad.style.setProperty("display", "none", "important");
-
-const MONITOR_SKETCH_STORAGE_KEY = "desktopWindowMonitorSketchV1";
-const monitorSketchCanvas = document.getElementById("monitorSketchCanvas");
-const monitorSketchPen = document.getElementById("monitorSketchPen");
-const monitorSketchEraser = document.getElementById("monitorSketchEraser");
-const monitorSketchLine = document.getElementById("monitorSketchLine");
-const monitorSketchRect = document.getElementById("monitorSketchRect");
-const monitorSketchText = document.getElementById("monitorSketchText");
-const monitorSketchTextSmall = document.getElementById("monitorSketchTextSmall");
-const monitorSketchTextMedium = document.getElementById("monitorSketchTextMedium");
-const monitorSketchTextLarge = document.getElementById("monitorSketchTextLarge");
-const monitorSketchTextSizeMenu = document.getElementById("monitorSketchTextSizeMenu");
-const monitorSketchUndo = document.getElementById("monitorSketchUndo");
-const monitorSketchRedo = document.getElementById("monitorSketchRedo");
-const monitorSketchClear = document.getElementById("monitorSketchClear");
-const monitorSketchCollapse = document.getElementById("monitorSketchCollapse");
-const monitorSketchTextInput = document.getElementById("monitorSketchTextInput");
-if (!MONITOR_FEATURE_SKETCH_ENABLED) {
-  monitorSketchCanvas.width = 1;
-  monitorSketchCanvas.height = 1;
-  const startupOverlay = monitorSketchpad.querySelector("#monitorSketchOverlay");
-  if (startupOverlay) { startupOverlay.width = 1; startupOverlay.height = 1; }
-}
-const monitorSketchNoopContext = {
-  clearRect(){}, save(){}, restore(){}, drawImage(){}, beginPath(){}, moveTo(){}, lineTo(){}, stroke(){}, closePath(){}, strokeRect(){}, fillText(){},
-  globalCompositeOperation:"source-over", strokeStyle:"#000", fillStyle:"#000", font:"16px sans-serif", textBaseline:"top", lineCap:"round", lineJoin:"round", lineWidth:1
-};
-const monitorSketchContext = MONITOR_FEATURE_SKETCH_ENABLED ? monitorSketchCanvas.getContext("2d") : monitorSketchNoopContext;
-const monitorSketchOverlay = document.getElementById("monitorSketchOverlay");
-const monitorSketchOverlayContext = monitorSketchOverlay.getContext("2d");
-const monitorSketchCursor = document.getElementById("monitorSketchCursor");
-let monitorSketchTool = "pen";
-let monitorSketchDrawing = false;
-let monitorSketchCollapsed = false;
-let monitorSketchStartPoint = null;
-let monitorSketchTextSize = "medium";
-let monitorSketchTextPoint = null;
-let monitorSketchTextLongPressTimer = null;
-let monitorSketchSuppressTextClick = false;
-const MONITOR_SKETCH_TEXT_SIZES = Object.freeze({ small: 14, medium: 20, large: 28 });
-const MONITOR_SKETCH_TEXT_LONG_PRESS_MS = 450;
-const MONITOR_SKETCH_HISTORY_LIMIT = 24;
-const monitorSketchUndoStack = [];
-const monitorSketchRedoStack = [];
-
-/*@@MONITOR_FUNCTION:monitorSketchHideTextSizeMenu@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchSetTool@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchSetTextSize@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchShowTextSizeMenu@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchStartTextLongPress@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchStopTextLongPress@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchPoint@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchCssPoint@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchUpdateCursor@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchClearOverlay@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchPrepareShapeContext@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchDrawShape@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchDrawPreview@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchCommitShape@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchSnapshot@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchUpdateHistoryButtons@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchRemember@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchApplySnapshot@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchUndoAction@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchRedoAction@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchSave@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchRestore@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchCancelText@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchCommitText@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchTextLeftBearing@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchSyncTextInputBearing@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchBeginText@@*/
-
-/*@@MONITOR_FUNCTION:monitorSketchStop@@*/
-
-monitorSketchCanvas.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0) return;
-  const point = monitorSketchPoint(event);
-  if (!point) return;
-  event.preventDefault();
-  if (monitorSketchTool === "text") {
-    monitorSketchHideTextSizeMenu();
-    monitorSketchBeginText(event, point);
-    return;
-  }
-  monitorSketchRemember();
-  monitorSketchDrawing = true;
-  monitorSketchStartPoint = point;
-  monitorSketchCanvas.setPointerCapture(event.pointerId);
-  if (monitorSketchTool === "line" || monitorSketchTool === "rect") {
-    monitorSketchClearOverlay();
-    return;
-  }
-  monitorSketchContext.beginPath();
-  monitorSketchContext.moveTo(point.x, point.y);
-  monitorSketchContext.lineCap = "round";
-  monitorSketchContext.lineJoin = "round";
-  monitorSketchContext.lineWidth = Math.max(4, point.scale * (monitorSketchTool === "eraser" ? 12 : 2.5));
-  monitorSketchContext.globalCompositeOperation = monitorSketchTool === "eraser" ? "destination-out" : "source-over";
-  monitorSketchContext.strokeStyle = "#000000";
-});
-
-monitorSketchCanvas.addEventListener("pointermove", (event) => {
-  monitorSketchUpdateCursor(event);
-  if (!monitorSketchDrawing) return;
-  const point = monitorSketchPoint(event);
-  if (!point) return;
-  event.preventDefault();
-  if (monitorSketchTool === "line" || monitorSketchTool === "rect") {
-    monitorSketchDrawPreview(point);
-    return;
-  }
-  monitorSketchContext.lineTo(point.x, point.y);
-  monitorSketchContext.stroke();
-});
-
-monitorSketchCanvas.addEventListener("pointerenter", monitorSketchUpdateCursor);
-monitorSketchCanvas.addEventListener("pointerleave", () => monitorSketchCursor.classList.remove("visible"));
-monitorSketchCanvas.addEventListener("pointerup", monitorSketchStop);
-monitorSketchCanvas.addEventListener("pointercancel", monitorSketchStop);
-monitorSketchPen.addEventListener("click", () => monitorSketchSetTool("pen"));
-monitorSketchEraser.addEventListener("click", () => monitorSketchSetTool("eraser"));
-monitorSketchLine.addEventListener("click", () => monitorSketchSetTool("line"));
-monitorSketchRect.addEventListener("click", () => monitorSketchSetTool("rect"));
-monitorSketchText.addEventListener("pointerdown", monitorSketchStartTextLongPress);
-monitorSketchText.addEventListener("pointerup", monitorSketchStopTextLongPress);
-monitorSketchText.addEventListener("pointercancel", monitorSketchStopTextLongPress);
-monitorSketchText.addEventListener("pointerleave", monitorSketchStopTextLongPress);
-monitorSketchText.addEventListener("click", (event) => {
-  if (monitorSketchSuppressTextClick) {
-    monitorSketchSuppressTextClick = false;
-    event.preventDefault();
-    return;
-  }
-  monitorSketchHideTextSizeMenu();
-  monitorSketchSetTool("text");
-});
-[
-  [monitorSketchTextSmall, "small"],
-  [monitorSketchTextMedium, "medium"],
-  [monitorSketchTextLarge, "large"]
-].forEach(([button, size]) => {
-  button.addEventListener("pointerdown", (event) => event.preventDefault());
-  button.addEventListener("click", () => {
-    monitorSketchSetTextSize(size);
-    monitorSketchSetTool("text");
-    monitorSketchHideTextSizeMenu();
-  });
-});
-document.addEventListener("pointerdown", (event) => {
-  if (monitorSketchTextSizeMenu.hidden) return;
-  if (monitorSketchTextSizeMenu.contains(event.target) || monitorSketchText.contains(event.target)) return;
-  monitorSketchHideTextSizeMenu();
-}, true);
-monitorSketchTextInput.addEventListener("input", monitorSketchSyncTextInputBearing);
-monitorSketchTextInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.isComposing) {
-    event.preventDefault();
-    monitorSketchCommitText();
-  } else if (event.key === "Escape") {
-    event.preventDefault();
-    monitorSketchCancelText();
-  }
-});
-monitorSketchTextInput.addEventListener("blur", monitorSketchCommitText);
-monitorSketchUndo.addEventListener("click", monitorSketchUndoAction);
-monitorSketchRedo.addEventListener("click", monitorSketchRedoAction);
-monitorSketchClear.addEventListener("click", () => {
-  monitorSketchRemember();
-  monitorSketchContext.clearRect(0, 0, monitorSketchCanvas.width, monitorSketchCanvas.height);
-  monitorSketchClearOverlay();
-  try { localStorage.removeItem(MONITOR_SKETCH_STORAGE_KEY); } catch (_) {}
-});
-monitorSketchCollapse.addEventListener("click", () => {
-  monitorSketchCollapsed = !monitorSketchCollapsed;
-  syncMonitorSideNote();
-});
-if (MONITOR_FEATURE_SKETCH_ENABLED) monitorSketchRestore();
-monitorSketchUpdateHistoryButtons();
 
 const MONITOR_DESKTOP_SWITCHER_GAP_PX = 12;
 /*@@MONITOR_FUNCTION:syncMonitorPanelToDesktopSwitcher@@*/

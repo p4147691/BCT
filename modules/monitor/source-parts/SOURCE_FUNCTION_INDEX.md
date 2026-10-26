@@ -518,7 +518,7 @@ Generated extension/monitor.js is not an edit target.
 - toggleMonitorAutoProcess
 - waitForNewChromeHwnd
 
-## sketch-notes (57 functions)
+## sketch-notes (29 functions)
 
 - clearMonitorTrashedNotes
 - deleteMonitorTrashedNote
@@ -540,34 +540,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorRenderNoteList
 - monitorSerializeNotes
 - monitorShowNoteList
-- monitorSketchApplySnapshot
-- monitorSketchBeginText
-- monitorSketchCancelText
-- monitorSketchClearOverlay
-- monitorSketchCommitShape
-- monitorSketchCommitText
-- monitorSketchCssPoint
-- monitorSketchDrawPreview
-- monitorSketchDrawShape
-- monitorSketchHideTextSizeMenu
-- monitorSketchPoint
-- monitorSketchPrepareShapeContext
-- monitorSketchRedoAction
-- monitorSketchRemember
-- monitorSketchRestore
-- monitorSketchSave
-- monitorSketchSetTextSize
-- monitorSketchSetTool
-- monitorSketchShowTextSizeMenu
-- monitorSketchSnapshot
-- monitorSketchStartTextLongPress
-- monitorSketchStop
-- monitorSketchStopTextLongPress
-- monitorSketchSyncTextInputBearing
-- monitorSketchTextLeftBearing
-- monitorSketchUndoAction
-- monitorSketchUpdateCursor
-- monitorSketchUpdateHistoryButtons
 - monitorUndoNote
 - monitorUpdateNoteInsertLine
 - organizeMonitorNoteWithAi

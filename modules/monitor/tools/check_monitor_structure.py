@@ -32,6 +32,8 @@ def main():
         ext/'monitor-thumbnail-contract.js', ext/'monitor-desktop-visual-source.js',
         ext/'monitor-thumbnail-background-layer.js', ext/'monitor-thumbnail-window-layer.js',
         ext/'monitor-desktop-thumbnail-v2.js',
+        ext/'features'/'sketch'/'monitor-sketch-feature.js',
+        ext/'features'/'sketch'/'monitor-sketch-feature.css',
         ext/'browser'/'tab-focus-adapter.js',
         root/'tools'/'Request-MonitorDeploymentCheck.ps1',
         root/'tools'/'Publish-MonitorDeployment.ps1',
@@ -286,6 +288,16 @@ def main():
     node = shutil.which('node')
     facts['node_executable'] = node
     if node:
+        sketch_check = root/'tools'/'check_monitor_sketch_feature.js'
+        if not sketch_check.is_file():
+            errors.append({'kind':'monitor_sketch_feature_contract_test_missing','path':str(sketch_check)})
+        else:
+            checked=subprocess.run([node,str(sketch_check)],cwd=str(root.parent.parent),
+                capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+            facts['monitor_sketch_feature_test_rc']=checked.returncode
+            if checked.returncode:
+                errors.append({'kind':'monitor_sketch_feature_contract_regression',
+                    'detail':(checked.stdout+checked.stderr)[-600:]})
         thumbnail_checks = [
             root/'tools'/'check_monitor_thumbnail_architecture.js',
             root/'tools'/'check_monitor_thumbnail_v2_cleanroom.js',

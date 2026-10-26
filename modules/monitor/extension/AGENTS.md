@@ -24,8 +24,9 @@
 - Compatibility-only organization behavior is documented in `MONITOR_ORGANIZATION_MODEL.md`.
 
 ## Human-edit authority
-- Function edit sources: domains/*.js. Every one of the 588 function declarations has exactly one owner in ten domain files.
+- Compatibility-bundle function edit sources: domains/*.js. Every one of the current 545 generated function declarations has exactly one owner in ten domain files.
 - Global/bootstrap statements remain in source-parts/*.js; use source-parts/SOURCE_FUNCTION_INDEX.md to locate the owner.
+- Extracted screen features own their implementation under `extension/features/<feature>/`; Sketch is the first such owner. Do not copy an extracted feature back into domains/source-parts.
 - extension/monitor.js is generated output. Never edit it directly or restore the former 80k-line historical worktree.
 - Always rebuild with tools/build_monitor_bundle.py and validate using --check, check_monitor_structure.py and relevant tests.
 - Source ownership alone is NOT independent state/API modularity. The cross-domain globals still need separate acceptance.

@@ -6,12 +6,13 @@ The controlling target architecture and migration order are in `MONITOR_ARCHITEC
 
 ## What actually exists now
 - Canonical editable source: source-parts/manifest.json (10 ordered JS files, about 1.4k-1.6k lines each) plus existing dedicated modules.
-- Generated runtime: extension/monitor.js (14,956 physical lines after cleanup and restoration of split regressions). Do not edit it.
+- Generated runtime: extension/monitor.js (14,509 physical lines after the first screen-feature extraction). Do not edit it.
 - Deterministic builder: tools/build_monitor_bundle.py. tools/check_monitor_structure.py fails on missing/out-of-sync runtime/part syntax.
 - Function ownership lookup: source-parts/SOURCE_FUNCTION_INDEX.md. Monitor.js is now a build output, not human edit authority.
 - Independent responsibility modules already implemented: monitor-desktop-thumbnail-v2.js, monitor-thumbnail-service.js, monitor-bct-shell.js, monitor-ui-layout.js, monitor-act-transport.js, etc.
 - Native color is separately implemented in DesktopSolidColorSource.cs and integrated with DesktopVisualSnapshot.cs. Windows color/solid/virtual desktop mode is read-only.
-- NO fully isolated API boundaries have yet been established for the 10 ordered source parts. These parts share lexical globals and logic; per-domain state/API encapsulation is the next major refactoring phase and requires real E2E for notes, nodes, windows, recovery, organization and capture.
+- The first fully isolated visible boundary now exists: `extension/features/sketch/` owns Sketch DOM, CSS, mutable state, history, events and persistence calls behind injected ports. The remaining ten ordered source/domain files still share lexical globals; Notes, nodes, windows, recovery and diagnostics require the same extraction pattern and real E2E.
+- Organization is explicitly `PARKED/UNUSED`: preserved for possible future use, but excluded from the active migration sequence.
 
 ## Strict reporting
 Not complete until development authority+domain API separation+CI+live deployment+real user E2E across requested functions.
@@ -20,18 +21,19 @@ Avoid duplicate work: BCT-MONITOR-FULL-MODULARIZE-SOLIDCOLOR-20261026-01.
 Existing live rollback protections: do not modify RCC/Core, active Chrome conversation, or unrelated extensions; preserve installed-only Monitor changes before source import.
 
 ## Domain function ownership improvement
-- The original ownership pass moved every function to ten semantic source files, leaving ordered global statements in source-parts. The current audited source contains 573 owned functions after removing twenty callerless functions and four globals used only by them, then restoring three active functions lost by the first split.
+- The original ownership pass moved every function to ten semantic source files, leaving ordered global statements in source-parts. The current audited compatibility source contains 545 owned functions after the 28 Sketch functions moved to their standalone controller.
 - domains/manifest.json and SOURCE_FUNCTION_INDEX.md provide one source authority for each function. Builder prevents missing/duplicate ownership and mismatched generated output.
 - Shared state and global calls remain; independently injectable state/API boundaries are not yet completed. Do not claim overall modularization complete.
 
 
 ## Independent runtime API progress (2026-10-26)
 - 43 safe functions from four domains now execute from standalone monitor-domain-apis.js. Compatibility bridges keep existing call sites. Module is immutable and unit tested in a DOM-free Node VM.
-- Shared state and other function bodies remain coupled. Full independent domain APIs and E2E remain unaccepted.
+- Sketch is separately loaded before `monitor.js`; the compatibility bundle only creates it with injected storage/timing ports and calls its bounded layout API. Its old DOM, handlers, state and CSS were deleted from the bundle source in the same change.
+- Shared state in the remaining domains is still coupled. Full independent domain APIs and LIVE acceptance remain incomplete.
 
 ## Current dependency audit and cleanup
 - `tools/analyze_monitor_dependencies.py` generates `MONITOR_DEPENDENCY_AUDIT.md` from the editable domains, ordered source parts and active script graph.
-- The current source has 573 owned functions, 451 ordered top-level declarations and no definition-only function/global candidate after cleanup.
+- The current source has 545 owned functions, 417 ordered top-level declarations and no definition-only function/global candidate after cleanup.
 - Historical pre-split comparison found and restored three real regressions: shared Chrome-window tab grouping/focus, GitHub completion Inbox rendering, and the thumbnail node-chip/Z-rail CSS. `check_monitor_modularization_regressions.js` now pins those contracts.
 - `MONITOR_REBUILD_READINESS.md` records what must be retained, what was removed and when a clean shell rewrite becomes safer than incremental extraction.
 - These source facts are not deployment or LIVE acceptance. Installed Monitor 2.0.48 remains unchanged during this cleanup.
