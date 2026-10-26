@@ -75,6 +75,27 @@ def main():
         except Exception as exc:
             errors.append({'kind':'monitor_source_parts_invalid','detail':str(exc)[:150]})
 
+    domain_manifest = root/'domains'/'manifest.json'
+    if (root/'source-parts'/'manifest.json').exists() and not domain_manifest.exists():
+        errors.append({'kind':'monitor_domain_manifest_missing'})
+    if domain_manifest.exists():
+        try:
+            domain_specs=json.loads(domain_manifest.read_text(encoding='utf-8'))['domains']
+            if len(domain_specs) < 8 or len({x['domain'] for x in domain_specs}) != len(domain_specs):
+                errors.append({'kind':'monitor_domain_manifest_invalid'})
+            facts['monitor_function_domain_count']=len(domain_specs)
+            for spec in domain_specs:
+                p=root/'domains'/spec['file']
+                if not p.is_file():
+                    errors.append({'kind':'monitor_domain_file_missing','name':spec['file']})
+                elif shutil.which('node'):
+                    c=subprocess.run([shutil.which('node'),'--check',str(p)],
+                        capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=20)
+                    if c.returncode!=0:
+                        errors.append({'kind':'monitor_domain_syntax_failed','name':spec['file']})
+        except Exception as exc:
+            errors.append({'kind':'monitor_domain_manifest_error','detail':str(exc)[:150]})
+
     monitor = ext/'monitor.js'
     index = ext/'MONITOR_JS_INDEX.md'
     if monitor.exists() and index.exists():

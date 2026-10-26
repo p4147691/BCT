@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "domains": [
+    {
+      "domain": "activity",
+      "file": "activity.js",
+      "functions": 20
+    },
+    {
+      "domain": "conversations",
+      "file": "conversations.js",
+      "functions": 78
+    },
+    {
+      "domain": "desktop-lifecycle",
+      "file": "desktop-lifecycle.js",
+      "functions": 98
+    },
+    {
+      "domain": "diagnostics-shell",
+      "file": "diagnostics-shell.js",
+      "functions": 22
+    },
+    {
+      "domain": "native-transport",
+      "file": "native-transport.js",
+      "functions": 12
+    },
+    {
+      "domain": "node-identity",
+      "file": "node-identity.js",
+      "functions": 64
+    },
+    {
+      "domain": "organization",
+      "file": "organization.js",
+      "functions": 92
+    },
+    {
+      "domain": "shared-ui",
+      "file": "shared-ui.js",
+      "functions": 120
+    },
+    {
+      "domain": "sketch-notes",
+      "file": "sketch-notes.js",
+      "functions": 57
+    },
+    {
+      "domain": "thumbnail-wallpaper",
+      "file": "thumbnail-wallpaper.js",
+      "functions": 25
+    }
+  ]
+}

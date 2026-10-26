@@ -50,21 +50,11 @@ const ORCHESTRATOR_CONVERSATION_CLOSE_TAB_URL = "act:/monitor/conversation/close
 const actFetch = globalThis.MonitorActTransport && globalThis.MonitorActTransport.actFetch;
 if (typeof actFetch !== "function") throw new Error("MONITOR_ACT_TRANSPORT_MISSING");
 
-function monitorExtensionVersion() {
-  try { return String(globalThis.chrome?.runtime?.getManifest?.().version || "").trim(); }
-  catch (_) { return ""; }
-}
+/*@@MONITOR_FUNCTION:monitorExtensionVersion@@*/
 
-function monitorWindowTitle() {
-  const version = monitorExtensionVersion();
-  return version ? `BCT Window Monitor · ${version}` : "BCT Window Monitor";
-}
+/*@@MONITOR_FUNCTION:monitorWindowTitle@@*/
 
-function monitorIsOwnWindowTitle(value) {
-  const title = String(value || "").trim();
-  return title === "BCT Window Monitor" || title.startsWith("BCT Window Monitor ·") ||
-    title === "DWM" || title.startsWith("DWM ·") || title.startsWith("DesktopWindow Monitor");
-}
+/*@@MONITOR_FUNCTION:monitorIsOwnWindowTitle@@*/
 
 document.title = monitorWindowTitle();
 
@@ -259,13 +249,7 @@ const monitorRenderDiagnostics = {
   refreshLastStages: {},
 };
 
-function monitorRecordRefreshTiming(startedAt, stages) {
-  const totalMs = Math.max(0, performance.now() - startedAt);
-  monitorRenderDiagnostics.refreshRuns += 1;
-  monitorRenderDiagnostics.refreshLastMs = totalMs;
-  monitorRenderDiagnostics.refreshSlowestMs = Math.max(monitorRenderDiagnostics.refreshSlowestMs, totalMs);
-  monitorRenderDiagnostics.refreshLastStages = { ...stages, total: totalMs };
-}
+/*@@MONITOR_FUNCTION:monitorRecordRefreshTiming@@*/
 
 chrome.runtime.sendMessage({ type:"monitor-register-popup-window" }).catch(() => {});
 
@@ -360,301 +344,61 @@ const MONITOR_SKETCH_HISTORY_LIMIT = 24;
 const monitorSketchUndoStack = [];
 const monitorSketchRedoStack = [];
 
-function monitorSketchHideTextSizeMenu() {
-  monitorSketchTextSizeMenu.hidden = true;
-  monitorSketchText.setAttribute("aria-expanded", "false");
-}
+/*@@MONITOR_FUNCTION:monitorSketchHideTextSizeMenu@@*/
 
-function monitorSketchSetTool(tool) {
-  monitorSketchTool = ["pen", "eraser", "line", "rect", "text"].includes(tool) ? tool : "pen";
-  monitorSketchPen.classList.toggle("active", monitorSketchTool === "pen");
-  monitorSketchEraser.classList.toggle("active", monitorSketchTool === "eraser");
-  monitorSketchLine.classList.toggle("active", monitorSketchTool === "line");
-  monitorSketchRect.classList.toggle("active", monitorSketchTool === "rect");
-  monitorSketchText.classList.toggle("active", monitorSketchTool === "text");
-  monitorSketchCursor.classList.toggle("pen", monitorSketchTool === "pen");
-  monitorSketchCursor.classList.toggle("eraser", monitorSketchTool === "eraser");
-  monitorSketchCursor.classList.toggle("shape", monitorSketchTool === "line" || monitorSketchTool === "rect");
-  monitorSketchCursor.classList.toggle("text", monitorSketchTool === "text");
-  if (monitorSketchTool !== "text") monitorSketchHideTextSizeMenu();
-}
+/*@@MONITOR_FUNCTION:monitorSketchSetTool@@*/
 
-function monitorSketchSetTextSize(size) {
-  monitorSketchTextSize = MONITOR_SKETCH_TEXT_SIZES[size] ? size : "medium";
-  monitorSketchTextSmall.classList.toggle("active", monitorSketchTextSize === "small");
-  monitorSketchTextMedium.classList.toggle("active", monitorSketchTextSize === "medium");
-  monitorSketchTextLarge.classList.toggle("active", monitorSketchTextSize === "large");
-  const cssSize = MONITOR_SKETCH_TEXT_SIZES[monitorSketchTextSize];
-  monitorSketchCursor.style.setProperty("--monitor-sketch-text-caret-height", `${cssSize}px`);
-  if (!monitorSketchTextInput.hidden) monitorSketchTextInput.style.fontSize = `${cssSize}px`;
-}
+/*@@MONITOR_FUNCTION:monitorSketchSetTextSize@@*/
 
-function monitorSketchShowTextSizeMenu() {
-  monitorSketchSetTool("text");
-  monitorSketchTextSizeMenu.hidden = false;
-  monitorSketchText.setAttribute("aria-expanded", "true");
-}
+/*@@MONITOR_FUNCTION:monitorSketchShowTextSizeMenu@@*/
 
-function monitorSketchStartTextLongPress(event) {
-  if (event.button !== 0) return;
-  if (monitorSketchTextLongPressTimer) clearTimeout(monitorSketchTextLongPressTimer);
-  monitorSketchSuppressTextClick = false;
-  monitorSketchTextLongPressTimer = setTimeout(() => {
-    monitorSketchTextLongPressTimer = null;
-    monitorSketchSuppressTextClick = true;
-    monitorSketchShowTextSizeMenu();
-  }, MONITOR_SKETCH_TEXT_LONG_PRESS_MS);
-}
+/*@@MONITOR_FUNCTION:monitorSketchStartTextLongPress@@*/
 
-function monitorSketchStopTextLongPress() {
-  if (!monitorSketchTextLongPressTimer) return;
-  clearTimeout(monitorSketchTextLongPressTimer);
-  monitorSketchTextLongPressTimer = null;
-}
+/*@@MONITOR_FUNCTION:monitorSketchStopTextLongPress@@*/
 
-function monitorSketchPoint(event) {
-  const rect = monitorSketchCanvas.getBoundingClientRect();
-  if (!rect.width || !rect.height) return null;
-  return {
-    x: (event.clientX - rect.left) * monitorSketchCanvas.width / rect.width,
-    y: (event.clientY - rect.top) * monitorSketchCanvas.height / rect.height,
-    scale: monitorSketchCanvas.width / rect.width
-  };
-}
+/*@@MONITOR_FUNCTION:monitorSketchPoint@@*/
 
-function monitorSketchCssPoint(point) {
-  const canvasRect = monitorSketchCanvas.getBoundingClientRect();
-  const wrapRect = monitorSketchCanvas.parentElement.getBoundingClientRect();
-  if (!point || !canvasRect.width || !canvasRect.height) return null;
-  return {
-    left: canvasRect.left - wrapRect.left + point.x * canvasRect.width / monitorSketchCanvas.width,
-    top: canvasRect.top - wrapRect.top + point.y * canvasRect.height / monitorSketchCanvas.height
-  };
-}
+/*@@MONITOR_FUNCTION:monitorSketchCssPoint@@*/
 
-function monitorSketchUpdateCursor(event) {
-  const canvasRect = monitorSketchCanvas.getBoundingClientRect();
-  const point = monitorSketchPoint(event);
-  const cssPoint = monitorSketchCssPoint(point);
-  if (!cssPoint || !canvasRect.width || !canvasRect.height) return;
-  monitorSketchCursor.style.left = `${cssPoint.left}px`;
-  monitorSketchCursor.style.top = `${cssPoint.top}px`;
-  if (monitorSketchTool === "eraser") {
-    const scale = monitorSketchCanvas.width / canvasRect.width;
-    const eraseCssPx = Math.max(12, 4 / Math.max(scale, 0.001));
-    monitorSketchCursor.style.width = `${eraseCssPx}px`;
-    monitorSketchCursor.style.height = `${eraseCssPx}px`;
-  } else {
-    monitorSketchCursor.style.width = "";
-    monitorSketchCursor.style.height = "";
-  }
-  if (monitorSketchTool === "text") {
-    monitorSketchCursor.style.setProperty("--monitor-sketch-text-caret-height", `${MONITOR_SKETCH_TEXT_SIZES[monitorSketchTextSize]}px`);
-  }
-  monitorSketchCursor.classList.add("visible");
-}
+/*@@MONITOR_FUNCTION:monitorSketchUpdateCursor@@*/
 
-function monitorSketchClearOverlay() {
-  monitorSketchOverlayContext.clearRect(0, 0, monitorSketchOverlay.width, monitorSketchOverlay.height);
-}
+/*@@MONITOR_FUNCTION:monitorSketchClearOverlay@@*/
 
-function monitorSketchPrepareShapeContext(context, point) {
-  context.globalCompositeOperation = "source-over";
-  context.strokeStyle = "#000000";
-  context.lineCap = "round";
-  context.lineJoin = "round";
-  context.lineWidth = Math.max(4, point.scale * 2.5);
-}
+/*@@MONITOR_FUNCTION:monitorSketchPrepareShapeContext@@*/
 
-function monitorSketchDrawShape(context, point) {
-  if (!monitorSketchStartPoint) return;
-  const start = monitorSketchStartPoint;
-  if (monitorSketchTool === "line") {
-    context.beginPath();
-    context.moveTo(start.x, start.y);
-    context.lineTo(point.x, point.y);
-    context.stroke();
-    context.closePath();
-    return;
-  }
-  if (monitorSketchTool === "rect") {
-    const x = Math.min(start.x, point.x);
-    const y = Math.min(start.y, point.y);
-    const width = Math.abs(point.x - start.x);
-    const height = Math.abs(point.y - start.y);
-    context.strokeRect(x, y, width, height);
-  }
-}
+/*@@MONITOR_FUNCTION:monitorSketchDrawShape@@*/
 
-function monitorSketchDrawPreview(point) {
-  monitorSketchClearOverlay();
-  monitorSketchPrepareShapeContext(monitorSketchOverlayContext, point);
-  monitorSketchDrawShape(monitorSketchOverlayContext, point);
-}
+/*@@MONITOR_FUNCTION:monitorSketchDrawPreview@@*/
 
-function monitorSketchCommitShape(point) {
-  monitorSketchPrepareShapeContext(monitorSketchContext, point);
-  monitorSketchDrawShape(monitorSketchContext, point);
-  monitorSketchClearOverlay();
-}
+/*@@MONITOR_FUNCTION:monitorSketchCommitShape@@*/
 
-function monitorSketchSnapshot() {
-  try { return monitorSketchCanvas.toDataURL("image/png"); } catch (_) { return ""; }
-}
+/*@@MONITOR_FUNCTION:monitorSketchSnapshot@@*/
 
-function monitorSketchUpdateHistoryButtons() {
-  monitorSketchUndo.disabled = monitorSketchUndoStack.length === 0;
-  monitorSketchRedo.disabled = monitorSketchRedoStack.length === 0;
-}
+/*@@MONITOR_FUNCTION:monitorSketchUpdateHistoryButtons@@*/
 
-function monitorSketchRemember() {
-  const snapshot = monitorSketchSnapshot();
-  if (!snapshot) return;
-  if (monitorSketchUndoStack[monitorSketchUndoStack.length - 1] !== snapshot) {
-    monitorSketchUndoStack.push(snapshot);
-    if (monitorSketchUndoStack.length > MONITOR_SKETCH_HISTORY_LIMIT) monitorSketchUndoStack.shift();
-  }
-  monitorSketchRedoStack.length = 0;
-  monitorSketchUpdateHistoryButtons();
-}
+/*@@MONITOR_FUNCTION:monitorSketchRemember@@*/
 
-function monitorSketchApplySnapshot(snapshot) {
-  if (!snapshot) return;
-  const image = new Image();
-  image.onload = () => {
-    monitorSketchContext.save();
-    monitorSketchContext.globalCompositeOperation = "source-over";
-    monitorSketchContext.clearRect(0, 0, monitorSketchCanvas.width, monitorSketchCanvas.height);
-    monitorSketchContext.drawImage(image, 0, 0, monitorSketchCanvas.width, monitorSketchCanvas.height);
-    monitorSketchContext.restore();
-    monitorSketchClearOverlay();
-    monitorSketchSave();
-  };
-  image.src = snapshot;
-}
+/*@@MONITOR_FUNCTION:monitorSketchApplySnapshot@@*/
 
-function monitorSketchUndoAction() {
-  if (!monitorSketchUndoStack.length) return;
-  const current = monitorSketchSnapshot();
-  const previous = monitorSketchUndoStack.pop();
-  if (current) {
-    monitorSketchRedoStack.push(current);
-    if (monitorSketchRedoStack.length > MONITOR_SKETCH_HISTORY_LIMIT) monitorSketchRedoStack.shift();
-  }
-  monitorSketchApplySnapshot(previous);
-  monitorSketchUpdateHistoryButtons();
-}
+/*@@MONITOR_FUNCTION:monitorSketchUndoAction@@*/
 
-function monitorSketchRedoAction() {
-  if (!monitorSketchRedoStack.length) return;
-  const current = monitorSketchSnapshot();
-  const next = monitorSketchRedoStack.pop();
-  if (current) {
-    monitorSketchUndoStack.push(current);
-    if (monitorSketchUndoStack.length > MONITOR_SKETCH_HISTORY_LIMIT) monitorSketchUndoStack.shift();
-  }
-  monitorSketchApplySnapshot(next);
-  monitorSketchUpdateHistoryButtons();
-}
+/*@@MONITOR_FUNCTION:monitorSketchRedoAction@@*/
 
-function monitorSketchSave() {
-  try { localStorage.setItem(MONITOR_SKETCH_STORAGE_KEY, monitorSketchCanvas.toDataURL("image/png")); } catch (_) {}
-}
+/*@@MONITOR_FUNCTION:monitorSketchSave@@*/
 
-function monitorSketchRestore() {
-  let saved = "";
-  try { saved = localStorage.getItem(MONITOR_SKETCH_STORAGE_KEY) || ""; } catch (_) {}
-  if (!saved) return;
-  const image = new Image();
-  image.onload = () => monitorSketchContext.drawImage(image, 0, 0, monitorSketchCanvas.width, monitorSketchCanvas.height);
-  image.src = saved;
-}
+/*@@MONITOR_FUNCTION:monitorSketchRestore@@*/
 
-function monitorSketchCancelText() {
-  monitorSketchTextInput.hidden = true;
-  monitorSketchTextInput.value = "";
-  monitorSketchTextPoint = null;
-}
+/*@@MONITOR_FUNCTION:monitorSketchCancelText@@*/
 
-function monitorSketchCommitText() {
-  if (monitorSketchTextInput.hidden || !monitorSketchTextPoint) return;
-  const text = monitorSketchTextInput.value;
-  const point = monitorSketchTextPoint;
-  monitorSketchTextInput.hidden = true;
-  monitorSketchTextInput.value = "";
-  monitorSketchTextPoint = null;
-  if (!text) return;
-  monitorSketchRemember();
-  const cssSize = MONITOR_SKETCH_TEXT_SIZES[monitorSketchTextSize];
-  const fontSize = Math.max(1, point.scale * cssSize);
-  monitorSketchContext.save();
-  monitorSketchContext.globalCompositeOperation = "source-over";
-  monitorSketchContext.fillStyle = "#000000";
-  monitorSketchContext.font = `${fontSize}px "Malgun Gothic","Segoe UI",sans-serif`;
-  monitorSketchContext.textBaseline = "alphabetic";
-  const metrics = monitorSketchContext.measureText(text);
-  const fontAscent = Number(metrics.fontBoundingBoxAscent) || fontSize * 0.8;
-  const fontDescent = Number(metrics.fontBoundingBoxDescent) || fontSize * 0.2;
-  const lineBoxOffset = (fontSize - (fontAscent + fontDescent)) / 2;
-  const leftBearing = Number(metrics.actualBoundingBoxLeft) || 0;
-  monitorSketchContext.fillText(text, point.x + leftBearing, point.y + fontAscent + lineBoxOffset);
-  monitorSketchContext.restore();
-  monitorSketchSave();
-}
+/*@@MONITOR_FUNCTION:monitorSketchCommitText@@*/
 
-function monitorSketchTextLeftBearing(text, point) {
-  if (!text || !point) return 0;
-  const cssSize = MONITOR_SKETCH_TEXT_SIZES[monitorSketchTextSize];
-  const fontSize = Math.max(1, point.scale * cssSize);
-  monitorSketchContext.save();
-  monitorSketchContext.font = `${fontSize}px "Malgun Gothic","Segoe UI",sans-serif`;
-  const metrics = monitorSketchContext.measureText(text);
-  monitorSketchContext.restore();
-  return Number(metrics.actualBoundingBoxLeft) || 0;
-}
+/*@@MONITOR_FUNCTION:monitorSketchTextLeftBearing@@*/
 
-function monitorSketchSyncTextInputBearing() {
-  if (monitorSketchTextInput.hidden || !monitorSketchTextPoint) return;
-  const cssPoint = monitorSketchCssPoint(monitorSketchTextPoint);
-  if (!cssPoint) return;
-  const bearing = monitorSketchTextLeftBearing(monitorSketchTextInput.value, monitorSketchTextPoint);
-  const bearingCss = bearing / Math.max(monitorSketchTextPoint.scale, 0.001);
-  monitorSketchTextInput.style.left = `${cssPoint.left + bearingCss}px`;
-}
+/*@@MONITOR_FUNCTION:monitorSketchSyncTextInputBearing@@*/
 
-function monitorSketchBeginText(event, point) {
-  monitorSketchCommitText();
-  const canvasRect = monitorSketchCanvas.getBoundingClientRect();
-  const wrapRect = monitorSketchCanvas.parentElement.getBoundingClientRect();
-  const cssPoint = monitorSketchCssPoint(point);
-  if (!cssPoint) return;
-  monitorSketchTextPoint = point;
-  monitorSketchTextInput.value = "";
-  monitorSketchTextInput.style.left = `${cssPoint.left}px`;
-  monitorSketchTextInput.style.top = `${cssPoint.top}px`;
-  monitorSketchTextInput.style.width = `${Math.max(32, Math.min(180, canvasRect.right - (wrapRect.left + cssPoint.left)))}px`;
-  monitorSketchTextInput.style.fontSize = `${MONITOR_SKETCH_TEXT_SIZES[monitorSketchTextSize]}px`;
-  monitorSketchTextInput.hidden = false;
-  requestAnimationFrame(() => {
-    try { monitorSketchTextInput.focus({ preventScroll: true }); } catch (_) { monitorSketchTextInput.focus(); }
-  });
-}
+/*@@MONITOR_FUNCTION:monitorSketchBeginText@@*/
 
-function monitorSketchStop(event) {
-  if (!monitorSketchDrawing) return;
-  const point = event?.type === "pointercancel" ? null : monitorSketchPoint(event);
-  if (point && (monitorSketchTool === "line" || monitorSketchTool === "rect")) {
-    monitorSketchCommitShape(point);
-  } else {
-    monitorSketchClearOverlay();
-  }
-  monitorSketchDrawing = false;
-  monitorSketchStartPoint = null;
-  try { if (event?.pointerId != null) monitorSketchCanvas.releasePointerCapture(event.pointerId); } catch (_) {}
-  monitorSketchContext.closePath();
-  monitorSketchContext.globalCompositeOperation = "source-over";
-  monitorSketchSave();
-}
+/*@@MONITOR_FUNCTION:monitorSketchStop@@*/
 
 monitorSketchCanvas.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
@@ -762,16 +506,7 @@ if (MONITOR_FEATURE_SKETCH_ENABLED) monitorSketchRestore();
 monitorSketchUpdateHistoryButtons();
 
 const MONITOR_DESKTOP_SWITCHER_GAP_PX = 12;
-function syncMonitorPanelToDesktopSwitcher() {
-  if (!monitorRoot || !monitorDesktopSwitcher || monitorRoot.classList.contains("collapsed")) return;
-  const rootRect = monitorRoot.getBoundingClientRect();
-  const switcherRect = monitorDesktopSwitcher.getBoundingClientRect();
-  if (!Number.isFinite(switcherRect.top) || switcherRect.height < 1 || switcherRect.top <= rootRect.top + 120) return;
-  const targetHeight = Math.max(260, Math.floor(switcherRect.top - rootRect.top - MONITOR_DESKTOP_SWITCHER_GAP_PX));
-  const targetPx = `${targetHeight}px`;
-  if (monitorRoot.style.height !== targetPx) monitorRoot.style.height = targetPx;
-  if (monitorRoot.style.maxHeight !== targetPx) monitorRoot.style.maxHeight = targetPx;
-}
+/*@@MONITOR_FUNCTION:syncMonitorPanelToDesktopSwitcher@@*/
 const queueMonitorPanelToDesktopSwitcherSync = () => requestAnimationFrame(() => {
   syncMonitorPanelToDesktopSwitcher();
   syncMonitorSideNote();
@@ -794,19 +529,7 @@ if (monitorWorkRecoveryMount && globalThis.MonitorWorkRecovery) monitorWorkRecov
 
 const monitorTitleLine = monitorTitle?.closest(".monitor-title-line");
 
-function syncMonitorTitle() {
-
-  if (!monitorTitle || !monitorTitleLine) return;
-
-  const version = monitorExtensionVersion();
-  monitorTitle.textContent = "BWM";
-  if (monitorVersion) {
-    monitorVersion.textContent = version ? `v${version}` : "버전 미확인";
-    monitorVersion.title = version ? `실행 중인 BWM 버전 ${version} · BCT 연결 확인 중` : "실행 중인 확장 버전을 확인하지 못했습니다";
-  }
-  document.title = monitorWindowTitle();
-
-}
+/*@@MONITOR_FUNCTION:syncMonitorTitle@@*/
 
 syncMonitorTitle();
 
@@ -848,27 +571,15 @@ let monitorLastViewedNoteId = "";
 
 let monitorNoteListMode = true;
 
-function monitorNoteId() { return `n${Date.now().toString(36)}${Math.random().toString(36).slice(2,7)}`; }
+/*@@MONITOR_FUNCTION:monitorNoteId@@*/
 
-function monitorNoteTitleFromText(text) { return String(text||"").split(/\r?\n/).map(v=>v.trim()).find(Boolean)?.slice(0,42) || "새 메모"; }
+/*@@MONITOR_FUNCTION:monitorNoteTitleFromText@@*/
 
-function monitorParseNoteBundle(raw) {
+/*@@MONITOR_FUNCTION:monitorParseNoteBundle@@*/
 
-  const text = String(raw || "");
+/*@@MONITOR_FUNCTION:monitorSerializeNotes@@*/
 
-  if (text.startsWith(MONITOR_NOTE_BUNDLE_PREFIX)) {
-
-    try { const data = JSON.parse(text.slice(MONITOR_NOTE_BUNDLE_PREFIX.length)); return Array.isArray(data?.notes) ? data.notes.filter(n=>n&&n.id).map(n=>{ const body=String(n.body||""); return {id:String(n.id),title:monitorNoteTitleFromText(body),body,updatedAt:Number(n.updatedAt)||0}; }) : []; } catch (_) { return []; }
-
-  }
-
-  return text.trim() ? [{ id:monitorNoteId(), title:monitorNoteTitleFromText(text), body:text, updatedAt:Date.now() }] : [];
-
-}
-
-function monitorSerializeNotes() { return MONITOR_NOTE_BUNDLE_PREFIX + JSON.stringify({ notes:monitorNotes }); }
-
-function monitorActiveNote() { return monitorNotes.find(n=>n.id===monitorActiveNoteId) || null; }
+/*@@MONITOR_FUNCTION:monitorActiveNote@@*/
 
 const monitorNoteHistory = new Map();
 
@@ -876,59 +587,23 @@ const monitorNoteListUndo = [];
 
 const monitorNoteListRedo = [];
 
-function monitorNoteSnapshot(note=monitorActiveNote()) { return note ? { title:String(note.title||""), body:String(note.body||"") } : null; }
+/*@@MONITOR_FUNCTION:monitorNoteSnapshot@@*/
 
-function monitorNoteHistoryState(id=monitorActiveNoteId) { if(!id)return null; if(!monitorNoteHistory.has(id)) monitorNoteHistory.set(id,{undo:[],redo:[]}); return monitorNoteHistory.get(id); }
+/*@@MONITOR_FUNCTION:monitorNoteHistoryState@@*/
 
-function monitorSyncHistoryButtons() {
+/*@@MONITOR_FUNCTION:monitorSyncHistoryButtons@@*/
 
-  if (monitorNoteListMode) {
+/*@@MONITOR_FUNCTION:monitorRecordUndoBeforeEdit@@*/
 
-    monitorNoteUndo.hidden = false;
+/*@@MONITOR_FUNCTION:monitorApplyHistorySnapshot@@*/
 
-    monitorNoteUndo.disabled = !monitorNoteListUndo.length;
+/*@@MONITOR_FUNCTION:monitorUndoNote@@*/
 
-    monitorNoteUndo.title = "목록 변경 되돌리기 (Ctrl+Z)";
+/*@@MONITOR_FUNCTION:monitorRedoNote@@*/
 
-    monitorNoteUndo.setAttribute("aria-label", "목록 변경 되돌리기");
+/*@@MONITOR_FUNCTION:monitorUndoListDelete@@*/
 
-    monitorNoteRedo.hidden = false;
-
-    monitorNoteRedo.disabled = !monitorNoteListRedo.length;
-
-    monitorNoteRedo.title = "목록 변경 다시 실행 (Ctrl+Y / Ctrl+Shift+Z)";
-
-    monitorNoteRedo.setAttribute("aria-label", "목록 변경 다시 실행");
-
-    return;
-
-  }
-
-  const h=monitorNoteHistoryState();
-
-  const editing=!!monitorActiveNoteId;
-
-  monitorNoteUndo.hidden=!editing; monitorNoteRedo.hidden=!editing;
-
-  monitorNoteUndo.disabled=!h?.undo?.length; monitorNoteRedo.disabled=!h?.redo?.length;
-
-  monitorNoteUndo.title = "실행 취소 (Ctrl+Z)";
-
-  monitorNoteUndo.setAttribute("aria-label", "실행 취소");
-
-}
-
-function monitorRecordUndoBeforeEdit() { const note=monitorActiveNote(); const h=monitorNoteHistoryState(); if(!note||!h)return; const prev=monitorNoteSnapshot(note); const next={title:monitorNoteTitleFromText(monitorSideNoteText.value),body:String(monitorSideNoteText.value||"")}; if(prev.body===next.body)return; const last=h.undo[h.undo.length-1]; if(!last||last.body!==prev.body) h.undo.push(prev); if(h.undo.length>100)h.undo.shift(); h.redo.length=0; }
-
-function monitorApplyHistorySnapshot(snapshot) { const note=monitorActiveNote(); if(!note||!snapshot)return; note.body=String(snapshot.body||""); note.title=monitorNoteTitleFromText(note.body); note.updatedAt=Date.now(); monitorSideNoteText.value=note.body; monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorSyncHistoryButtons(); }
-
-function monitorUndoNote() { const note=monitorActiveNote(); const h=monitorNoteHistoryState(); if(!note||!h?.undo?.length)return; h.redo.push(monitorNoteSnapshot(note)); monitorApplyHistorySnapshot(h.undo.pop()); }
-
-function monitorRedoNote() { const note=monitorActiveNote(); const h=monitorNoteHistoryState(); if(!note||!h?.redo?.length)return; h.undo.push(monitorNoteSnapshot(note)); monitorApplyHistorySnapshot(h.redo.pop()); }
-
-function monitorUndoListDelete() { const action=monitorNoteListUndo.pop(); if(!action)return; let note=action.note||action; if(action.type==="create"){ const current=monitorNotes.find(n=>n.id===note.id); if(current) note={...current}; monitorNotes=monitorNotes.filter(n=>n.id!==note.id); monitorNoteHistory.delete(note.id); } else if(!monitorNotes.some(n=>n.id===note.id)) monitorNotes.push(note); monitorNoteListRedo.push({type:action.type||"delete",note:{...note}}); if(monitorNoteListRedo.length>50)monitorNoteListRedo.shift(); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorSyncHistoryButtons(); }
-
-function monitorRedoListDelete() { const action=monitorNoteListRedo.pop(); if(!action)return; const note=action.note||action; if((action.type||"delete")==="create"){ if(!monitorNotes.some(n=>n.id===note.id)) monitorNotes.push(note); } else { monitorNotes=monitorNotes.filter(n=>n.id!==note.id); monitorNoteHistory.delete(note.id); } monitorNoteListUndo.push({type:action.type||"delete",note:{...note}}); if(monitorNoteListUndo.length>50)monitorNoteListUndo.shift(); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorSyncHistoryButtons(); }
+/*@@MONITOR_FUNCTION:monitorRedoListDelete@@*/
 
 let monitorNoteSuppressOpenUntil=0;
 
@@ -936,325 +611,41 @@ let monitorNoteDragState=null;
 
 let monitorNoteDragRaf=0;
 
-function monitorUpdateNoteInsertLine(clientY) {
+/*@@MONITOR_FUNCTION:monitorUpdateNoteInsertLine@@*/
 
-  const st=monitorNoteDragState; if(!st?.active)return;
+/*@@MONITOR_FUNCTION:monitorNoteDragScrollTick@@*/
 
-  const rows=[...monitorNoteList.querySelectorAll(".monitor-note-item")];
+/*@@MONITOR_FUNCTION:monitorBindNoteDrag@@*/
 
-  let beforeId=null, lineY=null;
+/*@@MONITOR_FUNCTION:persistMonitorTrashedNotes@@*/
 
-  for(const row of rows){
+/*@@MONITOR_FUNCTION:trashMonitorNote@@*/
 
-    const r=row.getBoundingClientRect();
+/*@@MONITOR_FUNCTION:restoreMonitorTrashedNote@@*/
 
-    if(clientY < r.top + r.height/2){ beforeId=row.dataset.noteId; lineY=r.top; break; }
+/*@@MONITOR_FUNCTION:deleteMonitorTrashedNote@@*/
 
-  }
+/*@@MONITOR_FUNCTION:clearMonitorTrashedNotes@@*/
 
-  if(lineY==null){
+/*@@MONITOR_FUNCTION:monitorRenderNoteList@@*/
 
-    const last=rows[rows.length-1];
+/*@@MONITOR_FUNCTION:monitorHighlightLastViewedNote@@*/
 
-    lineY=last ? last.getBoundingClientRect().bottom : monitorNoteList.getBoundingClientRect().top+7;
+/*@@MONITOR_FUNCTION:monitorShowNoteList@@*/
 
-  }
+/*@@MONITOR_FUNCTION:monitorOpenNote@@*/
 
-  st.beforeId=beforeId;
+/*@@MONITOR_FUNCTION:monitorCreateNote@@*/
 
-  const listRect=monitorNoteList.getBoundingClientRect();
+/*@@MONITOR_FUNCTION:monitorUpdateActiveFromEditor@@*/
 
-  st.insertLine.style.top=`${lineY-listRect.top+monitorNoteList.scrollTop}px`;
-
-}
-
-function monitorNoteDragScrollTick() {
-
-  const st=monitorNoteDragState; if(!st?.active){monitorNoteDragRaf=0;return;}
-
-  if(st.scrollVelocity){ monitorNoteList.scrollTop+=st.scrollVelocity; monitorUpdateNoteInsertLine(st.lastClientY); }
-
-  monitorNoteDragRaf=requestAnimationFrame(monitorNoteDragScrollTick);
-
-}
-
-function monitorBindNoteDrag(row,noteId) {
-
-  row.addEventListener("pointerdown",ev=>{
-
-    if(ev.button!==0||ev.target.closest(".monitor-note-item-delete")||monitorNoteDragState)return;
-
-    const startX=ev.clientX,startY=ev.clientY;
-
-    const state={row,noteId,pointerId:ev.pointerId,startX,startY,lastClientY:startY,active:false,scrollVelocity:0,offsetY:0,height:0,ghost:null,insertLine:null,beforeId:noteId};
-
-    monitorNoteDragState=state;
-
-    const onMove=e=>{
-
-      if(e.pointerId!==state.pointerId)return;
-
-      state.lastClientY=e.clientY;
-
-      if(!state.active&&Math.hypot(e.clientX-startX,e.clientY-startY)<6)return;
-
-      if(!state.active){
-
-        state.active=true; monitorNoteSuppressOpenUntil=Date.now()+500;
-
-        const r=row.getBoundingClientRect(); state.offsetY=startY-r.top; state.height=r.height;
-
-        const ghost=row.cloneNode(true); ghost.classList.add("monitor-note-drag-ghost"); ghost.removeAttribute("data-note-id");
-
-        Object.assign(ghost.style,{position:"fixed",left:`${r.left}px`,top:`${r.top}px`,width:`${r.width}px`,height:`${r.height}px`,margin:"0",zIndex:"2147483646",pointerEvents:"none"});
-
-        state.ghost=ghost; document.body.appendChild(ghost); row.classList.add("monitor-note-drag-source");
-
-        const line=document.createElement("div"); line.className="monitor-note-insert-line"; state.insertLine=line; monitorNoteList.appendChild(line);
-
-        monitorNoteList.classList.add("monitor-note-reordering"); monitorUpdateNoteInsertLine(startY);
-
-        if(!monitorNoteDragRaf)monitorNoteDragRaf=requestAnimationFrame(monitorNoteDragScrollTick);
-
-      }
-
-      e.preventDefault();
-
-      const listRect=monitorNoteList.getBoundingClientRect();
-
-      const top=Math.max(listRect.top,Math.min(e.clientY-state.offsetY,listRect.bottom-state.height));
-
-      state.ghost.style.top=`${top}px`;
-
-      const edge=Math.min(48,Math.max(30,listRect.height*.16));
-
-      if(e.clientY<listRect.top+edge) state.scrollVelocity=-Math.min(14,Math.max(2,(listRect.top+edge-e.clientY)*.34));
-
-      else if(e.clientY>listRect.bottom-edge) state.scrollVelocity=Math.min(14,Math.max(2,(e.clientY-(listRect.bottom-edge))*.34));
-
-      else state.scrollVelocity=0;
-
-      monitorUpdateNoteInsertLine(e.clientY);
-
-    };
-
-    const finish=e=>{
-
-      if(e.pointerId!==state.pointerId)return;
-
-      document.removeEventListener("pointermove",onMove); document.removeEventListener("pointerup",finish); document.removeEventListener("pointercancel",finish);
-
-      if(state.active){
-
-        state.scrollVelocity=0; if(monitorNoteDragRaf){cancelAnimationFrame(monitorNoteDragRaf);monitorNoteDragRaf=0;}
-
-        state.ghost?.remove(); state.insertLine?.remove(); row.classList.remove("monitor-note-drag-source"); monitorNoteList.classList.remove("monitor-note-reordering");
-
-        const currentIds=monitorNotes.map(n=>n.id); const filtered=currentIds.filter(id=>id!==state.noteId);
-
-        let insertAt=state.beforeId ? filtered.indexOf(state.beforeId) : filtered.length;
-
-        if(insertAt<0)insertAt=filtered.length; filtered.splice(insertAt,0,state.noteId);
-
-        const byId=new Map(monitorNotes.map(note=>[note.id,note]));
-
-        if(filtered.length===monitorNotes.length&&filtered.every(id=>byId.has(id))){ monitorNotes=filtered.map(id=>byId.get(id)); monitorLastViewedNoteId=state.noteId; monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorHighlightLastViewedNote(); }
-
-        monitorNoteSuppressOpenUntil=Date.now()+350;
-
-      }
-
-      monitorNoteDragState=null;
-
-    };
-
-    document.addEventListener("pointermove",onMove,{passive:false}); document.addEventListener("pointerup",finish); document.addEventListener("pointercancel",finish);
-
-  });
-
-}
-
-function persistMonitorTrashedNotes(){
-
-  chrome.storage.local.set({[MONITOR_TRASHED_NOTES_KEY]:[...monitorTrashedNotes.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,100)});
-
-}
-
-function trashMonitorNote(note){
-
-  if(!note?.id)return; monitorTrashedNotes.set(String(note.id),{...note,trashed_at_ms:Date.now()}); persistMonitorTrashedNotes(); refreshMonitorRecoveryMenu();
-
-}
-
-function restoreMonitorTrashedNote(id){
-
-  const note=monitorTrashedNotes.get(String(id)); if(!note)return; monitorTrashedNotes.delete(String(id)); const restored={...note}; delete restored.trashed_at_ms; if(!monitorNotes.some((x)=>x.id===restored.id))monitorNotes.push(restored); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); persistMonitorTrashedNotes(); monitorRenderNoteList(); refreshMonitorRecoveryMenu();
-
-}
-
-function deleteMonitorTrashedNote(id){monitorTrashedNotes.delete(String(id));persistMonitorTrashedNotes();refreshMonitorRecoveryMenu();}
-
-function clearMonitorTrashedNotes(){monitorTrashedNotes.clear();persistMonitorTrashedNotes();refreshMonitorRecoveryMenu();}
-
-function monitorRenderNoteList() {
-  if (!MONITOR_FEATURE_MEMO_ENABLED) { monitorNoteList.replaceChildren(); return; }
-
-  monitorNoteList.innerHTML = "";
-
-  const sorted = [...monitorNotes];
-
-  if (!sorted.length) { const empty=document.createElement("div"); empty.className="monitor-note-empty"; empty.textContent="메모가 없습니다. 위 + 버튼을 눌러 시작하세요."; monitorNoteList.appendChild(empty); return; }
-
-  for (const note of sorted) {
-
-    const row=document.createElement("div"); row.className="monitor-note-item"; row.dataset.noteId=note.id; if(note.id===monitorLastViewedNoteId) row.classList.add("is-last-viewed");
-
-    const open=document.createElement("button"); open.type="button"; open.className="monitor-note-item-open";
-
-    const title=document.createElement("strong"); title.textContent=note.title||"새 메모";
-
-    const preview=document.createElement("span"); preview.textContent=String(note.body||"").replace(/\s+/g," ").trim().slice(0,72)||"내용 없음";
-
-    open.append(title,preview); open.addEventListener("click",event=>{ if(Date.now()<monitorNoteSuppressOpenUntil){event.preventDefault();return;} monitorOpenNote(note.id); });
-
-    const del=document.createElement("button"); del.type="button"; del.className="monitor-note-item-delete"; del.title="메모 삭제"; del.setAttribute("aria-label",`${note.title||"새 메모"} 삭제`); del.textContent="🗑";
-
-    del.addEventListener("click",()=>{ trashMonitorNote(note); monitorNotes=monitorNotes.filter(n=>n.id!==note.id); monitorNoteHistory.delete(note.id); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorSyncHistoryButtons(); });
-
-    row.append(open,del); monitorBindNoteDrag(row,note.id); monitorNoteList.appendChild(row);
-
-  }
-
-}
-
-function monitorHighlightLastViewedNote() {
-
-  const id=String(monitorLastViewedNoteId||""); if(!id)return;
-
-  requestAnimationFrame(()=>{
-
-    const row=[...monitorNoteList.querySelectorAll(".monitor-note-item")].find(el=>el.dataset.noteId===id);
-
-    if(!row)return;
-
-    row.scrollIntoView({block:"nearest",inline:"nearest"});
-
-    row.classList.remove("monitor-note-return-highlight");
-
-    void row.offsetWidth;
-
-    row.classList.add("monitor-note-return-highlight");
-
-    setTimeout(()=>row.classList.remove("monitor-note-return-highlight"),1200);
-
-  });
-
-}
-
-function monitorShowNoteList() { monitorNoteListMode=true; monitorActiveNoteId=""; monitorNoteList.hidden=false; monitorNoteEditor.hidden=true; monitorNoteBack.hidden=true; monitorNoteAi.hidden=false; monitorNoteDelete.hidden=true; monitorNoteAdd.hidden=false; monitorNoteHeaderTitle.textContent="메모"; monitorRenderNoteList(); monitorSyncHistoryButtons(); }
-
-function monitorOpenNote(id, focusEditor=true) { const note=monitorNotes.find(n=>n.id===id); if(!note)return; monitorNoteListMode=false; monitorActiveNoteId=id; monitorLastViewedNoteId=id; monitorNoteHistoryState(id); monitorNoteList.hidden=true; monitorNoteEditor.hidden=false; monitorNoteBack.hidden=false; monitorNoteAi.hidden=false; monitorNoteAdd.hidden=true; monitorNoteHeaderTitle.textContent="메모 편집"; monitorNoteDelete.textContent="🗑"; monitorNoteDelete.hidden=false; monitorSideNoteText.value=note.body||""; monitorSyncHistoryButtons(); if(focusEditor) requestAnimationFrame(()=>monitorSideNoteText.focus()); }
-
-function monitorCreateNote() {
-
-  const note={id:monitorNoteId(),title:"새 메모",body:"",updatedAt:Date.now()};
-
-  monitorNoteListUndo.push({type:"create",note:{...note}});
-
-  if(monitorNoteListUndo.length>50)monitorNoteListUndo.shift();
-
-  monitorNoteListRedo.length=0;
-
-  monitorNotes.unshift(note);
-
-  monitorNoteLocalDirty=true;
-
-  monitorQueueNoteBundleSave();
-
-  monitorShowNoteList();
-
-  requestAnimationFrame(()=>{
-
-    const row=[...monitorNoteList.querySelectorAll(".monitor-note-item")].find(el=>el.dataset.noteId===note.id);
-
-    if(row) row.scrollIntoView({block:"start",inline:"nearest"});
-
-  });
-
-}
-
-function monitorUpdateActiveFromEditor() { const note=monitorActiveNote(); if(!note)return; note.body=String(monitorSideNoteText.value||""); note.title=monitorNoteTitleFromText(note.body); note.updatedAt=Date.now(); monitorNoteLocalDirty=true; }
-
-function monitorQueueNoteBundleSave() { clearTimeout(monitorNoteSaveTimer); monitorNoteSaveTimer=setTimeout(async()=>{ const text=monitorSerializeNotes(); const result=await monitorNoteNative({type:"setSharedNote",text}).catch(()=>null); if(result?.ok){monitorNoteLastSharedText=text;monitorNoteLocalDirty=false;} },180); }
+/*@@MONITOR_FUNCTION:monitorQueueNoteBundleSave@@*/
 
 let monitorNoteCollapsed = false;
 
 let monitorNoteSaveTimer = 0;
 
-function syncMonitorSideNote() {
-
-  const boardCollapsed = monitorRoot.classList.contains("collapsed");
-
-  monitorNote.hidden = boardCollapsed;
-  monitorSketchpad.hidden = boardCollapsed;
-
-  if (boardCollapsed) return;
-
-  const rect = monitorRoot.getBoundingClientRect();
-
-  const width = Math.min(300, Math.max(220, rect.left - 24));
-
-  const effectiveWidth = monitorNoteCollapsed ? 50 : width;
-
-  monitorNote.style.width = `${Math.round(width)}px`;
-
-  monitorNote.style.top = `${Math.round(rect.top)}px`;
-
-  monitorNote.style.left = `${Math.max(8, Math.round(rect.left - effectiveWidth - 8))}px`;
-
-  const noteLeft = Number.parseFloat(monitorNote.style.left) || 8;
-  const sketchWidth = Math.min(280, Math.max(180, noteLeft - 16));
-  const sketchEffectiveWidth = monitorSketchCollapsed ? 50 : sketchWidth;
-  monitorSketchpad.style.width = `${Math.round(sketchWidth)}px`;
-  monitorSketchpad.style.top = `${Math.round(rect.top)}px`;
-  monitorSketchpad.style.left = `${Math.max(8, Math.round(noteLeft - sketchEffectiveWidth - 8))}px`;
-  monitorSketchpad.style.height = monitorSketchCollapsed ? "40px" : `${Math.round(rect.height)}px`;
-  monitorSketchpad.style.minWidth = monitorSketchCollapsed ? "50px" : "180px";
-  monitorSketchpad.style.minHeight = monitorSketchCollapsed ? "40px" : "180px";
-  monitorSketchpad.classList.toggle("collapsed", monitorSketchCollapsed);
-  monitorSketchCollapse.classList.toggle("is-collapsed", monitorSketchCollapsed);
-  monitorSketchCollapse.title = monitorSketchCollapsed ? "그림판 펼치기" : "그림판 접기";
-  monitorSketchCollapse.setAttribute("aria-label", monitorSketchCollapse.title);
-
-  monitorNote.classList.toggle("collapsed", monitorNoteCollapsed);
-
-  monitorNoteCollapse.classList.toggle("is-collapsed", monitorNoteCollapsed);
-
-  monitorNoteCollapse.title = monitorNoteCollapsed ? "메모 펼치기" : "메모 접기";
-
-  monitorNoteCollapse.setAttribute("aria-label", monitorNoteCollapse.title);
-
-  if (monitorNoteCollapsed) {
-
-    monitorNote.style.width = "50px";
-
-    monitorNote.style.minWidth = "50px";
-
-    monitorNote.style.height = "40px";
-
-    monitorNote.style.minHeight = "40px";
-
-    return;
-
-  }
-
-  monitorNote.style.minWidth = "220px";
-
-  monitorNote.style.minHeight = "180px";
-
-  monitorNote.style.height = `${Math.round(rect.height)}px`;
-
-}
+/*@@MONITOR_FUNCTION:syncMonitorSideNote@@*/
 
 monitorNoteCollapse.addEventListener("click", () => { monitorNoteCollapsed = !monitorNoteCollapsed; syncMonitorSideNote(); });
 
@@ -1274,93 +665,11 @@ monitorNote.addEventListener("keydown", (event) => { if(!monitorNoteListMode||!e
 
 let monitorNoteAiBusy = false;
 
-async function organizeMonitorNoteWithAi() {
-
-  if (monitorNoteAiBusy) return;
-
-  monitorNoteAiBusy = true; monitorNoteAi.disabled = true; monitorNoteAi.textContent = "...";
-
-  try {
-
-    if (monitorNoteListMode) {
-
-      const baseline = monitorSerializeNotes();
-
-      const targets = monitorNotes.filter(note => String(note.body || "").trim());
-
-      if (!targets.length) { setMonitorStatus("AI 정리할 메모가 없음", false); return; }
-
-      const response = await actFetch(ORCHESTRATOR_NOTE_AI_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({notes:targets.map(note=>({id:note.id,text:String(note.body||"").trim()}))}) });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok || !data?.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-
-      const cleanedById = new Map((Array.isArray(data.notes)?data.notes:[]).map(item=>[String(item?.id||""),String(item?.text||"").trim()]));
-
-      if (cleanedById.size !== targets.length || targets.some(note=>!cleanedById.get(note.id))) throw new Error("NOTE_AI_BUNDLE_INCOMPLETE");
-
-      if (!monitorNoteListMode || monitorSerializeNotes() !== baseline) { setMonitorStatus("메모 목록이 바뀌어 AI 결과는 적용하지 않음", false); return; }
-
-      const now = Date.now();
-
-      monitorNotes = monitorNotes.map(note => cleanedById.has(note.id) ? {...note, body:cleanedById.get(note.id), title:monitorNoteTitleFromText(cleanedById.get(note.id)), updatedAt:now} : note);
-
-      monitorNoteLocalDirty = true;
-
-      const bundle = monitorSerializeNotes();
-
-      const saved = await monitorNoteNative({ type:"setSharedNote", text:bundle });
-
-      if (!saved?.ok) throw new Error(saved?.error || "NOTE_SAVE_FAILED");
-
-      monitorNoteLastSharedText = bundle; monitorNoteLocalDirty = false; monitorRenderNoteList();
-
-      setMonitorStatus(`전체 메모 AI 정리 완료 ${targets.length}개${data.profile_id ? ` - ${String(data.profile_id)}` : ""}`, true);
-
-      return;
-
-    }
-
-    const source = String(monitorSideNoteText.value || "").trim();
-
-    if (!source) { setMonitorStatus("AI 정리할 메모가 없음", false); return; }
-
-    const response = await actFetch(ORCHESTRATOR_NOTE_AI_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:source}) });
-
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok || !data?.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-
-    if (String(monitorSideNoteText.value || "").trim() !== source) { setMonitorStatus("메모가 바뀌어 AI 결과는 적용하지 않음", false); return; }
-
-    const cleaned = String(data.text || "").trim(); if (!cleaned) throw new Error("NOTE_AI_EMPTY_RESULT");
-
-    monitorRecordUndoBeforeEdit(); monitorSideNoteText.value = cleaned; monitorUpdateActiveFromEditor(); monitorSyncHistoryButtons(); syncMonitorSideNote();
-
-    const bundle = monitorSerializeNotes();
-
-    const saved = await monitorNoteNative({ type:"setSharedNote", text:bundle });
-
-    if (!saved?.ok) throw new Error(saved?.error || "NOTE_SAVE_FAILED");
-
-    monitorNoteLastSharedText = bundle; monitorNoteLocalDirty = false;
-
-    setMonitorStatus(`메모 AI 정리 완료 - ${String(data.profile_id||"")}`, true);
-
-  } catch (error) { setMonitorStatus(`메모 AI 실패 - ${monitorRoleAdminErrorText(error?.message || error)}`, false); }
-
-  finally { monitorNoteAiBusy = false; monitorNoteAi.disabled = false; monitorNoteAi.textContent = "AI"; }
-
-}
+/*@@MONITOR_FUNCTION:organizeMonitorNoteWithAi@@*/
 
 monitorNoteAi.addEventListener("click", organizeMonitorNoteWithAi);
 
-function monitorNoteNative(message) {
-
-  return monitorNative(message);
-
-}
+/*@@MONITOR_FUNCTION:monitorNoteNative@@*/
 
 let monitorNoteLastSharedText = "";
 
@@ -1376,51 +685,9 @@ let monitorNoteViewSaveTimer = 0;
 
 let monitorNoteViewSyncBusy = false;
 
-function monitorNoteScrollRatio() {
+/*@@MONITOR_FUNCTION:monitorNoteScrollRatio@@*/
 
-  const maxScroll = Math.max(0, monitorSideNoteText.scrollHeight - monitorSideNoteText.clientHeight);
-
-  return maxScroll > 0 ? Math.max(0, Math.min(1, monitorSideNoteText.scrollTop / maxScroll)) : 0;
-
-}
-
-async function refreshMonitorSharedNoteView() {
-
-  if (monitorNoteViewSyncBusy) return;
-
-  if (document.activeElement === monitorSideNoteText) return;
-
-  monitorNoteViewSyncBusy = true;
-
-  try {
-
-    const result = await monitorNoteNative({ type: "getSharedMonitorNoteView" }).catch(() => null);
-
-    const revision = String(result?.revision || "");
-
-    if (!result?.ok || !revision || revision === monitorNoteViewRevision) return;
-
-    monitorNoteViewRevision = revision;
-
-    const ratio = Math.max(0, Math.min(1, Number(result.ratio) || 0));
-
-    const maxScroll = Math.max(0, monitorSideNoteText.scrollHeight - monitorSideNoteText.clientHeight);
-
-    const target = maxScroll * ratio;
-
-    if (Math.abs(monitorSideNoteText.scrollTop - target) > 2) {
-
-      monitorNoteViewRemoteApplying = true;
-
-      monitorSideNoteText.scrollTop = target;
-
-      requestAnimationFrame(() => { monitorNoteViewRemoteApplying = false; });
-
-    }
-
-  } finally { monitorNoteViewSyncBusy = false; }
-
-}
+/*@@MONITOR_FUNCTION:refreshMonitorSharedNoteView@@*/
 
 monitorSideNoteText.addEventListener("scroll", (event) => {
 
@@ -1438,47 +705,7 @@ monitorSideNoteText.addEventListener("scroll", (event) => {
 
 });
 
-async function refreshMonitorSharedNote() {
-
-  if (monitorNoteDragState?.active) return;
-
-  const result = await monitorNoteNative({ type: "getSharedNote" }).catch(() => null);
-
-  if (!result?.ok) return;
-
-  const text = String(result.text || "");
-
-  if (monitorNoteReady && text === monitorSerializeNotes()) { monitorNoteLastSharedText = text; monitorNoteLocalDirty = false; return; }
-
-  const editorActive = document.activeElement === monitorSideNoteText;
-
-  if (monitorNoteReady && editorActive && text !== monitorSerializeNotes()) return;
-
-  const safeToReplace = !monitorNoteLocalDirty || monitorSerializeNotes() === monitorNoteLastSharedText;
-
-  if (!monitorNoteReady || safeToReplace) {
-
-    const previousActive = monitorActiveNoteId;
-
-    monitorNotes = monitorParseNoteBundle(text);
-
-    monitorNoteLastSharedText = text;
-
-    monitorNoteLocalDirty = false;
-
-    if (!monitorNoteReady || monitorNoteListMode || !monitorNotes.some(n=>n.id===previousActive)) monitorShowNoteList();
-
-    else { monitorOpenNote(previousActive, false); }
-
-    syncMonitorSideNote();
-
-    if (text && !text.startsWith(MONITOR_NOTE_BUNDLE_PREFIX)) { monitorNoteLocalDirty = true; monitorQueueNoteBundleSave(); }
-
-  }
-
-  monitorNoteReady = true;
-
-}
+/*@@MONITOR_FUNCTION:refreshMonitorSharedNote@@*/
 
 monitorSideNoteText.addEventListener("input", (event) => {
 
@@ -1526,5 +753,5 @@ const monitorDesktopScrollLeft = document.getElementById("monitorDesktopScrollLe
 
 const monitorDesktopScrollRight = document.getElementById("monitorDesktopScrollRight");
 
-function monitorDesktopScrollStep(){const tile=monitorDesktopThumbs.querySelector(".monitor-desktop-thumb");return Math.max(132,Math.round(tile?.getBoundingClientRect?.().width||156)+8);}
+/*@@MONITOR_FUNCTION:monitorDesktopScrollStep@@*/
 

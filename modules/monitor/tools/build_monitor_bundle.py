@@ -1,28 +1,41 @@
 from pathlib import Path
-import json,hashlib,argparse,re
+import json,re,hashlib,argparse
 root=Path(__file__).resolve().parents[1]
-folder=root/"source-parts"
-manifest=json.loads((folder/"manifest.json").read_text(encoding="utf-8"))
-output=b"".join((folder/name).read_bytes() for name in manifest["parts"])
-target=root/"extension"/"monitor.js"
-index_path=root/"source-parts"/"SOURCE_FUNCTION_INDEX.md"
-index_lines=["# Monitor editable source function index","","Edit the listed source part, then rebuild the generated extension/monitor.js.",""]
-for name in manifest["parts"]:
-    text=(folder/name).read_text(encoding="utf-8")
-    matches=re.findall(r"^\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(",text,re.M)
-    index_lines.append("## "+name+" ("+str(len(matches))+" declared functions)")
-    index_lines.append("")
-    for f in matches: index_lines.append("- "+f)
-    index_lines.append("")
-index_content="\n".join(index_lines)
-
-a=argparse.ArgumentParser();a.add_argument("--check",action="store_true");mode=a.parse_args()
-if mode.check:
- if target.read_bytes()!=output:raise SystemExit("OUT_OF_SYNC: edit source-parts then rebuild")
- if not index_path.exists() or index_path.read_text(encoding="utf-8")!=index_content:
-  raise SystemExit("SOURCE_FUNCTION_INDEX_OUT_OF_SYNC")
- print("MONITOR_BUNDLE_SYNC_PASS",len(output),hashlib.sha256(output).hexdigest())
+partdir=root/"source-parts"; domaindir=root/"domains"
+parts=json.loads((partdir/"manifest.json").read_text(encoding="utf-8"))["parts"]
+domain_manifest=json.loads((domaindir/"manifest.json").read_text(encoding="utf-8"))["domains"]
+fpat=re.compile(rb"^//@@FN_START:([A-Za-z_$][\w$]*)\n(.*?)\n//@@FN_END:\1\n",re.S|re.M)
+functions={};owners={}
+for info in domain_manifest:
+    raw=(domaindir/info["file"]).read_bytes();pos=0;count=0
+    for m in fpat.finditer(raw):
+        if raw[pos:m.start()].strip():raise ValueError("INVALID_DOMAIN_FRAGMENT:"+info["file"])
+        name=m.group(1).decode("ascii")
+        if name in functions:raise ValueError("DUPLICATE:"+name)
+        functions[name]=m.group(2);owners[name]=info["domain"];count+=1;pos=m.end()
+    if raw[pos:].strip() or count!=info["functions"]:raise ValueError("DOMAIN_INTEGRITY:"+info["file"])
+marker=re.compile(rb"/\*@@MONITOR_FUNCTION:([A-Za-z_$][\w$]*)@@\*/")
+used=[]
+def splice(match):
+    name=match.group(1).decode("ascii")
+    if name not in functions:raise ValueError("UNBOUND_FUNCTION:"+name)
+    used.append(name)
+    return functions[name]
+output=b"".join(marker.sub(splice,(partdir/name).read_bytes()) for name in parts)
+if len(used)!=len(set(used)) or len(used)!=len(functions):raise ValueError("MISSING_OR_DUPLICATE_FUNCTION")
+runtime=root/"extension/monitor.js"
+index=partdir/"SOURCE_FUNCTION_INDEX.md"
+idx=["# Monitor function edit ownership","","Edit source in domains/*.js, ordered statements in source-parts/*.js.","Generated extension/monitor.js is not an edit target.",""]
+for info in domain_manifest:
+    idx+=["## "+info["domain"]+" ("+str(info["functions"])+" functions)",""]
+    idx+=["- "+n for n in sorted(functions) if owners[n]==info["domain"]]
+    idx+=[""]
+index_text="\n".join(idx)
+a=argparse.ArgumentParser();a.add_argument("--check",action="store_true");args=a.parse_args()
+if args.check:
+    if runtime.read_bytes()!=output:raise SystemExit("MONITOR_RUNTIME_OUT_OF_SYNC")
+    if not index.is_file() or index.read_text(encoding="utf-8")!=index_text:raise SystemExit("DOMAIN_INDEX_OUT_OF_SYNC")
+    print("DOMAIN_BUNDLE_PASS",len(functions),len(domain_manifest),"sha",hashlib.sha256(output).hexdigest())
 else:
- target.write_bytes(output)
- index_path.write_text(index_content,encoding="utf-8",newline="")
- print("MONITOR_BUNDLE_GENERATED",len(output),hashlib.sha256(output).hexdigest())
+    runtime.write_bytes(output);index.write_text(index_text,encoding="utf-8",newline="")
+    print("DOMAIN_BUNDLE_GENERATED",len(functions),len(domain_manifest),"sha",hashlib.sha256(output).hexdigest())

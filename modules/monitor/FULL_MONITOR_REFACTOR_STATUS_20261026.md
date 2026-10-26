@@ -16,3 +16,8 @@ Not complete until development authority+domain API separation+CI+live deploymen
 Do not call blank-run compaction or 10 ordered slices 'full modularization complete'.
 Avoid duplicate work: BCT-MONITOR-FULL-MODULARIZE-SOLIDCOLOR-20261026-01.
 Existing live rollback protections: do not modify RCC/Core, active Chrome conversation, or unrelated extensions; preserve installed-only Monitor changes before source import.
+
+## Domain function ownership improvement
+- All 588 functions moved to 10 semantic source files, leaving ordered global statements in original source-parts. The compiled 15,389-line runtime SHA remained fa8ef4d2ba8509fc29a261db7d363f508cc4e42421abb455b111a7fca86f762c, i.e. zero runtime effect.
+- domains/manifest.json and SOURCE_FUNCTION_INDEX.md provide one source authority for each function. Builder prevents missing/duplicate ownership and mismatched generated output.
+- Shared state and global calls remain; independently injectable state/API boundaries are not yet completed. Do not claim overall modularization complete.
