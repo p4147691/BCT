@@ -218,6 +218,26 @@ class ClaimDiagnosticsTests(unittest.TestCase):
                         policy_revision="fixture",
                     )
 
+    def test_running_exact_rcc_operation_blocks_instance_wide_operation(self):
+        self.claim("active-delivery", resource="rcc-instance:example:delivery:one")
+        with self.assertRaisesRegex(ConflictError, "RCC_INSTANCE_ACTIVE_EXECUTION"):
+            self.store.begin_operation(
+                operation_id="legacy-send", work=self.work,
+                principal_id="fixture-owner", request_digest="legacy-send",
+                capability="relay_browser", target="example",
+                resources=("rcc-instance:example",), policy_revision="fixture",
+            )
+
+    def test_running_instance_wide_rcc_operation_blocks_exact_operation(self):
+        self.claim("legacy-send", resource="rcc-instance:example")
+        with self.assertRaisesRegex(ConflictError, "RCC_INSTANCE_ACTIVE_EXECUTION"):
+            self.store.begin_operation(
+                operation_id="active-delivery", work=self.work,
+                principal_id="fixture-owner", request_digest="active-delivery",
+                capability="relay_browser", target="example",
+                resources=("rcc-instance:example:delivery:one",), policy_revision="fixture",
+            )
+
     def test_finished_unknown_exact_effects_retire_for_distinct_successor(self):
         resources = (
             "rcc-instance:example:direct-tab:12",

@@ -251,6 +251,41 @@ class RccIntegrationTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_generic_send_retires_terminal_unknown_claim_after_idle_proof(self):
+        self._generic_unknown_send()
+        self.client.results = [
+            self._idle_rcc_state(), self.client.result,
+            {"type": "host:ack", "ok": True, "submitted": True,
+             "effectState": "SUBMITTED"},
+        ]
+        successor = self.call("generic-independent-successor", {
+            "command": "send", "instance_id": "instance123",
+            "to": "BCT_ROSTER", "text": "independent task",
+        })
+        self.assertEqual(Outcome.APPLIED, successor.outcome)
+        self.assertEqual(
+            ["send", "state", "result", "send"],
+            [call["command"] for call in self.client.calls],
+        )
+        original = self.bct.store.get_operation_for(
+            operation_id="generic-roster-original", work_id="rcc-work",
+            principal_id="codex",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH", original.error)
+
+    def test_generic_send_keeps_terminal_unknown_claim_when_rcc_is_pending(self):
+        self._generic_unknown_send()
+        pending = dict(self.client.result)
+        pending.update({"found": False, "completed": False, "pending": True,
+                        "result": None, "pendingStatus": {"state": "QUEUED"}})
+        self.client.results = [self._idle_rcc_state(), pending]
+        with self.assertRaisesRegex(Exception, "generic-roster-original:FINISHED:UNKNOWN"):
+            self.call("generic-pending-successor", {
+                "command": "send", "instance_id": "instance123",
+                "to": "BCT_ROSTER", "text": "independent task",
+            })
+
     def test_direct_send_ack_without_submission_is_not_success(self):
         self.client.result = {"type": "host:ack", "ok": True,
                               "submitted": False, "effectState": "QUEUED"}
@@ -921,7 +956,7 @@ class RccIntegrationTests(unittest.TestCase):
             db.close()
         self.assertEqual(1, unresolved)
 
-    def test_create_and_send_does_not_inspect_non_missing_unknown_claim(self):
+    def test_create_and_send_probes_non_missing_terminal_unknown_without_dispatch(self):
         self.client.result = {
             "type": "host:result", "ok": False, "error": "SOME_OTHER_UNKNOWN",
         }
@@ -937,10 +972,11 @@ class RccIntegrationTests(unittest.TestCase):
                 "command": "create-and-send", "instance_id": "instance123",
                 "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
             })
-        # Target freshness is read before the inherited UNKNOWN claim fence is
-        # evaluated.  It is read-only; no new-chat effect was dispatched.
-        self.assertEqual(prior_calls + 1, len(self.client.calls))
-        self.assertEqual("state", self.client.calls[-1]["command"])
+        # Target freshness and the common terminal-claim probe are read-only;
+        # no new-chat effect was dispatched when the proof was insufficient.
+        self.assertEqual(prior_calls + 3, len(self.client.calls))
+        self.assertEqual(["state", "state", "result"],
+                         [call["command"] for call in self.client.calls[-3:]])
 
     def test_create_and_send_terminal_identity_mismatch_stays_unknown(self):
         wrong = self._new_chat_result("compose-bad-identity")
@@ -980,7 +1016,7 @@ class RccIntegrationTests(unittest.TestCase):
             operation_id=operation_id, capability="relay_browser", arguments=arguments,
         )
 
-    def test_same_principal_successor_retires_exact_terminal_mismatch_claim_after_idle_proof(self):
+    def test_successor_retires_terminal_mismatch_claim_after_idle_proof(self):
         original_id = self._terminal_mismatch_original()
         self._successor_work()
         self.client.results = [
@@ -991,7 +1027,6 @@ class RccIntegrationTests(unittest.TestCase):
         successor = self._call_successor("successor-independent", {
             "command": "create-and-send", "instance_id": "instance123",
             "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
-            "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
         })
         self.assertEqual(Outcome.APPLIED, successor.outcome)
         self.assertEqual(
@@ -1019,34 +1054,28 @@ class RccIntegrationTests(unittest.TestCase):
         audit = json.loads(event[1])
         self.assertEqual("successor-independent", audit["new_operation_id"])
         self.assertEqual("rcc-successor", audit["successor_work_id"])
-        self.assertTrue(audit["same_principal_verified"])
-        self.assertEqual("TERMINAL_OPERATION_RCC_NO_PENDING_RECORD_EFFECT_UNKNOWN", audit["reason"])
+        self.assertEqual("TERMINAL_OPERATION_RCC_IDLE_PROVEN", audit["reason"])
         self.assertTrue(audit["no_resend_original"])
 
-    def test_terminal_mismatch_handoff_rejects_foreign_principal_without_probe_or_release(self):
+    def test_foreign_successor_retires_terminal_mismatch_claim_after_idle_proof(self):
         original_id = self._terminal_mismatch_original()
         foreign = Principal("foreign", "test", frozenset({"relay_browser"}))
         self._successor_work(principal=foreign)
         target_ref = self._fresh_window_target(work_id="rcc-successor")
-        calls_before = len(self.client.calls)
-        with self.assertRaisesRegex(Exception, "RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK"):
-            self._call_successor("foreign-independent", {
-                "command": "create-and-send", "instance_id": "instance123",
-                "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
-                "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
-            }, principal=foreign)
-        # The opaque target is revalidated before the inherited claim fence is
-        # evaluated.  It is read-only; no successor effect was dispatched.
-        self.assertEqual(calls_before + 1, len(self.client.calls))
-        self.assertEqual("state", self.client.calls[-1]["command"])
-        db = self.bct.store._connect()
-        try:
-            unresolved = db.execute(
-                "SELECT unresolved FROM resource_claims WHERE operation_id=?", (original_id,)
-            ).fetchone()[0]
-        finally:
-            db.close()
-        self.assertEqual(1, unresolved)
+        self.client.results = [
+            self._idle_rcc_state(), self._missing_rcc_result(original_id),
+            self._new_chat_result("foreign-independent"),
+        ]
+        successor = self._call_successor("foreign-independent", {
+            "command": "create-and-send", "instance_id": "instance123",
+            "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
+        }, principal=foreign)
+        self.assertEqual(Outcome.APPLIED, successor.outcome)
+        original = self.bct.store.get_operation_for(
+            operation_id=original_id, work_id="rcc-work", principal_id="codex",
+        )
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH", original.error)
 
     def test_terminal_mismatch_handoff_keeps_claim_when_rcc_reports_pending(self):
         original_id = self._terminal_mismatch_original()
@@ -1059,7 +1088,6 @@ class RccIntegrationTests(unittest.TestCase):
             self._call_successor("successor-pending", {
                 "command": "create-and-send", "instance_id": "instance123",
                 "mode": "tab", "target_ref": target_ref, "text": "new independent request", "timeout_s": 120,
-                "predecessor_work_id": "rcc-work", "predecessor_operation_id": original_id,
             })
         self.assertEqual(
             ["state", "new-chat-send", "state", "state", "result"],
@@ -1598,7 +1626,10 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.UNKNOWN, result.outcome)
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(1, len(self.client.calls))
+        # The duplicate never re-dispatches the operation. It only performs
+        # the common read-only terminal-claim probe.
+        self.assertEqual(["create-chat-window", "state"],
+                         [call["command"] for call in self.client.calls])
 
     def test_unavailable_before_dispatch_is_failed_confirmed(self):
         self.client.error = RelayUnavailable("RCC_INSTANCE_UNAVAILABLE:instance123")

@@ -356,21 +356,14 @@ class OperationCoordinator:
                             )
             if (
                 capability == "relay_browser"
-                and request.arguments.get("command") == "create-and-send"
                 and request.resources == ("rcc-instance:" + request.target,)
             ):
-                # A historical UNKNOWN is immutable effect evidence, not a
-                # permanent execution lease.  Before replacing the one legacy
-                # RCC-wide reservation, ask the exact current RCC instance for
-                # both identity and absence of any pending/result record.  No
-                # send/create command is issued here.
-                handoff = request.arguments.get("extra", {}).get("successorClaimHandoff", {})
-                candidate = self.store.retired_rcc_claim_candidate(
-                    request.target,
-                    original_work_id=str(handoff.get("originalWorkId") or ""),
-                    original_operation_id=str(handoff.get("originalOperationId") or ""),
-                    principal_id=principal.principal_id if handoff else "",
-                )
+                # Every RCC command that still needs the legacy instance-wide
+                # reservation shares this path.  A terminal operation is a
+                # historical receipt, not an execution lease; the current RCC
+                # state decides whether its execution has really ended.  This
+                # only reads state/result and never dispatches the old effect.
+                candidate = self.store.retired_rcc_claim_candidate(request.target)
                 relay = getattr(feature, "client", None)
                 if candidate is not None and relay is not None:
                     proof_prefix = "rcc-retire-" + hashlib.sha256(
@@ -398,6 +391,19 @@ class OperationCoordinator:
                         and isinstance(state_reply.get("state"), dict)
                         else {}
                     )
+                    terminal_or_absent = isinstance(result_reply, dict) and (
+                        (
+                            result_reply.get("found") is False
+                            and result_reply.get("completed") is False
+                            and result_reply.get("pending") is False
+                            and result_reply.get("result") is None
+                            and result_reply.get("pendingStatus") is None
+                        ) or (
+                            result_reply.get("found") is True
+                            and result_reply.get("completed") is True
+                            and result_reply.get("pending") is False
+                        )
+                    )
                     if (
                         isinstance(result_reply, dict)
                         and isinstance(state_reply, dict)
@@ -406,11 +412,7 @@ class OperationCoordinator:
                         and bool(str(observed_state.get("sessionId") or ""))
                         and result_reply.get("ok") is True
                         and result_reply.get("relayId") == candidate["operation_id"]
-                        and result_reply.get("found") is False
-                        and result_reply.get("completed") is False
-                        and result_reply.get("pending") is False
-                        and result_reply.get("result") is None
-                        and result_reply.get("pendingStatus") is None
+                        and terminal_or_absent
                     ):
                         retired_rcc_claim = (
                             candidate["operation_id"], candidate["work_id"],

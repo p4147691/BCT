@@ -1022,17 +1022,14 @@ class Store:
         finally:
             db.close()
 
-    def retired_rcc_claim_candidate(
-        self, instance_id: str, *, original_work_id: str = "",
-        original_operation_id: str = "", principal_id: str = "",
-    ) -> dict[str, Any] | None:
-        """Return one terminal legacy RCC-wide reservation eligible for live proof.
+    def retired_rcc_claim_candidate(self, instance_id: str) -> dict[str, Any] | None:
+        """Return one terminal RCC-wide reservation eligible for live proof.
 
         This is not evidence that the external effect did or did not happen.  It
-        only identifies the narrow historical shape whose *execution* may be
-        proved idle by the current RCC before a new operation reserves the same
-        instance.  Exact-resource claims and every non-terminal operation remain
-        ineligible.
+        identifies a historical instance-wide execution reservation whose
+        *execution* may be proved idle by current RCC state before any new
+        command reserves the same instance. Exact-resource claims use the
+        ordinary terminal-claim path; non-terminal operations remain ineligible.
         """
         resource = "rcc-instance:" + instance_id
         db = self._connect()
@@ -1051,32 +1048,12 @@ class Store:
             result = dict(row)
             if (
                 result["state"] != OperationState.FINISHED.value
-                or result["outcome"] != Outcome.UNKNOWN.value
                 or result["capability"] != "relay_browser"
                 or result["target"] != instance_id
                 or result["operation_epoch"] != result["assignment_epoch"]
             ):
                 return None
-            explicit_handoff = bool(original_work_id or original_operation_id or principal_id)
-            if explicit_handoff:
-                if (not original_work_id or not original_operation_id or not principal_id
-                        or result["work_id"] != original_work_id
-                        or result["operation_id"] != original_operation_id
-                        or result["principal_id"] != principal_id
-                        or result["error"] not in {
-                            "RCC_HOST_OUTCOME_UNVERIFIED:MISSING",
-                            "RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH",
-                        }):
-                    return None
-                result["retirement_reason"] = (
-                    "TERMINAL_OPERATION_RCC_NO_PENDING_RECORD_EFFECT_UNKNOWN"
-                    if result["error"] == "RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH"
-                    else "TERMINAL_OPERATION_RCC_NO_PENDING_RECORD"
-                )
-            elif result["error"] != "RCC_HOST_OUTCOME_UNVERIFIED:MISSING":
-                return None
-            else:
-                result["retirement_reason"] = "TERMINAL_OPERATION_RCC_NO_PENDING_RECORD"
+            result["retirement_reason"] = "TERMINAL_OPERATION_RCC_IDLE_PROVEN"
             return result
         finally:
             db.close()
@@ -1203,6 +1180,30 @@ class Store:
                     ).fetchone()
                     if maintenance is not None:
                         raise ConflictError("RCC_MAINTENANCE_IN_PROGRESS")
+                    instance_id = resource[len("rcc-instance:"):].split(":", 1)[0]
+                    broad_key = "rcc-instance:" + instance_id
+                    if resource == broad_key:
+                        # An instance-wide legacy command must not overlap an
+                        # active exact delivery or relay operation.
+                        active = db.execute(
+                            "SELECT 1 FROM resource_claims c JOIN operations o "
+                            "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
+                            "WHERE c.resource_key LIKE ? AND c.resource_key NOT LIKE ? "
+                            "AND c.unresolved=1 AND o.state<>'FINISHED' LIMIT 1",
+                            (broad_key + ":%", broad_key + ":read:%"),
+                        ).fetchone()
+                    else:
+                        # Conversely, an active instance-wide command protects
+                        # every exact mutating RCC resource on that instance.
+                        active = db.execute(
+                            "SELECT 1 FROM resource_claims c JOIN operations o "
+                            "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
+                            "WHERE c.resource_key=? AND c.unresolved=1 "
+                            "AND o.state<>'FINISHED' LIMIT 1",
+                            (broad_key,),
+                        ).fetchone()
+                    if active is not None:
+                        raise ConflictError("RCC_INSTANCE_ACTIVE_EXECUTION")
                 row = db.execute("SELECT * FROM resource_claims WHERE resource_key=? AND unresolved=1", (resource,)).fetchone()
                 if row is not None and self._retire_finished_idle_claim(
                     db, resource, successor_operation_id=operation_id,
@@ -1252,15 +1253,9 @@ class Store:
                         if (
                             owner is not None
                             and owner["state"] == OperationState.FINISHED.value
-                            and owner["outcome"] == Outcome.UNKNOWN.value
                             and owner["capability"] == "relay_browser"
                             and owner["target"] == previous_instance
-                            and owner["error"] in {
-                                "RCC_HOST_OUTCOME_UNVERIFIED:MISSING",
-                                "RCC_NEW_CHAT_TERMINAL_EVIDENCE_MISMATCH",
-                            }
                             and owner["assignment_epoch"] == previous_epoch
-                            and owner["principal_id"] == principal_id
                         ):
                             released = db.execute(
                                 "UPDATE resource_claims SET unresolved=0 "
@@ -1275,8 +1270,7 @@ class Store:
                                 "successor_work_id": work.work_id,
                                 "original_work_id": previous_work,
                                 "original_assignment_epoch": previous_epoch,
-                                "original_principal_id": principal_id,
-                                "same_principal_verified": True,
+                                "original_principal_id": owner["principal_id"],
                                 "resource_key": resource,
                                 "reason": retirement_reason,
                                 "original_effect_unchanged": True,
