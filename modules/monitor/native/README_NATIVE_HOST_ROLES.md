@@ -5,7 +5,7 @@
 | Native Messaging 이름 | 담당 기능 | 검증한 실행 파일 |
 |---|---|---|
 | `com.pas40.desktop_window_monitor` | 바탕화면 파일·아이콘 조회, 파일 작업, 파일 내 탐색 | `native/1.9.20.128-hidden-all/DesktopWindowMonitorHost.exe` |
-| `com.pas40.desktop_window_monitor_control` | HWND, WGC, 가상 데스크톱 및 창 제어 | `native/1.9.20.180-thumbnail-correlated/DesktopWindowMonitorControlHost.exe` |
+| `com.pas40.desktop_window_monitor_control` | HWND, WGC, 가상 데스크톱·창 제어 및 GUID별 배경 판정 | `native/1.9.20.181-background-unified/DesktopWindowMonitorControlHost.exe` |
 
 새 Host를 세 번째로 등록할 필요는 없습니다. 기존 두 등록의 역할이 달랐지만, 파일용 매니페스트가 제어용 컴파일 실행 파일로 바뀌면서 `list` 명령을 처리하지 못했습니다.
 
@@ -22,5 +22,6 @@
 - 프로그램 실행(`open`), 클립보드(`copyFiles`), 휴지통 이동(`deleteItems`) 같은 외부 부작용 동작은 운영 파일 보호를 위해 E2E를 수행하지 않았습니다. `DesktopWindowMonitorHost.exe` 1.9.20.128의 파일 동작 소스는 현재 저장소에서 발견되지 않아 장기적으로 **소스 정본화**가 필요합니다.
 - 운영 Host의 `allowed_origins`는 단일 확장 ID로 제한해야 합니다. 파일 경로 보호(바탕화면 밖 경로/링크 거부)를 우회하지 않습니다.
 - 실제 운영 적용 전 정확한 원본 매니페스트·확장 소스·버전 영수증을 백업하고, 적용 시 기존 제어용 Host·Core·RCC·Chrome 로그인 상태를 보존합니다.
+- 배경 변경 이벤트는 현재 가상 데스크톱 GUID를 포함한다. 개별 사진 경로가 있는 GUID에는 단색을 투영하지 않으며, 활성 데스크톱이면서 개별 사진이 없는 GUID만 현재 COM 단색을 상속한다.
 
 공식 Chrome 문서: https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging

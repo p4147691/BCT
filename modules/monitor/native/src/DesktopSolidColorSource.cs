@@ -34,6 +34,11 @@ internal static class DesktopSolidColorSource
         return exactActiveDesktop && (comSolid || explicitSolidType || screenColorMatch);
     }
 
+    internal static bool ShouldUseInheritedSolid(bool targetIsActiveDesktop, bool targetHasWallpaperOverride, bool currentDesktopIsComSolid)
+    {
+        return targetIsActiveDesktop && !targetHasWallpaperOverride && currentDesktopIsComSolid;
+    }
+
     private static bool ComSolid(out int r, out int g, out int b)
     {
         r = g = b = 0;
@@ -71,11 +76,21 @@ internal static class DesktopSolidColorSource
     internal static bool TryGet(Guid desktopId, out string rgb, out string proof)
     {
         rgb = ""; proof = "";
-        // COM only describes the currently displayed virtual desktop. Never
-        // project its color into an unrelated D1/D2 GUID.
+        // COM directly describes the current desktop. A different active GUID
+        // may inherit it only while that GUID has no per-desktop photo override;
+        // configured photo desktops and historical GUIDs are always rejected.
         bool current = IsCurrentDesktop(desktopId);
-        if (!current) return false;
         int r,g,b;
+        if (!current)
+        {
+            bool targetActive=IsActiveDesktop(desktopId);
+            bool targetHasWallpaper=HasWallpaperOverride(desktopId);
+            bool currentSolid=ComSolid(out r,out g,out b);
+            if (!ShouldUseInheritedSolid(targetActive,targetHasWallpaper,currentSolid)) return false;
+            rgb=string.Format(CultureInfo.InvariantCulture,"#{0:X2}{1:X2}{2:X2}",r,g,b);
+            proof="windows-unconfigured-desktop-solid-inheritance";
+            return true;
+        }
         if (ComSolid(out r,out g,out b) && ShouldUseSolid(current,true,false,false)) {
             rgb = string.Format(CultureInfo.InvariantCulture,"#{0:X2}{1:X2}{2:X2}",r,g,b);
             proof = "windows-desktopwallpaper-com-solid";
@@ -118,6 +133,30 @@ internal static class DesktopSolidColorSource
                 return raw!=null && raw.Length==16 && new Guid(raw)==id;
             }
         } catch {return false;}
+    }
+    private static bool IsActiveDesktop(Guid id)
+    {
+        try {
+            using(RegistryKey key=Registry.CurrentUser.OpenSubKey(DesktopRegistry)) {
+                byte[] raw=key==null?null:key.GetValue("VirtualDesktopIDs") as byte[];
+                if(raw==null)return false;
+                for(int offset=0;offset+16<=raw.Length;offset+=16) {
+                    byte[] bytes=new byte[16];Array.Copy(raw,offset,bytes,0,16);
+                    if(new Guid(bytes)==id)return true;
+                }
+                return false;
+            }
+        } catch {return false;}
+    }
+    private static bool HasWallpaperOverride(Guid id)
+    {
+        string keyPath=DesktopRegistry+@"\Desktops\{"+id.ToString("D").ToUpperInvariant()+"}";
+        try {
+            using(RegistryKey key=Registry.CurrentUser.OpenSubKey(keyPath)) {
+                string raw=Convert.ToString(key==null?null:key.GetValue("Wallpaper"));
+                return !string.IsNullOrWhiteSpace(raw);
+            }
+        } catch {return true;}
     }
     private static bool CurrentScreenShowsBackgroundColor(int r, int g, int b)
     {

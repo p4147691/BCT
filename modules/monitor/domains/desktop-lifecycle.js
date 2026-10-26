@@ -357,6 +357,8 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     const beforeIds = new Set(monitorDesktopState.desktopIds);
 
+    const sourceBackground = await monitorAcceptedDesktopBackground(sourceDesktopId, true);
+
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
     if (!result?.ok) throw new Error(result?.error || "새 데스크톱 생성 실패");
@@ -393,7 +395,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     await refreshVirtualDesktops();
 
-    settleNewDesktopWallpaper(createdId).catch(() => {});
+    settleNewDesktopWallpaper(createdId,result,sourceBackground).catch(() => {});
 
     if (failed.length) {
 
@@ -1271,11 +1273,9 @@ function primeSelectedDesktopPreview(desktopId) {
   const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
   monitorWindowLayer.replaceChildren();
   monitorWindowLayer.dataset.desktopId = id;
+  monitorPreviewBackground.begin(id);
   if (!visual) return;
-  if (visual.style.backgroundImage) {
-    monitorPreviewWallpaper.style.backgroundImage = visual.style.backgroundImage;
-    monitorPreviewWallpaper.dataset.desktopId = id;
-  }
+  syncMonitorPreviewBackground(visual,id);
   for (const source of visual.querySelectorAll(".monitor-desktop-thumb-window")) {
     const img = source.cloneNode(false);
     img.className = "monitor-window-preview";
@@ -1818,8 +1818,7 @@ function renderVirtualDesktops(state) {
   const selectedId = observedDesktopId;
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) {
     monitorDesktopThumbs.replaceChildren();
-    monitorPreviewWallpaper.style.backgroundImage = "";
-    monitorPreviewWallpaper.dataset.desktopId = selectedId || "";
+    monitorPreviewBackground.clear(selectedId || "");
     monitorWindowLayer.replaceChildren();
     monitorFrameCache.clear();
     if (hostWindowChanged) void monitorPublishSharedInstance("host-hwnd-changed");
@@ -1863,7 +1862,7 @@ function renderVirtualDesktops(state) {
 
   if (selectedId) {
 
-    const wallpaperChangedDesktop = monitorPreviewWallpaper.dataset.desktopId !== selectedId;
+    const wallpaperChangedDesktop = monitorPreviewBackground.desktopId !== String(selectedId).toLowerCase();
 
     applyObservedWallpaper(selectedId, wallpaperChangedDesktop);
 

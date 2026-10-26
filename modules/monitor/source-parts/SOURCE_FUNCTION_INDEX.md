@@ -522,7 +522,7 @@ Generated extension/monitor.js is not an edit target.
 - syncMonitorSideNote
 - trashMonitorNote
 
-## thumbnail-wallpaper (26 functions)
+## thumbnail-wallpaper (28 functions)
 
 - applyObservedWallpaper
 - captureDesktopFrame
@@ -530,6 +530,7 @@ Generated extension/monitor.js is not an edit target.
 - decorateMonitorThumbnailWindows
 - ensureMonitorCurrentWallpaperSnapshot
 - getObservedWallpaper
+- monitorAcceptedDesktopBackground
 - monitorFreezeDesktopThumbnail
 - monitorLightweightWallpaperDataUri
 - monitorRememberWallpaperEntry
@@ -549,4 +550,5 @@ Generated extension/monitor.js is not an edit target.
 - scheduleMonitorThumbnailProjectionReceipt
 - settleNewDesktopWallpaper
 - syncMonitorAllDesktopThumbnailNodeBadges
+- syncMonitorPreviewBackground
 - syncMonitorThumbnailTabBadges

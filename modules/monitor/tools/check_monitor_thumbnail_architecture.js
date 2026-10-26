@@ -3,6 +3,7 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
 const ext=path.join(__dirname,"..","extension");
 const names=[
   "monitor-thumbnail-contract.js",
+  "monitor-preview-background.js",
   "monitor-desktop-visual-source.js",
   "monitor-thumbnail-layer-policy.js",
   "monitor-thumbnail-background-layer.js",
@@ -16,6 +17,7 @@ for(const [name,source] of Object.entries(sources)){
 }
 assert.doesNotMatch(sources["monitor-desktop-visual-source.js"],/document|createElement|backgroundImage|backgroundColor/);
 assert.doesNotMatch(sources["monitor-thumbnail-contract.js"],/document|chrome|style\./);
+assert.doesNotMatch(sources["monitor-preview-background.js"],/chrome|connectNative|getDesktopVisualSnapshot|monitor-desktop-thumb/);
 assert.doesNotMatch(sources["monitor-thumbnail-background-layer.js"],/createElement|\.src\s*=|monitor-desktop-thumb-window/);
 assert.doesNotMatch(sources["monitor-thumbnail-window-layer.js"],/backgroundImage\s*=|backgroundColor\s*=/);
 

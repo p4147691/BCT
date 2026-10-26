@@ -12,6 +12,7 @@ required=[
  "IDesktopWallpaperReadOnly","GetMonitorDevicePathCount","GetMonitorDevicePathAt",
  "GetWallpaper(monitor, out wallpaper)","GetBackgroundColor(out color)",
  "IsCurrentDesktop(desktopId)","ShouldUseSolid(current,true,false,false)",
+ "ShouldUseInheritedSolid(targetActive,targetHasWallpaper,currentSolid)",
  "Marshal.FinalReleaseComObject(instance)"
 ]
 missing=[x for x in required if x not in text]
@@ -30,6 +31,6 @@ with tempfile.TemporaryDirectory(prefix="bct-monitor-solid-com-") as temp:
  compiled=subprocess.run(argv,capture_output=True,text=True,errors="replace",timeout=55)
  if compiled.returncode:raise SystemExit("NATIVE_SOLID_BUILD_FAILED:"+compiled.stdout[-1500:]+compiled.stderr[-1500:])
  run=subprocess.run([str(exe)],capture_output=True,text=True,errors="replace",timeout=20)
- if run.returncode or run.stdout.count("PASS ")!=6:
+ if run.returncode or run.stdout.count("PASS ")!=9:
   raise SystemExit("NATIVE_SOLID_UNIT_TEST_FAILED:"+run.stdout+run.stderr)
  print("SOLID_COM_SOURCE_AND_WINDOWS_DECISION_PASS",run.stdout.count("PASS "))

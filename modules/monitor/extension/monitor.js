@@ -329,6 +329,11 @@ monitorDesktopSwitcher.innerHTML = `<button id="monitorDesktopScrollLeft" class=
 
 document.body.prepend(monitorPreviewWallpaper, monitorWindowLayer, monitorTransitionFlash);
 
+const monitorPreviewBackground = globalThis.MonitorPreviewBackground.create({
+  element:monitorPreviewWallpaper,
+  contract:globalThis.MonitorThumbnailContract,
+});
+
 const monitorSketchStoragePort = Object.freeze({
   get(key) { try { return localStorage.getItem(key); } catch (_) { return null; } },
   set(key, value) { try { localStorage.setItem(key, value); return true; } catch (_) { return false; } },
@@ -7653,12 +7658,20 @@ function ensureMonitorNativePort() {
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {
       const explicitId=String(response.desktopId||"").toLowerCase();
       const visuals=[...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual")||[])];
-      const targets=explicitId ? visuals.filter(v=>String(v.dataset.desktopId||"").toLowerCase()===explicitId) : visuals;
+      const currentId=String(monitorDesktopState?.currentDesktopId||"").toLowerCase();
+      const selectedId=String(monitorDesktopState?.desktopIds?.[monitorDesktopState?.selectedIndex]||"").toLowerCase();
+      const priority=id=>id===explicitId?0:id===currentId?1:id===selectedId?2:3;
+      const targets=(explicitId ? visuals.filter(v=>String(v.dataset.desktopId||"").toLowerCase()===explicitId) : visuals)
+        .sort((a,b)=>priority(String(a.dataset.desktopId||"").toLowerCase())-priority(String(b.dataset.desktopId||"").toLowerCase()));
       monitorDesktopThumbs.dataset.wallpaperEventAt=String(Date.now());
-      // Each visual keeps its own generation fence; no cross-desktop cache.
-      void Promise.allSettled(targets.map(visual =>
-        globalThis.MonitorDesktopThumbnailV2.refreshBackground(
-          visual,visual.dataset.desktopId,{forceWallpaper:true})));
+      // Native names the changed desktop. Older hosts without that field are
+      // queued current-first; the injected wallpaper transport serializes I/O.
+      void Promise.allSettled(targets.map(async visual=>{
+          const id=String(visual.dataset.desktopId||"").toLowerCase();
+          await globalThis.MonitorDesktopThumbnailV2.refreshBackground(
+            visual,id,{forceWallpaper:true}).catch(()=>null);
+          syncMonitorPreviewBackground(visual,id);
+      }));
       return;
     }
     if (response?.event === true && response?.type === "monitorDragPreviewReleased") {
@@ -8815,31 +8828,38 @@ async function getObservedWallpaper(desktopId, force = false) {
 
 }
 
+async function monitorAcceptedDesktopBackground(desktopId, force = false) {
+  const id=String(desktopId||"").toLowerCase();
+  const tile=[...monitorDesktopThumbs.children].find(button=>String(button.dataset.desktopId||"").toLowerCase()===id);
+  const visual=tile?.querySelector(".monitor-desktop-thumb-visual");
+  const renderer=globalThis.MonitorDesktopThumbnailV2;
+  if(!visual?.isConnected||!renderer?.refreshBackground)return null;
+  await renderer.refreshBackground(visual,id,{forceWallpaper:force===true}).catch(()=>null);
+  return renderer.acceptedBackground?.(visual,id)||null;
+}
+
+function syncMonitorPreviewBackground(visual,desktopId) {
+  const id=String(desktopId||"").toLowerCase();
+  const selected=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"").toLowerCase();
+  if(!id||id!==selected)return false;
+  const snapshot=globalThis.MonitorDesktopThumbnailV2?.acceptedBackground?.(visual,id)||null;
+  return snapshot ? monitorPreviewBackground.apply(id,snapshot) : monitorPreviewBackground.failed(id);
+}
+
 async function applyObservedWallpaper(desktopId, force = false) {
-
   const token = ++monitorWallpaperToken;
-  const wallpaperState = globalThis.MonitorWallpaperState;
-  const request = wallpaperState?.begin?.(desktopId);
-
-  const dataUri = await getObservedWallpaper(desktopId, force);
-
-  if (token !== monitorWallpaperToken) return;
-  const recorded = request ? wallpaperState.resolve(desktopId, request.generation,
-    {ok:Boolean(dataUri),dataUri,error:dataUri ? "" : "NATIVE_WALLPAPER_UNAVAILABLE"}) : null;
-  if (request && !recorded?.applied) return;
-
-  if (dataUri) {
-
-    monitorPreviewWallpaper.style.backgroundImage = `url("${dataUri}")`;
-
-    monitorPreviewWallpaper.dataset.desktopId = String(desktopId || "");
-    monitorPreviewWallpaper.dataset.captureState = "captured";
-  } else {
-    monitorPreviewWallpaper.style.backgroundImage = "";
-    monitorPreviewWallpaper.dataset.desktopId = String(desktopId || "");
-    monitorPreviewWallpaper.dataset.captureState = "failed";
+  const id=String(desktopId||"").toLowerCase();
+  monitorPreviewBackground.begin(id);
+  const tile=[...monitorDesktopThumbs.children].find(button=>String(button.dataset.desktopId||"").toLowerCase()===id);
+  const visual=tile?.querySelector(".monitor-desktop-thumb-visual");
+  const renderer=globalThis.MonitorDesktopThumbnailV2;
+  if(!visual?.isConnected||!renderer?.refreshBackground){
+    if(token===monitorWallpaperToken)monitorPreviewBackground.failed(id);
+    return false;
   }
-
+  await renderer.refreshBackground(visual,id,{forceWallpaper:force===true}).catch(()=>null);
+  if (token !== monitorWallpaperToken) return;
+  return syncMonitorPreviewBackground(visual,id);
 }
 
 function monitorActDesktopVisualForDesktop(desktopId, state = monitorLastAiState) {
@@ -10812,6 +10832,8 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     const beforeIds = new Set(monitorDesktopState.desktopIds);
 
+    const sourceBackground = await monitorAcceptedDesktopBackground(sourceDesktopId, true);
+
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
     if (!result?.ok) throw new Error(result?.error || "새 데스크톱 생성 실패");
@@ -10848,7 +10870,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     await refreshVirtualDesktops();
 
-    settleNewDesktopWallpaper(createdId).catch(() => {});
+    settleNewDesktopWallpaper(createdId,result,sourceBackground).catch(() => {});
 
     if (failed.length) {
 
@@ -11518,8 +11540,7 @@ function renderVirtualDesktops(state) {
   const selectedId = observedDesktopId;
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) {
     monitorDesktopThumbs.replaceChildren();
-    monitorPreviewWallpaper.style.backgroundImage = "";
-    monitorPreviewWallpaper.dataset.desktopId = selectedId || "";
+    monitorPreviewBackground.clear(selectedId || "");
     monitorWindowLayer.replaceChildren();
     monitorFrameCache.clear();
     if (hostWindowChanged) void monitorPublishSharedInstance("host-hwnd-changed");
@@ -11563,7 +11584,7 @@ function renderVirtualDesktops(state) {
 
   if (selectedId) {
 
-    const wallpaperChangedDesktop = monitorPreviewWallpaper.dataset.desktopId !== selectedId;
+    const wallpaperChangedDesktop = monitorPreviewBackground.desktopId !== String(selectedId).toLowerCase();
 
     applyObservedWallpaper(selectedId, wallpaperChangedDesktop);
 
@@ -11705,11 +11726,9 @@ function primeSelectedDesktopPreview(desktopId) {
   const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
   monitorWindowLayer.replaceChildren();
   monitorWindowLayer.dataset.desktopId = id;
+  monitorPreviewBackground.begin(id);
   if (!visual) return;
-  if (visual.style.backgroundImage) {
-    monitorPreviewWallpaper.style.backgroundImage = visual.style.backgroundImage;
-    monitorPreviewWallpaper.dataset.desktopId = id;
-  }
+  syncMonitorPreviewBackground(visual,id);
   for (const source of visual.querySelectorAll(".monitor-desktop-thumb-window")) {
     const img = source.cloneNode(false);
     img.className = "monitor-window-preview";
@@ -12037,9 +12056,21 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
 });
 
-async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") {
+async function settleNewDesktopWallpaper(createdId, createReply = null, sourceSnapshot = null) {
 
-  if (!createdId) return;
+  if (!createdId) return false;
+
+  const renderer=globalThis.MonitorDesktopThumbnailV2;
+  const tile = [...monitorDesktopThumbs.children].find((item) => item.dataset.desktopId === createdId);
+  const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
+  const sourceDesktopId=String(createReply?.sourceDesktopId||"").toLowerCase();
+  const inherited=Boolean(visual&&sourceSnapshot&&renderer?.inheritBackground?.(
+    visual,createdId,sourceDesktopId,sourceSnapshot,createReply));
+  if(inherited)syncMonitorPreviewBackground(visual,createdId);
+
+  if(inherited&&sourceSnapshot.kind==="solid")return true;
+
+  const expectedWallpaperPath=String(createReply?.inheritedWallpaper?.path||createReply?.wallpaperPath||"");
 
   const started = Date.now(); let ready = false;
 
@@ -12057,23 +12088,15 @@ async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") 
 
   }
 
-  if (!ready) return;
+  if (!ready) return inherited;
 
   monitorWallpaperCache.delete(createdId);
 
-  const dataUri = await getObservedWallpaper(createdId, true);
-
-  if (monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] === createdId && dataUri) monitorPreviewWallpaper.style.backgroundImage = `url("${dataUri}")`;
-
-  const tile = [...monitorDesktopThumbs.children].find((item) => item.dataset.desktopId === createdId);
-
-  const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-
   if (visual) {
-    void globalThis.MonitorDesktopThumbnailV2.refreshBackground(
-      visual,createdId,{forceWallpaper:true}).catch(()=>false);
+    await renderer.refreshBackground(visual,createdId,{forceWallpaper:true}).catch(()=>null);
+    syncMonitorPreviewBackground(visual,createdId);
   }
-
+  return Boolean(renderer?.acceptedBackground?.(visual,createdId));
 }
 
 monitorCreateDesktop.addEventListener("click", async () => {
@@ -12096,9 +12119,7 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const sourceDesktopId = liveIds[liveIndex] || monitorDesktopState.currentDesktopId || null;
 
-    const sourceWallpaper = sourceDesktopId ? await getObservedWallpaper(sourceDesktopId, true) : "";
-
-    const sourceWallpaperInfo = sourceDesktopId ? await monitorNative({ type: "getDesktopWallpaperInfo", desktopId: sourceDesktopId }).catch(() => null) : null;
+    const sourceBackground = sourceDesktopId ? await monitorAcceptedDesktopBackground(sourceDesktopId, true) : null;
 
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
@@ -12108,19 +12129,13 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const createdId = resultIds.find((id) => !beforeIds.has(id)) || resultIds[resultIds.length - 1] || null;
 
-    if (createdId && sourceWallpaper) {
-
-      monitorRememberWallpaperEntry(monitorWallpaperCache, createdId, sourceWallpaper, MONITOR_WALLPAPER_CACHE_LIMIT);
-
-    }
-
     monitorDesktopState.observedDesktopId = createdId;
 
     renderVirtualDesktops(result);
 
     selectVirtualDesktopPreview(monitorDesktopState.selectedIndex);
 
-    settleNewDesktopWallpaper(createdId, sourceWallpaperInfo?.path || "").catch(() => {});
+    settleNewDesktopWallpaper(createdId, result, sourceBackground).catch(() => {});
 
   } catch (error) {
 

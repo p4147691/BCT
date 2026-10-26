@@ -190,6 +190,10 @@ let monitorThumbBatchInflight = null;
 
 /*@@MONITOR_FUNCTION:getObservedWallpaper@@*/
 
+/*@@MONITOR_FUNCTION:monitorAcceptedDesktopBackground@@*/
+
+/*@@MONITOR_FUNCTION:syncMonitorPreviewBackground@@*/
+
 /*@@MONITOR_FUNCTION:applyObservedWallpaper@@*/
 
 /*@@MONITOR_FUNCTION:monitorActDesktopVisualForDesktop@@*/

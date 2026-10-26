@@ -76,14 +76,22 @@
 - 독립 검증: `..\tools\check_monitor_thumbnail_service.js`
 - 규칙: `monitor.js`에 별도 capture queue/cache/inflight map을 다시 만들거나 Native `captureWindow` 호출을 분산하지 않는다.
 
-### Bottom thumbnail renderer — SOURCE EXTRACTED / LIVE PENDING
+### Bottom thumbnail renderer — SOURCE EXTRACTED / D1-D2 LIVE PASSED
 - input: `monitor-desktop-visual-source.js`; 주입된 canonical `monitorNative` request만 사용한다.
 - validation: `monitor-thumbnail-contract.js`; exact GUID와 photo/solid 증거를 검증한다.
 - state/output: background와 HWND window 레이어가 각자의 DOM/CSS만 소유하고 V2 compositor가 순서와 호환 API만 소유한다.
 - 금지: 썸네일 모듈의 Chrome Native 직접 호출, 별도 `sendNativeMessage`, FIFO 응답 추측, legacy wallpaper cache 접근.
 - 검증: `check_monitor_thumbnail_architecture.js`, `check_monitor_thumbnail_v2_cleanroom.js`, `check_monitor_thumbnail_v2_native_ports.js`, `check_monitor_thumbnail_v2_render_ownership.js`.
 - refresh lifecycle: V2가 타일별 in-flight/queued event와 배경·창의 분리된 완료 결과를 소유한다. monitor.js 호환 함수는 `renderer.refresh()`의 결합 결과만 전달한다.
-- 아직 운영 설치 및 실제 사진/단색/D1-D2 왕복 수락 전이므로 LIVE 완료로 보고하지 않는다.
+- 2.0.62에서 D1 사진, D2 단색 및 왕복은 LIVE 수락됐다. 새 데스크톱 단색 상속과 큰 배경 동기화는 다음 배포에서 별도 수락한다.
+
+### Full Monitor preview background — SOURCE EXTRACTED / LIVE PENDING
+- 구현: `monitor-preview-background.js`; public `MonitorPreviewBackground.create({element, contract})`.
+- 입력: thumbnail V2가 exact GUID Native 응답으로 수락한 정규화 photo/solid snapshot만 받는다.
+- 출력: 큰 Monitor 배경의 `backgroundImage`/`backgroundColor`와 수락 상태만 소유한다.
+- 금지: Native 직접 호출, 예전 사진 cache 읽기, 실패 시 다른 데스크톱 배경 유지.
+- 새 데스크톱은 Native create 응답의 source/created GUID와 inherited wallpaper 증거가 일치할 때만 원본의 수락 snapshot을 상속한다.
+- 독립 검증: `..\tools\check_monitor_preview_background.js`, `..\tools\check_monitor_thumbnail_background_only_mode.js`.
 
 ### Node identity / endpoint projection — KEEP TOGETHER FOR NOW
 - 기본 목록은 ACT node authority를 사용하지 않고 RCC의 exact instance/session/tab/conversation을

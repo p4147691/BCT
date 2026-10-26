@@ -17,6 +17,10 @@ const desktopSource = fs.readFileSync(
   path.join(__dirname, "..", "extension", "desktop.html"),
   "utf8",
 );
+const monitorCss = fs.readFileSync(
+  path.join(__dirname, "..", "extension", "monitor.css"),
+  "utf8",
+);
 const manifest = JSON.parse(fs.readFileSync(
   path.join(__dirname, "..", "extension", "manifest.json"),
   "utf8",
@@ -159,6 +163,9 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /type:"recoverMcpTunnel"/);
   assert.match(monitorSource, /type:"monitor-refresh-exact-chatgpt-tab"/);
   assert.match(monitorSource, /monitorWorkers\.dataset\.columns = "3"/);
+  assert.match(monitorCss, /\.monitor-bct-node-list\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/);
+  assert.doesNotMatch(monitorCss, /@media[^}]+\.monitor-bct-node-list\s*\{/,
+    "node networks stay three columns at the live Monitor width");
   assert.match(monitorSource, /monitorVersion\.classList\.add\("healthy"\)/);
   assert.doesNotMatch(monitorSource, /id="monitorActRestart"/);
   assert.doesNotMatch(monitorSource, /id="monitorNodeSync"/);

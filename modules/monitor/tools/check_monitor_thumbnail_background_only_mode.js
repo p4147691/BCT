@@ -78,5 +78,17 @@ renderer.configure({
   reply={ok:false,desktopId,error:"SECOND_FAILURE"};
   assert.equal((await renderer.refreshBackground(visual,desktopId,{force:true})).wallpaperReady,false);
   assert.equal(visual.style.backgroundColor,"#10893E","last accepted solid color survives a later failure");
+
+  const createdId="53bc50d3-d7a1-4595-9264-e3fa4537ad79";
+  const created=document.createElement("span");created.className="monitor-desktop-thumb-visual";created.dataset.desktopId=createdId;
+  const sourceSnapshot=renderer.acceptedBackground(visual,desktopId);
+  assert.equal(renderer.inheritBackground(created,createdId,desktopId,sourceSnapshot,{
+    ok:true,createdDesktopId:createdId,sourceDesktopId:desktopId,
+    inheritedWallpaper:{mode:"solid",color:"#10893E",proof:"create-inherited:windows-solid-mode"}
+  }),true,"new desktop accepts only the exact create lineage and source snapshot");
+  assert.equal(created.style.backgroundImage,"");
+  assert.equal(created.style.backgroundColor,"#10893E");
+  assert.equal(renderer.acceptedBackground(created,createdId).inheritedFrom,desktopId);
+  assert.equal(renderer.inheritBackground(created,createdId,"c991b275-7933-4697-9d6e-73bf31ae4379",sourceSnapshot,{}),false);
   console.log("PASS: background-only policy renders only exact wallpaper evidence and retains last-good photo/solid pixels without hiding failures");
 })().catch(error=>{console.error(error);process.exitCode=1});

@@ -1189,12 +1189,26 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
                 EmitMonitorEvent(new Dictionary<string, object> {
                     { "type", "desktopWallpaperChanged" },
                     { "event", true },
+                    { "desktopId", ReadCurrentDesktopId() },
                     { "source", "registry-notify" },
                     { "at", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
                 });
             }
             catch { }
         });
+    }
+
+    private static string ReadCurrentDesktopId()
+    {
+        try
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(VdKey))
+            {
+                byte[] raw = key == null ? null : key.GetValue("CurrentVirtualDesktop") as byte[];
+                return raw != null && raw.Length >= 16 ? new Guid(raw).ToString("D") : string.Empty;
+            }
+        }
+        catch { return string.Empty; }
     }
 
     internal static void EmitMonitorEvent(Dictionary<string, object> message)
@@ -3318,12 +3332,17 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-            Guid currentId; string currentWallpaper = "";
+            Guid currentId; string currentWallpaper = "", sourceDesktopId = "", solidColor = "", solidProof = ""; bool currentSolid = false;
 
 
 
 
-            if (beforeIds != null && currentIndex >= 0 && currentIndex < beforeIds.Count && Guid.TryParse(beforeIds[currentIndex], out currentId)) currentWallpaper = GetDesktopWallpaperPath(currentId);
+            if (beforeIds != null && currentIndex >= 0 && currentIndex < beforeIds.Count && Guid.TryParse(beforeIds[currentIndex], out currentId))
+            {
+                sourceDesktopId = currentId.ToString("D");
+                currentWallpaper = GetDesktopWallpaperPath(currentId);
+                currentSolid = DesktopSolidColorSource.TryGet(currentId, out solidColor, out solidProof);
+            }
 
 
 
@@ -3373,7 +3392,20 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-            state["created"] = true; state["createdDesktopId"] = createdId; state["index"] = afterIds != null && createdId != null ? afterIds.IndexOf(createdId) : rawIndex; state["count"] = after; state["wallpaperPath"] = currentWallpaper;
+            var inheritedWallpaper = new Dictionary<string, object>();
+            if (currentSolid)
+            {
+                inheritedWallpaper["mode"] = "solid";
+                inheritedWallpaper["color"] = solidColor;
+                inheritedWallpaper["proof"] = "create-inherited:" + solidProof;
+            }
+            else if (!string.IsNullOrWhiteSpace(currentWallpaper))
+            {
+                inheritedWallpaper["mode"] = "photo";
+                inheritedWallpaper["path"] = currentWallpaper;
+                inheritedWallpaper["proof"] = "create-inherited:guid-file";
+            }
+            state["created"] = true; state["createdDesktopId"] = createdId; state["sourceDesktopId"] = sourceDesktopId; state["inheritedWallpaper"] = inheritedWallpaper; state["index"] = afterIds != null && createdId != null ? afterIds.IndexOf(createdId) : rawIndex; state["count"] = after; state["wallpaperPath"] = currentWallpaper;
 
 
 

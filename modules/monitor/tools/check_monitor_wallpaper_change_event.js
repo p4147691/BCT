@@ -7,6 +7,9 @@ assert.match(native,/StartWallpaperChangeEvents\(\);/);
 assert.match(native,/MonitorWallpaperRegistryWatcher\.Start\(/);
 assert.match(watcher,/RegNotifyChangeKeyValue\(/);
 assert.match(native,/"type", "desktopWallpaperChanged"/);
+assert.match(native,/"desktopId", ReadCurrentDesktopId\(\)/,"event identifies the exact changed virtual desktop");
+assert.match(native,/state\["sourceDesktopId"\] = sourceDesktopId/);
+assert.match(native,/state\["inheritedWallpaper"\] = inheritedWallpaper/);
 const start=js.indexOf('    if (response?.event === true && response?.type === "desktopWallpaperChanged")');
 const end=js.indexOf('    if (response?.event === true && response?.type === "monitorDragPreviewReleased")',start);
 assert(start>0 && end>start);
@@ -20,12 +23,14 @@ const adapter={refreshBackground:(visual,id,options)=>{seen.push({id,options});r
 const env={
  response:{event:true,type:"desktopWallpaperChanged"},
  monitorDesktopThumbs:thumbs,
+ monitorDesktopState:{currentDesktopId:second,desktopIds:[first,second],selectedIndex:1},
+ syncMonitorPreviewBackground:()=>true,
  globalThis:{MonitorDesktopThumbnailV2:adapter},
  Date,Promise,String
 };
 vm.createContext(env);
 vm.runInContext("(function(){"+branch+"})()",env);
-assert.deepEqual(seen.map(x=>x.id),[first,second],"event without a GUID refreshes independently by visual GUID");
+assert.deepEqual(seen.map(x=>x.id),[second,first],"legacy event without a GUID refreshes current desktop first");
 assert(seen.every(x=>x.options?.forceWallpaper===true),"Windows change events must force a fresh canonical read");
 assert.equal(typeof thumbs.dataset.wallpaperEventAt,"string");
 seen.length=0;

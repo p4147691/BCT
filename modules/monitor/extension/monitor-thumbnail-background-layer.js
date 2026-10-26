@@ -22,6 +22,7 @@
           accepted:false,
           acceptedKind:"",
           acceptedAt:0,
+          acceptedSnapshot:null,
           inflight:null,
           forcedDrain:null,
           forceQueued:false
@@ -31,10 +32,9 @@
       return state;
     }
 
-    function apply(visual, desktopId, reply, generation) {
+    function commit(visual, desktopId, snapshot, generation) {
       const state = resolve(visual,desktopId);
       if (!state || (generation != null && state.generation !== generation)) return false;
-      const snapshot = contract.wallpaperSnapshot(desktopId,reply);
       if (snapshot.ok && snapshot.kind === "solid") {
         visual.style.backgroundImage = "";
         visual.style.backgroundColor = snapshot.color;
@@ -49,6 +49,7 @@
         state.accepted = true;
         state.acceptedKind = snapshot.kind;
         state.acceptedAt = Date.now();
+        state.acceptedSnapshot = snapshot;
       }
       state.status = snapshot.ok ? "captured" : state.accepted ? "retained" : "failed";
       state.reason = snapshot.ok ? "" : snapshot.reason;
@@ -63,6 +64,20 @@
       visual.dataset.wallpaperAcceptedKind = state.acceptedKind;
       visual.dataset.wallpaperAcceptedAt = state.acceptedAt ? String(state.acceptedAt) : "";
       return snapshot.ok;
+    }
+
+    function apply(visual, desktopId, reply, generation) {
+      return commit(visual,desktopId,contract.wallpaperSnapshot(desktopId,reply),generation);
+    }
+
+    function inherit(visual,desktopId,sourceDesktopId,sourceSnapshot,createReply) {
+      return commit(visual,desktopId,
+        contract.inheritedWallpaperSnapshot(desktopId,sourceDesktopId,sourceSnapshot,createReply));
+    }
+
+    function accepted(visual,desktopId) {
+      const state=resolve(visual,desktopId);
+      return state?.acceptedSnapshot || null;
     }
 
     function startRead(visual, desktopId, state) {
@@ -128,7 +143,7 @@
       }
     }
 
-    return Object.freeze({resolve,apply,refresh,invalidate});
+    return Object.freeze({resolve,apply,inherit,accepted,refresh,invalidate});
   }
   root.MonitorThumbnailBackgroundLayer = Object.freeze({create});
 })(globalThis);

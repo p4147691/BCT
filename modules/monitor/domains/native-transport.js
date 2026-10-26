@@ -58,12 +58,20 @@ function ensureMonitorNativePort() {
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {
       const explicitId=String(response.desktopId||"").toLowerCase();
       const visuals=[...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual")||[])];
-      const targets=explicitId ? visuals.filter(v=>String(v.dataset.desktopId||"").toLowerCase()===explicitId) : visuals;
+      const currentId=String(monitorDesktopState?.currentDesktopId||"").toLowerCase();
+      const selectedId=String(monitorDesktopState?.desktopIds?.[monitorDesktopState?.selectedIndex]||"").toLowerCase();
+      const priority=id=>id===explicitId?0:id===currentId?1:id===selectedId?2:3;
+      const targets=(explicitId ? visuals.filter(v=>String(v.dataset.desktopId||"").toLowerCase()===explicitId) : visuals)
+        .sort((a,b)=>priority(String(a.dataset.desktopId||"").toLowerCase())-priority(String(b.dataset.desktopId||"").toLowerCase()));
       monitorDesktopThumbs.dataset.wallpaperEventAt=String(Date.now());
-      // Each visual keeps its own generation fence; no cross-desktop cache.
-      void Promise.allSettled(targets.map(visual =>
-        globalThis.MonitorDesktopThumbnailV2.refreshBackground(
-          visual,visual.dataset.desktopId,{forceWallpaper:true})));
+      // Native names the changed desktop. Older hosts without that field are
+      // queued current-first; the injected wallpaper transport serializes I/O.
+      void Promise.allSettled(targets.map(async visual=>{
+          const id=String(visual.dataset.desktopId||"").toLowerCase();
+          await globalThis.MonitorDesktopThumbnailV2.refreshBackground(
+            visual,id,{forceWallpaper:true}).catch(()=>null);
+          syncMonitorPreviewBackground(visual,id);
+      }));
       return;
     }
     if (response?.event === true && response?.type === "monitorDragPreviewReleased") {

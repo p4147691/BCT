@@ -11,6 +11,9 @@ internal static class NativeColorDecisionTest {
         Check(DesktopSolidColorSource.ShouldUseSolid(true,false,true,false),true,"active GUID Windows solid-mode setting");
         Check(DesktopSolidColorSource.ShouldUseSolid(true,false,false,true),true,"active GUID physical color proof");
         Check(DesktopSolidColorSource.ShouldUseSolid(true,false,false,false),false,"picture remains picture");
+        Check(DesktopSolidColorSource.ShouldUseInheritedSolid(true,false,true),true,"unconfigured active desktop inherits current COM solid");
+        Check(DesktopSolidColorSource.ShouldUseInheritedSolid(true,true,true),false,"configured photo desktop never inherits solid");
+        Check(DesktopSolidColorSource.ShouldUseInheritedSolid(false,false,true),false,"inactive historical GUID never inherits solid");
         return 0;
     }
 }

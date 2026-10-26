@@ -139,9 +139,7 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const sourceDesktopId = liveIds[liveIndex] || monitorDesktopState.currentDesktopId || null;
 
-    const sourceWallpaper = sourceDesktopId ? await getObservedWallpaper(sourceDesktopId, true) : "";
-
-    const sourceWallpaperInfo = sourceDesktopId ? await monitorNative({ type: "getDesktopWallpaperInfo", desktopId: sourceDesktopId }).catch(() => null) : null;
+    const sourceBackground = sourceDesktopId ? await monitorAcceptedDesktopBackground(sourceDesktopId, true) : null;
 
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
@@ -151,19 +149,13 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const createdId = resultIds.find((id) => !beforeIds.has(id)) || resultIds[resultIds.length - 1] || null;
 
-    if (createdId && sourceWallpaper) {
-
-      monitorRememberWallpaperEntry(monitorWallpaperCache, createdId, sourceWallpaper, MONITOR_WALLPAPER_CACHE_LIMIT);
-
-    }
-
     monitorDesktopState.observedDesktopId = createdId;
 
     renderVirtualDesktops(result);
 
     selectVirtualDesktopPreview(monitorDesktopState.selectedIndex);
 
-    settleNewDesktopWallpaper(createdId, sourceWallpaperInfo?.path || "").catch(() => {});
+    settleNewDesktopWallpaper(createdId, result, sourceBackground).catch(() => {});
 
   } catch (error) {
 

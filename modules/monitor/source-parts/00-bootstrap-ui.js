@@ -313,6 +313,11 @@ monitorDesktopSwitcher.innerHTML = `<button id="monitorDesktopScrollLeft" class=
 
 document.body.prepend(monitorPreviewWallpaper, monitorWindowLayer, monitorTransitionFlash);
 
+const monitorPreviewBackground = globalThis.MonitorPreviewBackground.create({
+  element:monitorPreviewWallpaper,
+  contract:globalThis.MonitorThumbnailContract,
+});
+
 const monitorSketchStoragePort = Object.freeze({
   get(key) { try { return localStorage.getItem(key); } catch (_) { return null; } },
   set(key, value) { try { localStorage.setItem(key, value); return true; } catch (_) { return false; } },
