@@ -47,6 +47,6 @@ const bounds={left:0,top:569,width:1294,height:703};
   assert.equal(calls.length,1,"invalid geometry cannot authorize a fallback");
   assert.equal(html.split('src="monitor-host-window-identity.js"').length,2,"load exactly once");
   assert(html.indexOf('src="monitor-host-window-identity.js"')<html.indexOf('src="monitor.js"'));
-  assert(generated.includes("MonitorHostWindowIdentity.resolve(state"),"generated startup must invoke the new owner");
+  assert(generated.includes("MonitorHostWindowIdentity.resolve(topology"),"generated startup must invoke the new owner after background startup");
   console.log("PASS actual hostTitle-vs-OS-title fallback, strict GUID/HWND/ambiguity constraints, no guessed window, and script order");
 })().catch(e=>{console.error(e);process.exitCode=1});

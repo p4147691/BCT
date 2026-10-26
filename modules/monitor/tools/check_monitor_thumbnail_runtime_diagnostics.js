@@ -22,6 +22,8 @@ assert.match(thumbnails, /thumbnail-background-failed/);
 assert.match(thumbnails, /thumbnail-background-ready/);
 
 assert.match(shared, /thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics\(\)/);
+assert.match(shared, /thumbnail_initial:\{stage:String\(monitorInitialThumbStage/);
+assert.match(shared, /error:String\(monitorInitialThumbError/);
 assert.match(shared, /MonitorNativeTrace\?\.summary\?\.\("getDesktopVisualSnapshot"\)/);
 
 console.log("PASS: thumbnail runtime diagnostics expose bounded layer and transport metadata only");

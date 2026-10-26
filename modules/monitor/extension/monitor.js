@@ -635,17 +635,32 @@ let monitorStartupSharedRuntimeConfirmed = false;
 let monitorStartupEndpointFreshConfirmed = false;
 
 let monitorInitialThumbBatchDone = false;
+let monitorInitialThumbStage = "not-started";
+let monitorInitialThumbError = "";
 async function refreshInitialBackgroundThumbs() {
-  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
+  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) {
+    monitorInitialThumbStage = "disabled";
+    return false;
+  }
   const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
   const renderer = globalThis.MonitorDesktopThumbnailV2;
-  if (!renderer?.refreshBackground) return false;
+  if (!renderer?.refreshBackground) {
+    monitorInitialThumbStage = "renderer-unavailable";
+    monitorInitialThumbError = "THUMBNAIL_BACKGROUND_RENDERER_UNAVAILABLE";
+    return false;
+  }
   let pending = [
     selectedId,
     ...monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId)
   ].filter(Boolean);
-  if (!pending.length) return true;
+  if (!pending.length) {
+    monitorInitialThumbStage = "no-desktops";
+    monitorInitialThumbError = "NO_DESKTOP_IDS";
+    return false;
+  }
 
+  monitorInitialThumbStage = "background-requesting";
+  monitorInitialThumbError = "";
   const retryDelays = [160, 420];
   for (let attempt = 0; pending.length; attempt += 1) {
     const failed = [];
@@ -660,6 +675,8 @@ async function refreshInitialBackgroundThumbs() {
     if (!pending.length || attempt >= retryDelays.length) break;
     await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
   }
+  monitorInitialThumbStage = pending.length ? "background-failed" : "background-ready";
+  monitorInitialThumbError = pending.length ? `UNREADY_DESKTOPS:${pending.join(",")}` : "";
   return pending.length === 0;
 }
 let monitorInitialSemanticThumbSyncDone = false;
@@ -3188,7 +3205,7 @@ async function monitorPublishSharedInstance(reason = "event") {
 
   // Runtime presence is one current record per browser profile. Using the
   // transient HWND in the key left old rows behind after an extension reload.
-  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
+  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),desktop_ids:[...(monitorDesktopState?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
 
 }
 
@@ -10999,8 +11016,6 @@ function syncDesktopSwitcher() {
 
   }
 
-  syncMonitorMinimizedNodeBadges();
-
   for (const stale of existing.values()) { const key=String(stale.dataset.hwnd||""); stale.parentElement?.querySelectorAll(".monitor-window-pause-overlay").forEach((node)=>{if(node.dataset.hwnd===key)node.remove();}); stale.remove(); }
 
   for (const stalePlaceholder of [...monitorDesktopThumbs.querySelectorAll(".monitor-desktop-trash-placeholder")]) stalePlaceholder.remove();
@@ -11036,6 +11051,7 @@ function syncDesktopSwitcher() {
       if (visual?.isConnected) void renderer?.refreshBackground?.(visual, desktopId).catch(() => null);
     }
   });
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("summary") !== false) syncMonitorMinimizedNodeBadges();
   requestAnimationFrame(syncMonitorDesktopScrollArrows);
 
 }
@@ -11094,11 +11110,17 @@ async function refreshSelectedThumb() {
 
 async function refreshInitialSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
+  monitorInitialThumbStage = "background-starting";
+  monitorInitialThumbError = "";
   const refreshTask = refreshInitialBackgroundThumbs();
   const pendingReportTimer = setTimeout(() => {
     void monitorPublishSharedInstance("thumbnail-background-pending");
   }, 2500);
-  const backgroundReady = await refreshTask.catch(() => false);
+  const backgroundReady = await refreshTask.catch((error) => {
+    monitorInitialThumbStage = "background-exception";
+    monitorInitialThumbError = String(error?.message || error || "BACKGROUND_EXCEPTION").slice(0,160);
+    return false;
+  });
   clearTimeout(pendingReportTimer);
   monitorInitialThumbBatchDone = backgroundReady === true;
   await monitorPublishSharedInstance(
@@ -11358,13 +11380,13 @@ function renderLightweightDesktopCards(reason = "EXPLICIT") {
 
   });
 
-  syncMonitorMinimizedNodeBadges();
   requestAnimationFrame(() => {
     const renderer = globalThis.MonitorDesktopThumbnailV2;
     for (const entry of createdVisuals) {
       if (entry.visual.isConnected) void renderer?.refreshBackground?.(entry.visual, entry.desktopId).catch(() => null);
     }
   });
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("summary") !== false) syncMonitorMinimizedNodeBadges();
   return true;
 
 }
@@ -11501,9 +11523,10 @@ async function refreshVirtualDesktops() {
 
   try {
 
+    if (!monitorInitialThumbBatchDone) monitorInitialThumbStage = "topology-requesting";
     const currentWindow = await chrome.windows.getCurrent();
 
-    let state = await monitorNative({
+    const topology = await monitorNative({
 
       type: "getVirtualDesktops", hostTitle: document.title,
 
@@ -11513,22 +11536,35 @@ async function refreshVirtualDesktops() {
 
     });
 
-    state = await globalThis.MonitorHostWindowIdentity.resolve(state, {
-      title: document.title,
-      bounds: {left:currentWindow?.left,top:currentWindow?.top,
-        width:currentWindow?.width,height:currentWindow?.height},
-      requestNative: query => monitorNative(query),
-      isOwnTitle: monitorIsOwnWindowTitle,
-    });
+    if (topology?.ok) {
 
-    if (state?.ok) {
+      if (!monitorInitialThumbBatchDone) monitorInitialThumbStage = "cards-rendering";
+      try {
+        renderVirtualDesktops(topology);
+      } catch (error) {
+        // Card extras must never prevent the independent exact-GUID
+        // background layer from reaching its Native source.
+        monitorInitialThumbStage = "cards-partial";
+        monitorInitialThumbError = String(error?.message || error || "CARD_RENDER_EXCEPTION").slice(0,160);
+      }
 
-      renderVirtualDesktops(state);
-
-      // Exact-GUID wallpaper capture does not depend on identifying this
-      // Monitor popup's HWND. Start the bottom layer as soon as Native has
-      // returned the desktop IDs; window-frame work remains HWND-gated below.
       if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb();
+
+      // Window ownership is a separate, later layer. It must not delay card
+      // creation or exact-GUID wallpaper acceptance.
+      const state = await globalThis.MonitorHostWindowIdentity.resolve(topology, {
+        title: document.title,
+        bounds: {left:currentWindow?.left,top:currentWindow?.top,
+          width:currentWindow?.width,height:currentWindow?.height},
+        requestNative: query => monitorNative(query),
+        isOwnTitle: monitorIsOwnWindowTitle,
+      });
+      if (state !== topology) {
+        try { renderVirtualDesktops(state); }
+        catch (error) {
+          monitorInitialThumbError = String(error?.message || error || "HOST_RENDER_EXCEPTION").slice(0,160);
+        }
+      }
 
       const resolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
 
@@ -11556,14 +11592,18 @@ async function refreshVirtualDesktops() {
 
     } else if (!monitorHostResolveRetryTimer) {
 
+      monitorInitialThumbStage = "topology-failed";
+      monitorInitialThumbError = String(topology?.error || "GET_VIRTUAL_DESKTOPS_FAILED").slice(0,160);
       monitorHostResolveRetryCount += 1;
 
       monitorHostResolveRetryTimer = setTimeout(() => { monitorHostResolveRetryTimer = 0; refreshVirtualDesktops(); }, Math.min(5000, 500 + monitorHostResolveRetryCount * 250));
 
     }
 
-  } catch (_) {
+  } catch (error) {
 
+    monitorInitialThumbStage = "topology-exception";
+    monitorInitialThumbError = String(error?.message || error || "TOPOLOGY_EXCEPTION").slice(0,160);
     if (!monitorHostResolveRetryTimer) {
 
       monitorHostResolveRetryCount += 1;

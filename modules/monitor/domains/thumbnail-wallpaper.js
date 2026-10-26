@@ -830,16 +830,29 @@ function monitorThumbnailBackgroundRuntimeDiagnostics() {
 
 //@@FN_START:refreshInitialBackgroundThumbs
 async function refreshInitialBackgroundThumbs() {
-  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
+  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) {
+    monitorInitialThumbStage = "disabled";
+    return false;
+  }
   const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
   const renderer = globalThis.MonitorDesktopThumbnailV2;
-  if (!renderer?.refreshBackground) return false;
+  if (!renderer?.refreshBackground) {
+    monitorInitialThumbStage = "renderer-unavailable";
+    monitorInitialThumbError = "THUMBNAIL_BACKGROUND_RENDERER_UNAVAILABLE";
+    return false;
+  }
   let pending = [
     selectedId,
     ...monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId)
   ].filter(Boolean);
-  if (!pending.length) return true;
+  if (!pending.length) {
+    monitorInitialThumbStage = "no-desktops";
+    monitorInitialThumbError = "NO_DESKTOP_IDS";
+    return false;
+  }
 
+  monitorInitialThumbStage = "background-requesting";
+  monitorInitialThumbError = "";
   const retryDelays = [160, 420];
   for (let attempt = 0; pending.length; attempt += 1) {
     const failed = [];
@@ -854,6 +867,8 @@ async function refreshInitialBackgroundThumbs() {
     if (!pending.length || attempt >= retryDelays.length) break;
     await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
   }
+  monitorInitialThumbStage = pending.length ? "background-failed" : "background-ready";
+  monitorInitialThumbError = pending.length ? `UNREADY_DESKTOPS:${pending.join(",")}` : "";
   return pending.length === 0;
 }
 //@@FN_END:refreshInitialBackgroundThumbs
@@ -861,11 +876,17 @@ async function refreshInitialBackgroundThumbs() {
 //@@FN_START:refreshInitialSelectedThumb
 async function refreshInitialSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
+  monitorInitialThumbStage = "background-starting";
+  monitorInitialThumbError = "";
   const refreshTask = refreshInitialBackgroundThumbs();
   const pendingReportTimer = setTimeout(() => {
     void monitorPublishSharedInstance("thumbnail-background-pending");
   }, 2500);
-  const backgroundReady = await refreshTask.catch(() => false);
+  const backgroundReady = await refreshTask.catch((error) => {
+    monitorInitialThumbStage = "background-exception";
+    monitorInitialThumbError = String(error?.message || error || "BACKGROUND_EXCEPTION").slice(0,160);
+    return false;
+  });
   clearTimeout(pendingReportTimer);
   monitorInitialThumbBatchDone = backgroundReady === true;
   await monitorPublishSharedInstance(

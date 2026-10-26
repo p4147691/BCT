@@ -125,6 +125,8 @@ let monitorStartupSharedRuntimeConfirmed = false;
 let monitorStartupEndpointFreshConfirmed = false;
 
 let monitorInitialThumbBatchDone = false;
+let monitorInitialThumbStage = "not-started";
+let monitorInitialThumbError = "";
 /*@@MONITOR_FUNCTION:refreshInitialBackgroundThumbs@@*/
 let monitorInitialSemanticThumbSyncDone = false;
 let monitorInitialSemanticThumbSyncInflight = false;

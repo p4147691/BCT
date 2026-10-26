@@ -1316,9 +1316,10 @@ async function refreshVirtualDesktops() {
 
   try {
 
+    if (!monitorInitialThumbBatchDone) monitorInitialThumbStage = "topology-requesting";
     const currentWindow = await chrome.windows.getCurrent();
 
-    let state = await monitorNative({
+    const topology = await monitorNative({
 
       type: "getVirtualDesktops", hostTitle: document.title,
 
@@ -1328,22 +1329,35 @@ async function refreshVirtualDesktops() {
 
     });
 
-    state = await globalThis.MonitorHostWindowIdentity.resolve(state, {
-      title: document.title,
-      bounds: {left:currentWindow?.left,top:currentWindow?.top,
-        width:currentWindow?.width,height:currentWindow?.height},
-      requestNative: query => monitorNative(query),
-      isOwnTitle: monitorIsOwnWindowTitle,
-    });
+    if (topology?.ok) {
 
-    if (state?.ok) {
+      if (!monitorInitialThumbBatchDone) monitorInitialThumbStage = "cards-rendering";
+      try {
+        renderVirtualDesktops(topology);
+      } catch (error) {
+        // Card extras must never prevent the independent exact-GUID
+        // background layer from reaching its Native source.
+        monitorInitialThumbStage = "cards-partial";
+        monitorInitialThumbError = String(error?.message || error || "CARD_RENDER_EXCEPTION").slice(0,160);
+      }
 
-      renderVirtualDesktops(state);
-
-      // Exact-GUID wallpaper capture does not depend on identifying this
-      // Monitor popup's HWND. Start the bottom layer as soon as Native has
-      // returned the desktop IDs; window-frame work remains HWND-gated below.
       if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb();
+
+      // Window ownership is a separate, later layer. It must not delay card
+      // creation or exact-GUID wallpaper acceptance.
+      const state = await globalThis.MonitorHostWindowIdentity.resolve(topology, {
+        title: document.title,
+        bounds: {left:currentWindow?.left,top:currentWindow?.top,
+          width:currentWindow?.width,height:currentWindow?.height},
+        requestNative: query => monitorNative(query),
+        isOwnTitle: monitorIsOwnWindowTitle,
+      });
+      if (state !== topology) {
+        try { renderVirtualDesktops(state); }
+        catch (error) {
+          monitorInitialThumbError = String(error?.message || error || "HOST_RENDER_EXCEPTION").slice(0,160);
+        }
+      }
 
       const resolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
 
@@ -1371,14 +1385,18 @@ async function refreshVirtualDesktops() {
 
     } else if (!monitorHostResolveRetryTimer) {
 
+      monitorInitialThumbStage = "topology-failed";
+      monitorInitialThumbError = String(topology?.error || "GET_VIRTUAL_DESKTOPS_FAILED").slice(0,160);
       monitorHostResolveRetryCount += 1;
 
       monitorHostResolveRetryTimer = setTimeout(() => { monitorHostResolveRetryTimer = 0; refreshVirtualDesktops(); }, Math.min(5000, 500 + monitorHostResolveRetryCount * 250));
 
     }
 
-  } catch (_) {
+  } catch (error) {
 
+    monitorInitialThumbStage = "topology-exception";
+    monitorInitialThumbError = String(error?.message || error || "TOPOLOGY_EXCEPTION").slice(0,160);
     if (!monitorHostResolveRetryTimer) {
 
       monitorHostResolveRetryCount += 1;
@@ -1590,13 +1608,13 @@ function renderLightweightDesktopCards(reason = "EXPLICIT") {
 
   });
 
-  syncMonitorMinimizedNodeBadges();
   requestAnimationFrame(() => {
     const renderer = globalThis.MonitorDesktopThumbnailV2;
     for (const entry of createdVisuals) {
       if (entry.visual.isConnected) void renderer?.refreshBackground?.(entry.visual, entry.desktopId).catch(() => null);
     }
   });
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("summary") !== false) syncMonitorMinimizedNodeBadges();
   return true;
 
 }
@@ -2339,8 +2357,6 @@ function syncDesktopSwitcher() {
 
   }
 
-  syncMonitorMinimizedNodeBadges();
-
   for (const stale of existing.values()) { const key=String(stale.dataset.hwnd||""); stale.parentElement?.querySelectorAll(".monitor-window-pause-overlay").forEach((node)=>{if(node.dataset.hwnd===key)node.remove();}); stale.remove(); }
 
   for (const stalePlaceholder of [...monitorDesktopThumbs.querySelectorAll(".monitor-desktop-trash-placeholder")]) stalePlaceholder.remove();
@@ -2376,6 +2392,7 @@ function syncDesktopSwitcher() {
       if (visual?.isConnected) void renderer?.refreshBackground?.(visual, desktopId).catch(() => null);
     }
   });
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("summary") !== false) syncMonitorMinimizedNodeBadges();
   requestAnimationFrame(syncMonitorDesktopScrollArrows);
 
 }

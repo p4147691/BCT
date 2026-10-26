@@ -67,8 +67,13 @@ const lifecycleStart = source.indexOf("async function refreshVirtualDesktops()")
 const lifecycleEnd = source.indexOf("//@@FN_END:refreshVirtualDesktops", lifecycleStart);
 const lifecycleBody = source.slice(lifecycleStart, lifecycleEnd);
 const initialRefresh = lifecycleBody.indexOf("if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb()");
+const identityResolve = lifecycleBody.indexOf("MonitorHostWindowIdentity.resolve(topology");
 const hwndGate = lifecycleBody.indexOf("const resolved = /^\\d+$/");
-assert(initialRefresh >= 0 && hwndGate > initialRefresh,
-  "exact-GUID backgrounds must start before Monitor HWND resolution gates window capture");
+assert(initialRefresh >= 0 && identityResolve > initialRefresh && hwndGate > identityResolve,
+  "exact-GUID backgrounds must start before Monitor HWND identity resolution and window capture");
+assert.match(lifecycleBody, /try \{\s*renderVirtualDesktops\(topology\);\s*\} catch \(error\)/,
+  "optional card rendering failures must not skip the independent background startup");
+assert.match(body, /allowsLayer\?\.\("summary"\) !== false/,
+  "summary decoration must remain optional after background scheduling");
 
 console.log("PASS: exact-GUID backgrounds start independently, canonical cards use the background port, and HWND capture keeps its active-desktop gate");
