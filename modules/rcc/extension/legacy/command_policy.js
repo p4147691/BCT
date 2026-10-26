@@ -13,6 +13,12 @@
   // A bounded operator action against one exact, already-open Chrome tab.
   // It neither creates, moves, closes, nor discovers a replacement tab.
   const EXACT_TAB_COMMANDS = new Set(['send-to-tab']);
+  // Small, independently receipted browser actions.  They are deliberately
+  // separate from orchestration: a caller can inspect the returned exact
+  // tab/window identity before choosing a subsequent action.
+  const ATOMIC_CHAT_COMMANDS = new Set([
+    'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab',
+  ]);
   const ORCHESTRATION_COMMANDS = new Set(['send']);
   const READ_ONLY_COMMANDS = new Set([
     'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
@@ -24,10 +30,10 @@
   const MAINTENANCE_COMMANDS = new Set(['reload-extension']);
   const LEGACY_MUTATION_COMMANDS = new Set([
     'clear-relay-state', 'close-conversation-tab',
-    'conversation-bootstrap-bind', 'create-chat-tab', 'create-chat-window',
-    'ensure', 'main-capture-install', 'manager-promote', 'move-tab',
+    'conversation-bootstrap-bind',
+    'ensure', 'main-capture-install', 'manager-promote',
     'recover-created-result', 'recover-pending', 'register', 'reload-workers',
-    'result-ack', 'send-to-created-tab', 'send-wakeback',
+    'result-ack', 'send-wakeback',
   ]);
   const LEGACY_MUTATION_MESSAGES = new Set([
     'relay:actDirectTask', 'relay:actLocalExecution', 'relay:actWorkerOperation',
@@ -49,6 +55,7 @@
     if (NEW_RELAY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'NEW_RELAY' });
     if (CONVERSATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'CONVERSATION' });
     if (EXACT_TAB_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'EXACT_TAB' });
+    if (ATOMIC_CHAT_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'ATOMIC_CHAT' });
     if (ORCHESTRATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'ORCHESTRATION' });
     if (READ_ONLY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'LEGACY_READONLY' });
     if (MAINTENANCE_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'MAINTENANCE' });

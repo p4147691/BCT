@@ -22,6 +22,22 @@ function getTabCreateAdapter() {
     },
   );
 }
+function getWindowCreateAdapter() {
+  return RccBrowserWindowCreateAdapter.create(
+    chrome, RccBrowserWindowCreateContract, {
+      isChatTab: (tab) => browserGateway.isChatTab(tab),
+      conversationKey: (url) => RelayCore.conversationKey(url),
+    },
+  );
+}
+function getTabMoveAdapter() {
+  return RccBrowserTabMoveAdapter.create(
+    chrome, RccBrowserTabMoveContract, {
+      isChatTab: (tab) => browserGateway.isChatTab(tab),
+      conversationKey: (url) => RelayCore.conversationKey(url),
+    },
+  );
+}
 const observationGateway = RccObservationGateway.create(chrome);
 const lifecycle = RccLifecycle.create(chrome);
 

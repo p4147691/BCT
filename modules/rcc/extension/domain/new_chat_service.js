@@ -53,6 +53,10 @@ function publicNewChatResult(receipt, replayed = false) {
 function publicPersistedNewChatResult(state, operationId) {
   const receipt = state?.newChatReceipts?.[operationId] || null;
   if (!receipt || receipt.state !== 'RESULT_PERSISTED') return null;
+  if (receipt.command === 'send-to-created-tab'
+      && typeof publicCreatedTabBootstrapResult === 'function') {
+    return publicCreatedTabBootstrapResult(receipt, true);
+  }
   return publicNewChatResult(receipt, true);
 }
 

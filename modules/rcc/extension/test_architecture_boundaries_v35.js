@@ -95,13 +95,13 @@ for (const platform of [
 assert(!loader.includes("importScripts('browser/read_adapter.js');"), 'old read adapter must remain optional');
 for (const selected of [
   'browser/tab_create_contract.js', 'browser/tab_create_adapter.js',
+  'browser/window_create_contract.js', 'browser/window_create_adapter.js',
+  'browser/tab_move_contract.js', 'browser/tab_move_adapter.js',
 ]) {
   assert(loader.includes(`importScripts('${selected}');`), `${selected} must support the active new-chat product path`);
 }
 for (const optional of [
-  'browser/tab_move_contract.js', 'browser/tab_move_adapter.js',
   'browser/tab_close_contract.js', 'browser/tab_close_adapter.js',
-  'browser/window_create_contract.js', 'browser/window_create_adapter.js',
   'browser/tab_reload_contract.js', 'browser/tab_reload_adapter.js',
   'browser/read_adapter.js',
 ]) {

@@ -125,6 +125,7 @@ def _verify_contracts(
     policy_sets = {
         "nativeNewRelay": _set_values(policy, "NEW_RELAY_COMMANDS"),
         "nativeConversation": _set_values(policy, "CONVERSATION_COMMANDS"),
+        "nativeAtomicChat": _set_values(policy, "ATOMIC_CHAT_COMMANDS"),
         "nativeOrchestration": _set_values(policy, "ORCHESTRATION_COMMANDS"),
         "nativeReadOnly": _set_values(policy, "READ_ONLY_COMMANDS"),
         "nativeMaintenance": _set_values(policy, "MAINTENANCE_COMMANDS"),

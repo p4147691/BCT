@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC34_EXACT_TAB_RECEIPT", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC35_ATOMIC_CHAT_PRIMITIVES", release["candidate"])
         self.assertEqual(
             "44bd45596ed2267d2bf777163a7d8344a88d74186b02fe5c26a1928da043ec92",
             release["rollbackBaseline"]["aggregateSha256"],
@@ -35,6 +35,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "domain/simple_relay_service.js", "domain/orchestration_relay_service.js",
             "domain/delivery_ledger_service.js",
             "domain/new_chat_service.js",
+            "domain/atomic_chat_service.js",
             "domain/conversation_rename_service.js", "domain/readonly_diagnostics.js",
             "domain/runtime_message_service.js", "content/conversation_dom.js",
             "content/simple_relay_executor.js", "content/orchestration_relay_executor.js",
@@ -83,6 +84,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
             "retire-composer-draft", "retire-recovered-execution",
             "delivery-manager-status", "send-to-tab",
+            "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
             "conversation-bind", "send",
             "rename-receipt", "result", "main-capture-get",
             "api-probe", "probe-tabs", "diagnose-activity",
@@ -92,10 +94,10 @@ class RccSourceBaselineTests(unittest.TestCase):
             self.assertIn(f"message.command === '{command}'", background)
         for command in (
             "clear-relay-state", "close-conversation-tab",
-            "conversation-bootstrap-bind", "create-chat-tab", "create-chat-window",
-            "ensure", "main-capture-install", "manager-promote", "move-tab",
+            "conversation-bootstrap-bind",
+            "ensure", "main-capture-install", "manager-promote",
             "recover-created-result", "recover-pending", "register", "reload-workers",
-            "result-ack", "send-to-created-tab", "send-wakeback",
+            "result-ack", "send-wakeback",
         ):
             self.assertNotIn(f"message.command === '{command}'", background)
 
@@ -140,15 +142,17 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_browser_management_is_explicitly_split_between_active_and_optional(self):
         loader = (self.extension / "background_loader.js").read_text(encoding="utf-8")
-        active = ("browser/tab_create_contract.js", "browser/tab_create_adapter.js")
+        active = (
+            "browser/tab_create_contract.js", "browser/tab_create_adapter.js",
+            "browser/tab_move_contract.js", "browser/tab_move_adapter.js",
+            "browser/window_create_contract.js", "browser/window_create_adapter.js",
+        )
         for relative in active:
             self.assertTrue((self.extension / relative).is_file(), relative)
             self.assertIn(f"importScripts('{relative}');", loader)
         optional = (
             "browser/read_adapter.js",
-            "browser/tab_move_contract.js", "browser/tab_move_adapter.js",
             "browser/tab_close_contract.js", "browser/tab_close_adapter.js",
-            "browser/window_create_contract.js", "browser/window_create_adapter.js",
             "browser/tab_reload_contract.js", "browser/tab_reload_adapter.js",
         )
         for relative in optional:
@@ -227,6 +231,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_legacy_command_policy_v6.js", "legacy command policy v6: PASS"),
             ("test_conversation_rename_service_v1.js", "conversation rename service v1: PASS"),
             ("test_new_chat_service_v1.js", "rcc new chat service v1: PASS"),
+            ("test_atomic_chat_service_v1.js", "rcc atomic chat service v1: PASS"),
             ("test_chat_surface_gate_v1.js", "rcc chat surface gate v1: PASS"),
             ("test_architecture_boundaries_v35.js", "rcc architecture boundaries v3.5: PASS"),
             ("test_platform_boundaries_v2.js", "rcc platform boundaries v2: PASS"),
@@ -278,6 +283,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "domain/state_service.js", "domain/simple_relay_receipts.js",
             "domain/endpoint_service.js", "domain/diagnostic_support.js",
             "domain/simple_relay_service.js", "domain/readonly_diagnostics.js",
+            "domain/atomic_chat_service.js",
             "domain/runtime_message_service.js", "content/conversation_dom.js",
             "content/simple_relay_executor.js", "content/content_router.js",
             "content/activity_reporter.js",

@@ -671,7 +671,7 @@ class RelayBrowserFeature:
             })
         elif command == "move-tab":
             allowed.update({
-                "session_id", "tab_id", "window_id", "index",
+                "session_id", "tab_id", "window_id", "target_window_id", "index",
                 "conversation_key", "create_operation_id",
             })
             session_id = str(arguments.get("session_id") or "").strip()
@@ -687,6 +687,9 @@ class RelayBrowserFeature:
                 "instanceId": instance_id, "sessionId": session_id,
                 "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
                 "windowId": _positive_int(arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"),
+                "targetWindowId": _positive_int(
+                    arguments.get("target_window_id"), "RCC_TARGET_WINDOW_ID_INVALID"
+                ),
                 "index": index, "conversationKey": conversation_key,
                 "createOperationId": create_id,
             })

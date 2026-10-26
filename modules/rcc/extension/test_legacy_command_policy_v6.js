@@ -10,12 +10,15 @@ const runtimeMessages = fs.readFileSync(path.join(root, 'domain/runtime_message_
 const content = fs.readFileSync(path.join(root, 'content/content_router.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
-for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'new-chat-send', 'rename-conversation', 'conversation-bind', 'send-to-tab', 'send', 'state', 'result', 'probe-tabs']) {
+for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'new-chat-send', 'rename-conversation', 'conversation-bind', 'send-to-tab', 'send', 'state', 'result', 'probe-tabs', 'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab']) {
   assert.equal(policy.nativeCommand(command).allowed, true, command);
 }
 assert.deepEqual(policy.nativeCommand('send'), { allowed: true, kind: 'ORCHESTRATION' });
 assert.deepEqual(policy.nativeCommand('send-to-tab'), { allowed: true, kind: 'EXACT_TAB' });
-for (const command of ['create-chat-tab', 'move-tab', 'register', 'send-wakeback', 'reload-workers', 'result-ack']) {
+for (const command of ['create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab']) {
+  assert.deepEqual(policy.nativeCommand(command), { allowed: true, kind: 'ATOMIC_CHAT' }, command);
+}
+for (const command of ['register', 'send-wakeback', 'reload-workers', 'result-ack']) {
   assert.deepEqual(policy.nativeCommand(command), { allowed: false, kind: 'LEGACY_MUTATION' }, command);
 }
 for (const type of ['relay:activity', 'relay:getState', 'relay:getPendingStatus']) {
@@ -34,7 +37,10 @@ const nativeHandler = nativeCommands.split('async function handleNativeCommand(m
 assert(nativeHandler.includes('RccLegacyCommandPolicy.nativeCommand(message.command)'));
 assert(nativeHandler.indexOf('RccLegacyCommandPolicy.nativeCommand(message.command)')
   < nativeHandler.indexOf("message.command === 'simple-relay-send'"));
-for (const command of ['create-chat-tab', 'move-tab', 'register', 'send-wakeback', 'reload-workers', 'result-ack']) {
+for (const command of ['create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab']) {
+  assert(nativeHandler.includes(`message.command === '${command}'`), `${command} must have an active handler`);
+}
+for (const command of ['register', 'send-wakeback', 'reload-workers', 'result-ack']) {
   assert(!nativeHandler.includes(`message.command === '${command}'`), `${command} implementation must be pruned`);
 }
 assert(nativeHandler.includes("message.command === 'send'"));

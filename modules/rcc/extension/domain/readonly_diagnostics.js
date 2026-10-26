@@ -174,6 +174,30 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'create-chat-tab') {
+          const result = await createAtomicChatTab(message);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
+        }
+
+    if (message.command === 'create-chat-window') {
+          const result = await createAtomicChatWindow(message);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
+        }
+
+    if (message.command === 'send-to-created-tab') {
+          const result = await sendToAtomicCreatedTab(message);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
+        }
+
+    if (message.command === 'move-tab') {
+          const result = await moveAtomicChatTab(message);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
+        }
+
     if (message.command === 'send-to-tab') {
 
           const result = await sendToExactExistingTab(message, requestId);

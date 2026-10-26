@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC34_EXACT_TAB_RECEIPT",
+  "candidate": "RCC_REBUILD_V2_RC35_ATOMIC_CHAT_PRIMITIVES",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -12,8 +12,8 @@
       },
       {
         "path": "background_loader.js",
-        "size": 1405,
-        "sha256": "f829788c2935f2d7a77c29a0cb63753fc64cade4c7be2821c0a7627e4d3cf912"
+        "size": 1649,
+        "sha256": "d34d72dcaf784fd9c48ce6999eaa28563c0c388952ef33899b0eb816a8deccab"
       },
       {
         "path": "boot/background_app.js",
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1092,
-        "sha256": "d350c303e31e33255ca6452845c6fd5b09742f5dd97756fda69da173fbcd25f7"
+        "size": 1605,
+        "sha256": "6e90a48297b17756d7217d4f10ada93edcb31dd81a3a9b1b2504802bfd74a91f"
       },
       {
         "path": "browser/read_adapter.js",
@@ -141,6 +141,11 @@
         "sha256": "8b89dd65a24fa6dceb97d853c7d4e5da36c9f42d086ee3ddc0ea4e11d4307233"
       },
       {
+        "path": "domain/atomic_chat_service.js",
+        "size": 10385,
+        "sha256": "b0440c7a5cde51f115d9f3213e7b59a96fa04aeae46db931d2397c9d5c88f9b9"
+      },
+      {
         "path": "domain/conversation_rename_service.js",
         "size": 4878,
         "sha256": "b0e20dacf40b09433c1d0c50d0240bbf6a36255f48ca1d301b4e36c549865c8b"
@@ -167,8 +172,8 @@
       },
       {
         "path": "domain/new_chat_service.js",
-        "size": 13400,
-        "sha256": "0cb8eb4d9a8b3fdc3c9e24e5a53d1ac78cc304da29d8efe054bc6b23a6142b91"
+        "size": 13577,
+        "sha256": "5c670686b8f03be0ca82ec65c63316bd5f55a460eb82726384f64ffd3a5f0d3a"
       },
       {
         "path": "domain/orchestration_relay_service.js",
@@ -177,8 +182,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 31173,
-        "sha256": "4742fd91148566812f427031d5c4e523f8f3f152a7fdeadfccae21feb516663f"
+        "size": 32009,
+        "sha256": "27f7f2999996013dcdd9e870f814d4cc48e97913114e4296526eb9d8cbd74a6b"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -202,8 +207,8 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 3882,
-        "sha256": "fe6a05662a34de5ae29aeb4873b0c83c29c326dc8db43ec9d3718b7f4bcfaf09"
+        "size": 4248,
+        "sha256": "d9058f78e0ba2dc2e5299068e15ee484b4e948a712bb79f8d3e865f46fb48bb5"
       },
       {
         "path": "manifest.json",
@@ -271,8 +276,8 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "fileCount": 53,
-    "aggregateSha256": "29a89e241dac6c48d362de9a1207dfd15c8906d938b00ecb43424b9f39c3d313"
+    "fileCount": 54,
+    "aggregateSha256": "d3d5b4c22b474e8933fa4483398af082b959eca52f1459fc8fcec0907a5d7917"
   },
   "activeLoaderGraph": {
     "background": [
@@ -288,6 +293,10 @@
       "platform/lifecycle.js",
       "browser/tab_create_contract.js",
       "browser/tab_create_adapter.js",
+      "browser/window_create_contract.js",
+      "browser/window_create_adapter.js",
+      "browser/tab_move_contract.js",
+      "browser/tab_move_adapter.js",
       "relay_core.js",
       "network/directory.js",
       "relay/contract.js",
@@ -302,6 +311,7 @@
       "domain/delivery_ledger_service.js",
       "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
+      "domain/atomic_chat_service.js",
       "domain/exact_tab_send_service.js",
       "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
@@ -334,6 +344,7 @@
       "domain/delivery_ledger_service.js",
       "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
+      "domain/atomic_chat_service.js",
       "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
       "domain/runtime_message_service.js",
@@ -342,12 +353,8 @@
   },
   "optionalBrowserPayload": [
     "browser/read_adapter.js",
-    "browser/tab_move_contract.js",
-    "browser/tab_move_adapter.js",
     "browser/tab_close_contract.js",
     "browser/tab_close_adapter.js",
-    "browser/window_create_contract.js",
-    "browser/window_create_adapter.js",
     "browser/tab_reload_contract.js",
     "browser/tab_reload_adapter.js"
   ],
@@ -390,6 +397,12 @@
         "rename-conversation",
         "conversation-bind"
       ],
+      "nativeAtomicChat": [
+        "create-chat-tab",
+        "create-chat-window",
+        "send-to-created-tab",
+        "move-tab"
+      ],
       "nativeOrchestration": [
         "send"
       ],
@@ -415,18 +428,14 @@
         "clear-relay-state",
         "close-conversation-tab",
         "conversation-bootstrap-bind",
-        "create-chat-tab",
-        "create-chat-window",
         "ensure",
         "main-capture-install",
         "manager-promote",
-        "move-tab",
         "recover-created-result",
         "recover-pending",
         "register",
         "reload-workers",
         "result-ack",
-        "send-to-created-tab",
         "send-wakeback"
       ],
       "runtimeReadOnly": [
