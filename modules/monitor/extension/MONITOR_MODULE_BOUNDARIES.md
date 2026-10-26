@@ -160,3 +160,10 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - Additional mutable state and other domain functions still share classic-script globals. Do not claim full API independence.
 
 - Direct conversation generation and HWND generation also use the exact injected readers. This covers six stateful compatibility functions: per-tab status, user attention, endpoint metadata fallback, per-conversation status, conversation activity and HWND activity.
+
+
+## Exact Monitor host/window identity after extension reload
+- monitor-host-window-identity.js owns a narrow stateless resolver for host HWND recovery; the primary getVirtualDesktops request stays in the desktop-lifecycle domain.
+- A mismatch between extension document title and OS window title no longer permanently prevents initial desktop-thumbnail rendering. On unresolved host identity, try title-only then exact window-bounds Native lookup with empty hostTitle.
+- Fallback only accepts ok, unambiguous exact HWND, a matching desktop GUID and validated Monitor-only OS title. No cross-desktop guessing, cache fallback, Chrome tab enumeration or polling added.
+- check_monitor_host_window_identity.js verifies the contract, with check_monitor_structure.py enforcing its existence. Actual live D1/D2 acceptance remains required.
