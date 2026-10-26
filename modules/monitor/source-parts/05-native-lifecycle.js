@@ -2,6 +2,7 @@
 
 let monitorBctNodeInteractionService = null;
 const monitorBctCollapsedScopes = new Set();
+const monitorBctCollapsedWindowCards = new Set();
 let monitorBctSuppressedClickKey = "";
 let monitorBctSuppressScopeClickUntil = 0;
 
@@ -14,6 +15,10 @@ let monitorBctSuppressScopeClickUntil = 0;
 /*@@MONITOR_FUNCTION:resolveMonitorBctNodeDisplayHwnd@@*/
 
 /*@@MONITOR_FUNCTION:compareMonitorBctNodeDisplayOrder@@*/
+
+/*@@MONITOR_FUNCTION:monitorBctSharedWindowGroups@@*/
+
+/*@@MONITOR_FUNCTION:monitorFocusBctSharedWindowTab@@*/
 
 /*@@MONITOR_FUNCTION:renderMonitorBctWindowNodes@@*/
 
@@ -45,6 +50,8 @@ const MONITOR_BCT_DROP_EDGE_Y_PX = 10;
 /*@@MONITOR_FUNCTION:commitMonitorBctNodeDrop@@*/
 
 /*@@MONITOR_FUNCTION:refreshMonitorBctWindowNodes@@*/
+
+/*@@MONITOR_FUNCTION:renderMonitorGithubInbox@@*/
 
 /*@@MONITOR_FUNCTION:refreshMonitorBctStatus@@*/
 
@@ -261,7 +268,11 @@ const monitorNativePending = new Map();
 let monitorNativeRequestSequence = 0;
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorNative });
-globalThis.MonitorDesktopThumbnailV2.configure({ visualSource: monitorDesktopVisualSource });
+globalThis.MonitorDesktopThumbnailV2.configure({
+  visualSource: monitorDesktopVisualSource,
+  readFrame: desktopId => captureDesktopFrame(desktopId, "thumb"),
+  afterWindowRender: decorateMonitorThumbnailWindows,
+});
 
 /*@@MONITOR_FUNCTION:monitorCaptureDataUriToObjectUrl@@*/
 

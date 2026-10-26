@@ -20,7 +20,7 @@ Dependencies only point downward. A presentation module never opens a Native por
 
 | Domain | Owns | Required public boundary | Current state |
 | --- | --- | --- | --- |
-| Thumbnail | bottom-tile background, HWND pixels, overlay composition | `MonitorDesktopThumbnailV2` over injected `DesktopVisualSource` | first extraction active in this branch |
+| Thumbnail | bottom-tile refresh lifecycle, background, HWND pixels, completion and overlay composition | `MonitorDesktopThumbnailV2` over injected visual/frame ports | source controller extracted; LIVE pending |
 | Notes | note model, undo/redo, persistence orchestration, editor projection | `NotesController` + injected storage/native/AI ports | planned after thumbnail acceptance |
 | Desktop/window lifecycle | desktop identity, window observation, move/focus actions | `DesktopWindowController` + Native port | planned |
 | Nodes/conversations | RCC identity projection, attention/generation state | `NodeProjectionController` + BCT/RCC readers | pure subset extracted; controller planned |
@@ -49,6 +49,7 @@ Rules:
 - The window layer is the only owner of thumbnail HWND elements and their image sources.
 - A solid color is renderable only after the Native reply identifies the exact desktop GUID and returns `mode: solid` with `#RRGGBB` evidence. A missing/invalid reply is a visible failed state, not a fabricated gray background.
 - The compositor knows layer order, not how either layer obtains or paints pixels.
+- The compositor is the only owner of per-tile refresh concurrency and combined completion. Normal duplicate requests coalesce; a real wallpaper event queues one follow-up read. Background and frame success remain separately observable.
 
 ## Migration sequence
 

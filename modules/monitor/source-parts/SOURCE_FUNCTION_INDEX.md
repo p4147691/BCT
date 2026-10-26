@@ -26,7 +26,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorUserAttentionVisualDetail
 - syncMonitorNonChatCountdown
 
-## conversations (78 functions)
+## conversations (69 functions)
 
 - applyMonitorConversationGroupVisual
 - classifyMonitorWorker
@@ -55,21 +55,12 @@ Generated extension/monitor.js is not an edit target.
 - monitorExactConversationWindow
 - monitorGhostAgeing
 - monitorGhostArchiveAgeing
-- monitorGhostAuthoritativeLocation
 - monitorGhostBoundText
-- monitorGhostCanAutoHide
-- monitorGhostConversationTime
 - monitorGhostMeaningfulTitle
-- monitorGhostNumericTime
-- monitorGhostObservationTime
 - monitorGhostPersist
 - monitorGhostProtected
-- monitorGhostTail
 - monitorGhostTaskForWorker
-- monitorGhostTaskHistory
 - monitorGhostTime
-- monitorGhostUsage
-- monitorGhostValidLease
 - monitorGhostWorkerId
 - monitorLiveRoleForConversation
 - monitorLlmWorkersFromState
@@ -249,7 +240,7 @@ Generated extension/monitor.js is not an edit target.
 - stopMonitorBctNativePreview
 - syncMonitorNativeZOrder
 
-## node-identity (64 functions)
+## node-identity (65 functions)
 
 - applyMonitorBctNodeHighlight
 - applyMonitorChatNavigationIdentity
@@ -268,11 +259,11 @@ Generated extension/monitor.js is not an edit target.
 - monitorBctNodeLocationText
 - monitorBctNodeRoleSummary
 - monitorBctNodeSelectionKey
+- monitorBctSharedWindowGroups
 - monitorBrowserDisplaySlots
 - monitorBrowserWindowIdForEndpoint
 - monitorCanonicalNodeBindings
 - monitorCodexResourceProfile
-- monitorDirectEndpointGenerationState
 - monitorDirectEndpointUserAttention
 - monitorEndpointFreshnessState
 - monitorEndpointGenerationIsActive
@@ -283,6 +274,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorEndpointWindowKey
 - monitorExactOpenEndpoint
 - monitorExactSelectedChatNode
+- monitorFocusBctSharedWindowTab
 - monitorHwndHasOpenChatEndpoint
 - monitorListDisplaySlots
 - monitorLocationForEndpoint
@@ -290,7 +282,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorNodeBindingsSignature
 - monitorNodeChatChangeState
 - monitorNodeIdentityParts
-- monitorNodeNumbersForMinimizedHwnd
 - monitorOpenEndpointForHwnd
 - monitorOpenEndpointsForConversation
 - monitorPersistNodeBindings
@@ -308,6 +299,7 @@ Generated extension/monitor.js is not an edit target.
 - refreshMonitorIdentityIndex
 - refreshMonitorWindowIdentity
 - renderMonitorBctWindowNodes
+- renderMonitorGithubInbox
 - resolveMonitorBctNodeDisplayHwnd
 - resolveMonitorBctNodeHwnd
 - resolveStableMonitorLocation
@@ -316,7 +308,7 @@ Generated extension/monitor.js is not an edit target.
 - syncMonitorBctNodeTargetHighlight
 - syncMonitorMinimizedNodeBadges
 
-## organization (92 functions)
+## organization (88 functions)
 
 - clearMonitorHierarchyTargets
 - closeMonitorStructure
@@ -329,7 +321,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorStructureAuthorityOverrides
 - monitorStructureAutoLayout
 - monitorStructureAvailableNodes
-- monitorStructureBaselineIsCompatible
 - monitorStructureBaselineSnapshot
 - monitorStructureBuildSavePayload
 - monitorStructureBundleCard
@@ -338,7 +329,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorStructureBundleName
 - monitorStructureBundleNode
 - monitorStructureBundleOrder
-- monitorStructureBundlePalette
 - monitorStructureClearDragFeedback
 - monitorStructureCloneDraftValue
 - monitorStructureConnectNodesByPosition
@@ -375,8 +365,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorStructurePersistBaseline
 - monitorStructurePersistLinks
 - monitorStructurePersistNodeControls
-- monitorStructurePersistSavedLocal
-- monitorStructurePersistSockets
 - monitorStructurePersistWorkingDraft
 - monitorStructurePointerTargetAt
 - monitorStructureReconcileSnapshot
@@ -411,10 +399,9 @@ Generated extension/monitor.js is not an edit target.
 - openMonitorStructure
 - renderMonitorStructure
 
-## shared-ui (120 functions)
+## shared-ui (116 functions)
 
 - activateMonitorCodexResource
-- applyMonitorForegroundFocus
 - applyMonitorLiveWindowGeometry
 - applyMonitorSharedSelection
 - applyPersistentMonitorRoleClass
@@ -422,7 +409,6 @@ Generated extension/monitor.js is not an edit target.
 - checkMonitorDeploymentUpdate
 - compareMonitorSharedSelectionRevision
 - createMonitorContextContinueButton
-- createMonitorProjectContextRecallButton
 - ensureMonitorOwnFrozenSnapshot
 - flushMonitorBrowserVisualRefresh
 - flushMonitorPopupTopologyRefresh
@@ -499,9 +485,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorUpdateActiveFromEditor
 - monitorUpdateLocalLlmToggleButton
 - monitorUpdateLocalLlmToggleButtons
-- monitorViewportScreenOrigin
 - monitorWorkIconState
-- monitorWorkSymbol
 - persistMonitorContextTitles
 - pruneMonitorEphemeralGenerationState
 - publishMonitorSharedSelection
@@ -599,6 +583,7 @@ Generated extension/monitor.js is not an edit target.
 - applyObservedWallpaper
 - captureDesktopFrame
 - clearMonitorThumbnailRecovery
+- decorateMonitorThumbnailWindows
 - ensureMonitorCurrentWallpaperSnapshot
 - getObservedWallpaper
 - monitorFreezeDesktopThumbnail
@@ -611,7 +596,6 @@ Generated extension/monitor.js is not an edit target.
 - refreshBackgroundThumbs
 - refreshDesktopDropThumbnails
 - refreshDesktopThumb
-- refreshDesktopThumbBatch
 - refreshInitialBackgroundThumbs
 - refreshInitialSelectedThumb
 - refreshMonitorBctThumbnailProjectionForDesktop

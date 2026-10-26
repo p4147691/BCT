@@ -14,7 +14,15 @@
       if (!state || state.desktopId !== id) {
         visual.style.backgroundImage = "";
         visual.style.backgroundColor = "";
-        state = {desktopId:id, generation:0, status:"unobserved", reason:""};
+        state = {
+          desktopId:id,
+          generation:0,
+          status:"unobserved",
+          reason:"",
+          inflight:null,
+          forcedDrain:null,
+          forceQueued:false
+        };
         states.set(visual,state);
       }
       return state;
@@ -44,27 +52,67 @@
       return snapshot.ok;
     }
 
-    async function refresh(visual, desktopId, {force = false} = {}) {
-      const state = resolve(visual,desktopId);
-      if (!state) return false;
-      // A confirmed image/color is retained until a real Windows change event.
-      // A failed read is never frozen permanently; the next normal refresh may retry.
-      if (!force && state.status === "captured") return true;
+    function startRead(visual, desktopId, state) {
       const generation = ++state.generation;
       state.status = "pending";
       state.reason = "";
       visual.dataset.wallpaperCapture = "pending";
       visual.dataset.wallpaperFailureReason = "";
-      let reply;
-      try { reply = await visualSource.readWallpaper(desktopId); }
-      catch (error) { reply = {ok:false,error:String(error?.message || "NATIVE_UNAVAILABLE")}; }
-      if (states.get(visual) !== state || generation !== state.generation) return false;
-      return apply(visual,desktopId,reply,generation);
+      const task = (async () => {
+        let reply;
+        try { reply = await visualSource.readWallpaper(desktopId); }
+        catch (error) { reply = {ok:false,error:String(error?.message || "NATIVE_UNAVAILABLE")}; }
+        if (states.get(visual) !== state || generation !== state.generation) return false;
+        return apply(visual,desktopId,reply,generation);
+      })();
+      state.inflight = task;
+      void task.then(
+        () => { if (state.inflight === task) state.inflight = null; },
+        () => { if (state.inflight === task) state.inflight = null; }
+      );
+      return task;
+    }
+
+    function refresh(visual, desktopId, {force = false} = {}) {
+      const state = resolve(visual,desktopId);
+      if (!state) return Promise.resolve(false);
+      // A confirmed image/color is retained until a real Windows change event.
+      // A failed read is never frozen permanently; the next normal refresh may retry.
+      if (!force && state.status === "captured" && !state.inflight && !state.forcedDrain)
+        return Promise.resolve(true);
+      if (state.forcedDrain) {
+        if (force) state.forceQueued = true;
+        return state.forcedDrain;
+      }
+      if (!state.inflight) return startRead(visual,desktopId,state);
+      if (!force) return state.inflight;
+
+      // A real Windows change arriving during a read queues one follow-up read.
+      // Repeated events are coalesced; an already valid reply is never discarded
+      // merely because another normal render requested the same tile.
+      state.forceQueued = true;
+      const drain = (async () => {
+        let result = await state.inflight.catch(() => false);
+        while (states.get(visual) === state && state.forceQueued) {
+          state.forceQueued = false;
+          result = await startRead(visual,desktopId,state).catch(() => false);
+        }
+        return result;
+      })();
+      state.forcedDrain = drain;
+      void drain.then(
+        () => { if (state.forcedDrain === drain) state.forcedDrain = null; },
+        () => { if (state.forcedDrain === drain) state.forcedDrain = null; }
+      );
+      return drain;
     }
 
     function invalidate(visual,desktopId) {
       const state = resolve(visual,desktopId);
-      if (state) ++state.generation;
+      if (state) {
+        ++state.generation;
+        state.forceQueued = false;
+      }
     }
 
     return Object.freeze({resolve,apply,refresh,invalidate});

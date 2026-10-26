@@ -12,8 +12,8 @@ const event=js.indexOf('if (response?.event === true && response?.type === "desk
 const next=js.indexOf('if (response?.event === true && response?.type === "monitorDragPreviewReleased")',event);
 assert(event>0&&next>event);
 const branch=js.slice(event,next);
-assert.match(branch,/MonitorDesktopThumbnailV2\.refreshWallpaper/);
-assert.match(branch,/\{force:true\}/);
+assert.match(branch,/MonitorDesktopThumbnailV2\.refreshBackground/);
+assert.match(branch,/\{forceWallpaper:true\}/);
 assert.doesNotMatch(branch,/getDesktopVisualSnapshot|monitorNativeVisualRead|monitorNative\(|monitorCoreNative\(/,
   "event branch must delegate through the configured V2 source instead of choosing a transport");
 assert.doesNotMatch(branch,/monitorWallpaperCache|monitorWallpaperActuals|wallpaperDataUri/);

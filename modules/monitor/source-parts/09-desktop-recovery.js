@@ -27,13 +27,9 @@
 
 /*@@MONITOR_FUNCTION:monitorStructureDeskNodeGrid@@*/
 
-/*@@MONITOR_FUNCTION:monitorStructureBundlePalette@@*/
-
 /*@@MONITOR_FUNCTION:monitorStructureAutoLayout@@*/
 
 /*@@MONITOR_FUNCTION:monitorStructureNodeForHwnd@@*/
-
-/*@@MONITOR_FUNCTION:monitorStructurePersistSockets@@*/
 
 /*@@MONITOR_FUNCTION:monitorStructureRemoveNode@@*/
 
@@ -78,8 +74,6 @@
 
 /*@@MONITOR_FUNCTION:monitorStructureBuildSavePayload@@*/
 
-/*@@MONITOR_FUNCTION:monitorStructurePersistSavedLocal@@*/
-
 /*@@MONITOR_FUNCTION:monitorStructureCloneDraftValue@@*/
 
 /*@@MONITOR_FUNCTION:monitorStructureHistorySnapshot@@*/
@@ -103,8 +97,6 @@
 /*@@MONITOR_FUNCTION:monitorStructurePersistWorkingDraft@@*/
 
 /*@@MONITOR_FUNCTION:monitorStructureReconcileSnapshot@@*/
-
-/*@@MONITOR_FUNCTION:monitorStructureBaselineIsCompatible@@*/
 
 /*@@MONITOR_FUNCTION:monitorStructurePersistBaseline@@*/
 

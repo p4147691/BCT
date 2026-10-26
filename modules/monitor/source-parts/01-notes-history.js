@@ -302,8 +302,6 @@ const MONITOR_AI_STATE_CACHE_TTL_MS = 600000;
 
 let monitorStructureOpen = false;
 
-const MONITOR_STRUCTURE_SOCKET_KEY = "desktopWindowMonitorStructureSocketsV1";
-
 const MONITOR_STRUCTURE_LINK_KEY = "desktopWindowMonitorStructureLinksV1";
 
 const MONITOR_STRUCTURE_NODE_CONTROL_KEY = "desktopWindowMonitorStructureNodeControlsV1";
@@ -338,10 +336,6 @@ const monitorStructureUndoStack = [];
 const monitorStructureRedoStack = [];
 
 let monitorStructureRelationDragKey = "";
-
-const MONITOR_STRUCTURE_DESK_MEMBERSHIP_KEY = "desktopWindowMonitorStructureDeskMembershipV1";
-
-const MONITOR_STRUCTURE_BUNDLE_DESK_KEY = "desktopWindowMonitorStructureBundleDeskV1";
 
 const MONITOR_STRUCTURE_BASELINE_KEY = "desktopWindowMonitorStructureBaselineV2";
 const MONITOR_STRUCTURE_WORKING_DRAFT_KEY = "desktopWindowMonitorStructureWorkingDraftV1";
@@ -382,4 +376,3 @@ let monitorStructureActiveScopeKey = "GLOBAL";
 /*@@MONITOR_FUNCTION:monitorEndpointInstanceId@@*/
 
 /*@@MONITOR_FUNCTION:monitorEndpointGeometry@@*/
-

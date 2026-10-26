@@ -6,7 +6,7 @@ The controlling target architecture and migration order are in `MONITOR_ARCHITEC
 
 ## What actually exists now
 - Canonical editable source: source-parts/manifest.json (10 ordered JS files, about 1.4k-1.6k lines each) plus existing dedicated modules.
-- Generated runtime: extension/monitor.js (15,389 physical lines); full nonblank statements were preserved in order from installed 2.0.42 source. Do not edit it.
+- Generated runtime: extension/monitor.js (14,956 physical lines after cleanup and restoration of split regressions). Do not edit it.
 - Deterministic builder: tools/build_monitor_bundle.py. tools/check_monitor_structure.py fails on missing/out-of-sync runtime/part syntax.
 - Function ownership lookup: source-parts/SOURCE_FUNCTION_INDEX.md. Monitor.js is now a build output, not human edit authority.
 - Independent responsibility modules already implemented: monitor-desktop-thumbnail-v2.js, monitor-thumbnail-service.js, monitor-bct-shell.js, monitor-ui-layout.js, monitor-act-transport.js, etc.
@@ -20,7 +20,7 @@ Avoid duplicate work: BCT-MONITOR-FULL-MODULARIZE-SOLIDCOLOR-20261026-01.
 Existing live rollback protections: do not modify RCC/Core, active Chrome conversation, or unrelated extensions; preserve installed-only Monitor changes before source import.
 
 ## Domain function ownership improvement
-- All 588 functions moved to 10 semantic source files, leaving ordered global statements in original source-parts. The compiled 15,389-line runtime SHA remained fa8ef4d2ba8509fc29a261db7d363f508cc4e42421abb455b111a7fca86f762c, i.e. zero runtime effect.
+- The original ownership pass moved every function to ten semantic source files, leaving ordered global statements in source-parts. The current audited source contains 573 owned functions after removing twenty callerless functions and four globals used only by them, then restoring three active functions lost by the first split.
 - domains/manifest.json and SOURCE_FUNCTION_INDEX.md provide one source authority for each function. Builder prevents missing/duplicate ownership and mismatched generated output.
 - Shared state and global calls remain; independently injectable state/API boundaries are not yet completed. Do not claim overall modularization complete.
 
@@ -28,6 +28,13 @@ Existing live rollback protections: do not modify RCC/Core, active Chrome conver
 ## Independent runtime API progress (2026-10-26)
 - 43 safe functions from four domains now execute from standalone monitor-domain-apis.js. Compatibility bridges keep existing call sites. Module is immutable and unit tested in a DOM-free Node VM.
 - Shared state and other function bodies remain coupled. Full independent domain APIs and E2E remain unaccepted.
+
+## Current dependency audit and cleanup
+- `tools/analyze_monitor_dependencies.py` generates `MONITOR_DEPENDENCY_AUDIT.md` from the editable domains, ordered source parts and active script graph.
+- The current source has 573 owned functions, 451 ordered top-level declarations and no definition-only function/global candidate after cleanup.
+- Historical pre-split comparison found and restored three real regressions: shared Chrome-window tab grouping/focus, GitHub completion Inbox rendering, and the thumbnail node-chip/Z-rail CSS. `check_monitor_modularization_regressions.js` now pins those contracts.
+- `MONITOR_REBUILD_READINESS.md` records what must be retained, what was removed and when a clean shell rewrite becomes safer than incremental extraction.
+- These source facts are not deployment or LIVE acceptance. Installed Monitor 2.0.48 remains unchanged during this cleanup.
 
 ## Thumbnail reference extraction (source implementation, LIVE pending)
 - Background, HWND window pixels and composition now have separate owners: `monitor-thumbnail-background-layer.js`, `monitor-thumbnail-window-layer.js` and `monitor-desktop-thumbnail-v2.js`.

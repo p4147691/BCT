@@ -52,7 +52,7 @@ assert.equal(service.endpointIsGenerating({...e,metadata:{generating:true}}),fal
 const script='<script src="monitor-node-generation-state.js"></script>';
 assert.equal(html.split(script).length,2);
 assert(html.indexOf(script)<html.indexOf('<script src="monitor.js"></script>'));
-for(const name of ["monitorDirectEndpointGenerationState","monitorDirectEndpointUserAttention","monitorEndpointGenerationIsActive",
+for(const name of ["monitorDirectEndpointUserAttention","monitorEndpointGenerationIsActive",
   "monitorDirectConversationGenerationState","monitorConversationIsGenerating","monitorHwndIsGenerating"]){
  assert(generated.includes("function "+name+"("),name+" compatibility bridge");
 }

@@ -22,6 +22,7 @@ def main():
     facts = {}
 
     required = [
+        root/'MONITOR_DEPENDENCY_AUDIT.md', root/'MONITOR_REBUILD_READINESS.md',
         ext/'AGENTS.md', ext/'MONITOR_STRUCTURE.md', ext/'MONITOR_JS_MAP.md',
         ext/'MONITOR_MODULE_BOUNDARIES.md', ext/'MONITOR_ORGANIZATION_MODEL.md', ext/'MONITOR_JS_INDEX.md',
         ext/'manifest.json', ext/'desktop.html', ext/'monitor.js', ext/'monitor.css',
@@ -77,6 +78,19 @@ def main():
             facts['monitor_source_parts_count'] = len(parts)
         except Exception as exc:
             errors.append({'kind':'monitor_source_parts_invalid','detail':str(exc)[:150]})
+
+    dependency_audit = root/'tools'/'analyze_monitor_dependencies.py'
+    if not dependency_audit.is_file():
+        errors.append({'kind':'monitor_dependency_audit_tool_missing'})
+    else:
+        audit_check = subprocess.run(
+            [sys.executable, str(dependency_audit), '--check'],
+            capture_output=True, text=True, encoding='utf-8',
+            errors='replace', timeout=30)
+        facts['monitor_dependency_audit_check'] = audit_check.returncode
+        if audit_check.returncode != 0:
+            errors.append({'kind':'monitor_dependency_audit_out_of_sync',
+                           'detail':(audit_check.stdout+audit_check.stderr)[-350:]})
 
     domain_manifest = root/'domains'/'manifest.json'
     if (root/'source-parts'/'manifest.json').exists() and not domain_manifest.exists():

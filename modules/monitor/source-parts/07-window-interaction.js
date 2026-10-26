@@ -16,10 +16,6 @@ let monitorCreateDesktopDropConsumedUntil = 0;
 
 /*@@MONITOR_FUNCTION:syncMonitorNativeZOrder@@*/
 
-/*@@MONITOR_FUNCTION:applyMonitorForegroundFocus@@*/
-
-/*@@MONITOR_FUNCTION:monitorViewportScreenOrigin@@*/
-
 /*@@MONITOR_FUNCTION:monitorSelectedEntries@@*/
 
 /*@@MONITOR_FUNCTION:monitorProfileIdForHwnd@@*/
@@ -156,7 +152,8 @@ document.addEventListener("pointercancel", cancelMonitorDesktopPointerDrag, true
 
 /*@@MONITOR_FUNCTION:bindDesktopDropTarget@@*/
 
+/*@@MONITOR_FUNCTION:decorateMonitorThumbnailWindows@@*/
+
 /*@@MONITOR_FUNCTION:refreshDesktopThumb@@*/
 
 /*@@MONITOR_FUNCTION:syncMonitorMinimizedNodeBadges@@*/
-

@@ -9,7 +9,7 @@
     {
       "domain": "conversations",
       "file": "conversations.js",
-      "functions": 78
+      "functions": 69
     },
     {
       "domain": "desktop-lifecycle",
@@ -29,17 +29,17 @@
     {
       "domain": "node-identity",
       "file": "node-identity.js",
-      "functions": 64
+      "functions": 65
     },
     {
       "domain": "organization",
       "file": "organization.js",
-      "functions": 92
+      "functions": 88
     },
     {
       "domain": "shared-ui",
       "file": "shared-ui.js",
-      "functions": 120
+      "functions": 116
     },
     {
       "domain": "sketch-notes",

@@ -10,7 +10,7 @@ assert.equal(file.type,"stdio");assert.equal(control.type,"stdio");
 assert.deepEqual(file.allowed_origins,allowed);assert.deepEqual(control.allowed_origins,allowed);
 assert.notEqual(file.path.toLowerCase(),control.path.toLowerCase());
 assert.match(file.path,/1\.9\.20\.128-hidden-all[\\/]DesktopWindowMonitorHost\.exe$/i,"file shell contract is implemented by the retained original host");
-assert.match(control.path,/1\.9\.20\.176-wallpaper-events[\\/]DesktopWindowMonitorControlHost\.exe$/i,"native virtual desktop controller remains at approved running release");
+assert.match(control.path,/1\.9\.20\.180-thumbnail-correlated[\\/]DesktopWindowMonitorControlHost\.exe$/i,"native virtual desktop controller remains at the documented correlated-thumbnail release");
 const background=fs.readFileSync(path.join(root,"extension","background.js"),"utf8");
 const js=fs.readFileSync(path.join(root,"extension","monitor.js"),"utf8");
 const publish=fs.readFileSync(path.join(root,"tools","Publish-MonitorDeployment.ps1"),"utf8");

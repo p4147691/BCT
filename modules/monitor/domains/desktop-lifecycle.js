@@ -2357,7 +2357,7 @@ function syncDesktopSwitcher() {
   // gray until an unrelated interaction happens to refresh the thumbnail.
   // Schedule exactly one GUID-native read after the DOM batch is committed;
   // V2 suppresses subsequent normal repaint reads for the same tile.
-  if (createdDesktopIds.length) requestAnimationFrame(() => {
+  if (createdDesktopIds.length && monitorInitialThumbBatchDone) requestAnimationFrame(() => {
     for (const desktopId of createdDesktopIds) {
       const tile = [...monitorDesktopThumbs.children].find((item) => (
         String(item.dataset.desktopId || "") === String(desktopId)

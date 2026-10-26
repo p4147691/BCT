@@ -1,8 +1,4 @@
-/*@@MONITOR_FUNCTION:monitorGhostValidLease@@*/
-
 /*@@MONITOR_FUNCTION:monitorGhostProtected@@*/
-
-/*@@MONITOR_FUNCTION:monitorGhostCanAutoHide@@*/
 
 let monitorGhostPersistTimer = 0;
 
@@ -201,4 +197,3 @@ let monitorBctRenameEditor = null;
 /*@@MONITOR_FUNCTION:monitorBctNodeRoleSummary@@*/
 
 /*@@MONITOR_FUNCTION:monitorBctNodeLocationText@@*/
-

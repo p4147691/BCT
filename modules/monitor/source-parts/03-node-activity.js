@@ -110,8 +110,6 @@ window.addEventListener("pointerleave", () => {
 
 /*@@MONITOR_FUNCTION:resolveWorkerWorkState@@*/
 
-/*@@MONITOR_FUNCTION:monitorWorkSymbol@@*/
-
 // SVG icon semantics used by the node list and desktop-thumbnail overlay.
 // Kept distinct from the legacy text symbol helper above so persisted old
 // alert records cannot accidentally control the new visual meaning.
@@ -153,8 +151,6 @@ const MONITOR_GHOST_HIDDEN_KEY = "desktopWindowMonitorGhostHiddenV1";
 
 const MONITOR_GHOST_CACHE_MAX = 80;
 
-const MONITOR_GHOST_TAIL_MAX = 5;
-
 const MONITOR_GHOST_TEXT_MAX = 1200;
 
 const monitorGhostCache = new Map();
@@ -179,21 +175,9 @@ const monitorRebootRestorePendingKeys = new Set();
 
 /*@@MONITOR_FUNCTION:monitorGhostWorkerId@@*/
 
-/*@@MONITOR_FUNCTION:monitorGhostUsage@@*/
-
-/*@@MONITOR_FUNCTION:monitorGhostTail@@*/
-
 /*@@MONITOR_FUNCTION:monitorGhostTaskForWorker@@*/
 
 /*@@MONITOR_FUNCTION:monitorGhostMeaningfulTitle@@*/
-
-/*@@MONITOR_FUNCTION:monitorGhostNumericTime@@*/
-
-/*@@MONITOR_FUNCTION:monitorGhostConversationTime@@*/
-
-/*@@MONITOR_FUNCTION:monitorGhostObservationTime@@*/
-
-/*@@MONITOR_FUNCTION:monitorGhostTaskHistory@@*/
 
 /*@@MONITOR_FUNCTION:monitorContextTitleRecord@@*/
 
@@ -238,9 +222,6 @@ const monitorRebootRestorePendingKeys = new Set();
 
 /*@@MONITOR_FUNCTION:monitorWorkerContextTitle@@*/
 
-/*@@MONITOR_FUNCTION:monitorGhostAuthoritativeLocation@@*/
-
 /*@@MONITOR_FUNCTION:monitorGhostAgeing@@*/
 
 /*@@MONITOR_FUNCTION:monitorGhostArchiveAgeing@@*/
-

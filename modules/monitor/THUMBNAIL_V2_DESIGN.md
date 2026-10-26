@@ -1,8 +1,8 @@
 # Monitor 썸네일 V2 — 입력/출력 단일 경계 (격리 후보)
 
 ## 책임
-- `monitor-desktop-thumbnail-v2.js`가 **하단 D1/D2 타일의 시각 렌더링만** 소유한다. 상단/큰 미리보기, 노드 의미·클릭·드래그·대화 송수신은 변경하지 않는다.
-- `monitor.js`의 `refreshDesktopThumb(visual, GUID)` 및 Native `desktopWallpaperChanged` 분기에서 V2 호출. 기존 `reconcileFrame`은 큰 미리보기용으로만 남는다.
+- `monitor-desktop-thumbnail-v2.js`가 **하단 D1/D2 타일의 갱신 생명주기와 시각 렌더링**을 소유한다. 상단/큰 미리보기, 노드 의미·클릭·드래그·대화 송수신은 변경하지 않는다.
+- `monitor.js`의 `refreshDesktopThumb(visual, GUID)`는 V2의 단일 `refresh()` 결과만 전달한다. Native `desktopWallpaperChanged`는 V2의 background refresh event만 요청한다. 기존 `reconcileFrame`은 큰 미리보기용으로만 남는다.
 
 ## 배경 — 단 하나의 진실
 1. 레지스트리 `VirtualDesktopIDs` 순서의 GUID를 타일 `dataset.desktopId`와 정확히 비교한다.
@@ -10,6 +10,7 @@
 3. `reply.ok===true`, `reply.desktopId===GUID`이며, 진짜 JPEG/PNG/WEBP 데이터 또는 Windows가 증명한 `mode:solid` + `#RRGGBB`가 만족될 때만 배경 레이어를 설정한다.
 4. 같은 타일의 일반 재렌더는 이미 확인한 사진을 반복해서 다시 읽지 않는다. 최초 조회와 **Windows 실제 배경 변경 이벤트**만 재조회. 세대(generation) 검사로 늦은 이전 응답 차단.
 5. 일반 캐시(`monitorWallpaperActuals`, `monitorWallpaperCache`), `chrome.storage.session`의 이전 팝업 `wallpaperDataUri`, Progman/WGC 캡처는 배경 출처로 사용하지 않는다.
+6. 같은 타일의 일반 중복 요청은 한 promise로 합치며, 실제 Windows 배경 변경 이벤트가 진행 중 요청과 겹치면 후속 읽기 한 건으로 합친다.
 
 ## 창 레이어 — 배경과 절대 혼합 금지
 - 기존 Native HWND 목록의 `frame.meta.desktopId===GUID`와 실제 영역(virtualLeft,Top,Width,Height)을 확인한 후 창 위치와 Z순서 유지.
@@ -43,6 +44,7 @@
 - monitor.js는 Native 이벤트와 GUID/HWND 식별 및 역할·상태·드래그 의미를 전달한다. 이벤트가 직접 이미지 DOM을 생성/수정하거나 wallpaperDataUri, monitorWallpaperActuals, monitorWallpaperCache, Progman, SVG/이전 프레임을 대입하면 안 된다.
 - legacy window lifecycle handler의 직접 이미지 생성(upsertMonitorEventThumbWindow), old source-set, 직접 이동/크기 반영은 폐기하고 \`scheduleMonitorV2WindowRefresh\`(V2 Native 재조회) 및 \`removeMonitorV2Window\`(V2 소유 하위창 제거)로 전환한다.
 - 비동기 capture가 역순 완료되어 과거 프레임을 다시 그리는 경우를 막도록 V2 frameGeneration을 검증한다. 이 방어는 wallpaper 세대(generation)와 독립적이다.
+- V2는 `wallpaperReady`, `frameReady`, 결합 `ok`를 따로 반환한다. 창 프레임 성공으로 배경 실패를 숨기거나 초기 완료로 기록하지 않는다.
 - 새 데스크톱 생성 후 기존 getObservedWallpaper는 **선택한 큰 미리보기**에 한해 계속 사용될 수 있지만 하단 배경은 V2 Native GUID 조회만 가능하다.
 - 옛 getObservedWallpaper, cache map, popup restore, freeze thumbnail, reconcileFrame는 노트·복구·큰 미리보기·기타 UI에 필요하므로 무작정 삭제하지 않는다. 단, 신규 하단 썸네일 코드에서 이들을 호출하면 회귀다.
 - tests/check_monitor_thumbnail_v2_render_ownership.js가 이 경계의 직접 writer 재도입을 CI/로컬 검사에서 탐지한다. 기능 테스트는 check_monitor_thumbnail_v2_cleanroom.js를 계속 사용한다.

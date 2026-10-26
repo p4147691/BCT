@@ -146,23 +146,6 @@ function monitorStructureAvailableNodes(){
 }
 //@@FN_END:monitorStructureAvailableNodes
 
-//@@FN_START:monitorStructureBaselineIsCompatible
-function monitorStructureBaselineIsCompatible(snapshot){
-  if(!snapshot||typeof snapshot!=="object")return false;
-  const liveKeys=new Set(monitorStructureAvailableNodes().map(node=>String(node?.conversation_key||"")).filter(Boolean));
-  const required=new Set();
-  const add=node=>{const key=String(node?.conversation_key||"");if(key)required.add(key);};
-  add(snapshot.socketDraft?.orchestrator);add(snapshot.socketDraft?.aux1);add(snapshot.socketDraft?.aux2);
-  for(const node of Object.values(snapshot.socketDraft?.managers||{}))add(node);
-  for(const [key,parent] of Object.entries(snapshot.linkOverrides||{})){required.add(String(key));if(parent)required.add(String(parent));}
-  for(const key of Object.keys(snapshot.deskMembership||{}))required.add(String(key));
-  for(const edge of snapshot.resourceEdges||[]){const supervisor=String(edge?.supervisor_key||"");if(supervisor)required.add(supervisor);}
-  const desktops=new Set((monitorDesktopState.desktopIds||[]).map(String));
-  const deskValues=[...Object.values(snapshot.deskMembership||{}),...Object.values(snapshot.bundleDesk||{})].map(String).filter(Boolean);
-  return [...required].every(key=>liveKeys.has(key))&&deskValues.every(id=>desktops.has(id));
-}
-//@@FN_END:monitorStructureBaselineIsCompatible
-
 //@@FN_START:monitorStructureBaselineSnapshot
 function monitorStructureBaselineSnapshot(){
   return {...monitorStructureHistorySnapshot(),savedAt:Date.now()};
@@ -294,10 +277,6 @@ function monitorStructureBundleNode(kind){
 //@@FN_START:monitorStructureBundleOrder
 function monitorStructureBundleOrder() { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureBundleOrder"].apply(this, arguments); }
 //@@FN_END:monitorStructureBundleOrder
-
-//@@FN_START:monitorStructureBundlePalette
-function monitorStructureBundlePalette(){const bar=document.createElement("div");bar.className="monitor-org-bundle-palette";for(const kind of monitorStructureBundleOrder())if(!monitorStructureBundleDesk[kind]&&!monitorStructureManagerBundleDesk[kind])bar.append(monitorStructureBundleCard(kind));return bar;}
-//@@FN_END:monitorStructureBundlePalette
 
 //@@FN_START:monitorStructureClearDragFeedback
 function monitorStructureClearDragFeedback(removeGhost=true){if(removeGhost){monitorStructurePointerGhost?.remove();monitorStructurePointerGhost=null;}for(const el of monitorStructurePanel.querySelectorAll(".is-desk-drop,.is-socket-drop,.monitor-org-link-target,.monitor-org-link-dragging"))el.classList.remove("is-desk-drop","is-socket-drop","monitor-org-link-target","monitor-org-link-dragging");}
@@ -677,20 +656,6 @@ function monitorStructurePersistLinks(){chrome.storage.local.set({[MONITOR_STRUC
 //@@FN_START:monitorStructurePersistNodeControls
 function monitorStructurePersistNodeControls(){chrome.storage.local.set({[MONITOR_STRUCTURE_NODE_CONTROL_KEY]:monitorStructureNodeControls});}
 //@@FN_END:monitorStructurePersistNodeControls
-
-//@@FN_START:monitorStructurePersistSavedLocal
-function monitorStructurePersistSavedLocal(){
-
-  monitorStructurePersistSockets();monitorStructurePersistLinks();
-
-  chrome.storage.local.set({[MONITOR_STRUCTURE_DESK_MEMBERSHIP_KEY]:monitorStructureDeskMembership,[MONITOR_STRUCTURE_BUNDLE_DESK_KEY]:monitorStructureBundleDesk});
-
-}
-//@@FN_END:monitorStructurePersistSavedLocal
-
-//@@FN_START:monitorStructurePersistSockets
-function monitorStructurePersistSockets(){chrome.storage.local.set({[MONITOR_STRUCTURE_SOCKET_KEY]:monitorStructureSocketDraft});}
-//@@FN_END:monitorStructurePersistSockets
 
 //@@FN_START:monitorStructurePersistWorkingDraft
 function monitorStructurePersistWorkingDraft(){
@@ -1461,4 +1426,3 @@ function renderMonitorStructure(){
   monitorStructureAlignLowerDesksToOrchestrator();
 }
 //@@FN_END:renderMonitorStructure
-

@@ -31,8 +31,6 @@
 
 /*@@MONITOR_FUNCTION:monitorGroupChatgptMembersForDisplay@@*/
 
-/*@@MONITOR_FUNCTION:monitorNodeNumbersForMinimizedHwnd@@*/
-
 // The desktop-label summary is reserved for minimized ChatGPT windows. Open
 // ChatGPT windows render their BCT/RCC number directly on their thumbnail.
 /*@@MONITOR_FUNCTION:monitorMinimizedNodeSlotsByDesktop@@*/
@@ -97,8 +95,6 @@ const monitorNodeGenerationAPI = globalThis.MonitorNodeGenerationState.create({
 });
 
 /*@@MONITOR_FUNCTION:monitorDirectConversationGenerationState@@*/
-
-/*@@MONITOR_FUNCTION:monitorDirectEndpointGenerationState@@*/
 
 /*@@MONITOR_FUNCTION:monitorDirectEndpointUserAttention@@*/
 
@@ -306,4 +302,3 @@ const MONITOR_EPHEMERAL_GENERATION_TTL_MS = 30 * 60 * 1000;
 /*@@MONITOR_FUNCTION:monitorChatAlertDetail@@*/
 
 /*@@MONITOR_FUNCTION:monitorReportMatchesTask@@*/
-

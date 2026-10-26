@@ -77,6 +77,7 @@
 - state/output: background와 HWND window 레이어가 각자의 DOM/CSS만 소유하고 V2 compositor가 순서와 호환 API만 소유한다.
 - 금지: 썸네일 모듈의 Chrome Native 직접 호출, 별도 `sendNativeMessage`, FIFO 응답 추측, legacy wallpaper cache 접근.
 - 검증: `check_monitor_thumbnail_architecture.js`, `check_monitor_thumbnail_v2_cleanroom.js`, `check_monitor_thumbnail_v2_native_ports.js`, `check_monitor_thumbnail_v2_render_ownership.js`.
+- refresh lifecycle: V2가 타일별 in-flight/queued event와 배경·창의 분리된 완료 결과를 소유한다. monitor.js 호환 함수는 `renderer.refresh()`의 결합 결과만 전달한다.
 - 아직 운영 설치 및 실제 사진/단색/D1-D2 왕복 수락 전이므로 LIVE 완료로 보고하지 않는다.
 
 ### Node identity / endpoint projection — KEEP TOGETHER FOR NOW

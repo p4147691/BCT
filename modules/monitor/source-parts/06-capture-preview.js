@@ -10,8 +10,6 @@
 
 /*@@MONITOR_FUNCTION:createMonitorContextContinueButton@@*/
 
-/*@@MONITOR_FUNCTION:createMonitorProjectContextRecallButton@@*/
-
 /*@@MONITOR_FUNCTION:createMonitorWorkRecoveryButton@@*/
 
 /*@@MONITOR_FUNCTION:restoreMonitorDetachedTask@@*/
@@ -229,4 +227,3 @@ let monitorThumbBatchInflight = null;
 /*@@MONITOR_FUNCTION:syncMonitorStatusLayer@@*/
 
 /*@@MONITOR_FUNCTION:reconcileFrame@@*/
-

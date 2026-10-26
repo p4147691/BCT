@@ -39,20 +39,6 @@ async function activateMonitorCodexResource(worker, row = null) {
 }
 //@@FN_END:activateMonitorCodexResource
 
-//@@FN_START:applyMonitorForegroundFocus
-function applyMonitorForegroundFocus(hwnd) {
-
-  const next = String(hwnd || "");
-
-  if (!next) return;
-
-  // A real Chrome click is the same selection gesture as clicking that window in Monitor.
-
-  applyMonitorWindowHighlight(next, monitorSelectedHwnds.has(next) ? { toggle: true } : {});
-
-}
-//@@FN_END:applyMonitorForegroundFocus
-
 //@@FN_START:applyMonitorLiveWindowGeometry
 function applyMonitorLiveWindowGeometry(desktopId, snap) {
 
@@ -244,7 +230,10 @@ function attachMonitorContextTitleMenu(row,worker,state,endpoint){
 //@@FN_START:checkMonitorDeploymentUpdate
 async function checkMonitorDeploymentUpdate() {
 
-  if (monitorDeploymentCheckBusy) return;
+  if (monitorDeploymentCheckBusy) {
+    monitorDeploymentCheckQueued = true;
+    return;
+  }
 
   monitorDeploymentCheckBusy = true;
 
@@ -278,8 +267,6 @@ async function checkMonitorDeploymentUpdate() {
 
       monitorReloadToken = reloadToken;
 
-      if (reloadToken) await monitorNative({ type: "ackExtensionReload", token: reloadToken }).catch(() => null);
-
     } else if (reloadToken && reloadToken !== monitorReloadToken) {
 
       if (!monitorDeploymentReloadRequested) {
@@ -293,6 +280,12 @@ async function checkMonitorDeploymentUpdate() {
 
     }
 
+    if (reloadToken && monitorReloadToken === reloadToken && monitorInitialThumbBatchDone &&
+        monitorReloadAckToken !== reloadToken) {
+      const ack = await monitorNative({ type: "ackExtensionReload", token: reloadToken }).catch(() => null);
+      if (ack?.ok === true) monitorReloadAckToken = reloadToken;
+    }
+
     // A reload can recreate the popup after its HWND-change event has already
     // run. Publish one fresh presence record once the token is known; this is
     // a startup/deployment event, not a timer or a background polling loop.
@@ -301,7 +294,13 @@ async function checkMonitorDeploymentUpdate() {
     }
     monitorDeploymentReloadRequested = false;
 
-  } catch (_) {} finally { monitorDeploymentCheckBusy = false; }
+  } catch (_) {} finally {
+    monitorDeploymentCheckBusy = false;
+    if (monitorDeploymentCheckQueued) {
+      monitorDeploymentCheckQueued = false;
+      queueMicrotask(() => { void checkMonitorDeploymentUpdate(); });
+    }
+  }
 
 }
 //@@FN_END:checkMonitorDeploymentUpdate
@@ -320,15 +319,6 @@ function createMonitorContextContinueButton(item) {
   });
 }
 //@@FN_END:createMonitorContextContinueButton
-
-//@@FN_START:createMonitorProjectContextRecallButton
-function createMonitorProjectContextRecallButton() {
-  return globalThis.MonitorProjectContextRecall.createButton({
-    fetcher: actFetch,
-    openConversation: target => restoreMonitorDetachedTask(target, document.createElement('button')),
-  });
-}
-//@@FN_END:createMonitorProjectContextRecallButton
 
 //@@FN_START:ensureMonitorOwnFrozenSnapshot
 async function ensureMonitorOwnFrozenSnapshot() {
@@ -1724,18 +1714,6 @@ function monitorUpdateLocalLlmToggleButtons() {
 }
 //@@FN_END:monitorUpdateLocalLlmToggleButtons
 
-//@@FN_START:monitorViewportScreenOrigin
-function monitorViewportScreenOrigin() {
-
-  const borderX = Math.max(0, (Number(window.outerWidth) - Number(window.innerWidth)) / 2);
-
-  const chromeY = Math.max(0, Number(window.outerHeight) - Number(window.innerHeight) - borderX);
-
-  return { x: Number(window.screenX) + borderX, y: Number(window.screenY) + chromeY };
-
-}
-//@@FN_END:monitorViewportScreenOrigin
-
 //@@FN_START:monitorWorkIconState
 function monitorWorkIconState(work, connection, alertDetail = null) {
   const value = String(work || "").toLowerCase();
@@ -1750,26 +1728,6 @@ function monitorWorkIconState(work, connection, alertDetail = null) {
   return { activity, warning, label, tone: alertDetail?.tone || "general" };
 }
 //@@FN_END:monitorWorkIconState
-
-//@@FN_START:monitorWorkSymbol
-function monitorWorkSymbol(work, connection, alertDetail = null) {
-
-  const value = String(work || "").toLowerCase();
-
-  if (alertDetail) return { symbol: "", label: alertDetail.label, tone: alertDetail.tone };
-
-  if (["running", "working", "busy", "executing", "in_progress"].includes(value)) return { symbol: "", label: "실행" };
-
-  if (["waiting_resource", "waiting", "paused", "queued", "pending"].includes(value)) return { symbol: "", label: "대기" };
-
-  if (connection === "disconnected" || ["offline", "stopped", "cancelled", "canceled"].includes(value)) return { symbol: "", label: "사용자 조치 필요" };
-
-  if (["succeeded", "completed", "complete", "done"].includes(value)) return { symbol: "", label: "완료" };
-
-  return { symbol: "", label: "유휴" };
-
-}
-//@@FN_END:monitorWorkSymbol
 
 //@@FN_START:persistMonitorContextTitles
 function persistMonitorContextTitles() {
@@ -2633,4 +2591,3 @@ async function waitForNewChromeHwnd(before, timeoutMs = 7000) {
 
 }
 //@@FN_END:waitForNewChromeHwnd
-

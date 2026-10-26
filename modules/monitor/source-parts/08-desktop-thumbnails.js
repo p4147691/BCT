@@ -9,8 +9,6 @@ globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
   void refreshSelectedThumb().catch(() => false);
   void refreshBackgroundThumbs(...ids).catch(() => []);
 });
-/*@@MONITOR_FUNCTION:refreshDesktopThumbBatch@@*/
-
 /*@@MONITOR_FUNCTION:refreshSelectedThumb@@*/
 
 /*@@MONITOR_FUNCTION:refreshInitialSelectedThumb@@*/
@@ -249,8 +247,10 @@ monitorCollapse.addEventListener("click", () => {
 });
 
 let monitorDeploymentCheckBusy = false;
+let monitorDeploymentCheckQueued = false;
 
 let monitorReloadToken = null;
+let monitorReloadAckToken = "";
 let monitorDeploymentReloadRequested = false;
 
 /*@@MONITOR_FUNCTION:checkMonitorDeploymentUpdate@@*/
@@ -453,4 +453,3 @@ let monitorAutoProcessEnabled=false;
 /*@@MONITOR_FUNCTION:monitorStructureNodeIdentityTokens@@*/
 
 /*@@MONITOR_FUNCTION:monitorStructureAvailableNodes@@*/
-

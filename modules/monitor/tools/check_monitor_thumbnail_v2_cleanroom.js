@@ -28,10 +28,16 @@ const D1="8ac6b16f-820b-4773-89e7-276ae4b84040",D2="c991b275-7933-4697-9d6e-73bf
 function tile(id){const t=doc.createElement("span");t.className="monitor-desktop-thumb-visual";t.dataset.desktopId=id;return t;}
 const visual1=tile(D1),visual2=tile(D2);
 let currentRequest=async()=>({ok:false,error:"NO_TEST_REPLY"});
+let currentFrame=async()=>null;
+let controllerDecorations=0;
 const ctx={WeakMap,Map,Set,Object,Array,Number,String,Date,Promise,TypeError,globalThis:null};
 ctx.globalThis=ctx;vm.createContext(ctx);for(const code of modules)vm.runInContext(code,ctx);
 const r=ctx.MonitorDesktopThumbnailV2;
-r.configure({visualSource:ctx.MonitorDesktopVisualSource.create({request:message=>currentRequest(message)})});
+r.configure({
+  visualSource:ctx.MonitorDesktopVisualSource.create({request:message=>currentRequest(message)}),
+  readFrame:desktopId=>currentFrame(desktopId),
+  afterWindowRender(){controllerDecorations++}
+});
 assert.equal(typeof r.refreshWallpaper,"function");
 const img="data:image/jpeg;base64,VALID_BYTES";
 const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
@@ -50,14 +56,31 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   assert.equal(visual1.style.backgroundColor,"");
   assert.equal(r.wallpaper(visual1,D1,source(D1)),true);
   assert.equal(visual1.style.backgroundColor,"");
-  let unblock;const old=new Promise(f=>unblock=f);
-  currentRequest=()=>old;
-  const oldTurn=r.refreshWallpaper(visual1,D1,{force:true});
-  currentRequest=message=>source(message.desktopId);
-  const latest=await r.refreshWallpaper(visual1,D1,{force:true});
-  unblock({ok:true,desktopId:D1,wallpaper:{dataUri:"data:image/jpeg;base64,OLD"}});
-  assert.equal(await oldTurn,false,"old async image must be rejected");
-  assert.equal(latest,true);assert(!visual1.style.backgroundImage.includes("OLD"));
+  const tick=()=>new Promise(resolve=>setImmediate(resolve));
+  let reads=0,releaseNormal;
+  currentRequest=message=>{reads++;return new Promise(resolve=>{releaseNormal=()=>resolve(source(message.desktopId))})};
+  const firstNormal=r.refreshWallpaper(visual1,D1,{force:true});
+  const duplicateNormal=r.refreshWallpaper(visual1,D1);
+  await tick();
+  assert.equal(reads,1,"concurrent normal refreshes must share one Native read");
+  releaseNormal();
+  assert.deepEqual(await Promise.all([firstNormal,duplicateNormal]),[true,true]);
+
+  reads=0;
+  const releases=[];
+  currentRequest=message=>{reads++;return new Promise(resolve=>releases.push(value=>resolve({
+    ok:true,desktopId:message.desktopId,wallpaper:{dataUri:value}
+  })))};
+  const firstEvent=r.refreshWallpaper(visual1,D1,{force:true});
+  await tick();
+  const secondEvent=r.refreshWallpaper(visual1,D1,{force:true});
+  assert.equal(reads,1,"a wallpaper event during a read queues instead of invalidating it");
+  releases.shift()("data:image/jpeg;base64,OLD");
+  await tick();
+  assert.equal(reads,2,"multiple overlapping events coalesce to one follow-up read");
+  releases.shift()(img);
+  assert.deepEqual(await Promise.all([firstEvent,secondEvent]),[true,true]);
+  assert(!visual1.style.backgroundImage.includes("OLD"));
   assert.equal(visual2.dataset.wallpaperCapture,"captured");
   const falsePhoto={ok:true,desktopId:D1,wallpaper:{dataUri:"data:image/svg+xml;base64,FAKE"}};
   assert.equal(r.wallpaper(visual1,D1,falsePhoto),false);
@@ -69,6 +92,20 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
       {item:{hwnd:"123",left:10,top:15,width:40,height:30,z:0,cloaked:0,title:"Chrome"},captureState:"captured",physicalSource:"wgc-oneshot",dataUri:img,capturedAt:Date.now()},
       {item:{hwnd:"124",left:50,top:55,width:50,height:45,z:1,cloaked:2,title:"CLOAKED"},captureState:"placeholder",physicalSource:"windows-native",dataUri:"data:image/svg+xml;base64,FAKE",capturedAt:0}
     ]};
+  currentFrame=async()=>frame;
+  currentRequest=async message=>source(message.desktopId);
+  const complete=await r.refresh(visual1,D1,{forceWallpaper:true});
+  assert.equal(complete.ok,true);
+  assert.equal(complete.wallpaperReady,true);
+  assert.equal(complete.frameReady,true);
+  assert.equal(controllerDecorations,1);
+  currentRequest=async message=>({ok:false,desktopId:message.desktopId,error:"NO_WALLPAPER"});
+  const backgroundFailed=await r.refresh(visual1,D1,{forceWallpaper:true});
+  assert.equal(backgroundFailed.wallpaperReady,false);
+  assert.equal(backgroundFailed.frameReady,true);
+  assert.equal(backgroundFailed.ok,false,"a valid window frame must not hide a wallpaper failure");
+  currentRequest=async message=>source(message.desktopId);
+  assert.equal((await r.refresh(visual1,D1,{forceWallpaper:true})).ok,true);
   assert.equal(r.windowFrame(visual1,D1,frame,{afterRender(){decorations++}}),true);
   assert.equal(decorations,1);
   const images=visual1.querySelectorAll(".monitor-desktop-thumb-window");

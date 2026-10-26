@@ -771,89 +771,46 @@ async function refreshDesktopDropThumbnails(sourceDesktopId, targetDesktopId) {
 }
 //@@FN_END:refreshDesktopDropThumbnails
 
+//@@FN_START:decorateMonitorThumbnailWindows
+function decorateMonitorThumbnailWindows(tile) {
+  for (const image of tile.querySelectorAll(".monitor-desktop-thumb-window")) {
+    const hwnd = String(image.dataset.hwnd || "");
+    try {
+      applyPersistentMonitorRoleClass(image,hwnd);
+      image.classList.toggle("monitor-window-row-hovered",
+        Boolean(monitorHoveredHwnd) && hwnd===monitorHoveredHwnd && !monitorSelectedHwnds.has(hwnd));
+      syncMonitorStatusLayer(image,hwnd);
+      syncMonitorPauseOverlay(image,hwnd);
+      syncMonitorDesktopNumberBadge(image,hwnd);
+      syncMonitorNonChatCountdown(image,hwnd);
+      if (!image.dataset.monitorDragBound) {
+        image.dataset.monitorDragBound="1";
+        image.draggable=false;
+        image.addEventListener("pointerdown",beginMonitorWindowPointerDrag);
+      }
+    } catch (error) { console.warn("Monitor thumbnail V2 badge delayed",hwnd,error); }
+  }
+  syncMonitorThumbnailTabBadges(tile,"monitor-desktop-thumb-window");
+}
+//@@FN_END:decorateMonitorThumbnailWindows
+
 //@@FN_START:refreshDesktopThumb
 async function refreshDesktopThumb(visual, desktopId) {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !visual?.isConnected) return false;
   if (String(visual.dataset.desktopId || "").toLowerCase() !== String(desktopId || "").toLowerCase()) return false;
   const renderer = globalThis.MonitorDesktopThumbnailV2;
   if (!renderer) return false;
-  // Native is authoritative: explicit per-desktop GUID/file snapshot; never
-  // use the legacy actual/restore/Progman wallpaper image maps.
-  const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId);
-  if (!visual.isConnected || String(visual.dataset.desktopId).toLowerCase() !== String(desktopId).toLowerCase()) return false;
-  // Window geometry is separate Native HWND truth; pixels never become wallpaper.
-  // On other desktops capture may fail/CLOAKED; V2 renders a transparent outline.
-  const frameToken = renderer.beginFrame(visual,desktopId);
-  if (frameToken == null) return false;
-  const frame = await captureDesktopFrame(desktopId, "thumb").catch(() => null);
-  if (!frame || !visual.isConnected) { renderer.frameFailure(visual,desktopId,"FRAME_UNAVAILABLE",frameToken); return wallpaperReady; }
-  return renderer.windowFrame(visual,desktopId,frame,{
-    frameToken,
-    afterRender: tile => {
-      for (const image of tile.querySelectorAll(".monitor-desktop-thumb-window")) {
-        const hwnd = String(image.dataset.hwnd || "");
-        try {
-          applyPersistentMonitorRoleClass(image,hwnd);
-          image.classList.toggle("monitor-window-row-hovered",
-            Boolean(monitorHoveredHwnd) && hwnd===monitorHoveredHwnd && !monitorSelectedHwnds.has(hwnd));
-          syncMonitorStatusLayer(image,hwnd);
-          syncMonitorPauseOverlay(image,hwnd);
-          syncMonitorDesktopNumberBadge(image,hwnd);
-          syncMonitorNonChatCountdown(image,hwnd);
-          if (!image.dataset.monitorDragBound) {
-            image.dataset.monitorDragBound="1";
-            image.draggable=false;
-            image.addEventListener("pointerdown",beginMonitorWindowPointerDrag);
-          }
-        }catch(error){ console.warn("Monitor thumbnail V2 badge delayed",hwnd,error); }
-      }
-      syncMonitorThumbnailTabBadges(tile,"monitor-desktop-thumb-window");
-    }
-  });
+  const result = await renderer.refresh(visual,desktopId);
+  return result?.ok === true;
 }
 //@@FN_END:refreshDesktopThumb
 
-//@@FN_START:refreshDesktopThumbBatch
-async function refreshDesktopThumbBatch() {
-
-  if (monitorCapturePaused()) return;
-
-  if (monitorThumbBatchInflight) return monitorThumbBatchInflight;
-
-  const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
-  if (!selectedDesktopId) return;
-
-  const targets = [...monitorDesktopThumbs.children].map((button) => ({
-
-    visual: button.querySelector(".monitor-desktop-thumb-visual"),
-
-    desktopId: button.dataset.desktopId || ""
-
-  })).filter((target) => target.desktopId === selectedDesktopId && target.visual?.isConnected);
-
-  const job = (async () => {
-
-    await refreshBackgroundThumbs(...targets.map((target) => target.desktopId));
-
-  })().finally(() => {
-
-    if (monitorThumbBatchInflight === job) monitorThumbBatchInflight = null;
-
-  });
-
-  monitorThumbBatchInflight = job;
-
-  return job;
-
-}
-//@@FN_END:refreshDesktopThumbBatch
-
 //@@FN_START:refreshInitialBackgroundThumbs
 async function refreshInitialBackgroundThumbs() {
-  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !monitorIsActiveDesktopRenderer()) return;
+  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !monitorIsActiveDesktopRenderer()) return false;
   const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
   let pending = monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId);
-  if (!pending.length) return;
+  if (!pending.length) return true;
 
   const retryDelays = [160, 420];
   for (let attempt = 0; pending.length; attempt += 1) {
@@ -862,18 +819,20 @@ async function refreshInitialBackgroundThumbs() {
     await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
     if (!monitorIsActiveDesktopRenderer()) break;
   }
+  return pending.length === 0;
 }
 //@@FN_END:refreshInitialBackgroundThumbs
 
 //@@FN_START:refreshInitialSelectedThumb
 async function refreshInitialSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
-  const ready = await refreshSelectedThumb().catch(() => false);
-  monitorInitialThumbBatchDone = ready === true;
-  if (monitorInitialThumbBatchDone) scheduleInitialSemanticThumbSync();
-  // Background Desktop initialization is independent of the selected Desktop.
-  // A transient selected capture failure must not prevent D2/D3/D4 from starting.
-  await refreshInitialBackgroundThumbs();
+  const selectedReady = await refreshSelectedThumb().catch(() => false);
+  const backgroundReady = await refreshInitialBackgroundThumbs().catch(() => false);
+  monitorInitialThumbBatchDone = selectedReady === true && backgroundReady === true;
+  if (monitorInitialThumbBatchDone) {
+    scheduleInitialSemanticThumbSync();
+    void checkMonitorDeploymentUpdate();
+  }
   return monitorInitialThumbBatchDone;
 }
 //@@FN_END:refreshInitialSelectedThumb
@@ -1006,8 +965,8 @@ async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") 
   const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
 
   if (visual) {
-    void globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-      visual,createdId,{force:true}).catch(()=>false);
+    void globalThis.MonitorDesktopThumbnailV2.refreshBackground(
+      visual,createdId,{forceWallpaper:true}).catch(()=>false);
   }
 
 }

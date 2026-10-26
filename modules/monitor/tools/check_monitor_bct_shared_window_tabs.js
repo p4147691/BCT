@@ -22,6 +22,9 @@ const chromeApi={
 };
 const ctx={globalThis:null,Map,Set,Array,Object,Number,String,Date,Promise,URL,RegExp};
 ctx.globalThis=ctx;
+ctx.MonitorDomainAPIs={"node-identity":{
+  compareMonitorBctNodeDisplayOrder:(left,right)=>(left.tabIndex??Number.MAX_SAFE_INTEGER)-(right.tabIndex??Number.MAX_SAFE_INTEGER)||left.tabId-right.tabId
+}};
 vm.createContext(ctx);
 vm.runInContext(adapterSource,ctx);
 const adapter=ctx.MonitorTabFocusAdapter.create(chromeApi);
@@ -78,14 +81,14 @@ function node(i,overrides={}) {
  receipt=await ctx.focus(shifted);
  assert.equal(receipt.status,"NOT_APPLIED","tab moved to different window: no wrong focus");
  assert.equal(calls.length,before);
- assert.match(source,/if\(isShared\)\s*\{[\s\S]*?monitorFocusBctSharedWindowTab\(node\)/,"only a shared row click focuses its tab");
- assert.match(source,/if\(isShared\)return;\s*row\.classList\.add\("monitor-bct-node-switch-pending"\)/,"shared row double-click cannot also move desktop");
+ assert.match(source,/if\s*\(isShared\)\s*\{[\s\S]*?monitorFocusBctSharedWindowTab\(node\)/,"only a shared row click focuses its tab");
+ assert.match(source,/if\s*\(isShared\)\s*return;\s*row\.classList\.add\("monitor-bct-node-switch-pending"\)/,"shared row double-click cannot also move desktop");
  assert.match(source,/monitorBctCollapsedWindowCards/);
  assert.match(source,/sharedWindowScope\.set\(group\.key/,"cross-scope tabs use one card");
  assert.match(source,/rowContainer\.append\(row\)/);
  assert.match(source,/row\.parentElement === list/,"nested group card is not an invalid drag insertion target");
  assert.match(source,/if \(event\.detail > 1\) return/,"double click does not dispatch twice");
- assert.match(source,/const isGenerating = entry\.attachments\.some/,"per-UUID activity merged");
+ assert.match(source,/const isGenerating\s*=\s*entry\.attachments\.some/,"per-UUID activity merged");
  assert.match(css,/\.monitor-bct-window-tab-row\[aria-selected="true"\]/);
  assert(!source.includes("BCT_SHARED_WINDOW_RELOAD"),"no invented reload path");
  assert(Buffer.from("Chrome 창 · 5개 탭","utf8").toString("utf8").includes("개 탭"),"UTF-8 round trip");

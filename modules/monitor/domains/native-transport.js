@@ -62,8 +62,8 @@ function ensureMonitorNativePort() {
       monitorDesktopThumbs.dataset.wallpaperEventAt=String(Date.now());
       // Each visual keeps its own generation fence; no cross-desktop cache.
       void Promise.allSettled(targets.map(visual =>
-        globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-          visual,visual.dataset.desktopId,{force:true})));
+        globalThis.MonitorDesktopThumbnailV2.refreshBackground(
+          visual,visual.dataset.desktopId,{forceWallpaper:true})));
       return;
     }
     if (response?.event === true && response?.type === "monitorDragPreviewReleased") {

@@ -21,6 +21,10 @@ assert.ok(update.indexOf("if (versionMismatch)") < update.indexOf("ackExtensionR
 assert.match(update, /reloadToken && reloadToken !== monitorReloadToken/);
 assert.match(update, /return;[\s\S]*?ackExtensionReload/,
   "changed token branch must return without allowing the stale renderer to ACK");
+assert.match(update, /monitorInitialThumbBatchDone[\s\S]*?ackExtensionReload/,
+  "reload ACK must wait for the initial thumbnail acceptance gate");
+assert.match(update, /monitorReloadAckToken !== reloadToken/,
+  "the same accepted reload token is acknowledged at most once per runtime");
 
 for (const source of [publish, request]) {
   assert.match(source, /shared-runtime\.json/);

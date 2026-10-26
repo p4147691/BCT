@@ -188,6 +188,7 @@ monitorRoot.innerHTML = `
 
     <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
     <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
+    <div id="monitorGithubInbox" class="monitor-bct-node-empty" aria-live="polite"></div>
 
 
 
@@ -1509,6 +1510,7 @@ if (MONITOR_FEATURE_MEMO_ENABLED) {
 const monitorService = document.getElementById("monitorService");
 
 const monitorWorkers = document.getElementById("monitorWorkers");
+const monitorGithubInbox = document.getElementById("monitorGithubInbox");
 
 const monitorCollapse = document.getElementById("monitorCollapse");
 monitorCollapse.classList.add("monitor-collapse-chevron");
@@ -1527,7 +1529,6 @@ const monitorDesktopScrollLeft = document.getElementById("monitorDesktopScrollLe
 const monitorDesktopScrollRight = document.getElementById("monitorDesktopScrollRight");
 
 function monitorDesktopScrollStep(){const tile=monitorDesktopThumbs.querySelector(".monitor-desktop-thumb");return Math.max(132,Math.round(tile?.getBoundingClientRect?.().width||156)+8);}
-
 function syncMonitorDesktopScrollArrows(){const max=Math.max(0,monitorDesktopScrollViewport.scrollWidth-monitorDesktopScrollViewport.clientWidth);const overflow=max>4;monitorDesktopScrollLeft.hidden=!overflow;monitorDesktopScrollRight.hidden=!overflow;if(!overflow)return;monitorDesktopScrollLeft.disabled=monitorDesktopScrollViewport.scrollLeft<=2;monitorDesktopScrollRight.disabled=monitorDesktopScrollViewport.scrollLeft>=max-2;}
 
 monitorDesktopScrollLeft.addEventListener("click",()=>monitorDesktopScrollViewport.scrollBy({left:-monitorDesktopScrollStep(),behavior:"smooth"}));
@@ -1700,10 +1701,10 @@ let monitorStartupEndpointFreshConfirmed = false;
 
 let monitorInitialThumbBatchDone = false;
 async function refreshInitialBackgroundThumbs() {
-  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !monitorIsActiveDesktopRenderer()) return;
+  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !monitorIsActiveDesktopRenderer()) return false;
   const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
   let pending = monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId);
-  if (!pending.length) return;
+  if (!pending.length) return true;
 
   const retryDelays = [160, 420];
   for (let attempt = 0; pending.length; attempt += 1) {
@@ -1712,6 +1713,7 @@ async function refreshInitialBackgroundThumbs() {
     await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
     if (!monitorIsActiveDesktopRenderer()) break;
   }
+  return pending.length === 0;
 }
 let monitorInitialSemanticThumbSyncDone = false;
 let monitorInitialSemanticThumbSyncInflight = false;
@@ -2581,8 +2583,6 @@ const MONITOR_AI_STATE_CACHE_TTL_MS = 600000;
 
 let monitorStructureOpen = false;
 
-const MONITOR_STRUCTURE_SOCKET_KEY = "desktopWindowMonitorStructureSocketsV1";
-
 const MONITOR_STRUCTURE_LINK_KEY = "desktopWindowMonitorStructureLinksV1";
 
 const MONITOR_STRUCTURE_NODE_CONTROL_KEY = "desktopWindowMonitorStructureNodeControlsV1";
@@ -2626,10 +2626,6 @@ const monitorStructureUndoStack = [];
 const monitorStructureRedoStack = [];
 
 let monitorStructureRelationDragKey = "";
-
-const MONITOR_STRUCTURE_DESK_MEMBERSHIP_KEY = "desktopWindowMonitorStructureDeskMembershipV1";
-
-const MONITOR_STRUCTURE_BUNDLE_DESK_KEY = "desktopWindowMonitorStructureBundleDeskV1";
 
 const MONITOR_STRUCTURE_BASELINE_KEY = "desktopWindowMonitorStructureBaselineV2";
 const MONITOR_STRUCTURE_WORKING_DRAFT_KEY = "desktopWindowMonitorStructureWorkingDraftV1";
@@ -2949,7 +2945,6 @@ function monitorFreshNativeLocations(conversationKey, now = Date.now()) {
 function monitorEndpointInstanceId(endpoint) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorEndpointInstanceId"].apply(this, arguments); }
 
 function monitorEndpointGeometry(endpoint) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorEndpointGeometry"].apply(this, arguments); }
-
 function monitorLocationForEndpoint(endpoint, now = Date.now()) {
 
   // Current native conversation identity is authoritative for physical placement.
@@ -3332,15 +3327,6 @@ function monitorGroupChatgptMembersForDisplay(members,state) {
 
 }
 
-function monitorNodeNumbersForMinimizedHwnd(hwnd, state = monitorLastAiState) {
-  const key = String(hwnd || "").trim();
-  if (!key) return [];
-
-  return monitorActNodeNumbersForHwnd(key, state);
-
-
-}
-
 // The desktop-label summary is reserved for minimized ChatGPT windows. Open
 // ChatGPT windows render their BCT/RCC number directly on their thumbnail.
 function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
@@ -3628,10 +3614,6 @@ const monitorNodeGenerationAPI = globalThis.MonitorNodeGenerationState.create({
 
 function monitorDirectConversationGenerationState(conversationKey, now = Date.now()) {
   return monitorNodeGenerationAPI.directConversationGenerationState(conversationKey, now);
-}
-
-function monitorDirectEndpointGenerationState(endpoint, now = Date.now()) {
-  return monitorNodeGenerationAPI.directGenerationState(endpoint, now);
 }
 
 function monitorDirectEndpointUserAttention(endpoint) {
@@ -4420,7 +4402,6 @@ function monitorChatAlertDetail(conversationKey) {
 }
 
 function monitorReportMatchesTask(report, task) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorReportMatchesTask"].apply(this, arguments); }
-
 function monitorAuthoritativeConversationForTask(task, state, report) {
 
   const owner=String(task?.assigned_agent||task?.executor||"").trim().toUpperCase();
@@ -5174,24 +5155,6 @@ function resolveWorkerWorkState(worker, state) {
 
 }
 
-function monitorWorkSymbol(work, connection, alertDetail = null) {
-
-  const value = String(work || "").toLowerCase();
-
-  if (alertDetail) return { symbol: "", label: alertDetail.label, tone: alertDetail.tone };
-
-  if (["running", "working", "busy", "executing", "in_progress"].includes(value)) return { symbol: "", label: "실행" };
-
-  if (["waiting_resource", "waiting", "paused", "queued", "pending"].includes(value)) return { symbol: "", label: "대기" };
-
-  if (connection === "disconnected" || ["offline", "stopped", "cancelled", "canceled"].includes(value)) return { symbol: "", label: "사용자 조치 필요" };
-
-  if (["succeeded", "completed", "complete", "done"].includes(value)) return { symbol: "", label: "완료" };
-
-  return { symbol: "", label: "유휴" };
-
-}
-
 // SVG icon semantics used by the node list and desktop-thumbnail overlay.
 // Kept distinct from the legacy text symbol helper above so persisted old
 // alert records cannot accidentally control the new visual meaning.
@@ -5286,8 +5249,6 @@ const MONITOR_GHOST_HIDDEN_KEY = "desktopWindowMonitorGhostHiddenV1";
 
 const MONITOR_GHOST_CACHE_MAX = 80;
 
-const MONITOR_GHOST_TAIL_MAX = 5;
-
 const MONITOR_GHOST_TEXT_MAX = 1200;
 
 const monitorGhostCache = new Map();
@@ -5312,32 +5273,6 @@ function monitorGhostTime(value) { return globalThis.MonitorDomainAPIs["conversa
 
 function monitorGhostWorkerId(worker) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostWorkerId"].apply(this, arguments); }
 
-function monitorGhostUsage(metadata = {}, previous = {}) {
-
-  const src = { ...(metadata || {}), ...(metadata?.telemetry || {}), ...(metadata?.usage || {}), ...(metadata?.usage_telemetry || {}) };
-
-  const num = (...keys) => { for (const key of keys) { const n = Number(src?.[key]); if (Number.isFinite(n) && n >= 0) return n; } return null; };
-
-  const next = { user_count:num("user_count","user_message_count","userMessages"), assistant_count:num("assistant_count","assistant_message_count","assistantMessages"), turns:num("turns","turn_count","message_turns"), rendered_chars:num("rendered_chars","rendered_text_chars","renderedChars"), scroll_height:num("scroll_height","scrollHeight"), viewport_height:num("viewport_height","viewportHeight"), screen_lengths:num("screen_lengths","screenLength","screen_lengths_count"), js_heap_used_mb:num("js_heap_used_mb","jsHeapUsedMb"), js_heap_limit_mb:num("js_heap_limit_mb","jsHeapLimitMb"), event_loop_lag_ms:num("event_loop_lag_ms","eventLoopLagMs") };
-
-  if (next.turns == null && next.user_count != null && next.assistant_count != null) next.turns = Math.min(next.user_count, next.assistant_count);
-
-  if (next.screen_lengths == null && next.scroll_height != null && next.viewport_height > 0) next.screen_lengths = next.scroll_height / next.viewport_height;
-
-  for (const key of Object.keys(next)) if (next[key] == null && previous?.[key] != null) next[key] = previous[key];
-
-  return next;
-
-}
-
-function monitorGhostTail(metadata = {}, previous = []) {
-
-  const source = Array.isArray(metadata?.conversation_tail) ? metadata.conversation_tail : previous;
-
-  return (Array.isArray(source) ? source : []).slice(-MONITOR_GHOST_TAIL_MAX).map((item) => ({ role:String(item?.role || "").slice(0,16), text:monitorGhostBoundText(item?.text) }));
-
-}
-
 function monitorGhostTaskForWorker(worker, state) {
 
   const tasks = Array.isArray(state?.tasks) ? state.tasks : []; const station = stationForMonitorWorker(worker, state);
@@ -5361,58 +5296,6 @@ function monitorGhostMeaningfulTitle(value, previous = "") {
   if (/^(?:waiting|available|idle|paused|pending|queued|대기|유휴)$/i.test(text)) return previous || "";
 
   return text;
-
-}
-
-function monitorGhostNumericTime(value) {
-
-  const n = Number(value); if (Number.isFinite(n) && n > 0) return n < 1e12 ? n * 1000 : n;
-
-  return monitorGhostTime(value);
-
-}
-
-function monitorGhostConversationTime(metadata = {}, previous = 0) {
-
-  const values = [metadata?.last_conversation_at, metadata?.last_message_at, metadata?.conversation_updated_at, metadata?.last_message_timestamp].map(monitorGhostNumericTime).filter(Boolean);
-
-  const tail = Array.isArray(metadata?.conversation_tail) ? metadata.conversation_tail : [];
-
-  for (const item of tail) for (const key of ["created_at","timestamp","time","at"]) { const ms = monitorGhostNumericTime(item?.[key]); if (ms) values.push(ms); }
-
-  return values.length ? Math.max(...values) : Number(previous || 0);
-
-}
-
-function monitorGhostObservationTime(endpoint = {}, metadata = {}, previous = 0) {
-
-  const values = [monitorGhostTime(endpoint?.last_seen_at), monitorGhostNumericTime(metadata?.reported_observed_at), Number(previous || 0)].filter(Boolean);
-
-  return values.length ? Math.max(...values) : 0;
-
-}
-
-function monitorGhostTaskHistory(worker, state, previous = []) {
-
-  const owner = monitorGhostWorkerId(worker); const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
-
-  const current = tasks.filter((task) => String(task?.assigned_agent || "").trim().toUpperCase() === owner).map((task) => {
-
-    const at = Math.max(monitorGhostTime(task?.completed_at), monitorGhostTime(task?.finished_at), monitorGhostTime(task?.verified_at), monitorGhostTime(task?.updated_at), monitorGhostTime(task?.created_at));
-
-    const title = monitorGhostMeaningfulTitle(task?.title, ""); if (!title) return null;
-
-    const status = String(task?.status || "").toUpperCase(); const result = monitorGhostBoundText(task?.result ?? task?.completion_report?.result ?? "", 180).replace(/\s+/g," ").trim();
-
-    return { id:String(task?.id || ""), at, text:`${title}${status ? ` [${status}]` : ""}${result ? ` · ${result}` : ""}` };
-
-  }).filter(Boolean);
-
-  const merged = [...(Array.isArray(previous) ? previous : []), ...current].filter((item) => item?.text);
-
-  const dedup = new Map(); for (const item of merged) dedup.set(`${item.id || "event"}:${item.at || 0}:${item.text}`, item);
-
-  return [...dedup.values()].sort((a,b) => Number(a.at||0)-Number(b.at||0)).slice(-5);
 
 }
 
@@ -5831,18 +5714,6 @@ function monitorWorkerContextTitle(worker, state, endpoint = null) {
 
 }
 
-function monitorGhostAuthoritativeLocation(worker, state, endpoint = null, previous = {}) {
-
-  const station = stationForMonitorWorker(worker, state); const meta = monitorStationMetadata(station); const em = endpoint?.metadata || {};
-
-  const d = Number(station?.desktop_id ?? station?.desktop_index ?? meta.desktop_id ?? meta.desktop_index ?? em.desktop_id ?? em.desktop_index);
-
-  const sl = Number(station?.slot_index ?? meta.slot_index ?? em.slot_index);
-
-  return { desktop:Number.isInteger(d)&&d>0?d:(previous?.desktop ?? null), slot:Number.isInteger(sl)&&sl>0?sl:(previous?.slot ?? null) };
-
-}
-
 function monitorGhostAgeing(ghost, now = Date.now()) {
 
   const u = ghost?.usage || {}; let score = 0;
@@ -5860,26 +5731,7 @@ function monitorGhostAgeing(ghost, now = Date.now()) {
 }
 
 function monitorGhostArchiveAgeing(ghost) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostArchiveAgeing"].apply(this, arguments); }
-
-function monitorGhostValidLease(ghost, state, now = Date.now()) {
-
-  const leases = Array.isArray(state?.task_leases) ? state.task_leases : []; const taskId = String(ghost?.task_id || ""); const workerId = String(ghost?.worker_id || "").trim().toUpperCase();
-
-  return leases.some((lease) => monitorGhostTime(lease?.expires_at) > now && (taskId ? String(lease?.task_id || "") === taskId : Boolean(workerId) && String(lease?.owner || "").trim().toUpperCase() === workerId));
-
-}
-
 function monitorGhostProtected(ghost) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostProtected"].apply(this, arguments); }
-
-function monitorGhostCanAutoHide(ghost, state, now = Date.now()) {
-
-  if (monitorGhostProtected(ghost) || monitorGhostValidLease(ghost,state,now) || monitorGhostArchiveAgeing(ghost) < 80) return false;
-
-  const status=String(ghost?.task_status || ghost?.work_status || "").toUpperCase(); if (!["SUCCEEDED","COMPLETED","COMPLETE","DONE","IDLE","AVAILABLE"].includes(status)) return false;
-
-  const idleSince=Number(ghost?.completed_or_idle_ms || 0); return idleSince > 0 && now-idleSince >= 24*60*60*1000;
-
-}
 
 let monitorGhostPersistTimer = 0;
 
@@ -7368,7 +7220,6 @@ function monitorBctNodeLocationText(node, desktopPosition) {
   const reasoning = String(node?.reasoningLevel || "").trim();
   return [location, roles, reasoning].filter(Boolean).join(" · ");
 }
-
 function openMonitorBctRenameEditor(node, row) {
   if (!monitorBctShell?.renameConversation || !node?.conversationKey || !node?.sessionId) {
     setMonitorStatus("이 창의 정확한 RCC 대화 신원을 확인할 수 없어 이름을 바꾸지 않았습니다.", false, 5000);
@@ -7548,6 +7399,7 @@ function openMonitorBctRenameEditor(node, row) {
 
 let monitorBctNodeInteractionService = null;
 const monitorBctCollapsedScopes = new Set();
+const monitorBctCollapsedWindowCards = new Set();
 let monitorBctSuppressedClickKey = "";
 let monitorBctSuppressScopeClickUntil = 0;
 
@@ -7648,6 +7500,57 @@ async function resolveMonitorBctNodeDisplayHwnd(node) {
 
 function compareMonitorBctNodeDisplayOrder(left, right) { return globalThis.MonitorDomainAPIs["node-identity"]["compareMonitorBctNodeDisplayOrder"].apply(this, arguments); }
 
+function monitorBctSharedWindowGroups(nodes) {
+  const groups = [], byWindow = new Map();
+  for (const source of Array.isArray(nodes) ? nodes : []) {
+    const members = Array.isArray(source?.__window_group_members) ? source.__window_group_members : [source];
+    for (const node of members) {
+      const windowId = Number(node?.windowId), tabId = Number(node?.tabId);
+      const instanceId = String(node?.instanceId || ""), sessionId = String(node?.sessionId || "");
+      if (!instanceId || !sessionId || !Number.isSafeInteger(windowId) || windowId <= 0 ||
+          !Number.isSafeInteger(tabId) || tabId <= 0) continue;
+      const key = [instanceId, sessionId, windowId].join(":");
+      let group = byWindow.get(key);
+      if (!group) {
+        group = { key, windowId, entries: [], byConversation: new Map(), tabCount: 0 };
+        byWindow.set(key, group);
+        groups.push(group);
+      }
+      const identity = String(node.conversationKey || "").trim().toLowerCase() || ("pending-tab:" + tabId);
+      let entry = group.byConversation.get(identity);
+      if (!entry) {
+        entry = { node, attachments: [] };
+        group.byConversation.set(identity, entry);
+        group.entries.push(entry);
+      }
+      if (entry.attachments.some((item) => item.tabId === tabId)) continue;
+      entry.attachments.push(node);
+      group.tabCount += 1;
+      const prefer = (node.instanceState === "OPEN" && !node.displayStale &&
+        (entry.node.displayStale || entry.node.instanceState !== "OPEN")) ||
+        (node.active === true && entry.node.active !== true && node.instanceState === "OPEN" && !node.displayStale);
+      if (prefer) entry.node = node;
+    }
+  }
+  for (const group of groups) {
+    group.__window_group_members = group.entries.map((entry) => entry.node);
+    group.entries.sort((a, b) => compareMonitorBctNodeDisplayOrder(a.node, b.node));
+  }
+  return groups;
+}
+
+async function monitorFocusBctSharedWindowTab(node) {
+  const tabId = Number(node?.tabId), windowId = Number(node?.windowId);
+  const conversationKey = String(node?.conversationKey || "").trim();
+  if (node?.instanceState !== "OPEN" || node?.displayStale === true || node?.instanceCached === true)
+    return { ok: false, status: "NOT_APPLIED", error: "BCT_TAB_OBSERVATION_STALE" };
+  if (!Number.isSafeInteger(tabId) || tabId <= 0 || !Number.isSafeInteger(windowId) || windowId <= 0 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationKey))
+    return { ok: false, status: "NOT_APPLIED", error: "BCT_TAB_IDENTITY_INVALID" };
+  // The existing focus adapter checks exact tab, window, URL UUID, and the postcondition.
+  return chrome.runtime.sendMessage({ type: "monitor-focus-exact-chat-tab", tabId, windowId, conversationKey });
+}
+
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
   // A background refresh may replace the captured row while the mouse is down.
@@ -7661,8 +7564,16 @@ function renderMonitorBctWindowNodes(nodes) {
     fragment.append(empty);
   }
   const groups = new Map();
+  // A physical Chrome window remains one card even when its tabs have advisory scopes.
+  const sharedWindowScope = new Map();
+  for (const group of monitorBctSharedWindowGroups(nodes)) {
+    if (group.tabCount < 2) continue;
+    const active = group.entries.find((entry) => entry.node.active)?.node || group.entries[0]?.node;
+    sharedWindowScope.set(group.key, active?.scopeId || "__unassigned__");
+  }
   for (const node of nodes) {
-    const key = node.scopeId || "__unassigned__";
+    const windowKey = [node.instanceId, node.sessionId, node.windowId].join(":");
+    const key = sharedWindowScope.get(windowKey) || node.scopeId || "__unassigned__";
     if (!groups.has(key)) groups.set(key, {
       key,
       name: node.scopeName || "미소속 대화",
@@ -7705,7 +7616,38 @@ function renderMonitorBctWindowNodes(nodes) {
       groupList.hidden = true;
       continue;
     }
-    group.nodes.forEach((node, index) => {
+    let displayIndex = 0;
+    for (const chromeGroup of monitorBctSharedWindowGroups(group.nodes)) {
+      const isShared = chromeGroup.tabCount > 1;
+      let rowContainer = groupList;
+      if (isShared) {
+        const card = document.createElement("section");
+        card.className = "monitor-bct-window-card";
+        card.dataset.windowId = String(chromeGroup.windowId);
+        card.dataset.memberCount = String(chromeGroup.entries.length);
+        const heading = document.createElement("button");
+        heading.type = "button";
+        heading.className = "monitor-bct-window-card-heading";
+        heading.textContent = "Chrome 창 · " + chromeGroup.tabCount + "개 탭";
+        const tabRows = document.createElement("div");
+        tabRows.className = "monitor-bct-window-tab-rows";
+        const collapsed = monitorBctCollapsedWindowCards.has(chromeGroup.key);
+        heading.setAttribute("aria-expanded", String(!collapsed));
+        tabRows.hidden = collapsed;
+        heading.addEventListener("click", (event) => {
+          event.preventDefault();
+          if (monitorBctCollapsedWindowCards.has(chromeGroup.key)) monitorBctCollapsedWindowCards.delete(chromeGroup.key);
+          else monitorBctCollapsedWindowCards.add(chromeGroup.key);
+          const closed = monitorBctCollapsedWindowCards.has(chromeGroup.key);
+          heading.setAttribute("aria-expanded", String(!closed));
+          tabRows.hidden = closed;
+        });
+        card.append(heading, tabRows);
+        groupList.append(card);
+        rowContainer = tabRows;
+      }
+      for (const entry of chromeGroup.entries) {
+        const node = entry.node, index = displayIndex++;
     const row = document.createElement("article");
     row.className = "monitor-bct-node-row";
     row.dataset.tabId = String(node.tabId);
@@ -7717,7 +7659,9 @@ function renderMonitorBctWindowNodes(nodes) {
     row.dataset.conversationKey = node.conversationKey;
     row.dataset.scopeId = node.scopeId || "";
     row.setAttribute("role", "button");
-    row.setAttribute("aria-selected", "false");
+    row.setAttribute("aria-selected", String(node.active === true));
+    if (isShared) row.classList.add("monitor-bct-window-tab-row");
+    if (node.displayStale || node.instanceState !== "OPEN") row.classList.add("monitor-bct-window-tab-stale");
     row.tabIndex = 0;
     row.draggable = false;
     const mappedHwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
@@ -7729,6 +7673,7 @@ function renderMonitorBctWindowNodes(nodes) {
       ? `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 우클릭: 정보와 이름 변경 · 600ms 길게 누르기: Manager 안내 태그 지정/해제 · 창 ${node.windowId} · 탭 ${node.tabId}`
       : `클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동하고 정확한 탭 선택 · 창 ${node.windowId} · 탭 ${node.tabId}`;
 
+    if (isShared) row.title = "클릭: 정확한 대화 탭 선택 · 창 " + node.windowId + " · 탭 " + node.tabId;
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
     number.textContent = node.nodeLabel || "N?";
@@ -7749,22 +7694,47 @@ function renderMonitorBctWindowNodes(nodes) {
       ? `${desktopPosition >= 0 ? `D${desktopPosition + 1}` : "위치 확인 중"} · ${node.roleTags.join(" · ")}`
       : location.textContent;
     body.append(location);
-
+    if (entry.attachments.length > 1) {
+      const count = document.createElement("small");
+      count.className = "monitor-bct-window-tab-attachments";
+      count.textContent = entry.attachments.length + "개 연결 탭";
+      body.append(count);
+    }
+    if (isShared && node.scopeId && node.scopeId !== group.key && node.scopeName) {
+      const otherScope = document.createElement("small");
+      otherScope.className = "monitor-bct-window-tab-attachments";
+      otherScope.textContent = node.scopeName;
+      body.append(otherScope);
+    }
+    const isGenerating = entry.attachments.some((item) =>
+      item.instanceState === "OPEN" && !item.displayStale && item.generating === true);
     const presence = document.createElement("span");
-    presence.className = `monitor-bct-node-presence${node.generating ? " is-busy" : ""}`;
-    presence.setAttribute("aria-label", node.generating ? "응답 생성 중" : "열려 있음");
-    presence.title = node.generating ? "응답 생성 중" : "열려 있음";
-    globalThis.MonitorStatusIcon?.render?.(presence, { activity: node.generating ? "play" : "pause" });
+    presence.className = `monitor-bct-node-presence${isGenerating ? " is-busy" : ""}`;
+    const stale = node.displayStale === true || node.instanceState !== "OPEN";
+    presence.setAttribute("aria-label", stale ? "관측 지연" : isGenerating ? "응답 생성 중" : "열려 있음");
+    presence.title = stale ? "관측 지연" : isGenerating ? "응답 생성 중" : "열려 있음";
+    globalThis.MonitorStatusIcon?.render?.(presence, { activity: !stale && isGenerating ? "play" : "pause" });
     row.append(number, body, presence);
     row.classList.toggle("is-manager", Array.isArray(node.roleTags) && node.roleTags.includes("Manager"));
     installMonitorBctManagerLongPress(row, node);
     row.addEventListener("dragstart", (event) => event.preventDefault());
-    row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
+    if (!isShared) row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
     row.addEventListener("click", (event) => {
       if (monitorBctSuppressedClickKey === monitorBctNodeSelectionKey(node)) {
         monitorBctSuppressedClickKey = "";
         event.preventDefault();
         event.stopPropagation();
+        return;
+      }
+      if (isShared) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.detail > 1) return;
+        void monitorFocusBctSharedWindowTab(node).then((receipt) => {
+          if (!receipt?.ok || receipt.status !== "APPLIED") throw new Error(receipt?.error || "정확한 탭 선택 미확정");
+          monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
+          setMonitorStatus((node.nodeLabel || "N?") + " 탭을 선택했습니다.", true, 1800);
+        }).catch((error) => setMonitorStatus("탭 선택 실패 · " + (error?.message || error), false, 3500));
         return;
       }
       void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
@@ -7778,6 +7748,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.addEventListener("dblclick", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (isShared) return;
       row.classList.add("monitor-bct-node-switch-pending");
       void resolveMonitorBctNodeHwnd(node).then((hwnd) => (
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node),
@@ -7805,8 +7776,9 @@ function renderMonitorBctWindowNodes(nodes) {
         openMonitorBctRenameEditor(node, row);
       });
     }
-    groupList.append(row);
-    });
+    rowContainer.append(row);
+      }
+    }
   }
   monitorWorkers.replaceChildren(fragment);
   syncMonitorBctNodeTargetHighlight();
@@ -7859,12 +7831,14 @@ function monitorBctPointInsideScopeHeading(clientX, clientY) {
 
 function monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey) {
   const rows = [...list.querySelectorAll(".monitor-bct-node-row")]
-    .filter((row) => String(row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
+    .filter((row) => (!row.parentElement || row.parentElement === list) &&
+      String(row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
     .map((row) => ({ row, rect: row.getBoundingClientRect() }))
     .filter(({ rect }) => rect.width > 0 && rect.height > 0);
   if (!rows.length) return null;
   const direct = hit?.closest?.(".monitor-bct-node-row");
-  if (direct && hit?.closest?.(".monitor-bct-node-list") === list &&
+  if (direct && (!direct.parentElement || direct.parentElement === list) &&
+      hit?.closest?.(".monitor-bct-node-list") === list &&
       String(direct.dataset.conversationKey || "") !== draggedKey) {
     const rect = direct.getBoundingClientRect();
     return { row: direct, position: clientX < rect.left + rect.width / 2 ? "before" : "after" };
@@ -8092,6 +8066,7 @@ async function refreshMonitorBctWindowNodes() {
   if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
   try {
     const state = await monitorBctShell.monitorState();
+    renderMonitorGithubInbox(state);
     monitorBctWindowNodesCache = monitorBctShell.displayWindowNodes
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
@@ -8112,6 +8087,52 @@ async function refreshMonitorBctWindowNodes() {
   } finally {
     monitorBctWindowNodeRefreshBusy = false;
     if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = false;
+  }
+}
+
+function renderMonitorGithubInbox(state) {
+  if (!monitorGithubInbox) return;
+  const items = Array.isArray(state?.github_run_inbox) ? state.github_run_inbox.slice(0, 12) : [];
+  monitorGithubInbox.replaceChildren();
+  if (!items.length) {
+    monitorGithubInbox.textContent = "GitHub Inbox: no waiting or terminal results";
+    return;
+  }
+  const heading = document.createElement("strong");
+  const unreadCount = items.filter((item) => item?.unread === true).length;
+  heading.textContent = `GitHub 완료 Inbox (${unreadCount} 미확인)`;
+  monitorGithubInbox.append(heading);
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "monitor-bct-node-empty";
+    const primary = document.createElement("strong");
+    const stateLabel = String(item?.state || "UNKNOWN");
+    const project = String(item?.repository || "");
+    const kind = String(item?.context?.kind || item?.context?.type || "CI");
+    primary.textContent = `${item?.unread ? "● " : ""}${stateLabel} · ${project} · ${kind} #${String(item?.run_id || "")}`;
+    const details = document.createElement("div");
+    const sha = String(item?.head_sha || "");
+    const when = Number(item?.created_at || 0);
+    const age = Number.isFinite(when) && when > 0 ? ` · ${Math.max(0, Math.floor(Date.now() / 1000 - when))}초 경과` : "";
+    details.textContent = `Work ${String(item?.work_id || "")} · ${String(item?.node_id || "")} · ${sha.slice(0, 12)}${age}`;
+    const action = document.createElement("div");
+    action.textContent = `다음: ${String(item?.next_step || "참고용 결과 확인").slice(0, 240)}`;
+    row.append(primary, details, action);
+    if (item?.error_summary) {
+      const error = document.createElement("div");
+      error.textContent = `실패: ${String(item.error_summary).slice(0, 260)}`;
+      row.append(error);
+    }
+    const target = String(item?.url || "");
+    if (/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/[1-9][0-9]*$/.test(target)) {
+      const link = document.createElement("a");
+      link.href = target;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "GitHub 결과 보기";
+      row.append(link);
+    }
+    monitorGithubInbox.append(row);
   }
 }
 
@@ -8626,7 +8647,11 @@ const monitorNativePending = new Map();
 let monitorNativeRequestSequence = 0;
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorNative });
-globalThis.MonitorDesktopThumbnailV2.configure({ visualSource: monitorDesktopVisualSource });
+globalThis.MonitorDesktopThumbnailV2.configure({
+  visualSource: monitorDesktopVisualSource,
+  readFrame: desktopId => captureDesktopFrame(desktopId, "thumb"),
+  afterWindowRender: decorateMonitorThumbnailWindows,
+});
 
 function monitorCaptureDataUriToObjectUrl(dataUri) {
   const source = String(dataUri || "");
@@ -8659,8 +8684,8 @@ function ensureMonitorNativePort() {
       monitorDesktopThumbs.dataset.wallpaperEventAt=String(Date.now());
       // Each visual keeps its own generation fence; no cross-desktop cache.
       void Promise.allSettled(targets.map(visual =>
-        globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-          visual,visual.dataset.desktopId,{force:true})));
+        globalThis.MonitorDesktopThumbnailV2.refreshBackground(
+          visual,visual.dataset.desktopId,{forceWallpaper:true})));
       return;
     }
     if (response?.event === true && response?.type === "monitorDragPreviewReleased") {
@@ -9185,13 +9210,6 @@ function createMonitorContextContinueButton(item) {
     target: captured,
     fetcher: actFetch,
     openConversation: () => restoreMonitorDetachedTask(captured, document.createElement('button')),
-  });
-}
-
-function createMonitorProjectContextRecallButton() {
-  return globalThis.MonitorProjectContextRecall.createButton({
-    fetcher: actFetch,
-    openConversation: target => restoreMonitorDetachedTask(target, document.createElement('button')),
   });
 }
 
@@ -10516,7 +10534,6 @@ if (monitorSelectedHwnds.size) applyMonitorWindowHighlight(monitorHighlightedHwn
   scheduleMonitorHoverRecheck();
 
 }
-
 function syncMonitorThumbnailTabBadges(container, className) {
 
   if (className !== "monitor-desktop-thumb-window") return;
@@ -10642,28 +10659,6 @@ async function syncMonitorNativeZOrder(desktopId) {
   }
 
   return true;
-
-}
-
-function applyMonitorForegroundFocus(hwnd) {
-
-  const next = String(hwnd || "");
-
-  if (!next) return;
-
-  // A real Chrome click is the same selection gesture as clicking that window in Monitor.
-
-  applyMonitorWindowHighlight(next, monitorSelectedHwnds.has(next) ? { toggle: true } : {});
-
-}
-
-function monitorViewportScreenOrigin() {
-
-  const borderX = Math.max(0, (Number(window.outerWidth) - Number(window.innerWidth)) / 2);
-
-  const chromeY = Math.max(0, Number(window.outerHeight) - Number(window.innerHeight) - borderX);
-
-  return { x: Number(window.screenX) + borderX, y: Number(window.screenY) + chromeY };
 
 }
 
@@ -11877,44 +11872,34 @@ function bindDesktopDropTarget(button) {
 
 }
 
+function decorateMonitorThumbnailWindows(tile) {
+  for (const image of tile.querySelectorAll(".monitor-desktop-thumb-window")) {
+    const hwnd = String(image.dataset.hwnd || "");
+    try {
+      applyPersistentMonitorRoleClass(image,hwnd);
+      image.classList.toggle("monitor-window-row-hovered",
+        Boolean(monitorHoveredHwnd) && hwnd===monitorHoveredHwnd && !monitorSelectedHwnds.has(hwnd));
+      syncMonitorStatusLayer(image,hwnd);
+      syncMonitorPauseOverlay(image,hwnd);
+      syncMonitorDesktopNumberBadge(image,hwnd);
+      syncMonitorNonChatCountdown(image,hwnd);
+      if (!image.dataset.monitorDragBound) {
+        image.dataset.monitorDragBound="1";
+        image.draggable=false;
+        image.addEventListener("pointerdown",beginMonitorWindowPointerDrag);
+      }
+    } catch (error) { console.warn("Monitor thumbnail V2 badge delayed",hwnd,error); }
+  }
+  syncMonitorThumbnailTabBadges(tile,"monitor-desktop-thumb-window");
+}
+
 async function refreshDesktopThumb(visual, desktopId) {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !visual?.isConnected) return false;
   if (String(visual.dataset.desktopId || "").toLowerCase() !== String(desktopId || "").toLowerCase()) return false;
   const renderer = globalThis.MonitorDesktopThumbnailV2;
   if (!renderer) return false;
-  // Native is authoritative: explicit per-desktop GUID/file snapshot; never
-  // use the legacy actual/restore/Progman wallpaper image maps.
-  const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId);
-  if (!visual.isConnected || String(visual.dataset.desktopId).toLowerCase() !== String(desktopId).toLowerCase()) return false;
-  // Window geometry is separate Native HWND truth; pixels never become wallpaper.
-  // On other desktops capture may fail/CLOAKED; V2 renders a transparent outline.
-  const frameToken = renderer.beginFrame(visual,desktopId);
-  if (frameToken == null) return false;
-  const frame = await captureDesktopFrame(desktopId, "thumb").catch(() => null);
-  if (!frame || !visual.isConnected) { renderer.frameFailure(visual,desktopId,"FRAME_UNAVAILABLE",frameToken); return wallpaperReady; }
-  return renderer.windowFrame(visual,desktopId,frame,{
-    frameToken,
-    afterRender: tile => {
-      for (const image of tile.querySelectorAll(".monitor-desktop-thumb-window")) {
-        const hwnd = String(image.dataset.hwnd || "");
-        try {
-          applyPersistentMonitorRoleClass(image,hwnd);
-          image.classList.toggle("monitor-window-row-hovered",
-            Boolean(monitorHoveredHwnd) && hwnd===monitorHoveredHwnd && !monitorSelectedHwnds.has(hwnd));
-          syncMonitorStatusLayer(image,hwnd);
-          syncMonitorPauseOverlay(image,hwnd);
-          syncMonitorDesktopNumberBadge(image,hwnd);
-          syncMonitorNonChatCountdown(image,hwnd);
-          if (!image.dataset.monitorDragBound) {
-            image.dataset.monitorDragBound="1";
-            image.draggable=false;
-            image.addEventListener("pointerdown",beginMonitorWindowPointerDrag);
-          }
-        }catch(error){ console.warn("Monitor thumbnail V2 badge delayed",hwnd,error); }
-      }
-      syncMonitorThumbnailTabBadges(tile,"monitor-desktop-thumb-window");
-    }
-  });
+  const result = await renderer.refresh(visual,desktopId);
+  return result?.ok === true;
 }
 
 function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
@@ -11951,7 +11936,6 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
   }
 
 }
-
 function syncDesktopSwitcher() {
   const createdDesktopIds = [];
 
@@ -12062,7 +12046,7 @@ function syncDesktopSwitcher() {
   // gray until an unrelated interaction happens to refresh the thumbnail.
   // Schedule exactly one GUID-native read after the DOM batch is committed;
   // V2 suppresses subsequent normal repaint reads for the same tile.
-  if (createdDesktopIds.length) requestAnimationFrame(() => {
+  if (createdDesktopIds.length && monitorInitialThumbBatchDone) requestAnimationFrame(() => {
     for (const desktopId of createdDesktopIds) {
       const tile = [...monitorDesktopThumbs.children].find((item) => (
         String(item.dataset.desktopId || "") === String(desktopId)
@@ -12111,39 +12095,6 @@ globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
   void refreshSelectedThumb().catch(() => false);
   void refreshBackgroundThumbs(...ids).catch(() => []);
 });
-async function refreshDesktopThumbBatch() {
-
-  if (monitorCapturePaused()) return;
-
-  if (monitorThumbBatchInflight) return monitorThumbBatchInflight;
-
-  const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
-  if (!selectedDesktopId) return;
-
-  const targets = [...monitorDesktopThumbs.children].map((button) => ({
-
-    visual: button.querySelector(".monitor-desktop-thumb-visual"),
-
-    desktopId: button.dataset.desktopId || ""
-
-  })).filter((target) => target.desktopId === selectedDesktopId && target.visual?.isConnected);
-
-  const job = (async () => {
-
-    await refreshBackgroundThumbs(...targets.map((target) => target.desktopId));
-
-  })().finally(() => {
-
-    if (monitorThumbBatchInflight === job) monitorThumbBatchInflight = null;
-
-  });
-
-  monitorThumbBatchInflight = job;
-
-  return job;
-
-}
-
 async function refreshSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
 
@@ -12162,12 +12113,13 @@ async function refreshSelectedThumb() {
 
 async function refreshInitialSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
-  const ready = await refreshSelectedThumb().catch(() => false);
-  monitorInitialThumbBatchDone = ready === true;
-  if (monitorInitialThumbBatchDone) scheduleInitialSemanticThumbSync();
-  // Background Desktop initialization is independent of the selected Desktop.
-  // A transient selected capture failure must not prevent D2/D3/D4 from starting.
-  await refreshInitialBackgroundThumbs();
+  const selectedReady = await refreshSelectedThumb().catch(() => false);
+  const backgroundReady = await refreshInitialBackgroundThumbs().catch(() => false);
+  monitorInitialThumbBatchDone = selectedReady === true && backgroundReady === true;
+  if (monitorInitialThumbBatchDone) {
+    scheduleInitialSemanticThumbSync();
+    void checkMonitorDeploymentUpdate();
+  }
   return monitorInitialThumbBatchDone;
 }
 
@@ -13015,8 +12967,8 @@ async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") 
   const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
 
   if (visual) {
-    void globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-      visual,createdId,{force:true}).catch(()=>false);
+    void globalThis.MonitorDesktopThumbnailV2.refreshBackground(
+      visual,createdId,{forceWallpaper:true}).catch(()=>false);
   }
 
 }
@@ -13149,13 +13101,18 @@ monitorCollapse.addEventListener("click", () => {
 });
 
 let monitorDeploymentCheckBusy = false;
+let monitorDeploymentCheckQueued = false;
 
 let monitorReloadToken = null;
+let monitorReloadAckToken = "";
 let monitorDeploymentReloadRequested = false;
 
 async function checkMonitorDeploymentUpdate() {
 
-  if (monitorDeploymentCheckBusy) return;
+  if (monitorDeploymentCheckBusy) {
+    monitorDeploymentCheckQueued = true;
+    return;
+  }
 
   monitorDeploymentCheckBusy = true;
 
@@ -13189,8 +13146,6 @@ async function checkMonitorDeploymentUpdate() {
 
       monitorReloadToken = reloadToken;
 
-      if (reloadToken) await monitorNative({ type: "ackExtensionReload", token: reloadToken }).catch(() => null);
-
     } else if (reloadToken && reloadToken !== monitorReloadToken) {
 
       if (!monitorDeploymentReloadRequested) {
@@ -13204,6 +13159,12 @@ async function checkMonitorDeploymentUpdate() {
 
     }
 
+    if (reloadToken && monitorReloadToken === reloadToken && monitorInitialThumbBatchDone &&
+        monitorReloadAckToken !== reloadToken) {
+      const ack = await monitorNative({ type: "ackExtensionReload", token: reloadToken }).catch(() => null);
+      if (ack?.ok === true) monitorReloadAckToken = reloadToken;
+    }
+
     // A reload can recreate the popup after its HWND-change event has already
     // run. Publish one fresh presence record once the token is known; this is
     // a startup/deployment event, not a timer or a background polling loop.
@@ -13212,7 +13173,13 @@ async function checkMonitorDeploymentUpdate() {
     }
     monitorDeploymentReloadRequested = false;
 
-  } catch (_) {} finally { monitorDeploymentCheckBusy = false; }
+  } catch (_) {} finally {
+    monitorDeploymentCheckBusy = false;
+    if (monitorDeploymentCheckQueued) {
+      monitorDeploymentCheckQueued = false;
+      queueMicrotask(() => { void checkMonitorDeploymentUpdate(); });
+    }
+  }
 
 }
 
@@ -13497,7 +13464,6 @@ function monitorStructureAvailableNodes(){
   return out;
 
 }
-
 function monitorStructureEffectiveDesktopId(node){const key=String(node?.conversation_key||"");return String(monitorStructureDeskMembership[key]||node?.desktop_id||"");}
 
 function monitorStructureMoveNodeToDesk(nodeKey,desktopId){nodeKey=String(nodeKey||"");desktopId=String(desktopId||"");if(!nodeKey||!desktopId)return false;const bundleKind=nodeKey.startsWith("LLM:")?nodeKey.slice(4):"";if(monitorStructureBundleOrder().includes(bundleKind))return monitorStructureMoveBundleToDesk(bundleKind,desktopId);const historyBefore=monitorStructureHistorySnapshot();if(String(monitorStructureSocketDraft.orchestrator?.conversation_key||"")===nodeKey)monitorStructureSocketDraft.orchestrator=null;if(String(monitorStructureSocketDraft.aux1?.conversation_key||"")===nodeKey)monitorStructureSocketDraft.aux1=null;if(String(monitorStructureSocketDraft.aux2?.conversation_key||"")===nodeKey)monitorStructureSocketDraft.aux2=null;monitorStructureDeskMembership[nodeKey]=desktopId;for(const [desk,node] of Object.entries(monitorStructureSocketDraft.managers||{})){if(String(node?.conversation_key||"")===nodeKey)delete monitorStructureSocketDraft.managers[desk];}monitorStructureDirty=true;monitorStructureHistoryCommit(historyBefore);renderMonitorStructure();const st=document.getElementById("monitorStructureStatus");if(st)st.textContent="이동 예정 · 실행 시 실제 Desk 이동 후 노드 번호 확정";return true;}
@@ -13697,8 +13663,6 @@ function monitorStructureDeskNodeGrid(nodes,desktopId){
   return grid;
 }
 
-function monitorStructureBundlePalette(){const bar=document.createElement("div");bar.className="monitor-org-bundle-palette";for(const kind of monitorStructureBundleOrder())if(!monitorStructureBundleDesk[kind]&&!monitorStructureManagerBundleDesk[kind])bar.append(monitorStructureBundleCard(kind));return bar;}
-
 function monitorStructureAutoLayout(){
 
   const nodes=monitorStructureAvailableNodes().map(node=>({...node,placement_exempt:monitorStructureNodeIsPlacementExempt(node)})); const used=new Set(); const isExempt=(node)=>Boolean(node?.placement_exempt); const liveByKey=new Map(nodes.map(n=>[String(n.conversation_key||""),n])); const liveDraft=(node)=>{const draft=node?liveByKey.get(String(node.conversation_key||""))||null:null;return draft&&!isExempt(draft)?draft:null;}; const pickRole=(role)=>nodes.find(n=>n.role===role&&!isExempt(n)&&!used.has(n.conversation_key))||null; const commandDesktopId=String(monitorDesktopState.desktopIds?.[0]||""); const pickCommandFallback=()=>nodes.find(n=>!isExempt(n)&&!used.has(n.conversation_key)&&commandDesktopId&&monitorStructureEffectiveDesktopId(n)===commandDesktopId)||null;
@@ -13737,8 +13701,6 @@ function monitorStructureAutoLayout(){
 }
 
 function monitorStructureNodeForHwnd(hwnd){return monitorStructureAvailableNodes().find(node=>String(node.hwnd||"")===String(hwnd||""))||null;}
-
-function monitorStructurePersistSockets(){chrome.storage.local.set({[MONITOR_STRUCTURE_SOCKET_KEY]:monitorStructureSocketDraft});}
 
 function monitorStructureRemoveNode(key){
 
@@ -14009,14 +13971,6 @@ function monitorStructureBuildSavePayload(){
 
 }
 
-function monitorStructurePersistSavedLocal(){
-
-  monitorStructurePersistSockets();monitorStructurePersistLinks();
-
-  chrome.storage.local.set({[MONITOR_STRUCTURE_DESK_MEMBERSHIP_KEY]:monitorStructureDeskMembership,[MONITOR_STRUCTURE_BUNDLE_DESK_KEY]:monitorStructureBundleDesk});
-
-}
-
 function monitorStructureCloneDraftValue(value){
   try{return structuredClone(value);}catch(_){try{return JSON.parse(JSON.stringify(value));}catch(__){return value;}}
 }
@@ -14169,21 +14123,6 @@ function monitorStructureReconcileSnapshot(snapshot){
     return !supervisor||liveKeys.has(supervisor);
   }):[];
   return next;
-}
-
-function monitorStructureBaselineIsCompatible(snapshot){
-  if(!snapshot||typeof snapshot!=="object")return false;
-  const liveKeys=new Set(monitorStructureAvailableNodes().map(node=>String(node?.conversation_key||"")).filter(Boolean));
-  const required=new Set();
-  const add=node=>{const key=String(node?.conversation_key||"");if(key)required.add(key);};
-  add(snapshot.socketDraft?.orchestrator);add(snapshot.socketDraft?.aux1);add(snapshot.socketDraft?.aux2);
-  for(const node of Object.values(snapshot.socketDraft?.managers||{}))add(node);
-  for(const [key,parent] of Object.entries(snapshot.linkOverrides||{})){required.add(String(key));if(parent)required.add(String(parent));}
-  for(const key of Object.keys(snapshot.deskMembership||{}))required.add(String(key));
-  for(const edge of snapshot.resourceEdges||[]){const supervisor=String(edge?.supervisor_key||"");if(supervisor)required.add(supervisor);}
-  const desktops=new Set((monitorDesktopState.desktopIds||[]).map(String));
-  const deskValues=[...Object.values(snapshot.deskMembership||{}),...Object.values(snapshot.bundleDesk||{})].map(String).filter(Boolean);
-  return [...required].every(key=>liveKeys.has(key))&&deskValues.every(id=>desktops.has(id));
 }
 
 function monitorStructurePersistBaseline(){

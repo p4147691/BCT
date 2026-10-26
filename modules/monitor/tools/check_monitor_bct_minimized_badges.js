@@ -5,6 +5,7 @@ const fs=require("node:fs");
 const path=require("node:path");
 const vm=require("node:vm");
 const src=fs.readFileSync(path.join(__dirname,"../extension/monitor.js"),"utf8");
+const thumbnailV2Src=fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-thumbnail-v2.js"),"utf8");
 const contractSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-minimized-node-badge-contract.js"),"utf8");
 const projectionSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-bct-thumbnail-projection.js"),"utf8");
 function extract(name,until){
@@ -90,7 +91,10 @@ assert.match(src,/numbersForHwnd: \(hwnd\) => monitorBadgeNodeNumbersForHwnd\(hw
 assert.match(src,/iconic:minimized/);
 assert.match(src,/scheduleMonitorMinimizedBadgeConvergence\(hwnd\)/);
 assert.match(contractSrc,/if \(!Boolean\(location\?\.iconic\)\) continue;/);
-assert.match(src,/renderer\.windowFrame\(visual,desktopId,frame/);
+assert.match(thumbnailV2Src,/windowLayer\.windowFrame\(visual,desktopId,frame/,
+  "V2 owns the window-frame render instead of the compatibility bundle");
+assert.match(src,/afterWindowRender:\s*decorateMonitorThumbnailWindows/,
+  "the V2 boundary injects post-render node badge decoration");
 assert.match(src,/syncMonitorThumbnailTabBadges\(tile,"monitor-desktop-thumb-window"\)/);
 assert.match(src,/MonitorBctThumbnailProjection/);
 assert.match(projectionSrc,/windowLayer\.append\(badge\)/);

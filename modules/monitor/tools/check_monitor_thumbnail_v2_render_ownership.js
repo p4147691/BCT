@@ -20,9 +20,10 @@ for(const name of ordered){
 assert.doesNotMatch(html,/monitor-wallpaper-event-refresh\.js/);
 assert.match(monitor,/function scheduleMonitorV2WindowRefresh\(event\)/);
 assert.match(monitor,/function removeMonitorV2Window\(hwnd, exceptDesktopId = ""\)/);
-assert.match(monitor,/globalThis\.MonitorDesktopThumbnailV2\.refreshWallpaper\(/);
-assert.match(monitor,/renderer\.beginFrame\(visual,desktopId\)/);
-assert.match(monitor,/renderer\.windowFrame\(visual,desktopId,frame,/);
+assert.match(monitor,/globalThis\.MonitorDesktopThumbnailV2\.refreshBackground\(/);
+assert.match(monitor,/renderer\.refresh\(visual,desktopId\)/);
+assert.doesNotMatch(monitor,/renderer\.refreshWallpaper\(|renderer\.beginFrame\(|renderer\.windowFrame\(|renderer\.frameFailure\(/,
+  "the compatibility bundle must not orchestrate V2 layers");
 assert.doesNotMatch(monitor,/function upsertMonitorEventThumbWindow\(/);
 assert.doesNotMatch(monitor,/function removeMonitorEventThumbWindow\(/);
 assert.doesNotMatch(monitor,/visual\.style\.backgroundImage\s*=/);

@@ -178,6 +178,7 @@ monitorRoot.innerHTML = `
 
     <div class="monitor-bct-nodes-head"><strong>연결된 창</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
     <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
+    <div id="monitorGithubInbox" class="monitor-bct-node-empty" aria-live="polite"></div>
 
 
 
@@ -736,6 +737,7 @@ if (MONITOR_FEATURE_MEMO_ENABLED) {
 const monitorService = document.getElementById("monitorService");
 
 const monitorWorkers = document.getElementById("monitorWorkers");
+const monitorGithubInbox = document.getElementById("monitorGithubInbox");
 
 const monitorCollapse = document.getElementById("monitorCollapse");
 monitorCollapse.classList.add("monitor-collapse-chevron");
@@ -754,4 +756,3 @@ const monitorDesktopScrollLeft = document.getElementById("monitorDesktopScrollLe
 const monitorDesktopScrollRight = document.getElementById("monitorDesktopScrollRight");
 
 /*@@MONITOR_FUNCTION:monitorDesktopScrollStep@@*/
-

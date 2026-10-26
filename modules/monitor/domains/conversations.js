@@ -443,49 +443,9 @@ function monitorGhostAgeing(ghost, now = Date.now()) {
 function monitorGhostArchiveAgeing(ghost) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostArchiveAgeing"].apply(this, arguments); }
 //@@FN_END:monitorGhostArchiveAgeing
 
-//@@FN_START:monitorGhostAuthoritativeLocation
-function monitorGhostAuthoritativeLocation(worker, state, endpoint = null, previous = {}) {
-
-  const station = stationForMonitorWorker(worker, state); const meta = monitorStationMetadata(station); const em = endpoint?.metadata || {};
-
-  const d = Number(station?.desktop_id ?? station?.desktop_index ?? meta.desktop_id ?? meta.desktop_index ?? em.desktop_id ?? em.desktop_index);
-
-  const sl = Number(station?.slot_index ?? meta.slot_index ?? em.slot_index);
-
-  return { desktop:Number.isInteger(d)&&d>0?d:(previous?.desktop ?? null), slot:Number.isInteger(sl)&&sl>0?sl:(previous?.slot ?? null) };
-
-}
-//@@FN_END:monitorGhostAuthoritativeLocation
-
 //@@FN_START:monitorGhostBoundText
 function monitorGhostBoundText(value, max = MONITOR_GHOST_TEXT_MAX) { return String(value || "").slice(0, max); }
 //@@FN_END:monitorGhostBoundText
-
-//@@FN_START:monitorGhostCanAutoHide
-function monitorGhostCanAutoHide(ghost, state, now = Date.now()) {
-
-  if (monitorGhostProtected(ghost) || monitorGhostValidLease(ghost,state,now) || monitorGhostArchiveAgeing(ghost) < 80) return false;
-
-  const status=String(ghost?.task_status || ghost?.work_status || "").toUpperCase(); if (!["SUCCEEDED","COMPLETED","COMPLETE","DONE","IDLE","AVAILABLE"].includes(status)) return false;
-
-  const idleSince=Number(ghost?.completed_or_idle_ms || 0); return idleSince > 0 && now-idleSince >= 24*60*60*1000;
-
-}
-//@@FN_END:monitorGhostCanAutoHide
-
-//@@FN_START:monitorGhostConversationTime
-function monitorGhostConversationTime(metadata = {}, previous = 0) {
-
-  const values = [metadata?.last_conversation_at, metadata?.last_message_at, metadata?.conversation_updated_at, metadata?.last_message_timestamp].map(monitorGhostNumericTime).filter(Boolean);
-
-  const tail = Array.isArray(metadata?.conversation_tail) ? metadata.conversation_tail : [];
-
-  for (const item of tail) for (const key of ["created_at","timestamp","time","at"]) { const ms = monitorGhostNumericTime(item?.[key]); if (ms) values.push(ms); }
-
-  return values.length ? Math.max(...values) : Number(previous || 0);
-
-}
-//@@FN_END:monitorGhostConversationTime
 
 //@@FN_START:monitorGhostMeaningfulTitle
 function monitorGhostMeaningfulTitle(value, previous = "") {
@@ -500,26 +460,6 @@ function monitorGhostMeaningfulTitle(value, previous = "") {
 
 }
 //@@FN_END:monitorGhostMeaningfulTitle
-
-//@@FN_START:monitorGhostNumericTime
-function monitorGhostNumericTime(value) {
-
-  const n = Number(value); if (Number.isFinite(n) && n > 0) return n < 1e12 ? n * 1000 : n;
-
-  return monitorGhostTime(value);
-
-}
-//@@FN_END:monitorGhostNumericTime
-
-//@@FN_START:monitorGhostObservationTime
-function monitorGhostObservationTime(endpoint = {}, metadata = {}, previous = 0) {
-
-  const values = [monitorGhostTime(endpoint?.last_seen_at), monitorGhostNumericTime(metadata?.reported_observed_at), Number(previous || 0)].filter(Boolean);
-
-  return values.length ? Math.max(...values) : 0;
-
-}
-//@@FN_END:monitorGhostObservationTime
 
 //@@FN_START:monitorGhostPersist
 function monitorGhostPersist(immediate = false) {
@@ -539,16 +479,6 @@ function monitorGhostPersist(immediate = false) {
 function monitorGhostProtected(ghost) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostProtected"].apply(this, arguments); }
 //@@FN_END:monitorGhostProtected
 
-//@@FN_START:monitorGhostTail
-function monitorGhostTail(metadata = {}, previous = []) {
-
-  const source = Array.isArray(metadata?.conversation_tail) ? metadata.conversation_tail : previous;
-
-  return (Array.isArray(source) ? source : []).slice(-MONITOR_GHOST_TAIL_MAX).map((item) => ({ role:String(item?.role || "").slice(0,16), text:monitorGhostBoundText(item?.text) }));
-
-}
-//@@FN_END:monitorGhostTail
-
 //@@FN_START:monitorGhostTaskForWorker
 function monitorGhostTaskForWorker(worker, state) {
 
@@ -565,65 +495,9 @@ function monitorGhostTaskForWorker(worker, state) {
 }
 //@@FN_END:monitorGhostTaskForWorker
 
-//@@FN_START:monitorGhostTaskHistory
-function monitorGhostTaskHistory(worker, state, previous = []) {
-
-  const owner = monitorGhostWorkerId(worker); const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
-
-  const current = tasks.filter((task) => String(task?.assigned_agent || "").trim().toUpperCase() === owner).map((task) => {
-
-    const at = Math.max(monitorGhostTime(task?.completed_at), monitorGhostTime(task?.finished_at), monitorGhostTime(task?.verified_at), monitorGhostTime(task?.updated_at), monitorGhostTime(task?.created_at));
-
-    const title = monitorGhostMeaningfulTitle(task?.title, ""); if (!title) return null;
-
-    const status = String(task?.status || "").toUpperCase(); const result = monitorGhostBoundText(task?.result ?? task?.completion_report?.result ?? "", 180).replace(/\s+/g," ").trim();
-
-    return { id:String(task?.id || ""), at, text:`${title}${status ? ` [${status}]` : ""}${result ? ` · ${result}` : ""}` };
-
-  }).filter(Boolean);
-
-  const merged = [...(Array.isArray(previous) ? previous : []), ...current].filter((item) => item?.text);
-
-  const dedup = new Map(); for (const item of merged) dedup.set(`${item.id || "event"}:${item.at || 0}:${item.text}`, item);
-
-  return [...dedup.values()].sort((a,b) => Number(a.at||0)-Number(b.at||0)).slice(-5);
-
-}
-//@@FN_END:monitorGhostTaskHistory
-
 //@@FN_START:monitorGhostTime
 function monitorGhostTime(value) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostTime"].apply(this, arguments); }
 //@@FN_END:monitorGhostTime
-
-//@@FN_START:monitorGhostUsage
-function monitorGhostUsage(metadata = {}, previous = {}) {
-
-  const src = { ...(metadata || {}), ...(metadata?.telemetry || {}), ...(metadata?.usage || {}), ...(metadata?.usage_telemetry || {}) };
-
-  const num = (...keys) => { for (const key of keys) { const n = Number(src?.[key]); if (Number.isFinite(n) && n >= 0) return n; } return null; };
-
-  const next = { user_count:num("user_count","user_message_count","userMessages"), assistant_count:num("assistant_count","assistant_message_count","assistantMessages"), turns:num("turns","turn_count","message_turns"), rendered_chars:num("rendered_chars","rendered_text_chars","renderedChars"), scroll_height:num("scroll_height","scrollHeight"), viewport_height:num("viewport_height","viewportHeight"), screen_lengths:num("screen_lengths","screenLength","screen_lengths_count"), js_heap_used_mb:num("js_heap_used_mb","jsHeapUsedMb"), js_heap_limit_mb:num("js_heap_limit_mb","jsHeapLimitMb"), event_loop_lag_ms:num("event_loop_lag_ms","eventLoopLagMs") };
-
-  if (next.turns == null && next.user_count != null && next.assistant_count != null) next.turns = Math.min(next.user_count, next.assistant_count);
-
-  if (next.screen_lengths == null && next.scroll_height != null && next.viewport_height > 0) next.screen_lengths = next.scroll_height / next.viewport_height;
-
-  for (const key of Object.keys(next)) if (next[key] == null && previous?.[key] != null) next[key] = previous[key];
-
-  return next;
-
-}
-//@@FN_END:monitorGhostUsage
-
-//@@FN_START:monitorGhostValidLease
-function monitorGhostValidLease(ghost, state, now = Date.now()) {
-
-  const leases = Array.isArray(state?.task_leases) ? state.task_leases : []; const taskId = String(ghost?.task_id || ""); const workerId = String(ghost?.worker_id || "").trim().toUpperCase();
-
-  return leases.some((lease) => monitorGhostTime(lease?.expires_at) > now && (taskId ? String(lease?.task_id || "") === taskId : Boolean(workerId) && String(lease?.owner || "").trim().toUpperCase() === workerId));
-
-}
-//@@FN_END:monitorGhostValidLease
 
 //@@FN_START:monitorGhostWorkerId
 function monitorGhostWorkerId(worker) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostWorkerId"].apply(this, arguments); }
@@ -2307,4 +2181,3 @@ function settleMonitorWorkerPointerInteraction(delay = MONITOR_WORKER_CLICK_SETT
 //@@FN_START:stationForMonitorWorker
 function stationForMonitorWorker(worker, state) { return globalThis.MonitorDomainAPIs["conversations"]["stationForMonitorWorker"].apply(this, arguments); }
 //@@FN_END:stationForMonitorWorker
-

@@ -8,7 +8,7 @@ const host=fs.readFileSync(path.join(root,"native","src","MonitorDesktopHost.cs"
 assert.match(lifecycle,/const monitorNativePending = new Map\(\)/,"Control requests require keyed ownership");
 assert.match(lifecycle,/MonitorDesktopVisualSource\.create\(\{ request: monitorNative \}\)/,
   "desktop visual source must receive the canonical Control transport");
-assert.match(lifecycle,/MonitorDesktopThumbnailV2\.configure\(\{ visualSource: monitorDesktopVisualSource \}\)/);
+assert.match(lifecycle,/MonitorDesktopThumbnailV2\.configure\(\{[\s\S]*?visualSource: monitorDesktopVisualSource,[\s\S]*?readFrame: desktopId => captureDesktopFrame\(desktopId, "thumb"\),[\s\S]*?afterWindowRender: decorateMonitorThumbnailWindows,/);
 assert.match(transport,/if \(response\?\.event === true\) return;/,
   "unsolicited Native events cannot complete a request");
 assert.match(transport,/const requestId = String\(response\?\.requestId \|\| ""\)/);
