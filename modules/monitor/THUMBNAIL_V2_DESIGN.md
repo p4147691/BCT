@@ -31,3 +31,9 @@
 - 운영 설치본 SHA·백업/제어 Host/파일 Host/기존 RCC 상태 확인.
 - cleanroom 별도 브랜치 CI PASS 후 기존 설치본 고유 변경을 유지한 딱 네 경로: `monitor-desktop-thumbnail-v2.js`, `monitor.js` 썸네일 분기, `desktop.html`의 단일 스크립트, `monitor-ui-layout.css`; 기존 레거시 스크립트 제외와 index도 정확히 반영.
 - 한 번의 설치·한 번의 리로드·실제 D1/D2 변경 시험. 검증 실패 시 기존 파일을 정확한 해시로 복원. 중복 UNKNOWN 재시도 없음.
+
+## 시험 실행 구분
+- **이식 가능한 자동 회귀시험:** `modules/monitor/tools/check_monitor*.js` — 별도 Chrome/Edge, Native Host 설치를 가정하지 않음.
+- **현장 전용 화면 시험:** `node modules/monitor/tools/physical_monitor_thumbnail_v2_edge_visual.js` — 별도 헤드리스 Edge에서 CSS, 위치, 실패 표시를 확인하며 운영 Chrome에 연결하지 않음.
+- **현장 전용 Native→화면 시험:** `node modules/monitor/tools/physical_monitor_thumbnail_v2_native_edge.js` — 설치된 Native Host가 반환한 실제 D1/D2 이미지를 별도 헤드리스 Edge에서 GUID별로 대조. 이미지를 저장하거나 외부로 전송하지 않음.
+- 현장 시험은 격리 Windows 환경에서 실제 실행해 두 건 PASS. 일반 CI에서는 물리 장치·개인 경로를 요구하지 않으므로 의도적으로 자동 검색 대상에서 제외.
