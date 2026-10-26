@@ -155,6 +155,8 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 ## Node generation and attention state with injected read-only storage (2026-10-26)
 - monitor-node-generation-state.js exports frozen MonitorNodeGenerationState.create({readTab,readConversation,ttlMs}).
 - It owns direct per-tab generation/TTL interpretation, event-driven userAttention precedence and metadata generation fallback. NO ambient Monitor globals or DOM. The actual event-owned record maps remain in monitor.js; the domain source injects only two immutable reader closures.
-- Three original function names remain compatibility wrappers; source-parts/02-node-identity.js establishes the state service after original Map and TTL constants.
+- Six original function names remain compatibility wrappers; source-parts/02-node-identity.js establishes the state service after original Map and TTL constants.
 - check_monitor_node_generation_state.js tests isolated VM/no DOM, exact precedence, stale generation TTL, attention persistence, and script load order. Structural check enforces module load order/test existence.
 - Additional mutable state and other domain functions still share classic-script globals. Do not claim full API independence.
+
+- Direct conversation generation and HWND generation also use the exact injected readers. This covers six stateful compatibility functions: per-tab status, user attention, endpoint metadata fallback, per-conversation status, conversation activity and HWND activity.

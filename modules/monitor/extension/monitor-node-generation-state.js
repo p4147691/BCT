@@ -1,7 +1,8 @@
 "use strict";
 (function installMonitorNodeGenerationState(root) {
-  function create({readTab, readConversation, ttlMs}) {
+  function create({readTab, readConversation, readTabEntries, openEndpointForHwnd, ttlMs}) {
     if (typeof readTab !== "function" || typeof readConversation !== "function"
+        || typeof readTabEntries !== "function" || typeof openEndpointForHwnd !== "function"
         || !Number.isFinite(ttlMs) || ttlMs < 0)
       throw new TypeError("MONITOR_NODE_GENERATION_DEPENDENCIES_INVALID");
 
@@ -37,7 +38,37 @@
       const interactionState = String(metadata.interaction_state || endpoint?.interaction_state || "").trim().toUpperCase();
       return interactionState === "WORKING";
     }
-    return Object.freeze({directGenerationState, directUserAttention, endpointIsGenerating});
+    function directConversationGenerationState(conversationKey, now = Date.now()) {
+      const key = String(conversationKey || "").trim();
+      const tabStates = [...readTabEntries()].filter(
+        item => item.conversationKey === key && now - Number(item.at || 0) <= ttlMs);
+      if (tabStates.length) return tabStates.some(item => item.generating === true);
+      const item = readConversation(key);
+      if (!item || now - Number(item.at || 0) > ttlMs) return null;
+      return item.generating === true;
+    }
+
+    function conversationIsGenerating(conversationKey, state) {
+      const key = String(conversationKey || "").trim();
+      if (!key) return false;
+      const directState = directConversationGenerationState(key);
+      const actActive = (Array.isArray(state?.endpoints) ? state.endpoints : []).some(endpoint => {
+        if (String(endpoint?.conversation_key || "").trim() !== key
+            || String(endpoint?.presence_state || "").toUpperCase() !== "OPEN") return false;
+        return endpointIsGenerating(endpoint);
+      });
+      return directState === true || actActive;
+    }
+
+    function hwndIsGenerating(hwnd, state) {
+      const endpoint = openEndpointForHwnd(hwnd,state);
+      if (!endpoint) return false;
+      return endpointIsGenerating(endpoint);
+    }
+    return Object.freeze({
+      directGenerationState, directUserAttention, endpointIsGenerating,
+      directConversationGenerationState, conversationIsGenerating, hwndIsGenerating
+    });
   }
   root.MonitorNodeGenerationState = Object.freeze({create});
 })(globalThis);

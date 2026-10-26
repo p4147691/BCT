@@ -91,6 +91,8 @@ const MONITOR_DIRECT_GENERATION_TTL_MS = 3500;
 const monitorNodeGenerationAPI = globalThis.MonitorNodeGenerationState.create({
   readTab: key => monitorDirectGenerationByTab.get(key),
   readConversation: key => monitorDirectGenerationByConversation.get(key),
+  readTabEntries: () => monitorDirectGenerationByTab.values(),
+  openEndpointForHwnd: (hwnd,state) => monitorOpenEndpointForHwnd(hwnd,state),
   ttlMs: MONITOR_DIRECT_GENERATION_TTL_MS,
 });
 

@@ -389,19 +389,7 @@ function monitorConversationStateSignature(state) { return globalThis.MonitorDom
 
 //@@FN_START:monitorDirectConversationGenerationState
 function monitorDirectConversationGenerationState(conversationKey, now = Date.now()) {
-
-  const key=String(conversationKey||"").trim();
-
-  const tabStates=[...monitorDirectGenerationByTab.values()].filter((item)=>item.conversationKey===key&&now-Number(item.at||0)<=MONITOR_DIRECT_GENERATION_TTL_MS);
-
-  if(tabStates.length) return tabStates.some((item)=>item.generating===true);
-
-  const item=monitorDirectGenerationByConversation.get(key);
-
-  if (!item || now-Number(item.at||0)>MONITOR_DIRECT_GENERATION_TTL_MS) return null;
-
-  return item.generating===true;
-
+  return monitorNodeGenerationAPI.directConversationGenerationState(conversationKey, now);
 }
 //@@FN_END:monitorDirectConversationGenerationState
 

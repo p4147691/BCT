@@ -88,23 +88,7 @@ function monitorChatAlertDetail(conversationKey) {
 
 //@@FN_START:monitorConversationIsGenerating
 function monitorConversationIsGenerating(conversationKey, state) {
-
-  const key = String(conversationKey || "").trim();
-
-  if (!key) return false;
-
-  const directState = monitorDirectConversationGenerationState(key);
-
-  const actActive = (Array.isArray(state?.endpoints) ? state.endpoints : []).some((endpoint) => {
-
-    if (String(endpoint?.conversation_key || "").trim() !== key || String(endpoint?.presence_state || "").toUpperCase() !== "OPEN") return false;
-
-    return monitorEndpointGenerationIsActive(endpoint);
-
-  });
-
-  return directState === true || actActive;
-
+  return monitorNodeGenerationAPI.conversationIsGenerating(conversationKey, state);
 }
 //@@FN_END:monitorConversationIsGenerating
 
@@ -174,13 +158,7 @@ function monitorEncodeSharedUserAttention(attentionCue,userAttention){
 
 //@@FN_START:monitorHwndIsGenerating
 function monitorHwndIsGenerating(hwnd, state) {
-
-  const endpoint=monitorOpenEndpointForHwnd(hwnd,state);
-
-  if(!endpoint)return false;
-
-  return monitorEndpointGenerationIsActive(endpoint);
-
+  return monitorNodeGenerationAPI.hwndIsGenerating(hwnd, state);
 }
 //@@FN_END:monitorHwndIsGenerating
 
