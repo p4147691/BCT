@@ -608,7 +608,8 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            object response;
+            object response;
+            Dictionary<string, object> request = null;
 
 
 
@@ -623,7 +624,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-                var request = Json.Deserialize<Dictionary<string, object>>(Encoding.UTF8.GetString(payload));
+                request = Json.Deserialize<Dictionary<string, object>>(Encoding.UTF8.GetString(payload));
 
 
 
@@ -640,7 +641,13 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            catch (Exception ex) { response = Error(ex.Message); }
+            catch (Exception ex) { response = Error(ex.Message); }
+
+            object requestId;
+            Dictionary<string, object> responseMap = response as Dictionary<string, object>;
+            if (request != null && responseMap != null
+                && request.TryGetValue("requestId", out requestId) && requestId != null)
+                responseMap["requestId"] = Convert.ToString(requestId);
 
 
 

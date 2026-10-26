@@ -3,10 +3,18 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
 const root=path.join(__dirname,"..");
 const transport=fs.readFileSync(path.join(root,"domains","native-transport.js"),"utf8");
 const wallpaper=fs.readFileSync(path.join(root,"domains","thumbnail-wallpaper.js"),"utf8");
-assert.match(transport,/function monitorNativeVisualRead\(message\)/);
-assert.match(transport,/MonitorNativeTrace\.request\("control-visual-read", message, \(\) => new Promise/s);
-assert.match(transport,/chrome\.runtime\.sendNativeMessage\(MONITOR_CONTROL_HOST, message, \(response\) =>/);
-assert.match(transport,/function monitorControlNativeIsolatedRequest\(message\)/);
-assert.match(wallpaper,/monitorNativeVisualRead\(\{type:"getDesktopVisualSnapshot"/);
-assert.doesNotMatch(wallpaper,/monitorNative\(\{type:"getDesktopVisualSnapshot"/);
-console.log("PASS: wallpaper snapshots use a traced isolated Native read rather than the shared control FIFO");
+const lifecycle=fs.readFileSync(path.join(root,"source-parts","05-native-lifecycle.js"),"utf8");
+const visualSource=fs.readFileSync(path.join(root,"extension","monitor-desktop-visual-source.js"),"utf8");
+
+assert.doesNotMatch(transport,/function monitorNativeVisualRead\(/);
+assert.doesNotMatch(transport,/sendNativeMessage\(MONITOR_CONTROL_HOST/,
+  "thumbnail reads must not open a side-channel Native request");
+assert.match(transport,/function monitorControlNativeRequest\(message\)/);
+assert.match(lifecycle,/MonitorDesktopVisualSource\.create\(\{ request: monitorNative \}\)/);
+assert.match(visualSource,/return await request\(\{/);
+assert.match(visualSource,/type:"getDesktopVisualSnapshot"/);
+assert.doesNotMatch(visualSource,/\bchrome\b|connectNative|sendNativeMessage/,
+  "the source adapter depends only on its injected request port");
+assert.doesNotMatch(wallpaper,/monitorNativeVisualRead\(/);
+
+console.log("PASS: wallpaper snapshots use the canonical correlated Native port through an injected DesktopVisualSource");

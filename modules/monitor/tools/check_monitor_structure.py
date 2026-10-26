@@ -28,6 +28,9 @@ def main():
         ext/'monitor-ui-layout.js', ext/'monitor-ui-layout.css',
         ext/'monitor-provider-launch-queue.js', ext/'monitor-act-transport.js',
         ext/'monitor-bct-node-interaction.js', ext/'monitor-bct-thumbnail-projection.js',
+        ext/'monitor-thumbnail-contract.js', ext/'monitor-desktop-visual-source.js',
+        ext/'monitor-thumbnail-background-layer.js', ext/'monitor-thumbnail-window-layer.js',
+        ext/'monitor-desktop-thumbnail-v2.js',
         ext/'browser'/'tab-focus-adapter.js',
         root/'tools'/'Request-MonitorDeploymentCheck.ps1',
         root/'tools'/'Publish-MonitorDeployment.ps1',
@@ -138,6 +141,17 @@ def main():
             if verify.returncode!=0:
                 errors.append({'kind':'native_solid_com_contract_failed',
                                'detail':(verify.stderr+verify.stdout)[-350:]})
+
+    correlation_contract=root/'tools'/'check_monitor_native_request_correlation.py'
+    if not correlation_contract.is_file():
+        errors.append({'kind':'native_request_correlation_check_missing'})
+    else:
+        verify=subprocess.run([sys.executable,str(correlation_contract),'--root',str(root)],
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=75)
+        facts['native_request_correlation_test_rc']=verify.returncode
+        if verify.returncode!=0:
+            errors.append({'kind':'native_request_correlation_failed',
+                           'detail':(verify.stderr+verify.stdout)[-500:]})
 
     # One owner for generation/attention state logic, with injected read-only
     # data sources and a separate focused contract regression.
@@ -257,6 +271,23 @@ def main():
 
     node = shutil.which('node')
     facts['node_executable'] = node
+    if node:
+        thumbnail_checks = [
+            root/'tools'/'check_monitor_thumbnail_architecture.js',
+            root/'tools'/'check_monitor_thumbnail_v2_cleanroom.js',
+            root/'tools'/'check_monitor_thumbnail_v2_native_ports.js',
+            root/'tools'/'check_monitor_thumbnail_v2_render_ownership.js',
+        ]
+        for checker in thumbnail_checks:
+            if not checker.is_file():
+                errors.append({'kind':'monitor_thumbnail_contract_test_missing','path':str(checker)})
+                continue
+            checked=subprocess.run([node,str(checker)],cwd=str(root.parent.parent),
+                capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+            facts['thumbnail_test_'+checker.stem]=checked.returncode
+            if checked.returncode:
+                errors.append({'kind':'monitor_thumbnail_contract_regression','name':checker.name,
+                    'detail':(checked.stdout+checked.stderr)[-600:]})
     js_syntax = {}
     if not node:
         errors.append({'kind':'js_syntax_checker_missing','executable':'node'})

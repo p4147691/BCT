@@ -2,6 +2,8 @@
 
 User goal: no manual 8만줄 monitor.js edits, and ultimately independently owned domains with interfaces, tests and live acceptance.
 
+The controlling target architecture and migration order are in `MONITOR_ARCHITECTURE.md`. The thumbnail is the first reference extraction; later domains must follow the same port/contract/state/renderer pattern rather than copying its implementation or introducing side channels.
+
 ## What actually exists now
 - Canonical editable source: source-parts/manifest.json (10 ordered JS files, about 1.4k-1.6k lines each) plus existing dedicated modules.
 - Generated runtime: extension/monitor.js (15,389 physical lines); full nonblank statements were preserved in order from installed 2.0.42 source. Do not edit it.
@@ -26,6 +28,13 @@ Existing live rollback protections: do not modify RCC/Core, active Chrome conver
 ## Independent runtime API progress (2026-10-26)
 - 43 safe functions from four domains now execute from standalone monitor-domain-apis.js. Compatibility bridges keep existing call sites. Module is immutable and unit tested in a DOM-free Node VM.
 - Shared state and other function bodies remain coupled. Full independent domain APIs and E2E remain unaccepted.
+
+## Thumbnail reference extraction (source implementation, LIVE pending)
+- Background, HWND window pixels and composition now have separate owners: `monitor-thumbnail-background-layer.js`, `monitor-thumbnail-window-layer.js` and `monitor-desktop-thumbnail-v2.js`.
+- `monitor-desktop-visual-source.js` accepts one injected canonical request function. Thumbnail code cannot call Chrome Native Messaging directly.
+- The persistent Control Native port correlates every response by `requestId`; a wallpaper event is no longer allowed to disturb a FIFO reply queue, and the one-off `sendNativeMessage` wallpaper side channel is removed.
+- `monitor-thumbnail-contract.js` accepts only an exact desktop GUID plus either JPEG/PNG/WEBP bytes or a proven `mode:solid` `#RRGGBB` value. Invalid input clears the claimed capture and exposes the failure instead of inventing a gray wallpaper.
+- This branch is not installed or LIVE accepted yet. Source build, automated regression, Native build and physical photo/solid/D1/D2 acceptance remain separate gates.
 
 
 ## Windows API color provenance, isolated acceptance pending

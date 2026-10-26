@@ -1,0 +1,73 @@
+"use strict";
+// Owns only the bottom thumbnail's background pixels/color and their state.
+(function installMonitorThumbnailBackgroundLayer(root) {
+  function create({contract, visualSource} = {}) {
+    if (!contract?.wallpaperSnapshot) throw new TypeError("Thumbnail background requires contract");
+    if (!visualSource?.readWallpaper) throw new TypeError("Thumbnail background requires visualSource");
+    const states = new WeakMap();
+
+    function resolve(visual, desktopId) {
+      const id = contract.normalizeDesktopId(desktopId);
+      if (!visual || !contract.isDesktopId(id)) return null;
+      if (contract.normalizeDesktopId(visual.dataset?.desktopId) !== id) return null;
+      let state = states.get(visual);
+      if (!state || state.desktopId !== id) {
+        visual.style.backgroundImage = "";
+        visual.style.backgroundColor = "";
+        state = {desktopId:id, generation:0, status:"unobserved", reason:""};
+        states.set(visual,state);
+      }
+      return state;
+    }
+
+    function apply(visual, desktopId, reply, generation) {
+      const state = resolve(visual,desktopId);
+      if (!state || (generation != null && state.generation !== generation)) return false;
+      const snapshot = contract.wallpaperSnapshot(desktopId,reply);
+      if (snapshot.ok && snapshot.kind === "solid") {
+        visual.style.backgroundImage = "";
+        visual.style.backgroundColor = snapshot.color;
+      } else if (snapshot.ok && snapshot.kind === "photo") {
+        visual.style.backgroundColor = "";
+        visual.style.backgroundImage = "url(" + JSON.stringify(snapshot.dataUri) + ")";
+      } else {
+        visual.style.backgroundImage = "";
+        visual.style.backgroundColor = "";
+      }
+      state.status = snapshot.ok ? "captured" : "failed";
+      state.reason = snapshot.ok ? "" : snapshot.reason;
+      visual.dataset.wallpaperCapture = state.status;
+      visual.dataset.wallpaperSource = snapshot.ok
+        ? (snapshot.kind === "solid" ? "native-solid-color" : "native-guid-file") : "none";
+      visual.dataset.wallpaperFailureReason = state.reason;
+      visual.dataset.wallpaperDesktopId = state.desktopId;
+      return snapshot.ok;
+    }
+
+    async function refresh(visual, desktopId, {force = false} = {}) {
+      const state = resolve(visual,desktopId);
+      if (!state) return false;
+      // A confirmed image/color is retained until a real Windows change event.
+      // A failed read is never frozen permanently; the next normal refresh may retry.
+      if (!force && state.status === "captured") return true;
+      const generation = ++state.generation;
+      state.status = "pending";
+      state.reason = "";
+      visual.dataset.wallpaperCapture = "pending";
+      visual.dataset.wallpaperFailureReason = "";
+      let reply;
+      try { reply = await visualSource.readWallpaper(desktopId); }
+      catch (error) { reply = {ok:false,error:String(error?.message || "NATIVE_UNAVAILABLE")}; }
+      if (states.get(visual) !== state || generation !== state.generation) return false;
+      return apply(visual,desktopId,reply,generation);
+    }
+
+    function invalidate(visual,desktopId) {
+      const state = resolve(visual,desktopId);
+      if (state) ++state.generation;
+    }
+
+    return Object.freeze({resolve,apply,refresh,invalidate});
+  }
+  root.MonitorThumbnailBackgroundLayer = Object.freeze({create});
+})(globalThis);

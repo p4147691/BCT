@@ -24,7 +24,7 @@
     {
       "domain": "native-transport",
       "file": "native-transport.js",
-      "functions": 14
+      "functions": 13
     },
     {
       "domain": "node-identity",

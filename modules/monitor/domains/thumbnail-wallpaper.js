@@ -779,9 +779,7 @@ async function refreshDesktopThumb(visual, desktopId) {
   if (!renderer) return false;
   // Native is authoritative: explicit per-desktop GUID/file snapshot; never
   // use the legacy actual/restore/Progman wallpaper image maps.
-  const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId, id =>
-    monitorNativeVisualRead({type:"getDesktopVisualSnapshot",desktopId:id,
-      maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}));
+  const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId);
   if (!visual.isConnected || String(visual.dataset.desktopId).toLowerCase() !== String(desktopId).toLowerCase()) return false;
   // Window geometry is separate Native HWND truth; pixels never become wallpaper.
   // On other desktops capture may fail/CLOAKED; V2 renders a transparent outline.
@@ -1009,9 +1007,7 @@ async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") 
 
   if (visual) {
     void globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-      visual,createdId,id=>monitorNativeVisualRead({type:"getDesktopVisualSnapshot",desktopId:id,
-        maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}),
-      {force:true}).catch(()=>false);
+      visual,createdId,{force:true}).catch(()=>false);
   }
 
 }

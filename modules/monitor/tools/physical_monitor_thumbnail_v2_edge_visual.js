@@ -23,7 +23,9 @@ const D2="c991b275-7933-4697-9d6e-73bf31ae4379";
    '<span id="d1" class="monitor-desktop-thumb-visual" data-desktop-id="'+D1+'"></span>'+
    '<span id="d2" class="monitor-desktop-thumb-visual" data-desktop-id="'+D2+'"></span>'+
    '</body></html>');
-  await page.addScriptTag({content:fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-thumbnail-v2.js"),"utf8")});
+  for(const name of ["monitor-thumbnail-contract.js","monitor-desktop-visual-source.js","monitor-thumbnail-background-layer.js","monitor-thumbnail-window-layer.js","monitor-desktop-thumbnail-v2.js"]){
+   await page.addScriptTag({content:fs.readFileSync(path.join(__dirname,"../extension",name),"utf8")});
+  }
   const result=await page.evaluate(async({D1,D2})=>{
     const engine=window.MonitorDesktopThumbnailV2;
     const tiles=[document.getElementById("d1"),document.getElementById("d2")];
@@ -32,10 +34,12 @@ const D2="c991b275-7933-4697-9d6e-73bf31ae4379";
       const g=c.getContext("2d");g.fillStyle=color;g.fillRect(0,0,50,50);
       return c.toDataURL("image/png");
     };
-    const a=photo("#ef4b4b"),b=photo("#3b5fe8");
-    const native=async id=>({ok:true,desktopId:id,wallpaper:{dataUri:id===D1?a:b}});
-    await Promise.all(tiles.map((t,i)=>engine.refreshWallpaper(t,i===0?D1:D2,native)));
-    const before=tiles.map(t=>getComputedStyle(t).backgroundImage);
+    const b=photo("#3b5fe8");
+    const native=async request=>({ok:true,desktopId:request.desktopId,wallpaper:request.desktopId===D1
+      ?{mode:"solid",color:"#10893E",proof:"windows-solid-mode"}:{dataUri:b}});
+    engine.configure({visualSource:window.MonitorDesktopVisualSource.create({request:native})});
+    await Promise.all(tiles.map((t,i)=>engine.refreshWallpaper(t,i===0?D1:D2)));
+    const before=tiles.map(t=>({image:getComputedStyle(t).backgroundImage,color:getComputedStyle(t).backgroundColor,source:t.dataset.wallpaperSource}));
     const failedImage=photo("#111111");
     const nativeFrame={meta:{desktopId:D1,previewVirtualLeft:0,previewVirtualTop:0,previewVirtualWidth:100,previewVirtualHeight:100,observedWindowHwnds:["801"]},
       frames:[{item:{hwnd:"801",left:25,top:10,width:50,height:70,z:1,cloaked:2,title:"Old Other Desktop"},
@@ -45,7 +49,8 @@ const D2="c991b275-7933-4697-9d6e-73bf31ae4379";
     const fail=tiles[0].querySelector(".monitor-thumb-v2-status");
     const rect=img.getBoundingClientRect(),tileRect=tiles[0].getBoundingClientRect();
     const result={
-      uniqueBackgrounds:before[0]!==before[1]&&before.every(x=>x.includes("data:image/png;base64")),
+      solidBackground:before[0].image==="none"&&before[0].color==="rgb(16, 137, 62)"&&before[0].source==="native-solid-color",
+      photoBackground:before[1].image.includes("data:image/png;base64")&&before[1].source==="native-guid-file",
       d1Guid:tiles[0].dataset.wallpaperDesktopId,d2Guid:tiles[1].dataset.wallpaperDesktopId,
       failedHasSrc:img.hasAttribute("src"),failedState:img.dataset.captureFailureReason,
       errorVisible:getComputedStyle(fail).display!=="none" && fail.textContent.includes("CLOAKED"),
@@ -57,7 +62,8 @@ const D2="c991b275-7933-4697-9d6e-73bf31ae4379";
     result.failureAfterMissingFrame=img.dataset.captureFailureReason;
     return result;
   },{D1,D2});
-  assert.equal(result.uniqueBackgrounds,true,"D1/D2 actual browser backgrounds must differ");
+  assert.equal(result.solidBackground,true,"D1 must render the confirmed Windows color, not the CSS gray default");
+  assert.equal(result.photoBackground,true,"D2 must preserve the confirmed photo path");
   assert.equal(result.d1Guid,D1);assert.equal(result.d2Guid,D2);
   assert.equal(result.failedHasSrc,false,"CLOAKED cannot cover real background");
   assert.equal(result.failedState,"CLOAKED");
@@ -66,6 +72,6 @@ const D2="c991b275-7933-4697-9d6e-73bf31ae4379";
   assert(Math.abs(result.windowTopFraction-0.10)<0.03);
   assert.equal(result.d2Windows,0);
   assert.equal(result.failureAfterMissingFrame,"FRAME_UNAVAILABLE");
-  console.log("PASS ISOLATED_EDGE_VISUAL: exact GUID CSS backgrounds, transparent CLOAKED HWND, failure caption, geometry, separate desktop, missing-frame handling");
+  console.log("PASS ISOLATED_EDGE_VISUAL: exact GUID solid/photo backgrounds, transparent CLOAKED HWND, failure caption, geometry, separate desktop, missing-frame handling");
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

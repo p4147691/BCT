@@ -2,6 +2,7 @@
 
 목적: 파일을 많이 만드는 것이 아니라, 다음 노드가 책임 경계를 추측하지 않게 한다.
 `monitor.js`에서 코드를 다른 파일로 옮기는 것은 아래 상태가 `READY`일 때만 한다.
+전체 목표 구조와 도메인 이행 순서는 `..\MONITOR_ARCHITECTURE.md`를 따른다.
 
 ## 이미 분리된 경계
 
@@ -69,6 +70,14 @@
 - `monitor.js` 책임: Native WGC adapter, Blob URL 생성, DOM projection, 실제 Windows 이벤트에서의 호출
 - 독립 검증: `..\tools\check_monitor_thumbnail_service.js`
 - 규칙: `monitor.js`에 별도 capture queue/cache/inflight map을 다시 만들거나 Native `captureWindow` 호출을 분산하지 않는다.
+
+### Bottom thumbnail renderer — SOURCE EXTRACTED / LIVE PENDING
+- input: `monitor-desktop-visual-source.js`; 주입된 canonical `monitorNative` request만 사용한다.
+- validation: `monitor-thumbnail-contract.js`; exact GUID와 photo/solid 증거를 검증한다.
+- state/output: background와 HWND window 레이어가 각자의 DOM/CSS만 소유하고 V2 compositor가 순서와 호환 API만 소유한다.
+- 금지: 썸네일 모듈의 Chrome Native 직접 호출, 별도 `sendNativeMessage`, FIFO 응답 추측, legacy wallpaper cache 접근.
+- 검증: `check_monitor_thumbnail_architecture.js`, `check_monitor_thumbnail_v2_cleanroom.js`, `check_monitor_thumbnail_v2_native_ports.js`, `check_monitor_thumbnail_v2_render_ownership.js`.
+- 아직 운영 설치 및 실제 사진/단색/D1-D2 왕복 수락 전이므로 LIVE 완료로 보고하지 않는다.
 
 ### Node identity / endpoint projection — KEEP TOGETHER FOR NOW
 - 기본 목록은 ACT node authority를 사용하지 않고 RCC의 exact instance/session/tab/conversation을

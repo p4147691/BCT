@@ -28,11 +28,17 @@ function request(desktopId){
   const page=await browser.newPage({viewport:{width:530,height:200},deviceScaleFactor:1});
   await page.setContent("<!doctype html><meta charset='utf-8'><style>.monitor-desktop-thumb-visual{display:inline-block;width:240px;height:145px;position:relative;background-size:100% 100%;margin:6px;background-color:#333}</style>"+
   ids.map((id,i)=>'<div id="d'+(i+1)+'" class="monitor-desktop-thumb-visual" data-desktop-id="'+id+'"></div>').join(""));
-  await page.addScriptTag({content:fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-thumbnail-v2.js"),"utf8")});
+  for(const name of ["monitor-thumbnail-contract.js","monitor-desktop-visual-source.js","monitor-thumbnail-background-layer.js","monitor-thumbnail-window-layer.js","monitor-desktop-thumbnail-v2.js"]){
+   await page.addScriptTag({content:fs.readFileSync(path.join(__dirname,"../extension",name),"utf8")});
+  }
   const result=await page.evaluate(async({ids,frames})=>{
     const engine=window.MonitorDesktopThumbnailV2;
     const tiles=[document.getElementById("d1"),document.getElementById("d2")];
-    await Promise.all(tiles.map((tile,i)=>engine.refreshWallpaper(tile,ids[i],async()=>frames[i])));
+    engine.configure({visualSource:window.MonitorDesktopVisualSource.create({request:request=>{
+      const index=ids.indexOf(String(request.desktopId||"").toLowerCase());
+      return Promise.resolve(index>=0?frames[index]:{ok:false,error:"UNKNOWN_DESKTOP"});
+    }})});
+    await Promise.all(tiles.map((tile,i)=>engine.refreshWallpaper(tile,ids[i])));
     const normal=tiles.map(x=>({id:x.dataset.wallpaperDesktopId,state:x.dataset.wallpaperCapture,source:x.dataset.wallpaperSource,
       image:getComputedStyle(x).backgroundImage}));
     const wrong=engine.wallpaper(tiles[0],ids[0],frames[1]);

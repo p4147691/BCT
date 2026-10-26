@@ -13,12 +13,11 @@ const next=js.indexOf('if (response?.event === true && response?.type === "monit
 assert(event>0&&next>event);
 const branch=js.slice(event,next);
 assert.match(branch,/MonitorDesktopThumbnailV2\.refreshWallpaper/);
-assert.match(branch,/getDesktopVisualSnapshot/);
-assert.match(branch,/monitorNativeVisualRead\(/);
-assert.doesNotMatch(branch,/monitorNative\(/,"wallpaper bytes must not enter the shared control-port FIFO");
-assert.doesNotMatch(branch,/monitorCoreNative\(/,"use the Control host's isolated read, not the Core capture route");
+assert.match(branch,/\{force:true\}/);
+assert.doesNotMatch(branch,/getDesktopVisualSnapshot|monitorNativeVisualRead|monitorNative\(|monitorCoreNative\(/,
+  "event branch must delegate through the configured V2 source instead of choosing a transport");
 assert.doesNotMatch(branch,/monitorWallpaperCache|monitorWallpaperActuals|wallpaperDataUri/);
 assert.doesNotMatch(branch,/setInterval|captureCurrentDesktopWallpaper|Progman/);
-assert.match(core,/native-guid-file/);
+assert.match(core,/backgrounds\.create\(\{contract,visualSource\}\)/);
 assert(!core.includes("monitorWallpaperActuals.get(") && !core.includes("monitorWallpaperCache.get(") && !core.includes("captureCurrentDesktopWallpaper("),"V2 cannot read legacy cache or capture Progman");
-console.log("PASS: thumbnail V2 is the sole wallpaper event renderer and uses its isolated Native read path without legacy caches");
+console.log("PASS: thumbnail V2 is the sole wallpaper event renderer and delegates to its injected canonical source without legacy caches");

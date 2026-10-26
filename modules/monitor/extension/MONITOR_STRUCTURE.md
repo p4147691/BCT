@@ -13,6 +13,7 @@
 - Organization behavior model: `extension\MONITOR_ORGANIZATION_MODEL.md`
 - Code responsibility map: `extension\MONITOR_JS_MAP.md`
 - Module boundary decisions: `extension\MONITOR_MODULE_BOUNDARIES.md`
+- Target architecture and migration order: `..\MONITOR_ARCHITECTURE.md`
 - Generated function index: `extension\MONITOR_JS_INDEX.md`
 - Deployment observation tool: `tools\Request-MonitorDeploymentCheck.ps1`
 - Versioned deployment tool: `tools\Publish-MonitorDeployment.ps1`
@@ -59,9 +60,13 @@ Organization UI의 backend runtime은 `D:\ACT\runtime\agent-orchestrator`이며,
 1. `desktop.js`
 2. `monitor-act-transport.js`
 3. `monitor-thumbnail-service.js`
-4. `monitor-native-trace.js` — bounded event-driven request diagnostics
-5. `monitor.js`
-6. `desktop-window-chrome.js`
+4. 독립 UI/정책 모듈들과 `monitor-native-trace.js`
+5. 썸네일 계약 스택: `monitor-thumbnail-contract.js` → `monitor-desktop-visual-source.js` → `monitor-thumbnail-background-layer.js` → `monitor-thumbnail-window-layer.js` → `monitor-desktop-thumbnail-v2.js`
+6. `monitor-domain-apis.js`, node generation, host identity
+7. generated compatibility bundle `monitor.js`
+8. `desktop-window-chrome.js`
+
+정확한 전체 순서는 `desktop.html`과 `tools/check_monitor_structure.py`가 검증한다. 하단 썸네일의 input adapter와 각 시각 레이어는 `..\MONITOR_ARCHITECTURE.md`의 dependency direction을 따른다.
 
 `G+` / `N+`는 `monitor.js`의 최소 provider launch trigger다. 각 버튼은 provider별 ChatGPT 브라우저 창 열기만 요청하며 launch queue, 자동 `기깃`, endpoint/ACT node 동기화 상태를 소유하지 않는다.
 `monitor-act-transport.js`는 ACT endpoint 탐색/cache/retry를 소유하고, `monitor.js`에는 `actFetch` 한 경계만 노출한다.

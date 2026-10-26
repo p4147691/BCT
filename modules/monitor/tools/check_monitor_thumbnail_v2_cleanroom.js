@@ -1,11 +1,17 @@
 "use strict";
 const assert=require("node:assert/strict");
 const fs=require("node:fs"),vm=require("node:vm"),path=require("node:path");
-const code=fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-thumbnail-v2.js"),"utf8");
+const modules=[
+  "monitor-thumbnail-contract.js",
+  "monitor-desktop-visual-source.js",
+  "monitor-thumbnail-background-layer.js",
+  "monitor-thumbnail-window-layer.js",
+  "monitor-desktop-thumbnail-v2.js"
+].map(name=>fs.readFileSync(path.join(__dirname,"../extension",name),"utf8"));
 class Element {
   constructor(tag,doc){
     this.tagName=tag.toUpperCase();this.ownerDocument=doc;this.dataset={};this.children=[];this.attrs=new Map();this.isConnected=true;this.textContent="";
-    this.style={backgroundImage:"",setProperty(name,v){this[name]=v}};
+    this.style={backgroundImage:"",backgroundColor:"",setProperty(name,v){this[name]=v}};
     const classes=new Set();
     this.classList={add:n=>classes.add(n),remove:n=>classes.delete(n),contains:n=>classes.has(n)};
     Object.defineProperty(this,"className",{get(){return [...classes].join(" ")},set(s){classes.clear();for(const x of s.split(/\s+/).filter(Boolean))classes.add(x)}});
@@ -21,9 +27,11 @@ const doc={createElement(tag){return new Element(tag,doc)}};
 const D1="8ac6b16f-820b-4773-89e7-276ae4b84040",D2="c991b275-7933-4697-9d6e-73bf31ae4379";
 function tile(id){const t=doc.createElement("span");t.className="monitor-desktop-thumb-visual";t.dataset.desktopId=id;return t;}
 const visual1=tile(D1),visual2=tile(D2);
-const ctx={WeakMap,Map,Set,Object,Array,Number,String,Date,globalThis:null};
-ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(code,ctx);
+let currentRequest=async()=>({ok:false,error:"NO_TEST_REPLY"});
+const ctx={WeakMap,Map,Set,Object,Array,Number,String,Date,Promise,TypeError,globalThis:null};
+ctx.globalThis=ctx;vm.createContext(ctx);for(const code of modules)vm.runInContext(code,ctx);
 const r=ctx.MonitorDesktopThumbnailV2;
+r.configure({visualSource:ctx.MonitorDesktopVisualSource.create({request:message=>currentRequest(message)})});
 assert.equal(typeof r.refreshWallpaper,"function");
 const img="data:image/jpeg;base64,VALID_BYTES";
 const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
@@ -36,15 +44,17 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   const solid = {ok:true,desktopId:D1,wallpaper:{mode:"solid",color:"#10893e",proof:"windows-solid-mode"}};
   assert.equal(r.wallpaper(visual1,D1,solid),true);
   assert.equal(visual1.style.backgroundImage,"");
-  assert.equal(visual1.style.backgroundColor,"#10893e");
+  assert.equal(visual1.style.backgroundColor,"#10893E");
   assert.equal(visual1.dataset.wallpaperSource,"native-solid-color");
   assert.equal(r.wallpaper(visual1,D1,{...solid,desktopId:D2}),false);
   assert.equal(visual1.style.backgroundColor,"");
   assert.equal(r.wallpaper(visual1,D1,source(D1)),true);
   assert.equal(visual1.style.backgroundColor,"");
   let unblock;const old=new Promise(f=>unblock=f);
-  const oldTurn=r.refreshWallpaper(visual1,D1,()=>old,{force:true});
-  const latest=await r.refreshWallpaper(visual1,D1,async()=>source(D1),{force:true});
+  currentRequest=()=>old;
+  const oldTurn=r.refreshWallpaper(visual1,D1,{force:true});
+  currentRequest=message=>source(message.desktopId);
+  const latest=await r.refreshWallpaper(visual1,D1,{force:true});
   unblock({ok:true,desktopId:D1,wallpaper:{dataUri:"data:image/jpeg;base64,OLD"}});
   assert.equal(await oldTurn,false,"old async image must be rejected");
   assert.equal(latest,true);assert(!visual1.style.backgroundImage.includes("OLD"));
@@ -93,9 +103,10 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   assert.equal(legacy.querySelectorAll(".monitor-desktop-thumb-window").length,0);
   assert.equal(visual2.dataset.wallpaperDesktopId,D2.toLowerCase());
   let nativeReads=0;
-  await r.refreshWallpaper(visual1,D1,async id=>{nativeReads++;return source(id)});
+  currentRequest=async message=>{nativeReads++;return source(message.desktopId)};
+  await r.refreshWallpaper(visual1,D1);
   assert.equal(nativeReads,0,"normal thumbnail repaint must not poll wallpapers");
-  await r.refreshWallpaper(visual1,D1,async id=>{nativeReads++;return source(id)},{force:true});
+  await r.refreshWallpaper(visual1,D1,{force:true});
   assert.equal(nativeReads,1,"a native wallpaper-change signal forces exactly one GUID read");
   const timed={...removed,frames:[{...frame.frames[0],capturedAt:Date.now()-30000}]};
   r.windowFrame(visual1,D1,timed);

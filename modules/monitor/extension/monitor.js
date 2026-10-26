@@ -8622,7 +8622,11 @@ async function refreshAiMonitor() {
 
 let monitorNativePort = null;
 
-const monitorNativePending = [];
+const monitorNativePending = new Map();
+let monitorNativeRequestSequence = 0;
+
+const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorNative });
+globalThis.MonitorDesktopThumbnailV2.configure({ visualSource: monitorDesktopVisualSource });
 
 function monitorCaptureDataUriToObjectUrl(dataUri) {
   const source = String(dataUri || "");
@@ -8656,10 +8660,7 @@ function ensureMonitorNativePort() {
       // Each visual keeps its own generation fence; no cross-desktop cache.
       void Promise.allSettled(targets.map(visual =>
         globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-          visual,visual.dataset.desktopId,id=>monitorNativeVisualRead({
-            type:"getDesktopVisualSnapshot",desktopId:id,
-            maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68
-          }),{force:true})));
+          visual,visual.dataset.desktopId,{force:true})));
       return;
     }
     if (response?.event === true && response?.type === "monitorDragPreviewReleased") {
@@ -8670,12 +8671,12 @@ function ensureMonitorNativePort() {
       return;
     }
 
-    if (response?.event === true) return; // Never shift a request reply for unsolicited Native events.
-    const pending = monitorNativePending.shift();
-
-    if (pending) {
-      pending.resolve(response);
-    }
+    if (response?.event === true) return; // Unsolicited events never complete requests.
+    const requestId = String(response?.requestId || "");
+    const pending = monitorNativePending.get(requestId);
+    if (!pending) return;
+    monitorNativePending.delete(requestId);
+    pending.resolve(response);
 
   });
 
@@ -8685,7 +8686,8 @@ function ensureMonitorNativePort() {
 
     monitorNativePort = null;
 
-    while (monitorNativePending.length) monitorNativePending.shift().reject(new Error(error));
+    for (const pending of monitorNativePending.values()) pending.reject(new Error(error));
+    monitorNativePending.clear();
 
   });
 
@@ -8864,12 +8866,12 @@ function monitorControlNativeRequest(message) {
   return new Promise((resolve, reject) => {
 
     const port = ensureMonitorNativePort();
+    const requestId = `monitor-${Date.now().toString(36)}-${(++monitorNativeRequestSequence).toString(36)}`;
+    monitorNativePending.set(requestId, { resolve, reject, message });
 
-    monitorNativePending.push({ resolve, reject, message });
+    try { port.postMessage({ ...message, requestId }); }
 
-    try { port.postMessage(message); }
-
-    catch (error) { monitorNativePending.pop(); reject(error); }
+    catch (error) { monitorNativePending.delete(requestId); reject(error); }
 
   });
 
@@ -8878,20 +8880,6 @@ function monitorControlNativeRequest(message) {
 function monitorNativeLaunchIsolated(message) {
 
   return monitorControlNativeIsolatedRequest(message);
-
-}
-
-function monitorNativeVisualRead(message) {
-
-  // Chrome's official one-shot Native Messaging API gives this read one host
-  // process and one response. Wallpaper bytes therefore never enter the
-  // long-lived control port's mixed FIFO.
-  return MonitorNativeTrace.request("control-visual-read", message, () => new Promise((resolve, reject) => {
-    chrome.runtime.sendNativeMessage(MONITOR_CONTROL_HOST, message, (response) => {
-      const error = chrome.runtime.lastError?.message;
-      if (error) reject(new Error(error)); else resolve(response);
-    });
-  }));
 
 }
 
@@ -11896,9 +11884,7 @@ async function refreshDesktopThumb(visual, desktopId) {
   if (!renderer) return false;
   // Native is authoritative: explicit per-desktop GUID/file snapshot; never
   // use the legacy actual/restore/Progman wallpaper image maps.
-  const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId, id =>
-    monitorNativeVisualRead({type:"getDesktopVisualSnapshot",desktopId:id,
-      maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}));
+  const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId);
   if (!visual.isConnected || String(visual.dataset.desktopId).toLowerCase() !== String(desktopId).toLowerCase()) return false;
   // Window geometry is separate Native HWND truth; pixels never become wallpaper.
   // On other desktops capture may fail/CLOAKED; V2 renders a transparent outline.
@@ -13030,9 +13016,7 @@ async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") 
 
   if (visual) {
     void globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-      visual,createdId,id=>monitorNativeVisualRead({type:"getDesktopVisualSnapshot",desktopId:id,
-        maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}),
-      {force:true}).catch(()=>false);
+      visual,createdId,{force:true}).catch(()=>false);
   }
 
 }

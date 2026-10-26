@@ -63,10 +63,7 @@ function ensureMonitorNativePort() {
       // Each visual keeps its own generation fence; no cross-desktop cache.
       void Promise.allSettled(targets.map(visual =>
         globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-          visual,visual.dataset.desktopId,id=>monitorNativeVisualRead({
-            type:"getDesktopVisualSnapshot",desktopId:id,
-            maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68
-          }),{force:true})));
+          visual,visual.dataset.desktopId,{force:true})));
       return;
     }
     if (response?.event === true && response?.type === "monitorDragPreviewReleased") {
@@ -77,12 +74,12 @@ function ensureMonitorNativePort() {
       return;
     }
 
-    if (response?.event === true) return; // Never shift a request reply for unsolicited Native events.
-    const pending = monitorNativePending.shift();
-
-    if (pending) {
-      pending.resolve(response);
-    }
+    if (response?.event === true) return; // Unsolicited events never complete requests.
+    const requestId = String(response?.requestId || "");
+    const pending = monitorNativePending.get(requestId);
+    if (!pending) return;
+    monitorNativePending.delete(requestId);
+    pending.resolve(response);
 
   });
 
@@ -92,7 +89,8 @@ function ensureMonitorNativePort() {
 
     monitorNativePort = null;
 
-    while (monitorNativePending.length) monitorNativePending.shift().reject(new Error(error));
+    for (const pending of monitorNativePending.values()) pending.reject(new Error(error));
+    monitorNativePending.clear();
 
   });
 
@@ -112,12 +110,12 @@ function monitorControlNativeRequest(message) {
   return new Promise((resolve, reject) => {
 
     const port = ensureMonitorNativePort();
+    const requestId = `monitor-${Date.now().toString(36)}-${(++monitorNativeRequestSequence).toString(36)}`;
+    monitorNativePending.set(requestId, { resolve, reject, message });
 
-    monitorNativePending.push({ resolve, reject, message });
+    try { port.postMessage({ ...message, requestId }); }
 
-    try { port.postMessage(message); }
-
-    catch (error) { monitorNativePending.pop(); reject(error); }
+    catch (error) { monitorNativePending.delete(requestId); reject(error); }
 
   });
 
@@ -193,22 +191,6 @@ function monitorNativeLaunchIsolated(message) {
 
 }
 //@@FN_END:monitorNativeLaunchIsolated
-
-//@@FN_START:monitorNativeVisualRead
-function monitorNativeVisualRead(message) {
-
-  // Chrome's official one-shot Native Messaging API gives this read one host
-  // process and one response. Wallpaper bytes therefore never enter the
-  // long-lived control port's mixed FIFO.
-  return MonitorNativeTrace.request("control-visual-read", message, () => new Promise((resolve, reject) => {
-    chrome.runtime.sendNativeMessage(MONITOR_CONTROL_HOST, message, (response) => {
-      const error = chrome.runtime.lastError?.message;
-      if (error) reject(new Error(error)); else resolve(response);
-    });
-  }));
-
-}
-//@@FN_END:monitorNativeVisualRead
 
 //@@FN_START:monitorControlNativeIsolatedRequest
 function monitorControlNativeIsolatedRequest(message) {

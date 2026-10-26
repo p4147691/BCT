@@ -6,8 +6,8 @@
 
 ## 배경 — 단 하나의 진실
 1. 레지스트리 `VirtualDesktopIDs` 순서의 GUID를 타일 `dataset.desktopId`와 정확히 비교한다.
-2. Native Control Host `getDesktopVisualSnapshot({desktopId: GUID})`를 **동일한 이벤트 수신 가능 Native 포트**에서 요청한다.
-3. `reply.ok===true`, `reply.desktopId===GUID`, 진짜 JPEG/PNG/WEBP 데이터가 모두 만족할 때만 CSS backgroundImage 설정.
+2. `monitor-desktop-visual-source.js`가 주입받은 **하나의 requestId 상관관계 Native Control 포트**에서 `getDesktopVisualSnapshot({desktopId: GUID})`를 요청한다. 썸네일 모듈은 Chrome Native API를 직접 호출하지 않는다.
+3. `reply.ok===true`, `reply.desktopId===GUID`이며, 진짜 JPEG/PNG/WEBP 데이터 또는 Windows가 증명한 `mode:solid` + `#RRGGBB`가 만족될 때만 배경 레이어를 설정한다.
 4. 같은 타일의 일반 재렌더는 이미 확인한 사진을 반복해서 다시 읽지 않는다. 최초 조회와 **Windows 실제 배경 변경 이벤트**만 재조회. 세대(generation) 검사로 늦은 이전 응답 차단.
 5. 일반 캐시(`monitorWallpaperActuals`, `monitorWallpaperCache`), `chrome.storage.session`의 이전 팝업 `wallpaperDataUri`, Progman/WGC 캡처는 배경 출처로 사용하지 않는다.
 
@@ -23,7 +23,7 @@
 - Chrome/RCC/Core, 기타 원본 파일은 변경하지 않고 격리 worktree에만 구현한다.
 
 ## 수락
-- `check_monitor_thumbnail_v2_cleanroom.js`: GUID 오매핑 거부, 비동기 구세대 응답 차단, Native 이벤트에서만 재조회, 정상 HWND/노드/Z/기하 유지, CLOAKED·stale·source 오류 투명 처리, F5 새 DOM에서 레거시 픽셀 소거.
+- `check_monitor_thumbnail_architecture.js`와 `check_monitor_thumbnail_v2_cleanroom.js`: 포트/계약/레이어 분리, GUID 오매핑 거부, 비동기 구세대 응답 차단, Native 이벤트에서만 재조회, 정상 HWND/노드/Z/기하 유지, CLOAKED·stale·source 오류 투명 처리, F5 새 DOM에서 레거시 픽셀 소거.
 - 구버전 Minimized/노드/배경 이벤트 계약 수정·검증. 모든 Monitor JS 34 PASS, 공식 구조 검사 PASS, 함수 SHA 인덱스 일치.
 - **실제 Windows D1/D2 스크린샷과 Monitor 타일 픽셀 비교는 미실시**. LIVE 설치 성공과 화면 수락으로 보고하지 않는다.
 
@@ -38,8 +38,8 @@
 - **현장 전용 Native→화면 시험:** `node modules/monitor/tools/physical_monitor_thumbnail_v2_native_edge.js` — 설치된 Native Host가 반환한 실제 D1/D2 이미지를 별도 헤드리스 Edge에서 GUID별로 대조. 이미지를 저장하거나 외부로 전송하지 않음.
 - 현장 시험은 격리 Windows 환경에서 실제 실행해 두 건 PASS. 일반 CI에서는 물리 장치·개인 경로를 요구하지 않으므로 의도적으로 자동 검색 대상에서 제외.
 
-## 운영 격리 경계: V2 단독 소유 (2026-10-26 추가)
-- 하단 \`.monitor-desktop-thumb-visual\`의 CSS 배경, 하단 \`.monitor-desktop-thumb-window\`의 이미지 src/geometry/실패 표시는 **monitor-desktop-thumbnail-v2.js만 소유**한다.
+## 운영 격리 경계: V2 레이어 소유 (2026-10-26 추가)
+- 하단 \`.monitor-desktop-thumb-visual\`의 CSS 배경은 **monitor-thumbnail-background-layer.js**, 하단 \`.monitor-desktop-thumb-window\`의 이미지 src/geometry/실패 표시는 **monitor-thumbnail-window-layer.js**, 결합 순서와 호환 API는 **monitor-desktop-thumbnail-v2.js**가 소유한다.
 - monitor.js는 Native 이벤트와 GUID/HWND 식별 및 역할·상태·드래그 의미를 전달한다. 이벤트가 직접 이미지 DOM을 생성/수정하거나 wallpaperDataUri, monitorWallpaperActuals, monitorWallpaperCache, Progman, SVG/이전 프레임을 대입하면 안 된다.
 - legacy window lifecycle handler의 직접 이미지 생성(upsertMonitorEventThumbWindow), old source-set, 직접 이동/크기 반영은 폐기하고 \`scheduleMonitorV2WindowRefresh\`(V2 Native 재조회) 및 \`removeMonitorV2Window\`(V2 소유 하위창 제거)로 전환한다.
 - 비동기 capture가 역순 완료되어 과거 프레임을 다시 그리는 경우를 막도록 V2 frameGeneration을 검증한다. 이 방어는 wallpaper 세대(generation)와 독립적이다.

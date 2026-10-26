@@ -257,7 +257,11 @@ let monitorActHealthWasDown = false;
 
 let monitorNativePort = null;
 
-const monitorNativePending = [];
+const monitorNativePending = new Map();
+let monitorNativeRequestSequence = 0;
+
+const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorNative });
+globalThis.MonitorDesktopThumbnailV2.configure({ visualSource: monitorDesktopVisualSource });
 
 /*@@MONITOR_FUNCTION:monitorCaptureDataUriToObjectUrl@@*/
 
@@ -281,7 +285,5 @@ const monitorNativePending = [];
 /*@@MONITOR_FUNCTION:monitorControlNativeRequest@@*/
 
 /*@@MONITOR_FUNCTION:monitorNativeLaunchIsolated@@*/
-
-/*@@MONITOR_FUNCTION:monitorNativeVisualRead@@*/
 
 /*@@MONITOR_FUNCTION:monitorControlNativeIsolatedRequest@@*/
