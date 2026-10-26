@@ -33,6 +33,7 @@ from bct.integrations.rcc import (
 
 _READ_COMMANDS = {
     "state", "presence", "result", "result-of-create-and-send", "target-discover",
+    "tab-get", "windows-list", "window-get", "tab-groups-list", "tab-group-get", "read-latest-assistant",
 }
 _RECONCILE_COMMANDS = {
     "reconcile-send-to-created-tab", "reconcile-create-and-send",
@@ -43,6 +44,8 @@ _RENAME_INSPECTION_COMMAND = "inspect-rename-receipt"
 _OPERATOR_QUARANTINE_COMMAND = "quarantine-legacy-rename-claim"
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
+    "create-tab-group", "add-tab-to-group", "remove-tab-from-group", "move-tab-group",
+    "update-tab-group",
     "rename-conversation", "reload-extension", "send", "send-to-tab", "create-and-send",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
@@ -78,6 +81,18 @@ def _positive_int(value: object, code: str) -> int:
     except (TypeError, ValueError) as exc:
         raise PreconditionError(code) from exc
     if parsed <= 0:
+        raise PreconditionError(code)
+    return parsed
+
+
+def _nonnegative_int(value: object, code: str) -> int:
+    if isinstance(value, bool):
+        raise PreconditionError(code)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise PreconditionError(code) from exc
+    if parsed < 0:
         raise PreconditionError(code)
     return parsed
 
@@ -407,6 +422,36 @@ class RelayBrowserFeature:
         elif command in _READ_COMMANDS:
             if command == "target-discover":
                 prepared["extra"]["workId"] = work.work_id
+            elif command == "tab-get":
+                allowed.add("tab_id")
+                prepared["extra"]["tabId"] = _positive_int(
+                    arguments.get("tab_id"), "RCC_TAB_ID_INVALID"
+                )
+            elif command == "window-get":
+                allowed.add("window_id")
+                prepared["extra"]["windowId"] = _positive_int(
+                    arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"
+                )
+            elif command == "tab-group-get":
+                allowed.add("group_id")
+                prepared["extra"]["groupId"] = _nonnegative_int(
+                    arguments.get("group_id"), "RCC_TAB_GROUP_ID_INVALID"
+                )
+            elif command == "read-latest-assistant":
+                allowed.update({"session_id", "tab_id", "window_id", "conversation_key"})
+                session = str(arguments.get("session_id") or "").strip()
+                key = str(arguments.get("conversation_key") or "").strip().lower()
+                if (not re.fullmatch(r"[a-f0-9]{32}", session)
+                        or not re.fullmatch(
+                            r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", key
+                        )):
+                    raise PreconditionError("RCC_READ_LATEST_ASSISTANT_IDENTITY_REQUIRED")
+                prepared["extra"].update({
+                    "sessionId": session,
+                    "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                    "windowId": _positive_int(arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"),
+                    "conversationKey": key,
+                })
         elif command in {"create-chat-window", "reload-extension"}:
             pass
         elif command == "create-and-send":
@@ -704,6 +749,72 @@ class RelayBrowserFeature:
                 "index": index, "conversationKey": conversation_key,
                 "createOperationId": create_id,
             })
+        elif command == "create-tab-group":
+            allowed.update({"session_id", "tab_ids", "title", "color", "collapsed"})
+            session = str(arguments.get("session_id") or "").strip()
+            raw_tab_ids = arguments.get("tab_ids")
+            if not re.fullmatch(r"[a-f0-9]{32}", session) or not isinstance(raw_tab_ids, list):
+                raise PreconditionError("RCC_TAB_GROUP_CREATE_IDENTITY_REQUIRED")
+            tab_ids = [_positive_int(value, "RCC_TAB_ID_INVALID") for value in raw_tab_ids]
+            title = str(arguments.get("title") or "").strip()
+            color = str(arguments.get("color") or "").strip().lower()
+            collapsed = arguments.get("collapsed", False)
+            if (not tab_ids or len(tab_ids) > 32 or len(set(tab_ids)) != len(tab_ids)
+                    or not title or len(title) > 100 or color not in {
+                        "grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"
+                    } or not isinstance(collapsed, bool)):
+                raise PreconditionError("RCC_TAB_GROUP_CREATE_ARGUMENT_INVALID")
+            prepared["extra"].update({"sessionId": session, "tabIds": tab_ids, "title": title,
+                                      "color": color, "collapsed": collapsed})
+        elif command in {"add-tab-to-group", "remove-tab-from-group"}:
+            allowed.update({"session_id", "group_id", "tab_id"})
+            session = str(arguments.get("session_id") or "").strip()
+            if not re.fullmatch(r"[a-f0-9]{32}", session):
+                raise PreconditionError("RCC_TAB_GROUP_SESSION_ID_REQUIRED")
+            prepared["extra"].update({
+                "sessionId": session,
+                "groupId": _nonnegative_int(arguments.get("group_id"), "RCC_TAB_GROUP_ID_INVALID"),
+                "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+            })
+        elif command == "move-tab-group":
+            allowed.update({"session_id", "group_id", "window_id", "target_window_id", "index"})
+            session = str(arguments.get("session_id") or "").strip()
+            try:
+                index = int(arguments.get("index"))
+            except (TypeError, ValueError) as exc:
+                raise PreconditionError("RCC_TAB_GROUP_INDEX_INVALID") from exc
+            if not re.fullmatch(r"[a-f0-9]{32}", session) or index < -1:
+                raise PreconditionError("RCC_TAB_GROUP_MOVE_IDENTITY_REQUIRED")
+            prepared["extra"].update({
+                "sessionId": session,
+                "groupId": _nonnegative_int(arguments.get("group_id"), "RCC_TAB_GROUP_ID_INVALID"),
+                "windowId": _positive_int(arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"),
+                "targetWindowId": _positive_int(
+                    arguments.get("target_window_id"), "RCC_TARGET_WINDOW_ID_INVALID"
+                ), "index": index,
+            })
+        elif command == "update-tab-group":
+            allowed.update({"session_id", "group_id", "title", "color", "collapsed"})
+            session = str(arguments.get("session_id") or "").strip()
+            title = arguments.get("title")
+            color = arguments.get("color")
+            collapsed = arguments.get("collapsed")
+            if not re.fullmatch(r"[a-f0-9]{32}", session):
+                raise PreconditionError("RCC_TAB_GROUP_SESSION_ID_REQUIRED")
+            if title is not None and (not isinstance(title, str) or not title.strip() or len(title.strip()) > 100):
+                raise PreconditionError("RCC_TAB_GROUP_TITLE_INVALID")
+            if color is not None and (not isinstance(color, str) or color.strip().lower() not in {
+                    "grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"}):
+                raise PreconditionError("RCC_TAB_GROUP_COLOR_INVALID")
+            if collapsed is not None and not isinstance(collapsed, bool):
+                raise PreconditionError("RCC_TAB_GROUP_COLLAPSED_INVALID")
+            if title is None and color is None and collapsed is None:
+                raise PreconditionError("RCC_TAB_GROUP_UPDATE_EMPTY")
+            prepared["extra"].update({"sessionId": session,
+                "groupId": _nonnegative_int(arguments.get("group_id"), "RCC_TAB_GROUP_ID_INVALID"),
+                "title": title.strip() if isinstance(title, str) else None,
+                "color": color.strip().lower() if isinstance(color, str) else None,
+                "collapsed": collapsed})
         elif command == "rename-conversation":
             allowed.update({"session_id", "tab_id", "conversation_key", "title"})
             session_id = str(arguments.get("session_id") or "").strip()
@@ -729,6 +840,10 @@ class RelayBrowserFeature:
             resource += ":maintenance:reload-extension"
         elif command == "send-to-tab":
             resource += ":direct-tab:" + str(prepared["extra"]["tabId"])
+        elif command in {"add-tab-to-group", "remove-tab-from-group", "move-tab-group", "update-tab-group"}:
+            resource += ":tab-group:" + str(prepared["extra"]["groupId"])
+        elif command == "create-tab-group":
+            resource += ":tab-group-create:" + ",".join(map(str, prepared["extra"]["tabIds"]))
         elif command == "simple-relay-bind":
             resource += ":simple-relay:binding"
         elif command == "simple-relay-send":
@@ -1574,8 +1689,13 @@ class RelayBrowserFeature:
             compose_parent_id = values["text"]
         if request.preconditions["mutating"]:
             extra["operationId"] = request.operation_id
-            if values["command"] in {"create-chat-window", "create-chat-tab"}:
+            if values["command"] in {"create-chat-window", "create-chat-tab",
+                                     "create-tab-group", "add-tab-to-group",
+                                     "remove-tab-from-group", "move-tab-group",
+                                     "update-tab-group"}:
                 extra["instanceId"] = values["instance_id"]
+        if values["command"] == "read-latest-assistant":
+            extra["instanceId"] = values["instance_id"]
         try:
             host_command = (
                 "rename-receipt" if values["command"] in {
@@ -1598,7 +1718,18 @@ class RelayBrowserFeature:
         except RelayUnavailable as exc:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
         except RelayEffectUnknown as exc:
+            # An observation does not cross a browser-effect boundary.  A
+            # lost read response is therefore an unavailable read, never an
+            # UNKNOWN send/creation that can leave a durable execution claim.
+            if values["command"] in _READ_COMMANDS:
+                raise ConfirmedFailure("RCC_READ_UNAVAILABLE", release_claims=True) from exc
             raise UnknownEffectError(str(exc)) from exc
+        if values["command"] in _READ_COMMANDS and result.get("ok") is not True:
+            return FeatureResult(Outcome.NOT_APPLIED, {
+                "instance_id": values["instance_id"], "command": values["command"],
+                "read": True,
+                "error": str(result.get("error") or "RCC_READ_NOT_APPLIED")[:128],
+            }, release_claims=True, output={"result": _sanitize(result)})
         if values["command"] == _RENAME_INSPECTION_COMMAND:
             observed = result.get("observed") if isinstance(result.get("observed"), dict) else {}
             if not (

@@ -325,6 +325,37 @@ if (message.type === 'relay:retireComposerDraft') {
   return true;
 }
 
+// Read exactly the latest rendered Assistant turn in this exact conversation.
+// It is intentionally an observation: it does not bind the answer to a
+// previous send operation and never changes the page or composer.
+if (message.type === 'relay:readLatestAssistant') {
+  Promise.resolve().then(async () => {
+    const expectedConversationKey = String(message.conversationKey || '').trim().toLowerCase();
+    const actualConversationKey = currentConversationKey();
+    if (!expectedConversationKey || actualConversationKey !== expectedConversationKey) {
+      return { ok: false, error: 'READ_LATEST_ASSISTANT_CONVERSATION_MISMATCH' };
+    }
+    const node = lastAssistantNode();
+    const responseText = node ? messageUnitText(node, 'assistant') : '';
+    if (responseText.length > 12000) {
+      return { ok: false, error: 'READ_LATEST_ASSISTANT_TOO_LARGE' };
+    }
+    const generating = isGenerating();
+    const terminal = !generating && (!node || hasCompletionAction());
+    return {
+      ok: true, conversationKey: actualConversationKey,
+      observationState: node ? (terminal ? 'TERMINAL' : 'IN_PROGRESS') : 'EMPTY',
+      generating, terminal, responseText,
+      responseSha256: responseText ? await newChatTextSha256(responseText) : '',
+      responseLength: responseText.length,
+      observedAt: Date.now(),
+    };
+  }).then(sendResponse).catch((error) => sendResponse({
+    ok: false, error: String(error?.message || error || 'READ_LATEST_ASSISTANT_FAILED').slice(0, 128),
+  }));
+  return true;
+}
+
 if (message.type === 'relay:retireExecution') {
   Promise.resolve().then(async () => {
     const relayId = String(message.relayId || '').trim();

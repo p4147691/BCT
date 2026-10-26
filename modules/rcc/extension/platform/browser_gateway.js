@@ -48,6 +48,7 @@
 
     return Object.freeze({
       queryChatTabs: async () => (await chromeApi.tabs.query({ url: chatUrls })).filter(isChatTab),
+      queryTabs: async (query = {}) => chromeApi.tabs.query(query),
       isChatTab,
       publicTab: (tab) => ({
         // Normalise the Chrome Tabs API's `id` at the browser boundary.
@@ -55,6 +56,7 @@
         tabId: tab?.id,
         windowId: tab?.windowId ?? null,
         index: Number.isInteger(tab?.index) ? tab.index : null,
+        groupId: Number.isSafeInteger(Number(tab?.groupId)) ? Number(tab.groupId) : -1,
         title: tab?.title || '',
         url: tab?.url || '',
       }),
@@ -64,6 +66,13 @@
           throw new Error('RCC_BROWSER_GATEWAY_WINDOWS_API_REQUIRED');
         }
         return chromeApi.windows.get(windowId);
+      },
+      listNormalWindows: async () => {
+        if (typeof chromeApi.windows?.getAll !== 'function') {
+          throw new Error('RCC_BROWSER_GATEWAY_WINDOWS_API_REQUIRED');
+        }
+        const windows = await chromeApi.windows.getAll({ populate: true });
+        return windows.filter((item) => String(item?.type || 'normal') === 'normal');
       },
       sendMessage: (tabId, message) => chromeApi.tabs.sendMessage(tabId, message),
       sendWithReceiver,

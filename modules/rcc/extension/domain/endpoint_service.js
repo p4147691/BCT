@@ -70,6 +70,8 @@ function endpointFromTab(tab, presence = 'OPEN', reason = '') {
 
     tabIndex: Number.isInteger(tab?.index) ? tab.index : null,
 
+    groupId: Number.isSafeInteger(Number(tab?.groupId)) ? Number(tab.groupId) : -1,
+
     conversationKey: RelayCore.conversationKey(url),
 
     title: String(tab?.title || ''),
@@ -98,6 +100,8 @@ function endpointComparable(endpoint) {
     endpoint?.windowId ?? null,
 
     endpoint?.tabIndex ?? null,
+
+    endpoint?.groupId ?? -1,
 
     endpoint?.conversationKey || '',
 

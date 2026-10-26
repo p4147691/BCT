@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-24-rcc-reasoning-observation-v1';
+const RCC_BUILD_VERSION = '2026-10-27-rcc-tab-groups-and-read-v1';
 
 function editorCandidates() {
 

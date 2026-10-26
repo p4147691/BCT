@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC35_ATOMIC_CHAT_PRIMITIVES",
+  "candidate": "RCC_REBUILD_V2_RC36_TAB_GROUP_AND_READ_PRIMITIVES",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -12,8 +12,8 @@
       },
       {
         "path": "background_loader.js",
-        "size": 1649,
-        "sha256": "d34d72dcaf784fd9c48ce6999eaa28563c0c388952ef33899b0eb816a8deccab"
+        "size": 1790,
+        "sha256": "50ec1bb71f502a898007763d3cc846606fcb4667230ae82a933bb32e1d06b09c"
       },
       {
         "path": "boot/background_app.js",
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1605,
-        "sha256": "6e90a48297b17756d7217d4f10ada93edcb31dd81a3a9b1b2504802bfd74a91f"
+        "size": 1716,
+        "sha256": "25cd022b170838a19bdd496898ab1326a4f162b178ee510ac020bf2f708c8e2e"
       },
       {
         "path": "browser/read_adapter.js",
@@ -56,9 +56,19 @@
         "sha256": "d1c07aa32664046bf71e758712b6ff39950726235164434f40161864265c510b"
       },
       {
+        "path": "browser/tab_group_contract.js",
+        "size": 5773,
+        "sha256": "d98df36688894c2861be8bb681a3896908006d35cfac53d45049b7c9b9ecebb6"
+      },
+      {
+        "path": "browser/tab_group_adapter.js",
+        "size": 6824,
+        "sha256": "533c8bf34a4191c22e48a02ab6a719e21112939cf35c733f1cd89dd7f11e2d11"
+      },
+      {
         "path": "browser/tab_move_contract.js",
-        "size": 3177,
-        "sha256": "77139d72a70cc1bd0b1101dfec284d0c06080cef59ea1597bb6a51500bc99d22"
+        "size": 3281,
+        "sha256": "928f1e3f2a6f39dcd7dc98193e180f7031ff8945e356b0c01ae7c8281f726741"
       },
       {
         "path": "browser/tab_reload_adapter.js",
@@ -92,13 +102,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 23724,
-        "sha256": "a89f5b3faccb6d4bd75c28a4bb2adfb8c18132636c303bf722cb5b57c1cb1b7d"
+        "size": 25239,
+        "sha256": "85e013a0cc0e9b9fb80203a66212abbfa281db8419af10568f18bfe50b73c46f"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 20940,
-        "sha256": "36e629fcf9775b3392f25b9f62eeb1f673035710591c5a5530021b24f82fe10f"
+        "size": 20938,
+        "sha256": "2a1281a87e95460072a925733005dce6cb9c92d9a59ea5736cae71e433343220"
       },
       {
         "path": "content/conversation_rename.js",
@@ -162,8 +172,8 @@
       },
       {
         "path": "domain/endpoint_service.js",
-        "size": 8075,
-        "sha256": "bfc2926bec212a398513afc4f2fc57a02c4d670d236966d81dd0a8ee881b6776"
+        "size": 8190,
+        "sha256": "1a52732317dbf3295fa3326fc4d3d7b573f2ad890885b76e373738fdee93ca33"
       },
       {
         "path": "domain/exact_tab_send_service.js",
@@ -182,8 +192,13 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 32009,
-        "sha256": "27f7f2999996013dcdd9e870f814d4cc48e97913114e4296526eb9d8cbd74a6b"
+        "size": 35719,
+        "sha256": "37c3b7d33f1f03252394741c4a895c38ed5b6f0ac13c8922dfa566062ab5fad6"
+      },
+      {
+        "path": "domain/tab_group_service.js",
+        "size": 5057,
+        "sha256": "89d78daffb25208e5206a7882fc43d880f9a560dd6ad8adfc2ccd1759fb9d91c"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -207,13 +222,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 4248,
-        "sha256": "d9058f78e0ba2dc2e5299068e15ee484b4e948a712bb79f8d3e865f46fb48bb5"
+        "size": 4465,
+        "sha256": "c5f70986709d39d72008b151a1b106410f1326227d8097ca962d89829d4d0c74"
       },
       {
         "path": "manifest.json",
-        "size": 1525,
-        "sha256": "646e59f756cd15db81fe663d478494fe82b56dcfd28e813dafeb16625e6d68ba"
+        "size": 1539,
+        "sha256": "dec7f2e15713ad35d203e1a91591a8c5d3b9b32779318a8305f42de131e43213"
       },
       {
         "path": "network/directory.js",
@@ -222,8 +237,8 @@
       },
       {
         "path": "platform/browser_gateway.js",
-        "size": 2960,
-        "sha256": "3442b6b2e8a6a9012eebfe5947102ca72357fb1a5650f8cce33d839758d45e67"
+        "size": 3470,
+        "sha256": "b36d0cb4a557fe8acf4c5045cf18e29d14484806e26389936e1f15a5edd0a6dc"
       },
       {
         "path": "platform/chrome_state_repository.js",
@@ -276,8 +291,8 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "fileCount": 54,
-    "aggregateSha256": "c557d8754acbf8429b75a7b4be10c320fd3553a63286a543e1ea5130d1cbe8e0"
+    "fileCount": 57,
+    "aggregateSha256": "5e278244216f5a9e9a0d21a10236b923d4bc9f5b4c712a100e6c62d9691c7bda"
   },
   "activeLoaderGraph": {
     "background": [
@@ -297,6 +312,8 @@
       "browser/window_create_adapter.js",
       "browser/tab_move_contract.js",
       "browser/tab_move_adapter.js",
+      "browser/tab_group_contract.js",
+      "browser/tab_group_adapter.js",
       "relay_core.js",
       "network/directory.js",
       "relay/contract.js",
@@ -312,6 +329,7 @@
       "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
       "domain/atomic_chat_service.js",
+      "domain/tab_group_service.js",
       "domain/exact_tab_send_service.js",
       "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
@@ -345,6 +363,7 @@
       "domain/orchestration_relay_service.js",
       "domain/new_chat_service.js",
       "domain/atomic_chat_service.js",
+      "domain/tab_group_service.js",
       "domain/conversation_rename_service.js",
       "domain/readonly_diagnostics.js",
       "domain/runtime_message_service.js",
@@ -372,7 +391,8 @@
         "scripting",
         "nativeMessaging",
         "storage",
-        "tabs"
+        "tabs",
+        "tabGroups"
       ],
       "hostPermissions": [
         "https://chatgpt.com/*",
@@ -401,7 +421,12 @@
         "create-chat-tab",
         "create-chat-window",
         "send-to-created-tab",
-        "move-tab"
+        "move-tab",
+        "create-tab-group",
+        "add-tab-to-group",
+        "remove-tab-from-group",
+        "move-tab-group",
+        "update-tab-group"
       ],
       "nativeOrchestration": [
         "send"
@@ -419,7 +444,13 @@
         "api-probe",
         "main-capture-get",
         "delivery-manager-status",
-        "delivery-recovery-inspect"
+        "delivery-recovery-inspect",
+        "tab-get",
+        "windows-list",
+        "window-get",
+        "tab-groups-list",
+        "tab-group-get",
+        "read-latest-assistant"
       ],
       "nativeMaintenance": [
         "reload-extension"
@@ -468,6 +499,7 @@
       ],
       "contentAccepted": [
         "relay:activityProbe",
+        "relay:readLatestAssistant",
         "relay:deliveryReadiness",
         "relay:deliveryRecoveryProof",
         "relay:exactReplyProof",
@@ -501,6 +533,7 @@
         "simpleRelayV0Binding",
         "simpleRelayV0Receipts",
         "newChatReceiptsV1",
+        "tabGroupReceiptsV1",
         "deliveryLedgerMirrorV1",
         "exactTabSendReceiptsV1"
       ],
@@ -528,6 +561,7 @@
       "content": [
         "relay:recoverExecution",
         "relay:activityProbe",
+        "relay:readLatestAssistant",
         "relay:probe",
         "relay:simpleExecute",
         "relay:simpleReadReply",

@@ -1675,5 +1675,97 @@ class RccIntegrationTests(unittest.TestCase):
                 "relay_id": "direct-tab-rejected",
             })
 
+    def test_tab_group_commands_are_exact_and_group_zero_is_valid(self):
+        session_id = "a" * 32
+        self.client.result = {
+            "type": "host:result", "ok": True, "state": "APPLIED",
+            "group": {"groupId": 0, "windowId": 11, "title": "작업 A",
+                      "color": "blue", "collapsed": False, "memberTabIds": [10, 12]},
+        }
+        created = self.call("group-create-1", {
+            "command": "create-tab-group", "instance_id": "instance123",
+            "session_id": session_id, "tab_ids": [10, 12], "title": "작업 A",
+            "color": "blue", "collapsed": False,
+        })
+        self.assertEqual(Outcome.APPLIED, created.outcome)
+        self.assertEqual("create-tab-group", self.client.calls[-1]["command"])
+        self.assertEqual([10, 12], self.client.calls[-1]["extra"]["tabIds"])
+        self.assertEqual("instance123", self.client.calls[-1]["extra"]["instanceId"])
+
+        moved = self.call("group-move-1", {
+            "command": "move-tab-group", "instance_id": "instance123",
+            "session_id": session_id, "group_id": 0, "window_id": 11,
+            "target_window_id": 22, "index": -1,
+        })
+        self.assertEqual(Outcome.APPLIED, moved.outcome)
+        self.assertEqual(0, self.client.calls[-1]["extra"]["groupId"])
+        self.assertEqual(22, self.client.calls[-1]["extra"]["targetWindowId"])
+
+    def test_new_read_commands_are_observational_and_validate_identity(self):
+        session_id = "a" * 32
+        self.client.result = {
+            "type": "host:result", "ok": True, "observationState": "TERMINAL",
+            "conversationKey": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "responseText": "답변 전문", "responseLength": 5,
+        }
+        read = self.call("read-latest-1", {
+            "command": "read-latest-assistant", "instance_id": "instance123",
+            "session_id": session_id, "tab_id": 10, "window_id": 11,
+            "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+        })
+        self.assertEqual(Outcome.APPLIED, read.outcome)
+        self.assertEqual("read-latest-assistant", self.client.calls[-1]["command"])
+        self.assertEqual("instance123", self.client.calls[-1]["extra"]["instanceId"])
+        self.assertEqual("답변 전문", read.output["result"]["responseText"])
+        with self.assertRaisesRegex(PreconditionError, "RCC_READ_LATEST_ASSISTANT_IDENTITY_REQUIRED"):
+            self.call("read-latest-invalid", {
+                "command": "read-latest-assistant", "instance_id": "instance123",
+                "session_id": session_id, "tab_id": 10, "window_id": 11,
+                "conversation_key": "not-a-uuid",
+            })
+
+    def test_presence_and_window_reads_have_no_mutation_arguments(self):
+        self.client.result = {"type": "host:result", "ok": True, "connected": True,
+                              "windows": [{"windowId": 11, "chatTabs": []}]}
+        presence = self.call("presence-1", {
+            "command": "presence", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, presence.outcome)
+        self.assertEqual("presence", self.client.calls[-1]["command"])
+        windows = self.call("windows-1", {
+            "command": "windows-list", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.APPLIED, windows.outcome)
+        self.assertEqual("windows-list", self.client.calls[-1]["command"])
+        window = self.call("window-1", {
+            "command": "window-get", "instance_id": "instance123", "window_id": 11,
+        })
+        self.assertEqual(Outcome.APPLIED, window.outcome)
+        self.assertEqual(11, self.client.calls[-1]["extra"]["windowId"])
+
+    def test_failed_read_is_not_an_unknown_browser_effect_or_live_claim(self):
+        self.client.result = {"type": "host:result", "ok": False, "error": "TAB_GET_TARGET_NOT_CHATGPT"}
+        rejected = self.call("tab-read-rejected", {
+            "command": "tab-get", "instance_id": "instance123", "tab_id": 10,
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, rejected.outcome)
+        self.assertTrue(rejected.evidence["read"])
+        db = self.bct.store._connect()
+        try:
+            unresolved = db.execute(
+                "SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                ("tab-read-rejected",),
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(0, unresolved)
+
+        self.client.error = RelayEffectUnknown("read response lost")
+        unavailable = self.call("presence-read-unavailable", {
+            "command": "presence", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.FAILED, unavailable.outcome)
+        self.assertEqual("RCC_READ_UNAVAILABLE", unavailable.error)
+
 if __name__ == "__main__":
     unittest.main()

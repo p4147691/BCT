@@ -45,8 +45,8 @@ const intent = {
     assert.equal(receipt.state, 'MOVED');
     assert.equal(receipt.effectState, 'APPLIED_CONFIRMED');
     assert.equal(receipt.retrySafe, false);
-    assert.deepEqual(receipt.before, { tabId: 17, windowId: 3, index: 1 });
-    assert.deepEqual(receipt.after, { tabId: 17, windowId: 9, index: 0 });
+    assert.deepEqual(receipt.before, { tabId: 17, windowId: 3, index: 1, groupId: null });
+    assert.deepEqual(receipt.after, { tabId: 17, windowId: 9, index: 0, groupId: null });
     assert.deepEqual(calls[2], ['move', 17, { windowId: 9, index: 0 }]);
   }
   {
@@ -70,6 +70,15 @@ const intent = {
     const receipt = await adapter.move(intent);
     assert.equal(receipt.state, 'MOVE_UNKNOWN');
     assert.equal(receipt.error, 'TAB_MOVE_POSTCONDITION_UNPROVEN');
+  }
+  {
+    const { adapter, calls, setTab } = harness();
+    setTab({ id: 17, windowId: 3, index: 1, groupId: 7, url: 'https://chatgpt.com/c/abc-12345' });
+    const receipt = await adapter.move(intent);
+    assert.equal(receipt.state, 'MOVED');
+    assert.equal(calls.some(([name]) => name === 'move'), true);
+    assert.equal(receipt.before.groupId, 7);
+    assert.equal(receipt.after.groupId, 7);
   }
   assert.equal(contract.fingerprint(intent), contract.fingerprint({ ...intent }));
   assert.throws(() => contract.normalizeIntent({ ...intent, requestedIndex: -2 }),

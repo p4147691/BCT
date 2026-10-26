@@ -50,10 +50,12 @@
     const id = Number(tab.id);
     const windowId = Number(tab.windowId);
     const index = Number(tab.index);
+    const groupId = Number(tab.groupId);
     return Object.freeze({
       tabId: Number.isSafeInteger(id) ? id : null,
       windowId: Number.isSafeInteger(windowId) ? windowId : null,
       index: Number.isSafeInteger(index) ? index : null,
+      groupId: Number.isSafeInteger(groupId) ? groupId : null,
     });
   }
 

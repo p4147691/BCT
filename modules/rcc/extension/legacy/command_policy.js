@@ -18,12 +18,15 @@
   // tab/window identity before choosing a subsequent action.
   const ATOMIC_CHAT_COMMANDS = new Set([
     'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab',
+    'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group',
+    'move-tab-group', 'update-tab-group',
   ]);
   const ORCHESTRATION_COMMANDS = new Set(['send']);
   const READ_ONLY_COMMANDS = new Set([
     'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
     'diagnose-activity', 'diagnose-composer', 'diagnose-conversation-ui',
     'api-probe', 'main-capture-get', 'delivery-manager-status', 'delivery-recovery-inspect',
+    'tab-get', 'windows-list', 'window-get', 'tab-groups-list', 'tab-group-get', 'read-latest-assistant',
   ]);
   // This is lifecycle maintenance, not a product relay path. Its caller is
   // still subject to the external deploy/reload approval gate.

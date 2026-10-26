@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC35_ATOMIC_CHAT_PRIMITIVES", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC36_TAB_GROUP_AND_READ_PRIMITIVES", release["candidate"])
         self.assertEqual(
             "44bd45596ed2267d2bf777163a7d8344a88d74186b02fe5c26a1928da043ec92",
             release["rollbackBaseline"]["aggregateSha256"],
@@ -55,8 +55,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.58", manifest["version"])
-        self.assertEqual("1.0.58 General Chat Home Route Contract", manifest["version_name"])
+        self.assertEqual("1.0.59", manifest["version"])
+        self.assertEqual("1.0.59 Tab Group and Read Primitives", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -85,10 +85,13 @@ class RccSourceBaselineTests(unittest.TestCase):
             "retire-composer-draft", "retire-recovered-execution",
             "delivery-manager-status", "send-to-tab",
             "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
+            "create-tab-group", "add-tab-to-group", "remove-tab-from-group",
+            "move-tab-group", "update-tab-group",
             "conversation-bind", "send",
             "rename-receipt", "result", "main-capture-get",
             "api-probe", "probe-tabs", "diagnose-activity",
             "diagnose-conversation-ui", "diagnose-composer", "probe",
+            "tab-get", "windows-list", "window-get", "tab-groups-list", "tab-group-get", "read-latest-assistant",
             "reload-extension",
         ):
             self.assertIn(f"message.command === '{command}'", background)
@@ -129,6 +132,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "relay:simpleExecute", "relay:simpleReadReply", "relay:orchestrationExecute",
             "relay:newChatExecute",
             "relay:newChatStatus", "relay:renameConversation",
+            "relay:readLatestAssistant",
         ):
             self.assertIn(f"message.type === '{message_type}'", content)
         for message_type in (
@@ -145,6 +149,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         active = (
             "browser/tab_create_contract.js", "browser/tab_create_adapter.js",
             "browser/tab_move_contract.js", "browser/tab_move_adapter.js",
+            "browser/tab_group_contract.js", "browser/tab_group_adapter.js",
             "browser/window_create_contract.js", "browser/window_create_adapter.js",
         )
         for relative in active:
@@ -176,7 +181,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-24-rcc-reasoning-observation-v1"
+        marker = "2026-10-27-rcc-tab-groups-and-read-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
@@ -260,6 +265,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             ("test_browser_tab_close_adapter_v1.js", "rcc browser tab close adapter v1: PASS"),
             ("test_browser_window_create_adapter_v1.js", "rcc browser window create adapter v1: PASS"),
             ("test_browser_tab_reload_adapter_v1.js", "rcc browser tab reload adapter v1: PASS"),
+            ("test_browser_tab_group_adapter_v1.js", "rcc browser tab group adapter v1: PASS"),
         ):
             self._run_node(name, marker)
 
@@ -276,6 +282,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "browser/tab_close_adapter.js", "browser/window_create_contract.js",
             "browser/window_create_adapter.js", "browser/tab_reload_contract.js",
             "browser/tab_reload_adapter.js", "relay/contract.js", "legacy/command_policy.js",
+            "browser/tab_group_contract.js", "browser/tab_group_adapter.js",
             "platform/chrome_state_repository.js", "platform/browser_gateway.js",
             "platform/native_transport.js", "platform/observation_gateway.js",
             "platform/lifecycle.js",
@@ -284,6 +291,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "domain/endpoint_service.js", "domain/diagnostic_support.js",
             "domain/simple_relay_service.js", "domain/readonly_diagnostics.js",
             "domain/atomic_chat_service.js",
+            "domain/tab_group_service.js",
             "domain/runtime_message_service.js", "content/conversation_dom.js",
             "content/simple_relay_executor.js", "content/content_router.js",
             "content/activity_reporter.js",

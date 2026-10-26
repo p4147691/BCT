@@ -15,6 +15,8 @@ const observationGateway = fs.readFileSync(path.join(root, 'platform/observation
 const lifecycle = fs.readFileSync(path.join(root, 'platform/lifecycle.js'), 'utf8');
 const tabMoveContract = fs.readFileSync(path.join(root, 'browser/tab_move_contract.js'), 'utf8');
 const tabMoveAdapter = fs.readFileSync(path.join(root, 'browser/tab_move_adapter.js'), 'utf8');
+const tabGroupContract = fs.readFileSync(path.join(root, 'browser/tab_group_contract.js'), 'utf8');
+const tabGroupAdapter = fs.readFileSync(path.join(root, 'browser/tab_group_adapter.js'), 'utf8');
 const tabCreateContract = fs.readFileSync(path.join(root, 'browser/tab_create_contract.js'), 'utf8');
 const tabCreateAdapter = fs.readFileSync(path.join(root, 'browser/tab_create_adapter.js'), 'utf8');
 const tabCloseContract = fs.readFileSync(path.join(root, 'browser/tab_close_contract.js'), 'utf8');
@@ -52,6 +54,14 @@ for (const prohibited of ['tabs.create', 'tabs.remove', 'tabs.reload', 'windows.
 }
 assert(tabMoveAdapter.includes('tabs.move'), 'Tab move adapter must own the single tab move effect');
 assert(!background.includes('chrome.tabs.move'), 'Background must delegate tab movement to the adapter');
+assert(!tabGroupContract.includes('chrome.'), 'Tab group receipt contract must not depend on Chrome');
+assert(!tabGroupContract.includes('storage.'), 'Tab group receipt contract must not persist state');
+for (const prohibited of ['tabs.create', 'tabs.move', 'tabs.remove', 'tabs.reload', 'windows.create', 'windows.update', 'sendMessage']) {
+  assert(!tabGroupAdapter.includes(prohibited), `Tab group adapter must not contain ${prohibited}`);
+}
+assert(tabGroupAdapter.includes('tabs.group'), 'Tab group adapter must own group membership effects');
+assert(tabGroupAdapter.includes('tabGroups.move'), 'Tab group adapter must own group movement effects');
+assert(!background.includes('chrome.tabGroups'), 'Background must delegate group actions to the adapter');
 assert(!tabCreateContract.includes('chrome.'), 'Tab create receipt contract must not depend on Chrome');
 assert(!tabCreateContract.includes('storage.'), 'Tab create receipt contract must not persist state');
 for (const prohibited of ['tabs.move', 'tabs.remove', 'tabs.reload', 'windows.create', 'windows.update', 'sendMessage']) {
@@ -97,6 +107,7 @@ for (const selected of [
   'browser/tab_create_contract.js', 'browser/tab_create_adapter.js',
   'browser/window_create_contract.js', 'browser/window_create_adapter.js',
   'browser/tab_move_contract.js', 'browser/tab_move_adapter.js',
+  'browser/tab_group_contract.js', 'browser/tab_group_adapter.js',
 ]) {
   assert(loader.includes(`importScripts('${selected}');`), `${selected} must support the active new-chat product path`);
 }

@@ -10,12 +10,12 @@ const runtimeMessages = fs.readFileSync(path.join(root, 'domain/runtime_message_
 const content = fs.readFileSync(path.join(root, 'content/content_router.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
-for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'new-chat-send', 'rename-conversation', 'conversation-bind', 'send-to-tab', 'send', 'state', 'result', 'probe-tabs', 'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab']) {
+for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'new-chat-send', 'rename-conversation', 'conversation-bind', 'send-to-tab', 'send', 'state', 'result', 'probe-tabs', 'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab', 'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group', 'move-tab-group', 'update-tab-group', 'tab-get', 'windows-list', 'window-get', 'tab-groups-list', 'tab-group-get', 'read-latest-assistant']) {
   assert.equal(policy.nativeCommand(command).allowed, true, command);
 }
 assert.deepEqual(policy.nativeCommand('send'), { allowed: true, kind: 'ORCHESTRATION' });
 assert.deepEqual(policy.nativeCommand('send-to-tab'), { allowed: true, kind: 'EXACT_TAB' });
-for (const command of ['create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab']) {
+for (const command of ['create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab', 'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group', 'move-tab-group', 'update-tab-group']) {
   assert.deepEqual(policy.nativeCommand(command), { allowed: true, kind: 'ATOMIC_CHAT' }, command);
 }
 for (const command of ['register', 'send-wakeback', 'reload-workers', 'result-ack']) {
@@ -37,7 +37,7 @@ const nativeHandler = nativeCommands.split('async function handleNativeCommand(m
 assert(nativeHandler.includes('RccLegacyCommandPolicy.nativeCommand(message.command)'));
 assert(nativeHandler.indexOf('RccLegacyCommandPolicy.nativeCommand(message.command)')
   < nativeHandler.indexOf("message.command === 'simple-relay-send'"));
-for (const command of ['create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab']) {
+for (const command of ['create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab', 'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group', 'move-tab-group', 'update-tab-group', 'tab-get', 'windows-list', 'window-get', 'tab-groups-list', 'tab-group-get', 'read-latest-assistant']) {
   assert(nativeHandler.includes(`message.command === '${command}'`), `${command} must have an active handler`);
 }
 for (const command of ['register', 'send-wakeback', 'reload-workers', 'result-ack']) {
@@ -51,7 +51,7 @@ assert(runtimeHandler.indexOf('RccLegacyCommandPolicy.runtimeMessage(message?.ty
 for (const type of ['relay:manualSend', 'relay:autoDirective', 'relay:workerResult', 'relay:actNaturalCommand']) {
   assert(!runtimeHandler.includes(`message.type === '${type}'`), `${type} implementation must be pruned`);
 }
-for (const type of ['relay:simpleExecute', 'relay:simpleReadReply', 'relay:orchestrationExecute', 'relay:newChatExecute', 'relay:newChatStatus', 'relay:renameConversation', 'relay:activityProbe', 'relay:probe']) {
+for (const type of ['relay:simpleExecute', 'relay:simpleReadReply', 'relay:orchestrationExecute', 'relay:newChatExecute', 'relay:newChatStatus', 'relay:renameConversation', 'relay:activityProbe', 'relay:probe', 'relay:readLatestAssistant']) {
   assert(content.includes(`message.type === '${type}'`), `${type} active content route must remain`);
 }
 for (const type of ['relay:execute', 'relay:deliver', 'relay:bootstrap']) {

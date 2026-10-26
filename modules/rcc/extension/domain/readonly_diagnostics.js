@@ -32,6 +32,15 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'presence') {
+          const state = await loadState();
+          const tabs = await getChatTabs();
+          postNative({ type: 'host:result', requestId, ok: true, connected: true,
+            instanceId: state.settings.instanceId, sessionId: endpointSessionId,
+            observedChatTabCount: tabs.length, backgroundBuildId: RCC_BACKGROUND_BUILD_ID });
+          return;
+        }
+
     if (message.command === 'state') {
 
 
@@ -51,12 +60,18 @@ async function handleNativeCommand(message) {
 
 
           const coreShadow = coreShadowSnapshot(tabs, endpoints, state.simpleRelayV0Binding);
+          // A stale installed extension can temporarily lack the newly added
+          // tabGroups permission.  Its basic tab state remains valuable and
+          // must not become unavailable merely because group observation is.
+          let groups = [];
+          let groupsAvailable = true;
+          try { groups = await getTabGroupAdapter().list(); } catch (_) { groupsAvailable = false; }
 
 
           postNative({ type: 'host:result', requestId, ok: true, state: {
 
 
-            instanceId: state.settings.instanceId, sessionId: endpointSessionId, tabs, endpoints,
+            instanceId: state.settings.instanceId, sessionId: endpointSessionId, tabs, endpoints, groups, groupsAvailable,
 
 
             registrations: state.registrations, settings: state.settings,
@@ -77,6 +92,58 @@ async function handleNativeCommand(message) {
           return;
 
 
+        }
+
+    if (message.command === 'tab-get') {
+          const tabId = Number(message.tabId);
+          if (!Number.isSafeInteger(tabId) || tabId < 1) throw new Error('TAB_GET_ID_INVALID');
+          const tab = await browserGateway.getExactTab(tabId);
+          const endpoint = browserGateway.isChatTab(tab)
+            ? await endpointFromTabWithActivity(tab, 'OPEN', 'tab-get') : null;
+          let group = null;
+          if (Number(tab.groupId) >= 0) group = await getTabGroupAdapter().get(Number(tab.groupId));
+          postNative({ type: 'host:result', requestId, ok: true, tab: publicTab(tab), endpoint, group });
+          return;
+        }
+
+    if (message.command === 'windows-list') {
+          const windows = (await browserGateway.listNormalWindows()).map((item) => ({
+            windowId: Number(item.id), focused: item.focused === true,
+            state: String(item.state || ''), tabs: (Array.isArray(item.tabs) ? item.tabs : []).map(publicTab),
+          }));
+          postNative({ type: 'host:result', requestId, ok: true, windows });
+          return;
+        }
+
+    if (message.command === 'window-get') {
+          const windowId = Number(message.windowId);
+          if (!Number.isSafeInteger(windowId) || windowId < 1) throw new Error('WINDOW_GET_ID_INVALID');
+          const window = await browserGateway.getWindow(windowId);
+          if (String(window?.type || 'normal') !== 'normal') throw new Error('WINDOW_GET_NOT_NORMAL');
+          const tabs = (await browserGateway.queryTabs({ windowId })).map(publicTab);
+          postNative({ type: 'host:result', requestId, ok: true,
+            window: { windowId, focused: window.focused === true, state: String(window.state || ''), tabs } });
+          return;
+        }
+
+    if (message.command === 'tab-groups-list') {
+          postNative({ type: 'host:result', requestId, ...(await readTabGroups(message)) });
+          return;
+        }
+
+    if (message.command === 'tab-group-get') {
+          const groupId = Number(message.groupId);
+          if (!Number.isSafeInteger(groupId) || groupId < 0) throw new Error('TAB_GROUP_ID_INVALID');
+          postNative({ type: 'host:result', requestId, ...(await readTabGroups(message, groupId)) });
+          return;
+        }
+
+    if (message.command === 'create-tab-group' || message.command === 'add-tab-to-group'
+        || message.command === 'remove-tab-from-group' || message.command === 'move-tab-group'
+        || message.command === 'update-tab-group') {
+          const result = await mutateTabGroup(message.command, message);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
         }
 
     if (message.command === 'simple-relay-bind') {
@@ -206,6 +273,12 @@ async function handleNativeCommand(message) {
 
           return;
 
+        }
+
+    if (message.command === 'read-latest-assistant') {
+          const result = await readLatestAssistant(message);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
         }
 
     if (message.command === 'rename-conversation') {
