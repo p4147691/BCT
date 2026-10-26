@@ -307,33 +307,7 @@ async function checkMonitorDeploymentUpdate() {
 //@@FN_END:checkMonitorDeploymentUpdate
 
 //@@FN_START:compareMonitorSharedSelectionRevision
-function compareMonitorSharedSelectionRevision(leftValue, rightValue) {
-
-  const left = String(leftValue || "").trim();
-
-  const right = String(rightValue || "").trim();
-
-  if (left === right) return 0;
-
-  if (!left) return -1;
-
-  if (!right) return 1;
-
-  if (/^\d+$/.test(left) && /^\d+$/.test(right)) {
-
-    const a = left.replace(/^0+/, "") || "0";
-
-    const b = right.replace(/^0+/, "") || "0";
-
-    if (a.length !== b.length) return a.length > b.length ? 1 : -1;
-
-    return a > b ? 1 : -1;
-
-  }
-
-  return left > right ? 1 : -1;
-
-}
+function compareMonitorSharedSelectionRevision(leftValue, rightValue) { return globalThis.MonitorDomainAPIs["shared-ui"]["compareMonitorSharedSelectionRevision"].apply(this, arguments); }
 //@@FN_END:compareMonitorSharedSelectionRevision
 
 //@@FN_START:createMonitorContextContinueButton
@@ -652,19 +626,7 @@ async function monitorBootstrapExempt(body){
 //@@FN_END:monitorBootstrapExempt
 
 //@@FN_START:monitorBrowserLineageKey
-function monitorBrowserLineageKey(endpoint) {
-
-  if (!endpoint) return "";
-
-  const transport = String(endpoint?.transport_instance_id || "").trim();
-
-  const windowId = String(endpoint?.window_id ?? "").trim();
-
-  if (!transport || !windowId) return "";
-
-  return `${transport}:${windowId}`;
-
-}
+function monitorBrowserLineageKey(endpoint) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorBrowserLineageKey"].apply(this, arguments); }
 //@@FN_END:monitorBrowserLineageKey
 
 //@@FN_START:monitorCanonicalJsonValue
@@ -890,13 +852,7 @@ function monitorChatTransitionIsApproved(nodeIdentityKey, profileId, oldKey, new
 //@@FN_END:monitorChatTransitionIsApproved
 
 //@@FN_START:monitorChatTransitionKey
-function monitorChatTransitionKey(nodeIdentityKey, profileId, oldKey, newKey) {
-
-  const node=String(nodeIdentityKey||"").trim(), profile=String(profileId||"").toUpperCase(), from=String(oldKey||"").trim(), to=String(newKey||"").trim();
-
-  return node&&profile&&from&&to&&from!==to ? `${node}|${profile}:${from}>${to}` : "";
-
-}
+function monitorChatTransitionKey(nodeIdentityKey, profileId, oldKey, newKey) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorChatTransitionKey"].apply(this, arguments); }
 //@@FN_END:monitorChatTransitionKey
 
 //@@FN_START:monitorChooseCaptureView
@@ -992,7 +948,7 @@ function monitorContextTitleRecord(key) { return key ? (monitorContextTitles.get
 //@@FN_END:monitorContextTitleRecord
 
 //@@FN_START:monitorContextTitleSignature
-function monitorContextTitleSignature(input){return JSON.stringify([input.browser_title,input.task_title,input.project_name,input.history.slice(-3)]);}
+function monitorContextTitleSignature(input) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorContextTitleSignature"].apply(this, arguments); }
 //@@FN_END:monitorContextTitleSignature
 
 //@@FN_START:monitorDisplayHwndForBrowserWindowId
@@ -1112,24 +1068,11 @@ function monitorIsActionableCodexResource(worker) {
 //@@FN_END:monitorIsActionableCodexResource
 
 //@@FN_START:monitorIsActivelyWorking
-function monitorIsActivelyWorking(work) {
-
-  return ["running", "working", "busy", "executing", "in_progress"].includes(String(work || "").toLowerCase());
-
-}
+function monitorIsActivelyWorking(work) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorIsActivelyWorking"].apply(this, arguments); }
 //@@FN_END:monitorIsActivelyWorking
 
 //@@FN_START:monitorIsExplicitCodexResource
-function monitorIsExplicitCodexResource(node) {
-  const provider = String(node?.provider || node?.provider_type || "").trim().toLowerCase();
-  const kind = String(node?.kind || node?.provider_kind || node?.node_type || "").trim().toLowerCase();
-  const endpoint = node?.__endpoint || {};
-  const urlText = [
-    node?.url, endpoint?.url, endpoint?.href, endpoint?.pathname,
-    endpoint?.metadata?.url, endpoint?.metadata?.href, endpoint?.metadata?.pathname,
-  ].filter(Boolean).join(" ").toLowerCase();
-  return provider === "codex" || kind.includes("codex") || /(?:^|[\/:])codex(?:[\/?#:\s]|$)/.test(urlText);
-}
+function monitorIsExplicitCodexResource(node) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorIsExplicitCodexResource"].apply(this, arguments); }
 //@@FN_END:monitorIsExplicitCodexResource
 
 //@@FN_START:monitorIsOwnWindowTitle
@@ -1151,19 +1094,7 @@ function monitorLifecycleTooltip(key,endpoint,ghost){
 //@@FN_END:monitorLifecycleTooltip
 
 //@@FN_START:monitorLlmRuntimePresentation
-function monitorLlmRuntimePresentation(worker, ready) {
-  const runtime = worker?.llm_runtime && typeof worker.llm_runtime === "object" ? worker.llm_runtime : {};
-  const runtimeState = String(worker?.llm_runtime_state || worker?.status || "UNAVAILABLE").toUpperCase();
-  const loaded = runtime.loaded === true || runtimeState === "LOADED";
-  const loading = runtime.loading === true || runtimeState === "LOADING";
-  const busy = runtime.busy === true || runtimeState === "BUSY";
-  const label = busy ? "사용 중" : (loading ? "로딩 중" : (loaded ? "로드됨" : (ready ? "준비됨" : "꺼짐")));
-  const vram = Number(runtime.size_vram);
-  return {
-    label,
-    vramText: Number.isFinite(vram) && vram > 0 ? ` · VRAM ${(vram / 1024 / 1024 / 1024).toFixed(1)} GB` : "",
-  };
-}
+function monitorLlmRuntimePresentation(worker, ready) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorLlmRuntimePresentation"].apply(this, arguments); }
 //@@FN_END:monitorLlmRuntimePresentation
 
 //@@FN_START:monitorLocalLlmIsUsable
@@ -1193,11 +1124,7 @@ function monitorLocalLlmSummary() {
 //@@FN_END:monitorLocalLlmSummary
 
 //@@FN_START:monitorLocalModelIsLoaded
-function monitorLocalModelIsLoaded(node) {
-  const runtime = node?.runtime && typeof node.runtime === "object" ? node.runtime : {};
-  const state = String(node?.runtime_state || runtime.state || "").toUpperCase();
-  return runtime.loaded === true || runtime.busy === true || ["LOADED", "BUSY"].includes(state);
-}
+function monitorLocalModelIsLoaded(node) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorLocalModelIsLoaded"].apply(this, arguments); }
 //@@FN_END:monitorLocalModelIsLoaded
 
 //@@FN_START:monitorLocalOllamaModels
@@ -1398,27 +1325,7 @@ function monitorRememberApprovedChatTransition(nodeIdentityKey, profileId, oldKe
 //@@FN_END:monitorRememberApprovedChatTransition
 
 //@@FN_START:monitorReportMatchesTask
-function monitorReportMatchesTask(report, task) {
-
-  const taskId = String(task?.id || "").trim();
-
-  if (!taskId || String(report?.task_id || "").trim() !== taskId) return false;
-
-  if (String(report?.review_state || "").toUpperCase() !== "PENDING_REVIEW" || report?.stale_attempt === true) return false;
-
-  const taskAttempt = String(task?.attempt_id || task?.current_attempt_id || "").trim();
-
-  const currentAttempt = String(report?.current_attempt_id || "").trim();
-
-  const reportAttempt = String(report?.attempt_id || "").trim();
-
-  if (taskAttempt && reportAttempt !== taskAttempt) return false;
-
-  if (currentAttempt && reportAttempt !== currentAttempt) return false;
-
-  return true;
-
-}
+function monitorReportMatchesTask(report, task) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorReportMatchesTask"].apply(this, arguments); }
 //@@FN_END:monitorReportMatchesTask
 
 //@@FN_START:monitorRoleAdminCandidates
@@ -1436,7 +1343,7 @@ function monitorRoleAdminCandidates(state) {
 //@@FN_END:monitorRoleAdminCandidates
 
 //@@FN_START:monitorRoleAdminErrorText
-function monitorRoleAdminErrorText(value) { const text=String(value||"ROLE_ADMIN_FAILED"); return text.replace(/^.*?(STALE_GENERATION|ROLE_OCCUPIED|ROLE_USER_RESERVED|ACTIVE_TASK_CONFLICT|ENDPOINT_[A-Z_]+)[: ]?/,'$1: ').slice(0,120); }
+function monitorRoleAdminErrorText(value) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorRoleAdminErrorText"].apply(this, arguments); }
 //@@FN_END:monitorRoleAdminErrorText
 
 //@@FN_START:monitorRoleAdminPath
@@ -1456,7 +1363,7 @@ function monitorRoleAdminPayload(action, roleRow, conversationKey="") {
 //@@FN_END:monitorRoleAdminPayload
 
 //@@FN_START:monitorRoleAdminShort
-function monitorRoleAdminShort(role) { return role==="ORCHESTRATOR"?"O":role==="COORDINATOR_1"?"C1":"C2"; }
+function monitorRoleAdminShort(role) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorRoleAdminShort"].apply(this, arguments); }
 //@@FN_END:monitorRoleAdminShort
 
 //@@FN_START:monitorSelectedEntries
@@ -1570,17 +1477,7 @@ function monitorSortLocationParts(worker, state) {
 //@@FN_END:monitorSortLocationParts
 
 //@@FN_START:monitorStationMetadata
-function monitorStationMetadata(station) {
-
-  if (!station) return {};
-
-  if (station.metadata && typeof station.metadata === "object") return station.metadata;
-
-  try { return JSON.parse(String(station.metadata_json || "{}")); }
-
-  catch (_) { return {}; }
-
-}
+function monitorStationMetadata(station) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorStationMetadata"].apply(this, arguments); }
 //@@FN_END:monitorStationMetadata
 
 //@@FN_START:monitorSyncHistoryButtons
@@ -1754,25 +1651,11 @@ async function monitorSyncSharedState(reason = "event", publishInstance = false)
 //@@FN_END:monitorSyncSharedState
 
 //@@FN_START:monitorTabBindingKey
-function monitorTabBindingKey(endpoint) {
-
-  const transport=String(endpoint?.transport_instance_id||"").trim();
-
-  const tabId=String(endpoint?.tab_id??"").trim();
-
-  return transport&&tabId ? `tab:${transport}:${tabId}` : "";
-
-}
+function monitorTabBindingKey(endpoint) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorTabBindingKey"].apply(this, arguments); }
 //@@FN_END:monitorTabBindingKey
 
 //@@FN_START:monitorTitlesEquivalent
-function monitorTitlesEquivalent(observed, requested){
-
-  const a=String(observed||"").replace(/\s+/g," ").trim(), b=String(requested||"").replace(/\s+/g," ").trim();
-
-  return a===b||[" - ChatGPT"," | ChatGPT"," — ChatGPT"].some((suffix)=>a===b+suffix);
-
-}
+function monitorTitlesEquivalent(observed, requested) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorTitlesEquivalent"].apply(this, arguments); }
 //@@FN_END:monitorTitlesEquivalent
 
 //@@FN_START:monitorTrustedPhysicalWindowKey

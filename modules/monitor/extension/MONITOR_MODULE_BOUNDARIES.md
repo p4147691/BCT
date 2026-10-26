@@ -142,3 +142,11 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - Pure source extraction changes ZERO runtime bytes. The local structure checker enforces source synchronization and domain JS syntax.
 - CRITICAL: Function ownership is NOT full API encapsulation. Implementations still share global lexical state with the app. State migration to independent interfaces needs additional behavioral acceptance.
 - extension/monitor.js is derived output. Never hand-edit its 15k lines or revert to earlier 80k formatting.
+
+
+## Isolated domain runtime APIs (2026-10-26)
+- 43 state-independent functions in conversations, node-identity, organization and shared-ui are executed inside standalone monitor-domain-apis.js IIFE, loaded before monitor.js by desktop.html.
+- Frozen globalThis.MonitorDomainAPIs namespaces export exact functions. The old function names remain thin compatibility shims in compiled Monitor, keeping existing call sites and DOM identities stable.
+- The core runs without Monitor lexical globals or DOM in isolation. check_monitor_domain_pure_api.js verifies immutable namespaces, 43 routed functions and independent VM behavior; structure checker enforces script order and the manifest.
+- Historical integration tests requiring direct standalone functions remain on their former source contract until equivalent executable tests are introduced.
+- CRITICAL: This is a genuinely independent subset, NOT independently injectable runtime APIs for the remaining 545 functions or shared mutable state. Scope is still OPEN.

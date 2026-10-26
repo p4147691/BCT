@@ -27,29 +27,11 @@ function applyMonitorConversationGroupVisual(node, conversationKey, state) {
 //@@FN_END:applyMonitorConversationGroupVisual
 
 //@@FN_START:classifyMonitorWorker
-function classifyMonitorWorker(worker) {
-  const profileId = String(worker?.profile_id || "").trim().toUpperCase();
-  const provider = String(worker?.provider || worker?.provider_type || "").trim().toLowerCase();
-
-  if (provider === "codex" || profileId === "CODEX") return "chatgpt";
-  if (["GOOGLE", "NAVER"].includes(profileId)) return "chatgpt";
-  if (provider.includes("local") || profileId === "LOCAL" || profileId.startsWith("L:")) return "local-llm";
-  return "external-llm";
-}
+function classifyMonitorWorker(worker) { return globalThis.MonitorDomainAPIs["conversations"]["classifyMonitorWorker"].apply(this, arguments); }
 //@@FN_END:classifyMonitorWorker
 
 //@@FN_START:cleanMonitorWorkerName
-function cleanMonitorWorkerName(worker) {
-
-  const raw = String(worker?.display_name || worker?.name || worker?.role || "").trim().replace(/^(?:G|N|E|L):\s*/i, "");
-
-  const role = String(worker?.role || raw).trim().toUpperCase();
-
-  const abbreviations = { ORCHESTRATOR: "O", COORDINATOR_1: "C1", COORDINATOR_2: "C2", WORKER: "W" };
-
-  return abbreviations[role] || raw || "Agent";
-
-}
+function cleanMonitorWorkerName(worker) { return globalThis.MonitorDomainAPIs["conversations"]["cleanMonitorWorkerName"].apply(this, arguments); }
 //@@FN_END:cleanMonitorWorkerName
 
 //@@FN_START:clearMonitorWorkerOrderTargets
@@ -261,19 +243,11 @@ function monitorBctProjectionHasUnresolvedLineage() {
 //@@FN_END:monitorBctProjectionHasUnresolvedLineage
 
 //@@FN_START:monitorBctRenameErrorText
-function monitorBctRenameErrorText(error) {
-  const raw = String(error?.message || error || "").trim();
-  if (/RESOURCE_ALREADY_CLAIMED|UNKNOWN|OUTCOME_UNVERIFIED/i.test(raw)) {
-    return "이 대화의 이전 이름 변경 결과가 아직 미확정이라 안전상 다시 바꾸지 않았습니다.";
-  }
-  return raw ? `변경되지 않았습니다 · ${raw}` : "이름을 변경하지 못했습니다.";
-}
+function monitorBctRenameErrorText(error) { return globalThis.MonitorDomainAPIs["conversations"]["monitorBctRenameErrorText"].apply(this, arguments); }
 //@@FN_END:monitorBctRenameErrorText
 
 //@@FN_START:monitorBctRoleTagsFromText
-function monitorBctRoleTagsFromText(value) {
-  return [...new Set(String(value || "").split(",").map((item) => item.trim()).filter(Boolean))].slice(0, 24);
-}
+function monitorBctRoleTagsFromText(value) { return globalThis.MonitorDomainAPIs["conversations"]["monitorBctRoleTagsFromText"].apply(this, arguments); }
 //@@FN_END:monitorBctRoleTagsFromText
 
 //@@FN_START:monitorClosedConversationContextTitle
@@ -410,40 +384,7 @@ function monitorConversationKeysForHwnd(hwnd,state=monitorLastAiState) {
 //@@FN_END:monitorConversationKeysForHwnd
 
 //@@FN_START:monitorConversationStateSignature
-function monitorConversationStateSignature(state) {
-  const endpoints=(Array.isArray(state?.endpoints)?state.endpoints:[])
-    .filter((endpoint)=>String(endpoint?.presence_state||"").toUpperCase()==="OPEN")
-    .map((endpoint)=>[
-      String(endpoint?.profile_id||"").toUpperCase(),
-      String(endpoint?.transport_instance_id||""),
-      String(endpoint?.tab_id??""),
-      String(endpoint?.conversation_key||""),
-      String(endpoint?.window_id??""),
-      String(endpoint?.metadata?.tab_active===true),
-      String(endpoint?.metadata?.window_bounds?.state||"").toLowerCase()
-    ].join(":"))
-    .sort()
-    .join("|");
-  const nodes=(Array.isArray(state?.node_state?.nodes)?state.node_state.nodes:[])
-    .map((node)=>[
-      String(node?.node_label||"").toUpperCase(),
-      String(node?.browser_node_id||""),
-      String(node?.hwnd||""),
-      String(node?.desktop_id||""),
-      String(node?.location_authority||"")
-    ].join(":"))
-    .sort()
-    .join("|");
-  const windows=(Array.isArray(state?.node_state?.observer?.windows)?state.node_state.observer.windows:[])
-    .map((row)=>[
-      String(row?.hwnd||""),
-      String(row?.desktop_id||""),
-      String(row?.conversation_key||"")
-    ].join(":"))
-    .sort()
-    .join("|");
-  return `e:${endpoints}||n:${nodes}||w:${windows}`;
-}
+function monitorConversationStateSignature(state) { return globalThis.MonitorDomainAPIs["conversations"]["monitorConversationStateSignature"].apply(this, arguments); }
 //@@FN_END:monitorConversationStateSignature
 
 //@@FN_START:monitorDirectConversationGenerationState
@@ -511,21 +452,7 @@ function monitorGhostAgeing(ghost, now = Date.now()) {
 //@@FN_END:monitorGhostAgeing
 
 //@@FN_START:monitorGhostArchiveAgeing
-function monitorGhostArchiveAgeing(ghost) {
-
-  const u = ghost?.usage || {}; let score = 0;
-
-  // Preserve the previous ghost auto-hide behavior independently from handoff readiness.
-
-  if (u.turns != null) score += Math.min(45, Math.sqrt(Math.max(0, u.turns) / 45) * 45);
-
-  if (u.rendered_chars != null) score += Math.min(35, Math.sqrt(Math.max(0, u.rendered_chars) / 150000) * 35);
-
-  if (u.screen_lengths != null) score += Math.min(20, Math.sqrt(Math.max(0, u.screen_lengths) / 35) * 20);
-
-  return Math.max(0, Math.min(100, Math.round(score)));
-
-}
+function monitorGhostArchiveAgeing(ghost) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostArchiveAgeing"].apply(this, arguments); }
 //@@FN_END:monitorGhostArchiveAgeing
 
 //@@FN_START:monitorGhostAuthoritativeLocation
@@ -621,13 +548,7 @@ function monitorGhostPersist(immediate = false) {
 //@@FN_END:monitorGhostPersist
 
 //@@FN_START:monitorGhostProtected
-function monitorGhostProtected(ghost) {
-
-  const role=String(ghost?.role || "").toUpperCase(), status=String(ghost?.task_status || ghost?.work_status || "").toUpperCase();
-
-  return ["ORCHESTRATOR","COORDINATOR_1","COORDINATOR_2"].includes(role) || ["RUNNING","NEEDS_REVIEW","FAILED","FAILURE","RECOVERY","RECOVERY_PENDING","BLOCKED"].includes(status);
-
-}
+function monitorGhostProtected(ghost) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostProtected"].apply(this, arguments); }
 //@@FN_END:monitorGhostProtected
 
 //@@FN_START:monitorGhostTail
@@ -683,7 +604,7 @@ function monitorGhostTaskHistory(worker, state, previous = []) {
 //@@FN_END:monitorGhostTaskHistory
 
 //@@FN_START:monitorGhostTime
-function monitorGhostTime(value) { const ms = Date.parse(String(value || "")); return Number.isFinite(ms) ? ms : 0; }
+function monitorGhostTime(value) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostTime"].apply(this, arguments); }
 //@@FN_END:monitorGhostTime
 
 //@@FN_START:monitorGhostUsage
@@ -717,7 +638,7 @@ function monitorGhostValidLease(ghost, state, now = Date.now()) {
 //@@FN_END:monitorGhostValidLease
 
 //@@FN_START:monitorGhostWorkerId
-function monitorGhostWorkerId(worker) { return `CHATGPT:${String(worker?.profile_id || "").toUpperCase()}:${String(worker?.role || "").toUpperCase()}`; }
+function monitorGhostWorkerId(worker) { return globalThis.MonitorDomainAPIs["conversations"]["monitorGhostWorkerId"].apply(this, arguments); }
 //@@FN_END:monitorGhostWorkerId
 
 //@@FN_START:monitorLiveRoleForConversation
@@ -2396,14 +2317,6 @@ function settleMonitorWorkerPointerInteraction(delay = MONITOR_WORKER_CLICK_SETT
 //@@FN_END:settleMonitorWorkerPointerInteraction
 
 //@@FN_START:stationForMonitorWorker
-function stationForMonitorWorker(worker, state) {
-
-  const workerId = `chatgpt:${String(worker?.profile_id || "").toUpperCase()}:${String(worker?.role || "").toUpperCase()}`;
-
-  const stations = Array.isArray(state?.stations) ? state.stations : [];
-
-  return stations.find((station) => String(station?.worker_id || "").toUpperCase() === workerId.toUpperCase()) || null;
-
-}
+function stationForMonitorWorker(worker, state) { return globalThis.MonitorDomainAPIs["conversations"]["stationForMonitorWorker"].apply(this, arguments); }
 //@@FN_END:stationForMonitorWorker
 

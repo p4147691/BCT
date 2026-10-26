@@ -111,17 +111,7 @@ async function approveMonitorNodeChatChange(worker, nodeState, button) {
 //@@FN_END:approveMonitorNodeChatChange
 
 //@@FN_START:compareMonitorBctNodeDisplayOrder
-function compareMonitorBctNodeDisplayOrder(left, right) {
-  const leftOrder = Number(left.displayOrder || 0);
-  const rightOrder = Number(right.displayOrder || 0);
-  if (leftOrder > 0 || rightOrder > 0) {
-    if (leftOrder <= 0) return 1;
-    if (rightOrder <= 0) return -1;
-    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-  }
-  return (left.tabIndex ?? Number.MAX_SAFE_INTEGER) - (right.tabIndex ?? Number.MAX_SAFE_INTEGER)
-    || left.tabId - right.tabId;
-}
+function compareMonitorBctNodeDisplayOrder(left, right) { return globalThis.MonitorDomainAPIs["node-identity"]["compareMonitorBctNodeDisplayOrder"].apply(this, arguments); }
 //@@FN_END:compareMonitorBctNodeDisplayOrder
 
 //@@FN_START:endpointForMonitorWorker
@@ -358,14 +348,7 @@ function monitorBctNodeLocationText(node, desktopPosition) {
 //@@FN_END:monitorBctNodeLocationText
 
 //@@FN_START:monitorBctNodeRoleSummary
-function monitorBctNodeRoleSummary(node) {
-  const tags = Array.isArray(node?.roleTags)
-    ? node.roleTags.map((value) => String(value || "").trim()).filter(Boolean)
-    : [];
-  if (!tags.length) return "";
-  const shown = tags.slice(0, 3);
-  return `${shown.join(" · ")}${tags.length > shown.length ? ` · +${tags.length - shown.length}` : ""}`;
-}
+function monitorBctNodeRoleSummary(node) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorBctNodeRoleSummary"].apply(this, arguments); }
 //@@FN_END:monitorBctNodeRoleSummary
 
 //@@FN_START:monitorBctNodeSelectionKey
@@ -385,10 +368,7 @@ function monitorBrowserDisplaySlots(workers,state) { return monitorListDisplaySl
 //@@FN_END:monitorBrowserDisplaySlots
 
 //@@FN_START:monitorBrowserWindowIdForEndpoint
-function monitorBrowserWindowIdForEndpoint(endpoint) {
-  const metadata = endpoint?.metadata && typeof endpoint.metadata === "object" ? endpoint.metadata : {};
-  return String(endpoint?.window_id ?? endpoint?.browser_window_id ?? metadata.window_id ?? metadata.browser_window_id ?? "").trim();
-}
+function monitorBrowserWindowIdForEndpoint(endpoint) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorBrowserWindowIdForEndpoint"].apply(this, arguments); }
 //@@FN_END:monitorBrowserWindowIdForEndpoint
 
 //@@FN_START:monitorCanonicalNodeBindings
@@ -405,9 +385,7 @@ function monitorCanonicalNodeBindings(values = monitorNodeBindings.values()) {
 //@@FN_END:monitorCanonicalNodeBindings
 
 //@@FN_START:monitorCodexResourceProfile
-function monitorCodexResourceProfile(worker) {
-  return String(worker?.codex_profile_id || "").trim().toUpperCase();
-}
+function monitorCodexResourceProfile(worker) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorCodexResourceProfile"].apply(this, arguments); }
 //@@FN_END:monitorCodexResourceProfile
 
 //@@FN_START:monitorDirectEndpointGenerationState
@@ -441,13 +419,7 @@ function monitorDirectEndpointUserAttention(endpoint) {
 //@@FN_END:monitorDirectEndpointUserAttention
 
 //@@FN_START:monitorEndpointFreshnessState
-function monitorEndpointFreshnessState(endpoint) {
-
-  if (String(endpoint?.presence_state || "").toUpperCase() !== "OPEN") return "disconnected";
-
-  return "connected";
-
-}
+function monitorEndpointFreshnessState(endpoint) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorEndpointFreshnessState"].apply(this, arguments); }
 //@@FN_END:monitorEndpointFreshnessState
 
 //@@FN_START:monitorEndpointGenerationIsActive
@@ -475,23 +447,11 @@ function monitorEndpointGenerationIsActive(endpoint) {
 //@@FN_END:monitorEndpointGenerationIsActive
 
 //@@FN_START:monitorEndpointGeometry
-function monitorEndpointGeometry(endpoint) {
-
-  const b = endpoint?.metadata?.window_bounds || {};
-
-  return { left:Number(b.left), top:Number(b.top), width:Number(b.width), height:Number(b.height) };
-
-}
+function monitorEndpointGeometry(endpoint) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorEndpointGeometry"].apply(this, arguments); }
 //@@FN_END:monitorEndpointGeometry
 
 //@@FN_START:monitorEndpointInstanceId
-function monitorEndpointInstanceId(endpoint) {
-
-  if (!endpoint) return "";
-
-  return [endpoint.transport_instance_id, endpoint.session_id, endpoint.tab_id].map((v)=>String(v ?? "")).join(":");
-
-}
+function monitorEndpointInstanceId(endpoint) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorEndpointInstanceId"].apply(this, arguments); }
 //@@FN_END:monitorEndpointInstanceId
 
 //@@FN_START:monitorEndpointIsMinimized
@@ -517,25 +477,11 @@ function monitorEndpointLocation(worker, state) { return monitorCanonicalPhysica
 //@@FN_END:monitorEndpointLocation
 
 //@@FN_START:monitorEndpointWindowKey
-function monitorEndpointWindowKey(endpoint) {
-
-  if (!endpoint) return "";
-
-  return [endpoint.transport_instance_id, endpoint.window_id].map((v)=>String(v ?? "")).join(":");
-
-}
+function monitorEndpointWindowKey(endpoint) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorEndpointWindowKey"].apply(this, arguments); }
 //@@FN_END:monitorEndpointWindowKey
 
 //@@FN_START:monitorExactOpenEndpoint
-function monitorExactOpenEndpoint(state, conversationKey) {
-
-  const key=String(conversationKey||"").trim();
-
-  const rows=(Array.isArray(state?.endpoints)?state.endpoints:[]).filter((ep)=>String(ep?.presence_state||"").toUpperCase()==="OPEN"&&String(ep?.conversation_key||"").trim()===key);
-
-  return rows.length===1?rows[0]:null;
-
-}
+function monitorExactOpenEndpoint(state, conversationKey) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorExactOpenEndpoint"].apply(this, arguments); }
 //@@FN_END:monitorExactOpenEndpoint
 
 //@@FN_START:monitorExactSelectedChatNode
@@ -856,21 +802,7 @@ function monitorOpenEndpointForHwnd(hwnd, state = monitorLastAiState) {
 //@@FN_END:monitorOpenEndpointForHwnd
 
 //@@FN_START:monitorOpenEndpointsForConversation
-function monitorOpenEndpointsForConversation(state, conversationKey) {
-
-  const key = String(conversationKey || "").trim();
-
-  if (!key) return [];
-
-  return (Array.isArray(state?.endpoints) ? state.endpoints : []).filter((endpoint) =>
-
-    String(endpoint?.conversation_key || "").trim() === key
-
-    && String(endpoint?.presence_state || "").toUpperCase() === "OPEN"
-
-  );
-
-}
+function monitorOpenEndpointsForConversation(state, conversationKey) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorOpenEndpointsForConversation"].apply(this, arguments); }
 //@@FN_END:monitorOpenEndpointsForConversation
 
 //@@FN_START:monitorPersistNodeBindings
@@ -911,17 +843,7 @@ function monitorProfileIdForHwnd(hwnd) {
 //@@FN_END:monitorProfileIdForHwnd
 
 //@@FN_START:monitorStableBrowserNodeKey
-function monitorStableBrowserNodeKey(worker) {
-
-  const ep=worker?.__endpoint||null;
-
-  const tabId=String(ep?.tab_id??"").trim();
-
-  const conversationKey=String(worker?.conversation_key||ep?.conversation_key||"").trim();
-
-  return tabId&&conversationKey ? `tab:${tabId}:chat:${conversationKey}` : "";
-
-}
+function monitorStableBrowserNodeKey(worker) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorStableBrowserNodeKey"].apply(this, arguments); }
 //@@FN_END:monitorStableBrowserNodeKey
 
 //@@FN_START:monitorStableNodeForEndpoint
@@ -1095,15 +1017,7 @@ function monitorStoreNodeBinding(binding, endpoint = null) {
 //@@FN_END:monitorStoreNodeBinding
 
 //@@FN_START:profileForMonitorWorker
-function profileForMonitorWorker(worker, state) {
-
-  const profileId = String(worker?.profile_id || "").toUpperCase();
-
-  return (Array.isArray(state?.profiles) ? state.profiles : [])
-
-    .find((item) => String(item?.profile_id || "").toUpperCase() === profileId) || null;
-
-}
+function profileForMonitorWorker(worker, state) { return globalThis.MonitorDomainAPIs["node-identity"]["profileForMonitorWorker"].apply(this, arguments); }
 //@@FN_END:profileForMonitorWorker
 
 //@@FN_START:refreshMonitorBctWindowNodes
