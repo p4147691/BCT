@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function classify({ text, editor = true, buttons = [], controls = [] }) {
+function classify({ text, editor = true, buttons = [], pathname = '/' }) {
   const document = {
     body: { innerText: text, textContent: text },
     querySelector: (selector) => editor && selector === '#prompt-textarea' ? {} : null,
@@ -11,14 +11,10 @@ function classify({ text, editor = true, buttons = [], controls = [] }) {
         textContent,
         getAttribute: () => '',
       }));
-      if (selector.includes('[role="checkbox"]')) return controls.map((textContent) => ({
-        textContent,
-        getAttribute: () => '',
-      }));
       return [];
     },
   };
-  const context = vm.createContext({ document, console, setTimeout, clearTimeout });
+  const context = vm.createContext({ document, location: { pathname }, console, setTimeout, clearTimeout });
   const source = fs.readFileSync('content/simple_relay_executor.js', 'utf8');
   vm.runInContext(`${source}\nglobalThis.__classify = classifyNewChatSurface;`, context,
     { filename: 'content/simple_relay_executor.js' });
@@ -45,11 +41,10 @@ assert.deepEqual(general.evidence.markers, [
 const currentGeneralHome = classify({
   text: '어디서 시작할까요?',
   buttons: ['임시 채팅'],
-  controls: ['작성기 모드', 'Chat', 'Work'],
 });
 assert.equal(currentGeneralHome.kind, 'GENERAL_CHAT');
 assert.deepEqual(currentGeneralHome.evidence.markers, [
-  'GENERAL_CHAT_TEMPORARY', 'GENERAL_CHAT_MODE',
+  'GENERAL_CHAT_TEMPORARY', 'GENERAL_CHAT_HOME_ROUTE',
 ]);
 
 const unknown = classify({ text: '새 채팅', editor: true });

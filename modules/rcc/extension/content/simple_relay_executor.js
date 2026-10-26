@@ -816,31 +816,26 @@ function classifyNewChatSurface() {
   // chooser are ordinary-Chat controls; require both so an arbitrary page
   // with an editor is still UNKNOWN.
   const temporaryChatControls = controlText('button');
-  const composerModeControls = controlText(
-    'button, [role="checkbox"], input[type="checkbox"], label',
-  );
   const generalTemporaryChat = [
     '임시 채팅', 'Temporary chat',
   ].some((marker) => text.includes(marker) || temporaryChatControls.includes(marker));
-  const generalChatMode = [
-    '작성기 모드 Chat Work', 'Composer mode Chat Work',
-  ].some((marker) => text.includes(marker) || composerModeControls.includes(marker));
+  const generalChatHomeRoute = String(globalThis.location?.pathname || '') === '/';
   const legacyGeneralChat = generalWelcome && generalNavigation;
-  const currentGeneralChatHome = generalTemporaryChat && generalChatMode;
+  const currentGeneralChatHome = generalTemporaryChat && generalChatHomeRoute;
   if (hasEditor && (legacyGeneralChat || currentGeneralChatHome)) {
     return Object.freeze({
       kind: 'GENERAL_CHAT',
       evidence: Object.freeze({ schema: 1, hasEditor, markers: Object.freeze([
         ...(legacyGeneralChat
           ? ['GENERAL_CHAT_WELCOME', 'GENERAL_CHAT_NAVIGATION']
-          : ['GENERAL_CHAT_TEMPORARY', 'GENERAL_CHAT_MODE']),
+          : ['GENERAL_CHAT_TEMPORARY', 'GENERAL_CHAT_HOME_ROUTE']),
       ]) }),
     });
   }
   return Object.freeze({
     kind: 'UNKNOWN',
     evidence: Object.freeze({ schema: 1, hasEditor, markers: Object.freeze([]), signals: Object.freeze({
-      generalTemporaryChat, generalChatMode,
+      generalTemporaryChat, generalChatHomeRoute,
     }) }),
   });
 }
