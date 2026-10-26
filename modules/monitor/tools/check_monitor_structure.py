@@ -34,6 +34,8 @@ def main():
         ext/'monitor-desktop-thumbnail-v2.js',
         ext/'features'/'sketch'/'monitor-sketch-feature.js',
         ext/'features'/'sketch'/'monitor-sketch-feature.css',
+        ext/'features'/'notes'/'monitor-notes-feature.js',
+        ext/'features'/'notes'/'monitor-notes-feature.css',
         ext/'browser'/'tab-focus-adapter.js',
         root/'tools'/'Request-MonitorDeploymentCheck.ps1',
         root/'tools'/'Publish-MonitorDeployment.ps1',
@@ -297,6 +299,16 @@ def main():
             facts['monitor_sketch_feature_test_rc']=checked.returncode
             if checked.returncode:
                 errors.append({'kind':'monitor_sketch_feature_contract_regression',
+                    'detail':(checked.stdout+checked.stderr)[-600:]})
+        notes_check = root/'tools'/'check_monitor_notes_feature.js'
+        if not notes_check.is_file():
+            errors.append({'kind':'monitor_notes_feature_contract_test_missing','path':str(notes_check)})
+        else:
+            checked=subprocess.run([node,str(notes_check)],cwd=str(root.parent.parent),
+                capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+            facts['monitor_notes_feature_test_rc']=checked.returncode
+            if checked.returncode:
+                errors.append({'kind':'monitor_notes_feature_contract_regression',
                     'detail':(checked.stdout+checked.stderr)[-600:]})
         thumbnail_checks = [
             root/'tools'/'check_monitor_thumbnail_architecture.js',

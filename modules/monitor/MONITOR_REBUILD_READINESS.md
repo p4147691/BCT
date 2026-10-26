@@ -12,10 +12,10 @@ The generated `extension/monitor.js` is not an editing surface. It remains a com
 
 The generated dependency report is `MONITOR_DEPENDENCY_AUDIT.md`.
 
-- `monitor.js`: 14,509 physical lines, 632,954 characters.
-- Function owners: 545 functions in ten editable domain files.
-- Ordered bootstrap/global declarations: 417.
-- Separately loaded scripts: 27.
+- `monitor.js`: 13,891 physical lines, 607,877 characters.
+- Function owners: 516 functions in ten editable domain files.
+- Ordered bootstrap/global declarations: 385.
+- Separately loaded scripts: 28.
 - Definition-only functions/globals after cleanup: zero.
 - The ten domain files are ownership indexes, not runtime-isolated modules. They still share globals and call each other directly.
 
@@ -40,12 +40,12 @@ Keep these verified ports and standalone implementations. A rebuild should injec
 - `monitor-node-generation-state.js`: injected generation/attention state.
 - `monitor-ui-layout.js`: presentation layout policy.
 - `features/sketch/monitor-sketch-feature.js` and its stylesheet: the sole owner of Sketch DOM, state, events, history and persistence calls.
+- `features/notes/monitor-notes-feature.js` and its stylesheet: the sole owner of Notes DOM, model, edit/list history and shared-view synchronization; Native, AI and Recovery enter through injected ports.
 - `monitor-work-recovery.js`, `monitor-context-resume.js`, `monitor-project-context-recall.js`: explicit recovery/read paths.
 - Native host contracts for exact GUID, HWND, geometry, Z order and captured pixels.
 
 Keep the following compatibility-bundle behavior until it has a standalone controller and focused acceptance:
 
-- Notes and shared note synchronization.
 - Desktop/window lifecycle and drag mutations.
 - BCT node-list projection and interaction.
 - Recovery UI.
@@ -73,7 +73,7 @@ Each step must move state and side effects, route all callers to one API, delete
 
 1. Thumbnail: finish source tests, deploy once, accept photo/solid/D1-D2/reload.
 2. Sketch: source extraction complete behind `MonitorSketchFeature` with injected storage and a layout callback; install/LIVE acceptance remains.
-3. Notes: split storage/native/AI ports from note model and editor projection, then move note state.
+3. Notes: source extraction complete behind `MonitorNotesFeature`; install/LIVE acceptance remains.
 4. Node list: isolate BCT/RCC readers, row state and interaction; do not combine it with organization authority.
 5. Desktop/window lifecycle: move exact GUID/HWND state and mutations behind one controller.
 6. Recovery and diagnostics after the basic screen features are stable.

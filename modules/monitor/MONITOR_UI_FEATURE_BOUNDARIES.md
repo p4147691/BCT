@@ -1,10 +1,11 @@
 # Monitor UI feature boundaries
 
-Status: active ownership map. The current ten `domains/*.js` files are transitional edit owners, not the final screen modules. Sketch is the first fully extracted screen feature; Thumbnail remains the reference layered renderer.
+Status: active ownership map. The current ten `domains/*.js` files are transitional edit owners, not the final screen modules. Sketch and Notes are fully extracted screen features; Thumbnail remains the reference layered renderer.
 
 Current migration state:
 
 - `SketchFeature`: source extracted to `extension/features/sketch/`; isolated contract passes; installed/LIVE acceptance is pending.
+- `NotesFeature`: source extracted to `extension/features/notes/`; Native shared note, ACT AI and Recovery trash enter only through injected ports; installed/LIVE acceptance is pending.
 - `OrganizationFeature`: `PARKED/UNUSED`. Its compatibility code remains preserved but is outside the active basic-feature sequence. It is not migrated or extended unless the user explicitly reactivates it.
 - `DiagnosticsFeature` and `RecoveryFeature`: preserved and deferred until the basic Sketch, Notes, Node panel and desktop surfaces are stable.
 
@@ -89,7 +90,8 @@ Rules:
 
 The existing edit domains intentionally do not dictate the final layout:
 
-- Sketch DOM, CSS, mutable state and persistence now live in `extension/features/sketch/`; `sketch-notes.js` retains Notes only plus the narrow composition layout call.
+- Sketch DOM, CSS, mutable state and persistence now live in `extension/features/sketch/`.
+- Notes DOM, CSS, model, history and shared-view synchronization now live in `extension/features/notes/`; `sketch-notes.js` retains only Recovery trash adapters and the narrow Sketch/Notes layout composition.
 - `node-identity.js`, `conversations.js` and relevant `shared-ui.js` code converge into `NodePanelFeature`.
 - `thumbnail-wallpaper.js` plus the three standalone thumbnail layers become `ThumbnailFeature`.
 - desktop visual code in `thumbnail-wallpaper.js`, `desktop-lifecycle.js` and `shared-ui.js` separates into `DesktopStageFeature` and `DesktopStripFeature`.
@@ -102,7 +104,7 @@ The existing edit domains intentionally do not dictate the final layout:
 
 1. Keep Thumbnail as the reference implementation and complete LIVE photo/solid/D1-D2 acceptance.
 2. Extract Sketch because it is visually isolated and has the smallest external surface. **Source complete; LIVE pending.**
-3. Extract Notes with separate model, persistence and editor projection.
+3. Extract Notes with separate model, persistence and editor projection. **Source complete; LIVE pending.**
 4. Extract Node panel, including shared Chrome rows and GitHub Inbox, without mixing organization authority into it.
 5. Split Desktop stage from Desktop strip; reuse Thumbnail rather than moving its internals back into either feature.
 6. Extract Recovery and Header commands after node/desktop identity ports are stable.

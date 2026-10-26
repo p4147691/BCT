@@ -39,12 +39,12 @@
     {
       "domain": "shared-ui",
       "file": "shared-ui.js",
-      "functions": 116
+      "functions": 110
     },
     {
       "domain": "sketch-notes",
       "file": "sketch-notes.js",
-      "functions": 29
+      "functions": 6
     },
     {
       "domain": "thumbnail-wallpaper",

@@ -253,15 +253,37 @@ const monitorRenderDiagnostics = {
 
 chrome.runtime.sendMessage({ type:"monitor-register-popup-window" }).catch(() => {});
 
-const monitorNote = document.createElement("aside");
-
-monitorNote.className = "monitor-side-note";
-
-monitorNote.setAttribute("aria-label", "할 일 메모");
-
-monitorNote.innerHTML = `<div class="monitor-side-note-title"><span class="monitor-note-title-left"><button id="monitorNoteBack" type="button" title="메모 목록" aria-label="메모 목록" hidden>‹</button><span id="monitorNoteHeaderTitle">메모</span><button id="monitorNoteAdd" type="button" title="새 메모" aria-label="새 메모">＋</button></span><span class="monitor-note-actions"><button id="monitorNoteUndo" type="button" title="실행 취소 (Ctrl+Z)" aria-label="실행 취소" hidden>↶</button><button id="monitorNoteRedo" type="button" title="다시 실행 (Ctrl+Y / Ctrl+Shift+Z)" aria-label="다시 실행" hidden>↷</button><button id="monitorNoteAi" type="button" title="작업하지 않는 유휴 워커로 메모 정리" aria-label="AI로 메모 정리" hidden>AI</button><button id="monitorNoteDelete" type="button" title="현재 메모 삭제" aria-label="현재 메모 삭제" hidden>×</button><button id="monitorNoteCollapse" type="button" title="메모 접기" aria-label="메모 접기">−</button></span></div><div id="monitorNoteList" class="monitor-note-list"></div><div id="monitorNoteEditor" class="monitor-note-editor" hidden><textarea id="monitorSideNoteText" spellcheck="false" placeholder="첫 줄이 목록 제목으로 표시됩니다.\n해야 할 일..."></textarea></div>`;
-
-const MONITOR_NOTE_BUNDLE_PREFIX = "DWM_NOTES_V1:";
+const monitorNotesFeature = globalThis.MonitorNotesFeature?.create({
+  document,
+  enabled: MONITOR_FEATURE_MEMO_ENABLED,
+  sharedNotePort: Object.freeze({
+    getContent: () => monitorNative({ type: "getSharedNote" }),
+    setContent: (text) => monitorNative({ type: "setSharedNote", text }),
+    getView: () => monitorNative({ type: "getSharedMonitorNoteView" }),
+    setView: (ratio) => monitorNative({ type: "setSharedMonitorNoteView", ratio }),
+  }),
+  aiPort: Object.freeze({
+    async organize(payload) {
+      const response = await actFetch(ORCHESTRATOR_NOTE_AI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+      return data;
+    },
+  }),
+  onTrash: (note) => trashMonitorNote(note),
+  onStatus: (message, ok) => setMonitorStatus(message, ok),
+  errorText: (value) => monitorRoleAdminErrorText(value),
+  onLayoutChange: () => syncMonitorSideNote(),
+  requestFrame: requestAnimationFrame,
+  cancelFrame: cancelAnimationFrame,
+  setTimer: setTimeout,
+  clearTimer: clearTimeout,
+});
+if (!monitorNotesFeature) throw new Error("MONITOR_NOTES_FEATURE_MISSING");
 
 const monitorPreviewWallpaper = document.createElement("div");
 
@@ -306,9 +328,8 @@ const monitorSketchFeature = globalThis.MonitorSketchFeature?.create({
   onLayoutChange: () => syncMonitorSideNote(),
 });
 if (!monitorSketchFeature) throw new Error("MONITOR_SKETCH_FEATURE_MISSING");
-document.body.append(monitorDesktopSwitcher, monitorSketchFeature.element, monitorNote, monitorRoot);
+document.body.append(monitorDesktopSwitcher, monitorSketchFeature.element, monitorNotesFeature.element, monitorRoot);
 if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED && !MONITOR_FEATURE_RECOVERY_ENABLED) monitorDesktopSwitcher.style.setProperty("display", "none", "important");
-if (!MONITOR_FEATURE_MEMO_ENABLED) monitorNote.style.setProperty("display", "none", "important");
 
 const MONITOR_DESKTOP_SWITCHER_GAP_PX = 12;
 /*@@MONITOR_FUNCTION:syncMonitorPanelToDesktopSwitcher@@*/
@@ -344,84 +365,7 @@ monitorTitleResizeObserver.observe(monitorRoot);
 
 requestAnimationFrame(syncMonitorTitle);
 
-const monitorSideNoteText = document.getElementById("monitorSideNoteText");
-
-const monitorNoteAi = document.getElementById("monitorNoteAi");
-
-const monitorNoteCollapse = document.getElementById("monitorNoteCollapse");
-monitorNoteCollapse.classList.add("monitor-collapse-chevron");
-monitorNoteCollapse.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14l6-6 6 6"/></svg>';
-
-const monitorNoteBack = document.getElementById("monitorNoteBack");
-
-const monitorNoteAdd = document.getElementById("monitorNoteAdd");
-
-const monitorNoteDelete = document.getElementById("monitorNoteDelete");
-
-const monitorNoteUndo = document.getElementById("monitorNoteUndo");
-
-const monitorNoteRedo = document.getElementById("monitorNoteRedo");
-
-const monitorNoteList = document.getElementById("monitorNoteList");
-
-const monitorNoteEditor = document.getElementById("monitorNoteEditor");
-
-const monitorNoteHeaderTitle = document.getElementById("monitorNoteHeaderTitle");
-
-let monitorNotes = [];
-
-let monitorActiveNoteId = "";
-
-let monitorLastViewedNoteId = "";
-
-let monitorNoteListMode = true;
-
-/*@@MONITOR_FUNCTION:monitorNoteId@@*/
-
-/*@@MONITOR_FUNCTION:monitorNoteTitleFromText@@*/
-
-/*@@MONITOR_FUNCTION:monitorParseNoteBundle@@*/
-
-/*@@MONITOR_FUNCTION:monitorSerializeNotes@@*/
-
-/*@@MONITOR_FUNCTION:monitorActiveNote@@*/
-
-const monitorNoteHistory = new Map();
-
-const monitorNoteListUndo = [];
-
-const monitorNoteListRedo = [];
-
-/*@@MONITOR_FUNCTION:monitorNoteSnapshot@@*/
-
-/*@@MONITOR_FUNCTION:monitorNoteHistoryState@@*/
-
-/*@@MONITOR_FUNCTION:monitorSyncHistoryButtons@@*/
-
-/*@@MONITOR_FUNCTION:monitorRecordUndoBeforeEdit@@*/
-
-/*@@MONITOR_FUNCTION:monitorApplyHistorySnapshot@@*/
-
-/*@@MONITOR_FUNCTION:monitorUndoNote@@*/
-
-/*@@MONITOR_FUNCTION:monitorRedoNote@@*/
-
-/*@@MONITOR_FUNCTION:monitorUndoListDelete@@*/
-
-/*@@MONITOR_FUNCTION:monitorRedoListDelete@@*/
-
-let monitorNoteSuppressOpenUntil=0;
-
-let monitorNoteDragState=null;
-
-let monitorNoteDragRaf=0;
-
-/*@@MONITOR_FUNCTION:monitorUpdateNoteInsertLine@@*/
-
-/*@@MONITOR_FUNCTION:monitorNoteDragScrollTick@@*/
-
-/*@@MONITOR_FUNCTION:monitorBindNoteDrag@@*/
-
+/* Recovery owns deleted-note storage; Notes receives it through one callback. */
 /*@@MONITOR_FUNCTION:persistMonitorTrashedNotes@@*/
 
 /*@@MONITOR_FUNCTION:trashMonitorNote@@*/
@@ -432,107 +376,12 @@ let monitorNoteDragRaf=0;
 
 /*@@MONITOR_FUNCTION:clearMonitorTrashedNotes@@*/
 
-/*@@MONITOR_FUNCTION:monitorRenderNoteList@@*/
-
-/*@@MONITOR_FUNCTION:monitorHighlightLastViewedNote@@*/
-
-/*@@MONITOR_FUNCTION:monitorShowNoteList@@*/
-
-/*@@MONITOR_FUNCTION:monitorOpenNote@@*/
-
-/*@@MONITOR_FUNCTION:monitorCreateNote@@*/
-
-/*@@MONITOR_FUNCTION:monitorUpdateActiveFromEditor@@*/
-
-/*@@MONITOR_FUNCTION:monitorQueueNoteBundleSave@@*/
-
-let monitorNoteCollapsed = false;
-
-let monitorNoteSaveTimer = 0;
-
+/* Composition only: place Notes, then place Sketch to its left. */
 /*@@MONITOR_FUNCTION:syncMonitorSideNote@@*/
 
-monitorNoteCollapse.addEventListener("click", () => { monitorNoteCollapsed = !monitorNoteCollapsed; syncMonitorSideNote(); });
-
-monitorNoteAdd.addEventListener("click", monitorCreateNote);
-
-monitorNoteBack.addEventListener("click", () => { monitorUpdateActiveFromEditor(); monitorQueueNoteBundleSave(); monitorShowNoteList(); monitorHighlightLastViewedNote(); });
-
-monitorNoteDelete.addEventListener("click", () => { const id=monitorActiveNoteId; if(!id)return; const note=monitorNotes.find(n=>n.id===id); if(note)trashMonitorNote(note); monitorNotes=monitorNotes.filter(n=>n.id!==id); monitorNoteHistory.delete(id); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorShowNoteList(); });
-
-monitorNoteUndo.addEventListener("click", () => { if(monitorNoteListMode) monitorUndoListDelete(); else monitorUndoNote(); });
-
-monitorNoteRedo.addEventListener("click", () => { if(monitorNoteListMode) monitorRedoListDelete(); else monitorRedoNote(); });
-
-monitorNoteEditor.addEventListener("keydown", (event) => { if(!event.ctrlKey||event.altKey||event.metaKey)return; const key=String(event.key||"").toLowerCase(); if(key==="z"){event.preventDefault(); if(event.shiftKey)monitorRedoNote(); else monitorUndoNote();} else if(key==="y"){event.preventDefault(); monitorRedoNote();} });
-
-monitorNote.addEventListener("keydown", (event) => { if(!monitorNoteListMode||!event.ctrlKey||event.altKey||event.metaKey)return; const key=String(event.key||"").toLowerCase(); if(key==="z"){event.preventDefault(); if(event.shiftKey)monitorRedoListDelete(); else monitorUndoListDelete();} else if(key==="y"){event.preventDefault(); monitorRedoListDelete();} });
-
-let monitorNoteAiBusy = false;
-
-/*@@MONITOR_FUNCTION:organizeMonitorNoteWithAi@@*/
-
-monitorNoteAi.addEventListener("click", organizeMonitorNoteWithAi);
-
-/*@@MONITOR_FUNCTION:monitorNoteNative@@*/
-
-let monitorNoteLastSharedText = "";
-
-let monitorNoteLocalDirty = false;
-
-let monitorNoteReady = false;
-
-let monitorNoteViewRevision = "";
-
-let monitorNoteViewRemoteApplying = false;
-
-let monitorNoteViewSaveTimer = 0;
-
-let monitorNoteViewSyncBusy = false;
-
-/*@@MONITOR_FUNCTION:monitorNoteScrollRatio@@*/
-
-/*@@MONITOR_FUNCTION:refreshMonitorSharedNoteView@@*/
-
-monitorSideNoteText.addEventListener("scroll", (event) => {
-
-  if (monitorNoteViewRemoteApplying || !event.isTrusted) return;
-
-  clearTimeout(monitorNoteViewSaveTimer);
-
-  monitorNoteViewSaveTimer = setTimeout(async () => {
-
-    const result = await monitorNoteNative({ type: "setSharedMonitorNoteView", ratio: String(monitorNoteScrollRatio()) }).catch(() => null);
-
-    if (result?.ok && result.revision) monitorNoteViewRevision = String(result.revision);
-
-  }, 80);
-
-});
-
-/*@@MONITOR_FUNCTION:refreshMonitorSharedNote@@*/
-
-monitorSideNoteText.addEventListener("input", (event) => {
-
-  syncMonitorSideNote();
-
-  if (!event.isTrusted || !monitorNoteReady || monitorNoteListMode) return;
-
-  monitorRecordUndoBeforeEdit();
-
-  monitorUpdateActiveFromEditor();
-
-  monitorQueueNoteBundleSave();
-
-  monitorSyncHistoryButtons();
-
-});
-
-// Shared note reads are event-driven: startup/focus.
-
 if (MONITOR_FEATURE_MEMO_ENABLED) {
-  setTimeout(refreshMonitorSharedNote, 250);
-  setTimeout(refreshMonitorSharedNoteView, 320);
+  setTimeout(() => { void monitorNotesFeature.refreshContent(); }, 250);
+  setTimeout(() => { void monitorNotesFeature.refreshView(); }, 320);
   new ResizeObserver(syncMonitorSideNote).observe(monitorRoot);
   window.addEventListener("resize", syncMonitorSideNote);
   requestAnimationFrame(syncMonitorSideNote);

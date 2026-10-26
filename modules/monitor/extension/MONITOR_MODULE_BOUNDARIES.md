@@ -54,10 +54,12 @@
 
 ## monitor.js 내부 후보
 
-### Notes / local history — REVIEW
-- 대표 anchor: `monitorNoteId`, `monitorParseNoteBundle`, `monitorUndoNote`, `monitorRedoNote`
-- ACT/node authority와 개념적으로 분리돼 있지만 DOM/storage 의존성 확인이 더 필요하다.
-- 아직 파일 이동 금지.
+### Notes / local history — SOURCE EXTRACTED / LIVE PENDING
+- 현재 소스 구현: `features/notes/monitor-notes-feature.js`와 `.css`.
+- 단일 소유 책임: Notes DOM, 목록/편집 상태, reorder, list/edit undo/redo, shared content/view synchronization.
+- Native shared-note 요청, ACT AI organizer, Recovery trash, status와 layout은 모두 주입 포트다. Notes가 Chrome/Native/ACT 전역을 직접 읽지 않는다.
+- `sketch-notes.js`에는 삭제 메모 Recovery adapter와 Sketch/Notes 배치 composition만 남는다.
+- 독립 검증: `..\tools\check_monitor_notes_feature.js`; 설치 및 실제 편집/동기화/AI/복구 수락 전이므로 LIVE 완료로 보고하지 않는다.
 
 ### ACT transport — READY / EXTRACTED
 - 구현 파일: `monitor-act-transport.js`
@@ -107,11 +109,11 @@
 - `syncMonitorSideNote()`는 Sketch DOM/state를 읽지 않고 `layout({ boardCollapsed, rootRect, noteLeft })`만 호출한다.
 - 다음 단계는 배포가 아니라 먼저 이번 source commit을 보존한 뒤, 별도 설치/LIVE 수락에서 실제 입력과 복원을 확인하는 것이다.
 
-### Notes / local history — NOT READY
-- 측정 구간 약 5,051줄, top-level 함수 34개 중 15개가 구간 밖에서 직접 참조된다.
-- DOM, local history/undo, Native note 저장, shared note refresh, AI 정리가 한 덩어리에 섞여 있다.
-- 파일을 먼저 나누면 public API가 너무 넓어지므로 **현재는 분리하지 않는다.**
-- 먼저 storage/native adapter와 UI/editor state의 책임 경계를 문서화한 뒤 재검토한다.
+### Notes / local history — SOURCE EXTRACTED / LIVE PENDING
+- 기존 DOM/global state와 29개 compatibility 함수, `shared-ui`의 history helper 6개를 독립 feature로 이동하고 옛 구현을 삭제했다.
+- public API는 `element`, `layout`, `refreshContent`, `refreshView`, `restoreNote`, `titleFromText`, `destroy`, read-only `snapshot`으로 제한한다.
+- Recovery는 삭제 메모 보관만 소유하고 `restoreNote(note)`로 되돌린다. ACT AI와 Native transport는 composition root의 adapter가 소유한다.
+- 다음 변경에서 이 구현을 compatibility bundle로 복사하거나 raw Notes state를 다시 노출하지 않는다.
 
 ### Diagnostics / Control Center — NOT READY AS ONE MODULE
 - 현재 후반 구간은 diagnostics와 structure/organization 코드가 서로 이어져 있어 한 모듈 후보로 취급하면 안 된다.
@@ -162,7 +164,7 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - Frozen globalThis.MonitorDomainAPIs namespaces export exact functions. The old function names remain thin compatibility shims in compiled Monitor, keeping existing call sites and DOM identities stable.
 - The core runs without Monitor lexical globals or DOM in isolation. check_monitor_domain_pure_api.js verifies immutable namespaces, 43 routed functions and independent VM behavior; structure checker enforces script order and the manifest.
 - Historical integration tests requiring direct standalone functions remain on their former source contract until equivalent executable tests are introduced.
-- CRITICAL: This is a genuinely independent subset, NOT independently injectable runtime APIs for the remaining 545 functions or shared mutable state. Scope is still OPEN.
+- CRITICAL: This is a genuinely independent subset, NOT independently injectable runtime APIs for the remaining 516 functions or shared mutable state. Scope is still OPEN.
 
 
 ## Node generation and attention state with injected read-only storage (2026-10-26)

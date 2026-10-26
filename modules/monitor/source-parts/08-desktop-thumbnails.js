@@ -352,9 +352,9 @@ window.addEventListener("focus", () => {
 
   void monitorSyncSharedState("focus", true);
 
-  void refreshMonitorSharedNote();
+  void monitorNotesFeature.refreshContent();
 
-  void refreshMonitorSharedNoteView();
+  void monitorNotesFeature.refreshView();
 
   void checkMonitorDeploymentUpdate();
 

@@ -16,6 +16,7 @@
 - Target architecture and migration order: `..\MONITOR_ARCHITECTURE.md`
 - Screen feature ownership map: `..\MONITOR_UI_FEATURE_BOUNDARIES.md`
 - Extracted Sketch owner: `extension\features\sketch\monitor-sketch-feature.js` and `.css`
+- Extracted Notes owner: `extension\features\notes\monitor-notes-feature.js` and `.css`
 - Generated function index: `extension\MONITOR_JS_INDEX.md`
 - Deployment observation tool: `tools\Request-MonitorDeploymentCheck.ps1`
 - Versioned deployment tool: `tools\Publish-MonitorDeployment.ps1`

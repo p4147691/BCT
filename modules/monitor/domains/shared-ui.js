@@ -552,10 +552,6 @@ function monitorApplyDirectUserClick(message, sender) {
 }
 //@@FN_END:monitorApplyDirectUserClick
 
-//@@FN_START:monitorApplyHistorySnapshot
-function monitorApplyHistorySnapshot(snapshot) { const note=monitorActiveNote(); if(!note||!snapshot)return; note.body=String(snapshot.body||""); note.title=monitorNoteTitleFromText(note.body); note.updatedAt=Date.now(); monitorSideNoteText.value=note.body; monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorSyncHistoryButtons(); }
-//@@FN_END:monitorApplyHistorySnapshot
-
 //@@FN_START:monitorApplyRoleMode
 async function monitorApplyRoleMode(worker,state) {
 
@@ -1296,14 +1292,6 @@ function monitorRecordRefreshTiming(startedAt, stages) {
 }
 //@@FN_END:monitorRecordRefreshTiming
 
-//@@FN_START:monitorRecordUndoBeforeEdit
-function monitorRecordUndoBeforeEdit() { const note=monitorActiveNote(); const h=monitorNoteHistoryState(); if(!note||!h)return; const prev=monitorNoteSnapshot(note); const next={title:monitorNoteTitleFromText(monitorSideNoteText.value),body:String(monitorSideNoteText.value||"")}; if(prev.body===next.body)return; const last=h.undo[h.undo.length-1]; if(!last||last.body!==prev.body) h.undo.push(prev); if(h.undo.length>100)h.undo.shift(); h.redo.length=0; }
-//@@FN_END:monitorRecordUndoBeforeEdit
-
-//@@FN_START:monitorRedoListDelete
-function monitorRedoListDelete() { const action=monitorNoteListRedo.pop(); if(!action)return; const note=action.note||action; if((action.type||"delete")==="create"){ if(!monitorNotes.some(n=>n.id===note.id)) monitorNotes.push(note); } else { monitorNotes=monitorNotes.filter(n=>n.id!==note.id); monitorNoteHistory.delete(note.id); } monitorNoteListUndo.push({type:action.type||"delete",note:{...note}}); if(monitorNoteListUndo.length>50)monitorNoteListUndo.shift(); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorSyncHistoryButtons(); }
-//@@FN_END:monitorRedoListDelete
-
 //@@FN_START:monitorRememberApprovedChatTransition
 function monitorRememberApprovedChatTransition(nodeIdentityKey, profileId, oldKey, newKey) {
 
@@ -1470,46 +1458,6 @@ function monitorSortLocationParts(worker, state) {
 function monitorStationMetadata(station) { return globalThis.MonitorDomainAPIs["shared-ui"]["monitorStationMetadata"].apply(this, arguments); }
 //@@FN_END:monitorStationMetadata
 
-//@@FN_START:monitorSyncHistoryButtons
-function monitorSyncHistoryButtons() {
-
-  if (monitorNoteListMode) {
-
-    monitorNoteUndo.hidden = false;
-
-    monitorNoteUndo.disabled = !monitorNoteListUndo.length;
-
-    monitorNoteUndo.title = "목록 변경 되돌리기 (Ctrl+Z)";
-
-    monitorNoteUndo.setAttribute("aria-label", "목록 변경 되돌리기");
-
-    monitorNoteRedo.hidden = false;
-
-    monitorNoteRedo.disabled = !monitorNoteListRedo.length;
-
-    monitorNoteRedo.title = "목록 변경 다시 실행 (Ctrl+Y / Ctrl+Shift+Z)";
-
-    monitorNoteRedo.setAttribute("aria-label", "목록 변경 다시 실행");
-
-    return;
-
-  }
-
-  const h=monitorNoteHistoryState();
-
-  const editing=!!monitorActiveNoteId;
-
-  monitorNoteUndo.hidden=!editing; monitorNoteRedo.hidden=!editing;
-
-  monitorNoteUndo.disabled=!h?.undo?.length; monitorNoteRedo.disabled=!h?.redo?.length;
-
-  monitorNoteUndo.title = "실행 취소 (Ctrl+Z)";
-
-  monitorNoteUndo.setAttribute("aria-label", "실행 취소");
-
-}
-//@@FN_END:monitorSyncHistoryButtons
-
 //@@FN_START:monitorSyncSharedRuntime
 async function monitorSyncSharedRuntime() {
 
@@ -1671,14 +1619,6 @@ function monitorTrustedPhysicalWindowKey(endpoint, location = null) {
 
 }
 //@@FN_END:monitorTrustedPhysicalWindowKey
-
-//@@FN_START:monitorUndoListDelete
-function monitorUndoListDelete() { const action=monitorNoteListUndo.pop(); if(!action)return; let note=action.note||action; if(action.type==="create"){ const current=monitorNotes.find(n=>n.id===note.id); if(current) note={...current}; monitorNotes=monitorNotes.filter(n=>n.id!==note.id); monitorNoteHistory.delete(note.id); } else if(!monitorNotes.some(n=>n.id===note.id)) monitorNotes.push(note); monitorNoteListRedo.push({type:action.type||"delete",note:{...note}}); if(monitorNoteListRedo.length>50)monitorNoteListRedo.shift(); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorSyncHistoryButtons(); }
-//@@FN_END:monitorUndoListDelete
-
-//@@FN_START:monitorUpdateActiveFromEditor
-function monitorUpdateActiveFromEditor() { const note=monitorActiveNote(); if(!note)return; note.body=String(monitorSideNoteText.value||""); note.title=monitorNoteTitleFromText(note.body); note.updatedAt=Date.now(); monitorNoteLocalDirty=true; }
-//@@FN_END:monitorUpdateActiveFromEditor
 
 //@@FN_START:monitorUpdateLocalLlmToggleButton
 function monitorUpdateLocalLlmToggleButton(button) {

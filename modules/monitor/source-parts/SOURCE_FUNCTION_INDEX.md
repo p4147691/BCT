@@ -399,7 +399,7 @@ Generated extension/monitor.js is not an edit target.
 - openMonitorStructure
 - renderMonitorStructure
 
-## shared-ui (116 functions)
+## shared-ui (110 functions)
 
 - activateMonitorCodexResource
 - applyMonitorLiveWindowGeometry
@@ -415,7 +415,6 @@ Generated extension/monitor.js is not an edit target.
 - handleMonitorForegroundChangedEvent
 - monitorAdoptLocalLlmControlPayload
 - monitorApplyDirectUserClick
-- monitorApplyHistorySnapshot
 - monitorApplyRoleMode
 - monitorBootstrapExempt
 - monitorBrowserLineageKey
@@ -460,8 +459,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorPublishSharedRuntime
 - monitorReconcilePendingTitles
 - monitorRecordRefreshTiming
-- monitorRecordUndoBeforeEdit
-- monitorRedoListDelete
 - monitorRememberApprovedChatTransition
 - monitorReportMatchesTask
 - monitorRoleAdminCandidates
@@ -475,14 +472,11 @@ Generated extension/monitor.js is not an edit target.
 - monitorShouldKeepExistingCapture
 - monitorSortLocationParts
 - monitorStationMetadata
-- monitorSyncHistoryButtons
 - monitorSyncSharedRuntime
 - monitorSyncSharedState
 - monitorTabBindingKey
 - monitorTitlesEquivalent
 - monitorTrustedPhysicalWindowKey
-- monitorUndoListDelete
-- monitorUpdateActiveFromEditor
 - monitorUpdateLocalLlmToggleButton
 - monitorUpdateLocalLlmToggleButtons
 - monitorWorkIconState
@@ -518,34 +512,11 @@ Generated extension/monitor.js is not an edit target.
 - toggleMonitorAutoProcess
 - waitForNewChromeHwnd
 
-## sketch-notes (29 functions)
+## sketch-notes (6 functions)
 
 - clearMonitorTrashedNotes
 - deleteMonitorTrashedNote
-- monitorActiveNote
-- monitorBindNoteDrag
-- monitorCreateNote
-- monitorHighlightLastViewedNote
-- monitorNoteDragScrollTick
-- monitorNoteHistoryState
-- monitorNoteId
-- monitorNoteNative
-- monitorNoteScrollRatio
-- monitorNoteSnapshot
-- monitorNoteTitleFromText
-- monitorOpenNote
-- monitorParseNoteBundle
-- monitorQueueNoteBundleSave
-- monitorRedoNote
-- monitorRenderNoteList
-- monitorSerializeNotes
-- monitorShowNoteList
-- monitorUndoNote
-- monitorUpdateNoteInsertLine
-- organizeMonitorNoteWithAi
 - persistMonitorTrashedNotes
-- refreshMonitorSharedNote
-- refreshMonitorSharedNoteView
 - restoreMonitorTrashedNote
 - syncMonitorSideNote
 - trashMonitorNote

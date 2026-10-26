@@ -24,7 +24,7 @@ Dependencies only point downward. A presentation module never opens a Native por
 | --- | --- | --- | --- |
 | Thumbnail | bottom-tile refresh lifecycle, background, HWND pixels, completion and overlay composition | `MonitorDesktopThumbnailV2` over injected visual/frame ports | source controller extracted; LIVE pending |
 | Sketch | drawing canvas, tools, text input and history | `MonitorSketchFeature` + injected persistence port | source controller/CSS extracted; isolated test passed; LIVE pending |
-| Notes | note model, undo/redo, persistence orchestration, editor projection | `NotesController` + injected storage/native/AI ports | planned after thumbnail acceptance |
+| Notes | note model, undo/redo, persistence orchestration, editor projection | `MonitorNotesFeature` + injected Native/AI/Recovery ports | source controller/CSS extracted; isolated test passed; LIVE pending |
 | Desktop/window lifecycle | desktop identity, window observation, move/focus actions | `DesktopWindowController` + Native port | planned |
 | Nodes/conversations | RCC identity projection, attention/generation state | `NodeProjectionController` + BCT/RCC readers | pure subset extracted; controller planned |
 | Recovery | exact conversation restore policy and execution | `RecoveryController` + explicit launch/ACT ports | planned |
@@ -58,7 +58,7 @@ Rules:
 
 1. Finish and physically accept Thumbnail: solid, photo, D1/D2 switching, window overlays and extension reload.
 2. Extract Sketch as one visible feature with its canvas state and history. **Source complete; LIVE pending.**
-3. Extract Notes without changing behavior: first define storage/native/AI adapters, then move model, then editor projection.
+3. Extract Notes without changing behavior: first define storage/native/AI adapters, then move model, then editor projection. **Source complete; LIVE pending.**
 4. Finish Nodes/conversations as one visible node panel around the already isolated pure generation/identity APIs.
 5. Split the full desktop stage from the bottom desktop strip around exact GUID/HWND ownership; keep mutations behind one Native port.
 6. Extract Recovery and Header command surfaces only after node and desktop identity ports are stable.

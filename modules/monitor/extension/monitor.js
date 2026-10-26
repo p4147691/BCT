@@ -269,15 +269,37 @@ function monitorRecordRefreshTiming(startedAt, stages) {
 
 chrome.runtime.sendMessage({ type:"monitor-register-popup-window" }).catch(() => {});
 
-const monitorNote = document.createElement("aside");
-
-monitorNote.className = "monitor-side-note";
-
-monitorNote.setAttribute("aria-label", "할 일 메모");
-
-monitorNote.innerHTML = `<div class="monitor-side-note-title"><span class="monitor-note-title-left"><button id="monitorNoteBack" type="button" title="메모 목록" aria-label="메모 목록" hidden>‹</button><span id="monitorNoteHeaderTitle">메모</span><button id="monitorNoteAdd" type="button" title="새 메모" aria-label="새 메모">＋</button></span><span class="monitor-note-actions"><button id="monitorNoteUndo" type="button" title="실행 취소 (Ctrl+Z)" aria-label="실행 취소" hidden>↶</button><button id="monitorNoteRedo" type="button" title="다시 실행 (Ctrl+Y / Ctrl+Shift+Z)" aria-label="다시 실행" hidden>↷</button><button id="monitorNoteAi" type="button" title="작업하지 않는 유휴 워커로 메모 정리" aria-label="AI로 메모 정리" hidden>AI</button><button id="monitorNoteDelete" type="button" title="현재 메모 삭제" aria-label="현재 메모 삭제" hidden>×</button><button id="monitorNoteCollapse" type="button" title="메모 접기" aria-label="메모 접기">−</button></span></div><div id="monitorNoteList" class="monitor-note-list"></div><div id="monitorNoteEditor" class="monitor-note-editor" hidden><textarea id="monitorSideNoteText" spellcheck="false" placeholder="첫 줄이 목록 제목으로 표시됩니다.\n해야 할 일..."></textarea></div>`;
-
-const MONITOR_NOTE_BUNDLE_PREFIX = "DWM_NOTES_V1:";
+const monitorNotesFeature = globalThis.MonitorNotesFeature?.create({
+  document,
+  enabled: MONITOR_FEATURE_MEMO_ENABLED,
+  sharedNotePort: Object.freeze({
+    getContent: () => monitorNative({ type: "getSharedNote" }),
+    setContent: (text) => monitorNative({ type: "setSharedNote", text }),
+    getView: () => monitorNative({ type: "getSharedMonitorNoteView" }),
+    setView: (ratio) => monitorNative({ type: "setSharedMonitorNoteView", ratio }),
+  }),
+  aiPort: Object.freeze({
+    async organize(payload) {
+      const response = await actFetch(ORCHESTRATOR_NOTE_AI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+      return data;
+    },
+  }),
+  onTrash: (note) => trashMonitorNote(note),
+  onStatus: (message, ok) => setMonitorStatus(message, ok),
+  errorText: (value) => monitorRoleAdminErrorText(value),
+  onLayoutChange: () => syncMonitorSideNote(),
+  requestFrame: requestAnimationFrame,
+  cancelFrame: cancelAnimationFrame,
+  setTimer: setTimeout,
+  clearTimer: clearTimeout,
+});
+if (!monitorNotesFeature) throw new Error("MONITOR_NOTES_FEATURE_MISSING");
 
 const monitorPreviewWallpaper = document.createElement("div");
 
@@ -322,9 +344,8 @@ const monitorSketchFeature = globalThis.MonitorSketchFeature?.create({
   onLayoutChange: () => syncMonitorSideNote(),
 });
 if (!monitorSketchFeature) throw new Error("MONITOR_SKETCH_FEATURE_MISSING");
-document.body.append(monitorDesktopSwitcher, monitorSketchFeature.element, monitorNote, monitorRoot);
+document.body.append(monitorDesktopSwitcher, monitorSketchFeature.element, monitorNotesFeature.element, monitorRoot);
 if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED && !MONITOR_FEATURE_RECOVERY_ENABLED) monitorDesktopSwitcher.style.setProperty("display", "none", "important");
-if (!MONITOR_FEATURE_MEMO_ENABLED) monitorNote.style.setProperty("display", "none", "important");
 
 const MONITOR_DESKTOP_SWITCHER_GAP_PX = 12;
 function syncMonitorPanelToDesktopSwitcher() {
@@ -381,680 +402,41 @@ monitorTitleResizeObserver.observe(monitorRoot);
 
 requestAnimationFrame(syncMonitorTitle);
 
-const monitorSideNoteText = document.getElementById("monitorSideNoteText");
-
-const monitorNoteAi = document.getElementById("monitorNoteAi");
-
-const monitorNoteCollapse = document.getElementById("monitorNoteCollapse");
-monitorNoteCollapse.classList.add("monitor-collapse-chevron");
-monitorNoteCollapse.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14l6-6 6 6"/></svg>';
-
-const monitorNoteBack = document.getElementById("monitorNoteBack");
-
-const monitorNoteAdd = document.getElementById("monitorNoteAdd");
-
-const monitorNoteDelete = document.getElementById("monitorNoteDelete");
-
-const monitorNoteUndo = document.getElementById("monitorNoteUndo");
-
-const monitorNoteRedo = document.getElementById("monitorNoteRedo");
-
-const monitorNoteList = document.getElementById("monitorNoteList");
-
-const monitorNoteEditor = document.getElementById("monitorNoteEditor");
-
-const monitorNoteHeaderTitle = document.getElementById("monitorNoteHeaderTitle");
-
-let monitorNotes = [];
-
-let monitorActiveNoteId = "";
-
-let monitorLastViewedNoteId = "";
-
-let monitorNoteListMode = true;
-
-function monitorNoteId() { return `n${Date.now().toString(36)}${Math.random().toString(36).slice(2,7)}`; }
-
-function monitorNoteTitleFromText(text) { return String(text||"").split(/\r?\n/).map(v=>v.trim()).find(Boolean)?.slice(0,42) || "새 메모"; }
-
-function monitorParseNoteBundle(raw) {
-
-  const text = String(raw || "");
-
-  if (text.startsWith(MONITOR_NOTE_BUNDLE_PREFIX)) {
-
-    try { const data = JSON.parse(text.slice(MONITOR_NOTE_BUNDLE_PREFIX.length)); return Array.isArray(data?.notes) ? data.notes.filter(n=>n&&n.id).map(n=>{ const body=String(n.body||""); return {id:String(n.id),title:monitorNoteTitleFromText(body),body,updatedAt:Number(n.updatedAt)||0}; }) : []; } catch (_) { return []; }
-
-  }
-
-  return text.trim() ? [{ id:monitorNoteId(), title:monitorNoteTitleFromText(text), body:text, updatedAt:Date.now() }] : [];
-
-}
-
-function monitorSerializeNotes() { return MONITOR_NOTE_BUNDLE_PREFIX + JSON.stringify({ notes:monitorNotes }); }
-
-function monitorActiveNote() { return monitorNotes.find(n=>n.id===monitorActiveNoteId) || null; }
-
-const monitorNoteHistory = new Map();
-
-const monitorNoteListUndo = [];
-
-const monitorNoteListRedo = [];
-
-function monitorNoteSnapshot(note=monitorActiveNote()) { return note ? { title:String(note.title||""), body:String(note.body||"") } : null; }
-
-function monitorNoteHistoryState(id=monitorActiveNoteId) { if(!id)return null; if(!monitorNoteHistory.has(id)) monitorNoteHistory.set(id,{undo:[],redo:[]}); return monitorNoteHistory.get(id); }
-
-function monitorSyncHistoryButtons() {
-
-  if (monitorNoteListMode) {
-
-    monitorNoteUndo.hidden = false;
-
-    monitorNoteUndo.disabled = !monitorNoteListUndo.length;
-
-    monitorNoteUndo.title = "목록 변경 되돌리기 (Ctrl+Z)";
-
-    monitorNoteUndo.setAttribute("aria-label", "목록 변경 되돌리기");
-
-    monitorNoteRedo.hidden = false;
-
-    monitorNoteRedo.disabled = !monitorNoteListRedo.length;
-
-    monitorNoteRedo.title = "목록 변경 다시 실행 (Ctrl+Y / Ctrl+Shift+Z)";
-
-    monitorNoteRedo.setAttribute("aria-label", "목록 변경 다시 실행");
-
-    return;
-
-  }
-
-  const h=monitorNoteHistoryState();
-
-  const editing=!!monitorActiveNoteId;
-
-  monitorNoteUndo.hidden=!editing; monitorNoteRedo.hidden=!editing;
-
-  monitorNoteUndo.disabled=!h?.undo?.length; monitorNoteRedo.disabled=!h?.redo?.length;
-
-  monitorNoteUndo.title = "실행 취소 (Ctrl+Z)";
-
-  monitorNoteUndo.setAttribute("aria-label", "실행 취소");
-
-}
-
-function monitorRecordUndoBeforeEdit() { const note=monitorActiveNote(); const h=monitorNoteHistoryState(); if(!note||!h)return; const prev=monitorNoteSnapshot(note); const next={title:monitorNoteTitleFromText(monitorSideNoteText.value),body:String(monitorSideNoteText.value||"")}; if(prev.body===next.body)return; const last=h.undo[h.undo.length-1]; if(!last||last.body!==prev.body) h.undo.push(prev); if(h.undo.length>100)h.undo.shift(); h.redo.length=0; }
-
-function monitorApplyHistorySnapshot(snapshot) { const note=monitorActiveNote(); if(!note||!snapshot)return; note.body=String(snapshot.body||""); note.title=monitorNoteTitleFromText(note.body); note.updatedAt=Date.now(); monitorSideNoteText.value=note.body; monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorSyncHistoryButtons(); }
-
-function monitorUndoNote() { const note=monitorActiveNote(); const h=monitorNoteHistoryState(); if(!note||!h?.undo?.length)return; h.redo.push(monitorNoteSnapshot(note)); monitorApplyHistorySnapshot(h.undo.pop()); }
-
-function monitorRedoNote() { const note=monitorActiveNote(); const h=monitorNoteHistoryState(); if(!note||!h?.redo?.length)return; h.undo.push(monitorNoteSnapshot(note)); monitorApplyHistorySnapshot(h.redo.pop()); }
-
-function monitorUndoListDelete() { const action=monitorNoteListUndo.pop(); if(!action)return; let note=action.note||action; if(action.type==="create"){ const current=monitorNotes.find(n=>n.id===note.id); if(current) note={...current}; monitorNotes=monitorNotes.filter(n=>n.id!==note.id); monitorNoteHistory.delete(note.id); } else if(!monitorNotes.some(n=>n.id===note.id)) monitorNotes.push(note); monitorNoteListRedo.push({type:action.type||"delete",note:{...note}}); if(monitorNoteListRedo.length>50)monitorNoteListRedo.shift(); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorSyncHistoryButtons(); }
-
-function monitorRedoListDelete() { const action=monitorNoteListRedo.pop(); if(!action)return; const note=action.note||action; if((action.type||"delete")==="create"){ if(!monitorNotes.some(n=>n.id===note.id)) monitorNotes.push(note); } else { monitorNotes=monitorNotes.filter(n=>n.id!==note.id); monitorNoteHistory.delete(note.id); } monitorNoteListUndo.push({type:action.type||"delete",note:{...note}}); if(monitorNoteListUndo.length>50)monitorNoteListUndo.shift(); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorSyncHistoryButtons(); }
-
-let monitorNoteSuppressOpenUntil=0;
-
-let monitorNoteDragState=null;
-
-let monitorNoteDragRaf=0;
-
-function monitorUpdateNoteInsertLine(clientY) {
-
-  const st=monitorNoteDragState; if(!st?.active)return;
-
-  const rows=[...monitorNoteList.querySelectorAll(".monitor-note-item")];
-
-  let beforeId=null, lineY=null;
-
-  for(const row of rows){
-
-    const r=row.getBoundingClientRect();
-
-    if(clientY < r.top + r.height/2){ beforeId=row.dataset.noteId; lineY=r.top; break; }
-
-  }
-
-  if(lineY==null){
-
-    const last=rows[rows.length-1];
-
-    lineY=last ? last.getBoundingClientRect().bottom : monitorNoteList.getBoundingClientRect().top+7;
-
-  }
-
-  st.beforeId=beforeId;
-
-  const listRect=monitorNoteList.getBoundingClientRect();
-
-  st.insertLine.style.top=`${lineY-listRect.top+monitorNoteList.scrollTop}px`;
-
-}
-
-function monitorNoteDragScrollTick() {
-
-  const st=monitorNoteDragState; if(!st?.active){monitorNoteDragRaf=0;return;}
-
-  if(st.scrollVelocity){ monitorNoteList.scrollTop+=st.scrollVelocity; monitorUpdateNoteInsertLine(st.lastClientY); }
-
-  monitorNoteDragRaf=requestAnimationFrame(monitorNoteDragScrollTick);
-
-}
-
-function monitorBindNoteDrag(row,noteId) {
-
-  row.addEventListener("pointerdown",ev=>{
-
-    if(ev.button!==0||ev.target.closest(".monitor-note-item-delete")||monitorNoteDragState)return;
-
-    const startX=ev.clientX,startY=ev.clientY;
-
-    const state={row,noteId,pointerId:ev.pointerId,startX,startY,lastClientY:startY,active:false,scrollVelocity:0,offsetY:0,height:0,ghost:null,insertLine:null,beforeId:noteId};
-
-    monitorNoteDragState=state;
-
-    const onMove=e=>{
-
-      if(e.pointerId!==state.pointerId)return;
-
-      state.lastClientY=e.clientY;
-
-      if(!state.active&&Math.hypot(e.clientX-startX,e.clientY-startY)<6)return;
-
-      if(!state.active){
-
-        state.active=true; monitorNoteSuppressOpenUntil=Date.now()+500;
-
-        const r=row.getBoundingClientRect(); state.offsetY=startY-r.top; state.height=r.height;
-
-        const ghost=row.cloneNode(true); ghost.classList.add("monitor-note-drag-ghost"); ghost.removeAttribute("data-note-id");
-
-        Object.assign(ghost.style,{position:"fixed",left:`${r.left}px`,top:`${r.top}px`,width:`${r.width}px`,height:`${r.height}px`,margin:"0",zIndex:"2147483646",pointerEvents:"none"});
-
-        state.ghost=ghost; document.body.appendChild(ghost); row.classList.add("monitor-note-drag-source");
-
-        const line=document.createElement("div"); line.className="monitor-note-insert-line"; state.insertLine=line; monitorNoteList.appendChild(line);
-
-        monitorNoteList.classList.add("monitor-note-reordering"); monitorUpdateNoteInsertLine(startY);
-
-        if(!monitorNoteDragRaf)monitorNoteDragRaf=requestAnimationFrame(monitorNoteDragScrollTick);
-
-      }
-
-      e.preventDefault();
-
-      const listRect=monitorNoteList.getBoundingClientRect();
-
-      const top=Math.max(listRect.top,Math.min(e.clientY-state.offsetY,listRect.bottom-state.height));
-
-      state.ghost.style.top=`${top}px`;
-
-      const edge=Math.min(48,Math.max(30,listRect.height*.16));
-
-      if(e.clientY<listRect.top+edge) state.scrollVelocity=-Math.min(14,Math.max(2,(listRect.top+edge-e.clientY)*.34));
-
-      else if(e.clientY>listRect.bottom-edge) state.scrollVelocity=Math.min(14,Math.max(2,(e.clientY-(listRect.bottom-edge))*.34));
-
-      else state.scrollVelocity=0;
-
-      monitorUpdateNoteInsertLine(e.clientY);
-
-    };
-
-    const finish=e=>{
-
-      if(e.pointerId!==state.pointerId)return;
-
-      document.removeEventListener("pointermove",onMove); document.removeEventListener("pointerup",finish); document.removeEventListener("pointercancel",finish);
-
-      if(state.active){
-
-        state.scrollVelocity=0; if(monitorNoteDragRaf){cancelAnimationFrame(monitorNoteDragRaf);monitorNoteDragRaf=0;}
-
-        state.ghost?.remove(); state.insertLine?.remove(); row.classList.remove("monitor-note-drag-source"); monitorNoteList.classList.remove("monitor-note-reordering");
-
-        const currentIds=monitorNotes.map(n=>n.id); const filtered=currentIds.filter(id=>id!==state.noteId);
-
-        let insertAt=state.beforeId ? filtered.indexOf(state.beforeId) : filtered.length;
-
-        if(insertAt<0)insertAt=filtered.length; filtered.splice(insertAt,0,state.noteId);
-
-        const byId=new Map(monitorNotes.map(note=>[note.id,note]));
-
-        if(filtered.length===monitorNotes.length&&filtered.every(id=>byId.has(id))){ monitorNotes=filtered.map(id=>byId.get(id)); monitorLastViewedNoteId=state.noteId; monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorHighlightLastViewedNote(); }
-
-        monitorNoteSuppressOpenUntil=Date.now()+350;
-
-      }
-
-      monitorNoteDragState=null;
-
-    };
-
-    document.addEventListener("pointermove",onMove,{passive:false}); document.addEventListener("pointerup",finish); document.addEventListener("pointercancel",finish);
-
-  });
-
-}
-
+/* Recovery owns deleted-note storage; Notes receives it through one callback. */
 function persistMonitorTrashedNotes(){
-
   chrome.storage.local.set({[MONITOR_TRASHED_NOTES_KEY]:[...monitorTrashedNotes.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,100)});
-
 }
 
 function trashMonitorNote(note){
-
-  if(!note?.id)return; monitorTrashedNotes.set(String(note.id),{...note,trashed_at_ms:Date.now()}); persistMonitorTrashedNotes(); refreshMonitorRecoveryMenu();
-
+  if(!note?.id)return;monitorTrashedNotes.set(String(note.id),{...note,trashed_at_ms:Date.now()});persistMonitorTrashedNotes();refreshMonitorRecoveryMenu();
 }
 
 function restoreMonitorTrashedNote(id){
-
-  const note=monitorTrashedNotes.get(String(id)); if(!note)return; monitorTrashedNotes.delete(String(id)); const restored={...note}; delete restored.trashed_at_ms; if(!monitorNotes.some((x)=>x.id===restored.id))monitorNotes.push(restored); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); persistMonitorTrashedNotes(); monitorRenderNoteList(); refreshMonitorRecoveryMenu();
-
+  const key=String(id),note=monitorTrashedNotes.get(key);if(!note)return;
+  if(!monitorNotesFeature.restoreNote(note))return;
+  monitorTrashedNotes.delete(key);persistMonitorTrashedNotes();refreshMonitorRecoveryMenu();
 }
 
 function deleteMonitorTrashedNote(id){monitorTrashedNotes.delete(String(id));persistMonitorTrashedNotes();refreshMonitorRecoveryMenu();}
 
 function clearMonitorTrashedNotes(){monitorTrashedNotes.clear();persistMonitorTrashedNotes();refreshMonitorRecoveryMenu();}
 
-function monitorRenderNoteList() {
-  if (!MONITOR_FEATURE_MEMO_ENABLED) { monitorNoteList.replaceChildren(); return; }
-
-  monitorNoteList.innerHTML = "";
-
-  const sorted = [...monitorNotes];
-
-  if (!sorted.length) { const empty=document.createElement("div"); empty.className="monitor-note-empty"; empty.textContent="메모가 없습니다. 위 + 버튼을 눌러 시작하세요."; monitorNoteList.appendChild(empty); return; }
-
-  for (const note of sorted) {
-
-    const row=document.createElement("div"); row.className="monitor-note-item"; row.dataset.noteId=note.id; if(note.id===monitorLastViewedNoteId) row.classList.add("is-last-viewed");
-
-    const open=document.createElement("button"); open.type="button"; open.className="monitor-note-item-open";
-
-    const title=document.createElement("strong"); title.textContent=note.title||"새 메모";
-
-    const preview=document.createElement("span"); preview.textContent=String(note.body||"").replace(/\s+/g," ").trim().slice(0,72)||"내용 없음";
-
-    open.append(title,preview); open.addEventListener("click",event=>{ if(Date.now()<monitorNoteSuppressOpenUntil){event.preventDefault();return;} monitorOpenNote(note.id); });
-
-    const del=document.createElement("button"); del.type="button"; del.className="monitor-note-item-delete"; del.title="메모 삭제"; del.setAttribute("aria-label",`${note.title||"새 메모"} 삭제`); del.textContent="🗑";
-
-    del.addEventListener("click",()=>{ trashMonitorNote(note); monitorNotes=monitorNotes.filter(n=>n.id!==note.id); monitorNoteHistory.delete(note.id); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorRenderNoteList(); monitorSyncHistoryButtons(); });
-
-    row.append(open,del); monitorBindNoteDrag(row,note.id); monitorNoteList.appendChild(row);
-
-  }
-
-}
-
-function monitorHighlightLastViewedNote() {
-
-  const id=String(monitorLastViewedNoteId||""); if(!id)return;
-
-  requestAnimationFrame(()=>{
-
-    const row=[...monitorNoteList.querySelectorAll(".monitor-note-item")].find(el=>el.dataset.noteId===id);
-
-    if(!row)return;
-
-    row.scrollIntoView({block:"nearest",inline:"nearest"});
-
-    row.classList.remove("monitor-note-return-highlight");
-
-    void row.offsetWidth;
-
-    row.classList.add("monitor-note-return-highlight");
-
-    setTimeout(()=>row.classList.remove("monitor-note-return-highlight"),1200);
-
-  });
-
-}
-
-function monitorShowNoteList() { monitorNoteListMode=true; monitorActiveNoteId=""; monitorNoteList.hidden=false; monitorNoteEditor.hidden=true; monitorNoteBack.hidden=true; monitorNoteAi.hidden=false; monitorNoteDelete.hidden=true; monitorNoteAdd.hidden=false; monitorNoteHeaderTitle.textContent="메모"; monitorRenderNoteList(); monitorSyncHistoryButtons(); }
-
-function monitorOpenNote(id, focusEditor=true) { const note=monitorNotes.find(n=>n.id===id); if(!note)return; monitorNoteListMode=false; monitorActiveNoteId=id; monitorLastViewedNoteId=id; monitorNoteHistoryState(id); monitorNoteList.hidden=true; monitorNoteEditor.hidden=false; monitorNoteBack.hidden=false; monitorNoteAi.hidden=false; monitorNoteAdd.hidden=true; monitorNoteHeaderTitle.textContent="메모 편집"; monitorNoteDelete.textContent="🗑"; monitorNoteDelete.hidden=false; monitorSideNoteText.value=note.body||""; monitorSyncHistoryButtons(); if(focusEditor) requestAnimationFrame(()=>monitorSideNoteText.focus()); }
-
-function monitorCreateNote() {
-
-  const note={id:monitorNoteId(),title:"새 메모",body:"",updatedAt:Date.now()};
-
-  monitorNoteListUndo.push({type:"create",note:{...note}});
-
-  if(monitorNoteListUndo.length>50)monitorNoteListUndo.shift();
-
-  monitorNoteListRedo.length=0;
-
-  monitorNotes.unshift(note);
-
-  monitorNoteLocalDirty=true;
-
-  monitorQueueNoteBundleSave();
-
-  monitorShowNoteList();
-
-  requestAnimationFrame(()=>{
-
-    const row=[...monitorNoteList.querySelectorAll(".monitor-note-item")].find(el=>el.dataset.noteId===note.id);
-
-    if(row) row.scrollIntoView({block:"start",inline:"nearest"});
-
-  });
-
-}
-
-function monitorUpdateActiveFromEditor() { const note=monitorActiveNote(); if(!note)return; note.body=String(monitorSideNoteText.value||""); note.title=monitorNoteTitleFromText(note.body); note.updatedAt=Date.now(); monitorNoteLocalDirty=true; }
-
-function monitorQueueNoteBundleSave() { clearTimeout(monitorNoteSaveTimer); monitorNoteSaveTimer=setTimeout(async()=>{ const text=monitorSerializeNotes(); const result=await monitorNoteNative({type:"setSharedNote",text}).catch(()=>null); if(result?.ok){monitorNoteLastSharedText=text;monitorNoteLocalDirty=false;} },180); }
-
-let monitorNoteCollapsed = false;
-
-let monitorNoteSaveTimer = 0;
-
-function syncMonitorSideNote() {
-
-  const boardCollapsed = monitorRoot.classList.contains("collapsed");
-
-  monitorNote.hidden = boardCollapsed;
-  monitorSketchFeature.layout({ boardCollapsed });
-
-  if (boardCollapsed) return;
-
-  const rect = monitorRoot.getBoundingClientRect();
-
-  const width = Math.min(300, Math.max(220, rect.left - 24));
-
-  const effectiveWidth = monitorNoteCollapsed ? 50 : width;
-
-  monitorNote.style.width = `${Math.round(width)}px`;
-
-  monitorNote.style.top = `${Math.round(rect.top)}px`;
-
-  monitorNote.style.left = `${Math.max(8, Math.round(rect.left - effectiveWidth - 8))}px`;
-
-  const noteLeft = Number.parseFloat(monitorNote.style.left) || 8;
-  monitorSketchFeature.layout({ boardCollapsed: false, rootRect: rect, noteLeft });
-
-  monitorNote.classList.toggle("collapsed", monitorNoteCollapsed);
-
-  monitorNoteCollapse.classList.toggle("is-collapsed", monitorNoteCollapsed);
-
-  monitorNoteCollapse.title = monitorNoteCollapsed ? "메모 펼치기" : "메모 접기";
-
-  monitorNoteCollapse.setAttribute("aria-label", monitorNoteCollapse.title);
-
-  if (monitorNoteCollapsed) {
-
-    monitorNote.style.width = "50px";
-
-    monitorNote.style.minWidth = "50px";
-
-    monitorNote.style.height = "40px";
-
-    monitorNote.style.minHeight = "40px";
-
+/* Composition only: place Notes, then place Sketch to its left. */
+function syncMonitorSideNote(){
+  const boardCollapsed=monitorRoot.classList.contains("collapsed");
+  if(boardCollapsed){
+    monitorNotesFeature.layout({boardCollapsed:true});
+    monitorSketchFeature.layout({boardCollapsed:true});
     return;
-
   }
-
-  monitorNote.style.minWidth = "220px";
-
-  monitorNote.style.minHeight = "180px";
-
-  monitorNote.style.height = `${Math.round(rect.height)}px`;
-
+  const rootRect=monitorRoot.getBoundingClientRect();
+  const noteLayout=monitorNotesFeature.layout({boardCollapsed:false,rootRect});
+  monitorSketchFeature.layout({boardCollapsed:false,rootRect,noteLeft:noteLayout.left});
 }
-
-monitorNoteCollapse.addEventListener("click", () => { monitorNoteCollapsed = !monitorNoteCollapsed; syncMonitorSideNote(); });
-
-monitorNoteAdd.addEventListener("click", monitorCreateNote);
-
-monitorNoteBack.addEventListener("click", () => { monitorUpdateActiveFromEditor(); monitorQueueNoteBundleSave(); monitorShowNoteList(); monitorHighlightLastViewedNote(); });
-
-monitorNoteDelete.addEventListener("click", () => { const id=monitorActiveNoteId; if(!id)return; const note=monitorNotes.find(n=>n.id===id); if(note)trashMonitorNote(note); monitorNotes=monitorNotes.filter(n=>n.id!==id); monitorNoteHistory.delete(id); monitorNoteLocalDirty=true; monitorQueueNoteBundleSave(); monitorShowNoteList(); });
-
-monitorNoteUndo.addEventListener("click", () => { if(monitorNoteListMode) monitorUndoListDelete(); else monitorUndoNote(); });
-
-monitorNoteRedo.addEventListener("click", () => { if(monitorNoteListMode) monitorRedoListDelete(); else monitorRedoNote(); });
-
-monitorNoteEditor.addEventListener("keydown", (event) => { if(!event.ctrlKey||event.altKey||event.metaKey)return; const key=String(event.key||"").toLowerCase(); if(key==="z"){event.preventDefault(); if(event.shiftKey)monitorRedoNote(); else monitorUndoNote();} else if(key==="y"){event.preventDefault(); monitorRedoNote();} });
-
-monitorNote.addEventListener("keydown", (event) => { if(!monitorNoteListMode||!event.ctrlKey||event.altKey||event.metaKey)return; const key=String(event.key||"").toLowerCase(); if(key==="z"){event.preventDefault(); if(event.shiftKey)monitorRedoListDelete(); else monitorUndoListDelete();} else if(key==="y"){event.preventDefault(); monitorRedoListDelete();} });
-
-let monitorNoteAiBusy = false;
-
-async function organizeMonitorNoteWithAi() {
-
-  if (monitorNoteAiBusy) return;
-
-  monitorNoteAiBusy = true; monitorNoteAi.disabled = true; monitorNoteAi.textContent = "...";
-
-  try {
-
-    if (monitorNoteListMode) {
-
-      const baseline = monitorSerializeNotes();
-
-      const targets = monitorNotes.filter(note => String(note.body || "").trim());
-
-      if (!targets.length) { setMonitorStatus("AI 정리할 메모가 없음", false); return; }
-
-      const response = await actFetch(ORCHESTRATOR_NOTE_AI_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({notes:targets.map(note=>({id:note.id,text:String(note.body||"").trim()}))}) });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok || !data?.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-
-      const cleanedById = new Map((Array.isArray(data.notes)?data.notes:[]).map(item=>[String(item?.id||""),String(item?.text||"").trim()]));
-
-      if (cleanedById.size !== targets.length || targets.some(note=>!cleanedById.get(note.id))) throw new Error("NOTE_AI_BUNDLE_INCOMPLETE");
-
-      if (!monitorNoteListMode || monitorSerializeNotes() !== baseline) { setMonitorStatus("메모 목록이 바뀌어 AI 결과는 적용하지 않음", false); return; }
-
-      const now = Date.now();
-
-      monitorNotes = monitorNotes.map(note => cleanedById.has(note.id) ? {...note, body:cleanedById.get(note.id), title:monitorNoteTitleFromText(cleanedById.get(note.id)), updatedAt:now} : note);
-
-      monitorNoteLocalDirty = true;
-
-      const bundle = monitorSerializeNotes();
-
-      const saved = await monitorNoteNative({ type:"setSharedNote", text:bundle });
-
-      if (!saved?.ok) throw new Error(saved?.error || "NOTE_SAVE_FAILED");
-
-      monitorNoteLastSharedText = bundle; monitorNoteLocalDirty = false; monitorRenderNoteList();
-
-      setMonitorStatus(`전체 메모 AI 정리 완료 ${targets.length}개${data.profile_id ? ` - ${String(data.profile_id)}` : ""}`, true);
-
-      return;
-
-    }
-
-    const source = String(monitorSideNoteText.value || "").trim();
-
-    if (!source) { setMonitorStatus("AI 정리할 메모가 없음", false); return; }
-
-    const response = await actFetch(ORCHESTRATOR_NOTE_AI_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:source}) });
-
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok || !data?.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-
-    if (String(monitorSideNoteText.value || "").trim() !== source) { setMonitorStatus("메모가 바뀌어 AI 결과는 적용하지 않음", false); return; }
-
-    const cleaned = String(data.text || "").trim(); if (!cleaned) throw new Error("NOTE_AI_EMPTY_RESULT");
-
-    monitorRecordUndoBeforeEdit(); monitorSideNoteText.value = cleaned; monitorUpdateActiveFromEditor(); monitorSyncHistoryButtons(); syncMonitorSideNote();
-
-    const bundle = monitorSerializeNotes();
-
-    const saved = await monitorNoteNative({ type:"setSharedNote", text:bundle });
-
-    if (!saved?.ok) throw new Error(saved?.error || "NOTE_SAVE_FAILED");
-
-    monitorNoteLastSharedText = bundle; monitorNoteLocalDirty = false;
-
-    setMonitorStatus(`메모 AI 정리 완료 - ${String(data.profile_id||"")}`, true);
-
-  } catch (error) { setMonitorStatus(`메모 AI 실패 - ${monitorRoleAdminErrorText(error?.message || error)}`, false); }
-
-  finally { monitorNoteAiBusy = false; monitorNoteAi.disabled = false; monitorNoteAi.textContent = "AI"; }
-
-}
-
-monitorNoteAi.addEventListener("click", organizeMonitorNoteWithAi);
-
-function monitorNoteNative(message) {
-
-  return monitorNative(message);
-
-}
-
-let monitorNoteLastSharedText = "";
-
-let monitorNoteLocalDirty = false;
-
-let monitorNoteReady = false;
-
-let monitorNoteViewRevision = "";
-
-let monitorNoteViewRemoteApplying = false;
-
-let monitorNoteViewSaveTimer = 0;
-
-let monitorNoteViewSyncBusy = false;
-
-function monitorNoteScrollRatio() {
-
-  const maxScroll = Math.max(0, monitorSideNoteText.scrollHeight - monitorSideNoteText.clientHeight);
-
-  return maxScroll > 0 ? Math.max(0, Math.min(1, monitorSideNoteText.scrollTop / maxScroll)) : 0;
-
-}
-
-async function refreshMonitorSharedNoteView() {
-
-  if (monitorNoteViewSyncBusy) return;
-
-  if (document.activeElement === monitorSideNoteText) return;
-
-  monitorNoteViewSyncBusy = true;
-
-  try {
-
-    const result = await monitorNoteNative({ type: "getSharedMonitorNoteView" }).catch(() => null);
-
-    const revision = String(result?.revision || "");
-
-    if (!result?.ok || !revision || revision === monitorNoteViewRevision) return;
-
-    monitorNoteViewRevision = revision;
-
-    const ratio = Math.max(0, Math.min(1, Number(result.ratio) || 0));
-
-    const maxScroll = Math.max(0, monitorSideNoteText.scrollHeight - monitorSideNoteText.clientHeight);
-
-    const target = maxScroll * ratio;
-
-    if (Math.abs(monitorSideNoteText.scrollTop - target) > 2) {
-
-      monitorNoteViewRemoteApplying = true;
-
-      monitorSideNoteText.scrollTop = target;
-
-      requestAnimationFrame(() => { monitorNoteViewRemoteApplying = false; });
-
-    }
-
-  } finally { monitorNoteViewSyncBusy = false; }
-
-}
-
-monitorSideNoteText.addEventListener("scroll", (event) => {
-
-  if (monitorNoteViewRemoteApplying || !event.isTrusted) return;
-
-  clearTimeout(monitorNoteViewSaveTimer);
-
-  monitorNoteViewSaveTimer = setTimeout(async () => {
-
-    const result = await monitorNoteNative({ type: "setSharedMonitorNoteView", ratio: String(monitorNoteScrollRatio()) }).catch(() => null);
-
-    if (result?.ok && result.revision) monitorNoteViewRevision = String(result.revision);
-
-  }, 80);
-
-});
-
-async function refreshMonitorSharedNote() {
-
-  if (monitorNoteDragState?.active) return;
-
-  const result = await monitorNoteNative({ type: "getSharedNote" }).catch(() => null);
-
-  if (!result?.ok) return;
-
-  const text = String(result.text || "");
-
-  if (monitorNoteReady && text === monitorSerializeNotes()) { monitorNoteLastSharedText = text; monitorNoteLocalDirty = false; return; }
-
-  const editorActive = document.activeElement === monitorSideNoteText;
-
-  if (monitorNoteReady && editorActive && text !== monitorSerializeNotes()) return;
-
-  const safeToReplace = !monitorNoteLocalDirty || monitorSerializeNotes() === monitorNoteLastSharedText;
-
-  if (!monitorNoteReady || safeToReplace) {
-
-    const previousActive = monitorActiveNoteId;
-
-    monitorNotes = monitorParseNoteBundle(text);
-
-    monitorNoteLastSharedText = text;
-
-    monitorNoteLocalDirty = false;
-
-    if (!monitorNoteReady || monitorNoteListMode || !monitorNotes.some(n=>n.id===previousActive)) monitorShowNoteList();
-
-    else { monitorOpenNote(previousActive, false); }
-
-    syncMonitorSideNote();
-
-    if (text && !text.startsWith(MONITOR_NOTE_BUNDLE_PREFIX)) { monitorNoteLocalDirty = true; monitorQueueNoteBundleSave(); }
-
-  }
-
-  monitorNoteReady = true;
-
-}
-
-monitorSideNoteText.addEventListener("input", (event) => {
-
-  syncMonitorSideNote();
-
-  if (!event.isTrusted || !monitorNoteReady || monitorNoteListMode) return;
-
-  monitorRecordUndoBeforeEdit();
-
-  monitorUpdateActiveFromEditor();
-
-  monitorQueueNoteBundleSave();
-
-  monitorSyncHistoryButtons();
-
-});
-
-// Shared note reads are event-driven: startup/focus.
 
 if (MONITOR_FEATURE_MEMO_ENABLED) {
-  setTimeout(refreshMonitorSharedNote, 250);
-  setTimeout(refreshMonitorSharedNoteView, 320);
+  setTimeout(() => { void monitorNotesFeature.refreshContent(); }, 250);
+  setTimeout(() => { void monitorNotesFeature.refreshView(); }, 320);
   new ResizeObserver(syncMonitorSideNote).observe(monitorRoot);
   window.addEventListener("resize", syncMonitorSideNote);
   requestAnimationFrame(syncMonitorSideNote);
@@ -5412,7 +4794,7 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
 
   const notePane=document.createElement("section");notePane.className="monitor-trash-pane monitor-trash-note-pane";notePane.append(makeHeader("삭제된 메모",noteRecords.length,clearMonitorTrashedNotes));const noteScroll=document.createElement("div");noteScroll.className="monitor-trash-pane-scroll";
 
-  if(!noteRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";noteScroll.append(empty);}else for(const note of noteRecords){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-note-row";const info=document.createElement("div");info.className="monitor-closed-conversation-info monitor-trash-note-info";const noteTitle=document.createElement("strong");noteTitle.textContent=note.title||monitorNoteTitleFromText(note.body)||"메모";const lines=String(note.body||"").split(/\r?\n/);const firstLineIndex=lines.findIndex((line)=>line.trim());const notePreview=document.createElement("span");notePreview.textContent=(firstLineIndex>=0?lines.slice(firstLineIndex+1).join(" "):"").replace(/\s+/g," ").trim()||"내용 없음";info.append(noteTitle,notePreview);const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashedNote(note.id);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();deleteMonitorTrashedNote(note.id);});row.append(info,restore,del);noteScroll.append(row);}notePane.append(noteScroll);panel.append(notePane);
+  if(!noteRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";noteScroll.append(empty);}else for(const note of noteRecords){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-note-row";const info=document.createElement("div");info.className="monitor-closed-conversation-info monitor-trash-note-info";const noteTitle=document.createElement("strong");noteTitle.textContent=note.title||monitorNotesFeature.titleFromText(note.body)||"메모";const lines=String(note.body||"").split(/\r?\n/);const firstLineIndex=lines.findIndex((line)=>line.trim());const notePreview=document.createElement("span");notePreview.textContent=(firstLineIndex>=0?lines.slice(firstLineIndex+1).join(" "):"").replace(/\s+/g," ").trim()||"내용 없음";info.append(noteTitle,notePreview);const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashedNote(note.id);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();deleteMonitorTrashedNote(note.id);});row.append(info,restore,del);noteScroll.append(row);}notePane.append(noteScroll);panel.append(notePane);
 
   const renderTrashRows=(source,container)=>{const records=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")===source).sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));if(!records.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";container.append(empty);return;}for(const ghost of records){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-record-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost),at=Number(ghost?.trashed_at_ms||0),scope=String(ghost?.network_name||"미소속"),roles=Array.isArray(ghost?.role_tags)&&ghost.role_tags.length?` · ${ghost.role_tags.join(", ")}`:"";info.textContent=`${String(ghost?.node_label||"")} ${context} · ${scope}${roles} · ${location} · ${at?new Date(at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"?"}`.trim();const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashRecord(ghost.conversation_key);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorTrashRecord(ghost.conversation_key),140);});row.append(info);if(source==="list")appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);container.append(row);}};
 
@@ -12860,9 +12242,9 @@ window.addEventListener("focus", () => {
 
   void monitorSyncSharedState("focus", true);
 
-  void refreshMonitorSharedNote();
+  void monitorNotesFeature.refreshContent();
 
-  void refreshMonitorSharedNoteView();
+  void monitorNotesFeature.refreshView();
 
   void checkMonitorDeploymentUpdate();
 
