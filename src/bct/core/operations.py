@@ -330,102 +330,11 @@ class OperationCoordinator:
                         elapsed_ms=(time.perf_counter_ns() - prepare_started) / 1e6)
         claim_started = time.perf_counter_ns()
         try:
-            retired_desktop_claim = None
-            retired_rcc_claim = None
-            if "desktop-control:interactive-session" in request.resources:
-                # A terminal desktop UNKNOWN is an effect receipt, not an
-                # indefinite execution lock. A live agent (not a monitor
-                # projection) proves idle before atomic replacement.
-                candidate = self.store.retired_desktop_claim_candidate()
-                if candidate is not None:
-                    desktop = self._features.get("desktop_control_lease")
-                    client = getattr(desktop, "client", None)
-                    if client is not None:
-                        try:
-                            from bct.features.claim_reconciliation import desktop_control_is_idle
-                            control = client.control(
-                                request_id=operation_id + ":desktop-idle-before-reservation",
-                                command="control_status",
-                            )
-                        except Exception:
-                            control = None
-                        if desktop_control_is_idle(control):
-                            retired_desktop_claim = (
-                                candidate["operation_id"], candidate["work_id"],
-                                candidate["assignment_epoch"],
-                            )
-            if (
-                capability == "relay_browser"
-                and request.resources == ("rcc-instance:" + request.target,)
-            ):
-                # Every RCC command that still needs the legacy instance-wide
-                # reservation shares this path.  A terminal operation is a
-                # historical receipt, not an execution lease; the current RCC
-                # state decides whether its execution has really ended.  This
-                # only reads state/result and never dispatches the old effect.
-                candidate = self.store.retired_rcc_claim_candidate(request.target)
-                relay = getattr(feature, "client", None)
-                if candidate is not None and relay is not None:
-                    proof_prefix = "rcc-retire-" + hashlib.sha256(
-                        operation_id.encode("utf-8")
-                    ).hexdigest()[:24]
-                    try:
-                        state_reply = relay.request(
-                            instance_id=request.target,
-                            request_id=proof_prefix + "-state",
-                            command="state",
-                            timeout_s=2.0,
-                        )
-                        result_reply = relay.request(
-                            instance_id=request.target,
-                            request_id=proof_prefix + "-result",
-                            command="result",
-                            text=candidate["operation_id"],
-                            timeout_s=2.0,
-                        )
-                    except Exception:
-                        state_reply = result_reply = None
-                    observed_state = (
-                        state_reply.get("state")
-                        if isinstance(state_reply, dict)
-                        and isinstance(state_reply.get("state"), dict)
-                        else {}
-                    )
-                    terminal_or_absent = isinstance(result_reply, dict) and (
-                        (
-                            result_reply.get("found") is False
-                            and result_reply.get("completed") is False
-                            and result_reply.get("pending") is False
-                            and result_reply.get("result") is None
-                            and result_reply.get("pendingStatus") is None
-                        ) or (
-                            result_reply.get("found") is True
-                            and result_reply.get("completed") is True
-                            and result_reply.get("pending") is False
-                        )
-                    )
-                    if (
-                        isinstance(result_reply, dict)
-                        and isinstance(state_reply, dict)
-                        and state_reply.get("ok") is True
-                        and observed_state.get("instanceId") == request.target
-                        and bool(str(observed_state.get("sessionId") or ""))
-                        and result_reply.get("ok") is True
-                        and result_reply.get("relayId") == candidate["operation_id"]
-                        and terminal_or_absent
-                    ):
-                        retired_rcc_claim = (
-                            candidate["operation_id"], candidate["work_id"],
-                            candidate["assignment_epoch"], request.target,
-                            candidate["retirement_reason"],
-                        )
             created, current = self.store.begin_operation(
                 operation_id=operation_id, work=work, principal_id=principal.principal_id,
                 request_digest=digest, capability=capability, target=request.target,
                 resources=request.resources, policy_revision=decision.policy_revision,
                 background_job=background_job,
-                retired_desktop_claim=retired_desktop_claim,
-                retired_rcc_claim=retired_rcc_claim,
             )
         finally:
             trace_stage("claim_reservation", tool_kind=capability,

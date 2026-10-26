@@ -299,7 +299,7 @@ class CrossWorkDesktopReacquisitionTests(unittest.TestCase):
             operation_id=id, capability="desktop_control_lease",
             arguments={"operation":"acquire", "target_type":"session"})
 
-    def test_new_work_automatically_reclaims_stale_claim_and_keeps_receipt(self):
+    def test_new_work_replaces_stale_measurement_without_live_probe(self):
         self.original()
         before=self.store.get_operation_for(
             operation_id="prior-uia",work_id="prior",principal_id="owner")
@@ -308,7 +308,7 @@ class CrossWorkDesktopReacquisitionTests(unittest.TestCase):
         created, current=self.acquire()
         self.assertTrue(created)
         self.assertEqual("fresh",current.operation_id)
-        self.assertEqual(1,self.agent.calls)
+        self.assertEqual(0,self.agent.calls)
         self.assertEqual(before,self.store.get_operation_for(
             operation_id="prior-uia",work_id="prior",principal_id="owner"))
         self.assertEqual(journal,self.store.get_effect_journal_for(
@@ -327,35 +327,35 @@ class CrossWorkDesktopReacquisitionTests(unittest.TestCase):
             evidence={"phase":"fixture"},error=None,release_claims=True)
         self.assertEqual([],self.store.claim_diagnostics())
 
-    def test_active_agent_lease_fences_independent_work(self):
+    def test_active_agent_lease_does_not_turn_old_claim_into_begin_gate(self):
         self.original()
         self.agent.lease={"leaseId":"still-held"}
-        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
-            self.acquire()
-        self.assertEqual("prior-uia",self.store.claim_diagnostics()[0]["operation_id"])
+        created, _ = self.acquire()
+        self.assertTrue(created)
+        self.assertEqual("fresh",self.store.claim_diagnostics()[0]["operation_id"])
 
-    def test_emergency_stop_fences_independent_work(self):
+    def test_emergency_stop_does_not_turn_old_claim_into_begin_gate(self):
         self.original()
         self.agent.stopped=True
-        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
-            self.acquire()
+        created, _ = self.acquire()
+        self.assertTrue(created)
 
-    def test_unavailable_agent_fences_independent_work(self):
+    def test_unavailable_agent_does_not_turn_old_claim_into_begin_gate(self):
         self.original()
         self.agent.available=False
-        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
-            self.acquire()
+        created, _ = self.acquire()
+        self.assertTrue(created)
 
-    def test_unfinished_original_fences_independent_work(self):
+    def test_unfinished_original_claim_does_not_fence_independent_begin(self):
         self.original(finish=False)
-        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
-            self.acquire()
+        created, _ = self.acquire()
+        self.assertTrue(created)
         self.assertEqual(0,self.agent.calls)
 
-    def test_unrelated_running_resource_is_never_retired(self):
+    def test_unrelated_running_resource_does_not_fence_independent_begin(self):
         self.original(capability="desktop_program_launch")
-        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
-            self.acquire()
+        created, _ = self.acquire()
+        self.assertTrue(created)
         self.assertEqual(0,self.agent.calls)
 
     def test_unrelated_claim_of_original_remains_protected(self):
@@ -385,7 +385,7 @@ class CrossWorkDesktopReacquisitionTests(unittest.TestCase):
                 resources=(CLAIM,),policy_revision="fixture")
 
 
-    def test_executor_metadata_does_not_block_finished_operation_retirement(self):
+    def test_executor_metadata_does_not_trigger_finished_operation_probe(self):
         self.original()
         with self.store.transaction() as db:
             db.execute(
@@ -396,24 +396,20 @@ class CrossWorkDesktopReacquisitionTests(unittest.TestCase):
                 ("prior-uia", 321, "attached-worker", 101.0))
         created, _ = self.acquire()
         self.assertTrue(created)
-        self.assertEqual(1, self.agent.calls)
+        self.assertEqual(0, self.agent.calls)
 
-    def test_old_assignment_epoch_change_blocks_stale_proof(self):
+    def test_old_assignment_epoch_does_not_affect_claim_measurement_replacement(self):
         self.original()
-        cand=self.store.retired_desktop_claim_candidate()
-        self.assertIsNotNone(cand)
         with self.store.transaction() as db:
             db.execute(
                 "UPDATE resource_claims SET assignment_epoch=? "
                 "WHERE operation_id=?", (9, "prior-uia"))
-        with self.assertRaisesRegex(ConflictError,"RESOURCE_ALREADY_CLAIMED"):
-            self.store.begin_operation(
-                operation_id="fresh",work=self.new,principal_id="owner",
-                request_digest="fresh",capability="desktop_control_lease",
-                target="acquire:session",resources=(CLAIM,),
-                policy_revision="fixture",
-                retired_desktop_claim=(cand["operation_id"],cand["work_id"],
-                                       cand["assignment_epoch"]))
+        created, _ = self.store.begin_operation(
+            operation_id="fresh",work=self.new,principal_id="owner",
+            request_digest="fresh",capability="desktop_control_lease",
+            target="acquire:session",resources=(CLAIM,),
+            policy_revision="fixture")
+        self.assertTrue(created)
 
 if __name__ == "__main__":
     unittest.main()

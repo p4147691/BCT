@@ -139,7 +139,7 @@ class LocalGitAuthorityTests(unittest.TestCase):
         self.assertEqual(b.evidence, again.evidence)
         self.assertFalse(self.bct.store.monitor_snapshot()["unresolved_claims"])
 
-    def test_merge_owner_resource_claim_blocks_second_merge(self):
+    def test_merge_owner_resource_claim_does_not_block_second_operation(self):
         branch, sha = self.feature("claim")
         args = {"operation": "merge_local_main", "path": str(self.source),
                 "branch": branch, "expected_head": self.initial,
@@ -149,9 +149,9 @@ class LocalGitAuthorityTests(unittest.TestCase):
             operation_id="merge-reserved", capability="git_commit", arguments=args,
         )
         self.assertTrue(made)
-        with self.assertRaises(ConflictError):
-            self.call("merge-contender", "git_commit", args)
-        self.assertEqual(self.initial, head(self.source))
+        contender = self.call("merge-contender", "git_commit", args)
+        self.assertEqual(Outcome.APPLIED, contender.outcome, contender.as_dict())
+        self.assertNotEqual(self.initial, head(self.source))
 
     def test_legacy_remote_authority_routes_fail_closed(self):
         with self.assertRaises(PreconditionError):

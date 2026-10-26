@@ -59,7 +59,7 @@ _CAPABILITY_USAGE = {
     "desktop_window_manage": "Restore, minimize, maximize, or move/resize only the exact window bound to the active lease. Close is not supported.",
     "desktop_program_launch": "Launch one exact absolute .exe with an argument array under an active session lease, capture the new PID identity, and bind that same lease only if the PID creates a visible window on the current virtual desktop.",
     "vtl_validate": "Run a project-owned browser or profile scenario directly through the exact immutable local VTL release. Returns PASS/FAIL and durable evidence without dispatching GitHub Actions.",
-    "claim_reconcile": "Release one exact retired Claim from a FINISHED UNKNOWN read-only or proven pre-dispatch execution, or a finished UIA changed-foreground UNKNOWN with a verified idle desktop agent. Never retry original effects; preserve original receipt and other Claims.",
+    "claim_reconcile": "Record a read-only reconciliation of one FINISHED UNKNOWN receipt when its no-effect proof is available. Claims never gate new operations, so this is not required to unlock a resource. Never retry original effects; preserve the original receipt.",
 }
 _SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 

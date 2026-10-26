@@ -24,21 +24,6 @@ _CLAIM_UNKNOWN_STAGE = {
 }
 
 
-def _claim_requires_live_retirement_proof(resource: str) -> bool:
-    """Whether a shared runtime owner needs one automatic current-state probe.
-
-    This is not a manual reconciliation gate. The coordinator probes the
-    current desktop/RCC owner before reservation and supplies the exact
-    retirement candidate when it is idle. Every other FINISHED Claim retires
-    atomically without such a probe. A background-executor row is historical
-    metadata once the owning Operation is FINISHED; it is not a second lock.
-    """
-    return (
-        resource == "desktop-control:interactive-session"
-        or (resource.startswith("rcc-instance:") and resource.count(":") == 1)
-    )
-
-
 def _claim_unknown_detail(error: str | None, outcome: str | None,
                           capability: str | None) -> dict[str, str | None]:
     if outcome != "UNKNOWN":
@@ -868,9 +853,8 @@ class Store:
             detail = _claim_unknown_detail(row["error"], outcome, row["capability"])
             identity_status, identity_verified = _claim_executor_identity(
                 row["executor_pid"], row["executor_fingerprint"])
-            # Preserve UNKNOWN as the historical outcome. Blocking is decided
-            # separately from current execution/ownership evidence below; the
-            # label itself is never treated as a permanent lock.
+            # Claims are observational metadata. Preserve UNKNOWN as the
+            # historical outcome, but never project it as execution ownership.
             if outcome == "UNKNOWN":
                 diagnosis = "UNKNOWN_EFFECT"
             elif state == "FINISHED":
@@ -887,19 +871,7 @@ class Store:
                 or ":read:" in resource_key
             )
             scope = "EXACT_RESOURCE" if exact_scope else "SHARED_RESOURCE"
-            # FINISHED is the execution boundary. An executor row remains
-            # useful provenance, but must not silently turn a terminal receipt
-            # back into a live lock. Preserve UNKNOWN/replay fences
-            # independently. RCC and desktop shared owners still require their
-            # separate current-state probes.
             terminal_operation = state == "FINISHED"
-            requires_live_state_check = (
-                terminal_operation
-                and _claim_requires_live_retirement_proof(resource_key)
-            )
-            retires_on_next_reservation = (
-                terminal_operation and not requires_live_state_check
-            )
             output.append({
                 "resource_key": resource_key,
                 "operation_id": row["operation_id"],
@@ -927,21 +899,15 @@ class Store:
                 },
                 "diagnosis": diagnosis,
                 "scope": scope,
-                "blocks_unrelated_work": (
-                    scope == "SHARED_RESOURCE" and not terminal_operation
-                ),
-                # Report whether the historical claim can actually reject the
-                # next distinct reservation. Exact terminal claims are
-                # retired inside begin_operation, so calling them blockers in
-                # diagnostics would recreate the ambiguity this projection is
-                # meant to remove.
-                "blocks_same_resource": not retires_on_next_reservation,
-                "requires_live_state_check": requires_live_state_check,
-                "retires_on_next_reservation": retires_on_next_reservation,
+                "blocks_unrelated_work": False,
+                "blocks_same_resource": False,
+                "requires_live_state_check": False,
+                # Kept as a read-compatible status field. Every claim is
+                # replaced by a later measurement without a retirement gate.
+                "retires_on_next_reservation": terminal_operation,
                 "replay_allowed": False if outcome == "UNKNOWN" else None,
                 # Kept for compatibility: the diagnostics/read path itself
-                # never mutates claims. See retires_on_next_reservation for
-                # the automatic successor behavior.
+                # never mutates claims.
                 "can_auto_release": False,
             })
         return output
@@ -954,29 +920,8 @@ class Store:
                 raise KeyError("WORK_NOT_FOUND")
             if row["owner_principal_id"] != old_principal_id or row["assignment_epoch"] != expected_epoch:
                 raise ConflictError("WORK_HANDOFF_FENCE_MISMATCH")
-            # Handoff is about active ownership, not archived UNKNOWN receipts.
-            # Retire this work's terminal reservations. Executor rows are
-            # provenance after FINISHED, not independent execution ownership.
-            rows = db.execute(
-                "SELECT resource_key FROM resource_claims WHERE work_id=? AND unresolved=1",
-                (work_id,),
-            ).fetchall()
-            for claimed in rows:
-                self._retire_finished_idle_claim(
-                    db, claimed["resource_key"],
-                    successor_operation_id="work-handoff:" + work_id,
-                )
-            unresolved = db.execute(
-                "SELECT COUNT(*) FROM resource_claims c "
-                "LEFT JOIN operations o ON c.operation_id=o.operation_id "
-                "AND c.work_id=o.work_id "
-                "WHERE c.work_id=? AND c.unresolved=1 AND ("
-                "o.operation_id IS NULL OR o.state<>? "
-                "OR o.assignment_epoch<>c.assignment_epoch)",
-                (work_id, OperationState.FINISHED.value),
-            ).fetchone()[0]
-            if unresolved:
-                raise ConflictError("WORK_HAS_UNRESOLVED_OPERATION")
+            # Claims are measurements, not work ownership. Handoff fencing is
+            # based only on the Work epoch and actual nonterminal operations.
             running = db.execute(
                 "SELECT COUNT(*) FROM operations WHERE work_id=? AND state!=?",
                 (work_id, OperationState.FINISHED.value),
@@ -990,125 +935,10 @@ class Store:
             self._event(db, "WORK_HANDED_OFF", work_id, {"old": old_principal_id, "new": new_principal_id})
         return self.get_work(work_id)
 
-    # One-shot desktop operations end when their BCT Operation is FINISHED.
-    # Their uncertain *effects* stay in immutable receipts; the exclusive
-    # desktop Claim represents only a live execution reservation.
-    _RETIRED_DESKTOP_CAPABILITIES = frozenset({
-        "desktop_uia_element_action", "desktop_chrome_content_action",
-        "desktop_chrome_tab_select", "desktop_window_activate",
-        "desktop_window_manage", "desktop_input", "desktop_clipboard",
-        "desktop_application_target", "desktop_control_lease",
-    })
-
-    def retired_desktop_claim_candidate(self) -> dict[str, Any] | None:
-        """Internal reservation lookup, never a monitoring/authorization signal."""
-        db = self._connect()
-        try:
-            row = db.execute(
-                "SELECT c.operation_id,c.work_id,c.assignment_epoch,"
-                "o.capability,o.state,o.outcome,o.assignment_epoch AS operation_epoch "
-                "FROM resource_claims c JOIN operations o "
-                "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
-                "WHERE c.resource_key='desktop-control:interactive-session' AND c.unresolved=1"
-            ).fetchone()
-            if row is None:
-                return None
-            result = dict(row)
-            if (result["state"] != OperationState.FINISHED.value
-                    or result["capability"] not in self._RETIRED_DESKTOP_CAPABILITIES
-                    or result["operation_epoch"] != result["assignment_epoch"]):
-                return None
-            return result
-        finally:
-            db.close()
-
-    def retired_rcc_claim_candidate(self, instance_id: str) -> dict[str, Any] | None:
-        """Return one terminal RCC-wide reservation eligible for live proof.
-
-        This is not evidence that the external effect did or did not happen.  It
-        identifies a historical instance-wide execution reservation whose
-        *execution* may be proved idle by current RCC state before any new
-        command reserves the same instance. Exact-resource claims use the
-        ordinary terminal-claim path; non-terminal operations remain ineligible.
-        """
-        resource = "rcc-instance:" + instance_id
-        db = self._connect()
-        try:
-            row = db.execute(
-                "SELECT c.operation_id,c.work_id,c.assignment_epoch,"
-                "o.principal_id,o.capability,o.target,o.state,o.outcome,o.error,"
-                "o.assignment_epoch AS operation_epoch "
-                "FROM resource_claims c JOIN operations o "
-                "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
-                "WHERE c.resource_key=? AND c.unresolved=1",
-                (resource,),
-            ).fetchone()
-            if row is None:
-                return None
-            result = dict(row)
-            if (
-                result["state"] != OperationState.FINISHED.value
-                or result["capability"] != "relay_browser"
-                or result["target"] != instance_id
-                or result["operation_epoch"] != result["assignment_epoch"]
-            ):
-                return None
-            result["retirement_reason"] = "TERMINAL_OPERATION_RCC_IDLE_PROVEN"
-            return result
-        finally:
-            db.close()
-
-    def _retire_finished_idle_claim(self, db, resource: str, *,
-                                    successor_operation_id: str) -> bool:
-        """Retire a terminal reservation; preserve its UNKNOWN receipt and any Lease.
-
-        A FINISHED operation is historical evidence. Its background-executor
-        row is audit metadata, not a second execution state. The desktop
-        Agent's exclusive Lease and the RCC's current state remain independent
-        live ownership and are proved by their dedicated probe paths.
-        This CAS applies only to the exact resource requested by the next
-        operation or handoff; RUNNING and other active claims never change.
-        """
-        if _claim_requires_live_retirement_proof(resource):
-            # These shared runtime resources use the coordinator's fresh
-            # current-state probe and exact CAS paths below.
-            return False
-        row = db.execute(
-            "SELECT c.operation_id,c.work_id,c.assignment_epoch,o.state,"
-            "o.assignment_epoch AS operation_epoch FROM resource_claims c "
-            "JOIN operations o ON c.operation_id=o.operation_id "
-            "AND c.work_id=o.work_id "
-            "WHERE c.resource_key=? AND c.unresolved=1",
-            (resource,),
-        ).fetchone()
-        if row is None or row["state"] != OperationState.FINISHED.value:
-            return False
-        if row["assignment_epoch"] != row["operation_epoch"]:
-            return False
-        retired = db.execute(
-            "UPDATE resource_claims SET unresolved=0 "
-            "WHERE resource_key=? AND operation_id=? AND work_id=? "
-            "AND assignment_epoch=? AND unresolved=1",
-            (resource, row["operation_id"], row["work_id"], row["assignment_epoch"]),
-        ).rowcount
-        if retired != 1:
-            raise ConflictError("TERMINAL_CLAIM_RETIRE_CHANGED")
-        self._event(db, "TERMINAL_CLAIM_RETIRED", row["operation_id"], {
-            "new_operation_id": successor_operation_id,
-            "original_work_id": row["work_id"],
-            "original_assignment_epoch": row["assignment_epoch"],
-            "resource_key": resource,
-            "reason": "FINISHED_OPERATION",
-            "original_effect_unchanged": True,
-        })
-        return True
-
     def begin_operation(self, *, operation_id: str, work: Work, principal_id: str,
                         request_digest: str, capability: str, target: str,
                         resources: tuple[str, ...], policy_revision: str,
                         background_job: dict[str, Any] | None = None,
-                        retired_desktop_claim: tuple[str, str, int] | None = None,
-                        retired_rcc_claim: tuple[str, str, int, str, str] | None = None,
                         ) -> tuple[bool, OperationResult]:
         now = time.time()
         with self.transaction() as db:
@@ -1134,166 +964,11 @@ class Store:
                  policy_revision, now, now),
             )
             for resource in sorted(set(resources)):
-                if resource.startswith("rcc-instance:") and resource.endswith(
-                    ":maintenance:reload-extension"
-                ):
-                    instance_id = resource[
-                        len("rcc-instance:"):-len(":maintenance:reload-extension")
-                    ]
-                    # Reserve reload against all *currently nonterminal* RCC
-                    # effects, including exact delivery resources. Finished
-                    # UNKNOWN history is retained but is not a live lock.
-                    broad = db.execute(
-                        "SELECT c.operation_id,c.work_id,c.assignment_epoch,"
-                        "o.state,o.assignment_epoch AS operation_epoch "
-                        "FROM resource_claims c JOIN operations o "
-                        "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
-                        "WHERE (c.resource_key=? OR c.resource_key LIKE ?) "
-                        "AND c.unresolved=1 AND o.state<>'FINISHED' "
-                        "ORDER BY o.created_at DESC LIMIT 1",
-                        ("rcc-instance:" + instance_id,
-                         "rcc-instance:" + instance_id + ":%"),
-                    ).fetchone()
-                    if broad is not None:
-                        actor = db.execute(
-                            "SELECT COUNT(*) FROM background_job_executors "
-                            "WHERE operation_id=?", (broad["operation_id"],),
-                        ).fetchone()[0]
-                        if (
-                            broad["state"] != OperationState.FINISHED.value
-                            or broad["operation_epoch"] != broad["assignment_epoch"]
-                            or actor
-                        ):
-                            raise ConflictError("RCC_MAINTENANCE_ACTIVE_EXECUTION")
-                elif (resource.startswith("rcc-instance:")
-                      and ":maintenance:reload-extension" not in resource
-                      and ":read:" not in resource):
-                    # Exact delivery/relay claims cannot begin while a
-                    # maintenance reload has already been reserved.
-                    instance_id = resource[len("rcc-instance:"):].split(":", 1)[0]
-                    maintenance = db.execute(
-                        "SELECT c.operation_id,o.state FROM resource_claims c "
-                        "JOIN operations o ON c.operation_id=o.operation_id "
-                        "AND c.work_id=o.work_id "
-                        "WHERE c.resource_key=? AND c.unresolved=1",
-                        ("rcc-instance:" + instance_id + ":maintenance:reload-extension",),
-                    ).fetchone()
-                    if maintenance is not None:
-                        raise ConflictError("RCC_MAINTENANCE_IN_PROGRESS")
-                    instance_id = resource[len("rcc-instance:"):].split(":", 1)[0]
-                    broad_key = "rcc-instance:" + instance_id
-                    if resource == broad_key:
-                        # An instance-wide legacy command must not overlap an
-                        # active exact delivery or relay operation.
-                        active = db.execute(
-                            "SELECT 1 FROM resource_claims c JOIN operations o "
-                            "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
-                            "WHERE c.resource_key LIKE ? AND c.resource_key NOT LIKE ? "
-                            "AND c.unresolved=1 AND o.state<>'FINISHED' LIMIT 1",
-                            (broad_key + ":%", broad_key + ":read:%"),
-                        ).fetchone()
-                    else:
-                        # Conversely, an active instance-wide command protects
-                        # every exact mutating RCC resource on that instance.
-                        active = db.execute(
-                            "SELECT 1 FROM resource_claims c JOIN operations o "
-                            "ON c.operation_id=o.operation_id AND c.work_id=o.work_id "
-                            "WHERE c.resource_key=? AND c.unresolved=1 "
-                            "AND o.state<>'FINISHED' LIMIT 1",
-                            (broad_key,),
-                        ).fetchone()
-                    if active is not None:
-                        raise ConflictError("RCC_INSTANCE_ACTIVE_EXECUTION")
-                row = db.execute("SELECT * FROM resource_claims WHERE resource_key=? AND unresolved=1", (resource,)).fetchone()
-                if row is not None and self._retire_finished_idle_claim(
-                    db, resource, successor_operation_id=operation_id,
-                ):
-                    row = None
-                if row is not None and resource == "desktop-control:interactive-session" and retired_desktop_claim is not None:
-                    previous_id, previous_work, previous_epoch = retired_desktop_claim
-                    if (row["operation_id"], row["work_id"], row["assignment_epoch"]) == (previous_id, previous_work, previous_epoch):
-                        owner = db.execute(
-                            "SELECT capability,state,assignment_epoch FROM operations "
-                            "WHERE operation_id=? AND work_id=?",
-                            (previous_id, previous_work),
-                        ).fetchone()
-                        if (owner is not None
-                                and owner["state"] == OperationState.FINISHED.value
-                                and owner["assignment_epoch"] == previous_epoch
-                                and owner["capability"] in self._RETIRED_DESKTOP_CAPABILITIES):
-                            released = db.execute(
-                                "UPDATE resource_claims SET unresolved=0 "
-                                "WHERE resource_key=? AND operation_id=? AND work_id=? "
-                                "AND assignment_epoch=? AND unresolved=1",
-                                (resource, previous_id, previous_work, previous_epoch),
-                            ).rowcount
-                            if released != 1:
-                                raise ConflictError("DESKTOP_RETIRE_CLAIM_CHANGED")
-                            self._event(db, "DESKTOP_CLAIM_RETIRED", previous_id, {
-                                "new_operation_id": operation_id,
-                                "original_work_id": previous_work,
-                                "original_assignment_epoch": previous_epoch,
-                                "resource_key": resource,
-                                "reason": "TERMINAL_OPERATION_AGENT_IDLE",
-                                "original_effect_unchanged": True,
-                            })
-                            row = None
-                if row is not None and retired_rcc_claim is not None:
-                    (previous_id, previous_work, previous_epoch, previous_instance,
-                     retirement_reason) = retired_rcc_claim
-                    broad_key = "rcc-instance:" + previous_instance
-                    if resource == broad_key and (
-                        row["operation_id"], row["work_id"], row["assignment_epoch"]
-                    ) == (previous_id, previous_work, previous_epoch):
-                        owner = db.execute(
-                            "SELECT principal_id,capability,target,state,outcome,error,assignment_epoch "
-                            "FROM operations WHERE operation_id=? AND work_id=?",
-                            (previous_id, previous_work),
-                        ).fetchone()
-                        if (
-                            owner is not None
-                            and owner["state"] == OperationState.FINISHED.value
-                            and owner["capability"] == "relay_browser"
-                            and owner["target"] == previous_instance
-                            and owner["assignment_epoch"] == previous_epoch
-                        ):
-                            released = db.execute(
-                                "UPDATE resource_claims SET unresolved=0 "
-                                "WHERE resource_key=? AND operation_id=? AND work_id=? "
-                                "AND assignment_epoch=? AND unresolved=1",
-                                (resource, previous_id, previous_work, previous_epoch),
-                            ).rowcount
-                            if released != 1:
-                                raise ConflictError("RCC_RETIRE_CLAIM_CHANGED")
-                            self._event(db, "RCC_CLAIM_RETIRED", previous_id, {
-                                "new_operation_id": operation_id,
-                                "successor_work_id": work.work_id,
-                                "original_work_id": previous_work,
-                                "original_assignment_epoch": previous_epoch,
-                                "original_principal_id": owner["principal_id"],
-                                "resource_key": resource,
-                                "reason": retirement_reason,
-                                "original_effect_unchanged": True,
-                                "no_resend_original": True,
-                            })
-                            row = None
-                if row is not None:
-                    # Only the current work may see its own operation identity.
-                    # Foreign claims remain opaque, including their resource key.
-                    if row["work_id"] != work.work_id:
-                        raise ConflictError("RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK")
-                    owner = db.execute(
-                        "SELECT state,outcome FROM operations WHERE operation_id=? AND work_id=?",
-                        (row["operation_id"], work.work_id),
-                    ).fetchone()
-                    if owner is None:
-                        raise ConflictError("RESOURCE_ALREADY_CLAIMED:SAME_WORK_UNVERIFIED")
-                    next_action = "WAIT_RECHECK" if owner["state"] != OperationState.FINISHED.value else "REVIEW_UNRESOLVED"
-                    raise ConflictError(
-                        "RESOURCE_ALREADY_CLAIMED:SAME_WORK:"
-                        + row["operation_id"] + ":" + owner["state"] + ":"
-                        + (owner["outcome"] or "NONE") + ":" + next_action
-                    )
+                # A Claim is an observational sample for this resource, never
+                # an execution lock. A newer independent operation replaces the
+                # current sample regardless of its Work, outcome, or resource
+                # family. Operation identity and feature-specific leases remain
+                # the only idempotency and live-control boundaries.
                 db.execute(
                     "INSERT OR REPLACE INTO resource_claims VALUES(?,?,?,?,1)",
                     (resource, operation_id, work.work_id, work.assignment_epoch),

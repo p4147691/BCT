@@ -131,7 +131,7 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual("APPLIED", journal[0]["outcome"])
         self.assertIsNone(journal[1]["outcome"])
 
-    def test_worker_loss_after_plan_checkpoint_keeps_all_steps_pending(self):
+    def test_worker_loss_after_plan_checkpoint_does_not_claim_block_new_operation(self):
         original = self.bct.store.initialize_operation_steps
 
         def stop_after_checkpoint(**values):
@@ -148,10 +148,10 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual("RUNNING", operation.state.value)
         journal = self.bct.store.get_operation_steps(operation_id="plan-checkpoint")
         self.assertEqual(["PENDING", "PENDING"], [step["state"] for step in journal])
-        with self.assertRaises(ConflictError):
-            self.call(operation="plan-checkpoint-bypass")
+        successor = self.call(operation="plan-checkpoint-bypass")
+        self.assertEqual(Outcome.APPLIED, successor.outcome)
 
-    def test_worker_loss_after_running_checkpoint_does_not_dispatch_child(self):
+    def test_worker_loss_after_running_checkpoint_does_not_claim_block_new_operation(self):
         original = self.bct.store.start_operation_step
 
         def stop_after_checkpoint(**values):
@@ -167,8 +167,8 @@ class VerificationTests(unittest.TestCase):
         execute.assert_not_called()
         journal = self.bct.store.get_operation_steps(operation_id="running-checkpoint")
         self.assertEqual(["RUNNING", "PENDING"], [step["state"] for step in journal])
-        with self.assertRaises(ConflictError):
-            self.call(operation="running-checkpoint-bypass")
+        successor = self.call(operation="running-checkpoint-bypass")
+        self.assertEqual(Outcome.APPLIED, successor.outcome)
 
     def test_fixed_local_recipe_and_versioned_digest(self):
         arguments = {
@@ -290,7 +290,7 @@ class VerificationTests(unittest.TestCase):
             with self.assertRaises(PreconditionError):
                 self.call(steps=[self.ci_step(wait)])
 
-    def test_launch_metadata_failure_does_not_release_or_replay(self):
+    def test_launch_metadata_failure_does_not_claim_block_new_operation(self):
         process = Mock(pid=123)
         with patch("bct.background_operations._runtime_root", return_value=self.root / "runtime"), \
              patch("bct.background_operations.subprocess.Popen", return_value=process), \
@@ -299,8 +299,8 @@ class VerificationTests(unittest.TestCase):
                 operation_id="launch-failed", capability="verify", arguments={"steps": self.steps}, approval_ref=None)
         self.assertEqual("RUNNING", result.state.value)
         process.terminate.assert_not_called()
-        with self.assertRaises(ConflictError):
-            self.call(operation="cannot-repeat")
+        successor = self.call(operation="cannot-repeat")
+        self.assertEqual(Outcome.APPLIED, successor.outcome)
         jobs = list((self.root / "runtime" / "background-operations").glob("*.job.json"))
         self.assertEqual(1, len(jobs))
         job = json.loads(jobs[0].read_text())

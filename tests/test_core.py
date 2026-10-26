@@ -267,7 +267,7 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(Outcome.FAILED, successor.outcome)
         self.assertEqual(2, feature.calls)
-    def test_concurrent_writer_for_same_resource_is_denied(self):
+    def test_concurrent_writer_for_same_resource_is_not_claim_blocked(self):
         feature = BlockingFeature()
         self.replace_feature(feature)
         result = []
@@ -281,20 +281,21 @@ class CoreTests(unittest.TestCase):
         thread = threading.Thread(target=first_writer)
         thread.start()
         self.assertTrue(feature.started.wait(5))
-        try:
-            with self.assertRaises(ConflictError):
-                self.bct.operations.run(
-                    principal=self.owner, work_id="work-1", operation_id="op-2",
-                    capability="write", arguments={"resource": "x"},
-                )
-        finally:
-            feature.release.set()
-            thread.join(5)
+        contender = threading.Thread(target=lambda: result.append(self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="op-2",
+            capability="write", arguments={"resource": "x"},
+        )))
+        contender.start()
+        feature.release.set()
+        thread.join(5)
+        contender.join(5)
         self.assertFalse(thread.is_alive())
-        self.assertEqual(Outcome.APPLIED, result[0].outcome)
-        self.assertEqual(1, feature.calls)
+        self.assertFalse(contender.is_alive())
+        self.assertEqual([Outcome.APPLIED, Outcome.APPLIED],
+                         sorted(item.outcome for item in result))
+        self.assertEqual(2, feature.calls)
 
-    def test_same_work_running_claim_reports_owner_without_reexecution(self):
+    def test_same_work_running_claim_is_not_an_execution_gate(self):
         feature = BlockingFeature()
         self.replace_feature(feature)
         results = []
@@ -308,20 +309,19 @@ class CoreTests(unittest.TestCase):
         thread = threading.Thread(target=first_writer)
         thread.start()
         self.assertTrue(feature.started.wait(5))
-        try:
-            with self.assertRaisesRegex(
-                ConflictError, "RESOURCE_ALREADY_CLAIMED:SAME_WORK:running-owner:RUNNING:NONE:WAIT_RECHECK"
-            ):
-                self.bct.operations.run(
-                    principal=self.owner, work_id="work-1", operation_id="blocked-contender",
-                    capability="write", arguments={"resource": "shared"},
-                )
-        finally:
-            feature.release.set()
-            thread.join(5)
+        contender = threading.Thread(target=lambda: results.append(self.bct.operations.run(
+            principal=self.owner, work_id="work-1", operation_id="blocked-contender",
+            capability="write", arguments={"resource": "shared"},
+        )))
+        contender.start()
+        feature.release.set()
+        thread.join(5)
+        contender.join(5)
         self.assertFalse(thread.is_alive())
-        self.assertEqual(1, feature.calls)
-        self.assertEqual(Outcome.APPLIED, results[0].outcome)
+        self.assertFalse(contender.is_alive())
+        self.assertEqual(2, feature.calls)
+        self.assertEqual([Outcome.APPLIED, Outcome.APPLIED],
+                         sorted(item.outcome for item in results))
         self.assertEqual(Outcome.APPLIED, self.bct.operations.run(
             principal=self.owner, work_id="work-1", operation_id="after-release",
             capability="write", arguments={"resource": "shared"},
@@ -343,7 +343,7 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(Outcome.UNKNOWN, original.outcome)
         self.assertEqual(2, feature.calls)
-    def test_foreign_running_claim_does_not_expose_owner_or_resource(self):
+    def test_foreign_running_claim_does_not_block_independent_work(self):
         feature = BlockingFeature()
         self.replace_feature(feature)
         self.bct.create_work(work_id="other-work", request_summary="other",
@@ -354,16 +354,20 @@ class CoreTests(unittest.TestCase):
         ))
         t.start()
         self.assertTrue(feature.started.wait(5))
-        try:
-            with self.assertRaises(ConflictError) as caught:
-                self.bct.operations.run(principal=self.other, work_id="other-work",
-                                        operation_id="foreign-contender", capability="write",
-                                        arguments={"resource": "secret-resource"})
-            self.assertEqual("RESOURCE_ALREADY_CLAIMED:FOREIGN_WORK", str(caught.exception))
-        finally:
-            feature.release.set()
-            t.join(5)
+        contender_results = []
+        contender = threading.Thread(target=lambda: contender_results.append(
+            self.bct.operations.run(principal=self.other, work_id="other-work",
+                                    operation_id="foreign-contender", capability="write",
+                                    arguments={"resource": "secret-resource"})
+        ))
+        contender.start()
+        feature.release.set()
+        t.join(5)
+        contender.join(5)
         self.assertFalse(t.is_alive())
+        self.assertFalse(contender.is_alive())
+        self.assertEqual([Outcome.APPLIED], [item.outcome for item in contender_results])
+        self.assertEqual(2, feature.calls)
 
     def test_finished_foreign_unknown_releases_only_exact_resource_claim(self):
         self.replace_feature(UnknownFeature())
@@ -418,7 +422,7 @@ class CoreTests(unittest.TestCase):
         finally:
             db.close()
         self.assertIsNotNone(row)
-        self.assertEqual(0, row[0])
+        self.assertEqual(1, row[0])
     def test_handoff_after_terminal_released_operation(self):
         self.replace_feature(CountingFeature())
         self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-1",

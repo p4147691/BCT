@@ -38,7 +38,7 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         self.claim("shared", resource="rcc-instance:instance-1")
         shared = self.store.claim_diagnostics()[0]
         self.assertEqual("SHARED_RESOURCE", shared["scope"])
-        self.assertTrue(shared["blocks_unrelated_work"])
+        self.assertFalse(shared["blocks_unrelated_work"])
 
     def test_old_claim_resolves_without_recent_operations_window(self):
         self.claim("first")
@@ -189,7 +189,7 @@ class ClaimDiagnosticsTests(unittest.TestCase):
                 self.assertFalse(item["can_auto_release"])
                 self.assertEqual("UNKNOWN_EFFECT", item["diagnosis"])
 
-    def test_shared_runtime_claims_require_automatic_live_probe(self):
+    def test_shared_runtime_claims_are_measurements_not_live_gates(self):
         for resource in (
             "rcc-instance:example",
             "desktop-control:interactive-session",
@@ -203,40 +203,40 @@ class ClaimDiagnosticsTests(unittest.TestCase):
                 )
                 item = next(x for x in self.store.claim_diagnostics()
                             if x["operation_id"] == name)
-                self.assertTrue(item["requires_live_state_check"])
-                self.assertFalse(item["retires_on_next_reservation"])
-                self.assertTrue(item["blocks_same_resource"])
-                with self.assertRaises(ConflictError):
-                    self.store.begin_operation(
-                        operation_id=name + "-without-live-probe",
-                        work=self.work,
-                        principal_id="fixture-owner",
-                        request_digest=name + "-without-live-probe",
-                        capability="read",
-                        target="fixture",
-                        resources=(resource,),
-                        policy_revision="fixture",
-                    )
+                self.assertFalse(item["requires_live_state_check"])
+                self.assertTrue(item["retires_on_next_reservation"])
+                self.assertFalse(item["blocks_same_resource"])
+                created, _ = self.store.begin_operation(
+                    operation_id=name + "-without-live-probe",
+                    work=self.work,
+                    principal_id="fixture-owner",
+                    request_digest=name + "-without-live-probe",
+                    capability="read",
+                    target="fixture",
+                    resources=(resource,),
+                    policy_revision="fixture",
+                )
+                self.assertTrue(created)
 
-    def test_running_exact_rcc_operation_blocks_instance_wide_operation(self):
+    def test_running_exact_rcc_measurement_does_not_block_instance_wide_operation(self):
         self.claim("active-delivery", resource="rcc-instance:example:delivery:one")
-        with self.assertRaisesRegex(ConflictError, "RCC_INSTANCE_ACTIVE_EXECUTION"):
-            self.store.begin_operation(
-                operation_id="legacy-send", work=self.work,
-                principal_id="fixture-owner", request_digest="legacy-send",
-                capability="relay_browser", target="example",
-                resources=("rcc-instance:example",), policy_revision="fixture",
-            )
+        created, _ = self.store.begin_operation(
+            operation_id="legacy-send", work=self.work,
+            principal_id="fixture-owner", request_digest="legacy-send",
+            capability="relay_browser", target="example",
+            resources=("rcc-instance:example",), policy_revision="fixture",
+        )
+        self.assertTrue(created)
 
-    def test_running_instance_wide_rcc_operation_blocks_exact_operation(self):
+    def test_running_instance_wide_rcc_measurement_does_not_block_exact_operation(self):
         self.claim("legacy-send", resource="rcc-instance:example")
-        with self.assertRaisesRegex(ConflictError, "RCC_INSTANCE_ACTIVE_EXECUTION"):
-            self.store.begin_operation(
-                operation_id="active-delivery", work=self.work,
-                principal_id="fixture-owner", request_digest="active-delivery",
-                capability="relay_browser", target="example",
-                resources=("rcc-instance:example:delivery:one",), policy_revision="fixture",
-            )
+        created, _ = self.store.begin_operation(
+            operation_id="active-delivery", work=self.work,
+            principal_id="fixture-owner", request_digest="active-delivery",
+            capability="relay_browser", target="example",
+            resources=("rcc-instance:example:delivery:one",), policy_revision="fixture",
+        )
+        self.assertTrue(created)
 
     def test_finished_unknown_exact_effects_retire_for_distinct_successor(self):
         resources = (
@@ -305,7 +305,7 @@ class ClaimDiagnosticsTests(unittest.TestCase):
             x for x in self.store.claim_diagnostics()
             if x["operation_id"] == "old-rcc"
         )
-        self.assertTrue(claim["requires_live_state_check"])
+        self.assertFalse(claim["requires_live_state_check"])
         original = self.store.get_operation_for(
             operation_id="old-rcc", work_id=self.work.work_id,
             principal_id="next-owner",
