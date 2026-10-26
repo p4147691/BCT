@@ -4,6 +4,8 @@
 
 `extension/monitor.js` is a generated compatibility bundle, not an editing surface. New work moves one accepted responsibility at a time behind a narrow injected API. A file split without owned state, an interface and an independent test does not count as modularization.
 
+The screen-level ownership map is `MONITOR_UI_FEATURE_BOUNDARIES.md`. It is the authority for deciding which visible feature owns DOM, CSS and mutable UI state; the current ten edit domains are transitional and do not define the target layout.
+
 ## Dependency direction
 
 ```text
@@ -21,6 +23,7 @@ Dependencies only point downward. A presentation module never opens a Native por
 | Domain | Owns | Required public boundary | Current state |
 | --- | --- | --- | --- |
 | Thumbnail | bottom-tile refresh lifecycle, background, HWND pixels, completion and overlay composition | `MonitorDesktopThumbnailV2` over injected visual/frame ports | source controller extracted; LIVE pending |
+| Sketch | drawing canvas, tools, text input and history | `SketchController` + injected persistence port | planned immediately after thumbnail acceptance |
 | Notes | note model, undo/redo, persistence orchestration, editor projection | `NotesController` + injected storage/native/AI ports | planned after thumbnail acceptance |
 | Desktop/window lifecycle | desktop identity, window observation, move/focus actions | `DesktopWindowController` + Native port | planned |
 | Nodes/conversations | RCC identity projection, attention/generation state | `NodeProjectionController` + BCT/RCC readers | pure subset extracted; controller planned |
@@ -54,11 +57,12 @@ Rules:
 ## Migration sequence
 
 1. Finish and physically accept Thumbnail: solid, photo, D1/D2 switching, window overlays and extension reload.
-2. Extract Notes without changing behavior: first define storage/native/AI adapters, then move model, then editor projection.
-3. Extract Desktop/window lifecycle around exact GUID/HWND ownership; keep mutations behind one Native port.
-4. Finish Nodes/conversations controller around the already isolated pure generation/identity APIs.
-5. Extract Recovery only after node and window identity have stable APIs.
-6. Split Diagnostics from Organization; migrate Organization last because it spans the most state and ACT commit rules.
-7. Remove compatibility shims and global state only after every caller has moved and full regression plus LIVE acceptance passes.
+2. Extract Sketch as one visible feature with its canvas state and history.
+3. Extract Notes without changing behavior: first define storage/native/AI adapters, then move model, then editor projection.
+4. Finish Nodes/conversations as one visible node panel around the already isolated pure generation/identity APIs.
+5. Split the full desktop stage from the bottom desktop strip around exact GUID/HWND ownership; keep mutations behind one Native port.
+6. Extract Recovery and Header command surfaces only after node and desktop identity ports are stable.
+7. Split Diagnostics from Organization; migrate Organization last because it spans the most state and ACT commit rules.
+8. Remove compatibility shims and global state only after every caller has moved and full regression plus LIVE acceptance passes.
 
 At every step the old bundle remains generated from `source-parts` and `domains`; nobody edits or revives an 80,000-line artifact. A domain is complete only when authority, inputs, owned state, outputs, public API, isolated regression and LIVE acceptance are all recorded separately.
