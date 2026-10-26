@@ -267,7 +267,12 @@ let monitorNativePort = null;
 const monitorNativePending = new Map();
 let monitorNativeRequestSequence = 0;
 
-const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorNative });
+let monitorWallpaperNativePort = null;
+const monitorWallpaperNativePending = new Map();
+let monitorWallpaperNativeRequestSequence = 0;
+let monitorWallpaperNativeQueue = Promise.resolve();
+
+const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorWallpaperNativeRequest });
 const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
   globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_ONLY
 );
@@ -298,6 +303,10 @@ globalThis.MonitorDesktopThumbnailV2.configure({
 /*@@MONITOR_FUNCTION:monitorNative@@*/
 
 /*@@MONITOR_FUNCTION:monitorControlNativeRequest@@*/
+
+/*@@MONITOR_FUNCTION:ensureMonitorWallpaperNativePort@@*/
+
+/*@@MONITOR_FUNCTION:monitorWallpaperNativeRequest@@*/
 
 /*@@MONITOR_FUNCTION:monitorNativeLaunchIsolated@@*/
 

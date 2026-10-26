@@ -77,10 +77,6 @@ function ensureMonitorNativePort() {
     if (response?.event === true) return; // Unsolicited events never complete requests.
     const requestId = String(response?.requestId || "");
     const pending = monitorNativePending.get(requestId);
-    if (pending?.message?.type === "getDesktopVisualSnapshot" && monitorVersion) {
-      const id = String(pending.message.desktopId || "").slice(0,4);
-      monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · R:${id}`;
-    }
     if (!pending) return;
     monitorNativePending.delete(requestId);
     pending.resolve(response);
@@ -117,13 +113,7 @@ function monitorControlNativeRequest(message) {
     const requestId = `monitor-${Date.now().toString(36)}-${(++monitorNativeRequestSequence).toString(36)}`;
     monitorNativePending.set(requestId, { resolve, reject, message });
 
-    try {
-      port.postMessage({ ...message, requestId });
-      if (message?.type === "getDesktopVisualSnapshot" && monitorVersion) {
-        const id = String(message.desktopId || "").slice(0,4);
-        monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · P:${id}`;
-      }
-    }
+    try { port.postMessage({ ...message, requestId }); }
 
     catch (error) { monitorNativePending.delete(requestId); reject(error); }
 
@@ -131,6 +121,75 @@ function monitorControlNativeRequest(message) {
 
 }
 //@@FN_END:monitorControlNativeRequest
+
+//@@FN_START:ensureMonitorWallpaperNativePort
+function ensureMonitorWallpaperNativePort() {
+  if (monitorWallpaperNativePort) return monitorWallpaperNativePort;
+  const port = chrome.runtime.connectNative(MONITOR_CONTROL_HOST);
+  monitorWallpaperNativePort = port;
+  port.onMessage.addListener((response) => {
+    if (response?.event === true) return;
+    const requestId = String(response?.requestId || "");
+    const pending = monitorWallpaperNativePending.get(requestId);
+    if (!pending) return;
+    if (monitorVersion) {
+      const id = String(pending.message?.desktopId || "").slice(0,4);
+      monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · R:${id}`;
+    }
+    monitorWallpaperNativePending.delete(requestId);
+    pending.resolve(response);
+  });
+  port.onDisconnect.addListener(() => {
+    if (monitorWallpaperNativePort === port) monitorWallpaperNativePort = null;
+    const error = new Error(chrome.runtime.lastError?.message || "Monitor Wallpaper Native Host 연결 종료");
+    for (const pending of monitorWallpaperNativePending.values()) pending.reject(error);
+    monitorWallpaperNativePending.clear();
+  });
+  return port;
+}
+//@@FN_END:ensureMonitorWallpaperNativePort
+
+//@@FN_START:monitorWallpaperNativeRequest
+function monitorWallpaperNativeRequest(message, timeoutMs = 8000) {
+  const run = () => new Promise((resolve, reject) => {
+    const port = ensureMonitorWallpaperNativePort();
+    const requestId = `wallpaper-${Date.now().toString(36)}-${(++monitorWallpaperNativeRequestSequence).toString(36)}`;
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      const error = new Error("MONITOR_WALLPAPER_NATIVE_TIMEOUT");
+      if (monitorWallpaperNativePort === port) monitorWallpaperNativePort = null;
+      try { port.disconnect(); } catch (_) {}
+      for (const pending of monitorWallpaperNativePending.values()) pending.reject(error);
+      monitorWallpaperNativePending.clear();
+    }, Math.max(1000, Number(timeoutMs) || 8000));
+    monitorWallpaperNativePending.set(requestId, {
+      message,
+      resolve:value => finish(resolve,value),
+      reject:error => finish(reject,error)
+    });
+    try {
+      port.postMessage({ ...message, requestId });
+      if (monitorVersion) {
+        const id = String(message?.desktopId || "").slice(0,4);
+        monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · P:${id}`;
+      }
+    } catch (error) {
+      monitorWallpaperNativePending.delete(requestId);
+      finish(reject,error);
+    }
+  });
+  const task = monitorWallpaperNativeQueue.catch(() => null).then(run);
+  monitorWallpaperNativeQueue = task.catch(() => null);
+  return task;
+}
+//@@FN_END:monitorWallpaperNativeRequest
 
 //@@FN_START:monitorCoreNative
 function monitorCoreNative(message) {
