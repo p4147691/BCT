@@ -6,13 +6,14 @@ durable authority; the extension is a browser transport and observation boundary
 
 ## Active structure
 
-- `background_loader.js` loads Core, Platform, Relay, Domain, and the three-line background entrypoint.
+- `background_loader.js` loads Core, Platform, Relay, Domain, the atomic chat adapters, and the three-line background entrypoint.
 - `content/` owns conversation DOM detection, exact submit/read, the accepted message router, and bounded activity observation.
 - `platform/` is the only active background boundary for `chrome.storage`, `chrome.tabs`,
   `chrome.scripting`, Native Messaging, observation events, and extension lifecycle.
 - `domain/` has no direct `chrome.*` calls.
-- `browser/` contains optional tab/window capability contracts and adapters. They are preserved source,
-  not active loader entries or Relay permissions.
+- `browser/` contains tab/window capability contracts and adapters.  Creating a blank ChatGPT tab or
+  window and moving an exact tab are active, independently receipted primitives; close/reload/read
+  adapters remain optional source and are not product commands.
 - The popup is read-only and sends only `relay:getState`.
 
 The exact V2 Release Candidate file list, loader graph, message matrix, storage/wire contract, and
