@@ -1717,6 +1717,17 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual("read-latest-assistant", self.client.calls[-1]["command"])
         self.assertEqual("instance123", self.client.calls[-1]["extra"]["instanceId"])
         self.assertEqual("답변 전문", read.output["result"]["responseText"])
+        groups = self.call("group-list-read-1", {
+            "command": "tab-groups-list", "instance_id": "instance123",
+            "session_id": session_id,
+        })
+        self.assertEqual(Outcome.APPLIED, groups.outcome)
+        self.assertEqual("tab-groups-list", self.client.calls[-1]["command"])
+        self.assertEqual(session_id, self.client.calls[-1]["extra"]["sessionId"])
+        with self.assertRaisesRegex(PreconditionError, "RCC_TAB_GROUP_SESSION_ID_REQUIRED"):
+            self.call("group-list-missing-session", {
+                "command": "tab-groups-list", "instance_id": "instance123",
+            })
         with self.assertRaisesRegex(PreconditionError, "RCC_READ_LATEST_ASSISTANT_IDENTITY_REQUIRED"):
             self.call("read-latest-invalid", {
                 "command": "read-latest-assistant", "instance_id": "instance123",

@@ -432,11 +432,23 @@ class RelayBrowserFeature:
                 prepared["extra"]["windowId"] = _positive_int(
                     arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"
                 )
-            elif command == "tab-group-get":
-                allowed.add("group_id")
-                prepared["extra"]["groupId"] = _nonnegative_int(
-                    arguments.get("group_id"), "RCC_TAB_GROUP_ID_INVALID"
-                )
+            elif command in {"tab-groups-list", "tab-group-get"}:
+                # Groups are ordinary Chrome state, but their numeric IDs are
+                # scoped to the current RCC endpoint lifetime.  Require the
+                # session observed from `state` so a reconnect cannot make a
+                # stale group lookup appear current.
+                allowed.add("session_id")
+                session = str(arguments.get("session_id") or "").strip()
+                if not re.fullmatch(r"[a-f0-9]{32}", session):
+                    raise PreconditionError("RCC_TAB_GROUP_SESSION_ID_REQUIRED")
+                prepared["extra"]["sessionId"] = session
+                if command == "tab-groups-list":
+                    pass
+                else:
+                    allowed.add("group_id")
+                    prepared["extra"]["groupId"] = _nonnegative_int(
+                        arguments.get("group_id"), "RCC_TAB_GROUP_ID_INVALID"
+                    )
             elif command == "read-latest-assistant":
                 allowed.update({"session_id", "tab_id", "window_id", "conversation_key"})
                 session = str(arguments.get("session_id") or "").strip()
