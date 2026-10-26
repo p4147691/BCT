@@ -11948,7 +11948,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
 }
 
 function syncDesktopSwitcher() {
-  let createdDesktopThumb = false;
+  const createdDesktopIds = [];
 
   const existing = new Map([...monitorDesktopThumbs.children].filter(button => !button.dataset.deletedPlaceholder).map(button => [button.dataset.desktopId, button]));
 
@@ -12013,7 +12013,8 @@ function syncDesktopSwitcher() {
 
       bindDesktopDropTarget(button);
 
-      monitorDesktopThumbs.append(button); createdDesktopThumb = true;
+      monitorDesktopThumbs.append(button);
+      createdDesktopIds.push(desktopId);
 
     }
 
@@ -12052,9 +12053,19 @@ function syncDesktopSwitcher() {
 
   }
 
-  // The selected desktop is refreshed by refreshVirtualDesktops(). Background
-  // desktop pixels stay lazy until an explicit selection/layout operation.
-  // Do not capture every desktop merely because its card was created.
+  // A new card has no V2 state yet. Leaving it lazy produces the CSS fallback
+  // gray until an unrelated interaction happens to refresh the thumbnail.
+  // Schedule exactly one GUID-native read after the DOM batch is committed;
+  // V2 suppresses subsequent normal repaint reads for the same tile.
+  if (createdDesktopIds.length) requestAnimationFrame(() => {
+    for (const desktopId of createdDesktopIds) {
+      const tile = [...monitorDesktopThumbs.children].find((item) => (
+        String(item.dataset.desktopId || "") === String(desktopId)
+      ));
+      const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
+      if (visual?.isConnected) void refreshDesktopThumb(visual, desktopId).catch(() => false);
+    }
+  });
   requestAnimationFrame(syncMonitorDesktopScrollArrows);
 
 }
