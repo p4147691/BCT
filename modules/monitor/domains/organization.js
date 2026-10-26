@@ -269,9 +269,7 @@ function monitorStructureBundleKinds(){
 //@@FN_END:monitorStructureBundleKinds
 
 //@@FN_START:monitorStructureBundleName
-function monitorStructureBundleName(kind){
-  return kind==="local"?"L-LLM":kind==="external"?"E-LLM":"G-CODEX";
-}
+function monitorStructureBundleName(kind) { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureBundleName"].apply(this, arguments); }
 //@@FN_END:monitorStructureBundleName
 
 //@@FN_START:monitorStructureBundleNode
@@ -294,7 +292,7 @@ function monitorStructureBundleNode(kind){
 //@@FN_END:monitorStructureBundleNode
 
 //@@FN_START:monitorStructureBundleOrder
-function monitorStructureBundleOrder(){return ["local","external","codex-google"];}
+function monitorStructureBundleOrder() { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureBundleOrder"].apply(this, arguments); }
 //@@FN_END:monitorStructureBundleOrder
 
 //@@FN_START:monitorStructureBundlePalette
@@ -540,7 +538,7 @@ function monitorStructureHistoryCommit(before){
 //@@FN_END:monitorStructureHistoryCommit
 
 //@@FN_START:monitorStructureHistoryKey
-function monitorStructureHistoryKey(snapshot){return JSON.stringify(snapshot||{});}
+function monitorStructureHistoryKey(snapshot) { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureHistoryKey"].apply(this, arguments); }
 //@@FN_END:monitorStructureHistoryKey
 
 //@@FN_START:monitorStructureHistoryReset
@@ -606,15 +604,7 @@ function monitorStructureNodeControlState(key){
 //@@FN_END:monitorStructureNodeControlState
 
 //@@FN_START:monitorStructureNodeDisplayName
-function monitorStructureNodeDisplayName(node){
-  const number=String(node?.label||"").trim();
-  const title=String(node?.title||"").trim();
-  if(title&&title!==number)return title;
-  const role=String(node?.role||"").trim().toUpperCase();
-  if(role&&!["ORCHESTRATOR","COORDINATOR_1","COORDINATOR_2","MANAGER","WORKER"].includes(role))return role;
-  const profile=String(node?.profile_id||"").trim().toUpperCase();
-  return profile?("ChatGPT · "+profile):"ChatGPT";
-}
+function monitorStructureNodeDisplayName(node) { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureNodeDisplayName"].apply(this, arguments); }
 //@@FN_END:monitorStructureNodeDisplayName
 
 //@@FN_START:monitorStructureNodeForHwnd
@@ -648,26 +638,11 @@ function monitorStructureNodeFromWorker(worker,state){
 //@@FN_END:monitorStructureNodeFromWorker
 
 //@@FN_START:monitorStructureNodeIdentityTokens
-function monitorStructureNodeIdentityTokens(node){
-  const label=String(node?.label||"").trim().toUpperCase();
-  if(/^D\d+[-_]\d+$/.test(label))return [`act:${label}`];
-  const tabId=String(node?.tab_id??"").trim();
-  const conversationKey=String(node?.conversation_key||"").trim();
-  if(tabId&&conversationKey)return [`tab:${tabId}:conversation:${conversationKey}`];
-  return [`conversation:${conversationKey}`];
-}
+function monitorStructureNodeIdentityTokens(node) { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureNodeIdentityTokens"].apply(this, arguments); }
 //@@FN_END:monitorStructureNodeIdentityTokens
 
 //@@FN_START:monitorStructureNodeIsActive
-function monitorStructureNodeIsActive(node,kind){
-  const status=String(node?.status||node?.availability||node?.connection_status||"").trim().toLowerCase();
-  const runtime=String(node?.runtime_state||node?.runtime?.state||node?.llm_runtime_state||"").trim().toLowerCase();
-  const activeStates=["available","ready","loaded","busy","working","running","generating","connected","online","healthy"];
-  if(kind==="local")return node?.loaded===true||["loaded","busy","working","running","generating"].includes(runtime)
-    || ["loaded","busy","working","running","generating"].includes(status);
-  return activeStates.includes(runtime)||activeStates.includes(status)
-    ||node?.loaded===true||node?.active===true||node?.connected===true||node?.available===true;
-}
+function monitorStructureNodeIsActive(node,kind) { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureNodeIsActive"].apply(this, arguments); }
 //@@FN_END:monitorStructureNodeIsActive
 
 //@@FN_START:monitorStructureNodeIsPlacementExempt
@@ -684,11 +659,7 @@ function monitorStructureNodeIsPlacementExempt(nodeOrKey){
 //@@FN_END:monitorStructureNodeIsPlacementExempt
 
 //@@FN_START:monitorStructureNodeShortNumber
-function monitorStructureNodeShortNumber(node){
-  const label=String(node?.label||"").trim();
-  const match=label.match(/^D\d+[-_](\d+)$/i);
-  return match?match[1]:(label||"NODE");
-}
+function monitorStructureNodeShortNumber(node) { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureNodeShortNumber"].apply(this, arguments); }
 //@@FN_END:monitorStructureNodeShortNumber
 
 //@@FN_START:monitorStructurePersistBaseline

@@ -23,6 +23,15 @@ def main():
     source = root / 'extension' / 'monitor.js'
     text = source.read_text(encoding='utf-8', errors='replace')
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    # Domain-owned implementations may be loaded in their own classic script.
+    # Retain every original invariant, but inspect the actual source of truth
+    # rather than only the generated forwarding wrapper in monitor.js.
+    domains_script = root / 'extension' / 'monitor-domain-apis.js'
+    domains_html = (root / 'extension' / 'desktop.html').read_text(encoding='utf-8', errors='replace')
+    pure_api_text = domains_script.read_text(encoding='utf-8') if (
+        domains_script.is_file() and '<script src="monitor-domain-apis.js"></script>' in domains_html
+    ) else ''
+    visual_source = text + '\n' + pure_api_text
 
     names = ['monitorStructureDefaultParents', 'monitorStructureEffectiveParents', 'monitorStructureAuthorityOverrides', 'monitorStructureWouldCycle', 'monitorStructureBuildSavePayload']
     parts = [extract_top_level_function(text, n) for n in names]
@@ -134,7 +143,7 @@ console.log(JSON.stringify({base,newNode,moved,swappedDefault,normalizedDefault,
     resource_desk_ok = 'const resourceDesk=ids[ids.length-1]||"";' in text and 'if(!monitorStructureBundleDesk[kind]&&resourceDesk)' in text
     compact_node_number_ok = 'function monitorStructureNodeShortNumber(node)' in text and 'const numberText=compact?monitorStructureNodeShortNumber(node)' in text and 'if(!compact){' in text
     connection_drag_enabled = ('const MONITOR_STRUCTURE_CONNECTIONS_ENABLED=true;' in text and '<svg id="monitorStructureLinks"' in text and 'monitorStructurePointerTargetAt' in text and 'monitorStructureConnectNodesByPosition' in text and 'monitorStructureDetachBlankStep(nodeKey)' in text)
-    physical_node_dedup = 'function monitorStructureNodeIdentityTokens(node)' in text and 'identityTokens.some(token=>seenPhysicalNodes.has(token))' in text and 'return [`act:${label}`]' in text and 'return [`tab:${tabId}:conversation:${conversationKey}`]' in text
+    physical_node_dedup = 'function monitorStructureNodeIdentityTokens(node)' in visual_source and 'identityTokens.some(token=>seenPhysicalNodes.has(token))' in visual_source and 'return [`act:${label}`]' in visual_source and 'return [`tab:${tabId}:conversation:${conversationKey}`]' in visual_source
     minimized_native_desktop_authority = (
         'function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState)' in text
         and 'monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({' in text

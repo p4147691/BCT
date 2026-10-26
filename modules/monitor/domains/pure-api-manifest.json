@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "namespaces": {
+    "conversations": [
+      "classifyMonitorWorker",
+      "cleanMonitorWorkerName",
+      "monitorBctRenameErrorText",
+      "monitorBctRoleTagsFromText",
+      "monitorConversationStateSignature",
+      "monitorGhostArchiveAgeing",
+      "monitorGhostProtected",
+      "monitorGhostTime",
+      "monitorGhostWorkerId",
+      "stationForMonitorWorker"
+    ],
+    "node-identity": [
+      "compareMonitorBctNodeDisplayOrder",
+      "monitorBctNodeRoleSummary",
+      "monitorBrowserWindowIdForEndpoint",
+      "monitorCodexResourceProfile",
+      "monitorEndpointFreshnessState",
+      "monitorEndpointGeometry",
+      "monitorEndpointInstanceId",
+      "monitorEndpointWindowKey",
+      "monitorExactOpenEndpoint",
+      "monitorOpenEndpointsForConversation",
+      "monitorStableBrowserNodeKey",
+      "profileForMonitorWorker"
+    ],
+    "organization": [
+      "monitorStructureBundleName",
+      "monitorStructureBundleOrder",
+      "monitorStructureHistoryKey",
+      "monitorStructureNodeDisplayName",
+      "monitorStructureNodeIdentityTokens",
+      "monitorStructureNodeIsActive",
+      "monitorStructureNodeShortNumber"
+    ],
+    "shared-ui": [
+      "compareMonitorSharedSelectionRevision",
+      "monitorBrowserLineageKey",
+      "monitorChatTransitionKey",
+      "monitorContextTitleSignature",
+      "monitorIsActivelyWorking",
+      "monitorIsExplicitCodexResource",
+      "monitorLlmRuntimePresentation",
+      "monitorLocalModelIsLoaded",
+      "monitorReportMatchesTask",
+      "monitorRoleAdminErrorText",
+      "monitorRoleAdminShort",
+      "monitorStationMetadata",
+      "monitorTabBindingKey",
+      "monitorTitlesEquivalent"
+    ]
+  },
+  "count": 43
+}

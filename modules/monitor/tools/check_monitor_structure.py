@@ -96,6 +96,36 @@ def main():
         except Exception as exc:
             errors.append({'kind':'monitor_domain_manifest_error','detail':str(exc)[:150]})
 
+    # Stateless domain runtime must load before compatibility wrappers.
+    pure_manifest = root/'domains'/'pure-api-manifest.json'
+    if pure_manifest.is_file():
+        try:
+            spec=json.loads(pure_manifest.read_text(encoding='utf-8'))
+            count=sum(len(names) for names in spec['namespaces'].values())
+            api_js=ext/'monitor-domain-apis.js'
+            scripts=(ext/'desktop.html').read_text(encoding='utf-8')
+            prereq=(api_js.is_file()
+              and '<script src="monitor-domain-apis.js"></script>' in scripts
+              and scripts.index('<script src="monitor-domain-apis.js"></script>')<scripts.index('<script src="monitor.js"></script>')
+              and spec['count']==count)
+            facts['pure_domain_api_count']=count
+            if not prereq:
+                errors.append({'kind':'monitor_pure_domain_api_load_order_or_manifest_broken'})
+            checker=root/'tools'/'check_monitor_domain_pure_api.js'
+            if not checker.is_file():
+                errors.append({'kind':'monitor_pure_domain_api_test_missing'})
+            elif shutil.which('node'):
+                cp=subprocess.run([shutil.which('node'),str(checker)],
+                    capture_output=True,text=True,encoding='utf-8',
+                    errors='replace',timeout=25)
+                facts['pure_domain_api_test_rc']=cp.returncode
+                if cp.returncode!=0:
+                    errors.append({'kind':'monitor_pure_domain_api_test_failed',
+                                   'details':(cp.stderr+cp.stdout)[-300:]})
+        except Exception as exc:
+            errors.append({'kind':'monitor_pure_domain_manifest_invalid',
+                           'detail':str(exc)[:180]})
+
     monitor = ext/'monitor.js'
     index = ext/'MONITOR_JS_INDEX.md'
     if monitor.exists() and index.exists():
