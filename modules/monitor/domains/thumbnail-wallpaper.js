@@ -733,7 +733,8 @@ if (monitorSelectedHwnds.size) applyMonitorWindowHighlight(monitorHighlightedHwn
 //@@FN_START:refreshBackgroundThumbs
 async function refreshBackgroundThumbs(...desktopIds) {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return [];
-  if (!monitorIsActiveDesktopRenderer() || monitorCapturePaused()) return [];
+  const renderer = globalThis.MonitorDesktopThumbnailV2;
+  if (!renderer?.refreshBackground) return desktopIds.filter(Boolean);
   const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
   const ids = new Set(desktopIds.map((id) => String(id || "")).filter(Boolean));
   if (selectedDesktopId) ids.delete(selectedDesktopId);
@@ -742,8 +743,8 @@ async function refreshBackgroundThumbs(...desktopIds) {
     const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
     const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
     if (!visual?.isConnected) continue;
-    const refreshed = await refreshDesktopThumb(visual, desktopId).catch(() => false);
-    if (!refreshed) failed.push(desktopId);
+    const result = await renderer.refreshBackground(visual, desktopId).catch(() => null);
+    if (result?.wallpaperReady !== true) failed.push(desktopId);
   }
   return failed;
 }
@@ -829,7 +830,7 @@ function monitorThumbnailBackgroundRuntimeDiagnostics() {
 
 //@@FN_START:refreshInitialBackgroundThumbs
 async function refreshInitialBackgroundThumbs() {
-  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !monitorIsActiveDesktopRenderer()) return false;
+  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
   const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
   const renderer = globalThis.MonitorDesktopThumbnailV2;
   if (!renderer?.refreshBackground) return false;
@@ -852,7 +853,6 @@ async function refreshInitialBackgroundThumbs() {
     pending = failed;
     if (!pending.length || attempt >= retryDelays.length) break;
     await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
-    if (!monitorIsActiveDesktopRenderer()) break;
   }
   return pending.length === 0;
 }

@@ -11,6 +11,8 @@
 
 배경 읽기가 일시적으로 실패하면 실패 상태와 이유는 그대로 기록하되, 이미 수락한 마지막 사진/단색 픽셀은 회색 기본색으로 지우지 않는다. 새 카드 생성 경로는 canonical/lightweight 어느 쪽이든 모든 카드의 동일한 `refreshBackground` 포트를 호출한다. 다음 레이어는 배경 LIVE 수락 뒤 정책만 확장하고, 배경 소유권이나 별도 우회 경로를 추가하지 않는다.
 
+배경 레이어의 권한은 타일의 정확한 데스크톱 GUID로 결정한다. Monitor 팝업 HWND가 어느 가상 데스크톱에 속하는지는 창 캡처 레이어의 조건일 뿐이며, 배경 요청을 막는 조건으로 사용하지 않는다.
+
 ## 책임
 - `monitor-desktop-thumbnail-v2.js`가 **하단 D1/D2 타일의 갱신 생명주기와 시각 렌더링**을 소유한다. 상단/큰 미리보기, 노드 의미·클릭·드래그·대화 송수신은 변경하지 않는다.
 - `monitor.js`의 `refreshDesktopThumb(visual, GUID)`는 V2의 단일 `refresh()` 결과만 전달한다. Native `desktopWallpaperChanged`는 V2의 background refresh event만 요청한다. 기존 `reconcileFrame`은 큰 미리보기용으로만 남는다.

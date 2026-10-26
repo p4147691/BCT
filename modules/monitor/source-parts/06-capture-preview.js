@@ -186,8 +186,6 @@ let monitorThumbBatchGeneration = 0;
 
 let monitorThumbBatchInflight = null;
 
-/*@@MONITOR_FUNCTION:monitorCapturePaused@@*/
-
 /*@@MONITOR_FUNCTION:monitorIsActiveDesktopRenderer@@*/
 
 /*@@MONITOR_FUNCTION:getObservedWallpaper@@*/

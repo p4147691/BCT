@@ -754,12 +754,6 @@ function monitorCaptureMatchesCurrentWindow(captureTitle,currentTitle,capturedAt
 }
 //@@FN_END:monitorCaptureMatchesCurrentWindow
 
-//@@FN_START:monitorCapturePaused
-function monitorCapturePaused() {
-  return Boolean(monitorWindowPointerDrag || monitorDesktopPointerDrag);
-}
-//@@FN_END:monitorCapturePaused
-
 //@@FN_START:monitorCaptureRebootSnapshot
 function monitorCaptureRebootSnapshot(state) {
   if (!MONITOR_FEATURE_RECOVERY_ENABLED) return;

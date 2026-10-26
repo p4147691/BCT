@@ -399,7 +399,7 @@ Generated extension/monitor.js is not an edit target.
 - openMonitorStructure
 - renderMonitorStructure
 
-## shared-ui (110 functions)
+## shared-ui (109 functions)
 
 - activateMonitorCodexResource
 - applyMonitorLiveWindowGeometry
@@ -422,7 +422,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorCanonicalPhysicalLocation
 - monitorCaptureDataUriToObjectUrl
 - monitorCaptureMatchesCurrentWindow
-- monitorCapturePaused
 - monitorCaptureRebootSnapshot
 - monitorChatTransitionIsApproved
 - monitorChatTransitionKey

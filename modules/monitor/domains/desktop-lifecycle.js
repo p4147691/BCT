@@ -2363,17 +2363,17 @@ function syncDesktopSwitcher() {
 
   }
 
-  // A new card has no V2 state yet. Leaving it lazy produces the CSS fallback
-  // gray until an unrelated interaction happens to refresh the thumbnail.
-  // Schedule exactly one GUID-native read after the DOM batch is committed;
-  // V2 suppresses subsequent normal repaint reads for the same tile.
-  if (createdDesktopIds.length && monitorInitialThumbBatchDone) requestAnimationFrame(() => {
+  // Background identity is the desktop GUID, not the Monitor popup's owning
+  // desktop. Every new canonical card enters the same bottom-layer port used
+  // by the lightweight renderer; V2 coalesces startup overlap per tile.
+  if (createdDesktopIds.length) requestAnimationFrame(() => {
+    const renderer = globalThis.MonitorDesktopThumbnailV2;
     for (const desktopId of createdDesktopIds) {
       const tile = [...monitorDesktopThumbs.children].find((item) => (
         String(item.dataset.desktopId || "") === String(desktopId)
       ));
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-      if (visual?.isConnected) void refreshDesktopThumb(visual, desktopId).catch(() => false);
+      if (visual?.isConnected) void renderer?.refreshBackground?.(visual, desktopId).catch(() => null);
     }
   });
   requestAnimationFrame(syncMonitorDesktopScrollArrows);

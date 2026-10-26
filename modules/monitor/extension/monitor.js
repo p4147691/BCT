@@ -636,7 +636,7 @@ let monitorStartupEndpointFreshConfirmed = false;
 
 let monitorInitialThumbBatchDone = false;
 async function refreshInitialBackgroundThumbs() {
-  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !monitorIsActiveDesktopRenderer()) return false;
+  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
   const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
   const renderer = globalThis.MonitorDesktopThumbnailV2;
   if (!renderer?.refreshBackground) return false;
@@ -659,7 +659,6 @@ async function refreshInitialBackgroundThumbs() {
     pending = failed;
     if (!pending.length || attempt >= retryDelays.length) break;
     await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
-    if (!monitorIsActiveDesktopRenderer()) break;
   }
   return pending.length === 0;
 }
@@ -8688,10 +8687,6 @@ let monitorThumbBatchGeneration = 0;
 
 let monitorThumbBatchInflight = null;
 
-function monitorCapturePaused() {
-  return Boolean(monitorWindowPointerDrag || monitorDesktopPointerDrag);
-}
-
 function monitorIsActiveDesktopRenderer() {
   const hostDesktopId = String(monitorDesktopState.hostDesktopId || "").trim();
   const currentDesktopId = String(monitorDesktopState.currentDesktopId || "").trim();
@@ -11028,17 +11023,17 @@ function syncDesktopSwitcher() {
 
   }
 
-  // A new card has no V2 state yet. Leaving it lazy produces the CSS fallback
-  // gray until an unrelated interaction happens to refresh the thumbnail.
-  // Schedule exactly one GUID-native read after the DOM batch is committed;
-  // V2 suppresses subsequent normal repaint reads for the same tile.
-  if (createdDesktopIds.length && monitorInitialThumbBatchDone) requestAnimationFrame(() => {
+  // Background identity is the desktop GUID, not the Monitor popup's owning
+  // desktop. Every new canonical card enters the same bottom-layer port used
+  // by the lightweight renderer; V2 coalesces startup overlap per tile.
+  if (createdDesktopIds.length) requestAnimationFrame(() => {
+    const renderer = globalThis.MonitorDesktopThumbnailV2;
     for (const desktopId of createdDesktopIds) {
       const tile = [...monitorDesktopThumbs.children].find((item) => (
         String(item.dataset.desktopId || "") === String(desktopId)
       ));
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-      if (visual?.isConnected) void refreshDesktopThumb(visual, desktopId).catch(() => false);
+      if (visual?.isConnected) void renderer?.refreshBackground?.(visual, desktopId).catch(() => null);
     }
   });
   requestAnimationFrame(syncMonitorDesktopScrollArrows);
@@ -11118,7 +11113,8 @@ async function refreshInitialSelectedThumb() {
 
 async function refreshBackgroundThumbs(...desktopIds) {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return [];
-  if (!monitorIsActiveDesktopRenderer() || monitorCapturePaused()) return [];
+  const renderer = globalThis.MonitorDesktopThumbnailV2;
+  if (!renderer?.refreshBackground) return desktopIds.filter(Boolean);
   const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
   const ids = new Set(desktopIds.map((id) => String(id || "")).filter(Boolean));
   if (selectedDesktopId) ids.delete(selectedDesktopId);
@@ -11127,8 +11123,8 @@ async function refreshBackgroundThumbs(...desktopIds) {
     const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
     const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
     if (!visual?.isConnected) continue;
-    const refreshed = await refreshDesktopThumb(visual, desktopId).catch(() => false);
-    if (!refreshed) failed.push(desktopId);
+    const result = await renderer.refreshBackground(visual, desktopId).catch(() => null);
+    if (result?.wallpaperReady !== true) failed.push(desktopId);
   }
   return failed;
 }
