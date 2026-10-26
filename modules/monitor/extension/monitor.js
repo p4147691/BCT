@@ -3189,7 +3189,7 @@ async function monitorPublishSharedInstance(reason = "event") {
 
   // Runtime presence is one current record per browser profile. Using the
   // transient HWND in the key left old rows behind after an extension reload.
-  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
+  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
 
 }
 
@@ -10850,6 +10850,20 @@ async function refreshDesktopThumb(visual, desktopId) {
   return result?.ok === true;
 }
 
+function monitorThumbnailBackgroundRuntimeDiagnostics() {
+  const visuals = [...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual") || [])];
+  return visuals.map((visual) => ({
+    desktop_id:String(visual.dataset.desktopId || ""),
+    capture:String(visual.dataset.wallpaperCapture || "unobserved"),
+    source:String(visual.dataset.wallpaperSource || "none"),
+    failure_reason:String(visual.dataset.wallpaperFailureReason || "").slice(0,120),
+    thumbnail_ready:String(visual.dataset.monitorThumbnailReady || ""),
+    composite_ready:String(visual.dataset.monitorThumbnailCompositeReady || ""),
+    has_background_image:Boolean(visual.style.backgroundImage),
+    has_background_color:Boolean(visual.style.backgroundColor)
+  }));
+}
+
 function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
   const slotsByDesktop = monitorMinimizedNodeSlotsByDesktop(state);
 
@@ -11061,8 +11075,16 @@ async function refreshSelectedThumb() {
 
 async function refreshInitialSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
-  const backgroundReady = await refreshInitialBackgroundThumbs().catch(() => false);
+  const refreshTask = refreshInitialBackgroundThumbs();
+  const pendingReportTimer = setTimeout(() => {
+    void monitorPublishSharedInstance("thumbnail-background-pending");
+  }, 2500);
+  const backgroundReady = await refreshTask.catch(() => false);
+  clearTimeout(pendingReportTimer);
   monitorInitialThumbBatchDone = backgroundReady === true;
+  await monitorPublishSharedInstance(
+    monitorInitialThumbBatchDone ? "thumbnail-background-ready" : "thumbnail-background-failed"
+  ).catch(() => null);
   if (monitorInitialThumbBatchDone) {
     scheduleInitialSemanticThumbSync();
     void checkMonitorDeploymentUpdate();

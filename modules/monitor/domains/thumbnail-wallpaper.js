@@ -805,6 +805,22 @@ async function refreshDesktopThumb(visual, desktopId) {
 }
 //@@FN_END:refreshDesktopThumb
 
+//@@FN_START:monitorThumbnailBackgroundRuntimeDiagnostics
+function monitorThumbnailBackgroundRuntimeDiagnostics() {
+  const visuals = [...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual") || [])];
+  return visuals.map((visual) => ({
+    desktop_id:String(visual.dataset.desktopId || ""),
+    capture:String(visual.dataset.wallpaperCapture || "unobserved"),
+    source:String(visual.dataset.wallpaperSource || "none"),
+    failure_reason:String(visual.dataset.wallpaperFailureReason || "").slice(0,120),
+    thumbnail_ready:String(visual.dataset.monitorThumbnailReady || ""),
+    composite_ready:String(visual.dataset.monitorThumbnailCompositeReady || ""),
+    has_background_image:Boolean(visual.style.backgroundImage),
+    has_background_color:Boolean(visual.style.backgroundColor)
+  }));
+}
+//@@FN_END:monitorThumbnailBackgroundRuntimeDiagnostics
+
 //@@FN_START:refreshInitialBackgroundThumbs
 async function refreshInitialBackgroundThumbs() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !monitorIsActiveDesktopRenderer()) return false;
@@ -839,8 +855,16 @@ async function refreshInitialBackgroundThumbs() {
 //@@FN_START:refreshInitialSelectedThumb
 async function refreshInitialSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
-  const backgroundReady = await refreshInitialBackgroundThumbs().catch(() => false);
+  const refreshTask = refreshInitialBackgroundThumbs();
+  const pendingReportTimer = setTimeout(() => {
+    void monitorPublishSharedInstance("thumbnail-background-pending");
+  }, 2500);
+  const backgroundReady = await refreshTask.catch(() => false);
+  clearTimeout(pendingReportTimer);
   monitorInitialThumbBatchDone = backgroundReady === true;
+  await monitorPublishSharedInstance(
+    monitorInitialThumbBatchDone ? "thumbnail-background-ready" : "thumbnail-background-failed"
+  ).catch(() => null);
   if (monitorInitialThumbBatchDone) {
     scheduleInitialSemanticThumbSync();
     void checkMonitorDeploymentUpdate();

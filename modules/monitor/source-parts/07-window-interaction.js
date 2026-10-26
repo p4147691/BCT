@@ -156,4 +156,6 @@ document.addEventListener("pointercancel", cancelMonitorDesktopPointerDrag, true
 
 /*@@MONITOR_FUNCTION:refreshDesktopThumb@@*/
 
+/*@@MONITOR_FUNCTION:monitorThumbnailBackgroundRuntimeDiagnostics@@*/
+
 /*@@MONITOR_FUNCTION:syncMonitorMinimizedNodeBadges@@*/

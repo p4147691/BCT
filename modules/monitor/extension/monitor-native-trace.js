@@ -4,6 +4,22 @@
   const session=Date.now().toString(36);
   let sequence=0, revision=0, writing=false, scheduled=false, ready=false, previous=null;
   const snapshot=()=>({session,events:events.slice(),pending:[...pending.values()]});
+  const bounded=value=>String(value||'').slice(0,120);
+  function summary(type=''){
+    const expected=String(type||'');
+    const matches=item=>!expected||String(item?.type||'')===expected;
+    const now=Date.now();
+    return Object.freeze({
+      session,
+      pending:[...pending.values()].filter(matches).slice(-8).map(item=>({
+        id:item.id,host:bounded(item.host),type:bounded(item.type),age_ms:Math.max(0,now-Number(item.at||now))
+      })),
+      recent:events.filter(item=>matches(item)&&['end','error'].includes(item.kind)).slice(-8).map(item=>({
+        at:Number(item.at||0),kind:bounded(item.kind),id:item.id,host:bounded(item.host),type:bounded(item.type),
+        ms:Number(item.ms||0),ok:item.ok===true,engine:bounded(item.engine),error:bounded(item.error)
+      }))
+    });
+  }
   function persist(){
     if(!ready||writing||scheduled)return;
     scheduled=true;
@@ -28,14 +44,14 @@
     record('begin',item);
     try{
       const result=await invoke();pending.delete(id);
-      record('end',{id,host,type:item.type,ms:Math.round(performance.now()-started),ok:result?.ok===true,engine:String(result?.captureEngine||'')});
+      record('end',{id,host,type:item.type,ms:Math.round(performance.now()-started),ok:result?.ok===true,engine:bounded(result?.captureEngine),error:result?.ok===true?'':bounded(result?.error)});
       return result;
     }catch(error){
-      pending.delete(id);record('error',{id,host,type:item.type,ms:Math.round(performance.now()-started)});throw error;
+      pending.delete(id);record('error',{id,host,type:item.type,ms:Math.round(performance.now()-started),error:bounded(error?.message||error)});throw error;
     }
   }
   chrome.storage.session.get(key).then(data=>{previous=data?.[key]||null;}).catch(()=>{}).finally(()=>{ready=true;persist();});
   for(const kind of ['focus','blur','pagehide'])window.addEventListener(kind,()=>record(kind));
-  globalThis.MonitorNativeTrace={request,record,export:()=>JSON.stringify({current:snapshot(),previous},null,2)};
+  globalThis.MonitorNativeTrace={request,record,summary,export:()=>JSON.stringify({current:snapshot(),previous},null,2)};
   record('loaded',{build:'20260924-orchestrator-pyramid-19'});
 })();
