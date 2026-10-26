@@ -134,3 +134,11 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - check_monitor_structure.py rejects a generated runtime/source mismatch, missing part syntax or an outdated index.
 - Ordered source-parts still share top-level lexical variables, Native request adapters and UI state; file separation ALONE does not prove domain-level isolation. Per-domain authority/API extraction remains open and must be honestly counted as outstanding.
 - Before merging other Monitor changes, preserve any installed-only differences in the editable source; rebuilding from stale main is forbidden.
+
+
+## Domain-owned editable function implementations (2026-10-26)
+- All 588 top-level function declarations have one human-editable owner in 10 classified domains/*.js source files. Domain owners are compiled back at exact original byte positions using placeholders in source-parts/*.js.
+- tools/build_monitor_bundle.py reconstructs the exact runtime byte sequence, checks unique definitions/markers, and updates SOURCE_FUNCTION_INDEX.md. Running HTML and global classic-script variables remain unchanged.
+- Pure source extraction changes ZERO runtime bytes. The local structure checker enforces source synchronization and domain JS syntax.
+- CRITICAL: Function ownership is NOT full API encapsulation. Implementations still share global lexical state with the app. State migration to independent interfaces needs additional behavioral acceptance.
+- extension/monitor.js is derived output. Never hand-edit its 15k lines or revert to earlier 80k formatting.
