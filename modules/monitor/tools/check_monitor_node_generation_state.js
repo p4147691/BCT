@@ -13,7 +13,9 @@ assert(Object.isFrozen(impl));
 assert.equal(typeof impl.create,"function");
 assert.throws(()=>impl.create({readTab:5,readConversation:()=>null,ttlMs:3500}));
 const tabs=new Map(),conversations=new Map(), service=impl.create({
- readTab:key=>tabs.get(key),readConversation:key=>conversations.get(key),ttlMs:3500
+ readTab:key=>tabs.get(key),readConversation:key=>conversations.get(key),
+ readTabEntries:()=>tabs.values(),openEndpointForHwnd:(hwnd,state)=>state?.byHwnd?.[hwnd]||null,
+ ttlMs:3500
 });
 assert(Object.isFrozen(service));
 const e={conversation_key:"c-1",tab_id:12},n={conversation_key:"c-2",tab_id:0};
@@ -30,6 +32,16 @@ tabs.delete("c-1:12");
 assert.equal(service.directUserAttention(e).status,"action","fall back to conversation attention");
 assert.equal(service.directUserAttention({tab_id:12}),null);
 assert.equal(service.directGenerationState(n,10),null);
+conversations.set("c-1",{at:8000,generating:true,userAttention:{status:"action"}});
+assert.equal(service.directConversationGenerationState("c-1",9000),true);
+tabs.set("c-1:12",{conversationKey:"c-1",at:9000,generating:false,userAttention:null});
+assert.equal(service.directConversationGenerationState("c-1",9200),false,"fresh exact tab overrides old conversation report");
+assert.equal(service.directConversationGenerationState("c-1",15000),null,"old generation expires");
+assert.equal(service.conversationIsGenerating("c-1",{endpoints:[]}),false);
+assert.equal(service.conversationIsGenerating("c-1",{endpoints:[{conversation_key:"c-1",presence_state:"OPEN",generating:true}]}),true);
+assert.equal(service.conversationIsGenerating("missing",{}),false);
+assert.equal(service.hwndIsGenerating("123",{byHwnd:{"123":{generating:true}}}),true);
+assert.equal(service.hwndIsGenerating("888",{byHwnd:{}}),false);
 assert.equal(service.endpointIsGenerating({metadata:{generation_state:"GENERATING"}}),true);
 assert.equal(service.endpointIsGenerating({metadata:{generation_state:"IDLE"}}),false);
 assert.equal(service.endpointIsGenerating({metadata:{interaction_state:"WORKING"}}),true);
@@ -40,7 +52,8 @@ assert.equal(service.endpointIsGenerating({...e,metadata:{generating:true}}),fal
 const script='<script src="monitor-node-generation-state.js"></script>';
 assert.equal(html.split(script).length,2);
 assert(html.indexOf(script)<html.indexOf('<script src="monitor.js"></script>'));
-for(const name of ["monitorDirectEndpointGenerationState","monitorDirectEndpointUserAttention","monitorEndpointGenerationIsActive"]){
+for(const name of ["monitorDirectEndpointGenerationState","monitorDirectEndpointUserAttention","monitorEndpointGenerationIsActive",
+  "monitorDirectConversationGenerationState","monitorConversationIsGenerating","monitorHwndIsGenerating"]){
  assert(generated.includes("function "+name+"("),name+" compatibility bridge");
 }
 assert(generated.includes("MonitorNodeGenerationState.create("));

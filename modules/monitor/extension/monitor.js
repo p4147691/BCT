@@ -3621,23 +3621,13 @@ const MONITOR_DIRECT_GENERATION_TTL_MS = 3500;
 const monitorNodeGenerationAPI = globalThis.MonitorNodeGenerationState.create({
   readTab: key => monitorDirectGenerationByTab.get(key),
   readConversation: key => monitorDirectGenerationByConversation.get(key),
+  readTabEntries: () => monitorDirectGenerationByTab.values(),
+  openEndpointForHwnd: (hwnd,state) => monitorOpenEndpointForHwnd(hwnd,state),
   ttlMs: MONITOR_DIRECT_GENERATION_TTL_MS,
 });
 
 function monitorDirectConversationGenerationState(conversationKey, now = Date.now()) {
-
-  const key=String(conversationKey||"").trim();
-
-  const tabStates=[...monitorDirectGenerationByTab.values()].filter((item)=>item.conversationKey===key&&now-Number(item.at||0)<=MONITOR_DIRECT_GENERATION_TTL_MS);
-
-  if(tabStates.length) return tabStates.some((item)=>item.generating===true);
-
-  const item=monitorDirectGenerationByConversation.get(key);
-
-  if (!item || now-Number(item.at||0)>MONITOR_DIRECT_GENERATION_TTL_MS) return null;
-
-  return item.generating===true;
-
+  return monitorNodeGenerationAPI.directConversationGenerationState(conversationKey, now);
 }
 
 function monitorDirectEndpointGenerationState(endpoint, now = Date.now()) {
@@ -4637,23 +4627,7 @@ function monitorEndpointGenerationIsActive(endpoint) {
 }
 
 function monitorConversationIsGenerating(conversationKey, state) {
-
-  const key = String(conversationKey || "").trim();
-
-  if (!key) return false;
-
-  const directState = monitorDirectConversationGenerationState(key);
-
-  const actActive = (Array.isArray(state?.endpoints) ? state.endpoints : []).some((endpoint) => {
-
-    if (String(endpoint?.conversation_key || "").trim() !== key || String(endpoint?.presence_state || "").toUpperCase() !== "OPEN") return false;
-
-    return monitorEndpointGenerationIsActive(endpoint);
-
-  });
-
-  return directState === true || actActive;
-
+  return monitorNodeGenerationAPI.conversationIsGenerating(conversationKey, state);
 }
 
 function monitorOpenEndpointForHwnd(hwnd, state = monitorLastAiState) {
@@ -4711,13 +4685,7 @@ function monitorOpenEndpointForHwnd(hwnd, state = monitorLastAiState) {
 }
 
 function monitorHwndIsGenerating(hwnd, state) {
-
-  const endpoint=monitorOpenEndpointForHwnd(hwnd,state);
-
-  if(!endpoint)return false;
-
-  return monitorEndpointGenerationIsActive(endpoint);
-
+  return monitorNodeGenerationAPI.hwndIsGenerating(hwnd, state);
 }
 
 function monitorVisualConversationForHwnd(hwnd, state) {
