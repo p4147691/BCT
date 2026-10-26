@@ -27,7 +27,9 @@ internal static class MonitorWallpaperRegistryWatcher
             ? watchedPaths
             : new [] {
                 @"Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops\Desktops",
-                @"Control Panel\Desktop"
+                @"Control Panel\Desktop",
+                @"Control Panel\Colors",
+                @"Software\Microsoft\Windows\CurrentVersion\Explorer\Wallpapers"
               };
         foreach (string rawPath in paths)
         {

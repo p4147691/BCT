@@ -43,6 +43,38 @@ def main():
         if route_doc.exists() and org_doc_name not in route_doc.read_text(encoding='utf-8', errors='replace'):
             errors.append({'kind':'organization_model_not_routed','path':str(route_doc),'required':org_doc_name})
 
+    # Generated runtime is subordinate to the named, separately editable source parts.
+    # Fail closed if a later agent patches the generated monolith directly.
+    parts_manifest = root/'source-parts'/'manifest.json'
+    if parts_manifest.exists():
+        builder = root/'tools'/'build_monitor_bundle.py'
+        if not builder.exists():
+            errors.append({'kind':'monitor_source_parts_builder_missing'})
+        else:
+            build_check = subprocess.run(
+                [sys.executable, str(builder), '--check'],
+                capture_output=True, text=True, encoding='utf-8',
+                errors='replace', timeout=20)
+            facts['monitor_source_bundle_check'] = build_check.returncode
+            if build_check.returncode != 0:
+                errors.append({'kind':'monitor_source_bundle_out_of_sync',
+                               'detail':(build_check.stdout+build_check.stderr)[-550:]})
+        try:
+            parts = json.loads(parts_manifest.read_text(encoding='utf-8'))['parts']
+            if not isinstance(parts,list) or len(set(parts)) != len(parts):
+                errors.append({'kind':'monitor_source_parts_manifest_invalid'})
+            elif node := shutil.which('node'):
+                for part in parts:
+                    candidate = root/'source-parts'/part
+                    result = subprocess.run(
+                        [node, '--check', str(candidate)], capture_output=True, text=True,
+                        encoding='utf-8', errors='replace', timeout=20)
+                    if result.returncode != 0:
+                        errors.append({'kind':'monitor_source_part_syntax', 'name':part})
+            facts['monitor_source_parts_count'] = len(parts)
+        except Exception as exc:
+            errors.append({'kind':'monitor_source_parts_invalid','detail':str(exc)[:150]})
+
     monitor = ext/'monitor.js'
     index = ext/'MONITOR_JS_INDEX.md'
     if monitor.exists() and index.exists():

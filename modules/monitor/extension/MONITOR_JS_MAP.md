@@ -1,5 +1,7 @@
 # Monitor JS Responsibility Map
 
+목적: 실행용 생성 파일을 직접 편집하지 않는다. 편집 정본은 `source-parts/*.js`이며, `source-parts/SOURCE_FUNCTION_INDEX.md`에서 함수의 실제 원본 파일을 찾는다. 변경 후 `python tools/build_monitor_bundle.py`로 출력 파일을 재생성한다. 기존 기능 간 공유 전역 상태가 남아 있으므로 소스 파일 분리만으로 독립 API 구축이 끝났다고 주장하지 않는다.
+
 목적: 큰 `monitor.js`에서 다음 노드가 어디를 봐야 하는지 먼저 찾게 하는 지도다.
 정확한 함수 위치는 `MONITOR_JS_INDEX.md`를 사용하고 line number보다 함수/anchor 이름을 우선 검색한다.
 
