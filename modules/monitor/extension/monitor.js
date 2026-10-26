@@ -3618,6 +3618,11 @@ const monitorDirectGenerationByConversation = new Map();
 const monitorDirectGenerationByTab = new Map();
 
 const MONITOR_DIRECT_GENERATION_TTL_MS = 3500;
+const monitorNodeGenerationAPI = globalThis.MonitorNodeGenerationState.create({
+  readTab: key => monitorDirectGenerationByTab.get(key),
+  readConversation: key => monitorDirectGenerationByConversation.get(key),
+  ttlMs: MONITOR_DIRECT_GENERATION_TTL_MS,
+});
 
 function monitorDirectConversationGenerationState(conversationKey, now = Date.now()) {
 
@@ -3636,29 +3641,11 @@ function monitorDirectConversationGenerationState(conversationKey, now = Date.no
 }
 
 function monitorDirectEndpointGenerationState(endpoint, now = Date.now()) {
-
-  const key=String(endpoint?.conversation_key||"").trim(), tabId=String(endpoint?.tab_id??"").trim();
-
-  if(!key||!tabId)return null;
-
-  const item=monitorDirectGenerationByTab.get(`${key}:${tabId}`);
-
-  if(!item||now-Number(item.at||0)>MONITOR_DIRECT_GENERATION_TTL_MS)return null;
-
-  return item.generating===true;
-
+  return monitorNodeGenerationAPI.directGenerationState(endpoint, now);
 }
 
 function monitorDirectEndpointUserAttention(endpoint) {
-  const key=String(endpoint?.conversation_key||"").trim(), tabId=String(endpoint?.tab_id??"").trim();
-  if(!key)return null;
-  // User attention is event-driven and stays visible until the content script explicitly reports that it cleared.
-  // Generation/busy state still uses MONITOR_DIRECT_GENERATION_TTL_MS separately.
-  if(tabId){
-    const tabItem=monitorDirectGenerationByTab.get(`${key}:${tabId}`);
-    if(tabItem)return tabItem.userAttention||null;
-  }
-  return monitorDirectGenerationByConversation.get(key)?.userAttention||null;
+  return monitorNodeGenerationAPI.directUserAttention(endpoint);
 }
 
 function monitorUserAttentionVisualDetail(attentionRaw) {
@@ -4646,25 +4633,7 @@ function monitorLiveRoleForConversation(conversationKey, state, hwnd = "") {
 }
 
 function monitorEndpointGenerationIsActive(endpoint) {
-
-  const direct = monitorDirectEndpointGenerationState(endpoint);
-
-  if (direct !== null) return direct;
-
-  const metadata = endpoint?.metadata || {};
-
-  if (metadata.generating === true || endpoint?.generating === true) return true;
-  if (metadata.generating === false || endpoint?.generating === false) return false;
-
-  const generationState = String(metadata.generation_state || endpoint?.generation_state || "").trim().toUpperCase();
-
-  if (["GENERATING", "RUNNING", "WORKING", "ACTIVE"].includes(generationState)) return true;
-  if (generationState) return false;
-
-  const interactionState = String(metadata.interaction_state || endpoint?.interaction_state || "").trim().toUpperCase();
-
-  return interactionState === "WORKING";
-
+  return monitorNodeGenerationAPI.endpointIsGenerating(endpoint);
 }
 
 function monitorConversationIsGenerating(conversationKey, state) {

@@ -139,6 +139,25 @@ def main():
                 errors.append({'kind':'native_solid_com_contract_failed',
                                'detail':(verify.stderr+verify.stdout)[-350:]})
 
+    # One owner for generation/attention state logic, with injected read-only
+    # data sources and a separate focused contract regression.
+    node_gen = ext/'monitor-node-generation-state.js'
+    html_source=(ext/'desktop.html').read_text(encoding='utf-8')
+    if node_gen.is_file():
+        script_tag='<script src="monitor-node-generation-state.js"></script>'
+        owner_test=root/'tools'/'check_monitor_node_generation_state.js'
+        if script_tag not in html_source or html_source.index(script_tag)>=html_source.index('<script src="monitor.js"></script>'):
+            errors.append({'kind':'node_generation_module_script_load_order_invalid'})
+        if not owner_test.is_file():
+            errors.append({'kind':'node_generation_state_contract_test_missing'})
+        elif shutil.which('node'):
+            outcome=subprocess.run([shutil.which('node'),str(owner_test)],
+               capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=25)
+            facts['node_generation_state_test_rc']=outcome.returncode
+            if outcome.returncode:
+                errors.append({'kind':'node_generation_state_contract_regression',
+                  'detail':(outcome.stdout+outcome.stderr)[-450:]})
+
     monitor = ext/'monitor.js'
     index = ext/'MONITOR_JS_INDEX.md'
     if monitor.exists() and index.exists():
