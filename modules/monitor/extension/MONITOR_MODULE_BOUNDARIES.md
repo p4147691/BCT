@@ -125,3 +125,12 @@
 
 READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강한다.
 파일 크기 자체는 분리 사유가 아니다.
+
+
+## 2026-10-26 source ownership transition (in progress, NOT full API modularization)
+- Editable Monitor source now lives in 10 ordered source-parts/*.js files plus already-extracted dedicated modules.
+- tools/build_monitor_bundle.py deterministically assembles extension/monitor.js for Chrome. This runtime file is GENERATED; do not edit it directly.
+- source-parts/SOURCE_FUNCTION_INDEX.md maps function names to source files; inspect this instead of manually searching a monolith.
+- check_monitor_structure.py rejects a generated runtime/source mismatch, missing part syntax or an outdated index.
+- Ordered source-parts still share top-level lexical variables, Native request adapters and UI state; file separation ALONE does not prove domain-level isolation. Per-domain authority/API extraction remains open and must be honestly counted as outstanding.
+- Before merging other Monitor changes, preserve any installed-only differences in the editable source; rebuilding from stale main is forbidden.

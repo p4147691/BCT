@@ -18,6 +18,7 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 $outputExe = Join-Path $output "DesktopWindowMonitorHost.exe"
 $hostSource = Join-Path $source "MonitorDesktopHost.cs"
 $visualSource = Join-Path $source "DesktopVisualSnapshot.cs"
+$solidSource = Join-Path $source "DesktopSolidColorSource.cs"
 $dragPreviewSource = Join-Path $source "MonitorDragPreviewOverlay.cs"
 $wallpaperWatchSource = Join-Path $source "MonitorWallpaperRegistryWatcher.cs"
 $automationClient = Join-Path $framework "UIAutomationClient.dll"
@@ -26,6 +27,7 @@ $automationTypes = Join-Path $framework "UIAutomationTypes.dll"
     "/out:$outputExe" `
     $hostSource `
     $visualSource `
+    $solidSource `
     $dragPreviewSource `
     $wallpaperWatchSource `
     /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll `

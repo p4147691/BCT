@@ -35,17 +35,27 @@
     // Identity must be a GUID, not index or host/foreground aliases.
     const matched = reply && reply.ok === true && norm(reply.desktopId) === state.desktopId;
     const pixels = matched && reply.wallpaper && reply.wallpaper.dataUri;
+    const solid = matched && reply.wallpaper?.mode === "solid"
+      && typeof reply.wallpaper.color === "string"
+      && /^#[0-9a-f]{6}$/i.test(reply.wallpaper.color) ? reply.wallpaper.color : "";
     // Native wallpaper snapshots must be inline image bytes; blob URLs only
     // belong to HWND captures and cannot establish a per-desktop file origin.
-    if (typeof pixels === "string" && /^data:image\/(?:jpeg|png|webp);base64,/i.test(pixels)) {
+    if (solid) {
+      visual.style.backgroundImage = "";
+      visual.style.backgroundColor = solid;
+      state.wallpaper = "captured";
+    } else if (typeof pixels === "string" && /^data:image\/(?:jpeg|png|webp);base64,/i.test(pixels)) {
+      visual.style.backgroundColor = "";
       visual.style.backgroundImage = "url(" + JSON.stringify(pixels) + ")";
       state.wallpaper = "captured";
     } else {
       visual.style.backgroundImage = "";
+      visual.style.backgroundColor = "";
       state.wallpaper = "failed";
     }
     visual.dataset.wallpaperCapture = state.wallpaper;
-    visual.dataset.wallpaperSource = state.wallpaper === "captured" ? "native-guid-file" : "none";
+    visual.dataset.wallpaperSource = solid ? "native-solid-color"
+      : state.wallpaper === "captured" ? "native-guid-file" : "none";
     visual.dataset.wallpaperDesktopId = state.desktopId;
     return state.wallpaper === "captured";
   }

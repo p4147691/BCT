@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "parts": [
+    "00-bootstrap-ui.js",
+    "01-notes-history.js",
+    "02-node-identity.js",
+    "03-node-activity.js",
+    "04-worker-list.js",
+    "05-native-lifecycle.js",
+    "06-capture-preview.js",
+    "07-window-interaction.js",
+    "08-desktop-thumbnails.js",
+    "09-desktop-recovery.js"
+  ]
+}

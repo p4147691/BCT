@@ -26,6 +26,18 @@ internal static class DesktopVisualSnapshot
         int maxWidth = GetInt(request, "maxWidth", 960, 160, 1920);
         int maxHeight = GetInt(request, "maxHeight", 600, 100, 1080);
         int quality = GetInt(request, "quality", 68, 40, 90);
+        string solidColor, solidProof;
+        if (DesktopSolidColorSource.TryGet(desktopId, out solidColor, out solidProof))
+        {
+            return new Dictionary<string, object>
+            {
+                { "ok", true }, { "desktopId", desktopId.ToString("D") },
+                { "wallpaperPath", "" },
+                { "wallpaper", new Dictionary<string, object> {
+                    { "mode", "solid" }, { "color", solidColor }, { "proof", solidProof }
+                } }
+            };
+        }
         string path = ResolveWallpaperPath(desktopId);
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
