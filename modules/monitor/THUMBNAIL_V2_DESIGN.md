@@ -47,3 +47,11 @@
 - 옛 getObservedWallpaper, cache map, popup restore, freeze thumbnail, reconcileFrame는 노트·복구·큰 미리보기·기타 UI에 필요하므로 무작정 삭제하지 않는다. 단, 신규 하단 썸네일 코드에서 이들을 호출하면 회귀다.
 - tests/check_monitor_thumbnail_v2_render_ownership.js가 이 경계의 직접 writer 재도입을 CI/로컬 검사에서 탐지한다. 기능 테스트는 check_monitor_thumbnail_v2_cleanroom.js를 계속 사용한다.
 - 격리는 **하단 썸네일 렌더링** 기준이며 8만 줄 monitor.js 전체 기능의 독립 모듈화가 아니다. 전체 모듈화와 별개로 보고한다.
+
+
+## Windows API color provenance, isolated acceptance pending
+- Photo and solid must be identified by Windows desktop truth, not a stale remembered per-desktop wallpaper filename or merely the global RGB color.
+- DesktopSolidColorSource.cs first requires the exact current virtual-desktop GUID. It asks read-only IDesktopWallpaper for all physical monitor wallpaper paths; for an actual solid-color presentation these paths are empty, and COM GetBackgroundColor provides the RGB value.
+- If the COM interface is unavailable it uses exact-current-desktop Windows BackgroundType or distributed exposed-screen-color evidence. It never attributes current color to another desktop.
+- The current PC was in picture mode during isolated E2E; a true solid-color presentation was not present and must be physically retested before claiming LIVE_SOLID_ACCEPTED. This is not a reason to fabricate a successful check.
+- check_monitor_solid_native_contract.py compiles the pure GUID decision harness on Windows and asserts six false-positive/positive behaviors without changing user wallpaper.

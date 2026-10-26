@@ -26,3 +26,11 @@ Existing live rollback protections: do not modify RCC/Core, active Chrome conver
 ## Independent runtime API progress (2026-10-26)
 - 43 safe functions from four domains now execute from standalone monitor-domain-apis.js. Compatibility bridges keep existing call sites. Module is immutable and unit tested in a DOM-free Node VM.
 - Shared state and other function bodies remain coupled. Full independent domain APIs and E2E remain unaccepted.
+
+
+## Windows API color provenance, isolated acceptance pending
+- Photo and solid must be identified by Windows desktop truth, not a stale remembered per-desktop wallpaper filename or merely the global RGB color.
+- DesktopSolidColorSource.cs first requires the exact current virtual-desktop GUID. It asks read-only IDesktopWallpaper for all physical monitor wallpaper paths; for an actual solid-color presentation these paths are empty, and COM GetBackgroundColor provides the RGB value.
+- If the COM interface is unavailable it uses exact-current-desktop Windows BackgroundType or distributed exposed-screen-color evidence. It never attributes current color to another desktop.
+- The current PC was in picture mode during isolated E2E; a true solid-color presentation was not present and must be physically retested before claiming LIVE_SOLID_ACCEPTED. This is not a reason to fabricate a successful check.
+- check_monitor_solid_native_contract.py compiles the pure GUID decision harness on Windows and asserts six false-positive/positive behaviors without changing user wallpaper.
