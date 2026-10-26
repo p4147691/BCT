@@ -21,7 +21,12 @@ def splice(match):
     if name not in functions:raise ValueError("UNBOUND_FUNCTION:"+name)
     used.append(name)
     return functions[name]
-output=b"".join(marker.sub(splice,(partdir/name).read_bytes()) for name in parts)
+def source_part_without_unowned_functions(part):
+    raw=(partdir/part).read_bytes()
+    if re.search(rb"(?m)^(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(",raw):
+        raise ValueError("UNOWNED_TOP_LEVEL_FUNCTION_IN_SOURCE_PART:"+part)
+    return raw
+output=b"".join(marker.sub(splice,source_part_without_unowned_functions(name)) for name in parts)
 if len(used)!=len(set(used)) or len(used)!=len(functions):raise ValueError("MISSING_OR_DUPLICATE_FUNCTION")
 runtime=root/"extension/monitor.js"
 index=partdir/"SOURCE_FUNCTION_INDEX.md"
