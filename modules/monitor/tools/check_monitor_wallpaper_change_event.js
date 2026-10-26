@@ -22,7 +22,7 @@ const env={
  monitorDesktopThumbs:thumbs,
  globalThis:{MonitorDesktopThumbnailV2:adapter},
  MONITOR_WALLPAPER_MAX_WIDTH:960,MONITOR_WALLPAPER_MAX_HEIGHT:600,
- monitorNative:async req=>({ok:true,desktopId:req.desktopId}),
+ monitorNativeVisualRead:async req=>({ok:true,desktopId:req.desktopId}),
  Date,Promise,String
 };
 vm.createContext(env);

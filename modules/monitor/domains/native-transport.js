@@ -63,7 +63,7 @@ function ensureMonitorNativePort() {
       // Each visual keeps its own generation fence; no cross-desktop cache.
       void Promise.allSettled(targets.map(visual =>
         globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-          visual,visual.dataset.desktopId,id=>monitorNative({
+          visual,visual.dataset.desktopId,id=>monitorNativeVisualRead({
             type:"getDesktopVisualSnapshot",desktopId:id,
             maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68
           }),{force:true})));
@@ -189,6 +189,27 @@ function monitorNative(message) {
 //@@FN_START:monitorNativeLaunchIsolated
 function monitorNativeLaunchIsolated(message) {
 
+  return monitorControlNativeIsolatedRequest(message);
+
+}
+//@@FN_END:monitorNativeLaunchIsolated
+
+//@@FN_START:monitorNativeVisualRead
+function monitorNativeVisualRead(message) {
+
+  // Wallpaper bytes must not wait behind the long-lived control port's mixed
+  // UI/control traffic. This is a bounded, read-only Native connection: each
+  // snapshot gets its own reply stream and cannot be paired with another
+  // command's reply.
+  return MonitorNativeTrace.request("control-visual-read", message, () =>
+    monitorControlNativeIsolatedRequest(message));
+
+}
+//@@FN_END:monitorNativeVisualRead
+
+//@@FN_START:monitorControlNativeIsolatedRequest
+function monitorControlNativeIsolatedRequest(message) {
+
   return new Promise((resolve, reject) => {
 
     const port = chrome.runtime.connectNative(MONITOR_CONTROL_HOST);
@@ -230,7 +251,7 @@ function monitorNativeLaunchIsolated(message) {
   });
 
 }
-//@@FN_END:monitorNativeLaunchIsolated
+//@@FN_END:monitorControlNativeIsolatedRequest
 
 //@@FN_START:monitorNativeWithTimeout
 function monitorNativeWithTimeout(message, timeoutMs = 2500) {
@@ -305,4 +326,3 @@ async function syncMonitorNativeZOrder(desktopId) {
 
 }
 //@@FN_END:syncMonitorNativeZOrder
-

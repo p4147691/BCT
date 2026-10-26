@@ -1,0 +1,11 @@
+"use strict";
+const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path");
+const root=path.join(__dirname,"..");
+const transport=fs.readFileSync(path.join(root,"domains","native-transport.js"),"utf8");
+const wallpaper=fs.readFileSync(path.join(root,"domains","thumbnail-wallpaper.js"),"utf8");
+assert.match(transport,/function monitorNativeVisualRead\(message\)/);
+assert.match(transport,/MonitorNativeTrace\.request\("control-visual-read", message, \(\) =>\s*monitorControlNativeIsolatedRequest\(message\)\)/s);
+assert.match(transport,/function monitorControlNativeIsolatedRequest\(message\)/);
+assert.match(wallpaper,/monitorNativeVisualRead\(\{type:"getDesktopVisualSnapshot"/);
+assert.doesNotMatch(wallpaper,/monitorNative\(\{type:"getDesktopVisualSnapshot"/);
+console.log("PASS: wallpaper snapshots use a traced isolated Native read rather than the shared control FIFO");
