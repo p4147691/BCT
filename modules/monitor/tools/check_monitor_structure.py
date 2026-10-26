@@ -158,6 +158,26 @@ def main():
                 errors.append({'kind':'node_generation_state_contract_regression',
                   'detail':(outcome.stdout+outcome.stderr)[-450:]})
 
+    # Exact Monitor host-identity fallback is a separate bounded dependency.
+    host_script=ext/'monitor-host-window-identity.js'
+    if host_script.is_file():
+        html=(ext/'desktop.html').read_text(encoding='utf-8')
+        host_tag='<script src="monitor-host-window-identity.js"></script>'
+        monitor_tag='<script src="monitor.js"></script>'
+        if host_tag not in html or monitor_tag not in html or html.index(host_tag)>html.index(monitor_tag):
+            errors.append({'kind':'monitor_host_identity_script_load_order_invalid'})
+        host_test=root/'tools'/'check_monitor_host_window_identity.js'
+        if not host_test.is_file():
+            errors.append({'kind':'monitor_host_identity_regression_test_missing'})
+        elif shutil.which('node'):
+            c=subprocess.run([shutil.which('node'),str(host_test)],
+                capture_output=True,text=True,encoding='utf-8',
+                errors='replace',timeout=25)
+            facts['monitor_host_identity_test_rc']=c.returncode
+            if c.returncode!=0:
+                errors.append({'kind':'monitor_host_identity_regression_failed',
+                               'detail':(c.stdout+c.stderr)[-360:]})
+
     monitor = ext/'monitor.js'
     index = ext/'MONITOR_JS_INDEX.md'
     if monitor.exists() and index.exists():

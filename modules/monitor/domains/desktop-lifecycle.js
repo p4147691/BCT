@@ -1328,17 +1328,13 @@ async function refreshVirtualDesktops() {
 
     });
 
-    const hostResolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
-
-    if (state?.ok && !hostResolved) {
-
-      const titleOnlyState = await monitorNative({ type: "getVirtualDesktops", hostTitle: document.title }).catch(() => null);
-
-      const titleResolved = /^\d+$/.test(String(titleOnlyState?.hostWindowHwnd || "")) && String(titleOnlyState?.hostWindowHwnd || "") !== "0";
-
-      if (titleOnlyState?.ok && titleResolved) state = titleOnlyState;
-
-    }
+    state = await globalThis.MonitorHostWindowIdentity.resolve(state, {
+      title: document.title,
+      bounds: {left:currentWindow?.left,top:currentWindow?.top,
+        width:currentWindow?.width,height:currentWindow?.height},
+      requestNative: query => monitorNative(query),
+      isOwnTitle: monitorIsOwnWindowTitle,
+    });
 
     if (state?.ok) {
 
