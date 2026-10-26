@@ -8656,7 +8656,7 @@ function ensureMonitorNativePort() {
       // Each visual keeps its own generation fence; no cross-desktop cache.
       void Promise.allSettled(targets.map(visual =>
         globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-          visual,visual.dataset.desktopId,id=>monitorNative({
+          visual,visual.dataset.desktopId,id=>monitorNativeVisualRead({
             type:"getDesktopVisualSnapshot",desktopId:id,
             maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68
           }),{force:true})));
@@ -8877,6 +8877,23 @@ function monitorControlNativeRequest(message) {
 
 function monitorNativeLaunchIsolated(message) {
 
+  return monitorControlNativeIsolatedRequest(message);
+
+}
+
+function monitorNativeVisualRead(message) {
+
+  // Wallpaper bytes must not wait behind the long-lived control port's mixed
+  // UI/control traffic. This is a bounded, read-only Native connection: each
+  // snapshot gets its own reply stream and cannot be paired with another
+  // command's reply.
+  return MonitorNativeTrace.request("control-visual-read", message, () =>
+    monitorControlNativeIsolatedRequest(message));
+
+}
+
+function monitorControlNativeIsolatedRequest(message) {
+
   return new Promise((resolve, reject) => {
 
     const port = chrome.runtime.connectNative(MONITOR_CONTROL_HOST);
@@ -8918,7 +8935,6 @@ function monitorNativeLaunchIsolated(message) {
   });
 
 }
-
 function monitorNativeWithTimeout(message, timeoutMs = 2500) {
 
   return new Promise((resolve, reject) => {
@@ -11878,7 +11894,7 @@ async function refreshDesktopThumb(visual, desktopId) {
   // Native is authoritative: explicit per-desktop GUID/file snapshot; never
   // use the legacy actual/restore/Progman wallpaper image maps.
   const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId, id =>
-    monitorNative({type:"getDesktopVisualSnapshot",desktopId:id,
+    monitorNativeVisualRead({type:"getDesktopVisualSnapshot",desktopId:id,
       maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}));
   if (!visual.isConnected || String(visual.dataset.desktopId).toLowerCase() !== String(desktopId).toLowerCase()) return false;
   // Window geometry is separate Native HWND truth; pixels never become wallpaper.
@@ -13011,7 +13027,7 @@ async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") 
 
   if (visual) {
     void globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-      visual,createdId,id=>monitorNative({type:"getDesktopVisualSnapshot",desktopId:id,
+      visual,createdId,id=>monitorNativeVisualRead({type:"getDesktopVisualSnapshot",desktopId:id,
         maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}),
       {force:true}).catch(()=>false);
   }

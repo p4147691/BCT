@@ -282,3 +282,6 @@ const monitorNativePending = [];
 
 /*@@MONITOR_FUNCTION:monitorNativeLaunchIsolated@@*/
 
+/*@@MONITOR_FUNCTION:monitorNativeVisualRead@@*/
+
+/*@@MONITOR_FUNCTION:monitorControlNativeIsolatedRequest@@*/

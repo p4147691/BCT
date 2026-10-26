@@ -233,10 +233,11 @@ Generated extension/monitor.js is not an edit target.
 - scheduleMonitorWindowLifecycleEvent
 - showMonitorDiagText
 
-## native-transport (12 functions)
+## native-transport (14 functions)
 
 - ensureMonitorCoreNativePort
 - ensureMonitorNativePort
+- monitorControlNativeIsolatedRequest
 - monitorControlNativeRequest
 - monitorCoreNative
 - monitorCoreNativeRequest
@@ -244,6 +245,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorFreshNativeLocations
 - monitorNative
 - monitorNativeLaunchIsolated
+- monitorNativeVisualRead
 - monitorNativeWithTimeout
 - stopMonitorBctNativePreview
 - syncMonitorNativeZOrder

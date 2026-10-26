@@ -780,7 +780,7 @@ async function refreshDesktopThumb(visual, desktopId) {
   // Native is authoritative: explicit per-desktop GUID/file snapshot; never
   // use the legacy actual/restore/Progman wallpaper image maps.
   const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId, id =>
-    monitorNative({type:"getDesktopVisualSnapshot",desktopId:id,
+    monitorNativeVisualRead({type:"getDesktopVisualSnapshot",desktopId:id,
       maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}));
   if (!visual.isConnected || String(visual.dataset.desktopId).toLowerCase() !== String(desktopId).toLowerCase()) return false;
   // Window geometry is separate Native HWND truth; pixels never become wallpaper.
@@ -1009,7 +1009,7 @@ async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") 
 
   if (visual) {
     void globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
-      visual,createdId,id=>monitorNative({type:"getDesktopVisualSnapshot",desktopId:id,
+      visual,createdId,id=>monitorNativeVisualRead({type:"getDesktopVisualSnapshot",desktopId:id,
         maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}),
       {force:true}).catch(()=>false);
   }
@@ -1055,4 +1055,3 @@ function syncMonitorThumbnailTabBadges(container, className) {
   return diagnostics;
 }
 //@@FN_END:syncMonitorThumbnailTabBadges
-
