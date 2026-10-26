@@ -805,26 +805,25 @@ function classifyNewChatSurface() {
   const generalNavigation = [
     '새 채팅', '대화 검색', 'New chat', 'Search chats',
   ].some((marker) => text.includes(marker));
-  // The current Chat home no longer always renders the older welcome and
-  // sidebar labels together.  Its Chat/Work composer-mode chooser and the
-  // home heading are both ordinary-Chat-specific evidence; keep requiring
-  // both so an arbitrary page with an editor is still UNKNOWN.
-  const generalHomeWelcome = [
-    '오늘은 어떤 생각이 드나요?',
-    "What's on your mind today?", 'What’s on your mind today?',
+  // The current Chat home rotates its greeting per tab, so greetings are not
+  // stable identity.  Its temporary-chat control and Chat/Work composer-mode
+  // chooser are ordinary-Chat controls; require both so an arbitrary page
+  // with an editor is still UNKNOWN.
+  const generalTemporaryChat = [
+    '임시 채팅', 'Temporary chat',
   ].some((marker) => text.includes(marker));
   const generalChatMode = [
     '작성기 모드 Chat Work', 'Composer mode Chat Work',
   ].some((marker) => text.includes(marker));
   const legacyGeneralChat = generalWelcome && generalNavigation;
-  const currentGeneralChatHome = generalHomeWelcome && generalChatMode;
+  const currentGeneralChatHome = generalTemporaryChat && generalChatMode;
   if (hasEditor && (legacyGeneralChat || currentGeneralChatHome)) {
     return Object.freeze({
       kind: 'GENERAL_CHAT',
       evidence: Object.freeze({ schema: 1, hasEditor, markers: Object.freeze([
         ...(legacyGeneralChat
           ? ['GENERAL_CHAT_WELCOME', 'GENERAL_CHAT_NAVIGATION']
-          : ['GENERAL_CHAT_HOME_WELCOME', 'GENERAL_CHAT_MODE']),
+          : ['GENERAL_CHAT_TEMPORARY', 'GENERAL_CHAT_MODE']),
       ]) }),
     });
   }

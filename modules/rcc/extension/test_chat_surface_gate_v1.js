@@ -32,11 +32,11 @@ assert.deepEqual(general.evidence.markers, [
 ]);
 
 const currentGeneralHome = classify({
-  text: '임시 채팅 작성기 모드 Chat Work 오늘은 어떤 생각이 드나요?',
+  text: '임시 채팅 작성기 모드 Chat Work 어디서 시작할까요?',
 });
 assert.equal(currentGeneralHome.kind, 'GENERAL_CHAT');
 assert.deepEqual(currentGeneralHome.evidence.markers, [
-  'GENERAL_CHAT_HOME_WELCOME', 'GENERAL_CHAT_MODE',
+  'GENERAL_CHAT_TEMPORARY', 'GENERAL_CHAT_MODE',
 ]);
 
 const unknown = classify({ text: '새 채팅', editor: true });

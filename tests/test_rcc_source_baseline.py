@@ -55,8 +55,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.55", manifest["version"])
-        self.assertEqual("1.0.55 General Chat Home Contract", manifest["version_name"])
+        self.assertEqual("1.0.56", manifest["version"])
+        self.assertEqual("1.0.56 General Chat Control Contract", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
