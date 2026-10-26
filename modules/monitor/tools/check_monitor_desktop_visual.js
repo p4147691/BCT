@@ -2,9 +2,11 @@
 
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 
-const hostPath = process.argv[2] || path.join(__dirname, "..", "native", "1.9.20.156-desktop-visual", "DesktopWindowMonitorHost.exe");
+const configuredManifest = JSON.parse(fs.readFileSync(path.join(__dirname,"..","native","com.pas40.desktop_window_monitor_control.json"),"utf8"));
+const hostPath = process.argv[2] || configuredManifest.path;
 const host = spawn(hostPath, [], { stdio: ["pipe", "pipe", "inherit"] });
 let received = Buffer.alloc(0);
 const waiters = [];
@@ -41,8 +43,12 @@ function request(message) {
     assert.equal(visual.ok, true, visual.error || "getDesktopVisualSnapshot failed");
     assert.equal(String(visual.desktopId).toLowerCase(), String(desktopId).toLowerCase());
     if (visual.wallpaper) {
-      assert.match(visual.wallpaper.dataUri, /^data:image\/jpeg;base64,/);
-      assert.ok(visual.wallpaper.width > 0 && visual.wallpaper.height > 0);
+      if (visual.wallpaper.mode === "solid") {
+        assert.match(visual.wallpaper.color, /^#[0-9A-F]{6}$/i);
+      } else {
+        assert.match(visual.wallpaper.dataUri, /^data:image\/(?:jpeg|png|webp);base64,/);
+        assert.ok(visual.wallpaper.width > 0 && visual.wallpaper.height > 0);
+      }
     }
     console.log(JSON.stringify({ ok: true, desktopId, wallpaper: Boolean(visual.wallpaper), width: visual.wallpaper?.width || 0, height: visual.wallpaper?.height || 0, mode: visual.wallpaper?.mode || "" }));
   } finally {

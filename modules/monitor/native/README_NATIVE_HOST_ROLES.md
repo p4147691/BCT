@@ -5,7 +5,7 @@
 | Native Messaging 이름 | 담당 기능 | 검증한 실행 파일 |
 |---|---|---|
 | `com.pas40.desktop_window_monitor` | 바탕화면 파일·아이콘 조회, 파일 작업, 파일 내 탐색 | `native/1.9.20.128-hidden-all/DesktopWindowMonitorHost.exe` |
-| `com.pas40.desktop_window_monitor_control` | HWND, WGC, 가상 데스크톱 및 창 제어 | `native/1.9.20.176-wallpaper-events/DesktopWindowMonitorControlHost.exe` |
+| `com.pas40.desktop_window_monitor_control` | HWND, WGC, 가상 데스크톱 및 창 제어 | `native/1.9.20.180-thumbnail-correlated/DesktopWindowMonitorControlHost.exe` |
 
 새 Host를 세 번째로 등록할 필요는 없습니다. 기존 두 등록의 역할이 달랐지만, 파일용 매니페스트가 제어용 컴파일 실행 파일로 바뀌면서 `list` 명령을 처리하지 못했습니다.
 
