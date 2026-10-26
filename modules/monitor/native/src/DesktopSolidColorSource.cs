@@ -29,14 +29,14 @@ internal static class DesktopSolidColorSource
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int left, top, right, bottom; }
 
-    internal static bool ShouldUseSolid(bool exactActiveDesktop, bool comSolid, bool explicitSolidType, bool screenColorMatch)
+    internal static bool ShouldUseGlobalSolid(bool targetIsActiveDesktop, bool comSolid, bool explicitSolidType)
     {
-        return exactActiveDesktop && (comSolid || explicitSolidType || screenColorMatch);
+        return targetIsActiveDesktop && (comSolid || explicitSolidType);
     }
 
-    internal static bool ShouldUseInheritedSolid(bool targetIsActiveDesktop, bool targetHasWallpaperOverride, bool currentDesktopIsComSolid)
+    internal static bool ShouldUseSampledSolid(bool targetIsCurrentDesktop, bool screenColorMatch)
     {
-        return targetIsActiveDesktop && !targetHasWallpaperOverride && currentDesktopIsComSolid;
+        return targetIsCurrentDesktop && screenColorMatch;
     }
 
     private static bool ComSolid(out int r, out int g, out int b)
@@ -76,24 +76,17 @@ internal static class DesktopSolidColorSource
     internal static bool TryGet(Guid desktopId, out string rgb, out string proof)
     {
         rgb = ""; proof = "";
-        // COM directly describes the current desktop. A different active GUID
-        // may inherit it only while that GUID has no per-desktop photo override;
-        // configured photo desktops and historical GUIDs are always rejected.
+        // Windows solid color is a global virtual-desktop mode. Per-desktop
+        // Wallpaper values can remain in the registry, but they are dormant
+        // while the global mode is solid. Apply that proven global state to
+        // every currently active GUID and reject historical/deleted GUIDs.
+        bool active = IsActiveDesktop(desktopId);
+        if (!active) return false;
         bool current = IsCurrentDesktop(desktopId);
         int r,g,b;
-        if (!current)
-        {
-            bool targetActive=IsActiveDesktop(desktopId);
-            bool targetHasWallpaper=HasWallpaperOverride(desktopId);
-            bool currentSolid=ComSolid(out r,out g,out b);
-            if (!ShouldUseInheritedSolid(targetActive,targetHasWallpaper,currentSolid)) return false;
+        if (ComSolid(out r,out g,out b) && ShouldUseGlobalSolid(active,true,false)) {
             rgb=string.Format(CultureInfo.InvariantCulture,"#{0:X2}{1:X2}{2:X2}",r,g,b);
-            proof="windows-unconfigured-desktop-solid-inheritance";
-            return true;
-        }
-        if (ComSolid(out r,out g,out b) && ShouldUseSolid(current,true,false,false)) {
-            rgb = string.Format(CultureInfo.InvariantCulture,"#{0:X2}{1:X2}{2:X2}",r,g,b);
-            proof = "windows-desktopwallpaper-com-solid";
+            proof="windows-global-desktopwallpaper-com-solid";
             return true;
         }
         if (!GetBackgroundRgb(out r,out g,out b)) return false;
@@ -105,10 +98,15 @@ internal static class DesktopSolidColorSource
                 explicitlySolid=mode!=null && Convert.ToInt32(mode,CultureInfo.InvariantCulture)==1;
             }
         } catch { /* missing registry mode is not a solid-color proof */ }
-        bool sampled = !explicitlySolid && CurrentScreenShowsBackgroundColor(r,g,b);
-        if (!ShouldUseSolid(current,false,explicitlySolid,sampled)) return false;
+        if (ShouldUseGlobalSolid(active,false,explicitlySolid)) {
+            rgb=color;
+            proof="windows-global-solid-mode";
+            return true;
+        }
+        bool sampled = current && CurrentScreenShowsBackgroundColor(r,g,b);
+        if (!ShouldUseSampledSolid(current,sampled)) return false;
         rgb=color;
-        proof=explicitlySolid ? "windows-solid-mode" : "current-desktop-screen-color";
+        proof="current-desktop-screen-color";
         return true;
     }
     private static bool GetBackgroundRgb(out int r, out int g, out int b)
@@ -147,16 +145,6 @@ internal static class DesktopSolidColorSource
                 return false;
             }
         } catch {return false;}
-    }
-    private static bool HasWallpaperOverride(Guid id)
-    {
-        string keyPath=DesktopRegistry+@"\Desktops\{"+id.ToString("D").ToUpperInvariant()+"}";
-        try {
-            using(RegistryKey key=Registry.CurrentUser.OpenSubKey(keyPath)) {
-                string raw=Convert.ToString(key==null?null:key.GetValue("Wallpaper"));
-                return !string.IsNullOrWhiteSpace(raw);
-            }
-        } catch {return true;}
     }
     private static bool CurrentScreenShowsBackgroundColor(int r, int g, int b)
     {

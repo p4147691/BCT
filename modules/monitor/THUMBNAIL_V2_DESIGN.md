@@ -64,9 +64,9 @@
 - 격리는 **하단 썸네일 렌더링** 기준이며 8만 줄 monitor.js 전체 기능의 독립 모듈화가 아니다. 전체 모듈화와 별개로 보고한다.
 
 
-## Windows API color provenance, isolated acceptance pending
-- Photo and solid must be identified by Windows desktop truth, not a stale remembered per-desktop wallpaper filename or merely the global RGB color.
-- DesktopSolidColorSource.cs first requires the exact current virtual-desktop GUID. It asks read-only IDesktopWallpaper for all physical monitor wallpaper paths; for an actual solid-color presentation these paths are empty, and COM GetBackgroundColor provides the RGB value.
-- If the COM interface is unavailable it uses exact-current-desktop Windows BackgroundType or distributed exposed-screen-color evidence. It never attributes current color to another desktop.
-- The current PC was in picture mode during isolated E2E; a true solid-color presentation was not present and must be physically retested before claiming LIVE_SOLID_ACCEPTED. This is not a reason to fabricate a successful check.
-- check_monitor_solid_native_contract.py compiles the pure GUID decision harness on Windows and asserts six false-positive/positive behaviors without changing user wallpaper.
+## Windows API color provenance
+- Photo and solid must be identified by Windows desktop truth, not a stale remembered per-desktop wallpaper filename or merely the stored RGB value.
+- Windows supports per-virtual-desktop customization only for picture backgrounds. Solid color is a global mode, so old per-GUID `Wallpaper` paths can remain populated while none of those pictures is currently displayed.
+- DesktopSolidColorSource.cs verifies that the requested GUID is still active, then asks read-only IDesktopWallpaper for all physical monitor wallpaper paths. Empty paths plus COM GetBackgroundColor, or the explicit global Windows BackgroundType, apply to every active GUID. Historical/deleted GUIDs are rejected.
+- If COM and the explicit mode are unavailable, distributed exposed-screen-color evidence is still restricted to the exact current GUID; it is never projected onto another desktop.
+- check_monitor_solid_native_contract.py compiles the decision harness on Windows and verifies global-solid, current-screen fallback, inactive-GUID rejection, and dormant-photo-path behavior without changing the user wallpaper.

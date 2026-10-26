@@ -5,15 +5,15 @@ internal static class NativeColorDecisionTest {
         Console.WriteLine("PASS "+name);
     }
     public static int Main() {
-        Check(DesktopSolidColorSource.ShouldUseSolid(false,true,false,false),false,"wrong GUID cannot inherit COM solid color");
-        Check(DesktopSolidColorSource.ShouldUseSolid(false,false,true,false),false,"wrong GUID cannot inherit registry solid mode");
-        Check(DesktopSolidColorSource.ShouldUseSolid(true,true,false,false),true,"active GUID COM says no wallpaper");
-        Check(DesktopSolidColorSource.ShouldUseSolid(true,false,true,false),true,"active GUID Windows solid-mode setting");
-        Check(DesktopSolidColorSource.ShouldUseSolid(true,false,false,true),true,"active GUID physical color proof");
-        Check(DesktopSolidColorSource.ShouldUseSolid(true,false,false,false),false,"picture remains picture");
-        Check(DesktopSolidColorSource.ShouldUseInheritedSolid(true,false,true),true,"unconfigured active desktop inherits current COM solid");
-        Check(DesktopSolidColorSource.ShouldUseInheritedSolid(true,true,true),false,"configured photo desktop never inherits solid");
-        Check(DesktopSolidColorSource.ShouldUseInheritedSolid(false,false,true),false,"inactive historical GUID never inherits solid");
+        Check(DesktopSolidColorSource.ShouldUseGlobalSolid(false,true,false),false,"historical GUID cannot receive global COM solid");
+        Check(DesktopSolidColorSource.ShouldUseGlobalSolid(false,false,true),false,"historical GUID cannot receive global registry solid");
+        Check(DesktopSolidColorSource.ShouldUseGlobalSolid(true,true,false),true,"active GUID receives global COM solid");
+        Check(DesktopSolidColorSource.ShouldUseGlobalSolid(true,false,true),true,"active GUID receives global registry solid");
+        Check(DesktopSolidColorSource.ShouldUseGlobalSolid(true,false,false),false,"picture mode remains picture");
+        Check(DesktopSolidColorSource.ShouldUseSampledSolid(false,true),false,"screen sample cannot describe another GUID");
+        Check(DesktopSolidColorSource.ShouldUseSampledSolid(true,true),true,"screen sample may prove exact current GUID");
+        Check(DesktopSolidColorSource.ShouldUseSampledSolid(true,false),false,"unmatched screen sample is rejected");
+        Check(DesktopSolidColorSource.ShouldUseGlobalSolid(true,true,true),true,"global solid ignores dormant photo registry path");
         return 0;
     }
 }

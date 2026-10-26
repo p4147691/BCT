@@ -11,8 +11,11 @@ text=source.read_text(encoding="utf-8")
 required=[
  "IDesktopWallpaperReadOnly","GetMonitorDevicePathCount","GetMonitorDevicePathAt",
  "GetWallpaper(monitor, out wallpaper)","GetBackgroundColor(out color)",
- "IsCurrentDesktop(desktopId)","ShouldUseSolid(current,true,false,false)",
- "ShouldUseInheritedSolid(targetActive,targetHasWallpaper,currentSolid)",
+ "IsCurrentDesktop(desktopId)","IsActiveDesktop(desktopId)",
+ "ShouldUseGlobalSolid(active,true,false)",
+ "ShouldUseGlobalSolid(active,false,explicitlySolid)",
+ "ShouldUseSampledSolid(current,sampled)",
+ "windows-global-desktopwallpaper-com-solid","windows-global-solid-mode",
  "Marshal.FinalReleaseComObject(instance)"
 ]
 missing=[x for x in required if x not in text]
