@@ -122,7 +122,17 @@ UI self-reload와 deployment-token reload는 둘 다 같은 `monitor-reload-exte
 구조 gate를 통과한 payload에 한해 네 자리 manifest version의 마지막 build component를
 정확히 1 증가시키고, 원자적으로 manifest를 교체한 뒤 새 `.reload-token`을 발행한다.
 
+정본 `D:\BCT\source\modules\monitor`에서 별도 설치본으로 승격할 때에는 같은 도구에
+`-InstalledRoot`, `-ExpectedInstalledVersion`, `-ExpectedInstalledPayloadSha256`을 모두 준다.
+도구는 source extension 전체를 임시 디렉터리에 조립하고 active script 문법과 load graph를
+검사한 뒤, 설치본의 version과 전체 payload SHA를 실행 직전에 다시 확인한다. 일치할 때만
+기존 `extension` 디렉터리 전체를 `backup`으로 이동하고 조립된 디렉터리를 한 번에 같은 경로로
+교체한다. 따라서 `monitor.js`와 일부 모듈만 섞어 복사하는 중간 상태를 정식 배포로 허용하지 않는다.
+`.reload-token`과 `.reload-ack`은 소스가 아닌 운영 marker이므로 staged candidate에 보존하며,
+새 token은 cutover와 post-check가 모두 통과한 뒤에만 발행한다.
+
 - `-WhatIf`는 다음 version만 보여주며 파일을 바꾸지 않는다.
+- 별도 설치본 `-WhatIf`는 현재 guard에 사용한 installed payload SHA도 함께 보여준다.
 - 기본 실행은 `PUBLISHED`와 `PENDING`을 출력한다. 이 상태는 Chrome 실행 인스턴스가 아직
   reload되지 않았음을 명시한다.
 - `-WaitForObservation`은 새 token ACK만 확인한다. ACK 단독은 actual UI reload 증명이 아니며,
