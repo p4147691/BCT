@@ -346,7 +346,7 @@ class OperationCoordinator:
               approval_ref: str | None = None,
               background_job: dict[str, Any] | None = None,
               ) -> tuple[bool, OperationResult]:
-        """Durably fence an operation before an external one-shot worker starts."""
+        """Durably record an operation before an external one-shot worker starts."""
         _, _, created, current = self._begin(
             principal=principal, work_id=work_id, operation_id=operation_id,
             capability=capability, arguments=arguments, approval_ref=approval_ref,
