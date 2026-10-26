@@ -46958,645 +46958,37 @@ function handleMonitorForegroundChangedEvent(event) {
   void syncMonitorNativeZOrder(desktopId);
 }
 
-function removeMonitorEventThumbWindow(hwnd, exceptDesktopId = "") {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// V2 owns all bottom desktop-thumbnail pixels and HWND DOM. Legacy lifecycle
+// events may request refresh/removal; they must never create/modify tile images.
+function removeMonitorV2Window(hwnd, exceptDesktopId = "") {
   const key=String(hwnd||"");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  if (!/^\d+$/.test(key)) return;
+  const renderer=globalThis.MonitorDesktopThumbnailV2;
   for (const tile of monitorDesktopThumbs.children) {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if (String(tile.dataset.desktopId||"")===String(exceptDesktopId||"")) continue;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    const id=String(tile.dataset.desktopId||"");
+    if (id===String(exceptDesktopId||"")) continue;
     const visual=tile.querySelector(".monitor-desktop-thumb-visual");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     if (!visual) continue;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    visual.querySelector(`.monitor-desktop-thumb-window[data-hwnd="${key}"]`)?.remove();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    renderer?.removeWindow(visual,id,key);
+    // These are independent semantic overlays, not pixel-rendering surfaces.
     for (const selector of [
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
       `.monitor-window-status-layer[data-hwnd="${key}"]`,
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
       `.monitor-window-pause-overlay[data-hwnd="${key}"]`,
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
       `.monitor-window-desktop-badge[data-hwnd="${key}"]`,
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
       `.monitor-window-non-chat-countdown[data-hwnd="${key}"]`
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     ]) visual.querySelector(selector)?.remove();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function upsertMonitorEventThumbWindow(event, dataUri = "") {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const hwnd=String(event?.hwnd||""), desktopId=String(event?.desktopId||"");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const tile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+function scheduleMonitorV2WindowRefresh(event) {
+  const id=String(event?.desktopId||"");
+  const tile=[...monitorDesktopThumbs.children].find(t=>String(t.dataset.desktopId||"")===id);
   const visual=tile?.querySelector(".monitor-desktop-thumb-visual");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (!visual?.isConnected) return false;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  removeMonitorEventThumbWindow(hwnd,desktopId);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  let img=visual.querySelector(`.monitor-desktop-thumb-window[data-hwnd="${hwnd}"]`);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (!img && !dataUri && !event) return false;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (!img) {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    img=document.createElement("img"); img.className="monitor-desktop-thumb-window"; img.dataset.hwnd=hwnd; img.alt=""; img.draggable=false; img.src=dataUri||monitorWindowFallbackDataUri(event); visual.append(img);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    img.dataset.monitorDragBound="1";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    img.addEventListener("pointerdown",beginMonitorWindowPointerDrag);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const vw=Math.max(1,Number(event.previewVirtualWidth)||1), vh=Math.max(1,Number(event.previewVirtualHeight)||1);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const vl=Number(event.previewVirtualLeft)||0, vt=Number(event.previewVirtualTop)||0;
-
-  visual.dataset.monitorPreviewVirtualLeft=String(vl);
-  visual.dataset.monitorPreviewVirtualTop=String(vt);
-  visual.dataset.monitorPreviewVirtualWidth=String(vw);
-  visual.dataset.monitorPreviewVirtualHeight=String(vh);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  img.title=String(event.title||""); img.style.display=(Boolean(event.iconic)||event.visible===false)?"none":"";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  img.style.left=`${((Number(event.left)-vl)/vw)*100}%`; img.style.top=`${((Number(event.top)-vt)/vh)*100}%`;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  img.style.width=`${(Number(event.width)/vw)*100}%`; img.style.height=`${(Number(event.height)/vh)*100}%`;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if(img.dataset.nativeZIndex) img.style.setProperty("z-index",img.dataset.nativeZIndex,"important");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if(dataUri) img.src=dataUri;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  applyPersistentMonitorRoleClass(img,hwnd); syncMonitorStatusLayer(img,hwnd); syncMonitorPauseOverlay(img,hwnd); syncMonitorDesktopNumberBadge(img,hwnd); syncMonitorNonChatCountdown(img,hwnd);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  visual.dataset.monitorFrameReady="1";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  void syncMonitorNativeZOrder(desktopId);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  if (!visual?.isConnected || !globalThis.MonitorDesktopThumbnailV2) return false;
+  // Source of pixels remains getDesktopVisualSnapshot/captureDesktopFrame only.
+  // Never accept the old event's thumbnail-service snapshot, SVG or cache.
+  void refreshDesktopThumb(visual,id).catch(()=>false);
   return true;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }
-
-
-
-
-
-
-
-const monitorWindowLifecyclePendingEvents = new Map();
-let monitorWindowLifecycleDrainBusy = false;
 
 function scheduleMonitorWindowLifecycleEvent(event) {
   const hwnd = String(event?.hwnd || "").trim();
@@ -47759,7 +47151,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-  if (!previousDesktopId || previousDesktopId===desktopId) for (const img of document.querySelectorAll(`.monitor-window-preview[data-hwnd="${hwnd}"], .monitor-desktop-thumb-window[data-hwnd="${hwnd}"]`)) apply(img);
+  if (!previousDesktopId || previousDesktopId===desktopId) for (const img of document.querySelectorAll(`.monitor-window-preview[data-hwnd="${hwnd}"]`)) apply(img);
 
 
 
@@ -47820,7 +47212,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const lifecycleHidden=reason==="hidden"||minimized||event.visible===false;
   if (lifecycleHidden) {
     monitorThumbnailService.invalidate(hwnd);
-    removeMonitorEventThumbWindow(hwnd);
+    removeMonitorV2Window(hwnd);
   }
 
 
@@ -47870,16 +47262,9 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
   const cloakEvent=reason==="cloaked"||reason==="uncloaked";
-
   if (cloakEvent) {
-    const targetTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
-    const targetVisual=targetTile?.querySelector(".monitor-desktop-thumb-visual");
-    const alreadyThere=Boolean(targetVisual?.querySelector(`.monitor-desktop-thumb-window[data-hwnd="${hwnd}"]`));
-    if (previousDesktopId===desktopId && alreadyThere) return;
-
     monitorThumbnailService.invalidate(hwnd);
-    const dataUri=await monitorThumbnailService.requestSnapshot(hwnd, `window-${reason || "cloak-change"}`);
-    if (dataUri) upsertMonitorEventThumbWindow(event,dataUri);
+    scheduleMonitorV2WindowRefresh(event);
     return;
   }
 
@@ -47904,7 +47289,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-    removeMonitorEventThumbWindow(hwnd,desktopId);
+    removeMonitorV2Window(hwnd,desktopId);
 
 
 
@@ -47920,8 +47305,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
 
 
-    const movedCapture = await monitorThumbnailService.requestSnapshot(hwnd, "window-desktop-change");
-    if (movedCapture) upsertMonitorEventThumbWindow(event, movedCapture);
+    scheduleMonitorV2WindowRefresh(event);
 
 
 
@@ -47992,14 +47376,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
     return;
   }
 
-  const capture = await monitorThumbnailService.requestSnapshot(hwnd, "window-move-size-end");
-
-  if (capture) {
-    upsertMonitorEventThumbWindow(event,capture);
-    for (const img of document.querySelectorAll(`.monitor-desktop-thumb-window[data-hwnd="${hwnd}"]`)) img.src=capture;
-  } else {
-    upsertMonitorEventThumbWindow(event,"");
-  }
+  scheduleMonitorV2WindowRefresh(event);
 
 
 
@@ -53280,7 +52657,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
 
 
-        removeMonitorEventThumbWindow(staleHwnd);
+        removeMonitorV2Window(staleHwnd);
 
 
 
@@ -66424,9 +65801,12 @@ async function refreshDesktopThumb(visual, desktopId) {
   if (!visual.isConnected || String(visual.dataset.desktopId).toLowerCase() !== String(desktopId).toLowerCase()) return false;
   // Window geometry is separate Native HWND truth; pixels never become wallpaper.
   // On other desktops capture may fail/CLOAKED; V2 renders a transparent outline.
+  const frameToken = renderer.beginFrame(visual,desktopId);
+  if (frameToken == null) return false;
   const frame = await captureDesktopFrame(desktopId, "thumb").catch(() => null);
-  if (!frame || !visual.isConnected) { renderer.frameFailure(visual,desktopId,"FRAME_UNAVAILABLE"); return wallpaperReady; }
+  if (!frame || !visual.isConnected) { renderer.frameFailure(visual,desktopId,"FRAME_UNAVAILABLE",frameToken); return wallpaperReady; }
   return renderer.windowFrame(visual,desktopId,frame,{
+    frameToken,
     afterRender: tile => {
       for (const image of tile.querySelectorAll(".monitor-desktop-thumb-window")) {
         const hwnd = String(image.dataset.hwnd || "");
@@ -74322,7 +73702,12 @@ async function settleNewDesktopWallpaper(createdId, expectedWallpaperPath = "") 
 
 
 
-  if (visual && dataUri) visual.style.backgroundImage = `url("${dataUri}")`;
+  if (visual) {
+    void globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
+      visual,createdId,id=>monitorNative({type:"getDesktopVisualSnapshot",desktopId:id,
+        maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}),
+      {force:true}).catch(()=>false);
+  }
 
 
 

@@ -99,5 +99,16 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   assert.equal(first.getAttribute("src"),null,"Native failure clears any old pixels");
   assert.equal(first.dataset.captureFailureReason,"FRAME_UNAVAILABLE");
   assert.equal(r.windowFrame(visual1,D2,back),false,"wrong GUID frame rejected");
+  // The most recent V2 window snapshot owns pixels; stale results and
+  // lifecycle removal must not bring back previous HWND captures.
+  const olderToken=r.beginFrame(visual1,D1);
+  const latestToken=r.beginFrame(visual1,D1);
+  assert.equal(r.windowFrame(visual1,D1,back,{frameToken:olderToken}),false);
+  assert.equal(r.windowFrame(visual1,D1,back,{frameToken:latestToken}),true);
+  assert.equal(r.removeWindow(visual1,D2,"123"),false);
+  assert.equal(r.removeWindow(visual1,D1,"123"),true);
+  assert.equal(visual1.querySelectorAll(".monitor-desktop-thumb-window").length,0);
+  assert.equal(r.windowFrame(visual1,D1,back,{frameToken:latestToken}),false);
+  assert.equal(r.frameFailure(visual1,D1,"OLD_FAILURE",latestToken),false);
   console.log("PASS: V2 uses exact GUID wallpapers, strict HWND frame provenance, transparent failures, Z/geometry and node decoration callback, stale async rejection, no legacy fallback.");
 })().catch(err=>{console.error(err);process.exitCode=1});

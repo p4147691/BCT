@@ -37,3 +37,13 @@
 - **현장 전용 화면 시험:** `node modules/monitor/tools/physical_monitor_thumbnail_v2_edge_visual.js` — 별도 헤드리스 Edge에서 CSS, 위치, 실패 표시를 확인하며 운영 Chrome에 연결하지 않음.
 - **현장 전용 Native→화면 시험:** `node modules/monitor/tools/physical_monitor_thumbnail_v2_native_edge.js` — 설치된 Native Host가 반환한 실제 D1/D2 이미지를 별도 헤드리스 Edge에서 GUID별로 대조. 이미지를 저장하거나 외부로 전송하지 않음.
 - 현장 시험은 격리 Windows 환경에서 실제 실행해 두 건 PASS. 일반 CI에서는 물리 장치·개인 경로를 요구하지 않으므로 의도적으로 자동 검색 대상에서 제외.
+
+## 운영 격리 경계: V2 단독 소유 (2026-10-26 추가)
+- 하단 \`.monitor-desktop-thumb-visual\`의 CSS 배경, 하단 \`.monitor-desktop-thumb-window\`의 이미지 src/geometry/실패 표시는 **monitor-desktop-thumbnail-v2.js만 소유**한다.
+- monitor.js는 Native 이벤트와 GUID/HWND 식별 및 역할·상태·드래그 의미를 전달한다. 이벤트가 직접 이미지 DOM을 생성/수정하거나 wallpaperDataUri, monitorWallpaperActuals, monitorWallpaperCache, Progman, SVG/이전 프레임을 대입하면 안 된다.
+- legacy window lifecycle handler의 직접 이미지 생성(upsertMonitorEventThumbWindow), old source-set, 직접 이동/크기 반영은 폐기하고 \`scheduleMonitorV2WindowRefresh\`(V2 Native 재조회) 및 \`removeMonitorV2Window\`(V2 소유 하위창 제거)로 전환한다.
+- 비동기 capture가 역순 완료되어 과거 프레임을 다시 그리는 경우를 막도록 V2 frameGeneration을 검증한다. 이 방어는 wallpaper 세대(generation)와 독립적이다.
+- 새 데스크톱 생성 후 기존 getObservedWallpaper는 **선택한 큰 미리보기**에 한해 계속 사용될 수 있지만 하단 배경은 V2 Native GUID 조회만 가능하다.
+- 옛 getObservedWallpaper, cache map, popup restore, freeze thumbnail, reconcileFrame는 노트·복구·큰 미리보기·기타 UI에 필요하므로 무작정 삭제하지 않는다. 단, 신규 하단 썸네일 코드에서 이들을 호출하면 회귀다.
+- tests/check_monitor_thumbnail_v2_render_ownership.js가 이 경계의 직접 writer 재도입을 CI/로컬 검사에서 탐지한다. 기능 테스트는 check_monitor_thumbnail_v2_cleanroom.js를 계속 사용한다.
+- 격리는 **하단 썸네일 렌더링** 기준이며 8만 줄 monitor.js 전체 기능의 독립 모듈화가 아니다. 전체 모듈화와 별개로 보고한다.
