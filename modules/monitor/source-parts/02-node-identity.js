@@ -88,6 +88,11 @@ const monitorDirectGenerationByConversation = new Map();
 const monitorDirectGenerationByTab = new Map();
 
 const MONITOR_DIRECT_GENERATION_TTL_MS = 3500;
+const monitorNodeGenerationAPI = globalThis.MonitorNodeGenerationState.create({
+  readTab: key => monitorDirectGenerationByTab.get(key),
+  readConversation: key => monitorDirectGenerationByConversation.get(key),
+  ttlMs: MONITOR_DIRECT_GENERATION_TTL_MS,
+});
 
 /*@@MONITOR_FUNCTION:monitorDirectConversationGenerationState@@*/
 
