@@ -122,6 +122,27 @@ function monitorControlNativeRequest(message) {
 }
 //@@FN_END:monitorControlNativeRequest
 
+//@@FN_START:monitorPublishThumbnailDiagnostic
+function monitorPublishThumbnailDiagnostic(stage, details = {}) {
+  const at = Date.now();
+  const label = JSON.stringify({
+    manifest_version:String(chrome.runtime.getManifest().version || ""),
+    stage:String(stage || "unknown"),
+    details:details && typeof details === "object" ? details : {},
+    at_ms:at
+  });
+  return monitorControlNativeIsolatedRequest({
+    type:"setSharedMonitorRuntime",
+    kind:"alert",
+    conversationKey:"__MONITOR_THUMBNAIL_DIAGNOSTIC__",
+    at:String(at),
+    symbol:"",
+    tone:"thumbnail-diagnostic",
+    label
+  }).catch(() => null);
+}
+//@@FN_END:monitorPublishThumbnailDiagnostic
+
 //@@FN_START:monitorCoreNative
 function monitorCoreNative(message) {
   return MonitorNativeTrace.request("core", message, () => monitorCoreNativeRequest(message));

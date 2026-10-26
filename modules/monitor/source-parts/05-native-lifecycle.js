@@ -299,6 +299,8 @@ globalThis.MonitorDesktopThumbnailV2.configure({
 
 /*@@MONITOR_FUNCTION:monitorControlNativeRequest@@*/
 
+/*@@MONITOR_FUNCTION:monitorPublishThumbnailDiagnostic@@*/
+
 /*@@MONITOR_FUNCTION:monitorNativeLaunchIsolated@@*/
 
 /*@@MONITOR_FUNCTION:monitorControlNativeIsolatedRequest@@*/

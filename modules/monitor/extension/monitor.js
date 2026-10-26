@@ -667,8 +667,27 @@ async function refreshInitialBackgroundThumbs() {
     for (const desktopId of pending) {
       const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-      if (!visual?.isConnected) { failed.push(desktopId); continue; }
+      if (!visual?.isConnected) {
+        failed.push(desktopId);
+        void monitorPublishThumbnailDiagnostic("background-target-missing", {desktop_id:String(desktopId)});
+        continue;
+      }
+      void monitorPublishThumbnailDiagnostic("background-request", {
+        desktop_id:String(desktopId),
+        attempt
+      });
       const result = await renderer.refreshBackground(visual, desktopId).catch(() => null);
+      void monitorPublishThumbnailDiagnostic("background-result", {
+        desktop_id:String(desktopId),
+        attempt,
+        wallpaper_ready:result?.wallpaperReady === true,
+        reason:String(result?.reason || "").slice(0,120),
+        capture:String(visual.dataset.wallpaperCapture || ""),
+        source:String(visual.dataset.wallpaperSource || ""),
+        failure_reason:String(visual.dataset.wallpaperFailureReason || "").slice(0,120),
+        has_background_image:Boolean(visual.style.backgroundImage),
+        has_background_color:Boolean(visual.style.backgroundColor)
+      });
       if (result?.wallpaperReady !== true) failed.push(desktopId);
     }
     pending = failed;
@@ -7870,6 +7889,25 @@ function monitorControlNativeRequest(message) {
 
 }
 
+function monitorPublishThumbnailDiagnostic(stage, details = {}) {
+  const at = Date.now();
+  const label = JSON.stringify({
+    manifest_version:String(chrome.runtime.getManifest().version || ""),
+    stage:String(stage || "unknown"),
+    details:details && typeof details === "object" ? details : {},
+    at_ms:at
+  });
+  return monitorControlNativeIsolatedRequest({
+    type:"setSharedMonitorRuntime",
+    kind:"alert",
+    conversationKey:"__MONITOR_THUMBNAIL_DIAGNOSTIC__",
+    at:String(at),
+    symbol:"",
+    tone:"thumbnail-diagnostic",
+    label
+  }).catch(() => null);
+}
+
 function monitorNativeLaunchIsolated(message) {
 
   return monitorControlNativeIsolatedRequest(message);
@@ -11524,6 +11562,9 @@ async function refreshVirtualDesktops() {
   try {
 
     if (!monitorInitialThumbBatchDone) monitorInitialThumbStage = "topology-requesting";
+    void monitorPublishThumbnailDiagnostic("topology-start", {
+      initial_done:Boolean(monitorInitialThumbBatchDone)
+    });
     const currentWindow = await chrome.windows.getCurrent();
 
     const topology = await monitorNative({
@@ -11534,6 +11575,11 @@ async function refreshVirtualDesktops() {
 
       width: currentWindow?.width, height: currentWindow?.height
 
+    });
+    void monitorPublishThumbnailDiagnostic("topology-result", {
+      ok:topology?.ok === true,
+      error:String(topology?.error || "").slice(0,120),
+      desktop_ids:Array.isArray(topology?.desktopIds) ? topology.desktopIds.map(String) : []
     });
 
     if (topology?.ok) {
@@ -11549,6 +11595,12 @@ async function refreshVirtualDesktops() {
       }
 
       if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb();
+      void monitorPublishThumbnailDiagnostic("initial-background-returned", {
+        initial_done:Boolean(monitorInitialThumbBatchDone),
+        stage:String(monitorInitialThumbStage || ""),
+        error:String(monitorInitialThumbError || "").slice(0,120),
+        backgrounds:monitorThumbnailBackgroundRuntimeDiagnostics()
+      });
 
       // Window ownership is a separate, later layer. It must not delay card
       // creation or exact-GUID wallpaper acceptance.
@@ -11565,6 +11617,11 @@ async function refreshVirtualDesktops() {
           monitorInitialThumbError = String(error?.message || error || "HOST_RENDER_EXCEPTION").slice(0,160);
         }
       }
+      setTimeout(() => {
+        void monitorPublishThumbnailDiagnostic("settled", {
+          backgrounds:monitorThumbnailBackgroundRuntimeDiagnostics()
+        });
+      }, 1200);
 
       const resolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
 
