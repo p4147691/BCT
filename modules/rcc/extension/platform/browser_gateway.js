@@ -50,7 +50,9 @@
       queryChatTabs: async () => (await chromeApi.tabs.query({ url: chatUrls })).filter(isChatTab),
       isChatTab,
       publicTab: (tab) => ({
-        id: tab?.id,
+        // Normalise the Chrome Tabs API's `id` at the browser boundary.
+        // All RCC state consumers use `tabId` for this same value.
+        tabId: tab?.id,
         windowId: tab?.windowId ?? null,
         index: Number.isInteger(tab?.index) ? tab.index : null,
         title: tab?.title || '',

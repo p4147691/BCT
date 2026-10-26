@@ -214,6 +214,17 @@ class RelayBrowserFeature:
         ):
             raise PreconditionError("RCC_TARGET_REFERENCE_STATE_INVALID")
         tabs = [tab for tab in state["tabs"] if isinstance(tab, dict)]
+        # RCC state is a protocol projection, not a raw Chrome Tabs API
+        # response.  `tabId` is the one canonical spelling of Chrome's
+        # ephemeral tab identifier everywhere above the browser adapter.
+        # Reject an old/raw `id` shape here rather than silently returning an
+        # empty target list that makes a valid compose operation look absent.
+        for tab in tabs:
+            try:
+                _positive_int(tab.get("tabId"), "RCC_TARGET_REFERENCE_STATE_INVALID")
+                _positive_int(tab.get("windowId"), "RCC_TARGET_REFERENCE_STATE_INVALID")
+            except PreconditionError as exc:
+                raise PreconditionError("RCC_TARGET_REFERENCE_STATE_INVALID") from exc
         return state["sessionId"].strip(), tabs
 
     def _refresh_target_epoch(

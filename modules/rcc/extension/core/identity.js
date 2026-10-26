@@ -27,9 +27,11 @@
   function resolveExactConversation(tabs, conversationValue) {
     const conversationKey = conversationUuid(conversationValue);
     const matches = (Array.isArray(tabs) ? tabs : [])
-      .filter((tab) => conversationKeyFromUrl(tab?.url) === conversationKey)
+      .filter((tab) => Number.isInteger(tab?.tabId)
+        && conversationKeyFromUrl(tab?.url) === conversationKey)
       .map((tab) => Object.freeze({
-        tabId: Number.isInteger(tab?.id) ? tab.id : null,
+        // `tabs` here is RCC's public state projection, not a raw Chrome Tab.
+        tabId: tab.tabId,
         windowId: Number.isInteger(tab?.windowId) ? tab.windowId : null,
         conversationKey,
       }));

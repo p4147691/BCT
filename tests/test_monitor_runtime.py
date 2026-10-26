@@ -246,7 +246,7 @@ class MonitorRuntimeTests(unittest.TestCase):
                     "backgroundBuildId": "verified-build",
                     "sessionId": "verified-session",
                     "tabs": [{
-                        "id": 71, "windowId": 44, "title": "격리 검증 방법 안내",
+                        "tabId": 71, "windowId": 44, "title": "격리 검증 방법 안내",
                         "url": f"https://chatgpt.com/c/{conversation}",
                     }],
                     "endpoints": [{
@@ -315,7 +315,7 @@ class MonitorRuntimeTests(unittest.TestCase):
                     "sessionId": "session-123",
                     "settings": {"token": "must-not-leak"},
                     "registrations": {"MANAGER": {"secret": "must-not-leak"}},
-                    "tabs": [{"id": 12, "windowId": 34, "index": 7, "title": "Manager", "url": "https://chatgpt.com/c/x"}],
+                    "tabs": [{"tabId": 12, "windowId": 34, "index": 7, "title": "Manager", "url": "https://chatgpt.com/c/x"}],
                     "endpoints": [{"tabId": 12, "tabIndex": 8, "presence": "OPEN", "tabActive": True, "generating": False}],
                 }}
 
@@ -334,7 +334,7 @@ class MonitorRuntimeTests(unittest.TestCase):
         class Client:
             def request(self, **kwargs):
                 return {"state": {
-                    "sessionId": "live", "tabs": [{"id": 12, "windowId": 34, "title": "Manager", "url": f"https://chatgpt.com/c/{conversation}"}],
+                    "sessionId": "live", "tabs": [{"tabId": 12, "windowId": 34, "title": "Manager", "url": f"https://chatgpt.com/c/{conversation}"}],
                     "endpoints": [{"tabId": 12, "conversationKey": conversation, "presence": "OPEN",
                                    "reasoning": {"status": "OBSERVED", "level": "High",
                                                  "source": "chatgpt-model-selector", "observedAt": 1234}}],
@@ -367,7 +367,7 @@ class MonitorRuntimeTests(unittest.TestCase):
         conversation = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
         class Client:
             def request(self, **kwargs):
-                return {"state": {"sessionId": "live", "tabs": [{"id": 1, "windowId": 2, "title": "Observed", "url": f"https://chatgpt.com/c/{conversation}"}], "endpoints": [{"tabId": 1, "conversationKey": conversation, "presence": "OPEN"}]}}
+                return {"state": {"sessionId": "live", "tabs": [{"tabId": 1, "windowId": 2, "title": "Observed", "url": f"https://chatgpt.com/c/{conversation}"}], "endpoints": [{"tabId": 1, "conversationKey": conversation, "presence": "OPEN"}]}}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); store = Store(root / "state.sqlite")
             with patch("bct.monitor_runtime.discover_instance_ids", return_value=["instance"]), patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):

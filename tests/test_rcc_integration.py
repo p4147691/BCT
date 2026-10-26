@@ -760,6 +760,20 @@ class RccIntegrationTests(unittest.TestCase):
                             for target in targets))
         self.assertEqual(["state"], [call["command"] for call in self.client.calls])
 
+    def test_target_discovery_rejects_raw_chrome_id_shape(self):
+        self.client.target_state = {
+            "type": "host:result", "ok": True,
+            "state": {
+                "instanceId": "instance123", "sessionId": "session1",
+                "tabs": [{"id": 10, "windowId": 11}],
+            },
+        }
+        rejected = self.call("target-discovery-raw-id", {
+            "command": "target-discover", "instance_id": "instance123",
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, rejected.outcome)
+        self.assertEqual("RCC_TARGET_REFERENCE_STATE_INVALID", rejected.error)
+
     def test_create_and_send_rejects_raw_window_before_operation_claim(self):
         with self.assertRaisesRegex(PreconditionError, "RCC_LEGACY_NUMERIC_TARGET_REJECTED"):
             self.call("raw-window-rejected", {

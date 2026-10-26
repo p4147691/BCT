@@ -27,8 +27,8 @@
       },
       {
         "path": "browser/read_adapter.js",
-        "size": 1676,
-        "sha256": "c83b6e484853b8b8339389b5540f142e8f6870f1247ab5aedbc50299f3d0cd3f"
+        "size": 1911,
+        "sha256": "f9ba6e73a95fed8d622878792e3f752924fef5c9b3c6aed255178abe85ad6f88"
       },
       {
         "path": "browser/tab_close_adapter.js",
@@ -122,8 +122,8 @@
       },
       {
         "path": "core/identity.js",
-        "size": 1963,
-        "sha256": "1025d00015c517ec2da9e4652d9c814dc5eddcd879fe80f3263ae925a5088646"
+        "size": 2050,
+        "sha256": "75dc244d9d6fa723abf66fe00eb98e4129852159f9c712fa260d0fdd00f5b78e"
       },
       {
         "path": "core/shadow.js",
@@ -213,7 +213,7 @@
       {
         "path": "manifest.json",
         "size": 1514,
-        "sha256": "adb9e5a24a9998b841172f297f56247dd9579d27102ac2b3ee8a7c51a427a37f"
+        "sha256": "69ee1540efd32fe5089a0d57bd51a92b4ffab44fa0c5171993af60b2d0287cc6"
       },
       {
         "path": "network/directory.js",
@@ -222,8 +222,8 @@
       },
       {
         "path": "platform/browser_gateway.js",
-        "size": 2816,
-        "sha256": "e8b654781b845a42101d8b7977eee15d243ba474d3bfe0563d1b6083b1d4b737"
+        "size": 2960,
+        "sha256": "3442b6b2e8a6a9012eebfe5947102ca72357fb1a5650f8cce33d839758d45e67"
       },
       {
         "path": "platform/chrome_state_repository.js",
@@ -277,7 +277,7 @@
       }
     ],
     "fileCount": 54,
-    "aggregateSha256": "d3d5b4c22b474e8933fa4483398af082b959eca52f1459fc8fcec0907a5d7917"
+    "aggregateSha256": "86e5d7ea49069a5c57ea81171ea0a84a721af566c54f4de97de64928b4739969"
   },
   "activeLoaderGraph": {
     "background": [

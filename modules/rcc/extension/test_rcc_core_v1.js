@@ -14,7 +14,7 @@ const manager = '6ad5afa4-b1e0-83ee-8692-aec4bb51523e';
 const worker = '6ad4bb5d-6624-83ee-b045-e57fdad5120e';
 const managerUrl = 'https://chatgpt.com/c/' + manager;
 const workerUrl = 'https://chatgpt.com/c/' + worker;
-const tabs = [{ id: 1, windowId: 10, url: managerUrl }, { id: 2, windowId: 20, url: workerUrl }];
+const tabs = [{ tabId: 1, windowId: 10, url: managerUrl }, { tabId: 2, windowId: 20, url: workerUrl }];
 const endpoints = [
   { tabId: 1, conversationKey: manager, presence: 'OPEN', generating: false },
   { tabId: 2, conversationKey: worker, presence: 'OPEN', generating: false },
@@ -25,7 +25,9 @@ assert.equal(identity.conversationKeyFromUrl('https://chatgpt.com/c/local-chatgp
 assert.throws(() => identity.conversationUuid('not-a-uuid'), /RCC_CORE_CONVERSATION_UUID_INVALID/);
 assert.equal(identity.resolveExactConversation(tabs, manager).status, 'EXACT');
 assert.equal(identity.resolveExactConversation([], manager).status, 'MISSING');
-assert.equal(identity.resolveExactConversation(tabs.concat([{ id: 3, url: managerUrl }]), manager).status, 'AMBIGUOUS');
+assert.equal(identity.resolveExactConversation(tabs.concat([{ tabId: 3, url: managerUrl }]), manager).status, 'AMBIGUOUS');
+assert.equal(identity.resolveExactConversation([{ id: 1, url: managerUrl }], manager).status, 'MISSING',
+  'the public state protocol must not accept raw Chrome id');
 
 assert.equal(state.inspectConversation(tabs, endpoints, manager).status, state.STATUS.CONNECTED);
 assert.equal(state.inspectConversation(tabs, [{ ...endpoints[0], generating: true }, endpoints[1]], manager).status, state.STATUS.BUSY);

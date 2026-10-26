@@ -155,9 +155,9 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
             }
             tabs = []
             for item in state.get("tabs", []):
-                if not isinstance(item, dict) or not isinstance(item.get("id"), int):
+                if not isinstance(item, dict) or not isinstance(item.get("tabId"), int):
                     continue
-                endpoint = endpoints.get(int(item["id"]), {})
+                endpoint = endpoints.get(int(item["tabId"]), {})
                 tab_index = item.get("index")
                 if not isinstance(tab_index, int) or isinstance(tab_index, bool) or tab_index < 0:
                     tab_index = endpoint.get("tabIndex")
@@ -175,7 +175,7 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                     reasoning_level = ""
                     reasoning_source = ""
                 tabs.append({
-                    "tab_id": item["id"],
+                    "tab_id": item["tabId"],
                     "window_id": item.get("windowId"),
                     "tab_index": tab_index,
                     "conversation_key": str(endpoint.get("conversationKey") or "").lower(),

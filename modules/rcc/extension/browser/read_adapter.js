@@ -23,7 +23,10 @@
       queryChatTabs: async () => (await chromeApi.tabs.query({ url: patterns })).filter(isChatTab),
       isChatTab,
       publicTab: (tab) => ({
-        id: tab?.id,
+        // Chrome calls this field `id`; RCC's public protocol calls the same
+        // ephemeral browser identifier `tabId`.  Do not expose both spellings:
+        // consumers must never have to guess which one identifies a tab.
+        tabId: tab?.id,
         windowId: tab?.windowId ?? null,
         index: Number.isInteger(tab?.index) ? tab.index : null,
         title: tab?.title || '',

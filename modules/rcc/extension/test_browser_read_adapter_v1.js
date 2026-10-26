@@ -30,7 +30,7 @@ const adapter = browserReadAdapter.create(chromeApi, ['https://chatgpt.com/*']);
   assert.equal(adapter.isChatTab(tabs[0]), true);
   assert.equal(adapter.isChatTab({ url: 'https://example.test/' }), false);
   assert.deepEqual(adapter.publicTab(tabs[0]), {
-    id: 1, windowId: 2, index: 3, title: 'ChatGPT', url: 'https://chatgpt.com/c/abc',
+    tabId: 1, windowId: 2, index: 3, title: 'ChatGPT', url: 'https://chatgpt.com/c/abc',
   });
   assert.deepEqual(await adapter.getWindow(2), { id: 2, focused: true });
   assert.deepEqual(await adapter.probeActivity(1), { generating: false });
