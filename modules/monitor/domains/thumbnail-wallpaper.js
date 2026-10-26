@@ -861,6 +861,10 @@ async function refreshInitialBackgroundThumbs() {
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
       if (!visual?.isConnected) { failed.push(desktopId); continue; }
       const result = await renderer.refreshBackground(visual, desktopId).catch(() => null);
+      if (monitorVersion) {
+        const id = String(desktopId || "").slice(0,4);
+        monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · A:${id}:${result?.wallpaperReady === true ? "1" : "0"}`;
+      }
       if (result?.wallpaperReady !== true) failed.push(desktopId);
     }
     pending = failed;

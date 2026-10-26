@@ -77,6 +77,10 @@ function ensureMonitorNativePort() {
     if (response?.event === true) return; // Unsolicited events never complete requests.
     const requestId = String(response?.requestId || "");
     const pending = monitorNativePending.get(requestId);
+    if (pending?.message?.type === "getDesktopVisualSnapshot" && monitorVersion) {
+      const id = String(pending.message.desktopId || "").slice(0,4);
+      monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · R:${id}`;
+    }
     if (!pending) return;
     monitorNativePending.delete(requestId);
     pending.resolve(response);
@@ -113,7 +117,13 @@ function monitorControlNativeRequest(message) {
     const requestId = `monitor-${Date.now().toString(36)}-${(++monitorNativeRequestSequence).toString(36)}`;
     monitorNativePending.set(requestId, { resolve, reject, message });
 
-    try { port.postMessage({ ...message, requestId }); }
+    try {
+      port.postMessage({ ...message, requestId });
+      if (message?.type === "getDesktopVisualSnapshot" && monitorVersion) {
+        const id = String(message.desktopId || "").slice(0,4);
+        monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · P:${id}`;
+      }
+    }
 
     catch (error) { monitorNativePending.delete(requestId); reject(error); }
 
