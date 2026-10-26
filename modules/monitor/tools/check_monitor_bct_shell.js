@@ -164,6 +164,8 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /type:"monitor-refresh-exact-chatgpt-tab"/);
   assert.match(monitorSource, /monitorWorkers\.dataset\.columns = "3"/);
   assert.match(monitorCss, /\.monitor-bct-node-list\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/);
+  assert.match(monitorCss, /\.monitor-bct-window-tab-rows\s*\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/,
+    "shared Chrome-window cards keep their conversation rows in three columns");
   assert.doesNotMatch(monitorCss, /@media[^}]+\.monitor-bct-node-list\s*\{/,
     "node networks stay three columns at the live Monitor width");
   assert.match(monitorSource, /monitorVersion\.classList\.add\("healthy"\)/);

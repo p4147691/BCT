@@ -61,7 +61,12 @@ function ensureMonitorNativePort() {
       const currentId=String(monitorDesktopState?.currentDesktopId||"").toLowerCase();
       const selectedId=String(monitorDesktopState?.desktopIds?.[monitorDesktopState?.selectedIndex]||"").toLowerCase();
       const priority=id=>id===explicitId?0:id===currentId?1:id===selectedId?2:3;
-      const targets=(explicitId ? visuals.filter(v=>String(v.dataset.desktopId||"").toLowerCase()===explicitId) : visuals)
+      // Windows only persists per-virtual-desktop picture paths.  A desktop
+      // without one follows the current global picture/solid mode, so a change
+      // reported for the current GUID can also change those inherited tiles.
+      // Re-read every canonical tile, with the reported/current/selected ones
+      // first, instead of retaining an old inherited color or photo.
+      const targets=visuals
         .sort((a,b)=>priority(String(a.dataset.desktopId||"").toLowerCase())-priority(String(b.dataset.desktopId||"").toLowerCase()));
       monitorDesktopThumbs.dataset.wallpaperEventAt=String(Date.now());
       // Native names the changed desktop. Older hosts without that field are

@@ -1,5 +1,6 @@
 "use strict";
 const assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm"),path=require("node:path");
+const css=fs.readFileSync(path.join(__dirname,"../extension/monitor.css"),"utf8");
 const context={globalThis:null,Object,String,RegExp,TypeError};context.globalThis=context;vm.createContext(context);
 for(const name of ["monitor-thumbnail-contract.js","monitor-preview-background.js"])
   vm.runInContext(fs.readFileSync(path.join(__dirname,"../extension",name),"utf8"),context);
@@ -15,4 +16,6 @@ assert.equal(element.style.backgroundColor,"#D13438");
 assert.equal(view.begin(d2),true,"desktop selection clears the prior desktop immediately");
 assert.equal(element.style.backgroundImage,"");assert.equal(element.style.backgroundColor,"");
 assert.equal(view.failed(d2),false);assert.equal(element.dataset.captureState,"failed");
+assert.match(css,/body\.desktop-window-monitor-active\s*\{[^}]*background-image:none!important;[^}]*background-color:transparent!important;/,
+  "the dedicated Monitor backdrop must be the only visible wallpaper owner");
 console.log("PASS: full Monitor backdrop projects the same validated photo/solid snapshot without legacy photo state");

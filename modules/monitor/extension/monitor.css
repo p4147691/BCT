@@ -602,6 +602,11 @@
 
 
 
+/* While Monitor is active its selected-desktop background module is the sole
+   backdrop owner.  desktop.js still maintains the shell wallpaper inline for
+   the ordinary desktop view; do not let that older value show through while a
+   Monitor background read is pending or unavailable. */
+body.desktop-window-monitor-active { background-image:none!important; background-color:transparent!important; }
 .monitor-preview-wallpaper { position: fixed; inset: 0; z-index: 0; pointer-events: none; background-size: 100% 100%; background-position: center; background-repeat: no-repeat; }
 
 
@@ -3603,7 +3608,7 @@
 .monitor-bct-window-card-heading{width:100%;text-align:left;padding:5px 7px;margin:0 0 5px;border:0;border-radius:5px;background:rgba(117,184,255,.10);color:#eaf3ff;font:700 11px/1.3 "Segoe UI","Malgun Gothic",sans-serif;cursor:pointer}
 .monitor-bct-window-card-heading::before{content:"▾";display:inline-block;margin-right:7px}
 .monitor-bct-window-card-heading[aria-expanded="false"]::before{content:"▸"}
-.monitor-bct-window-tab-rows{display:grid;gap:4px;min-width:0}
+.monitor-bct-window-tab-rows{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;min-width:0}
 .monitor-bct-window-tab-rows[hidden]{display:none!important}
 .monitor-bct-window-tab-row{min-width:0;cursor:pointer}
 .monitor-bct-window-tab-row[aria-selected="true"]{border-color:rgba(117,184,255,.68);background:rgba(80,130,190,.14)}

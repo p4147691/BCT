@@ -36,10 +36,10 @@ assert.equal(typeof thumbs.dataset.wallpaperEventAt,"string");
 seen.length=0;
 env.response={event:true,type:"desktopWallpaperChanged",desktopId:second};
 vm.runInContext("(function(){"+branch+"})()",env);
-assert.deepEqual(seen.map(x=>x.id),[second],"explicit event GUID never corrupts another desktop");
+assert.deepEqual(seen.map(x=>x.id),[second,first],"explicit current-GUID events refresh inherited global backgrounds too");
 assert.doesNotMatch(branch,/monitorWallpaperActuals|monitorWallpaperCache|monitorPreviewWallpaper/);
 assert.match(branch,/MonitorDesktopThumbnailV2\.refreshBackground/);
 assert.match(branch,/\{forceWallpaper:true\}/);
 assert.doesNotMatch(branch,/getDesktopVisualSnapshot|monitorNativeVisualRead|monitorNative\(/,
   "event handling delegates input selection to the injected thumbnail source");
-console.log("PASS: Windows wallpaper event forces only matching V2 GUID tiles through the configured visual source");
+console.log("PASS: Windows wallpaper event refreshes every exact-GUID V2 tile, reported/current first, through the configured visual source");
