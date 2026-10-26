@@ -447,7 +447,7 @@ class RelayBrowserFeature:
             prepared["to"] = str(arguments.get("to") or "").strip()
             prepared["text"] = str(arguments.get("text") or "")
             if not prepared["to"] or not prepared["text"]:
-                raise PreconditionError("RCC_SEND_TARGET_AND_TEXT_REQUIRED")
+                raise PreconditionError("RCC_SEND_TARGET_AND_TEXT_REQUIRED:send_requires_to_and_text;existing_tab_use_send-to-tab")
         elif command == "simple-relay-bind":
             allowed.update({"manager_conversation_key", "worker_conversation_key"})
             manager_key = str(arguments.get("manager_conversation_key") or "").strip().lower()
