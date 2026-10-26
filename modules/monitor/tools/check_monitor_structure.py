@@ -126,6 +126,19 @@ def main():
             errors.append({'kind':'monitor_pure_domain_manifest_invalid',
                            'detail':str(exc)[:180]})
 
+    solid_contract=root/'tools'/'check_monitor_solid_native_contract.py'
+    if (root/'native/src/DesktopSolidColorSource.cs').is_file():
+        if not solid_contract.is_file():
+            errors.append({'kind':'native_solid_com_contract_check_missing'})
+        else:
+            verify=subprocess.run([sys.executable,str(solid_contract),'--root',str(root)],
+                capture_output=True,text=True,encoding='utf-8',
+                errors='replace',timeout=75)
+            facts['native_solid_com_test_rc']=verify.returncode
+            if verify.returncode!=0:
+                errors.append({'kind':'native_solid_com_contract_failed',
+                               'detail':(verify.stderr+verify.stdout)[-350:]})
+
     monitor = ext/'monitor.js'
     index = ext/'MONITOR_JS_INDEX.md'
     if monitor.exists() and index.exists():
