@@ -46784,6 +46784,7 @@ function ensureMonitorNativePort() {
 
 
 
+    if (response?.event === true) return; // Never shift a request reply for unsolicited Native events.
     const pending = monitorNativePending.shift();
 
 
@@ -51300,6 +51301,7 @@ function ensureMonitorCoreNativePort() {
 
 
 
+    if (response?.event === true) return; // Unsolicited native events cannot consume command replies.
     const pending = monitorCoreNativePending.shift();
 
 

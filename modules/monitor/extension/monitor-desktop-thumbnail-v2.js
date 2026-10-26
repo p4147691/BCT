@@ -35,7 +35,9 @@
     // Identity must be a GUID, not index or host/foreground aliases.
     const matched = reply && reply.ok === true && norm(reply.desktopId) === state.desktopId;
     const pixels = matched && reply.wallpaper && reply.wallpaper.dataUri;
-    if (validPixels(pixels)) {
+    // Native wallpaper snapshots must be inline image bytes; blob URLs only
+    // belong to HWND captures and cannot establish a per-desktop file origin.
+    if (typeof pixels === "string" && /^data:image\/(?:jpeg|png|webp);base64,/i.test(pixels)) {
       visual.style.backgroundImage = "url(" + JSON.stringify(pixels) + ")";
       state.wallpaper = "captured";
     } else {
