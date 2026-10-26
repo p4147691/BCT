@@ -52,6 +52,8 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
                 "probe-tabs", "diagnose-activity", "diagnose-composer",
                 "delivery-manager-status", "delivery-recovery-inspect",
                 "diagnose-conversation-ui", "api-probe", "main-capture-get",
+                "windows-list", "window-get", "tab-get", "tab-groups-list",
+                "tab-group-get", "read-latest-assistant",
             },
             "MAINTENANCE_COMMANDS": {"reload-extension"},
         }
