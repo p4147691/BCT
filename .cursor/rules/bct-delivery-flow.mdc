@@ -44,3 +44,11 @@ overrides the scope.
 
 Report the final state with the exact tested SHA, test/CI evidence, LIVE
 evidence, E2E result, and any deferred follow-ups.
+
+## Completion semantics and durable continuation
+
+- Treat the user's entire requested outcome as ONE acceptance scope. Do not present coding, modularization, PR, CI, local-main merge, package publication, or installed files as "완료" while actual running operation or user-facing acceptance remains outstanding.
+- Only report "완료" after the requested change is applied, the exact running build and receipt are verified, real usage/E2E is accepted, and no requested part remains. If some steps are still open, state "진행 N/M", list the remaining concrete step(s), and avoid contradictory success language.
+- Define the M concrete gates at the start from the full user request and keep the denominator stable. If the scope changes, explicitly rebaseline it with evidence; never invent stages to inflate progress.
+- A stopped or blocked task stays visibly IN_PROGRESS/BLOCKED with its original durable Work ID, last verified SHA, receipts, next executable step, and precise blocker. Resume that same task first; do not create duplicate Work, ask the user to issue a copy-and-paste continuation prompt, or drift into old implementation paths.
+- When an operation needs user interaction, distinguish the confirmed technical gate from remaining physical acceptance. Record user-observed success faithfully, without promoting unobserved components.
