@@ -22,7 +22,7 @@
         ".monitor-desktop-thumb-window, .monitor-window-capture-age-label, .monitor-thumb-v2-status"
       ))) node.remove();
       visual.style.backgroundImage = "";
-      state = {desktopId:norm(desktopId), generation:0, wallpaper:"unobserved", windows:new Map()};
+      state = {desktopId:norm(desktopId), generation:0, frameGeneration:0, wallpaper:"unobserved", windows:new Map()};
       states.set(visual,state);
       visual.dataset.monitorThumbnailRenderer = "v2";
     }
@@ -68,9 +68,29 @@
     return wallpaper(visual, desktopId, reply, generation);
   }
 
+  function beginFrame(visual, desktopId) {
+    const state = resolve(visual,desktopId);
+    return state ? ++state.frameGeneration : null;
+  }
+
+  function removeWindow(visual, desktopId, hwnd) {
+    const state = states.get(visual);
+    if (!state || state.desktopId !== norm(desktopId)) return false;
+    const key = String(hwnd || "");
+    const view = state.windows.get(key);
+    if (!view) return false;
+    ++state.frameGeneration; // reject an earlier in-flight Native frame
+    view.image.remove();
+    view.status.remove();
+    state.windows.delete(key);
+    visual.dataset.monitorThumbnailWindows = String(state.windows.size);
+    return true;
+  }
+
   function windowFrame(visual, desktopId, frame, bindings = {}) {
     const state = resolve(visual, desktopId);
     if (!state || !frame?.meta || !Array.isArray(frame.frames)) return false;
+    if (bindings.frameToken != null && state.frameGeneration !== bindings.frameToken) return false;
     if (norm(frame.meta.desktopId) !== state.desktopId) return false;
     const originX = Number(frame.meta.previewVirtualLeft ?? frame.meta.virtualLeft ?? 0);
     const originY = Number(frame.meta.previewVirtualTop ?? frame.meta.virtualTop ?? 0);
@@ -156,9 +176,9 @@
     return true;
   }
 
-  function frameFailure(visual, desktopId, reason = "FRAME_UNAVAILABLE") {
+  function frameFailure(visual, desktopId, reason = "FRAME_UNAVAILABLE", frameToken = null) {
     const state = resolve(visual,desktopId);
-    if (!state) return false;
+    if (!state || (frameToken != null && state.frameGeneration !== frameToken)) return false;
     for (const {image,status} of state.windows.values()) {
       image.removeAttribute("src");
       image.dataset.captureState = "failed";
@@ -176,5 +196,5 @@
     const state = resolve(visual, desktopId);
     if (state) ++state.generation;
   }
-  root.MonitorDesktopThumbnailV2 = Object.freeze({resolve, wallpaper, refreshWallpaper, windowFrame, frameFailure, invalidate});
+  root.MonitorDesktopThumbnailV2 = Object.freeze({resolve, wallpaper, refreshWallpaper, beginFrame, removeWindow, windowFrame, frameFailure, invalidate});
 })(globalThis);
