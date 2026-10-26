@@ -1340,6 +1340,11 @@ async function refreshVirtualDesktops() {
 
       renderVirtualDesktops(state);
 
+      // Exact-GUID wallpaper capture does not depend on identifying this
+      // Monitor popup's HWND. Start the bottom layer as soon as Native has
+      // returned the desktop IDs; window-frame work remains HWND-gated below.
+      if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb();
+
       const resolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
 
       if (resolved) {
@@ -1349,14 +1354,6 @@ async function refreshVirtualDesktops() {
         if (monitorHostResolveRetryTimer) clearTimeout(monitorHostResolveRetryTimer);
 
         monitorHostResolveRetryTimer = 0;
-
-        if (!monitorInitialThumbBatchDone) {
-
-          monitorInitialThumbBatchDone = false;
-
-          await refreshInitialSelectedThumb();
-
-        }
 
       } else if (monitorHostResolveRetryCount < 8 && !monitorHostResolveRetryTimer) {
 

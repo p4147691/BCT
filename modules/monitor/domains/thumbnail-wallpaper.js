@@ -809,12 +809,25 @@ async function refreshDesktopThumb(visual, desktopId) {
 async function refreshInitialBackgroundThumbs() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !monitorIsActiveDesktopRenderer()) return false;
   const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
-  let pending = monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId);
+  const renderer = globalThis.MonitorDesktopThumbnailV2;
+  if (!renderer?.refreshBackground) return false;
+  let pending = [
+    selectedId,
+    ...monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId)
+  ].filter(Boolean);
   if (!pending.length) return true;
 
   const retryDelays = [160, 420];
   for (let attempt = 0; pending.length; attempt += 1) {
-    pending = await refreshBackgroundThumbs(...pending);
+    const failed = [];
+    for (const desktopId of pending) {
+      const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
+      const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
+      if (!visual?.isConnected) { failed.push(desktopId); continue; }
+      const result = await renderer.refreshBackground(visual, desktopId).catch(() => null);
+      if (result?.wallpaperReady !== true) failed.push(desktopId);
+    }
+    pending = failed;
     if (!pending.length || attempt >= retryDelays.length) break;
     await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
     if (!monitorIsActiveDesktopRenderer()) break;
@@ -826,9 +839,8 @@ async function refreshInitialBackgroundThumbs() {
 //@@FN_START:refreshInitialSelectedThumb
 async function refreshInitialSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
-  const selectedReady = await refreshSelectedThumb().catch(() => false);
   const backgroundReady = await refreshInitialBackgroundThumbs().catch(() => false);
-  monitorInitialThumbBatchDone = selectedReady === true && backgroundReady === true;
+  monitorInitialThumbBatchDone = backgroundReady === true;
   if (monitorInitialThumbBatchDone) {
     scheduleInitialSemanticThumbSync();
     void checkMonitorDeploymentUpdate();

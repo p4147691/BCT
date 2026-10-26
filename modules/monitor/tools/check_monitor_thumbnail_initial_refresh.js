@@ -33,7 +33,22 @@ assert.match(compositor, /compositeReady/,
 const initialStart = thumbnails.indexOf("async function refreshInitialSelectedThumb()");
 const initialEnd = thumbnails.indexOf("//@@FN_END:refreshInitialSelectedThumb", initialStart);
 const initialBody = thumbnails.slice(initialStart, initialEnd);
-assert.match(initialBody, /selectedReady === true && backgroundReady === true/,
-  "initial completion requires selected and background desktop acceptance");
+assert.match(initialBody, /monitorInitialThumbBatchDone = backgroundReady === true/,
+  "initial completion must depend only on the independent background layer");
+const backgroundsStart = thumbnails.indexOf("async function refreshInitialBackgroundThumbs()");
+const backgroundsEnd = thumbnails.indexOf("//@@FN_END:refreshInitialBackgroundThumbs", backgroundsStart);
+const backgroundsBody = thumbnails.slice(backgroundsStart, backgroundsEnd);
+assert.match(backgroundsBody, /renderer\.refreshBackground\(visual, desktopId\)/,
+  "startup must explicitly refresh the exact-GUID background layer");
+assert.doesNotMatch(backgroundsBody, /refreshDesktopThumb\(/,
+  "startup background acceptance must not depend on the HWND frame layer");
+
+const lifecycleStart = source.indexOf("async function refreshVirtualDesktops()");
+const lifecycleEnd = source.indexOf("//@@FN_END:refreshVirtualDesktops", lifecycleStart);
+const lifecycleBody = source.slice(lifecycleStart, lifecycleEnd);
+const initialRefresh = lifecycleBody.indexOf("if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb()");
+const hwndGate = lifecycleBody.indexOf("const resolved = /^\\d+$/");
+assert(initialRefresh >= 0 && hwndGate > initialRefresh,
+  "exact-GUID backgrounds must start before Monitor HWND resolution gates window capture");
 
 console.log("PASS: startup has one thumbnail owner, later desktop creation is explicit, and all initial tiles gate completion");
