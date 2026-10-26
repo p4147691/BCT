@@ -25,6 +25,11 @@ const refreshBody = thumbnails.slice(refreshStart, refreshEnd);
 assert.match(refreshBody, /renderer\.refresh\(visual,desktopId\)/);
 assert.doesNotMatch(refreshBody, /captureDesktopFrame|refreshWallpaper|windowFrame|frameFailure/,
   "the compatibility bundle must not reimplement thumbnail orchestration");
+const compositor = fs.readFileSync(path.join(__dirname, "../extension/monitor-desktop-thumbnail-v2.js"), "utf8");
+assert.match(compositor, /ok:backgroundReady/,
+  "initial thumbnail acceptance must follow the independent background-layer result");
+assert.match(compositor, /compositeReady/,
+  "window-frame readiness must remain observable without blocking wallpaper acceptance");
 const initialStart = thumbnails.indexOf("async function refreshInitialSelectedThumb()");
 const initialEnd = thumbnails.indexOf("//@@FN_END:refreshInitialSelectedThumb", initialStart);
 const initialBody = thumbnails.slice(initialStart, initialEnd);

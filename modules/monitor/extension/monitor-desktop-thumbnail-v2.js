@@ -59,12 +59,26 @@
           }
         }
       }
-      const ok=wallpaperReady===true&&(frameReady===null||frameReady===true);
-      const result=Object.freeze({ok,wallpaperReady:wallpaperReady===true,frameReady,reason:ok?"":!wallpaperReady?"WALLPAPER_UNAVAILABLE":"FRAME_UNAVAILABLE"});
+      // Background acceptance and HWND-frame acceptance are independent layer
+      // contracts. Other virtual desktops can legitimately have no capturable
+      // HWND pixels (for example CLOAKED/WGC-unavailable) while their exact-GUID
+      // wallpaper is already valid. Keep `ok` as the compatibility signal for
+      // the bottom/background layer and expose full composition separately.
+      const backgroundReady=wallpaperReady===true;
+      const compositeReady=backgroundReady&&(frameReady===null||frameReady===true);
+      const result=Object.freeze({
+        ok:backgroundReady,
+        wallpaperReady:backgroundReady,
+        frameReady,
+        compositeReady,
+        reason:backgroundReady?"":"WALLPAPER_UNAVAILABLE",
+        frameReason:frameReady===false?"FRAME_UNAVAILABLE":""
+      });
       const current=attached.get(visual);
       if(current===state.control){
         current.lastResult=result;
-        visual.dataset.monitorThumbnailReady=ok?"1":"failed";
+        visual.dataset.monitorThumbnailReady=backgroundReady?"1":"failed";
+        visual.dataset.monitorThumbnailCompositeReady=compositeReady?"1":backgroundReady?"partial":"failed";
       }
       return result;
     }
