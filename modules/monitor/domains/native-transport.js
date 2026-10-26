@@ -132,10 +132,6 @@ function ensureMonitorWallpaperNativePort() {
     const requestId = String(response?.requestId || "");
     const pending = monitorWallpaperNativePending.get(requestId);
     if (!pending) return;
-    if (monitorVersion) {
-      const id = String(pending.message?.desktopId || "").slice(0,4);
-      monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · R:${id}`;
-    }
     monitorWallpaperNativePending.delete(requestId);
     pending.resolve(response);
   });
@@ -176,12 +172,10 @@ function monitorWallpaperNativeRequest(message, timeoutMs = 8000) {
     });
     try {
       port.postMessage({ ...message, requestId });
-      if (monitorVersion) {
-        const id = String(message?.desktopId || "").slice(0,4);
-        monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · P:${id}`;
-      }
     } catch (error) {
       monitorWallpaperNativePending.delete(requestId);
+      if (monitorWallpaperNativePort === port) monitorWallpaperNativePort = null;
+      try { port.disconnect(); } catch (_) {}
       finish(reject,error);
     }
   });

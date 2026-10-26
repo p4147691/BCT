@@ -56,16 +56,19 @@ function request(message){
     await Promise.all(tiles.map((tile,i)=>engine.refreshWallpaper(tile,ids[i])));
     const normal=tiles.map(x=>({id:x.dataset.wallpaperDesktopId,state:x.dataset.wallpaperCapture,source:x.dataset.wallpaperSource,
       image:getComputedStyle(x).backgroundImage,color:getComputedStyle(x).backgroundColor}));
+    const cssColor=value=>{const probe=document.createElement("i");probe.style.color=value;document.body.append(probe);const normalized=getComputedStyle(probe).color;probe.remove();return normalized;};
     const exact=(view,frame)=>frame.wallpaper.mode==="solid"
-      ? view.state==="captured"&&view.source==="native-solid-color"&&view.color.toUpperCase()===frame.wallpaper.color.toUpperCase()
+      ? view.state==="captured"&&view.source==="native-solid-color"&&view.color===cssColor(frame.wallpaper.color)
       : view.state==="captured"&&view.source==="native-guid-file"&&view.image.includes(frame.wallpaper.dataUri.slice(18,65));
     const passes=normal.map((view,i)=>exact(view,frames[i]));
+    const priorStyle={image:tiles[0].style.backgroundImage,color:tiles[0].style.backgroundColor};
     const wrong=engine.wallpaper(tiles[0],ids[0],frames[1]);
     return {ids:normal.map(x=>x.id),passes,kinds:normal.map(x=>x.source),wrongIdAccepted:wrong,
-      crossIdCleared:tiles[0].style.backgroundImage===""&&tiles[0].style.backgroundColor===""};
+      crossIdRetained:tiles[0].style.backgroundImage===priorStyle.image&&tiles[0].style.backgroundColor===priorStyle.color};
   },{ids,frames});
+  if(!result.passes.every(Boolean))console.error("NATIVE_TO_EDGE_V2_MISMATCH "+JSON.stringify({result,kinds:frames.map(frame=>frame.wallpaper?.mode||""),sizes:frames.map(frame=>String(frame.wallpaper?.dataUri||"").length)}));
   assert.deepEqual(result.ids,ids);assert.deepEqual(result.passes,[true,true]);
-  assert.equal(result.wrongIdAccepted,false);assert.equal(result.crossIdCleared,true);
+  assert.equal(result.wrongIdAccepted,false);assert.equal(result.crossIdRetained,true);
   console.log("PASS ACTUAL_NATIVE_TO_EDGE_V2: configured correlated Native D1/D2 "+result.kinds.join("+")+" rendered by exact GUID; mismatch rejected");
  }finally{await browser.close()}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1});

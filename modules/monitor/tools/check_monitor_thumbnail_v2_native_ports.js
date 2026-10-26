@@ -31,4 +31,4 @@ assert.match(host,/request\.TryGetValue\("requestId", out requestId\)/);
 assert.match(host,/responseMap\["requestId"\] = Convert\.ToString\(requestId\)/,
   "the Native host must echo the exact correlation id");
 
-console.log("PASS: one persistent Control port correlates replies by requestId while unsolicited events remain independent");
+console.log("PASS: Control and wallpaper ports have separate exact-correlation ownership; wallpaper reads are serialized and bounded");

@@ -669,10 +669,6 @@ async function refreshInitialBackgroundThumbs() {
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
       if (!visual?.isConnected) { failed.push(desktopId); continue; }
       const result = await renderer.refreshBackground(visual, desktopId).catch(() => null);
-      if (monitorVersion) {
-        const id = String(desktopId || "").slice(0,4);
-        monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · A:${id}:${result?.wallpaperReady === true ? "1" : "0"}`;
-      }
       if (result?.wallpaperReady !== true) failed.push(desktopId);
     }
     pending = failed;
@@ -7888,10 +7884,6 @@ function ensureMonitorWallpaperNativePort() {
     const requestId = String(response?.requestId || "");
     const pending = monitorWallpaperNativePending.get(requestId);
     if (!pending) return;
-    if (monitorVersion) {
-      const id = String(pending.message?.desktopId || "").slice(0,4);
-      monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · R:${id}`;
-    }
     monitorWallpaperNativePending.delete(requestId);
     pending.resolve(response);
   });
@@ -7930,12 +7922,10 @@ function monitorWallpaperNativeRequest(message, timeoutMs = 8000) {
     });
     try {
       port.postMessage({ ...message, requestId });
-      if (monitorVersion) {
-        const id = String(message?.desktopId || "").slice(0,4);
-        monitorVersion.textContent = `v${chrome.runtime.getManifest().version} · P:${id}`;
-      }
     } catch (error) {
       monitorWallpaperNativePending.delete(requestId);
+      if (monitorWallpaperNativePort === port) monitorWallpaperNativePort = null;
+      try { port.disconnect(); } catch (_) {}
       finish(reject,error);
     }
   });
