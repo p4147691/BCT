@@ -774,6 +774,12 @@ async function newChatTextSha256(value) {
 function classifyNewChatSurface() {
   const root = document.body;
   const text = String(root?.innerText || root?.textContent || '').replace(/\s+/g, ' ').trim();
+  const controlText = (selector) => Array.from(document.querySelectorAll(selector))
+    .map((element) => [
+      element.getAttribute?.('aria-label'), element.getAttribute?.('title'),
+      element.getAttribute?.('data-testid'), element.textContent,
+    ].filter(Boolean).join(' '))
+    .join(' ').replace(/\s+/g, ' ').trim();
   const hasEditor = [
     '#prompt-textarea',
     'div[contenteditable="true"][data-virtualkeyboard="true"]',
@@ -809,12 +815,16 @@ function classifyNewChatSurface() {
   // stable identity.  Its temporary-chat control and Chat/Work composer-mode
   // chooser are ordinary-Chat controls; require both so an arbitrary page
   // with an editor is still UNKNOWN.
+  const temporaryChatControls = controlText('button');
+  const composerModeControls = controlText(
+    'button, [role="checkbox"], input[type="checkbox"], label',
+  );
   const generalTemporaryChat = [
     '임시 채팅', 'Temporary chat',
-  ].some((marker) => text.includes(marker));
+  ].some((marker) => text.includes(marker) || temporaryChatControls.includes(marker));
   const generalChatMode = [
     '작성기 모드 Chat Work', 'Composer mode Chat Work',
-  ].some((marker) => text.includes(marker));
+  ].some((marker) => text.includes(marker) || composerModeControls.includes(marker));
   const legacyGeneralChat = generalWelcome && generalNavigation;
   const currentGeneralChatHome = generalTemporaryChat && generalChatMode;
   if (hasEditor && (legacyGeneralChat || currentGeneralChatHome)) {
@@ -829,7 +839,9 @@ function classifyNewChatSurface() {
   }
   return Object.freeze({
     kind: 'UNKNOWN',
-    evidence: Object.freeze({ schema: 1, hasEditor, markers: Object.freeze([]) }),
+    evidence: Object.freeze({ schema: 1, hasEditor, markers: Object.freeze([]), signals: Object.freeze({
+      generalTemporaryChat, generalChatMode,
+    }) }),
   });
 }
 

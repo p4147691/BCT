@@ -2,10 +2,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function classify({ text, editor = true }) {
+function classify({ text, editor = true, buttons = [], controls = [] }) {
   const document = {
     body: { innerText: text, textContent: text },
     querySelector: (selector) => editor && selector === '#prompt-textarea' ? {} : null,
+    querySelectorAll: (selector) => {
+      if (selector === 'button') return buttons.map((textContent) => ({
+        textContent,
+        getAttribute: () => '',
+      }));
+      if (selector.includes('[role="checkbox"]')) return controls.map((textContent) => ({
+        textContent,
+        getAttribute: () => '',
+      }));
+      return [];
+    },
   };
   const context = vm.createContext({ document, console, setTimeout, clearTimeout });
   const source = fs.readFileSync('content/simple_relay_executor.js', 'utf8');
@@ -32,7 +43,9 @@ assert.deepEqual(general.evidence.markers, [
 ]);
 
 const currentGeneralHome = classify({
-  text: '임시 채팅 작성기 모드 Chat Work 어디서 시작할까요?',
+  text: '어디서 시작할까요?',
+  buttons: ['임시 채팅'],
+  controls: ['작성기 모드', 'Chat', 'Work'],
 });
 assert.equal(currentGeneralHome.kind, 'GENERAL_CHAT');
 assert.deepEqual(currentGeneralHome.evidence.markers, [
