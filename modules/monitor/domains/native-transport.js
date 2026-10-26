@@ -77,18 +77,6 @@ function ensureMonitorNativePort() {
     if (response?.event === true) return; // Unsolicited events never complete requests.
     const requestId = String(response?.requestId || "");
     const pending = monitorNativePending.get(requestId);
-    if (pending?.message?.type === "getDesktopVisualSnapshot" || response?.type === "desktopVisualSnapshot") {
-      void monitorPublishThumbnailDiagnostic("native-response-received", {
-        request_id:requestId,
-        matched:Boolean(pending),
-        request_type:String(pending?.message?.type || ""),
-        requested_desktop_id:String(pending?.message?.desktopId || ""),
-        response_desktop_id:String(response?.desktopId || ""),
-        ok:response?.ok === true,
-        kind:String(response?.kind || response?.wallpaperKind || ""),
-        error:String(response?.error || "").slice(0,120)
-      });
-    }
     if (!pending) return;
     monitorNativePending.delete(requestId);
     pending.resolve(response);
@@ -125,16 +113,7 @@ function monitorControlNativeRequest(message) {
     const requestId = `monitor-${Date.now().toString(36)}-${(++monitorNativeRequestSequence).toString(36)}`;
     monitorNativePending.set(requestId, { resolve, reject, message });
 
-    try {
-      port.postMessage({ ...message, requestId });
-      if (message?.type === "getDesktopVisualSnapshot") {
-        void monitorPublishThumbnailDiagnostic("native-request-posted", {
-          request_id:requestId,
-          desktop_id:String(message.desktopId || ""),
-          pending_count:monitorNativePending.size
-        });
-      }
-    }
+    try { port.postMessage({ ...message, requestId }); }
 
     catch (error) { monitorNativePending.delete(requestId); reject(error); }
 
@@ -142,28 +121,6 @@ function monitorControlNativeRequest(message) {
 
 }
 //@@FN_END:monitorControlNativeRequest
-
-//@@FN_START:monitorPublishThumbnailDiagnostic
-function monitorPublishThumbnailDiagnostic(stage, details = {}) {
-  const at = Date.now();
-  const normalizedStage = String(stage || "unknown").replace(/[^a-z0-9-]/gi,"-").slice(0,64) || "unknown";
-  const label = JSON.stringify({
-    manifest_version:String(chrome.runtime.getManifest().version || ""),
-    stage:normalizedStage,
-    details:details && typeof details === "object" ? details : {},
-    at_ms:at
-  });
-  return monitorControlNativeIsolatedRequest({
-    type:"setSharedMonitorRuntime",
-    kind:"alert",
-    conversationKey:`__MONITOR_THUMBNAIL_DIAGNOSTIC__:${normalizedStage}`,
-    at:String(at),
-    symbol:"",
-    tone:"thumbnail-diagnostic",
-    label
-  }).catch(() => null);
-}
-//@@FN_END:monitorPublishThumbnailDiagnostic
 
 //@@FN_START:monitorCoreNative
 function monitorCoreNative(message) {

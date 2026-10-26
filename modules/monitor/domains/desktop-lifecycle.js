@@ -1317,9 +1317,6 @@ async function refreshVirtualDesktops() {
   try {
 
     if (!monitorInitialThumbBatchDone) monitorInitialThumbStage = "topology-requesting";
-    void monitorPublishThumbnailDiagnostic("topology-start", {
-      initial_done:Boolean(monitorInitialThumbBatchDone)
-    });
     const currentWindow = await chrome.windows.getCurrent();
 
     const topology = await monitorNative({
@@ -1330,11 +1327,6 @@ async function refreshVirtualDesktops() {
 
       width: currentWindow?.width, height: currentWindow?.height
 
-    });
-    void monitorPublishThumbnailDiagnostic("topology-result", {
-      ok:topology?.ok === true,
-      error:String(topology?.error || "").slice(0,120),
-      desktop_ids:Array.isArray(topology?.desktopIds) ? topology.desktopIds.map(String) : []
     });
 
     if (topology?.ok) {
@@ -1350,12 +1342,6 @@ async function refreshVirtualDesktops() {
       }
 
       if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb();
-      void monitorPublishThumbnailDiagnostic("initial-background-returned", {
-        initial_done:Boolean(monitorInitialThumbBatchDone),
-        stage:String(monitorInitialThumbStage || ""),
-        error:String(monitorInitialThumbError || "").slice(0,120),
-        backgrounds:monitorThumbnailBackgroundRuntimeDiagnostics()
-      });
 
       // Window ownership is a separate, later layer. It must not delay card
       // creation or exact-GUID wallpaper acceptance.
@@ -1372,11 +1358,6 @@ async function refreshVirtualDesktops() {
           monitorInitialThumbError = String(error?.message || error || "HOST_RENDER_EXCEPTION").slice(0,160);
         }
       }
-      setTimeout(() => {
-        void monitorPublishThumbnailDiagnostic("settled", {
-          backgrounds:monitorThumbnailBackgroundRuntimeDiagnostics()
-        });
-      }, 1200);
 
       const resolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
 

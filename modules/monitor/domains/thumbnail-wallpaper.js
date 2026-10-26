@@ -859,27 +859,8 @@ async function refreshInitialBackgroundThumbs() {
     for (const desktopId of pending) {
       const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-      if (!visual?.isConnected) {
-        failed.push(desktopId);
-        void monitorPublishThumbnailDiagnostic("background-target-missing", {desktop_id:String(desktopId)});
-        continue;
-      }
-      void monitorPublishThumbnailDiagnostic("background-request", {
-        desktop_id:String(desktopId),
-        attempt
-      });
+      if (!visual?.isConnected) { failed.push(desktopId); continue; }
       const result = await renderer.refreshBackground(visual, desktopId).catch(() => null);
-      void monitorPublishThumbnailDiagnostic("background-result", {
-        desktop_id:String(desktopId),
-        attempt,
-        wallpaper_ready:result?.wallpaperReady === true,
-        reason:String(result?.reason || "").slice(0,120),
-        capture:String(visual.dataset.wallpaperCapture || ""),
-        source:String(visual.dataset.wallpaperSource || ""),
-        failure_reason:String(visual.dataset.wallpaperFailureReason || "").slice(0,120),
-        has_background_image:Boolean(visual.style.backgroundImage),
-        has_background_color:Boolean(visual.style.backgroundColor)
-      });
       if (result?.wallpaperReady !== true) failed.push(desktopId);
     }
     pending = failed;

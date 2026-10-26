@@ -667,27 +667,8 @@ async function refreshInitialBackgroundThumbs() {
     for (const desktopId of pending) {
       const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-      if (!visual?.isConnected) {
-        failed.push(desktopId);
-        void monitorPublishThumbnailDiagnostic("background-target-missing", {desktop_id:String(desktopId)});
-        continue;
-      }
-      void monitorPublishThumbnailDiagnostic("background-request", {
-        desktop_id:String(desktopId),
-        attempt
-      });
+      if (!visual?.isConnected) { failed.push(desktopId); continue; }
       const result = await renderer.refreshBackground(visual, desktopId).catch(() => null);
-      void monitorPublishThumbnailDiagnostic("background-result", {
-        desktop_id:String(desktopId),
-        attempt,
-        wallpaper_ready:result?.wallpaperReady === true,
-        reason:String(result?.reason || "").slice(0,120),
-        capture:String(visual.dataset.wallpaperCapture || ""),
-        source:String(visual.dataset.wallpaperSource || ""),
-        failure_reason:String(visual.dataset.wallpaperFailureReason || "").slice(0,120),
-        has_background_image:Boolean(visual.style.backgroundImage),
-        has_background_color:Boolean(visual.style.backgroundColor)
-      });
       if (result?.wallpaperReady !== true) failed.push(desktopId);
     }
     pending = failed;
@@ -7686,18 +7667,6 @@ function ensureMonitorNativePort() {
     if (response?.event === true) return; // Unsolicited events never complete requests.
     const requestId = String(response?.requestId || "");
     const pending = monitorNativePending.get(requestId);
-    if (pending?.message?.type === "getDesktopVisualSnapshot" || response?.type === "desktopVisualSnapshot") {
-      void monitorPublishThumbnailDiagnostic("native-response-received", {
-        request_id:requestId,
-        matched:Boolean(pending),
-        request_type:String(pending?.message?.type || ""),
-        requested_desktop_id:String(pending?.message?.desktopId || ""),
-        response_desktop_id:String(response?.desktopId || ""),
-        ok:response?.ok === true,
-        kind:String(response?.kind || response?.wallpaperKind || ""),
-        error:String(response?.error || "").slice(0,120)
-      });
-    }
     if (!pending) return;
     monitorNativePending.delete(requestId);
     pending.resolve(response);
@@ -7893,41 +7862,12 @@ function monitorControlNativeRequest(message) {
     const requestId = `monitor-${Date.now().toString(36)}-${(++monitorNativeRequestSequence).toString(36)}`;
     monitorNativePending.set(requestId, { resolve, reject, message });
 
-    try {
-      port.postMessage({ ...message, requestId });
-      if (message?.type === "getDesktopVisualSnapshot") {
-        void monitorPublishThumbnailDiagnostic("native-request-posted", {
-          request_id:requestId,
-          desktop_id:String(message.desktopId || ""),
-          pending_count:monitorNativePending.size
-        });
-      }
-    }
+    try { port.postMessage({ ...message, requestId }); }
 
     catch (error) { monitorNativePending.delete(requestId); reject(error); }
 
   });
 
-}
-
-function monitorPublishThumbnailDiagnostic(stage, details = {}) {
-  const at = Date.now();
-  const normalizedStage = String(stage || "unknown").replace(/[^a-z0-9-]/gi,"-").slice(0,64) || "unknown";
-  const label = JSON.stringify({
-    manifest_version:String(chrome.runtime.getManifest().version || ""),
-    stage:normalizedStage,
-    details:details && typeof details === "object" ? details : {},
-    at_ms:at
-  });
-  return monitorControlNativeIsolatedRequest({
-    type:"setSharedMonitorRuntime",
-    kind:"alert",
-    conversationKey:`__MONITOR_THUMBNAIL_DIAGNOSTIC__:${normalizedStage}`,
-    at:String(at),
-    symbol:"",
-    tone:"thumbnail-diagnostic",
-    label
-  }).catch(() => null);
 }
 
 function monitorNativeLaunchIsolated(message) {
@@ -11584,9 +11524,6 @@ async function refreshVirtualDesktops() {
   try {
 
     if (!monitorInitialThumbBatchDone) monitorInitialThumbStage = "topology-requesting";
-    void monitorPublishThumbnailDiagnostic("topology-start", {
-      initial_done:Boolean(monitorInitialThumbBatchDone)
-    });
     const currentWindow = await chrome.windows.getCurrent();
 
     const topology = await monitorNative({
@@ -11597,11 +11534,6 @@ async function refreshVirtualDesktops() {
 
       width: currentWindow?.width, height: currentWindow?.height
 
-    });
-    void monitorPublishThumbnailDiagnostic("topology-result", {
-      ok:topology?.ok === true,
-      error:String(topology?.error || "").slice(0,120),
-      desktop_ids:Array.isArray(topology?.desktopIds) ? topology.desktopIds.map(String) : []
     });
 
     if (topology?.ok) {
@@ -11617,12 +11549,6 @@ async function refreshVirtualDesktops() {
       }
 
       if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb();
-      void monitorPublishThumbnailDiagnostic("initial-background-returned", {
-        initial_done:Boolean(monitorInitialThumbBatchDone),
-        stage:String(monitorInitialThumbStage || ""),
-        error:String(monitorInitialThumbError || "").slice(0,120),
-        backgrounds:monitorThumbnailBackgroundRuntimeDiagnostics()
-      });
 
       // Window ownership is a separate, later layer. It must not delay card
       // creation or exact-GUID wallpaper acceptance.
@@ -11639,11 +11565,6 @@ async function refreshVirtualDesktops() {
           monitorInitialThumbError = String(error?.message || error || "HOST_RENDER_EXCEPTION").slice(0,160);
         }
       }
-      setTimeout(() => {
-        void monitorPublishThumbnailDiagnostic("settled", {
-          backgrounds:monitorThumbnailBackgroundRuntimeDiagnostics()
-        });
-      }, 1200);
 
       const resolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
 
