@@ -46749,45 +46749,19 @@ function ensureMonitorNativePort() {
     if (response?.event === true && response?.type === "windowMoveSizeEnd") { scheduleMonitorWindowLifecycleEvent(response); return; }
     if (response?.event === true && response?.type === "windowForegroundChanged") { handleMonitorForegroundChangedEvent(response); return; }
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {
-      const explicitId = String(response?.desktopId || "").trim();
-      // Windows preference events do not identify a specific virtual desktop.
-      // Refresh only thumbnails actually displayed by this Monitor instance.
-      const desktopIds = explicitId ? [explicitId] :
-        [...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual") || [])]
-          .map(visual => String(visual.dataset.desktopId || "").trim()).filter(Boolean);
-      if (!desktopIds.length) {
-        const selected = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
-        if (selected) desktopIds.push(selected);
-      }
-      if (monitorDesktopThumbs) monitorDesktopThumbs.dataset.wallpaperEventAt = String(Date.now());
-      void globalThis.MonitorWallpaperEventRefresh?.notify?.({
-        desktopIds,
-        invalidate: id => { monitorWallpaperActuals.delete(id); monitorWallpaperCache.delete(id); },
-        read: id => getObservedWallpaper(id, true),
-        display: (id, source, outcome) => {
-          for (const visual of monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual") || []) {
-            if (String(visual.dataset.desktopId || "") !== id) continue;
-            visual.style.backgroundImage = source ? "url(" + JSON.stringify(source) + ")" : "";
-            visual.dataset.wallpaperCapture = outcome.status;
-          }
-          if (String(monitorPreviewWallpaper?.dataset.desktopId || "") === id) {
-            monitorPreviewWallpaper.style.backgroundImage = source ? "url(" + JSON.stringify(source) + ")" : "";
-            monitorPreviewWallpaper.dataset.captureState = outcome.status;
-          }
-        },
-        onObserved: outcome => {
-          if (monitorDesktopThumbs) {
-            monitorDesktopThumbs.dataset.wallpaperLastResult = outcome.status;
-            monitorDesktopThumbs.dataset.wallpaperLastDesktopId = outcome.desktopId;
-            monitorDesktopThumbs.dataset.wallpaperLastReason = outcome.reason;
-          }
-        },
-      }).catch(error => {
-        if (monitorDesktopThumbs) monitorDesktopThumbs.dataset.wallpaperLastReason = String(error?.message || "EVENT_REFRESH_ERROR");
-      });
+      const explicitId=String(response.desktopId||"").toLowerCase();
+      const visuals=[...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual")||[])];
+      const targets=explicitId ? visuals.filter(v=>String(v.dataset.desktopId||"").toLowerCase()===explicitId) : visuals;
+      monitorDesktopThumbs.dataset.wallpaperEventAt=String(Date.now());
+      // Each visual keeps its own generation fence; no cross-desktop cache.
+      void Promise.allSettled(targets.map(visual =>
+        globalThis.MonitorDesktopThumbnailV2.refreshWallpaper(
+          visual,visual.dataset.desktopId,id=>monitorNative({
+            type:"getDesktopVisualSnapshot",desktopId:id,
+            maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68
+          }),{force:true})));
       return;
     }
-
     if (response?.event === true && response?.type === "monitorDragPreviewReleased") {
       const drag = monitorBctPointerDrag;
       if (drag?.active && response?.token === monitorBctNativePreviewToken) {
@@ -66436,199 +66410,43 @@ function bindDesktopDropTarget(button) {
 
 
 async function refreshDesktopThumb(visual, desktopId) {
-  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
-  if (!monitorIsActiveDesktopRenderer()) return false;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (!visual?.isConnected || visual.dataset.desktopId !== desktopId) return false;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const batchGeneration = monitorThumbBatchGeneration;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const dataUri = await getObservedWallpaper(desktopId);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (dataUri && visual.isConnected && visual.dataset.desktopId === desktopId) visual.style.backgroundImage = `url("${dataUri}")`;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  const frame = await captureDesktopFrame(desktopId, "thumb");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (batchGeneration !== monitorThumbBatchGeneration) return false;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  if (!frame || !visual.isConnected || visual.dataset.desktopId !== desktopId) return false;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  reconcileFrame(visual, frame, "monitor-desktop-thumb-window");
-  syncMonitorThumbnailTabBadges(visual, "monitor-desktop-thumb-window");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  visual.dataset.monitorFrameReady = "1";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  return true;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED || !visual?.isConnected) return false;
+  if (String(visual.dataset.desktopId || "").toLowerCase() !== String(desktopId || "").toLowerCase()) return false;
+  const renderer = globalThis.MonitorDesktopThumbnailV2;
+  if (!renderer) return false;
+  // Native is authoritative: explicit per-desktop GUID/file snapshot; never
+  // use the legacy actual/restore/Progman wallpaper image maps.
+  const wallpaperReady = await renderer.refreshWallpaper(visual, desktopId, id =>
+    monitorNative({type:"getDesktopVisualSnapshot",desktopId:id,
+      maxWidth:MONITOR_WALLPAPER_MAX_WIDTH,maxHeight:MONITOR_WALLPAPER_MAX_HEIGHT,quality:68}));
+  if (!visual.isConnected || String(visual.dataset.desktopId).toLowerCase() !== String(desktopId).toLowerCase()) return false;
+  // Window geometry is separate Native HWND truth; pixels never become wallpaper.
+  // On other desktops capture may fail/CLOAKED; V2 renders a transparent outline.
+  const frame = await captureDesktopFrame(desktopId, "thumb").catch(() => null);
+  if (!frame || !visual.isConnected) { renderer.frameFailure(visual,desktopId,"FRAME_UNAVAILABLE"); return wallpaperReady; }
+  return renderer.windowFrame(visual,desktopId,frame,{
+    afterRender: tile => {
+      for (const image of tile.querySelectorAll(".monitor-desktop-thumb-window")) {
+        const hwnd = String(image.dataset.hwnd || "");
+        try {
+          applyPersistentMonitorRoleClass(image,hwnd);
+          image.classList.toggle("monitor-window-row-hovered",
+            Boolean(monitorHoveredHwnd) && hwnd===monitorHoveredHwnd && !monitorSelectedHwnds.has(hwnd));
+          syncMonitorStatusLayer(image,hwnd);
+          syncMonitorPauseOverlay(image,hwnd);
+          syncMonitorDesktopNumberBadge(image,hwnd);
+          syncMonitorNonChatCountdown(image,hwnd);
+          if (!image.dataset.monitorDragBound) {
+            image.dataset.monitorDragBound="1";
+            image.draggable=false;
+            image.addEventListener("pointerdown",beginMonitorWindowPointerDrag);
+          }
+        }catch(error){ console.warn("Monitor thumbnail V2 badge delayed",hwnd,error); }
+      }
+      syncMonitorThumbnailTabBadges(tile,"monitor-desktop-thumb-window");
+    }
+  });
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
   const slotsByDesktop = monitorMinimizedNodeSlotsByDesktop(state);

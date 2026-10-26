@@ -105,3 +105,25 @@
 .desktop-window-monitor .monitor-window-capture-stale {
   filter: saturate(.65);
 }
+
+/* Thumbnail V2: a failed HWND capture is transparent, never a simulated screen. */
+.monitor-desktop-thumb-window.monitor-thumb-v2-failed {
+  background: transparent !important;
+  border: 1px dashed rgba(255,195,110,.90);
+  box-shadow: none;
+  color: transparent;
+}
+.monitor-thumb-v2-status {
+  position: absolute;
+  max-width: 88%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(24,24,24,.84);
+  color: #ffe2b5;
+  font-size: 9px;
+  padding: 2px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.monitor-thumb-v2-status[hidden] { display: none !important; }

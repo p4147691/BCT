@@ -90,7 +90,8 @@ assert.match(src,/numbersForHwnd: \(hwnd\) => monitorBadgeNodeNumbersForHwnd\(hw
 assert.match(src,/iconic:minimized/);
 assert.match(src,/scheduleMonitorMinimizedBadgeConvergence\(hwnd\)/);
 assert.match(contractSrc,/if \(!Boolean\(location\?\.iconic\)\) continue;/);
-assert.match(src,/reconcileFrame\(visual, frame, "monitor-desktop-thumb-window"\);\s*syncMonitorThumbnailTabBadges\(visual, "monitor-desktop-thumb-window"\);/);
+assert.match(src,/renderer\.windowFrame\(visual,desktopId,frame/);
+assert.match(src,/syncMonitorThumbnailTabBadges\(tile,"monitor-desktop-thumb-window"\)/);
 assert.match(src,/MonitorBctThumbnailProjection/);
 assert.match(projectionSrc,/windowLayer\.append\(badge\)/);
 assert.match(projectionSrc,/layer\.append\(windowLayer\)/);
