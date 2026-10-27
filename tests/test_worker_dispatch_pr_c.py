@@ -34,10 +34,28 @@ class FakeRelay:
         self.before_callback = None
         self.before_wake_callback = None
         self.unavailable_wake_ids = set()
+        self.generating_instances = set()
 
     def request(self, **kwargs):
         self.calls.append(kwargs)
         command = kwargs["command"]
+        if command == "state":
+            instance_id = kwargs["instance_id"]
+            endpoint = {
+                "manager-instance": ("manager-session", 11, "manager-conversation"),
+                "worker-instance": ("worker-session", 12, "worker-conversation"),
+                "next-instance": ("next-session", 13, "next-conversation"),
+            }.get(instance_id)
+            if endpoint is None:
+                return {"ok": False}
+            session_id, tab_id, conversation_key = endpoint
+            return {"ok": True, "state": {
+                "instanceId": instance_id, "sessionId": session_id,
+                "endpoints": [{
+                    "tabId": tab_id, "conversationKey": conversation_key,
+                    "presence": "OPEN", "generating": instance_id in self.generating_instances,
+                }],
+            }}
         if command == "send":
             self.send_count += 1
             if self.unavailable:
@@ -204,6 +222,15 @@ class WorkerDispatchPRCTests(unittest.TestCase):
             return None if row is None else dict(row)
         finally:
             db.close()
+
+    def set_routing(self, routing, *, started_at=None):
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_dispatch_routes SET routing_json=?,state='PENDING',"
+                "created_at=?,updated_at=? WHERE delivery_id=?",
+                (_canonical(routing), self.now if started_at is None else started_at,
+                 self.now, self.outbox["delivery_id"]),
+            )
 
     def worker_receipt(self):
         assignment = self.service.assignment(
@@ -631,6 +658,36 @@ class WorkerDispatchPRCTests(unittest.TestCase):
         sent = replacement.run_once(now=now + 2)
         self.assertEqual(1, sent["sent"])
         self.assertEqual(1, self.relay.send_count)
+
+    def test_busy_preferred_worker_reroutes_only_before_any_send(self):
+        self.set_routing({
+            "affinity": "PREFERRED", "allow_provision": False,
+            "fallbacks": [{
+                "node_id": "worker", "attachment_id": "worker-att",
+                "attachment_generation": 1,
+            }],
+        }, started_at=self.now - 20)
+        self.relay.generating_instances.add("next-instance")
+        routed = self.dispatcher.run_once(now=self.now + 2)
+        self.assertEqual(1, routed["rerouted"])
+        self.assertEqual(0, self.relay.send_count)
+        outbox = self.row("orchestration_dispatch_outbox", "delivery_id", self.outbox["delivery_id"])
+        self.assertEqual("worker", outbox["target_node_id"])
+        self.assertEqual(2, outbox["assignment_generation"])
+        delivered = self.dispatcher.run_once(now=self.now + 3)
+        self.assertEqual(1, delivered["sent"])
+        self.assertEqual(1, self.relay.send_count)
+
+    def test_busy_required_worker_escalates_after_ten_minutes_without_send(self):
+        self.set_routing({
+            "affinity": "REQUIRED", "allow_provision": False, "fallbacks": [],
+        }, started_at=self.now - 601)
+        self.relay.generating_instances.add("next-instance")
+        result = self.dispatcher.run_once(now=self.now + 2)
+        self.assertEqual(1, result["deferred"])
+        self.assertEqual(0, self.relay.send_count)
+        route = self.row("orchestration_dispatch_routes", "delivery_id", self.outbox["delivery_id"])
+        self.assertEqual("ESCALATED", route["state"])
 
     def test_parallel_dispatcher_is_fenced(self):
         contender = WorkerDispatchRecovery(self.service, self.relay)

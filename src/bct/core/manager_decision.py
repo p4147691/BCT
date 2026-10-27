@@ -115,10 +115,12 @@ def parse_manager_decision(reply: Any, *, expected: dict[str, Any]) -> dict[str,
     for successor in successors:
         if not isinstance(successor, dict):
             raise PreconditionError("MANAGER_DECISION_SUCCESSOR_INVALID")
-        _exact_keys(successor, {
+        allowed = {
             "target_node_id", "attachment_id", "instruction", "roots",
             "actions", "acceptance", "dependencies",
-        }, "MANAGER_DECISION_SUCCESSOR_FIELDS_INVALID")
+        }
+        if not set(successor).issubset(allowed | {"routing"}):
+            raise PreconditionError("MANAGER_DECISION_SUCCESSOR_FIELDS_INVALID")
         target_node_id = _identifier(
             successor["target_node_id"], "MANAGER_DECISION_TARGET_INVALID",
         )
@@ -147,6 +149,44 @@ def parse_manager_decision(reply: Any, *, expected: dict[str, Any]) -> dict[str,
             raise PreconditionError("MANAGER_DECISION_DEPENDENCIES_INVALID")
         if not isinstance(acceptance, dict) or len(_canonical(acceptance)) > 8000:
             raise PreconditionError("MANAGER_DECISION_ACCEPTANCE_INVALID")
+        routing = successor.get("routing", {
+            "affinity": "REQUIRED", "fallbacks": [], "allow_provision": False,
+        })
+        if not isinstance(routing, dict) or set(routing) != {
+            "affinity", "fallbacks", "allow_provision",
+        }:
+            raise PreconditionError("MANAGER_DECISION_ROUTING_INVALID")
+        if routing["affinity"] not in {"REQUIRED", "PREFERRED", "ANY"}:
+            raise PreconditionError("MANAGER_DECISION_ROUTING_AFFINITY_INVALID")
+        if type(routing["allow_provision"]) is not bool:
+            raise PreconditionError("MANAGER_DECISION_ROUTING_PROVISION_INVALID")
+        if (not isinstance(routing["fallbacks"], list)
+                or len(routing["fallbacks"]) > 8):
+            raise PreconditionError("MANAGER_DECISION_ROUTING_FALLBACKS_INVALID")
+        fallbacks: list[dict[str, Any]] = []
+        seen_fallbacks: set[tuple[str, str]] = set()
+        for fallback in routing["fallbacks"]:
+            if not isinstance(fallback, dict) or set(fallback) != {
+                "node_id", "attachment_id", "attachment_generation",
+            }:
+                raise PreconditionError("MANAGER_DECISION_ROUTING_FALLBACK_INVALID")
+            item = {
+                "node_id": _identifier(
+                    fallback["node_id"], "MANAGER_DECISION_ROUTING_NODE_INVALID",
+                ),
+                "attachment_id": _identifier(
+                    fallback["attachment_id"], "MANAGER_DECISION_ROUTING_ATTACHMENT_INVALID",
+                ),
+                "attachment_generation": fallback["attachment_generation"],
+            }
+            if (type(item["attachment_generation"]) is not int
+                    or item["attachment_generation"] < 1):
+                raise PreconditionError("MANAGER_DECISION_ROUTING_ATTACHMENT_GENERATION_INVALID")
+            key = (item["node_id"], item["attachment_id"])
+            if key == (target_node_id, attachment_id) or key in seen_fallbacks:
+                raise PreconditionError("MANAGER_DECISION_ROUTING_FALLBACK_DUPLICATE")
+            seen_fallbacks.add(key)
+            fallbacks.append(item)
         normalized.append({
             "target_node_id": target_node_id,
             "attachment_id": attachment_id,
@@ -155,6 +195,10 @@ def parse_manager_decision(reply: Any, *, expected: dict[str, Any]) -> dict[str,
             "actions": sorted(set(actions)),
             "acceptance": acceptance,
             "dependencies": sorted(set(dependencies)),
+            "routing": {
+                "affinity": routing["affinity"], "fallbacks": fallbacks,
+                "allow_provision": routing["allow_provision"],
+            },
         })
     value["successors"] = normalized
     return value
@@ -355,6 +399,7 @@ class ManagerDecisionConsumer:
                     "instruction": successor["instruction"],
                     "source_event_id": event_id,
                     "source_result_hash": result_hash,
+                    "routing": successor["routing"],
                 }
                 self.service.create_assignment(
                     work=work, session_id=str(current["session_id"]),
@@ -392,6 +437,7 @@ class ManagerDecisionConsumer:
                         "acceptance": successor["acceptance"],
                         "dependencies": successor["dependencies"],
                     },
+                    "routing": successor["routing"],
                 })
             persisted_decision = {
                 **decision,

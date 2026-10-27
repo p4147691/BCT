@@ -17,6 +17,10 @@ from typing import Any
 
 from .core.durable_pr2 import acknowledge_delivery, record_attempt, reserve_delivery
 from .core.models import ConflictError, PreconditionError
+from .core.node_routing import (
+    NodeAffinity, NodeReadiness, RoutingAction, RoutingCandidate,
+    RoutingPolicy, decide_route,
+)
 from .core.orchestration import OrchestrationService, _canonical
 from .core.rcc_result import rcc_result_hash
 from .features.orchestration import OrchestrationFeature
@@ -38,6 +42,9 @@ class DispatchCandidate:
     assignment_generation: int
     instance_id: str
     result_hash: str | None
+    routing: dict[str, Any] | None
+    routing_state: str | None
+    routing_started_at: float | None
 
 
 @dataclass(frozen=True)
@@ -243,12 +250,14 @@ class WorkerDispatchRecovery:
             if owner is None:
                 return []
             common = (
-                "SELECT o.*,s.work_id,l.token,a.instance_id FROM "
+                "SELECT o.*,s.work_id,l.token,a.instance_id,r.routing_json,r.state AS routing_state,"
+                "r.created_at AS routing_started_at FROM "
                 "orchestration_dispatch_outbox o JOIN orchestration_sessions s "
                 "ON s.session_id=o.session_id JOIN works w ON w.work_id=s.work_id "
                 "JOIN orchestration_durable_leases l ON l.session_id=o.session_id "
                 "JOIN orchestration_attachments a ON a.attachment_id=o.attachment_id "
-                "AND a.generation=o.attachment_generation WHERE o.state IN "
+                "AND a.generation=o.attachment_generation LEFT JOIN orchestration_dispatch_routes r "
+                "ON r.delivery_id=o.delivery_id WHERE o.state IN "
                 "('PENDING','RESERVED','DISPATCHING','DELIVERED','UNKNOWN','ACKNOWLEDGED') "
                 "AND o.completed_at IS NULL AND s.state IN ('ACTIVE','PARTIAL') "
                 "AND s.wake_receipt_mode='RCC_RESULT_POLL_V1' "
@@ -273,6 +282,9 @@ class WorkerDispatchRecovery:
                 int(r["attachment_generation"]), str(r["assignment_id"]),
                 int(r["assignment_generation"]), str(r["instance_id"]),
                 None if r["ack_digest"] is None else str(r["ack_digest"]),
+                (json.loads(str(r["routing_json"])) if r["routing_json"] is not None else None),
+                None if r["routing_state"] is None else str(r["routing_state"]),
+                None if r["routing_started_at"] is None else float(r["routing_started_at"]),
             ) for r in rows]
         finally:
             db.close()
@@ -443,6 +455,138 @@ class WorkerDispatchRecovery:
                 epoch=candidate.manager_epoch, token=candidate.lease_token,
                 reservation_token=reservation, phase="SEND_STARTED", now=now, _db=db,
             )
+
+    def _set_route_state(
+        self, candidate: DispatchCandidate, state: str, detail: dict[str, Any],
+    ) -> None:
+        """Persist scheduler evidence without changing the delivery receipt."""
+        if candidate.routing is None:
+            return
+        now = time.time()
+        with self.store.transaction() as db:
+            self._assert_fence(db, now)
+            changed = db.execute(
+                "UPDATE orchestration_dispatch_routes SET state=?,detail_json=?,updated_at=? "
+                "WHERE delivery_id=?",
+                (state, _canonical(detail), now, candidate.delivery_id),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("WORKER_DISPATCH_ROUTE_FENCED")
+
+    @staticmethod
+    def _endpoint_readiness(attachment: dict[str, Any], state: dict[str, Any]) -> NodeReadiness:
+        """Accept only an exact, current endpoint as an idle observation."""
+        if (state.get("instanceId") != attachment["instance_id"]
+                or state.get("sessionId") != attachment["external_session_id"]):
+            return NodeReadiness.DISCONNECTED
+        for endpoint in state.get("endpoints", []):
+            if not isinstance(endpoint, dict):
+                continue
+            if (endpoint.get("tabId") == attachment["tab_id"]
+                    and endpoint.get("conversationKey") == attachment["conversation_key"]
+                    and endpoint.get("presence") == "OPEN"):
+                return (NodeReadiness.GENERATING if endpoint.get("generating") is True
+                        else NodeReadiness.IDLE)
+        return NodeReadiness.ORPHANED
+
+    def _readiness(self, attachment: dict[str, Any]) -> NodeReadiness:
+        try:
+            response = self.client.request(
+                instance_id=str(attachment["instance_id"]),
+                request_id="worker.route." + hashlib.sha256(
+                    (str(attachment["attachment_id"]) + ":" + str(time.time_ns())).encode("utf-8")
+                ).hexdigest()[:32],
+                command="state", timeout_s=5.0,
+            )
+        except (RelayUnavailable, RelayEffectUnknown):
+            return NodeReadiness.DISCONNECTED
+        state = response.get("state") if isinstance(response.get("state"), dict) else None
+        if response.get("ok") is not True or state is None:
+            return NodeReadiness.DISCONNECTED
+        return self._endpoint_readiness(attachment, state)
+
+    def _route_pending(self, candidate: DispatchCandidate) -> str:
+        """Schedule only before reserve_delivery can cross the write boundary."""
+        if candidate.routing is None:
+            # Pre-routing receipts retain their historical dispatch behavior.
+            return "DISPATCH"
+        if candidate.routing_state in {"PROVISION_REQUIRED", "ESCALATED"}:
+            return "DEFERRED"
+        routing = candidate.routing
+        try:
+            policy = RoutingPolicy(
+                affinity=NodeAffinity(str(routing["affinity"])),
+                allow_provision=bool(routing["allow_provision"]),
+            )
+            raw_fallbacks = routing["fallbacks"]
+            if not isinstance(raw_fallbacks, list):
+                raise ValueError("ROUTING_FALLBACKS_INVALID")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreconditionError("WORKER_DISPATCH_ROUTING_INVALID") from exc
+        work, assignment, attachment, _nonce, _prompt = self._context(
+            candidate, check_unattended_policy=False,
+        )
+        preferred = RoutingCandidate(
+            node_id=candidate.target_node_id, attachment_id=candidate.attachment_id,
+            readiness=self._readiness(attachment),
+        )
+        fallbacks: list[RoutingCandidate] = []
+        for raw in raw_fallbacks:
+            if not isinstance(raw, dict):
+                raise PreconditionError("WORKER_DISPATCH_ROUTING_INVALID")
+            node_id, attachment_id, attachment_generation = (
+                raw.get("node_id"), raw.get("attachment_id"), raw.get("attachment_generation"),
+            )
+            if (not isinstance(node_id, str) or not isinstance(attachment_id, str)
+                    or type(attachment_generation) is not int or attachment_generation < 1):
+                raise PreconditionError("WORKER_DISPATCH_ROUTING_INVALID")
+            fallback = self.service.attachment(
+                work=work, session_id=candidate.session_id,
+                attachment_id=attachment_id, generation=attachment_generation,
+            )
+            if fallback["node_id"] != node_id or not fallback["active"]:
+                continue
+            fallbacks.append(RoutingCandidate(
+                node_id=node_id, attachment_id=attachment_id,
+                readiness=self._readiness(fallback),
+            ))
+        elapsed = max(0.0, time.time() - float(candidate.routing_started_at or time.time()))
+        decision = decide_route(
+            policy=policy, preferred=preferred, fallbacks=fallbacks, elapsed_s=elapsed,
+        )
+        detail = {
+            "reason": decision.reason, "elapsed_s": round(elapsed, 3),
+            "preferred": preferred.readiness.value,
+            "fallbacks": [{"node_id": item.node_id, "readiness": item.readiness.value}
+                          for item in fallbacks],
+        }
+        if decision.action is RoutingAction.DISPATCH_PREFERRED:
+            self._set_route_state(candidate, "PENDING", detail)
+            return "DISPATCH"
+        if decision.action is RoutingAction.REROUTE_TO_STANDBY:
+            assert decision.candidate is not None
+            self.service.reroute_undispatched_delivery(
+                work=work, session_id=candidate.session_id,
+                assignment_id=candidate.assignment_id,
+                manager_epoch=candidate.manager_epoch, delivery_id=candidate.delivery_id,
+                worker_node_id=decision.candidate.node_id,
+                attachment_id=decision.candidate.attachment_id,
+                attachment_generation=next(
+                    int(item["attachment_generation"]) for item in raw_fallbacks
+                    if item["node_id"] == decision.candidate.node_id
+                    and item["attachment_id"] == decision.candidate.attachment_id
+                ),
+                reason=decision.reason, evidence=detail,
+            )
+            return "REROUTED"
+        if decision.action is RoutingAction.PROVISION_NODE:
+            self._set_route_state(candidate, "PROVISION_REQUIRED", detail)
+            return "DEFERRED"
+        if decision.action is RoutingAction.ESCALATE_REQUIRED:
+            self._set_route_state(candidate, "ESCALATED", detail)
+            return "DEFERRED"
+        self._set_route_state(candidate, "WAITING", detail)
+        return "DEFERRED"
 
     def _confirmed_not_applied(
         self, candidate: DispatchCandidate, reservation: str, error: str,
@@ -714,7 +858,7 @@ class WorkerDispatchRecovery:
         now = time.time() if now is None else max(now, time.time())
         summary = {"lease_owned": False, "checked": 0, "sent": 0,
                    "committed": 0, "acked": 0, "deferred": 0,
-                   "not_applied": 0, "manager_wakes": 0, "rejected": 0}
+                   "not_applied": 0, "rerouted": 0, "manager_wakes": 0, "rejected": 0}
         if not self._acquire(now):
             return summary
         summary["lease_owned"] = True
@@ -731,11 +875,17 @@ class WorkerDispatchRecovery:
                     self._recover_reserved(candidate)
                     summary["deferred"] += 1
                 elif candidate.state == "PENDING":
-                    outcome = self._reserve_and_send(candidate)
-                    if outcome == "NOT_APPLIED":
-                        summary["not_applied"] += 1
+                    route = self._route_pending(candidate)
+                    if route == "DEFERRED":
+                        summary["deferred"] += 1
+                    elif route == "REROUTED":
+                        summary["rerouted"] += 1
                     else:
-                        summary["sent"] += 1
+                        outcome = self._reserve_and_send(candidate)
+                        if outcome == "NOT_APPLIED":
+                            summary["not_applied"] += 1
+                        else:
+                            summary["sent"] += 1
                 elif candidate.state == "ACKNOWLEDGED":
                     self._ack_result(candidate, str(candidate.result_hash))
                     summary["acked"] += 1

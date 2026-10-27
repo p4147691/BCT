@@ -145,6 +145,7 @@ files = [
   "src/bct/core/__init__.py",
   "src/bct/core/identity.py",
   "src/bct/core/models.py",
+  "src/bct/core/node_routing.py",
   "src/bct/core/project_memory.py",
   "src/bct/core/operations.py",
   "src/bct/core/chat_stream_checkpoint.py",

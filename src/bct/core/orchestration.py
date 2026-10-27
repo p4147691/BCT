@@ -1521,6 +1521,136 @@ class OrchestrationService:
             elif prior["message_digest"] != digest:
                 raise ConflictError("ORCHESTRATION_MESSAGE_REQUEST_MISMATCH")
 
+    def reroute_undispatched_delivery(
+        self, *, work: Work, session_id: str, assignment_id: str,
+        manager_epoch: int, delivery_id: str, worker_node_id: str,
+        attachment_id: str, attachment_generation: int, reason: str,
+        evidence: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Move an *unreserved* outbox item to an idle standby worker.
+
+        This is deliberately narrower than worker replacement.  It has no
+        external effect: the prior attempt must still be QUEUED, the outbox
+        must still be PENDING without a reservation, and there must be no
+        dispatcher attempt record.  An APPLIED or UNKNOWN delivery therefore
+        cannot ever enter this path.
+        """
+        worker_node_id = _identifier(worker_node_id, "ORCHESTRATION_WORKER_NODE_INVALID")
+        attachment_id = _identifier(attachment_id, "ORCHESTRATION_ATTACHMENT_ID_INVALID")
+        if type(attachment_generation) is not int or attachment_generation < 1:
+            raise PreconditionError("ORCHESTRATION_ATTACHMENT_GENERATION_INVALID")
+        delivery_id = _identifier(delivery_id, "ORCHESTRATION_DELIVERY_ID_INVALID")
+        reason = _bounded_text(reason, code="ORCHESTRATION_REROUTE_REASON_INVALID", limit=500)
+        evidence = dict(evidence or {})
+        if len(_canonical(evidence)) > 8000:
+            raise PreconditionError("ORCHESTRATION_REROUTE_EVIDENCE_INVALID")
+        now = time.time()
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            if session["manager_epoch"] != manager_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            assignment = db.execute(
+                "SELECT * FROM orchestration_assignments WHERE assignment_id=? AND session_id=?",
+                (assignment_id, session_id),
+            ).fetchone()
+            outbox = db.execute(
+                "SELECT * FROM orchestration_dispatch_outbox WHERE delivery_id=?",
+                (delivery_id,),
+            ).fetchone()
+            if (assignment is None or outbox is None
+                    or outbox["session_id"] != session_id
+                    or outbox["assignment_id"] != assignment_id
+                    or int(outbox["manager_epoch"]) != manager_epoch
+                    or outbox["state"] != "PENDING"
+                    or outbox["reservation_token"] is not None
+                    or assignment["state"] != "QUEUED"):
+                raise ConflictError("ORCHESTRATION_REROUTE_NOT_UNDISPATCHED")
+            generation = int(assignment["current_generation"])
+            prior = db.execute(
+                "SELECT * FROM orchestration_assignment_attempts "
+                "WHERE assignment_id=? AND generation=?", (assignment_id, generation),
+            ).fetchone()
+            attempted = db.execute(
+                "SELECT 1 FROM orchestration_dispatch_attempts WHERE delivery_id=? LIMIT 1",
+                (delivery_id,),
+            ).fetchone()
+            if (prior is None or prior["state"] != "QUEUED"
+                    or prior["dispatch_operation_id"] is not None
+                    or int(outbox["assignment_generation"]) != generation
+                    or attempted is not None):
+                raise ConflictError("ORCHESTRATION_REROUTE_NOT_UNDISPATCHED")
+            attachment = db.execute(
+                "SELECT * FROM orchestration_attachments WHERE attachment_id=? AND generation=? AND node_id=? "
+                "AND active=1 AND EXISTS (SELECT 1 FROM orchestration_session_nodes sn "
+                "WHERE sn.session_id=? AND sn.node_id=orchestration_attachments.node_id "
+                "AND sn.active=1) LIMIT 1",
+                (attachment_id, attachment_generation, worker_node_id, session_id),
+            ).fetchone()
+            if attachment is None or not attachment["relay_role"]:
+                raise ConflictError("ORCHESTRATION_REROUTE_ATTACHMENT_MISMATCH")
+            self._assert_attachment_current_session(db, attachment)
+            if attachment["instance_id"] in self.excluded_new_assignment_instances:
+                raise ConflictError("ORCHESTRATION_RCC_RETIRED_FOR_NEW_ASSIGNMENTS")
+            next_generation = generation + 1
+            decision_id = "reroute." + hashlib.sha256(
+                f"{delivery_id}:{next_generation}".encode("utf-8")
+            ).hexdigest()[:32]
+            db.execute(
+                "INSERT INTO orchestration_reconciliations VALUES(?,?,?,?,?,?,?,?)",
+                (decision_id, session_id, assignment_id, generation, manager_epoch,
+                 "REROUTE_UNDISPATCHED", _canonical({
+                     "reason": reason, "evidence": evidence,
+                     "prior_generation": generation,
+                     "replacement_worker_node_id": worker_node_id,
+                     "replacement_attachment_id": attachment_id,
+                     "delivery_id": delivery_id,
+                 }), now),
+            )
+            changed = db.execute(
+                "UPDATE orchestration_assignment_attempts SET state='NOT_APPLIED',updated_at=? "
+                "WHERE assignment_id=? AND generation=? AND state='QUEUED' "
+                "AND dispatch_operation_id IS NULL",
+                (now, assignment_id, generation),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("ORCHESTRATION_REROUTE_RACE")
+            db.execute(
+                "INSERT INTO orchestration_assignment_attempts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (assignment_id, next_generation, manager_epoch, worker_node_id,
+                 attachment_id, attachment["generation"], "QUEUED", None, None, now, now),
+            )
+            changed = db.execute(
+                "UPDATE orchestration_assignments SET current_generation=?,updated_at=? "
+                "WHERE assignment_id=? AND current_generation=? AND state='QUEUED'",
+                (next_generation, now, assignment_id, generation),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("ORCHESTRATION_REROUTE_RACE")
+            changed = db.execute(
+                "UPDATE orchestration_dispatch_outbox SET target_node_id=?,attachment_id=?,"
+                "attachment_generation=?,assignment_generation=? WHERE delivery_id=? "
+                "AND state='PENDING' AND reservation_token IS NULL",
+                (worker_node_id, attachment_id, attachment["generation"], next_generation, delivery_id),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("ORCHESTRATION_REROUTE_RACE")
+            db.execute(
+                "UPDATE orchestration_dispatch_routes SET state='PENDING',detail_json=?,updated_at=? "
+                "WHERE delivery_id=?",
+                (_canonical({"reason": reason, "rerouted_generation": next_generation,
+                             "target_node_id": worker_node_id}), now, delivery_id),
+            )
+            self.store._event(db, "ORCHESTRATION_ASSIGNMENT_REROUTED", assignment_id, {
+                "delivery_id": delivery_id, "prior_generation": generation,
+                "generation": next_generation, "worker_node_id": worker_node_id,
+                "decision_id": decision_id,
+            })
+            updated = db.execute(
+                "SELECT * FROM orchestration_assignments WHERE assignment_id=?", (assignment_id,),
+            ).fetchone()
+            return self._assignment_value(db, updated)
+
     def replace_worker(
         self, *, work: Work, session_id: str, assignment_id: str,
         manager_epoch: int, worker_node_id: str, attachment_id: str,
@@ -2735,6 +2865,15 @@ class OrchestrationService:
                 "WHERE session_id=? ORDER BY created_at,event_id LIMIT 200",
                 (session_id,),
             ).fetchall()]
+            routes = [dict(row) for row in db.execute(
+                "SELECT r.delivery_id,o.assignment_id,o.assignment_generation,"
+                "o.target_node_id,o.attachment_id,o.attachment_generation,"
+                "r.routing_json,r.state,r.detail_json,r.created_at,r.updated_at "
+                "FROM orchestration_dispatch_routes r JOIN orchestration_dispatch_outbox o "
+                "ON o.delivery_id=r.delivery_id WHERE o.session_id=? "
+                "ORDER BY r.created_at,r.delivery_id LIMIT 200",
+                (session_id,),
+            ).fetchall()]
             epochs = [dict(row) for row in db.execute(
                 "SELECT session_id,epoch,manager_node_id,reason,started_at,ended_at "
                 "FROM orchestration_manager_epochs WHERE session_id=? "
@@ -2760,6 +2899,7 @@ class OrchestrationService:
                     (session_id,),
                 ).fetchone()[0],
                 "manager_wakes": len(wakes),
+                "dispatch_routes": len(routes),
             }
         finally:
             db.close()
@@ -2769,6 +2909,7 @@ class OrchestrationService:
             "attachments": attachments,
             "mailbox": mailbox,
             "manager_wakes": wakes,
+            "dispatch_routes": routes,
             "manager_epochs": epochs,
             "counts": counts,
         }

@@ -500,6 +500,15 @@ class Store:
                     delivery_id TEXT NOT NULL REFERENCES orchestration_dispatch_outbox(delivery_id),
                     phase TEXT NOT NULL, epoch INTEGER NOT NULL, created_at REAL NOT NULL
                 );
+                -- Routing is deliberately separate from the delivery receipt.
+                -- It describes a pre-write scheduling decision only; it cannot
+                -- make an applied or unknown delivery eligible for re-send.
+                CREATE TABLE IF NOT EXISTS orchestration_dispatch_routes (
+                    delivery_id TEXT PRIMARY KEY REFERENCES orchestration_dispatch_outbox(delivery_id),
+                    routing_json TEXT NOT NULL, state TEXT NOT NULL,
+                    detail_json TEXT NOT NULL, created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS orchestration_reconciliations (
                     decision_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
                     assignment_id TEXT NOT NULL, generation INTEGER NOT NULL,

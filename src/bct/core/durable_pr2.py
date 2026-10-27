@@ -144,8 +144,11 @@ def commit_and_enqueue(store: Store, *, session_id: str, consumer_assignment_id:
                    decision_id=decision_id, request_digest=request_digest,
                    decision=decision, results=results, _db=db)
         for index, action in enumerate(actions):
-            if not isinstance(action, dict) or set(action) != {"delivery_id","target_node_id","attachment_id",
-                    "attachment_generation","assignment_id","assignment_generation","payload"}:
+            legacy_keys = {"delivery_id","target_node_id","attachment_id",
+                           "attachment_generation","assignment_id","assignment_generation","payload"}
+            if (not isinstance(action, dict)
+                    or (set(action) != legacy_keys
+                        and set(action) != legacy_keys | {"routing"})):
                 raise ValueError("ACTION_SCHEMA_INVALID")
             for key in ("delivery_id","target_node_id","attachment_id","assignment_id"):
                 _require_id(action[key])
@@ -173,6 +176,14 @@ def commit_and_enqueue(store: Store, *, session_id: str, consumer_assignment_id:
                 continue
             db.execute("INSERT INTO orchestration_dispatch_outbox VALUES(?,?,?,?,?,?,?,?,?,?,?,'PENDING',NULL,NULL,?,NULL)",
                        (*values, now))
+            if "routing" in action:
+                route = json.dumps(action["routing"], sort_keys=True, separators=(",", ":"), allow_nan=False)
+                db.execute(
+                    "INSERT INTO orchestration_dispatch_routes "
+                    "(delivery_id,routing_json,state,detail_json,created_at,updated_at) "
+                    "VALUES(?,?, 'PENDING','{}',?,?)",
+                    (action["delivery_id"], route, now, now),
+                )
         count = db.execute("SELECT COUNT(*) FROM orchestration_dispatch_outbox WHERE decision_id=?", (decision_id,)).fetchone()[0]
         if count != len(actions):
             raise ConflictError("OUTBOX_SET_CONFLICT")
