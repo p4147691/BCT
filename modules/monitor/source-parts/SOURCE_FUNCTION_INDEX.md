@@ -242,7 +242,7 @@ Generated extension/monitor.js is not an edit target.
 - stopMonitorBctNativePreview
 - syncMonitorNativeZOrder
 
-## node-identity (65 functions)
+## node-identity (64 functions)
 
 - applyMonitorBctNodeHighlight
 - applyMonitorChatNavigationIdentity
@@ -261,7 +261,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorBctNodeLocationText
 - monitorBctNodeRoleSummary
 - monitorBctNodeSelectionKey
-- monitorBctSharedWindowGroups
 - monitorBrowserDisplaySlots
 - monitorBrowserWindowIdForEndpoint
 - monitorCanonicalNodeBindings
@@ -276,7 +275,6 @@ Generated extension/monitor.js is not an edit target.
 - monitorEndpointWindowKey
 - monitorExactOpenEndpoint
 - monitorExactSelectedChatNode
-- monitorFocusBctSharedWindowTab
 - monitorHwndHasOpenChatEndpoint
 - monitorListDisplaySlots
 - monitorLocationForEndpoint
@@ -295,6 +293,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorStableNodeSlot
 - monitorStableNodeSlotRecord
 - monitorStoreNodeBinding
+- monitorUniqueBctConversationNodes
 - profileForMonitorWorker
 - refreshMonitorBctWindowNodes
 - refreshMonitorEndpointRegistry

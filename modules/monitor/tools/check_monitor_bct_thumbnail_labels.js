@@ -51,8 +51,10 @@ assert.match(source,/function monitorDisplayHwndForBrowserWindowId\(/);
 assert.match(source,/resolveMonitorBctNodeDisplayHwnd\(node\)\.then/);
 assert.match(source,/resolveMonitorBctNodeHwnd\(node\)\.then/);
 assert.match(source,/location\.textContent = monitorBctNodeLocationText\(node, desktopPosition\)/);
-assert.match(source,/MonitorStatusIcon\?\.render\?\.\(presence, \{ activity: !stale && isGenerating \? "play" : "pause" \}\)/);
-assert.doesNotMatch(source,/presence\.textContent\s*=/);
+assert.match(source,/row\.append\(number, body\)/,
+  "the node list exposes only node number, title, and desktop location");
+assert.doesNotMatch(source,/monitor-bct-node-presence|presence\.textContent\s*=/,
+  "generation state is not a visible node-list column");
 assert.doesNotMatch(source,/id="monitorLocalLlmOpen"/);
 assert.doesNotMatch(source,/id="monitorNodeCols[23]"/);
 assert.doesNotMatch(source,/id="monitorRccRescan"/);

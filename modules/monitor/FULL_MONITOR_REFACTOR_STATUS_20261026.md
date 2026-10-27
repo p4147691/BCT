@@ -35,7 +35,7 @@ Existing live rollback protections: do not modify RCC/Core, active Chrome conver
 ## Current dependency audit and cleanup
 - `tools/analyze_monitor_dependencies.py` generates `MONITOR_DEPENDENCY_AUDIT.md` from the editable domains, ordered source parts and active script graph.
 - The current source has 520 owned functions and no definition-only function/global candidate after cleanup.
-- Historical pre-split comparison found and restored three real regressions: shared Chrome-window tab grouping/focus, GitHub completion Inbox rendering, and the thumbnail node-chip/Z-rail CSS. `check_monitor_modularization_regressions.js` now pins those contracts.
+- Historical pre-split comparison restored the GitHub completion Inbox and exposed the earlier physical Chrome-window grouping. The node-list contract now deliberately supersedes that grouping: conversation networks and `미소속 대화` are the only visible groups, while physical desktop/window/tab order is only a fallback sort key. `check_monitor_modularization_regressions.js` pins the revised contract.
 - `MONITOR_REBUILD_READINESS.md` records what must be retained, what was removed and when a clean shell rewrite becomes safer than incremental extraction.
 - These source facts are not deployment or LIVE acceptance. Installed and currently running versions must be reported separately from this source cleanup.
 

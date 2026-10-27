@@ -29,7 +29,7 @@
     {
       "domain": "node-identity",
       "file": "node-identity.js",
-      "functions": 65
+      "functions": 64
     },
     {
       "domain": "organization",

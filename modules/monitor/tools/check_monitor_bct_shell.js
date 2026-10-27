@@ -164,8 +164,8 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /type:"monitor-refresh-exact-chatgpt-tab"/);
   assert.match(monitorSource, /monitorWorkers\.dataset\.columns = "3"/);
   assert.match(monitorCss, /\.monitor-bct-node-list\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/);
-  assert.match(monitorCss, /\.monitor-bct-window-tab-rows\s*\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/,
-    "shared Chrome-window cards keep their conversation rows in three columns");
+  assert.doesNotMatch(monitorCss, /\.monitor-bct-window-card|\.monitor-bct-window-tab-rows/,
+    "physical Chrome windows do not create a second grouping layer");
   assert.doesNotMatch(monitorCss, /@media[^}]+\.monitor-bct-node-list\s*\{/,
     "node networks stay three columns at the live Monitor width");
   assert.match(monitorSource, /monitorVersion\.classList\.add\("healthy"\)/);
@@ -179,8 +179,8 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /addEventListener\("contextmenu"/);
   assert.match(monitorSource, /monitorBctShell\.renameConversation\(node, title\)/);
   assert.match(monitorSource, /monitorBctShell\.updateConversationScope\(node,/);
-  assert.match(monitorSource, /monitorBctNodeRoleSummary/);
   assert.match(monitorSource, /monitorBctNodeLocationText/);
+  assert.match(monitorSource, /installMonitorBctManagerLongPress\(row, node\)/);
   assert.match(monitorSource, /Manager는 안내용 역할 태그입니다/);
   assert.match(monitorSource, /setTimeout\(\(\) => \{[\s\S]*?\}, 600\)/);
   assert.match(monitorSource, /network_name:String\(bctNode\?\.scopeName/);

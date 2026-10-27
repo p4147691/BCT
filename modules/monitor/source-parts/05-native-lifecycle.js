@@ -2,7 +2,6 @@
 
 let monitorBctNodeInteractionService = null;
 const monitorBctCollapsedScopes = new Set();
-const monitorBctCollapsedWindowCards = new Set();
 let monitorBctSuppressedClickKey = "";
 let monitorBctSuppressScopeClickUntil = 0;
 
@@ -16,9 +15,7 @@ let monitorBctSuppressScopeClickUntil = 0;
 
 /*@@MONITOR_FUNCTION:compareMonitorBctNodeDisplayOrder@@*/
 
-/*@@MONITOR_FUNCTION:monitorBctSharedWindowGroups@@*/
-
-/*@@MONITOR_FUNCTION:monitorFocusBctSharedWindowTab@@*/
+/*@@MONITOR_FUNCTION:monitorUniqueBctConversationNodes@@*/
 
 /*@@MONITOR_FUNCTION:renderMonitorBctWindowNodes@@*/
 

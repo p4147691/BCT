@@ -274,14 +274,15 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   }
   const draggedKey = monitorBctDraggedNodeKey;
   const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
-  const dragged = snapshot.find((node) => node.conversationKey === draggedKey);
+  const semanticSnapshot = monitorUniqueBctConversationNodes(snapshot);
+  const dragged = semanticSnapshot.find((node) => node.conversationKey === draggedKey);
   const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
-  const destinationSample = snapshot.find((node) => (node.scopeId || "") === destinationScopeId);
+  const destinationSample = semanticSnapshot.find((node) => (node.scopeId || "") === destinationScopeId);
   if (!dragged || !monitorBctShell?.reorderConversations) {
     finishMonitorBctNodeDrag();
     return;
   }
-  const destination = snapshot
+  const destination = semanticSnapshot
     .filter((node) => node.conversationKey !== draggedKey && (node.scopeId || "") === destinationScopeId)
     .sort(compareMonitorBctNodeDisplayOrder);
   let insertion = destination.length;

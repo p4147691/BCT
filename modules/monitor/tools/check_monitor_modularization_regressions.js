@@ -8,12 +8,18 @@ const root = path.join(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "extension", "monitor.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "extension", "monitor.css"), "utf8");
 
-assert.match(source, /function monitorBctSharedWindowGroups\(/,
-  "shared Chrome-window grouping must survive bundle generation");
-assert.match(source, /function monitorFocusBctSharedWindowTab\(/,
-  "exact shared-window tab focus must survive bundle generation");
-assert.match(css, /\.monitor-bct-window-card\{/,
-  "shared Chrome-window cards must retain their layout contract");
+assert.doesNotMatch(source, /function monitorBctSharedWindowGroups\(/,
+  "physical Chrome windows must not return as node-list groups");
+assert.doesNotMatch(source, /function monitorFocusBctSharedWindowTab\(/,
+  "physical-window tab focus must not bypass the ordinary node interaction path");
+assert.doesNotMatch(css, /\.monitor-bct-window-card\{/,
+  "physical Chrome-window cards must not return after bundle generation");
+assert.match(source, /const key = node\.scopeId \|\| "__unassigned__";/,
+  "conversation-network scope remains the only node-list grouping key");
+assert.match(source, /groupList\.append\(row\)/,
+  "network members remain direct draggable rows after bundle generation");
+assert.match(css, /\.monitor-bct-node-list\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/,
+  "conversation networks retain their three-column layout");
 
 assert.match(source, /id="monitorGithubInbox"/,
   "GitHub completion inbox mount must remain in the Monitor DOM");
@@ -27,4 +33,4 @@ assert.ok(!css.includes(".monitor-thumbnail-z-rail"),
 assert.ok(!css.includes(".monitor-thumbnail-node-chip"),
   "the obsolete per-node chip styling must not return after bundle generation");
 
-console.log("PASS: source-part generation retains shared-window rows, GitHub inbox, and simplified node styling");
+console.log("PASS: source-part generation retains network-only rows, GitHub inbox, and simplified node styling");

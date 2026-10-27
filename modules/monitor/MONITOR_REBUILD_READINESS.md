@@ -25,7 +25,7 @@ Twenty production functions had no runtime caller or external reference. Four gl
 
 No active storage key, DOM entry point, Native request, BCT operation or user event handler was removed.
 
-The first source-part split had accidentally dropped active code that existed immediately before it. This cleanup restored shared Chrome-window tab grouping/focus, the GitHub completion Inbox, and thumbnail node-chip/Z-order rail styling. A dedicated regression contract now prevents those features from disappearing during future bundle generation.
+The first source-part split had accidentally dropped active code that existed immediately before it. The GitHub completion Inbox remains restored. The former physical Chrome-window grouping/focus layer has since been intentionally removed from the node list: conversation networks and `미소속 대화` are the only visible groups, while desktop/window/tab observations are used only for fallback ordering. A dedicated regression contract prevents the generated bundle from restoring the obsolete physical grouping.
 
 ## Keep
 

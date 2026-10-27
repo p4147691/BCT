@@ -12,6 +12,7 @@ async function scenario(freshRefresh) {
  const promise = new Promise((resolve,reject)=>{resolveSave=resolve;rejectSave=reject;});
  const initial=[
   {conversationKey:"A",scopeId:"team",scopeName:"Team",displayOrder:1,tabIndex:0,tabId:1},
+  {conversationKey:"A",scopeId:"team",scopeName:"Team",displayOrder:1,tabIndex:3,tabId:9},
   {conversationKey:"B",scopeId:"team",scopeName:"Team",displayOrder:2,tabIndex:1,tabId:2}
  ];
  const renders=[],statuses=[];
@@ -20,10 +21,16 @@ async function scenario(freshRefresh) {
   monitorBctNodeReorderPending:false,
   monitorBctDraggedNodeKey:"A",
   monitorBctWindowNodesCache:initial,
-  monitorBctShell:{reorderConversations:()=>{calls++;return promise;}},
+  monitorBctShell:{reorderConversations:(nodes)=>{
+    assert.deepEqual(nodes.map((node)=>node.conversationKey),["B","A"],"duplicate UUIDs never enter reorder persistence");
+    calls++;return promise;
+  }},
   finishMonitorBctNodeDrag(){},
   renderMonitorBctWindowNodes(nodes){renders.push(nodes);},
   setMonitorStatus(...args){statuses.push(args);},
+  monitorUniqueBctConversationNodes:(nodes)=>[
+    ...new Map(nodes.map((node)=>[node.conversationKey,node])).values()
+  ],
   compareMonitorBctNodeDisplayOrder:(a,b)=>a.displayOrder-b.displayOrder,
   Object,Map,Array,String
  };
@@ -49,9 +56,10 @@ async function scenario(freshRefresh) {
   assert.equal(ctx.monitorBctWindowNodesCache,fresh,"newest state preserved");
   assert.equal(renders.length,1,"do not rerender outdated snapshot");
  } else {
-  assert.equal(ctx.monitorBctWindowNodesCache.length,2);
+  assert.equal(ctx.monitorBctWindowNodesCache.length,3,"rollback preserves the original observation cache");
   assert.equal(ctx.monitorBctWindowNodesCache[0].displayOrder,1,"old order restored");
-  assert.equal(ctx.monitorBctWindowNodesCache[1].displayOrder,2);
+  assert.equal(ctx.monitorBctWindowNodesCache[1].displayOrder,1,"duplicate observation keeps the same restored order");
+  assert.equal(ctx.monitorBctWindowNodesCache[2].displayOrder,2);
   assert.equal(renders.length,2,"rollback repaint completed");
  }
  assert.equal(statuses.length,1);
@@ -64,6 +72,9 @@ async function successfulSave(){
   monitorBctWindowNodesCache:[{conversationKey:"A",scopeId:"a",displayOrder:1},{conversationKey:"B",scopeId:"a",displayOrder:2}],
   monitorBctShell:{reorderConversations:()=>promise},
   finishMonitorBctNodeDrag(){},renderMonitorBctWindowNodes(){},setMonitorStatus(){},
+  monitorUniqueBctConversationNodes:(nodes)=>[
+    ...new Map(nodes.map((node)=>[node.conversationKey,node])).values()
+  ],
   compareMonitorBctNodeDisplayOrder:(a,b)=>a.displayOrder-b.displayOrder,Object,Map,Array,String
  };
  vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
