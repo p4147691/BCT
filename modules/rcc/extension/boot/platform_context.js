@@ -41,9 +41,17 @@ function getTabMoveAdapter() {
 function getTabGroupAdapter() {
   return RccBrowserTabGroupAdapter.create(chrome, RccBrowserTabGroupContract);
 }
+function getTabCloseAdapter() {
+  return RccBrowserTabCloseAdapter.create(
+    chrome, RccBrowserTabCloseContract, {
+      isChatTab: (tab) => browserGateway.isChatTab(tab),
+      conversationKey: (url) => RelayCore.conversationKey(url),
+    },
+  );
+}
 const observationGateway = RccObservationGateway.create(chrome);
 const lifecycle = RccLifecycle.create(chrome);
 
 const NATIVE_HOST = 'com.ai_workspace_relay.host';
-const RCC_BACKGROUND_BUILD_ID = '2026-10-27-rcc-tab-groups-and-read-v1';
+const RCC_BACKGROUND_BUILD_ID = '2026-10-27-rcc-exact-tab-close-v1';
 let nativeTransport = null;

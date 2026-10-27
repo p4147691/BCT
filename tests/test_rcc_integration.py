@@ -1701,6 +1701,47 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual(0, self.client.calls[-1]["extra"]["groupId"])
         self.assertEqual(22, self.client.calls[-1]["extra"]["targetWindowId"])
 
+    def test_exact_conversation_tab_close_requires_full_identity_and_never_retries_unknown(self):
+        identity = {
+            "command": "close-conversation-tab", "instance_id": "instance123",
+            "session_id": "a" * 32, "tab_id": 10, "window_id": 11,
+            "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+        }
+        self.client.result = {
+            "type": "host:result", "ok": True, "operationId": "close-confirmed-1",
+            "instanceId": "instance123", "sessionId": identity["session_id"],
+            "tabId": 10, "expectedWindowId": 11,
+            "conversationKey": identity["conversation_key"],
+            "state": "CLOSED_CONFIRMED", "effectState": "APPLIED_CONFIRMED",
+            "closed": True, "tabPresence": "ABSENT",
+        }
+        confirmed = self.call("close-confirmed-1", identity)
+        self.assertEqual(Outcome.APPLIED, confirmed.outcome)
+        self.assertEqual("close-conversation-tab", self.client.calls[-1]["command"])
+        self.assertEqual("instance123", self.client.calls[-1]["extra"]["instanceId"])
+        self.assertTrue(self.call("close-confirmed-1", identity).duplicate)
+        self.assertEqual(1, len([
+            call for call in self.client.calls if call["command"] == "close-conversation-tab"
+        ]))
+
+        with self.assertRaisesRegex(PreconditionError, "RCC_CLOSE_CONVERSATION_IDENTITY_REQUIRED"):
+            self.call("close-invalid", {**identity, "conversation_key": "not-a-uuid"})
+
+        self.client.result = {
+            "type": "host:result", "ok": False, "operationId": "close-unknown-1",
+            "instanceId": "instance123", "sessionId": identity["session_id"],
+            "tabId": 10, "expectedWindowId": 11,
+            "conversationKey": identity["conversation_key"],
+            "state": "CLOSE_UNKNOWN", "effectState": "UNKNOWN",
+            "closed": False, "tabPresence": "UNKNOWN",
+        }
+        unknown = self.call("close-unknown-1", identity)
+        self.assertEqual(Outcome.UNKNOWN, unknown.outcome)
+        self.assertTrue(self.call("close-unknown-1", identity).duplicate)
+        self.assertEqual(2, len([
+            call for call in self.client.calls if call["command"] == "close-conversation-tab"
+        ]))
+
     def test_new_read_commands_are_observational_and_validate_identity(self):
         session_id = "a" * 32
         self.client.result = {

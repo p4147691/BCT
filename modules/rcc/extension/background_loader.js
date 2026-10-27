@@ -16,6 +16,8 @@ importScripts('browser/tab_move_contract.js');
 importScripts('browser/tab_move_adapter.js');
 importScripts('browser/tab_group_contract.js');
 importScripts('browser/tab_group_adapter.js');
+importScripts('browser/tab_close_contract.js');
+importScripts('browser/tab_close_adapter.js');
 importScripts('relay_core.js');
 importScripts('network/directory.js');
 importScripts('relay/contract.js');

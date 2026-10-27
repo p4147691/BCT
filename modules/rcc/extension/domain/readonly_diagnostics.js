@@ -265,6 +265,12 @@ async function handleNativeCommand(message) {
           return;
         }
 
+    if (message.command === 'close-conversation-tab') {
+          const result = await closeAtomicConversationTab(message);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
+        }
+
     if (message.command === 'send-to-tab') {
 
           const result = await sendToExactExistingTab(message, requestId);

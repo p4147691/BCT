@@ -45,7 +45,7 @@ _OPERATOR_QUARANTINE_COMMAND = "quarantine-legacy-rename-claim"
 _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "create-tab-group", "add-tab-to-group", "remove-tab-from-group", "move-tab-group",
-    "update-tab-group",
+    "update-tab-group", "close-conversation-tab",
     "rename-conversation", "reload-extension", "send", "send-to-tab", "send-to-self",
     "node-continue", "create-and-send",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
@@ -993,6 +993,22 @@ class RelayBrowserFeature:
                 "index": index, "conversationKey": conversation_key,
                 "createOperationId": create_id,
             })
+        elif command == "close-conversation-tab":
+            allowed.update({"session_id", "tab_id", "window_id", "conversation_key"})
+            session_id = str(arguments.get("session_id") or "").strip().lower()
+            conversation_key = str(arguments.get("conversation_key") or "").strip().lower()
+            if (not re.fullmatch(r"[a-f0-9]{32}", session_id)
+                    or not re.fullmatch(
+                        r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}",
+                        conversation_key,
+                    )):
+                raise PreconditionError("RCC_CLOSE_CONVERSATION_IDENTITY_REQUIRED")
+            prepared["extra"].update({
+                "instanceId": instance_id, "sessionId": session_id,
+                "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                "windowId": _positive_int(arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"),
+                "conversationKey": conversation_key,
+            })
         elif command == "create-tab-group":
             allowed.update({"session_id", "tab_ids", "title", "color", "collapsed"})
             session = str(arguments.get("session_id") or "").strip()
@@ -1084,6 +1100,9 @@ class RelayBrowserFeature:
             resource += ":maintenance:reload-extension"
         elif command in {"send-to-tab", "send-to-self", "node-continue"}:
             resource += ":direct-tab:" + str(prepared["extra"]["tabId"])
+        elif command == "close-conversation-tab":
+            resource += (":close:" + str(prepared["extra"]["tabId"]) + ":"
+                         + str(prepared["extra"]["conversationKey"]))
         elif command in {"add-tab-to-group", "remove-tab-from-group", "move-tab-group", "update-tab-group"}:
             resource += ":tab-group:" + str(prepared["extra"]["groupId"])
         elif command == "create-tab-group":
@@ -1938,7 +1957,7 @@ class RelayBrowserFeature:
             if values["command"] in {"create-chat-window", "create-chat-tab",
                                      "create-tab-group", "add-tab-to-group",
                                      "remove-tab-from-group", "move-tab-group",
-                                     "update-tab-group"}:
+                                     "update-tab-group", "close-conversation-tab"}:
                 extra["instanceId"] = values["instance_id"]
         if values["command"] == "read-latest-assistant":
             extra["instanceId"] = values["instance_id"]
@@ -2296,6 +2315,34 @@ class RelayBrowserFeature:
             )
             if not correct:
                 raise UnknownEffectError("RCC_DIRECT_TAB_ACK_UNVERIFIED")
+        if values["command"] == "close-conversation-tab":
+            exact = (
+                str(result.get("operationId") or "") == request.operation_id
+                and result.get("instanceId") == values["instance_id"]
+                and result.get("sessionId") == extra["sessionId"]
+                and result.get("tabId") == extra["tabId"]
+                and result.get("expectedWindowId") == extra["windowId"]
+                and result.get("conversationKey") == extra["conversationKey"]
+            )
+            if (result.get("ok") is True and result.get("closed") is True
+                    and result.get("state") == "CLOSED_CONFIRMED"
+                    and result.get("effectState") == "APPLIED_CONFIRMED"
+                    and result.get("tabPresence") == "ABSENT" and exact):
+                return FeatureResult(Outcome.APPLIED, {
+                    "instance_id": values["instance_id"],
+                    "command": values["command"], "host_request_id": request.operation_id,
+                    "tab_id": extra["tabId"], "window_id": extra["windowId"],
+                    "conversation_key": extra["conversationKey"],
+                    "tab_presence": "ABSENT",
+                }, output={"result": _sanitize(result)})
+            if result.get("effectState") == "NOT_APPLIED" and exact:
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "instance_id": values["instance_id"],
+                    "command": values["command"], "host_request_id": request.operation_id,
+                    "tab_id": extra["tabId"], "conversation_key": extra["conversationKey"],
+                    "error": str(result.get("error") or "RCC_CLOSE_NOT_APPLIED")[:128],
+                }, release_claims=True, output={"result": _sanitize(result)})
+            raise UnknownEffectError("RCC_CLOSE_ACK_UNVERIFIED")
         if values["command"] == "simple-relay-bind" and result.get("ok") is True:
             binding = result.get("binding") if isinstance(result.get("binding"), dict) else {}
             if not (

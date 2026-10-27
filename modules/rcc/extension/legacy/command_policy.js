@@ -19,7 +19,7 @@
   const ATOMIC_CHAT_COMMANDS = new Set([
     'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab',
     'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group',
-    'move-tab-group', 'update-tab-group',
+    'move-tab-group', 'update-tab-group', 'close-conversation-tab',
   ]);
   const ORCHESTRATION_COMMANDS = new Set(['send']);
   const READ_ONLY_COMMANDS = new Set([
@@ -32,7 +32,7 @@
   // still subject to the external deploy/reload approval gate.
   const MAINTENANCE_COMMANDS = new Set(['reload-extension']);
   const LEGACY_MUTATION_COMMANDS = new Set([
-    'clear-relay-state', 'close-conversation-tab',
+    'clear-relay-state',
     'conversation-bootstrap-bind',
     'ensure', 'main-capture-install', 'manager-promote',
     'recover-created-result', 'recover-pending', 'register', 'reload-workers',

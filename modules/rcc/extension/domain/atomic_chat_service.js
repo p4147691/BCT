@@ -221,3 +221,38 @@ async function moveAtomicChatTab(message) {
   });
   return result;
 }
+
+// Closing is an exact, one-way browser effect.  Persist the first terminal
+// receipt and never call tabs.remove again for the same operation ID.
+async function closeAtomicConversationTab(message) {
+  const operationId = atomicChatOperationId(message.operationId || message.requestId);
+  const endpoint = await atomicChatEndpoint(message);
+  const tabId = atomicPositiveId(message.tabId, 'ATOMIC_CHAT_TAB_ID_INVALID');
+  const expectedWindowId = atomicPositiveId(message.windowId, 'ATOMIC_CHAT_WINDOW_ID_INVALID');
+  const conversationKey = String(message.conversationKey || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(conversationKey)) {
+    throw new Error('ATOMIC_CHAT_CONVERSATION_KEY_INVALID');
+  }
+  const fingerprint = JSON.stringify([
+    endpoint.instanceId, endpoint.sessionId, tabId, expectedWindowId, conversationKey,
+  ]);
+  const existing = (await readNewChatReceipts())[operationId] || null;
+  if (existing) {
+    if (existing.command !== 'close-conversation-tab' || existing.fingerprint !== fingerprint) {
+      throw new Error('ATOMIC_CHAT_OPERATION_ID_REUSE_MISMATCH');
+    }
+    return { ...(existing.result || {}), replayed: true };
+  }
+  const result = await getTabCloseAdapter().closeTab({
+    operationId, instanceId: endpoint.instanceId, sessionId: endpoint.sessionId,
+    tabId, expectedWindowId, conversationKey,
+  });
+  await writeNewChatReceipt(operationId, {
+    command: 'close-conversation-tab', fingerprint,
+    instanceId: endpoint.instanceId, sessionId: endpoint.sessionId,
+    tabId, windowId: expectedWindowId, conversationKey,
+    state: String(result.state || 'CLOSE_UNKNOWN'), result,
+    error: String(result.error || ''),
+  });
+  return result;
+}

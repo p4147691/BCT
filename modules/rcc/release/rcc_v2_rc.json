@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC36_TAB_GROUP_AND_READ_PRIMITIVES",
+  "candidate": "RCC_REBUILD_V2_RC37_EXACT_CONVERSATION_TAB_CLOSE",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "files": [
@@ -12,8 +12,8 @@
       },
       {
         "path": "background_loader.js",
-        "size": 1790,
-        "sha256": "50ec1bb71f502a898007763d3cc846606fcb4667230ae82a933bb32e1d06b09c"
+        "size": 1885,
+        "sha256": "836c1eed1fd3a73b3631a1bea8151b405b7d6d3047202af1c70f2b854e21b880"
       },
       {
         "path": "boot/background_app.js",
@@ -22,8 +22,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1716,
-        "sha256": "25cd022b170838a19bdd496898ab1326a4f162b178ee510ac020bf2f708c8e2e"
+        "size": 1964,
+        "sha256": "137c111101838975ec4cd1d3e9f113b20f6140f7233bddecb8c469bf0f4f17eb"
       },
       {
         "path": "browser/read_adapter.js",
@@ -107,8 +107,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 20938,
-        "sha256": "2a1281a87e95460072a925733005dce6cb9c92d9a59ea5736cae71e433343220"
+        "size": 20934,
+        "sha256": "f790ada22ba929711096f02355135e04b98118207dadf3873462daa4ebe1b3a3"
       },
       {
         "path": "content/conversation_rename.js",
@@ -152,8 +152,8 @@
       },
       {
         "path": "domain/atomic_chat_service.js",
-        "size": 10385,
-        "sha256": "b0440c7a5cde51f115d9f3213e7b59a96fa04aeae46db931d2397c9d5c88f9b9"
+        "size": 12134,
+        "sha256": "861e40a18a9af8d44bc7c2a91595ad3c553a2cadf9b3aea0ea550148fcfc7b24"
       },
       {
         "path": "domain/conversation_rename_service.js",
@@ -192,8 +192,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 35719,
-        "sha256": "37c3b7d33f1f03252394741c4a895c38ed5b6f0ac13c8922dfa566062ab5fad6"
+        "size": 35941,
+        "sha256": "72b692a8fa92146a7091f8c9934c150c9a85fa121a3a36928b2caa9be969bfc0"
       },
       {
         "path": "domain/tab_group_service.js",
@@ -223,12 +223,12 @@
       {
         "path": "legacy/command_policy.js",
         "size": 4465,
-        "sha256": "c5f70986709d39d72008b151a1b106410f1326227d8097ca962d89829d4d0c74"
+        "sha256": "83eacb410c52847d2f47a1987002fe66897d5aa9201073fd7ef5108bf722486a"
       },
       {
         "path": "manifest.json",
-        "size": 1539,
-        "sha256": "dec7f2e15713ad35d203e1a91591a8c5d3b9b32779318a8305f42de131e43213"
+        "size": 1568,
+        "sha256": "a2a48d75addb497a414ac516969bacebeac70866fd977802c4f737610c84967a"
       },
       {
         "path": "network/directory.js",
@@ -292,7 +292,7 @@
       }
     ],
     "fileCount": 57,
-    "aggregateSha256": "5e278244216f5a9e9a0d21a10236b923d4bc9f5b4c712a100e6c62d9691c7bda"
+    "aggregateSha256": "dca45a3e69e5fe8afe11bd7d046fcdfd56f8a3d8b0a1d8955f23c967e80eb865"
   },
   "activeLoaderGraph": {
     "background": [
@@ -314,6 +314,8 @@
       "browser/tab_move_adapter.js",
       "browser/tab_group_contract.js",
       "browser/tab_group_adapter.js",
+      "browser/tab_close_contract.js",
+      "browser/tab_close_adapter.js",
       "relay_core.js",
       "network/directory.js",
       "relay/contract.js",
@@ -372,8 +374,6 @@
   },
   "optionalBrowserPayload": [
     "browser/read_adapter.js",
-    "browser/tab_close_contract.js",
-    "browser/tab_close_adapter.js",
     "browser/tab_reload_contract.js",
     "browser/tab_reload_adapter.js"
   ],
@@ -426,7 +426,8 @@
         "add-tab-to-group",
         "remove-tab-from-group",
         "move-tab-group",
-        "update-tab-group"
+        "update-tab-group",
+        "close-conversation-tab"
       ],
       "nativeOrchestration": [
         "send"
@@ -457,7 +458,6 @@
       ],
       "nativeBlockedLegacy": [
         "clear-relay-state",
-        "close-conversation-tab",
         "conversation-bootstrap-bind",
         "ensure",
         "main-capture-install",

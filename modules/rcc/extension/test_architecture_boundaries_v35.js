@@ -108,11 +108,11 @@ for (const selected of [
   'browser/window_create_contract.js', 'browser/window_create_adapter.js',
   'browser/tab_move_contract.js', 'browser/tab_move_adapter.js',
   'browser/tab_group_contract.js', 'browser/tab_group_adapter.js',
+  'browser/tab_close_contract.js', 'browser/tab_close_adapter.js',
 ]) {
   assert(loader.includes(`importScripts('${selected}');`), `${selected} must support the active new-chat product path`);
 }
 for (const optional of [
-  'browser/tab_close_contract.js', 'browser/tab_close_adapter.js',
   'browser/tab_reload_contract.js', 'browser/tab_reload_adapter.js',
   'browser/read_adapter.js',
 ]) {
