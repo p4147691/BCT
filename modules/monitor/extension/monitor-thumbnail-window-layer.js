@@ -78,6 +78,15 @@
           image.dataset.captureState="captured";image.dataset.captureFailureReason="";
           image.dataset.monitorCapturedAt=String(recorded);image.dataset.monitorCaptureTitle=String(entry.captureTitle||item.title||"");
           image.classList.remove("monitor-thumb-v2-failed");status.hidden=true;status.textContent="";
+        }else if(entry.physicalSource!=="monitor-frozen"&&validPixels(image.getAttribute("src"))){
+          // A missing/stale capture is not evidence that the HWND disappeared.
+          // Preserve the last accepted pixels until an authoritative successful
+          // window snapshot omits the HWND or an exact lifecycle event removes it.
+          const reason=entry.physicalSource==="monitor-frozen"?"SAVED_FRAME_REJECTED"
+            :entry.captureState==="captured"&&!fresh?"STALE_CAPTURE":"NO_REAL_CAPTURE";
+          image.style.display="block";
+          image.dataset.captureState="retained";image.dataset.captureFailureReason=reason;
+          image.classList.remove("monitor-thumb-v2-failed");status.hidden=true;status.textContent="";
         }else{
           image.removeAttribute("src");
           const reason=entry.physicalSource==="monitor-frozen"?"SAVED_FRAME_REJECTED"
@@ -100,9 +109,8 @@
       if(!state||(frameToken!=null&&state.generation!==frameToken))return false;
       let retained=0;
       for(const {image,status} of state.windows.values()){
-        const recorded=Number(image.dataset.monitorCapturedAt||0),age=Date.now()-recorded;
-        const fresh=recorded>0&&age>=0&&age<=15000&&validPixels(image.getAttribute("src"));
-        if(fresh){
+        const accepted=validPixels(image.getAttribute("src"));
+        if(accepted){
           retained+=1;image.dataset.captureState="retained";image.dataset.captureFailureReason=reason;
           image.style.display="block";image.classList.remove("monitor-thumb-v2-failed");
           status.hidden=true;status.textContent="";continue;

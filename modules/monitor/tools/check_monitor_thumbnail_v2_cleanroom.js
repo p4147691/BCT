@@ -184,11 +184,14 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(nativeReads,0,"normal thumbnail repaint must not poll wallpapers");
   await r.refreshWallpaper(visual1,D1,{force:true});
   assert.equal(nativeReads,1,"a native wallpaper-change signal forces exactly one GUID read");
+  const back={...removed,frames:[{...frame.frames[0],capturedAt:Date.now()}]};
+  r.windowFrame(visual1,D1,back);
+  assert.equal(first.getAttribute("src"),img,"a fresh physical capture restores pixels after a rejected saved frame");
   const timed={...removed,frames:[{...frame.frames[0],capturedAt:Date.now()-30000}]};
   r.windowFrame(visual1,D1,timed);
-  assert.equal(first.getAttribute("src"),null,"old image must not claim a fresh capture");
+  assert.equal(first.getAttribute("src"),img,"a stale read must not erase the last accepted HWND pixels");
+  assert.equal(first.dataset.captureState,"retained");
   assert.equal(first.dataset.captureFailureReason,"STALE_CAPTURE");
-  const back={...removed,frames:[{...frame.frames[0],capturedAt:Date.now()}]};
   r.windowFrame(visual1,D1,back);
   assert.equal(first.getAttribute("src"),img);
   assert.equal(r.frameFailure(visual1,D1,"FRAME_UNAVAILABLE"),true);
@@ -197,7 +200,8 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(first.dataset.captureFailureReason,"FRAME_UNAVAILABLE");
   first.dataset.monitorCapturedAt=String(Date.now()-30000);
   assert.equal(r.frameFailure(visual1,D1,"FRAME_UNAVAILABLE"),true);
-  assert.equal(first.getAttribute("src"),null,"stale accepted pixels are still cleared on failure");
+  assert.equal(first.getAttribute("src"),img,"an uncertain frame failure must retain accepted pixels regardless of age");
+  assert.equal(first.dataset.captureState,"retained");
   assert.equal(r.windowFrame(visual1,D2,back),false,"wrong GUID frame rejected");
   // The most recent V2 window snapshot owns pixels; stale results and
   // lifecycle removal must not bring back previous HWND captures.

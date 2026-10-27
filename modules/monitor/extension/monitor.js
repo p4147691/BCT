@@ -11817,20 +11817,6 @@ function selectVirtualDesktopPreview(index) {
 
   const changed = bounded !== monitorDesktopState.selectedIndex;
 
-  if (changed) {
-
-    monitorFrameGeneration += 1;
-
-    monitorThumbBatchGeneration += 1;
-
-    monitorFrameCache.clear();
-
-    monitorFrameInflight.clear();
-
-    monitorThumbBatchInflight = null;
-
-  }
-
   monitorDesktopState.selectedIndex = bounded;
 
   const desktopId = monitorDesktopState.desktopIds[bounded] || null;
@@ -11870,7 +11856,11 @@ function selectVirtualDesktopPreview(index) {
 
   });
 
-  refreshObservedWindows();
+  // Selecting a preview does not change Windows topology.  Do not invalidate
+  // other desktop captures here: rapid D1/D2 navigation used to cancel valid
+  // in-flight card frames and temporarily blank their accepted pixels.
+  void refreshObservedWindows();
+  void refreshSelectedThumb();
 
 }
 
