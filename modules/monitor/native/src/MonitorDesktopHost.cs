@@ -270,8 +270,22 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-    private static WinEventDelegate LocationChangeCallback;
-
+    private static WinEventDelegate LocationChangeCallback;
+
+    private static volatile bool WindowLocationHookReady;
+
+    private static int WindowLocationEventsSeen;
+
+    private static int WindowLocationEventsAccepted;
+
+    private static int WindowSettledEventsEmitted;
+
+    private static int WindowSettleTicks;
+
+    private static int WindowSettledAttempts;
+
+    private static int WindowSettleSchedules;
+
 
 
 
@@ -297,7 +311,9 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-    private static readonly Dictionary<long, System.Threading.Timer> WindowSettleTimers = new Dictionary<long, System.Threading.Timer>();
+    private static readonly Dictionary<long, System.Threading.Timer> WindowSettleTimers = new Dictionary<long, System.Threading.Timer>();
+
+    private static readonly Dictionary<long, Guid> ObservedWindowDesktopIds = new Dictionary<long, Guid>();
 
 
 
@@ -726,7 +742,9 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            IntPtr locationHook = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, IntPtr.Zero, LocationChangeCallback, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+            IntPtr locationHook = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, IntPtr.Zero, LocationChangeCallback, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+
+            WindowLocationHookReady = locationHook != IntPtr.Zero;
 
 
 
@@ -846,7 +864,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-        try {
+        try {
 
 
 
@@ -866,12 +884,19 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            lock (WindowEventLock) ActiveMoveSizeWindows.Remove(key);
+            lock (WindowEventLock) {
+                ActiveMoveSizeWindows.Remove(key);
+                System.Threading.Timer pendingTimer;
+                if (WindowSettleTimers.TryGetValue(key, out pendingTimer)) {
+                    WindowSettleTimers.Remove(key);
+                    try { pendingTimer.Dispose(); } catch { }
+                }
+            }
 
 
 
 
-            EmitWindowSettled(hWnd, "movesizeend");
+            EmitWindowSettled(hWnd, "movesizeend", GetObservedWindowDesktopId(hWnd));
 
 
 
@@ -891,7 +916,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-    private static void OnWindowLocationChange(IntPtr hook, uint eventType, IntPtr hWnd, int idObject, int idChild, uint eventThread, uint eventTime)
+    private static void OnWindowLocationChange(IntPtr hook, uint eventType, IntPtr hWnd, int idObject, int idChild, uint eventThread, uint eventTime)
 
 
 
@@ -901,22 +926,31 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-        try {
+        try {
+
+            Interlocked.Increment(ref WindowLocationEventsSeen);
 
 
 
 
-            if (idObject != 0 || !IsObservedTopLevelWindow(hWnd)) return;
+            if (idObject != 0 || !IsObservedTopLevelWindow(hWnd)) return;
+
+            Interlocked.Increment(ref WindowLocationEventsAccepted);
 
 
 
 
-            lock (WindowEventLock) if (ActiveMoveSizeWindows.Contains(hWnd.ToInt64())) return;
+            bool moveSizeActive;
+
+            lock (WindowEventLock) moveSizeActive = ActiveMoveSizeWindows.Contains(hWnd.ToInt64());
 
 
 
 
-            ScheduleWindowSettled(hWnd, "locationchange", 85);
+            // LOCATIONCHANGE is authoritative for keyboard Snap and other moves
+            // that do not reliably complete the mouse move/size event pair.
+            // Re-arm one fallback while dragging instead of dropping the event.
+            ScheduleWindowSettled(hWnd, "locationchange", moveSizeActive ? 140 : 85);
 
 
 
@@ -1021,7 +1055,15 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-    private static void ScheduleWindowSettled(IntPtr hWnd, string reason, int delayMs)
+    private static Guid? GetObservedWindowDesktopId(IntPtr hWnd)
+    {
+        lock (WindowEventLock) {
+            Guid desktopId;
+            return ObservedWindowDesktopIds.TryGetValue(hWnd.ToInt64(), out desktopId) ? desktopId : (Guid?)null;
+        }
+    }
+
+    private static void ScheduleWindowSettled(IntPtr hWnd, string reason, int delayMs)
 
 
 
@@ -1031,7 +1073,11 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-        long key = hWnd.ToInt64();
+        Interlocked.Increment(ref WindowSettleSchedules);
+
+        long key = hWnd.ToInt64();
+
+        Guid? desktopId = GetObservedWindowDesktopId(hWnd);
 
 
 
@@ -1041,7 +1087,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            System.Threading.Timer oldTimer;
+            System.Threading.Timer oldTimer;
 
 
 
@@ -1051,32 +1097,42 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            System.Threading.Timer timer = null;
+            System.Threading.Timer timer = null;
 
 
 
 
-            timer = new System.Threading.Timer(_ => {
+            timer = new System.Threading.Timer(_ => {
+
+                Interlocked.Increment(ref WindowSettleTicks);
 
 
 
 
-                lock (WindowEventLock) { WindowSettleTimers.Remove(key); try { timer.Dispose(); } catch { } }
+                bool ownsSlot = false;
+
+                lock (WindowEventLock) {
+                    System.Threading.Timer currentTimer;
+                    ownsSlot = WindowSettleTimers.TryGetValue(key, out currentTimer) && Object.ReferenceEquals(currentTimer, timer);
+                    if (ownsSlot) WindowSettleTimers.Remove(key);
+                    try { timer.Dispose(); } catch { }
+                }
 
 
 
 
-                EmitWindowSettled(hWnd, reason);
+                if (ownsSlot) EmitWindowSettled(hWnd, reason, desktopId);
 
 
 
 
-            }, null, delayMs, System.Threading.Timeout.Infinite);
+            }, null, System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
 
 
 
 
-            WindowSettleTimers[key] = timer;
+            WindowSettleTimers[key] = timer;
+            timer.Change(Math.Max(1, delayMs), System.Threading.Timeout.Infinite);
 
 
 
@@ -1096,7 +1152,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-    private static void EmitWindowSettled(IntPtr hWnd, string reason)
+    private static void EmitWindowSettled(IntPtr hWnd, string reason, Guid? knownDesktopId = null)
 
 
 
@@ -1106,7 +1162,9 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-        try {
+        try {
+
+            Interlocked.Increment(ref WindowSettledAttempts);
 
 
 
@@ -1141,7 +1199,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            Guid desktopId = ((IVirtualDesktopManager)new VirtualDesktopManagerCom()).GetWindowDesktopId(hWnd);
+            string desktopId = knownDesktopId.HasValue ? knownDesktopId.Value.ToString() : string.Empty;
 
 
 
@@ -1151,7 +1209,9 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            var message = new Dictionary<string, object> { { "type", "windowMoveSizeEnd" }, { "event", true }, { "reason", reason }, { "hwnd", hWnd.ToInt64().ToString(CultureInfo.InvariantCulture) }, { "desktopId", desktopId.ToString() }, { "title", title }, { "className", classBuffer.ToString() }, { "left", rect.Left }, { "top", rect.Top }, { "width", width }, { "height", height }, { "visible", IsWindowVisible(hWnd) }, { "iconic", IsIconic(hWnd) }, { "previewVirtualLeft", previewScreen.Left }, { "previewVirtualTop", previewScreen.Top }, { "previewVirtualWidth", previewScreen.Width }, { "previewVirtualHeight", previewScreen.Height }, { "at", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() } };
+            var message = new Dictionary<string, object> { { "type", "windowMoveSizeEnd" }, { "event", true }, { "reason", reason }, { "hwnd", hWnd.ToInt64().ToString(CultureInfo.InvariantCulture) }, { "desktopId", desktopId }, { "title", title }, { "className", classBuffer.ToString() }, { "left", rect.Left }, { "top", rect.Top }, { "width", width }, { "height", height }, { "visible", IsWindowVisible(hWnd) }, { "iconic", IsIconic(hWnd) }, { "previewVirtualLeft", previewScreen.Left }, { "previewVirtualTop", previewScreen.Top }, { "previewVirtualWidth", previewScreen.Width }, { "previewVirtualHeight", previewScreen.Height }, { "at", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() } };
+
+            Interlocked.Increment(ref WindowSettledEventsEmitted);
 
 
 
@@ -1240,6 +1300,17 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
         if (type == "getDeploymentInfo") return GetDeploymentInfo();
+
+        if (type == "getWindowEventDiagnostics") return new Dictionary<string, object> {
+            { "ok", true },
+            { "locationHookReady", WindowLocationHookReady },
+            { "locationEventsSeen", WindowLocationEventsSeen },
+            { "locationEventsAccepted", WindowLocationEventsAccepted },
+            { "settleSchedules", WindowSettleSchedules },
+            { "settleTicks", WindowSettleTicks },
+            { "settledAttempts", WindowSettledAttempts },
+            { "settledEventsEmitted", WindowSettledEventsEmitted }
+        };
 
         if (type == "recoverBctCore") return RecoverBoundedService("BCT Core Supervisor", true);
 
@@ -2305,6 +2376,7 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
                 if (hostWindowHwnd != 0 && hWnd.ToInt64() == hostWindowHwnd) return true;
 
                 Guid desktopId = manager.GetWindowDesktopId(hWnd);
+                lock (WindowEventLock) ObservedWindowDesktopIds[hWnd.ToInt64()] = desktopId;
 
 
 

@@ -7781,15 +7781,25 @@ async function drainMonitorWindowLifecycleEvents() {
 
 async function handleMonitorWindowLifecycleEvent(event) {
 
-  const hwnd=String(event?.hwnd||"").trim(), desktopId=String(event?.desktopId||"").trim();
+  const hwnd=String(event?.hwnd||"").trim();
 
-  if (!/^\d+$/.test(hwnd)||hwnd==="0"||!desktopId) return;
+  if (!/^\d+$/.test(hwnd)||hwnd==="0") return;
   if (hwnd === String(monitorDesktopState.hostWindowHwnd || "")) {
     await chrome.runtime.sendMessage({ type:"monitor-save-popup-window-bounds" }).catch(() => null);
     return;
   }
 
   const prior=monitorWindowDesktopLocations.get(hwnd)||{};
+
+  const desktopId=String(event?.desktopId||prior.desktopId||"").trim();
+  if (!desktopId) {
+    for (const tile of monitorDesktopThumbs.children) {
+      const id=String(tile.dataset.desktopId||"");
+      const visual=tile.querySelector(".monitor-desktop-thumb-visual");
+      if (id&&visual?.isConnected) await refreshDesktopThumb(visual,id).catch(()=>false);
+    }
+    return;
+  }
 
   const previousDesktopId=String(prior.desktopId||"").trim();
 
