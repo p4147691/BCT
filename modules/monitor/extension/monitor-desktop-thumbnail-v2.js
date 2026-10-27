@@ -115,7 +115,17 @@
         if(options.forceWallpaper||
             (options.includeWindows&&!control.activeOptions?.includeWindows))
           control.queued=mergeOptions(control.queued,options);
-        return control.active;
+        // A request can arrive after the active pass consumed `queued` but
+        // before its finally handler clears `active`.  In that narrow window a
+        // full refresh used to inherit the background-only result and its HWND
+        // pass was silently lost.  Join the active pass first, then repeat only
+        // when this caller asked for windows and no window pass actually ran.
+        return control.active.then(result=>{
+          if(attached.get(visual)!==control)return result;
+          if(options.includeWindows&&result?.frameReady===null)
+            return refresh(visual,desktopId,rawOptions);
+          return result;
+        });
       }
       const task=(async()=>{
         let next=options,result;

@@ -68,6 +68,25 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   releaseNormal();
   assert.deepEqual(await Promise.all([firstNormal,duplicateNormal]),[true,true]);
 
+  // A full refresh can arrive after a background-only pass has already read
+  // its queue but before the active promise clears.  That late upgrade must
+  // start a follow-up window pass instead of resolving as background-only.
+  currentRequest=async message=>source(message.desktopId);
+  currentFrame=async()=>({
+    meta:{desktopId:D1,previewVirtualLeft:0,previewVirtualTop:0,previewVirtualWidth:100,previewVirtualHeight:100,observedWindowHwnds:[]},
+    frames:[]
+  });
+  const backgroundOnlyRace=r.refresh(visual1,D1,{includeWindows:false});
+  let lateFullRace=null;
+  const decorationsBeforeLateRace=controllerDecorations;
+  await Promise.resolve().then(()=>Promise.resolve().then(()=>Promise.resolve().then(()=>{
+    lateFullRace=r.refresh(visual1,D1,{includeWindows:true});
+  })));
+  await backgroundOnlyRace;
+  const lateFullResult=await lateFullRace;
+  assert.equal(lateFullResult.frameReady,true,"late window upgrade must not be lost at active-promise cleanup");
+  assert.equal(controllerDecorations,decorationsBeforeLateRace+1,"late window upgrade must execute exactly one window pass");
+
   reads=0;
   const releases=[];
   currentRequest=message=>{reads++;return new Promise(resolve=>releases.push(value=>resolve({
@@ -101,7 +120,7 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(complete.wallpaperReady,true);
   assert.equal(complete.frameReady,true);
   assert.equal(complete.compositeReady,true);
-  assert.equal(controllerDecorations,1);
+  assert.equal(controllerDecorations,decorationsBeforeLateRace+2);
   currentRequest=async message=>({ok:false,desktopId:message.desktopId,error:"NO_WALLPAPER"});
   const backgroundFailed=await r.refresh(visual1,D1,{forceWallpaper:true});
   assert.equal(backgroundFailed.wallpaperReady,false);
