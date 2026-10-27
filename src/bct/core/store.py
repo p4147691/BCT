@@ -341,6 +341,45 @@ class Store:
                     FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id),
                     FOREIGN KEY(manager_node_id) REFERENCES nodes(node_id)
                 );
+                -- A succession is a durable authority transition, not a hint
+                -- derived from a Chrome tab.  It prevents an old manager from
+                -- regaining authority when its delayed response finally ends.
+                CREATE TABLE IF NOT EXISTS orchestration_manager_successions (
+                    session_id TEXT NOT NULL, successor_epoch INTEGER NOT NULL,
+                    predecessor_node_id TEXT NOT NULL, predecessor_epoch INTEGER NOT NULL,
+                    successor_node_id TEXT NOT NULL, state TEXT NOT NULL,
+                    close_state TEXT NOT NULL, evidence_json TEXT NOT NULL,
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    PRIMARY KEY(session_id,successor_epoch),
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id)
+                );
+                -- The initial context notice is its own one-shot effect.  It
+                -- is never inferred from the takeover receipt and UNKNOWN is
+                -- terminal: a new Manager must not receive a guessed resend.
+                CREATE TABLE IF NOT EXISTS orchestration_manager_handoffs (
+                    handoff_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                    successor_epoch INTEGER NOT NULL, predecessor_node_id TEXT NOT NULL,
+                    successor_node_id TEXT NOT NULL, attachment_id TEXT NOT NULL,
+                    attachment_generation INTEGER NOT NULL, instance_id TEXT NOT NULL,
+                    external_session_id TEXT NOT NULL, tab_id INTEGER NOT NULL,
+                    conversation_key TEXT NOT NULL, relay_role TEXT NOT NULL,
+                    binding_receipt_id TEXT NOT NULL, state TEXT NOT NULL,
+                    delivery_id TEXT, payload_json TEXT NOT NULL, created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL, delivered_at REAL,
+                    UNIQUE(session_id,successor_epoch),
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id)
+                );
+                -- The timer begins only after a current-manager observation.
+                -- The raw state observation and the authority decision remain
+                -- separate so an unavailable browser can never fabricate a
+                -- successful result or a safe tab close.
+                CREATE TABLE IF NOT EXISTS orchestration_manager_liveness (
+                    session_id TEXT PRIMARY KEY, manager_epoch INTEGER NOT NULL,
+                    manager_node_id TEXT NOT NULL, state TEXT NOT NULL,
+                    blocked_since REAL, last_observed_at REAL NOT NULL,
+                    evidence_json TEXT NOT NULL, updated_at REAL NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES orchestration_sessions(session_id)
+                );
                 CREATE TABLE IF NOT EXISTS orchestration_session_nodes (
                     session_id TEXT NOT NULL, node_id TEXT NOT NULL,
                     session_role TEXT NOT NULL, active INTEGER NOT NULL,

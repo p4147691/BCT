@@ -14,6 +14,7 @@ from .manager_decision_recovery import ManagerDecisionRecovery
 from .delivery_continuation_recovery import DeliveryContinuationRecovery
 from .relay_executor import RelayControlFeature
 from .worker_dispatch_recovery import WorkerDispatchRecovery
+from .manager_succession_recovery import ManagerSuccessionRecovery
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
@@ -83,6 +84,21 @@ def _manager_wake_receipt_v2_enabled(policy_path: str | Path) -> bool:
     return enabled
 
 
+def _manager_failover_seconds(policy_path: str | Path) -> float:
+    """Read the bounded, operator-adjustable Manager failover timeout."""
+    data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
+    orchestration = data.get("orchestration", {})
+    if not isinstance(orchestration, dict):
+        raise ValueError("ORCHESTRATION_SECTION_INVALID")
+    value = orchestration.get("manager_failover_seconds", 300)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("MANAGER_FAILOVER_SECONDS_INVALID")
+    seconds = float(value)
+    if not 30.0 <= seconds <= 3600.0:
+        raise ValueError("MANAGER_FAILOVER_SECONDS_INVALID")
+    return seconds
+
+
 
 def _excluded_new_assignment_instances(policy_path: str | Path) -> frozenset[str]:
     data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
@@ -131,6 +147,7 @@ class BCT:
             self.store,
             policy=self.policy,
             manager_wake_receipt_v2_enabled=v2_enabled,
+            manager_failover_seconds=_manager_failover_seconds(policy_path),
             excluded_new_assignment_instances=_excluded_new_assignment_instances(policy_path),
             require_current_session_instances=_require_current_session_instances(policy_path),
         )
@@ -141,6 +158,10 @@ class BCT:
         )
         self.worker_dispatch_recovery = (
             WorkerDispatchRecovery(self.orchestration, relay)
+            if self.orchestration.manager_wake_receipt_v2_active else None
+        )
+        self.manager_succession_recovery = (
+            ManagerSuccessionRecovery(self.orchestration, relay)
             if self.orchestration.manager_wake_receipt_v2_active else None
         )
         self.manager_decision_recovery = (

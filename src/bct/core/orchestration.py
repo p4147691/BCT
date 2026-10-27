@@ -73,13 +73,19 @@ class OrchestrationService:
     def __init__(
         self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
         policy: "Policy | None" = None,
+        manager_failover_seconds: float = 300.0,
         excluded_new_assignment_instances: frozenset[str] = frozenset(),
         require_current_session_instances: frozenset[str] = frozenset(),
     ):
         if not isinstance(manager_wake_receipt_v2_enabled, bool):
             raise ValueError("MANAGER_WAKE_RECEIPT_V2_ENABLED_INVALID")
+        if (isinstance(manager_failover_seconds, bool)
+                or not isinstance(manager_failover_seconds, (int, float))
+                or not 30.0 <= float(manager_failover_seconds) <= 3600.0):
+            raise ValueError("MANAGER_FAILOVER_SECONDS_INVALID")
         self.store = store
         self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
+        self.manager_failover_seconds = float(manager_failover_seconds)
         self.policy = policy
         self.excluded_new_assignment_instances = frozenset(excluded_new_assignment_instances)
         self.require_current_session_instances = frozenset(
@@ -788,6 +794,184 @@ class OrchestrationService:
                 )
             return [dict(row) for row in stale]
 
+    def observe_manager_liveness(
+        self, *, work: Work, session_id: str, manager_epoch: int,
+        state: str, evidence: dict[str, Any] | None = None,
+        observed_at: float | None = None,
+    ) -> dict[str, Any]:
+        """Persist one exact Manager endpoint observation.
+
+        ``GENERATING``, ``DISCONNECTED`` and ``ORPHANED`` are blocking
+        observations.  They only make a successor *eligible* after the
+        configured timeout; they do not themselves take over or send anything.
+        An ``IDLE`` observation clears the timer for the current epoch.
+        """
+        if state not in {"IDLE", "GENERATING", "DISCONNECTED", "ORPHANED"}:
+            raise PreconditionError("ORCHESTRATION_MANAGER_LIVENESS_STATE_INVALID")
+        if evidence is not None and (not isinstance(evidence, dict)
+                                     or len(_canonical(evidence)) > 4000):
+            raise PreconditionError("ORCHESTRATION_MANAGER_LIVENESS_EVIDENCE_INVALID")
+        now = time.time() if observed_at is None else float(observed_at)
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            if int(session["manager_epoch"]) != manager_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            manager_node_id = str(session["manager_node_id"] or "")
+            if not manager_node_id:
+                raise ConflictError("ORCHESTRATION_MANAGER_MISSING")
+            previous = db.execute(
+                "SELECT * FROM orchestration_manager_liveness WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            blocked = state != "IDLE"
+            same_owner = previous is not None and (
+                int(previous["manager_epoch"]) == manager_epoch
+                and str(previous["manager_node_id"]) == manager_node_id
+            )
+            blocked_since = (
+                float(previous["blocked_since"])
+                if blocked and same_owner and previous["blocked_since"] is not None
+                else now if blocked else None
+            )
+            detail = _canonical(evidence or {})
+            db.execute(
+                "INSERT INTO orchestration_manager_liveness "
+                "(session_id,manager_epoch,manager_node_id,state,blocked_since,"
+                "last_observed_at,evidence_json,updated_at) VALUES(?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(session_id) DO UPDATE SET manager_epoch=excluded.manager_epoch,"
+                "manager_node_id=excluded.manager_node_id,state=excluded.state,"
+                "blocked_since=excluded.blocked_since,last_observed_at=excluded.last_observed_at,"
+                "evidence_json=excluded.evidence_json,updated_at=excluded.updated_at",
+                (session_id, manager_epoch, manager_node_id, state, blocked_since,
+                 now, detail, now),
+            )
+            elapsed = 0.0 if blocked_since is None else max(0.0, now - blocked_since)
+            value = {
+                "session_id": session_id,
+                "manager_node_id": manager_node_id,
+                "manager_epoch": manager_epoch,
+                "state": state,
+                "blocked_since": blocked_since,
+                "elapsed_s": elapsed,
+                "failover_after_s": self.manager_failover_seconds,
+                "failover_due": bool(blocked and elapsed >= self.manager_failover_seconds),
+            }
+            self.store._event(db, "ORCHESTRATION_MANAGER_LIVENESS_OBSERVED", session_id, value)
+            return value
+
+    def manager_successor_candidates(
+        self, *, work: Work, session_id: str, expected_epoch: int,
+    ) -> list[dict[str, Any]]:
+        """Return durable candidate attachments, never an implicit takeover.
+
+        Standby nodes precede workers.  A caller must still make its own exact
+        RCC readiness observation and then call ``takeover_manager`` with the
+        current epoch; this prevents stale discovery from becoming authority.
+        """
+        db = self.store._connect()
+        try:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            if int(session["manager_epoch"]) != expected_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            rows = db.execute(
+                "SELECT sn.node_id,sn.session_role,a.attachment_id,a.generation,"
+                "a.instance_id,a.external_session_id,a.tab_id,a.window_id,"
+                "a.conversation_key,a.relay_role FROM orchestration_session_nodes sn "
+                "JOIN orchestration_attachments a ON a.node_id=sn.node_id AND a.active=1 "
+                "WHERE sn.session_id=? AND sn.active=1 AND sn.node_id!=? "
+                "AND sn.session_role IN ('STANDBY','MANAGER','WORKER') "
+                "AND a.binding_receipt_id IS NOT NULL AND a.binding_receipt_id!='' "
+                "AND NOT EXISTS (SELECT 1 FROM orchestration_manager_epochs e "
+                "WHERE e.session_id=sn.session_id AND e.manager_node_id=sn.node_id) "
+                "AND EXISTS (SELECT 1 FROM orchestration_rcc_instance_sessions rs "
+                "WHERE rs.instance_id=a.instance_id AND rs.external_session_id=a.external_session_id) "
+                "ORDER BY CASE sn.session_role WHEN 'STANDBY' THEN 0 WHEN 'MANAGER' THEN 1 "
+                "WHEN 'WORKER' THEN 2 ELSE 3 END,a.observed_at DESC,sn.node_id",
+                (session_id, str(session["manager_node_id"])),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            db.close()
+
+    def claim_manager_handoff(
+        self, *, work: Work, session_id: str, successor_epoch: int,
+    ) -> dict[str, Any] | None:
+        """Claim one successor context notice before its external write.
+
+        A notice which crossed the write boundary is ``UNKNOWN`` rather than
+        retried.  ``NOT_APPLIED`` remains eligible because the relay has proved
+        that no browser write occurred.
+        """
+        now = time.time()
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            if int(session["manager_epoch"]) != successor_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            row = db.execute(
+                "SELECT * FROM orchestration_manager_handoffs WHERE session_id=? "
+                "AND successor_epoch=?", (session_id, successor_epoch),
+            ).fetchone()
+            if row is None:
+                return None
+            if str(row["state"]) in {"DELIVERED", "DELIVERING", "UNKNOWN", "BLOCKED"}:
+                return None
+            delivery_id = "manager-handoff." + hashlib.sha256(
+                str(row["handoff_id"]).encode("utf-8")
+            ).hexdigest()[:32]
+            changed = db.execute(
+                "UPDATE orchestration_manager_handoffs SET state='DELIVERING',delivery_id=?,"
+                "updated_at=? WHERE handoff_id=? AND state IN ('PENDING','NOT_APPLIED')",
+                (delivery_id, now, str(row["handoff_id"])),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("ORCHESTRATION_MANAGER_HANDOFF_FENCED")
+            value = dict(db.execute(
+                "SELECT * FROM orchestration_manager_handoffs WHERE handoff_id=?",
+                (str(row["handoff_id"]),),
+            ).fetchone())
+            self.store._event(db, "ORCHESTRATION_MANAGER_HANDOFF_DELIVERING", str(row["handoff_id"]), {
+                "session_id": session_id, "manager_epoch": successor_epoch,
+                "delivery_id": delivery_id,
+            })
+            return value
+
+    def complete_manager_handoff(
+        self, *, work: Work, session_id: str, successor_epoch: int,
+        handoff_id: str, delivery_id: str, outcome: Outcome,
+    ) -> dict[str, Any]:
+        if outcome not in {Outcome.APPLIED, Outcome.NOT_APPLIED, Outcome.UNKNOWN}:
+            raise ValueError("ORCHESTRATION_MANAGER_HANDOFF_OUTCOME_INVALID")
+        now = time.time()
+        with self.store.transaction() as db:
+            session = self._session_row(db, session_id)
+            self._assert_work(session, work)
+            if int(session["manager_epoch"]) != successor_epoch:
+                raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            state = {
+                Outcome.APPLIED: "DELIVERED", Outcome.NOT_APPLIED: "NOT_APPLIED",
+                Outcome.UNKNOWN: "UNKNOWN",
+            }[outcome]
+            changed = db.execute(
+                "UPDATE orchestration_manager_handoffs SET state=?,updated_at=?,"
+                "delivered_at=? WHERE handoff_id=? AND session_id=? AND successor_epoch=? "
+                "AND delivery_id=? AND state='DELIVERING'",
+                (state, now, now if state == "DELIVERED" else None, handoff_id,
+                 session_id, successor_epoch, delivery_id),
+            ).rowcount
+            if changed != 1:
+                raise ConflictError("ORCHESTRATION_MANAGER_HANDOFF_FENCED")
+            row = db.execute(
+                "SELECT * FROM orchestration_manager_handoffs WHERE handoff_id=?", (handoff_id,)
+            ).fetchone()
+            self.store._event(db, "ORCHESTRATION_MANAGER_HANDOFF_" + state, handoff_id, {
+                "session_id": session_id, "manager_epoch": successor_epoch,
+                "delivery_id": delivery_id,
+            })
+            return dict(row)
+
     def takeover_manager(
         self, *, work: Work, session_id: str, expected_epoch: int,
         manager_node_id: str, reason: str, evidence: dict[str, Any] | None = None,
@@ -804,6 +988,19 @@ class OrchestrationService:
             self._assert_work(session, work)
             if session["manager_epoch"] != expected_epoch:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            prior_manager_node_id = str(session["manager_node_id"] or "")
+            if manager_node_id == prior_manager_node_id:
+                raise ConflictError("ORCHESTRATION_MANAGER_SUCCESSOR_REQUIRED")
+            previous_authority = db.execute(
+                "SELECT 1 FROM orchestration_manager_epochs WHERE session_id=? "
+                "AND manager_node_id=? LIMIT 1",
+                (session_id, manager_node_id),
+            ).fetchone()
+            if previous_authority is not None:
+                # Epochs fence stale decisions.  They are deliberately not a
+                # carousel that lets a delayed original manager reclaim a live
+                # successor's authority.
+                raise ConflictError("ORCHESTRATION_MANAGER_REINSTATEMENT_DENIED")
             node = db.execute(
                 "SELECT active FROM nodes WHERE node_id=?", (manager_node_id,)
             ).fetchone()
@@ -840,6 +1037,64 @@ class OrchestrationService:
             ).rowcount
             if changed != 1:
                 raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+            db.execute(
+                "UPDATE orchestration_session_nodes SET session_role='RETIRED_MANAGER' "
+                "WHERE session_id=? AND node_id=?",
+                (session_id, prior_manager_node_id),
+            )
+            db.execute(
+                "UPDATE orchestration_session_nodes SET session_role='MANAGER' "
+                "WHERE session_id=? AND node_id=? AND active=1",
+                (session_id, manager_node_id),
+            )
+            db.execute(
+                "INSERT INTO orchestration_manager_successions "
+                "(session_id,successor_epoch,predecessor_node_id,predecessor_epoch,"
+                "successor_node_id,state,close_state,evidence_json,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (session_id, next_epoch, prior_manager_node_id, expected_epoch,
+                 manager_node_id, "CURRENT", "PENDING_CONTEXT", _canonical(evidence or {}),
+                 now, now),
+            )
+            handoff_id = "handoff." + hashlib.sha256(
+                f"{session_id}:{next_epoch}:{prior_manager_node_id}:{manager_node_id}".encode("utf-8")
+            ).hexdigest()[:32]
+            handoff_payload = {
+                "schema": "BCT_MANAGER_SUCCESSION_V1",
+                "session_id": session_id,
+                "manager_epoch": next_epoch,
+                "predecessor": {"node_id": prior_manager_node_id, "epoch": expected_epoch},
+                "objective": str(session["objective"]),
+                "acceptance": _load(session["acceptance_json"]),
+                "roots": _load(session["roots_json"]),
+                "actions": _load(session["actions_json"]),
+                "instruction": (
+                    "You are the permanent current Manager for this session. "
+                    "The previous Manager cannot regain authority. Inspect the durable "
+                    "session status before issuing follow-up assignments; do not resend "
+                    "any UNKNOWN delivery."
+                ),
+            }
+            binding_receipt_id = str(attachment["binding_receipt_id"] or "")
+            handoff_state = "PENDING" if binding_receipt_id else "BLOCKED"
+            db.execute(
+                "INSERT INTO orchestration_manager_handoffs "
+                "(handoff_id,session_id,successor_epoch,predecessor_node_id,successor_node_id,"
+                "attachment_id,attachment_generation,instance_id,external_session_id,tab_id,"
+                "conversation_key,relay_role,binding_receipt_id,state,delivery_id,payload_json,"
+                "created_at,updated_at,delivered_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (handoff_id, session_id, next_epoch, prior_manager_node_id, manager_node_id,
+                 str(attachment["attachment_id"]), int(attachment["generation"]),
+                 str(attachment["instance_id"]), str(attachment["external_session_id"]),
+                 int(attachment["tab_id"]), str(attachment["conversation_key"]),
+                 str(attachment["relay_role"]), binding_receipt_id, handoff_state, None,
+                 _canonical(handoff_payload), now, now, None),
+            )
+            # The old token is already fenced because every durable operation
+            # checks ``orchestration_sessions.manager_epoch`` first.  Lease
+            # replacement stays in ``acquire_lease`` so callers retain its
+            # single, audited ownership transition and no token is ever
+            # exposed through a succession notification.
             # A pending notification belongs to the old manager attachment and
             # must never be redirected.  Once takeover has atomically proved
             # the replacement manager, preserve the old record as STALE and
@@ -906,6 +1161,10 @@ class OrchestrationService:
             self.store._event(db, "ORCHESTRATION_MANAGER_TAKEOVER", session_id, {
                 "manager_node_id": manager_node_id, "manager_epoch": next_epoch,
                 "prior_epoch": expected_epoch,
+                "prior_manager_node_id": prior_manager_node_id,
+                "permanent_successor": True,
+                "handoff_id": handoff_id,
+                "handoff_state": handoff_state,
                 "adopted_queued_assignments": len(queued),
                 "requeued_manager_wakes": requeued_wakes,
             })
@@ -2865,6 +3124,10 @@ class OrchestrationService:
                 "WHERE session_id=? ORDER BY created_at,event_id LIMIT 200",
                 (session_id,),
             ).fetchall()]
+            session_nodes = [dict(row) for row in db.execute(
+                "SELECT node_id,session_role,active FROM orchestration_session_nodes "
+                "WHERE session_id=? ORDER BY node_id", (session_id,),
+            ).fetchall()]
             routes = [dict(row) for row in db.execute(
                 "SELECT r.delivery_id,o.assignment_id,o.assignment_generation,"
                 "o.target_node_id,o.attachment_id,o.attachment_generation,"
@@ -2879,6 +3142,25 @@ class OrchestrationService:
                 "FROM orchestration_manager_epochs WHERE session_id=? "
                 "ORDER BY epoch DESC LIMIT 50",
                 (session_id,),
+            ).fetchall()]
+            successions = [dict(row) for row in db.execute(
+                "SELECT session_id,successor_epoch,predecessor_node_id,predecessor_epoch,"
+                "successor_node_id,state,close_state,evidence_json,created_at,updated_at "
+                "FROM orchestration_manager_successions WHERE session_id=? "
+                "ORDER BY successor_epoch DESC LIMIT 50",
+                (session_id,),
+            ).fetchall()]
+            liveness = db.execute(
+                "SELECT session_id,manager_epoch,manager_node_id,state,blocked_since,"
+                "last_observed_at,evidence_json,updated_at FROM orchestration_manager_liveness "
+                "WHERE session_id=?", (session_id,),
+            ).fetchone()
+            handoffs = [dict(row) for row in db.execute(
+                "SELECT handoff_id,successor_epoch,predecessor_node_id,successor_node_id,"
+                "attachment_id,attachment_generation,instance_id,external_session_id,tab_id,"
+                "conversation_key,relay_role,state,delivery_id,created_at,updated_at,delivered_at "
+                "FROM orchestration_manager_handoffs WHERE session_id=? "
+                "ORDER BY successor_epoch DESC LIMIT 50", (session_id,),
             ).fetchall()]
             counts = {
                 "assignments": db.execute(
@@ -2898,6 +3180,8 @@ class OrchestrationService:
                     "SELECT COUNT(*) FROM orchestration_manager_epochs WHERE session_id=?",
                     (session_id,),
                 ).fetchone()[0],
+                "manager_successions": len(successions),
+                "manager_handoffs": len(handoffs),
                 "manager_wakes": len(wakes),
                 "dispatch_routes": len(routes),
             }
@@ -2907,10 +3191,14 @@ class OrchestrationService:
             "session": self._session_value(session),
             "assignments": assignments,
             "attachments": attachments,
+            "session_nodes": session_nodes,
             "mailbox": mailbox,
             "manager_wakes": wakes,
             "dispatch_routes": routes,
             "manager_epochs": epochs,
+            "manager_successions": successions,
+            "manager_liveness": None if liveness is None else dict(liveness),
+            "manager_handoffs": handoffs,
             "counts": counts,
         }
 

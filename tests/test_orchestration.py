@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -794,6 +795,93 @@ class OrchestrationTests(unittest.TestCase):
                 request={"instruction": "stale"}, roots=[str(self.root)],
                 actions=["read"], acceptance={}, dependencies=[],
             )
+
+    def test_manager_successor_is_permanent_and_liveness_is_timed(self):
+        work = self.bct.store.get_work("work")
+        first = self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1,
+            state="GENERATING", evidence={"source": "exact-rcc-state"},
+            observed_at=100.0,
+        )
+        self.assertFalse(first["failover_due"])
+        due = self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1,
+            state="GENERATING", evidence={"source": "exact-rcc-state"},
+            observed_at=400.0,
+        )
+        self.assertTrue(due["failover_due"])
+        self.assertEqual(300.0, due["failover_after_s"])
+        candidates = self.bct.orchestration.manager_successor_candidates(
+            work=work, session_id="session", expected_epoch=1,
+        )
+        self.assertEqual("backup", candidates[0]["node_id"])
+        succeeded = self.bct.orchestration.takeover_manager(
+            work=work, session_id="session", expected_epoch=1,
+            manager_node_id="backup", reason="manager timed out",
+            evidence={"elapsed_s": 300.0},
+        )
+        self.assertEqual(2, succeeded["manager_epoch"])
+        with self.assertRaisesRegex(ConflictError, "REINSTATEMENT_DENIED"):
+            self.bct.orchestration.takeover_manager(
+                work=work, session_id="session", expected_epoch=2,
+                manager_node_id="manager", reason="late original response",
+            )
+        snapshot = self.bct.orchestration.snapshot(work=work, session_id="session")
+        succession = snapshot["manager_successions"][0]
+        self.assertEqual("manager", succession["predecessor_node_id"])
+        self.assertEqual("backup", succession["successor_node_id"])
+        self.assertEqual("PENDING_CONTEXT", succession["close_state"])
+        self.assertEqual("RETIRED_MANAGER", next(
+            row["session_role"] for row in snapshot["session_nodes"]
+            if row["node_id"] == "manager"
+        ))
+        handoff = self.bct.orchestration.claim_manager_handoff(
+            work=work, session_id="session", successor_epoch=2,
+        )
+        self.assertIsNotNone(handoff)
+        self.bct.orchestration.complete_manager_handoff(
+            work=work, session_id="session", successor_epoch=2,
+            handoff_id=handoff["handoff_id"], delivery_id=handoff["delivery_id"],
+            outcome=Outcome.UNKNOWN,
+        )
+        # An uncertain notice is retained as evidence, never sent again.
+        self.assertIsNone(self.bct.orchestration.claim_manager_handoff(
+            work=work, session_id="session", successor_epoch=2,
+        ))
+
+    def test_manager_succession_recovery_promotes_idle_backup_once(self):
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+
+        work = self.bct.store.get_work("work")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode='RCC_RESULT_POLL_V1' "
+                "WHERE session_id='session'"
+            )
+        self.bct.orchestration.manager_wake_receipt_v2_enabled = True
+        self.bct.orchestration.manager_failover_seconds = 30.0
+        self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1, state="GENERATING",
+            evidence={"source": "fixture"}, observed_at=time.time() - 31.0,
+        )
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        current = recovery._current(limit=8)
+        for endpoint in self.relay.endpoints:
+            if endpoint["tabId"] == current[0]["tab_id"]:
+                endpoint["generating"] = True
+        self.assertEqual("GENERATING", recovery._observe(current[0]))
+        result = recovery.run_once()
+        self.assertEqual(1, result["taken_over"], result)
+        snapshot = self.bct.orchestration.snapshot(work=work, session_id="session")
+        self.assertEqual("backup", snapshot["session"]["manager_node_id"])
+        handoff = snapshot["manager_handoffs"][0]
+        self.assertIn(handoff["state"], {"DELIVERED", "BLOCKED"})
+        # A later run sees backup as current and cannot revive the original
+        # manager, even though its tab is still generating.
+        recovery.run_once()
+        self.assertEqual(2, self.bct.orchestration.snapshot(
+            work=work, session_id="session"
+        )["session"]["manager_epoch"])
 
     def test_chain_runs_two_workers_takes_over_manager_and_synthesizes(self):
         worker_b = self.attachment("worker-b")

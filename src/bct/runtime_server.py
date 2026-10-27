@@ -271,6 +271,10 @@ def main() -> int:
             "enabled": bct.worker_dispatch_recovery is not None,
             "runs": 0,
         },
+        "manager_succession_recovery": {
+            "enabled": bct.manager_succession_recovery is not None,
+            "runs": 0,
+        },
         "delivery_continuation_recovery": {
             "enabled": True, "runs": 0,
         },
@@ -326,6 +330,29 @@ def main() -> int:
                 }
             # Event-first latency with bounded polling as the recovery safety net.
             recovery.wait(2.0)
+
+    def manager_succession_recovery_loop() -> None:
+        recovery = bct.manager_succession_recovery
+        if recovery is None:
+            return
+        while not recovery_stop.is_set():
+            try:
+                outcome = recovery.run_once(limit=8)
+                state["manager_succession_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["manager_succession_recovery"].get("runs", 0)) + 1,
+                    "last_outcome": outcome,
+                    "last_error": None,
+                    "last_run_at": time.time(),
+                }
+            except Exception as exc:  # no state change is assumed after a failed observation
+                state["manager_succession_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["manager_succession_recovery"].get("runs", 0)) + 1,
+                    "last_error": type(exc).__name__ + ":" + str(exc),
+                    "last_run_at": time.time(),
+                }
+            recovery_stop.wait(2.0)
 
     def bottleneck_ack_loop() -> None:
         """Observe RCC telemetry only; the controller owns any one-shot effect."""
@@ -540,6 +567,7 @@ def main() -> int:
     holder["server"] = server
     recovery_thread = None
     dispatch_thread = None
+    succession_thread = None
     bottleneck_thread = None
     delivery_continuation_thread = threading.Thread(
         target=delivery_continuation_recovery_loop,
@@ -563,6 +591,12 @@ def main() -> int:
             name="bct-worker-dispatch-recovery", daemon=True,
         )
         dispatch_thread.start()
+    if bct.manager_succession_recovery is not None:
+        succession_thread = threading.Thread(
+            target=manager_succession_recovery_loop,
+            name="bct-manager-succession-recovery", daemon=True,
+        )
+        succession_thread.start()
     if bottleneck_ack.policy.enabled:
         bottleneck_thread = threading.Thread(
             target=bottleneck_ack_loop, name="bct-bottleneck-ack", daemon=True,
@@ -576,6 +610,8 @@ def main() -> int:
             recovery_thread.join(timeout=3.0)
         if dispatch_thread is not None:
             dispatch_thread.join(timeout=3.0)
+        if succession_thread is not None:
+            succession_thread.join(timeout=3.0)
         if bottleneck_thread is not None:
             bottleneck_thread.join(timeout=3.0)
         delivery_continuation_thread.join(timeout=3.0)

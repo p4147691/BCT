@@ -82,6 +82,11 @@ timeout_seconds = 300
 # sessions created afterwards use Schema 2; existing sessions stay pinned to
 # their stored legacy receipt mode.
 manager_wake_receipt_v2_enabled = true
+# A Manager which remains generating or unavailable for this period is eligible
+# for a permanent successor takeover.  This is deliberately a policy value,
+# not an authority grant: the successor still needs an exact active attachment
+# and receives a new fenced manager epoch.
+manager_failover_seconds = 300
 # Emergency-only stable-instance retirement. Normal same-ID reloads are fenced
 # by the exact current RCC session in SQLite, so they do not require a manual
 # allow/deny edit and historical attachments remain audit-only.
@@ -136,6 +141,7 @@ files = [
   "src/bct/monitor_ui_layout.py",
   "src/bct/bottleneck_ack.py",
   "src/bct/manager_decision_recovery.py",
+  "src/bct/manager_succession_recovery.py",
   "src/bct/worker_dispatch_recovery.py",
   "src/bct/delivery_continuation_recovery.py",
   "src/bct/github_manager_wake.py",

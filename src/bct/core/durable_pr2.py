@@ -45,8 +45,13 @@ def acquire_lease(store: Store, *, session_id: str, manager_node_id: str,
         session = db.execute("SELECT manager_epoch,manager_node_id FROM orchestration_sessions WHERE session_id=?", (session_id,)).fetchone()
         if session is None or session["manager_epoch"] != expected_epoch:
             raise ConflictError("STALE_EPOCH")
-        node = db.execute("SELECT active,role FROM nodes WHERE node_id=?", (manager_node_id,)).fetchone()
-        if node is None or not node["active"] or node["role"] != "MANAGER":
+        node = db.execute("SELECT active FROM nodes WHERE node_id=?", (manager_node_id,)).fetchone()
+        # Global node roles are discovery metadata and can be refreshed by
+        # node-sync.  Session manager ownership is the durable authority;
+        # requiring the mutable global role here would make a valid successor
+        # lose its fenced lease on the next observation.
+        if (node is None or not node["active"]
+                or session["manager_node_id"] != manager_node_id):
             raise ConflictError("INVALID_MANAGER")
         old = db.execute("SELECT * FROM orchestration_durable_leases WHERE session_id=?", (session_id,)).fetchone()
         # Session epoch is authoritative. A higher epoch is proof that the
