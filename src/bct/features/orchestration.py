@@ -240,11 +240,11 @@ class OrchestrationFeature:
             _exact_keys(
                 arguments,
                 common | {
-                    "manager_epoch", "assignment_id", "worker_node_id",
-                    "attachment_id", "tool_name", "problem",
+                    "assignment_id", "tool_name", "problem",
                     "required_behaviors", "acceptance", "actions",
                 },
-                {"roots", "dependencies", "timeout_s"},
+                {"manager_epoch", "worker_node_id", "attachment_id",
+                 "roots", "dependencies", "timeout_s"},
             )
         elif operation == "tool-build-report":
             _exact_keys(arguments, common | {"assignment_id"}, set())
@@ -372,6 +372,7 @@ class OrchestrationFeature:
                 "acceptance": dict(acceptance),
                 "actions": [str(item) for item in actions],
             })
+            normalized = self._resolve_tool_build_target(work=work, values=normalized)
         if operation == "project-run-plan":
             resources = (
                 "conversation-scope:" + str(arguments.get("scope_id") or ""),
@@ -483,13 +484,70 @@ class OrchestrationFeature:
             f"문제: {spec['problem']}\n"
             "필수 동작:\n" + behaviors + "\n\n"
             "이 범위 안에서 기존 구현을 먼저 확인한 뒤 필요한 최소 도구를 구현하고, "
-            "허용된 Work 권한 안에서 테스트 및 실제 사용 증거를 남기세요. 새 권한을 "
-            "요청하거나 범위를 넓히지 말고, 배포·외부 전송은 현재 Work 권한과 별도 "
-            "지시가 있을 때만 하세요. 결과 summary에는 도구 이름, 변경 파일, 테스트, "
+            "작업에 이미 위임된 행동 범위 안에서 테스트 및 실제 사용 증거를 남기세요. "
+            "이 지시는 새 권한을 만들지 않으며, 배포·외부 전송은 별도 지시가 있을 때만 "
+            "하세요. 결과 summary에는 도구 이름, 변경 파일, 테스트, "
             "실제 사용 여부와 증거, 남은 위험을 적으세요. 이 결과는 사후 사용자 보고 "
             "대상이며 정식 유지·수정·폐기 결정은 사용자가 합니다.\n"
             "[/BCT_TOOL_BUILD_REQUEST_V1]"
         )
+
+    def _resolve_tool_build_target(
+        self, *, work: Work, values: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve the delivery target for a normal Chat caller without guessing.
+
+        ``manager_epoch`` is an internal race fence, not a permission that a
+        calling Chat must understand.  The caller can name a Worker when there
+        are several; a sole active Worker is selected deterministically.  The
+        immutable attachment remains part of the eventual assignment identity.
+        """
+        try:
+            snapshot = self.service.snapshot(
+                work=work, session_id=str(values["session_id"]),
+            )
+        except (KeyError, ConflictError) as exc:
+            raise PreconditionError("ORCHESTRATION_TOOL_BUILD_SESSION_NOT_ACCESSIBLE") from exc
+        session = snapshot["session"]
+        current_epoch = int(session["manager_epoch"])
+        supplied_epoch = values.get("manager_epoch")
+        if supplied_epoch is not None and int(supplied_epoch) != current_epoch:
+            raise ConflictError("ORCHESTRATION_MANAGER_EPOCH_MISMATCH")
+
+        worker_roles = {
+            str(item["node_id"]): str(item["session_role"])
+            for item in snapshot["session_nodes"] if item.get("active")
+        }
+        active = [
+            item for item in snapshot["attachments"]
+            if item.get("active") and item.get("relay_role")
+            and worker_roles.get(str(item["node_id"])) == "WORKER"
+        ]
+        requested_node = str(values.get("worker_node_id") or "").strip()
+        requested_attachment = str(values.get("attachment_id") or "").strip()
+        candidates = active
+        if requested_node:
+            candidates = [
+                item for item in candidates
+                if str(item["node_id"]) == requested_node
+            ]
+        if requested_attachment:
+            candidates = [
+                item for item in candidates
+                if str(item["attachment_id"]) == requested_attachment
+            ]
+        if not candidates:
+            raise PreconditionError("ORCHESTRATION_TOOL_BUILD_TARGET_NOT_ACTIVE")
+        if len(candidates) != 1:
+            raise PreconditionError("ORCHESTRATION_TOOL_BUILD_TARGET_REQUIRED")
+        target = candidates[0]
+        resolved = dict(values)
+        resolved.update({
+            "manager_epoch": current_epoch,
+            "worker_node_id": str(target["node_id"]),
+            "attachment_id": str(target["attachment_id"]),
+        })
+        return resolved
 
     def _tool_build_request(
         self, *, request: FeatureRequest, work: Work, values: dict[str, Any], authorize,

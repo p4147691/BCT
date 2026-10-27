@@ -324,6 +324,34 @@ class OrchestrationTests(unittest.TestCase):
                 "acceptance": {"tested": True}, "actions": ["read", "write"],
             })
 
+    def test_tool_build_request_from_ordinary_chat_resolves_one_worker(self):
+        # The caller need not be the Manager or know a generation/epoch.  This
+        # fixture has two Workers, so it identifies the intended node but lets
+        # BCT select that node's exact current attachment and manager fence.
+        result = self.call("ordinary-chat-tool-build", {
+            "operation": "tool-build-request", "session_id": "session",
+            "assignment_id": "ordinary-chat-tool-build", "worker_node_id": "worker-b",
+            "tool_name": "small-status-reader", "problem": "read one status safely",
+            "required_behaviors": ["Return a bounded read-only status result."],
+            "acceptance": {"test": "passes"}, "actions": ["read", "write", "test"],
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        attempt = result.output["assignment"]["attempts"][-1]
+        self.assertEqual("worker-b", attempt["worker_node_id"])
+        self.assertEqual(1, attempt["manager_epoch"])
+
+    def test_tool_build_request_does_not_guess_between_workers(self):
+        with self.assertRaisesRegex(
+            PreconditionError, "ORCHESTRATION_TOOL_BUILD_TARGET_REQUIRED"
+        ):
+            self.call("ambiguous-ordinary-chat-tool-build", {
+                "operation": "tool-build-request", "session_id": "session",
+                "assignment_id": "ambiguous-ordinary-chat-tool-build",
+                "tool_name": "ambiguous-status-reader", "problem": "read status",
+                "required_behaviors": ["Return a bounded status result."],
+                "acceptance": {"test": "passes"}, "actions": ["read", "write", "test"],
+            })
+
     def test_duplicate_tabs_map_to_one_node_and_immutable_attachments(self):
         snapshot = self.bct.orchestration.snapshot(
             work=self.bct.store.get_work("work"), session_id="session"

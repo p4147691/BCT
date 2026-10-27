@@ -52,13 +52,15 @@ only when SQLite proves that no dispatch reservation or message exists; otherwis
 remains quarantined. A terminal assignment/session may be adopted after an outer receipt loss
 without sending to RCC again.
 
-`tool-build-request` is a bounded `dispatch` specialization for an immediately needed,
-small tool. It requires a named worker, exact attachment, explicit `read`, `write`, and
-`test` actions, a short problem statement, one to five required behaviors, and acceptance
-criteria. The worker may implement, test, and use the tool only under the Work's existing
-authority; the command grants no new capability and never deploys by itself. Completion leaves
-`PENDING_USER_REPORT`; `tool-build-report` returns the tool identity, assignment state, and
-worker summary so the user can later choose to keep, change, or retire it.
+`tool-build-request`는 일반 ChatGPT 대화창에서도 호출할 수 있는, 당장 필요한 작은 도구의
+제한된 구현 지시다. 호출 창이 Manager일 필요는 없다. `session_id`, `assignment_id`, 도구
+설명, 명시적 `read`·`write`·`test` 행동을 주고, 활성 Worker가 하나면 BCT가 그 Worker와
+현재 정확한 결합을 선택한다. 여러 Worker/탭이 있으면 `worker_node_id` 또는
+`attachment_id`를 추가로 지정해야 하며 BCT는 임의로 고르지 않는다. `manager_epoch`는
+선택 사항인 내부 경쟁 방지 값이며 생략하면 현재 값을 사용한다. 이 명령은 새 권한이나 배포를
+만들지 않는다. 완료 후에는 `PENDING_USER_REPORT`가 남고 `tool-build-report`로 도구 정체,
+할당 상태, Worker 요약을 읽는다. 도구는 작업 범위 안에서 먼저 실제 사용 가능하며 사용자는
+이후 KEEP, CHANGE, RETIRE를 결정한다.
 
 Verification and positive `github_pr_status.wait_seconds` use the existing one-shot worker
 and survive MCP disconnect. Polling CI is local to that bounded operation, never a daemon.
