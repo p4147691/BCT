@@ -71,3 +71,9 @@
 - Registry `BackgroundType`, remembered per-GUID photo paths and sampled screen pixels are not mode evidence. There is no heuristic fallback when the official COM read is unavailable.
 - New and restored desktops never inherit a source tile or receive a Monitor-written wallpaper path. Their V2 tile remains pending until a fresh Native snapshot of Windows' actual state succeeds.
 - check_monitor_background_state_native_contract.py compiles the decision harness on Windows and rejects mode heuristics and setter invocations without changing user wallpaper.
+
+## 2.0.68 background-only LIVE result
+- Reload acknowledgement, runtime version and deployment token matched.
+- D1-D3 each accepted a distinct Native photo with the shared Windows base color; no gray fallback or cross-GUID reply was accepted.
+- Windows personalization state was identical before and after all Native reads.
+- This accepts the bottom layer in the current picture configuration only. Physical solid-mode transition and every upper layer remain separate acceptance gates.

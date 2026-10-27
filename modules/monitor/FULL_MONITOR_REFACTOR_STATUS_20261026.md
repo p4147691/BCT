@@ -53,3 +53,9 @@ Existing live rollback protections: do not modify RCC/Core, active Chrome conver
 - Registry BackgroundType, screen-pixel sampling, source-tile inheritance and Monitor wallpaper writes have been removed. Failure remains visible instead of being converted into a guessed background.
 - New/restored desktops are rendered only after a fresh Native snapshot succeeds. The current PC still requires physical photo/solid/reload acceptance before claiming LIVE_SOLID_ACCEPTED.
 - check_monitor_background_state_native_contract.py compiles the read-only COM decision harness and rejects heuristic or setter regressions without changing user wallpaper.
+
+## Background-layer LIVE acceptance (2.0.68, 2026-10-27)
+- Installed and running Monitor both acknowledged 2.0.68 with the exact deployment token. The registered Control Host is `1.9.20.188-readonly-global-mode`; the prior 2.0.67 extension and 1.9.20.187 host remain available as rollback artifacts.
+- On the current three-desktop Windows picture configuration, each active GUID returned a distinct photo snapshot plus the same official base color. Runtime diagnostics reported `background-ready`, canonical `background-only`, `capture=captured`, `accepted_kind=photo`, empty failure reasons and `thumbnail_ready=1` for D1-D3.
+- A request-before/request-after comparison proved that wallpaper path, placement and per-GUID registry values were unchanged by the acceptance read. The isolated global-solid decision contract also passes, but a physical solid-color LIVE transition was intentionally not performed because verification must not change Windows personalization.
+- The bottom background layer is accepted for the current picture configuration. Window pixels, semantic overlays and summary overlays remain disabled by the layer policy and require separate staged acceptance.
