@@ -165,6 +165,7 @@ let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
 let monitorBctWindowNodeRefreshBusy = false;
+let monitorBctWindowNodeRefreshPending = false;
 let monitorMinimizedBadgeConvergenceTimer = 0;
 let monitorBctProjectionGeneration = 0;
 let monitorBctProjectionConvergenceTimer = 0;

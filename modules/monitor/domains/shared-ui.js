@@ -2220,6 +2220,10 @@ function scheduleMonitorChatNavigationRefresh(message) {
 
     try {
       await refreshMonitorEndpointRegistry();
+      // RCC window_id/tab membership is a separate source from the legacy ACT
+      // conversation state. Refresh it for this official Chrome navigation
+      // event so node badges do not wait for the Monitor window to gain focus.
+      await refreshMonitorBctWindowNodes();
 
       // Reuse the lightweight ACT state path once per event burst. Each event is
       // then applied to only its own browser window/HWND.
@@ -2234,6 +2238,9 @@ function scheduleMonitorChatNavigationRefresh(message) {
       // Full identity discovery is recovery-only and runs at most once for this
       // burst when targeted windowId -> HWND mapping is genuinely unavailable.
       if (mappingMiss && state) await refreshMonitorIdentityIndex(state, true);
+      refreshMonitorBctCurrentSessionWindowHwnd();
+      refreshMonitorBctDisplayWindowHwnd();
+      syncMonitorAllDesktopThumbnailNodeBadges();
     } catch (error) {
       console.warn("DesktopWindow Monitor chat navigation refresh failed", {
         tabIds: pending.map((item) => Number(item?.tabId)).filter(Number.isInteger),

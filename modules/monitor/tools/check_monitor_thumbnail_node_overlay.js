@@ -9,6 +9,7 @@ const source = fs.readFileSync(
   path.join(__dirname, "../extension/monitor-bct-thumbnail-projection.js"), "utf8",
 );
 const monitorSource = fs.readFileSync(path.join(__dirname, "../extension/monitor.js"), "utf8");
+const backgroundSource = fs.readFileSync(path.join(__dirname, "../extension/background.js"), "utf8");
 assert.match(monitorSource,
   /function syncMonitorThumbnailTabBadges\([\s\S]*MonitorBctThumbnailProjection[\s\S]*return diagnostics;/,
   "the active thumbnail path must delegate to the isolated projection renderer");
@@ -22,6 +23,17 @@ assert.match(monitorSource, /includeMonitorWindows:\s*true/,
 assert.match(monitorSource,
   /itemHwnd === hostHwnd && monitorIsOwnWindowTitle\(item\?\.title\)/,
   "the frozen-frame exception must require the exact registered Monitor HWND");
+assert.match(monitorSource,
+  /scheduleMonitorChatNavigationRefresh\(message\)[\s\S]*await refreshMonitorBctWindowNodes\(\);[\s\S]*syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
+  "Chrome navigation must refresh RCC window membership and node badges without Monitor focus");
+assert.match(monitorSource, /monitorBctWindowNodeRefreshPending = true/,
+  "a navigation refresh arriving during an in-flight RCC read must be coalesced, not lost");
+assert.match(backgroundSource, /chrome\.tabs\.onAttached\.addListener/,
+  "moving a tab into another Chrome window must publish a refresh event");
+assert.match(backgroundSource, /chrome\.tabs\.onDetached\.addListener/,
+  "the old Chrome window must refresh when a tab leaves it");
+assert.match(backgroundSource, /chrome\.tabs\.onMoved\.addListener/,
+  "tab-order changes must refresh node-number order");
 
 function node(className = "") {
   const result = {

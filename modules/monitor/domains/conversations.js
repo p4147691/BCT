@@ -237,7 +237,7 @@ function monitorBctPointInsideScopeHeading(clientX, clientY) {
 //@@FN_START:monitorBctProjectionHasUnresolvedLineage
 function monitorBctProjectionHasUnresolvedLineage() {
   return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) =>
-    !monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId)
+    !monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId)
   );
 }
 //@@FN_END:monitorBctProjectionHasUnresolvedLineage

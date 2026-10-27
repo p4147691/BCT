@@ -12,6 +12,12 @@ assert.match(monitorSource,
 assert.match(monitorSource,
   /async function refreshMonitorBctThumbnailProjectionForDesktop\(desktopId\)[\s\S]*await refreshMonitorBctBrowserWindowGeometry\(\);[\s\S]*refreshMonitorBctDisplayWindowHwnd\(\);/,
   "thumbnail projection must refresh Chrome geometry before resolving the display-only HWND binding");
+assert.match(monitorSource,
+  /function monitorBadgeNodeNumbersForHwnd\([\s\S]*monitorBctDisplaySessionHwnd\(node\.windowId, node\.instanceId, node\.sessionId\)/,
+  "thumbnail badges must use the strict BCT current-session/display mapping, not stale legacy ACT HWND data");
+assert.match(monitorSource,
+  /function monitorBctProjectionHasUnresolvedLineage\([\s\S]*!monitorBctDisplaySessionHwnd\(node\.windowId, node\.instanceId, node\.sessionId\)/,
+  "projection convergence must continue while the strict BCT HWND lineage is unresolved");
 
 const projectionStart = monitorSource.indexOf("async function refreshMonitorBctThumbnailProjectionForDesktop(");
 const projectionEnd = monitorSource.indexOf("\nfunction monitorBctProjectionHasUnresolvedLineage(", projectionStart);

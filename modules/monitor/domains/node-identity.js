@@ -292,10 +292,12 @@ function monitorAgeIdentityForWorkerGroup(members, state = monitorLastAiState) {
 //@@FN_START:monitorBadgeNodeNumbersForHwnd
 function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   // BCT/RCC owns conversation labels, and Native/ACT maps the physical HWND.
-  // A missing HWND hides only the thumbnail overlay, never the node list.
+  // Thumbnail labels use only the current-session/display contract. Legacy ACT
+  // mappings may lag behind a Chrome tab detach/attach and must never merge two
+  // different Chrome window_ids onto one physical thumbnail window.
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
-      monitorDisplayHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd))
+      monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId) === String(hwnd))
       .sort((left,right) =>
         (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
           (Number.isSafeInteger(right?.tabIndex) ? right.tabIndex : Number.MAX_SAFE_INTEGER) ||
@@ -972,8 +974,13 @@ function profileForMonitorWorker(worker, state) { return globalThis.MonitorDomai
 
 //@@FN_START:refreshMonitorBctWindowNodes
 async function refreshMonitorBctWindowNodes() {
-  if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell || monitorBctWindowNodeRefreshBusy) return;
+  if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell) return;
+  if (monitorBctWindowNodeRefreshBusy) {
+    monitorBctWindowNodeRefreshPending = true;
+    return;
+  }
   monitorBctWindowNodeRefreshBusy = true;
+  monitorBctWindowNodeRefreshPending = false;
   if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = true;
   if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
   try {
@@ -999,6 +1006,10 @@ async function refreshMonitorBctWindowNodes() {
   } finally {
     monitorBctWindowNodeRefreshBusy = false;
     if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = false;
+    if (monitorBctWindowNodeRefreshPending) {
+      monitorBctWindowNodeRefreshPending = false;
+      queueMicrotask(() => void refreshMonitorBctWindowNodes());
+    }
   }
 }
 //@@FN_END:refreshMonitorBctWindowNodes

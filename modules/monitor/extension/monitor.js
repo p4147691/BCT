@@ -2999,6 +2999,10 @@ function scheduleMonitorChatNavigationRefresh(message) {
 
     try {
       await refreshMonitorEndpointRegistry();
+      // RCC window_id/tab membership is a separate source from the legacy ACT
+      // conversation state. Refresh it for this official Chrome navigation
+      // event so node badges do not wait for the Monitor window to gain focus.
+      await refreshMonitorBctWindowNodes();
 
       // Reuse the lightweight ACT state path once per event burst. Each event is
       // then applied to only its own browser window/HWND.
@@ -3013,6 +3017,9 @@ function scheduleMonitorChatNavigationRefresh(message) {
       // Full identity discovery is recovery-only and runs at most once for this
       // burst when targeted windowId -> HWND mapping is genuinely unavailable.
       if (mappingMiss && state) await refreshMonitorIdentityIndex(state, true);
+      refreshMonitorBctCurrentSessionWindowHwnd();
+      refreshMonitorBctDisplayWindowHwnd();
+      syncMonitorAllDesktopThumbnailNodeBadges();
     } catch (error) {
       console.warn("DesktopWindow Monitor chat navigation refresh failed", {
         tabIds: pending.map((item) => Number(item?.tabId)).filter(Number.isInteger),
@@ -6054,6 +6061,7 @@ let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
 let monitorBctWindowNodeRefreshBusy = false;
+let monitorBctWindowNodeRefreshPending = false;
 let monitorMinimizedBadgeConvergenceTimer = 0;
 let monitorBctProjectionGeneration = 0;
 let monitorBctProjectionConvergenceTimer = 0;
@@ -6126,7 +6134,7 @@ async function refreshMonitorBctThumbnailProjectionForDesktop(desktopId) {
 
 function monitorBctProjectionHasUnresolvedLineage() {
   return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) =>
-    !monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId)
+    !monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId)
   );
 }
 
@@ -6968,8 +6976,13 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
 }
 
 async function refreshMonitorBctWindowNodes() {
-  if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell || monitorBctWindowNodeRefreshBusy) return;
+  if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell) return;
+  if (monitorBctWindowNodeRefreshBusy) {
+    monitorBctWindowNodeRefreshPending = true;
+    return;
+  }
   monitorBctWindowNodeRefreshBusy = true;
+  monitorBctWindowNodeRefreshPending = false;
   if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = true;
   if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
   try {
@@ -6995,6 +7008,10 @@ async function refreshMonitorBctWindowNodes() {
   } finally {
     monitorBctWindowNodeRefreshBusy = false;
     if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = false;
+    if (monitorBctWindowNodeRefreshPending) {
+      monitorBctWindowNodeRefreshPending = false;
+      queueMicrotask(() => void refreshMonitorBctWindowNodes());
+    }
   }
 }
 
@@ -9271,10 +9288,12 @@ function monitorActNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
 
 function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   // BCT/RCC owns conversation labels, and Native/ACT maps the physical HWND.
-  // A missing HWND hides only the thumbnail overlay, never the node list.
+  // Thumbnail labels use only the current-session/display contract. Legacy ACT
+  // mappings may lag behind a Chrome tab detach/attach and must never merge two
+  // different Chrome window_ids onto one physical thumbnail window.
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
-      monitorDisplayHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd))
+      monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId) === String(hwnd))
       .sort((left,right) =>
         (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
           (Number.isSafeInteger(right?.tabIndex) ? right.tabIndex : Number.MAX_SAFE_INTEGER) ||

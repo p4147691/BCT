@@ -22,7 +22,7 @@ const nodes = [
 const ctx = {
   monitorBctWindowNodesCache:nodes,
   monitorLastAiState:state,
-  monitorDisplayHwndForBrowserWindowId:(windowId)=>({491:"5000",319:"6000"})[windowId]||"",
+  monitorBctDisplaySessionHwnd:(windowId)=>({491:"5000",319:"6000"})[windowId]||"",
   monitorActNodeNumbersForHwnd:()=>[99],
   String,Number,Array,Set
 };
