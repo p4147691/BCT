@@ -74,6 +74,7 @@
           &&Number(item.cloaked||0)===0&&fresh&&validPixels(entry.dataUri)?entry.dataUri:"";
         if(pixels){
           if(image.getAttribute("src")!==pixels)image.setAttribute("src",pixels);
+          image.style.display="block";
           image.dataset.captureState="captured";image.dataset.captureFailureReason="";
           image.dataset.monitorCapturedAt=String(recorded);image.dataset.monitorCaptureTitle=String(entry.captureTitle||item.title||"");
           image.classList.remove("monitor-thumb-v2-failed");status.hidden=true;status.textContent="";
@@ -81,8 +82,9 @@
           image.removeAttribute("src");
           const reason=Number(item.cloaked)?"CLOAKED":entry.physicalSource==="monitor-frozen"?"SAVED_FRAME_REJECTED"
             :entry.captureState==="captured"&&!fresh?"STALE_CAPTURE":"NO_REAL_CAPTURE";
+          image.style.display="none";
           image.dataset.captureState="failed";image.dataset.captureFailureReason=reason;image.dataset.monitorCapturedAt="0";
-          image.classList.add("monitor-thumb-v2-failed");status.hidden=false;status.textContent="캡처 실패 · "+reason;
+          image.classList.add("monitor-thumb-v2-failed");status.hidden=true;status.textContent="";
         }
         image.title=String(item.title||"")+(pixels?"":" · "+image.dataset.captureFailureReason);
         image.dataset.physicalSource=String(entry.physicalSource||"windows-native");
@@ -98,8 +100,8 @@
       if(!state||(frameToken!=null&&state.generation!==frameToken))return false;
       for(const {image,status} of state.windows.values()){
         image.removeAttribute("src");image.dataset.captureState="failed";image.dataset.captureFailureReason=reason;
-        image.dataset.monitorCapturedAt="0";image.classList.add("monitor-thumb-v2-failed");
-        status.hidden=false;status.textContent="캡처 실패 · "+reason;
+        image.style.display="none";image.dataset.monitorCapturedAt="0";image.classList.add("monitor-thumb-v2-failed");
+        status.hidden=true;status.textContent="";
       }
       visual.dataset.monitorFrameReady="failed";return true;
     }

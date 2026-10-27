@@ -134,10 +134,11 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(failed.getAttribute("src"),null);
   assert.equal(failed.dataset.captureFailureReason,"CLOAKED");
   assert(failed.classList.contains("monitor-thumb-v2-failed"));
+  assert.equal(failed.style.display,"none","failed capture must leave the background visible without a simulated window");
   assert.equal(first.style.left,"10%");assert.equal(first.style.top,"15%");
   assert.equal(first.style.width,"40%");assert.equal(first.style.height,"30%");
   assert.equal(first.style["z-index"],"10000");assert.equal(failed.style["z-index"],"9999");
-  assert.match(visual1.querySelectorAll(".monitor-thumb-v2-status").find(x=>x.dataset.hwnd==="124").textContent,/CLOAKED/);
+  assert.equal(visual1.querySelectorAll(".monitor-thumb-v2-status").find(x=>x.dataset.hwnd==="124").hidden,true);
   assert.equal(r.windowFrame(visual2,D2,frame),false,"cross-desktop Windows frame must be rejected");
   const removed={...frame,meta:{...frame.meta,observedWindowHwnds:["123"]},frames:[frame.frames[0]]};
   assert.equal(r.windowFrame(visual1,D1,removed),true);

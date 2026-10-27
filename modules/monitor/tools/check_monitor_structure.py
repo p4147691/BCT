@@ -314,6 +314,7 @@ def main():
         thumbnail_checks = [
             root/'tools'/'check_monitor_thumbnail_architecture.js',
             root/'tools'/'check_monitor_thumbnail_background_only_mode.js',
+            root/'tools'/'check_monitor_thumbnail_background_windows_mode.js',
             root/'tools'/'check_monitor_thumbnail_v2_cleanroom.js',
             root/'tools'/'check_monitor_thumbnail_v2_native_ports.js',
             root/'tools'/'check_monitor_thumbnail_v2_render_ownership.js',

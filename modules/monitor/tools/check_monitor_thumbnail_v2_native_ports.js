@@ -10,8 +10,8 @@ assert.match(lifecycle,/const monitorWallpaperNativePending = new Map\(\)/,
   "wallpaper requests require independent keyed ownership");
 assert.match(lifecycle,/MonitorDesktopVisualSource\.create\(\{ request: monitorWallpaperNativeRequest \}\)/,
   "desktop visual source must receive the dedicated wallpaper transport");
-assert.match(lifecycle,/MonitorThumbnailLayerPolicy\.MODES\.BACKGROUND_ONLY/,
-  "staged acceptance must use the canonical background-only layer policy");
+assert.match(lifecycle,/MonitorThumbnailLayerPolicy\.MODES\.BACKGROUND_WINDOWS/,
+  "staged acceptance must use the canonical background-and-windows layer policy");
 assert.match(lifecycle,/MonitorDesktopThumbnailV2\.configure\(\{[\s\S]*?visualSource: monitorDesktopVisualSource,[\s\S]*?readFrame: desktopId => captureDesktopFrame\(desktopId, "thumb"\),[\s\S]*?afterWindowRender: decorateMonitorThumbnailWindows,/);
 assert.match(transport,/if \(response\?\.event === true\) return;/,
   "unsolicited Native events cannot complete a request");
@@ -30,5 +30,7 @@ assert.match(transport,/monitorWallpaperNativeQueue\.catch\(\(\) => null\)\.then
 assert.match(host,/request\.TryGetValue\("requestId", out requestId\)/);
 assert.match(host,/responseMap\["requestId"\] = Convert\.ToString\(requestId\)/,
   "the Native host must echo the exact correlation id");
+assert.equal((host.match(/hostWindowHwnd != 0 && hWnd\.ToInt64\(\) == hostWindowHwnd/g)||[]).length,2,
+  "both Native desktop-window enumerators must exclude the exact Monitor HWND");
 
 console.log("PASS: Control and wallpaper ports have separate exact-correlation ownership; wallpaper reads are serialized and bounded");

@@ -1,11 +1,11 @@
 # Monitor 썸네일 V2 — 입력/출력 단일 경계 (격리 후보)
 
-## 현재 수락 단계: background-only
+## 현재 수락 단계: background-windows
 
-현재 운영 구성은 `MonitorThumbnailLayerPolicy`의 `background-only` 모드를 사용한다. 이는 별도 폴백 렌더러가 아니라 정식 V2 합성기의 단계별 수락 정책이다.
+현재 운영 구성은 `MonitorThumbnailLayerPolicy`의 `background-windows` 모드를 사용한다. 이는 별도 폴백 렌더러가 아니라 정식 V2 합성기의 단계별 수락 정책이다.
 
 - `background`: 활성. 정확한 데스크톱 GUID에 대응하는 Native 사진 또는 Windows 단색 근거만 렌더링한다.
-- `windows`: 임시 비활성. HWND 캡처와 상태 장식을 호출하지 않는다.
+- `windows`: 활성. Native가 확인한 HWND의 실제 WGC 픽셀과 Windows 위치/Z순서만 렌더링한다.
 - `semantic`: 임시 비활성. 노드/탭 의미 배지를 렌더링하지 않는다.
 - `summary`: 임시 비활성. 최소화 노드 요약을 렌더링하지 않는다.
 
@@ -28,8 +28,9 @@
 ## 창 레이어 — 배경과 절대 혼합 금지
 - 기존 Native HWND 목록의 `frame.meta.desktopId===GUID`와 실제 영역(virtualLeft,Top,Width,Height)을 확인한 후 창 위치와 Z순서 유지.
 - `captureState=captured`, 최근 15초 이내 촬영, `cloaked=0`, 물리적인 이미지 데이터, `physicalSource!=monitor-frozen`일 때만 창 픽셀 표시.
-- CLOAKED, 오래된/보존 캡처, 파일 없는 프레임 또는 복원본은 이미지 소스 제거 → 투명한 창 윤곽 + 원인 표시. 정상 화면처럼 대체 SVG 사용 금지.
-- 노드 번호·상태 표시·포커스·드래그는 기존 `syncMonitorDesktopNumberBadge`, `syncMonitorThumbnailTabBadges`, 원래 이벤트 함수로 연결하므로 의미 데이터는 중복 보관하지 않는다.
+- CLOAKED, 오래된/보존 캡처, 파일 없는 프레임 또는 복원본은 이미지 소스를 제거하고 해당 창 노드도 숨긴다. 배경 위에 회색 화면, 윤곽, 실패 문구, 대체 SVG를 올리지 않는다. 실패 이유는 DOM 진단 데이터에만 남긴다.
+- 현재 단계에서는 노드 번호·상태 표시·포커스·드래그·요약을 호출하지 않는다. 이 기능들은 `semantic`/`summary` 정책을 별도로 수락할 때만 다시 켠다.
+- Monitor 자신의 창은 제목 추측이 아니라 확인된 `hostWindowHwnd`와의 정확한 비교로 두 Native 창 열거 경로에서 제외한다.
 
 ## 제거된 과거 경로와 남긴 경계
 - 기존 썸네일 `refreshDesktopThumb -> reconcileFrame`, 별도 `MonitorWallpaperEventRefresh` 렌더러 사용 중단/삭제.

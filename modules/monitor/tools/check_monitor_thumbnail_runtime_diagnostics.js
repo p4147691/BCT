@@ -17,6 +17,8 @@ assert.doesNotMatch(trace, /dataUri|wallpaperPath|item=\{\s*message|payload:/,
 
 assert.match(thumbnails, /function monitorThumbnailBackgroundRuntimeDiagnostics\(\)/);
 assert.match(thumbnails, /failure_reason:String\(visual\.dataset\.wallpaperFailureReason/);
+assert.match(thumbnails, /captured_windows:visual\.querySelectorAll/);
+assert.match(thumbnails, /failed_windows:visual\.querySelectorAll/);
 assert.match(thumbnails, /thumbnail-background-pending/);
 assert.match(thumbnails, /thumbnail-background-failed/);
 assert.match(thumbnails, /thumbnail-background-ready/);

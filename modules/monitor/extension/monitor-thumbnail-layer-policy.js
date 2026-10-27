@@ -6,14 +6,21 @@
   const MODES = Object.freeze({
     FULL: "full",
     BACKGROUND_ONLY: "background-only",
+    BACKGROUND_WINDOWS: "background-windows",
   });
   const LAYERS = Object.freeze(["background", "windows", "semantic", "summary"]);
 
   function create(requestedMode = MODES.FULL) {
     const mode = requestedMode === MODES.BACKGROUND_ONLY
       ? MODES.BACKGROUND_ONLY
-      : MODES.FULL;
-    const enabled = mode === MODES.BACKGROUND_ONLY ? ["background"] : LAYERS;
+      : requestedMode === MODES.BACKGROUND_WINDOWS
+        ? MODES.BACKGROUND_WINDOWS
+        : MODES.FULL;
+    const enabled = mode === MODES.BACKGROUND_ONLY
+      ? ["background"]
+      : mode === MODES.BACKGROUND_WINDOWS
+        ? ["background", "windows"]
+        : LAYERS;
     return Object.freeze({
       mode,
       allows(layer) {

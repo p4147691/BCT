@@ -274,7 +274,7 @@ let monitorWallpaperNativeQueue = Promise.resolve();
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorWallpaperNativeRequest });
 const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
-  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_ONLY
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS
 );
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,

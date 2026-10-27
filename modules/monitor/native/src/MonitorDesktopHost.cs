@@ -2302,7 +2302,9 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-                Guid desktopId = manager.GetWindowDesktopId(hWnd);
+                if (hostWindowHwnd != 0 && hWnd.ToInt64() == hostWindowHwnd) return true;
+
+                Guid desktopId = manager.GetWindowDesktopId(hWnd);
 
 
 
@@ -2727,7 +2729,9 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-                if (manager.GetWindowDesktopId(hWnd) != target) return true;
+                if (hostWindowHwnd != 0 && hWnd.ToInt64() == hostWindowHwnd) return true;
+
+                if (manager.GetWindowDesktopId(hWnd) != target) return true;
 
 
 

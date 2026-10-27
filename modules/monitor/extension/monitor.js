@@ -7622,7 +7622,7 @@ let monitorWallpaperNativeQueue = Promise.resolve();
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorWallpaperNativeRequest });
 const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
-  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_ONLY
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS
 );
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,
@@ -9000,9 +9000,9 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
     const handleSnapshot = await monitorNative(hasHostHwnd
 
-      ? { type: "getDesktopWindowHandles", desktopId, hostWindowHwnd: hostHwnd, includeMonitorWindows: true }
+      ? { type: "getDesktopWindowHandles", desktopId, hostWindowHwnd: hostHwnd, includeMonitorWindows: profile !== "thumb" }
 
-      : { type: "getDesktopWindowHandles", desktopId, includeMonitorWindows: true }).catch(() => null);
+      : { type: "getDesktopWindowHandles", desktopId, includeMonitorWindows: profile !== "thumb" }).catch(() => null);
 
     if (generation !== monitorDesktopFrameGeneration(desktopId)) return null;
     // Only a successful native snapshot can add/remove physical windows.
@@ -10980,6 +10980,10 @@ function monitorThumbnailBackgroundRuntimeDiagnostics() {
     failure_reason:String(visual.dataset.wallpaperFailureReason || "").slice(0,120),
     thumbnail_ready:String(visual.dataset.monitorThumbnailReady || ""),
     composite_ready:String(visual.dataset.monitorThumbnailCompositeReady || ""),
+    frame_ready:String(visual.dataset.monitorFrameReady || ""),
+    actual_windows:Number(visual.dataset.monitorThumbnailWindows || 0),
+    captured_windows:visual.querySelectorAll(".monitor-desktop-thumb-window[data-capture-state='captured']").length,
+    failed_windows:visual.querySelectorAll(".monitor-desktop-thumb-window[data-capture-state='failed']").length,
     has_background_image:Boolean(visual.style.backgroundImage),
     has_background_color:Boolean(visual.style.backgroundColor)
   }));

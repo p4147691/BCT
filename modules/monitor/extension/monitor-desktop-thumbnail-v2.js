@@ -16,8 +16,21 @@
     const windowLayer=windows.create({contract});
     const attached=new WeakMap();
     function clearDisabledLayers(visual){
-      if(policy.allows("windows")||policy.allows("semantic"))return;
-      for(const child of [...(visual?.children||[])])child.remove?.();
+      if(!policy.allows("windows")){
+        for(const node of Array.from(visual?.querySelectorAll?.(
+          ".monitor-desktop-thumb-window, .monitor-thumb-v2-status"
+        )||[]))node.remove?.();
+      }
+      if(!policy.allows("semantic")){
+        for(const node of Array.from(visual?.querySelectorAll?.(
+          ".monitor-thumbnail-node-overlay, .monitor-thumbnail-tab-badge, .monitor-window-status-layer, .monitor-window-pause-overlay, .monitor-window-desktop-badge, .monitor-window-non-chat-countdown, .monitor-thumbnail-z-rail, .monitor-window-capture-age-label"
+        )||[]))node.remove?.();
+      }
+      if(!policy.allows("summary")){
+        for(const node of Array.from(visual?.querySelectorAll?.(
+          ".monitor-thumbnail-summary, .monitor-thumbnail-summary-layer"
+        )||[]))node.remove?.();
+      }
     }
     function resolve(visual,desktopId){
       const backgroundState=background.resolve(visual,desktopId);
@@ -65,7 +78,7 @@
           }else{
             frameReady=windowLayer.windowFrame(visual,desktopId,frame,{
               frameToken,
-              afterRender:typeof afterWindowRender==="function"?afterWindowRender:undefined
+              afterRender:policy.allows("semantic")&&typeof afterWindowRender==="function"?afterWindowRender:undefined
             });
           }
         }
