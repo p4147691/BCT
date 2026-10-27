@@ -28,6 +28,24 @@ class NodeRoutingTests(unittest.TestCase):
         self.assertEqual(RoutingAction.WAIT_REQUIRED, waiting.action)
         self.assertEqual(RoutingAction.ESCALATE_REQUIRED, expired.action)
 
+    def test_operator_can_adjust_required_node_hold(self):
+        policy = RoutingPolicy(
+            NodeAffinity.REQUIRED, short_wait_s=20, required_wait_s=900,
+        )
+        preferred = candidate("worker-b", NodeReadiness.GENERATING)
+        self.assertEqual(
+            RoutingAction.WAIT_REQUIRED,
+            decide_route(policy=policy, preferred=preferred, fallbacks=[], elapsed_s=899).action,
+        )
+        self.assertEqual(
+            RoutingAction.ESCALATE_REQUIRED,
+            decide_route(policy=policy, preferred=preferred, fallbacks=[], elapsed_s=900).action,
+        )
+
+    def test_invalid_routing_waits_fail_closed(self):
+        with self.assertRaisesRegex(ValueError, "NODE_ROUTING_POLICY_INTERVAL_INVALID"):
+            RoutingPolicy(NodeAffinity.ANY, short_wait_s=20, required_wait_s=19)
+
     def test_independent_work_uses_idle_standby_after_fifteen_seconds(self):
         result = decide_route(
             policy=RoutingPolicy(NodeAffinity.PREFERRED),
@@ -59,4 +77,3 @@ class NodeRoutingTests(unittest.TestCase):
                     delivery_effect=effect,
                 )
                 self.assertEqual(RoutingAction.PROTECT_EXISTING_EFFECT, result.action)
-

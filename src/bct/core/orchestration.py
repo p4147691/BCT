@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .models import ConflictError, OperationState, Outcome, PreconditionError, Work
+from .node_routing import validate_routing_waits
 from .store import Store
 
 if TYPE_CHECKING:
@@ -74,6 +75,8 @@ class OrchestrationService:
         self, store: Store, *, manager_wake_receipt_v2_enabled: bool = False,
         policy: "Policy | None" = None,
         manager_failover_seconds: float = 300.0,
+        worker_reroute_wait_seconds: float = 15.0,
+        required_node_hold_seconds: float = 600.0,
         excluded_new_assignment_instances: frozenset[str] = frozenset(),
         require_current_session_instances: frozenset[str] = frozenset(),
     ):
@@ -86,6 +89,13 @@ class OrchestrationService:
         self.store = store
         self.manager_wake_receipt_v2_enabled = manager_wake_receipt_v2_enabled
         self.manager_failover_seconds = float(manager_failover_seconds)
+        try:
+            waits = validate_routing_waits(
+                worker_reroute_wait_seconds, required_node_hold_seconds,
+            )
+        except ValueError as exc:
+            raise ValueError("ORCHESTRATION_ROUTING_WAIT_SECONDS_INVALID") from exc
+        self.worker_reroute_wait_seconds, self.required_node_hold_seconds = waits
         self.policy = policy
         self.excluded_new_assignment_instances = frozenset(excluded_new_assignment_instances)
         self.require_current_session_instances = frozenset(

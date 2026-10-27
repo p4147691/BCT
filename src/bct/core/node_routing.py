@@ -8,7 +8,35 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import math
 from typing import Iterable
+
+
+DEFAULT_SHORT_WAIT_S = 15.0
+DEFAULT_REQUIRED_WAIT_S = 600.0
+
+
+def validate_routing_waits(
+    short_wait_s: object = DEFAULT_SHORT_WAIT_S,
+    required_wait_s: object = DEFAULT_REQUIRED_WAIT_S,
+) -> tuple[float, float]:
+    """Validate operator-adjustable routing delays before dispatch decisions.
+
+    These values are capacity policy, not a delivery timeout: a submitted or
+    unknown effect is still never re-routed regardless of their value.
+    """
+    if (isinstance(short_wait_s, bool) or isinstance(required_wait_s, bool)
+            or not isinstance(short_wait_s, (int, float))
+            or not isinstance(required_wait_s, (int, float))):
+        raise ValueError("NODE_ROUTING_POLICY_INTERVAL_INVALID")
+    short = float(short_wait_s)
+    required = float(required_wait_s)
+    if (not math.isfinite(short) or not math.isfinite(required)
+            or not 1.0 <= short <= 300.0
+            or not 30.0 <= required <= 3600.0
+            or required < short):
+        raise ValueError("NODE_ROUTING_POLICY_INTERVAL_INVALID")
+    return short, required
 
 
 class NodeAffinity(StrEnum):
@@ -38,13 +66,16 @@ class RoutingAction(StrEnum):
 @dataclass(frozen=True)
 class RoutingPolicy:
     affinity: NodeAffinity
-    short_wait_s: int = 15
-    required_wait_s: int = 600
+    short_wait_s: float = DEFAULT_SHORT_WAIT_S
+    required_wait_s: float = DEFAULT_REQUIRED_WAIT_S
     allow_provision: bool = True
 
     def __post_init__(self) -> None:
-        if self.short_wait_s != 15 or self.required_wait_s != 600:
-            raise ValueError("NODE_ROUTING_POLICY_INTERVAL_FIXED")
+        short, required = validate_routing_waits(self.short_wait_s, self.required_wait_s)
+        object.__setattr__(self, "short_wait_s", short)
+        object.__setattr__(self, "required_wait_s", required)
+        if not isinstance(self.allow_provision, bool):
+            raise ValueError("NODE_ROUTING_POLICY_PROVISION_INVALID")
 
 
 @dataclass(frozen=True)

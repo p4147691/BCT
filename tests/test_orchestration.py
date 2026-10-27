@@ -199,6 +199,21 @@ class FakeRelay:
 
 
 class OrchestrationTests(unittest.TestCase):
+    def test_orchestration_waits_load_from_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["read","orchestrate"]\napproval_actions=[]\n'
+                '[orchestration]\nmanager_failover_seconds=420\n'
+                'worker_reroute_wait_seconds=20\nrequired_node_hold_seconds=900\n',
+                encoding="utf-8",
+            )
+            configured = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            self.assertEqual(420.0, configured.orchestration.manager_failover_seconds)
+            self.assertEqual(20.0, configured.orchestration.worker_reroute_wait_seconds)
+            self.assertEqual(900.0, configured.orchestration.required_node_hold_seconds)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

@@ -10,6 +10,7 @@ from .core.operations import OperationCoordinator
 from .core.policy import Policy
 from .core.store import Store
 from .core.orchestration import OrchestrationService
+from .core.node_routing import validate_routing_waits
 from .manager_decision_recovery import ManagerDecisionRecovery
 from .delivery_continuation_recovery import DeliveryContinuationRecovery
 from .relay_executor import RelayControlFeature
@@ -99,6 +100,21 @@ def _manager_failover_seconds(policy_path: str | Path) -> float:
     return seconds
 
 
+def _worker_routing_waits(policy_path: str | Path) -> tuple[float, float]:
+    """Read bounded dispatch waits from the reviewed orchestration policy."""
+    data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
+    orchestration = data.get("orchestration", {})
+    if not isinstance(orchestration, dict):
+        raise ValueError("ORCHESTRATION_SECTION_INVALID")
+    try:
+        return validate_routing_waits(
+            orchestration.get("worker_reroute_wait_seconds", 15),
+            orchestration.get("required_node_hold_seconds", 600),
+        )
+    except ValueError as exc:
+        raise ValueError("ORCHESTRATION_ROUTING_WAIT_SECONDS_INVALID") from exc
+
+
 
 def _excluded_new_assignment_instances(policy_path: str | Path) -> frozenset[str]:
     data = tomllib.loads(Path(policy_path).read_text(encoding="utf-8"))
@@ -143,11 +159,16 @@ class BCT:
         self.policy = Policy(policy_path)
         self.identity = IdentityService(self.store)
         v2_enabled = _manager_wake_receipt_v2_enabled(policy_path)
+        worker_reroute_wait_seconds, required_node_hold_seconds = _worker_routing_waits(
+            policy_path
+        )
         self.orchestration = OrchestrationService(
             self.store,
             policy=self.policy,
             manager_wake_receipt_v2_enabled=v2_enabled,
             manager_failover_seconds=_manager_failover_seconds(policy_path),
+            worker_reroute_wait_seconds=worker_reroute_wait_seconds,
+            required_node_hold_seconds=required_node_hold_seconds,
             excluded_new_assignment_instances=_excluded_new_assignment_instances(policy_path),
             require_current_session_instances=_require_current_session_instances(policy_path),
         )

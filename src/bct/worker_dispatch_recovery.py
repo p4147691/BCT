@@ -516,6 +516,8 @@ class WorkerDispatchRecovery:
         try:
             policy = RoutingPolicy(
                 affinity=NodeAffinity(str(routing["affinity"])),
+                short_wait_s=self.service.worker_reroute_wait_seconds,
+                required_wait_s=self.service.required_node_hold_seconds,
                 allow_provision=bool(routing["allow_provision"]),
             )
             raw_fallbacks = routing["fallbacks"]

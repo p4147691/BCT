@@ -251,6 +251,14 @@ assignment 범위는 원래 work보다 좁게 검증되며 V1 노드 작업은 �
 사라진 경우에는 미전송 영수증이 있을 때만 다른 워커로 교체한다. 전송 여부가 불명확한 UNKNOWN은
 자동 재실행하지 않고 해당 작업만 격리한다. 모든 결과는 mailbox와 assignment generation에 남아
 Core 재시작 후에도 status에서 같은 증거를 다시 읽을 수 있다.
+
+대기 시간은 `bct.toml`의 `[orchestration]`에서 운영자가 조정한다. 기본값은
+`worker_reroute_wait_seconds = 15`, `required_node_hold_seconds = 600`,
+`manager_failover_seconds = 300`이다. 각각 독립 작업의 대체 대기, 반드시 같은 노드여야
+하는 작업의 보류, 매니저 영구 승계 판정 시간이다. 값은 재시작된 Core에만 적용되며,
+허용 범위는 대체 1~300초, 보류 30~3,600초(대체 대기 이상), 매니저 30~3,600초다.
+이 값은 이미 제출됐거나 UNKNOWN인 메시지의 재전송을 허용하지 않는다.
+
 단일 작업의 전송 후 결과 회수는 `reconcile`, 체인 전체 복구는 `chain-resume`을 사용한다.
 전송 예약조차 없었음을 SQLite로 입증할 수 있을 때만 `recover-not-dispatched`가 기존 잠금을
 종결한다. 체인의 일부만 화해해 전체 잠금을 푸는 동작과 미해결 결과를 제외한 조기 종합은 거부한다.

@@ -263,6 +263,11 @@ def main() -> int:
         "mcp_tool_count": 10 if hybrid_catalogue else 8 if compact_catalogue else len(bct.operations.capabilities) + 5,
         "started_at": time.time(),
         "orphan_recoveries": orphan_recoveries,
+        "orchestration_policy": {
+            "manager_failover_seconds": bct.orchestration.manager_failover_seconds,
+            "worker_reroute_wait_seconds": bct.orchestration.worker_reroute_wait_seconds,
+            "required_node_hold_seconds": bct.orchestration.required_node_hold_seconds,
+        },
         "manager_decision_recovery": {
             "enabled": bct.manager_decision_recovery is not None,
             "runs": 0,
