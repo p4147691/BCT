@@ -269,19 +269,32 @@ class RelayBrowserFeature:
                 raise ConfirmedFailure("RCC_SELF_IDLE_STATE_UNAVAILABLE", release_claims=True) from exc
             state = observed.get("state") if isinstance(observed, dict) else None
             tabs = state.get("tabs") if isinstance(state, dict) else None
+            endpoints = state.get("endpoints") if isinstance(state, dict) else None
             if not (isinstance(observed, dict) and observed.get("ok") is True
                     and isinstance(state, dict) and state.get("instanceId") == values["instance_id"]
-                    and state.get("sessionId") == extra["sessionId"] and isinstance(tabs, list)):
+                    and state.get("sessionId") == extra["sessionId"] and isinstance(tabs, list)
+                    and isinstance(endpoints, list)):
                 raise ConfirmedFailure("RCC_SELF_IDLE_STATE_INVALID", release_claims=True)
-            matches = [tab for tab in tabs if isinstance(tab, dict)
-                       and int(tab.get("tabId") or 0) == extra["tabId"]]
-            if len(matches) != 1:
+            tab_matches = [tab for tab in tabs if isinstance(tab, dict)
+                           and int(tab.get("tabId") or 0) == extra["tabId"]]
+            if len(tab_matches) != 1:
                 raise ConfirmedFailure("RCC_SELF_TARGET_NOT_PRESENT", release_claims=True)
-            tab = matches[0]
-            if (str(tab.get("conversationKey") or "").lower() != extra["conversationKey"]
-                    or int(tab.get("windowId") or 0) <= 0):
+            # ``tabs`` is a Chrome-only observation: it deliberately carries
+            # tab/window/url but not page-derived UUID or activity.  Those
+            # fields are captured independently in ``endpoints``.  Reading a
+            # UUID from ``tabs`` made every valid node-continue attempt fail
+            # against the real RCC state contract as TARGET_CHANGED.
+            endpoint_matches = [endpoint for endpoint in endpoints if isinstance(endpoint, dict)
+                                and int(endpoint.get("tabId") or 0) == extra["tabId"]]
+            if len(endpoint_matches) != 1:
+                raise ConfirmedFailure("RCC_SELF_TARGET_NOT_PRESENT", release_claims=True)
+            endpoint = endpoint_matches[0]
+            if (str(endpoint.get("conversationKey") or "").lower() != extra["conversationKey"]
+                    or int(endpoint.get("windowId") or 0) <= 0):
                 raise ConfirmedFailure("RCC_SELF_TARGET_CHANGED", release_claims=True)
-            if tab.get("generating") is not True:
+            if not isinstance(endpoint.get("generating"), bool):
+                raise ConfirmedFailure("RCC_SELF_IDLE_ACTIVITY_UNKNOWN", release_claims=True)
+            if endpoint["generating"] is not True:
                 return True
             if time.monotonic() >= deadline:
                 return False

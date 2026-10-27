@@ -29,6 +29,8 @@ class _Relay:
             self.generating = False
             return {"ok": True, "state": {"instanceId": instance_id,
                 "sessionId": RCC_SESSION, "tabs": [{"tabId": 71, "windowId": 70,
+                "title": "Worker B", "url": "https://chatgpt.com/c/" + CONVERSATION}],
+                "endpoints": [{"tabId": 71, "windowId": 70,
                 "conversationKey": CONVERSATION, "generating": busy}]}}
         self.assertEqual("send-to-tab", command)
         self.sent.append({"request_id": request_id, "text": text, "extra": extra})
