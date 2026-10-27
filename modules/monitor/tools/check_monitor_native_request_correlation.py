@@ -16,7 +16,7 @@ def main():
     if not csc.is_file():
         raise SystemExit("WINDOWS_CSC_NOT_FOUND")
     sources = [root / "native" / "src" / name for name in (
-        "MonitorDesktopHost.cs", "DesktopVisualSnapshot.cs", "DesktopSolidColorSource.cs",
+        "MonitorDesktopHost.cs", "DesktopVisualSnapshot.cs", "DesktopBackgroundStateSource.cs",
         "MonitorDragPreviewOverlay.cs", "MonitorWallpaperRegistryWatcher.cs")]
     if not all(path.is_file() for path in sources):
         raise SystemExit("NATIVE_SOURCE_MISSING")

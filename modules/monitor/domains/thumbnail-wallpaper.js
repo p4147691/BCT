@@ -1006,44 +1006,31 @@ function scheduleMonitorThumbnailProjectionReceipt() {
 //@@FN_END:scheduleMonitorThumbnailProjectionReceipt
 
 //@@FN_START:settleNewDesktopWallpaper
-async function settleNewDesktopWallpaper(createdId, createReply = null, sourceSnapshot = null) {
+async function settleNewDesktopWallpaper(createdId) {
 
   if (!createdId) return false;
 
   const renderer=globalThis.MonitorDesktopThumbnailV2;
   const tile = [...monitorDesktopThumbs.children].find((item) => item.dataset.desktopId === createdId);
   const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-  const sourceDesktopId=String(createReply?.sourceDesktopId||"").toLowerCase();
-  const inherited=Boolean(visual&&sourceSnapshot&&renderer?.inheritBackground?.(
-    visual,createdId,sourceDesktopId,sourceSnapshot,createReply));
-  if(inherited)syncMonitorPreviewBackground(visual,createdId);
-
-  if(inherited&&sourceSnapshot.kind==="solid")return true;
-
-  const expectedWallpaperPath=String(createReply?.inheritedWallpaper?.path||createReply?.wallpaperPath||"");
-
   const started = Date.now(); let ready = false;
 
   while (Date.now() - started < 5000) {
 
-    const info = await monitorNative({ type: "getDesktopWallpaperInfo", desktopId: createdId }).catch(() => null);
-
-    const path = String(info?.path || "").trim().toLowerCase();
-
-    const expected = String(expectedWallpaperPath || "").trim().toLowerCase();
-
-    if (info?.ready && (!expected || path === expected)) { ready = true; break; }
+    if (visual) {
+      const result=await renderer?.refreshBackground?.(visual,createdId,{forceWallpaper:true}).catch(()=>null);
+      if(result?.wallpaperReady===true){ready=true;break;}
+    }
 
     await new Promise((resolve) => setTimeout(resolve, 160));
 
   }
 
-  if (!ready) return inherited;
+  if (!ready) return false;
 
   monitorWallpaperCache.delete(createdId);
 
   if (visual) {
-    await renderer.refreshBackground(visual,createdId,{forceWallpaper:true}).catch(()=>null);
     syncMonitorPreviewBackground(visual,createdId);
   }
   return Boolean(renderer?.acceptedBackground?.(visual,createdId));

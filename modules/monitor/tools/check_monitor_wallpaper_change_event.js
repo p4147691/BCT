@@ -8,8 +8,8 @@ assert.match(native,/MonitorWallpaperRegistryWatcher\.Start\(/);
 assert.match(watcher,/RegNotifyChangeKeyValue\(/);
 assert.match(native,/"type", "desktopWallpaperChanged"/);
 assert.match(native,/"desktopId", ReadCurrentDesktopId\(\)/,"event identifies the exact changed virtual desktop");
-assert.match(native,/state\["sourceDesktopId"\] = sourceDesktopId/);
-assert.match(native,/state\["inheritedWallpaper"\] = inheritedWallpaper/);
+assert.doesNotMatch(native,/SetDesktopWallpaperPath|SetValue\("Wallpaper"/,
+  "Monitor creation and restore must never write personalization state");
 const start=js.indexOf('    if (response?.event === true && response?.type === "desktopWallpaperChanged")');
 const end=js.indexOf('    if (response?.event === true && response?.type === "monitorDragPreviewReleased")',start);
 assert(start>0 && end>start);

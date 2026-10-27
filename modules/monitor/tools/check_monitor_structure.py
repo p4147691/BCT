@@ -148,17 +148,17 @@ def main():
             errors.append({'kind':'monitor_pure_domain_manifest_invalid',
                            'detail':str(exc)[:180]})
 
-    solid_contract=root/'tools'/'check_monitor_solid_native_contract.py'
-    if (root/'native/src/DesktopSolidColorSource.cs').is_file():
-        if not solid_contract.is_file():
-            errors.append({'kind':'native_solid_com_contract_check_missing'})
+    background_state_contract=root/'tools'/'check_monitor_background_state_native_contract.py'
+    if (root/'native/src/DesktopBackgroundStateSource.cs').is_file():
+        if not background_state_contract.is_file():
+            errors.append({'kind':'native_background_state_contract_check_missing'})
         else:
-            verify=subprocess.run([sys.executable,str(solid_contract),'--root',str(root)],
+            verify=subprocess.run([sys.executable,str(background_state_contract),'--root',str(root)],
                 capture_output=True,text=True,encoding='utf-8',
                 errors='replace',timeout=75)
-            facts['native_solid_com_test_rc']=verify.returncode
+            facts['native_background_state_test_rc']=verify.returncode
             if verify.returncode!=0:
-                errors.append({'kind':'native_solid_com_contract_failed',
+                errors.append({'kind':'native_background_state_contract_failed',
                                'detail':(verify.stderr+verify.stdout)[-350:]})
 
     correlation_contract=root/'tools'/'check_monitor_native_request_correlation.py'
@@ -320,6 +320,7 @@ def main():
             root/'tools'/'check_monitor_preview_background.js',
             root/'tools'/'check_monitor_wallpaper_change_event.js',
             root/'tools'/'check_monitor_desktop_click_boundary.js',
+            root/'tools'/'check_monitor_wallpaper_read_only_boundary.js',
         ]
         for checker in thumbnail_checks:
             if not checker.is_file():

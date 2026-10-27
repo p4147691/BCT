@@ -95,15 +95,13 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
     const beforeIds = new Set(monitorDesktopState.desktopIds);
 
-    const result = await monitorNative({ type: "restoreVirtualDesktop", hwnds: snapshot.hwnds, wallpaperPath: snapshot.wallpaperPath || "" });
+    const result = await monitorNative({ type: "restoreVirtualDesktop", hwnds: snapshot.hwnds });
 
     if (!result?.ok) throw new Error(result?.error || "데스크톱 복구 실패");
 
     const resultIds = Array.isArray(result.desktopIds) ? result.desktopIds : [];
 
     const restoredId = resultIds.find((id) => !beforeIds.has(id)) || resultIds[resultIds.length - 1] || null;
-
-    if (restoredId && snapshot.wallpaperDataUri) { monitorRememberWallpaperEntry(monitorWallpaperCache, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_CACHE_LIMIT);  }
 
     commitDesktopUndoRestore(); updateDesktopUndoUi();
 
@@ -129,18 +127,6 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const beforeIds = new Set(monitorDesktopState.desktopIds);
 
-    const liveBefore = await monitorNative({ type: "getVirtualDesktops" }).catch(() => null);
-
-    const liveIds = Array.isArray(liveBefore?.desktopIds) ? liveBefore.desktopIds : monitorDesktopState.desktopIds;
-
-    const liveIndexRaw = Number(liveBefore?.currentIndex);
-
-    const liveIndex = Number.isInteger(liveIndexRaw) && liveIndexRaw >= 0 && liveIndexRaw < liveIds.length ? liveIndexRaw : monitorDesktopState.currentIndex;
-
-    const sourceDesktopId = liveIds[liveIndex] || monitorDesktopState.currentDesktopId || null;
-
-    const sourceBackground = sourceDesktopId ? await monitorAcceptedDesktopBackground(sourceDesktopId, true) : null;
-
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
     if (!result?.ok) throw new Error(result?.error || "새 데스크톱 생성 실패");
@@ -155,7 +141,7 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     selectVirtualDesktopPreview(monitorDesktopState.selectedIndex);
 
-    settleNewDesktopWallpaper(createdId, result, sourceBackground).catch(() => {});
+    settleNewDesktopWallpaper(createdId).catch(() => {});
 
   } catch (error) {
 

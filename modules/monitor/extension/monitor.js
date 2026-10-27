@@ -10170,7 +10170,7 @@ function storeMonitorTrashedDesktop(snapshot){const id=String(snapshot?.desktopI
 
 function deleteMonitorTrashedDesktop(id){monitorTrashedDesktops.delete(String(id||""));persistMonitorTrashedDesktops();refreshMonitorRecoveryMenu();}
 
-async function restoreMonitorTrashedDesktop(id,button){const item=monitorTrashedDesktops.get(String(id||""));if(!item)return;if(button)button.disabled=true;try{const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:item.hwnds||[],wallpaperPath:item.wallpaperPath||""});if(!result?.ok)throw new Error(result?.error||"데스크톱 복구 실패");restoreMonitorDesktopNodeSnapshots(item.nodes);deleteMonitorTrashedDesktop(id);renderVirtualDesktops(result);}catch(error){setMonitorStatus(`데스크톱 복구 실패 · ${error?.message||error}`,false);if(button)button.disabled=false;}}
+async function restoreMonitorTrashedDesktop(id,button){const item=monitorTrashedDesktops.get(String(id||""));if(!item)return;if(button)button.disabled=true;try{const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:item.hwnds||[]});if(!result?.ok)throw new Error(result?.error||"데스크톱 복구 실패");restoreMonitorDesktopNodeSnapshots(item.nodes);deleteMonitorTrashedDesktop(id);renderVirtualDesktops(result);}catch(error){setMonitorStatus(`데스크톱 복구 실패 · ${error?.message||error}`,false);if(button)button.disabled=false;}}
 
 function clearMonitorThumbnailRecovery(){
 
@@ -10837,8 +10837,6 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     const beforeIds = new Set(monitorDesktopState.desktopIds);
 
-    const sourceBackground = await monitorAcceptedDesktopBackground(sourceDesktopId, true);
-
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
     if (!result?.ok) throw new Error(result?.error || "새 데스크톱 생성 실패");
@@ -10875,7 +10873,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     await refreshVirtualDesktops();
 
-    settleNewDesktopWallpaper(createdId,result,sourceBackground).catch(() => {});
+    settleNewDesktopWallpaper(createdId).catch(() => {});
 
     if (failed.length) {
 
@@ -11915,15 +11913,13 @@ async function undoDeletedDesktopTrash() {
 
     const beforeIds=new Set(monitorDesktopState.desktopIds);
 
-    const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:snapshot.hwnds,wallpaperPath:snapshot.wallpaperPath||""});
+    const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:snapshot.hwnds});
 
     if(!result?.ok)throw new Error(result?.error||"데스크톱 복구 실패");
 
     const resultIds=Array.isArray(result.desktopIds)?result.desktopIds:[];
 
     const restoredId=resultIds.find((id)=>!beforeIds.has(id))||resultIds[resultIds.length-1]||null;
-
-    if(restoredId&&snapshot.wallpaperDataUri){monitorRememberWallpaperEntry(monitorWallpaperCache, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_CACHE_LIMIT);}
 
     monitorDeletedDesktopUndo=null; monitorDeletedDesktopUndoExpiresAt=0; clearTimeout(monitorDeletedDesktopUndoTimer);
 
@@ -11951,8 +11947,6 @@ async function removeVirtualDesktopPreview(index, options={}) {
 
     const snapshot = desktopId ? await monitorNative({ type: "getDesktopWindowHandles", desktopId }) : null;
 
-    const wallpaperInfo = desktopId ? await monitorNative({ type: "getDesktopWallpaperInfo", desktopId }).catch(() => null) : null;
-
     const wallpaperDataUri = desktopId ? await getObservedWallpaper(desktopId, true) : "";
 
     const thumbnail = desktopId ? await monitorFreezeDesktopThumbnail(desktopId, wallpaperDataUri).catch(() => "") : "";
@@ -11975,9 +11969,9 @@ async function removeVirtualDesktopPreview(index, options={}) {
 
     renderVirtualDesktops(result);
 
-    const undoSnapshot={kind:"desktop-delete",desktopId,index,hwnds,nodes:nodeSnapshots,wallpaperPath:wallpaperInfo?.path||"",wallpaperDataUri,thumbnail};
+    const undoSnapshot={kind:"desktop-delete",desktopId,index,hwnds,nodes:nodeSnapshots,wallpaperDataUri,thumbnail};
 
-    storeMonitorTrashedDesktop({desktopId,index,desktop_number:index+1,thumbnail,hwnds,nodes:nodeSnapshots,wallpaperPath:wallpaperInfo?.path||""});
+    storeMonitorTrashedDesktop({desktopId,index,desktop_number:index+1,thumbnail,hwnds,nodes:nodeSnapshots});
 
     showDeletedDesktopTrashUndo(undoSnapshot);
 
@@ -12039,15 +12033,13 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
     const beforeIds = new Set(monitorDesktopState.desktopIds);
 
-    const result = await monitorNative({ type: "restoreVirtualDesktop", hwnds: snapshot.hwnds, wallpaperPath: snapshot.wallpaperPath || "" });
+    const result = await monitorNative({ type: "restoreVirtualDesktop", hwnds: snapshot.hwnds });
 
     if (!result?.ok) throw new Error(result?.error || "데스크톱 복구 실패");
 
     const resultIds = Array.isArray(result.desktopIds) ? result.desktopIds : [];
 
     const restoredId = resultIds.find((id) => !beforeIds.has(id)) || resultIds[resultIds.length - 1] || null;
-
-    if (restoredId && snapshot.wallpaperDataUri) { monitorRememberWallpaperEntry(monitorWallpaperCache, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_CACHE_LIMIT);  }
 
     commitDesktopUndoRestore(); updateDesktopUndoUi();
 
@@ -12061,44 +12053,31 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
 });
 
-async function settleNewDesktopWallpaper(createdId, createReply = null, sourceSnapshot = null) {
+async function settleNewDesktopWallpaper(createdId) {
 
   if (!createdId) return false;
 
   const renderer=globalThis.MonitorDesktopThumbnailV2;
   const tile = [...monitorDesktopThumbs.children].find((item) => item.dataset.desktopId === createdId);
   const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-  const sourceDesktopId=String(createReply?.sourceDesktopId||"").toLowerCase();
-  const inherited=Boolean(visual&&sourceSnapshot&&renderer?.inheritBackground?.(
-    visual,createdId,sourceDesktopId,sourceSnapshot,createReply));
-  if(inherited)syncMonitorPreviewBackground(visual,createdId);
-
-  if(inherited&&sourceSnapshot.kind==="solid")return true;
-
-  const expectedWallpaperPath=String(createReply?.inheritedWallpaper?.path||createReply?.wallpaperPath||"");
-
   const started = Date.now(); let ready = false;
 
   while (Date.now() - started < 5000) {
 
-    const info = await monitorNative({ type: "getDesktopWallpaperInfo", desktopId: createdId }).catch(() => null);
-
-    const path = String(info?.path || "").trim().toLowerCase();
-
-    const expected = String(expectedWallpaperPath || "").trim().toLowerCase();
-
-    if (info?.ready && (!expected || path === expected)) { ready = true; break; }
+    if (visual) {
+      const result=await renderer?.refreshBackground?.(visual,createdId,{forceWallpaper:true}).catch(()=>null);
+      if(result?.wallpaperReady===true){ready=true;break;}
+    }
 
     await new Promise((resolve) => setTimeout(resolve, 160));
 
   }
 
-  if (!ready) return inherited;
+  if (!ready) return false;
 
   monitorWallpaperCache.delete(createdId);
 
   if (visual) {
-    await renderer.refreshBackground(visual,createdId,{forceWallpaper:true}).catch(()=>null);
     syncMonitorPreviewBackground(visual,createdId);
   }
   return Boolean(renderer?.acceptedBackground?.(visual,createdId));
@@ -12114,18 +12093,6 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const beforeIds = new Set(monitorDesktopState.desktopIds);
 
-    const liveBefore = await monitorNative({ type: "getVirtualDesktops" }).catch(() => null);
-
-    const liveIds = Array.isArray(liveBefore?.desktopIds) ? liveBefore.desktopIds : monitorDesktopState.desktopIds;
-
-    const liveIndexRaw = Number(liveBefore?.currentIndex);
-
-    const liveIndex = Number.isInteger(liveIndexRaw) && liveIndexRaw >= 0 && liveIndexRaw < liveIds.length ? liveIndexRaw : monitorDesktopState.currentIndex;
-
-    const sourceDesktopId = liveIds[liveIndex] || monitorDesktopState.currentDesktopId || null;
-
-    const sourceBackground = sourceDesktopId ? await monitorAcceptedDesktopBackground(sourceDesktopId, true) : null;
-
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
     if (!result?.ok) throw new Error(result?.error || "새 데스크톱 생성 실패");
@@ -12140,7 +12107,7 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     selectVirtualDesktopPreview(monitorDesktopState.selectedIndex);
 
-    settleNewDesktopWallpaper(createdId, result, sourceBackground).catch(() => {});
+    settleNewDesktopWallpaper(createdId).catch(() => {});
 
   } catch (error) {
 

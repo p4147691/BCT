@@ -31,50 +31,19 @@
         proof:String(wallpaper.proof || "")
       });
     }
-    if (isImage(wallpaper?.dataUri)) {
+    if (isImage(wallpaper?.dataUri) && color.test(String(wallpaper.baseColor || ""))) {
       return Object.freeze({
         ok:true, desktopId:id, kind:"photo",
         dataUri:String(wallpaper.dataUri),
+        baseColor:String(wallpaper.baseColor).toUpperCase(),
+        baseProof:String(wallpaper.baseProof || ""),
         proof:String(reply.wallpaperPath || "native-guid-file")
       });
     }
     return failure(id, "WALLPAPER_PIXELS_MISSING");
   }
 
-  function inheritedWallpaperSnapshot(desktopId, sourceDesktopId, sourceSnapshot, createReply) {
-    const id = normalizeDesktopId(desktopId);
-    const sourceId = normalizeDesktopId(sourceDesktopId);
-    if (!isDesktopId(id) || !isDesktopId(sourceId) || id === sourceId)
-      return failure(id,"INVALID_CREATION_LINEAGE");
-    if (!createReply || createReply.ok !== true ||
-        normalizeDesktopId(createReply.createdDesktopId) !== id ||
-        normalizeDesktopId(createReply.sourceDesktopId) !== sourceId)
-      return failure(id,"CREATION_LINEAGE_MISMATCH");
-    if (!sourceSnapshot?.ok || normalizeDesktopId(sourceSnapshot.desktopId) !== sourceId)
-      return failure(id,"SOURCE_WALLPAPER_UNAVAILABLE");
-    const inherited = createReply.inheritedWallpaper;
-    if (sourceSnapshot.kind === "solid" && inherited?.mode === "solid" &&
-        color.test(String(inherited.color || "")) &&
-        String(inherited.color).toUpperCase() === String(sourceSnapshot.color).toUpperCase()) {
-      return Object.freeze({
-        ok:true, desktopId:id, kind:"solid",
-        color:String(inherited.color).toUpperCase(),
-        proof:String(inherited.proof || "created-desktop-solid-inheritance"),
-        inheritedFrom:sourceId
-      });
-    }
-    if (sourceSnapshot.kind === "photo" && inherited?.mode === "photo" &&
-        isImage(sourceSnapshot.dataUri) &&
-        String(inherited.path || "").trim().toLowerCase() === String(sourceSnapshot.proof || "").trim().toLowerCase()) {
-      return Object.freeze({
-        ok:true, desktopId:id, kind:"photo", dataUri:String(sourceSnapshot.dataUri),
-        proof:String(inherited.path), inheritedFrom:sourceId
-      });
-    }
-    return failure(id,"INHERITED_WALLPAPER_MISMATCH");
-  }
-
   root.MonitorThumbnailContract = Object.freeze({
-    normalizeDesktopId, isDesktopId, isImage, wallpaperSnapshot, inheritedWallpaperSnapshot
+    normalizeDesktopId, isDesktopId, isImage, wallpaperSnapshot
   });
 })(globalThis);

@@ -357,8 +357,6 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     const beforeIds = new Set(monitorDesktopState.desktopIds);
 
-    const sourceBackground = await monitorAcceptedDesktopBackground(sourceDesktopId, true);
-
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
     if (!result?.ok) throw new Error(result?.error || "새 데스크톱 생성 실패");
@@ -395,7 +393,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     await refreshVirtualDesktops();
 
-    settleNewDesktopWallpaper(createdId,result,sourceBackground).catch(() => {});
+    settleNewDesktopWallpaper(createdId).catch(() => {});
 
     if (failed.length) {
 
@@ -1514,8 +1512,6 @@ async function removeVirtualDesktopPreview(index, options={}) {
 
     const snapshot = desktopId ? await monitorNative({ type: "getDesktopWindowHandles", desktopId }) : null;
 
-    const wallpaperInfo = desktopId ? await monitorNative({ type: "getDesktopWallpaperInfo", desktopId }).catch(() => null) : null;
-
     const wallpaperDataUri = desktopId ? await getObservedWallpaper(desktopId, true) : "";
 
     const thumbnail = desktopId ? await monitorFreezeDesktopThumbnail(desktopId, wallpaperDataUri).catch(() => "") : "";
@@ -1538,9 +1534,9 @@ async function removeVirtualDesktopPreview(index, options={}) {
 
     renderVirtualDesktops(result);
 
-    const undoSnapshot={kind:"desktop-delete",desktopId,index,hwnds,nodes:nodeSnapshots,wallpaperPath:wallpaperInfo?.path||"",wallpaperDataUri,thumbnail};
+    const undoSnapshot={kind:"desktop-delete",desktopId,index,hwnds,nodes:nodeSnapshots,wallpaperDataUri,thumbnail};
 
-    storeMonitorTrashedDesktop({desktopId,index,desktop_number:index+1,thumbnail,hwnds,nodes:nodeSnapshots,wallpaperPath:wallpaperInfo?.path||""});
+    storeMonitorTrashedDesktop({desktopId,index,desktop_number:index+1,thumbnail,hwnds,nodes:nodeSnapshots});
 
     showDeletedDesktopTrashUndo(undoSnapshot);
 
@@ -2159,7 +2155,7 @@ function restoreMonitorTrashRecord(key){key=String(key||"");monitorTrashedConver
 //@@FN_END:restoreMonitorTrashRecord
 
 //@@FN_START:restoreMonitorTrashedDesktop
-async function restoreMonitorTrashedDesktop(id,button){const item=monitorTrashedDesktops.get(String(id||""));if(!item)return;if(button)button.disabled=true;try{const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:item.hwnds||[],wallpaperPath:item.wallpaperPath||""});if(!result?.ok)throw new Error(result?.error||"데스크톱 복구 실패");restoreMonitorDesktopNodeSnapshots(item.nodes);deleteMonitorTrashedDesktop(id);renderVirtualDesktops(result);}catch(error){setMonitorStatus(`데스크톱 복구 실패 · ${error?.message||error}`,false);if(button)button.disabled=false;}}
+async function restoreMonitorTrashedDesktop(id,button){const item=monitorTrashedDesktops.get(String(id||""));if(!item)return;if(button)button.disabled=true;try{const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:item.hwnds||[]});if(!result?.ok)throw new Error(result?.error||"데스크톱 복구 실패");restoreMonitorDesktopNodeSnapshots(item.nodes);deleteMonitorTrashedDesktop(id);renderVirtualDesktops(result);}catch(error){setMonitorStatus(`데스크톱 복구 실패 · ${error?.message||error}`,false);if(button)button.disabled=false;}}
 //@@FN_END:restoreMonitorTrashedDesktop
 
 //@@FN_START:scheduleMonitorStartupRecovery
@@ -2520,15 +2516,13 @@ async function undoDeletedDesktopTrash() {
 
     const beforeIds=new Set(monitorDesktopState.desktopIds);
 
-    const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:snapshot.hwnds,wallpaperPath:snapshot.wallpaperPath||""});
+    const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:snapshot.hwnds});
 
     if(!result?.ok)throw new Error(result?.error||"데스크톱 복구 실패");
 
     const resultIds=Array.isArray(result.desktopIds)?result.desktopIds:[];
 
     const restoredId=resultIds.find((id)=>!beforeIds.has(id))||resultIds[resultIds.length-1]||null;
-
-    if(restoredId&&snapshot.wallpaperDataUri){monitorRememberWallpaperEntry(monitorWallpaperCache, restoredId, snapshot.wallpaperDataUri, MONITOR_WALLPAPER_CACHE_LIMIT);}
 
     monitorDeletedDesktopUndo=null; monitorDeletedDesktopUndoExpiresAt=0; clearTimeout(monitorDeletedDesktopUndoTimer);
 

@@ -23,18 +23,21 @@ internal static class DesktopVisualSnapshot
     {
         Guid desktopId;
         if (!Guid.TryParse(GetString(request, "desktopId"), out desktopId)) return Error("Invalid desktopId.");
+        if (!IsActiveDesktop(desktopId)) return Error("Desktop is not active.");
         int maxWidth = GetInt(request, "maxWidth", 960, 160, 1920);
         int maxHeight = GetInt(request, "maxHeight", 600, 100, 1080);
         int quality = GetInt(request, "quality", 68, 40, 90);
-        string solidColor, solidProof;
-        if (DesktopSolidColorSource.TryGet(desktopId, out solidColor, out solidProof))
+        DesktopGlobalBackgroundState backgroundState;
+        if (!DesktopBackgroundStateSource.TryGet(out backgroundState))
+            return Error("Desktop background state unavailable.");
+        if (backgroundState.IsSolid)
         {
             return new Dictionary<string, object>
             {
                 { "ok", true }, { "desktopId", desktopId.ToString("D") },
                 { "wallpaperPath", "" },
                 { "wallpaper", new Dictionary<string, object> {
-                    { "mode", "solid" }, { "color", solidColor }, { "proof", solidProof }
+                    { "mode", "solid" }, { "color", backgroundState.BaseColor }, { "proof", backgroundState.Proof }
                 } }
             };
         }
@@ -65,7 +68,7 @@ internal static class DesktopVisualSnapshot
                 using (Graphics graphics = Graphics.FromImage(resized))
                 using (MemoryStream output = new MemoryStream())
                 {
-                    graphics.Clear(Color.Black);
+                    graphics.Clear(ColorTranslator.FromHtml(backgroundState.BaseColor));
                     graphics.CompositingQuality = CompositingQuality.HighQuality;
                     graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
                     graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
@@ -84,7 +87,8 @@ internal static class DesktopVisualSnapshot
                             {
                                 { "dataUri", "data:image/jpeg;base64," + Convert.ToBase64String(output.ToArray()) },
                                 { "originalWidth", screenWidth }, { "originalHeight", screenHeight },
-                                { "width", width }, { "height", height }, { "mode", mode.ToString().ToLowerInvariant() }
+                                { "width", width }, { "height", height }, { "mode", mode.ToString().ToLowerInvariant() },
+                                { "baseColor", backgroundState.BaseColor }, { "baseProof", backgroundState.Proof }
                             }
                         }
                     };
@@ -152,6 +156,26 @@ internal static class DesktopVisualSnapshot
         string id = "{" + desktopId.ToString("D").ToUpperInvariant() + "}";
         string path = ReadRegistryWallpaper(VirtualDesktopKey + @"\Desktops\" + id);
         return !string.IsNullOrWhiteSpace(path) ? path : ReadRegistryWallpaper(@"Control Panel\Desktop");
+    }
+
+    private static bool IsActiveDesktop(Guid desktopId)
+    {
+        try
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(VirtualDesktopKey))
+            {
+                byte[] raw = key == null ? null : key.GetValue("VirtualDesktopIDs") as byte[];
+                if (raw == null) return false;
+                for (int offset = 0; offset + 16 <= raw.Length; offset += 16)
+                {
+                    byte[] bytes = new byte[16];
+                    Array.Copy(raw, offset, bytes, 0, 16);
+                    if (new Guid(bytes) == desktopId) return true;
+                }
+                return false;
+            }
+        }
+        catch { return false; }
     }
 
     private static string ReadRegistryWallpaper(string keyPath)

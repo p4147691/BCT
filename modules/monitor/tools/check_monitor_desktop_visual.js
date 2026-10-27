@@ -47,6 +47,7 @@ function request(message) {
         assert.match(visual.wallpaper.color, /^#[0-9A-F]{6}$/i);
       } else {
         assert.match(visual.wallpaper.dataUri, /^data:image\/(?:jpeg|png|webp);base64,/);
+        assert.match(visual.wallpaper.baseColor, /^#[0-9A-F]{6}$/i);
         assert.ok(visual.wallpaper.width > 0 && visual.wallpaper.height > 0);
       }
     }

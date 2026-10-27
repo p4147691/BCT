@@ -2992,56 +2992,47 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-    private static void SetDesktopWallpaperPath(Guid desktopId, string wallpaperPath)
-
-
-
-
-    {
-
-
-
-
-        if (string.IsNullOrWhiteSpace(wallpaperPath)) return;
-
-
-
-
-        string keyPath = VdKey + @"\Desktops\{" + desktopId.ToString("D").ToUpperInvariant() + "}";
-
-
-
-
-        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(keyPath))
-
-
-
-
-        {
-
-
-
-
-            if (key != null) key.SetValue("Wallpaper", wallpaperPath, RegistryValueKind.String);
-
-
-
-
-        }
-
-
-
-
-    }
-
-
-
-
-
-
-
-
-
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     private static object GetDesktopWallpaperInfo(Dictionary<string, object> request)
 
 
@@ -3327,22 +3318,15 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-            int currentIndex = Convert.ToInt32(beforeState["currentIndex"]);
+            // Desktop creation does not inherit or copy wallpaper state here.
 
 
 
 
-            Guid currentId; string currentWallpaper = "", sourceDesktopId = "", solidColor = "", solidProof = ""; bool currentSolid = false;
 
 
 
 
-            if (beforeIds != null && currentIndex >= 0 && currentIndex < beforeIds.Count && Guid.TryParse(beforeIds[currentIndex], out currentId))
-            {
-                sourceDesktopId = currentId.ToString("D");
-                currentWallpaper = GetDesktopWallpaperPath(currentId);
-                currentSolid = DesktopSolidColorSource.TryGet(currentId, out solidColor, out solidProof);
-            }
 
 
 
@@ -3387,25 +3371,13 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-            Guid createdGuid; if (!string.IsNullOrEmpty(createdId) && Guid.TryParse(createdId, out createdGuid)) SetDesktopWallpaperPath(createdGuid, currentWallpaper);
+            // Windows owns personalization for the new desktop. Monitor reads
+            // the resulting state and never writes wallpaper registry values.
 
 
 
 
-            var inheritedWallpaper = new Dictionary<string, object>();
-            if (currentSolid)
-            {
-                inheritedWallpaper["mode"] = "solid";
-                inheritedWallpaper["color"] = solidColor;
-                inheritedWallpaper["proof"] = "create-inherited:" + solidProof;
-            }
-            else if (!string.IsNullOrWhiteSpace(currentWallpaper))
-            {
-                inheritedWallpaper["mode"] = "photo";
-                inheritedWallpaper["path"] = currentWallpaper;
-                inheritedWallpaper["proof"] = "create-inherited:guid-file";
-            }
-            state["created"] = true; state["createdDesktopId"] = createdId; state["sourceDesktopId"] = sourceDesktopId; state["inheritedWallpaper"] = inheritedWallpaper; state["index"] = afterIds != null && createdId != null ? afterIds.IndexOf(createdId) : rawIndex; state["count"] = after; state["wallpaperPath"] = currentWallpaper;
+            state["created"] = true; state["createdDesktopId"] = createdId; state["index"] = afterIds != null && createdId != null ? afterIds.IndexOf(createdId) : rawIndex; state["count"] = after;
 
 
 
@@ -3590,7 +3562,6 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-            string wallpaperPath = GetString(request, "wallpaperPath");
 
 
 
@@ -3640,7 +3611,8 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-            Guid restoredGuid; if (!string.IsNullOrEmpty(restoredId) && Guid.TryParse(restoredId, out restoredGuid)) SetDesktopWallpaperPath(restoredGuid, wallpaperPath);
+            // Restoring recreates the desktop and its windows only. Windows
+            // remains the sole owner of personalization state.
 
 
 
@@ -3690,7 +3662,7 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-            state["restored"] = true; state["restoredDesktopId"] = restoredId; state["index"] = index; state["restoredWindows"] = restored; state["wallpaperPath"] = wallpaperPath;
+            state["restored"] = true; state["restoredDesktopId"] = restoredId; state["index"] = index; state["restoredWindows"] = restored;
 
 
 

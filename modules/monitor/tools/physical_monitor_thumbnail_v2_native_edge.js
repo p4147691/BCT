@@ -35,7 +35,10 @@ function request(message){
   assert.equal(reply.ok,true,reply.error||"getDesktopVisualSnapshot failed");
   assert.equal(String(reply.desktopId).toLowerCase(),desktopId);
   if(reply.wallpaper?.mode==="solid")assert.match(reply.wallpaper.color||"",/^#[0-9a-f]{6}$/i);
-  else assert.match(reply.wallpaper?.dataUri||"",/^data:image\/(?:jpeg|png|webp);base64,/);
+  else {
+    assert.match(reply.wallpaper?.dataUri||"",/^data:image\/(?:jpeg|png|webp);base64,/);
+    assert.match(reply.wallpaper?.baseColor||"",/^#[0-9a-f]{6}$/i);
+  }
   return reply;
  });
  const browser=await chromium.launch({executablePath:"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",headless:true,args:["--no-first-run","--no-default-browser-check"]});
@@ -59,7 +62,8 @@ function request(message){
     const cssColor=value=>{const probe=document.createElement("i");probe.style.color=value;document.body.append(probe);const normalized=getComputedStyle(probe).color;probe.remove();return normalized;};
     const exact=(view,frame)=>frame.wallpaper.mode==="solid"
       ? view.state==="captured"&&view.source==="native-solid-color"&&view.color===cssColor(frame.wallpaper.color)
-      : view.state==="captured"&&view.source==="native-guid-file"&&view.image.includes(frame.wallpaper.dataUri.slice(18,65));
+      : view.state==="captured"&&view.source==="native-guid-file"&&
+        view.image.includes(frame.wallpaper.dataUri.slice(18,65))&&view.color===cssColor(frame.wallpaper.baseColor);
     const passes=normal.map((view,i)=>exact(view,frames[i]));
     const priorStyle={image:tiles[0].style.backgroundImage,color:tiles[0].style.backgroundColor};
     const wrong=engine.wallpaper(tiles[0],ids[0],frames[1]);

@@ -130,8 +130,6 @@
       allowsLayer:layer=>policy.allows(layer),
       resolve,
       wallpaper:(visual,desktopId,reply,generation)=>background.apply(visual,desktopId,reply,generation),
-      inheritBackground:(visual,desktopId,sourceDesktopId,sourceSnapshot,createReply)=>
-        background.inherit(visual,desktopId,sourceDesktopId,sourceSnapshot,createReply),
       acceptedBackground:(visual,desktopId)=>background.accepted(visual,desktopId),
       refresh,
       refreshBackground,
@@ -151,7 +149,6 @@
     allowsLayer:layer=>instance?.allowsLayer(layer)??true,
     resolve:(...args)=>instance?.resolve(...args)??null,
     wallpaper:(...args)=>instance?.wallpaper(...args)??false,
-    inheritBackground:(...args)=>instance?.inheritBackground(...args)??false,
     acceptedBackground:(...args)=>instance?.acceptedBackground(...args)??null,
     refresh:(...args)=>instance?.refresh(...args)??Promise.resolve(Object.freeze({ok:false,wallpaperReady:false,frameReady:false,reason:"NOT_CONFIGURED"})),
     refreshBackground:(...args)=>instance?.refreshBackground(...args)??Promise.resolve(Object.freeze({ok:false,wallpaperReady:false,frameReady:null,reason:"NOT_CONFIGURED"})),

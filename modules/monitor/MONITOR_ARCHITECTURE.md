@@ -55,8 +55,10 @@ Rules:
 - There is one persistent Control Native port. Requests carry `requestId`; unsolicited events cannot consume replies.
 - No thumbnail module calls `chrome.runtime`, `connectNative` or `sendNativeMessage`.
 - The background layer is the only owner of `backgroundImage` and `backgroundColor`.
+- Monitor background code is read-only. Creating, restoring, selecting or switching a desktop never writes Windows wallpaper registry values or calls a wallpaper setter.
 - The window layer is the only owner of thumbnail HWND elements and their image sources.
-- A solid color is renderable only after the Native reply identifies the exact desktop GUID and returns `mode: solid` with `#RRGGBB` evidence. A missing/invalid reply is a visible failed state, not a fabricated gray background.
+- Native reads the global base color independently from the global mode. In picture mode that color is painted underneath the GUID-specific image for Center/Fit margins; in proven global solid mode it is the entire background. A missing/invalid reply is a visible failed state, not a fabricated gray background.
+- New/restored desktops never copy another tile's accepted snapshot. They wait for a fresh Native read of the state Windows actually established.
 - The compositor knows layer order, not how either layer obtains or paints pixels.
 - The compositor is the only owner of per-tile refresh concurrency and combined completion. Normal duplicate requests coalesce; a real wallpaper event queues one follow-up read. Background and frame success remain separately observable.
 

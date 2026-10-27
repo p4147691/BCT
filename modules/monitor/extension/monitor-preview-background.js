@@ -28,7 +28,7 @@
         element.style.backgroundImage="";
         element.style.backgroundColor=String(snapshot.color).toUpperCase();
       } else if (snapshot.kind==="photo" && contract.isImage(snapshot.dataUri)) {
-        element.style.backgroundColor="";
+        element.style.backgroundColor=String(snapshot.baseColor).toUpperCase();
         element.style.backgroundImage="url("+JSON.stringify(String(snapshot.dataUri))+")";
       } else return false;
       acceptedSnapshot=snapshot;

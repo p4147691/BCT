@@ -34,7 +34,7 @@ const visual=document.createElement("span");visual.className="monitor-desktop-th
 for(const className of ["monitor-desktop-thumb-window","monitor-thumb-v2-status","monitor-thumbnail-node-overlay"]){
   const child=document.createElement("span");child.className=className;visual.append(child);
 }
-let reply={ok:true,desktopId,wallpaper:{dataUri:"data:image/jpeg;base64,BOTTOM_LAYER"}};
+let reply={ok:true,desktopId,wallpaper:{dataUri:"data:image/jpeg;base64,BOTTOM_LAYER",baseColor:"#107c10",baseProof:"windows-base-color"}};
 let frameReads=0,decorations=0;
 const policy=context.MonitorThumbnailLayerPolicy.create(context.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_ONLY);
 const renderer=context.MonitorDesktopThumbnailV2;
@@ -60,6 +60,7 @@ renderer.configure({
   assert.equal(decorations,0);
   assert.equal(visual.children.length,0,"background-only mode removes every child overlay from the visual");
   assert.match(visual.style.backgroundImage,/BOTTOM_LAYER/);
+  assert.equal(visual.style.backgroundColor,"#107C10");
   assert.equal(visual.dataset.monitorThumbnailLayers,"background");
 
   reply={ok:false,desktopId,error:"NATIVE_TEMPORARY_FAILURE"};
@@ -79,16 +80,7 @@ renderer.configure({
   assert.equal((await renderer.refreshBackground(visual,desktopId,{force:true})).wallpaperReady,false);
   assert.equal(visual.style.backgroundColor,"#10893E","last accepted solid color survives a later failure");
 
-  const createdId="53bc50d3-d7a1-4595-9264-e3fa4537ad79";
-  const created=document.createElement("span");created.className="monitor-desktop-thumb-visual";created.dataset.desktopId=createdId;
-  const sourceSnapshot=renderer.acceptedBackground(visual,desktopId);
-  assert.equal(renderer.inheritBackground(created,createdId,desktopId,sourceSnapshot,{
-    ok:true,createdDesktopId:createdId,sourceDesktopId:desktopId,
-    inheritedWallpaper:{mode:"solid",color:"#10893E",proof:"create-inherited:windows-solid-mode"}
-  }),true,"new desktop accepts only the exact create lineage and source snapshot");
-  assert.equal(created.style.backgroundImage,"");
-  assert.equal(created.style.backgroundColor,"#10893E");
-  assert.equal(renderer.acceptedBackground(created,createdId).inheritedFrom,desktopId);
-  assert.equal(renderer.inheritBackground(created,createdId,"c991b275-7933-4697-9d6e-73bf31ae4379",sourceSnapshot,{}),false);
+  assert.equal("inheritBackground" in renderer,false,
+    "new desktops must read Windows truth instead of inheriting a source tile");
   console.log("PASS: background-only policy renders only exact wallpaper evidence and retains last-good photo/solid pixels without hiding failures");
 })().catch(error=>{console.error(error);process.exitCode=1});

@@ -41,7 +41,7 @@ r.configure({
 });
 assert.equal(typeof r.refreshWallpaper,"function");
 const img="data:image/jpeg;base64,VALID_BYTES";
-const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
+const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c10",baseProof:"windows-base-color"}});
 (async()=>{
   assert.equal(r.wallpaper(visual1,D1,source(D2)),false,"wrong GUID must fail closed");
   assert.equal(visual1.style.backgroundImage,"");
@@ -57,7 +57,7 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   assert.equal(visual1.style.backgroundColor,"#10893E","a rejected reply must not erase the last accepted background");
   assert.equal(visual1.dataset.wallpaperCapture,"retained");
   assert.equal(r.wallpaper(visual1,D1,source(D1)),true);
-  assert.equal(visual1.style.backgroundColor,"");
+  assert.equal(visual1.style.backgroundColor,"#107C10");
   const tick=()=>new Promise(resolve=>setImmediate(resolve));
   let reads=0,releaseNormal;
   currentRequest=message=>{reads++;return new Promise(resolve=>{releaseNormal=()=>resolve(source(message.desktopId))})};
@@ -71,7 +71,7 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img}});
   reads=0;
   const releases=[];
   currentRequest=message=>{reads++;return new Promise(resolve=>releases.push(value=>resolve({
-    ok:true,desktopId:message.desktopId,wallpaper:{dataUri:value}
+    ok:true,desktopId:message.desktopId,wallpaper:{dataUri:value,baseColor:"#107c10",baseProof:"windows-base-color"}
   })))};
   const firstEvent=r.refreshWallpaper(visual1,D1,{force:true});
   await tick();

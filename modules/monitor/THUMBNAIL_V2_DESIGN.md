@@ -67,6 +67,7 @@
 ## Windows API color provenance
 - Photo and solid must be identified by Windows desktop truth, not a stale remembered per-desktop wallpaper filename or merely the stored RGB value.
 - Windows supports per-virtual-desktop customization only for picture backgrounds. Solid color is a global mode, so old per-GUID `Wallpaper` paths can remain populated while none of those pictures is currently displayed.
-- DesktopSolidColorSource.cs verifies that the requested GUID is still active, then asks read-only IDesktopWallpaper for all physical monitor wallpaper paths. Empty paths plus COM GetBackgroundColor, or the explicit global Windows BackgroundType, apply to every active GUID. Historical/deleted GUIDs are rejected.
-- If COM and the explicit mode are unavailable, distributed exposed-screen-color evidence is still restricted to the exact current GUID; it is never projected onto another desktop.
-- check_monitor_solid_native_contract.py compiles the decision harness on Windows and verifies global-solid, current-screen fallback, inactive-GUID rejection, and dormant-photo-path behavior without changing the user wallpaper.
+- DesktopVisualSnapshot.cs first rejects GUIDs that are not in Windows' current active desktop list. DesktopBackgroundStateSource.cs then asks read-only IDesktopWallpaper for every physical monitor wallpaper path and the global base color. Empty paths prove the one global solid-color mode; picture mode keeps the same base color underneath each GUID-specific picture.
+- Registry `BackgroundType`, remembered per-GUID photo paths and sampled screen pixels are not mode evidence. There is no heuristic fallback when the official COM read is unavailable.
+- New and restored desktops never inherit a source tile or receive a Monitor-written wallpaper path. Their V2 tile remains pending until a fresh Native snapshot of Windows' actual state succeeds.
+- check_monitor_background_state_native_contract.py compiles the decision harness on Windows and rejects mode heuristics and setter invocations without changing user wallpaper.

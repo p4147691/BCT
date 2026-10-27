@@ -39,7 +39,7 @@
         visual.style.backgroundImage = "";
         visual.style.backgroundColor = snapshot.color;
       } else if (snapshot.ok && snapshot.kind === "photo") {
-        visual.style.backgroundColor = "";
+        visual.style.backgroundColor = snapshot.baseColor;
         visual.style.backgroundImage = "url(" + JSON.stringify(snapshot.dataUri) + ")";
       } else if (!state.accepted) {
         visual.style.backgroundImage = "";
@@ -68,11 +68,6 @@
 
     function apply(visual, desktopId, reply, generation) {
       return commit(visual,desktopId,contract.wallpaperSnapshot(desktopId,reply),generation);
-    }
-
-    function inherit(visual,desktopId,sourceDesktopId,sourceSnapshot,createReply) {
-      return commit(visual,desktopId,
-        contract.inheritedWallpaperSnapshot(desktopId,sourceDesktopId,sourceSnapshot,createReply));
     }
 
     function accepted(visual,desktopId) {
@@ -143,7 +138,7 @@
       }
     }
 
-    return Object.freeze({resolve,apply,inherit,accepted,refresh,invalidate});
+    return Object.freeze({resolve,apply,accepted,refresh,invalidate});
   }
   root.MonitorThumbnailBackgroundLayer = Object.freeze({create});
 })(globalThis);
