@@ -283,6 +283,47 @@ class OrchestrationTests(unittest.TestCase):
             result.output["assignment"]["actions"],
         )
 
+    def test_tool_build_request_can_be_used_before_later_user_report(self):
+        worker = self.attachment("worker-b")
+        result = self.call("build-exact-tab-close-tool", {
+            "operation": "tool-build-request", "session_id": "session",
+            "manager_epoch": 1, "assignment_id": "build-exact-tab-close-tool",
+            "worker_node_id": "worker-b", "attachment_id": worker["attachment_id"],
+            "tool_name": "exact-tab-close", "problem": "close one exact old manager tab",
+            "required_behaviors": [
+                "Require exact tab, window, session, and conversation identity.",
+                "Record an UNKNOWN result instead of retrying an unproven close.",
+            ],
+            "acceptance": {"adapter_test": True, "postcondition": "tab absent"},
+            "actions": ["read", "write", "test"],
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("PENDING_USER_REPORT", result.evidence["post_use_report"])
+        assignment = result.output["assignment"]
+        self.assertEqual("exact-tab-close", assignment["request"]["tool_build"]["tool_name"])
+        self.assertIn("[BCT_TOOL_BUILD_REQUEST_V1]", assignment["request"]["instruction"])
+        self.assertTrue(assignment["acceptance"]["post_use_report"]["required"])
+
+        report = self.call("build-exact-tab-close-tool-report", {
+            "operation": "tool-build-report", "session_id": "session",
+            "assignment_id": "build-exact-tab-close-tool",
+        })
+        self.assertEqual(Outcome.APPLIED, report.outcome)
+        details = report.output["tool_build_report"]
+        self.assertEqual("PENDING_USER_REPORT", details["report_state"])
+        self.assertTrue(details["actual_use_permitted_by_work"])
+        self.assertFalse(details["automatic_formal_adoption"])
+
+        with self.assertRaisesRegex(PreconditionError, "ORCHESTRATION_TOOL_BUILD_SCOPE_INVALID"):
+            self.call("build-without-tests", {
+                "operation": "tool-build-request", "session_id": "session",
+                "manager_epoch": 1, "assignment_id": "build-without-tests",
+                "worker_node_id": "worker-b", "attachment_id": worker["attachment_id"],
+                "tool_name": "bad-tool", "problem": "missing test scope",
+                "required_behaviors": ["Must not be accepted."],
+                "acceptance": {"tested": True}, "actions": ["read", "write"],
+            })
+
     def test_duplicate_tabs_map_to_one_node_and_immutable_attachments(self):
         snapshot = self.bct.orchestration.snapshot(
             work=self.bct.store.get_work("work"), session_id="session"

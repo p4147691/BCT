@@ -40,6 +40,7 @@ from bct.project_run import (
 
 _OPERATIONS = {
     "session-start", "node-sync", "manager-takeover", "dispatch",
+    "tool-build-request", "tool-build-report",
     "worker-replace", "reconcile", "recover-not-dispatched",
     "recover-node-sync", "recover-reconciled-wake",
     "chain-run", "chain-resume", "manager-wake", "status", "cancel",
@@ -157,6 +158,14 @@ def _conversation_key(url: str) -> str:
     return match.group(1) if match else ""
 
 
+def _tool_build_text(value: object, *, field: str, limit: int) -> str:
+    text = str(value or "").strip()
+    if (not text or len(text) > limit
+            or any(ord(character) < 32 and character not in "\t\r\n" for character in text)):
+        raise PreconditionError("ORCHESTRATION_TOOL_BUILD_" + field + "_INVALID")
+    return text
+
+
 class OrchestrationFeature:
     capability = "orchestrate"
 
@@ -227,6 +236,18 @@ class OrchestrationFeature:
                 },
                 {"roots", "actions", "dependencies", "timeout_s"},
             )
+        elif operation == "tool-build-request":
+            _exact_keys(
+                arguments,
+                common | {
+                    "manager_epoch", "assignment_id", "worker_node_id",
+                    "attachment_id", "tool_name", "problem",
+                    "required_behaviors", "acceptance", "actions",
+                },
+                {"roots", "dependencies", "timeout_s"},
+            )
+        elif operation == "tool-build-report":
+            _exact_keys(arguments, common | {"assignment_id"}, set())
         elif operation == "worker-replace":
             _exact_keys(
                 arguments,
@@ -321,6 +342,36 @@ class OrchestrationFeature:
             if not math.isfinite(timeout_value):
                 raise PreconditionError("ORCHESTRATION_TIMEOUT_INVALID")
             normalized["timeout_s"] = timeout_value
+        if operation == "tool-build-request":
+            tool_name = str(arguments.get("tool_name") or "").strip().casefold()
+            if not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", tool_name):
+                raise PreconditionError("ORCHESTRATION_TOOL_BUILD_NAME_INVALID")
+            problem = _tool_build_text(arguments.get("problem"), field="PROBLEM", limit=2000)
+            raw_behaviors = arguments.get("required_behaviors")
+            if not isinstance(raw_behaviors, list) or not 1 <= len(raw_behaviors) <= 5:
+                raise PreconditionError("ORCHESTRATION_TOOL_BUILD_BEHAVIORS_INVALID")
+            behaviors = [
+                _tool_build_text(item, field="BEHAVIOR", limit=1000)
+                for item in raw_behaviors
+            ]
+            if len(set(behaviors)) != len(behaviors):
+                raise PreconditionError("ORCHESTRATION_TOOL_BUILD_BEHAVIORS_INVALID")
+            acceptance = arguments.get("acceptance")
+            actions = arguments.get("actions")
+            if (not isinstance(acceptance, dict) or not acceptance
+                    or len(_canonical(acceptance)) > 4000
+                    or not isinstance(actions, list)
+                    or not {"read", "write", "test"}.issubset(
+                        {str(item) for item in actions}
+                    )):
+                raise PreconditionError("ORCHESTRATION_TOOL_BUILD_SCOPE_INVALID")
+            normalized.update({
+                "tool_name": tool_name,
+                "problem": problem,
+                "required_behaviors": behaviors,
+                "acceptance": dict(acceptance),
+                "actions": [str(item) for item in actions],
+            })
         if operation == "project-run-plan":
             resources = (
                 "conversation-scope:" + str(arguments.get("scope_id") or ""),
@@ -341,11 +392,16 @@ class OrchestrationFeature:
             resources = ("rcc-instance:" + validate_instance_id(
                 arguments.get("instance_id")
             ),)
-        elif operation in {"dispatch", "worker-replace"}:
+        elif operation in {"dispatch", "tool-build-request", "worker-replace"}:
             resources = (
                 "orchestration-run:" + session_id + ":"
                 + str(arguments.get("assignment_id")),
                 "orchestration-attachment:" + str(arguments.get("attachment_id")),
+            )
+        elif operation == "tool-build-report":
+            resources = (
+                "orchestration-inspection:" + session_id + ":"
+                + str(arguments.get("assignment_id")),
             )
         elif operation in {
             "reconcile", "recover-not-dispatched", "recover-node-sync"
@@ -417,6 +473,73 @@ class OrchestrationFeature:
         if work.assignment_epoch != request.preconditions["work_assignment_epoch"]:
             raise PreconditionError("ORCHESTRATION_WORK_ASSIGNMENT_CHANGED")
         return work
+
+    @staticmethod
+    def _tool_build_instruction(spec: dict[str, Any]) -> str:
+        behaviors = "\n".join(f"- {item}" for item in spec["required_behaviors"])
+        return (
+            "[BCT_TOOL_BUILD_REQUEST_V1]\n"
+            f"도구 이름: {spec['tool_name']}\n"
+            f"문제: {spec['problem']}\n"
+            "필수 동작:\n" + behaviors + "\n\n"
+            "이 범위 안에서 기존 구현을 먼저 확인한 뒤 필요한 최소 도구를 구현하고, "
+            "허용된 Work 권한 안에서 테스트 및 실제 사용 증거를 남기세요. 새 권한을 "
+            "요청하거나 범위를 넓히지 말고, 배포·외부 전송은 현재 Work 권한과 별도 "
+            "지시가 있을 때만 하세요. 결과 summary에는 도구 이름, 변경 파일, 테스트, "
+            "실제 사용 여부와 증거, 남은 위험을 적으세요. 이 결과는 사후 사용자 보고 "
+            "대상이며 정식 유지·수정·폐기 결정은 사용자가 합니다.\n"
+            "[/BCT_TOOL_BUILD_REQUEST_V1]"
+        )
+
+    def _tool_build_request(
+        self, *, request: FeatureRequest, work: Work, values: dict[str, Any], authorize,
+    ) -> dict[str, Any]:
+        spec = {
+            "schema": 1,
+            "tool_name": values["tool_name"],
+            "problem": values["problem"],
+            "required_behaviors": list(values["required_behaviors"]),
+            "post_use_report": "PENDING_USER_REPORT",
+            "user_review_is_a_gate": False,
+        }
+        dispatched = dict(values)
+        dispatched["instruction"] = self._tool_build_instruction(spec)
+        dispatched["acceptance"] = {
+            "tool_acceptance": dict(values["acceptance"]),
+            "post_use_report": {
+                "state": "PENDING_USER_REPORT",
+                "required": True,
+                "user_decides": ["KEEP", "CHANGE", "RETIRE"],
+            },
+        }
+        dispatched["tool_build"] = spec
+        return self._dispatch(
+            request=request, work=work, values=dispatched, authorize=authorize,
+        )
+
+    def _tool_build_report(self, *, work: Work, values: dict[str, Any]) -> dict[str, Any]:
+        try:
+            assignment = self.service.assignment(
+                work=work, session_id=str(values["session_id"]),
+                assignment_id=str(values["assignment_id"]),
+            )
+        except (KeyError, ConflictError) as exc:
+            raise PreconditionError("ORCHESTRATION_TOOL_BUILD_ASSIGNMENT_NOT_ACCESSIBLE") from exc
+        spec = assignment.get("request", {}).get("tool_build")
+        if not isinstance(spec, dict) or spec.get("schema") != 1:
+            raise PreconditionError("ORCHESTRATION_TOOL_BUILD_ASSIGNMENT_REQUIRED")
+        terminal = assignment.get("terminal_result")
+        envelope = terminal.get("envelope") if isinstance(terminal, dict) else None
+        summary = envelope.get("summary") if isinstance(envelope, dict) else ""
+        return {
+            "tool": dict(spec),
+            "assignment_id": assignment["assignment_id"],
+            "assignment_state": assignment["state"],
+            "worker_report": str(summary or ""),
+            "report_state": "PENDING_USER_REPORT",
+            "actual_use_permitted_by_work": True,
+            "automatic_formal_adoption": False,
+        }
 
     @staticmethod
     def _manager_wake_envelope(event: dict[str, Any]) -> str:
@@ -1231,13 +1354,16 @@ class OrchestrationFeature:
             raise PreconditionError("ORCHESTRATION_TIMEOUT_INVALID")
         authorize("orchestrate")
         outer_operation_id = str(request.operation_id)
+        assignment_request = {"instruction": instruction,
+                              "_outer_operation_id": outer_operation_id}
+        if isinstance(values.get("tool_build"), dict):
+            assignment_request["tool_build"] = dict(values["tool_build"])
         created, assignment = self.service.create_assignment(
             work=work, session_id=session_id, assignment_id=assignment_id,
             manager_epoch=manager_epoch,
             worker_node_id=str(values["worker_node_id"]),
             attachment_id=str(values["attachment_id"]),
-            request={"instruction": instruction,
-                     "_outer_operation_id": outer_operation_id},
+            request=assignment_request,
             roots=roots, actions=actions, acceptance=acceptance,
             dependencies=dependencies,
         )
@@ -2476,9 +2602,24 @@ class OrchestrationFeature:
                  "observation": result["observation"]},
                 output=result,
             )
-        if operation == "dispatch":
-            result = self._dispatch(
-                request=request, work=work, values=values, authorize=authorize
+        if operation == "tool-build-report":
+            result = self._tool_build_report(work=work, values=values)
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": operation, "session_id": values["session_id"],
+                 "assignment_id": values["assignment_id"],
+                 "report_state": result["report_state"]},
+                release_claims=True, output={"tool_build_report": result},
+            )
+        if operation in {"dispatch", "tool-build-request"}:
+            result = (
+                self._tool_build_request(
+                    request=request, work=work, values=values, authorize=authorize,
+                )
+                if operation == "tool-build-request"
+                else self._dispatch(
+                    request=request, work=work, values=values, authorize=authorize,
+                )
             )
             outcome = (
                 Outcome.APPLIED if result["state"] == "APPLIED"
@@ -2490,7 +2631,9 @@ class OrchestrationFeature:
                 outcome,
                 {"operation": operation, "session_id": values["session_id"],
                  "assignment_id": result["assignment_id"],
-                 "assignment_state": result["state"]},
+                 "assignment_state": result["state"],
+                 **({"post_use_report": "PENDING_USER_REPORT"}
+                    if operation == "tool-build-request" else {})},
                 release_claims=outcome is not Outcome.UNKNOWN,
                 output={"assignment": result},
             )

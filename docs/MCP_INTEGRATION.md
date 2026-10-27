@@ -52,6 +52,14 @@ only when SQLite proves that no dispatch reservation or message exists; otherwis
 remains quarantined. A terminal assignment/session may be adopted after an outer receipt loss
 without sending to RCC again.
 
+`tool-build-request` is a bounded `dispatch` specialization for an immediately needed,
+small tool. It requires a named worker, exact attachment, explicit `read`, `write`, and
+`test` actions, a short problem statement, one to five required behaviors, and acceptance
+criteria. The worker may implement, test, and use the tool only under the Work's existing
+authority; the command grants no new capability and never deploys by itself. Completion leaves
+`PENDING_USER_REPORT`; `tool-build-report` returns the tool identity, assignment state, and
+worker summary so the user can later choose to keep, change, or retire it.
+
 Verification and positive `github_pr_status.wait_seconds` use the existing one-shot worker
 and survive MCP disconnect. Polling CI is local to that bounded operation, never a daemon.
 Recover results with `bct_operation_get`; do not create a new operation to retry UNKNOWN.
