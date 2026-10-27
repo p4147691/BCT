@@ -238,7 +238,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
     for (const tile of monitorDesktopThumbs.children) {
       const id=String(tile.dataset.desktopId||"");
       const visual=tile.querySelector(".monitor-desktop-thumb-visual");
-      if (id&&visual?.isConnected) await refreshDesktopThumb(visual,id).catch(()=>false);
+      if (id&&visual?.isConnected) void refreshDesktopThumb(visual,id).catch(()=>false);
     }
     return;
   }
@@ -257,6 +257,12 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const apply=(img)=>{ img.style.display=(minimized||event.visible===false)?"none":""; img.style.left=`${((Number(event.left)-vl)/vw)*100}%`; img.style.top=`${((Number(event.top)-vt)/vh)*100}%`; img.style.width=`${(Number(event.width)/vw)*100}%`; img.style.height=`${(Number(event.height)/vh)*100}%`; syncMonitorStatusLayer(img,hwnd); syncMonitorPauseOverlay(img,hwnd); if(!restoring)syncMonitorDesktopNumberBadge(img,hwnd); syncMonitorNonChatCountdown(img,hwnd); };
 
   if (!previousDesktopId || previousDesktopId===desktopId) for (const img of document.querySelectorAll(`.monitor-window-preview[data-hwnd="${hwnd}"]`)) apply(img);
+
+  // Position is event data, not a pixel capture. Apply it to the existing V2
+  // HWND node immediately; the slower WGC refresh runs independently below.
+  const eventTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
+  const eventVisual=eventTile?.querySelector(".monitor-desktop-thumb-visual");
+  globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
 
   monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
@@ -313,7 +319,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const selectedDesktopId=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"");
   const selectedDesktop=desktopId===selectedDesktopId;
   if (selectedDesktop) {
-    await refreshSelectedThumb().catch(() => false);
+    scheduleMonitorV2WindowRefresh(event);
     return;
   }
 

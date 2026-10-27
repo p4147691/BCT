@@ -159,6 +159,7 @@
       refreshWallpaper:async(visual,desktopId,options)=>(await refreshBackground(visual,desktopId,options)).wallpaperReady,
       beginFrame:(...args)=>policy.allows("windows")?windowLayer.beginFrame(...args):null,
       removeWindow:(...args)=>policy.allows("windows")?windowLayer.removeWindow(...args):false,
+      windowEvent:(...args)=>policy.allows("windows")?windowLayer.windowEvent(...args):false,
       windowFrame:(...args)=>policy.allows("windows")?windowLayer.windowFrame(...args):false,
       frameFailure:(...args)=>policy.allows("windows")?windowLayer.frameFailure(...args):false,
       invalidate:(visual,desktopId)=>background.invalidate(visual,desktopId)
@@ -178,6 +179,7 @@
     refreshWallpaper:(...args)=>instance?.refreshWallpaper(...args)??Promise.resolve(false),
     beginFrame:(...args)=>instance?.beginFrame(...args)??null,
     removeWindow:(...args)=>instance?.removeWindow(...args)??false,
+    windowEvent:(...args)=>instance?.windowEvent(...args)??false,
     windowFrame:(...args)=>instance?.windowFrame(...args)??false,
     frameFailure:(...args)=>instance?.frameFailure(...args)??false,
     invalidate:(...args)=>instance?.invalidate(...args)

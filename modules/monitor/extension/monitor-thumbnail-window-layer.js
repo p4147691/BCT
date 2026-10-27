@@ -35,6 +35,25 @@
       visual.dataset.monitorThumbnailWindows=String(state.windows.size);return true;
     }
 
+    function windowEvent(visual,desktopId,event={}){
+      const state=states.get(visual),id=norm(desktopId),hwnd=String(event.hwnd||"");
+      if(!state||state.desktopId!==id||!/^[0-9]+$/.test(hwnd)||hwnd==="0")return false;
+      const view=state.windows.get(hwnd);if(!view)return false;
+      const originX=Number(event.previewVirtualLeft??event.virtualLeft??0);
+      const originY=Number(event.previewVirtualTop??event.virtualTop??0);
+      const width=Number(event.previewVirtualWidth??event.virtualWidth);
+      const height=Number(event.previewVirtualHeight??event.virtualHeight);
+      const rect=[event.left,event.top,event.width,event.height].map(Number);
+      if(!(width>0&&height>0)||!rect.every(Number.isFinite)||!(rect[2]>0&&rect[3]>0))return false;
+      const hidden=event.visible===false||event.iconic===true||["hidden","minimized"].includes(norm(event.reason));
+      const {image,status}=view;
+      image.style.left=percent(rect[0],originX,width);image.style.top=percent(rect[1],originY,height);
+      image.style.width=percent(rect[2],0,width);image.style.height=percent(rect[3],0,height);
+      image.style.display=hidden?"none":validPixels(image.getAttribute("src"))?"block":"none";
+      status.style.left=image.style.left;status.style.top=image.style.top;
+      return true;
+    }
+
     function windowFrame(visual,desktopId,frame,bindings={}){
       const state=resolve(visual,desktopId);
       if(!state||!frame?.meta||!Array.isArray(frame.frames))return false;
@@ -122,7 +141,7 @@
       visual.dataset.monitorFrameReady=retained?"retained":"failed";return true;
     }
 
-    return Object.freeze({resolve,beginFrame,removeWindow,windowFrame,frameFailure});
+    return Object.freeze({resolve,beginFrame,removeWindow,windowEvent,windowFrame,frameFailure});
   }
   root.MonitorThumbnailWindowLayer=Object.freeze({create});
 })(globalThis);

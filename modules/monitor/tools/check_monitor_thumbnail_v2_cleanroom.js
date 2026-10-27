@@ -156,6 +156,10 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(failed.style.display,"none","failed capture must leave the background visible without a simulated window");
   assert.equal(first.style.left,"10%");assert.equal(first.style.top,"15%");
   assert.equal(first.style.width,"40%");assert.equal(first.style.height,"30%");
+  assert.equal(r.windowEvent(visual1,D1,{hwnd:"123",left:20,top:25,width:30,height:35,previewVirtualLeft:0,previewVirtualTop:0,previewVirtualWidth:100,previewVirtualHeight:100,visible:true}),true);
+  assert.equal(first.style.left,"20%");assert.equal(first.style.top,"25%");
+  assert.equal(first.style.width,"30%");assert.equal(first.style.height,"35%");
+  assert.equal(r.windowEvent(visual2,D2,{hwnd:"123",left:0,top:0,width:10,height:10,previewVirtualWidth:100,previewVirtualHeight:100}),false,"an event cannot move a HWND owned by another desktop tile");
   assert.equal(first.style["z-index"],"10000");assert.equal(failed.style["z-index"],"9999");
   assert.equal(visual1.querySelectorAll(".monitor-thumb-v2-status").find(x=>x.dataset.hwnd==="124").hidden,true);
   assert.equal(r.windowFrame(visual2,D2,frame),false,"cross-desktop Windows frame must be rejected");

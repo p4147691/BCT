@@ -318,6 +318,7 @@ def main():
             root/'tools'/'check_monitor_thumbnail_v2_cleanroom.js',
             root/'tools'/'check_monitor_thumbnail_v2_native_ports.js',
             root/'tools'/'check_monitor_thumbnail_v2_render_ownership.js',
+            root/'tools'/'check_monitor_thumbnail_window_event_path.js',
             root/'tools'/'check_monitor_preview_background.js',
             root/'tools'/'check_monitor_wallpaper_change_event.js',
             root/'tools'/'check_monitor_desktop_click_boundary.js',
