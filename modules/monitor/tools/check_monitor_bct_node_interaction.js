@@ -96,6 +96,12 @@ function loadModule() {
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
   assert.match(monitor, /tags\.filter\(\(tag\) => tag !== "Manager"\)/);
   assert.match(monitor, /row\.classList\.toggle\("is-manager", !hadManager\)/);
+  assert.match(monitor, /if \(!monitorBctShell\?\.updateConversationScope \|\| !node\?\.conversationKey\)/,
+    "conversation metadata editor must be available independently of exact tab rename identity");
+  assert.match(monitor, /titleField\.control\.disabled = !canRenameTitle/,
+    "only exact ChatGPT title rename is disabled when tab identity is incomplete");
+  assert.match(monitor, /대화망과 역할은 변경할 수 있습니다/,
+    "the editor explains that persistent network and role metadata remain editable");
   assert.match(monitor, /monitorBctPointInsideScopeHeading/);
   assert.match(monitor, /monitorBctNodeInsertionAt/);
   assert.match(monitor, /row\.setPointerCapture\(event\.pointerId\)/);
@@ -114,6 +120,58 @@ function loadModule() {
   assert.doesNotMatch(css, /monitor-bct-node-drag-ghost[\s\S]{0,240}background:rgba\(12,24,38,\.92\)/);
   const selectedRule = css.match(/\.monitor-bct-node-row\.is-selected\s*\{([^}]+)\}/)?.[1] || "";
   assert.doesNotMatch(selectedRule, /background:/);
+
+  const holdStart = monitor.indexOf("function installMonitorBctManagerLongPress(");
+  const holdEnd = monitor.indexOf("\nfunction getMonitorBctNodeInteractionService(", holdStart);
+  assert.ok(holdStart > 0 && holdEnd > holdStart);
+  function managerRow() {
+    const listeners = new Map();
+    const classes = new Set();
+    return {
+      listeners,
+      classes,
+      addEventListener(type, listener) { listeners.set(type, listener); },
+      classList: {
+        add(name) { classes.add(name); },
+        remove(name) { classes.delete(name); },
+        toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
+      },
+    };
+  }
+  const holdTimers = [];
+  const managerUpdates = [];
+  const holdContext = {
+    monitorBctSuppressedClickKey: "",
+    monitorBctNodeSelectionKey: (node) => node.conversationKey,
+    monitorBctShell: {
+      updateConversationScope: async (_node, values) => { managerUpdates.push(values); return { ok: true }; },
+    },
+    refreshMonitorBctWindowNodes: async () => {},
+    setMonitorStatus: () => {},
+    setTimeout(callback, delay) { holdTimers.push({ callback, delay }); return holdTimers.length; },
+    clearTimeout: () => {},
+    globalThis: null,
+    Array, String, Math, Promise,
+  };
+  holdContext.globalThis = holdContext;
+  vm.createContext(holdContext);
+  vm.runInContext(monitor.slice(holdStart, holdEnd), holdContext);
+  const rowOn = managerRow();
+  const baseNode = { conversationKey: "conv-1", nodeLabel: "N33", title: "대화", scopeName: "대화망 A", roleTags: ["Worker"] };
+  holdContext.installMonitorBctManagerLongPress(rowOn, baseNode);
+  rowOn.listeners.get("pointerdown")({ button: 0, clientX: 10, clientY: 10, target: { closest: () => null } });
+  assert.equal(holdTimers[0].delay, 600);
+  holdTimers[0].callback();
+  await Promise.resolve();
+  assert.deepEqual(Array.from(managerUpdates[0].roleTags), ["Worker", "Manager"]);
+  assert.equal(rowOn.classes.has("is-manager"), true);
+  const rowOff = managerRow();
+  holdContext.installMonitorBctManagerLongPress(rowOff, { ...baseNode, roleTags: ["Worker", "Manager"] });
+  rowOff.listeners.get("pointerdown")({ button: 0, clientX: 20, clientY: 20, target: { closest: () => null } });
+  holdTimers.at(-1).callback();
+  await Promise.resolve();
+  assert.deepEqual(Array.from(managerUpdates[1].roleTags), ["Worker"]);
+  assert.equal(rowOff.classes.has("is-manager"), false);
 
   const dropStart = monitor.indexOf("function monitorBctPointInsideScopeHeading(");
   const dropEnd = monitor.indexOf("\nfunction updateMonitorBctNodePointerDrag(", dropStart);

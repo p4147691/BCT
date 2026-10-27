@@ -6188,10 +6188,16 @@ function monitorBctNodeLocationText(node, desktopPosition) {
   return desktopPosition >= 0 ? `D${desktopPosition + 1}` : "위치 확인 중";
 }
 function openMonitorBctRenameEditor(node, row) {
-  if (!monitorBctShell?.renameConversation || !node?.conversationKey || !node?.sessionId) {
-    setMonitorStatus("이 창의 정확한 RCC 대화 신원을 확인할 수 없어 이름을 바꾸지 않았습니다.", false, 5000);
+  if (!monitorBctShell?.updateConversationScope || !node?.conversationKey) {
+    setMonitorStatus("이 대화의 영속 신원을 확인할 수 없어 정보를 바꾸지 않았습니다.", false, 5000);
     return;
   }
+  const canRenameTitle = Boolean(
+    monitorBctShell?.renameConversation
+    && node?.sessionId
+    && node?.windowId !== undefined
+    && node?.tabId !== undefined
+  );
   closeMonitorBctRenameEditor();
   const overlay = document.createElement("div");
   overlay.className = "monitor-bct-rename-overlay";
@@ -6243,6 +6249,12 @@ function openMonitorBctRenameEditor(node, row) {
     return { label, control };
   };
   const titleField = makeField("ChatGPT 대화창 이름", currentTitle, 100);
+  const titleHint = document.createElement("div");
+  titleHint.className = "monitor-bct-info-hint";
+  titleHint.textContent = canRenameTitle
+    ? "이름 변경은 확인된 현재 ChatGPT 탭에만 적용됩니다."
+    : "현재 정확한 탭 신원을 확인하지 못해 이름 변경만 잠시 사용할 수 없습니다. 대화망과 역할은 변경할 수 있습니다.";
+  titleField.control.disabled = !canRenameTitle;
   const scopeField = makeField(
     "대화망 / 작업 범위",
     String(node.scopeName || "").trim(),
@@ -6275,12 +6287,13 @@ function openMonitorBctRenameEditor(node, row) {
   confirm.className = "is-primary";
   confirm.textContent = "확인";
   actions.append(recovery, cancel, confirm);
-  dialog.append(head, facts, titleField.label, scopeField.label, rolesField.label, roleHint, error, actions);
+  dialog.append(head, facts, titleField.label, titleHint, scopeField.label, rolesField.label, roleHint, error, actions);
   overlay.append(dialog);
   document.body.append(overlay);
   monitorBctRenameEditor = {
     overlay, dialog, input: titleField.control, scopeInput: scopeField.control,
     rolesInput: rolesField.control, error, recovery, cancel, close, confirm, busy: false,
+    canRenameTitle,
   };
 
   const cancelEditor = () => closeMonitorBctRenameEditor();
@@ -6305,15 +6318,15 @@ function openMonitorBctRenameEditor(node, row) {
     event.preventDefault();
     const editor = monitorBctRenameEditor;
     if (!editor || editor.busy) return;
-    const title = editor.input.value.trim();
+    const title = editor.canRenameTitle ? editor.input.value.trim() : currentTitle;
     const scopeName = editor.scopeInput.value.trim();
     const roleTags = monitorBctRoleTagsFromText(editor.rolesInput.value);
-    if (!title) {
+    if (editor.canRenameTitle && !title) {
       editor.error.textContent = "이름을 입력하세요.";
       editor.input.focus();
       return;
     }
-    const titleChanged = title !== currentTitle;
+    const titleChanged = editor.canRenameTitle && title !== currentTitle;
     const metadataChanged = scopeName !== String(node.scopeName || "").trim()
       || JSON.stringify(roleTags) !== JSON.stringify(Array.isArray(node.roleTags) ? node.roleTags : []);
     if (!titleChanged && !metadataChanged) return closeMonitorBctRenameEditor();
@@ -6336,7 +6349,7 @@ function openMonitorBctRenameEditor(node, row) {
         titleApplied = true;
       }
       await monitorBctShell.updateConversationScope(node, {
-        displayName: title,
+        displayName: title || String(node.title || node.nodeLabel || "").trim(),
         scopeName,
         roleTags,
       });
@@ -6346,7 +6359,7 @@ function openMonitorBctRenameEditor(node, row) {
       globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 600);
     } catch (renameError) {
       editor.busy = false;
-      editor.input.disabled = false;
+      editor.input.disabled = !editor.canRenameTitle;
       editor.scopeInput.disabled = false;
       editor.rolesInput.disabled = false;
       editor.recovery.disabled = false;
@@ -6357,11 +6370,12 @@ function openMonitorBctRenameEditor(node, row) {
       editor.error.textContent = titleApplied
         ? `ChatGPT 이름은 변경됐지만 대화망 정보 저장에 실패했습니다 · ${renameError?.message || renameError}`
         : monitorBctRenameErrorText(renameError);
-      (titleApplied ? editor.scopeInput : editor.input).focus();
+      (titleApplied || !editor.canRenameTitle ? editor.scopeInput : editor.input).focus();
     }
   });
-  titleField.control.focus();
-  titleField.control.select();
+  const initialControl = canRenameTitle ? titleField.control : scopeField.control;
+  initialControl.focus();
+  initialControl.select();
 }
 
 let monitorBctNodeInteractionService = null;
