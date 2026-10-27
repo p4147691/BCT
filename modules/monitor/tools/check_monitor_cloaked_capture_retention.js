@@ -27,7 +27,8 @@ assert.equal(policy.monitorShouldKeepExistingCapture("captured", "data:image/jpe
 assert.equal(policy.monitorShouldKeepExistingCapture("placeholder", "data:image/svg+xml,OLD", "placeholder"), false);
 assert.equal(policy.monitorShouldKeepExistingCapture("captured", "blob:good", "captured"), false);
 
-assert.match(source, /items\.filter\(monitorWindowCanRefreshPixels\)/, "capture eligibility uses the explicit policy");
+assert.match(source, /items\.filter\(\(item\) => monitorWindowCanRefreshPixels\(item\) && !monitorWindowUsesFrozenCapture\(item\)\)/,
+  "capture eligibility keeps ordinary HWNDs live while the Monitor self frame stays one-shot");
 assert.doesNotMatch(windowLayer, /Number\(item\.cloaked\|\|0\)===0/,
   "a valid real capture is not discarded only because its HWND is Shell-cloaked");
 assert.match(source, /monitorChooseCaptureView\(/, "bounded age-aware fallback decision is consulted through the compatibility guard");

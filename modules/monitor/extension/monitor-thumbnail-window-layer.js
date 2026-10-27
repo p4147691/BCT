@@ -89,26 +89,26 @@
         status.style.left=image.style.left;status.style.top=image.style.top;status.style.zIndex=String(Number(z)+1);
         const recorded=Number(entry.capturedAt||0),age=Date.now()-recorded;
         const fresh=recorded>0&&age>=0&&age<=15000;
-        const pixels=entry.captureState==="captured"&&entry.physicalSource!=="monitor-frozen"
-          &&fresh&&validPixels(entry.dataUri)?entry.dataUri:"";
+        const frozen=entry.physicalSource==="monitor-frozen";
+        const pixels=entry.captureState==="captured"&&(frozen||fresh)&&validPixels(entry.dataUri)?entry.dataUri:"";
         if(pixels){
           if(image.getAttribute("src")!==pixels)image.setAttribute("src",pixels);
           image.style.display="block";
           image.dataset.captureState="captured";image.dataset.captureFailureReason="";
           image.dataset.monitorCapturedAt=String(recorded);image.dataset.monitorCaptureTitle=String(entry.captureTitle||item.title||"");
           image.classList.remove("monitor-thumb-v2-failed");status.hidden=true;status.textContent="";
-        }else if(entry.physicalSource!=="monitor-frozen"&&validPixels(image.getAttribute("src"))){
+        }else if(validPixels(image.getAttribute("src"))){
           // A missing/stale capture is not evidence that the HWND disappeared.
           // Preserve the last accepted pixels until an authoritative successful
           // window snapshot omits the HWND or an exact lifecycle event removes it.
-          const reason=entry.physicalSource==="monitor-frozen"?"SAVED_FRAME_REJECTED"
+          const reason=frozen?"FROZEN_FRAME_UNAVAILABLE"
             :entry.captureState==="captured"&&!fresh?"STALE_CAPTURE":"NO_REAL_CAPTURE";
           image.style.display="block";
           image.dataset.captureState="retained";image.dataset.captureFailureReason=reason;
           image.classList.remove("monitor-thumb-v2-failed");status.hidden=true;status.textContent="";
         }else{
           image.removeAttribute("src");
-          const reason=entry.physicalSource==="monitor-frozen"?"SAVED_FRAME_REJECTED"
+          const reason=frozen?"FROZEN_FRAME_UNAVAILABLE"
             :entry.captureState==="captured"&&!fresh?"STALE_CAPTURE":"NO_REAL_CAPTURE";
           image.style.display="none";
           image.dataset.captureState="failed";image.dataset.captureFailureReason=reason;image.dataset.monitorCapturedAt="0";

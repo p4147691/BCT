@@ -12,7 +12,7 @@
   function configure({visualSource,readFrame=null,interactionPorts=null,afterWindowRender=null,layerPolicy=null}={}){
     const policy=layerPolicy?.allows
       ? layerPolicy
-      : policies?.create?.(policies?.MODES?.FULL||"full")||Object.freeze({mode:"full",allows:()=>true,enabledLayers:["background","windows","interaction","semantic","summary"]});
+      : policies?.create?.(policies?.MODES?.FULL||"full")||Object.freeze({mode:"full",allows:()=>true,enabledLayers:["background","windows","interaction","nodes","status","summary"]});
     const background=backgrounds.create({contract,visualSource});
     const windowLayer=windows.create({contract});
     const interactionLayer=policy.allows("interaction")&&interactions?.create&&typeof interactionPorts?.moveWindow==="function"
@@ -25,9 +25,14 @@
           ".monitor-desktop-thumb-window, .monitor-thumb-v2-status"
         )||[]))node.remove?.();
       }
-      if(!policy.allows("semantic")){
+      if(!policy.allows("nodes")){
         for(const node of Array.from(visual?.querySelectorAll?.(
-          ".monitor-thumbnail-node-overlay, .monitor-thumbnail-tab-badge, .monitor-window-status-layer, .monitor-window-pause-overlay, .monitor-window-desktop-badge, .monitor-window-non-chat-countdown, .monitor-thumbnail-z-rail, .monitor-window-capture-age-label"
+          ".monitor-thumbnail-node-overlay, .monitor-thumbnail-tab-badge, .monitor-window-desktop-badge, .monitor-thumbnail-z-rail"
+        )||[]))node.remove?.();
+      }
+      if(!policy.allows("status")){
+        for(const node of Array.from(visual?.querySelectorAll?.(
+          ".monitor-window-status-layer, .monitor-window-pause-overlay, .monitor-window-non-chat-countdown, .monitor-window-capture-age-label"
         )||[]))node.remove?.();
       }
       if(!policy.allows("summary")){
@@ -80,9 +85,9 @@
             windowLayer.frameFailure(visual,desktopId,"FRAME_UNAVAILABLE",frameToken);
             frameReady=false;
           }else{
-            const hasSemantic=policy.allows("semantic")&&typeof afterWindowRender==="function";
-            const afterRender=interactionLayer||hasSemantic
-              ?(target,id)=>{interactionLayer?.reconcile(target,id);if(hasSemantic)afterWindowRender(target,id);}
+            const hasNodes=policy.allows("nodes")&&typeof afterWindowRender==="function";
+            const afterRender=interactionLayer||hasNodes
+              ?(target,id)=>{interactionLayer?.reconcile(target,id);if(hasNodes)afterWindowRender(target,id);}
               :undefined;
             frameReady=windowLayer.windowFrame(visual,desktopId,frame,{frameToken,afterRender});
           }

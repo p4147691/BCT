@@ -10,9 +10,10 @@ assert.match(lifecycle,/const monitorWallpaperNativePending = new Map\(\)/,
   "wallpaper requests require independent keyed ownership");
 assert.match(lifecycle,/MonitorDesktopVisualSource\.create\(\{ request: monitorWallpaperNativeRequest \}\)/,
   "desktop visual source must receive the dedicated wallpaper transport");
-assert.match(lifecycle,/MonitorThumbnailLayerPolicy\.MODES\.BACKGROUND_WINDOWS/,
-  "staged acceptance must use the canonical background-and-windows layer policy");
-assert.match(lifecycle,/MonitorDesktopThumbnailV2\.configure\(\{[\s\S]*?visualSource: monitorDesktopVisualSource,[\s\S]*?readFrame: desktopId => captureDesktopFrame\(desktopId, "thumb"\),[\s\S]*?afterWindowRender: decorateMonitorThumbnailWindows,/);
+assert.match(lifecycle,/MonitorThumbnailLayerPolicy\.MODES\.BACKGROUND_WINDOWS_INTERACTION_NODES/,
+  "staged acceptance must use the canonical background, windows, interaction, and node layer policy");
+assert.match(lifecycle,/MonitorDesktopThumbnailV2\.configure\(\{[\s\S]*?visualSource: monitorDesktopVisualSource,[\s\S]*?readFrame: desktopId => captureDesktopFrame\(desktopId, "thumb"\),[\s\S]*?afterWindowRender: visual => syncMonitorThumbnailTabBadges\(visual,"monitor-desktop-thumb-window"\),/,
+  "the compositor must inject the node-only post-render projection");
 assert.match(transport,/if \(response\?\.event === true\) return;/,
   "unsolicited Native events cannot complete a request");
 assert.match(transport,/const requestId = String\(response\?\.requestId \|\| ""\)/);

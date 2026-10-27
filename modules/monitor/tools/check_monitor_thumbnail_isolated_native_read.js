@@ -10,7 +10,8 @@ assert.doesNotMatch(transport,/function monitorNativeVisualRead\(/);
 assert.doesNotMatch(transport,/sendNativeMessage\(MONITOR_CONTROL_HOST/,
   "thumbnail reads must not open a side-channel Native request");
 assert.match(transport,/function monitorControlNativeRequest\(message\)/);
-assert.match(lifecycle,/MonitorDesktopVisualSource\.create\(\{ request: monitorNative \}\)/);
+assert.match(lifecycle,/MonitorDesktopVisualSource\.create\(\{ request: monitorWallpaperNativeRequest \}\)/,
+  "wallpaper snapshots use the dedicated correlated Native port");
 assert.match(visualSource,/return await request\(\{/);
 assert.match(visualSource,/type:"getDesktopVisualSnapshot"/);
 assert.doesNotMatch(visualSource,/\bchrome\b|connectNative|sendNativeMessage/,

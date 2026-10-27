@@ -350,7 +350,11 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   // A missing HWND hides only the thumbnail overlay, never the node list.
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
-      monitorDisplayHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd));
+      monitorDisplayHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd))
+      .sort((left,right) =>
+        (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
+          (Number.isSafeInteger(right?.tabIndex) ? right.tabIndex : Number.MAX_SAFE_INTEGER) ||
+        Number(left?.tabId || 0) - Number(right?.tabId || 0));
     return [...new Set(matched.map((node) => {
       const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
       return match ? Number(match[1]) : 0;

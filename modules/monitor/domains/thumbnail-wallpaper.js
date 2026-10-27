@@ -62,6 +62,10 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
   const job = (async () => {
 
+    if (profile === "thumb" && String(desktopId) === String(monitorDesktopState.hostDesktopId || "")) {
+      await ensureMonitorOwnFrozenSnapshot().catch(() => false);
+    }
+
     const actMeta = monitorActDesktopVisualForDesktop(desktopId);
 
     // Window geometry/minimize state must come from the live Windows observer.
@@ -93,9 +97,9 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
     const handleSnapshot = await monitorNative(hasHostHwnd
 
-      ? { type: "getDesktopWindowHandles", desktopId, hostWindowHwnd: hostHwnd, includeMonitorWindows: profile !== "thumb" }
+      ? { type: "getDesktopWindowHandles", desktopId, hostWindowHwnd: hostHwnd, includeMonitorWindows: true }
 
-      : { type: "getDesktopWindowHandles", desktopId, includeMonitorWindows: profile !== "thumb" }).catch(() => null);
+      : { type: "getDesktopWindowHandles", desktopId, includeMonitorWindows: true }).catch(() => null);
 
     if (generation !== monitorDesktopFrameGeneration(desktopId)) return null;
     // Only a successful native snapshot can add/remove physical windows.
@@ -150,7 +154,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
     // Coverage is complete; concurrency is bounded inside ThumbnailService.
     // Placeholder frames remain visible only while a capture is unavailable.
     const captureItems = MONITOR_WINDOW_PIXEL_CAPTURE_ENABLED
-      ? items.filter(monitorWindowCanRefreshPixels)
+      ? items.filter((item) => monitorWindowCanRefreshPixels(item) && !monitorWindowUsesFrozenCapture(item))
       : [];
 
     const frames = items.map((item) => ({
@@ -1115,7 +1119,7 @@ function syncMonitorAllDesktopThumbnailNodeBadges() {
 function syncMonitorThumbnailTabBadges(container, className) {
 
   if (className !== "monitor-desktop-thumb-window") return;
-  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("semantic") === false) {
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("nodes") === false) {
     container.querySelectorAll(
       ".monitor-thumbnail-node-overlay, .monitor-thumbnail-tab-badge, .monitor-window-desktop-badge-thumb, .monitor-window-desktop-badge"
     ).forEach((node) => node.remove());

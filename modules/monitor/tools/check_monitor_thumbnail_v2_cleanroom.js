@@ -174,8 +174,10 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(first.style.display,"block");
   const frozen={...removed,frames:[{...frame.frames[0],physicalSource:"monitor-frozen",dataUri:img}]};
   r.windowFrame(visual1,D1,frozen);
-  assert.equal(first.getAttribute("src"),null,"previous monitor popup screenshots forbidden");
-  assert.equal(first.dataset.captureFailureReason,"SAVED_FRAME_REJECTED");
+  assert.equal(first.getAttribute("src"),img,"the verified one-shot Monitor self frame is a valid physical window layer");
+  assert.equal(first.dataset.physicalSource,"monitor-frozen");
+  assert.equal(first.dataset.captureState,"captured");
+  assert.equal(first.dataset.captureFailureReason,"");
   assert.equal(r.wallpaper(visual1,D1,source(D1)),true);
   // Existing DOM from legacy renderer is discarded on first attachment.
   const legacy=tile(D1);const obsolete=doc.createElement("img");obsolete.className="monitor-desktop-thumb-window";obsolete.dataset.hwnd="987";legacy.append(obsolete);
@@ -190,7 +192,7 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(nativeReads,1,"a native wallpaper-change signal forces exactly one GUID read");
   const back={...removed,frames:[{...frame.frames[0],capturedAt:Date.now()}]};
   r.windowFrame(visual1,D1,back);
-  assert.equal(first.getAttribute("src"),img,"a fresh physical capture restores pixels after a rejected saved frame");
+  assert.equal(first.getAttribute("src"),img,"a fresh physical capture can replace the accepted frozen Monitor frame");
   const timed={...removed,frames:[{...frame.frames[0],capturedAt:Date.now()-30000}]};
   r.windowFrame(visual1,D1,timed);
   assert.equal(first.getAttribute("src"),img,"a stale read must not erase the last accepted HWND pixels");

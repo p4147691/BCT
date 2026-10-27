@@ -5,7 +5,7 @@ const source=fs.readFileSync(path.join(ext,"monitor-thumbnail-interaction-layer.
 const compositor=fs.readFileSync(path.join(ext,"monitor-desktop-thumbnail-v2.js"),"utf8");
 const bootstrap=fs.readFileSync(path.join(__dirname,"..","source-parts","05-native-lifecycle.js"),"utf8");
 assert.match(compositor,/interactionLayer\?\.reconcile\(target,id\)/,"V2 must reconcile input after a HWND frame render");
-assert.match(bootstrap,/BACKGROUND_WINDOWS_INTERACTION/,"accepted runtime mode must enable interaction without semantic overlays");
+assert.match(bootstrap,/BACKGROUND_WINDOWS_INTERACTION_NODES/,"accepted runtime mode must enable interaction and the isolated node-label layer");
 assert.match(bootstrap,/moveWindow:\s*\(\{hwnd,sourceDesktopId,targetDesktopId\}\)/,"runtime must inject one exact-HWND move port");
 assert.doesNotMatch(source,/monitorNative|connectNative|moveWindowToDesktop|backgroundImage\s*=|backgroundColor\s*=|\.src\s*=/);
 

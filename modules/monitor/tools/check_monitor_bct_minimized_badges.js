@@ -93,11 +93,12 @@ assert.match(src,/scheduleMonitorMinimizedBadgeConvergence\(hwnd\)/);
 assert.match(contractSrc,/if \(!Boolean\(location\?\.iconic\)\) continue;/);
 assert.match(thumbnailV2Src,/windowLayer\.windowFrame\(visual,desktopId,frame/,
   "V2 owns the window-frame render instead of the compatibility bundle");
-assert.match(src,/afterWindowRender:\s*decorateMonitorThumbnailWindows/,
-  "the V2 boundary injects post-render node badge decoration");
+assert.match(src,/afterWindowRender:\s*visual\s*=>\s*syncMonitorThumbnailTabBadges\(visual,\s*"monitor-desktop-thumb-window"\)/,
+  "the V2 boundary injects only the node-label projection");
 assert.match(src,/syncMonitorThumbnailTabBadges\(tile,"monitor-desktop-thumb-window"\)/);
 assert.match(src,/MonitorBctThumbnailProjection/);
 assert.match(projectionSrc,/windowLayer\.append\(badge\)/);
 assert.match(projectionSrc,/layer\.append\(windowLayer\)/);
-assert.match(css,/\.monitor-thumbnail-node-overlay\s*\{[^}]*z-index:2147480000/s);
-console.log("PASS: only minimized ChatGPT windows use the bottom desktop summary; open nodes render above their thumbnail");
+assert.match(css,/\.monitor-thumbnail-node-overlay\s*\{[^}]*display:contents/s);
+assert.doesNotMatch(css,/\.monitor-thumbnail-z-rail\s*\{/);
+console.log("PASS: minimized nodes use the bottom summary while open nodes keep natural HWND stacking");

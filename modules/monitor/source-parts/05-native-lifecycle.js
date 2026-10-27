@@ -274,7 +274,7 @@ let monitorWallpaperNativeQueue = Promise.resolve();
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorWallpaperNativeRequest });
 const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
-  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS_INTERACTION
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS_INTERACTION_NODES
 );
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,
@@ -283,7 +283,7 @@ globalThis.MonitorDesktopThumbnailV2.configure({
     moveWindow: ({hwnd,sourceDesktopId,targetDesktopId}) => moveMonitorWindowToDesktop(hwnd,sourceDesktopId,targetDesktopId),
     onError: error => setMonitorStatus(`창 이동 실패 · ${error?.message || error}`, false),
   },
-  afterWindowRender: decorateMonitorThumbnailWindows,
+  afterWindowRender: visual => syncMonitorThumbnailTabBadges(visual,"monitor-desktop-thumb-window"),
   layerPolicy: monitorThumbnailLayerPolicy,
 });
 

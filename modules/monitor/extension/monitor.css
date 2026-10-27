@@ -373,12 +373,9 @@
 .monitor-worker-resource-actionable.monitor-worker-resource-pending { cursor:wait; filter:brightness(1.12); }
 
 
-.monitor-thumbnail-node-overlay { position:absolute; inset:0; z-index:2147480000; overflow:hidden; pointer-events:none; }
-.monitor-thumbnail-node-window { position:absolute; z-index:1; box-sizing:border-box; pointer-events:none; }
-.monitor-thumbnail-tab-badge { position:absolute; left:2px; top:2px; transform:none; z-index:2!important; pointer-events:none; }
-.monitor-thumbnail-tab-badge[data-anchor="top-right"] { left:auto; right:2px; top:2px; bottom:auto; }
-.monitor-thumbnail-tab-badge[data-anchor="bottom-left"] { left:2px; right:auto; top:auto; bottom:2px; }
-.monitor-thumbnail-tab-badge[data-anchor="bottom-right"] { left:auto; right:2px; top:auto; bottom:2px; }
+.monitor-thumbnail-node-overlay { display:contents; pointer-events:none; }
+.monitor-thumbnail-node-window { position:absolute; box-sizing:border-box; overflow:hidden; pointer-events:none; }
+.monitor-thumbnail-tab-badge { position:absolute; left:2px; right:2px; top:2px; bottom:auto; transform:none; z-index:2!important; pointer-events:none; }
 
 
 .monitor-worker-row.monitor-worker-working {
@@ -3615,15 +3612,5 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-bct-window-tab-stale{opacity:.62}
 .monitor-bct-window-tab-attachments{display:block;color:rgba(202,216,232,.70);font:600 10px/1.2 "Segoe UI","Malgun Gothic",sans-serif}
 
-/* BCT_MONITOR_SELECTED_NODE_Z_RAIL_V1 - Node identity stays separate from HWND framing. */
-.monitor-thumbnail-node-chip-list{display:flex!important;flex-wrap:wrap;gap:2px;align-content:flex-start;width:max-content;height:auto;max-width:100%;line-height:1.1;overflow:visible;}
-.monitor-thumbnail-node-chip{display:inline-flex;align-items:center;gap:2px;padding:2px 4px;border:1px solid rgba(180,207,249,.8);border-radius:4px;background:rgba(12,26,45,.92);color:#f9fbff;font-size:10px;font-weight:700;white-space:nowrap;}
-.monitor-thumbnail-node-chip.is-selected{background:#ffe17b!important;color:#191100!important;border:2px solid #ffbd38!important;box-shadow:0 0 0 1px #110d03,0 0 10px rgba(255,209,69,.95);text-shadow:none!important;font-weight:900;}
-.monitor-thumbnail-node-overflow{font-size:9px;color:#fff;background:#32455b;border-radius:3px;padding:2px 4px;white-space:nowrap;}
-.monitor-thumbnail-z-rail{position:absolute;top:3px;left:3px;max-width:min(80%,200px);max-height:88%;overflow:hidden;display:flex;flex-direction:column;gap:2px;z-index:2147480001;pointer-events:none;}
-.monitor-thumbnail-z-row{display:flex;align-items:flex-start;gap:2px;padding:1px 2px;background:rgba(11,20,34,.83);border:1px solid rgba(170,195,225,.45);border-radius:4px;min-height:16px;box-sizing:border-box;}
-.monitor-thumbnail-z-index{display:inline-block;min-width:10px;color:#b9c5d7;font:700 9px/16px sans-serif;}
-.monitor-thumbnail-z-row .monitor-thumbnail-tab-badge{position:relative!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;display:flex!important;transform:none!important;max-width:100%;}
-.monitor-thumbnail-z-more{pointer-events:auto;align-self:start;cursor:pointer;background:#243b53;color:white;border:1px solid #91a6c1;border-radius:3px;font:700 10px sans-serif;padding:2px 5px;}
-.monitor-thumbnail-z-rail[data-z-order-confirmed="false"]::before{content:"Z?";font:700 9px sans-serif;color:#ffdc84;}
-.monitor-thumbnail-z-rail.is-expanded{overflow-y:auto;pointer-events:auto;scrollbar-width:thin;}
+/* Node identity stays inside its physical HWND and follows the HWND z-order. */
+.monitor-thumbnail-node-window .monitor-thumbnail-tab-badge{display:block!important;width:auto;max-width:none;min-width:0;height:auto;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;word-break:normal;text-align:left;line-height:1.15;}

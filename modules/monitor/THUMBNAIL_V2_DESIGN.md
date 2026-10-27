@@ -1,13 +1,14 @@
 # Monitor 썸네일 V2 — 입력/출력 단일 경계 (격리 후보)
 
-## 현재 수락 단계: background-windows-interaction
+## 현재 수락 단계: background-windows-interaction-nodes
 
-현재 운영 구성은 `MonitorThumbnailLayerPolicy`의 `background-windows` 모드를 사용한다. 이는 별도 폴백 렌더러가 아니라 정식 V2 합성기의 단계별 수락 정책이다.
+현재 운영 구성은 `MonitorThumbnailLayerPolicy`의 `background-windows-interaction-nodes` 모드를 사용한다. 이는 별도 대체 렌더러가 아니라 정식 V2 합성기의 단계별 수락 정책이다.
 
 - `background`: 활성. 정확한 데스크톱 GUID에 대응하는 Native 사진 또는 Windows 단색 근거만 렌더링한다.
 - `windows`: 활성. Native가 확인한 HWND의 실제 WGC 픽셀과 Windows 위치/Z순서만 렌더링한다.
-- `interaction`: 활성 후보. HWND 창 표면의 단일 창 드래그, 고스트, 기존 데스크톱 드롭만 담당한다. 실제 이동은 주입된 exact-HWND 포트 한 번으로 수행한다.
-- `semantic`: 임시 비활성. 노드/탭 의미 배지를 렌더링하지 않는다.
+- `interaction`: 활성. HWND 창 표면의 단일 창 드래그, 고스트, 기존 데스크톱 드롭만 담당한다. 실제 이동은 주입된 exact-HWND 포트 한 번으로 수행한다.
+- `nodes`: 활성 후보. 실제로 렌더링된 Chrome HWND의 좌상단에 현재 탭 순서대로 `N33/35/45` 형식의 정적 번호만 표시한다.
+- `status`: 임시 비활성. 진행·일시정지·완료 등 변동 상태를 렌더링하지 않는다.
 - `summary`: 임시 비활성. 최소화 노드 요약을 렌더링하지 않는다.
 
 배경 읽기가 일시적으로 실패하면 실패 상태와 이유는 그대로 기록하되, 이미 수락한 마지막 사진/단색 픽셀은 회색 기본색으로 지우지 않는다. 새 카드 생성 경로는 canonical/lightweight 어느 쪽이든 모든 카드의 동일한 `refreshBackground` 포트를 호출한다. 다음 레이어는 배경 LIVE 수락 뒤 정책만 확장하고, 배경 소유권이나 별도 우회 경로를 추가하지 않는다.
@@ -28,10 +29,11 @@
 
 ## 창 레이어 — 배경과 절대 혼합 금지
 - 기존 Native HWND 목록의 `frame.meta.desktopId===GUID`와 실제 영역(virtualLeft,Top,Width,Height)을 확인한 후 창 위치와 Z순서 유지.
-- `captureState=captured`, 최근 15초 이내 촬영, `cloaked=0`, 물리적인 이미지 데이터, `physicalSource!=monitor-frozen`일 때만 창 픽셀 표시.
+- 일반 창은 `captureState=captured`, 최근 15초 이내 촬영, `cloaked=0`, 물리적인 이미지 데이터일 때만 창 픽셀을 표시한다. Monitor 자신의 창은 정확한 호스트 HWND를 한 번 WGC 캡처한 `physicalSource=monitor-frozen` 프레임만 허용하며 반복 자기 캡처는 하지 않는다.
 - CLOAKED, 오래된/보존 캡처, 파일 없는 프레임 또는 복원본은 이미지 소스를 제거하고 해당 창 노드도 숨긴다. 배경 위에 회색 화면, 윤곽, 실패 문구, 대체 SVG를 올리지 않는다. 실패 이유는 DOM 진단 데이터에만 남긴다.
-- 현재 단계에서는 노드 번호·상태 표시·포커스·요약을 호출하지 않는다. 이 기능들은 `semantic`/`summary` 정책을 별도로 수락할 때만 다시 켠다. 단일 창 드래그는 의미 장식과 분리된 `interaction` 정책으로만 활성화한다.
-- Monitor 자신의 창은 제목 추측이 아니라 확인된 `hostWindowHwnd`와의 정확한 비교로 두 Native 창 열거 경로에서 제외한다.
+- 노드 번호는 실제 창 이미지와 같은 위치·크기·Z순서를 갖는다. 겹친 뒤쪽 창의 번호는 앞쪽 창에 자연스럽게 가려지며, 충돌 회피 위치 이동·별도 Z 레일·첫 3개 생략은 사용하지 않는다. 노드가 많으면 창 너비 안에서 여러 줄로 표시한다.
+- 상태 표시·포커스·요약은 각각 `status`/`summary` 정책을 별도로 수락할 때만 켠다. 단일 창 드래그는 번호 표기와 독립된 `interaction` 정책으로 유지한다.
+- Monitor 자신의 창은 제목 추측이 아니라 확인된 `hostWindowHwnd`와의 정확한 비교로 식별한다. 시작 시 한 번 만든 고정 프레임은 실제 창 기하와 함께 합성하므로 자기 화면의 무한 재귀 캡처 없이 Monitor도 해당 데스크톱 타일에 보인다.
 
 ## 제거된 과거 경로와 남긴 경계
 - 기존 썸네일 `refreshDesktopThumb -> reconcileFrame`, 별도 `MonitorWallpaperEventRefresh` 렌더러 사용 중단/삭제.

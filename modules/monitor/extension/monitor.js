@@ -7623,7 +7623,7 @@ let monitorWallpaperNativeQueue = Promise.resolve();
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorWallpaperNativeRequest });
 const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
-  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS_INTERACTION
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS_INTERACTION_NODES
 );
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,
@@ -7632,7 +7632,7 @@ globalThis.MonitorDesktopThumbnailV2.configure({
     moveWindow: ({hwnd,sourceDesktopId,targetDesktopId}) => moveMonitorWindowToDesktop(hwnd,sourceDesktopId,targetDesktopId),
     onError: error => setMonitorStatus(`창 이동 실패 · ${error?.message || error}`, false),
   },
-  afterWindowRender: decorateMonitorThumbnailWindows,
+  afterWindowRender: visual => syncMonitorThumbnailTabBadges(visual,"monitor-desktop-thumb-window"),
   layerPolicy: monitorThumbnailLayerPolicy,
 });
 
@@ -8922,7 +8922,10 @@ function monitorActDesktopVisualForDesktop(desktopId, state = monitorLastAiState
 }
 
 function monitorWindowUsesFrozenCapture(item) {
-  return monitorIsOwnWindowTitle(item?.title);
+  const itemHwnd = String(item?.hwnd || "").trim();
+  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  return /^[0-9]+$/.test(hostHwnd) && hostHwnd !== "0"
+    && itemHwnd === hostHwnd && monitorIsOwnWindowTitle(item?.title);
 }
 
 function monitorWindowCanRefreshPixels(item) {
@@ -8993,6 +8996,10 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
   const job = (async () => {
 
+    if (profile === "thumb" && String(desktopId) === String(monitorDesktopState.hostDesktopId || "")) {
+      await ensureMonitorOwnFrozenSnapshot().catch(() => false);
+    }
+
     const actMeta = monitorActDesktopVisualForDesktop(desktopId);
 
     // Window geometry/minimize state must come from the live Windows observer.
@@ -9024,9 +9031,9 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
     const handleSnapshot = await monitorNative(hasHostHwnd
 
-      ? { type: "getDesktopWindowHandles", desktopId, hostWindowHwnd: hostHwnd, includeMonitorWindows: profile !== "thumb" }
+      ? { type: "getDesktopWindowHandles", desktopId, hostWindowHwnd: hostHwnd, includeMonitorWindows: true }
 
-      : { type: "getDesktopWindowHandles", desktopId, includeMonitorWindows: profile !== "thumb" }).catch(() => null);
+      : { type: "getDesktopWindowHandles", desktopId, includeMonitorWindows: true }).catch(() => null);
 
     if (generation !== monitorDesktopFrameGeneration(desktopId)) return null;
     // Only a successful native snapshot can add/remove physical windows.
@@ -9081,7 +9088,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
     // Coverage is complete; concurrency is bounded inside ThumbnailService.
     // Placeholder frames remain visible only while a capture is unavailable.
     const captureItems = MONITOR_WINDOW_PIXEL_CAPTURE_ENABLED
-      ? items.filter(monitorWindowCanRefreshPixels)
+      ? items.filter((item) => monitorWindowCanRefreshPixels(item) && !monitorWindowUsesFrozenCapture(item))
       : [];
 
     const frames = items.map((item) => ({
@@ -9200,6 +9207,12 @@ function syncMonitorPauseOverlay(img, hwnd) {
   const key = String(hwnd || "");
 
   let overlay = [...img.parentElement.querySelectorAll(".monitor-window-pause-overlay")].find((node)=>node.dataset.hwnd===key);
+
+  if (img.classList.contains("monitor-desktop-thumb-window")
+      && globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("status") === false) {
+    overlay?.remove();
+    return;
+  }
 
   const paused = img.classList.contains("monitor-window-paused");
   const userAttentionDetail = monitorHwndUserAttentionDetail(key, monitorLastAiState);
@@ -9323,7 +9336,11 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   // A missing HWND hides only the thumbnail overlay, never the node list.
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
-      monitorDisplayHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd));
+      monitorDisplayHwndForBrowserWindowId(node.windowId, state, node.instanceId, node.sessionId) === String(hwnd))
+      .sort((left,right) =>
+        (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
+          (Number.isSafeInteger(right?.tabIndex) ? right.tabIndex : Number.MAX_SAFE_INTEGER) ||
+        Number(left?.tabId || 0) - Number(right?.tabId || 0));
     return [...new Set(matched.map((node) => {
       const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
       return match ? Number(match[1]) : 0;
@@ -9416,6 +9433,14 @@ function syncMonitorStatusLayer(img, hwnd) {
   const parent=img.parentElement;
 
   let layer=[...parent.querySelectorAll(".monitor-window-status-layer")].find((node)=>node.dataset.hwnd===key&&node.dataset.surface===surface);
+
+  if(isThumb && globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("status") === false){
+
+    layer?.remove();
+
+    return;
+
+  }
 
   if(!layer){
 
@@ -9614,7 +9639,7 @@ if (monitorSelectedHwnds.size) applyMonitorWindowHighlight(monitorHighlightedHwn
 function syncMonitorThumbnailTabBadges(container, className) {
 
   if (className !== "monitor-desktop-thumb-window") return;
-  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("semantic") === false) {
+  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("nodes") === false) {
     container.querySelectorAll(
       ".monitor-thumbnail-node-overlay, .monitor-thumbnail-tab-badge, .monitor-window-desktop-badge-thumb, .monitor-window-desktop-badge"
     ).forEach((node) => node.remove());

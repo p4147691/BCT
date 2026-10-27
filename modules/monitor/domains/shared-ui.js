@@ -2359,6 +2359,12 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
   let overlay = [...img.parentElement.querySelectorAll(".monitor-window-pause-overlay")].find((node)=>node.dataset.hwnd===key);
 
+  if (img.classList.contains("monitor-desktop-thumb-window")
+      && globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("status") === false) {
+    overlay?.remove();
+    return;
+  }
+
   const paused = img.classList.contains("monitor-window-paused");
   const userAttentionDetail = monitorHwndUserAttentionDetail(key, monitorLastAiState);
   const conversationKey=monitorVisualConversationForHwnd(key,monitorLastAiState);
@@ -2432,6 +2438,14 @@ function syncMonitorStatusLayer(img, hwnd) {
   const parent=img.parentElement;
 
   let layer=[...parent.querySelectorAll(".monitor-window-status-layer")].find((node)=>node.dataset.hwnd===key&&node.dataset.surface===surface);
+
+  if(isThumb && globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("status") === false){
+
+    layer?.remove();
+
+    return;
+
+  }
 
   if(!layer){
 

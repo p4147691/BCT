@@ -22,14 +22,9 @@ assert.match(source, /renderMonitorGithubInbox\(state\)/,
   "BCT refresh must project GitHub terminal results");
 assert.match(source, /function renderMonitorGithubInbox\(/);
 
-for (const selector of [
-  ".monitor-thumbnail-node-chip-list",
-  ".monitor-thumbnail-node-chip",
-  ".monitor-thumbnail-z-rail",
-  ".monitor-thumbnail-z-row",
-  ".monitor-thumbnail-z-more",
-]) {
-  assert.ok(css.includes(selector), `${selector} styling must survive modularization`);
-}
+assert.ok(!css.includes(".monitor-thumbnail-z-rail"),
+  "the obsolete collision rail must not return after bundle generation");
+assert.ok(!css.includes(".monitor-thumbnail-node-chip"),
+  "the obsolete per-node chip styling must not return after bundle generation");
 
-console.log("PASS: source-part generation retains shared-window rows, GitHub inbox, and thumbnail Z-rail styling");
+console.log("PASS: source-part generation retains shared-window rows, GitHub inbox, and simplified node styling");

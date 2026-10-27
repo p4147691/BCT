@@ -420,7 +420,10 @@ function monitorWindowTitle() {
 
 //@@FN_START:monitorWindowUsesFrozenCapture
 function monitorWindowUsesFrozenCapture(item) {
-  return monitorIsOwnWindowTitle(item?.title);
+  const itemHwnd = String(item?.hwnd || "").trim();
+  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  return /^[0-9]+$/.test(hostHwnd) && hostHwnd !== "0"
+    && itemHwnd === hostHwnd && monitorIsOwnWindowTitle(item?.title);
 }
 //@@FN_END:monitorWindowUsesFrozenCapture
 

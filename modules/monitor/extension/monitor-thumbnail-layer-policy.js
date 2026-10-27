@@ -8,8 +8,9 @@
     BACKGROUND_ONLY: "background-only",
     BACKGROUND_WINDOWS: "background-windows",
     BACKGROUND_WINDOWS_INTERACTION: "background-windows-interaction",
+    BACKGROUND_WINDOWS_INTERACTION_NODES: "background-windows-interaction-nodes",
   });
-  const LAYERS = Object.freeze(["background", "windows", "interaction", "semantic", "summary"]);
+  const LAYERS = Object.freeze(["background", "windows", "interaction", "nodes", "status", "summary"]);
 
   function create(requestedMode = MODES.FULL) {
     const mode = requestedMode === MODES.BACKGROUND_ONLY
@@ -18,6 +19,8 @@
         ? MODES.BACKGROUND_WINDOWS
         : requestedMode === MODES.BACKGROUND_WINDOWS_INTERACTION
           ? MODES.BACKGROUND_WINDOWS_INTERACTION
+        : requestedMode === MODES.BACKGROUND_WINDOWS_INTERACTION_NODES
+          ? MODES.BACKGROUND_WINDOWS_INTERACTION_NODES
         : MODES.FULL;
     const enabled = mode === MODES.BACKGROUND_ONLY
       ? ["background"]
@@ -25,6 +28,8 @@
         ? ["background", "windows"]
         : mode === MODES.BACKGROUND_WINDOWS_INTERACTION
           ? ["background", "windows", "interaction"]
+        : mode === MODES.BACKGROUND_WINDOWS_INTERACTION_NODES
+          ? ["background", "windows", "interaction", "nodes"]
         : LAYERS;
     return Object.freeze({
       mode,
