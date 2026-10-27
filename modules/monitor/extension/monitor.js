@@ -640,6 +640,7 @@ let monitorStartupSharedRuntimeConfirmed = false;
 let monitorStartupEndpointFreshConfirmed = false;
 
 let monitorInitialThumbBatchDone = false;
+let monitorInitialWindowBatchDone = false;
 let monitorInitialThumbStage = "not-started";
 let monitorInitialThumbError = "";
 async function refreshInitialBackgroundThumbs() {
@@ -3210,7 +3211,7 @@ async function monitorPublishSharedInstance(reason = "event") {
 
   // Runtime presence is one current record per browser profile. Using the
   // transient HWND in the key left old rows behind after an extension reload.
-  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),desktop_ids:[...(monitorDesktopState?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
+  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),background_done:monitorInitialThumbBatchDone===true,windows_done:monitorInitialWindowBatchDone===true,desktop_ids:[...(monitorDesktopState?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
 
 }
 
@@ -11218,51 +11219,72 @@ async function refreshInitialWindowThumbs() {
 
   monitorInitialThumbStage = "windows-requesting";
   monitorInitialThumbError = "";
-  const failed = [];
-  for (const desktopId of desktopIds) {
-    const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
-    const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-    if (!visual?.isConnected) { failed.push(desktopId); continue; }
-    const result = await renderer.refresh(visual, desktopId).catch(() => null);
-    if (result?.frameReady !== true) failed.push(desktopId);
+  let pending = desktopIds;
+  const retryDelays = [180, 500];
+  for (let attempt = 0; pending.length; attempt += 1) {
+    const failed = [];
+    for (const desktopId of pending) {
+      const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
+      const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
+      if (!visual?.isConnected) { failed.push(desktopId); continue; }
+      const result = await renderer.refresh(visual, desktopId).catch(() => null);
+      if (result?.frameReady !== true) failed.push(desktopId);
+    }
+    pending = failed;
+    if (!pending.length || attempt >= retryDelays.length) break;
+    await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
   }
-  monitorInitialThumbStage = failed.length ? "windows-partial" : "windows-ready";
-  monitorInitialThumbError = failed.length ? `UNREADY_WINDOW_DESKTOPS:${failed.join(",")}` : "";
-  return failed.length === 0;
+  monitorInitialThumbStage = pending.length ? "windows-partial" : "windows-ready";
+  monitorInitialThumbError = pending.length ? `UNREADY_WINDOW_DESKTOPS:${pending.join(",")}` : "";
+  return pending.length === 0;
 }
 
-async function refreshInitialSelectedThumb() {
+async function refreshInitialSelectedThumb({ allowWindows = true } = {}) {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
-  monitorInitialThumbStage = "background-starting";
-  monitorInitialThumbError = "";
-  const refreshTask = refreshInitialBackgroundThumbs();
-  const pendingReportTimer = setTimeout(() => {
-    void monitorPublishSharedInstance("thumbnail-background-pending");
-  }, 2500);
-  const backgroundReady = await refreshTask.catch((error) => {
-    monitorInitialThumbStage = "background-exception";
-    monitorInitialThumbError = String(error?.message || error || "BACKGROUND_EXCEPTION").slice(0,160);
+  if (!monitorInitialThumbBatchDone) {
+    monitorInitialThumbStage = "background-starting";
+    monitorInitialThumbError = "";
+    const refreshTask = refreshInitialBackgroundThumbs();
+    const pendingReportTimer = setTimeout(() => {
+      void monitorPublishSharedInstance("thumbnail-background-pending");
+    }, 2500);
+    const backgroundReady = await refreshTask.catch((error) => {
+      monitorInitialThumbStage = "background-exception";
+      monitorInitialThumbError = String(error?.message || error || "BACKGROUND_EXCEPTION").slice(0,160);
+      return false;
+    });
+    clearTimeout(pendingReportTimer);
+    monitorInitialThumbBatchDone = backgroundReady === true;
+  }
+  if (!monitorInitialThumbBatchDone) {
+    await monitorPublishSharedInstance("thumbnail-background-failed").catch(() => null);
+    return false;
+  }
+  if (!allowWindows) {
+    monitorInitialThumbStage = "windows-awaiting-host";
+    monitorInitialThumbError = "";
+    await monitorPublishSharedInstance("thumbnail-windows-awaiting-host").catch(() => null);
+    return true;
+  }
+  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  if (!/^\d+$/.test(hostHwnd) || hostHwnd === "0") {
+    monitorInitialThumbStage = "windows-awaiting-host";
+    monitorInitialThumbError = "MONITOR_HOST_HWND_UNRESOLVED";
+    await monitorPublishSharedInstance("thumbnail-windows-awaiting-host").catch(() => null);
+    return true;
+  }
+  const windowsReady = monitorInitialWindowBatchDone || await refreshInitialWindowThumbs().catch((error) => {
+    monitorInitialThumbStage = "windows-exception";
+    monitorInitialThumbError = String(error?.message || error || "WINDOW_EXCEPTION").slice(0,160);
     return false;
   });
-  clearTimeout(pendingReportTimer);
-  monitorInitialThumbBatchDone = backgroundReady === true;
-  const windowsReady = backgroundReady === true
-    ? await refreshInitialWindowThumbs().catch((error) => {
-        monitorInitialThumbStage = "windows-exception";
-        monitorInitialThumbError = String(error?.message || error || "WINDOW_EXCEPTION").slice(0,160);
-        return false;
-      })
-    : false;
+  monitorInitialWindowBatchDone = windowsReady === true;
   await monitorPublishSharedInstance(
-    monitorInitialThumbBatchDone
-      ? (windowsReady ? "thumbnail-composite-ready" : "thumbnail-windows-partial")
-      : "thumbnail-background-failed"
+    windowsReady ? "thumbnail-composite-ready" : "thumbnail-windows-partial"
   ).catch(() => null);
-  if (monitorInitialThumbBatchDone) {
-    scheduleInitialSemanticThumbSync();
-    void checkMonitorDeploymentUpdate();
-  }
-  return monitorInitialThumbBatchDone;
+  scheduleInitialSemanticThumbSync();
+  void checkMonitorDeploymentUpdate();
+  return true;
 }
 
 async function refreshBackgroundThumbs(...desktopIds) {
@@ -11624,7 +11646,11 @@ function renderVirtualDesktops(state) {
 
     for (const visual of monitorDesktopThumbs.querySelectorAll(".monitor-desktop-thumb-visual")) delete visual.dataset.monitorFrameReady;
 
-    setTimeout(() => { refreshObservedWindows(); refreshSelectedThumb(); }, 0);
+    if (monitorInitialWindowBatchDone) {
+
+      setTimeout(() => { refreshObservedWindows(); refreshSelectedThumb(); }, 0);
+
+    }
 
   }
 
@@ -11679,7 +11705,7 @@ async function refreshVirtualDesktops() {
         monitorInitialThumbError = String(error?.message || error || "CARD_RENDER_EXCEPTION").slice(0,160);
       }
 
-      if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb();
+      if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb({ allowWindows: false });
 
       // Window ownership is a separate, later layer. It must not delay card
       // creation or exact-GUID wallpaper acceptance.
@@ -11700,6 +11726,8 @@ async function refreshVirtualDesktops() {
       const resolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
 
       if (resolved) {
+
+        if (!monitorInitialWindowBatchDone) await refreshInitialSelectedThumb({ allowWindows: true });
 
         monitorHostResolveRetryCount = 0;
 

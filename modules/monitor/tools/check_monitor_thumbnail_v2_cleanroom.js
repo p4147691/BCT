@@ -192,8 +192,12 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   r.windowFrame(visual1,D1,back);
   assert.equal(first.getAttribute("src"),img);
   assert.equal(r.frameFailure(visual1,D1,"FRAME_UNAVAILABLE"),true);
-  assert.equal(first.getAttribute("src"),null,"Native failure clears any old pixels");
+  assert.equal(first.getAttribute("src"),img,"a transient Native failure retains fresh accepted pixels");
+  assert.equal(first.dataset.captureState,"retained");
   assert.equal(first.dataset.captureFailureReason,"FRAME_UNAVAILABLE");
+  first.dataset.monitorCapturedAt=String(Date.now()-30000);
+  assert.equal(r.frameFailure(visual1,D1,"FRAME_UNAVAILABLE"),true);
+  assert.equal(first.getAttribute("src"),null,"stale accepted pixels are still cleared on failure");
   assert.equal(r.windowFrame(visual1,D2,back),false,"wrong GUID frame rejected");
   // The most recent V2 window snapshot owns pixels; stale results and
   // lifecycle removal must not bring back previous HWND captures.

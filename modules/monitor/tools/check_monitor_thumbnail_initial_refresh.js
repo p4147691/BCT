@@ -33,13 +33,19 @@ assert.match(compositor, /ok:backgroundReady/,
   "initial thumbnail acceptance must follow the independent background-layer result");
 assert.match(compositor, /compositeReady/,
   "window-frame readiness must remain observable without blocking wallpaper acceptance");
-const initialStart = thumbnails.indexOf("async function refreshInitialSelectedThumb()");
+const initialStart = thumbnails.indexOf("async function refreshInitialSelectedThumb({ allowWindows = true } = {})");
 const initialEnd = thumbnails.indexOf("//@@FN_END:refreshInitialSelectedThumb", initialStart);
 const initialBody = thumbnails.slice(initialStart, initialEnd);
 assert.match(initialBody, /monitorInitialThumbBatchDone = backgroundReady === true/,
   "initial completion must depend only on the independent background layer");
+assert.match(initialBody, /if \(!allowWindows\)/,
+  "the first startup phase must stop after exact-GUID backgrounds");
+assert.match(initialBody, /MONITOR_HOST_HWND_UNRESOLVED/,
+  "window startup must fail closed until the Monitor HWND is known");
 assert.match(initialBody, /await refreshInitialWindowThumbs\(\)/,
-  "background acceptance must be followed by a bounded all-desktop window pass");
+  "the host-gated phase must run a bounded all-desktop window pass");
+assert(initialBody.indexOf("await refreshInitialWindowThumbs()") < initialBody.indexOf("scheduleInitialSemanticThumbSync()"),
+  "semantic overlays and deployment acceptance must wait for the first window pass");
 const windowsStart = thumbnails.indexOf("async function refreshInitialWindowThumbs()");
 const windowsEnd = thumbnails.indexOf("//@@FN_END:refreshInitialWindowThumbs", windowsStart);
 const windowsBody = thumbnails.slice(windowsStart, windowsEnd);
@@ -78,11 +84,12 @@ assert.match(sharedUi.slice(observedStart, observedEnd), /monitorIsActiveDesktop
 const lifecycleStart = source.indexOf("async function refreshVirtualDesktops()");
 const lifecycleEnd = source.indexOf("//@@FN_END:refreshVirtualDesktops", lifecycleStart);
 const lifecycleBody = source.slice(lifecycleStart, lifecycleEnd);
-const initialRefresh = lifecycleBody.indexOf("if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb()");
+const backgroundRefresh = lifecycleBody.indexOf("if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb({ allowWindows: false })");
 const identityResolve = lifecycleBody.indexOf("MonitorHostWindowIdentity.resolve(topology");
 const hwndGate = lifecycleBody.indexOf("const resolved = /^\\d+$/");
-assert(initialRefresh >= 0 && identityResolve > initialRefresh && hwndGate > identityResolve,
-  "exact-GUID backgrounds must start before Monitor HWND identity resolution and window capture");
+const windowRefresh = lifecycleBody.indexOf("if (!monitorInitialWindowBatchDone) await refreshInitialSelectedThumb({ allowWindows: true })");
+assert(backgroundRefresh >= 0 && identityResolve > backgroundRefresh && hwndGate > identityResolve && windowRefresh > hwndGate,
+  "backgrounds must load first, then HWND identity, then the all-desktop window pass");
 assert.match(lifecycleBody, /try \{\s*renderVirtualDesktops\(topology\);\s*\} catch \(error\)/,
   "optional card rendering failures must not skip the independent background startup");
 assert.match(body, /allowsLayer\?\.\("summary"\) !== false/,

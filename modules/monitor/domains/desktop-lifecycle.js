@@ -1339,7 +1339,7 @@ async function refreshVirtualDesktops() {
         monitorInitialThumbError = String(error?.message || error || "CARD_RENDER_EXCEPTION").slice(0,160);
       }
 
-      if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb();
+      if (!monitorInitialThumbBatchDone) await refreshInitialSelectedThumb({ allowWindows: false });
 
       // Window ownership is a separate, later layer. It must not delay card
       // creation or exact-GUID wallpaper acceptance.
@@ -1360,6 +1360,8 @@ async function refreshVirtualDesktops() {
       const resolved = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0";
 
       if (resolved) {
+
+        if (!monitorInitialWindowBatchDone) await refreshInitialSelectedThumb({ allowWindows: true });
 
         monitorHostResolveRetryCount = 0;
 
@@ -1852,7 +1854,11 @@ function renderVirtualDesktops(state) {
 
     for (const visual of monitorDesktopThumbs.querySelectorAll(".monitor-desktop-thumb-visual")) delete visual.dataset.monitorFrameReady;
 
-    setTimeout(() => { refreshObservedWindows(); refreshSelectedThumb(); }, 0);
+    if (monitorInitialWindowBatchDone) {
+
+      setTimeout(() => { refreshObservedWindows(); refreshSelectedThumb(); }, 0);
+
+    }
 
   }
 

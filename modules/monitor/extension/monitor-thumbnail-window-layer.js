@@ -98,12 +98,20 @@
     function frameFailure(visual,desktopId,reason="FRAME_UNAVAILABLE",frameToken=null){
       const state=resolve(visual,desktopId);
       if(!state||(frameToken!=null&&state.generation!==frameToken))return false;
+      let retained=0;
       for(const {image,status} of state.windows.values()){
+        const recorded=Number(image.dataset.monitorCapturedAt||0),age=Date.now()-recorded;
+        const fresh=recorded>0&&age>=0&&age<=15000&&validPixels(image.getAttribute("src"));
+        if(fresh){
+          retained+=1;image.dataset.captureState="retained";image.dataset.captureFailureReason=reason;
+          image.style.display="block";image.classList.remove("monitor-thumb-v2-failed");
+          status.hidden=true;status.textContent="";continue;
+        }
         image.removeAttribute("src");image.dataset.captureState="failed";image.dataset.captureFailureReason=reason;
         image.style.display="none";image.dataset.monitorCapturedAt="0";image.classList.add("monitor-thumb-v2-failed");
         status.hidden=true;status.textContent="";
       }
-      visual.dataset.monitorFrameReady="failed";return true;
+      visual.dataset.monitorFrameReady=retained?"retained":"failed";return true;
     }
 
     return Object.freeze({resolve,beginFrame,removeWindow,windowFrame,frameFailure});
