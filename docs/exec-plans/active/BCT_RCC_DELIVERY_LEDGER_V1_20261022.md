@@ -120,7 +120,14 @@ also contains the general audit tables `operations`,
   `orchestration_durable_lease_revocations`,
   `orchestration_manager_recovery_leases`,
   `orchestration_dispatch_outbox`, `orchestration_dispatch_attempts`,
-  `orchestration_reconciliations`.
+  `orchestration_dispatch_routes`, `orchestration_reconciliations`;
+- Manager availability and permanent succession: `orchestration_manager_liveness`
+  records one observed Manager state and its blocked timer;
+  `orchestration_manager_successions` records the fenced old-to-new Manager
+  authority transition; and `orchestration_manager_handoffs` records the
+  separately deliverable context notice to the successor. These are audit/state
+  records: none proves a browser send, replays an UNKNOWN send, or grants a new
+  authority by itself.
 
 Read-only snapshot on 2026-10-22: 20 orchestration sessions (11 ACTIVE), 28
 assignments (11 NOT_APPLIED, 9 APPLIED, 7 UNKNOWN, 1 FAILED), one acknowledged
