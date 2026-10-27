@@ -21,7 +21,9 @@ assert.match(thumbnails, /captured_windows:visual\.querySelectorAll/);
 assert.match(thumbnails, /failed_windows:visual\.querySelectorAll/);
 assert.match(thumbnails, /thumbnail-background-pending/);
 assert.match(thumbnails, /thumbnail-background-failed/);
-assert.match(thumbnails, /thumbnail-background-ready/);
+assert.match(thumbnails, /thumbnail-composite-ready/);
+assert.match(thumbnails, /thumbnail-windows-partial/);
+assert.match(thumbnails, /windows-requesting/);
 
 assert.match(shared, /thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics\(\)/);
 assert.match(shared, /thumbnail_initial:\{stage:String\(monitorInitialThumbStage/);

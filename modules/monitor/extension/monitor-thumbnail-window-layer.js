@@ -71,7 +71,7 @@
         const recorded=Number(entry.capturedAt||0),age=Date.now()-recorded;
         const fresh=recorded>0&&age>=0&&age<=15000;
         const pixels=entry.captureState==="captured"&&entry.physicalSource!=="monitor-frozen"
-          &&Number(item.cloaked||0)===0&&fresh&&validPixels(entry.dataUri)?entry.dataUri:"";
+          &&fresh&&validPixels(entry.dataUri)?entry.dataUri:"";
         if(pixels){
           if(image.getAttribute("src")!==pixels)image.setAttribute("src",pixels);
           image.style.display="block";
@@ -80,7 +80,7 @@
           image.classList.remove("monitor-thumb-v2-failed");status.hidden=true;status.textContent="";
         }else{
           image.removeAttribute("src");
-          const reason=Number(item.cloaked)?"CLOAKED":entry.physicalSource==="monitor-frozen"?"SAVED_FRAME_REJECTED"
+          const reason=entry.physicalSource==="monitor-frozen"?"SAVED_FRAME_REJECTED"
             :entry.captureState==="captured"&&!fresh?"STALE_CAPTURE":"NO_REAL_CAPTURE";
           image.style.display="none";
           image.dataset.captureState="failed";image.dataset.captureFailureReason=reason;image.dataset.monitorCapturedAt="0";

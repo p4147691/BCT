@@ -366,10 +366,10 @@ function monitorRenderDiagnosticText(){
 
 //@@FN_START:monitorWindowCanRefreshPixels
 function monitorWindowCanRefreshPixels(item) {
-  // DWM keeps off-desktop windows alive but reports them as cloaked. WGC can
-  // return a formally successful, solid grey frame for those HWNDs. Never let
-  // that transient frame replace the last useful capture.
-  return Number(item?.cloaked || 0) === 0;
+  // A Shell-cloaked HWND can still yield its real WGC pixels.  The capture
+  // result, not the virtual-desktop cloak flag, decides whether pixels exist.
+  // Minimized windows are excluded earlier and have no current surface here.
+  return Boolean(item) && item.iconic !== true;
 }
 //@@FN_END:monitorWindowCanRefreshPixels
 
@@ -552,4 +552,3 @@ function scheduleMonitorWindowLifecycleEvent(event) {
 //@@FN_START:showMonitorDiagText
 function showMonitorDiagText(text){monitorDiagLog.textContent=String(text||'');monitorDiagLog.hidden=false;monitorDiagLogCopyState.textContent='';}
 //@@FN_END:showMonitorDiagText
-

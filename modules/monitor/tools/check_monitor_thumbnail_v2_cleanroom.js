@@ -132,7 +132,7 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(first.getAttribute("src"),img);
   assert.equal(first.dataset.captureState,"captured");
   assert.equal(failed.getAttribute("src"),null);
-  assert.equal(failed.dataset.captureFailureReason,"CLOAKED");
+  assert.equal(failed.dataset.captureFailureReason,"NO_REAL_CAPTURE");
   assert(failed.classList.contains("monitor-thumb-v2-failed"));
   assert.equal(failed.style.display,"none","failed capture must leave the background visible without a simulated window");
   assert.equal(first.style.left,"10%");assert.equal(first.style.top,"15%");
@@ -145,8 +145,10 @@ const source=id=>({ok:true,desktopId:id,wallpaper:{dataUri:img,baseColor:"#107c1
   assert.equal(visual1.querySelectorAll(".monitor-desktop-thumb-window").length,1);
   const cloakedReused={...removed,frames:[{...frame.frames[0],item:{...frame.frames[0].item,cloaked:2},capturedAt:Date.now()}]};
   r.windowFrame(visual1,D1,cloakedReused);
-  assert.equal(first.getAttribute("src"),null,"CLOAKED window must not mask real wallpaper even with cached JPEG");
-  assert.equal(first.dataset.captureFailureReason,"CLOAKED");
+  assert.equal(first.getAttribute("src"),img,"a Shell-cloaked HWND may display its verified real WGC pixels");
+  assert.equal(first.dataset.captureState,"captured");
+  assert.equal(first.dataset.captureFailureReason,"");
+  assert.equal(first.style.display,"block");
   const frozen={...removed,frames:[{...frame.frames[0],physicalSource:"monitor-frozen",dataUri:img}]};
   r.windowFrame(visual1,D1,frozen);
   assert.equal(first.getAttribute("src"),null,"previous monitor popup screenshots forbidden");

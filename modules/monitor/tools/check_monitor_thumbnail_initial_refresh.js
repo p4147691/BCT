@@ -38,6 +38,18 @@ const initialEnd = thumbnails.indexOf("//@@FN_END:refreshInitialSelectedThumb", 
 const initialBody = thumbnails.slice(initialStart, initialEnd);
 assert.match(initialBody, /monitorInitialThumbBatchDone = backgroundReady === true/,
   "initial completion must depend only on the independent background layer");
+assert.match(initialBody, /await refreshInitialWindowThumbs\(\)/,
+  "background acceptance must be followed by a bounded all-desktop window pass");
+const windowsStart = thumbnails.indexOf("async function refreshInitialWindowThumbs()");
+const windowsEnd = thumbnails.indexOf("//@@FN_END:refreshInitialWindowThumbs", windowsStart);
+const windowsBody = thumbnails.slice(windowsStart, windowsEnd);
+assert(windowsStart >= 0 && windowsEnd > windowsStart, "initial window refresh owner is required");
+assert.match(windowsBody, /\.\.\.monitorDesktopState\.desktopIds\.filter/,
+  "startup window pass must include every canonical desktop, not only the selection");
+assert.match(windowsBody, /renderer\.refresh\(visual, desktopId\)/,
+  "every desktop must enter the V2 background-plus-window compositor");
+assert.match(windowsBody, /result\?\.frameReady !== true/,
+  "window readiness must be reported independently for every desktop");
 const backgroundsStart = thumbnails.indexOf("async function refreshInitialBackgroundThumbs()");
 const backgroundsEnd = thumbnails.indexOf("//@@FN_END:refreshInitialBackgroundThumbs", backgroundsStart);
 const backgroundsBody = thumbnails.slice(backgroundsStart, backgroundsEnd);

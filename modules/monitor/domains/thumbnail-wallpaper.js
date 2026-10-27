@@ -888,6 +888,38 @@ async function refreshInitialBackgroundThumbs() {
 }
 //@@FN_END:refreshInitialBackgroundThumbs
 
+//@@FN_START:refreshInitialWindowThumbs
+async function refreshInitialWindowThumbs() {
+  if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
+  const renderer = globalThis.MonitorDesktopThumbnailV2;
+  if (!renderer?.refresh) {
+    monitorInitialThumbStage = "window-renderer-unavailable";
+    monitorInitialThumbError = "THUMBNAIL_WINDOW_RENDERER_UNAVAILABLE";
+    return false;
+  }
+  const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
+  const desktopIds = [
+    selectedId,
+    ...monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId)
+  ].filter(Boolean);
+  if (!desktopIds.length) return false;
+
+  monitorInitialThumbStage = "windows-requesting";
+  monitorInitialThumbError = "";
+  const failed = [];
+  for (const desktopId of desktopIds) {
+    const tile = [...monitorDesktopThumbs.children].find((button) => button.dataset.desktopId === desktopId);
+    const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
+    if (!visual?.isConnected) { failed.push(desktopId); continue; }
+    const result = await renderer.refresh(visual, desktopId).catch(() => null);
+    if (result?.frameReady !== true) failed.push(desktopId);
+  }
+  monitorInitialThumbStage = failed.length ? "windows-partial" : "windows-ready";
+  monitorInitialThumbError = failed.length ? `UNREADY_WINDOW_DESKTOPS:${failed.join(",")}` : "";
+  return failed.length === 0;
+}
+//@@FN_END:refreshInitialWindowThumbs
+
 //@@FN_START:refreshInitialSelectedThumb
 async function refreshInitialSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
@@ -904,8 +936,17 @@ async function refreshInitialSelectedThumb() {
   });
   clearTimeout(pendingReportTimer);
   monitorInitialThumbBatchDone = backgroundReady === true;
+  const windowsReady = backgroundReady === true
+    ? await refreshInitialWindowThumbs().catch((error) => {
+        monitorInitialThumbStage = "windows-exception";
+        monitorInitialThumbError = String(error?.message || error || "WINDOW_EXCEPTION").slice(0,160);
+        return false;
+      })
+    : false;
   await monitorPublishSharedInstance(
-    monitorInitialThumbBatchDone ? "thumbnail-background-ready" : "thumbnail-background-failed"
+    monitorInitialThumbBatchDone
+      ? (windowsReady ? "thumbnail-composite-ready" : "thumbnail-windows-partial")
+      : "thumbnail-background-failed"
   ).catch(() => null);
   if (monitorInitialThumbBatchDone) {
     scheduleInitialSemanticThumbSync();

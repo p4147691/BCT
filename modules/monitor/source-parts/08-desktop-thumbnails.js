@@ -11,6 +11,8 @@ globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
 });
 /*@@MONITOR_FUNCTION:refreshSelectedThumb@@*/
 
+/*@@MONITOR_FUNCTION:refreshInitialWindowThumbs@@*/
+
 /*@@MONITOR_FUNCTION:refreshInitialSelectedThumb@@*/
 
 /*@@MONITOR_FUNCTION:refreshBackgroundThumbs@@*/
