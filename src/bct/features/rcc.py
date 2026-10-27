@@ -46,7 +46,8 @@ _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "create-tab-group", "add-tab-to-group", "remove-tab-from-group", "move-tab-group",
     "update-tab-group",
-    "rename-conversation", "reload-extension", "send", "send-to-tab", "create-and-send",
+    "rename-conversation", "reload-extension", "send", "send-to-tab", "send-to-self",
+    "node-continue", "create-and-send",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
     "retire-composer-draft", "retire-recovered-execution",
@@ -196,6 +197,7 @@ class RelayBrowserFeature:
         recovery_retry_interval_s: float = 0.5,
     ):
         self.client = client or NamedPipeRelayClient()
+        self.store = store
         self.delivery_ledger = DeliveryLedger(store) if store is not None else None
         self.result_readback_timeout_s = result_readback_timeout_s
         self.recovery_retry_interval_s = max(0.01, recovery_retry_interval_s)
@@ -205,6 +207,176 @@ class RelayBrowserFeature:
         self._target_refs: dict[str, dict[str, Any]] = {}
         self._target_epochs: dict[tuple[str, str], str] = {}
         self._target_snapshots: dict[tuple[str, str], str] = {}
+
+    def _self_attachment(
+        self, *, work: Work, instance_id: str, orchestration_session_id: object,
+        node_id: object,
+    ) -> dict[str, Any]:
+        if self.store is None:
+            raise PreconditionError("RCC_SELF_ATTACHMENT_STORE_UNAVAILABLE")
+        session_id = str(orchestration_session_id or "").strip()
+        resolved_node_id = str(node_id or "").strip()
+        if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", session_id)
+                or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", resolved_node_id)):
+            raise PreconditionError("RCC_SELF_IDENTITY_REQUIRED")
+        try:
+            attachment = self.store.active_rcc_attachment_for_node(
+                work_id=work.work_id, orchestration_session_id=session_id,
+                node_id=resolved_node_id, instance_id=instance_id,
+            )
+        except KeyError as exc:
+            raise PreconditionError("RCC_SELF_ATTACHMENT_NOT_FOUND") from exc
+        except ConflictError as exc:
+            raise PreconditionError(str(exc)) from exc
+        external_session = str(attachment.get("external_session_id") or "").strip()
+        key = str(attachment.get("conversation_key") or "").strip().lower()
+        if (not re.fullmatch(r"[a-f0-9]{32}", external_session)
+                or not re.fullmatch(
+                    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", key
+                )):
+            raise PreconditionError("RCC_SELF_ATTACHMENT_IDENTITY_INVALID")
+        try:
+            tab_id = _positive_int(attachment.get("tab_id"), "RCC_SELF_ATTACHMENT_IDENTITY_INVALID")
+            window_id = _positive_int(attachment.get("window_id"), "RCC_SELF_ATTACHMENT_IDENTITY_INVALID")
+        except PreconditionError:
+            raise PreconditionError("RCC_SELF_ATTACHMENT_IDENTITY_INVALID") from None
+        return {
+            "orchestrationSessionId": session_id,
+            "nodeId": resolved_node_id,
+            "attachmentId": str(attachment["attachment_id"]),
+            "attachmentGeneration": int(attachment["generation"]),
+            "sessionId": external_session,
+            "tabId": tab_id,
+            "windowId": window_id,
+            "conversationKey": key,
+            "raw": attachment,
+        }
+
+    def _wait_for_self_idle(self, *, values: dict[str, Any], request_id: str) -> bool:
+        """Wait only for the exact bound ChatGPT tab; never queue a blind send."""
+        extra = values["extra"]
+        deadline = time.monotonic() + float(extra["idleTimeoutS"])
+        probe_id = "self-idle." + hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:32]
+        while True:
+            try:
+                observed = self.client.request(
+                    instance_id=values["instance_id"], request_id=probe_id,
+                    command="state", timeout_s=min(2.0, max(0.1, deadline - time.monotonic())),
+                )
+            except RelayEffectUnknown as exc:
+                raise UnknownEffectError("RCC_SELF_IDLE_STATE_UNKNOWN") from exc
+            except RelayUnavailable as exc:
+                raise ConfirmedFailure("RCC_SELF_IDLE_STATE_UNAVAILABLE", release_claims=True) from exc
+            state = observed.get("state") if isinstance(observed, dict) else None
+            tabs = state.get("tabs") if isinstance(state, dict) else None
+            if not (isinstance(observed, dict) and observed.get("ok") is True
+                    and isinstance(state, dict) and state.get("instanceId") == values["instance_id"]
+                    and state.get("sessionId") == extra["sessionId"] and isinstance(tabs, list)):
+                raise ConfirmedFailure("RCC_SELF_IDLE_STATE_INVALID", release_claims=True)
+            matches = [tab for tab in tabs if isinstance(tab, dict)
+                       and int(tab.get("tabId") or 0) == extra["tabId"]]
+            if len(matches) != 1:
+                raise ConfirmedFailure("RCC_SELF_TARGET_NOT_PRESENT", release_claims=True)
+            tab = matches[0]
+            if (str(tab.get("conversationKey") or "").lower() != extra["conversationKey"]
+                    or int(tab.get("windowId") or 0) <= 0):
+                raise ConfirmedFailure("RCC_SELF_TARGET_CHANGED", release_claims=True)
+            if tab.get("generating") is not True:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(min(0.25, max(0.01, deadline - time.monotonic())))
+
+    def _execute_self_command(self, request: FeatureRequest) -> FeatureResult:
+        """Implement exact B->B transmission without making the caller guess IDs."""
+        values = request.arguments
+        command = values["command"]
+        extra = values["extra"]
+        continuation: dict[str, Any] | None = None
+        phase = str(extra.get("phase") or "")
+        if command == "node-continue":
+            if self.store is None:
+                raise ConfirmedFailure("NODE_CONTINUATION_STORE_UNAVAILABLE", release_claims=True)
+            if phase == "close":
+                try:
+                    closed = self.store.close_node_continuation(
+                        continuation_id=extra["continuationId"], work_id=extra["workId"],
+                    )
+                except KeyError as exc:
+                    raise ConfirmedFailure("NODE_CONTINUATION_NOT_FOUND", release_claims=True) from exc
+                except ConflictError as exc:
+                    raise ConfirmedFailure(str(exc), release_claims=True) from exc
+                return FeatureResult(Outcome.APPLIED, {
+                    "command": command, "phase": "close",
+                    "continuation_id": extra["continuationId"],
+                    "continuation_state": closed["state"],
+                }, release_claims=True, output={"continuation": closed})
+            deadline_at = (time.time() + float(extra["totalTimeoutS"])
+                           if phase == "open" else 0.0)
+            attachment = {
+                "attachment_id": extra["attachmentId"],
+                "generation": extra["attachmentGeneration"],
+                "instance_id": values["instance_id"],
+                "external_session_id": extra["sessionId"],
+                "tab_id": extra["tabId"], "window_id": extra["windowId"],
+                "conversation_key": extra["conversationKey"],
+            }
+            try:
+                continuation = self.store.reserve_node_continuation(
+                    continuation_id=extra["continuationId"], work_id=extra["workId"],
+                    orchestration_session_id=extra["orchestrationSessionId"],
+                    node_id=extra["nodeId"], attachment=attachment,
+                    max_self_turns=int(extra["maxSelfTurns"] or 0), deadline_at=deadline_at,
+                    phase=phase, operation_id=request.operation_id,
+                )
+            except KeyError as exc:
+                raise ConfirmedFailure("NODE_CONTINUATION_NOT_FOUND", release_claims=True) from exc
+            except (ValueError, ConflictError) as exc:
+                raise ConfirmedFailure(str(exc), release_claims=True) from exc
+        try:
+            if not self._wait_for_self_idle(values=values, request_id=request.operation_id):
+                result = FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": command, "reason": "RCC_SELF_IDLE_TIMEOUT",
+                    "idle_timeout_s": extra["idleTimeoutS"],
+                }, release_claims=True)
+            else:
+                direct = FeatureRequest(
+                    self.capability, request.target,
+                    {**values, "command": "send-to-tab"}, request.resources, request.preconditions,
+                    request.operation_id,
+                )
+                result = self.execute(direct)
+        except UnknownEffectError:
+            if continuation is not None:
+                self.store.finish_node_continuation(
+                    continuation_id=extra["continuationId"], operation_id=request.operation_id,
+                    phase=phase, outcome=Outcome.UNKNOWN,
+                )
+            raise
+        except ConfirmedFailure:
+            if continuation is not None:
+                self.store.finish_node_continuation(
+                    continuation_id=extra["continuationId"], operation_id=request.operation_id,
+                    phase=phase, outcome=Outcome.NOT_APPLIED,
+                )
+            raise
+        if continuation is not None:
+            continuation = self.store.finish_node_continuation(
+                continuation_id=extra["continuationId"], operation_id=request.operation_id,
+                phase=phase, outcome=result.outcome,
+            )
+        return FeatureResult(
+            result.outcome,
+            {**result.evidence, "command": command,
+             "self_target": {"node_id": extra["nodeId"], "tab_id": extra["tabId"],
+                             "conversation_key": extra["conversationKey"]},
+             **({"continuation_id": extra["continuationId"],
+                 "continuation_state": continuation["state"],
+                 "used_self_turns": continuation["used_self_turns"],
+                 "max_self_turns": continuation["max_self_turns"]} if continuation else {})},
+            release_claims=result.release_claims,
+            output={**result.output, **({"continuation": continuation} if continuation else {})},
+        )
 
     def _read_target_state(self, *, instance_id: str, request_id: str) -> tuple[str, list[dict[str, Any]]]:
         """Read and validate the one RCC state snapshot used for a target ref.
@@ -702,6 +874,66 @@ class RelayBrowserFeature:
                 "expectedResponseSha256": response_sha,
                 "expectedResponseLength": response_length, "workId": work.work_id,
             })
+        elif command in {"send-to-self", "node-continue"}:
+            allowed.update({"orchestration_session_id", "node_id", "text", "idle_timeout_s"})
+            phase = ""
+            continuation_id = ""
+            if command == "node-continue":
+                allowed.update({"continuation_id", "phase", "max_self_turns", "total_timeout_s"})
+                phase = str(arguments.get("phase") or "").strip().lower()
+                continuation_id = str(arguments.get("continuation_id") or "").strip()
+                if phase not in {"open", "continue", "close"}:
+                    raise PreconditionError("NODE_CONTINUATION_PHASE_INVALID")
+                if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", continuation_id):
+                    raise PreconditionError("NODE_CONTINUATION_ID_INVALID")
+            text = str(arguments.get("text") or "")
+            if command == "node-continue" and phase == "close":
+                if text:
+                    raise PreconditionError("NODE_CONTINUATION_CLOSE_TEXT_FORBIDDEN")
+            elif not text or len(text) > 12000:
+                raise PreconditionError("RCC_SELF_TEXT_INVALID")
+            try:
+                idle_timeout_s = float(arguments.get("idle_timeout_s", 90.0))
+            except (TypeError, ValueError) as exc:
+                raise PreconditionError("RCC_SELF_IDLE_TIMEOUT_INVALID") from exc
+            if not 0.1 <= idle_timeout_s <= 360.0:
+                raise PreconditionError("RCC_SELF_IDLE_TIMEOUT_INVALID")
+            target = self._self_attachment(
+                work=work, instance_id=instance_id,
+                orchestration_session_id=arguments.get("orchestration_session_id"),
+                node_id=arguments.get("node_id"),
+            )
+            if command == "node-continue" and phase == "open":
+                try:
+                    max_self_turns = int(arguments.get("max_self_turns"))
+                    total_timeout_s = float(arguments.get("total_timeout_s"))
+                except (TypeError, ValueError) as exc:
+                    raise PreconditionError("NODE_CONTINUATION_BUDGET_INVALID") from exc
+                if not 1 <= max_self_turns <= 8 or not 1.0 <= total_timeout_s <= 3600.0:
+                    raise PreconditionError("NODE_CONTINUATION_BUDGET_INVALID")
+            elif command == "node-continue" and phase == "continue":
+                if "max_self_turns" in arguments or "total_timeout_s" in arguments:
+                    raise PreconditionError("NODE_CONTINUATION_BUDGET_IMMUTABLE")
+                max_self_turns = None
+                total_timeout_s = None
+            else:
+                max_self_turns = None
+                total_timeout_s = None
+            prepared["text"] = text
+            prepared["extra"].update({
+                "workId": work.work_id,
+                "sessionId": target["sessionId"], "tabId": target["tabId"],
+                "windowId": target["windowId"], "conversationKey": target["conversationKey"],
+                "orchestrationSessionId": target["orchestrationSessionId"],
+                "nodeId": target["nodeId"], "attachmentId": target["attachmentId"],
+                "attachmentGeneration": target["attachmentGeneration"],
+                "idleTimeoutS": idle_timeout_s,
+            })
+            if command == "node-continue":
+                prepared["extra"].update({
+                    "continuationId": continuation_id, "phase": phase,
+                    "maxSelfTurns": max_self_turns, "totalTimeoutS": total_timeout_s,
+                })
         elif command == "send-to-tab":
             allowed.update({"session_id", "tab_id", "window_id", "conversation_key", "text"})
             session = str(arguments.get("session_id") or "").strip()
@@ -850,7 +1082,7 @@ class RelayBrowserFeature:
             # live RCC-wide execution in Store, while allowing immutable
             # FINISHED/UNKNOWN effect history to remain recorded.
             resource += ":maintenance:reload-extension"
-        elif command == "send-to-tab":
+        elif command in {"send-to-tab", "send-to-self", "node-continue"}:
             resource += ":direct-tab:" + str(prepared["extra"]["tabId"])
         elif command in {"add-tab-to-group", "remove-tab-from-group", "move-tab-group", "update-tab-group"}:
             resource += ":tab-group:" + str(prepared["extra"]["groupId"])
@@ -1451,6 +1683,8 @@ class RelayBrowserFeature:
         }, output={"targets": targets})
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments["command"] in {"send-to-self", "node-continue"}:
+            return self._execute_self_command(request)
         if request.arguments["command"] == "delivery-preview":
             if self.delivery_ledger is None:
                 raise ConfirmedFailure(

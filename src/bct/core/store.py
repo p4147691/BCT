@@ -210,6 +210,33 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS relay_deliveries_work_state
                     ON relay_deliveries(work_id,state,updated_at);
+                -- A bounded B -> B continuation is separate from a Delivery:
+                -- it never implies a Manager return and it must retain its
+                -- own budget/identity fence across Core restarts.
+                CREATE TABLE IF NOT EXISTS node_continuations (
+                    continuation_id TEXT PRIMARY KEY,
+                    work_id TEXT NOT NULL REFERENCES works(work_id),
+                    orchestration_session_id TEXT NOT NULL REFERENCES orchestration_sessions(session_id),
+                    node_id TEXT NOT NULL REFERENCES nodes(node_id),
+                    attachment_id TEXT NOT NULL,
+                    attachment_generation INTEGER NOT NULL,
+                    instance_id TEXT NOT NULL,
+                    external_session_id TEXT NOT NULL,
+                    tab_id INTEGER NOT NULL,
+                    window_id INTEGER NOT NULL,
+                    conversation_key TEXT NOT NULL,
+                    max_self_turns INTEGER NOT NULL,
+                    used_self_turns INTEGER NOT NULL,
+                    deadline_at REAL NOT NULL,
+                    state TEXT NOT NULL,
+                    reserved_operation_id TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    FOREIGN KEY(attachment_id,attachment_generation)
+                        REFERENCES orchestration_attachments(attachment_id,generation)
+                );
+                CREATE INDEX IF NOT EXISTS node_continuations_work_state
+                    ON node_continuations(work_id,state,updated_at);
                 -- UI stream reports are untrusted observations, separated from
                 -- authoritative operation effects. Immutable append-only steps.
                 CREATE TABLE IF NOT EXISTS chat_stream_checkpoints (
@@ -680,6 +707,163 @@ class Store:
         return Work(row["work_id"], row["request_summary"], tuple(json.loads(row["roots_json"])),
                     frozenset(json.loads(row["actions_json"])), row["owner_principal_id"],
                     row["assignment_epoch"], row["state"])
+
+    def active_rcc_attachment_for_node(
+        self, *, work_id: str, orchestration_session_id: str, node_id: str,
+        instance_id: str,
+    ) -> dict[str, Any]:
+        """Return exactly one current RCC binding for a self-directed send.
+
+        A node name alone is intentionally insufficient: the durable session
+        and active attachment fence prevent a same-named old tab becoming a
+        "self" target after a handoff or reconnect.
+        """
+        db = self._connect()
+        try:
+            session = db.execute(
+                "SELECT work_id FROM orchestration_sessions WHERE session_id=?",
+                (orchestration_session_id,),
+            ).fetchone()
+            if session is None or session["work_id"] != work_id:
+                raise ConflictError("RCC_SELF_SESSION_ACCESS_DENIED")
+            rows = db.execute(
+                "SELECT a.* FROM orchestration_attachments a "
+                "JOIN orchestration_session_nodes sn ON sn.node_id=a.node_id "
+                "WHERE sn.session_id=? AND sn.active=1 AND a.active=1 "
+                "AND a.node_id=? AND a.kind='rcc' AND a.instance_id=? "
+                "ORDER BY a.generation DESC",
+                (orchestration_session_id, node_id, instance_id),
+            ).fetchall()
+            if not rows:
+                raise KeyError("RCC_SELF_ATTACHMENT_NOT_FOUND")
+            if len(rows) != 1:
+                raise ConflictError("RCC_SELF_ATTACHMENT_AMBIGUOUS")
+            return dict(rows[0])
+        finally:
+            db.close()
+
+    @staticmethod
+    def _continuation_public(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        value = dict(row)
+        return {
+            key: value[key] for key in (
+                "continuation_id", "work_id", "orchestration_session_id", "node_id",
+                "attachment_id", "attachment_generation", "instance_id",
+                "external_session_id", "tab_id", "window_id", "conversation_key",
+                "max_self_turns", "used_self_turns", "deadline_at", "state",
+                "reserved_operation_id", "created_at", "updated_at",
+            )
+        }
+
+    def reserve_node_continuation(
+        self, *, continuation_id: str, work_id: str, orchestration_session_id: str,
+        node_id: str, attachment: dict[str, Any], max_self_turns: int,
+        deadline_at: float, phase: str, operation_id: str,
+    ) -> dict[str, Any]:
+        """Reserve exactly one initial or B->B continuation transmission.
+
+        Reservation occurs before the browser effect.  A crash or unknown
+        effect therefore leaves the continuation fenced rather than allowing a
+        second self prompt to be silently sent.
+        """
+        now = time.time()
+        if phase not in {"open", "continue"}:
+            raise ValueError("NODE_CONTINUATION_PHASE_INVALID")
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT * FROM node_continuations WHERE continuation_id=?",
+                (continuation_id,),
+            ).fetchone()
+            identity = {
+                "work_id": work_id,
+                "orchestration_session_id": orchestration_session_id,
+                "node_id": node_id,
+                "attachment_id": str(attachment["attachment_id"]),
+                "attachment_generation": int(attachment["generation"]),
+                "instance_id": str(attachment["instance_id"]),
+                "external_session_id": str(attachment["external_session_id"]),
+                "tab_id": int(attachment["tab_id"]),
+                "window_id": int(attachment["window_id"]),
+                "conversation_key": str(attachment["conversation_key"]),
+            }
+            if phase == "open":
+                if row is not None:
+                    raise ConflictError("NODE_CONTINUATION_ID_REUSE")
+                db.execute(
+                    "INSERT INTO node_continuations(continuation_id,work_id,orchestration_session_id,"
+                    "node_id,attachment_id,attachment_generation,instance_id,external_session_id,"
+                    "tab_id,window_id,conversation_key,max_self_turns,used_self_turns,deadline_at,"
+                    "state,reserved_operation_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (continuation_id, work_id, orchestration_session_id, node_id,
+                     identity["attachment_id"], identity["attachment_generation"],
+                     identity["instance_id"], identity["external_session_id"],
+                     identity["tab_id"], identity["window_id"], identity["conversation_key"],
+                     max_self_turns, 0, deadline_at, "RESERVED", operation_id, now, now),
+                )
+            else:
+                if row is None:
+                    raise KeyError("NODE_CONTINUATION_NOT_FOUND")
+                for key, expected in identity.items():
+                    if row[key] != expected:
+                        raise ConflictError("NODE_CONTINUATION_TARGET_CHANGED")
+                if row["state"] != "ACTIVE":
+                    raise ConflictError("NODE_CONTINUATION_NOT_ACTIVE:" + str(row["state"]))
+                if now >= float(row["deadline_at"]):
+                    db.execute("UPDATE node_continuations SET state='EXPIRED',updated_at=? WHERE continuation_id=?",
+                               (now, continuation_id))
+                    raise ConflictError("NODE_CONTINUATION_DEADLINE_EXPIRED")
+                if int(row["used_self_turns"]) >= int(row["max_self_turns"]):
+                    db.execute("UPDATE node_continuations SET state='BUDGET_EXHAUSTED',updated_at=? WHERE continuation_id=?",
+                               (now, continuation_id))
+                    raise ConflictError("NODE_CONTINUATION_BUDGET_EXHAUSTED")
+                db.execute(
+                    "UPDATE node_continuations SET state='RESERVED',reserved_operation_id=?,updated_at=? "
+                    "WHERE continuation_id=?",
+                    (operation_id, now, continuation_id),
+                )
+            saved = db.execute("SELECT * FROM node_continuations WHERE continuation_id=?", (continuation_id,)).fetchone()
+            return self._continuation_public(saved)
+
+    def finish_node_continuation(
+        self, *, continuation_id: str, operation_id: str, phase: str,
+        outcome: Outcome,
+    ) -> dict[str, Any]:
+        now = time.time()
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM node_continuations WHERE continuation_id=?", (continuation_id,)).fetchone()
+            if row is None or row["state"] != "RESERVED" or row["reserved_operation_id"] != operation_id:
+                raise ConflictError("NODE_CONTINUATION_RESERVATION_LOST")
+            if outcome == Outcome.UNKNOWN:
+                state = "UNKNOWN"
+                used = int(row["used_self_turns"])
+            elif outcome == Outcome.APPLIED:
+                used = int(row["used_self_turns"]) + (1 if phase == "continue" else 0)
+                state = "BUDGET_EXHAUSTED" if used >= int(row["max_self_turns"]) else "ACTIVE"
+            else:
+                state = "ACTIVE"
+                used = int(row["used_self_turns"])
+            db.execute(
+                "UPDATE node_continuations SET state=?,used_self_turns=?,reserved_operation_id=NULL,updated_at=? "
+                "WHERE continuation_id=?",
+                (state, used, now, continuation_id),
+            )
+            saved = db.execute("SELECT * FROM node_continuations WHERE continuation_id=?", (continuation_id,)).fetchone()
+            return self._continuation_public(saved)
+
+    def close_node_continuation(self, *, continuation_id: str, work_id: str) -> dict[str, Any]:
+        now = time.time()
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM node_continuations WHERE continuation_id=? AND work_id=?",
+                             (continuation_id, work_id)).fetchone()
+            if row is None:
+                raise KeyError("NODE_CONTINUATION_NOT_FOUND")
+            if row["state"] == "RESERVED":
+                raise ConflictError("NODE_CONTINUATION_EFFECT_PENDING")
+            if row["state"] not in {"UNKNOWN", "CLOSED"}:
+                db.execute("UPDATE node_continuations SET state='CLOSED',updated_at=? WHERE continuation_id=?",
+                           (now, continuation_id))
+                row = db.execute("SELECT * FROM node_continuations WHERE continuation_id=?", (continuation_id,)).fetchone()
+            return self._continuation_public(row)
 
     def register_github_run_inbox(self, *, subscription_id: str, repository: str, run_id: int,
                                   head_sha: str, workflow: str, context: dict[str, Any],
