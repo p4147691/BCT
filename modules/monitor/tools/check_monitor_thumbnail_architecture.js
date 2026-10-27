@@ -8,6 +8,7 @@ const names=[
   "monitor-thumbnail-layer-policy.js",
   "monitor-thumbnail-background-layer.js",
   "monitor-thumbnail-window-layer.js",
+  "monitor-thumbnail-interaction-layer.js",
   "monitor-desktop-thumbnail-v2.js"
 ];
 const sources=Object.fromEntries(names.map(name=>[name,fs.readFileSync(path.join(ext,name),"utf8")]));
@@ -20,6 +21,9 @@ assert.doesNotMatch(sources["monitor-thumbnail-contract.js"],/document|chrome|st
 assert.doesNotMatch(sources["monitor-preview-background.js"],/chrome|connectNative|getDesktopVisualSnapshot|monitor-desktop-thumb/);
 assert.doesNotMatch(sources["monitor-thumbnail-background-layer.js"],/createElement|\.src\s*=|monitor-desktop-thumb-window/);
 assert.doesNotMatch(sources["monitor-thumbnail-window-layer.js"],/backgroundImage\s*=|backgroundColor\s*=/);
+assert.doesNotMatch(sources["monitor-thumbnail-interaction-layer.js"],/backgroundImage\s*=|backgroundColor\s*=|\.src\s*=|setAttribute\(["']src/);
+assert.doesNotMatch(sources["monitor-thumbnail-interaction-layer.js"],/moveWindowToDesktop|monitorNative|connectNative/,
+  "interaction layer must use only its injected exact-HWND move port");
 
 const context={globalThis:null,Object,String,Number,RegExp,TypeError};
 context.globalThis=context;vm.createContext(context);

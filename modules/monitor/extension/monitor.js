@@ -7623,11 +7623,15 @@ let monitorWallpaperNativeQueue = Promise.resolve();
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorWallpaperNativeRequest });
 const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
-  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS_INTERACTION
 );
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,
   readFrame: desktopId => captureDesktopFrame(desktopId, "thumb"),
+  interactionPorts: {
+    moveWindow: ({hwnd,sourceDesktopId,targetDesktopId}) => moveMonitorWindowToDesktop(hwnd,sourceDesktopId,targetDesktopId),
+    onError: error => setMonitorStatus(`창 이동 실패 · ${error?.message || error}`, false),
+  },
   afterWindowRender: decorateMonitorThumbnailWindows,
   layerPolicy: monitorThumbnailLayerPolicy,
 });
@@ -10966,11 +10970,6 @@ function decorateMonitorThumbnailWindows(tile) {
       syncMonitorPauseOverlay(image,hwnd);
       syncMonitorDesktopNumberBadge(image,hwnd);
       syncMonitorNonChatCountdown(image,hwnd);
-      if (!image.dataset.monitorDragBound) {
-        image.dataset.monitorDragBound="1";
-        image.draggable=false;
-        image.addEventListener("pointerdown",beginMonitorWindowPointerDrag);
-      }
     } catch (error) { console.warn("Monitor thumbnail V2 badge delayed",hwnd,error); }
   }
   syncMonitorThumbnailTabBadges(tile,"monitor-desktop-thumb-window");

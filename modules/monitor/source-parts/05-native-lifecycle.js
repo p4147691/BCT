@@ -274,11 +274,15 @@ let monitorWallpaperNativeQueue = Promise.resolve();
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorWallpaperNativeRequest });
 const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
-  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS_INTERACTION
 );
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,
   readFrame: desktopId => captureDesktopFrame(desktopId, "thumb"),
+  interactionPorts: {
+    moveWindow: ({hwnd,sourceDesktopId,targetDesktopId}) => moveMonitorWindowToDesktop(hwnd,sourceDesktopId,targetDesktopId),
+    onError: error => setMonitorStatus(`창 이동 실패 · ${error?.message || error}`, false),
+  },
   afterWindowRender: decorateMonitorThumbnailWindows,
   layerPolicy: monitorThumbnailLayerPolicy,
 });

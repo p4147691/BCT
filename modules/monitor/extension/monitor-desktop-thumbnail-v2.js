@@ -6,14 +6,18 @@
   const policies=root.MonitorThumbnailLayerPolicy;
   const backgrounds=root.MonitorThumbnailBackgroundLayer;
   const windows=root.MonitorThumbnailWindowLayer;
+  const interactions=root.MonitorThumbnailInteractionLayer;
   let instance=null;
 
-  function configure({visualSource,readFrame=null,afterWindowRender=null,layerPolicy=null}={}){
+  function configure({visualSource,readFrame=null,interactionPorts=null,afterWindowRender=null,layerPolicy=null}={}){
     const policy=layerPolicy?.allows
       ? layerPolicy
-      : policies?.create?.(policies?.MODES?.FULL||"full")||Object.freeze({mode:"full",allows:()=>true,enabledLayers:["background","windows","semantic","summary"]});
+      : policies?.create?.(policies?.MODES?.FULL||"full")||Object.freeze({mode:"full",allows:()=>true,enabledLayers:["background","windows","interaction","semantic","summary"]});
     const background=backgrounds.create({contract,visualSource});
     const windowLayer=windows.create({contract});
+    const interactionLayer=policy.allows("interaction")&&interactions?.create&&typeof interactionPorts?.moveWindow==="function"
+      ?interactions.create({contract,...interactionPorts})
+      :null;
     const attached=new WeakMap();
     function clearDisabledLayers(visual){
       if(!policy.allows("windows")){
@@ -76,10 +80,11 @@
             windowLayer.frameFailure(visual,desktopId,"FRAME_UNAVAILABLE",frameToken);
             frameReady=false;
           }else{
-            frameReady=windowLayer.windowFrame(visual,desktopId,frame,{
-              frameToken,
-              afterRender:policy.allows("semantic")&&typeof afterWindowRender==="function"?afterWindowRender:undefined
-            });
+            const hasSemantic=policy.allows("semantic")&&typeof afterWindowRender==="function";
+            const afterRender=interactionLayer||hasSemantic
+              ?(target,id)=>{interactionLayer?.reconcile(target,id);if(hasSemantic)afterWindowRender(target,id);}
+              :undefined;
+            frameReady=windowLayer.windowFrame(visual,desktopId,frame,{frameToken,afterRender});
           }
         }
       }
@@ -162,6 +167,7 @@
       windowEvent:(...args)=>policy.allows("windows")?windowLayer.windowEvent(...args):false,
       windowFrame:(...args)=>policy.allows("windows")?windowLayer.windowFrame(...args):false,
       frameFailure:(...args)=>policy.allows("windows")?windowLayer.frameFailure(...args):false,
+      cancelInteraction:()=>interactionLayer?.cancel?.(),
       invalidate:(visual,desktopId)=>background.invalidate(visual,desktopId)
     });
     return instance;

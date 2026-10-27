@@ -1,11 +1,12 @@
 # Monitor 썸네일 V2 — 입력/출력 단일 경계 (격리 후보)
 
-## 현재 수락 단계: background-windows
+## 현재 수락 단계: background-windows-interaction
 
 현재 운영 구성은 `MonitorThumbnailLayerPolicy`의 `background-windows` 모드를 사용한다. 이는 별도 폴백 렌더러가 아니라 정식 V2 합성기의 단계별 수락 정책이다.
 
 - `background`: 활성. 정확한 데스크톱 GUID에 대응하는 Native 사진 또는 Windows 단색 근거만 렌더링한다.
 - `windows`: 활성. Native가 확인한 HWND의 실제 WGC 픽셀과 Windows 위치/Z순서만 렌더링한다.
+- `interaction`: 활성 후보. HWND 창 표면의 단일 창 드래그, 고스트, 기존 데스크톱 드롭만 담당한다. 실제 이동은 주입된 exact-HWND 포트 한 번으로 수행한다.
 - `semantic`: 임시 비활성. 노드/탭 의미 배지를 렌더링하지 않는다.
 - `summary`: 임시 비활성. 최소화 노드 요약을 렌더링하지 않는다.
 
@@ -29,7 +30,7 @@
 - 기존 Native HWND 목록의 `frame.meta.desktopId===GUID`와 실제 영역(virtualLeft,Top,Width,Height)을 확인한 후 창 위치와 Z순서 유지.
 - `captureState=captured`, 최근 15초 이내 촬영, `cloaked=0`, 물리적인 이미지 데이터, `physicalSource!=monitor-frozen`일 때만 창 픽셀 표시.
 - CLOAKED, 오래된/보존 캡처, 파일 없는 프레임 또는 복원본은 이미지 소스를 제거하고 해당 창 노드도 숨긴다. 배경 위에 회색 화면, 윤곽, 실패 문구, 대체 SVG를 올리지 않는다. 실패 이유는 DOM 진단 데이터에만 남긴다.
-- 현재 단계에서는 노드 번호·상태 표시·포커스·드래그·요약을 호출하지 않는다. 이 기능들은 `semantic`/`summary` 정책을 별도로 수락할 때만 다시 켠다.
+- 현재 단계에서는 노드 번호·상태 표시·포커스·요약을 호출하지 않는다. 이 기능들은 `semantic`/`summary` 정책을 별도로 수락할 때만 다시 켠다. 단일 창 드래그는 의미 장식과 분리된 `interaction` 정책으로만 활성화한다.
 - Monitor 자신의 창은 제목 추측이 아니라 확인된 `hostWindowHwnd`와의 정확한 비교로 두 Native 창 열거 경로에서 제외한다.
 
 ## 제거된 과거 경로와 남긴 경계
@@ -55,6 +56,7 @@
 
 ## 운영 격리 경계: V2 레이어 소유 (2026-10-26 추가)
 - 하단 \`.monitor-desktop-thumb-visual\`의 CSS 배경은 **monitor-thumbnail-background-layer.js**, 하단 \`.monitor-desktop-thumb-window\`의 이미지 src/geometry/실패 표시는 **monitor-thumbnail-window-layer.js**, 결합 순서와 호환 API는 **monitor-desktop-thumbnail-v2.js**가 소유한다.
+- 하단 HWND의 pointer 입력, 고스트 프레임, 기존 데스크톱 드롭 표시는 **monitor-thumbnail-interaction-layer.js**가 소유한다. 이 모듈은 배경·창 픽셀을 쓰지 않고 Native API도 직접 호출하지 않으며, exact-HWND 이동 포트만 한 번 호출한다.
 - monitor.js는 Native 이벤트와 GUID/HWND 식별 및 역할·상태·드래그 의미를 전달한다. 이벤트가 직접 이미지 DOM을 생성/수정하거나 wallpaperDataUri, monitorWallpaperActuals, monitorWallpaperCache, Progman, SVG/이전 프레임을 대입하면 안 된다.
 - legacy window lifecycle handler의 직접 이미지 생성(upsertMonitorEventThumbWindow), old source-set, 직접 이동/크기 반영은 폐기하고 \`scheduleMonitorV2WindowRefresh\`(V2 Native 재조회) 및 \`removeMonitorV2Window\`(V2 소유 하위창 제거)로 전환한다.
 - 비동기 capture가 역순 완료되어 과거 프레임을 다시 그리는 경우를 막도록 V2 frameGeneration을 검증한다. 이 방어는 wallpaper 세대(generation)와 독립적이다.

@@ -795,11 +795,6 @@ function decorateMonitorThumbnailWindows(tile) {
       syncMonitorPauseOverlay(image,hwnd);
       syncMonitorDesktopNumberBadge(image,hwnd);
       syncMonitorNonChatCountdown(image,hwnd);
-      if (!image.dataset.monitorDragBound) {
-        image.dataset.monitorDragBound="1";
-        image.draggable=false;
-        image.addEventListener("pointerdown",beginMonitorWindowPointerDrag);
-      }
     } catch (error) { console.warn("Monitor thumbnail V2 badge delayed",hwnd,error); }
   }
   syncMonitorThumbnailTabBadges(tile,"monitor-desktop-thumb-window");
