@@ -3,6 +3,11 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs"),path=require("node:path");
 const root=path.join(__dirname,"..");
 const lifecycle=fs.readFileSync(path.join(root,"domains","diagnostics-shell.js"),"utf8");
+const nativeLifecycle=fs.readFileSync(path.join(root,"source-parts","05-native-lifecycle.js"),"utf8");
+assert.match(nativeLifecycle,/const monitorWindowLifecyclePendingEvents = new Map\(\);/,
+  "the lifecycle coalescing queue must be declared in the generated runtime");
+assert.match(nativeLifecycle,/let monitorWindowLifecycleDrainBusy = false;/,
+  "the lifecycle drain guard must be declared in the generated runtime");
 const start=lifecycle.indexOf("async function handleMonitorWindowLifecycleEvent(event)");
 const end=lifecycle.indexOf("//@@FN_END:handleMonitorWindowLifecycleEvent",start);
 assert(start>=0&&end>start,"lifecycle handler must exist");

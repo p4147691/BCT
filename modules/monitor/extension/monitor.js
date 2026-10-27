@@ -7755,6 +7755,9 @@ function scheduleMonitorV2WindowRefresh(event) {
   return true;
 }
 
+const monitorWindowLifecyclePendingEvents = new Map();
+let monitorWindowLifecycleDrainBusy = false;
+
 function scheduleMonitorWindowLifecycleEvent(event) {
   const hwnd = String(event?.hwnd || "").trim();
   if (!/^\d+$/.test(hwnd) || hwnd === "0") return;

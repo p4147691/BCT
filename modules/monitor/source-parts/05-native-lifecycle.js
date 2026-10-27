@@ -294,6 +294,9 @@ globalThis.MonitorDesktopThumbnailV2.configure({
 /*@@MONITOR_FUNCTION:removeMonitorV2Window@@*/
 /*@@MONITOR_FUNCTION:scheduleMonitorV2WindowRefresh@@*/
 
+const monitorWindowLifecyclePendingEvents = new Map();
+let monitorWindowLifecycleDrainBusy = false;
+
 /*@@MONITOR_FUNCTION:scheduleMonitorWindowLifecycleEvent@@*/
 
 /*@@MONITOR_FUNCTION:drainMonitorWindowLifecycleEvents@@*/
