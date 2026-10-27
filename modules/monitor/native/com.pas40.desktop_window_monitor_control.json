@@ -1,7 +1,7 @@
 {
   "name": "com.pas40.desktop_window_monitor_control",
   "description": "DesktopWindow Monitor virtual desktop control host",
-  "path": "D:\\ChromeExtensions\\DesktopWindow-Monitor\\native\\1.9.20.182-global-solid-truth\\DesktopWindowMonitorControlHost.exe",
+  "path": "D:\\ChromeExtensions\\DesktopWindow-Monitor\\native\\1.9.20.188-readonly-global-mode\\DesktopWindowMonitorControlHost.exe",
   "type": "stdio",
   "allowed_origins": [
     "chrome-extension://kaigandfpieiogfbfaemoimenmipedck/"
