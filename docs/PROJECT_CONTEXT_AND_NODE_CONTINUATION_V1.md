@@ -50,3 +50,34 @@
 연속 상태는 `ACTIVE`, `BUDGET_EXHAUSTED`, `EXPIRED`, `UNKNOWN`, `CLOSED` 중 하나다.
 전송 효과가 UNKNOWN이면 해당 연속은 UNKNOWN으로 봉인하고 자동 재전송하지 않는다.
 최종 B->A 반환은 여전히 기존 `send-to-tab` 또는 Delivery return의 책임이다.
+
+## 전달 방식과 Manager 대체 규칙
+
+`send-to-tab`은 A->B, B->A, B->B 모두에 쓸 수 있는 **한 번의 정확한 탭 전송**이다.
+호출자는 현재 관찰한 `session_id`, `tab_id`, `window_id`, `conversation_key`를 함께
+제시한다. 이 명령은 대기열·대체 노드 선택·새 노드 생성을 하지 않는다. 정확한 대상이
+바뀌거나 전송 효과가 UNKNOWN이면 재전송하지 않는다.
+
+대체가 필요한 지속 작업은 Manager Wake의 `FOLLOW_UP` successor로 만든다. successor에는
+대상과 완료 기준 외에 선택적으로 아래 `routing`을 넣는다.
+
+```json
+{
+  "affinity": "REQUIRED | PREFERRED | ANY",
+  "fallbacks": [{"node_id": "standby-1", "attachment_id": "att-1", "attachment_generation": 1}],
+  "allow_provision": false
+}
+```
+
+- `REQUIRED`: 지정 노드만 처리한다. 해당 노드가 바쁘면 `required_node_hold_seconds`까지
+  보류하고, 만료 뒤에는 다른 노드로 보내지 않고 Manager에 상향한다.
+- `PREFERRED` / `ANY`: 아직 브라우저에 제출되지 않은 경우에만
+  `worker_reroute_wait_seconds` 뒤 idle fallback으로 변경할 수 있다.
+- `allow_provision=true`: 자동으로 탭/노드를 만들지 않는다. `PROVISION_REQUIRED`를 남겨
+  Manager가 기존 담당·예비 노드 재확인 또는 새 노드 생성을 판단하게 한다.
+
+이 라우팅은 제출 전의 용량 결정일 뿐이다. 이미 APPLIED 또는 UNKNOWN인 delivery에는
+대체본을 보내지 않는다. Manager 결과는 내구성 wake 대기열에 누적되고, 한 wake를 소비해
+결정을 커밋한 뒤에만 successor outbox가 만들어진다. Manager가 장시간 멈췄을 때의 후임은
+새 epoch로 영구 승계하며, 기존 Manager가 나중에 돌아와도 권한을 되돌려 주지 않는다.
+대기 한도는 운영 정책의 `manager_failover_seconds`로 조정한다.
