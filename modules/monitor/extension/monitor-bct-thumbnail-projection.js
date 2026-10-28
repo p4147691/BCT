@@ -12,16 +12,23 @@
     const seenNumbers = new Set();
     const result = [];
     for (const value of Array.isArray(values) ? values : []) {
-      const number = Number(value);
+      const rawToken = value && typeof value === "object" ? value.token : value;
+      const tabId = Number(value && typeof value === "object" ? value.tabId : null);
+      const item = {
+        token: text(rawToken),
+        tabId: Number.isInteger(tabId) && tabId >= 0 ? tabId : null,
+      };
+      const number = Number(item.token);
       if (Number.isSafeInteger(number) && number > 0) {
         if (seenNumbers.has(number)) continue;
         seenNumbers.add(number);
-        result.push(String(number));
+        item.token = String(number);
+        result.push(item);
         continue;
       }
-      // An observed browser tab with no BCT UUID has no stable node number.
-      // It still occupies a real tab position, so preserve it as one `?` token.
-      if (text(value) === "?") result.push("?");
+      // UUID-less tabs retain their exact tabId. Multiple `?` labels can then
+      // be rendered in order while selection still targets one real tab only.
+      if (item.token === "?") result.push(item);
     }
     return result;
   }
@@ -104,30 +111,29 @@
       const badge = documentObject.createElement("span");
       badge.className = "monitor-node-number-badge monitor-thumbnail-tab-badge";
       badge.dataset.hwnd = hwnd;
-      const nodeLabel = `N${tokens.join("/")}`;
       // Keep each slash+node pair atomic.  A line may begin at `/58`, but a
       // node number such as `57` can never be detached from its separator.
       const selectedHere = hwnd === text(options.selectedNodeHwnd);
       const selectedToken = text(options.selectedNodeToken);
+      const selectedTabId = options.selectedNodeTabId == null ? null : Number(options.selectedNodeTabId);
       const labelParts = [];
-      const prefix = documentObject.createElement("span");
-      prefix.className = "monitor-thumbnail-tab-prefix";
-      prefix.textContent = "N";
-      labelParts.push(prefix);
-      for (const token of tokens) {
-        if (labelParts.length > 1) {
+      for (const item of tokens) {
+        const token = item.token;
+        if (labelParts.length > 0) {
           const separator = documentObject.createElement("span");
           separator.className = "monitor-thumbnail-tab-separator";
           separator.textContent = "/";
           labelParts.push(separator);
         }
         const part = documentObject.createElement("span");
-        part.className = `monitor-thumbnail-tab-token${selectedHere && token === selectedToken ? " is-selected" : ""}`;
+        const selectedByTab = selectedHere && Number.isInteger(selectedTabId) && item.tabId === selectedTabId;
+        const selectedByKnownToken = selectedHere && !Number.isInteger(selectedTabId) && selectedToken !== "?" && token === selectedToken;
+        part.className = `monitor-thumbnail-tab-token${selectedByTab || selectedByKnownToken ? " is-selected" : ""}`;
         part.textContent = token;
         labelParts.push(part);
       }
       badge.replaceChildren(...labelParts);
-      badge.title = `BCT 노드 ${tokens.join(" / ")}`;
+      badge.title = `BCT 노드 ${tokens.map((item) => item.token).join(" / ")}`;
       windowLayer.append(badge);
       layer.append(windowLayer);
       rendered += 1;

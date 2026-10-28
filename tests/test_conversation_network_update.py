@@ -7,12 +7,14 @@ from pathlib import Path
 from bct.conversation_network import (
     configure_conversation_scope,
     conversation_scope_directory,
+    upsert_conversation,
 )
 from bct.core.models import Outcome, Principal
 from bct.service import BCT
 
 
 MANAGER = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
+WORKER = "7bd5afa4-b1e0-83ee-8692-aec4bb51523e"
 
 
 class ConversationNetworkUpdateFeatureTests(unittest.TestCase):
@@ -42,6 +44,9 @@ class ConversationNetworkUpdateFeatureTests(unittest.TestCase):
             scope_name="테스트 대화망",
             role_tags=["Manager", "조정"],
             now=100.0,
+        )
+        upsert_conversation(
+            self.bct.store, conversation_key=WORKER, display_name="워커", now=100.0
         )
 
     def tearDown(self) -> None:
@@ -106,6 +111,45 @@ class ConversationNetworkUpdateFeatureTests(unittest.TestCase):
         self.assertEqual(
             "CONVERSATION_NETWORK_ROLE_TAGS_CONFLICT", result.error
         )
+        self.assertEqual([], self.bct.store.claim_diagnostics())
+
+    def test_manager_can_assign_an_observed_unscoped_worker_with_scope_cas(self):
+        assigned = self.bct.operations.run(
+            principal=self.principal,
+            work_id="role-work",
+            operation_id="membership-assign-1",
+            capability="conversation_network_update",
+            arguments={
+                "operation": "membership-assign",
+                "project": "테스트 대화망",
+                "conversation_key": WORKER,
+                "role_tags": ["Worker", "검증"],
+                "expected_scope_id": "",
+            },
+        )
+        self.assertEqual(Outcome.APPLIED, assigned.outcome)
+        current = conversation_scope_directory(
+            self.bct.store, conversation_keys=[WORKER]
+        )[WORKER]
+        self.assertEqual("테스트 대화망", current["scope_name"])
+        self.assertCountEqual(["Worker", "검증"], current["role_tags"])
+        self.assertTrue(assigned.output["node_label"].startswith("N"))
+
+        conflict = self.bct.operations.run(
+            principal=self.principal,
+            work_id="role-work",
+            operation_id="membership-assign-stale",
+            capability="conversation_network_update",
+            arguments={
+                "operation": "membership-assign",
+                "project": "테스트 대화망",
+                "conversation_key": WORKER,
+                "role_tags": ["Worker"],
+                "expected_scope_id": "",
+            },
+        )
+        self.assertEqual(Outcome.NOT_APPLIED, conflict.outcome)
+        self.assertEqual("CONVERSATION_NETWORK_SCOPE_CONFLICT", conflict.error)
         self.assertEqual([], self.bct.store.claim_diagnostics())
 
 

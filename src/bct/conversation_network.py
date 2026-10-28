@@ -276,6 +276,74 @@ def set_membership(store: Store, *, project_id: str, conversation_key: str,
     return {"project_id": project, "conversation_key": key, "activity": state, "tags": checked_tags}
 
 
+def assign_conversation_membership(
+    store: Store,
+    *,
+    project_id: str,
+    conversation_key: str,
+    role_tags: list[str] | tuple[str, ...],
+    expected_scope_id: str,
+    now: float | None = None,
+) -> dict[str, object]:
+    """Move one known chat into a scope with an explicit current-scope CAS.
+
+    This is directory metadata only: it neither sends a message to the chat nor
+    changes a browser tab.  Requiring the caller's observed current scope
+    prevents a Manager workflow from silently stealing a chat from another
+    conversation scope.
+    """
+    project = _identifier(project_id, "CONVERSATION_NETWORK_PROJECT_ID_INVALID")
+    key = _conversation_key(conversation_key)
+    expected = str(expected_scope_id or "").strip()
+    if expected and not _ID.fullmatch(expected):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_EXPECTED_SCOPE_INVALID")
+    tags = _role_tags(role_tags)
+    when = float(time.time() if now is None else now)
+    with store.transaction() as db:
+        if db.execute(
+            "SELECT 1 FROM conversation_network_projects WHERE project_id=?", (project,)
+        ).fetchone() is None:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_PROJECT_NOT_FOUND")
+        if db.execute(
+            "SELECT 1 FROM conversation_network_conversations WHERE conversation_key=?", (key,)
+        ).fetchone() is None:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_CONVERSATION_NOT_FOUND")
+        current_scope, current_tags = _active_role_tags(db, key)
+        if current_scope != expected:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_CONFLICT")
+        changed = current_scope != project or current_tags != tags
+        if changed:
+            db.execute(
+                "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+                "WHERE conversation_key=? AND activity='ACTIVE' AND project_id<>?",
+                (when, key, project),
+            )
+            db.execute(
+                "INSERT INTO conversation_network_memberships(project_id,conversation_key,activity,created_at,updated_at) "
+                "VALUES(?,?,?,?,?) ON CONFLICT(project_id,conversation_key) DO UPDATE SET "
+                "activity='ACTIVE',updated_at=excluded.updated_at",
+                (project, key, "ACTIVE", when, when),
+            )
+            db.execute(
+                "DELETE FROM conversation_network_membership_tags WHERE project_id=? AND conversation_key=?",
+                (project, key),
+            )
+            db.executemany(
+                "INSERT INTO conversation_network_membership_tags(project_id,conversation_key,tag,created_at) "
+                "VALUES(?,?,?,?)",
+                [(project, key, tag, when) for tag in tags],
+            )
+    label = node_labels_for_conversations(store, conversation_keys=[key]).get(key, "")
+    return {
+        "project_id": project,
+        "conversation_key": key,
+        "node_label": label,
+        "role_tags": tags,
+        "role_tags_sha256": role_tags_sha256(tags),
+        "changed": changed,
+    }
+
+
 def _role_tags(values: object) -> list[str]:
     if not isinstance(values, (list, tuple)):
         raise ConversationNetworkError("CONVERSATION_NETWORK_TAGS_INVALID")

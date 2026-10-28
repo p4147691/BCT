@@ -159,19 +159,49 @@ assert.match(overlays.get("500").className, /monitor-bct-node-target-highlighted
 function badgeText(badge) {
   return (badge.children || []).map((part) => part.textContent).join("") || badge.textContent;
 }
-assert.equal(badgeText(overlays.get("500").querySelector(".monitor-thumbnail-tab-badge")), "N33/35/?/45");
+assert.equal(badgeText(overlays.get("500").querySelector(".monitor-thumbnail-tab-badge")), "33/35/?/45");
 assert.equal(
   badgeText(overlays.get("600").querySelector(".monitor-thumbnail-tab-badge")),
-  "N7/8/9/10/11/12/13/14",
+  "7/8/9/10/11/12/13/14",
   "all tabs must remain visible; wrapping belongs to CSS and no +n abbreviation is allowed",
 );
-assert.deepEqual(overlays.get("500").querySelector(".monitor-thumbnail-tab-badge").children.map((part) => part.textContent), ["N", "33", "/", "35", "/", "?", "/", "45"], "prefix, separators, and numeric tokens must remain individually addressable so only a selected number can enlarge");
+assert.deepEqual(overlays.get("500").querySelector(".monitor-thumbnail-tab-badge").children.map((part) => part.textContent), ["33", "/", "35", "/", "?", "/", "45"], "separators, and numeric tokens must remain individually addressable so only a selected number can enlarge");
 assert.equal(layer.querySelector(".monitor-thumbnail-z-rail"), null,
   "collision rails must not exist in the simplified projection");
 assert.equal(layer.querySelector(".monitor-thumbnail-node-chip"), null,
   "per-node chips and state icons are outside the static node-label layer");
 assert.equal(first.repositioned, 0);
 assert.equal(first.unresolvedCollisions, 0);
+
+const unknownSelection = context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  state: null,
+  selectedNodeHwnd: "500",
+  selectedNodeToken: "?",
+  selectedNodeTabId: 202,
+  numbersForHwnd: (hwnd) => hwnd === "500"
+    ? [{ token: "?", tabId: 101 }, { token: "?", tabId: 202 }]
+    : [],
+});
+assert.equal(unknownSelection.rendered, 1);
+const unknownParts = layer.querySelector(".monitor-thumbnail-tab-badge").children
+  .filter((part) => String(part.className || "").includes("monitor-thumbnail-tab-token"));
+assert.equal(unknownParts.length, 2, "two UUID-less tabs must remain distinct visible tokens");
+assert.deepEqual(unknownParts.map((part) => String(part.className || "").includes("is-selected")), [false, true],
+  "selecting one UUID-less tab must highlight only its exact Chrome tabId");
+
+const knownSelection = context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  state: null,
+  selectedNodeHwnd: "500",
+  selectedNodeToken: "33",
+  numbersForHwnd: (hwnd) => hwnd === "500" ? [33, 35] : [],
+});
+assert.equal(knownSelection.rendered, 1);
+const knownParts = layer.querySelector(".monitor-thumbnail-tab-badge").children
+  .filter((part) => String(part.className || "").includes("monitor-thumbnail-tab-token"));
+assert.deepEqual(knownParts.map((part) => String(part.className || "").includes("is-selected")), [true, false],
+  "known node selection remains exact when no tabId was supplied");
 
 render();
 assert.equal(visual.querySelectorAll(".monitor-thumbnail-node-overlay").length, 1);
@@ -191,4 +221,4 @@ assert.equal(removed.candidates, 1);
 assert.equal(removed.rendered, 1,
   "Native geometry without a rendered image must not synthesize a label");
 
-console.log("PASS: simple top-left N labels keep tab order, wrap without truncation, and share physical HWND z-order");
+console.log("PASS: simple top-left number labels keep tab order, wrap without truncation, and share physical HWND z-order");

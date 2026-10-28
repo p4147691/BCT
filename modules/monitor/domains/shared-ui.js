@@ -388,6 +388,8 @@ async function flushMonitorBrowserVisualRefresh() {
     const windowIds = [...monitorBrowserVisualPendingWindowIds];
     monitorBrowserVisualPendingWindowIds.clear();
     if (!windowIds.length) return;
+    const refreshRoster = monitorBrowserRosterRefreshPending;
+    monitorBrowserRosterRefreshPending = false;
 
     const hwnds = new Set();
     const desktopIds = new Set();
@@ -407,7 +409,10 @@ async function flushMonitorBrowserVisualRefresh() {
         if (key) desktopIds.add(key);
       }
     }
-    if (!desktopIds.size) return;
+    if (!desktopIds.size) {
+      if (refreshRoster) await refreshMonitorBctWindowNodes();
+      return;
+    }
 
     if (hwnds.size) {
       for (const hwnd of hwnds) monitorThumbnailService.invalidate(hwnd);
@@ -428,6 +433,9 @@ async function flushMonitorBrowserVisualRefresh() {
     // A fresh desktop frame replaces its DOM layers. Re-project the same
     // browser snapshot after capture so a tab move cannot erase its node label.
     syncMonitorAllDesktopThumbnailNodeBadges();
+    // Chrome creation/removal is an event, not a reason to poll or change focus.
+    // Refresh exact RCC membership after the Native/Chrome visual reconciliation.
+    if (refreshRoster) await refreshMonitorBctWindowNodes();
   } finally {
     monitorBrowserVisualRefreshInFlight = false;
     if (monitorBrowserVisualPendingWindowIds.size && !monitorBrowserVisualRefreshTimer) {
@@ -2239,6 +2247,9 @@ function monitorBrowserVisualTabsForWindow(windowIdValue) {
 function scheduleMonitorBrowserVisualRefresh(message) {
   const windowId = Number(message?.windowId);
   if (!Number.isInteger(windowId)) return;
+  if (["window-created", "window-removed", "tab-created", "tab-removed", "tab-attached", "tab-detached", "tab-moved"].includes(String(message?.reason || ""))) {
+    monitorBrowserRosterRefreshPending = true;
+  }
 
   if (applyMonitorBrowserVisualTabSnapshot(message)) {
     // Preserve the existing pixels while their native refresh is queued; the

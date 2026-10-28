@@ -1219,6 +1219,14 @@ function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
 }
 //@@FN_END:monitorMinimizedNodeSlotsByDesktop
 
+//@@FN_START:monitorMinimizedNodeTokensByDesktop
+function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
+  return monitorMinimizedNodeBadgeContract?.tokensByDesktop?.({
+    locations: monitorWindowDesktopLocations,
+    tokensForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
+  }) || new Map();
+}
+//@@FN_END:monitorMinimizedNodeTokensByDesktop
 //@@FN_START:monitorObservedDesktopForHwnd
 function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
   const key=String(hwnd||"").trim();

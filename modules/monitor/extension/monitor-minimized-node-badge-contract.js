@@ -15,25 +15,47 @@
   function minimizedEvent(event) {
     return Boolean(event?.iconic) || text(event?.reason).toLowerCase() === "minimized";
   }
-  function slotsByDesktop(input = {}) {
+  function minimizedToken(value, fallbackIdentity) {
+    const raw = typeof value === "object" && value ? value : { token: value };
+    const token = text(raw.token).replace(/^N/i, "");
+    const number = positiveNodeNumber(token);
+    if (number) return { token: String(number), tabId: Number(raw.tabId) || 0, identity: `node:${number}` };
+    if (token !== "?") return null;
+    const tabId = Number(raw.tabId) || 0;
+    return { token: "?", tabId, identity: tabId ? `tab:${tabId}` : `unknown:${fallbackIdentity}` };
+  }
+  function tokensByDesktop(input = {}) {
     const grouped = new Map();
     const locations = input.locations instanceof Map ? input.locations : new Map(input.locations || []);
-    const numbersForHwnd = typeof input.numbersForHwnd === "function" ? input.numbersForHwnd : () => [];
+    const tokensForHwnd = typeof input.tokensForHwnd === "function" ? input.tokensForHwnd : () => [];
+    let ordinal = 0;
     for (const [rawHwnd, location] of locations) {
-      // The bottom desktop label is a minimized-window summary, not a list of
-      // every ChatGPT tab that happens to be open on the desktop.
       if (!Boolean(location?.iconic)) continue;
       const desktopId = text(location?.desktopId);
       if (!desktopId) continue;
       const hwnd = text(location?.hwnd || rawHwnd);
       if (!hwnd) continue;
-      const slots = [...new Set((numbersForHwnd(hwnd) || []).map(positiveNodeNumber).filter(Boolean))];
-      if (!slots.length) continue;
-      const target = grouped.get(desktopId) || new Set();
-      for (const slot of slots) target.add(slot);
-      grouped.set(desktopId, target);
+      const target = grouped.get(desktopId) || new Map();
+      for (const value of tokensForHwnd(hwnd) || []) {
+        const item = minimizedToken(value, `${hwnd}:${ordinal++}`);
+        if (item && !target.has(item.identity)) target.set(item.identity, item);
+      }
+      if (target.size) grouped.set(desktopId, target);
     }
-    return new Map([...grouped].map(([desktopId, slots]) => [desktopId, [...slots].sort((a, b) => a - b)]));
+    return new Map([...grouped].map(([desktopId, values]) => {
+      const items = [...values.values()];
+      // Numeric-only summaries retain the historical ascending order. Mixed
+      // unknown tabs must keep Chrome's observed tab order, not move '?' to
+      // the end where a different tab might appear selected.
+      if (items.every((item) => positiveNodeNumber(item.token))) {
+        items.sort((a, b) => positiveNodeNumber(a.token) - positiveNodeNumber(b.token));
+      }
+      return [desktopId, items];
+    }));
   }
-  root.MonitorMinimizedNodeBadgeContract = Object.freeze({ minimizedEvent, slotsByDesktop });
+  function slotsByDesktop(input = {}) {
+    const tokens = tokensByDesktop({ locations: input.locations, tokensForHwnd: input.numbersForHwnd });
+    return new Map([...tokens].map(([desktopId, items]) => [desktopId, items.map((item) => positiveNodeNumber(item.token)).filter(Boolean)]));
+  }
+  root.MonitorMinimizedNodeBadgeContract = Object.freeze({ minimizedEvent, slotsByDesktop, tokensByDesktop });
 })(globalThis);

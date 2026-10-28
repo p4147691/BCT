@@ -35,6 +35,8 @@
 // ChatGPT windows render their BCT/RCC number directly on their thumbnail.
 /*@@MONITOR_FUNCTION:monitorMinimizedNodeSlotsByDesktop@@*/
 
+/*@@MONITOR_FUNCTION:monitorMinimizedNodeTokensByDesktop@@*/
+
 /*@@MONITOR_FUNCTION:profileForMonitorWorker@@*/
 
 /*@@MONITOR_FUNCTION:endpointForMonitorWorker@@*/
@@ -143,7 +145,8 @@ const monitorBrowserVisualPendingWindowIds = new Set();
 const monitorBrowserVisualTabsByWindow = new Map();
 let monitorBrowserVisualRefreshTimer = 0;
 let monitorBrowserVisualRefreshInFlight = false;
-const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 360;
+let monitorBrowserRosterRefreshPending = false;
+const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 120;
 
 /*@@MONITOR_FUNCTION:applyMonitorBrowserVisualTabSnapshot@@*/
 

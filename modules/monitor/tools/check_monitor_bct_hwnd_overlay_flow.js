@@ -149,6 +149,26 @@ assert.equal(projectedLabel(openNodes, display.bindings), "N4/9/7",
 assert.equal(display.bindings[0].displayOnly, true);
 assert.equal(contract.resolve({ nodes: openNodes, locations: geometryLocations, now }).bindings.length, 0,
   "display-only geometry must never weaken the exact conversation identity contract");
+const minimizedDisplay = contract.resolveDisplay({
+  nodes: openNodes, locations: new Map([
+    ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "N4 - Google Chrome", left: 12, top: 12, width: 160, height: 28, iconic: true, at: now - 100 }],
+  ]), now,
+  browserWindows: [{ windowId: 594834491, state: "minimized", activeTabTitle: "N4", observedAt: now - 50 }],
+});
+assert.equal(projectedLabel(openNodes, minimizedDisplay.bindings), "N4/9/7",
+  "a uniquely titled minimized Chrome HWND retains the same display-only tab projection");
+assert.equal(minimizedDisplay.bindings[0].displayOnly, true);
+const ambiguousMinimizedDisplay = contract.resolveDisplay({
+  nodes: openNodes, now,
+  locations: new Map([
+    ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "N4 - Google Chrome", left: 12, top: 12, width: 160, height: 28, iconic: true, at: now - 100 }],
+    ["999", { hwnd: "999", className: "Chrome_WidgetWin_1", title: "N4 - Google Chrome", left: 12, top: 12, width: 160, height: 28, iconic: true, at: now - 100 }],
+  ]),
+  browserWindows: [{ windowId: 594834491, state: "minimized", activeTabTitle: "N4", observedAt: now - 50 }],
+});
+assert.equal(ambiguousMinimizedDisplay.bindings.length, 0,
+  "a duplicated minimized title must remain unassigned rather than guessed");
+assert.ok(ambiguousMinimizedDisplay.rejected.some((item) => item.reason === "HWND_GEOMETRY_AMBIGUOUS"));
 const ambiguousDisplay = contract.resolveDisplay({
   nodes: openNodes, now,
   locations: new Map([

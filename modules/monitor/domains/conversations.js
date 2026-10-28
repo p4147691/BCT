@@ -1823,6 +1823,14 @@ function performMonitorWorkerRender(state) {
 
   monitorWorkers.replaceChildren(nextWorkerDom);
 
+  // The BCT list owns this panel whenever it is enabled. A concurrent ACT
+  // refresh must not replace it after Chrome has selected a real tab, because
+  // that would erase the exact row selection just mirrored from Chrome.
+  if (MONITOR_BCT_NODE_SUMMARY_ENABLED && Array.isArray(monitorBctWindowNodesCache)) {
+    renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+    syncMonitorBctNodeTargetHighlight();
+  }
+
   if(monitorClosedRecoveryMenu){monitorClosedRecoveryMenu.hidden=!monitorClosedConversationPickerOpen;if(monitorClosedConversationPickerOpen)monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(state));}
 
 }
@@ -1835,12 +1843,21 @@ async function refreshMonitorBctBrowserWindowGeometry() {
   const observedAt = Date.now();
   const rows = await Promise.all(ids.map(async (windowId) => {
     try {
-      const browserWindow = await chrome.windows.get(windowId, { populate: false });
+      const [browserWindow, activeTabs] = await Promise.all([
+        chrome.windows.get(windowId, { populate: false }),
+        chrome.tabs.query({ windowId, active: true }),
+      ]);
+      const activeTab = Array.isArray(activeTabs) ? activeTabs[0] : null;
       return {
         windowId, observedAt,
         left: Number(browserWindow?.left), top: Number(browserWindow?.top),
         width: Number(browserWindow?.width), height: Number(browserWindow?.height),
         state: String(browserWindow?.state || "normal"), focused: browserWindow?.focused === true,
+        // A minimized Chrome HWND is represented by Windows as a tiny icon
+        // rectangle, so its restore bounds cannot be joined by geometry.  The
+        // active tab title is read-only Chrome state used only for a unique
+        // display projection in that minimized case.
+        activeTabTitle: String(activeTab?.title || ""),
       };
     } catch (_) { return null; }
   }));

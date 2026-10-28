@@ -2306,6 +2306,13 @@ function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
   }) || new Map();
 }
 
+function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
+  return monitorMinimizedNodeBadgeContract?.tokensByDesktop?.({
+    locations: monitorWindowDesktopLocations,
+    tokensForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
+  }) || new Map();
+}
+
 function profileForMonitorWorker(worker, state) { return globalThis.MonitorDomainAPIs["node-identity"]["profileForMonitorWorker"].apply(this, arguments); }
 
 function endpointForMonitorWorker(worker, state) {
@@ -2759,12 +2766,21 @@ async function refreshMonitorBctBrowserWindowGeometry() {
   const observedAt = Date.now();
   const rows = await Promise.all(ids.map(async (windowId) => {
     try {
-      const browserWindow = await chrome.windows.get(windowId, { populate: false });
+      const [browserWindow, activeTabs] = await Promise.all([
+        chrome.windows.get(windowId, { populate: false }),
+        chrome.tabs.query({ windowId, active: true }),
+      ]);
+      const activeTab = Array.isArray(activeTabs) ? activeTabs[0] : null;
       return {
         windowId, observedAt,
         left: Number(browserWindow?.left), top: Number(browserWindow?.top),
         width: Number(browserWindow?.width), height: Number(browserWindow?.height),
         state: String(browserWindow?.state || "normal"), focused: browserWindow?.focused === true,
+        // A minimized Chrome HWND is represented by Windows as a tiny icon
+        // rectangle, so its restore bounds cannot be joined by geometry.  The
+        // active tab title is read-only Chrome state used only for a unique
+        // display projection in that minimized case.
+        activeTabTitle: String(activeTab?.title || ""),
       };
     } catch (_) { return null; }
   }));
@@ -2895,7 +2911,8 @@ const monitorBrowserVisualPendingWindowIds = new Set();
 const monitorBrowserVisualTabsByWindow = new Map();
 let monitorBrowserVisualRefreshTimer = 0;
 let monitorBrowserVisualRefreshInFlight = false;
-const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 360;
+let monitorBrowserRosterRefreshPending = false;
+const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 120;
 
 function applyMonitorBrowserVisualTabSnapshot(message) {
   const windowId = Number(message?.windowId);
@@ -2937,6 +2954,9 @@ function monitorBrowserVisualTabsForWindow(windowIdValue) {
 function scheduleMonitorBrowserVisualRefresh(message) {
   const windowId = Number(message?.windowId);
   if (!Number.isInteger(windowId)) return;
+  if (["window-created", "window-removed", "tab-created", "tab-removed", "tab-attached", "tab-detached", "tab-moved"].includes(String(message?.reason || ""))) {
+    monitorBrowserRosterRefreshPending = true;
+  }
 
   if (applyMonitorBrowserVisualTabSnapshot(message)) {
     // Preserve the existing pixels while their native refresh is queued; the
@@ -2958,6 +2978,8 @@ async function flushMonitorBrowserVisualRefresh() {
     const windowIds = [...monitorBrowserVisualPendingWindowIds];
     monitorBrowserVisualPendingWindowIds.clear();
     if (!windowIds.length) return;
+    const refreshRoster = monitorBrowserRosterRefreshPending;
+    monitorBrowserRosterRefreshPending = false;
 
     const hwnds = new Set();
     const desktopIds = new Set();
@@ -2977,7 +2999,10 @@ async function flushMonitorBrowserVisualRefresh() {
         if (key) desktopIds.add(key);
       }
     }
-    if (!desktopIds.size) return;
+    if (!desktopIds.size) {
+      if (refreshRoster) await refreshMonitorBctWindowNodes();
+      return;
+    }
 
     if (hwnds.size) {
       for (const hwnd of hwnds) monitorThumbnailService.invalidate(hwnd);
@@ -2998,6 +3023,9 @@ async function flushMonitorBrowserVisualRefresh() {
     // A fresh desktop frame replaces its DOM layers. Re-project the same
     // browser snapshot after capture so a tab move cannot erase its node label.
     syncMonitorAllDesktopThumbnailNodeBadges();
+    // Chrome creation/removal is an event, not a reason to poll or change focus.
+    // Refresh exact RCC membership after the Native/Chrome visual reconciliation.
+    if (refreshRoster) await refreshMonitorBctWindowNodes();
   } finally {
     monitorBrowserVisualRefreshInFlight = false;
     if (monitorBrowserVisualPendingWindowIds.size && !monitorBrowserVisualRefreshTimer) {
@@ -6065,6 +6093,14 @@ function performMonitorWorkerRender(state) {
   }
 
   monitorWorkers.replaceChildren(nextWorkerDom);
+
+  // The BCT list owns this panel whenever it is enabled. A concurrent ACT
+  // refresh must not replace it after Chrome has selected a real tab, because
+  // that would erase the exact row selection just mirrored from Chrome.
+  if (MONITOR_BCT_NODE_SUMMARY_ENABLED && Array.isArray(monitorBctWindowNodesCache)) {
+    renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+    syncMonitorBctNodeTargetHighlight();
+  }
 
   if(monitorClosedRecoveryMenu){monitorClosedRecoveryMenu.hidden=!monitorClosedConversationPickerOpen;if(monitorClosedConversationPickerOpen)monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(state));}
 
@@ -9462,11 +9498,25 @@ function monitorActNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   return [...numbers].sort((a,b)=>a-b);
 }
 
-function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
+function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, options = null) {
   // BCT/RCC owns conversation labels, and Native/ACT maps the physical HWND.
   // Thumbnail labels use only the current-session/display contract. Legacy ACT
   // mappings may lag behind a Chrome tab detach/attach and must never merge two
   // different Chrome window_ids onto one physical thumbnail window.
+  const includeTabIds = options?.includeTabIds === true;
+  const tokenFor = (node) => {
+    const match = /^N(\d+)$/.exec(String(node?.nodeLabel || "").trim());
+    return match ? Number(match[1]) : "?";
+  };
+  const itemFor = (node, tabId = node?.tabId) => {
+    const token = tokenFor(node);
+    if (!includeTabIds) return token;
+    const numericTabId = Number(tabId);
+    return {
+      token,
+      tabId: Number.isInteger(numericTabId) && numericTabId >= 0 ? numericTabId : null,
+    };
+  };
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
       monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId) === String(hwnd))
@@ -9474,10 +9524,6 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
         (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
           (Number.isSafeInteger(right?.tabIndex) ? right.tabIndex : Number.MAX_SAFE_INTEGER) ||
         Number(left?.tabId || 0) - Number(right?.tabId || 0));
-    const nodeToken = (node) => {
-      const match = /^N(\d+)$/.exec(String(node?.nodeLabel || "").trim());
-      return match ? Number(match[1]) : "?";
-    };
     const byTabId = new Map(matched.map((node) => [Number(node?.tabId), node])
       .filter(([tabId]) => Number.isInteger(tabId) && tabId >= 0));
     const browserWindowIds = [...new Set(matched.map((node) => Number(node?.windowId))
@@ -9489,13 +9535,13 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
     if (browserWindowIds.length === 1) {
       const browserTabs = monitorBrowserVisualTabsForWindow(browserWindowIds[0]);
       if (browserTabs.length) {
-        return browserTabs.map((tab) => nodeToken(byTabId.get(Number(tab.tabId))));
+        return browserTabs.map((tab) => itemFor(byTabId.get(Number(tab.tabId)), tab.tabId));
       }
     }
 
-    return matched.map(nodeToken);
+    return matched.map((node) => itemFor(node));
   }
-  return monitorActNodeNumbersForHwnd(hwnd, state);
+  return monitorActNodeNumbersForHwnd(hwnd, state).map((token) => includeTabIds ? { token, tabId: null } : token);
 }
 
 function syncMonitorDesktopNumberBadge(img, hwnd) {
@@ -9817,7 +9863,8 @@ function syncMonitorThumbnailTabBadges(container, className) {
     highlightedHwnd: monitorBctNodeHighlightedHwnd,
     selectedNodeHwnd: selectedHwnd,
     selectedNodeToken: String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
-    numbersForHwnd: monitorBadgeNodeNumbersForHwnd,
+    selectedNodeTabId: Number(selectedNode?.tabId),
+    numbersForHwnd: (hwnd, state) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
   });
   container.dataset.monitorNodeOverlayStatus = String(diagnostics.status || "UNKNOWN");
   container.dataset.monitorNodeOverlayCandidates = String(Number(diagnostics.candidates) || 0);
@@ -11251,14 +11298,11 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     for (const host of monitorDesktopThumbs.querySelectorAll(".monitor-desktop-minimized-nodes")) host.remove();
     return;
   }
-  const slotsByDesktop = monitorMinimizedNodeSlotsByDesktop(state);
+  const tokensByDesktop = monitorMinimizedNodeTokensByDesktop(state);
   const selectedKey = String(globalThis.monitorBctSelectedNodeKey || "");
-  const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) =>
-    `${String(node?.instanceId || "")}:${String(node?.sessionId || "")}:${String(node?.windowId || "")}:${String(node?.tabId || "")}` === selectedKey
-  );
-  const selectedMatch = /^N(\d+)$/.exec(String(selectedNode?.nodeLabel || "").trim());
-  const selectedSlot = selectedMatch ? Number(selectedMatch[1]) : 0;
-
+  const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
+  const selectedToken = String(selectedNode?.nodeLabel || "").trim().replace(/^N/i, "") || "?";
+  const selectedTabId = Number(selectedNode?.tabId) || 0;
   for (const button of monitorDesktopThumbs.children) {
     const visual = button.querySelector(".monitor-desktop-thumb-visual");
     if (!visual) continue;
@@ -11267,19 +11311,18 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     visual.querySelector(".monitor-desktop-minimized-nodes")?.remove();
     let host = label.querySelector(".monitor-desktop-minimized-nodes");
     if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; label.append(host); }
-
-    const slots = slotsByDesktop.get(String(button.dataset.desktopId || "")) || [];
-    const selectedIndex = slots.indexOf(selectedSlot);
+    const tokens = tokensByDesktop.get(String(button.dataset.desktopId || "")) || [];
+    const selectedIndex = tokens.findIndex((item) => selectedTabId ? Number(item.tabId) === selectedTabId : selectedToken !== "?" && item.token === selectedToken);
     const width = Number(label.getBoundingClientRect?.().width || 0);
     const budget = Math.max(9, Math.floor((width || 118) / 6.2));
-    let first = 0, last = Math.max(0, slots.length - 1);
-    const lengthFor = (left, right) => 1 + (left > 0 ? 1 : 0) + (right < slots.length - 1 ? 1 : 0) + slots.slice(left, right + 1).join("/").length;
-    if (slots.length && lengthFor(first, last) > budget) {
+    let first = 0, last = Math.max(0, tokens.length - 1);
+    const lengthFor = (left, right) => (left > 0 ? 1 : 0) + (right < tokens.length - 1 ? 1 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join("/").length;
+    if (tokens.length && lengthFor(first, last) > budget) {
       const center = selectedIndex >= 0 ? selectedIndex : 0;
       first = center; last = center;
       let preferRight = true;
       while (true) {
-        const rightFits = last < slots.length - 1 && lengthFor(first, last + 1) <= budget;
+        const rightFits = last < tokens.length - 1 && lengthFor(first, last + 1) <= budget;
         const leftFits = first > 0 && lengthFor(first - 1, last) <= budget;
         if (!leftFits && !rightFits) break;
         if ((preferRight && rightFits) || !leftFits) last += 1;
@@ -11287,25 +11330,23 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
         preferRight = !preferRight;
       }
     }
-
-    const fullText = slots.length ? `N${slots.join("/")}` : "";
+    const fullText = tokens.length ? tokens.map((item) => item.token).join("/") : "";
     const parts = [];
-    if (slots.length) {
-      const prefix = document.createElement("span"); prefix.className = "monitor-desktop-minimized-prefix"; prefix.textContent = "N"; parts.push(prefix);
+    if (tokens.length) {
       if (first > 0) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
       for (let index = first; index <= last; index += 1) {
         if (index > first) { const slash = document.createElement("span"); slash.className = "monitor-desktop-minimized-separator"; slash.textContent = "/"; parts.push(slash); }
         const badge = document.createElement("span");
-        const selected = slots[index] === selectedSlot;
+        const selected = index === selectedIndex;
         badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
-        badge.textContent = String(slots[index]); badge.title = `최소화 노드 N${slots[index]}`; parts.push(badge);
+        badge.textContent = tokens[index].token; badge.title = `최소화 노드 ${tokens[index].token}`; parts.push(badge);
       }
-      if (last < slots.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
+      if (last < tokens.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
     }
     host.className = `monitor-desktop-minimized-nodes${selectedIndex >= 0 ? " monitor-bct-minimized-selection" : ""}`;
     host.title = fullText ? `최소화 노드 ${fullText}` : "";
     host.replaceChildren(...parts);
-    host.hidden = slots.length === 0;
+    host.hidden = tokens.length === 0;
   }
 }
 function syncDesktopSwitcher() {

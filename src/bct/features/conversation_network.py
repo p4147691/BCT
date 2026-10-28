@@ -5,6 +5,7 @@ from typing import Any
 
 from bct.conversation_network import (
     ConversationNetworkError,
+    assign_conversation_membership,
     patch_conversation_role_tags,
     resolve_project_id,
 )
@@ -14,10 +15,13 @@ from bct.core.store import Store
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _NODE_LABEL = re.compile(r"N[1-9][0-9]*\Z", re.I)
+_UUID = re.compile(
+    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\Z", re.I
+)
 
 
 class ConversationNetworkUpdateFeature:
-    """Narrow AI mutation path for existing advisory conversation roles."""
+    """Narrow AI mutation path for advisory scope membership and roles."""
 
     capability = "conversation_network_update"
 
@@ -38,20 +42,32 @@ class ConversationNetworkUpdateFeature:
         return result
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        operation = str(arguments.get("operation") or "role-patch").strip().casefold()
+        if operation == "role-patch":
+            return self._prepare_role_patch(arguments)
+        if operation == "membership-assign":
+            return self._prepare_membership_assign(arguments)
+        raise PreconditionError("CONVERSATION_NETWORK_UPDATE_OPERATION_INVALID")
+
+    def _project_id(self, project_reference: str) -> str:
+        if not project_reference:
+            raise PreconditionError("CONVERSATION_NETWORK_PROJECT_REQUIRED")
+        try:
+            return resolve_project_id(self.store, project_reference=project_reference)
+        except ConversationNetworkError as exc:
+            raise PreconditionError(str(exc)) from exc
+
+    def _prepare_role_patch(self, arguments: dict[str, Any]) -> FeatureRequest:
         allowed = {
             "operation", "project", "node_label", "add", "remove",
             "expected_role_tags_sha256",
         }
         if set(arguments) - allowed:
             raise PreconditionError("CONVERSATION_NETWORK_UPDATE_FIELD_NOT_ALLOWED")
-        operation = str(arguments.get("operation") or "role-patch").strip().casefold()
-        if operation != "role-patch":
-            raise PreconditionError("CONVERSATION_NETWORK_UPDATE_OPERATION_INVALID")
         project_reference = str(arguments.get("project") or "").strip()
         node_label = str(arguments.get("node_label") or "").strip().upper()
         expected = str(arguments.get("expected_role_tags_sha256") or "").strip().lower()
-        if not project_reference:
-            raise PreconditionError("CONVERSATION_NETWORK_PROJECT_REQUIRED")
+        project_id = self._project_id(project_reference)
         if not _NODE_LABEL.fullmatch(node_label):
             raise PreconditionError("CONVERSATION_NETWORK_NODE_LABEL_INVALID")
         if not _SHA256.fullmatch(expected):
@@ -62,15 +78,11 @@ class ConversationNetworkUpdateFeature:
             raise PreconditionError("CONVERSATION_NETWORK_ROLE_PATCH_EMPTY")
         if set(additions) & set(removals):
             raise PreconditionError("CONVERSATION_NETWORK_ROLE_PATCH_OVERLAP")
-        try:
-            project_id = resolve_project_id(self.store, project_reference=project_reference)
-        except ConversationNetworkError as exc:
-            raise PreconditionError(str(exc)) from exc
         return FeatureRequest(
             self.capability,
             f"conversation-network:{project_id}:{node_label}",
             {
-                "operation": operation,
+                "operation": "role-patch",
                 "project_id": project_id,
                 "node_label": node_label,
                 "add": additions,
@@ -80,7 +92,62 @@ class ConversationNetworkUpdateFeature:
             (f"conversation-network-role:{project_id}:{node_label}",),
         )
 
+    def _prepare_membership_assign(self, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {
+            "operation", "project", "conversation_key", "role_tags", "expected_scope_id",
+        }
+        if set(arguments) - allowed:
+            raise PreconditionError("CONVERSATION_NETWORK_UPDATE_FIELD_NOT_ALLOWED")
+        project_reference = str(arguments.get("project") or "").strip()
+        conversation_key = str(arguments.get("conversation_key") or "").strip().lower()
+        expected_scope_id = str(arguments.get("expected_scope_id") or "").strip()
+        project_id = self._project_id(project_reference)
+        if not _UUID.fullmatch(conversation_key):
+            raise PreconditionError("CONVERSATION_NETWORK_CONVERSATION_KEY_INVALID")
+        if expected_scope_id and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", expected_scope_id):
+            raise PreconditionError("CONVERSATION_NETWORK_EXPECTED_SCOPE_INVALID")
+        role_tags = self._tags(arguments.get("role_tags"), "CONVERSATION_NETWORK_ROLE_TAGS_INVALID")
+        if not role_tags:
+            raise PreconditionError("CONVERSATION_NETWORK_ROLE_TAGS_EMPTY")
+        return FeatureRequest(
+            self.capability,
+            f"conversation-network:{project_id}:{conversation_key}",
+            {
+                "operation": "membership-assign",
+                "project_id": project_id,
+                "conversation_key": conversation_key,
+                "role_tags": role_tags,
+                "expected_scope_id": expected_scope_id,
+            },
+            (f"conversation-network-membership:{conversation_key}",),
+        )
+
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        operation = request.arguments["operation"]
+        if operation == "membership-assign":
+            try:
+                result = assign_conversation_membership(
+                    self.store,
+                    project_id=request.arguments["project_id"],
+                    conversation_key=request.arguments["conversation_key"],
+                    role_tags=request.arguments["role_tags"],
+                    expected_scope_id=request.arguments["expected_scope_id"],
+                )
+            except ConversationNetworkError as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(
+                Outcome.APPLIED,
+                {
+                    "operation": operation,
+                    "project_id": result["project_id"],
+                    "node_label": result["node_label"],
+                    "changed": result["changed"],
+                    "role_tags_sha256": result["role_tags_sha256"],
+                },
+                output=result,
+            )
+        if operation != "role-patch":
+            raise PreconditionError("CONVERSATION_NETWORK_UPDATE_OPERATION_INVALID")
         try:
             result = patch_conversation_role_tags(
                 self.store,
