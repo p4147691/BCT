@@ -13,6 +13,7 @@ import re
 import sqlite3
 import subprocess
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -32,6 +33,7 @@ def _git(cwd: Path, *args: str) -> tuple[int, str, str]:
     return completed.returncode, completed.stdout, completed.stderr
 
 
+@lru_cache(maxsize=32768)
 def _norm(path: str | Path) -> str:
     raw = str(path)
     if not raw:
@@ -48,24 +50,46 @@ def _norm(path: str | Path) -> str:
     return raw.replace("/", "\\").rstrip("\\").casefold()
 
 
+@lru_cache(maxsize=32768)
+def _directory_identity(path: str) -> tuple[int, int] | None:
+    """Return filesystem volume/file identity, never modify the path."""
+    try:
+        item = Path(path)
+        if not item.is_absolute():
+            return None
+        stat = item.stat()
+        return (stat.st_dev, stat.st_ino) if stat.st_ino else None
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+@lru_cache(maxsize=32768)
+def _ancestor_identities(path: str) -> frozenset[tuple[int, int]]:
+    """Resolve a child path's existing ancestors at most once per audit.
+
+    Real paths and junction aliases may have different textual spellings.
+    Recomputing os.path.samefile for every Work * every Worktree used to turn
+    a read-only audit into a multi-minute operation.
+    """
+    value = Path(path)
+    if not value.is_absolute():
+        return frozenset()
+    ids = set()
+    for parent in (value, *value.parents):
+        identity = _directory_identity(str(parent))
+        if identity is not None:
+            ids.add(identity)
+    return frozenset(ids)
+
+
 def _inside(value: str | Path, root: str | Path) -> bool:
     child, parent = _norm(value), _norm(root)
+    if not child or not parent:
+        return False
     if child == parent or child.startswith(parent + "\\"):
         return True
-    # A Git for Windows path may use a junction/short-name spelling that
-    # resolves differently from the Python tempfile spelling. Compare the
-    # existing physical directories without bypassing Git ownership checks.
-    try:
-        root_path = Path(root)
-        if not root_path.exists():
-            return False
-        value_path = Path(value)
-        for candidate in (value_path, *value_path.parents):
-            if candidate.exists() and os.path.samefile(candidate, root_path):
-                return True
-    except (OSError, ValueError):
-        pass
-    return False
+    identity = _directory_identity(parent)
+    return identity is not None and identity in _ancestor_identities(child)
 
 
 def _git_required(cwd: Path, *args: str) -> str:
