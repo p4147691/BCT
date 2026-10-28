@@ -322,6 +322,11 @@ def main():
             if checked.returncode:
                 errors.append({'kind':'monitor_provider_launch_feature_contract_regression',
                     'detail':(checked.stdout+checked.stderr)[-600:]})
+        diag_check = root/'tools'/'check_monitor_diagnostics_view_feature.js'
+        diag = subprocess.run([node,str(diag_check)],cwd=str(root.parent.parent),capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if diag_check.is_file() else None
+        facts['monitor_diagnostics_view_feature_test_rc'] = diag.returncode if diag else None
+        if diag is None or diag.returncode:
+            errors.append({'kind':'monitor_diagnostics_view_feature_contract_regression', 'detail':(diag.stdout+diag.stderr)[-600:] if diag else 'test missing'})
         queue_check = root/'tools'/'check_monitor_window_lifecycle_queue.js'
         checked = subprocess.run([node,str(queue_check)],cwd=str(root.parent.parent),capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if queue_check.is_file() else None
         facts['monitor_window_lifecycle_queue_test_rc'] = checked.returncode if checked else None

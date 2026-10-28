@@ -206,3 +206,8 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - The accepted event-flow fixture is updated to assert the new private queue owner, while retaining independent HWND geometry/WGC invariants.
 - Contract tests: `tools/check_monitor_window_lifecycle_queue.js`, `tools/check_monitor_thumbnail_window_event_path.js`, bundled structure gate.
 - Still open: full desktop stage/strip GUI controller, Native host provenance and actual Windows LIVE acceptance (supervisor).
+
+## 2026-10-29 Diagnostics view owner
+- monitor-diagnostics-view-feature.js owns refresh busy state and view projection via injected reader, refresh and renderer ports; it calls no Native/Chrome/BCT services directly.
+- API: MonitorDiagnosticsViewFeature.create({button,getActiveView,ports}).refresh(); independent contract test wired to structure gate.
+- Remaining diagnostics commands and LIVE acceptance are NOT complete.

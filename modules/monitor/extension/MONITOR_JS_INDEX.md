@@ -3,8 +3,8 @@
 Generated from the deployed runtime. Do not edit by hand.
 
 - source: `extension/monitor.js`
-- sha256: `c479f1c64ae4b8474c843c79f13f88f4461b586190ff1f8bacc1535440b85988`
-- line count: 14399
+- sha256: `08994dc37227fe7b8da5846f84732b219cda069cfa2b0726a816c09b722e74aa`
+- line count: 14391
 - declared functions: 527
 
 Search by function name first; line numbers are snapshot hints only.
@@ -357,7 +357,7 @@ Search by function name first; line numbers are snapshot hints only.
 - `monitorProfileIdForHwnd` — line 9969
 - `moveMonitorWindowSet` — line 9983
 
-## Lines 10001-14399
+## Lines 10001-14391
 
 - `snapshotAllChromeHwnds` — line 10015
 - `waitForNewChromeHwnd` — line 10023
@@ -540,7 +540,7 @@ Search by function name first; line numbers are snapshot hints only.
 - `refreshMonitorActDiagnostic` — line 14075
 - `showMonitorDiagText` — line 14105
 - `refreshMonitorCurrentDiagnosticView` — line 14106
-- `monitorStructureClearDragFeedback` — line 14184
-- `monitorStructureUpdateDragGhost` — line 14186
-- `monitorStructurePointerTargetAt` — line 14188
-- `monitorStructureSlotAtPoint` — line 14217
+- `monitorStructureClearDragFeedback` — line 14176
+- `monitorStructureUpdateDragGhost` — line 14178
+- `monitorStructurePointerTargetAt` — line 14180
+- `monitorStructureSlotAtPoint` — line 14209

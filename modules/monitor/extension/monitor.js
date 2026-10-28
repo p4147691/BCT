@@ -14103,32 +14103,24 @@ async function refreshMonitorActDiagnostic(){
 }
 
 function showMonitorDiagText(text){monitorDiagLog.textContent=String(text||'');monitorDiagLog.hidden=false;monitorDiagLogCopyState.textContent='';}
-async function refreshMonitorCurrentDiagnosticView(){
-  const button=document.getElementById('monitorDiagRefresh');
-  if(button?.disabled)return;
-  const active=monitorDiagnostics.querySelector('[data-monitor-diag-view].is-active');
-  const view=String(active?.dataset?.monitorDiagView||'overview');
-  const label=String(active?.textContent||view);
-  if(button){button.disabled=true;button.classList.add('is-refreshing');}
-  try{
-    if(view==='overview'){
-      await Promise.allSettled([refreshMonitorActDiagnostic(),refreshMonitorAutoProcess()]);
-      showMonitorDiagText(`종합 관제\n${monitorDiagAct.textContent} · ${monitorAutoProcessQuick.textContent}\n현재 관제 상태를 다시 확인했습니다.`);
-      return;
+async function refreshMonitorCurrentDiagnosticView() {
+  const button = document.getElementById("monitorDiagRefresh");
+  const viewFeature = globalThis.MonitorDiagnosticsViewFeature.create({
+    button,
+    getActiveView: () => {
+      const selected = monitorDiagnostics.querySelector("[data-monitor-diag-view].is-active");
+      return { view: selected?.dataset?.monitorDiagView, label: selected?.textContent };
+    },
+    ports: {
+      refreshOverview: () => Promise.allSettled([refreshMonitorActDiagnostic(), refreshMonitorAutoProcess()]),
+      refreshAct: () => refreshMonitorActDiagnostic(),
+      actStatus: () => monitorDiagAct.textContent,
+      autoStatus: () => monitorAutoProcessQuick.textContent,
+      renderMonitor: () => monitorRenderDiagnosticText(),
+      show: text => showMonitorDiagText(text)
     }
-    if(view==='act'){
-      await refreshMonitorActDiagnostic();
-      showMonitorDiagText(`ACT 관제\n${monitorDiagAct.textContent}`);
-      return;
-    }
-    if(view==='monitor'){
-      showMonitorDiagText(monitorRenderDiagnosticText());
-      return;
-    }
-    showMonitorDiagText(`${label} 관제 · 세부 수집기 연결 전`);
-  }finally{
-    if(button){button.disabled=false;button.classList.remove('is-refreshing');}
-  }
+  });
+  return viewFeature.refresh();
 }
 
 document.getElementById('monitorDiagRefresh').addEventListener('click',()=>refreshMonitorCurrentDiagnosticView().catch(e=>showMonitorDiagText(`관제 새로고침 실패: ${monitorDiagTextError(e)}`)));
