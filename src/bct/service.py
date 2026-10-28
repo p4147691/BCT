@@ -51,6 +51,7 @@ from .features.desktop_session import (
     DesktopWindowManageFeature,
     DesktopWindowListFeature, desktop_session_client,
 )
+from .features.desktop_explorer_folder import DesktopExplorerFolderOpenFeature
 from .integrations.github import GhCliClient, GitHubClient
 from .integrations.rcc import NamedPipeRelayClient
 from .integrations.cdp_connection import CDPConnectionManager
@@ -235,6 +236,7 @@ class BCT:
             DesktopWindowActivateReconcileFeature(desktop_session),
             DesktopWindowManageFeature(desktop_session),
             DesktopProgramLaunchFeature(desktop_session),
+            DesktopExplorerFolderOpenFeature(desktop_session),
             VtlValidateFeature(policy_path, data_root=data_root),
         ):
             self.operations.register(feature)

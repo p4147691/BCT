@@ -49,3 +49,11 @@ No source-code patch is claimed; this is a bounded review and regression baselin
 - A launch UNKNOWN is never transformed to success solely via subsequent Shell enumeration. AuthorizationError also propagates.
 - Isolated focused 16 PASS and existing desktop 54 PASS.
 - Still HOLD: open_explorer_folder has no registered BCT Work/Operation feature, and no physical E2E, so no supervisor merge-ready handoff.
+
+## Registered capability checkpoint
+- Added DesktopExplorerFolderOpenFeature with capability desktop_explorer_folder_open to the Service feature registry, MCP tool catalogue, and checked-in normal_actions policy.
+- The BCT OperationCoordinator authorizes the feature by work action, principal policy and approval reference before feature preparation and execution. Existing durable outer-operation receipts are retained.
+- Agent effects use deterministic sub-request IDs, no retry after launch UNKNOWN; Shell path verification, exact HWND/process birth/session/virtual desktop fingerprint checks, optional minimized restore/foreground, and finally Lease release.
+- Isolated mock Agent tests: 9 PASS. Prior helper tests: 16 PASS. Existing desktop tests: 54 PASS. Combined: 79 PASS.
+- No production agent deployment or actual UI E2E was performed: main/LIVE prohibition. The isolated mock tests are not proof of physical virtual desktop/foreground behavior.
+- Do not mark as physical E2E PASS or merge before supervisor performs the exact LIVE acceptance after controlled deployment.
