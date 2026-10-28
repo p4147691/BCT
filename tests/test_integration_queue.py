@@ -172,7 +172,7 @@ class IntegrationQueueTests(unittest.TestCase):
                               frozenset(self.bct.operations.capabilities))
             work = self.bct.create_work(
                 work_id="bct-mcp-queue", request_summary="queue",
-                roots=[str(self.repo)], actions=["read", "write"], principal=owner,
+                roots=[str(self.repo)], actions=["read"], principal=owner,
             )
             result = await full.call_tool("bct_integration_queue", {
                 "work_id": work.work_id, "operation": "submit",

@@ -268,8 +268,10 @@ def build_mcp(
         if work.owner_principal_id != principal.principal_id or work.state != "ACTIVE":
             raise PermissionError("INTEGRATION_QUEUE_WORK_OWNER_INVALID")
         if operation == "submit":
-            if "write" not in work.actions:
-                raise PermissionError("INTEGRATION_QUEUE_SUBMIT_WRITE_SCOPE_REQUIRED")
+            # Queue metadata is not source mutation: do NOT require file
+            # write capability merely to submit a readiness request.
+            if "read" not in work.actions:
+                raise PermissionError("INTEGRATION_QUEUE_SUBMIT_READ_SCOPE_REQUIRED")
             if request is None or repository_root:
                 raise ValueError("INTEGRATION_QUEUE_SUBMIT_ARGUMENTS_INVALID")
             return await asyncio.to_thread(

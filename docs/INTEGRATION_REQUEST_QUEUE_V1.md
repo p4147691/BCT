@@ -22,7 +22,7 @@ Worker는 변경 파일, feature HEAD, 테스트 근거와 남은 문제를 원�
 ## 등록 API (Core 배포 이후)
 
 BCT MCP 도구: bct_integration_queue
-- submit: work_id=<현재 매니저 Work>, operation=submit, request=<아래 JSON>. Work에는 write가 필요하다.
+- submit: work_id=<현재 매니저 Work>, operation=submit, request=<아래 JSON>. Work에는 read가 필요하다.
 - list: work_id=<조회 Work>, operation=list, repository_root=D:\BCT\source (선택), limit=50. Work에는 read가 필요하다.
 - 모든 요청은 증가하는 sequence 순서로 조회된다. list 조회는 "실행 담당자 선정"이나 "요청 소비"가 아니다.
 
