@@ -42,3 +42,6 @@ Totals: 7 intentional / 3 tool drift / 2 Native HOLD. No confirmed direct JS/CSS
 - Organization remains PARKED. No MemoryGuard work.
 - N70 narrow source candidate: Header provider-launch click UI extracted to `extension/monitor-provider-launch-feature.js` with one WeakMap-owned listener and `launch/fail` injected ports; old bundle wrapper delegates, no second Native path; independent test and structure gate PASS. This is only partial domain completion.
 - Next gates: native build provenance, other domain state/API extraction, full regression, exact PR CI, supervisor-only main/LIVE/Windows E2E.
+
+## Follow-up N70 development, 2026-10-29
+Added five independent state owners (node selection, conversation projection WeakMap, desktop management modes, desktop frame epochs, Recovery Undo session). Original Native provenance HOLDs remain unresolved. Current PR #349 HEAD and matching CI must be verified separately. This development does not constitute complete NodePanel/DesktopStage/DesktopStrip/Recovery feature extraction or physical LIVE acceptance.

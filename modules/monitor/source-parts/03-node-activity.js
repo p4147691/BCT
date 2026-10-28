@@ -35,7 +35,7 @@ let monitorHighlightedHwnd = "";
 
 let monitorBctNodeHighlightedHwnd = "";
 
-let monitorBctSelectedNodeKey = "";
+const monitorNodePanelSelection = globalThis.MonitorNodePanelSelection.create();
 
 const monitorSelectedHwnds = new Set();
 

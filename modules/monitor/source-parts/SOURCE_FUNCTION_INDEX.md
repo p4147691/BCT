@@ -98,7 +98,7 @@ Generated extension/monitor.js is not an edit target.
 - settleMonitorWorkerPointerInteraction
 - stationForMonitorWorker
 
-## desktop-lifecycle (103 functions)
+## desktop-lifecycle (102 functions)
 
 - beginMonitorBctNodePointerDrag
 - beginMonitorDesktopPointerDrag
@@ -175,7 +175,6 @@ Generated extension/monitor.js is not an edit target.
 - renderLightweightDesktopCards
 - renderMonitorClosedConversationRecoveryPanel
 - renderVirtualDesktops
-- resetDesktopUndoSessionExpiry
 - restoreMonitorAllRecovery
 - restoreMonitorDesktopNodeSnapshots
 - restoreMonitorDetachedTask

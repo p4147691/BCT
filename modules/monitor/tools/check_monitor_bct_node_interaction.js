@@ -115,7 +115,7 @@ function loadModule() {
   assert.match(monitor, /row\.setPointerCapture\(event\.pointerId\)/);
   assert.doesNotMatch(monitor, /monitor-bct-node-list-end/);
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
-  assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\)/);
+  assert.match(monitor, /monitorNodePanelSelection[.]set\(monitorBctNodeSelectionKey\(node\)\)/);
   assert.match(css, /monitor-bct-node-target-highlighted/);
   assert.doesNotMatch(css, /\.monitor-bct-node-row\.is-selected \.monitor-bct-node-number/,
     "the node-list number remains neutral; selection belongs only in the thumbnail");
@@ -273,12 +273,16 @@ function loadModule() {
   const first = row(11), second = row(12), third = row(13);
   const selectionContext = {
     monitorBctNodeHighlightedHwnd: "4242",
-    monitorBctSelectedNodeKey: "rcc-1:session-1:100:12",
+    monitorNodePanelSelection: null,
+    monitorBctNodeSelectionKey: node => selectionContext.monitorNodePanelSelection.key(node),
     monitorWorkers: { querySelectorAll: () => [first, second, third] },
     document: { querySelectorAll: () => [] },
     String, Boolean,
   };
   vm.createContext(selectionContext);
+  vm.runInContext(fs.readFileSync(path.join(root, "extension", "monitor-node-panel-selection.js"), "utf8"), selectionContext);
+  selectionContext.monitorNodePanelSelection=selectionContext.MonitorNodePanelSelection.create();
+  selectionContext.monitorNodePanelSelection.set("rcc-1:session-1:100:12");
   vm.runInContext(monitor.slice(selectionStart, selectionEnd), selectionContext);
   selectionContext.syncMonitorBctNodeTargetHighlight();
   assert.equal(first.classes.has("is-selected"), false);

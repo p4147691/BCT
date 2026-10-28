@@ -66,6 +66,8 @@ const ctx={
 };
 vm.createContext(ctx);
 vm.runInContext(contractSrc,ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname,"../extension/monitor-node-panel-selection.js"),"utf8"),ctx);
+ctx.monitorNodePanelSelection=ctx.MonitorNodePanelSelection.create();
 ctx.monitorMinimizedNodeBadgeContract=ctx.MonitorMinimizedNodeBadgeContract;
 vm.runInContext(aggregate+"\n"+render,ctx);
 const arr=ctx.monitorMinimizedNodeSlotsByDesktop({});
@@ -83,14 +85,14 @@ assert.equal(label2.badges.children.map(x=>x.textContent).join(""),"8");
 labels["100"]=[{token:"?",tabId:701},{token:"?",tabId:702},{token:"61",tabId:703}];
 locationMap.set("200",{desktopId:"deskA",iconic:false});
 ctx.monitorBctWindowNodesCache=[{key:"selected-unknown",nodeLabel:"N?",tabId:702}];
-ctx.monitorBctSelectedNodeKey="selected-unknown";
+ctx.monitorNodePanelSelection.set("selected-unknown");
 ctx.monitorBctNodeSelectionKey=(node)=>node.key;
 ctx.syncMonitorMinimizedNodeBadges({});
 const selectedUnknown=label.badges.children.filter(x=>String(x.className).includes("monitor-desktop-minimized-node"));
 assert.deepEqual(selectedUnknown.map(x=>x.textContent),["?","?","61"]);
 assert.deepEqual(selectedUnknown.map(x=>String(x.className).includes("monitor-desktop-minimized-node-selected")),[false,true,false],
   "exact Chrome tabId selects only its own unknown minimized node");
-ctx.monitorBctSelectedNodeKey="";
+ctx.monitorNodePanelSelection.clear();
 ctx.monitorBctWindowNodesCache=[];
 
 locationMap.set("100",{desktopId:"deskA",iconic:false});

@@ -49,7 +49,7 @@ let monitorHostResolveRetryTimer = 0;
 
 /*@@MONITOR_FUNCTION:expireDesktopUndoSession@@*/
 
-/*@@MONITOR_FUNCTION:resetDesktopUndoSessionExpiry@@*/
+
 
 /*@@MONITOR_FUNCTION:pushDesktopUndoSnapshot@@*/
 

@@ -53,8 +53,7 @@ const monitorFrameCache = new Map();
 
 const monitorFrameInflight = new Map();
 
-let monitorFrameGeneration = 0;
-const monitorFrameDesktopGenerations = new Map();
+const monitorDesktopFrameGenerationController = globalThis.MonitorDesktopFrameGeneration.create();
 
 /*@@MONITOR_FUNCTION:monitorDesktopFrameGeneration@@*/
 

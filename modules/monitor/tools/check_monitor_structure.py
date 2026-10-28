@@ -332,6 +332,18 @@ def main():
         facts['monitor_window_lifecycle_queue_test_rc'] = checked.returncode if checked else None
         if checked is None or checked.returncode:
             errors.append({'kind':'monitor_window_lifecycle_queue_contract_regression', 'detail':(checked.stdout+checked.stderr)[-600:] if checked else 'test missing'})
+        desktop_mode_test = root/'tools'/'check_monitor_desktop_mode_controller.js'
+        conversation_projection_test = root/'tools'/'check_monitor_conversation_projection_controller.js'
+        node_selection_test = root/'tools'/'check_monitor_node_panel_selection.js'
+        recovery_undo_test = root/'tools'/'check_monitor_recovery_undo_session.js'
+        frame_generation_test = root/'tools'/'check_monitor_desktop_frame_generation.js'
+        for controller_test in (desktop_mode_test, conversation_projection_test, node_selection_test, recovery_undo_test, frame_generation_test):
+            checked = subprocess.run([node, str(controller_test)], cwd=str(root.parent.parent),
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30) if controller_test.is_file() else None
+            facts['controller_test_'+controller_test.stem] = checked.returncode if checked else None
+            if checked is None or checked.returncode:
+                errors.append({'kind':'monitor_controller_test_failed', 'name':controller_test.name,
+                    'detail':(checked.stdout+checked.stderr)[-600:] if checked else 'test missing'})
         thumbnail_checks = [
             root/'tools'/'check_monitor_thumbnail_architecture.js',
             root/'tools'/'check_monitor_thumbnail_background_only_mode.js',

@@ -30,7 +30,7 @@ function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState)
     ? nodes.find((node) => String(node?.conversationKey || "").trim() === conversationKey)
     : null);
   if (selectedNode) {
-    monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(selectedNode);
+    monitorNodePanelSelection.set(monitorBctNodeSelectionKey(selectedNode));
     // Chrome chose this tab; Monitor only mirrors that selection. Do not turn
     // it into a Monitor-window/desktop highlight or activate anything.
     monitorBctNodeHighlightedHwnd = "";
@@ -409,16 +409,7 @@ function monitorBctNodeRoleSummary(node) { return globalThis.MonitorDomainAPIs["
 //@@FN_END:monitorBctNodeRoleSummary
 
 //@@FN_START:monitorBctNodeSelectionKey
-function monitorBctNodeSelectionKey(value) {
-  const instanceId = String(value?.instanceId || "").trim();
-  const sessionId = String(value?.sessionId || "").trim();
-  const windowId = String(value?.windowId || "").trim();
-  const tabId = String(value?.tabId || "").trim();
-  if (!windowId || !tabId) return "";
-  return instanceId && sessionId
-    ? `${instanceId}:${sessionId}:${windowId}:${tabId}`
-    : `tab:${windowId}:${tabId}`;
-}
+function monitorBctNodeSelectionKey(value) { return monitorNodePanelSelection.key(value); }
 //@@FN_END:monitorBctNodeSelectionKey
 
 //@@FN_START:monitorBrowserDisplaySlots
@@ -504,7 +495,7 @@ function monitorExactOpenEndpoint(state, conversationKey) { return globalThis.Mo
 function monitorExactSelectedChatNode() {
   const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
   const selected = nodes.find((node) =>
-    monitorBctSelectedNodeKey && monitorBctNodeSelectionKey(node) === monitorBctSelectedNodeKey
+    monitorNodePanelSelection.get() && monitorBctNodeSelectionKey(node) === monitorNodePanelSelection.get()
   );
   if (selected) return selected;
   const active = nodes.filter((node) => node.active === true && node.conversationKey && !node.displayStale);
@@ -1527,7 +1518,7 @@ function renderMonitorBctWindowNodes(nodes) {
         return;
       }
       void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
-        monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
+        monitorNodePanelSelection.set(monitorBctNodeSelectionKey(node));
         getMonitorBctNodeInteractionService().select(hwnd);
         setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
       }).catch((error) => {
@@ -1539,7 +1530,7 @@ function renderMonitorBctWindowNodes(nodes) {
       event.stopPropagation();
       row.classList.add("monitor-bct-node-switch-pending");
       void resolveMonitorBctNodeHwnd(node).then((hwnd) => (
-        monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node),
+        monitorNodePanelSelection.set(monitorBctNodeSelectionKey(node)),
         getMonitorBctNodeInteractionService().activate(hwnd, {
           tabId: node.tabId,
           windowId: node.windowId,
@@ -1662,8 +1653,8 @@ function syncMonitorBctNodeTargetHighlight() {
   }
   if (!monitorWorkers) return;
   for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
-    const selected = Boolean(monitorBctSelectedNodeKey)
-      && monitorBctNodeSelectionKey(row.dataset) === monitorBctSelectedNodeKey;
+    const selected = Boolean(monitorNodePanelSelection.get())
+      && monitorBctNodeSelectionKey(row.dataset) === monitorNodePanelSelection.get();
     row.classList.toggle("is-selected", selected);
     row.setAttribute("aria-selected", selected ? "true" : "false");
   }
@@ -1677,7 +1668,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     return;
   }
   const tokensByDesktop = monitorMinimizedNodeTokensByDesktop(state);
-  const selectedKey = String(globalThis.monitorBctSelectedNodeKey || "");
+  const selectedKey = String(monitorNodePanelSelection.get() || "");
   const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
   const selectedToken = String(selectedNode?.nodeLabel || "").trim().replace(/^N/i, "") || "?";
   const selectedTabId = Number(selectedNode?.tabId) || 0;

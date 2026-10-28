@@ -971,14 +971,7 @@ function monitorWorkersForState(state) {
 //@@FN_END:monitorWorkersForState
 
 //@@FN_START:monitorWorkersProjectionForState
-function monitorWorkersProjectionForState(state) {
-  if (!state || typeof state !== "object") return monitorWorkersForState(state);
-  const cached = monitorWorkersProjectionCache.get(state);
-  if (cached) return cached;
-  const workers = monitorWorkersForState(state);
-  monitorWorkersProjectionCache.set(state, workers);
-  return workers;
-}
+function monitorWorkersProjectionForState(state) { return monitorConversationProjectionController.project(state); }
 //@@FN_END:monitorWorkersProjectionForState
 
 //@@FN_START:openMonitorBctRenameEditor

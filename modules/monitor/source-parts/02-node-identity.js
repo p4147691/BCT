@@ -51,7 +51,7 @@
 
 // ACT state payloads are immutable snapshots in this UI. Rendering used to rebuild
 // the same projection for every storage/identity callback, multiplying callback bursts.
-const monitorWorkersProjectionCache = new WeakMap();
+const monitorConversationProjectionController = globalThis.MonitorConversationProjectionController.create({build: state => monitorWorkersForState(state)});
 
 /*@@MONITOR_FUNCTION:monitorWorkersProjectionForState@@*/
 

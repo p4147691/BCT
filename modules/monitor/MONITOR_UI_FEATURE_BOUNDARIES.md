@@ -112,3 +112,6 @@ The existing edit domains intentionally do not dictate the final layout:
 8. Organization is not in the active migration queue. If it is ever reactivated, decide then whether to migrate or remove it.
 
 This order shrinks the compatibility bundle after every accepted feature while keeping one working Monitor throughout the migration.
+
+## N70 state-owner update (2026-10-29)
+NodePanel RCC UI selection/projection, desktop strip management mode, desktop stage capture generation and Recovery desktop Undo now use independent state owners with focused tests. These are bounded state slices, **not** complete DOM/controller extractions. Node row rendering, desktop stage/strip interactions, recovery trash, remaining diagnostics and Native mutations still require full boundary work and physical LIVE acceptance. Organization is PARKED and Native provenance remains HOLD.

@@ -497,15 +497,11 @@ const monitorDesktopUndoButton = document.getElementById("monitorDesktopUndoButt
 
 const monitorDesktopUndoCountdown = document.getElementById("monitorDesktopUndoCountdown");
 
-const monitorUndoStack = [];
-
 let monitorUndoTimer = 0;
 
-let monitorUndoSessionExpiresAt = 0;
-
 const MONITOR_UNDO_MAX = 8;
-
 const MONITOR_UNDO_TTL_MS = 10000;
+const monitorRecoveryUndoSession = globalThis.MonitorRecoveryUndoSession.create({maxEntries: MONITOR_UNDO_MAX, ttlMs: MONITOR_UNDO_TTL_MS});
 
 const MONITOR_TRASHED_NODES_KEY = "desktopWindowMonitorTrashedNodesV1";
 
@@ -546,13 +542,11 @@ let monitorDesktopState = { count: 1, currentIndex: 0, selectedIndex: null, curr
 // Per-desktop presentation policy is local Monitor state. It never changes ACT
 // organization, role or task ownership, and uses the immutable desktop id.
 const MONITOR_DESKTOP_MANAGEMENT_MODE_KEY = "desktopWindowMonitorDesktopManagementModesV1";
-const MONITOR_DESKTOP_MANAGEMENT_MODES = new Set(["MANAGED", "OBSERVE_ONLY", "PROTECTED"]);
-let monitorDesktopManagementModes = {};
+const monitorDesktopModeController = globalThis.MonitorDesktopModeController.create({
+  persist: snapshot => chrome.storage.local.set({ [MONITOR_DESKTOP_MANAGEMENT_MODE_KEY]: snapshot }).catch(() => {})
+});
 
-function monitorDesktopManagementMode(desktopId) {
-  const value = String(monitorDesktopManagementModes[String(desktopId || "")] || "OBSERVE_ONLY").toUpperCase();
-  return MONITOR_DESKTOP_MANAGEMENT_MODES.has(value) ? value : "OBSERVE_ONLY";
-}
+function monitorDesktopManagementMode(desktopId) { return monitorDesktopModeController.get(desktopId); }
 
 function monitorDesktopManagementModeText(mode) {
   if (mode === "MANAGED") return "관리";
@@ -560,20 +554,13 @@ function monitorDesktopManagementModeText(mode) {
   return "보기";
 }
 
-function monitorDesktopManagementNextMode(mode) {
-  if (mode === "OBSERVE_ONLY") return "MANAGED";
-  if (mode === "MANAGED") return "PROTECTED";
-  return "OBSERVE_ONLY";
-}
+function monitorDesktopManagementNextMode(mode) { return monitorDesktopModeController.next(mode); }
 
 function monitorSetDesktopManagementMode(desktopId, nextMode) {
   const id = String(desktopId || "").trim();
   const mode = String(nextMode || "").toUpperCase();
-  if (!id || !MONITOR_DESKTOP_MANAGEMENT_MODES.has(mode)) return;
-  if (monitorDesktopManagementMode(id) === mode) return;
-  monitorDesktopManagementModes = { ...monitorDesktopManagementModes, [id]: mode };
-  chrome.storage.local.set({ [MONITOR_DESKTOP_MANAGEMENT_MODE_KEY]: monitorDesktopManagementModes }).catch(() => {});
-  setMonitorStatus(`D${Math.max(1, monitorDesktopState.desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)} 모드`, true);
+  if (!monitorDesktopModeController.set(id, mode)) return;
+  setMonitorStatus(`D${Math.max(1, monitorDesktopState.desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)}`, true);
   syncDesktopSwitcher();
 }
 
@@ -605,15 +592,7 @@ function monitorAttachDesktopManagementControl(label, desktopId) {
 
 chrome.storage.local.get([MONITOR_DESKTOP_MANAGEMENT_MODE_KEY], (data) => {
   const raw = data?.[MONITOR_DESKTOP_MANAGEMENT_MODE_KEY];
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const normalized = {};
-    for (const [desktopId, mode] of Object.entries(raw)) {
-      const id = String(desktopId || "").trim();
-      const value = String(mode || "").toUpperCase();
-      if (id && MONITOR_DESKTOP_MANAGEMENT_MODES.has(value)) normalized[id] = value;
-    }
-    monitorDesktopManagementModes = normalized;
-  }
+  monitorDesktopModeController.hydrate(raw);
   if (monitorDesktopState.desktopIds.length) syncDesktopSwitcher();
 });
 
@@ -2493,16 +2472,9 @@ function monitorWorkersForState(state) {
 
 // ACT state payloads are immutable snapshots in this UI. Rendering used to rebuild
 // the same projection for every storage/identity callback, multiplying callback bursts.
-const monitorWorkersProjectionCache = new WeakMap();
+const monitorConversationProjectionController = globalThis.MonitorConversationProjectionController.create({build: state => monitorWorkersForState(state)});
 
-function monitorWorkersProjectionForState(state) {
-  if (!state || typeof state !== "object") return monitorWorkersForState(state);
-  const cached = monitorWorkersProjectionCache.get(state);
-  if (cached) return cached;
-  const workers = monitorWorkersForState(state);
-  monitorWorkersProjectionCache.set(state, workers);
-  return workers;
-}
+function monitorWorkersProjectionForState(state) { return monitorConversationProjectionController.project(state); }
 
 function endpointRegistryIsAuthoritative(worker, state) {
 
@@ -2878,7 +2850,7 @@ function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState)
     ? nodes.find((node) => String(node?.conversationKey || "").trim() === conversationKey)
     : null);
   if (selectedNode) {
-    monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(selectedNode);
+    monitorNodePanelSelection.set(monitorBctNodeSelectionKey(selectedNode));
     // Chrome chose this tab; Monitor only mirrors that selection. Do not turn
     // it into a Monitor-window/desktop highlight or activate anything.
     monitorBctNodeHighlightedHwnd = "";
@@ -3875,7 +3847,7 @@ let monitorHighlightedHwnd = "";
 
 let monitorBctNodeHighlightedHwnd = "";
 
-let monitorBctSelectedNodeKey = "";
+const monitorNodePanelSelection = globalThis.MonitorNodePanelSelection.create();
 
 const monitorSelectedHwnds = new Set();
 
@@ -4080,23 +4052,14 @@ function syncMonitorBctNodeTargetHighlight() {
   }
   if (!monitorWorkers) return;
   for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
-    const selected = Boolean(monitorBctSelectedNodeKey)
-      && monitorBctNodeSelectionKey(row.dataset) === monitorBctSelectedNodeKey;
+    const selected = Boolean(monitorNodePanelSelection.get())
+      && monitorBctNodeSelectionKey(row.dataset) === monitorNodePanelSelection.get();
     row.classList.toggle("is-selected", selected);
     row.setAttribute("aria-selected", selected ? "true" : "false");
   }
 }
 
-function monitorBctNodeSelectionKey(value) {
-  const instanceId = String(value?.instanceId || "").trim();
-  const sessionId = String(value?.sessionId || "").trim();
-  const windowId = String(value?.windowId || "").trim();
-  const tabId = String(value?.tabId || "").trim();
-  if (!windowId || !tabId) return "";
-  return instanceId && sessionId
-    ? `${instanceId}:${sessionId}:${windowId}:${tabId}`
-    : `tab:${windowId}:${tabId}`;
-}
+function monitorBctNodeSelectionKey(value) { return monitorNodePanelSelection.key(value); }
 
 function applyMonitorBctNodeHighlight(hwnd) {
   monitorBctNodeHighlightedHwnd = String(hwnd || "");
@@ -4117,7 +4080,7 @@ function applyMonitorWindowHighlight(hwnd, options = {}) {
 
   if (!options.bctNode && !options.preserve && !options.remote) {
     monitorBctNodeHighlightedHwnd = "";
-    monitorBctSelectedNodeKey = "";
+    monitorNodePanelSelection.clear();
   }
 
   if (options.preserve) { if (nextHwnd) monitorHighlightedHwnd = nextHwnd; }
@@ -6776,7 +6739,7 @@ function renderMonitorBctWindowNodes(nodes) {
         return;
       }
       void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
-        monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
+        monitorNodePanelSelection.set(monitorBctNodeSelectionKey(node));
         getMonitorBctNodeInteractionService().select(hwnd);
         setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
       }).catch((error) => {
@@ -6788,7 +6751,7 @@ function renderMonitorBctWindowNodes(nodes) {
       event.stopPropagation();
       row.classList.add("monitor-bct-node-switch-pending");
       void resolveMonitorBctNodeHwnd(node).then((hwnd) => (
-        monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node),
+        monitorNodePanelSelection.set(monitorBctNodeSelectionKey(node)),
         getMonitorBctNodeInteractionService().activate(hwnd, {
           tabId: node.tabId,
           windowId: node.windowId,
@@ -7318,7 +7281,7 @@ if (monitorExtensionReload) monitorExtensionReload.addEventListener("click", () 
 function monitorExactSelectedChatNode() {
   const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
   const selected = nodes.find((node) =>
-    monitorBctSelectedNodeKey && monitorBctNodeSelectionKey(node) === monitorBctSelectedNodeKey
+    monitorNodePanelSelection.get() && monitorBctNodeSelectionKey(node) === monitorNodePanelSelection.get()
   );
   if (selected) return selected;
   const active = nodes.filter((node) => node.active === true && node.conversationKey && !node.displayStale);
@@ -8643,13 +8606,9 @@ const monitorFrameCache = new Map();
 
 const monitorFrameInflight = new Map();
 
-let monitorFrameGeneration = 0;
-const monitorFrameDesktopGenerations = new Map();
+const monitorDesktopFrameGenerationController = globalThis.MonitorDesktopFrameGeneration.create();
 
-function monitorDesktopFrameGeneration(desktopId) {
-  const key = String(desktopId || "");
-  return `${monitorFrameGeneration}.${Number(monitorFrameDesktopGenerations.get(key) || 0)}`;
-}
+function monitorDesktopFrameGeneration(desktopId) { return monitorDesktopFrameGenerationController.generation(desktopId); }
 
 const MONITOR_FRAME_CACHE_LIMIT = 4;
 const MONITOR_DESKTOP_FRAME_CACHE_MAX_AGE_MS = 15000;
@@ -9817,7 +9776,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
     return;
   }
   const selectedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : []).find((node) =>
-    monitorBctSelectedNodeKey && monitorBctNodeSelectionKey(node) === monitorBctSelectedNodeKey
+    monitorNodePanelSelection.get() && monitorBctNodeSelectionKey(node) === monitorNodePanelSelection.get()
   );
   const selectedHwnd = selectedNode
     ? monitorDisplayHwndForBrowserWindowId(selectedNode.windowId, monitorLastAiState, selectedNode.instanceId, selectedNode.sessionId)
@@ -11001,16 +10960,8 @@ function invalidateMonitorDesktopFrames(...desktopIds) {
 
   // Thumbnail batch generation only changes for a full invalidation.
 
-  const ids = new Set(desktopIds.filter(Boolean).map(String));
-  if (!ids.size) {
-    monitorFrameGeneration += 1;
-    monitorFrameDesktopGenerations.clear();
-    monitorThumbBatchGeneration += 1;
-  } else {
-    for (const desktopId of ids) {
-      monitorFrameDesktopGenerations.set(desktopId, Number(monitorFrameDesktopGenerations.get(desktopId) || 0) + 1);
-    }
-  }
+  const ids = monitorDesktopFrameGenerationController.invalidate(desktopIds);
+  if (!ids.size) monitorThumbBatchGeneration += 1;
 
   for (const key of [...monitorFrameCache.keys()]) {
 
@@ -11265,7 +11216,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     return;
   }
   const tokensByDesktop = monitorMinimizedNodeTokensByDesktop(state);
-  const selectedKey = String(globalThis.monitorBctSelectedNodeKey || "");
+  const selectedKey = String(monitorNodePanelSelection.get() || "");
   const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
   const selectedToken = String(selectedNode?.nodeLabel || "").trim().replace(/^N/i, "") || "?";
   const selectedTabId = Number(selectedNode?.tabId) || 0;
@@ -12156,49 +12107,15 @@ function selectVirtualDesktopPreview(index) {
 
 }
 
-function expireDesktopUndoSession(now = Date.now()) {
+function expireDesktopUndoSession(now = Date.now()) { return monitorRecoveryUndoSession.expire(now); }
 
-  if (!monitorUndoStack.length || !monitorUndoSessionExpiresAt || now < monitorUndoSessionExpiresAt) return false;
 
-  monitorUndoStack.length = 0;
 
-  monitorUndoSessionExpiresAt = 0;
+function pushDesktopUndoSnapshot(snapshot, now = Date.now()) { monitorRecoveryUndoSession.push(snapshot, now); }
 
-  return true;
+function peekDesktopUndoSnapshot(now = Date.now()) { return monitorRecoveryUndoSession.peek(now); }
 
-}
-
-function resetDesktopUndoSessionExpiry(now = Date.now()) {
-
-  monitorUndoSessionExpiresAt = monitorUndoStack.length ? now + MONITOR_UNDO_TTL_MS : 0;
-
-}
-
-function pushDesktopUndoSnapshot(snapshot, now = Date.now()) {
-
-  monitorUndoStack.push({ ...snapshot });
-
-  while (monitorUndoStack.length > MONITOR_UNDO_MAX) monitorUndoStack.shift();
-
-  resetDesktopUndoSessionExpiry(now);
-
-}
-
-function peekDesktopUndoSnapshot(now = Date.now()) {
-
-  expireDesktopUndoSession(now);
-
-  return monitorUndoStack[monitorUndoStack.length - 1] || null;
-
-}
-
-function commitDesktopUndoRestore(now = Date.now()) {
-
-  if (monitorUndoStack.length) monitorUndoStack.pop();
-
-  resetDesktopUndoSessionExpiry(now);
-
-}
+function commitDesktopUndoRestore(now = Date.now()) { monitorRecoveryUndoSession.pop(now); }
 
 function updateDesktopUndoUi() {
 
@@ -12208,13 +12125,13 @@ function updateDesktopUndoUi() {
 
   clearTimeout(monitorUndoTimer);
 
-  const latest = monitorUndoStack[monitorUndoStack.length - 1] || null;
+  const latest = monitorRecoveryUndoSession.peek(now);
 
   monitorDesktopUndo.hidden = !latest;
 
   if (!latest) return;
 
-  const seconds = Math.max(0, Math.ceil((monitorUndoSessionExpiresAt - now) / 1000));
+  const seconds = Math.max(0, Math.ceil(monitorRecoveryUndoSession.remainingMs(now) / 1000));
 
   monitorDesktopUndoCountdown.textContent = `${seconds}s`;
 
@@ -12222,7 +12139,7 @@ function updateDesktopUndoUi() {
 
   monitorDesktopUndoButton.title = `Undo ${label} - ${seconds}s left`;
 
-  monitorUndoTimer = setTimeout(updateDesktopUndoUi, Math.min(250, Math.max(50, monitorUndoSessionExpiresAt - now)));
+  monitorUndoTimer = setTimeout(updateDesktopUndoUi, Math.min(250, Math.max(50, monitorRecoveryUndoSession.remainingMs(now))));
 
 }
 

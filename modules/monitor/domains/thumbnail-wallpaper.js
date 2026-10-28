@@ -1148,7 +1148,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
     return;
   }
   const selectedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : []).find((node) =>
-    monitorBctSelectedNodeKey && monitorBctNodeSelectionKey(node) === monitorBctSelectedNodeKey
+    monitorNodePanelSelection.get() && monitorBctNodeSelectionKey(node) === monitorNodePanelSelection.get()
   );
   const selectedHwnd = selectedNode
     ? monitorDisplayHwndForBrowserWindowId(selectedNode.windowId, monitorLastAiState, selectedNode.instanceId, selectedNode.sessionId)

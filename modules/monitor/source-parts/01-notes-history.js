@@ -26,15 +26,11 @@ const monitorDesktopUndoButton = document.getElementById("monitorDesktopUndoButt
 
 const monitorDesktopUndoCountdown = document.getElementById("monitorDesktopUndoCountdown");
 
-const monitorUndoStack = [];
-
 let monitorUndoTimer = 0;
 
-let monitorUndoSessionExpiresAt = 0;
-
 const MONITOR_UNDO_MAX = 8;
-
 const MONITOR_UNDO_TTL_MS = 10000;
+const monitorRecoveryUndoSession = globalThis.MonitorRecoveryUndoSession.create({maxEntries: MONITOR_UNDO_MAX, ttlMs: MONITOR_UNDO_TTL_MS});
 
 const MONITOR_TRASHED_NODES_KEY = "desktopWindowMonitorTrashedNodesV1";
 
@@ -75,8 +71,9 @@ let monitorDesktopState = { count: 1, currentIndex: 0, selectedIndex: null, curr
 // Per-desktop presentation policy is local Monitor state. It never changes ACT
 // organization, role or task ownership, and uses the immutable desktop id.
 const MONITOR_DESKTOP_MANAGEMENT_MODE_KEY = "desktopWindowMonitorDesktopManagementModesV1";
-const MONITOR_DESKTOP_MANAGEMENT_MODES = new Set(["MANAGED", "OBSERVE_ONLY", "PROTECTED"]);
-let monitorDesktopManagementModes = {};
+const monitorDesktopModeController = globalThis.MonitorDesktopModeController.create({
+  persist: snapshot => chrome.storage.local.set({ [MONITOR_DESKTOP_MANAGEMENT_MODE_KEY]: snapshot }).catch(() => {})
+});
 
 /*@@MONITOR_FUNCTION:monitorDesktopManagementMode@@*/
 
@@ -90,15 +87,7 @@ let monitorDesktopManagementModes = {};
 
 chrome.storage.local.get([MONITOR_DESKTOP_MANAGEMENT_MODE_KEY], (data) => {
   const raw = data?.[MONITOR_DESKTOP_MANAGEMENT_MODE_KEY];
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const normalized = {};
-    for (const [desktopId, mode] of Object.entries(raw)) {
-      const id = String(desktopId || "").trim();
-      const value = String(mode || "").toUpperCase();
-      if (id && MONITOR_DESKTOP_MANAGEMENT_MODES.has(value)) normalized[id] = value;
-    }
-    monitorDesktopManagementModes = normalized;
-  }
+  monitorDesktopModeController.hydrate(raw);
   if (monitorDesktopState.desktopIds.length) syncDesktopSwitcher();
 });
 

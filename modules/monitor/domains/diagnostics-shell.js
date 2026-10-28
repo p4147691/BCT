@@ -7,7 +7,7 @@ function applyMonitorWindowHighlight(hwnd, options = {}) {
 
   if (!options.bctNode && !options.preserve && !options.remote) {
     monitorBctNodeHighlightedHwnd = "";
-    monitorBctSelectedNodeKey = "";
+    monitorNodePanelSelection.clear();
   }
 
   if (options.preserve) { if (nextHwnd) monitorHighlightedHwnd = nextHwnd; }

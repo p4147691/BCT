@@ -313,13 +313,7 @@ function clearMonitorTrashDropTarget() { monitorNodeTrash?.classList.remove("mon
 //@@FN_END:clearMonitorTrashDropTarget
 
 //@@FN_START:commitDesktopUndoRestore
-function commitDesktopUndoRestore(now = Date.now()) {
-
-  if (monitorUndoStack.length) monitorUndoStack.pop();
-
-  resetDesktopUndoSessionExpiry(now);
-
-}
+function commitDesktopUndoRestore(now = Date.now()) { monitorRecoveryUndoSession.pop(now); }
 //@@FN_END:commitDesktopUndoRestore
 
 //@@FN_START:commitMonitorBctNodeDrop
@@ -596,17 +590,7 @@ function endMonitorBctNodePointerDrag(event) {
 //@@FN_END:endMonitorBctNodePointerDrag
 
 //@@FN_START:expireDesktopUndoSession
-function expireDesktopUndoSession(now = Date.now()) {
-
-  if (!monitorUndoStack.length || !monitorUndoSessionExpiresAt || now < monitorUndoSessionExpiresAt) return false;
-
-  monitorUndoStack.length = 0;
-
-  monitorUndoSessionExpiresAt = 0;
-
-  return true;
-
-}
+function expireDesktopUndoSession(now = Date.now()) { return monitorRecoveryUndoSession.expire(now); }
 //@@FN_END:expireDesktopUndoSession
 
 //@@FN_START:finishMonitorBctNodeDrag
@@ -910,16 +894,8 @@ function invalidateMonitorDesktopFrames(...desktopIds) {
 
   // Thumbnail batch generation only changes for a full invalidation.
 
-  const ids = new Set(desktopIds.filter(Boolean).map(String));
-  if (!ids.size) {
-    monitorFrameGeneration += 1;
-    monitorFrameDesktopGenerations.clear();
-    monitorThumbBatchGeneration += 1;
-  } else {
-    for (const desktopId of ids) {
-      monitorFrameDesktopGenerations.set(desktopId, Number(monitorFrameDesktopGenerations.get(desktopId) || 0) + 1);
-    }
-  }
+  const ids = monitorDesktopFrameGenerationController.invalidate(desktopIds);
+  if (!ids.size) monitorThumbBatchGeneration += 1;
 
   for (const key of [...monitorFrameCache.keys()]) {
 
@@ -1162,17 +1138,11 @@ function monitorDesktopDropTargetAt(clientX, clientY) {
 //@@FN_END:monitorDesktopDropTargetAt
 
 //@@FN_START:monitorDesktopFrameGeneration
-function monitorDesktopFrameGeneration(desktopId) {
-  const key = String(desktopId || "");
-  return `${monitorFrameGeneration}.${Number(monitorFrameDesktopGenerations.get(key) || 0)}`;
-}
+function monitorDesktopFrameGeneration(desktopId) { return monitorDesktopFrameGenerationController.generation(desktopId); }
 //@@FN_END:monitorDesktopFrameGeneration
 
 //@@FN_START:monitorDesktopManagementMode
-function monitorDesktopManagementMode(desktopId) {
-  const value = String(monitorDesktopManagementModes[String(desktopId || "")] || "OBSERVE_ONLY").toUpperCase();
-  return MONITOR_DESKTOP_MANAGEMENT_MODES.has(value) ? value : "OBSERVE_ONLY";
-}
+function monitorDesktopManagementMode(desktopId) { return monitorDesktopModeController.get(desktopId); }
 //@@FN_END:monitorDesktopManagementMode
 
 //@@FN_START:monitorDesktopManagementModeText
@@ -1184,11 +1154,7 @@ function monitorDesktopManagementModeText(mode) {
 //@@FN_END:monitorDesktopManagementModeText
 
 //@@FN_START:monitorDesktopManagementNextMode
-function monitorDesktopManagementNextMode(mode) {
-  if (mode === "OBSERVE_ONLY") return "MANAGED";
-  if (mode === "MANAGED") return "PROTECTED";
-  return "OBSERVE_ONLY";
-}
+function monitorDesktopManagementNextMode(mode) { return monitorDesktopModeController.next(mode); }
 //@@FN_END:monitorDesktopManagementNextMode
 
 //@@FN_START:monitorDesktopNodeSnapshots
@@ -1253,11 +1219,8 @@ function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
 function monitorSetDesktopManagementMode(desktopId, nextMode) {
   const id = String(desktopId || "").trim();
   const mode = String(nextMode || "").toUpperCase();
-  if (!id || !MONITOR_DESKTOP_MANAGEMENT_MODES.has(mode)) return;
-  if (monitorDesktopManagementMode(id) === mode) return;
-  monitorDesktopManagementModes = { ...monitorDesktopManagementModes, [id]: mode };
-  chrome.storage.local.set({ [MONITOR_DESKTOP_MANAGEMENT_MODE_KEY]: monitorDesktopManagementModes }).catch(() => {});
-  setMonitorStatus(`D${Math.max(1, monitorDesktopState.desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)} 모드`, true);
+  if (!monitorDesktopModeController.set(id, mode)) return;
+  setMonitorStatus(`D${Math.max(1, monitorDesktopState.desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)}`, true);
   syncDesktopSwitcher();
 }
 //@@FN_END:monitorSetDesktopManagementMode
@@ -1331,13 +1294,7 @@ function openMonitorTrashRecovery() {
 //@@FN_END:openMonitorTrashRecovery
 
 //@@FN_START:peekDesktopUndoSnapshot
-function peekDesktopUndoSnapshot(now = Date.now()) {
-
-  expireDesktopUndoSession(now);
-
-  return monitorUndoStack[monitorUndoStack.length - 1] || null;
-
-}
+function peekDesktopUndoSnapshot(now = Date.now()) { return monitorRecoveryUndoSession.peek(now); }
 //@@FN_END:peekDesktopUndoSnapshot
 
 //@@FN_START:performMonitorWindowDrop
@@ -1397,15 +1354,7 @@ function primeSelectedDesktopPreview(desktopId) {
 //@@FN_END:primeSelectedDesktopPreview
 
 //@@FN_START:pushDesktopUndoSnapshot
-function pushDesktopUndoSnapshot(snapshot, now = Date.now()) {
-
-  monitorUndoStack.push({ ...snapshot });
-
-  while (monitorUndoStack.length > MONITOR_UNDO_MAX) monitorUndoStack.shift();
-
-  resetDesktopUndoSessionExpiry(now);
-
-}
+function pushDesktopUndoSnapshot(snapshot, now = Date.now()) { monitorRecoveryUndoSession.push(snapshot, now); }
 //@@FN_END:pushDesktopUndoSnapshot
 
 //@@FN_START:refreshMonitorRecoveryMenu
@@ -1997,13 +1946,7 @@ function renderVirtualDesktops(state) {
 }
 //@@FN_END:renderVirtualDesktops
 
-//@@FN_START:resetDesktopUndoSessionExpiry
-function resetDesktopUndoSessionExpiry(now = Date.now()) {
 
-  monitorUndoSessionExpiresAt = monitorUndoStack.length ? now + MONITOR_UNDO_TTL_MS : 0;
-
-}
-//@@FN_END:resetDesktopUndoSessionExpiry
 
 //@@FN_START:restoreMonitorAllRecovery
 async function restoreMonitorAllRecovery(button,listRecords,items){
@@ -2676,13 +2619,13 @@ function updateDesktopUndoUi() {
 
   clearTimeout(monitorUndoTimer);
 
-  const latest = monitorUndoStack[monitorUndoStack.length - 1] || null;
+  const latest = monitorRecoveryUndoSession.peek(now);
 
   monitorDesktopUndo.hidden = !latest;
 
   if (!latest) return;
 
-  const seconds = Math.max(0, Math.ceil((monitorUndoSessionExpiresAt - now) / 1000));
+  const seconds = Math.max(0, Math.ceil(monitorRecoveryUndoSession.remainingMs(now) / 1000));
 
   monitorDesktopUndoCountdown.textContent = `${seconds}s`;
 
@@ -2690,7 +2633,7 @@ function updateDesktopUndoUi() {
 
   monitorDesktopUndoButton.title = `Undo ${label} - ${seconds}s left`;
 
-  monitorUndoTimer = setTimeout(updateDesktopUndoUi, Math.min(250, Math.max(50, monitorUndoSessionExpiresAt - now)));
+  monitorUndoTimer = setTimeout(updateDesktopUndoUi, Math.min(250, Math.max(50, monitorRecoveryUndoSession.remainingMs(now))));
 
 }
 //@@FN_END:updateDesktopUndoUi
