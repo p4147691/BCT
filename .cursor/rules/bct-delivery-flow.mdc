@@ -52,3 +52,29 @@ evidence, E2E result, and any deferred follow-ups.
 - Define the M concrete gates at the start from the full user request and keep the denominator stable. If the scope changes, explicitly rebaseline it with evidence; never invent stages to inflate progress.
 - A stopped or blocked task stays visibly IN_PROGRESS/BLOCKED with its original durable Work ID, last verified SHA, receipts, next executable step, and precise blocker. Resume that same task first; do not create duplicate Work, ask the user to issue a copy-and-paste continuation prompt, or drift into old implementation paths.
 - When an operation needs user interaction, distinguish the confirmed technical gate from remaining physical acceptance. Record user-observed success faithfully, without promoting unobserved components.
+
+## Worktree lifetime and truthful Work state
+
+- The only source authority is local `D:\BCT\source` on `main`; feature
+  branches and worktrees are disposable *after* verified acceptance, not
+  alternate canonical source copies. Name each feature worktree in the durable
+  Work and receipt; avoid parallel writes to the shared main index.
+- `Work.state=ACTIVE` is an authorization gate, **not** proof that execution
+  is running or that user acceptance is incomplete. Derive execution status
+  from operation receipts, running processes, and exact E2E/postconditions.
+  Never mass-update Work states to FINISHED or erase UNKNOWN evidence to make
+  a dashboard look clean.
+- On a completed task, run the existing read-only
+  `python scripts/bct_worktree_hygiene.py --repo D:\BCT\source --worktrees-root D:\BCT\worktrees --state-db D:\BCT\runtime\state\state.sqlite`
+  before proposing cleanup. A REVIEW candidate is **not deletion approval**.
+- To remove an exact accepted worktree, first verify it is on an ancestor of
+  local main, clean including untracked/ignored files, not locked/detached,
+  has no exact BCT Work/unfinished-or-UNKNOWN Operation/process references,
+  and is not used by deployment/rollback or another ongoing task. Record
+  branch, HEAD, before/after count, and the authoritative main SHA. Then use
+  `git worktree remove <exact path>` **without** `--force`. Retain Git branch,
+  commit, and durable receipts for recovery; never run broad prune/reset/clean.
+- Any incomplete Git ownership check, missing Work ledger, ambiguous runtime
+  reference, or user context that cannot be verified means HOLD, not cleanup.
+- Before starting a new worktree, look for a suitable, owned, clean isolated
+  worktree associated with the same Work; avoid unnecessary new worktrees.
