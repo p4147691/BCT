@@ -1,5 +1,6 @@
 from __future__ import annotations
 import unittest
+from pathlib import Path
 from bct.core.models import Work,PreconditionError
 from bct.features.rcc import RelayBrowserFeature
 class DirectTabPrepareTests(unittest.TestCase):
@@ -50,6 +51,19 @@ class DirectTabPrepareTests(unittest.TestCase):
             with self.subTest(change=change):
                 with self.assertRaises(PreconditionError):
                     self.feature.prepare(work=self.work,arguments={**self.args,**change})
+
+    def test_first_use_guidance_selects_direct_send_for_an_existing_blank_tab(self):
+        root = Path(__file__).resolve().parents[1]
+        guide = (root / "docs" / "RCC_FIRST_USE.md").read_text(encoding="utf-8")
+        catalogue = (root / "src" / "bct" / "mcp_server.py").read_text(encoding="utf-8")
+        for text in (guide, catalogue):
+            self.assertIn("send-to-tab", text)
+        self.assertIn('conversation_key: ""', guide)
+        self.assertIn('conversation_key=\\"\\"', catalogue)
+        self.assertIn("create_operation_id", guide)
+        self.assertIn("기존 빈 ChatGPT 탭", guide)
+        self.assertIn("node-continue", guide)
+        self.assertIn('phase: "open"', guide)
 
     def test_simple_relay_has_no_tab_or_session_input(self):
         args = {

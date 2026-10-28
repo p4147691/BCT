@@ -173,6 +173,23 @@ assert.equal(layer.querySelector(".monitor-thumbnail-node-chip"), null,
 assert.equal(first.repositioned, 0);
 assert.equal(first.unresolvedCollisions, 0);
 
+const unknownSelection = context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  state: null,
+  selectedNodeHwnd: "500",
+  selectedNodeToken: "?",
+  selectedNodeTabId: 202,
+  numbersForHwnd: (hwnd) => hwnd === "500"
+    ? [{ token: "?", tabId: 101 }, { token: "?", tabId: 202 }]
+    : [],
+});
+assert.equal(unknownSelection.rendered, 1);
+const unknownParts = layer.querySelector(".monitor-thumbnail-tab-badge").children
+  .filter((part) => String(part.className || "").includes("monitor-thumbnail-tab-token"));
+assert.equal(unknownParts.length, 2, "two UUID-less tabs must remain distinct visible tokens");
+assert.deepEqual(unknownParts.map((part) => String(part.className || "").includes("is-selected")), [false, true],
+  "selecting one UUID-less tab must highlight only its exact Chrome tabId");
+
 render();
 assert.equal(visual.querySelectorAll(".monitor-thumbnail-node-overlay").length, 1);
 assert.equal(layer.querySelectorAll(".monitor-thumbnail-tab-badge").length, 2,

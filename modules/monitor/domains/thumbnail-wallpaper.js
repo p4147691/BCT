@@ -1160,7 +1160,8 @@ function syncMonitorThumbnailTabBadges(container, className) {
     highlightedHwnd: monitorBctNodeHighlightedHwnd,
     selectedNodeHwnd: selectedHwnd,
     selectedNodeToken: String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
-    numbersForHwnd: monitorBadgeNodeNumbersForHwnd,
+    selectedNodeTabId: Number(selectedNode?.tabId),
+    numbersForHwnd: (hwnd, state) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
   });
   container.dataset.monitorNodeOverlayStatus = String(diagnostics.status || "UNKNOWN");
   container.dataset.monitorNodeOverlayCandidates = String(Number(diagnostics.candidates) || 0);

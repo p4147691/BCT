@@ -35,6 +35,8 @@
 // ChatGPT windows render their BCT/RCC number directly on their thumbnail.
 /*@@MONITOR_FUNCTION:monitorMinimizedNodeSlotsByDesktop@@*/
 
+/*@@MONITOR_FUNCTION:monitorMinimizedNodeTokensByDesktop@@*/
+
 /*@@MONITOR_FUNCTION:profileForMonitorWorker@@*/
 
 /*@@MONITOR_FUNCTION:endpointForMonitorWorker@@*/

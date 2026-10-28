@@ -26,6 +26,9 @@
     return Math.abs(left.left - right.left) + Math.abs(left.top - right.top)
       + Math.abs(left.width - right.width) + Math.abs(left.height - right.height);
   }
+  function chromeWindowTitle(value) {
+    return text(value).replace(/\s+-\s+(?:Google\s+Chrome|Chrome)$/i, "").trim();
+  }
 
   function create(options = {}) {
     const identityMaxAgeMs = Math.max(1000, Number(options.identityMaxAgeMs) || 8000);
@@ -119,14 +122,34 @@
         const browser = browserById.get(candidate.windowId);
         const browserGeometry = finiteGeometry(browser);
         const observedAt = Number(browser?.observedAt) || 0;
-        if (!browserGeometry || observedAt < now - locationMaxAgeMs || observedAt > now + 1000) {
+        if (observedAt < now - locationMaxAgeMs || observedAt > now + 1000) {
           rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "BROWSER_WINDOW_GEOMETRY_UNAVAILABLE" }));
           continue;
         }
         const minimized = text(browser?.state).toLowerCase() === "minimized";
-        const ranked = native.filter((item) => Boolean(item.location?.iconic) === minimized)
-          .map((item) => ({ ...item, score: geometryScore(browserGeometry, item.geometry) }))
-          .sort((a, b) => a.score - b.score || a.hwnd.localeCompare(b.hwnd));
+        let ranked = [];
+        if (minimized) {
+          // Windows reduces minimized HWNDs to an icon rectangle.  Geometry is
+          // therefore not a stable identity signal.  Use an exact normalized
+          // active-tab title only when it identifies one minimized Chrome HWND;
+          // ambiguity remains unbound rather than guessed.
+          const activeTitle = chromeWindowTitle(browser?.activeTabTitle);
+          if (activeTitle) ranked = native
+            .filter((item) => Boolean(item.location?.iconic) && chromeWindowTitle(item.location?.title) === activeTitle)
+            .map((item) => ({ ...item, score: 0 }));
+          if (!ranked.length) {
+            rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "MINIMIZED_WINDOW_TITLE_UNAVAILABLE" }));
+            continue;
+          }
+        } else {
+          if (!browserGeometry) {
+            rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "BROWSER_WINDOW_GEOMETRY_UNAVAILABLE" }));
+            continue;
+          }
+          ranked = native.filter((item) => Boolean(item.location?.iconic) === false)
+            .map((item) => ({ ...item, score: geometryScore(browserGeometry, item.geometry) }))
+            .sort((a, b) => a.score - b.score || a.hwnd.localeCompare(b.hwnd));
+        }
         if (!ranked.length || ranked[0].score > tolerance) {
           rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "HWND_GEOMETRY_UNAVAILABLE" }));
           continue;

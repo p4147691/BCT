@@ -316,11 +316,25 @@ function monitorAgeIdentityForWorkerGroup(members, state = monitorLastAiState) {
 //@@FN_END:monitorAgeIdentityForWorkerGroup
 
 //@@FN_START:monitorBadgeNodeNumbersForHwnd
-function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
+function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, options = null) {
   // BCT/RCC owns conversation labels, and Native/ACT maps the physical HWND.
   // Thumbnail labels use only the current-session/display contract. Legacy ACT
   // mappings may lag behind a Chrome tab detach/attach and must never merge two
   // different Chrome window_ids onto one physical thumbnail window.
+  const includeTabIds = options?.includeTabIds === true;
+  const tokenFor = (node) => {
+    const match = /^N(\d+)$/.exec(String(node?.nodeLabel || "").trim());
+    return match ? Number(match[1]) : "?";
+  };
+  const itemFor = (node, tabId = node?.tabId) => {
+    const token = tokenFor(node);
+    if (!includeTabIds) return token;
+    const numericTabId = Number(tabId);
+    return {
+      token,
+      tabId: Number.isInteger(numericTabId) && numericTabId >= 0 ? numericTabId : null,
+    };
+  };
   if (Array.isArray(monitorBctWindowNodesCache)) {
     const matched = monitorBctWindowNodesCache.filter((node) =>
       monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId) === String(hwnd))
@@ -328,10 +342,6 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
         (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
           (Number.isSafeInteger(right?.tabIndex) ? right.tabIndex : Number.MAX_SAFE_INTEGER) ||
         Number(left?.tabId || 0) - Number(right?.tabId || 0));
-    const nodeToken = (node) => {
-      const match = /^N(\d+)$/.exec(String(node?.nodeLabel || "").trim());
-      return match ? Number(match[1]) : "?";
-    };
     const byTabId = new Map(matched.map((node) => [Number(node?.tabId), node])
       .filter(([tabId]) => Number.isInteger(tabId) && tabId >= 0));
     const browserWindowIds = [...new Set(matched.map((node) => Number(node?.windowId))
@@ -343,13 +353,13 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
     if (browserWindowIds.length === 1) {
       const browserTabs = monitorBrowserVisualTabsForWindow(browserWindowIds[0]);
       if (browserTabs.length) {
-        return browserTabs.map((tab) => nodeToken(byTabId.get(Number(tab.tabId))));
+        return browserTabs.map((tab) => itemFor(byTabId.get(Number(tab.tabId)), tab.tabId));
       }
     }
 
-    return matched.map(nodeToken);
+    return matched.map((node) => itemFor(node));
   }
-  return monitorActNodeNumbersForHwnd(hwnd, state);
+  return monitorActNodeNumbersForHwnd(hwnd, state).map((token) => includeTabIds ? { token, tabId: null } : token);
 }
 //@@FN_END:monitorBadgeNodeNumbersForHwnd
 
@@ -1666,14 +1676,11 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     for (const host of monitorDesktopThumbs.querySelectorAll(".monitor-desktop-minimized-nodes")) host.remove();
     return;
   }
-  const slotsByDesktop = monitorMinimizedNodeSlotsByDesktop(state);
+  const tokensByDesktop = monitorMinimizedNodeTokensByDesktop(state);
   const selectedKey = String(globalThis.monitorBctSelectedNodeKey || "");
-  const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) =>
-    `${String(node?.instanceId || "")}:${String(node?.sessionId || "")}:${String(node?.windowId || "")}:${String(node?.tabId || "")}` === selectedKey
-  );
-  const selectedMatch = /^N(\d+)$/.exec(String(selectedNode?.nodeLabel || "").trim());
-  const selectedSlot = selectedMatch ? Number(selectedMatch[1]) : 0;
-
+  const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
+  const selectedToken = String(selectedNode?.nodeLabel || "").trim().replace(/^N/i, "") || "?";
+  const selectedTabId = Number(selectedNode?.tabId) || 0;
   for (const button of monitorDesktopThumbs.children) {
     const visual = button.querySelector(".monitor-desktop-thumb-visual");
     if (!visual) continue;
@@ -1682,19 +1689,18 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     visual.querySelector(".monitor-desktop-minimized-nodes")?.remove();
     let host = label.querySelector(".monitor-desktop-minimized-nodes");
     if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; label.append(host); }
-
-    const slots = slotsByDesktop.get(String(button.dataset.desktopId || "")) || [];
-    const selectedIndex = slots.indexOf(selectedSlot);
+    const tokens = tokensByDesktop.get(String(button.dataset.desktopId || "")) || [];
+    const selectedIndex = tokens.findIndex((item) => selectedTabId ? Number(item.tabId) === selectedTabId : selectedToken !== "?" && item.token === selectedToken);
     const width = Number(label.getBoundingClientRect?.().width || 0);
     const budget = Math.max(9, Math.floor((width || 118) / 6.2));
-    let first = 0, last = Math.max(0, slots.length - 1);
-    const lengthFor = (left, right) => 1 + (left > 0 ? 1 : 0) + (right < slots.length - 1 ? 1 : 0) + slots.slice(left, right + 1).join("/").length;
-    if (slots.length && lengthFor(first, last) > budget) {
+    let first = 0, last = Math.max(0, tokens.length - 1);
+    const lengthFor = (left, right) => 1 + (left > 0 ? 1 : 0) + (right < tokens.length - 1 ? 1 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join("/").length;
+    if (tokens.length && lengthFor(first, last) > budget) {
       const center = selectedIndex >= 0 ? selectedIndex : 0;
       first = center; last = center;
       let preferRight = true;
       while (true) {
-        const rightFits = last < slots.length - 1 && lengthFor(first, last + 1) <= budget;
+        const rightFits = last < tokens.length - 1 && lengthFor(first, last + 1) <= budget;
         const leftFits = first > 0 && lengthFor(first - 1, last) <= budget;
         if (!leftFits && !rightFits) break;
         if ((preferRight && rightFits) || !leftFits) last += 1;
@@ -1702,25 +1708,24 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
         preferRight = !preferRight;
       }
     }
-
-    const fullText = slots.length ? `N${slots.join("/")}` : "";
+    const fullText = tokens.length ? `N${tokens.map((item) => item.token).join("/")}` : "";
     const parts = [];
-    if (slots.length) {
+    if (tokens.length) {
       const prefix = document.createElement("span"); prefix.className = "monitor-desktop-minimized-prefix"; prefix.textContent = "N"; parts.push(prefix);
       if (first > 0) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
       for (let index = first; index <= last; index += 1) {
         if (index > first) { const slash = document.createElement("span"); slash.className = "monitor-desktop-minimized-separator"; slash.textContent = "/"; parts.push(slash); }
         const badge = document.createElement("span");
-        const selected = slots[index] === selectedSlot;
+        const selected = index === selectedIndex;
         badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
-        badge.textContent = String(slots[index]); badge.title = `최소화 노드 N${slots[index]}`; parts.push(badge);
+        badge.textContent = tokens[index].token; badge.title = `최소화 노드 N${tokens[index].token}`; parts.push(badge);
       }
-      if (last < slots.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
+      if (last < tokens.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
     }
     host.className = `monitor-desktop-minimized-nodes${selectedIndex >= 0 ? " monitor-bct-minimized-selection" : ""}`;
     host.title = fullText ? `최소화 노드 ${fullText}` : "";
     host.replaceChildren(...parts);
-    host.hidden = slots.length === 0;
+    host.hidden = tokens.length === 0;
   }
 }
 //@@FN_END:syncMonitorMinimizedNodeBadges
