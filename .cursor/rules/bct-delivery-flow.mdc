@@ -5,6 +5,53 @@ alwaysApply: true
 
 # BCT Delivery Flow
 
+## Single integration gateway — no additional supervisor
+
+- Every project may have its own autonomous Manager and Workers. A project
+  Manager owns task breakdown, isolated implementation, tests, review,
+  and an **integration request**, not authority to write shared local main.
+  Do not create another permanent supervising AI, extra manager hierarchy,
+  or a second project-wide orchestration service for this purpose.
+- The **one integration gateway per canonical Git repository** owns serialized
+  candidate acceptance, local main integration, final verification, guarded
+  LIVE publication for its affected product, and GitHub main synchronization.
+  Different independent repositories may progress independently. For BCT
+  the sole source authority remains `D:\BCT\source` local `main`.
+- Project Managers and Workers **must not write or merge into shared main**,
+  modify installed LIVE payloads, or publish GitHub main on their own.
+  Develop and review in owned isolated Worktrees; report branch, HEAD, exact
+  changed files, tests, deployment boundary, rollback plan, and proof of
+  acceptance to the gateway.
+- The gateway processes submissions **one at a time per repository**. Before
+  any source-changing effect, require a durable owned operation and compare
+  the expected local main SHA, clean worktree, request owner, target paths,
+  and other active/UNKNOWN effects. A stale submission must be reviewed
+  against latest main, never silently replayed or rebased onto another
+  worker's dirty files. Successful integration has one exact receipt.
+- The normal sequence is: isolated implementation and local focused tests
+  -> CI for the exact reviewed candidate (an intermediate GitHub branch
+  is permitted, but is never canonical GitHub main) -> exclusive guarded
+  **local main** integration -> verify that exact resulting main commit
+  (including full/exact-head CI when the impact gate requires it) ->
+  preflight, rollback and guarded **LIVE** acceptance for each affected
+  product -> **GitHub main fast-forward sync last** -> confirm post-sync
+  CI and exact source/installed/running versions where applicable.
+  Core, Monitor and RCC are independent deployment targets; a changed
+  source-main SHA alone never requires redeploying an unchanged target.
+- A gateway instance is replaceable. Its durable queue, exact work/operation
+  IDs, epochs, receipts, preflight results, and pending next step must live
+  in BCT state, **not in a specific ChatGPT tab**. An interrupted gateway
+  recovers from durable receipts before doing anything effectful; do not
+  replay UNKNOWN messages, merges, deployments, or GitHub publications.
+- This section is the **operating contract**, not proof of a machine-enforced
+  write lock. Existing direct `git_commit`, generic `execute`, deployment
+  and GitHub publication capabilities must be assessed and hardened so
+  only the owned gateway may invoke shared-main/LIVE effects; never assume
+  this Markdown text alone blocks direct Git or OS access. Until those
+  controls are tested, serialize such actions through the currently
+  designated gateway and explicitly report any bypass risk.
+
+
 Use this as the default for BCT changes unless the user explicitly narrows or
 overrides the scope.
 
@@ -19,10 +66,12 @@ overrides the scope.
      which do not alter Core/RCC/Native Host protocols, browser state, stored
      data, claims, messages, credentials, or external systems may be committed
      on the local authoritative main after local gates. Create a rollback
-     backup, then run the exact-commit LIVE E2E while pushing the same commit
-     and running CI in parallel. The work is complete only after both LIVE E2E
-     and CI pass; either failure is recorded and the LIVE payload is rolled
-     back when the display regression is material.
+     backup, then run the exact-commit LIVE E2E only through the single
+     gateway after the applicable candidate CI and source integration gate.
+     Keep GitHub main synchronization after guarded LIVE acceptance, while
+     allowing exact candidate CI on a non-main ref. The work is complete
+     only after both LIVE E2E and required exact CI pass; a material display
+     regression triggers the documented rollback decision.
    - **Effectful lane**: Core, RCC, Native Host, wire/schema/security, database,
      claim, Chrome mutation, message send, or other externally visible effects
      require exact-head CI success before LIVE deployment or E2E effects.
