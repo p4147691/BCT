@@ -19,6 +19,7 @@ from .manager_succession_recovery import ManagerSuccessionRecovery
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.pc_safe_plans import FileActionPlanFeature, ProcessStopPlanFeature
 from .features.pc_safe_apply import FileActionApplyFeature
+from .features.approval_challenge import ApprovalChallengeFeature
 from .features.pc_process_apply import ProcessStopApplyFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
@@ -248,6 +249,7 @@ class BCT:
         self.operations.register(RelayControlFeature(
             store=self.store, features=self.operations._features,
         ))
+        self.operations.register(ApprovalChallengeFeature(self.operations._features))
         self.operations.register(VerificationFeature(self.operations._features, self.store))
 
     def create_work(self, *, work_id: str, request_summary: str, roots: list[str],

@@ -74,7 +74,7 @@ class MCPIntegrationTests(unittest.TestCase):
             "desktop_clipboard",
             "desktop_window_list", "desktop_window_activate",
             "desktop_window_activate_reconcile", "desktop_window_manage",
-            "desktop_program_launch", "file_action_plan", "process_stop_plan", "file_action_apply", "process_stop_apply", "desktop_explorer_folder_open",
+            "desktop_program_launch", "file_action_plan", "process_stop_plan", "file_action_apply", "process_stop_apply", "approval_challenge", "desktop_explorer_folder_open",
             "vtl_validate",
         ]
         self.port = free_port()
@@ -169,7 +169,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_desktop_window_list", "bct_desktop_window_activate",
                         "bct_desktop_window_activate_reconcile",
                         "bct_desktop_window_manage",
-                        "bct_desktop_program_launch", "bct_file_action_plan", "bct_process_stop_plan", "bct_file_action_apply", "bct_process_stop_apply", "bct_desktop_explorer_folder_open",
+                        "bct_desktop_program_launch", "bct_file_action_plan", "bct_process_stop_plan", "bct_file_action_apply", "bct_process_stop_apply", "bct_approval_challenge", "bct_desktop_explorer_folder_open",
                         "bct_vtl_validate",
                     }
                     self.assertEqual(
