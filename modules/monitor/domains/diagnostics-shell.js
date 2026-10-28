@@ -134,24 +134,11 @@ async function cloneMonitorWindowSet(entries, targetDesktopId, undoKind = "windo
 
 //@@FN_START:configureMonitorProviderLaunchButton
 function configureMonitorProviderLaunchButton(button, provider) {
-  const normalizedProvider = String(provider || "").toUpperCase() === "GOOGLE" ? "GOOGLE" : "NAVER";
-  const name = normalizedProvider === "GOOGLE" ? "Google" : "Naver";
-  const type = normalizedProvider === "GOOGLE" ? "launchGoogleChatGpt" : "launchNaverChatGpt";
-
-  button.dataset.provider = normalizedProvider;
-  button.textContent = normalizedProvider === "GOOGLE" ? "G+" : "N+";
-  button.title = `${name} ChatGPT 새 창 열기`;
-  button.setAttribute("aria-label", `${name} ChatGPT 새 창 열기`);
-  button.disabled = false;
-
-  button.addEventListener("click", async () => {
-    try {
-      const result = await monitorNativeLaunchIsolated({ type });
-      if (!result?.ok || !result?.launched) {
-        throw new Error(result?.error || `${name} ChatGPT 실행 실패`);
-      }
-    } catch (error) {
-      setMonitorStatus(`${name} ChatGPT 실행 실패 · ${error?.message || error}`, false);
+  return globalThis.MonitorProviderLaunchFeature.bind({
+    button, provider,
+    ports: {
+      launch: request => monitorNativeLaunchIsolated(request),
+      fail: message => setMonitorStatus(message, false)
     }
   });
 }

@@ -190,3 +190,10 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - A mismatch between extension document title and OS window title no longer permanently prevents initial desktop-thumbnail rendering. On unresolved host identity, try title-only then exact window-bounds Native lookup with empty hostTitle.
 - Fallback only accepts ok, unambiguous exact HWND, a matching desktop GUID and validated Monitor-only OS title. No cross-desktop guessing, cache fallback, Chrome tab enumeration or polling added.
 - check_monitor_host_window_identity.js verifies the contract, with check_monitor_structure.py enforcing its existence. Actual live D1/D2 acceptance remains required.
+
+## 2026-10-29 Header provider launch source boundary (N70)
+- Owner: `extension/monitor-provider-launch-feature.js`; public `MonitorProviderLaunchFeature.bind({button,provider,ports}) -> {destroy()}`.
+- Owns: exact G+/N+ button labels, click event binding and one active handler per button (WeakMap).
+- Injected ports: `launch({type})` for existing Native launch route, `fail(message)` for existing status reporting. No direct Native, Chrome, ACT or BCT calls.
+- The generated `monitor.js` retains only `configureMonitorProviderLaunchButton` adapter and injects the two ports. No duplicate launch orchestration, endpoint polling or fallback dispatch is introduced.
+- Independent verification: `tools/check_monitor_provider_launch_feature.js`; generated bundle and structure gate. LIVE UI acceptance remains the supervisor's separate responsibility.

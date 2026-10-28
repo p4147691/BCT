@@ -311,6 +311,17 @@ def main():
             if checked.returncode:
                 errors.append({'kind':'monitor_notes_feature_contract_regression',
                     'detail':(checked.stdout+checked.stderr)[-600:]})
+        provider_check = root/'tools'/'check_monitor_provider_launch_feature.js'
+        if not provider_check.is_file():
+            errors.append({'kind':'monitor_provider_launch_feature_contract_test_missing',
+                'path':str(provider_check)})
+        else:
+            checked=subprocess.run([node,str(provider_check)],cwd=str(root.parent.parent),
+                capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+            facts['monitor_provider_launch_feature_test_rc']=checked.returncode
+            if checked.returncode:
+                errors.append({'kind':'monitor_provider_launch_feature_contract_regression',
+                    'detail':(checked.stdout+checked.stderr)[-600:]})
         thumbnail_checks = [
             root/'tools'/'check_monitor_thumbnail_architecture.js',
             root/'tools'/'check_monitor_thumbnail_background_only_mode.js',
