@@ -37,3 +37,10 @@ No source-code patch is claimed; this is a bounded review and regression baselin
 - Focused 15/15 PASS; existing desktop_session 54/54 PASS; py_compile PASS.
 - This is NOT a verified native Desktop Control end-to-end integration. Must still validate dispatcher effect receipts, authorization, virtual desktop and real agent behavior before merge.
 - Stop or unknown effects are not blindly retried. No production launch performed.
+
+## Latest final-gate audit
+- GitHub Actions run 40706241180: core(0..3), preflight, scope, duration-history PASS; browser-bridge and docs-only legitimately skipped.
+- Service registration src/bct/service.py enumerates DesktopApplicationTargetFeature, DesktopControlLeaseFeature, DesktopWindowActivateFeature, DesktopProgramLaunchFeature but does not register or invoke open_explorer_folder.
+- Therefore there is NO user-request-to-Explorer integration and NO physical LIVE or isolated-agent E2E proof for this PR. Existing 15 focused tests use injected fake invoke; they prove orchestration unit logic only.
+- Latest disposition: HOLD / NOT READY FOR MERGE. Required next step: add a work-authorized externally reachable BCT feature with explicit policy approval and durable operation receipts; then run actual Windows E2E incl current virtual desktop, same folder reuse and lease release, and repeat CI.
+- Do not claim approved dispatch or UI foreground E2E. Do not merge or deploy.
