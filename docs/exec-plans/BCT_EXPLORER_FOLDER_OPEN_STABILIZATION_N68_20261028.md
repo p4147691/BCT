@@ -57,3 +57,9 @@ No source-code patch is claimed; this is a bounded review and regression baselin
 - Isolated mock Agent tests: 9 PASS. Prior helper tests: 16 PASS. Existing desktop tests: 54 PASS. Combined: 79 PASS.
 - No production agent deployment or actual UI E2E was performed: main/LIVE prohibition. The isolated mock tests are not proof of physical virtual desktop/foreground behavior.
 - Do not mark as physical E2E PASS or merge before supervisor performs the exact LIVE acceptance after controlled deployment.
+
+## Latest PR #344 acceptance boundary
+- Added expected bct_desktop_explorer_folder_open to MCP integration catalogue checks.
+- Existing/new isolated focused regression 79/79 PASS.
+- Physical agent E2E was not performed; no agent deployment, main merge, service restart or LIVE effect in N68 scope. Report it as pending and do not falsely claim E2E success.
+- Supervisor gate: run an approved exact Windows folder E2E after isolated deployment/preflight, including one same-folder second request, delegated Explorer PID, minimized restore, another virtual desktop rejection, foreground and final Lease status, and record durable operation receipt.
