@@ -23,3 +23,10 @@ Date: 2026-10-28. Status: PARTIAL / NOT READY FOR MERGE.
 Branch feature/explorer-folder-open-n68-20261028 at D:\BCT\worktrees\explorer-folder-open-n68-20261028.
 No main merge, live deployment, restart, UI automation or actual Explorer launch performed.
 No source-code patch is claimed; this is a bounded review and regression baseline, NOT a feature completion.
+
+## Follow-up implementation checkpoint
+- Added pure decision helper src/bct/integrations/explorer_folder_open.py.
+- Added 10 focused decision tests, PASS (using explicit isolated src import path).
+- Existing desktop session 54 tests PASS.
+- Helper deliberately does not execute OS side effects or alter existing public API.
+- Still missing: authorized orchestration wiring for launch/bind/activate/release, physical E2E, full suite and GitHub CI. Do not merge as complete.
