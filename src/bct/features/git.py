@@ -158,7 +158,9 @@ class GitCommitFeature:
         # Check the *attached* candidate that owns this exact branch before
         # any shared-main effect. Do not copy instructions into historical trees.
         # The canonical script remains the only content comparator.
-        if (root / "scripts" / "check_instruction_authority.py").is_file():
+        if (root / "AGENTS.md").is_file():
+            if not (root / "scripts" / "check_instruction_authority.py").is_file():
+                raise PreconditionError("LOCAL_MAIN_INSTRUCTION_CHECKER_UNAVAILABLE")
             candidate = find_branch_worktree(root, branch)
             if candidate is None:
                 raise PreconditionError("LOCAL_MAIN_INSTRUCTION_WORKTREE_UNAVAILABLE")
