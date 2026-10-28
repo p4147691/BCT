@@ -2541,6 +2541,11 @@ chrome.tabs.onCreated.addListener((tab) => {
   void publishMonitorBrowserVisualChange(tab?.id, "tab-created", tab);
 });
 
+chrome.windows.onCreated.addListener((windowInfo) => {
+  if (windowInfo?.type !== "normal" || !Number.isInteger(windowInfo?.id)) return;
+  void publishMonitorBrowserWindowVisualChange(windowInfo.id, "window-created");
+});
+
 chrome.tabs.onAttached.addListener((tabId, attachInfo) => {
   chrome.tabs.get(tabId)
     .then((tab) => {
@@ -2596,6 +2601,15 @@ chrome.windows.onBoundsChanged.addListener((windowInfo) => {
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {
+  if (Number.isInteger(windowId)) {
+    chrome.runtime.sendMessage({
+      type: "monitor-browser-visual-changed",
+      windowId,
+      reason: "window-removed",
+      tabs: [],
+      at: Date.now(),
+    }).catch(() => {});
+  }
   removeMonitorPopupRuntime(windowId).catch(() => {});
 
 

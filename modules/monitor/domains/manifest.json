@@ -14,7 +14,7 @@
     {
       "domain": "desktop-lifecycle",
       "file": "desktop-lifecycle.js",
-      "functions": 102
+      "functions": 103
     },
     {
       "domain": "diagnostics-shell",

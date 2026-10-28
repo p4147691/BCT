@@ -71,9 +71,28 @@ vm.runInContext(aggregate+"\n"+render,ctx);
 const arr=ctx.monitorMinimizedNodeSlotsByDesktop({});
 assert.deepEqual(Array.from(arr.get("deskA")),[2,3,5,6,7]);
 assert.deepEqual(Array.from(arr.get("deskB")),[8]);
+const unknownTokens = ctx.MonitorMinimizedNodeBadgeContract.tokensByDesktop({
+  locations:new Map([["500",{desktopId:"deskC",iconic:true}]]),
+  tokensForHwnd:()=>[{token:"?",tabId:701},{token:"?",tabId:702}]
+});
+assert.deepEqual(Array.from(unknownTokens.get("deskC")).map((item)=>[item.token,item.tabId]),[["?",701],["?",702]], "each unknown tab stays independently represented");
 ctx.syncMonitorMinimizedNodeBadges({});
-assert.equal(label.badges.children.map(x=>x.textContent).join(""),"N2/3/5/6/7");
-assert.equal(label2.badges.children.map(x=>x.textContent).join(""),"N8");
+assert.equal(label.badges.children.map(x=>x.textContent).join(""),"2/3/5/6/7");
+assert.equal(label2.badges.children.map(x=>x.textContent).join(""),"8");
+// A UUID-less minimized Chrome tab is individually selected by exact tabId.
+labels["100"]=[{token:"?",tabId:701},{token:"?",tabId:702},{token:"61",tabId:703}];
+locationMap.set("200",{desktopId:"deskA",iconic:false});
+ctx.monitorBctWindowNodesCache=[{key:"selected-unknown",nodeLabel:"N?",tabId:702}];
+ctx.monitorBctSelectedNodeKey="selected-unknown";
+ctx.monitorBctNodeSelectionKey=(node)=>node.key;
+ctx.syncMonitorMinimizedNodeBadges({});
+const selectedUnknown=label.badges.children.filter(x=>String(x.className).includes("monitor-desktop-minimized-node"));
+assert.deepEqual(selectedUnknown.map(x=>x.textContent),["?","?","61"]);
+assert.deepEqual(selectedUnknown.map(x=>String(x.className).includes("monitor-desktop-minimized-node-selected")),[false,true,false],
+  "exact Chrome tabId selects only its own unknown minimized node");
+ctx.monitorBctSelectedNodeKey="";
+ctx.monitorBctWindowNodesCache=[];
+
 locationMap.set("100",{desktopId:"deskA",iconic:false});
 locationMap.set("200",{desktopId:"deskA",iconic:false});
 ctx.syncMonitorMinimizedNodeBadges({});
@@ -105,5 +124,9 @@ assert.match(css,/\.monitor-desktop-minimized-nodes\.monitor-bct-minimized-selec
   "the selected minimized node must highlight its own desktop summary");
 assert.match(src,/monitor-bct-minimized-selection/,
   "node selection must re-project into minimized summaries");
+assert.match(render,/monitorBctNodeSelectionKey\(node\) === selectedKey/,
+  "minimized selection uses the same identity key as the BCT node list");
+assert.match(render,/monitorMinimizedNodeTokensByDesktop\(state\)/,
+  "minimized summary retains tab identity instead of only numeric slots");
 assert.doesNotMatch(css,/\.monitor-thumbnail-z-rail\s*\{/);
 console.log("PASS: minimized nodes use the bottom summary while open nodes keep natural HWND stacking");

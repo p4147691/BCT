@@ -98,7 +98,7 @@ Generated extension/monitor.js is not an edit target.
 - settleMonitorWorkerPointerInteraction
 - stationForMonitorWorker
 
-## desktop-lifecycle (102 functions)
+## desktop-lifecycle (103 functions)
 
 - beginMonitorBctNodePointerDrag
 - beginMonitorDesktopPointerDrag
@@ -151,6 +151,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorDesktopScrollStep
 - monitorIsActiveDesktopRenderer
 - monitorMinimizedNodeSlotsByDesktop
+- monitorMinimizedNodeTokensByDesktop
 - monitorObservedDesktopForHwnd
 - monitorSetDesktopManagementMode
 - monitorTrashDropTargetAt
