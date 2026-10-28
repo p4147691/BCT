@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .conversation_network import ConversationNetworkError, project_view, resolve_project_id
+from .integration_queue import submit_integration_request, list_integration_requests
 from .core.models import Principal, Work
 from .mcp_catalogue_config import CatalogueSettings
 
@@ -23,7 +24,7 @@ MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "bct_conversation_network_get",
-    "bct_work_create", "bct_operation_get",
+    "bct_work_create", "bct_operation_get", "bct_integration_queue",
 )
 _CAPABILITY_USAGE = {
     "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; this requires verify and every child capability in work scope.",
@@ -247,6 +248,43 @@ def build_mcp(
             sleep_start = time.perf_counter_ns()
             await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
             wait_ms += (time.perf_counter_ns()-sleep_start)/1e6
+
+    @server.tool(
+        description=(
+            "BCT durable FIFO integration readiness queue: operation='submit' with "
+            "work_id and request metadata, or operation='list' with work_id and "
+            "optional repository_root/limit. Submit never merges, delivers a "
+            "message, grants execution permission, or modifies LIVE/GitHub. "
+            "Queue sequence and duplicate request ID are transaction-fenced. "
+            "A supervisor role is routing only."
+        ),
+        structured_output=True,
+    )
+    async def bct_integration_queue(
+        work_id: str, operation: str, request: dict[str, Any] | None = None,
+        repository_root: str = "", limit: int = 50,
+    ) -> dict[str, Any]:
+        work = await asyncio.to_thread(bct.store.get_work, work_id)
+        if work.owner_principal_id != principal.principal_id or work.state != "ACTIVE":
+            raise PermissionError("INTEGRATION_QUEUE_WORK_OWNER_INVALID")
+        if operation == "submit":
+            # Queue metadata is not source mutation: do NOT require file
+            # write capability merely to submit a readiness request.
+            if "read" not in work.actions:
+                raise PermissionError("INTEGRATION_QUEUE_SUBMIT_READ_SCOPE_REQUIRED")
+            if request is None or repository_root:
+                raise ValueError("INTEGRATION_QUEUE_SUBMIT_ARGUMENTS_INVALID")
+            return await asyncio.to_thread(
+                submit_integration_request, bct.store, work=work, request=request
+            )
+        if operation == "list":
+            if "read" not in work.actions or request is not None:
+                raise PermissionError("INTEGRATION_QUEUE_LIST_READ_SCOPE_REQUIRED")
+            return await asyncio.to_thread(
+                list_integration_requests, bct.store,
+                repository_root=repository_root, limit=limit
+            )
+        raise ValueError("INTEGRATION_QUEUE_OPERATION_INVALID")
 
     @server.tool(description="Read only a node's durable GitHub completion Inbox. acknowledge is idempotent and only marks returned rows read.", structured_output=True)
     async def bct_inbox_get(initiator_node_id: str, work_id: str,

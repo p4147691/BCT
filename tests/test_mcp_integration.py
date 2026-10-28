@@ -175,7 +175,8 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
-                            "bct_work_create", "bct_operation_get", "bct_inbox_get",
+                             "bct_work_create", "bct_operation_get", "bct_inbox_get",
+                            "bct_integration_queue",
                         },
                         names,
                     )
@@ -184,7 +185,8 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
-                            "bct_work_create", "bct_operation_get", "bct_inbox_get",
+                             "bct_work_create", "bct_operation_get", "bct_inbox_get",
+                            "bct_integration_queue",
                         },
                         set(capabilities.structuredContent["tools"]),
                     )
