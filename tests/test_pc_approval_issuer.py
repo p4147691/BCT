@@ -111,8 +111,8 @@ class IndependentApprovalIssuerTests(unittest.TestCase):
     def test_approve_issue_effect_and_duplicate_after_restart(self):
         challenge, args = self.challenge()
         text = challenge_display(challenge)
-        self.assertIn(args["source"], text)
-        self.assertIn(args["destination"], text)
+        self.assertIn(challenge["arguments"]["source"], text)
+        self.assertIn(challenge["arguments"]["destination"], text)
         self.assertIn("recoverable_delete", text)
         token = issue_after_human_confirmation(
             challenge, self.store, self.secret, confirmed=True)
