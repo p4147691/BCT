@@ -63,3 +63,9 @@ No source-code patch is claimed; this is a bounded review and regression baselin
 - Existing/new isolated focused regression 79/79 PASS.
 - Physical agent E2E was not performed; no agent deployment, main merge, service restart or LIVE effect in N68 scope. Report it as pending and do not falsely claim E2E success.
 - Supervisor gate: run an approved exact Windows folder E2E after isolated deployment/preflight, including one same-folder second request, delegated Explorer PID, minimized restore, another virtual desktop rejection, foreground and final Lease status, and record durable operation receipt.
+
+## Pre-merge CI repair
+- Core shard 2 failure from run 40710822266: deployment release closure omitted new feature file.
+- Added both new feature and integration source paths to bct.toml deployment file list.
+- Release import-closure test PASS; module-layout 10 PASS; Explorer-focused 79 PASS.
+- No main or LIVE mutation. Physical Explorer E2E remains supervisor gate.
