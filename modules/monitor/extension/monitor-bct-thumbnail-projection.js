@@ -8,14 +8,20 @@
     return String(value ?? "").trim();
   }
 
-  function uniquePositiveNumbers(values) {
-    const seen = new Set();
+  function uniqueNodeTokens(values) {
+    const seenNumbers = new Set();
     const result = [];
     for (const value of Array.isArray(values) ? values : []) {
       const number = Number(value);
-      if (!Number.isSafeInteger(number) || number <= 0 || seen.has(number)) continue;
-      seen.add(number);
-      result.push(number);
+      if (Number.isSafeInteger(number) && number > 0) {
+        if (seenNumbers.has(number)) continue;
+        seenNumbers.add(number);
+        result.push(String(number));
+        continue;
+      }
+      // An observed browser tab with no BCT UUID has no stable node number.
+      // It still occupies a real tab position, so preserve it as one `?` token.
+      if (text(value) === "?") result.push("?");
     }
     return result;
   }
@@ -72,8 +78,8 @@
         continue;
       }
 
-      const numbers = uniquePositiveNumbers(numbersForHwnd(hwnd, state));
-      if (!numbers.length) {
+      const tokens = uniqueNodeTokens(numbersForHwnd(hwnd, state));
+      if (!tokens.length) {
         skipped.noNumbers += 1;
         continue;
       }
@@ -98,8 +104,30 @@
       const badge = documentObject.createElement("span");
       badge.className = "monitor-node-number-badge monitor-thumbnail-tab-badge";
       badge.dataset.hwnd = hwnd;
-      badge.textContent = `N${numbers.join("/")}`;
-      badge.title = `BCT 노드 ${numbers.join(" / ")}`;
+      const nodeLabel = `N${tokens.join("/")}`;
+      // Keep each slash+node pair atomic.  A line may begin at `/58`, but a
+      // node number such as `57` can never be detached from its separator.
+      const selectedHere = hwnd === text(options.selectedNodeHwnd);
+      const selectedToken = text(options.selectedNodeToken);
+      const labelParts = [];
+      const prefix = documentObject.createElement("span");
+      prefix.className = "monitor-thumbnail-tab-prefix";
+      prefix.textContent = "N";
+      labelParts.push(prefix);
+      for (const token of tokens) {
+        if (labelParts.length > 1) {
+          const separator = documentObject.createElement("span");
+          separator.className = "monitor-thumbnail-tab-separator";
+          separator.textContent = "/";
+          labelParts.push(separator);
+        }
+        const part = documentObject.createElement("span");
+        part.className = `monitor-thumbnail-tab-token${selectedHere && token === selectedToken ? " is-selected" : ""}`;
+        part.textContent = token;
+        labelParts.push(part);
+      }
+      badge.replaceChildren(...labelParts);
+      badge.title = `BCT 노드 ${tokens.join(" / ")}`;
       windowLayer.append(badge);
       layer.append(windowLayer);
       rendered += 1;

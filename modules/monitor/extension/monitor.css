@@ -373,9 +373,12 @@
 .monitor-worker-resource-actionable.monitor-worker-resource-pending { cursor:wait; filter:brightness(1.12); }
 
 
-.monitor-thumbnail-node-overlay { display:contents; pointer-events:none; }
-.monitor-thumbnail-node-window { position:absolute; box-sizing:border-box; overflow:hidden; pointer-events:none; }
-.monitor-thumbnail-tab-badge { position:absolute; left:2px; right:2px; top:2px; bottom:auto; transform:none; z-index:2!important; pointer-events:none; }
+.monitor-thumbnail-node-overlay { position:absolute; inset:0; z-index:2147480000; overflow:hidden; pointer-events:none; }
+.monitor-thumbnail-node-window { position:absolute; z-index:1; box-sizing:border-box; pointer-events:none; }
+.monitor-thumbnail-tab-badge { position:absolute; left:2px; top:2px; transform:none; z-index:2!important; pointer-events:none; }
+.monitor-thumbnail-tab-badge[data-anchor="top-right"] { left:auto; right:2px; top:2px; bottom:auto; }
+.monitor-thumbnail-tab-badge[data-anchor="bottom-left"] { left:2px; right:auto; top:auto; bottom:2px; }
+.monitor-thumbnail-tab-badge[data-anchor="bottom-right"] { left:auto; right:2px; top:auto; bottom:2px; }
 
 
 .monitor-worker-row.monitor-worker-working {
@@ -865,7 +868,6 @@ body.desktop-window-monitor-active { background-image:none!important; background
 
 }
 
-
 .monitor-desktop-thumb.monitor-desktop-drop-pending { opacity: .78; }
 
 
@@ -926,13 +928,17 @@ body.desktop-window-monitor-active { background-image:none!important; background
 #monitorBctNodesRefresh:hover { background:rgba(117,184,255,.20); border-color:rgba(117,184,255,.62); }
 #monitorBctNodesRefresh:disabled { opacity:.55; cursor:default; }
 .monitor-bct-nodes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; align-content:start; }
-.monitor-bct-node-row { display:grid; grid-template-columns:29px minmax(0,1fr); align-items:center; gap:7px; min-height:36px; padding:5px 7px; border:1px solid rgba(255,255,255,.09); border-radius:8px; background:rgba(9,16,25,.56); box-shadow:inset 0 1px 0 rgba(255,255,255,.025); cursor:context-menu; }
+.monitor-bct-node-row { display:grid; grid-template-columns:29px minmax(0,1fr) 9px; align-items:center; gap:7px; min-height:36px; padding:5px 7px; border:1px solid rgba(255,255,255,.09); border-radius:8px; background:rgba(9,16,25,.56); box-shadow:inset 0 1px 0 rgba(255,255,255,.025); cursor:context-menu; }
 .monitor-bct-node-row:hover { border-color:rgba(117,184,255,.34); background:rgba(18,29,43,.72); }
 .monitor-bct-node-number { display:grid; place-items:center; width:27px; height:27px; border:1px solid rgba(117,184,255,.42); border-radius:7px; background:rgba(117,184,255,.13); color:#f2f8ff; font:900 13px/1 "Segoe UI","Malgun Gothic",sans-serif; }
 .monitor-bct-node-body { min-width:0; display:block; }
 .monitor-bct-node-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f7f9fc; font:700 12px/1.25 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-node-presence { display:block; width:7px; height:7px; border-radius:50%; background:#62d99a; box-shadow:0 0 0 2px rgba(98,217,154,.11); }
+.monitor-bct-node-presence.is-busy { background:#ffc45c; box-shadow:0 0 0 2px rgba(255,196,92,.12); }
 .monitor-bct-node-empty { padding:15px 12px; border:1px dashed rgba(255,255,255,.13); border-radius:9px; color:rgba(225,234,245,.68); text-align:center; font:600 11px/1.45 "Segoe UI","Malgun Gothic",sans-serif; }
 .monitor-bct-node-empty.is-error { border-color:rgba(255,126,126,.34); color:#ffc1c1; }
+.monitor-bct-node-drop-empty { grid-column:1 / -1; min-height:30px; padding:8px 12px; pointer-events:auto; }
+.monitor-bct-node-list-target .monitor-bct-node-drop-empty { border-color:rgba(159,231,255,.5); background:rgba(80,177,220,.08); color:#d8f4ff; }
 .monitor-bct-rename-overlay { position:fixed; inset:0; z-index:100000; display:grid; place-items:center; padding:18px; background:rgba(0,0,0,.48); }
 .monitor-bct-rename-dialog { width:min(390px,calc(100vw - 36px)); padding:13px; border:1px solid rgba(117,184,255,.42); border-radius:11px; background:#111a26; box-shadow:0 20px 70px rgba(0,0,0,.62); color:#f5f8fc; font-family:"Segoe UI","Malgun Gothic",sans-serif; }
 .monitor-bct-rename-head { display:flex; align-items:center; gap:8px; margin-bottom:11px; }
@@ -1609,6 +1615,8 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-window-pause-overlay-thumb>.monitor-status-icon{width:20px;height:20px;}
 .monitor-window-pause-overlay>.monitor-status-icon-warning{width:46%;height:46%;right:21%;bottom:21%;}
 .monitor-alert-tone-general::before,.monitor-alert-tone-success::before,.monitor-alert-tone-failure::before,.monitor-alert-tone-review::before,.monitor-alert-tone-question::before,.monitor-alert-tone-input::before,.monitor-alert-tone-action::before{color:#fff!important;text-shadow:none!important;}
+.monitor-bct-node-presence{position:relative;display:grid!important;place-items:center;width:14px!important;height:14px!important;background:none!important;box-shadow:none!important;color:#fff!important;}
+.monitor-bct-node-presence>.monitor-status-icon{width:12px;height:12px;}
 
 
 
@@ -3525,7 +3533,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 }
 .monitor-bct-scope-caret { width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid rgba(220,233,247,.72);transform-origin:50% 35%; }
 .monitor-bct-scope-heading[aria-expanded="false"] .monitor-bct-scope-caret { transform:rotate(-90deg); }
-.monitor-bct-node-row { grid-template-columns:29px minmax(0,1fr); }
+.monitor-bct-node-row { grid-template-columns:29px minmax(0,1fr) 17px; }
 .monitor-bct-node-row.is-manager { background:rgba(177,134,31,.20);border-color:rgba(255,211,92,.42); }
 .monitor-bct-node-row.monitor-bct-manager-hold { box-shadow:inset 0 0 0 2px rgba(255,215,90,.34); }
 .monitor-bct-node-row.monitor-bct-node-stale { opacity:.62; }
@@ -3561,9 +3569,10 @@ body.desktop-window-monitor-active { background-image:none!important; background
 }
 .monitor-bct-node-row { cursor:grab;touch-action:none; }
 .monitor-bct-node-row.is-selected {
-  border-color:#ffd75a!important;
-  box-shadow:0 0 0 1px rgba(255,215,90,.34),0 0 10px rgba(255,215,90,.12)!important;
+  border-color:rgba(255,255,255,.09)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025)!important;
 }
+
 .monitor-bct-node-row.is-dragging { opacity:.34!important;cursor:grabbing!important; }
 .monitor-bct-node-drag-active,
 .monitor-bct-node-drag-active * { cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important; }
@@ -3589,11 +3598,18 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-desktop-thumb-window.monitor-bct-node-target-highlighted,
 .monitor-window-preview.monitor-bct-node-target-highlighted,
 .monitor-thumbnail-node-window.monitor-bct-node-target-highlighted {
-  outline:3px solid #ffd75a!important;
-  outline-offset:-3px!important;
-  box-shadow:0 0 0 1px rgba(36,25,0,.92),0 0 14px rgba(255,215,90,.68)!important;
-  filter:brightness(1.1)!important;
+  outline:0!important;box-shadow:none!important;filter:none!important;
 }
 
-/* Node identity stays inside its physical HWND and follows the HWND z-order. */
-.monitor-thumbnail-node-window .monitor-thumbnail-tab-badge{display:block!important;width:auto;max-width:none;min-width:0;height:auto;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;word-break:normal;text-align:left;line-height:1.15;}
+/* Minimized-node summary: one desktop-level N list.  The selected node alone
+   grows; all other node numbers retain the compact baseline size. */
+.monitor-thumbnail-tab-badge { display:block;max-width:calc(100% - 4px);white-space:normal;overflow-wrap:normal;word-break:normal;line-height:1.15; }
+.monitor-thumbnail-tab-token { display:inline-block;white-space:nowrap; }
+.monitor-thumbnail-tab-token.is-selected { color:#ffd75a!important;font-size:13px!important;font-weight:900;text-shadow:0 0 7px rgba(255,215,90,.88); }
+.monitor-thumbnail-tab-prefix,.monitor-thumbnail-tab-separator { color:inherit;font-size:inherit;font-weight:inherit;text-shadow:none; }
+.monitor-desktop-thumb-label { grid-template-columns:30px 18px minmax(0,1fr)!important; }
+.monitor-desktop-management-control { min-width:14px;height:16px;padding:0;font-size:9px;line-height:14px; }
+.monitor-desktop-thumb-label > .monitor-desktop-minimized-nodes { grid-column:3 / 4;justify-self:stretch;width:100%;max-width:100%;gap:1px;justify-content:flex-start;overflow:hidden;pointer-events:auto;white-space:nowrap; }
+.monitor-desktop-minimized-nodes.monitor-bct-minimized-selection { outline:0;background:transparent;box-shadow:none; }
+.monitor-desktop-minimized-node-selected { color:#ffd75a!important;font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.16);transform-origin:center;text-shadow:0 0 7px rgba(255,215,90,.88); }
+.monitor-desktop-minimized-prefix,.monitor-desktop-minimized-separator { color:rgba(255,255,255,.94);font:800 10px/14px "Segoe UI","Malgun Gothic",sans-serif; }

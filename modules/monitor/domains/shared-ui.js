@@ -425,6 +425,9 @@ async function flushMonitorBrowserVisualRefresh() {
     }
     const backgroundIds = [...desktopIds].filter((desktopId) => desktopId !== selectedDesktopId);
     if (backgroundIds.length) await refreshBackgroundThumbs(...backgroundIds).catch(() => []);
+    // A fresh desktop frame replaces its DOM layers. Re-project the same
+    // browser snapshot after capture so a tab move cannot erase its node label.
+    syncMonitorAllDesktopThumbnailNodeBadges();
   } finally {
     monitorBrowserVisualRefreshInFlight = false;
     if (monitorBrowserVisualPendingWindowIds.size && !monitorBrowserVisualRefreshTimer) {
@@ -2191,11 +2194,57 @@ async function runMonitorUtilityAction(button, pendingText, action) {
 }
 //@@FN_END:runMonitorUtilityAction
 
+//@@FN_START:applyMonitorBrowserVisualTabSnapshot
+function applyMonitorBrowserVisualTabSnapshot(message) {
+  const windowId = Number(message?.windowId);
+  if (!Number.isInteger(windowId)) return false;
+
+  // The background supplies the complete Chrome tab order. This is observation
+  // only: it never selects, moves, closes, or otherwise changes a real tab.
+  if (Array.isArray(message?.tabs)) {
+    const tabs = new Map();
+    for (const item of message.tabs) {
+      const tabId = Number(item?.tabId);
+      const tabIndex = Number(item?.tabIndex);
+      if (!Number.isInteger(tabId) || tabId < 0 || !Number.isInteger(tabIndex) || tabIndex < 0) continue;
+      tabs.set(tabId, { tabId, tabIndex });
+    }
+    monitorBrowserVisualTabsByWindow.set(windowId, tabs);
+    return true;
+  }
+
+  const tabId = Number(message?.tabId);
+  if (!Number.isInteger(tabId) || tabId < 0) return false;
+  const tabs = monitorBrowserVisualTabsByWindow.get(windowId) || new Map();
+  if (message?.tabRemoved === true) tabs.delete(tabId);
+  else {
+    const tabIndex = Number(message?.tabIndex);
+    tabs.set(tabId, { tabId, tabIndex: Number.isInteger(tabIndex) && tabIndex >= 0 ? tabIndex : Number.MAX_SAFE_INTEGER });
+  }
+  monitorBrowserVisualTabsByWindow.set(windowId, tabs);
+  return true;
+}
+//@@FN_END:applyMonitorBrowserVisualTabSnapshot
+
+//@@FN_START:monitorBrowserVisualTabsForWindow
+function monitorBrowserVisualTabsForWindow(windowIdValue) {
+  const windowId = Number(windowIdValue);
+  const tabs = Number.isInteger(windowId) ? monitorBrowserVisualTabsByWindow.get(windowId) : null;
+  return [...(tabs?.values?.() || [])].sort((left, right) =>
+    Number(left?.tabIndex) - Number(right?.tabIndex) || Number(left?.tabId) - Number(right?.tabId));
+}
+//@@FN_END:monitorBrowserVisualTabsForWindow
+
 //@@FN_START:scheduleMonitorBrowserVisualRefresh
 function scheduleMonitorBrowserVisualRefresh(message) {
   const windowId = Number(message?.windowId);
   if (!Number.isInteger(windowId)) return;
 
+  if (applyMonitorBrowserVisualTabSnapshot(message)) {
+    // Preserve the existing pixels while their native refresh is queued; the
+    // label order is known already and should not wait for Monitor focus.
+    syncMonitorAllDesktopThumbnailNodeBadges();
+  }
   monitorBrowserVisualPendingWindowIds.add(windowId);
   if (monitorBrowserVisualRefreshTimer || monitorBrowserVisualRefreshInFlight) return;
   monitorBrowserVisualRefreshTimer = setTimeout(() => {

@@ -20,6 +20,7 @@ $hostSource = Join-Path $source "MonitorDesktopHost.cs"
 $visualSource = Join-Path $source "DesktopVisualSnapshot.cs"
 $backgroundStateSource = Join-Path $source "DesktopBackgroundStateSource.cs"
 $dragPreviewSource = Join-Path $source "MonitorDragPreviewOverlay.cs"
+$externalDropSource = Join-Path $source "MonitorExternalWindowDrop.cs"
 $wallpaperWatchSource = Join-Path $source "MonitorWallpaperRegistryWatcher.cs"
 $automationClient = Join-Path $framework "UIAutomationClient.dll"
 $automationTypes = Join-Path $framework "UIAutomationTypes.dll"
@@ -29,6 +30,7 @@ $automationTypes = Join-Path $framework "UIAutomationTypes.dll"
     $visualSource `
     $backgroundStateSource `
     $dragPreviewSource `
+    $externalDropSource `
     $wallpaperWatchSource `
     /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll `
     /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll `

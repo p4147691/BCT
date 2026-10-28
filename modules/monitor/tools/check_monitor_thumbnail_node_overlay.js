@@ -24,16 +24,28 @@ assert.match(monitorSource,
   /itemHwnd === hostHwnd && monitorIsOwnWindowTitle\(item\?\.title\)/,
   "the frozen-frame exception must require the exact registered Monitor HWND");
 assert.match(monitorSource,
+  /const currentWindowRows = handlesConfirmed\s*\? \[\.\.\.handleByHwnd\.values\(\), \.\.\.monitorPopupWindows\]\s*:\s*windows;/,
+  "a successful Native snapshot must retain the exact frozen Monitor self row");
+assert.match(monitorSource,
   /scheduleMonitorChatNavigationRefresh\(message\)[\s\S]*await refreshMonitorBctWindowNodes\(\);[\s\S]*syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
   "Chrome navigation must refresh RCC window membership and node badges without Monitor focus");
 assert.match(monitorSource, /monitorBctWindowNodeRefreshPending = true/,
   "a navigation refresh arriving during an in-flight RCC read must be coalesced, not lost");
+const monitorCss = fs.readFileSync(path.join(__dirname, "../extension/monitor.css"), "utf8");
+assert.match(monitorCss, /\.monitor-thumbnail-tab-badge\s*\{[^}]*overflow-wrap:normal[^}]*word-break:normal/s,
+  "a thumbnail window node label may wrap only at its natural separators, never through a node number");
 assert.match(backgroundSource, /chrome\.tabs\.onAttached\.addListener/,
   "moving a tab into another Chrome window must publish a refresh event");
 assert.match(backgroundSource, /chrome\.tabs\.onDetached\.addListener/,
   "the old Chrome window must refresh when a tab leaves it");
 assert.match(backgroundSource, /chrome\.tabs\.onMoved\.addListener/,
   "tab-order changes must refresh node-number order");
+assert.match(backgroundSource, /chrome\.tabs\.onCreated\.addListener/,
+  "a UUID-less new tab must enter the observed thumbnail order");
+assert.match(backgroundSource, /chrome\.tabs\.query\(\{ windowId \}\)/,
+  "a tab-order event must carry the complete current Chrome ordering, not only the active tab");
+assert.match(monitorSource, /function applyMonitorBrowserVisualTabSnapshot[\s\S]*function monitorBrowserVisualTabsForWindow/,
+  "Monitor must retain the observed tab order independently of a later Core refresh");
 
 function node(className = "") {
   const result = {
@@ -118,7 +130,7 @@ function image(hwnd, z, left = "0%") {
 const rear = image("500", 9000, "0%");
 const front = image("600", 9800, "25%");
 const nodeNumbers = new Map([
-  ["500", [33, 35, 45, 35]],
+  ["500", [33, 35, "?", 45, 35]],
   ["600", [7, 8, 9, 10, 11, 12, 13, 14]],
 ]);
 
@@ -144,12 +156,16 @@ assert.equal(overlays.get("500").style.zIndex, rear.style.zIndex,
 assert.equal(overlays.get("600").style.zIndex, front.style.zIndex,
   "a front label must share the front window z-order");
 assert.match(overlays.get("500").className, /monitor-bct-node-target-highlighted/);
-assert.equal(overlays.get("500").querySelector(".monitor-thumbnail-tab-badge").textContent, "N33/35/45");
+function badgeText(badge) {
+  return (badge.children || []).map((part) => part.textContent).join("") || badge.textContent;
+}
+assert.equal(badgeText(overlays.get("500").querySelector(".monitor-thumbnail-tab-badge")), "N33/35/?/45");
 assert.equal(
-  overlays.get("600").querySelector(".monitor-thumbnail-tab-badge").textContent,
+  badgeText(overlays.get("600").querySelector(".monitor-thumbnail-tab-badge")),
   "N7/8/9/10/11/12/13/14",
   "all tabs must remain visible; wrapping belongs to CSS and no +n abbreviation is allowed",
 );
+assert.deepEqual(overlays.get("500").querySelector(".monitor-thumbnail-tab-badge").children.map((part) => part.textContent), ["N", "33", "/", "35", "/", "?", "/", "45"], "prefix, separators, and numeric tokens must remain individually addressable so only a selected number can enlarge");
 assert.equal(layer.querySelector(".monitor-thumbnail-z-rail"), null,
   "collision rails must not exist in the simplified projection");
 assert.equal(layer.querySelector(".monitor-thumbnail-node-chip"), null,

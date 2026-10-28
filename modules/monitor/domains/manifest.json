@@ -14,7 +14,7 @@
     {
       "domain": "desktop-lifecycle",
       "file": "desktop-lifecycle.js",
-      "functions": 98
+      "functions": 102
     },
     {
       "domain": "diagnostics-shell",
@@ -29,7 +29,7 @@
     {
       "domain": "node-identity",
       "file": "node-identity.js",
-      "functions": 64
+      "functions": 65
     },
     {
       "domain": "organization",
@@ -39,7 +39,7 @@
     {
       "domain": "shared-ui",
       "file": "shared-ui.js",
-      "functions": 109
+      "functions": 111
     },
     {
       "domain": "sketch-notes",

@@ -228,6 +228,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   if (!/^\d+$/.test(hwnd)||hwnd==="0") return;
   if (hwnd === String(monitorDesktopState.hostWindowHwnd || "")) {
     await chrome.runtime.sendMessage({ type:"monitor-save-popup-window-bounds" }).catch(() => null);
+    scheduleMonitorExternalWindowDropTargets();
     return;
   }
 

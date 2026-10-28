@@ -21,6 +21,8 @@ globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
 
 let monitorThumbnailLayoutSignature = "";
 
+window.addEventListener("resize", () => scheduleMonitorExternalWindowDropTargets());
+
 /*@@MONITOR_FUNCTION:applyMonitorLiveWindowGeometry@@*/
 
 /*@@MONITOR_FUNCTION:monitorThumbnailLayoutWatch@@*/

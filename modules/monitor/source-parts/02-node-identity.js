@@ -140,9 +140,14 @@ const monitorChatNavigationPendingByTab = new Map();
 /*@@MONITOR_FUNCTION:applyMonitorChatNavigationIdentity@@*/
 
 const monitorBrowserVisualPendingWindowIds = new Set();
+const monitorBrowserVisualTabsByWindow = new Map();
 let monitorBrowserVisualRefreshTimer = 0;
 let monitorBrowserVisualRefreshInFlight = false;
 const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 360;
+
+/*@@MONITOR_FUNCTION:applyMonitorBrowserVisualTabSnapshot@@*/
+
+/*@@MONITOR_FUNCTION:monitorBrowserVisualTabsForWindow@@*/
 
 /*@@MONITOR_FUNCTION:scheduleMonitorBrowserVisualRefresh@@*/
 

@@ -72,8 +72,8 @@ const arr=ctx.monitorMinimizedNodeSlotsByDesktop({});
 assert.deepEqual(Array.from(arr.get("deskA")),[2,3,5,6,7]);
 assert.deepEqual(Array.from(arr.get("deskB")),[8]);
 ctx.syncMonitorMinimizedNodeBadges({});
-assert.deepEqual(label.badges.children.map(x=>x.textContent),["2","3","..."]);
-assert.deepEqual(label2.badges.children.map(x=>x.textContent),["8"]);
+assert.equal(label.badges.children.map(x=>x.textContent).join(""),"N2/3/5/6/7");
+assert.equal(label2.badges.children.map(x=>x.textContent).join(""),"N8");
 locationMap.set("100",{desktopId:"deskA",iconic:false});
 locationMap.set("200",{desktopId:"deskA",iconic:false});
 ctx.syncMonitorMinimizedNodeBadges({});
@@ -99,6 +99,11 @@ assert.match(src,/syncMonitorThumbnailTabBadges\(tile,"monitor-desktop-thumb-win
 assert.match(src,/MonitorBctThumbnailProjection/);
 assert.match(projectionSrc,/windowLayer\.append\(badge\)/);
 assert.match(projectionSrc,/layer\.append\(windowLayer\)/);
-assert.match(css,/\.monitor-thumbnail-node-overlay\s*\{[^}]*display:contents/s);
+assert.match(css,/\.monitor-thumbnail-node-overlay\s*\{[^}]*position:absolute[^}]*pointer-events:none/s,
+  "node overlay keeps a distinct click-through visual layer");
+assert.match(css,/\.monitor-desktop-minimized-nodes\.monitor-bct-minimized-selection/,
+  "the selected minimized node must highlight its own desktop summary");
+assert.match(src,/monitor-bct-minimized-selection/,
+  "node selection must re-project into minimized summaries");
 assert.doesNotMatch(css,/\.monitor-thumbnail-z-rail\s*\{/);
 console.log("PASS: minimized nodes use the bottom summary while open nodes keep natural HWND stacking");

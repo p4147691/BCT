@@ -176,6 +176,12 @@ vm.runInContext(source, context);
   assert.doesNotMatch(monitorSource, /monitor-ai-section" hidden/);
   assert.match(monitorSource, /id="monitorBctNodesRefresh"/);
   assert.match(monitorSource, /refreshMonitorBctWindowNodes/);
+  assert.match(monitorSource, /MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS = Object\.freeze\(\[250, 800, 1800, 3200\]\)/,
+    "a cached initial RCC result must receive only a bounded revalidation");
+  assert.match(monitorSource, /monitorBctStartupRevalidationAttempts >= MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS\.length/,
+    "startup revalidation remains strictly bounded and cannot become polling");
+  assert.match(monitorSource, /monitorBctWindowNodesCache\.some\(\(node\) => node\.displayStale === true\)[\s\S]*?scheduleMonitorBctNodeStartupRevalidation\(\)/,
+    "a stale initial node list must refresh without a Monitor focus click");
   assert.match(monitorSource, /addEventListener\("contextmenu"/);
   assert.match(monitorSource, /monitorBctShell\.renameConversation\(node, title\)/);
   assert.match(monitorSource, /monitorBctShell\.updateConversationScope\(node,/);

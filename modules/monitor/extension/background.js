@@ -2449,22 +2449,39 @@ function monitorConversationKeyFromUrl(rawUrl) {
   }
 }
 
+async function publishMonitorBrowserWindowVisualChange(windowIdValue, reason, details = {}) {
+  const windowId = Number(windowIdValue);
+  if (!Number.isInteger(windowId)) return;
+  // Tab position is observable Chrome state. Send a compact snapshot with every
+  // visual event so the Monitor can project the real ordering without focusing
+  // the browser window or asking Core to rebuild its conversation registry.
+  const tabs = await chrome.tabs.query({ windowId }).catch(() => []);
+  chrome.runtime.sendMessage({
+    type: "monitor-browser-visual-changed",
+    windowId,
+    reason: String(reason || "visual-change"),
+    tabs: tabs.map((item) => ({
+      tabId: Number(item?.id),
+      tabIndex: Number(item?.index),
+    })).filter((item) => Number.isInteger(item.tabId) && item.tabId >= 0 && Number.isInteger(item.tabIndex)),
+    at: Date.now(),
+    ...details,
+  }).catch(() => {});
+}
+
 async function publishMonitorBrowserVisualChange(tabIdValue, reason, tabHint = null) {
   const tabId = Number(tabIdValue);
   if (!Number.isInteger(tabId) || tabId < 0) return;
   const tab = tabHint || await chrome.tabs.get(tabId).catch(() => null);
-  if (!tab?.active) return;
+  if (!tab) return;
   const windowId = Number(tab?.windowId);
   if (!Number.isInteger(windowId)) return;
-  chrome.runtime.sendMessage({
-    type: "monitor-browser-visual-changed",
+  await publishMonitorBrowserWindowVisualChange(windowId, reason, {
     tabId,
-    windowId,
+    tabIndex: Number(tab?.index),
     url: String(tab?.url || ""),
-    active: true,
-    reason: String(reason || "visual-change"),
-    at: Date.now()
-  }).catch(() => {});
+    active: Boolean(tab?.active),
+  });
 }
 
 async function publishMonitorChatNavigation(tabIdValue, rawUrl, reason, windowIdHint = null, activeHint = null) {
@@ -2520,6 +2537,10 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
     .catch(() => {});
 });
 
+chrome.tabs.onCreated.addListener((tab) => {
+  void publishMonitorBrowserVisualChange(tab?.id, "tab-created", tab);
+});
+
 chrome.tabs.onAttached.addListener((tabId, attachInfo) => {
   chrome.tabs.get(tabId)
     .then((tab) => {
@@ -2532,14 +2553,11 @@ chrome.tabs.onAttached.addListener((tabId, attachInfo) => {
 chrome.tabs.onDetached.addListener((tabId, detachInfo) => {
   const oldWindowId = Number(detachInfo?.oldWindowId);
   if (!Number.isInteger(oldWindowId)) return;
-  chrome.runtime.sendMessage({
-    type: "monitor-browser-visual-changed",
+  void publishMonitorBrowserWindowVisualChange(oldWindowId, "tab-detached", {
     tabId: Number(tabId),
-    windowId: oldWindowId,
+    tabRemoved: true,
     active: false,
-    reason: "tab-detached",
-    at: Date.now(),
-  }).catch(() => {});
+  });
 });
 
 chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
@@ -2551,8 +2569,16 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
     .catch(() => {});
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   monitorChatNavigationLastByTab.delete(Number(tabId));
+  const windowId = Number(removeInfo?.windowId);
+  if (Number.isInteger(windowId)) {
+    void publishMonitorBrowserWindowVisualChange(windowId, "tab-removed", {
+      tabId: Number(tabId),
+      tabRemoved: true,
+      active: false,
+    });
+  }
 });
 
 chrome.windows.onFocusChanged.addListener(() => {

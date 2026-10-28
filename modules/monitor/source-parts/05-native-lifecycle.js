@@ -46,6 +46,8 @@ const MONITOR_BCT_DROP_EDGE_Y_PX = 10;
 
 /*@@MONITOR_FUNCTION:commitMonitorBctNodeDrop@@*/
 
+/*@@MONITOR_FUNCTION:scheduleMonitorBctNodeStartupRevalidation@@*/
+
 /*@@MONITOR_FUNCTION:refreshMonitorBctWindowNodes@@*/
 
 /*@@MONITOR_FUNCTION:renderMonitorGithubInbox@@*/

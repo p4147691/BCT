@@ -14,6 +14,12 @@ let monitorCreateDesktopDropBusy = false;
 
 let monitorCreateDesktopDropConsumedUntil = 0;
 
+let monitorExternalWindowDropTargetTimer = 0;
+
+let monitorExternalWindowDropTargetSignature = "";
+
+let monitorExternalWindowDropScreenOrigin = null;
+
 /*@@MONITOR_FUNCTION:syncMonitorNativeZOrder@@*/
 
 /*@@MONITOR_FUNCTION:monitorSelectedEntries@@*/
@@ -90,6 +96,14 @@ if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_TRASHED_
 
 /*@@MONITOR_FUNCTION:clearMonitorDesktopDropTargets@@*/
 
+/*@@MONITOR_FUNCTION:scheduleMonitorExternalWindowDropTargets@@*/
+
+/*@@MONITOR_FUNCTION:recordMonitorExternalWindowDropPointer@@*/
+
+/*@@MONITOR_FUNCTION:syncMonitorExternalWindowDropTargets@@*/
+
+/*@@MONITOR_FUNCTION:handleMonitorExternalWindowDropFinished@@*/
+
 let monitorWorkerRowPointerDrag = null;
 
 let monitorWorkerRowSuppressClickUntil = 0;
@@ -123,6 +137,8 @@ let monitorWorkerRowSuppressClickUntil = 0;
 /*@@MONITOR_FUNCTION:cancelMonitorDesktopPointerDrag@@*/
 
 document.addEventListener("pointermove", updateMonitorWindowPointerDrag, true);
+
+document.addEventListener("pointermove", recordMonitorExternalWindowDropPointer, true);
 
 document.addEventListener("pointerup", finishMonitorWindowPointerDrag, true);
 

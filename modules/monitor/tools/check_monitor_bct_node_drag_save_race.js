@@ -84,10 +84,49 @@ async function successfulSave(){
  assert.equal(ctx.monitorBctNodeReorderPending,false);
  assert.equal(ctx.monitorBctWindowNodesCache[0].displayOrder,2);
 }
+async function crossScopeMove(destinationGroupKey, destinationScopeName, expectedScopeName) {
+ const updates=[],reorders=[],statuses=[];
+ const ctx={
+  monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"A",
+  monitorBctWindowNodesCache:[
+   {conversationKey:"A",title:"Worker A",scopeId:"team-a",scopeName:"Team A",roleTags:["Worker","Review"]},
+   {conversationKey:"B",title:"Worker B",scopeId:"team-b",scopeName:"Team B",roleTags:["Manager"]}
+  ],
+  monitorBctShell:{
+   updateConversationScope:async(node,values)=>{updates.push({node,values});return {};},
+   reorderConversations:()=>{reorders.push(true);return Promise.resolve({});}
+  },
+  finishMonitorBctNodeDrag(){},renderMonitorBctWindowNodes(nodes){ctx.renders.push(nodes);},
+  refreshMonitorBctWindowNodes:async()=>{ctx.refreshed=(ctx.refreshed||0)+1;},
+  renders:[],
+  setMonitorStatus(...args){statuses.push(args);},
+  monitorUniqueBctConversationNodes:(nodes)=>[...new Map(nodes.map((node)=>[node.conversationKey,node])).values()],
+  compareMonitorBctNodeDisplayOrder:()=>0,Object,Map,Array,String
+ };
+ vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
+ const task=ctx.commitMonitorBctNodeDrop(destinationGroupKey,"","append",destinationScopeName);
+ const optimistic=ctx.monitorBctWindowNodesCache.find((node)=>node.conversationKey==="A");
+ assert.equal(optimistic.scopeId,destinationGroupKey==="__unassigned__"?"":destinationGroupKey,
+   "the card moves immediately instead of returning to the old group while saving");
+ assert.equal(optimistic.scopeName,expectedScopeName);
+ assert.equal(ctx.renders.length,1,"the optimistic card location is rendered before the metadata write resolves");
+ await task;
+ assert.equal(ctx.monitorBctNodeReorderPending,false);
+ assert.equal(reorders.length,0,"cross-scope drops use the same metadata update path as the context menu");
+ assert.equal(updates.length,1);
+ assert.equal(updates[0].node.conversationKey,"A");
+ assert.equal(updates[0].values.displayName,"Worker A");
+ assert.equal(updates[0].values.scopeName,expectedScopeName);
+ assert.deepEqual(updates[0].values.roleTags,["Worker","Review"],"role tags survive scope changes");
+ assert.equal(ctx.refreshed,1,"scope changes re-read authoritative Monitor state");
+ assert.equal(statuses.length,1);
+}
 (async()=>{
  await scenario(false);
  await scenario(true);
  await successfulSave();
+ await crossScopeMove("__unassigned__","","");
+ await crossScopeMove("team-b","Team B","Team B");
  assert.match(source,/monitorBctPointerDrag \|\| monitorBctNodeReorderPending\) return/);
- console.log(JSON.stringify({status:"PASS",cases:3,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success"}));
+ console.log(JSON.stringify({status:"PASS",cases:5,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,scope-move-to-unassigned,scope-move-to-network"}));
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});

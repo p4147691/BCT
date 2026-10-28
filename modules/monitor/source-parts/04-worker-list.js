@@ -166,6 +166,11 @@ let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorBctWindowNodeRefreshPending = false;
+// A reload can observe cached RCC rows while Chrome/RCC complete their own
+// restart. Revalidate only during this bounded warm-up; this is not a poll.
+const MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS = Object.freeze([250, 800, 1800, 3200]);
+let monitorBctStartupRevalidationTimer = 0;
+let monitorBctStartupRevalidationAttempts = 0;
 let monitorMinimizedBadgeConvergenceTimer = 0;
 let monitorBctProjectionGeneration = 0;
 let monitorBctProjectionConvergenceTimer = 0;

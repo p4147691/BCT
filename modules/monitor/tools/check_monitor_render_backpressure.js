@@ -36,6 +36,7 @@ const context = {
   monitorWindowDesktopLocations: new Map([["100", { desktopId: "D1" }]]),
   monitorHwndForBrowserWindowId: () => "100",
   monitorThumbnailService: { invalidate: (hwnd) => invalidatedHwnds.push(String(hwnd)) },
+  syncMonitorAllDesktopThumbnailNodeBadges: () => {},
   invalidateMonitorDesktopFrames: () => {},
   refreshBackgroundThumbs: async () => [],
   refreshObservedWindows: async () => true,

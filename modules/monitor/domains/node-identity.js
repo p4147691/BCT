@@ -3,6 +3,11 @@ function applyMonitorBctNodeHighlight(hwnd) {
   monitorBctNodeHighlightedHwnd = String(hwnd || "");
   applyMonitorWindowHighlight(hwnd, { bctNode: true });
   syncMonitorBctNodeTargetHighlight();
+  // A selected node may be in a minimized Chrome window. Re-project the same
+  // exact selection onto the desktop's minimized summary without changing any
+  // Windows or Chrome state.
+  syncMonitorMinimizedNodeBadges();
+  syncMonitorAllDesktopThumbnailNodeBadges();
 }
 //@@FN_END:applyMonitorBctNodeHighlight
 
@@ -12,9 +17,30 @@ function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState)
   if (!active) return { ok:true, changed:false, inactive:true };
 
   const conversationKey = String(message?.conversationKey || "").trim();
-  if (!conversationKey) return { ok:true, changed:false, transitional:true };
+  const windowId = Number(message?.windowId);
+  const tabId = Number(message?.tabId);
+  const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
+  // A tab without a conversation UUID is still a real observed `N?` entry.
+  // Prefer its exact Chrome window/tab pair, so selecting it never guesses a
+  // different unregistered tab in the same browser window.
+  const selectedNode = nodes.find((node) =>
+    Number(node?.windowId) === windowId && Number(node?.tabId) === tabId &&
+    (!conversationKey || String(node?.conversationKey || "").trim() === conversationKey)
+  ) || (conversationKey
+    ? nodes.find((node) => String(node?.conversationKey || "").trim() === conversationKey)
+    : null);
+  if (selectedNode) {
+    monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(selectedNode);
+    // Chrome chose this tab; Monitor only mirrors that selection. Do not turn
+    // it into a Monitor-window/desktop highlight or activate anything.
+    monitorBctNodeHighlightedHwnd = "";
+    syncMonitorBctNodeTargetHighlight();
+    syncMonitorMinimizedNodeBadges(state);
+    syncMonitorAllDesktopThumbnailNodeBadges();
+  }
+  if (!conversationKey) return { ok:true, changed:Boolean(selectedNode), transitional:!selectedNode };
 
-  const hwnd = monitorHwndForBrowserWindowId(message?.windowId, state);
+  const hwnd = monitorHwndForBrowserWindowId(windowId, state);
   if (!hwnd) return { ok:false, mappingMiss:true };
 
   const location = monitorWindowDesktopLocations.get(hwnd);
@@ -302,10 +328,26 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
         (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
           (Number.isSafeInteger(right?.tabIndex) ? right.tabIndex : Number.MAX_SAFE_INTEGER) ||
         Number(left?.tabId || 0) - Number(right?.tabId || 0));
-    return [...new Set(matched.map((node) => {
-      const match = /^N(\d+)$/.exec(String(node.nodeLabel || "").trim());
-      return match ? Number(match[1]) : 0;
-    }).filter((n) => Number.isSafeInteger(n) && n > 0))];
+    const nodeToken = (node) => {
+      const match = /^N(\d+)$/.exec(String(node?.nodeLabel || "").trim());
+      return match ? Number(match[1]) : "?";
+    };
+    const byTabId = new Map(matched.map((node) => [Number(node?.tabId), node])
+      .filter(([tabId]) => Number.isInteger(tabId) && tabId >= 0));
+    const browserWindowIds = [...new Set(matched.map((node) => Number(node?.windowId))
+      .filter((windowId) => Number.isInteger(windowId)))];
+
+    // When Chrome has just told us the current tab order, it is more current
+    // than Core's next membership refresh. Keep non-BCT/UUID-less tabs visible
+    // as `?` in that exact position rather than silently dropping them.
+    if (browserWindowIds.length === 1) {
+      const browserTabs = monitorBrowserVisualTabsForWindow(browserWindowIds[0]);
+      if (browserTabs.length) {
+        return browserTabs.map((tab) => nodeToken(byTabId.get(Number(tab.tabId))));
+      }
+    }
+
+    return matched.map(nodeToken);
   }
   return monitorActNodeNumbersForHwnd(hwnd, state);
 }
@@ -362,9 +404,10 @@ function monitorBctNodeSelectionKey(value) {
   const sessionId = String(value?.sessionId || "").trim();
   const windowId = String(value?.windowId || "").trim();
   const tabId = String(value?.tabId || "").trim();
-  return instanceId && sessionId && windowId && tabId
+  if (!windowId || !tabId) return "";
+  return instanceId && sessionId
     ? `${instanceId}:${sessionId}:${windowId}:${tabId}`
-    : "";
+    : `tab:${windowId}:${tabId}`;
 }
 //@@FN_END:monitorBctNodeSelectionKey
 
@@ -972,6 +1015,21 @@ function monitorStoreNodeBinding(binding, endpoint = null) {
 function profileForMonitorWorker(worker, state) { return globalThis.MonitorDomainAPIs["node-identity"]["profileForMonitorWorker"].apply(this, arguments); }
 //@@FN_END:profileForMonitorWorker
 
+//@@FN_START:scheduleMonitorBctNodeStartupRevalidation
+function scheduleMonitorBctNodeStartupRevalidation() {
+  if (!MONITOR_ACTIVE_STARTUP_ENABLED || monitorBctStartupRevalidationTimer ||
+      monitorBctStartupRevalidationAttempts >= MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS.length) return;
+  const delay = MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS[monitorBctStartupRevalidationAttempts];
+  monitorBctStartupRevalidationAttempts += 1;
+  monitorBctStartupRevalidationTimer = setTimeout(() => {
+    monitorBctStartupRevalidationTimer = 0;
+    // Read-only retry: a cached RCC row must not leave the initial Monitor
+    // view looking disabled until the user happens to focus this window.
+    void refreshMonitorBctWindowNodes();
+  }, delay);
+}
+//@@FN_END:scheduleMonitorBctNodeStartupRevalidation
+
 //@@FN_START:refreshMonitorBctWindowNodes
 async function refreshMonitorBctWindowNodes() {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell) return;
@@ -997,6 +1055,9 @@ async function refreshMonitorBctWindowNodes() {
     renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
     syncMonitorAllDesktopThumbnailNodeBadges();
     scheduleMonitorBctProjectionConvergence("bct-state");
+    if (monitorBctWindowNodesCache.some((node) => node.displayStale === true)) {
+      scheduleMonitorBctNodeStartupRevalidation();
+    }
   } catch (error) {
     if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "상태 확인 실패";
     const message = document.createElement("div");
@@ -1311,6 +1372,13 @@ function renderMonitorBctWindowNodes(nodes) {
     });
     groups.get(key).nodes.push(node);
   }
+  // Keep a real destination for returning a node even when no conversation is
+  // currently unassigned. The heading is not a drop target; the list below is.
+  if (!groups.has("__unassigned__")) groups.set("__unassigned__", {
+    key: "__unassigned__",
+    name: "미소속 대화",
+    nodes: [],
+  });
   const orderedGroups = [...groups.values()].sort((left, right) =>
     Number(left.key === "__unassigned__") - Number(right.key === "__unassigned__") ||
     left.name.localeCompare(right.name, "ko"));
@@ -1375,11 +1443,18 @@ function renderMonitorBctWindowNodes(nodes) {
     const groupList = document.createElement("div");
     groupList.className = "monitor-bct-node-list";
     groupList.dataset.scopeId = group.key;
+    groupList.dataset.scopeName = group.key === "__unassigned__" ? "" : group.name;
     groupSection.append(groupHeader, groupList);
     fragment.append(groupSection);
     if (monitorBctCollapsedScopes.has(group.key)) {
       groupList.hidden = true;
       continue;
+    }
+    if (!group.nodes.length) {
+      const emptyDrop = document.createElement("div");
+      emptyDrop.className = "monitor-bct-node-empty monitor-bct-node-drop-empty";
+      emptyDrop.textContent = "여기에 놓으면 미소속";
+      groupList.append(emptyDrop);
     }
     for (const [index, node] of group.nodes.entries()) {
     const row = document.createElement("article");
@@ -1423,7 +1498,13 @@ function renderMonitorBctWindowNodes(nodes) {
     location.textContent = monitorBctNodeLocationText(node, desktopPosition);
     location.title = location.textContent;
     body.append(location);
-    row.append(number, body);
+    const presence = document.createElement("span");
+    const stale = node.displayStale === true || node.instanceState !== "OPEN";
+    presence.className = `monitor-bct-node-presence${!stale && node.generating === true ? " is-busy" : ""}`;
+    presence.setAttribute("aria-label", stale ? "관측 지연" : node.generating === true ? "응답 생성 중" : "열려 있음");
+    presence.title = stale ? "관측 지연" : node.generating === true ? "응답 생성 중" : "열려 있음";
+    globalThis.MonitorStatusIcon?.render?.(presence, { activity: !stale && node.generating === true ? "play" : "pause" });
+    row.append(number, body, presence);
     row.classList.toggle("is-manager", Array.isArray(node.roleTags) && node.roleTags.includes("Manager"));
     installMonitorBctManagerLongPress(row, node);
     row.addEventListener("dragstart", (event) => event.preventDefault());
@@ -1586,36 +1667,60 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     return;
   }
   const slotsByDesktop = monitorMinimizedNodeSlotsByDesktop(state);
+  const selectedKey = String(globalThis.monitorBctSelectedNodeKey || "");
+  const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) =>
+    `${String(node?.instanceId || "")}:${String(node?.sessionId || "")}:${String(node?.windowId || "")}:${String(node?.tabId || "")}` === selectedKey
+  );
+  const selectedMatch = /^N(\d+)$/.exec(String(selectedNode?.nodeLabel || "").trim());
+  const selectedSlot = selectedMatch ? Number(selectedMatch[1]) : 0;
 
   for (const button of monitorDesktopThumbs.children) {
-
     const visual = button.querySelector(".monitor-desktop-thumb-visual");
-
     if (!visual) continue;
-
     const label = button.querySelector(".monitor-desktop-thumb-label");
     if (!label) continue;
     visual.querySelector(".monitor-desktop-minimized-nodes")?.remove();
     let host = label.querySelector(".monitor-desktop-minimized-nodes");
-
     if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; label.append(host); }
 
     const slots = slotsByDesktop.get(String(button.dataset.desktopId || "")) || [];
-
-    const visibleSlots = slots.slice(0, 2);
-    const badges = visibleSlots.map((slot) => { const badge=document.createElement("span"); badge.className="monitor-node-number-badge monitor-desktop-minimized-node"; badge.textContent=String(slot); badge.title=`최소화 노드 ${slot}`; return badge; });
-    if (slots.length >= 3) {
-      const more = document.createElement("span");
-      more.className = "monitor-desktop-minimized-more";
-      more.textContent = "...";
-      more.title = `최소화 노드 ${slots.length}개`;
-      badges.push(more);
+    const selectedIndex = slots.indexOf(selectedSlot);
+    const width = Number(label.getBoundingClientRect?.().width || 0);
+    const budget = Math.max(9, Math.floor((width || 118) / 6.2));
+    let first = 0, last = Math.max(0, slots.length - 1);
+    const lengthFor = (left, right) => 1 + (left > 0 ? 1 : 0) + (right < slots.length - 1 ? 1 : 0) + slots.slice(left, right + 1).join("/").length;
+    if (slots.length && lengthFor(first, last) > budget) {
+      const center = selectedIndex >= 0 ? selectedIndex : 0;
+      first = center; last = center;
+      let preferRight = true;
+      while (true) {
+        const rightFits = last < slots.length - 1 && lengthFor(first, last + 1) <= budget;
+        const leftFits = first > 0 && lengthFor(first - 1, last) <= budget;
+        if (!leftFits && !rightFits) break;
+        if ((preferRight && rightFits) || !leftFits) last += 1;
+        else first -= 1;
+        preferRight = !preferRight;
+      }
     }
-    host.replaceChildren(...badges);
 
+    const fullText = slots.length ? `N${slots.join("/")}` : "";
+    const parts = [];
+    if (slots.length) {
+      const prefix = document.createElement("span"); prefix.className = "monitor-desktop-minimized-prefix"; prefix.textContent = "N"; parts.push(prefix);
+      if (first > 0) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
+      for (let index = first; index <= last; index += 1) {
+        if (index > first) { const slash = document.createElement("span"); slash.className = "monitor-desktop-minimized-separator"; slash.textContent = "/"; parts.push(slash); }
+        const badge = document.createElement("span");
+        const selected = slots[index] === selectedSlot;
+        badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
+        badge.textContent = String(slots[index]); badge.title = `최소화 노드 N${slots[index]}`; parts.push(badge);
+      }
+      if (last < slots.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
+    }
+    host.className = `monitor-desktop-minimized-nodes${selectedIndex >= 0 ? " monitor-bct-minimized-selection" : ""}`;
+    host.title = fullText ? `최소화 노드 ${fullText}` : "";
+    host.replaceChildren(...parts);
     host.hidden = slots.length === 0;
-
   }
-
 }
 //@@FN_END:syncMonitorMinimizedNodeBadges

@@ -879,7 +879,11 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
-            if (eventType == EVENT_SYSTEM_MOVESIZESTART) { lock (WindowEventLock) ActiveMoveSizeWindows.Add(key); return; }
+            if (eventType == EVENT_SYSTEM_MOVESIZESTART) {
+                lock (WindowEventLock) ActiveMoveSizeWindows.Add(key);
+                MonitorExternalWindowDrop.OnMoveStart(hWnd);
+                return;
+            }
 
 
 
@@ -896,6 +900,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
 
 
+            MonitorExternalWindowDrop.OnMoveEnd(hWnd);
             EmitWindowSettled(hWnd, "movesizeend", GetObservedWindowDesktopId(hWnd));
 
 
@@ -950,6 +955,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
             // LOCATIONCHANGE is authoritative for keyboard Snap and other moves
             // that do not reliably complete the mouse move/size event pair.
             // Re-arm one fallback while dragging instead of dropping the event.
+            MonitorExternalWindowDrop.OnMoveLocation(hWnd);
             ScheduleWindowSettled(hWnd, "locationchange", moveSizeActive ? 140 : 85);
 
 
@@ -1290,6 +1296,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
         string type = GetString(request, "type");
 
         if (type == "monitorDragPreviewStart" || type == "monitorDragPreviewStop") return MonitorDragPreviewOverlay.Handle(request);
+        if (type == "setExternalWindowDropTargets") return MonitorExternalWindowDrop.Handle(request);
 
 
 
@@ -3878,7 +3885,7 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-    private static object MoveWindowToDesktop(Dictionary<string, object> request)
+    private static object MoveWindowToDesktop(Dictionary<string, object> request)
 
 
 
@@ -4023,7 +4030,12 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-    private static string ChromeAddressValue(IntPtr hWnd)
+    internal static object MoveExternalWindowToDesktop(Dictionary<string, object> request)
+    {
+        return MoveWindowToDesktop(request);
+    }
+
+    private static string ChromeAddressValue(IntPtr hWnd)
 
 
 

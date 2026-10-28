@@ -25,6 +25,7 @@ class Element{
   contains(node){for(let item=node;item;item=item.parentElement)if(item===this)return true;return false;}
   closest(selector){const cls=String(selector).replace(/^\./,"");for(let node=this;node;node=node.parentElement)if(node.classList.contains(cls))return node;return null;}
   querySelectorAll(selector){const want=String(selector).split("[")[0].replace(/^\./,"");const out=[];const visit=node=>{for(const child of node.children){if(child.classList.contains(want))out.push(child);visit(child);}};visit(this);return out;}
+  querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
   addEventListener(type,fn){const list=this.listeners.get(type)||[];list.push(fn);this.listeners.set(type,list);}
   removeEventListener(type,fn){this.listeners.set(type,(this.listeners.get(type)||[]).filter(x=>x!==fn));}
   emit(type,event){for(const fn of this.listeners.get(type)||[])fn(event);}

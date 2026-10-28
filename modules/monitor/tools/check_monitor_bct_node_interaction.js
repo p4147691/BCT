@@ -9,6 +9,7 @@ const root = path.join(__dirname, "..");
 const modulePath = path.join(root, "extension", "monitor-bct-node-interaction.js");
 const monitorPath = path.join(root, "extension", "monitor.js");
 const cssPath = path.join(root, "extension", "monitor.css");
+const projectionPath = path.join(root, "extension", "monitor-bct-thumbnail-projection.js");
 
 function loadModule() {
   const context = { globalThis: null, Object, String, Number, Array, Error, RegExp, Promise };
@@ -85,12 +86,19 @@ function loadModule() {
 
   const monitor = fs.readFileSync(monitorPath, "utf8");
   const css = fs.readFileSync(cssPath, "utf8");
+  const projection = fs.readFileSync(projectionPath, "utf8");
   assert.match(monitor, /row\.addEventListener\("click"/);
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
   assert.match(monitor, /function updateMonitorBctNodePointerDrag/);
   assert.match(monitor, /function monitorBctNodeDropAt/);
   assert.match(monitor, /groupList\.className = "monitor-bct-node-list"/);
+  assert.match(monitor, /groups\.has\("__unassigned__"\)/,
+    "an empty unassigned group must remain available as a drop destination");
+  assert.match(monitor, /monitor-bct-node-drop-empty/,
+    "empty unassigned drop surface must be rendered inside its list");
+  assert.match(monitor, /const scopeName = String\(list\.dataset\.scopeName \|\| ""\)\.trim\(\)/,
+    "drop resolution must carry the destination network name");
   assert.doesNotMatch(monitor, /groupHeader\.addEventListener\("drop"/);
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
@@ -109,6 +117,22 @@ function loadModule() {
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
   assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\)/);
   assert.match(css, /monitor-bct-node-target-highlighted/);
+  assert.doesNotMatch(css, /\.monitor-bct-node-row\.is-selected \.monitor-bct-node-number/,
+    "the node-list number remains neutral; selection belongs only in the thumbnail");
+  assert.match(css, /\.monitor-thumbnail-tab-token\.is-selected/,
+    "thumbnail selection must be token-level, not a full badge fill");
+  assert.match(css, /\.monitor-thumbnail-tab-prefix,.monitor-thumbnail-tab-separator/,
+    "the N prefix and slash separators must remain at baseline size");
+  assert.match(projection, /monitor-thumbnail-tab-separator/,
+    "the projection must render slash separators separately from number tokens");
+  assert.doesNotMatch(css, /monitor-bct-node-target-highlighted \.monitor-thumbnail-tab-badge \{[^}]*background:#ffd75a/,
+    "a selected tab must not paint its thumbnail badge background yellow");
+  assert.match(monitor, /A tab without a conversation UUID is still a real observed `N\?` entry/,
+    "tab activation must retain an unregistered N? entry");
+  assert.match(monitor, /Number\(node\?\.windowId\) === windowId && Number\(node\?\.tabId\) === tabId/,
+    "tab activation must select by exact Chrome window/tab identity");
+  assert.match(monitor, /syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
+    "selection changes must reproject thumbnail number tokens immediately");
   assert.match(css, /#ffd75a/);
   assert.match(css, /monitor-bct-drop-before/);
   assert.doesNotMatch(css, /monitor-bct-node-list-end/);
@@ -194,7 +218,7 @@ function loadModule() {
   ];
   const listClasses = new Set();
   const list = {
-    dataset: { scopeId: "scope-a" },
+    dataset: { scopeId: "scope-a", scopeName: "Scope A" },
     hidden: false,
     getBoundingClientRect: () => ({ left: 0, right: 300, top: 40, bottom: 120, width: 300, height: 80 }),
     querySelectorAll: () => dropRows,
@@ -215,11 +239,20 @@ function loadModule() {
   const appendDrop = dropContext.monitorBctNodeDropAt(290, 92, "dragged");
   assert.deepEqual(JSON.parse(JSON.stringify(appendDrop)), {
     scopeId: "scope-a",
+    scopeName: "Scope A",
     targetConversationKey: "n4",
     position: "after",
   });
   assert.equal(dropRows[3].classes.has("monitor-bct-drop-after"), true);
   assert.equal(listClasses.has("monitor-bct-node-list-target"), true);
+  list.querySelectorAll = () => [];
+  const emptyDrop = dropContext.monitorBctNodeDropAt(100, 92, "dragged");
+  assert.deepEqual(JSON.parse(JSON.stringify(emptyDrop)), {
+    scopeId: "scope-a",
+    scopeName: "Scope A",
+    targetConversationKey: "",
+    position: "append",
+  }, "an empty scope list remains a valid append destination");
 
   const selectionStart = monitor.indexOf("function syncMonitorBctNodeTargetHighlight(");
   const selectionEnd = monitor.indexOf("\nfunction applyMonitorBctNodeHighlight(", selectionStart);

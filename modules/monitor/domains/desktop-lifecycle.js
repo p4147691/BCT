@@ -252,6 +252,62 @@ function clearMonitorDesktopDropTargets() {
 }
 //@@FN_END:clearMonitorDesktopDropTargets
 
+//@@FN_START:scheduleMonitorExternalWindowDropTargets
+function scheduleMonitorExternalWindowDropTargets() {
+  if (monitorExternalWindowDropTargetTimer) return;
+  monitorExternalWindowDropTargetTimer = setTimeout(() => {
+    monitorExternalWindowDropTargetTimer = 0;
+    void syncMonitorExternalWindowDropTargets();
+  }, 0);
+}
+//@@FN_END:scheduleMonitorExternalWindowDropTargets
+
+//@@FN_START:recordMonitorExternalWindowDropPointer
+function recordMonitorExternalWindowDropPointer(event) {
+  const screenX = Number(event?.screenX);
+  const screenY = Number(event?.screenY);
+  const clientX = Number(event?.clientX);
+  const clientY = Number(event?.clientY);
+  if (![screenX, screenY, clientX, clientY].every(Number.isFinite)) return;
+  // A pointer observed by the Monitor document gives the exact document-to-
+  // screen offset, including Chrome's non-document chrome. This is more
+  // reliable than assuming window.screenY is the document origin.
+  monitorExternalWindowDropScreenOrigin = { left: screenX - clientX, top: screenY - clientY };
+}
+//@@FN_END:recordMonitorExternalWindowDropPointer
+
+//@@FN_START:syncMonitorExternalWindowDropTargets
+async function syncMonitorExternalWindowDropTargets() {
+  const hostWindowHwnd = String(monitorDesktopState?.hostWindowHwnd || "").trim();
+  const screenScale = Math.max(.5, Math.min(4, Number(window.devicePixelRatio) || 1));
+  const screenOrigin = monitorExternalWindowDropScreenOrigin || { left: Number(window.screenX || 0), top: Number(window.screenY || 0) };
+  const targets = [...monitorDesktopThumbs.querySelectorAll(".monitor-desktop-thumb[data-desktop-id]")]
+    .map((tile) => {
+      const desktopId = String(tile.dataset.desktopId || "").trim().toLowerCase();
+      const rect = tile.getBoundingClientRect();
+      return { desktopId, left: screenOrigin.left + rect.left, top: screenOrigin.top + rect.top, width: rect.width, height: rect.height };
+    })
+    .filter((target) => /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(target.desktopId) && target.width >= 16 && target.height >= 16);
+  const signature = JSON.stringify({ hostWindowHwnd, screenScale, targets });
+  if (signature === monitorExternalWindowDropTargetSignature) return;
+  monitorExternalWindowDropTargetSignature = signature;
+  if (!/^\d+$/.test(hostWindowHwnd) || hostWindowHwnd === "0") return;
+  const receipt = await monitorNative({ type:"setExternalWindowDropTargets", hostWindowHwnd, screenScale, targets }).catch(() => null);
+  if (!receipt?.ok) monitorExternalWindowDropTargetSignature = "";
+}
+//@@FN_END:syncMonitorExternalWindowDropTargets
+
+//@@FN_START:handleMonitorExternalWindowDropFinished
+async function handleMonitorExternalWindowDropFinished(event) {
+  if (event?.ok !== true) return;
+  const desktopId = String(event.desktopId || "").trim().toLowerCase();
+  invalidateMonitorDesktopFrames(...[desktopId].filter(Boolean));
+  await refreshVirtualDesktops();
+  void refreshWindowsCurrentState();
+  void refreshSelectedThumb();
+}
+//@@FN_END:handleMonitorExternalWindowDropFinished
+
 //@@FN_START:clearMonitorTrashDropTarget
 function clearMonitorTrashDropTarget() { monitorNodeTrash?.classList.remove("monitor-node-trash-drop-target","monitor-node-trash-drop-success"); }
 //@@FN_END:clearMonitorTrashDropTarget
@@ -267,7 +323,7 @@ function commitDesktopUndoRestore(now = Date.now()) {
 //@@FN_END:commitDesktopUndoRestore
 
 //@@FN_START:commitMonitorBctNodeDrop
-async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationKey, position) {
+async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationKey, position, destinationScopeName = "") {
   if (monitorBctNodeReorderPending) {
     finishMonitorBctNodeDrag();
     return;
@@ -278,10 +334,17 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   const dragged = semanticSnapshot.find((node) => node.conversationKey === draggedKey);
   const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
   const destinationSample = semanticSnapshot.find((node) => (node.scopeId || "") === destinationScopeId);
-  if (!dragged || !monitorBctShell?.reorderConversations) {
+  const movedAcrossScopes = (dragged?.scopeId || "") !== destinationScopeId;
+  const resolvedDestinationScopeName = destinationScopeId
+    ? String(destinationScopeName || destinationSample?.scopeName || "").trim()
+    : "";
+  if (!dragged || (movedAcrossScopes
+    ? !monitorBctShell?.updateConversationScope || (destinationScopeId && !resolvedDestinationScopeName)
+    : !monitorBctShell?.reorderConversations)) {
     finishMonitorBctNodeDrag();
     return;
   }
+
   const destination = semanticSnapshot
     .filter((node) => node.conversationKey !== draggedKey && (node.scopeId || "") === destinationScopeId)
     .sort(compareMonitorBctNodeDisplayOrder);
@@ -291,8 +354,48 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     if (targetIndex >= 0) insertion = targetIndex + (position === "after" ? 1 : 0);
   }
   destination.splice(insertion, 0, dragged);
-  const movedAcrossScopes = (dragged.scopeId || "") !== destinationScopeId;
   const nextOrders = new Map(destination.map((node, index) => [node.conversationKey, index + 1]));
+
+  if (movedAcrossScopes) {
+    // Move the card immediately.  The write still goes through the same Core
+    // metadata contract as the context menu; only a failed write rolls back.
+    const optimisticSnapshot = snapshot.map((node) => {
+      if (node.conversationKey !== draggedKey) return node;
+      return Object.freeze({
+        ...node,
+        scopeId: destinationScopeId,
+        scopeName: resolvedDestinationScopeName,
+        displayOrder: nextOrders.get(draggedKey) || 1,
+      });
+    });
+    monitorBctNodeReorderPending = true;
+    monitorBctWindowNodesCache = optimisticSnapshot;
+    finishMonitorBctNodeDrag();
+    renderMonitorBctWindowNodes(optimisticSnapshot);
+    try {
+      await monitorBctShell.updateConversationScope(dragged, {
+        displayName: String(dragged.title || dragged.nodeLabel || dragged.conversationKey || "ChatGPT").trim(),
+        scopeName: resolvedDestinationScopeName,
+        roleTags: Array.isArray(dragged.roleTags) ? dragged.roleTags : [],
+      });
+      await refreshMonitorBctWindowNodes();
+      setMonitorStatus(
+        destinationScopeId ? "노드를 대화망으로 이동했습니다." : "노드를 미소속 대화로 이동했습니다.",
+        true,
+        2200,
+      );
+    } catch (error) {
+      if (monitorBctWindowNodesCache === optimisticSnapshot) {
+        monitorBctWindowNodesCache = snapshot;
+        renderMonitorBctWindowNodes(snapshot);
+      }
+      setMonitorStatus(`대화망 이동 실패 · ${error?.message || error}`, false, 4200);
+    } finally {
+      monitorBctNodeReorderPending = false;
+    }
+    return;
+  }
+
   const optimisticSnapshot = snapshot.map((node) => {
     if (!nextOrders.has(node.conversationKey)) return node;
     return Object.freeze({
@@ -309,13 +412,9 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   try {
     await monitorBctShell.reorderConversations(destination, {
       scopeId: destinationScopeId,
-      movedConversationKey: movedAcrossScopes ? draggedKey : "",
+      movedConversationKey: "",
     });
-    setMonitorStatus(
-      movedAcrossScopes ? "노드를 대화망으로 이동하고 순서를 저장했습니다." : "노드 표시 순서를 저장했습니다.",
-      true,
-      2200,
-    );
+    setMonitorStatus("노드 표시 순서를 저장했습니다.", true, 2200);
   } catch (error) {
     // A newer RCC refresh replaces this exact snapshot. Never overwrite it.
     if (monitorBctWindowNodesCache === optimisticSnapshot) {
@@ -491,6 +590,7 @@ function endMonitorBctNodePointerDrag(event) {
     drop.scopeId,
     drop.targetConversationKey,
     drop.position,
+    drop.scopeName,
   );
 }
 //@@FN_END:endMonitorBctNodePointerDrag
@@ -917,19 +1017,23 @@ function monitorBctNodeDropAt(clientX, clientY, draggedKey) {
   const list = monitorBctNodeDropListAt(clientX, clientY, hit);
   if (!list) return null;
   const scopeId = String(list.dataset.scopeId || "__unassigned__");
+  const scopeName = String(list.dataset.scopeName || "").trim();
   const insertion = monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey);
+  list.classList.add("monitor-bct-node-list-target");
   if (insertion) {
     const { row, position } = insertion;
     row.classList.add(position === "before" ? "monitor-bct-drop-before" : "monitor-bct-drop-after");
     row.dataset.dropPosition = position;
-    list.classList.add("monitor-bct-node-list-target");
     return {
       scopeId,
+      scopeName,
       targetConversationKey: String(row.dataset.conversationKey || ""),
       position,
     };
   }
-  return null;
+  // An empty list (notably a newly empty 미소속 대화 list) still accepts the
+  // node. There is no row to insert beside, so the destination appends it.
+  return { scopeId, scopeName, targetConversationKey: "", position: "append" };
 }
 //@@FN_END:monitorBctNodeDropAt
 
@@ -1820,6 +1924,7 @@ function renderVirtualDesktops(state) {
     monitorPreviewBackground.clear(selectedId || "");
     monitorWindowLayer.replaceChildren();
     monitorFrameCache.clear();
+    scheduleMonitorExternalWindowDropTargets();
     if (hostWindowChanged) void monitorPublishSharedInstance("host-hwnd-changed");
     return;
   }
@@ -1878,6 +1983,8 @@ function renderVirtualDesktops(state) {
   }
 
   if (monitorStructureOpen && document.getElementById("monitorStructureManagers")) renderMonitorStructure();
+
+  scheduleMonitorExternalWindowDropTargets();
 
 }
 //@@FN_END:renderVirtualDesktops

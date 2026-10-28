@@ -54,6 +54,7 @@ function ensureMonitorNativePort() {
   port.onMessage.addListener((response) => {
 
     if (response?.event === true && response?.type === "windowMoveSizeEnd") { scheduleMonitorWindowLifecycleEvent(response); return; }
+    if (response?.event === true && response?.type === "externalWindowDropFinished") { void handleMonitorExternalWindowDropFinished(response); return; }
     if (response?.event === true && response?.type === "windowForegroundChanged") { handleMonitorForegroundChangedEvent(response); return; }
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {
       const explicitId=String(response.desktopId||"").toLowerCase();

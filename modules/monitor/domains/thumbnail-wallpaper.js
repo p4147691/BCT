@@ -88,8 +88,13 @@ async function captureDesktopFrame(desktopId, profile = "main") {
     const actByHwnd = new Map((Array.isArray(actMeta?.windows) ? actMeta.windows : []).map((item) => [String(item?.hwnd || ""), item]));
 
     const popupRuntime = await chrome.runtime.sendMessage({ type:"monitor-list-popup-runtime" }).catch(() => null);
+    // Native intentionally excludes the Monitor host HWND while it captures a
+    // desktop.  Keep that exclusion: including a live self-capture would make
+    // Monitor recursively render itself.  The exact host is instead allowed
+    // back in only through its bounded, frozen frame from the popup runtime.
     const monitorPopupWindows = (Array.isArray(popupRuntime?.windows) ? popupRuntime.windows : [])
-      .filter((item) => String(item?.desktopId || "") === String(desktopId));
+      .filter((item) => String(item?.desktopId || "") === String(desktopId))
+      .filter((item) => String(item?.hwnd || "") === hostHwnd && Boolean(item?.frozenDataUri));
     const windowRows = [...(Array.isArray(meta.windows) ? meta.windows : []), ...monitorPopupWindows];
     const windows = [...new Map(windowRows.map((item) => [String(item?.hwnd || ""), item])).values()]
 
@@ -106,9 +111,16 @@ async function captureDesktopFrame(desktopId, profile = "main") {
     const handlesConfirmed = handleSnapshot?.ok === true && Array.isArray(handleSnapshot.windows);
     const handleByHwnd = new Map((handlesConfirmed ? handleSnapshot.windows : []).map((item) => [String(item?.hwnd || ""), item]));
     const previousByHwnd = new Map(windows.map((item) => [String(item?.hwnd || ""), item]));
-    const currentWindows = handlesConfirmed
-      ? [...handleByHwnd.values()].filter((item) => /^[0-9]+$/.test(String(item?.hwnd || "")) && String(item.hwnd) !== "0" && (item.visible !== false || Boolean(item.iconic)))
+    // A confirmed native snapshot remains authoritative for real windows, but
+    // it does not contain the deliberately excluded host Monitor HWND above.
+    // Reinsert only that frozen self row after the snapshot so it cannot be
+    // lost on every successful refresh.
+    const currentWindowRows = handlesConfirmed
+      ? [...handleByHwnd.values(), ...monitorPopupWindows]
       : windows;
+    const currentWindows = [...new Map(currentWindowRows
+      .filter((item) => /^[0-9]+$/.test(String(item?.hwnd || "")) && String(item.hwnd) !== "0" && (item.visible !== false || Boolean(item.iconic)))
+      .map((item) => [String(item.hwnd), item])).values()];
     const liveWindows = currentWindows.map((item) => {
       const hwnd = String(item?.hwnd || "");
       const previous = previousByHwnd.get(hwnd);
@@ -1135,11 +1147,19 @@ function syncMonitorThumbnailTabBadges(container, className) {
     container.dataset.monitorNodeOverlayRendered = "0";
     return;
   }
+  const selectedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : []).find((node) =>
+    monitorBctSelectedNodeKey && monitorBctNodeSelectionKey(node) === monitorBctSelectedNodeKey
+  );
+  const selectedHwnd = selectedNode
+    ? monitorDisplayHwndForBrowserWindowId(selectedNode.windowId, monitorLastAiState, selectedNode.instanceId, selectedNode.sessionId)
+    : "";
   const diagnostics = projection.render({
     container,
     state: monitorLastAiState,
     locations: monitorWindowDesktopLocations,
     highlightedHwnd: monitorBctNodeHighlightedHwnd,
+    selectedNodeHwnd: selectedHwnd,
+    selectedNodeToken: String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
     numbersForHwnd: monitorBadgeNodeNumbersForHwnd,
   });
   container.dataset.monitorNodeOverlayStatus = String(diagnostics.status || "UNKNOWN");

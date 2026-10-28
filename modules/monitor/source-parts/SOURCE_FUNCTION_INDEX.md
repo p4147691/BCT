@@ -98,7 +98,7 @@ Generated extension/monitor.js is not an edit target.
 - settleMonitorWorkerPointerInteraction
 - stationForMonitorWorker
 
-## desktop-lifecycle (98 functions)
+## desktop-lifecycle (102 functions)
 
 - beginMonitorBctNodePointerDrag
 - beginMonitorDesktopPointerDrag
@@ -130,6 +130,7 @@ Generated extension/monitor.js is not an edit target.
 - finishMonitorWorkerRowPointerDrag
 - flashDesktopTransition
 - getDesktopBrowserWindowHandles
+- handleMonitorExternalWindowDropFinished
 - invalidateMonitorDesktopFrames
 - monitorActDesktopVisualForDesktop
 - monitorApplySharedDesktopSelection
@@ -164,6 +165,7 @@ Generated extension/monitor.js is not an edit target.
 - positionMonitorTrashRecoveryMenu
 - primeSelectedDesktopPreview
 - pushDesktopUndoSnapshot
+- recordMonitorExternalWindowDropPointer
 - refreshMonitorRecoveryMenu
 - refreshVirtualDesktops
 - rememberMonitorDesktopWindows
@@ -180,6 +182,7 @@ Generated extension/monitor.js is not an edit target.
 - restoreMonitorRebootSnapshot
 - restoreMonitorTrashRecord
 - restoreMonitorTrashedDesktop
+- scheduleMonitorExternalWindowDropTargets
 - scheduleMonitorStartupRecovery
 - selectVirtualDesktopPreview
 - showDeletedDesktopTrashUndo
@@ -188,6 +191,7 @@ Generated extension/monitor.js is not an edit target.
 - syncDesktopSwitcher
 - syncMonitorDesktopNumberBadge
 - syncMonitorDesktopScrollArrows
+- syncMonitorExternalWindowDropTargets
 - syncMonitorPanelToDesktopSwitcher
 - trashMonitorConversationKeys
 - undoDeletedDesktopTrash
@@ -242,7 +246,7 @@ Generated extension/monitor.js is not an edit target.
 - stopMonitorBctNativePreview
 - syncMonitorNativeZOrder
 
-## node-identity (64 functions)
+## node-identity (65 functions)
 
 - applyMonitorBctNodeHighlight
 - applyMonitorChatNavigationIdentity
@@ -304,6 +308,7 @@ Generated extension/monitor.js is not an edit target.
 - resolveMonitorBctNodeDisplayHwnd
 - resolveMonitorBctNodeHwnd
 - resolveStableMonitorLocation
+- scheduleMonitorBctNodeStartupRevalidation
 - scheduleMonitorMinimizedBadgeConvergence
 - syncMonitorBctNodeLocationLabels
 - syncMonitorBctNodeTargetHighlight
@@ -400,9 +405,10 @@ Generated extension/monitor.js is not an edit target.
 - openMonitorStructure
 - renderMonitorStructure
 
-## shared-ui (109 functions)
+## shared-ui (111 functions)
 
 - activateMonitorCodexResource
+- applyMonitorBrowserVisualTabSnapshot
 - applyMonitorLiveWindowGeometry
 - applyMonitorSharedSelection
 - applyPersistentMonitorRoleClass
@@ -419,6 +425,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorApplyRoleMode
 - monitorBootstrapExempt
 - monitorBrowserLineageKey
+- monitorBrowserVisualTabsForWindow
 - monitorCanonicalJsonValue
 - monitorCanonicalPhysicalLocation
 - monitorCaptureDataUriToObjectUrl

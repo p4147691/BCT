@@ -15,8 +15,9 @@
     const validHwnd=value=>/^\d+$/.test(String(value||""))&&String(value)!=="0";
 
     function clearTargets(doc){
-      for(const tile of Array.from(doc?.querySelectorAll?.(".monitor-desktop-thumb")||[]))
+      for(const tile of Array.from(doc?.querySelectorAll?.(".monitor-desktop-thumb")||[])){
         tile.classList.remove("monitor-desktop-drop-target");
+      }
     }
 
     function targetAt(doc,x,y){
@@ -76,8 +77,9 @@
       moveGhost(state.ghost,event.clientX,event.clientY);clearTargets(state.image.ownerDocument);
       const target=targetAt(state.image.ownerDocument,event.clientX,event.clientY);
       const targetDesktopId=String(target?.dataset?.desktopId||"").trim().toLowerCase();
-      if(target&&contract.isDesktopId(targetDesktopId)&&targetDesktopId!==state.sourceDesktopId)
+      if(target&&contract.isDesktopId(targetDesktopId)&&targetDesktopId!==state.sourceDesktopId){
         target.classList.add("monitor-desktop-drop-target");
+      }
       event.preventDefault?.();
     }
 
