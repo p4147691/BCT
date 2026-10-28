@@ -91,8 +91,12 @@ def open_explorer_folder(folder_path: str, invoke, *, foreground: bool = True) -
                     "lease_id": lease, "executable": r"C:\Windows\explorer.exe",
                     "working_directory": r"C:\Windows",
                     "arguments": [path]})
-            except Exception:
-                # Only read-only reconciliation; propagate when not proven.
+            except Exception as exc:
+                # UNKNOWN and authorization failures must not be reclassified as
+                # success based on a later unrelated Explorer window.
+                from bct.core.models import UnknownEffectError, AuthorizationError
+                if isinstance(exc, (UnknownEffectError, AuthorizationError)):
+                    raise
                 decision = observe()
                 if decision.action != "reuse":
                     raise

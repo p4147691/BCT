@@ -44,3 +44,8 @@ No source-code patch is claimed; this is a bounded review and regression baselin
 - Therefore there is NO user-request-to-Explorer integration and NO physical LIVE or isolated-agent E2E proof for this PR. Existing 15 focused tests use injected fake invoke; they prove orchestration unit logic only.
 - Latest disposition: HOLD / NOT READY FOR MERGE. Required next step: add a work-authorized externally reachable BCT feature with explicit policy approval and durable operation receipts; then run actual Windows E2E incl current virtual desktop, same folder reuse and lease release, and repeat CI.
 - Do not claim approved dispatch or UI foreground E2E. Do not merge or deploy.
+
+## Latest safety correction
+- A launch UNKNOWN is never transformed to success solely via subsequent Shell enumeration. AuthorizationError also propagates.
+- Isolated focused 16 PASS and existing desktop 54 PASS.
+- Still HOLD: open_explorer_folder has no registered BCT Work/Operation feature, and no physical E2E, so no supervisor merge-ready handoff.

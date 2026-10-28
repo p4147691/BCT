@@ -138,3 +138,18 @@ class TestExplorerOrchestration(unittest.TestCase):
         from bct.integrations.explorer_folder_open import open_explorer_folder
         open_explorer_folder(self.folder, self.invoke, foreground=False)
         self.assertFalse(any(c == "desktop_window_activate" for c,_ in self.calls))
+
+
+    def test_unknown_effect_is_never_reconciled_to_success(self):
+        from bct.integrations.explorer_folder_open import open_explorer_folder
+        from bct.core.models import UnknownEffectError
+        self.existing = False
+        original = self.invoke
+        def unsafe(capability, args):
+            if capability == "desktop_program_launch":
+                self.existing = True
+                raise UnknownEffectError("LAUNCH_UNKNOWN")
+            return original(capability, args)
+        with self.assertRaises(UnknownEffectError):
+            open_explorer_folder(self.folder, unsafe)
+        self.assertEqual("release", self.calls[-1][1]["operation"])
