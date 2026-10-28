@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -145,6 +146,17 @@ class IntegrationQueueTests(unittest.TestCase):
         self.assertEqual(8, len(set(numbers)))
         rows = list_integration_requests(self.bct.store)["requests"]
         self.assertEqual(sorted(numbers), [x["sequence"] for x in rows])
+
+    def test_deployment_profile_includes_queue_imported_by_mcp(self):
+        project_root = Path(__file__).resolve().parents[1]
+        with (project_root / "bct.toml").open("rb") as handle:
+            policy = tomllib.load(handle)
+        profile = policy["deployment"]["profiles"]["bct_runtime_v1"]
+        files = profile["files"]
+        self.assertIn("src/bct/integration_queue.py", files)
+        self.assertIn("src/bct/mcp_server.py", files)
+        self.assertIn("src/bct/relay_prompt.py", files)
+        self.assertEqual(len(files), len(set(files)))
 
     def test_no_operation_or_resource_claim_or_main_mutation(self):
         submit_integration_request(self.bct.store, work=self.work,
