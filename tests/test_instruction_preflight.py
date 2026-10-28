@@ -154,7 +154,7 @@ class InstructionPreflightTests(unittest.TestCase):
         self.assertIn("LOCAL_MAIN_INSTRUCTION_REVIEW_REQUIRED", git)
         self.assertIn("LOCAL_MAIN_INSTRUCTION_CHECKER_UNAVAILABLE", git)
         self.assertLess(git.index("inspect_worktree(root, candidate)"),
-                        git.index('preview = _git(root, "merge-tree"')))
+                        git.index('preview = _git(root, "merge-tree"'))
 
 
 if __name__ == "__main__":
