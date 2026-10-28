@@ -42,3 +42,4 @@
 5. 최신 HEAD GitHub 필수 CI 성공 및 정확한 인수인계서·영수증.
 
 **현 단계 판정은 코드·격리 E2E 검증 단계까지이며, 실제 사용자 승인 물리 E2E 미실시 시 \`PARTIAL\`이다.**
+\n## 최종 프로세스 소유권 보강\n\n- 프로세스 종료 승인 요청에는 임의 PID뿐 아니라 \`session_id\` 및 실제 \`process_session.start\`의 \`start_operation_id\`가 필요하다.\n- 기존 Work·주체의 BCT Store 원본 시작 Operation이 FINISHED/APPLIED이고 정확한 세션·원래 프로세스 지문을 포함해야 한다. 사후에 만들어진 가짜 \`session.json\`만으로는 승인 요청을 준비할 수 없다.\n- 재차 실행 직전에도 원본 시작 영수증과 실행 중 PID/프로세스 신원을 검증한다.\n

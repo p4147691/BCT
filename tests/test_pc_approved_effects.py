@@ -106,6 +106,25 @@ class SignedP2ApprovalTests(unittest.TestCase):
             arguments=arguments, approval_ref=grant,
         )
 
+    def register_start_receipt(self, session_id, identity):
+        work = self.bct.store.get_work(self.work_id)
+        operation_id = "start-" + session_id
+        self.bct.store.begin_operation(
+            operation_id=operation_id, work=work,
+            principal_id=self.owner.principal_id,
+            request_digest="a" * 64, capability="process_session",
+            target=session_id, resources=("process-session:" + session_id,),
+            policy_revision="test-ephemeral-only",
+        )
+        self.bct.store.finish_operation(
+            operation_id=operation_id, outcome=Outcome.APPLIED,
+            evidence={"already_running": False, "session": {
+                "session_id": session_id, "work_id": self.work_id,
+                "process": identity.as_dict(),
+            }}, error=None, release_claims=True,
+        )
+        return operation_id
+
     def test_signed_recoverable_delete_and_receipt(self):
         args = self.make_file_args()
         token = self.grant(operation_id="quarantine-1",
@@ -207,7 +226,8 @@ class SignedP2ApprovalTests(unittest.TestCase):
             "session_id": session_id, "work_id": self.work_id,
             "state": "RUNNING", "process": identity.as_dict(),
         }),encoding="utf8")
-        args = {"session_id": session_id,
+        start_id = self.register_start_receipt(session_id, identity)
+        args = {"session_id": session_id, "start_operation_id": start_id,
                 "expected_fingerprint": identity.fingerprint, "mode": "force"}
         token = self.grant(operation_id="ephemeral-stop",
                            capability="process_stop_apply", arguments=args)
@@ -262,6 +282,7 @@ class SignedP2ApprovalTests(unittest.TestCase):
     def test_distinct_force_request_cannot_use_graceful_approval(self):
         # Signing a graceful request never permits a force request or PID swap.
         args = {"session_id":"owned-test-session",
+                "start_operation_id":"nonexistent-start",
                 "expected_fingerprint":"0"*64,"mode":"graceful"}
         # The signer cannot mint an approval for an unowned session.
         with self.assertRaises(Exception):
@@ -317,9 +338,31 @@ class SignedP2ApprovalTests(unittest.TestCase):
             "session_id": session_id, "work_id": self.work_id,
             "state": "RUNNING", "process": identity.as_dict(),
         }),encoding="utf8")
-        args = {"session_id": session_id,
+        start_id = self.register_start_receipt(session_id, identity)
+        args = {"session_id": session_id, "start_operation_id": start_id,
                 "expected_fingerprint": identity.fingerprint, "mode": "force"}
         return process, args
+
+    def test_forged_session_file_without_bct_start_receipt_blocked(self):
+        from bct.core.models import PreconditionError
+        session_id = "forged-session-file"
+        fake = {
+            "pid": 9999, "executable": r"C:\\Temp\\fake.exe",
+            "creation_marker": "unverified", "fingerprint": "b" * 64,
+        }
+        directory = self.root / "process-sessions" / session_id
+        directory.mkdir(parents=True)
+        (directory / "session.json").write_text(json.dumps({
+            "session_id": session_id, "work_id": self.work_id,
+            "state": "RUNNING", "process": fake,
+        }), encoding="utf8")
+        args = {"session_id": session_id,
+                "start_operation_id": "no-such-start-receipt",
+                "expected_fingerprint": "b" * 64, "mode": "force"}
+        with self.assertRaisesRegex(PreconditionError, "START_RECEIPT_NOT_FOUND"):
+            self.bct.operations._features["process_stop_apply"].prepare(
+                work=self.bct.store.get_work(self.work_id), arguments=args,
+            )
 
     def test_no_signed_approval_never_terminates_test_child(self):
         process, args = self._make_owned_ephemeral()

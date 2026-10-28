@@ -207,7 +207,7 @@ class BCT:
         sessions = ProcessSessionFeature(policy_path, data_root=data_root)
         for feature in (
             FileReadFeature(self.store), FileWriteFeature(), FileActionPlanFeature(),
-            ProcessStopPlanFeature(), FileActionApplyFeature(), ProcessStopApplyFeature(sessions), TestFeature(), GitCommitFeature(policy_path),
+            ProcessStopPlanFeature(), FileActionApplyFeature(), ProcessStopApplyFeature(sessions, self.store), TestFeature(), GitCommitFeature(policy_path),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
             GitHubRunInboxFeature(self.store, github, policy_path),

@@ -70,11 +70,35 @@ def _request_close(pid: int) -> int:
 class ProcessStopApplyFeature:
     capability = "process_stop_apply"
 
-    def __init__(self, sessions: ProcessSessionFeature):
+    def __init__(self, sessions: ProcessSessionFeature, store):
         self.sessions = sessions
+        self.store = store
+
+    def _proven_start(self, *, operation_id: str, work_id: str,
+                      principal_id: str, session_id: str, child: dict) -> None:
+        try:
+            original = self.store.get_operation_metadata_for(
+                operation_id=operation_id, work_id=work_id,
+                principal_id=principal_id,
+            )
+        except (KeyError, ValueError) as exc:
+            raise PreconditionError("PROCESS_STOP_START_RECEIPT_NOT_FOUND") from exc
+        evidence = original.get("evidence", {})
+        observed = evidence.get("session") if isinstance(evidence, dict) else None
+        if (original.get("capability") != "process_session"
+                or original.get("target") != session_id
+                or original.get("state") != "FINISHED"
+                or original.get("outcome") != "APPLIED"
+                or not isinstance(observed, dict)
+                or observed.get("session_id") != session_id
+                or observed.get("work_id") != work_id
+                or observed.get("process") != child):
+            raise PreconditionError("PROCESS_STOP_ORIGIN_NOT_PROVEN")
 
     def prepare(self, *, work: Work, arguments: dict) -> FeatureRequest:
-        if set(arguments) != {"session_id", "expected_fingerprint", "mode"}:
+        if set(arguments) != {
+            "session_id", "start_operation_id", "expected_fingerprint", "mode"
+        }:
             raise PreconditionError("PROCESS_STOP_APPLY_FIELDS_INVALID")
         mode = arguments["mode"]
         if mode not in {"graceful", "force"}:
@@ -84,8 +108,17 @@ class ProcessStopApplyFeature:
             raise PreconditionError("PROCESS_STOP_SESSION_ID_INVALID")
         directory, receipt = self.sessions._owned_receipt(work, session_id)
         child = receipt.get("process")
+        start_id = arguments["start_operation_id"]
+        if (not isinstance(start_id, str) or not start_id
+                or len(start_id) > 120):
+            raise PreconditionError("PROCESS_STOP_START_OPERATION_INVALID")
         if not isinstance(child, dict):
             raise PreconditionError("PROCESS_STOP_CHILD_NOT_OWNED")
+        self._proven_start(
+            operation_id=start_id, work_id=work.work_id,
+            principal_id=work.owner_principal_id,
+            session_id=session_id, child=child,
+        )
         expected = arguments["expected_fingerprint"]
         if not isinstance(expected, str) or len(expected) != 64 or expected != child.get("fingerprint"):
             raise PreconditionError("PROCESS_STOP_FINGERPRINT_MISMATCH")
@@ -95,7 +128,9 @@ class ProcessStopApplyFeature:
         return FeatureRequest(
             self.capability, f"stop:{mode}:{session_id}:{pid}",
             {"session_id": session_id, "pid": pid, "mode": mode,
-             "expected_identity": child, "work_id": work.work_id},
+             "start_operation_id": start_id,
+             "expected_identity": child, "work_id": work.work_id,
+             "principal_id": work.owner_principal_id},
             (f"process-session:{session_id.casefold()}",),
         )
 
@@ -110,6 +145,13 @@ class ProcessStopApplyFeature:
         # Exact persisted identity, including executable and creation marker.
         if receipt.get("process") != values["expected_identity"]:
             raise PreconditionError("PROCESS_STOP_RECEIPT_CHANGED")
+        self._proven_start(
+            operation_id=values["start_operation_id"],
+            work_id=values["work_id"],
+            principal_id=values["principal_id"],
+            session_id=session_id,
+            child=values["expected_identity"],
+        )
         live = process_identity(pid)
         if live is None or live.as_dict() != values["expected_identity"]:
             raise PreconditionError("PROCESS_STOP_IDENTITY_CHANGED")
