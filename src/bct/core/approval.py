@@ -36,10 +36,12 @@ class ApprovalVerifier:
     ALLOWED = frozenset({"file_action_apply", "process_stop_apply"})
 
     def __init__(self, *, policy_path: str | Path, state_path: str | Path):
-        self.policy_path = Path(policy_path)
+        self.policy_path = Path(policy_path) if policy_path is not None else None
         self.state_path = str(state_path)
 
     def _public_key(self):
+        if self.policy_path is None:
+            raise AuthorizationError("APPROVAL_VERIFIER_DISABLED")
         data = tomllib.loads(self.policy_path.read_text(encoding="utf8"))
         config = data.get("approval_verifier", {})
         if not isinstance(config, dict) or config.get("enabled") is not True:

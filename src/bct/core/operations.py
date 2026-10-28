@@ -24,7 +24,7 @@ class OperationCoordinator:
         self.policy = policy
         self._features: dict[str, Feature] = {}
         self.approval_verifier = ApprovalVerifier(
-            policy_path=policy.path, state_path=store.path,
+            policy_path=getattr(policy, "path", None), state_path=store.path,
         )
 
     def register(self, feature: Feature) -> None:
