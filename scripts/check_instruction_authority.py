@@ -9,7 +9,15 @@ _RETIRED = ".cursor/rules/bct-persistent-supervision.mdc"
 _MODULES = ("modules/monitor/extension/AGENTS.md",)
 
 def digest(path: Path):
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+    if not path.is_file():
+        return None
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeError:
+        return hashlib.sha256(raw).hexdigest()
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+    return hashlib.sha256(normalized).hexdigest()
 
 def compare(canonical_root: Path, worktree: Path):
     canonical_root=canonical_root.resolve()

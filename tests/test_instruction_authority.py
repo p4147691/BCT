@@ -69,7 +69,15 @@ class InstructionAuthorityTests(unittest.TestCase):
                 out = target / rel
                 out.parent.mkdir(parents=True, exist_ok=True)
                 out.write_bytes((ROOT / rel).read_bytes())
-            (target / "AGENTS.md").write_text("old common policy\n", encoding="utf-8")
+            # Windows line-ending conversion must not produce a false stale result.
+            same = (target / "AGENTS.md").read_text(encoding="utf-8")
+            (target / "AGENTS.md").write_text(
+                same.replace("\n", "\r\n"), encoding="utf-8", newline=""
+            )
+            equivalent = module.compare(ROOT, target)
+            self.assertFalse(equivalent["stale"])
+
+            (target / "AGENTS.md").write_text("old common policy\r\n", encoding="utf-8", newline="")
             stale = module.compare(ROOT, target)
             self.assertTrue(stale["stale"])
             states = {x["path"]: x["status"] for x in stale["results"]}
