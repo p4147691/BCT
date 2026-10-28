@@ -34,7 +34,7 @@ class FileActionPlanTests(unittest.TestCase):
         self.assertFalse(self.destination.exists())
         self.assertTrue(result.evidence["read_only"])
         self.assertFalse(result.output["apply_available"])
-        self.assertEqual(str(self.source), result.output["recovery"]["to"])
+        self.assertEqual(str(self.source.resolve()), result.output["recovery"]["to"])
         self.assertEqual(64, len(result.output["source_state"]["sha256"]))
 
     def test_move_preview(self):
