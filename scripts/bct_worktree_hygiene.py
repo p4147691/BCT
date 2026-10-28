@@ -50,7 +50,8 @@ def _git_required(cwd: Path, *args: str) -> str:
 
 def _worktrees(porcelain: str) -> list[dict[str, Any]]:
     rows = []
-    for block in porcelain.strip().split("\n\n"):
+    # Git for Windows and independent test runners can preserve CRLF here.
+    for block in porcelain.replace("\r\n", "\n").strip().split("\n\n"):
         record: dict[str, Any] = {}
         for line in block.splitlines():
             if line.startswith("worktree "):

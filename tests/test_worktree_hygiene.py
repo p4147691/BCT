@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.bct_worktree_hygiene import audit
+from scripts.bct_worktree_hygiene import audit, _worktrees
 
 
 def git(root: Path, *args: str) -> str:
@@ -56,7 +56,11 @@ class WorktreeHygieneTests(unittest.TestCase):
         )
 
     def entry(self, report):
-        return next(x for x in report["entries"] if Path(x["path"]) == self.wt)
+        # Git for Windows can print a canonical path unlike tempfile's spelling.
+        # An exact unique test branch is the stable repository identity.
+        matches = [x for x in report["entries"] if x.get("branch") == "docs/completed"]
+        self.assertEqual(1, len(matches), f"worktree inventory: {report['entries']}")
+        return matches[0]
 
     def test_clean_merged_unreferenced_is_review_only(self):
         r = self.report()
@@ -126,6 +130,15 @@ class WorktreeHygieneTests(unittest.TestCase):
         (self.repo / "new.txt").write_text("uncommitted", encoding="utf-8")
         e = self.entry(self.report())
         self.assertIn("MAIN_DIRTY", e["hold_reasons"])
+
+    def test_git_porcelain_parses_crlf_without_losing_worktrees(self):
+        original = (
+            "worktree C:/source\r\nHEAD 123\r\nbranch refs/heads/main\r\n\r\n"
+            "worktree C:/worktrees/accepted\r\nHEAD 456\r\n"
+            "branch refs/heads/docs/completed\r\n\r\n"
+        )
+        rows = _worktrees(original)
+        self.assertEqual(["main", "docs/completed"], [x["branch"] for x in rows])
 
     def test_audit_does_not_change_repository(self):
         before = git(self.repo, "status", "--porcelain=v1", "-uall")
