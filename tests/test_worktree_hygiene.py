@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.bct_worktree_hygiene import audit, _worktrees
+from scripts.bct_worktree_hygiene import audit, _worktrees, _inside
 
 
 def git(root: Path, *args: str) -> str:
@@ -65,7 +65,10 @@ class WorktreeHygieneTests(unittest.TestCase):
     def test_clean_merged_unreferenced_is_review_only(self):
         r = self.report()
         e = self.entry(r)
-        self.assertTrue(e["review_candidate"])
+        self.assertTrue(
+            e["review_candidate"],
+            f"Git path={e['path']!r}; fixture root={self.wtroot!s}; holds={e['hold_reasons']}",
+        )
         self.assertEqual([], e["hold_reasons"])
         self.assertEqual(1, r["review_candidate_count"])
         self.assertEqual({"ACTIVE": 1}, r["work_authority_states"])
@@ -94,7 +97,11 @@ class WorktreeHygieneTests(unittest.TestCase):
             db.commit()
         finally:
             db.close()
-        self.assertIn("BCT_WORK_REFERENCE", self.entry(self.report())["hold_reasons"])
+        exact = self.entry(self.report())
+        self.assertIn(
+            "BCT_WORK_REFERENCE", exact["hold_reasons"],
+            f"Git path={exact['path']!r}; stored Work root={self.wt!s}",
+        )
         db = sqlite3.connect(self.db)
         try:
             db.execute("DELETE FROM works WHERE work_id='owner'")
@@ -108,7 +115,10 @@ class WorktreeHygieneTests(unittest.TestCase):
 
     def test_process_path_and_missing_ledger_block_review(self):
         e = self.entry(self.report([str(self.wt)]))
-        self.assertIn("ACTIVE_PROCESS_REFERENCE", e["hold_reasons"])
+        self.assertIn(
+            "ACTIVE_PROCESS_REFERENCE", e["hold_reasons"],
+            f"Git path={e['path']!r}; input process={self.wt!s}; holds={e['hold_reasons']}",
+        )
         e = self.entry(self.report(database=False))
         self.assertIn("WORK_LEDGER_UNAVAILABLE", e["hold_reasons"])
 
@@ -130,6 +140,12 @@ class WorktreeHygieneTests(unittest.TestCase):
         (self.repo / "new.txt").write_text("uncommitted", encoding="utf-8")
         e = self.entry(self.report())
         self.assertIn("MAIN_DIRTY", e["hold_reasons"])
+
+    def test_same_worktree_different_normalized_spelling(self):
+        alias = self.wt.parent / "nonexistent-segment" / ".." / self.wt.name
+        self.assertTrue(_inside(str(self.wt), str(alias)))
+        self.assertTrue(_inside(str(alias), str(self.wt.parent)))
+        self.assertFalse(_inside(str(self.repo), str(self.wt)))
 
     def test_git_porcelain_parses_crlf_without_losing_worktrees(self):
         original = (

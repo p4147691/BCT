@@ -33,12 +33,39 @@ def _git(cwd: Path, *args: str) -> tuple[int, str, str]:
 
 
 def _norm(path: str | Path) -> str:
-    return str(path).replace("/", "\\").rstrip("\\").casefold()
+    raw = str(path)
+    if not raw:
+        return ""
+    # CI and Git for Windows may observe the same directory through a
+    # junction, short-name or ..-normalized spelling. Resolve the exact
+    # physical path before comparing location authorities.
+    try:
+        candidate = Path(raw)
+        if candidate.is_absolute():
+            raw = str(candidate.resolve(strict=False))
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return raw.replace("/", "\\").rstrip("\\").casefold()
 
 
 def _inside(value: str | Path, root: str | Path) -> bool:
     child, parent = _norm(value), _norm(root)
-    return child == parent or child.startswith(parent + "\\")
+    if child == parent or child.startswith(parent + "\\"):
+        return True
+    # A Git for Windows path may use a junction/short-name spelling that
+    # resolves differently from the Python tempfile spelling. Compare the
+    # existing physical directories without bypassing Git ownership checks.
+    try:
+        root_path = Path(root)
+        if not root_path.exists():
+            return False
+        value_path = Path(value)
+        for candidate in (value_path, *value_path.parents):
+            if candidate.exists() and os.path.samefile(candidate, root_path):
+                return True
+    except (OSError, ValueError):
+        pass
+    return False
 
 
 def _git_required(cwd: Path, *args: str) -> str:
