@@ -145,7 +145,8 @@ const monitorBrowserVisualPendingWindowIds = new Set();
 const monitorBrowserVisualTabsByWindow = new Map();
 let monitorBrowserVisualRefreshTimer = 0;
 let monitorBrowserVisualRefreshInFlight = false;
-const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 360;
+let monitorBrowserRosterRefreshPending = false;
+const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 120;
 
 /*@@MONITOR_FUNCTION:applyMonitorBrowserVisualTabSnapshot@@*/
 

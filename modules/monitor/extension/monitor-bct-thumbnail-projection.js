@@ -111,20 +111,15 @@
       const badge = documentObject.createElement("span");
       badge.className = "monitor-node-number-badge monitor-thumbnail-tab-badge";
       badge.dataset.hwnd = hwnd;
-      const nodeLabel = `N${tokens.map((item) => item.token).join("/")}`;
       // Keep each slash+node pair atomic.  A line may begin at `/58`, but a
       // node number such as `57` can never be detached from its separator.
       const selectedHere = hwnd === text(options.selectedNodeHwnd);
       const selectedToken = text(options.selectedNodeToken);
-      const selectedTabId = Number(options.selectedNodeTabId);
+      const selectedTabId = options.selectedNodeTabId == null ? null : Number(options.selectedNodeTabId);
       const labelParts = [];
-      const prefix = documentObject.createElement("span");
-      prefix.className = "monitor-thumbnail-tab-prefix";
-      prefix.textContent = "N";
-      labelParts.push(prefix);
       for (const item of tokens) {
         const token = item.token;
-        if (labelParts.length > 1) {
+        if (labelParts.length > 0) {
           const separator = documentObject.createElement("span");
           separator.className = "monitor-thumbnail-tab-separator";
           separator.textContent = "/";

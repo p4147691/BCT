@@ -1694,7 +1694,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     const width = Number(label.getBoundingClientRect?.().width || 0);
     const budget = Math.max(9, Math.floor((width || 118) / 6.2));
     let first = 0, last = Math.max(0, tokens.length - 1);
-    const lengthFor = (left, right) => 1 + (left > 0 ? 1 : 0) + (right < tokens.length - 1 ? 1 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join("/").length;
+    const lengthFor = (left, right) => (left > 0 ? 1 : 0) + (right < tokens.length - 1 ? 1 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join("/").length;
     if (tokens.length && lengthFor(first, last) > budget) {
       const center = selectedIndex >= 0 ? selectedIndex : 0;
       first = center; last = center;
@@ -1708,17 +1708,16 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
         preferRight = !preferRight;
       }
     }
-    const fullText = tokens.length ? `N${tokens.map((item) => item.token).join("/")}` : "";
+    const fullText = tokens.length ? tokens.map((item) => item.token).join("/") : "";
     const parts = [];
     if (tokens.length) {
-      const prefix = document.createElement("span"); prefix.className = "monitor-desktop-minimized-prefix"; prefix.textContent = "N"; parts.push(prefix);
       if (first > 0) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
       for (let index = first; index <= last; index += 1) {
         if (index > first) { const slash = document.createElement("span"); slash.className = "monitor-desktop-minimized-separator"; slash.textContent = "/"; parts.push(slash); }
         const badge = document.createElement("span");
         const selected = index === selectedIndex;
         badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
-        badge.textContent = tokens[index].token; badge.title = `최소화 노드 N${tokens[index].token}`; parts.push(badge);
+        badge.textContent = tokens[index].token; badge.title = `최소화 노드 ${tokens[index].token}`; parts.push(badge);
       }
       if (last < tokens.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
     }

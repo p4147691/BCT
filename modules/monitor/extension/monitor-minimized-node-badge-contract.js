@@ -42,10 +42,16 @@
       }
       if (target.size) grouped.set(desktopId, target);
     }
-    return new Map([...grouped].map(([desktopId, values]) => [desktopId, [...values.values()].sort((a, b) => {
-      const an = positiveNodeNumber(a.token), bn = positiveNodeNumber(b.token);
-      return an && bn ? an - bn : an ? -1 : bn ? 1 : 0;
-    })]));
+    return new Map([...grouped].map(([desktopId, values]) => {
+      const items = [...values.values()];
+      // Numeric-only summaries retain the historical ascending order. Mixed
+      // unknown tabs must keep Chrome's observed tab order, not move '?' to
+      // the end where a different tab might appear selected.
+      if (items.every((item) => positiveNodeNumber(item.token))) {
+        items.sort((a, b) => positiveNodeNumber(a.token) - positiveNodeNumber(b.token));
+      }
+      return [desktopId, items];
+    }));
   }
   function slotsByDesktop(input = {}) {
     const tokens = tokensByDesktop({ locations: input.locations, tokensForHwnd: input.numbersForHwnd });

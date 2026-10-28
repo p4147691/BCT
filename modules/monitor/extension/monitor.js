@@ -2911,7 +2911,8 @@ const monitorBrowserVisualPendingWindowIds = new Set();
 const monitorBrowserVisualTabsByWindow = new Map();
 let monitorBrowserVisualRefreshTimer = 0;
 let monitorBrowserVisualRefreshInFlight = false;
-const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 360;
+let monitorBrowserRosterRefreshPending = false;
+const MONITOR_BROWSER_VISUAL_REFRESH_DEBOUNCE_MS = 120;
 
 function applyMonitorBrowserVisualTabSnapshot(message) {
   const windowId = Number(message?.windowId);
@@ -2953,6 +2954,9 @@ function monitorBrowserVisualTabsForWindow(windowIdValue) {
 function scheduleMonitorBrowserVisualRefresh(message) {
   const windowId = Number(message?.windowId);
   if (!Number.isInteger(windowId)) return;
+  if (["window-created", "window-removed", "tab-created", "tab-removed", "tab-attached", "tab-detached", "tab-moved"].includes(String(message?.reason || ""))) {
+    monitorBrowserRosterRefreshPending = true;
+  }
 
   if (applyMonitorBrowserVisualTabSnapshot(message)) {
     // Preserve the existing pixels while their native refresh is queued; the
@@ -2974,6 +2978,8 @@ async function flushMonitorBrowserVisualRefresh() {
     const windowIds = [...monitorBrowserVisualPendingWindowIds];
     monitorBrowserVisualPendingWindowIds.clear();
     if (!windowIds.length) return;
+    const refreshRoster = monitorBrowserRosterRefreshPending;
+    monitorBrowserRosterRefreshPending = false;
 
     const hwnds = new Set();
     const desktopIds = new Set();
@@ -2993,7 +2999,10 @@ async function flushMonitorBrowserVisualRefresh() {
         if (key) desktopIds.add(key);
       }
     }
-    if (!desktopIds.size) return;
+    if (!desktopIds.size) {
+      if (refreshRoster) await refreshMonitorBctWindowNodes();
+      return;
+    }
 
     if (hwnds.size) {
       for (const hwnd of hwnds) monitorThumbnailService.invalidate(hwnd);
@@ -3014,6 +3023,9 @@ async function flushMonitorBrowserVisualRefresh() {
     // A fresh desktop frame replaces its DOM layers. Re-project the same
     // browser snapshot after capture so a tab move cannot erase its node label.
     syncMonitorAllDesktopThumbnailNodeBadges();
+    // Chrome creation/removal is an event, not a reason to poll or change focus.
+    // Refresh exact RCC membership after the Native/Chrome visual reconciliation.
+    if (refreshRoster) await refreshMonitorBctWindowNodes();
   } finally {
     monitorBrowserVisualRefreshInFlight = false;
     if (monitorBrowserVisualPendingWindowIds.size && !monitorBrowserVisualRefreshTimer) {
@@ -11304,7 +11316,7 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     const width = Number(label.getBoundingClientRect?.().width || 0);
     const budget = Math.max(9, Math.floor((width || 118) / 6.2));
     let first = 0, last = Math.max(0, tokens.length - 1);
-    const lengthFor = (left, right) => 1 + (left > 0 ? 1 : 0) + (right < tokens.length - 1 ? 1 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join("/").length;
+    const lengthFor = (left, right) => (left > 0 ? 1 : 0) + (right < tokens.length - 1 ? 1 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join("/").length;
     if (tokens.length && lengthFor(first, last) > budget) {
       const center = selectedIndex >= 0 ? selectedIndex : 0;
       first = center; last = center;
@@ -11318,17 +11330,16 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
         preferRight = !preferRight;
       }
     }
-    const fullText = tokens.length ? `N${tokens.map((item) => item.token).join("/")}` : "";
+    const fullText = tokens.length ? tokens.map((item) => item.token).join("/") : "";
     const parts = [];
     if (tokens.length) {
-      const prefix = document.createElement("span"); prefix.className = "monitor-desktop-minimized-prefix"; prefix.textContent = "N"; parts.push(prefix);
       if (first > 0) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
       for (let index = first; index <= last; index += 1) {
         if (index > first) { const slash = document.createElement("span"); slash.className = "monitor-desktop-minimized-separator"; slash.textContent = "/"; parts.push(slash); }
         const badge = document.createElement("span");
         const selected = index === selectedIndex;
         badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
-        badge.textContent = tokens[index].token; badge.title = `최소화 노드 N${tokens[index].token}`; parts.push(badge);
+        badge.textContent = tokens[index].token; badge.title = `최소화 노드 ${tokens[index].token}`; parts.push(badge);
       }
       if (last < tokens.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
     }
