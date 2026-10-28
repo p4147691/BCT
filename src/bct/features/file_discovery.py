@@ -261,6 +261,22 @@ def execute_compare(request: FeatureRequest) -> FeatureResult:
             except OSError:
                 hashes[i] = None
     verified = not equal_size or all(hashes)
+    # Verify both *paths* are still the original files after any hashing.
+    if verified:
+        for row in entries:
+            try:
+                if is_reparse_point(row["path"]):
+                    verified = False
+                    break
+                current = os.stat(row["path"])
+                if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) != row["identity"]:
+                    verified = False
+                    break
+            except OSError:
+                verified = False
+                break
+    if not verified:
+        hashes = [None, None]
     equal = (hashes[0] == hashes[1] if equal_size else False) if verified else None
     output = {
         "path_a": str(entries[0]["path"]), "path_b": str(entries[1]["path"]),
