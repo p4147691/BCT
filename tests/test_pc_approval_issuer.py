@@ -185,3 +185,101 @@ class IndependentApprovalIssuerTests(unittest.TestCase):
         with self.assertRaisesRegex(AuthorizationError, "SCOPE_MISMATCH"):
             self.execute_file("human-other", args, token)
         self.assertTrue(self.src.exists())
+
+
+class SimulatedApprovalGuiTests(IndependentApprovalIssuerTests):
+    """Headless UI callback test: not a claim of physical human consent."""
+
+    def _run_mock_gui(self, challenge: dict, *, approve: bool):
+        import types
+        from unittest.mock import patch
+        import bct.approval_issuer as issuer
+
+        request_file = self.root / "request.json"
+        request_file.write_text(json.dumps(challenge), encoding="utf8")
+        output_file = self.root / "granted.approval"
+        buttons = {}
+        outcome = {"yes_no_count": 0}
+
+        class FakeElement:
+            def __init__(self, *a, **kw):
+                pass
+            def grid(self, *a, **kw):
+                pass
+            def pack(self, *a, **kw):
+                pass
+            def configure(self, *a, **kw):
+                pass
+            def delete(self, *a, **kw):
+                pass
+            def insert(self, *a, **kw):
+                pass
+
+        class FakeStringVar:
+            def __init__(self, value=""):
+                self.value = value
+            def set(self, value):
+                self.value = value
+
+        class FakeRoot:
+            def title(self, *_): pass
+            def geometry(self, *_): pass
+            def minsize(self, *_): pass
+            def attributes(self, *_): pass
+            def columnconfigure(self, *a, **kw): pass
+            def rowconfigure(self, *a, **kw): pass
+            def destroy(self): pass
+            def mainloop(self):
+                buttons["요청 파일 열기"]()
+                buttons["승인하고 서명" if approve else "거부"]()
+
+        class FakeButton(FakeElement):
+            def __init__(self, *a, **kw):
+                buttons[kw["text"]] = kw["command"]
+
+        module = types.ModuleType("tkinter")
+        module.Tk = FakeRoot
+        module.Text = FakeElement
+        module.StringVar = FakeStringVar
+        module.ttk = types.SimpleNamespace(
+            Label=FakeElement, Frame=FakeElement, Button=FakeButton,
+        )
+        module.filedialog = types.SimpleNamespace(
+            askopenfilename=lambda **kw: str(request_file),
+            asksaveasfilename=lambda **kw: str(output_file),
+        )
+
+        def confirmation(*a, **kw):
+            outcome["yes_no_count"] += 1
+            return True
+
+        module.messagebox = types.SimpleNamespace(
+            askyesno=confirmation,
+            showerror=lambda *a, **kw: None,
+            showwarning=lambda *a, **kw: None,
+        )
+        strings = iter([challenge["operation_id"], self.secret])
+        module.simpledialog = types.SimpleNamespace(
+            askstring=lambda *a, **kw: next(strings),
+        )
+        with patch.dict(sys.modules, {"tkinter": module}):
+            with patch.object(issuer, "default_identity_path", return_value=self.store.path):
+                issuer._launch_gui()
+        return output_file, outcome
+
+    def test_ui_callbacks_yes_signed_effect(self):
+        challenge, args = self.challenge("ui-yes")
+        output, confirmations = self._run_mock_gui(challenge, approve=True)
+        self.assertEqual(1, confirmations["yes_no_count"])
+        self.assertTrue(output.exists())
+        grant = output.read_text(encoding="ascii").strip()
+        result = self.execute_file("ui-yes", args, grant)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertTrue(self.dst.exists())
+
+    def test_ui_callbacks_no_creates_no_grant(self):
+        challenge, args = self.challenge("ui-no")
+        output, confirmations = self._run_mock_gui(challenge, approve=False)
+        self.assertEqual(0, confirmations["yes_no_count"])
+        self.assertFalse(output.exists())
+        self.assertTrue(self.src.exists())
