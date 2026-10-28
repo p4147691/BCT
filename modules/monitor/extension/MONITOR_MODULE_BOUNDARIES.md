@@ -197,3 +197,12 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - Injected ports: `launch({type})` for existing Native launch route, `fail(message)` for existing status reporting. No direct Native, Chrome, ACT or BCT calls.
 - The generated `monitor.js` retains only `configureMonitorProviderLaunchButton` adapter and injects the two ports. No duplicate launch orchestration, endpoint polling or fallback dispatch is introduced.
 - Independent verification: `tools/check_monitor_provider_launch_feature.js`; generated bundle and structure gate. LIVE UI acceptance remains the supervisor's separate responsibility.
+
+## 2026-10-29 Native window lifecycle event ownership (N70 follow-up)
+- Owner: `monitor-window-lifecycle-queue.js`; single private `Map<HWND, Event>`, drain state and disposal.
+- Public API: `MonitorWindowLifecycleQueue.create({handle,onError}) -> {schedule(event),drain(),destroy()}`.
+- Injected ports: `handle(event)` delegates to the existing V2 HWND geometry/pixel event handler; `onError(error,event)` reports an explicit failure through the existing status surface. No Native/Chrome/BCT calls inside the queue.
+- The generated compatibility `monitor.js` now has only the queue composition port and thin schedule/drain delegators; the former global queue/map and busy flag are removed.
+- The accepted event-flow fixture is updated to assert the new private queue owner, while retaining independent HWND geometry/WGC invariants.
+- Contract tests: `tools/check_monitor_window_lifecycle_queue.js`, `tools/check_monitor_thumbnail_window_event_path.js`, bundled structure gate.
+- Still open: full desktop stage/strip GUI controller, Native host provenance and actual Windows LIVE acceptance (supervisor).

@@ -7900,32 +7900,11 @@ function scheduleMonitorV2WindowRefresh(event) {
   return true;
 }
 
-const monitorWindowLifecyclePendingEvents = new Map();
-let monitorWindowLifecycleDrainBusy = false;
+const monitorWindowLifecycleController = globalThis.MonitorWindowLifecycleQueue.create({handle: event => handleMonitorWindowLifecycleEvent(event), onError: error => setMonitorStatus(String(error), false)});
 
-function scheduleMonitorWindowLifecycleEvent(event) {
-  const hwnd = String(event?.hwnd || "").trim();
-  if (!/^\d+$/.test(hwnd) || hwnd === "0") return;
-  monitorWindowLifecyclePendingEvents.set(hwnd, event);
-  if (!monitorWindowLifecycleDrainBusy) void drainMonitorWindowLifecycleEvents();
-}
+function scheduleMonitorWindowLifecycleEvent(event) { monitorWindowLifecycleController.schedule(event); }
 
-async function drainMonitorWindowLifecycleEvents() {
-  if (monitorWindowLifecycleDrainBusy) return;
-  monitorWindowLifecycleDrainBusy = true;
-  try {
-    while (monitorWindowLifecyclePendingEvents.size) {
-      const next = monitorWindowLifecyclePendingEvents.entries().next().value;
-      if (!next) break;
-      const [hwnd, event] = next;
-      monitorWindowLifecyclePendingEvents.delete(hwnd);
-      await handleMonitorWindowLifecycleEvent(event);
-    }
-  } finally {
-    monitorWindowLifecycleDrainBusy = false;
-    if (monitorWindowLifecyclePendingEvents.size) void drainMonitorWindowLifecycleEvents();
-  }
-}
+async function drainMonitorWindowLifecycleEvents() { return monitorWindowLifecycleController.drain(); }
 
 async function handleMonitorWindowLifecycleEvent(event) {
 

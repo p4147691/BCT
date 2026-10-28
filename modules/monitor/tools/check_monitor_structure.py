@@ -322,6 +322,11 @@ def main():
             if checked.returncode:
                 errors.append({'kind':'monitor_provider_launch_feature_contract_regression',
                     'detail':(checked.stdout+checked.stderr)[-600:]})
+        queue_check = root/'tools'/'check_monitor_window_lifecycle_queue.js'
+        checked = subprocess.run([node,str(queue_check)],cwd=str(root.parent.parent),capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if queue_check.is_file() else None
+        facts['monitor_window_lifecycle_queue_test_rc'] = checked.returncode if checked else None
+        if checked is None or checked.returncode:
+            errors.append({'kind':'monitor_window_lifecycle_queue_contract_regression', 'detail':(checked.stdout+checked.stderr)[-600:] if checked else 'test missing'})
         thumbnail_checks = [
             root/'tools'/'check_monitor_thumbnail_architecture.js',
             root/'tools'/'check_monitor_thumbnail_background_only_mode.js',

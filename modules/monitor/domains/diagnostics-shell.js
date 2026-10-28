@@ -189,22 +189,7 @@ function createMonitorWindowCaptureService({ maxEntries, maxWidth, maxHeight, qu
 //@@FN_END:createMonitorWindowCaptureService
 
 //@@FN_START:drainMonitorWindowLifecycleEvents
-async function drainMonitorWindowLifecycleEvents() {
-  if (monitorWindowLifecycleDrainBusy) return;
-  monitorWindowLifecycleDrainBusy = true;
-  try {
-    while (monitorWindowLifecyclePendingEvents.size) {
-      const next = monitorWindowLifecyclePendingEvents.entries().next().value;
-      if (!next) break;
-      const [hwnd, event] = next;
-      monitorWindowLifecyclePendingEvents.delete(hwnd);
-      await handleMonitorWindowLifecycleEvent(event);
-    }
-  } finally {
-    monitorWindowLifecycleDrainBusy = false;
-    if (monitorWindowLifecyclePendingEvents.size) void drainMonitorWindowLifecycleEvents();
-  }
-}
+async function drainMonitorWindowLifecycleEvents() { return monitorWindowLifecycleController.drain(); }
 //@@FN_END:drainMonitorWindowLifecycleEvents
 
 //@@FN_START:handleMonitorWindowLifecycleEvent
@@ -548,12 +533,7 @@ async function refreshMonitorCurrentDiagnosticView(){
 //@@FN_END:refreshMonitorCurrentDiagnosticView
 
 //@@FN_START:scheduleMonitorWindowLifecycleEvent
-function scheduleMonitorWindowLifecycleEvent(event) {
-  const hwnd = String(event?.hwnd || "").trim();
-  if (!/^\d+$/.test(hwnd) || hwnd === "0") return;
-  monitorWindowLifecyclePendingEvents.set(hwnd, event);
-  if (!monitorWindowLifecycleDrainBusy) void drainMonitorWindowLifecycleEvents();
-}
+function scheduleMonitorWindowLifecycleEvent(event) { monitorWindowLifecycleController.schedule(event); }
 //@@FN_END:scheduleMonitorWindowLifecycleEvent
 
 //@@FN_START:showMonitorDiagText
