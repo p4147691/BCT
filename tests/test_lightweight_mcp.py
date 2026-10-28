@@ -28,6 +28,7 @@ class DummyOperations:
 SHARED_MCP_TOOLS = {
     "bct_capabilities", "bct_conversation_network_get", "bct_desktop_capture",
     "bct_desktop_session_status", "bct_inbox_get", "bct_operation_get",
+    "bct_integration_queue",
     "bct_status", "bct_work_create",
 }
 

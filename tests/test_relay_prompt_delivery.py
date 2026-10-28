@@ -176,7 +176,12 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         preview = result.output["preview"]
         self.assertEqual("NONE_PREVIEW_ONLY", preview["effect"])
         self.assertIn(self.base["text"], preview["worker_message"]["text"])
+        worker_body = self.parse_body(preview["worker_message"]["text"])
+        self.assertIn("main 병합", worker_body["additional_instruction"])
+        self.assertIn("매니저에게 반환", worker_body["additional_instruction"])
         manager_text = preview["manager_return_message"]["text"]
+        self.assertIn("integration_queue", manager_text)
+        self.assertIn("독점 권한자가 아닙니다", manager_text)
         self.assertEqual(1, manager_text.count("실제 Worker 결과 전문 예시 📦"))
         self.assertIn("bounded one delivery", manager_text)
         self.assertIn("단일 Delivery 경로", manager_text)

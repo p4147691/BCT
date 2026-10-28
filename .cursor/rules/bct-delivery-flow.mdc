@@ -14,6 +14,18 @@ alwaysApply: true
   and a stable request/delivery ID. The authoritative BCT source remains
   local D:/BCT/source main; a GitHub feature branch is only for review/CI.
   Do not create another supervisor hierarchy or duplicate orchestration system.
+- **Default integration stopping point for every project and individual Work:**
+  Workers implement and test only in isolated worktrees, then return exact
+  branch/HEAD/file/test evidence to their Manager. A Manager verifies the
+  candidate and calls BCT `bct_integration_queue` operation `submit` once
+  with a stable request ID. It records the returned monotonic `sequence`
+  and reports `READY_FOR_INTEGRATION`, **not** main/LIVE/GitHub completion.
+  The queue lives in BCT's existing runtime `state.sqlite` table
+  `integration_requests`; consult `docs/INTEGRATION_REQUEST_QUEUE_V1.md`.
+  Unless the user directly appoints an executor for actual integration,
+  stop before local main merge, LIVE mutation and GitHub main publication.
+  A direct user appointment still requires exact Work/Operation/resource
+  conflict checks; it never grants a supervisor-only role.
 - **Default route, not exclusive permission:** BCT durably records each request
   and ordinarily delivers one notification to the designated coordination
   ("supervisor") node. That node gathers requests, sequences conflicts, and

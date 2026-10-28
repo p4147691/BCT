@@ -18,6 +18,24 @@ from bct.relay_settings import read_relay_settings, utf16_units
 _UUID = re.compile(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\Z", re.I)
 _SCOPE = re.compile(r"[A-Za-z0-9_.:-]{1,96}\Z")
 
+# Always-on for BCT-composed *new* messages, independent of project overrides.
+# Existing conversations/previously submitted deliveries are not retroactively edited.
+_WORKER_INTEGRATION_RULE = (
+    "BCT 공통 규칙: 격리 작업공간에서 개발·테스트하고 결과·브랜치·HEAD·검증 근거를 "
+    "매니저에게 반환하세요. 사용자에게 별도 실행 지시를 받은 경우를 제외하고 "
+    "로컬 main 병합, LIVE 배포, GitHub main 게시를 직접 하지 마세요. "
+    "작업 준비 완료는 통합·LIVE 완료와 다릅니다."
+)
+_MANAGER_INTEGRATION_RULE = (
+    "BCT 공통 통합 규칙: 프로젝트/개별 작업의 후보 검수를 마치면 "
+    "로컬 main에 직접 병합하거나 LIVE/GitHub main을 게시하지 말고 "
+    "BCT integration_queue에 하나의 고유 request_id로 통합 준비 요청을 등록하세요. "
+    "등록 ACK는 통합·배포 완료가 아닙니다. 감독관은 기본 교통정리 수신처일 뿐 "
+    "독점 권한자가 아닙니다. 사용자가 귀하에게 직접 통합·배포를 지시하면 "
+    "기존 BCT Work/Operation/expected SHA 충돌 검증을 거쳐 처리할 수 있습니다."
+)
+
+
 
 def compose_worker_delivery(
     *, store, scope_id: str, manager_conversation_key: str,
@@ -102,8 +120,11 @@ def compose_worker_delivery(
         "task": task,
         "return_instruction": settings["worker_return_instruction"],
     })
-    if settings["worker_additional_instruction"]:
-        body["additional_instruction"] = settings["worker_additional_instruction"]
+    body["additional_instruction"] = (
+        _WORKER_INTEGRATION_RULE
+        + ("\n" + settings["worker_additional_instruction"]
+           if settings["worker_additional_instruction"] else "")
+    )
     prompt = (
         settings["worker_intro"] + "\n" + settings["worker_context_notice"] + "\n"
         "[BCT_DELIVERY_WORKER_V1]"
@@ -176,6 +197,7 @@ def compose_manager_return_frame(
             item for item in (
                 settings["manager_result_notice"],
                 settings["manager_action"],
+                _MANAGER_INTEGRATION_RULE,
                 settings["manager_additional_instruction"],
             ) if item
         ) + "\n",

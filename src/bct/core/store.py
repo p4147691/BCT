@@ -175,6 +175,22 @@ class Store:
                     actions_json TEXT NOT NULL, owner_principal_id TEXT NOT NULL,
                     assignment_epoch INTEGER NOT NULL, state TEXT NOT NULL
                 );
+                -- Readiness queue is a durable inbox, NOT a claim, approval,
+                -- code merge or deployment. FIFO order is a DB sequence.
+                CREATE TABLE IF NOT EXISTS integration_requests (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    request_id TEXT NOT NULL UNIQUE,
+                    manager_work_id TEXT NOT NULL REFERENCES works(work_id),
+                    project_id TEXT NOT NULL,
+                    repository_root TEXT NOT NULL,
+                    request_digest TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'QUEUED'
+                      CHECK(state IN ('QUEUED')),
+                    created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS integration_requests_fifo
+                  ON integration_requests(repository_root,state,sequence);
                 CREATE TABLE IF NOT EXISTS operations (
                     operation_id TEXT PRIMARY KEY, work_id TEXT NOT NULL, principal_id TEXT NOT NULL,
                     request_digest TEXT NOT NULL, capability TEXT NOT NULL, target TEXT NOT NULL,
