@@ -20,7 +20,7 @@ def main():
     sha = hashlib.sha256(raw).hexdigest()
     tick = chr(96)
     out = ['# Monitor JS Function Index', '', 'Generated from the deployed runtime. Do not edit by hand.', '',
-           f'- source: {tick}{source}{tick}', f'- sha256: {tick}{sha}{tick}',
+           f'- source: {tick}extension/monitor.js{tick}', f'- sha256: {tick}{sha}{tick}',
            f'- line count: {len(lines)}', f'- declared functions: {len(funcs)}', '',
            'Search by function name first; line numbers are snapshot hints only.', '']
     step = 5000

@@ -2,7 +2,7 @@
 
 Generated from the deployed runtime. Do not edit by hand.
 
-- source: `D:\BCT\worktrees\monitor-modular-n70-20261029\modules\monitor\extension\monitor.js`
+- source: `extension/monitor.js`
 - sha256: `66d429437c1b73020fad380208cb6e71480a353eb88bc23507feb6f43509cdc2`
 - line count: 14420
 - declared functions: 528
