@@ -1,80 +1,21 @@
 ---
-description: Default BCT delivery flow for bounded, evidence-backed changes
+description: Thin pointer to the canonical BCT common instructions
 alwaysApply: true
 ---
 
-# BCT Delivery Flow
+# BCT instruction pointer
 
-Use this as the default for BCT changes unless the user explicitly narrows or
-overrides the scope.
+The single common-policy authority is:
 
-1. Before changing anything, record the intended files, permitted deployment
-   boundary, E2E success criteria, and protected UNKNOWN operations/claims.
-2. Complete the focused regression, relevant local suite, static checks, and
-   diff check before any LIVE change. Use the full suite when the affected
-   boundary or repository gate requires it; do not make a reversible display
-   correction wait on unrelated shards.
-3. Use one of two explicit delivery lanes and record which lane applies:
-   - **Reversible local-display lane**: Monitor-only HTML/CSS/rendering changes
-     which do not alter Core/RCC/Native Host protocols, browser state, stored
-     data, claims, messages, credentials, or external systems may be committed
-     on the local authoritative main after local gates. Create a rollback
-     backup, then run the exact-commit LIVE E2E while pushing the same commit
-     and running CI in parallel. The work is complete only after both LIVE E2E
-     and CI pass; either failure is recorded and the LIVE payload is rolled
-     back when the display regression is material.
-   - **Effectful lane**: Core, RCC, Native Host, wire/schema/security, database,
-     claim, Chrome mutation, message send, or other externally visible effects
-     require exact-head CI success before LIVE deployment or E2E effects.
-4. Keep a coherent correction and its regression coverage in one exact commit
-   or PR. For the effectful lane, prepare deployment and rollback while CI runs
-   without changing LIVE. For the local-display lane, never let LIVE and CI
-   test different commits.
-5. Advance effectful E2E only in order: deployment health, one round trip,
-   durable receipt/recovery, then the larger orchestration scenario.
-6. Use compact status or presence for routine health. Request full DOM or RCC
-   state only for a diagnosis, and label stale or uncertain observations rather
-   than treating them as IDLE.
-7. On a failed external effect, preserve the receipt and collect evidence
-   (canonical text, DOM, ACK, active execution, pending receipt) before any
-   retry. Never replay an UNKNOWN effect or release a protected claim merely
-   to make progress.
-8. Parallelize read-only inspection, test preparation, and GitHub observation.
-   Keep shared worktree writes, browser sends, and LIVE mutations serialized.
+`D:\BCT\source\AGENTS.md`
 
-Report the final state with the exact tested SHA, test/CI evidence, LIVE
-evidence, E2E result, and any deferred follow-ups.
+Read and follow that file before BCT source work. A nested `AGENTS.md` may add
+module-specific rules only. Runtime settings, handoffs, old Worktree copies and
+reference docs do not replace the canonical common policy.
 
-## Completion semantics and durable continuation
+For an existing Worktree, run:
 
-- Treat the user's entire requested outcome as ONE acceptance scope. Do not present coding, modularization, PR, CI, local-main merge, package publication, or installed files as "완료" while actual running operation or user-facing acceptance remains outstanding.
-- Only report "완료" after the requested change is applied, the exact running build and receipt are verified, real usage/E2E is accepted, and no requested part remains. If some steps are still open, state "진행 N/M", list the remaining concrete step(s), and avoid contradictory success language.
-- Define the M concrete gates at the start from the full user request and keep the denominator stable. If the scope changes, explicitly rebaseline it with evidence; never invent stages to inflate progress.
-- A stopped or blocked task stays visibly IN_PROGRESS/BLOCKED with its original durable Work ID, last verified SHA, receipts, next executable step, and precise blocker. Resume that same task first; do not create duplicate Work, ask the user to issue a copy-and-paste continuation prompt, or drift into old implementation paths.
-- When an operation needs user interaction, distinguish the confirmed technical gate from remaining physical acceptance. Record user-observed success faithfully, without promoting unobserved components.
+`python D:\BCT\source\scripts\check_instruction_authority.py --worktree <WORKTREE> --strict`
 
-## Worktree lifetime and truthful Work state
-
-- The only source authority is local `D:\BCT\source` on `main`; feature
-  branches and worktrees are disposable *after* verified acceptance, not
-  alternate canonical source copies. Name each feature worktree in the durable
-  Work and receipt; avoid parallel writes to the shared main index.
-- `Work.state=ACTIVE` is an authorization gate, **not** proof that execution
-  is running or that user acceptance is incomplete. Derive execution status
-  from operation receipts, running processes, and exact E2E/postconditions.
-  Never mass-update Work states to FINISHED or erase UNKNOWN evidence to make
-  a dashboard look clean.
-- On a completed task, run the existing read-only
-  `python scripts/bct_worktree_hygiene.py --repo D:\BCT\source --worktrees-root D:\BCT\worktrees --state-db D:\BCT\runtime\state\state.sqlite`
-  before proposing cleanup. A REVIEW candidate is **not deletion approval**.
-- To remove an exact accepted worktree, first verify it is on an ancestor of
-  local main, clean including untracked/ignored files, not locked/detached,
-  has no exact BCT Work/unfinished-or-UNKNOWN Operation/process references,
-  and is not used by deployment/rollback or another ongoing task. Record
-  branch, HEAD, before/after count, and the authoritative main SHA. Then use
-  `git worktree remove <exact path>` **without** `--force`. Retain Git branch,
-  commit, and durable receipts for recovery; never run broad prune/reset/clean.
-- Any incomplete Git ownership check, missing Work ledger, ambiguous runtime
-  reference, or user context that cannot be verified means HOLD, not cleanup.
-- Before starting a new worktree, look for a suitable, owned, clean isolated
-  worktree associated with the same Work; avoid unnecessary new worktrees.
+Do not resolve a stale instruction result by blindly copying files over branch
+work; preserve the candidate and reconcile deliberately.

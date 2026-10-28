@@ -24,9 +24,10 @@ class TestLocalDesktopSourceAuthority(unittest.TestCase):
 
     def test_monitor_policy_is_local_first(self):
         text = (ROOT / "modules/monitor/extension/AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("Official source authority: local Git main", text)
+        self.assertIn(r"D:\BCT\source\AGENTS.md", text)
+        self.assertIn("Canonical Monitor source", text)
         self.assertIn("expected-live-SHA", text)
-        self.assertNotIn("Official source: GitHub", text)
+        self.assertNotIn("GitHub p4147691/BCT is publication", text)
 
 if __name__ == "__main__":
     unittest.main()
