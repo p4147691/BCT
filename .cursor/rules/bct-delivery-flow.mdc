@@ -5,51 +5,60 @@ alwaysApply: true
 
 # BCT Delivery Flow
 
-## Single integration gateway — no additional supervisor
+## Integration requests — coordination, not role authority
 
-- Every project may have its own autonomous Manager and Workers. A project
-  Manager owns task breakdown, isolated implementation, tests, review,
-  and an **integration request**, not authority to write shared local main.
-  Do not create another permanent supervising AI, extra manager hierarchy,
-  or a second project-wide orchestration service for this purpose.
-- The **one integration gateway per canonical Git repository** owns serialized
-  candidate acceptance, local main integration, final verification, guarded
-  LIVE publication for its affected product, and GitHub main synchronization.
-  Different independent repositories may progress independently. For BCT
-  the sole source authority remains `D:\BCT\source` local `main`.
-- Project Managers and Workers **must not write or merge into shared main**,
-  modify installed LIVE payloads, or publish GitHub main on their own.
-  Develop and review in owned isolated Worktrees; report branch, HEAD, exact
-  changed files, tests, deployment boundary, rollback plan, and proof of
-  acceptance to the gateway.
-- The gateway processes submissions **one at a time per repository**. Before
-  any source-changing effect, require a durable owned operation and compare
-  the expected local main SHA, clean worktree, request owner, target paths,
-  and other active/UNKNOWN effects. A stale submission must be reviewed
-  against latest main, never silently replayed or rebased onto another
-  worker's dirty files. Successful integration has one exact receipt.
-- The normal sequence is: isolated implementation and local focused tests
-  -> CI for the exact reviewed candidate (an intermediate GitHub branch
-  is permitted, but is never canonical GitHub main) -> exclusive guarded
-  **local main** integration -> verify that exact resulting main commit
-  (including full/exact-head CI when the impact gate requires it) ->
-  preflight, rollback and guarded **LIVE** acceptance for each affected
-  product -> **GitHub main fast-forward sync last** -> confirm post-sync
-  CI and exact source/installed/running versions where applicable.
-  Core, Monitor and RCC are independent deployment targets; a changed
-  source-main SHA alone never requires redeploying an unchanged target.
-- A gateway instance is replaceable. Its durable queue, exact work/operation
-  IDs, epochs, receipts, preflight results, and pending next step must live
-  in BCT state, **not in a specific ChatGPT tab**. An interrupted gateway
-  recovers from durable receipts before doing anything effectful; do not
-  replay UNKNOWN messages, merges, deployments, or GitHub publications.
-- This section is the **operating contract**, not proof of a machine-enforced
-  write lock. Existing direct `git_commit`, generic `execute`, deployment
-  and GitHub publication capabilities must be assessed and hardened so
-  only the owned gateway may invoke shared-main/LIVE effects; never assume
-  this Markdown text alone blocks direct Git or OS access. Until those
-  controls are tested, serialize such actions through the currently
-  designated gateway and explicitly report any bypass risk.
+- Each project has an autonomous Manager and Workers. Managers own task
+  breakdown, isolated development, review and readiness decisions. When ready,
+  a Manager submits an integration request with exact repository/branch/SHA,
+  test and CI evidence, affected files, target LIVE products, rollback details
+  and a stable request/delivery ID. The authoritative BCT source remains
+  local D:/BCT/source main; a GitHub feature branch is only for review/CI.
+  Do not create another supervisor hierarchy or duplicate orchestration system.
+- **Default route, not exclusive permission:** BCT durably records each request
+  and ordinarily delivers one notification to the designated coordination
+  ("supervisor") node. That node gathers requests, sequences conflicts, and
+  delegates execution. Supervisor identity by itself grants **no** unique
+  permission to commit, merge, deploy or publish.
+- **User-directed route:** If the user tells a project Manager "you handle
+  integration and deployment", BCT may route or reassign that exact request
+  directly to that Manager. It does not require supervisor permission; record
+  the new assignee, reason, revision and original request ID without replaying
+  an already-submitted effect. Likewise, the supervisor may delegate a request
+  to a Manager, subject to existing authenticated Work scope and operation
+  receipts.
+- **Single effect lane per repository:** Whichever authorized Work owner is
+  assigned to execute must use existing BCT guarded operations. Before the
+  first main-changing effect, acquire or verify one shared repository-scoped
+  write reservation, exact main SHA and clean tree. An unrelated Manager
+  holding the same repository's main integration effect must cause the next
+  request to wait or return a concrete conflict, **not** a role-based denial.
+  Products or independent Git repositories can be handled independently.
+  LIVE publication similarly requires an exact per-target effect reservation.
+- The coordination request and delivery ACK are **not execution success**.
+  Keep request registration, routed message, ACK, claimed owner, merged SHA,
+  verified test/CI receipt, deployed payload/running version, and published
+  GitHub main SHA as separate durable stages. Duplicate delivery IDs are
+  idempotent; UNKNOWN effects are investigated before any retry.
+- **Normal delivery sequence:** isolated changes and focused regression ->
+  exact candidate CI on a non-main GitHub branch -> request stored and routed
+  to the coordinator (or user-designated Manager) -> eligible assignee obtains
+  the shared write reservation -> guarded local-main merge -> exact resulting
+  main verification and required CI -> guarded LIVE deployment and physical
+  acceptance where applicable -> GitHub main fast-forward synchronization
+  **last** -> reconcile completion evidence. Core, Monitor and RCC remain
+  separate deployment targets and only affected targets are deployed.
+- Recovery works without the original ChatGPT tab: pending requests, routing
+  decisions and receipts belong to BCT's existing durable Work/Operation and
+  orchestration state. Use existing RCC message/ACK and Manager Wake contracts
+  when their exact session and recipient bindings apply; a CI Inbox entry is
+  not a generic integration request. If no coordinator node is bound, retain
+  the request for manual routing rather than inventing a destination.
+- This rule expresses the intended workflow, **not** a proven OS-level lock.
+  Direct generic execute, git_commit, write and deployment commands can still
+  bypass a coordination convention. Evaluate their existing Work and resource
+  fences before claiming machine enforcement, and do not grant or revoke
+  permissions merely because a node is called "supervisor". The exclusive
+  resource is the *current effect reservation*, not a permanent AI role.
 
 
 Use this as the default for BCT changes unless the user explicitly narrows or
@@ -66,8 +75,9 @@ overrides the scope.
      which do not alter Core/RCC/Native Host protocols, browser state, stored
      data, claims, messages, credentials, or external systems may be committed
      on the local authoritative main after local gates. Create a rollback
-     backup, then run the exact-commit LIVE E2E only through the single
-     gateway after the applicable candidate CI and source integration gate.
+     backup, then run exact-commit LIVE E2E through the currently assigned
+     integrator's guarded BCT Work after the applicable candidate CI and
+     source integration gate. The supervisor route is optional.
      Keep GitHub main synchronization after guarded LIVE acceptance, while
      allowing exact candidate CI on a non-main ref. The work is complete
      only after both LIVE E2E and required exact CI pass; a material display
