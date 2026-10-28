@@ -51,10 +51,8 @@ Work/Delivery/scope ID, Manager·Worker UUID, 설정·결과 해시, Worker의 t
 return_instruction, Manager 반환의 Worker 결과 전문은 설정으로 제거할 수 없는 고정
 계약이다. BCT marker와 UTF-16 입력 상한도 런타임 표현 설정이 아니다.
 
-새 Delivery 메시지의 의미를 만드는 운영 설정원은 이 JSON 하나다. 과거
-`manager-relay-note.txt`와 `worker-relay-note.txt`는 구 Orchestration 경로의 호환 자료이며
-새 Worker 전달문이나 Manager 반환문에 자동 삽입하지 않는다. 계속 사용할 문구는 위의
-`worker_additional_instruction` 또는 `manager_additional_instruction`으로 명시적으로 옮긴다.
+새 Delivery 메시지의 의미를 만드는 운영 설정원은 이 JSON 하나다.
+과거 `manager-relay-note.txt`와 `worker-relay-note.txt`의 런타임 주입 경로는 퇴역했다. Orchestration 프로토콜·안전 문구는 소스 계약으로 고정하며, 사람이 조정할 현재 Delivery 문구만 `worker_additional_instruction` 또는 `manager_additional_instruction`으로 관리한다.
 
 ## Windows 언어/UTF-8 호환 계약
 
