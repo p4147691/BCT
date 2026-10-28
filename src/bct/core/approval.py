@@ -49,6 +49,13 @@ class ApprovalVerifier:
         encoded = config.get("ed25519_public_key")
         if not isinstance(encoded, str):
             raise AuthorizationError("APPROVAL_PUBLIC_KEY_UNCONFIGURED")
+        # A signed grant does not prove human authorization when the general
+        # automation account can edit the pinned key, running code or SQLite.
+        # Enabled P2 operations require a physically distinct core identity
+        # and protected state/policy directories on every verification.
+        from .approval_boundary import require_core_boundary
+        require_core_boundary(config.get("boundary"), policy_path=self.policy_path,
+                              state_path=Path(self.state_path))
         try:
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
             key = Ed25519PublicKey.from_public_bytes(_decode(encoded))

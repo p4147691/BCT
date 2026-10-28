@@ -264,7 +264,19 @@ def _launch_gui() -> None:
     import tkinter as tk
     from tkinter import filedialog, messagebox, simpledialog, ttk
 
+    # An independent, Admin-owned installed executable and manifest are
+    # required. Running this source module from a writable BCT worktree,
+    # or under the automation/Core SID, is not an acceptable signer.
+    from bct.core.approval_boundary import (
+        load_protected_issuer_manifest, require_issuer_boundary,
+    )
+    manifest_path = Path(os.environ.get(
+        "PROGRAMFILES", r"C:\\Program Files"
+    )) / "BCTApprovalIssuer" / "boundary-v1.json"
+    boundary = load_protected_issuer_manifest(manifest_path)
     path = default_identity_path()
+    require_issuer_boundary(boundary, issuer_module=Path(__file__),
+                            issuer_key=path)
     store = IssuerKeyStore(path)
     root = tk.Tk()
     root.title("BCT — 독립 사용자 승인")

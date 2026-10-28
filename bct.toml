@@ -184,6 +184,7 @@ files = [
   "src/bct/features/approval_challenge.py",
   "src/bct/features/pc_process_apply.py",
   "src/bct/core/approval.py",
+  "src/bct/core/approval_boundary.py",
   "src/bct/approval_issuer.py",
   "scripts/run_bct_approval_issuer.cmd",
   "src/bct/features/git.py",
@@ -237,4 +238,15 @@ files = [
 # No ordinary BCT/MCP tool can mint approvals. Disabled until that UI is verified.
 [approval_verifier]
 enabled = false
+# Enabling additionally requires a protected Core service account and
+# approval_verifier.boundary SID/path manifest. Do not set this in a
+# general-automation-writable worktree or deploy it from this source.
+# [approval_verifier.boundary]
+# schema = 1
+# automation_sid = "S-1-5-21-..."
+# core_sid = "S-1-5-21-..."
+# approver_sid = "S-1-5-21-..."
+# core_executable = "C:\\\\Program Files\\\\BCTCore\\\\core.exe"
+# issuer_executable = "C:\\\\Program Files\\\\BCTApprovalIssuer\\\\approval_issuer.py"
+# issuer_key_path = "C:\\\\Users\\\\Approver\\\\AppData\\\\Local\\\\BCTApprovalIssuer\\\\identity-v1.json"
 # ed25519_public_key = "<externally provisioned public key>"

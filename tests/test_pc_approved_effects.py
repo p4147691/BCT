@@ -41,6 +41,12 @@ class SignedP2ApprovalTests(unittest.TestCase):
             '[approval_verifier]\nenabled=true\n'
             f'ed25519_public_key="{public}"\n', encoding="utf8",
         )
+        # Isolated cryptographic unit tests model a proven external ACL
+        # boundary; its real Windows boundary is separately tested.
+        from unittest.mock import patch
+        mock_boundary = patch("bct.core.approval_boundary.require_core_boundary")
+        mock_boundary.start()
+        self.addCleanup(mock_boundary.stop)
         self.bct = BCT(
             state_path=self.root / "bct.sqlite", policy_path=self.policy,
             data_root=self.root,

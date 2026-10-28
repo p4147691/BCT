@@ -42,6 +42,10 @@ class IndependentApprovalIssuerTests(unittest.TestCase):
             "human-approval-sandbox", "test",
             frozenset({"file_action_plan", "approval_challenge", "file_action_apply"}),
         )
+        from unittest.mock import patch
+        simulated_boundary = patch("bct.core.approval_boundary.require_core_boundary")
+        simulated_boundary.start()
+        self.addCleanup(simulated_boundary.stop)
         self.bct = BCT(state_path=self.db, policy_path=self.policy_path,
                        data_root=self.root)
         self.bct.create_work(
@@ -264,7 +268,10 @@ class SimulatedApprovalGuiTests(IndependentApprovalIssuerTests):
         )
         with patch.dict(sys.modules, {"tkinter": module}):
             with patch.object(issuer, "default_identity_path", return_value=self.store.path):
-                issuer._launch_gui()
+                with patch("bct.core.approval_boundary.load_protected_issuer_manifest",
+                           return_value={}):
+                    with patch("bct.core.approval_boundary.require_issuer_boundary"):
+                        issuer._launch_gui()
         return output_file, outcome
 
     def test_ui_callbacks_yes_signed_effect(self):
