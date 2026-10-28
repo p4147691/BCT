@@ -17,6 +17,7 @@ from .relay_executor import RelayControlFeature
 from .worker_dispatch_recovery import WorkerDispatchRecovery
 from .manager_succession_recovery import ManagerSuccessionRecovery
 from .features.files import FileReadFeature, FileWriteFeature
+from .features.pc_safe_plans import FileActionPlanFeature, ProcessStopPlanFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
 from .features.github import (
@@ -201,7 +202,7 @@ class BCT:
         deployment_profiles = DeploymentProfiles(policy_path)
         desktop_session = desktop_session_client(policy_path, data_root=data_root)
         for feature in (
-            FileReadFeature(self.store), FileWriteFeature(), TestFeature(), GitCommitFeature(policy_path),
+            FileReadFeature(self.store), FileWriteFeature(), FileActionPlanFeature(), ProcessStopPlanFeature(), TestFeature(), GitCommitFeature(policy_path),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
             GitHubRunInboxFeature(self.store, github, policy_path),

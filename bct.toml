@@ -42,6 +42,8 @@ normal_actions = [
   "desktop_window_activate_reconcile",
   "desktop_window_manage",
   "desktop_program_launch",
+  "file_action_plan",
+  "process_stop_plan",
   "desktop_explorer_folder_open",
   "vtl_validate",
 ]
@@ -176,6 +178,7 @@ files = [
   "src/bct/features/claim_reconciliation.py",
   "src/bct/features/deploy.py",
   "src/bct/features/files.py",
+  "src/bct/features/pc_safe_plans.py",
   "src/bct/features/git.py",
   "src/bct/features/git_authority.py",
   "src/bct/features/github.py",

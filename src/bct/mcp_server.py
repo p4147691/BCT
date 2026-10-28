@@ -30,6 +30,8 @@ _CAPABILITY_USAGE = {
     "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled. Requires each child action in work scope. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
     "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",
     "github_run_watch": "Register one exact Actions run for a detached, advisory-only Inbox completion. It never merges, pushes, deploys, or changes Work state; retrieve terminal results with bct_inbox_get.",
+    "file_action_plan": "Read-only preview of one exact reversible file move or quarantine: operation=move_preview|quarantine_preview, source and destination in same Work root/device. Validates full SHA256 and produces restore plan. No file changes; apply disabled until approval verifier exists.",
+    "process_stop_plan": "Read-only exact PID/process-birth/executable inspection. No process signals; use existing owned process_session.stop where authorized, and require verified approval for any new stop capability.",
     "read": "For one file use arguments={\"path\": \"absolute file path\"}; for a bounded folder listing use operation=directory_tree; combine related reads with operation=batch and items containing unique id, path, and optional directory_tree bounds.",
     "system_inspect": "Use arguments.operation as process_list, process, or port. process_list accepts optional query and limit; process requires pid; port requires port.",
     "monitor": "Use arguments.operation as status or validate.",
