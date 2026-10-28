@@ -11,6 +11,7 @@ from bct.core.models import FeatureRequest, FeatureResult, Outcome, Precondition
 
 from .common import is_reparse_point, resolve_in_work, sha256_file
 from .snapshot import capture_work_snapshot
+from . import file_discovery
 
 
 class FileReadFeature:
@@ -25,8 +26,12 @@ class FileReadFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "file").strip().casefold()
-        if operation not in {"file", "directory_tree", "batch", "snapshot"}:
+        if operation not in {"file", "directory_tree", "batch", "snapshot", "search", "duplicates", "compare"}:
             raise PreconditionError("READ_OPERATION_INVALID")
+        if operation == "compare":
+            return file_discovery.prepare_compare(work, {**arguments, "operation": operation})
+        if operation in {"search", "duplicates"}:
+            return file_discovery.prepare(work, {**arguments, "operation": operation})
         if operation == "snapshot":
             return self._prepare_snapshot(work=work, arguments=arguments)
         if operation == "batch":
@@ -164,6 +169,10 @@ class FileReadFeature:
         )
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments["operation"] == "compare":
+            return file_discovery.execute_compare(request)
+        if request.arguments["operation"] in {"search", "duplicates"}:
+            return file_discovery.execute(request)
         if request.arguments["operation"] == "snapshot":
             output = capture_work_snapshot(self.store, request.arguments)
             return FeatureResult(

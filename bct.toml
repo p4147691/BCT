@@ -195,6 +195,7 @@ files = [
   "src/bct/features/tests.py",
   "src/bct/features/verification.py",
   "src/bct/features/desktop_session.py",
+  "src/bct/features/file_discovery.py",
   "src/bct/features/desktop_explorer_folder.py",
   "src/bct/features/vtl.py",
   "src/bct/integrations/__init__.py",
