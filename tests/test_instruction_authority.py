@@ -48,6 +48,16 @@ class InstructionAuthorityTests(unittest.TestCase):
         ):
             self.assertIn(heading, text)
 
+    def test_legacy_runtime_relay_notes_are_retired(self):
+        orchestration = (ROOT / "src" / "bct" / "features" / "orchestration.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("_relay_note(", orchestration)
+        self.assertNotIn("_RELAY_NOTES_DIR", orchestration)
+        self.assertFalse((ROOT / "docs" / "editable-relay-notes.md").exists())
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Retired `manager-relay-note.txt`", agents)
+
     def test_stale_checker_matches_self_and_detects_changed_worktree(self):
         path = ROOT / "scripts" / "check_instruction_authority.py"
         spec = importlib.util.spec_from_file_location("instruction_check", path)

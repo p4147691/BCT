@@ -116,8 +116,9 @@ A review candidate is not automatic deletion approval.
 - Module-specific rules belong in that module's nested `AGENTS.md`.
 - Message wording/project overrides belong in
   `D:\BCT\runtime\config\relay-message-settings.json`.
-- Legacy `manager-relay-note.txt` / `worker-relay-note.txt` are compatibility
-  inputs for older orchestration callers only; they are not common policy.
+- Retired `manager-relay-note.txt` / `worker-relay-note.txt` runtime files are
+  not message-policy sources. Do not recreate them; current editable message
+  wording belongs in `relay-message-settings.json`.
 - Do not delete or rename internal `node-sync` merely to simplify user-facing flow.
 - ACT and retired compatibility paths must not silently regain BCT authority.
 

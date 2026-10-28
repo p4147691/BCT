@@ -44,15 +44,9 @@ identity checks in `src/bct/**`.
 This is the strongest layer. A string inside source code is not automatically
 an enforcement rule; only executed checks/fences are.
 
-## F. Compatibility instructions
+## F. Compatibility instructions (retired runtime files)
 
-- `D:\BCT\runtime\config\manager-relay-note.txt`
-- `D:\BCT\runtime\config\worker-relay-note.txt`
-
-These are read only by older orchestration callers that still invoke
-`_relay_note()`. Canonical current Delivery message wording belongs in
-`relay-message-settings.json`. Do not promote compatibility notes back into
-common policy merely because the files still exist.
+The former runtime files `manager-relay-note.txt` and `worker-relay-note.txt` are retired. Orchestration protocol/safety wording is self-contained in source, and current editable Delivery wording belongs in `relay-message-settings.json`. Historical copies may be archived as evidence but must not be restored to `runtime/config` as instruction sources.
 
 ## G. Reference/history only
 

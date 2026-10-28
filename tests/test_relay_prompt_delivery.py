@@ -64,15 +64,6 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         ))
         self.host = StubExistingRcc()
         self.feature = RelayBrowserFeature(self.host, store=self.store)
-        self.cfg = Path(self.tmp.name) / "notes"
-        self.cfg.mkdir()
-        (self.cfg / "worker-relay-note.txt").write_text(
-            "LEGACY_WORKER_NOTE COMPLETE FOLLOW_UP 4줄 JSON", encoding="utf-8")
-        (self.cfg / "manager-relay-note.txt").write_text(
-            "LEGACY_MANAGER_NOTE COMPLETE FOLLOW_UP", encoding="utf-8")
-        self.patch = patch("bct.features.orchestration._RELAY_NOTES_DIR", self.cfg)
-        self.patch.start()
-        self.addCleanup(self.patch.stop)
         self.settings = Path(self.tmp.name) / "relay-message-settings.json"
         self.settings_env = patch.dict(
             os.environ, {"BCT_RELAY_SETTINGS_PATH": str(self.settings)}
@@ -111,7 +102,6 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.assertEqual(["Manager"], body["current_members"][0]["role_tags"])
         self.assertNotIn("role_note", body)
         self.assertIn("전체 원문", body["return_instruction"])
-        self.assertNotIn("LEGACY_WORKER_NOTE", start["text"])
         self.assertEqual(self.base["text"], body["task"])
         self.assertEqual(hashlib.sha256(start["text"].encode("utf-8")).hexdigest(),
                          start["extra"]["requestSha256"])
@@ -180,7 +170,6 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.assertEqual(1, manager_text.count("실제 Worker 결과 전문 예시 📦"))
         self.assertIn("bounded one delivery", manager_text)
         self.assertIn("단일 Delivery 경로", manager_text)
-        self.assertNotIn("LEGACY_MANAGER_NOTE", manager_text)
         self.assertNotIn("COMPLETE", manager_text)
         self.assertNotIn("FOLLOW_UP", manager_text)
         self.assertTrue(preview["worker_message"]["fits_current_limit"])
@@ -223,7 +212,6 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         self.assertIn("[BCT_CURRENT_WORKER_RESULT_FULL]", payload["managerReturnHeader"])
         self.assertIn("[/BCT_CURRENT_WORKER_RESULT_FULL]", payload["managerReturnFooter"])
         self.assertIn("단일 Delivery 경로", payload["managerReturnFooter"])
-        self.assertNotIn("LEGACY_MANAGER_NOTE", payload["managerReturnFooter"])
         self.assertNotIn("COMPLETE", payload["managerReturnFooter"])
         self.assertNotIn("FOLLOW_UP", payload["managerReturnFooter"])
         self.assertIn("managerReturnSettingsSha256", payload)
