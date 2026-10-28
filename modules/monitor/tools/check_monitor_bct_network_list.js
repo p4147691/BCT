@@ -23,10 +23,10 @@ assert.match(source, /row\.addEventListener\("pointerdown", \(event\) => beginMo
   "all node rows keep the existing drag interaction");
 assert.match(source, /installMonitorBctManagerLongPress\(row, node\)/,
   "the Manager long-press interaction remains installed");
-assert.match(source, /row\.append\(number, body\)/,
-  "visible rows contain only node identity and title/location text");
-assert.doesNotMatch(source, /monitor-bct-node-presence/,
-  "presence details do not clutter the node row");
+assert.match(source, /row\.append\(number, body, presence\)/,
+  "flat rows retain node identity, title/location and existing status icon");
+assert.match(source, /monitor-bct-node-presence/,
+  "existing status icon must not be removed by unrelated label work");
 assert.match(source, /return desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "위치 확인 중";/,
   "the visible location is only D1, D2, and so on");
 assert.match(source, /function monitorUniqueBctConversationNodes\(nodes\)/,
@@ -43,8 +43,8 @@ assert.match(source, /node\.tabIndex \?\? Number\.MAX_SAFE_INTEGER/,
   "tab order remains the final physical fallback without creating a visible group");
 assert.match(css, /\.monitor-bct-node-list\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/,
   "each conversation network retains the approved three-column layout");
-assert.match(css, /\.monitor-bct-node-row \{ grid-template-columns:29px minmax\(0,1fr\); \}/,
-  "node rows reserve columns only for N number and text");
+assert.match(css, /\.monitor-bct-node-row \{ grid-template-columns:29px minmax\(0,1fr\) 17px; \}/,
+  "node row preserves the existing status icon column");
 assert.doesNotMatch(css, /\.monitor-bct-window-card|\.monitor-bct-window-tab-rows/,
   "physical-window grouping styles are removed");
 
