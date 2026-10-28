@@ -19,7 +19,7 @@
     {
       "domain": "diagnostics-shell",
       "file": "diagnostics-shell.js",
-      "functions": 22
+      "functions": 21
     },
     {
       "domain": "native-transport",

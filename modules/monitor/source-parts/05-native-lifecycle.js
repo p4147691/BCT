@@ -301,7 +301,7 @@ const monitorWindowLifecycleController = globalThis.MonitorWindowLifecycleQueue.
 
 /*@@MONITOR_FUNCTION:scheduleMonitorWindowLifecycleEvent@@*/
 
-/*@@MONITOR_FUNCTION:drainMonitorWindowLifecycleEvents@@*/
+
 
 /*@@MONITOR_FUNCTION:handleMonitorWindowLifecycleEvent@@*/
 

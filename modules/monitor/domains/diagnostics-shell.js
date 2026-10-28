@@ -188,10 +188,6 @@ function createMonitorWindowCaptureService({ maxEntries, maxWidth, maxHeight, qu
 }
 //@@FN_END:createMonitorWindowCaptureService
 
-//@@FN_START:drainMonitorWindowLifecycleEvents
-async function drainMonitorWindowLifecycleEvents() { return monitorWindowLifecycleController.drain(); }
-//@@FN_END:drainMonitorWindowLifecycleEvents
-
 //@@FN_START:handleMonitorWindowLifecycleEvent
 async function handleMonitorWindowLifecycleEvent(event) {
 

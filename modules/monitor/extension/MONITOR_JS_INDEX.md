@@ -3,9 +3,9 @@
 Generated from the deployed runtime. Do not edit by hand.
 
 - source: `extension/monitor.js`
-- sha256: `9c9e9c60693f38db82c824799fb1e835cdfee27ea3d33cd53ab1e23bf8c1593d`
+- sha256: `c479f1c64ae4b8474c843c79f13f88f4461b586190ff1f8bacc1535440b85988`
 - line count: 14399
-- declared functions: 528
+- declared functions: 527
 
 Search by function name first; line numbers are snapshot hints only.
 
@@ -297,7 +297,6 @@ Search by function name first; line numbers are snapshot hints only.
 - `removeMonitorV2Window` — line 7873
 - `scheduleMonitorV2WindowRefresh` — line 7892
 - `scheduleMonitorWindowLifecycleEvent` — line 7905
-- `drainMonitorWindowLifecycleEvents` — line 7907
 - `handleMonitorWindowLifecycleEvent` — line 7909
 - `monitorNative` — line 8016
 - `monitorControlNativeRequest` — line 8020

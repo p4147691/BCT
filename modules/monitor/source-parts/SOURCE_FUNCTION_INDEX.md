@@ -204,14 +204,13 @@ Generated extension/monitor.js is not an edit target.
 - updateMonitorWindowPointerDrag
 - updateMonitorWorkerRowPointerDrag
 
-## diagnostics-shell (22 functions)
+## diagnostics-shell (21 functions)
 
 - applyMonitorWindowHighlight
 - applyMonitorWindowHover
 - cloneMonitorWindowSet
 - configureMonitorProviderLaunchButton
 - createMonitorWindowCaptureService
-- drainMonitorWindowLifecycleEvents
 - handleMonitorWindowLifecycleEvent
 - monitorDiagTextError
 - monitorExtensionVersion

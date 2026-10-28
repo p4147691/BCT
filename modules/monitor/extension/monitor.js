@@ -7904,7 +7904,7 @@ const monitorWindowLifecycleController = globalThis.MonitorWindowLifecycleQueue.
 
 function scheduleMonitorWindowLifecycleEvent(event) { monitorWindowLifecycleController.schedule(event); }
 
-async function drainMonitorWindowLifecycleEvents() { return monitorWindowLifecycleController.drain(); }
+
 
 async function handleMonitorWindowLifecycleEvent(event) {
 

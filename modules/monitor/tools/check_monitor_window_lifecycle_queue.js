@@ -16,7 +16,6 @@ const parts = fs.readFileSync(path.join(dir, "source-parts/05-native-lifecycle.j
 assert.ok(html.indexOf('src="monitor-window-lifecycle-queue.js"') <
   html.indexOf('src="monitor.js"'));
 assert.match(domain, /monitorWindowLifecycleController[.]schedule[(]event[)]/);
-assert.match(domain, /monitorWindowLifecycleController[.]drain[(][)]/);
 assert.doesNotMatch(parts, /const monitorWindowLifecyclePendingEvents = new Map/);
 assert.doesNotMatch(parts, /let monitorWindowLifecycleDrainBusy/);
 
