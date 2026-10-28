@@ -17,6 +17,7 @@ from bct.core.models import (
 
 from .common import relative_git_path, resolve_in_work, sha256_file
 from .git_authority import require_local_main
+from bct.instruction_preflight import find_branch_worktree, inspect_worktree
 
 
 def _git(root: Path, *args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
@@ -154,6 +155,24 @@ class GitCommitFeature:
             raise PreconditionError("LOCAL_MAIN_FEATURE_ALREADY_CONTAINED")
         if already.returncode != 1:
             raise PreconditionError("LOCAL_MAIN_ANCESTRY_UNVERIFIED")
+        # Check the *attached* candidate that owns this exact branch before
+        # any shared-main effect. Do not copy instructions into historical trees.
+        # The canonical script remains the only content comparator.
+        if (root / "scripts" / "check_instruction_authority.py").is_file():
+            candidate = find_branch_worktree(root, branch)
+            if candidate is None:
+                raise PreconditionError("LOCAL_MAIN_INSTRUCTION_WORKTREE_UNAVAILABLE")
+            candidate_head = _git(candidate, "rev-parse", "HEAD")
+            if (candidate_head.returncode != 0
+                    or candidate_head.stdout.strip().lower() != feature_head):
+                raise PreconditionError("LOCAL_MAIN_INSTRUCTION_CANDIDATE_SHA_MISMATCH")
+            if _dirty_paths(candidate):
+                raise PreconditionError("LOCAL_MAIN_INSTRUCTION_CANDIDATE_DIRTY")
+            inspection = inspect_worktree(root, candidate)
+            if inspection["status"] != "MATCH":
+                raise PreconditionError(
+                    "LOCAL_MAIN_INSTRUCTION_REVIEW_REQUIRED:" + inspection["status"]
+                )
         # Preflight detects ordinary content conflicts before changing main/worktree.
         preview = _git(root, "merge-tree", "--write-tree", before, feature_head)
         if preview.returncode != 0:

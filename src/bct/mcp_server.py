@@ -13,8 +13,10 @@ from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .conversation_network import ConversationNetworkError, project_view, resolve_project_id
-from .core.models import Principal, Work
+from .core.models import PreconditionError, Principal, Work
 from .mcp_catalogue_config import CatalogueSettings
+from .features.git_authority import read_git_authority
+from .instruction_preflight import inspect_work_roots
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -213,7 +215,22 @@ def build_mcp(
             if current != expected:
                 raise ValueError("WORK_ID_CONFLICT")
             duplicate = True
-        return {"work": _work_dict(current), "duplicate": duplicate}
+        result = {"work": _work_dict(current), "duplicate": duplicate}
+        # Work registration is an authorization event, not proof of execution.
+        # Observe linked BCT Worktrees without blocking read-only or legacy Work.
+        try:
+            authority = read_git_authority(bct.policy.path)
+            if authority.mode == "local" and authority.source_root is not None:
+                checks = await asyncio.to_thread(
+                    inspect_work_roots, authority.source_root, current.roots
+                )
+                if checks:
+                    result["instruction_authority"] = checks
+        except (OSError, ValueError, PreconditionError):
+            result["instruction_authority"] = [
+                {"status": "UNKNOWN", "reason": "INSTRUCTION_AUTHORITY_UNAVAILABLE"}
+            ]
+        return result
 
     @server.tool(description="Read one exact operation receipt owned by the current MCP work.", structured_output=True)
     async def bct_operation_get(work_id: str, operation_id: str, wait_seconds: float = 0) -> dict[str, Any]:

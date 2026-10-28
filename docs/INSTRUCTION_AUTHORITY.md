@@ -73,3 +73,29 @@ not "overwrite branch files".
 An instruction-like artifact may be removed only after its active caller is
 identified and migrated or retired. Do not delete compatibility files solely
 because a newer path exists.
+
+## Boundary checks (isolated candidate; not a LIVE claim)
+
+The common comparator remains `scripts/check_instruction_authority.py`.
+`src/bct/instruction_preflight.py` invokes that exact script in strict
+read-only mode; it does not maintain a second set of canonical rule contents.
+
+- BCT `bct_work_create` observes instruction status for linked worktree roots
+  inside the local BCT authority scope. Its returned `instruction_authority`
+  is advisory: Work registration is an authorization record, not execution.
+  Existing Work and unrelated repositories must not be blocked.
+- Guarded `git_commit(operation="merge_local_main")` requires an attached,
+  clean feature Worktree at the exact expected commit and a `MATCH` result
+  before modifying shared main. Missing/unverifiable or stale instructions
+  require review; no Worktree files are overwritten.
+- A separately owned `bct_integration_queue` implementation must call
+  `inspect_feature_branch(repository_root, feature_branch)` before a new
+  submit and distinguish `MATCH` from `STALE_INSTRUCTIONS` / `UNKNOWN`.
+  This candidate deliberately does **not** edit that feature branch.
+  Do not report an active queue submission gate until that hook is integrated,
+  tested and deployed.
+
+A stale result is an exact-content difference, **not** a proven semantic
+conflict. Manual review decides compatibility. This source-only candidate
+requires independent tests, exact feature CI, local-main integration and
+any affected Core LIVE acceptance by the designated integration owner.
