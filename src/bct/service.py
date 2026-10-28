@@ -18,6 +18,8 @@ from .worker_dispatch_recovery import WorkerDispatchRecovery
 from .manager_succession_recovery import ManagerSuccessionRecovery
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.pc_safe_plans import FileActionPlanFeature, ProcessStopPlanFeature
+from .features.pc_safe_apply import FileActionApplyFeature
+from .features.pc_process_apply import ProcessStopApplyFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
 from .features.github import (
@@ -201,8 +203,10 @@ class BCT:
         github = github_client or GhCliClient()
         deployment_profiles = DeploymentProfiles(policy_path)
         desktop_session = desktop_session_client(policy_path, data_root=data_root)
+        sessions = ProcessSessionFeature(policy_path, data_root=data_root)
         for feature in (
-            FileReadFeature(self.store), FileWriteFeature(), FileActionPlanFeature(), ProcessStopPlanFeature(), TestFeature(), GitCommitFeature(policy_path),
+            FileReadFeature(self.store), FileWriteFeature(), FileActionPlanFeature(),
+            ProcessStopPlanFeature(), FileActionApplyFeature(), ProcessStopApplyFeature(sessions), TestFeature(), GitCommitFeature(policy_path),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
             GitHubRunInboxFeature(self.store, github, policy_path),
@@ -210,7 +214,7 @@ class BCT:
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             relay_browser,
             SystemInspectFeature(), ExecuteFeature(),
-            ProcessSessionFeature(policy_path, data_root=data_root),
+            sessions,
             MonitorFeature(policy_path),
             ConversationNetworkUpdateFeature(self.store),
             ProjectContextFeature(data_root or Path(policy_path).parent),

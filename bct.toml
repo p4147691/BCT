@@ -47,7 +47,7 @@ normal_actions = [
   "desktop_explorer_folder_open",
   "vtl_validate",
 ]
-approval_actions = ["delete", "credential_change"]
+approval_actions = ["delete", "credential_change", "file_action_apply", "process_stop_apply"]
 
 # Chrome DevTools MCP is opt-in and never launched by starting BCT.
 # Configure a pinned, trusted MCP command and enable only after review.
@@ -179,6 +179,9 @@ files = [
   "src/bct/features/deploy.py",
   "src/bct/features/files.py",
   "src/bct/features/pc_safe_plans.py",
+  "src/bct/features/pc_safe_apply.py",
+  "src/bct/features/pc_process_apply.py",
+  "src/bct/core/approval.py",
   "src/bct/features/git.py",
   "src/bct/features/git_authority.py",
   "src/bct/features/github.py",
@@ -224,3 +227,10 @@ files = [
   "modules/mcp/ops/BCT-Tunnel-Supervisor.protected.task.xml.template",
   "modules/status-ui/index.html",
 ]
+
+
+# Signed approval issuer must be a separately authenticated human UI.
+# No ordinary BCT/MCP tool can mint approvals. Disabled until that UI is verified.
+[approval_verifier]
+enabled = false
+# ed25519_public_key = "<externally provisioned public key>"
