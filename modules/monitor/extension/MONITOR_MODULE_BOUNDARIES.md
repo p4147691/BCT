@@ -221,3 +221,15 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - The source-parts/domains contain only composition and compatibility delegates for these five states; generated `extension/monitor.js` remains derived, never hand-edited.
 - Independent tests: `check_monitor_node_panel_selection.js`, `check_monitor_conversation_projection_controller.js`, `check_monitor_desktop_mode_controller.js`, `check_monitor_desktop_frame_generation.js`, `check_monitor_recovery_undo_session.js`, all wired into `check_monitor_structure.py`.
 - **Not claimed complete**: full NodePanel DOM/row/controller, DesktopStage/Strip DOM and Native mutation, Recovery trash UI, remaining Diagnostics commands, Organization (PARKED), Native source provenance (2 HOLD), LIVE E2E. Do not merge/deploy until independent authority, public API and full behavior evidence are complete.
+
+## 2026-10-29 follow-up: recovery inventory and NodePanel refresh
+- `monitor-recovery-inventory.js`: owns closed/reboot conversation classification, exact conversation-key filtering, sorting, and read-only timestamp reconciliation. `MonitorRecoveryInventory.create({toEpoch}).project({ghosts,snapshot,trashedKeys,endpoints})` returns items and optional updated snapshot; existing composition root alone performs persistent writes. No second launch/recovery engine.
+- `monitor-node-panel-refresh.js`: owns refresh busy/pending state and at-most-one queued follow-up. `MonitorNodePanelRefresh.create({run,onBusy,onError,enqueue})` delegates existing BCT/RCC read, row rendering, geometry and thumbnail refresh to injected ports; no duplicated RCC transport.
+- `monitor-tool-connector-registry.js`: dormant future adapter contract; see `../MONITOR_TOOL_CONNECTOR_CONTRACT.md`. No actual tools connected or executed.
+- Independent tests: `check_monitor_recovery_inventory.js`, `check_monitor_node_panel_refresh.js`, `check_monitor_tool_connector_registry.js`, all wired into structure gate. Remaining NodePanel DOM and Recovery trash UI are not yet independent.
+
+## 2026-10-29 Recovery picker visibility state
+- `monitor-recovery-picker-state.js` is the sole owner of the picker open/closed boolean. Public `MonitorRecoveryPickerState.create() -> {isOpen,show,close,toggle}`.
+- Existing recovery menu events/rendering call the state API; no raw `monitorClosedConversationPickerOpen` global survives. No new restore/relaunch engine.
+- `check_monitor_recovery_picker_state.js` verifies state isolation and current caller contract, wired to the structure gate.
+- The full recovery trash UI DOM and exact restore executor remain in compatibility sources and require further review.

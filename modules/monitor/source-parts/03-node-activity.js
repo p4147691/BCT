@@ -159,9 +159,10 @@ const monitorHiddenGhosts = new Set();
 
 let monitorGhostStorageReady = false;
 
-let monitorClosedConversationPickerOpen = false;
+const monitorRecoveryPickerState = globalThis.MonitorRecoveryPickerState.create();
 
 let monitorRebootSnapshot = { captured_at_ms:0, items:[] };
+const monitorRecoveryInventoryController = globalThis.MonitorRecoveryInventory.create({toEpoch: value => monitorGhostTime(value)});
 
 let monitorRebootSnapshotReady = false;
 

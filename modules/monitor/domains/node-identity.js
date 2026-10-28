@@ -1034,45 +1034,40 @@ function scheduleMonitorBctNodeStartupRevalidation() {
 //@@FN_START:refreshMonitorBctWindowNodes
 async function refreshMonitorBctWindowNodes() {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell) return;
-  if (monitorBctWindowNodeRefreshBusy) {
-    monitorBctWindowNodeRefreshPending = true;
-    return;
+  if (!monitorNodePanelRefreshController) {
+    monitorNodePanelRefreshController = globalThis.MonitorNodePanelRefresh.create({
+      onBusy: busy => {
+        if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = busy;
+        if (busy && monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
+      },
+      enqueue: callback => queueMicrotask(callback),
+      run: async () => {
+        const state = await monitorBctShell.monitorState();
+        renderMonitorGithubInbox(state);
+        monitorBctWindowNodesCache = monitorBctShell.displayWindowNodes
+          ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
+          : monitorBctShell.windowNodes(state);
+        resetMonitorBctProjectionConvergence();
+        await refreshMonitorBctBrowserWindowGeometry();
+        await refreshMonitorIdentityIndex(monitorLastAiState, true);
+        refreshMonitorBctCurrentSessionWindowHwnd();
+        refreshMonitorBctDisplayWindowHwnd();
+        renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+        syncMonitorAllDesktopThumbnailNodeBadges();
+        scheduleMonitorBctProjectionConvergence("bct-state");
+        if (monitorBctWindowNodesCache.some(node => node.displayStale === true))
+          scheduleMonitorBctNodeStartupRevalidation();
+      },
+      onError: error => {
+        if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "상태 확인 실패";
+        const message = document.createElement("div");
+        message.className = "monitor-bct-node-empty is-error";
+        message.textContent = `BCT 창 현황을 불러오지 못했습니다 · ${error?.message || error}`;
+        monitorWorkers?.replaceChildren(message);
+      }
+    });
   }
-  monitorBctWindowNodeRefreshBusy = true;
-  monitorBctWindowNodeRefreshPending = false;
-  if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = true;
-  if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "확인 중…";
-  try {
-    const state = await monitorBctShell.monitorState();
-    renderMonitorGithubInbox(state);
-    monitorBctWindowNodesCache = monitorBctShell.displayWindowNodes
-      ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
-      : monitorBctShell.windowNodes(state);
-    resetMonitorBctProjectionConvergence();
-    await refreshMonitorBctBrowserWindowGeometry();
-    await refreshMonitorIdentityIndex(monitorLastAiState, true);
-    refreshMonitorBctCurrentSessionWindowHwnd();
-    refreshMonitorBctDisplayWindowHwnd();
-    renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
-    syncMonitorAllDesktopThumbnailNodeBadges();
-    scheduleMonitorBctProjectionConvergence("bct-state");
-    if (monitorBctWindowNodesCache.some((node) => node.displayStale === true)) {
-      scheduleMonitorBctNodeStartupRevalidation();
-    }
-  } catch (error) {
-    if (monitorBctNodeSummary) monitorBctNodeSummary.textContent = "상태 확인 실패";
-    const message = document.createElement("div");
-    message.className = "monitor-bct-node-empty is-error";
-    message.textContent = `BCT 창 현황을 불러오지 못했습니다 · ${error?.message || error}`;
-    monitorWorkers?.replaceChildren(message);
-  } finally {
-    monitorBctWindowNodeRefreshBusy = false;
-    if (monitorBctNodesRefresh) monitorBctNodesRefresh.disabled = false;
-    if (monitorBctWindowNodeRefreshPending) {
-      monitorBctWindowNodeRefreshPending = false;
-      queueMicrotask(() => void refreshMonitorBctWindowNodes());
-    }
-  }
+  return monitorNodePanelRefreshController.refresh();
 }
 //@@FN_END:refreshMonitorBctWindowNodes
 

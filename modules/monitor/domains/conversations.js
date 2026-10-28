@@ -1824,7 +1824,7 @@ function performMonitorWorkerRender(state) {
     syncMonitorBctNodeTargetHighlight();
   }
 
-  if(monitorClosedRecoveryMenu){monitorClosedRecoveryMenu.hidden=!monitorClosedConversationPickerOpen;if(monitorClosedConversationPickerOpen)monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(state));}
+  if(monitorClosedRecoveryMenu){monitorClosedRecoveryMenu.hidden=!monitorRecoveryPickerState.isOpen();if(monitorRecoveryPickerState.isOpen())monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(state));}
 
 }
 //@@FN_END:performMonitorWorkerRender

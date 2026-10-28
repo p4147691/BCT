@@ -336,6 +336,34 @@ def main():
         conversation_projection_test = root/'tools'/'check_monitor_conversation_projection_controller.js'
         node_selection_test = root/'tools'/'check_monitor_node_panel_selection.js'
         recovery_undo_test = root/'tools'/'check_monitor_recovery_undo_session.js'
+        recovery_picker_test = root/'tools'/'check_monitor_recovery_picker_state.js'
+        picker_checked = subprocess.run([node,str(recovery_picker_test)],cwd=str(root.parent.parent),
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if recovery_picker_test.is_file() else None
+        facts['monitor_recovery_picker_test_rc'] = picker_checked.returncode if picker_checked else None
+        if picker_checked is None or picker_checked.returncode:
+            errors.append({'kind':'monitor_recovery_picker_contract_regression',
+                'detail':(picker_checked.stdout+picker_checked.stderr)[-600:] if picker_checked else 'missing'})
+        node_refresh_test = root/'tools'/'check_monitor_node_panel_refresh.js'
+        node_refresh_checked = subprocess.run([node,str(node_refresh_test)],cwd=str(root.parent.parent),
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if node_refresh_test.is_file() else None
+        facts['monitor_node_panel_refresh_test_rc'] = node_refresh_checked.returncode if node_refresh_checked else None
+        if node_refresh_checked is None or node_refresh_checked.returncode:
+            errors.append({'kind':'monitor_node_panel_refresh_contract_regression',
+                'detail':(node_refresh_checked.stdout+node_refresh_checked.stderr)[-600:] if node_refresh_checked else 'missing'})
+        recovery_inventory_test = root/'tools'/'check_monitor_recovery_inventory.js'
+        recovery_checked = subprocess.run([node,str(recovery_inventory_test)],cwd=str(root.parent.parent),
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if recovery_inventory_test.is_file() else None
+        facts['monitor_recovery_inventory_test_rc'] = recovery_checked.returncode if recovery_checked else None
+        if recovery_checked is None or recovery_checked.returncode:
+            errors.append({'kind':'monitor_recovery_inventory_contract_regression',
+                'detail':(recovery_checked.stdout+recovery_checked.stderr)[-600:] if recovery_checked else 'missing'})
+        tool_registry_test = root/'tools'/'check_monitor_tool_connector_registry.js'
+        registry_checked = subprocess.run([node,str(tool_registry_test)],cwd=str(root.parent.parent),
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if tool_registry_test.is_file() else None
+        facts['monitor_tool_registry_test_rc'] = registry_checked.returncode if registry_checked else None
+        if registry_checked is None or registry_checked.returncode:
+            errors.append({'kind':'monitor_tool_registry_contract_regression',
+                'detail':(registry_checked.stdout+registry_checked.stderr)[-600:] if registry_checked else 'missing'})
         frame_generation_test = root/'tools'/'check_monitor_desktop_frame_generation.js'
         for controller_test in (desktop_mode_test, conversation_projection_test, node_selection_test, recovery_undo_test, frame_generation_test):
             checked = subprocess.run([node, str(controller_test)], cwd=str(root.parent.parent),

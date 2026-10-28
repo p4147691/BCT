@@ -1051,33 +1051,18 @@ function monitorBctStopDragInput(drag) {
 
 //@@FN_START:monitorClosedConversationRecoveryItems
 function monitorClosedConversationRecoveryItems(state = null) {
-
-  const byKey=new Map();
-
-  for(const g of monitorGhostCache.values()){const key=String(g?.conversation_key||"").trim();if(!g.open&&key&&!monitorTrashedConversationKeys.has(key))byKey.set(key,{...g,recovery_source:"일반 종료"});}
-
-  const endpoints=Array.isArray(state?.endpoints)?state.endpoints:[]; let sharedChanged=false;
-
-  const sharedItems=(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[]).map((snap)=>{
-
-    const key=String(snap?.conversation_key||"").trim(); if(!key)return snap; const ep=endpoints.find((x)=>String(x?.conversation_key||"").trim()===key)||null;
-
-    const firstSeen=Number(monitorGhostTime(ep?.first_seen_at)||snap?.first_seen_ms||0); const closedAt=Number(monitorGhostTime(ep?.closed_at)||snap?.closed_at_ms||snap?.captured_at_ms||monitorRebootSnapshot?.captured_at_ms||0);
-
-    if(firstSeen!==Number(snap?.first_seen_ms||0)||closedAt!==Number(snap?.closed_at_ms||0))sharedChanged=true;
-
-    return {...snap,first_seen_ms:firstSeen,closed_at_ms:closedAt};
-
+  const result = monitorRecoveryInventoryController.project({
+    ghosts: monitorGhostCache.values(),
+    snapshot: monitorRebootSnapshot,
+    trashedKeys: monitorTrashedConversationKeys,
+    endpoints: Array.isArray(state?.endpoints) ? state.endpoints : []
   });
-
-  if(sharedChanged){monitorRebootSnapshot={...monitorRebootSnapshot,items:sharedItems};chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot});monitorPublishSharedRebootSnapshot();}
-
-  const openKeys=new Set(endpoints.filter((x)=>String(x?.presence_state||"").toUpperCase()==="OPEN").map((x)=>String(x?.conversation_key||"").trim()).filter(Boolean));
-
-  for(const snap of sharedItems){const key=String(snap?.conversation_key||"").trim();if(!key||monitorTrashedConversationKeys.has(key)||openKeys.has(key))continue;byKey.set(key,{...snap,open:false,recovery_source:"재부팅 이전"});}
-
-  return [...byKey.values()].sort((a,b)=>{const ar=a.recovery_source==="재부팅 이전",br=b.recovery_source==="재부팅 이전";if(ar&&br)return Number(a.desktop||999)-Number(b.desktop||999)||Number(a.slot||999)-Number(b.slot||999);if(ar!==br)return ar?-1:1;return Number(b.closed_at_ms||b.captured_at_ms||0)-Number(a.closed_at_ms||a.captured_at_ms||0);});
-
+  if (result.updatedSnapshot) {
+    monitorRebootSnapshot = result.updatedSnapshot;
+    chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRebootSnapshot});
+    monitorPublishSharedRebootSnapshot();
+  }
+  return result.items;
 }
 //@@FN_END:monitorClosedConversationRecoveryItems
 
@@ -1289,7 +1274,7 @@ async function moveMonitorWindowToDesktop(hwnd, sourceDesktopId, targetDesktopId
 //@@FN_START:openMonitorTrashRecovery
 function openMonitorTrashRecovery() {
   if (!monitorNodeTrash || !monitorClosedRecoveryMenu) return;
-  if (!monitorClosedConversationPickerOpen) monitorNodeTrash.click();
+  if (!monitorRecoveryPickerState.isOpen()) monitorNodeTrash.click();
 }
 //@@FN_END:openMonitorTrashRecovery
 
@@ -1360,7 +1345,7 @@ function pushDesktopUndoSnapshot(snapshot, now = Date.now()) { monitorRecoveryUn
 //@@FN_START:refreshMonitorRecoveryMenu
 function refreshMonitorRecoveryMenu(){
 
-  if(!(monitorClosedConversationPickerOpen&&monitorClosedRecoveryMenu&&monitorLastAiState))return;
+  if(!(monitorRecoveryPickerState.isOpen()&&monitorClosedRecoveryMenu&&monitorLastAiState))return;
 
   const panes=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane-scroll')].map((el)=>({cls:el.parentElement?.className||'',top:el.scrollTop}));
 
@@ -2035,7 +2020,7 @@ async function restoreMonitorDetachedTask(item, button) {
 
     monitorHiddenGhosts.delete(key); monitorGhostPersist();
 
-    if(!item?.__reboot_restore)monitorClosedConversationPickerOpen=false;
+    if(!item?.__reboot_restore)monitorRecoveryPickerState.close();
 
     await refreshAiMonitor();
 
