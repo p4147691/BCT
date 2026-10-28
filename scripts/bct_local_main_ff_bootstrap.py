@@ -94,9 +94,10 @@ def run_bootstrap(*, candidate_root: Path, canonical_root: Path,
     policy_path = policy_path.resolve()
     state_db = state_db.resolve()
     if (Path(__file__).resolve().parents[1] != candidate_root
+            or candidate_root == canonical_root
             or not candidate_root.is_dir()
             or not (canonical_root / ".git").is_dir()
-            or not (candidate_root / ".git").is_file()):
+            or not (candidate_root / ".git").exists()):
         raise ValueError("BOOTSTRAP_SOURCE_IDENTITY_INVALID")
     if policy_path.is_symlink() or state_db.is_symlink():
         raise ValueError("BOOTSTRAP_PROTECTED_PATH_INVALID")

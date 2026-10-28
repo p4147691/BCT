@@ -53,18 +53,18 @@ on LIVE Core. Source/main/LIVE/Chrome/RCC are unchanged by developing this code.
 ## One-time bootstrap, before the new Core command exists
 
 The exact source of this bootstrap is
-\`scripts/bct_local_main_ff_bootstrap.py\` **in the pinned, tested feature Worktree**.
-It uses the current Core's existing BCT \`execute\` capability as the outer
+`scripts/bct_local_main_ff_bootstrap.py` **in the pinned, tested feature Worktree**.
+It uses the current Core's existing BCT `execute` capability as the outer
 durable BCT Operation. Inside that process, it loads the feature source's
-\`GitCommitFeature\`, then invokes **OperationCoordinator.run(capability="git_commit")**
+`GitCommitFeature`, then invokes **OperationCoordinator.run(capability="git_commit")**
 on the *same live BCT store*, using a separate, exact inner Operation ID.
-It never calls \`git merge\` directly and does not bypass the current policy.
+It never calls `git merge` directly and does not bypass the current policy.
 
 The bootstrap uses Store's existing DB, **without startup schema migration**.
-It validates that the outer \`execute\` Operation is RUNNING, belongs to the
+It validates that the outer `execute` Operation is RUNNING, belongs to the
 same ACTIVE Work/Principal/Epoch, owns the current execution claim observation,
 and both source and pinned feature Worktree are in Work roots.
-The inner \`git_commit\` operation has the same resource keys and guard logic as
+The inner `git_commit` operation has the same resource keys and guard logic as
 the approved feature code. Note: BCT resource Claims are currently observational;
 they are **not independent mutexes**. Only one designated integration operator
 may perform a shared-main effect, after checking active work and processes.
@@ -73,13 +73,13 @@ may perform a shared-main effect, after checking active work and processes.
 
 Before any execution, the supervisor must confirm:
 - Candidate exact commit SHA and matching feature CI; no uncommitted bytes.
-- The approved BCT Work has \`execute\` and \`git_commit\`, one owner, roots
+- The approved BCT Work has `execute` and `git_commit`, one owner, roots
   exactly covering source + the pinned feature Worktree; choose two unique IDs
   (outer execute, inner Git) and preserve both receipts.
 - The actually running BCT policy is compatible with the reviewed local-source
-  \`bct.toml\`; inspect \`git_authority\` and \`normal_actions\` and do not loosen
-  permissions or override \`github_sync_main\`.
-- Local source \`main\` is CLEAN at the expected original SHA; origin URL is
+  `bct.toml`; inspect `git_authority` and `normal_actions` and do not loosen
+  permissions or override `github_sync_main`.
+- Local source `main` is CLEAN at the expected original SHA; origin URL is
   EXACTLY the repository in policy; current remote main is at the pinned SHA;
   ancestry is proven and Work/Operation owners and concurrent Git effects are
   reconciled. Verify the remote head again immediately before execution.
@@ -88,8 +88,8 @@ Before any execution, the supervisor must confirm:
 
 ### Exact BCT execution recipe (supervisor-only, not run in this task)
 
-Create/recover an exact Work via \`bct_work_create\`:
-\`\`\`json
+Create/recover an exact Work via `bct_work_create`:
+```json
 {
   "work_id": "BCT-LOCAL-MAIN-FF-BOOTSTRAP-APPROVED-20261029",
   "request_summary": "One-time supervised exact origin/main fast-forward",
@@ -99,12 +99,12 @@ Create/recover an exact Work via \`bct_work_create\`:
   ],
   "actions": ["execute", "git_commit", "read"]
 }
-\`\`\`
-Use **one** BCT \`bct_execute\` with the exact Work and frozen arguments below
-and a unique \`operation_id\`, not raw Git, not an arbitrary shell. The inner
+```
+Use **one** BCT `bct_execute` with the exact Work and frozen arguments below
+and a unique `operation_id`, not raw Git, not an arbitrary shell. The inner
 Operation ID MUST remain different and MUST be recovered, not reissued, on
 an uncertain outcome.
-\`\`\`json
+```json
 {
   "work_id": "BCT-LOCAL-MAIN-FF-BOOTSTRAP-APPROVED-20261029",
   "operation_id": "n63-ff-bootstrap-outer-20261029-approved-01",
@@ -126,15 +126,15 @@ an uncertain outcome.
     "timeout_s": 120
   }
 }
-\`\`\`
+```
 The IDs and SHAs above are **examples grounded in the handoff**, not blanket
 approval: refresh exact HEAD/remote and owner/operation state first.
 A changed HEAD/remote needs a new reviewed plan, not a blind retry.
 
 ### Post-state and rollback discipline
 
-1. Read the **outer** \`execute\` receipt and the **inner** \`git_commit\`
-   receipt \`bct_operation_get\`. If either is RUNNING/UNKNOWN, preserve the
+1. Read the **outer** `execute` receipt and the **inner** `git_commit`
+   receipt `bct_operation_get`. If either is RUNNING/UNKNOWN, preserve the
    original Operation ID, read actual source HEAD and other receipts, and
    **do not replay**.
 2. Verify current main branch, CLEAN, exact expected target commit, remote
@@ -143,8 +143,8 @@ A changed HEAD/remote needs a new reviewed plan, not a blind retry.
 3. Save pre/post HEAD and exact receipts in a new checkpoint. The pre-FF
    commit is preserved as an ancestor in Git, even after success.
 4. **There is no automatic Git main rollback**. A ref rewind would violate
-   ancestry and could erase other actors' work; never \`reset --hard\`,
-   \`push --force\`, branch deletion or blind checkout. If reversal is
+   ancestry and could erase other actors' work; never `reset --hard`,
+   `push --force`, branch deletion or blind checkout. If reversal is
    required, supervisor must evaluate affected source and deploys and prepare
    separate reviewed revert commits (or a guarded, specifically approved
    restoration plan), with separate Work/Operation/CI. If LIVE changed later,
