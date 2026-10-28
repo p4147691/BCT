@@ -63,3 +63,56 @@ def select_exact_explorer(folder_path: str, inventory: dict[str, Any]) -> Explor
         or not str(window.get("hwnd", "")).isdigit()):
         raise ExplorerFolderError("EXPLORER_WINDOW_IDENTITY_INVALID")
     return ExplorerDecision("reuse", folder_path, str(window["hwnd"]))
+
+
+
+def open_explorer_folder(folder_path: str, invoke, *, foreground: bool = True) -> dict[str, Any]:
+    """Coordinate existing work-authorized desktop capabilities, not raw OS effects.
+
+    invoke(capability, arguments) must enforce the BCT Work/Operation boundary
+    and return the existing capability output. UNKNOWN effects must propagate,
+    never be retried. Lease release is attempted even if activation fails.
+    """
+    path = normalize_folder_path(folder_path)
+    def observe():
+        return select_exact_explorer(path, invoke("desktop_application_target", {
+            "operation": "list", "application": "explorer",
+            "folder_path": path, "include_minimized": True}))
+    decision = observe()
+    if decision.action == "open":
+        acquired = invoke("desktop_control_lease", {
+            "operation": "acquire", "target_type": "session"})
+        lease = acquired["control"]["lease"]["leaseId"]
+        try:
+            # Generic launch may report failure because Explorer handed off
+            # its new window to a different PID. Never retry that effect.
+            try:
+                invoke("desktop_program_launch", {
+                    "lease_id": lease, "executable": r"C:\Windows\explorer.exe",
+                    "working_directory": r"C:\Windows",
+                    "arguments": [path]})
+            except Exception:
+                # Only read-only reconciliation; propagate when not proven.
+                decision = observe()
+                if decision.action != "reuse":
+                    raise
+        finally:
+            invoke("desktop_control_lease", {"operation": "release", "lease_id": lease})
+        decision = observe()
+        if decision.action != "reuse":
+            raise ExplorerFolderError("EXPLORER_WINDOW_NOT_CONFIRMED")
+    if not foreground:
+        return {"folder_path": path, "hwnd": decision.hwnd, "verified": True}
+    bound = invoke("desktop_application_target", {
+        "operation": "bind", "application": "explorer",
+        "folder_path": path, "include_minimized": True})
+    lease = bound["control"]["lease"]["leaseId"]
+    try:
+        if str(bound["applicationTarget"]["window"]["hwnd"]) != decision.hwnd:
+            raise ExplorerFolderError("EXPLORER_WINDOW_CHANGED")
+        if bound["applicationTarget"]["window"].get("isMinimized") is True:
+            invoke("desktop_window_manage", {"lease_id": lease, "operation": "restore"})
+        invoke("desktop_window_activate", {"lease_id": lease})
+        return {"folder_path": path, "hwnd": decision.hwnd, "verified": True, "foreground": True}
+    finally:
+        invoke("desktop_control_lease", {"operation": "release", "lease_id": lease})

@@ -30,3 +30,10 @@ No source-code patch is claimed; this is a bounded review and regression baselin
 - Existing desktop session 54 tests PASS.
 - Helper deliberately does not execute OS side effects or alter existing public API.
 - Still missing: authorized orchestration wiring for launch/bind/activate/release, physical E2E, full suite and GitHub CI. Do not merge as complete.
+
+## Follow-up N68 orchestration checkpoint
+- Added open_explorer_folder(invoke=authorized BCT capability dispatch) in isolated integration module.
+- Existing-folder reuse, launch PID-independent Shell-path reconciliation, foreground activation, and finally lease release are implemented as an injected orchestration helper; no new exposed MCP capability or automatic user request wiring yet.
+- Focused 15/15 PASS; existing desktop_session 54/54 PASS; py_compile PASS.
+- This is NOT a verified native Desktop Control end-to-end integration. Must still validate dispatcher effect receipts, authorization, virtual desktop and real agent behavior before merge.
+- Stop or unknown effects are not blindly retried. No production launch performed.
