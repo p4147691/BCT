@@ -15,6 +15,7 @@
 ## 검증 명령
 - node modules/rcc/favicons/test_chatgpt_node_favicon.cjs : 14개 모의 회귀
 - node modules/rcc/favicons/test_chatgpt_node_favicon_browser.cjs : 별도 headless Chrome/profile PNG 64×64 검증
+- python -m unittest discover -s tests -p test_rcc_favicon_userscript.py -v : CI core shard에서 위 Node 모의 시험 실행
 - 격리 브라우저의 DOM/PNG PASS는 운영 Chrome 탭 스트립 시각 확인과 구별한다.
 
 ## 감독관 배포 전 차단
@@ -28,5 +29,5 @@
 4. main 병합, LIVE, 운영 Chrome 확장 설치·재로드·사용자 탭 변경은 감독관 전담.
 
 ## 범위 분리
-모든 변경 파일은 modules/rcc/favicons/ 아래이며 PR #349 Monitor 모듈화 파일은 수정하지 않는다.
+기능 소스와 JS 검증은 modules/rcc/favicons/ 아래이며 CI 연결 테스트만 tests/test_rcc_favicon_userscript.py를 사용한다. PR #349 Monitor 모듈화 파일은 수정하지 않는다.
 기존 데이터의 userscript 0.1.1도 원형 보존.
