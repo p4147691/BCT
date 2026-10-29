@@ -11,15 +11,21 @@ const tabs = new Map([
   [41, { id: 41, windowId: 9, index: 4, url: 'https://chatgpt.com/', title: 'ChatGPT' }],
   [42, { id: 42, windowId: 9, index: 0, url: `https://chatgpt.com/c/${conversationKey}`, title: 'History' }],
   [43, { id: 43, windowId: 9, index: 5, url: 'https://chatgpt.com/', title: 'ChatGPT' }],
+  [44, { id: 44, windowId: 9, index: 6, url: 'https://chatgpt.com/', title: 'ChatGPT' }],
+  [45, { id: 45, windowId: 9, index: 7, url: 'https://chatgpt.com/', title: 'ChatGPT' }],
 ]);
 const local = {};
 const sends = [];
+// Virtual clock: a slow provider must not make a successful first send UNKNOWN.
+const clock = { elapsed: 0 };
+class TestDate extends Date { static now() { return clock.elapsed; } }
+const fakeSetTimeout = (fn, ms) => { clock.elapsed += ms; Promise.resolve().then(fn); };
 const sha256 = async (value) => {
   const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value)));
   return Array.from(new Uint8Array(digest), (item) => item.toString(16).padStart(2, '0')).join('');
 };
 const context = vm.createContext({
-  crypto: webcrypto, TextEncoder, Uint8Array, setTimeout, console,
+  crypto: webcrypto, TextEncoder, Uint8Array, setTimeout: fakeSetTimeout, Date: TestDate, console,
   endpointSessionReady: Promise.resolve(), endpointSessionId: sessionId,
   EXACT_TAB_SEND_RECEIPTS_KEY: 'exactTabSendReceiptsV1', relaySha256: sha256,
   stateRepository: {
@@ -43,6 +49,19 @@ const context = vm.createContext({
         tabs.get(43).url = `https://chatgpt.com/c/${conversationKey}`;
         return { ok: false, submitted: false, effectState: 'UNKNOWN',
           error: 'CONVERSATION_IDENTITY_CHANGED' };
+      }
+      if (message.type === 'relay:newChatExecute' && [44, 45].includes(tabId)) {
+        tabs.get(tabId).url = `https://chatgpt.com/c/${conversationKey}`;
+        return { ok: false, submitted: false, effectState: 'UNKNOWN',
+          error: 'CONVERSATION_IDENTITY_CHANGED' };
+      }
+      if (message.type === 'relay:newChatStatus' && tabId === 44) {
+        return clock.elapsed < 14000
+          ? { ok: true, submitted: false, conversationKey }
+          : { ok: true, submitted: true, relayId: message.relayId, conversationKey };
+      }
+      if (message.type === 'relay:newChatStatus' && tabId === 45) {
+        return { ok: true, submitted: false, conversationKey };
       }
       if (message.type === 'relay:newChatStatus' && tabId === 43) {
         return { ok: true, submitted: true, relayId: message.relayId, conversationKey };
@@ -108,12 +127,26 @@ const request = (operationId, tabId, key = '', windowId = 9) => ({
   assert.equal(sends.filter((item) => item.tabId === 43
     && item.message.type === 'relay:newChatStatus').length, 1);
 
+  // Recovery beyond the old 12 s bound: still one Execute and exact proof.
+  const delayed = await context.sendToExactExistingTab(request('direct-delayed-receipt', 44));
+  assert.equal(delayed.state, 'SUBMITTED');
+  assert.equal(delayed.conversationKey, conversationKey);
+  assert.equal(sends.filter(item => item.tabId === 44 && item.message.type === 'relay:newChatExecute').length, 1);
+  assert.ok(sends.filter(item => item.tabId === 44 && item.message.type === 'relay:newChatStatus').length > 60);
+
+  // Never convert an unproven submission into APPLIED, even after 25 s.
+  const unresolved = await context.sendToExactExistingTab(request('direct-unproven-receipt', 45));
+  assert.equal(unresolved.state, 'UNKNOWN');
+  assert.equal(unresolved.submitted, false);
+  assert.equal(sends.filter(item => item.tabId === 45 && item.message.type === 'relay:newChatExecute').length, 1);
+
+  const beforeWrongSessionSendCount = sends.length;
   await assert.rejects(
     context.sendToExactExistingTab({ ...request('direct-wrong-session', 42, conversationKey), sessionId: 'f'.repeat(32) }),
     /EXACT_TAB_SESSION_MISMATCH/,
   );
-  assert.equal(sends.length, 5);
-  console.log('RCC_DIRECT_TAB_TEST_PASS cases=6 sends=' + sends.length);
+  assert.equal(sends.length, beforeWrongSessionSendCount);
+  console.log('RCC_DIRECT_TAB_TEST_PASS cases=8 sends=' + sends.length);
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

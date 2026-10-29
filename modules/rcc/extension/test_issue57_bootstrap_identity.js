@@ -68,6 +68,20 @@ const boundAfterPending = context.resolveRoutedTurn(blankBootstrap);
 assert.equal(boundAfterPending.ok, true);
 assert.equal(blankBootstrap.conversationKey, 'conversation-new');
 
+// Placeholder containers can appear while the first user turn is still mounting.
+// Wait for the exact user turn; do not promote from a UUID or empty container.
+turns = [{key: 'placeholder', text: ''}];
+const placeholderBootstrap = record({conversationKey: ''});
+const placeholderPending = context.resolveRoutedTurn(placeholderBootstrap);
+assert.equal(placeholderPending.terminal, false);
+assert.equal(placeholderPending.reason, 'BOOTSTRAP_ROUTE_TURN_PENDING');
+assert.equal(placeholderBootstrap.conversationKey, '');
+turns = [{key: 'turn-after-placeholder', text: 'exact prompt'}];
+const placeholderBound = context.resolveRoutedTurn(placeholderBootstrap);
+assert.equal(placeholderBound.ok, true);
+assert.equal(placeholderBound.turnKey, 'turn-after-placeholder');
+assert.equal(placeholderBootstrap.conversationKey, 'conversation-new');
+
 assert.equal(context.resolveRoutedTurn(record({bootstrapCreatedTab: false})).reason,
   'CONVERSATION_IDENTITY_CHANGED');
 assert.equal(context.resolveRoutedTurn(record({beforeTurnKeys: ['old-turn']})).reason,

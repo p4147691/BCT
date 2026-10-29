@@ -108,8 +108,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 20934,
-        "sha256": "f790ada22ba929711096f02355135e04b98118207dadf3873462daa4ebe1b3a3"
+        "size": 21271,
+        "sha256": "7aaeb2ac9b4bd24c67f7093f5dfd45e17ac496f485d06699495834aba50f2b62"
       },
       {
         "path": "content/conversation_rename.js",
@@ -178,8 +178,8 @@
       },
       {
         "path": "domain/exact_tab_send_service.js",
-        "size": 8036,
-        "sha256": "ffbb8e7aa3ef98f8fe5f9a1b2ba1387ce3bd5368120c76a9ac8750635e2e09d9"
+        "size": 8192,
+        "sha256": "a0b242edb2b57da249597964b1a94bf91caedf9bdba9565506aa0a0567ddb323"
       },
       {
         "path": "domain/new_chat_service.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "e42d6d0241e275c45b0d61c05db6711891ce42ce4b6394ba2219e67af694f3d9"
+    "aggregateSha256": "3c095789adea7c61118fefd2af1485945007230a9110c4e42f21d1ca303a2934"
   },
   "activeLoaderGraph": {
     "background": [

@@ -115,6 +115,8 @@ def build_mcp(
         value = {
             "capabilities": list(capabilities),
             "tools": [tool.name for tool in await server.list_tools()],
+            # The live runtime contract takes precedence over client-cached tool descriptions.
+            "relay_browser_usage": _CAPABILITY_USAGE["relay_browser"],
         }
         settings = getattr(server, "catalogue_settings", None)
         if settings is not None and settings.last_error:
@@ -149,6 +151,9 @@ def build_mcp(
                 if isinstance(rows, list):
                     monitor[key] = rows[:5]
             snapshot = {**snapshot, "monitor": monitor, "compact": True}
+        # Always expose the canonical RCC command contract during the required
+        # status preflight; client-side MCP tool metadata may be stale.
+        snapshot = {**snapshot, "relay_browser_usage": _CAPABILITY_USAGE["relay_browser"]}
         current_trace_id = _MCP_TRACE_ID.get()
         if current_trace_id is not None:
             snapshot = {**snapshot, "mcp_trace_id": current_trace_id}

@@ -144,6 +144,10 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual("BCT", initialized.serverInfo.name)
                     catalogue = await session.list_tools()
                     names = {tool.name for tool in catalogue.tools}
+                    relay_description = next(tool.description for tool in catalogue.tools
+                                             if tool.name == "bct_relay_browser")
+                    self.assertIn("send-to-tab", relay_description)
+                    self.assertIn("기존 ChatGPT 탭", relay_description)
                     expected_capability_tools = {
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
                         "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push", "bct_github_run_watch",
@@ -181,6 +185,9 @@ class MCPIntegrationTests(unittest.TestCase):
                     )
                     capabilities = await session.call_tool("bct_capabilities", {})
                     self.assertFalse(capabilities.isError)
+                    live_relay_usage = capabilities.structuredContent["relay_browser_usage"]
+                    self.assertIn("send-to-tab", live_relay_usage)
+                    self.assertIn("create-and-send", live_relay_usage)
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
@@ -191,6 +198,8 @@ class MCPIntegrationTests(unittest.TestCase):
                     status = await session.call_tool("bct_status", {})
                     self.assertFalse(status.isError)
                     self.assertTrue(status.structuredContent["core"]["ready"])
+                    self.assertEqual(live_relay_usage,
+                                     status.structuredContent["relay_browser_usage"])
                     self.assertRegex(status.structuredContent["mcp_trace_id"], r"^[0-9a-f]{32}$")
                     self.assertEqual(self.release_sha, status.structuredContent["runtime"]["release_sha"])
                     self.assertIn("rcc", status.structuredContent["monitor"])

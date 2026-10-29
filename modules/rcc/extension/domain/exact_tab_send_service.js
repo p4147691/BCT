@@ -71,6 +71,8 @@ function exactTabDelay(ms) {
 // The first ChatGPT message can replace the blank document before its original
 // receiver replies.  Never submit again: recover only through the same tabId,
 // the post-navigation UUID, and the persisted exact-user-turn proof.
+// Allow delayed provider route/user-turn mounting before declaring UNKNOWN.
+// Read-only status probes never resubmit; absent exact proof remains UNKNOWN.
 async function recoverExactBlankTabSubmission(tabId, relayId, textSha256, deadline) {
   while (Date.now() < deadline) {
     try {
@@ -161,7 +163,7 @@ async function sendToExactExistingTab(message, requestId) {
   if (blank && !(ack?.ok === true && ack?.submitted === true
       && String(ack?.relayId || '') === operationId)) {
     const recovered = await recoverExactBlankTabSubmission(
-      tabId, operationId, textSha256, Date.now() + 12000,
+      tabId, operationId, textSha256, Date.now() + 25000,
     );
     if (recovered) ack = recovered;
   }
