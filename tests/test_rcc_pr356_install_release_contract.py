@@ -18,19 +18,19 @@ class CurrentRccInstallContractTests(unittest.TestCase):
 
     def test_candidate_identity_is_pinned_to_pr356_and_unique_rollback(self):
         self.assertEqual(
-            r"D:\BCT\runtime\rehearsals\rcc-pr356-candidate58-20261029-a",
+            r"D:\BCT\data\RCC_PR362_58TO58_PREP_20261030\candidate_receipt_58",
             str(rcc.EXACT_STAGE),
         )
         self.assertEqual(
-            r"D:\BCT\runtime\backups\rcc-pr356-live57-20261029-a",
+            r"D:\BCT\data\RCC_PR362_58TO58_PREP_20261030\rollback_installed_58",
             str(rcc.EXACT_ROLLBACK),
         )
         self.assertEqual(
-            r"D:\BCT\data\RCC_PR356_GUARDED_INSTALL_20261030\release_manifest_immutable.json",
+            r"D:\BCT\data\RCC_PR362_58TO58_PREP_20261030\release_manifest_58to58_immutable.json",
             str(rcc.EXACT_MANIFEST),
         )
         self.assertEqual(
-            "c7c1f7f982fcc5669763af737315e3183293e8cfc39ec447d8c18addfc5b620e",
+            "b35f64eccce91c1263cb85932c7c882bb181790ab2b3d406937e380e87b9f244",
             rcc.PINNED_MANIFEST_SHA256,
         )
         self.assertEqual(
