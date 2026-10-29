@@ -233,3 +233,29 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - Existing recovery menu events/rendering call the state API; no raw `monitorClosedConversationPickerOpen` global survives. No new restore/relaunch engine.
 - `check_monitor_recovery_picker_state.js` verifies state isolation and current caller contract, wired to the structure gate.
 - The full recovery trash UI DOM and exact restore executor remain in compatibility sources and require further review.
+
+## 2026-10-29 full-screen owner extraction follow-up (N70)
+
+These are **source-level, independently Mock-tested DOM/controller owners**. They replace original functions in the generated compatibility bundle; the original effects remain connected through explicit composition ports. None of them directly opens Chrome, Native or BCT connections.
+
+| Surface | Public owner | Explicit responsibility | Effect authority |
+| --- | --- | --- | --- |
+| NodePanel DOM | `MonitorNodePanelView.create({root,summary,document,interactionState,ports}).render(nodes)` | Network grouping, row creation/update, role/status icons, exact RCC tab/UUID label, collapse/drag/focus events | injected identity/BCT/RCC/Native selection/manager/rename ports |
+| NodePanel interaction | `MonitorNodePanelInteractionState.create()` | collapsed network keys, suppressed click, drag heading fence | no commands |
+| DesktopStrip DOM | `MonitorDesktopStripView.create({root,document,ports}).sync()` | D1/D2 card DOM, create/remove, bottom labels, click vs double-click routing, existing V2 thumb refresh | injected DesktopTopology/Native/preview/mutation ports |
+| Desktop topology | `MonitorDesktopTopology.project({observed,previous,sharedSelection})` | sole pure projection of GUID/current/host/observed desktop identity and HWND ambiguity | existing canonical `monitorDesktopState` assignment in composition |
+| DesktopStage DOM | `MonitorDesktopStageView.create({body}).showTopology(state)` and `.showPreview({desktopId,index,currentIndex})` | current/host/observed GUID body attributes and remote-preview CSS | no mutations |
+| Recovery panel DOM | `MonitorRecoveryPanelView.create({document,ports}).render(state)` | notes, desktop, closed/reboot/trash rows, UUID details, UNKNOWN status, recovery/action buttons | injected existing Recovery/Notes/Native/ACT/Storage ports; old automatic prune moved into a single explicit effect port |
+| Diagnostics command view | `MonitorDiagnosticsCommandView.create({host,document,run?,prepare?,reconcile?})` | registered command rows, disabled-by-default UI, RUNNING/APPLIED/NOT_APPLIED/UNKNOWN, exact receipt checking | authorized ToolConnectorRegistry bridge; **not wired in LIVE** |
+| External tool connector | `MonitorToolConnectorRegistry.create({authorize,verifyReceipt,onChange})` | state/receipt projection, Work/Operation/exact target/approval/UNKNOWN/explicit lifecycle | BCT adapter only; no connected programs |
+
+New contract tests are wired into `tools/check_monitor_structure.py`: NodePanel view & interaction state, DesktopStrip view & topology, DesktopStage view, Recovery panel view, Diagnostics command view, plus previously extracted state owners. 기존 Thumbnail V2/Sketch/Notes implementations are not duplicated.
+
+**IMPORTANT residual boundaries:**
+- Existing legacy `monitorDesktopState` and several other mutable maps are still used across `domains/*.js`; pure topology projection is not complete elimination of all lexical shared state.
+- NodePanel list mounting is extracted, but independent RCC/role/rename/drag handlers still execute existing compatibility functions behind ports.
+- DesktopStage visible window overlay and preview/Native asynchronous graphics retain legacy composition; V2 Thumbnail itself remains independently owned.
+- Recovery list panel DOM is extracted, but actual resurrection/handoff and durable UNKNOWN reconciliation still require existing backend authorities and end-to-end behavior acceptance.
+- Diagnostics command UI intentionally starts with **no registered commands**, no `prepare` and no execution port. It must not be considered a proven operational command link.
+- Organization remains PARKED. Native provenance 2 source files and MemoryGuard integration remain HOLD.
+- Do **not** certify total module independence or READY_FOR_MERGE solely from source-level Mock/structure tests.

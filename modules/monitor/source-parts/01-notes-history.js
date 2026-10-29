@@ -67,6 +67,7 @@ let monitorDeletedDesktopUndoTimer = 0;
 let monitorLocalHostWindowTitle = "";
 
 let monitorDesktopState = { count: 1, currentIndex: 0, selectedIndex: null, currentDesktopId: null, hostDesktopId: null, hostWindowHwnd: null, observedDesktopId: null, desktopIds: [] };
+const monitorDesktopStageView = globalThis.MonitorDesktopStageView.create({body: document.body});
 
 // Per-desktop presentation policy is local Monitor state. It never changes ACT
 // organization, role or task ownership, and uses the immutable desktop id.

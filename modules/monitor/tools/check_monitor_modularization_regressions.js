@@ -6,6 +6,8 @@ const path = require("node:path");
 
 const root = path.join(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "extension", "monitor.js"), "utf8");
+const nodePanelSource = fs.readFileSync(path.join(root, "extension", "monitor-node-panel-view.js"), "utf8");
+assert.match(source, /MonitorNodePanelView[.]create/);
 const css = fs.readFileSync(path.join(root, "extension", "monitor.css"), "utf8");
 
 assert.doesNotMatch(source, /function monitorBctSharedWindowGroups\(/,
@@ -14,9 +16,9 @@ assert.doesNotMatch(source, /function monitorFocusBctSharedWindowTab\(/,
   "physical-window tab focus must not bypass the ordinary node interaction path");
 assert.doesNotMatch(css, /\.monitor-bct-window-card\{/,
   "physical Chrome-window cards must not return after bundle generation");
-assert.match(source, /const key = node\.scopeId \|\| "__unassigned__";/,
+assert.match(nodePanelSource, /const key = node\.scopeId \|\| "__unassigned__";/,
   "conversation-network scope remains the only node-list grouping key");
-assert.match(source, /groupList\.append\(row\)/,
+assert.match(nodePanelSource, /groupList\.append\(row\)/,
   "network members remain direct draggable rows after bundle generation");
 assert.match(css, /\.monitor-bct-node-list\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/,
   "conversation networks retain their three-column layout");

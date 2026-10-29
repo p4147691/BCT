@@ -105,9 +105,9 @@ function installMonitorBctManagerLongPress(row, node) {
       timer = 0;
       row.classList.remove("monitor-bct-manager-hold");
       const key = monitorBctNodeSelectionKey(node);
-      monitorBctSuppressedClickKey = key;
+      monitorNodePanelInteractionState.setSuppressedKey(key);
       globalThis.setTimeout(() => {
-        if (monitorBctSuppressedClickKey === key) monitorBctSuppressedClickKey = "";
+        monitorNodePanelInteractionState.clearSuppressedKeyIf(key);
       }, 900);
       if (!node.scopeName) {
         setMonitorStatus("먼저 우클릭 정보창에서 이 대화의 작업 범위를 지정하세요.", false, 3500);

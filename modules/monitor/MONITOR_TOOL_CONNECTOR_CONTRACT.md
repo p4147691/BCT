@@ -52,3 +52,13 @@ The contract is loaded before generated `monitor.js` by `extension/desktop.html`
 ## Outstanding Monitor modularization boundaries
 
 This contract does **not** make NodePanel DOM, desktop stage/strip interactions, Recovery trash/closed-conversation UI, Diagnostics command UI, or the remaining lexical cross-domain state independent. Their acceptance remains separate and the candidate must stay `PARTIAL` until all have approved tests and ownership proofs. Native provenance 2 files and MemoryGuard integration remain HOLD.
+
+## Diagnostics command view integration (N70 follow-up)
+
+The composition root now mounts `MonitorDiagnosticsCommandView` inside the existing diagnostics panel. It displays **승인된 진단 명령 미연결** until a genuine approved adapter is injected. No command button is enabled by default.
+
+- Interface: `create({host,document,prepare?,run?,reconcile?}) -> {setCommands,render,request,resolveUnknown,snapshot}`.
+- Command list entries: exact `{id,label,toolId,capability}`. A button may be enabled only when both `prepare` and `run` are supplied by the authorized composition root; the UI does not synthesize Work IDs, Operation IDs or approval tokens.
+- `run` returns `monitor.tool.operation.v1` with exact toolId, capability, workId, operationId and requestHash. A mismatch, lost response or post-dispatch exception is `UNKNOWN`, blocking subsequent execution until exact `monitor.tool.reconciliation.v1` proof.
+- The UI is not an approval authority; runtime `prepare/run/reconcile` must be connected via the existing `MonitorToolConnectorRegistry` and BCT security boundary. No provider wired in this PR.
+- Mock tests: `check_monitor_diagnostics_command_view.js` and `check_monitor_tool_connector_registry.js`. No real external tool, PowerShell or Chrome effect was performed.

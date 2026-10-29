@@ -364,6 +364,20 @@ def main():
         if registry_checked is None or registry_checked.returncode:
             errors.append({'kind':'monitor_tool_registry_contract_regression',
                 'detail':(registry_checked.stdout+registry_checked.stderr)[-600:] if registry_checked else 'missing'})
+        for new_view_test_name in ('check_monitor_node_panel_view.js',
+                                   'check_monitor_desktop_strip_view.js',
+                                   'check_monitor_desktop_topology.js',
+                                   'check_monitor_recovery_panel_view.js',
+                                   'check_monitor_diagnostics_command_view.js',
+                                   'check_monitor_desktop_stage_view.js',
+                                   'check_monitor_node_panel_interaction_state.js'):
+            view_test = root / 'tools' / new_view_test_name
+            checked = subprocess.run([node,str(view_test)],cwd=str(root.parent.parent),
+                capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if view_test.is_file() else None
+            facts['view_test_'+view_test.stem] = checked.returncode if checked else None
+            if checked is None or checked.returncode:
+                errors.append({'kind':'monitor_view_owner_contract_regression','name':new_view_test_name,
+                               'detail':(checked.stdout+checked.stderr)[-600:] if checked else 'test missing'})
         frame_generation_test = root/'tools'/'check_monitor_desktop_frame_generation.js'
         for controller_test in (desktop_mode_test, conversation_projection_test, node_selection_test, recovery_undo_test, frame_generation_test):
             checked = subprocess.run([node, str(controller_test)], cwd=str(root.parent.parent),

@@ -5,6 +5,8 @@ const fs=require("node:fs");
 const path=require("node:path");
 const vm=require("node:vm");
 const src=fs.readFileSync(path.join(__dirname,"../extension/monitor.js"),"utf8");
+const stripSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-strip-view.js"),"utf8");
+assert.match(src,/MonitorDesktopStripView[.]create/);
 const thumbnailV2Src=fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-thumbnail-v2.js"),"utf8");
 const contractSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-minimized-node-badge-contract.js"),"utf8");
 const projectionSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-bct-thumbnail-projection.js"),"utf8");
@@ -106,7 +108,7 @@ const css=fs.readFileSync(path.join(__dirname,"../extension/monitor.css"),"utf8"
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-minimized-nodes/);
 assert.match(css,/grid-column:3 \/ 5/);
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-label-text\s*\{ display:none!important; \}/);
-assert.match(src,/label\.append\(desktopBadge,\s*labelText,\s*minimizedNodes\)/);
+assert.match(stripSrc,/label\.append\(desktopBadge,\s*labelText,\s*minimizedNodes\)/);
 assert.match(src,/label\.append\(badge,\s*text,\s*minimizedNodes\)/);
 assert.match(src,/numbersForHwnd: \(hwnd\) => monitorBadgeNodeNumbersForHwnd\(hwnd, state\)/);
 assert.match(src,/iconic:minimized/);

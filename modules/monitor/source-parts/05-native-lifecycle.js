@@ -1,9 +1,7 @@
 /*@@MONITOR_FUNCTION:openMonitorBctRenameEditor@@*/
 
 let monitorBctNodeInteractionService = null;
-const monitorBctCollapsedScopes = new Set();
-let monitorBctSuppressedClickKey = "";
-let monitorBctSuppressScopeClickUntil = 0;
+const monitorNodePanelInteractionState = globalThis.MonitorNodePanelInteractionState.create();
 
 /*@@MONITOR_FUNCTION:installMonitorBctManagerLongPress@@*/
 
