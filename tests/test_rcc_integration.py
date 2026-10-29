@@ -430,6 +430,89 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, next_mutation.outcome)
 
+    def test_send_message_existing_tab_single_dispatch(self):
+        self.client.target_state = self._target_state(
+            session_id="a" * 32, tab_id=10, window_id=11,
+        )
+        sent = self.call("send-message-once", {
+            "command": "send-message", "instance_id": "instance123",
+            "session_id": "a" * 32, "tab_id": 10, "window_id": 11,
+            "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "text": "one request",
+        })
+        self.assertEqual(Outcome.UNKNOWN, sent.outcome)
+        dispatches = [c for c in self.client.calls if c["command"] != "state"]
+        self.assertEqual(1, len(dispatches))
+        self.assertEqual("send-to-tab", dispatches[0]["command"])
+        self.assertEqual("send-message-once", dispatches[0]["request_id"])
+        duplicate = self.call("send-message-once", {
+            "command": "send-message", "instance_id": "instance123",
+            "session_id": "a" * 32, "tab_id": 10, "window_id": 11,
+            "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "text": "one request",
+        })
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(1, len([c for c in self.client.calls if c["command"] != "state"]))
+
+    def test_send_message_wrong_target_rejects_before_send(self):
+        self.client.target_state = self._target_state(
+            session_id="a" * 32, tab_id=10, window_id=11,
+        )
+        with self.assertRaises(PreconditionError):
+            self.call("send-message-invalid", {
+            "command": "send-message", "instance_id": "instance123",
+            "session_id": "a" * 32, "tab_id": 12, "window_id": 11,
+            "conversation_key": "", "text": "no send",
+        })
+        self.assertEqual([], [c for c in self.client.calls if c["command"] != "state"])
+
+    def test_send_message_creation_without_receipt_rejected(self):
+        self.client.target_state = self._target_state(
+            session_id="a" * 32, tab_id=10, window_id=11,
+        )
+        with self.assertRaises(PreconditionError):
+            self.call("send-message-create-absent", {
+            "command": "send-message", "instance_id": "instance123",
+            "session_id": "a" * 32, "tab_id": 10, "window_id": 11,
+            "create_operation_id": "absent", "text": "no send",
+        })
+        self.assertEqual([], self.client.calls)
+
+    def test_send_message_created_tab_uses_verified_creation_receipt(self):
+        self.client.result = {
+            "type": "host:result", "requestId": "create-send-target",
+            "ok": True, "state": "PENDING_UNBOUND",
+            "windowId": 11, "tabId": 10,
+        }
+        created = self.call("create-send-target", {
+            "command": "create-chat-tab", "instance_id": "instance123",
+            "window_id": 11,
+        })
+        self.assertEqual(Outcome.APPLIED, created.outcome)
+        self.client.calls.clear()
+        self.client.target_state = self._target_state(
+            session_id="a" * 32, tab_id=10, window_id=11,
+        )
+        sent = self.call("created-tab-send-once", {
+            "command": "send-message", "instance_id": "instance123",
+            "session_id": "a" * 32, "tab_id": 10, "window_id": 11,
+            "create_operation_id": "create-send-target", "text": "one",
+        })
+        self.assertEqual(Outcome.APPLIED, sent.outcome)
+        submits = [c for c in self.client.calls if c["command"] != "state"]
+        self.assertEqual(1, len(submits))
+        self.assertEqual("send-to-created-tab", submits[0]["command"])
+
+    def test_send_message_ambiguous_creation_and_uuid_rejected(self):
+        with self.assertRaises(PreconditionError):
+            self.call("send-message-ambiguous", {
+                "command": "send-message", "instance_id": "instance123",
+                "session_id": "a" * 32, "tab_id": 10, "window_id": 11,
+                "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+                "create_operation_id": "create-1", "text": "one",
+            })
+        self.assertEqual([], self.client.calls)
+
     def test_browser_mutation_uses_bct_operation_id(self):
         self.client.result = {
             "type": "host:result", "requestId": "create-1", "ok": True,

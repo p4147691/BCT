@@ -59,7 +59,13 @@ class DirectTabPrepareTests(unittest.TestCase):
         for text in (guide, catalogue):
             self.assertIn("send-to-tab", text)
         self.assertIn('conversation_key: ""', guide)
-        self.assertIn('conversation_key=\\"\\"', catalogue)
+        self.assertIn("send-message", catalogue)
+        self.assertIn("rcc-send-message-v1", catalogue)
+        self.assertIn('"relay_browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"]', catalogue)
+        relay_source = (root / "src" / "bct" / "features" / "rcc.py").read_text(encoding="utf-8")
+        self.assertIn('if command == "send-message":', relay_source)
+        self.assertIn('return self._prepare_send_message(work=work, arguments=arguments)', relay_source)
+
         self.assertIn("create_operation_id", guide)
         self.assertIn("기존 빈 ChatGPT 탭", guide)
         self.assertIn("node-continue", guide)
