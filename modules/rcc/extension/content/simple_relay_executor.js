@@ -949,6 +949,14 @@ async function readNewChatBootstrapStatus(message) {
     return { ok: true, submitted: false, completed: false, conversationKey,
       pendingReason: String(routed.reason || 'NEW_CHAT_ROUTE_PENDING') };
   }
+  // A matching DOM label alone is not an authenticated submission proof.
+  // Verify the rendered user content against the operation's exact digest
+  // before persisting SUBMITTED or allowing the domain receipt to advance.
+  const renderedUserText = turnUserText(routed.turn);
+  if (!renderedUserText || await newChatTextSha256(renderedUserText) !== textSha256) {
+    return { ok: true, submitted: false, completed: false, conversationKey,
+      pendingReason: 'NEW_CHAT_RENDERED_USER_HASH_MISMATCH' };
+  }
   record.conversationKey = conversationKey;
   record.routeTurnKey = routed.turnKey;
   record.phase = 'submitted';

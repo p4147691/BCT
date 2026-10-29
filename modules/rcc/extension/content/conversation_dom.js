@@ -398,6 +398,12 @@ function resolveRoutedTurn(record) {
     // that narrow, initial gap is pending rather than an identity failure.
     const bootstrapRebind = record?.bootstrapCreatedTab === true
       && currentKey && before.size === 0;
+    // A blank bootstrap cannot adopt a mixed conversation, even when one
+    // candidate matches the submitted prompt exactly.
+    const visibleUserTurns = turns.filter((turn) => !!turnUserText(turn));
+    if (bootstrapRebind && visibleUserTurns.length > 1) {
+      return { ok: false, terminal: true, reason: 'CONVERSATION_IDENTITY_CHANGED' };
+    }
     // A blank-route submission can acquire its UUID before the exact user
     // turn is mounted. Do not classify that interim state as a different
     // conversation. Never promote without one unique exact matching turn.

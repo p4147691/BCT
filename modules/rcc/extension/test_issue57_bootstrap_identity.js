@@ -82,6 +82,13 @@ assert.equal(placeholderBound.ok, true);
 assert.equal(placeholderBound.turnKey, 'turn-after-placeholder');
 assert.equal(placeholderBootstrap.conversationKey, 'conversation-new');
 
+// A matching user turn mixed with another real user message must never
+// rebind a blank-tab operation to somebody else's conversation.
+turns = [{key: 'correct', text: 'exact prompt'}, {key: 'other', text: 'other prompt'}];
+assert.equal(context.resolveRoutedTurn(record()).reason, 'CONVERSATION_IDENTITY_CHANGED');
+turns = [{key: 'placeholder', text: ''}, {key: 'correct', text: 'exact prompt'}];
+assert.equal(context.resolveRoutedTurn(record()).ok, true);
+turns = [{key: 'turn-after-placeholder', text: 'exact prompt'}];
 assert.equal(context.resolveRoutedTurn(record({bootstrapCreatedTab: false})).reason,
   'CONVERSATION_IDENTITY_CHANGED');
 assert.equal(context.resolveRoutedTurn(record({beforeTurnKeys: ['old-turn']})).reason,

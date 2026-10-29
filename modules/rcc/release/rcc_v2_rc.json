@@ -108,8 +108,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 21271,
-        "sha256": "7aaeb2ac9b4bd24c67f7093f5dfd45e17ac496f485d06699495834aba50f2b62"
+        "size": 21624,
+        "sha256": "f40cc20a95b2f7d9fecd784cb7d021df11d37940431c87e96e6a3fe0e1904999"
       },
       {
         "path": "content/conversation_rename.js",
@@ -123,8 +123,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 38582,
-        "sha256": "422a34298db6347f2a3aff4a48ed2ad62dc30a86cb6d05b8e89cf666b7c458f4"
+        "size": 39091,
+        "sha256": "d71982f05bc63bc8a5d473dc640de8b702b903e2364280ca99fdddf30257d550"
       },
       {
         "path": "core/conversation.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "3c095789adea7c61118fefd2af1485945007230a9110c4e42f21d1ca303a2934"
+    "aggregateSha256": "76902ad35ed3301de876666aa993a6de2c223227cd6682f6c60da08b7d0f6854"
   },
   "activeLoaderGraph": {
     "background": [
