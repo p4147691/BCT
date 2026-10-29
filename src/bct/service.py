@@ -21,6 +21,7 @@ from .features.pc_safe_plans import FileActionPlanFeature, ProcessStopPlanFeatur
 from .features.pc_safe_apply import FileActionApplyFeature
 from .features.approval_challenge import ApprovalChallengeFeature
 from .features.pc_process_apply import ProcessStopApplyFeature
+from .features.pc_local_mode import LocalFileActionFeature, LocalProcessStopFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
 from .features.github import (
@@ -205,9 +206,11 @@ class BCT:
         deployment_profiles = DeploymentProfiles(policy_path)
         desktop_session = desktop_session_client(policy_path, data_root=data_root)
         sessions = ProcessSessionFeature(policy_path, data_root=data_root)
+        approved_stop = ProcessStopApplyFeature(sessions, self.store)
         for feature in (
             FileReadFeature(self.store), FileWriteFeature(), FileActionPlanFeature(),
-            ProcessStopPlanFeature(), FileActionApplyFeature(), ProcessStopApplyFeature(sessions, self.store), TestFeature(), GitCommitFeature(policy_path),
+            ProcessStopPlanFeature(), FileActionApplyFeature(), approved_stop,
+            LocalFileActionFeature(), LocalProcessStopFeature(approved_stop), TestFeature(), GitCommitFeature(policy_path),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
             GitHubRunInboxFeature(self.store, github, policy_path),
