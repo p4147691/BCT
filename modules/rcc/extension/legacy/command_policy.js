@@ -22,6 +22,7 @@
     'move-tab-group', 'update-tab-group', 'close-conversation-tab',
   ]);
   const ORCHESTRATION_COMMANDS = new Set(['send']);
+  const NODE_LABEL_COMMANDS = new Set(['node-label-notify']);
   const READ_ONLY_COMMANDS = new Set([
     'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
     'diagnose-activity', 'diagnose-composer', 'diagnose-conversation-ui',
@@ -60,6 +61,7 @@
     if (EXACT_TAB_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'EXACT_TAB' });
     if (ATOMIC_CHAT_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'ATOMIC_CHAT' });
     if (ORCHESTRATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'ORCHESTRATION' });
+    if (NODE_LABEL_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'NODE_LABEL_NOTIFY' });
     if (READ_ONLY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'LEGACY_READONLY' });
     if (MAINTENANCE_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'MAINTENANCE' });
     if (LEGACY_MUTATION_COMMANDS.has(value)) return Object.freeze({ allowed: false, kind: 'LEGACY_MUTATION' });

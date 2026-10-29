@@ -3,6 +3,28 @@ if (String(sender?.id || '') !== String(chrome.runtime.id || '')) {
   sendResponse({ ok: false, error: 'RCC_CONTENT_SENDER_REJECTED' });
   return false;
 }
+if (message.type === 'relay:nodeLabelNotify') {
+  const uuid = String(message.conversationKey || '').toLowerCase();
+  const eventId = message.eventId;
+  if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(uuid)
+      || !Number.isSafeInteger(eventId) || eventId <= 0
+      || uuid !== currentConversationKey()) {
+    sendResponse({ ok: false, error: 'NODE_LABEL_CONTENT_IDENTITY_MISMATCH' });
+    return false;
+  }
+  if (!globalThis.__bctNodeLabelDelivered) globalThis.__bctNodeLabelDelivered = new Set();
+  if (globalThis.__bctNodeLabelDelivered.has(eventId)) {
+    sendResponse({ ok: true, eventId, conversationKey: uuid, duplicate: true });
+    return false;
+  }
+  window.dispatchEvent(new Event('bct:conversation-roster-changed'));
+  globalThis.__bctNodeLabelDelivered.add(eventId);
+  if (globalThis.__bctNodeLabelDelivered.size > 1024) {
+    globalThis.__bctNodeLabelDelivered.delete(globalThis.__bctNodeLabelDelivered.values().next().value);
+  }
+  sendResponse({ ok: true, eventId, conversationKey: uuid });
+  return false;
+}
 if (message.type === 'relay:recoverExecution') {
     const storedRecord = loadRelayExecution();
     const suppliedRecord = message.recoveryRecord && typeof message.recoveryRecord === 'object'

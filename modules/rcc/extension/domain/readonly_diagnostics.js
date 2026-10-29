@@ -15,6 +15,11 @@ async function handleNativeCommand(message) {
     return;
   }
   try {
+    if (message.command === 'node-label-notify') {
+          const result = await notifyNodeFaviconChanged(message, requestId);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
+        }
     if (message.command === 'ping') {
 
 

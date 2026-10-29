@@ -36,6 +36,7 @@ importScripts('domain/atomic_chat_service.js');
 importScripts('domain/tab_group_service.js');
 importScripts('domain/exact_tab_send_service.js');
 importScripts('domain/conversation_rename_service.js');
+importScripts('domain/node_favicon_notify_service.js');
 importScripts('domain/readonly_diagnostics.js');
 importScripts('domain/runtime_message_service.js');
 importScripts('boot/background_app.js');

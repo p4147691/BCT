@@ -132,6 +132,7 @@ def upsert_conversation(store: Store, *, conversation_key: str, display_name: st
     key = _conversation_key(conversation_key)
     name = _text(display_name, "CONVERSATION_NETWORK_NODE_NAME_INVALID", 120)
     when = float(time.time() if now is None else now)
+    new_label_event = None
     with store.transaction() as db:
         existing = db.execute(
             "SELECT conversation_key FROM conversation_network_conversations WHERE conversation_key=?", (key,)
@@ -157,8 +158,11 @@ def upsert_conversation(store: Store, *, conversation_key: str, display_name: st
                 "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
                 (key, next_number, when),
             )
+            new_label_event = store.record_node_label_assignment(db, key, next_number)
         else:
             next_number = int(label_row["node_number"])
+    if new_label_event is not None:
+        store.emit_node_label_notification(new_label_event)
     return {"conversation_key": key, "display_name": name, "node_label": _node_label(next_number)}
 
 
@@ -187,6 +191,7 @@ def ensure_observed_node_labels(store: Store, *, conversations: list[tuple[str, 
         titles.setdefault(key, title)
     if not titles:
         return {}
+    new_label_events = []
     with store.transaction() as db:
         next_number = int(db.execute(
             "SELECT COALESCE(MAX(node_number),0)+1 AS next_number FROM conversation_network_node_labels"
@@ -206,7 +211,10 @@ def ensure_observed_node_labels(store: Store, *, conversations: list[tuple[str, 
                     "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
                     (key, next_number, time.time()),
                 )
+                new_label_events.append(store.record_node_label_assignment(db, key, next_number))
                 next_number += 1
+    for event_id in new_label_events:
+        store.emit_node_label_notification(event_id)
     return node_labels_for_conversations(store, conversation_keys=list(titles))
 
 
@@ -384,6 +392,7 @@ def configure_conversation_scope(
         if not _SHA256.fullmatch(expected_role_tags_sha256):
             raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_SHA256_INVALID")
     when = float(time.time() if now is None else now)
+    new_label_event = None
     with store.transaction() as db:
         _current_scope, current_tags = _active_role_tags(db, key)
         if (expected_role_tags_sha256 is not None
@@ -406,6 +415,7 @@ def configure_conversation_scope(
                 "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
                 (key, next_number, when),
             )
+            new_label_event = store.record_node_label_assignment(db, key, next_number)
         else:
             db.execute(
                 "UPDATE conversation_network_conversations SET display_name=?,updated_at=? WHERE conversation_key=?",
@@ -464,6 +474,8 @@ def configure_conversation_scope(
                 "VALUES(?,?,?,?)",
                 [(project_id, key, tag, when) for tag in tags],
             )
+    if new_label_event is not None:
+        store.emit_node_label_notification(new_label_event)
     label = node_labels_for_conversations(store, conversation_keys=[key]).get(key, "")
     return {
         "conversation_key": key,

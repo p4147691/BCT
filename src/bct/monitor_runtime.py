@@ -295,6 +295,18 @@ def build_monitor_state(
         if isinstance(tab, dict)
     ]
     labels = ensure_observed_node_labels(store, conversations=observed_conversations)
+    # Existing Monitor GET is a legitimate observation wake, not a new poller.
+    # Requeue only never-dispatched PENDING committed label events.
+    store.wake_node_label_notifications(
+        labels.keys(),
+        topology=[
+            (str(instance.get("instance_id") or ""), str(instance.get("session_id") or ""),
+             int(tab.get("tab_id") or 0), int(tab.get("window_id") or 0),
+             str(tab.get("conversation_key") or ""))
+            for instance in rcc for tab in instance.get("tabs", [])
+            if isinstance(tab, dict)
+        ],
+    )
     scopes = conversation_scope_directory(
         store,
         conversation_keys=[key for key, _title in observed_conversations],

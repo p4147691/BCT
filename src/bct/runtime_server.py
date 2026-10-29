@@ -20,6 +20,7 @@ from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
 from bct.core.chat_stream_rcc_watch import ChatStreamRccWatch
 from bct.integrations.rcc import NamedPipeRelayClient
+from bct.node_label_notifications import NodeLabelNotifier, ensure_notification_work
 from bct.conversation_network import (
     arrange_conversations,
     ConversationNetworkError,
@@ -232,6 +233,8 @@ def main() -> int:
     from .background_operations import recover_orphaned_orchestration_operations
     orphan_recoveries = recover_orphaned_orchestration_operations(bct)
     monitor_principal = ensure_monitor_work(bct, runtime_root=runtime_root)
+    label_principal = ensure_notification_work(bct, runtime_root)
+    node_label_notifier = NodeLabelNotifier(bct, label_principal)
     bottleneck_ack = BottleneckAckController(
         load_bottleneck_ack_policy(policy_path), bct=bct, principal=monitor_principal,
     )
@@ -288,6 +291,7 @@ def main() -> int:
     }
 
     recovery_stop = threading.Event()
+    node_label_notifier.start()
 
     def manager_decision_recovery_loop() -> None:
         recovery = bct.manager_decision_recovery
@@ -611,6 +615,7 @@ def main() -> int:
         server.run()
     finally:
         recovery_stop.set()
+        node_label_notifier.stop()
         if recovery_thread is not None:
             recovery_thread.join(timeout=3.0)
         if dispatch_thread is not None:

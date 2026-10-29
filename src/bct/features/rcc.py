@@ -51,6 +51,7 @@ _MUTATING_COMMANDS = {
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
     "retire-composer-draft", "retire-recovered-execution",
+    "node-label-notify",
 }
 _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
@@ -1088,6 +1089,27 @@ class RelayBrowserFeature:
                 "title": title.strip() if isinstance(title, str) else None,
                 "color": color.strip().lower() if isinstance(color, str) else None,
                 "collapsed": collapsed})
+        elif command == "node-label-notify":
+            allowed.update({"session_id", "tab_id", "window_id", "conversation_key", "event_id"})
+            uuid = str(arguments.get("conversation_key") or "").strip().lower()
+            if not re.fullmatch(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}", uuid):
+                raise PreconditionError("RCC_NODE_LABEL_UUID_INVALID")
+            event_id = _positive_int(arguments.get("event_id"), "RCC_NODE_LABEL_EVENT_ID_INVALID")
+            if self.store is None:
+                raise PreconditionError("RCC_NODE_LABEL_STORE_REQUIRED")
+            event = self.store.node_label_notification(event_id)
+            if event is None or event["conversation_key"] != uuid or event["status"] != "STARTED":
+                raise PreconditionError("RCC_NODE_LABEL_EVENT_NOT_COMMITTED")
+            session = str(arguments.get("session_id") or "").strip()
+            if not re.fullmatch(r"[a-f0-9]{32}", session):
+                raise PreconditionError("RCC_NODE_LABEL_SESSION_INVALID")
+            prepared["extra"].update({
+                "sessionId": session,
+                "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                "windowId": _positive_int(arguments.get("window_id"), "RCC_WINDOW_ID_INVALID"),
+                "conversationKey": uuid,
+                "eventId": event_id,
+            })
         elif command == "rename-conversation":
             allowed.update({"session_id", "tab_id", "conversation_key", "title"})
             session_id = str(arguments.get("session_id") or "").strip()
@@ -1111,7 +1133,7 @@ class RelayBrowserFeature:
             # live RCC-wide execution in Store, while allowing immutable
             # FINISHED/UNKNOWN effect history to remain recorded.
             resource += ":maintenance:reload-extension"
-        elif command in {"send-to-tab", "send-to-self", "node-continue"}:
+        elif command in {"send-to-tab", "send-to-self", "node-continue", "node-label-notify"}:
             resource += ":direct-tab:" + str(prepared["extra"]["tabId"])
         elif command == "close-conversation-tab":
             resource += (":close:" + str(prepared["extra"]["tabId"]) + ":"
@@ -2313,6 +2335,29 @@ class RelayBrowserFeature:
                 ):
                     break
                 time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+        if values["command"] == "node-label-notify":
+            matches = (
+                result.get("operationId") == request.operation_id
+                and result.get("instanceId") == values["instance_id"]
+                and result.get("sessionId") == extra["sessionId"]
+                and result.get("tabId") == extra["tabId"]
+                and result.get("windowId") == extra["windowId"]
+                and result.get("conversationKey") == extra["conversationKey"]
+                and result.get("eventId") == extra["eventId"]
+            )
+            if not matches:
+                raise UnknownEffectError("RCC_NODE_LABEL_ACK_IDENTITY_UNKNOWN")
+            if result.get("ok") is True and result.get("state") == "DELIVERED":
+                return FeatureResult(Outcome.APPLIED, {
+                    "command": "node-label-notify", "event_id": extra["eventId"],
+                    "tab_id": extra["tabId"], "conversation_key": extra["conversationKey"],
+                }, output={"result": _sanitize(result)})
+            if result.get("effectState") == "NOT_APPLIED":
+                return FeatureResult(Outcome.NOT_APPLIED, {
+                    "command": "node-label-notify",
+                    "event_id": extra["eventId"], "reason": str(result.get("error") or "")[:80],
+                }, release_claims=True)
+            raise UnknownEffectError("RCC_NODE_LABEL_DELIVERY_UNCONFIRMED")
         if values["command"] == "send-to-tab" and result.get("ok") is True:
             correct = (
                 str(result.get("operationId") or "") == request.operation_id
