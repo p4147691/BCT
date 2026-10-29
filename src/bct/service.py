@@ -34,6 +34,8 @@ from .features.rcc import RelayBrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
 from .features.cdp_inspect import CDPInspectFeature
+from .features.comfy_canvas_read import ComfyCanvasReadFeature
+from .features.comfy_canvas_adapter import ComfyCanvasAdapter
 from .features.browser_extension_manage import BrowserExtensionManageFeature
 from .features.monitor import MonitorFeature
 from .features.conversation_network import ConversationNetworkUpdateFeature
@@ -148,7 +150,8 @@ class BCT:
 
     def __init__(self, *, state_path: str | Path, policy_path: str | Path,
                  data_root: str | Path | None = None,
-                 github_client: GitHubClient | None = None):
+                 github_client: GitHubClient | None = None,
+                 comfy_canvas_transport=None):
         self.cdp_connections = CDPConnectionManager()  # lazy, no Chrome side effects
         self.mcp_catalogue_path = (Path(data_root) if data_root is not None
                                    else Path(policy_path).parent) / 'mcp_tools.toml'
@@ -195,6 +198,7 @@ class BCT:
             )
             if self.orchestration.manager_wake_receipt_v2_active else None
         )
+        self.comfy_canvas_adapter = ComfyCanvasAdapter(comfy_canvas_transport)
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)
         github = github_client or GhCliClient()
         deployment_profiles = DeploymentProfiles(policy_path)
@@ -213,6 +217,7 @@ class BCT:
             ConversationNetworkUpdateFeature(self.store),
             ProjectContextFeature(data_root or Path(policy_path).parent),
             CDPInspectFeature(self.cdp_connections),
+            ComfyCanvasReadFeature(self.comfy_canvas_adapter),
             BrowserExtensionManageFeature(self.cdp_connections, policy_path=policy_path, data_root=data_root),
             ReadOnlyClaimReconcileFeature(self.store, desktop_session),
             OrchestrationFeature(self.orchestration),

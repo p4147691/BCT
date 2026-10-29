@@ -51,7 +51,7 @@ def validate(message):
     expected = {"schema_version", "type", "request_id", "operation_id", "capability", "arguments"}
     if not isinstance(message, dict) or set(message) != expected:
         raise ValueError("REQUEST_SCHEMA_DENIED")
-    if message["schema_version"] != 1 or message["type"] not in ("bridge_read", "receipt_lookup") or message["capability"] != "read":
+    if message["schema_version"] != 1 or message["type"] not in ("bridge_read", "receipt_lookup", "comfy_canvas_read") or message["capability"] not in ("read", "comfy_canvas_read"):
         raise ValueError("CAPABILITY_DENIED")
     request_id = message["request_id"]
     if not isinstance(request_id, str) or len(request_id) != 32 or any(c not in "0123456789abcdef" for c in request_id):
@@ -62,8 +62,18 @@ def validate(message):
     if message["type"] == "bridge_read":
         if not isinstance(arguments, dict) or set(arguments) != {"path"} or not isinstance(arguments["path"], str) or not 0 < len(arguments["path"]) <= 1024:
             raise ValueError("ARGUMENTS_DENIED")
+    elif message["type"] == "comfy_canvas_read":
+        if message["capability"] != "comfy_canvas_read" or not isinstance(arguments, dict) or set(arguments) != {"tab_id","url","session_id","observed"}:
+            raise ValueError("COMFY_ARGUMENTS_DENIED")
+        from bct.features.comfy_bridge_contract import validate_read_request
+        try:
+            validate_read_request(**arguments)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("COMFY_IDENTITY_DENIED") from exc
     elif arguments != {}:
         raise ValueError("RECEIPT_ARGUMENTS_DENIED")
+    if message["type"] != "comfy_canvas_read" and message["capability"] != "read":
+        raise ValueError("CAPABILITY_DENIED")
     return request_id, arguments
 
 
@@ -83,6 +93,8 @@ async def dispatch(message):
                 await session.initialize()
                 if message["type"] == "receipt_lookup":
                     result = await session.call_tool("bct_operation_get", {"work_id": WORK_ID, "operation_id": request_id})
+                elif message["type"] == "comfy_canvas_read":
+                    result = await session.call_tool("bct_comfy_canvas_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
                 else:
                     result = await session.call_tool("bct_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
                 return {"ok": not result.isError, "request_id": request_id, "result": result.structuredContent}

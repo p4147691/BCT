@@ -43,8 +43,16 @@ def core_reply(result, request_id, operation_type="bridge_read"):
             (not isinstance(content.get("output"), dict) or
              not isinstance(content["output"].get("text"), str))):
         return error_reply(request_id, "CORE_READ_OUTPUT_INVALID", "RECEIPT_ERROR")
-    if operation_type not in ("bridge_read", "receipt_lookup"):
+    if operation_type not in ("bridge_read", "receipt_lookup", "comfy_canvas_read"):
         return error_reply(request_id, "CORE_REQUEST_TYPE_INVALID", "RECEIPT_ERROR")
+    if operation_type == "comfy_canvas_read":
+        from bct.features.comfy_graph_snapshot import validate_snapshot
+        if not isinstance(content.get("output"), dict):
+            return error_reply(request_id, "COMFY_RECEIPT_OUTPUT_INVALID", "RECEIPT_ERROR")
+        try:
+            validate_snapshot(content["output"]["graph"])
+        except (KeyError, TypeError, ValueError):
+            return error_reply(request_id, "COMFY_RECEIPT_GRAPH_INVALID", "RECEIPT_ERROR")
     return {"ok": True, "request_id": request_id, "result": content}
 
 
@@ -84,6 +92,8 @@ async def serve(inp, out):
                         try:
                             if message["type"] == "receipt_lookup":
                                 result = await session.call_tool("bct_operation_get", {"work_id": WORK_ID, "operation_id": request_id})
+                            elif message["type"] == "comfy_canvas_read":
+                                result = await session.call_tool("bct_comfy_canvas_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
                             else:
                                 result = await session.call_tool("bct_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
                         except Exception:
