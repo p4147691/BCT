@@ -17,6 +17,7 @@ from bct.core.models import (
 
 from .common import relative_git_path, resolve_in_work, sha256_file
 from .git_authority import require_local_main
+from .github import _remote_matches
 
 
 def _git(root: Path, *args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
@@ -87,10 +88,34 @@ class GitCommitFeature:
             {"expected_head": before, "expected_feature_head": feature_head},
         )
 
+    def _prepare_local_main_fast_forward(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        # A separate, narrowly fenced recovery path. It never relaxes
+        # github_sync_main or allows arbitrary refs/force-push/merges.
+        if set(arguments) != {"operation", "path", "expected_head", "expected_remote_head"}:
+            raise PreconditionError("LOCAL_MAIN_FF_ARGUMENTS_INVALID")
+        root = _repo_root(resolve_in_work(work, arguments["path"], must_exist=True))
+        authority = require_local_main(self.policy_path, root)
+        before = str(arguments["expected_head"]).lower()
+        remote_head = str(arguments["expected_remote_head"]).lower()
+        if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", sha)
+               for sha in (before, remote_head)):
+            raise PreconditionError("LOCAL_MAIN_FF_SHA_INVALID")
+        return FeatureRequest(
+            self.capability, str(root),
+            {"operation": "fast_forward_local_main_recovery",
+             "expected_head": before, "expected_remote_head": remote_head},
+            ("git-index:" + str(root).casefold(),
+             "git-worktree:" + str(root).casefold(),
+             "github-base:" + authority.repository.casefold()),
+            {"expected_head": before, "expected_remote_head": remote_head},
+        )
+
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = arguments.get("operation", "commit")
         if operation == "merge_local_main":
             return self._prepare_local_main_merge(work=work, arguments=arguments)
+        if operation == "fast_forward_local_main_recovery":
+            return self._prepare_local_main_fast_forward(work=work, arguments=arguments)
         if operation != "commit":
             raise PreconditionError("GIT_OPERATION_INVALID")
         root = _repo_root(resolve_in_work(work, str(arguments.get("path") or ""), must_exist=True))
@@ -198,9 +223,106 @@ class GitCommitFeature:
             "remote_ci_required": False,
         })
 
+    def _execute_local_main_fast_forward(self, request: FeatureRequest) -> FeatureResult:
+        root = Path(request.target)
+        authority = require_local_main(self.policy_path, root)
+        before = request.preconditions["expected_head"]
+        target = request.preconditions["expected_remote_head"]
+
+        def observed_head() -> str:
+            observed = _git(root, "rev-parse", "HEAD")
+            if observed.returncode != 0:
+                raise PreconditionError("LOCAL_MAIN_FF_HEAD_UNAVAILABLE")
+            return observed.stdout.strip().lower()
+
+        def current_remote_head() -> str:
+            observed = _git(root, "ls-remote", "--refs", "origin", "refs/heads/main")
+            if observed.returncode != 0:
+                raise PreconditionError("LOCAL_MAIN_FF_REMOTE_UNAVAILABLE")
+            lines = observed.stdout.strip().splitlines()
+            if len(lines) != 1:
+                raise PreconditionError("LOCAL_MAIN_FF_REMOTE_REF_UNVERIFIED")
+            fields = lines[0].split()
+            if (len(fields) != 2 or fields[1] != "refs/heads/main"
+                    or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", fields[0].lower())):
+                raise PreconditionError("LOCAL_MAIN_FF_REMOTE_REF_INVALID")
+            return fields[0].lower()
+
+        if observed_head() != before:
+            raise PreconditionError("LOCAL_MAIN_FF_HEAD_MISMATCH")
+        branch = _git(root, "branch", "--show-current")
+        if branch.returncode != 0 or branch.stdout.strip() != "main":
+            raise PreconditionError("LOCAL_MAIN_FF_MAIN_BRANCH_REQUIRED")
+        if _dirty_paths(root):
+            raise PreconditionError("LOCAL_MAIN_FF_WORKTREE_DIRTY")
+        remote_url = _git(root, "remote", "get-url", "origin")
+        if (remote_url.returncode != 0 or
+                not _remote_matches(authority.repository, remote_url.stdout)):
+            raise PreconditionError("LOCAL_MAIN_FF_REMOTE_IDENTITY_MISMATCH")
+        if current_remote_head() != target:
+            raise PreconditionError("LOCAL_MAIN_FF_REMOTE_SHA_CHANGED")
+        if before == target:
+            return FeatureResult(Outcome.APPLIED, {
+                "operation": "fast_forward_local_main_recovery",
+                "root": str(root), "repository": authority.repository,
+                "head_before": before, "head_after": before,
+                "verified_remote_head": target, "already_current": True,
+            })
+
+        # Fetch only the exact origin/main reference; FETCH_HEAD is not the
+        # shared local-main branch. No local change if fetch fails.
+        try:
+            fetched = _git(root, "fetch", "--no-tags", "origin", "refs/heads/main")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise PreconditionError("LOCAL_MAIN_FF_FETCH_UNAVAILABLE") from exc
+        if fetched.returncode != 0:
+            raise PreconditionError("LOCAL_MAIN_FF_FETCH_FAILED")
+        fetch_head = _git(root, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
+        if fetch_head.returncode != 0 or fetch_head.stdout.strip().lower() != target:
+            raise PreconditionError("LOCAL_MAIN_FF_FETCHED_SHA_MISMATCH")
+        ancestry = _git(root, "merge-base", "--is-ancestor", before, target)
+        if ancestry.returncode != 0:
+            raise PreconditionError("LOCAL_MAIN_FF_NOT_ANCESTOR" if ancestry.returncode == 1
+                                    else "LOCAL_MAIN_FF_ANCESTRY_UNVERIFIED")
+
+        # Exact refs, remote, branch and clean-tree fences immediately before
+        # a single fast-forward effect. No fallback to merge/reset/force.
+        if (observed_head() != before or current_remote_head() != target
+                or _dirty_paths(root)
+                or _git(root, "branch", "--show-current").stdout.strip() != "main"):
+            raise PreconditionError("LOCAL_MAIN_FF_PREFLIGHT_CHANGED")
+        try:
+            updated = _git(root, "merge", "--ff-only", target)
+        except (OSError, subprocess.TimeoutExpired):
+            updated = None
+
+        try:
+            after = observed_head()
+            clean = not _dirty_paths(root)
+            branch_after = _git(root, "branch", "--show-current")
+            merge_state = _git(root, "rev-parse", "--verify", "-q", "MERGE_HEAD")
+        except Exception as exc:
+            raise UnknownEffectError("LOCAL_MAIN_FF_POSTSTATE_UNAVAILABLE") from exc
+        if (after == target and clean and branch_after.returncode == 0
+                and branch_after.stdout.strip() == "main"
+                and merge_state.returncode != 0):
+            return FeatureResult(Outcome.APPLIED, {
+                "operation": "fast_forward_local_main_recovery",
+                "root": str(root), "repository": authority.repository,
+                "head_before": before, "head_after": after,
+                "verified_remote_head": target, "already_current": False,
+            })
+        if (updated is not None and updated.returncode != 0 and after == before
+                and clean and branch_after.stdout.strip() == "main"
+                and merge_state.returncode != 0):
+            raise ConfirmedFailure("LOCAL_MAIN_FF_NOT_APPLIED", release_claims=True)
+        raise UnknownEffectError("LOCAL_MAIN_FF_EFFECT_UNKNOWN")
+
     def execute(self, request: FeatureRequest) -> FeatureResult:
         if request.arguments.get("operation") == "merge_local_main":
             return self._execute_local_main_merge(request)
+        if request.arguments.get("operation") == "fast_forward_local_main_recovery":
+            return self._execute_local_main_fast_forward(request)
         root = Path(request.target)
         paths: list[str] = request.arguments["paths"]
         proofs: dict[str, str] = dict(request.arguments["new_files"])
