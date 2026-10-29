@@ -370,7 +370,14 @@ def main():
                                    'check_monitor_recovery_panel_view.js',
                                    'check_monitor_diagnostics_command_view.js',
                                    'check_monitor_desktop_stage_view.js',
-                                   'check_monitor_node_panel_interaction_state.js'):
+                                   'check_monitor_desktop_identity_state.js',
+                                   'check_monitor_node_panel_interaction_state.js',
+                                   'check_monitor_desktop_identity_state.js',
+                                   'check_monitor_node_panel_list_state.js',
+                                   'check_monitor_recovery_snapshot_state.js',
+                                   'check_monitor_recovery_record_store.js',
+                                   'check_monitor_diagnostics_tool_integration.js',
+                                   'check_monitor_observed_state.js'):
             view_test = root / 'tools' / new_view_test_name
             checked = subprocess.run([node,str(view_test)],cwd=str(root.parent.parent),
                 capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if view_test.is_file() else None

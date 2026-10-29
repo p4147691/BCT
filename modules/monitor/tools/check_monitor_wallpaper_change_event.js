@@ -23,7 +23,7 @@ const adapter={refreshBackground:(visual,id,options)=>{seen.push({id,options});r
 const env={
  response:{event:true,type:"desktopWallpaperChanged"},
  monitorDesktopThumbs:thumbs,
- monitorDesktopState:{currentDesktopId:second,desktopIds:[first,second],selectedIndex:1},
+ monitorDesktopIdentityState:{snapshot:()=>({currentDesktopId:second,desktopIds:[first,second],selectedIndex:1})},
  syncMonitorPreviewBackground:()=>true,
  globalThis:{MonitorDesktopThumbnailV2:adapter},
  Date,Promise,String

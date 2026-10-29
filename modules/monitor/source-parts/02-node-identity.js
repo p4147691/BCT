@@ -171,7 +171,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
   if (message?.type === "desktop-window-user-click") { monitorApplyDirectUserClick(message, sender); return; }
   if (message?.type === "monitor-popup-topology-changed") {
-    if (!monitorDesktopState.hostDesktopId || monitorDesktopState.hostDesktopId !== monitorDesktopState.currentDesktopId) return;
+    if (!monitorDesktopIdentityState.snapshot().hostDesktopId || monitorDesktopIdentityState.snapshot().hostDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId) return;
     const desktopIds = [...new Set((Array.isArray(message?.desktopIds) ? message.desktopIds : []).map((value) => String(value || "").trim()).filter(Boolean))];
     if (!desktopIds.length) return;
     scheduleMonitorPopupTopologyRefresh(desktopIds);
@@ -206,9 +206,9 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
   if(senderTabId)monitorDirectGenerationByTab.set(`${key}:${senderTabId}`,next);
 
-  if(monitorLastAiState){
+  if(monitorObservedState.snapshot()){
 
-    const endpoints=Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[];
+    const endpoints=Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[];
     const exactEndpoint=senderTabId?endpoints.find((item)=>String(item?.conversation_key||"").trim()===key && String(item?.tab_id??"").trim()===senderTabId):null;
     const conversationEndpoints=endpoints.filter((item)=>String(item?.conversation_key||"").trim()===key && String(item?.presence_state||"").toUpperCase()==="OPEN");
     const endpoint=exactEndpoint || (conversationEndpoints.length===1?conversationEndpoints[0]:null);
@@ -241,7 +241,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
     for (const preview of document.querySelectorAll(".monitor-desktop-thumb-window, .monitor-window-preview")) applyPersistentMonitorRoleClass(preview, preview.dataset.hwnd||"");
 
-    if (monitorLastAiState) renderWorkers(monitorLastAiState);
+    if (monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
 
   }
 

@@ -121,7 +121,7 @@ if (monitorNodeTrash && monitorClosedRecoveryMenu) {
 
   monitorNodeTrash.style.cursor="pointer";
 
-  monitorNodeTrash.addEventListener("click",(event)=>{if(monitorNodeTrash.classList.contains("monitor-node-trash-drop-target")||monitorNodeTrash.classList.contains("monitor-node-trash-drop-success"))return;event.stopPropagation();monitorRecoveryPickerState.toggle();monitorClosedRecoveryMenu.hidden=!monitorRecoveryPickerState.isOpen();if(monitorRecoveryPickerState.isOpen()){positionMonitorTrashRecoveryMenu();if(monitorLastAiState)monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorLastAiState));}});
+  monitorNodeTrash.addEventListener("click",(event)=>{if(monitorNodeTrash.classList.contains("monitor-node-trash-drop-target")||monitorNodeTrash.classList.contains("monitor-node-trash-drop-success"))return;event.stopPropagation();monitorRecoveryPickerState.toggle();monitorClosedRecoveryMenu.hidden=!monitorRecoveryPickerState.isOpen();if(monitorRecoveryPickerState.isOpen()){positionMonitorTrashRecoveryMenu();if(monitorObservedState.snapshot())monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorObservedState.snapshot()));}});
 
   monitorClosedRecoveryMenu.addEventListener("pointerdown",()=>{clearTimeout(monitorWorkerPointerReleaseTimer);monitorWorkerPointerInteractionActive=true;},true);
 
@@ -151,7 +151,7 @@ const monitorBctShell = globalThis.MonitorBctShell?.create?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
-let monitorBctWindowNodesCache = null;
+const monitorNodePanelListState = globalThis.MonitorNodePanelListState.create();
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;

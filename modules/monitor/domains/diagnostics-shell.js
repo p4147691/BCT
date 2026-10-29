@@ -194,7 +194,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const hwnd=String(event?.hwnd||"").trim();
 
   if (!/^\d+$/.test(hwnd)||hwnd==="0") return;
-  if (hwnd === String(monitorDesktopState.hostWindowHwnd || "")) {
+  if (hwnd === String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "")) {
     await chrome.runtime.sendMessage({ type:"monitor-save-popup-window-bounds" }).catch(() => null);
     scheduleMonitorExternalWindowDropTargets();
     return;
@@ -233,8 +233,8 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const eventVisual=eventTile?.querySelector(".monitor-desktop-thumb-visual");
   globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
 
-  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
-  syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
+  syncMonitorMinimizedNodeBadges(monitorObservedState.snapshot());
   if (minimized) scheduleMonitorMinimizedBadgeConvergence(hwnd);
   const badgeTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
   const badgeVisual=badgeTile?.querySelector(".monitor-desktop-thumb-visual");
@@ -285,7 +285,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
   invalidateMonitorDesktopFrames(desktopId);
 
-  const selectedDesktopId=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"");
+  const selectedDesktopId=String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex]||"");
   const selectedDesktop=desktopId===selectedDesktopId;
   if (selectedDesktop) {
     scheduleMonitorV2WindowRefresh(event);
@@ -314,9 +314,9 @@ function monitorRenderDiagnosticText(){
   const elapsedSec=elapsedMs/1000;
   let visibleWorkers=0;
   try{
-    if(monitorLastAiState){
-      const projected=monitorWorkersProjectionForState(monitorLastAiState);
-      visibleWorkers=projected.filter((worker)=>isMonitorVisibleWorker(worker,monitorLastAiState)).length;
+    if(monitorObservedState.snapshot()){
+      const projected=monitorWorkersProjectionForState(monitorObservedState.snapshot());
+      visibleWorkers=projected.filter((worker)=>isMonitorVisibleWorker(worker,monitorObservedState.snapshot())).length;
     }
   }catch(_){}
   const documentNodes=document.getElementsByTagName("*").length;
@@ -390,7 +390,7 @@ function monitorWindowTitle() {
 //@@FN_START:monitorWindowUsesFrozenCapture
 function monitorWindowUsesFrozenCapture(item) {
   const itemHwnd = String(item?.hwnd || "").trim();
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
   return /^[0-9]+$/.test(hostHwnd) && hostHwnd !== "0"
     && itemHwnd === hostHwnd && monitorIsOwnWindowTitle(item?.title);
 }

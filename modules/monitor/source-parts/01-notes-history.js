@@ -42,9 +42,9 @@ const MONITOR_TRASHED_DESKTOPS_KEY = "desktopWindowMonitorTrashedDesktopsV1";
 
 const MONITOR_NODE_TRASH_UNDO_MS = 5000;
 
-const monitorTrashedConversationKeys = new Set();
+const monitorRecoveryRecordStore = globalThis.MonitorRecoveryRecordStore.create();
 
-const monitorTrashRecords = new Map();
+
 
 const monitorTrashedNotes = new Map();
 
@@ -66,7 +66,7 @@ let monitorDeletedDesktopUndoTimer = 0;
 
 let monitorLocalHostWindowTitle = "";
 
-let monitorDesktopState = { count: 1, currentIndex: 0, selectedIndex: null, currentDesktopId: null, hostDesktopId: null, hostWindowHwnd: null, observedDesktopId: null, desktopIds: [] };
+const monitorDesktopIdentityState = globalThis.MonitorDesktopIdentityState.create({ count: 1, currentIndex: 0, selectedIndex: null, currentDesktopId: null, hostDesktopId: null, hostWindowHwnd: null, observedDesktopId: null, desktopIds: [] });
 const monitorDesktopStageView = globalThis.MonitorDesktopStageView.create({body: document.body});
 
 // Per-desktop presentation policy is local Monitor state. It never changes ACT
@@ -89,7 +89,7 @@ const monitorDesktopModeController = globalThis.MonitorDesktopModeController.cre
 chrome.storage.local.get([MONITOR_DESKTOP_MANAGEMENT_MODE_KEY], (data) => {
   const raw = data?.[MONITOR_DESKTOP_MANAGEMENT_MODE_KEY];
   monitorDesktopModeController.hydrate(raw);
-  if (monitorDesktopState.desktopIds.length) syncDesktopSwitcher();
+  if (monitorDesktopIdentityState.snapshot().desktopIds.length) syncDesktopSwitcher();
 });
 
 let monitorRefreshBusy = false;
@@ -287,7 +287,7 @@ let monitorIdentityIndexInflight = null;
 
 /*@@MONITOR_FUNCTION:normalizeMonitorWindowTitle@@*/
 
-let monitorLastAiState = null;
+const monitorObservedState = globalThis.MonitorObservedState.create();
 
 const MONITOR_AI_STATE_CACHE_KEY = "desktopWindowMonitorAiStateCacheV1";
 

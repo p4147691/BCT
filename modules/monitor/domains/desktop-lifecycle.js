@@ -229,15 +229,15 @@ function clearMonitorBctNodeDropFeedback() {
 //@@FN_START:clearMonitorConversationRecovery
 function clearMonitorConversationRecovery(){
 
-  const recovery=monitorClosedConversationRecoveryItems(monitorLastAiState);
+  const recovery=monitorClosedConversationRecoveryItems(monitorObservedState.snapshot());
 
-  for(const item of recovery){const key=String(item?.conversation_key||"").trim();if(key){monitorTrashedConversationKeys.add(key);monitorGhostCache.delete(key);monitorHiddenGhosts.delete(key);}}
+  for(const item of recovery){const key=String(item?.conversation_key||"").trim();if(key){monitorRecoveryRecordStore.trashedKeys.add(key);monitorRecoveryRecordStore.ghosts.delete(key);monitorHiddenGhosts.delete(key);}}
 
-  for(const [key,item] of [...monitorTrashRecords]) if(String(item?.trash_source||"list")!=="thumbnail"){monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(String(key));}
+  for(const [key,item] of [...monitorRecoveryRecordStore.trash]) if(String(item?.trash_source||"list")!=="thumbnail"){monitorRecoveryRecordStore.trash.delete(key);monitorRecoveryRecordStore.trashedKeys.add(String(key));}
 
-  monitorRebootSnapshot={...monitorRebootSnapshot,items:[]};
+  monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),items:[]});
 
-  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorLastAiState)renderWorkers(monitorLastAiState); refreshMonitorRecoveryMenu();
+  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRecoverySnapshotState.snapshot()}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); refreshMonitorRecoveryMenu();
 
 }
 //@@FN_END:clearMonitorConversationRecovery
@@ -278,7 +278,7 @@ function recordMonitorExternalWindowDropPointer(event) {
 
 //@@FN_START:syncMonitorExternalWindowDropTargets
 async function syncMonitorExternalWindowDropTargets() {
-  const hostWindowHwnd = String(monitorDesktopState?.hostWindowHwnd || "").trim();
+  const hostWindowHwnd = String(monitorDesktopIdentityState.snapshot()?.hostWindowHwnd || "").trim();
   const screenScale = Math.max(.5, Math.min(4, Number(window.devicePixelRatio) || 1));
   const screenOrigin = monitorExternalWindowDropScreenOrigin || { left: Number(window.screenX || 0), top: Number(window.screenY || 0) };
   const targets = [...monitorDesktopThumbs.querySelectorAll(".monitor-desktop-thumb[data-desktop-id]")]
@@ -323,7 +323,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     return;
   }
   const draggedKey = monitorBctDraggedNodeKey;
-  const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
+  const snapshot = Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot().slice() : [];
   const semanticSnapshot = monitorUniqueBctConversationNodes(snapshot);
   const dragged = semanticSnapshot.find((node) => node.conversationKey === draggedKey);
   const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
@@ -363,7 +363,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       });
     });
     monitorBctNodeReorderPending = true;
-    monitorBctWindowNodesCache = optimisticSnapshot;
+    monitorNodePanelListState.replace(optimisticSnapshot);
     finishMonitorBctNodeDrag();
     renderMonitorBctWindowNodes(optimisticSnapshot);
     try {
@@ -379,8 +379,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
         2200,
       );
     } catch (error) {
-      if (monitorBctWindowNodesCache === optimisticSnapshot) {
-        monitorBctWindowNodesCache = snapshot;
+      if (monitorNodePanelListState.snapshot() === optimisticSnapshot) {
+        monitorNodePanelListState.replace(snapshot);
         renderMonitorBctWindowNodes(snapshot);
       }
       setMonitorStatus(`대화망 이동 실패 · ${error?.message || error}`, false, 4200);
@@ -400,7 +400,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     });
   });
   monitorBctNodeReorderPending = true;
-  monitorBctWindowNodesCache = optimisticSnapshot;
+  monitorNodePanelListState.replace(optimisticSnapshot);
   finishMonitorBctNodeDrag();
   renderMonitorBctWindowNodes(optimisticSnapshot);
   try {
@@ -411,8 +411,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     setMonitorStatus("노드 표시 순서를 저장했습니다.", true, 2200);
   } catch (error) {
     // A newer RCC refresh replaces this exact snapshot. Never overwrite it.
-    if (monitorBctWindowNodesCache === optimisticSnapshot) {
-      monitorBctWindowNodesCache = snapshot;
+    if (monitorNodePanelListState.snapshot() === optimisticSnapshot) {
+      monitorNodePanelListState.replace(snapshot);
       renderMonitorBctWindowNodes(snapshot);
     }
     setMonitorStatus(`노드 순서 저장 실패 · ${error?.message || error}`, false, 4200);
@@ -427,7 +427,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
   if (monitorCreateDesktopDropBusy) return { ok: false, error: "DROP_BUSY" };
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!sourceDesktopId || !/^\d+$/.test(hostHwnd) || hostHwnd === "0") throw new Error("Monitor host HWND 또는 원본 데스크톱을 확인할 수 없습니다.");
 
@@ -449,7 +449,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
   try {
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
@@ -475,11 +475,11 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     const failed = success ? [] : [...exactHwnds];
 
-    monitorDesktopState.observedDesktopId = createdId;
+    monitorDesktopIdentityState.patch({observedDesktopId: createdId});
 
     renderVirtualDesktops(result);
 
-    const createdIndex = monitorDesktopState.desktopIds.indexOf(createdId);
+    const createdIndex = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(createdId);
 
     if (createdIndex >= 0) selectVirtualDesktopPreview(createdIndex);
 
@@ -542,17 +542,17 @@ function createMonitorWorkRecoveryButton() {
 //@@FN_START:deleteMonitorRecoveryRecord
 function deleteMonitorRecoveryRecord(key){
 
-  key=String(key||""); if(!key)return; monitorTrashRecords.delete(key); monitorTrashedConversationKeys.add(key); monitorGhostCache.delete(key); monitorHiddenGhosts.delete(key);
+  key=String(key||""); if(!key)return; monitorRecoveryRecordStore.trash.delete(key); monitorRecoveryRecordStore.trashedKeys.add(key); monitorRecoveryRecordStore.ghosts.delete(key); monitorHiddenGhosts.delete(key);
 
-  const items=(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[]).filter((x)=>String(x?.conversation_key||"").trim()!==key); monitorRebootSnapshot={...monitorRebootSnapshot,items};
+  const items=(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[]).filter((x)=>String(x?.conversation_key||"").trim()!==key); monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),items});
 
-  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorLastAiState)renderWorkers(monitorLastAiState); refreshMonitorRecoveryMenu();
+  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRecoverySnapshotState.snapshot()}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); refreshMonitorRecoveryMenu();
 
 }
 //@@FN_END:deleteMonitorRecoveryRecord
 
 //@@FN_START:deleteMonitorTrashRecord
-function deleteMonitorTrashRecord(key){key=String(key||"");monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(key);persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);refreshMonitorRecoveryMenu();}
+function deleteMonitorTrashRecord(key){key=String(key||"");monitorRecoveryRecordStore.trash.delete(key);monitorRecoveryRecordStore.trashedKeys.add(key);persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());refreshMonitorRecoveryMenu();}
 //@@FN_END:deleteMonitorTrashRecord
 
 //@@FN_START:deleteMonitorTrashedDesktop
@@ -634,7 +634,7 @@ async function finishMonitorDesktopPointerDrag(event) {
 
   setTimeout(() => delete drag.button.dataset.monitorDropSuppressClick, 0);
 
-  const trashTarget = drag.sourceDesktopId !== monitorDesktopState.currentDesktopId ? monitorTrashDropTargetAt(event.clientX,event.clientY) : null;
+  const trashTarget = drag.sourceDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId ? monitorTrashDropTargetAt(event.clientX,event.clientY) : null;
 
   const createTarget = trashTarget ? null : monitorCreateDesktopDropTargetAt(event.clientX, event.clientY);
 
@@ -642,7 +642,7 @@ async function finishMonitorDesktopPointerDrag(event) {
 
   if (trashTarget) {
 
-    const sourceIndex=monitorDesktopState.desktopIds.indexOf(drag.sourceDesktopId);
+    const sourceIndex=monitorDesktopIdentityState.snapshot().desktopIds.indexOf(drag.sourceDesktopId);
 
     if(sourceIndex>=0){await removeVirtualDesktopPreview(sourceIndex,{trashDrop:true});monitorNodeTrash.classList.add("monitor-node-trash-drop-success");setTimeout(()=>clearMonitorTrashDropTarget(),650);}
 
@@ -832,7 +832,7 @@ async function finishMonitorWorkerRowPointerDrag(event) {
 
     const targetKey=String(rowTarget.dataset.conversationKey||"");
 
-    if(monitorReorderWorkerKey(drag.sourceDesktopId,drag.key,targetKey,after)&&monitorLastAiState)renderWorkers(monitorLastAiState);
+    if(monitorReorderWorkerKey(drag.sourceDesktopId,drag.key,targetKey,after)&&monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   }
 
@@ -844,7 +844,7 @@ function flashDesktopTransition() {
 
   monitorTransitionFlash.classList.remove("active");
 
-  const button=[...monitorDesktopThumbs.children].find((node)=>Number(node.dataset.index)===monitorDesktopState.selectedIndex);
+  const button=[...monitorDesktopThumbs.children].find((node)=>Number(node.dataset.index)===monitorDesktopIdentityState.snapshot().selectedIndex);
 
   if(!button)return;
 
@@ -862,7 +862,7 @@ function flashDesktopTransition() {
 //@@FN_START:getDesktopBrowserWindowHandles
 async function getDesktopBrowserWindowHandles(desktopId) {
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!/^\d+$/.test(hostHwnd) || hostHwnd === "0") throw new Error("Monitor host HWND를 확인할 수 없어 데스크톱 이동을 중단했습니다.");
 
@@ -911,7 +911,7 @@ function invalidateMonitorDesktopFrames(...desktopIds) {
 //@@FN_END:invalidateMonitorDesktopFrames
 
 //@@FN_START:monitorActDesktopVisualForDesktop
-function monitorActDesktopVisualForDesktop(desktopId, state = monitorLastAiState) {
+function monitorActDesktopVisualForDesktop(desktopId, state = monitorObservedState.snapshot()) {
 
   const visual = state?.node_state?.desktop_visual;
 
@@ -947,11 +947,11 @@ function monitorApplySharedDesktopSelection(desktopId) {
 
   const id = String(desktopId || "").trim(); monitorSharedSelectedDesktopId = id;
 
-  if (!monitorSharedSelectionReady || !id || !monitorDesktopState.desktopIds.includes(id) || monitorDesktopState.observedDesktopId === id) return;
+  if (!monitorSharedSelectionReady || !id || !monitorDesktopIdentityState.snapshot().desktopIds.includes(id) || monitorDesktopIdentityState.snapshot().observedDesktopId === id) return;
 
-  monitorDesktopState.observedDesktopId = id;
+  monitorDesktopIdentityState.patch({observedDesktopId: id});
 
-  renderVirtualDesktops({ count:monitorDesktopState.count, currentIndex:monitorDesktopState.currentIndex, desktopIds:monitorDesktopState.desktopIds, currentDesktopId:monitorDesktopState.currentDesktopId, hostDesktopId:monitorDesktopState.hostDesktopId, hostWindowHwnd:monitorDesktopState.hostWindowHwnd });
+  renderVirtualDesktops({ count:monitorDesktopIdentityState.snapshot().count, currentIndex:monitorDesktopIdentityState.snapshot().currentIndex, desktopIds:monitorDesktopIdentityState.snapshot().desktopIds, currentDesktopId:monitorDesktopIdentityState.snapshot().currentDesktopId, hostDesktopId:monitorDesktopIdentityState.snapshot().hostDesktopId, hostWindowHwnd:monitorDesktopIdentityState.snapshot().hostWindowHwnd });
 
   refreshObservedWindows();
 
@@ -1052,14 +1052,14 @@ function monitorBctStopDragInput(drag) {
 //@@FN_START:monitorClosedConversationRecoveryItems
 function monitorClosedConversationRecoveryItems(state = null) {
   const result = monitorRecoveryInventoryController.project({
-    ghosts: monitorGhostCache.values(),
-    snapshot: monitorRebootSnapshot,
-    trashedKeys: monitorTrashedConversationKeys,
+    ghosts: monitorRecoveryRecordStore.ghosts.values(),
+    snapshot: monitorRecoverySnapshotState.snapshot(),
+    trashedKeys: monitorRecoveryRecordStore.trashedKeys,
     endpoints: Array.isArray(state?.endpoints) ? state.endpoints : []
   });
   if (result.updatedSnapshot) {
-    monitorRebootSnapshot = result.updatedSnapshot;
-    chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRebootSnapshot});
+    monitorRecoverySnapshotState.replace(result.updatedSnapshot);
+    chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRecoverySnapshotState.snapshot()});
     monitorPublishSharedRebootSnapshot();
   }
   return result.items;
@@ -1143,7 +1143,7 @@ function monitorDesktopManagementNextMode(mode) { return monitorDesktopModeContr
 //@@FN_END:monitorDesktopManagementNextMode
 
 //@@FN_START:monitorDesktopNodeSnapshots
-function monitorDesktopNodeSnapshots(desktopId,index,state=monitorLastAiState){const targetDesktop=Number(index)+1,out=[];for(const worker of monitorWorkersForState(state||{})){const key=String(worker?.conversation_key||worker?.__endpoint?.conversation_key||"").trim();if(!key)continue;const loc=monitorCanonicalPhysicalLocation(worker,state||{}),actNode=monitorActBrowserNode(worker,state||{}),sameId=desktopId&&String(actNode?.desktop_id||"").trim()===String(desktopId);if(!(sameId||Number(loc?.desktop)===targetDesktop))continue;out.push({conversation_key:key,profile_id:String(worker?.profile_id||worker?.__endpoint?.profile_id||"").toUpperCase(),title:String(worker?.task_title||worker?.title||worker?.__endpoint?.title||""),node_label:String(actNode?.node_label||loc?.label||""),slot:Number(loc?.slot||0)||null,hwnd:String(loc?.hwnd||actNode?.hwnd||"")});}return out;}
+function monitorDesktopNodeSnapshots(desktopId,index,state=monitorObservedState.snapshot()){const targetDesktop=Number(index)+1,out=[];for(const worker of monitorWorkersForState(state||{})){const key=String(worker?.conversation_key||worker?.__endpoint?.conversation_key||"").trim();if(!key)continue;const loc=monitorCanonicalPhysicalLocation(worker,state||{}),actNode=monitorActBrowserNode(worker,state||{}),sameId=desktopId&&String(actNode?.desktop_id||"").trim()===String(desktopId);if(!(sameId||Number(loc?.desktop)===targetDesktop))continue;out.push({conversation_key:key,profile_id:String(worker?.profile_id||worker?.__endpoint?.profile_id||"").toUpperCase(),title:String(worker?.task_title||worker?.title||worker?.__endpoint?.title||""),node_label:String(actNode?.node_label||loc?.label||""),slot:Number(loc?.slot||0)||null,hwnd:String(loc?.hwnd||actNode?.hwnd||"")});}return out;}
 //@@FN_END:monitorDesktopNodeSnapshots
 
 //@@FN_START:monitorDesktopScrollStep
@@ -1152,8 +1152,8 @@ function monitorDesktopScrollStep(){const tile=monitorDesktopThumbs.querySelecto
 
 //@@FN_START:monitorIsActiveDesktopRenderer
 function monitorIsActiveDesktopRenderer() {
-  const hostDesktopId = String(monitorDesktopState.hostDesktopId || "").trim();
-  const currentDesktopId = String(monitorDesktopState.currentDesktopId || "").trim();
+  const hostDesktopId = String(monitorDesktopIdentityState.snapshot().hostDesktopId || "").trim();
+  const currentDesktopId = String(monitorDesktopIdentityState.snapshot().currentDesktopId || "").trim();
   // Preserve startup/recovery until native host identity is known. After that,
   // only the Monitor on the current Windows virtual desktop may capture pixels.
   if (!hostDesktopId || !currentDesktopId) return true;
@@ -1162,7 +1162,7 @@ function monitorIsActiveDesktopRenderer() {
 //@@FN_END:monitorIsActiveDesktopRenderer
 
 //@@FN_START:monitorMinimizedNodeSlotsByDesktop
-function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
+function monitorMinimizedNodeSlotsByDesktop(state = monitorObservedState.snapshot()) {
   return monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({
     locations: monitorWindowDesktopLocations,
     numbersForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state),
@@ -1171,7 +1171,7 @@ function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
 //@@FN_END:monitorMinimizedNodeSlotsByDesktop
 
 //@@FN_START:monitorMinimizedNodeTokensByDesktop
-function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
+function monitorMinimizedNodeTokensByDesktop(state = monitorObservedState.snapshot()) {
   return monitorMinimizedNodeBadgeContract?.tokensByDesktop?.({
     locations: monitorWindowDesktopLocations,
     tokensForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
@@ -1179,7 +1179,7 @@ function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
 }
 //@@FN_END:monitorMinimizedNodeTokensByDesktop
 //@@FN_START:monitorObservedDesktopForHwnd
-function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
+function monitorObservedDesktopForHwnd(hwnd, state = monitorObservedState.snapshot()) {
   const key=String(hwnd||"").trim();
   if(!key||!state)return null;
   const observer=state?.node_state?.observer||null;
@@ -1195,7 +1195,7 @@ function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
   const remembered=monitorWindowDesktopLocations.get(key);
   const desktopId=String(remembered?.desktopId||"").trim();
   if(!desktopId)return null;
-  const desktop=monitorDesktopState.desktopIds.indexOf(desktopId)+1;
+  const desktop=monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId)+1;
   return {desktopId,desktop:desktop>0?desktop:0,authority:"MONITOR_NATIVE_EVENT"};
 }
 //@@FN_END:monitorObservedDesktopForHwnd
@@ -1205,7 +1205,7 @@ function monitorSetDesktopManagementMode(desktopId, nextMode) {
   const id = String(desktopId || "").trim();
   const mode = String(nextMode || "").toUpperCase();
   if (!monitorDesktopModeController.set(id, mode)) return;
-  setMonitorStatus(`D${Math.max(1, monitorDesktopState.desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)}`, true);
+  setMonitorStatus(`D${Math.max(1, monitorDesktopIdentityState.snapshot().desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)}`, true);
   syncDesktopSwitcher();
 }
 //@@FN_END:monitorSetDesktopManagementMode
@@ -1227,14 +1227,14 @@ function monitorTrashRecordForKey(key,sourceKind="list"){
 
   key=String(key||"").trim(); if(!key)return null;
 
-  const state=monitorLastAiState, ghost=monitorGhostCache.get(key)||{};
+  const state=monitorObservedState.snapshot(), ghost=monitorRecoveryRecordStore.ghosts.get(key)||{};
 
   const worker=state?monitorWorkersForState(state).find((x)=>String(x?.conversation_key||"").trim()===key):null;
 
   const endpoint=worker&&state?endpointForMonitorWorker(worker,state):(Array.isArray(state?.endpoints)?state.endpoints.find((x)=>String(x?.conversation_key||"").trim()===key):null);
 
   const em=endpoint?.metadata||{}; const desktop=Number(ghost?.desktop||em.desktop_id||em.desktop_index||0), slot=Number(ghost?.slot||em.slot_index||0);
-  const bctNode=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).find((item)=>String(item?.conversationKey||"")===key)||{};
+  const bctNode=(Array.isArray(monitorNodePanelListState.snapshot())?monitorNodePanelListState.snapshot():[]).find((item)=>String(item?.conversationKey||"")===key)||{};
 
   return {...ghost,conversation_key:key,profile_id:String(ghost?.profile_id||worker?.profile_id||endpoint?.profile_id||"").toUpperCase(),title:String(ghost?.title||endpoint?.title||bctNode?.title||""),meaningful_title:String(ghost?.meaningful_title||worker?.task_title||endpoint?.title||bctNode?.title||""),node_label:String(bctNode?.nodeLabel||ghost?.node_label||""),network_id:String(bctNode?.scopeId||ghost?.network_id||""),network_name:String(bctNode?.scopeName||ghost?.network_name||""),role_tags:Array.isArray(bctNode?.roleTags)?[...bctNode.roleTags]:(Array.isArray(ghost?.role_tags)?ghost.role_tags:[]),desktop:Number.isInteger(desktop)&&desktop>0?desktop:null,slot:Number.isInteger(slot)&&slot>0?slot:null,first_seen_ms:Number(ghost?.first_seen_ms||monitorGhostTime(endpoint?.first_seen_at)||0),closed_at_ms:Number(ghost?.closed_at_ms||monitorGhostTime(endpoint?.closed_at)||0),trash_source:sourceKind==="thumbnail"?"thumbnail":"list",trashed_at_ms:Date.now()};
 
@@ -1297,9 +1297,9 @@ function persistMonitorTrashedDesktops(){chrome.storage.local.set({[MONITOR_TRAS
 //@@FN_START:persistMonitorTrashedNodes
 function persistMonitorTrashedNodes(){
 
-  const records=[...monitorTrashRecords.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX);
+  const records=[...monitorRecoveryRecordStore.trash.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX);
 
-  chrome.storage.local.set({[MONITOR_TRASHED_NODES_KEY]:[...monitorTrashedConversationKeys],[MONITOR_TRASH_RECORDS_KEY]:records});
+  chrome.storage.local.set({[MONITOR_TRASHED_NODES_KEY]:[...monitorRecoveryRecordStore.trashedKeys],[MONITOR_TRASH_RECORDS_KEY]:records});
 
 }
 //@@FN_END:persistMonitorTrashedNodes
@@ -1345,11 +1345,11 @@ function pushDesktopUndoSnapshot(snapshot, now = Date.now()) { monitorRecoveryUn
 //@@FN_START:refreshMonitorRecoveryMenu
 function refreshMonitorRecoveryMenu(){
 
-  if(!(monitorRecoveryPickerState.isOpen()&&monitorClosedRecoveryMenu&&monitorLastAiState))return;
+  if(!(monitorRecoveryPickerState.isOpen()&&monitorClosedRecoveryMenu&&monitorObservedState.snapshot()))return;
 
   const panes=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane-scroll')].map((el)=>({cls:el.parentElement?.className||'',top:el.scrollTop}));
 
-  monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorLastAiState));
+  monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorObservedState.snapshot()));
 
   for(const saved of panes){const pane=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane')].find((el)=>(el.className||'')===saved.cls);const scroll=pane?.querySelector('.monitor-trash-pane-scroll');if(scroll)scroll.scrollTop=saved.top;}
 
@@ -1460,7 +1460,7 @@ async function refreshVirtualDesktops() {
 //@@FN_START:rememberMonitorDesktopWindows
 function rememberMonitorDesktopWindows(desktopId, windows) {
 
-  const index = monitorDesktopState.desktopIds.indexOf(desktopId);
+  const index = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId);
 
   if (index < 0) return;
 
@@ -1515,7 +1515,7 @@ function rememberMonitorDesktopWindows(desktopId, windows) {
 
   }
 
-  if (changed && monitorLastAiState) renderWorkers(monitorLastAiState);
+  if (changed && monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
 
 }
 //@@FN_END:rememberMonitorDesktopWindows
@@ -1533,11 +1533,11 @@ async function removeCreatedDesktopIfSafe(snapshot) {
 
   await refreshVirtualDesktops();
 
-  const index = monitorDesktopState.desktopIds.indexOf(createdId); if (index < 0 || monitorDesktopState.count <= 1) return;
+  const index = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(createdId); if (index < 0 || monitorDesktopIdentityState.snapshot().count <= 1) return;
 
-  const sourceIndex = Math.max(0, monitorDesktopState.desktopIds.indexOf(String(snapshot.sourceDesktopId || "")));
+  const sourceIndex = Math.max(0, monitorDesktopIdentityState.snapshot().desktopIds.indexOf(String(snapshot.sourceDesktopId || "")));
 
-  const fallbackIndex = sourceIndex === index ? (index > 0 ? index - 1 : Math.min(1, monitorDesktopState.count - 1)) : sourceIndex;
+  const fallbackIndex = sourceIndex === index ? (index > 0 ? index - 1 : Math.min(1, monitorDesktopIdentityState.snapshot().count - 1)) : sourceIndex;
 
   await monitorNative({ type: "removeVirtualDesktop", index, fallbackIndex }).catch(() => null);
 
@@ -1549,11 +1549,11 @@ async function removeCreatedDesktopIfSafe(snapshot) {
 //@@FN_START:removeVirtualDesktopPreview
 async function removeVirtualDesktopPreview(index, options={}) {
 
-  if (monitorDesktopState.count <= 1 || index < 0 || index >= monitorDesktopState.count) return;
+  if (monitorDesktopIdentityState.snapshot().count <= 1 || index < 0 || index >= monitorDesktopIdentityState.snapshot().count) return;
 
-  const desktopId = monitorDesktopState.desktopIds[index] || null;
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[index] || null;
 
-  const fallbackIndex = index < monitorDesktopState.count - 1 ? index + 1 : index - 1;
+  const fallbackIndex = index < monitorDesktopIdentityState.snapshot().count - 1 ? index + 1 : index - 1;
 
   try {
 
@@ -1575,9 +1575,9 @@ async function removeVirtualDesktopPreview(index, options={}) {
 
     const resultIds = Array.isArray(result.desktopIds) ? result.desktopIds : [];
 
-    if (monitorDesktopState.observedDesktopId === desktopId) {
+    if (monitorDesktopIdentityState.snapshot().observedDesktopId === desktopId) {
 
-      monitorDesktopState.observedDesktopId = resultIds[Math.min(index, Math.max(0, resultIds.length - 1))] || resultIds[0] || null;
+      monitorDesktopIdentityState.patch({observedDesktopId: resultIds[Math.min(index, Math.max(0, resultIds.length - 1))] || resultIds[0] || null});
 
     }
 
@@ -1600,7 +1600,7 @@ async function removeVirtualDesktopPreview(index, options={}) {
 function renderLightweightDesktopCards(reason = "EXPLICIT") {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) { monitorDesktopThumbs.replaceChildren(); return true; }
 
-  const ids = Array.isArray(monitorDesktopState.desktopIds) ? monitorDesktopState.desktopIds.filter(Boolean) : [];
+  const ids = Array.isArray(monitorDesktopIdentityState.snapshot().desktopIds) ? monitorDesktopIdentityState.snapshot().desktopIds.filter(Boolean) : [];
 
   if (!ids.length) return false;
 
@@ -1617,9 +1617,9 @@ function renderLightweightDesktopCards(reason = "EXPLICIT") {
 
     button.dataset.desktopId = desktopId; button.dataset.index = String(index);
 
-    button.classList.toggle("selected", index === monitorDesktopState.selectedIndex);
+    button.classList.toggle("selected", index === monitorDesktopIdentityState.snapshot().selectedIndex);
 
-    button.classList.toggle("current", index === monitorDesktopState.currentIndex);
+    button.classList.toggle("current", index === monitorDesktopIdentityState.snapshot().currentIndex);
 
     const visual = document.createElement("span");
 
@@ -1679,7 +1679,7 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
         clearNotes: () => clearMonitorTrashedNotes(),
         restoreNote: id => restoreMonitorTrashedNote(id),
         deleteNote: id => deleteMonitorTrashedNote(id),
-        trashRecords: () => monitorTrashRecords,
+        trashRecords: () => monitorRecoveryRecordStore.trash,
         previousLocation: item => monitorClosedConversationPreviousLocation(item),
         contextTitle: item => monitorClosedConversationContextTitle(item),
         restoreTrash: key => restoreMonitorTrashRecord(key),
@@ -1688,8 +1688,8 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
         clearThumbnail: () => clearMonitorThumbnailRecovery(),
         restoreDesktop: (id,button) => restoreMonitorTrashedDesktop(id,button),
         deleteDesktop: id => deleteMonitorTrashedDesktop(id),
-        rebootSnapshot: () => monitorRebootSnapshot,
-        trashedKeys: () => monitorTrashedConversationKeys,
+        rebootSnapshot: () => monitorRecoverySnapshotState.snapshot(),
+        trashedKeys: () => monitorRecoveryRecordStore.trashedKeys,
         rebootRestoring: () => monitorRebootRestoreActive,
         restoreAll: (button,records,items) => restoreMonitorAllRecovery(button,records,items),
         restoreReboot: button => restoreMonitorRebootSnapshot(button),
@@ -1703,15 +1703,15 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
         confirm: message => confirm(message),
         pruneDropped: dropKeys => {
           for (const key of dropKeys) {
-            monitorTrashRecords.delete(key);
-            monitorGhostCache.delete(key);
+            monitorRecoveryRecordStore.trash.delete(key);
+            monitorRecoveryRecordStore.ghosts.delete(key);
             monitorHiddenGhosts.delete(key);
-            monitorTrashedConversationKeys.add(key);
+            monitorRecoveryRecordStore.trashedKeys.add(key);
           }
-          monitorRebootSnapshot={...monitorRebootSnapshot,
-            items:(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[])
-              .filter(x=>!dropKeys.has(String(x?.conversation_key||"")))};
-          chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRebootSnapshot});
+          monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),
+            items:(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[])
+              .filter(x=>!dropKeys.has(String(x?.conversation_key||"")))});
+          chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRecoverySnapshotState.snapshot()});
           monitorPublishSharedRebootSnapshot();
           monitorGhostPersist(true);
           persistMonitorTrashedNodes();
@@ -1731,13 +1731,13 @@ function renderVirtualDesktops(state) {
   if (reportedHostTitle && reportedHostTitle !== monitorLocalHostWindowTitle) monitorLocalHostWindowTitle = reportedHostTitle;
 
   const topology = globalThis.MonitorDesktopTopology.project({
-    observed: state, previous: monitorDesktopState,
+    observed: state, previous: monitorDesktopIdentityState.snapshot(),
     sharedSelection: {ready: monitorSharedSelectionReady, desktopId: monitorSharedSelectedDesktopId}
   });
   const {desktopIds,count,currentIndex,selectedIndex,currentDesktopId,
     hostDesktopId,hostWindowHwnd,observedDesktopId} = topology.state;
   const {hostWindowChanged,previousCurrentDesktopId} = topology;
-  monitorDesktopState = topology.state;
+  monitorDesktopIdentityState.replace(topology.state);
   // BCT node state can arrive before Native desktop topology. Once the
   // desktop IDs exist, perform only a bounded exact identity reconciliation
   // so the semantic thumbnail overlay has a verified HWND to project onto.
@@ -1748,7 +1748,7 @@ function renderVirtualDesktops(state) {
     void ensureMonitorOwnFrozenSnapshot();
   }
 
-  monitorDesktopStageView.showTopology(monitorDesktopState);
+  monitorDesktopStageView.showTopology(monitorDesktopIdentityState.snapshot());
 
   const selectedId = observedDesktopId;
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) {
@@ -1836,7 +1836,7 @@ async function restoreMonitorAllRecovery(button,listRecords,items){
 //@@FN_END:restoreMonitorAllRecovery
 
 //@@FN_START:restoreMonitorDesktopNodeSnapshots
-function restoreMonitorDesktopNodeSnapshots(nodes){for(const item of Array.isArray(nodes)?nodes:[]){const key=String(item?.conversation_key||"");if(!key)continue;monitorTrashedConversationKeys.delete(key);monitorTrashRecords.delete(key);monitorHiddenGhosts.delete(key);}persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+function restoreMonitorDesktopNodeSnapshots(nodes){for(const item of Array.isArray(nodes)?nodes:[]){const key=String(item?.conversation_key||"");if(!key)continue;monitorRecoveryRecordStore.trashedKeys.delete(key);monitorRecoveryRecordStore.trash.delete(key);monitorHiddenGhosts.delete(key);}persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 //@@FN_END:restoreMonitorDesktopNodeSnapshots
 
 //@@FN_START:restoreMonitorDetachedTask
@@ -1934,7 +1934,7 @@ async function restoreMonitorDetachedTask(item, button) {
 
     button.textContent=original; button.disabled=false;
 
-    if(monitorLastAiState)renderWorkers(monitorLastAiState);
+    if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   }
 
@@ -2001,7 +2001,7 @@ async function restoreMonitorNodeChatChange(worker,nodeState,button){
 //@@FN_START:restoreMonitorRebootSnapshot
 async function restoreMonitorRebootSnapshot(button) {
 
-  const items=[...(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[])];
+  const items=[...(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[])];
 
   if(!items.length||monitorRebootRestoreActive||!button)return {ok:false,status:"IGNORED",results:[]};
 
@@ -2033,7 +2033,7 @@ async function restoreMonitorRebootSnapshot(button) {
 
           const hwnd=String(resolved?.location?.hwnd||endpointOsWindowHandle(ep)||"").trim();
 
-          const target=monitorDesktopState.desktopIds[Math.max(0,Number(item.desktop||1)-1)]||String(item.desktop_id||"");
+          const target=monitorDesktopIdentityState.snapshot().desktopIds[Math.max(0,Number(item.desktop||1)-1)]||String(item.desktop_id||"");
 
           if(/^\d+$/.test(hwnd)&&hwnd!=="0"&&target){
 
@@ -2083,7 +2083,7 @@ async function restoreMonitorRebootSnapshot(button) {
 
     button.disabled=false; button.textContent=old;
 
-    if(monitorLastAiState){if(allVerified)monitorCaptureRebootSnapshot(monitorLastAiState);renderWorkers(monitorLastAiState);}
+    if(monitorObservedState.snapshot()){if(allVerified)monitorCaptureRebootSnapshot(monitorObservedState.snapshot());renderWorkers(monitorObservedState.snapshot());}
 
   }
 
@@ -2091,7 +2091,7 @@ async function restoreMonitorRebootSnapshot(button) {
 //@@FN_END:restoreMonitorRebootSnapshot
 
 //@@FN_START:restoreMonitorTrashRecord
-function restoreMonitorTrashRecord(key){key=String(key||"");monitorTrashedConversationKeys.delete(key);monitorTrashRecords.delete(key);persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);refreshMonitorRecoveryMenu();}
+function restoreMonitorTrashRecord(key){key=String(key||"");monitorRecoveryRecordStore.trashedKeys.delete(key);monitorRecoveryRecordStore.trash.delete(key);persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());refreshMonitorRecoveryMenu();}
 //@@FN_END:restoreMonitorTrashRecord
 
 //@@FN_START:restoreMonitorTrashedDesktop
@@ -2125,21 +2125,21 @@ function scheduleMonitorStartupRecovery() {
 //@@FN_START:selectVirtualDesktopPreview
 function selectVirtualDesktopPreview(index) {
 
-  const bounded = Math.min(Math.max(0, index), monitorDesktopState.count - 1);
+  const bounded = Math.min(Math.max(0, index), monitorDesktopIdentityState.snapshot().count - 1);
 
-  const changed = bounded !== monitorDesktopState.selectedIndex;
+  const changed = bounded !== monitorDesktopIdentityState.snapshot().selectedIndex;
 
-  monitorDesktopState.selectedIndex = bounded;
+  monitorDesktopIdentityState.patch({selectedIndex: bounded});
 
-  const desktopId = monitorDesktopState.desktopIds[bounded] || null;
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[bounded] || null;
 
   monitorSharedSelectedDesktopId = desktopId || "";
 
-  monitorDesktopState.observedDesktopId = desktopId;
+  monitorDesktopIdentityState.patch({observedDesktopId: desktopId});
 
   publishMonitorSharedSelection();
 
-  monitorDesktopStageView.showPreview({desktopId,index:bounded,currentIndex:monitorDesktopState.currentIndex});
+  monitorDesktopStageView.showPreview({desktopId,index:bounded,currentIndex:monitorDesktopIdentityState.snapshot().currentIndex});
 
   if (changed) flashDesktopTransition();
 
@@ -2150,17 +2150,17 @@ function selectVirtualDesktopPreview(index) {
 
   window.dispatchEvent(new CustomEvent("desktopwindow-monitor-preview", {
 
-    detail: { index: bounded, desktopId, currentIndex: monitorDesktopState.currentIndex }
+    detail: { index: bounded, desktopId, currentIndex: monitorDesktopIdentityState.snapshot().currentIndex }
 
   }));
 
   renderVirtualDesktops({
 
-    count: monitorDesktopState.count,
+    count: monitorDesktopIdentityState.snapshot().count,
 
-    currentIndex: monitorDesktopState.currentIndex,
+    currentIndex: monitorDesktopIdentityState.snapshot().currentIndex,
 
-    desktopIds: monitorDesktopState.desktopIds
+    desktopIds: monitorDesktopIdentityState.snapshot().desktopIds
 
   });
 
@@ -2202,7 +2202,7 @@ function syncDesktopSwitcher() {
     monitorDesktopStripView = globalThis.MonitorDesktopStripView.create({
       root: monitorDesktopThumbs, document,
       ports: {
-        desktopState: () => monitorDesktopState,
+        desktopState: () => monitorDesktopIdentityState.snapshot(),
         attachManagement: (element,id) => monitorAttachDesktopManagementControl(element,id),
         beginDrag: event => beginMonitorDesktopPointerDrag(event),
         preview: index => selectVirtualDesktopPreview(index),
@@ -2230,7 +2230,7 @@ function syncMonitorDesktopNumberBadge(img, hwnd) {
 
   if (!img?.parentElement) return;
 
-  const key=String(hwnd||""), state=monitorLastAiState;
+  const key=String(hwnd||""), state=monitorObservedState.snapshot();
 
   let badge=[...img.parentElement.querySelectorAll(".monitor-window-desktop-badge")].find((node)=>node.dataset.hwnd===key);
   if(img.classList.contains("monitor-desktop-thumb-window")){
@@ -2278,9 +2278,9 @@ function syncMonitorPanelToDesktopSwitcher() {
 //@@FN_START:trashMonitorConversationKeys
 async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
-  const unique=[...new Set((keys||[]).map(String).filter(Boolean))].filter((key)=>!monitorTrashedConversationKeys.has(key)); if(!unique.length)return false;
+  const unique=[...new Set((keys||[]).map(String).filter(Boolean))].filter((key)=>!monitorRecoveryRecordStore.trashedKeys.has(key)); if(!unique.length)return false;
 
-  const endpoints=Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[];
+  const endpoints=Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[];
 
   const pending=[];
 
@@ -2318,9 +2318,9 @@ async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
     }
 
-    if(item.record)monitorTrashRecords.set(item.key,item.record);
+    if(item.record)monitorRecoveryRecordStore.trash.set(item.key,item.record);
 
-    monitorTrashedConversationKeys.add(item.key);monitorHiddenGhosts.delete(item.key);
+    monitorRecoveryRecordStore.trashedKeys.add(item.key);monitorHiddenGhosts.delete(item.key);
 
   }
 
@@ -2328,7 +2328,7 @@ async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
   const succeeded=pending.filter((item)=>!failed.includes(item.key)).map((item)=>item.key);
 
-  if(succeeded.length){persistMonitorTrashedNodes();monitorNodeTrashUndoSnapshot={keys:succeeded};monitorNodeTrashUndoExpiresAt=Date.now()+MONITOR_NODE_TRASH_UNDO_MS;updateMonitorNodeTrashUndoUi();if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+  if(succeeded.length){persistMonitorTrashedNodes();monitorNodeTrashUndoSnapshot={keys:succeeded};monitorNodeTrashUndoExpiresAt=Date.now()+MONITOR_NODE_TRASH_UNDO_MS;updateMonitorNodeTrashUndoUi();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 
   if(succeeded.length&&!failed.length)setMonitorStatus(`노드 ${succeeded.length}개 삭제 · 연결 탭 닫힘 확인`,true);
 
@@ -2346,7 +2346,7 @@ async function undoDeletedDesktopTrash() {
 
   try {
 
-    const beforeIds=new Set(monitorDesktopState.desktopIds);
+    const beforeIds=new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:snapshot.hwnds});
 
@@ -2362,7 +2362,7 @@ async function undoDeletedDesktopTrash() {
 
     if(snapshot.desktopId) deleteMonitorTrashedDesktop(snapshot.desktopId);
 
-    monitorDesktopState.observedDesktopId=restoredId; renderVirtualDesktops(result); if(restoredId)settleNewDesktopWallpaper(restoredId).catch(()=>{});
+    monitorDesktopIdentityState.patch({observedDesktopId: restoredId}); renderVirtualDesktops(result); if(restoredId)settleNewDesktopWallpaper(restoredId).catch(()=>{});
 
   } catch(error) { setMonitorStatus(`데스크톱 복구 실패 · ${error?.message||error}`,false); if(button)button.disabled=false; }
 
@@ -2439,7 +2439,7 @@ function updateMonitorBctNodePointerDrag(event) {
       type:"monitorDragPreviewStart",
       token:previewToken,
       label:monitorBctDragGhost.textContent,
-      sourceHwnd:String(monitorDesktopState?.hostWindowHwnd || ""),
+      sourceHwnd:String(monitorDesktopIdentityState.snapshot()?.hostWindowHwnd || ""),
     }).catch(() => {}); // An older installed Host keeps the DOM-only preview.
   }
   event.preventDefault();
@@ -2472,7 +2472,7 @@ function updateMonitorDesktopPointerDrag(event) {
 
   clearMonitorDesktopDropTargets(); clearMonitorTrashDropTarget();
 
-  if (drag.sourceDesktopId !== monitorDesktopState.currentDesktopId && monitorTrashDropTargetAt(event.clientX,event.clientY)) { monitorNodeTrash.classList.add("monitor-node-trash-drop-target"); return; }
+  if (drag.sourceDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId && monitorTrashDropTargetAt(event.clientX,event.clientY)) { monitorNodeTrash.classList.add("monitor-node-trash-drop-target"); return; }
 
   if (monitorCreateDesktopDropTargetAt(event.clientX, event.clientY)) monitorCreateDesktop.classList.add("monitor-create-desktop-drop-target");
 

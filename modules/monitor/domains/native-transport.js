@@ -59,8 +59,8 @@ function ensureMonitorNativePort() {
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {
       const explicitId=String(response.desktopId||"").toLowerCase();
       const visuals=[...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual")||[])];
-      const currentId=String(monitorDesktopState?.currentDesktopId||"").toLowerCase();
-      const selectedId=String(monitorDesktopState?.desktopIds?.[monitorDesktopState?.selectedIndex]||"").toLowerCase();
+      const currentId=String(monitorDesktopIdentityState.snapshot()?.currentDesktopId||"").toLowerCase();
+      const selectedId=String(monitorDesktopIdentityState.snapshot()?.desktopIds?.[monitorDesktopIdentityState.snapshot()?.selectedIndex]||"").toLowerCase();
       const priority=id=>id===explicitId?0:id===currentId?1:id===selectedId?2:3;
       // Windows only persists per-virtual-desktop picture paths.  A desktop
       // without one follows the current global picture/solid mode, so a change

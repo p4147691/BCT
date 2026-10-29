@@ -3,7 +3,7 @@
 /*@@MONITOR_FUNCTION:refreshObservedWindows@@*/
 
 globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
-  const ids = [...(monitorDesktopState.desktopIds || [])].filter(Boolean);
+  const ids = [...(monitorDesktopIdentityState.snapshot().desktopIds || [])].filter(Boolean);
   if (!ids.length || !monitorIsActiveDesktopRenderer()) return;
   invalidateMonitorDesktopFrames(...ids);
   void refreshSelectedThumb().catch(() => false);
@@ -97,7 +97,7 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
     }
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "restoreVirtualDesktop", hwnds: snapshot.hwnds });
 
@@ -109,9 +109,9 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
     commitDesktopUndoRestore(); updateDesktopUndoUi();
 
-    monitorDesktopState.observedDesktopId = restoredId;
+    monitorDesktopIdentityState.patch({observedDesktopId: restoredId});
 
-    renderVirtualDesktops(result); selectVirtualDesktopPreview(monitorDesktopState.selectedIndex); settleNewDesktopWallpaper(restoredId).catch(() => {});
+    renderVirtualDesktops(result); selectVirtualDesktopPreview(monitorDesktopIdentityState.snapshot().selectedIndex); settleNewDesktopWallpaper(restoredId).catch(() => {});
 
   } catch (error) { setMonitorStatus(`데스크톱 복구 실패 · ${error?.message || error}`, false); }
 
@@ -129,7 +129,7 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
   try {
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
@@ -139,11 +139,11 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const createdId = resultIds.find((id) => !beforeIds.has(id)) || resultIds[resultIds.length - 1] || null;
 
-    monitorDesktopState.observedDesktopId = createdId;
+    monitorDesktopIdentityState.patch({observedDesktopId: createdId});
 
     renderVirtualDesktops(result);
 
-    selectVirtualDesktopPreview(monitorDesktopState.selectedIndex);
+    selectVirtualDesktopPreview(monitorDesktopIdentityState.snapshot().selectedIndex);
 
     settleNewDesktopWallpaper(createdId).catch(() => {});
 
@@ -256,8 +256,8 @@ if (MONITOR_ACTIVE_STARTUP_ENABLED) {
     monitorCachedLlmNodes = Array.isArray(data?.[MONITOR_LLM_CACHE_STORAGE_KEY]) ? data[MONITOR_LLM_CACHE_STORAGE_KEY] : [];
     const cachedAiState=data?.[MONITOR_AI_STATE_CACHE_KEY];
     if(cachedAiState?.state?.ok===true && Date.now()-Number(cachedAiState?.at||0)<=MONITOR_AI_STATE_CACHE_TTL_MS){
-      monitorLastAiState=cachedAiState.state;
-      renderWorkers(monitorLastAiState);
+      monitorObservedState.replace(cachedAiState.state);
+      renderWorkers(monitorObservedState.snapshot());
     }
     monitorPostWorkStorageReady=true;
     if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) {

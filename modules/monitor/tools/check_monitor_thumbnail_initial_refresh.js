@@ -10,11 +10,12 @@ const sharedUi = fs.readFileSync(path.join(__dirname, "../domains/shared-ui.js")
 const begin = source.indexOf("function syncDesktopSwitcher() {");
 const end = source.indexOf("//@@FN_END:syncDesktopSwitcher", begin);
 assert(begin >= 0 && end > begin, "syncDesktopSwitcher source boundary is required");
-const body = source.slice(begin, end);
+const body = fs.readFileSync(path.join(__dirname, "../extension/monitor-desktop-strip-view.js"), "utf8");
+assert.match(source.slice(begin,end), /MonitorDesktopStripView[.]create/, "canonical desktop switcher delegates to one strip owner");
 
 assert.match(body, /const createdDesktopIds = \[\];/);
 assert.match(body, /createdDesktopIds\.push\(desktopId\);/);
-assert.match(body, /if \(createdDesktopIds\.length\) requestAnimationFrame\(\(\) => \{/);
+assert.match(body, /if \(createdDesktopIds\.length\) ports[.]frame\(\(\) => \{/);
 assert.match(body, /for \(const desktopId of createdDesktopIds\)/);
 assert.match(body, /renderer\?\.refreshBackground\?\.\(visual, desktopId\)/);
 assert.doesNotMatch(body, /monitorInitialThumbBatchDone/,
@@ -50,7 +51,7 @@ const windowsStart = thumbnails.indexOf("async function refreshInitialWindowThum
 const windowsEnd = thumbnails.indexOf("//@@FN_END:refreshInitialWindowThumbs", windowsStart);
 const windowsBody = thumbnails.slice(windowsStart, windowsEnd);
 assert(windowsStart >= 0 && windowsEnd > windowsStart, "initial window refresh owner is required");
-assert.match(windowsBody, /\.\.\.monitorDesktopState\.desktopIds\.filter/,
+assert.match(windowsBody, /\.\.\.monitorDesktopIdentityState[.]snapshot\(\)[.]desktopIds[.]filter/,
   "startup window pass must include every canonical desktop, not only the selection");
 assert.match(windowsBody, /renderer\.refresh\(visual, desktopId\)/,
   "every desktop must enter the V2 background-plus-window compositor");

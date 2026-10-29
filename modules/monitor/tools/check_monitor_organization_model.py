@@ -145,13 +145,13 @@ console.log(JSON.stringify({base,newNode,moved,swappedDefault,normalizedDefault,
     connection_drag_enabled = ('const MONITOR_STRUCTURE_CONNECTIONS_ENABLED=true;' in text and '<svg id="monitorStructureLinks"' in text and 'monitorStructurePointerTargetAt' in text and 'monitorStructureConnectNodesByPosition' in text and 'monitorStructureDetachBlankStep(nodeKey)' in text)
     physical_node_dedup = 'function monitorStructureNodeIdentityTokens(node)' in visual_source and 'identityTokens.some(token=>seenPhysicalNodes.has(token))' in visual_source and 'return [`act:${label}`]' in visual_source and 'return [`tab:${tabId}:conversation:${conversationKey}`]' in visual_source
     minimized_native_desktop_authority = (
-        'function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState)' in text
+        'function monitorMinimizedNodeSlotsByDesktop(state = monitorObservedState.snapshot())' in text
         and 'monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({' in text
         and 'locations: monitorWindowDesktopLocations,' in text
         and 'stable.desktopId || monitorDesktopState.desktopIds[Number(stable.desktop)-1]' not in text
     )
     minimized_exact_hwnd_identity = (
-        'function monitorActNodeNumbersForHwnd(hwnd, state = monitorLastAiState)' in text
+        'function monitorActNodeNumbersForHwnd(hwnd, state = monitorObservedState.snapshot())' in text
         and 'if(String(node?.identity_authority||"")!=="ACT_TAB_CHAT") continue;' in text
         and 'if(String(node?.hwnd||"").trim()!==key) continue;' in text
         and 'if(String(node?.location_authority||"")!=="ACT_NATIVE_OBSERVER") continue;' not in text

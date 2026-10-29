@@ -136,7 +136,7 @@ function loadModule() {
     "tab activation must select by exact Chrome window/tab identity");
   assert.match(monitor, /syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
     "selection changes must reproject thumbnail number tokens immediately");
-  assert.match(monitor, /renderMonitorBctWindowNodes\(monitorBctWindowNodesCache\);\s*syncMonitorBctNodeTargetHighlight\(\);/,
+  assert.match(monitor, /renderMonitorBctWindowNodes\(monitorNodePanelListState[.]snapshot\(\)\);\s*syncMonitorBctNodeTargetHighlight\(\);/,
     "a regular Worker render must restore BCT-list ownership and exact row selection");
   assert.match(projection, /selectedNodeTabId/,
     "thumbnail selection must use the exact Chrome tabId, not a shared N? label");

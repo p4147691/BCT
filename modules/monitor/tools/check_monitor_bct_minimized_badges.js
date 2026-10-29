@@ -62,6 +62,7 @@ const document={createElement(tag){
 const ctx={
   monitorWindowDesktopLocations:locationMap,
   monitorLastAiState:{},
+  monitorNodePanelListState:{snapshot:()=>[]},
   monitorBadgeNodeNumbersForHwnd:(hwnd)=>labels[hwnd]||[],
   monitorDesktopThumbs:{children:buttons},
   document,Map,Set,Boolean,String,Number,Array
@@ -86,7 +87,7 @@ assert.equal(label2.badges.children.map(x=>x.textContent).join(""),"8");
 // A UUID-less minimized Chrome tab is individually selected by exact tabId.
 labels["100"]=[{token:"?",tabId:701},{token:"?",tabId:702},{token:"61",tabId:703}];
 locationMap.set("200",{desktopId:"deskA",iconic:false});
-ctx.monitorBctWindowNodesCache=[{key:"selected-unknown",nodeLabel:"N?",tabId:702}];
+ctx.monitorNodePanelListState={snapshot:()=>[{key:"selected-unknown",nodeLabel:"N?",tabId:702}]};
 ctx.monitorNodePanelSelection.set("selected-unknown");
 ctx.monitorBctNodeSelectionKey=(node)=>node.key;
 ctx.syncMonitorMinimizedNodeBadges({});
@@ -95,7 +96,7 @@ assert.deepEqual(selectedUnknown.map(x=>x.textContent),["?","?","61"]);
 assert.deepEqual(selectedUnknown.map(x=>String(x.className).includes("monitor-desktop-minimized-node-selected")),[false,true,false],
   "exact Chrome tabId selects only its own unknown minimized node");
 ctx.monitorNodePanelSelection.clear();
-ctx.monitorBctWindowNodesCache=[];
+ctx.monitorNodePanelListState={snapshot:()=>[]};
 
 locationMap.set("100",{desktopId:"deskA",iconic:false});
 locationMap.set("200",{desktopId:"deskA",iconic:false});

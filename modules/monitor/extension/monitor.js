@@ -513,9 +513,9 @@ const MONITOR_TRASHED_DESKTOPS_KEY = "desktopWindowMonitorTrashedDesktopsV1";
 
 const MONITOR_NODE_TRASH_UNDO_MS = 5000;
 
-const monitorTrashedConversationKeys = new Set();
+const monitorRecoveryRecordStore = globalThis.MonitorRecoveryRecordStore.create();
 
-const monitorTrashRecords = new Map();
+
 
 const monitorTrashedNotes = new Map();
 
@@ -537,7 +537,7 @@ let monitorDeletedDesktopUndoTimer = 0;
 
 let monitorLocalHostWindowTitle = "";
 
-let monitorDesktopState = { count: 1, currentIndex: 0, selectedIndex: null, currentDesktopId: null, hostDesktopId: null, hostWindowHwnd: null, observedDesktopId: null, desktopIds: [] };
+const monitorDesktopIdentityState = globalThis.MonitorDesktopIdentityState.create({ count: 1, currentIndex: 0, selectedIndex: null, currentDesktopId: null, hostDesktopId: null, hostWindowHwnd: null, observedDesktopId: null, desktopIds: [] });
 const monitorDesktopStageView = globalThis.MonitorDesktopStageView.create({body: document.body});
 
 // Per-desktop presentation policy is local Monitor state. It never changes ACT
@@ -561,7 +561,7 @@ function monitorSetDesktopManagementMode(desktopId, nextMode) {
   const id = String(desktopId || "").trim();
   const mode = String(nextMode || "").toUpperCase();
   if (!monitorDesktopModeController.set(id, mode)) return;
-  setMonitorStatus(`D${Math.max(1, monitorDesktopState.desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)}`, true);
+  setMonitorStatus(`D${Math.max(1, monitorDesktopIdentityState.snapshot().desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)}`, true);
   syncDesktopSwitcher();
 }
 
@@ -594,7 +594,7 @@ function monitorAttachDesktopManagementControl(label, desktopId) {
 chrome.storage.local.get([MONITOR_DESKTOP_MANAGEMENT_MODE_KEY], (data) => {
   const raw = data?.[MONITOR_DESKTOP_MANAGEMENT_MODE_KEY];
   monitorDesktopModeController.hydrate(raw);
-  if (monitorDesktopState.desktopIds.length) syncDesktopSwitcher();
+  if (monitorDesktopIdentityState.snapshot().desktopIds.length) syncDesktopSwitcher();
 });
 
 let monitorRefreshBusy = false;
@@ -628,7 +628,7 @@ async function refreshInitialBackgroundThumbs() {
     monitorInitialThumbStage = "disabled";
     return false;
   }
-  const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
+  const selectedId = monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "";
   const renderer = globalThis.MonitorDesktopThumbnailV2;
   if (!renderer?.refreshBackground) {
     monitorInitialThumbStage = "renderer-unavailable";
@@ -637,7 +637,7 @@ async function refreshInitialBackgroundThumbs() {
   }
   let pending = [
     selectedId,
-    ...monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId)
+    ...monitorDesktopIdentityState.snapshot().desktopIds.filter((id) => id && id !== selectedId)
   ].filter(Boolean);
   if (!pending.length) {
     monitorInitialThumbStage = "no-desktops";
@@ -677,11 +677,11 @@ function monitorApplySharedDesktopSelection(desktopId) {
 
   const id = String(desktopId || "").trim(); monitorSharedSelectedDesktopId = id;
 
-  if (!monitorSharedSelectionReady || !id || !monitorDesktopState.desktopIds.includes(id) || monitorDesktopState.observedDesktopId === id) return;
+  if (!monitorSharedSelectionReady || !id || !monitorDesktopIdentityState.snapshot().desktopIds.includes(id) || monitorDesktopIdentityState.snapshot().observedDesktopId === id) return;
 
-  monitorDesktopState.observedDesktopId = id;
+  monitorDesktopIdentityState.patch({observedDesktopId: id});
 
-  renderVirtualDesktops({ count:monitorDesktopState.count, currentIndex:monitorDesktopState.currentIndex, desktopIds:monitorDesktopState.desktopIds, currentDesktopId:monitorDesktopState.currentDesktopId, hostDesktopId:monitorDesktopState.hostDesktopId, hostWindowHwnd:monitorDesktopState.hostWindowHwnd });
+  renderVirtualDesktops({ count:monitorDesktopIdentityState.snapshot().count, currentIndex:monitorDesktopIdentityState.snapshot().currentIndex, desktopIds:monitorDesktopIdentityState.snapshot().desktopIds, currentDesktopId:monitorDesktopIdentityState.snapshot().currentDesktopId, hostDesktopId:monitorDesktopIdentityState.snapshot().hostDesktopId, hostWindowHwnd:monitorDesktopIdentityState.snapshot().hostWindowHwnd });
 
   refreshObservedWindows();
 
@@ -800,7 +800,7 @@ function monitorSetRoleAssignMode(mode) {
 
   }
 
-  const state = monitorLastAiState;
+  const state = monitorObservedState.snapshot();
 
   const selectedWorker = nextMode && state ? monitorSelectedRoleWorker(state) : null;
 
@@ -871,7 +871,7 @@ async function monitorApplyRoleMode(worker,state) {
 
   } catch(error){ setMonitorStatus(`역할 변경 실패 · ${monitorRoleAdminErrorText(error?.message||error)}`,false); }
 
-  finally { monitorRoleMutationInFlight.delete(key); if(monitorLastAiState)renderWorkers(monitorLastAiState); }
+  finally { monitorRoleMutationInFlight.delete(key); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); }
 
 }
 
@@ -911,7 +911,7 @@ async function monitorTurnWorkerOff(worker,state) {
 
   } catch(error){setMonitorStatus(`OFF 실패 · ${monitorRoleAdminErrorText(error?.message||error)}`,false);}
 
-  finally {monitorRoleMutationInFlight.delete(key); if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+  finally {monitorRoleMutationInFlight.delete(key); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 
 }
 
@@ -925,7 +925,7 @@ function renderMonitorRoleAdmin() {
 
   const roles=Array.isArray(monitorRoleAdminState?.roles)?monitorRoleAdminState.roles:[];
 
-  const candidates=monitorRoleAdminCandidates(monitorLastAiState||{});
+  const candidates=monitorRoleAdminCandidates(monitorObservedState.snapshot()||{});
 
   for(const role of MONITOR_ROLE_ADMIN_ROLES){
 
@@ -959,7 +959,7 @@ async function refreshMonitorRoleAdmin() {
 
   if(monitorRoleAdminBusy)return; monitorRoleAdminBusy=true;
 
-  try{const r=await actFetch(ORCHESTRATOR_ROLE_ADMIN_URL,{cache:"no-store"});const data=await r.json();if(!r.ok||!data?.ok)throw new Error(data?.error||`HTTP ${r.status}`);const signature=JSON.stringify([data.roles,monitorRoleAdminCandidates(monitorLastAiState||{}).map(x=>x.conversation_key)]);monitorRoleAdminState=data;setMonitorRoleAdminStatus("");if(signature!==monitorRoleAdminSignature){monitorRoleAdminSignature=signature;renderMonitorRoleAdmin();}}
+  try{const r=await actFetch(ORCHESTRATOR_ROLE_ADMIN_URL,{cache:"no-store"});const data=await r.json();if(!r.ok||!data?.ok)throw new Error(data?.error||`HTTP ${r.status}`);const signature=JSON.stringify([data.roles,monitorRoleAdminCandidates(monitorObservedState.snapshot()||{}).map(x=>x.conversation_key)]);monitorRoleAdminState=data;setMonitorRoleAdminStatus("");if(signature!==monitorRoleAdminSignature){monitorRoleAdminSignature=signature;renderMonitorRoleAdmin();}}
 
   catch(error){setMonitorRoleAdminStatus(monitorRoleAdminErrorText(error?.message||error),true);}
 
@@ -997,7 +997,7 @@ function isMonitorVisibleWorker(worker, state) {
 
   const conversationKey = String(worker?.conversation_key || "").trim();
 
-  if (conversationKey && monitorTrashedConversationKeys.has(conversationKey)) return false;
+  if (conversationKey && monitorRecoveryRecordStore.trashedKeys.has(conversationKey)) return false;
 
   const profileId = String(worker?.profile_id || "").toUpperCase();
 
@@ -1084,7 +1084,7 @@ async function activateMonitorCodexResource(worker, row = null) {
       await new Promise((resolve) => setTimeout(resolve, 125));
     }
 
-    const desktopIds = Array.isArray(monitorDesktopState.desktopIds) ? monitorDesktopState.desktopIds : [];
+    const desktopIds = Array.isArray(monitorDesktopIdentityState.snapshot().desktopIds) ? monitorDesktopIdentityState.snapshot().desktopIds : [];
     const targetDesktopId = String(desktopIds[desktopIds.length - 1] || "").trim();
     if (!/^\d+$/.test(hwnd) || hwnd === "0") throw new Error("G-CODEX 창을 찾지 못했습니다");
     if (!targetDesktopId) throw new Error("마지막 데스크톱을 찾지 못했습니다");
@@ -1525,7 +1525,7 @@ let monitorIdentityIndexInflight = null;
 
 function normalizeMonitorWindowTitle(value) { return String(value || "").trim().replace(/\s+-\s+(?:Google\s+)?Chrome$/i, "").trim(); }
 
-let monitorLastAiState = null;
+const monitorObservedState = globalThis.MonitorObservedState.create();
 
 const MONITOR_AI_STATE_CACHE_KEY = "desktopWindowMonitorAiStateCacheV1";
 
@@ -1602,7 +1602,7 @@ let monitorStructureActiveScopeKey = "GLOBAL";
 
 function rememberMonitorDesktopWindows(desktopId, windows) {
 
-  const index = monitorDesktopState.desktopIds.indexOf(desktopId);
+  const index = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId);
 
   if (index < 0) return;
 
@@ -1657,13 +1657,13 @@ function rememberMonitorDesktopWindows(desktopId, windows) {
 
   }
 
-  if (changed && monitorLastAiState) renderWorkers(monitorLastAiState);
+  if (changed && monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
 
 }
 
 function monitorHwndHasOpenChatEndpoint(hwnd) {
 
-  const key=String(hwnd||"").trim(), state=monitorLastAiState;
+  const key=String(hwnd||"").trim(), state=monitorObservedState.snapshot();
 
   if(!key||!state)return false;
 
@@ -1743,7 +1743,7 @@ async function refreshMonitorWindowIdentity(hwnd) {
 
         const wait = Math.max(0, MONITOR_NON_CHAT_GRACE_MS - (Date.now() - started));
 
-        setTimeout(() => { if (monitorLastAiState) renderWorkers(monitorLastAiState); }, wait + 40);
+        setTimeout(() => { if (monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot()); }, wait + 40);
 
       }
 
@@ -1765,7 +1765,7 @@ async function refreshMonitorWindowIdentity(hwnd) {
 
     monitorWindowDesktopLocations.set(String(hwnd), latest);
 
-    if ((key && key !== previousKey) && monitorLastAiState) renderWorkers(monitorLastAiState);
+    if ((key && key !== previousKey) && monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
 
   } finally { monitorWindowIdentityInflight.delete(String(hwnd)); }
 
@@ -1780,9 +1780,9 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     String(ep?.presence_state || "").toUpperCase() === "OPEN"
     && ["GOOGLE", "NAVER"].includes(String(ep?.profile_id || "").toUpperCase())
   );
-  const bctActiveNodes = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+  const bctActiveNodes = (Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot() : [])
     .filter((node) => node?.active === true && String(node?.instanceState || "").toUpperCase() === "OPEN");
-  if ((!openEndpoints.length && !bctActiveNodes.length) || !monitorDesktopState.desktopIds.length) return false;
+  if ((!openEndpoints.length && !bctActiveNodes.length) || !monitorDesktopIdentityState.snapshot().desktopIds.length) return false;
 
   const wanted = new Set([
     ...openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()),
@@ -1807,9 +1807,9 @@ async function refreshMonitorIdentityIndex(state, force = false) {
 
   const job = (async () => {
     let projectionChanged = false;
-    for (let i = 0; i < monitorDesktopState.desktopIds.length; i += 1) {
-      const desktopId = monitorDesktopState.desktopIds[i];
-      const snapshot = await monitorNativeWithTimeout({ type: "getDesktopWindowHandles", desktopId, hostWindowHwnd: monitorDesktopState.hostWindowHwnd, includeMonitorWindows: true }, 2500).catch(() => null);
+    for (let i = 0; i < monitorDesktopIdentityState.snapshot().desktopIds.length; i += 1) {
+      const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[i];
+      const snapshot = await monitorNativeWithTimeout({ type: "getDesktopWindowHandles", desktopId, hostWindowHwnd: monitorDesktopIdentityState.snapshot().hostWindowHwnd, includeMonitorWindows: true }, 2500).catch(() => null);
       const windows = Array.isArray(snapshot?.windows) ? snapshot.windows : [];
       await Promise.all(windows.filter((item) => String(item?.className || "") === "Chrome_WidgetWin_1").map(async (item) => {
         const hwnd = String(item?.hwnd || "").trim();
@@ -1859,7 +1859,7 @@ async function refreshMonitorIdentityIndex(state, force = false) {
 
     monitorIdentityIndexRefreshAt = Date.now();
     refreshMonitorBctCurrentSessionWindowHwnd();
-    if (projectionChanged && monitorLastAiState) renderWorkers(monitorLastAiState);
+    if (projectionChanged && monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
     return projectionChanged;
   })().finally(() => { monitorIdentityIndexInflight = null; });
 
@@ -1991,7 +1991,7 @@ function monitorExactConversationWindow(conversationKey, state, now = Date.now()
 
   const desktopId = String(location?.desktopId || "").trim();
 
-  const desktopIndex = monitorDesktopState.desktopIds.indexOf(desktopId);
+  const desktopIndex = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId);
 
   if (desktopIndex < 0) return { endpoint, location: null, reason: "UNKNOWN_DESKTOP" };
 
@@ -2011,7 +2011,7 @@ function monitorNodeIdentityParts(label, desktopId = "") {
   let desktop = Number(display?.[2] || legacy?.[1] || 0) || null;
   const id = String(desktopId || "").trim();
   if (id) {
-    const index = Array.isArray(monitorDesktopState?.desktopIds) ? monitorDesktopState.desktopIds.indexOf(id) : -1;
+    const index = Array.isArray(monitorDesktopIdentityState.snapshot()?.desktopIds) ? monitorDesktopIdentityState.snapshot().desktopIds.indexOf(id) : -1;
     if (index >= 0) desktop = index + 1;
   }
   return {
@@ -2052,7 +2052,7 @@ function monitorPhysicalWindowPeerLocation(endpoint, state, now = Date.now()) {
 
     const desktopId = String(location?.desktopId || "").trim();
 
-    const desktopIndex = monitorDesktopState.desktopIds.indexOf(desktopId);
+    const desktopIndex = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId);
 
     if (desktopIndex >= 0) return { ...location, desktop: desktopIndex + 1 };
 
@@ -2167,7 +2167,7 @@ function resolveStableMonitorLocation(worker, state) { return monitorCanonicalPh
 
 // Node numbering is ACT-authoritative. Monitor only projects ACT-assigned labels.
 
-function monitorActBrowserNode(worker, state = monitorLastAiState) {
+function monitorActBrowserNode(worker, state = monitorObservedState.snapshot()) {
 
   if(String(state?.node_state?.observer?.source||"")!=="ACT_NATIVE_OBSERVER") return null;
 
@@ -2183,7 +2183,7 @@ function monitorActBrowserNode(worker, state = monitorLastAiState) {
 
 function monitorStableBrowserNodeKey(worker) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorStableBrowserNodeKey"].apply(this, arguments); }
 
-function monitorStableNodeSlotRecord(worker,key,state=monitorLastAiState) {
+function monitorStableNodeSlotRecord(worker,key,state=monitorObservedState.snapshot()) {
 
   const endpoint=worker?.__endpoint||endpointForMonitorWorker(worker,state)||null;
 
@@ -2279,14 +2279,14 @@ function monitorGroupChatgptMembersForDisplay(members,state) {
 
 // The desktop-label summary is reserved for minimized ChatGPT windows. Open
 // ChatGPT windows render their BCT/RCC number directly on their thumbnail.
-function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
+function monitorMinimizedNodeSlotsByDesktop(state = monitorObservedState.snapshot()) {
   return monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({
     locations: monitorWindowDesktopLocations,
     numbersForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state),
   }) || new Map();
 }
 
-function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
+function monitorMinimizedNodeTokensByDesktop(state = monitorObservedState.snapshot()) {
   return monitorMinimizedNodeBadgeContract?.tokensByDesktop?.({
     locations: monitorWindowDesktopLocations,
     tokensForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
@@ -2577,7 +2577,7 @@ function monitorUserAttentionVisualDetail(attentionRaw) {
   return null;
 }
 
-function monitorConversationUserAttentionDetail(conversationKey,state=monitorLastAiState) {
+function monitorConversationUserAttentionDetail(conversationKey,state=monitorObservedState.snapshot()) {
   const key=String(conversationKey||"").trim();
   if(!key)return null;
   const direct=monitorDirectGenerationByConversation.get(key)?.userAttention||null;
@@ -2589,7 +2589,7 @@ function monitorConversationUserAttentionDetail(conversationKey,state=monitorLas
   return monitorUserAttentionVisualDetail(raw);
 }
 
-function monitorHwndUserAttentionDetail(hwnd,state=monitorLastAiState) {
+function monitorHwndUserAttentionDetail(hwnd,state=monitorObservedState.snapshot()) {
   const conversationKey=monitorVisualConversationForHwnd(String(hwnd||""),state);
   return monitorConversationUserAttentionDetail(conversationKey,state);
 }
@@ -2646,7 +2646,7 @@ function monitorScheduleChatCompletionAlert(conversationKey, attentionCue="", co
 
     if(monitorDirectConversationGenerationState(key)===true)return;
 
-    const live=(Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[]).filter((endpoint)=>String(endpoint?.conversation_key||"").trim()===key&&String(endpoint?.presence_state||"").toUpperCase()==="OPEN");
+    const live=(Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[]).filter((endpoint)=>String(endpoint?.conversation_key||"").trim()===key&&String(endpoint?.presence_state||"").toUpperCase()==="OPEN");
 
     if(live.some((endpoint)=>monitorEndpointGenerationIsActive(endpoint)))return;
 
@@ -2678,9 +2678,9 @@ function monitorApplyDirectUserClick(message, sender) {
 
   monitorAcknowledgePostWork(key, "");
 
-  if (!tabId || !monitorLastAiState) { if (monitorLastAiState) renderWorkers(monitorLastAiState); return true; }
+  if (!tabId || !monitorObservedState.snapshot()) { if (monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot()); return true; }
 
-  const candidates=(Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[]).filter((endpoint)=>
+  const candidates=(Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[]).filter((endpoint)=>
 
     String(endpoint?.presence_state||"").toUpperCase()==="OPEN"
 
@@ -2692,7 +2692,7 @@ function monitorApplyDirectUserClick(message, sender) {
 
   );
 
-  if (candidates.length!==1) { renderWorkers(monitorLastAiState); return true; }
+  if (candidates.length!==1) { renderWorkers(monitorObservedState.snapshot()); return true; }
 
   const endpoint=candidates[0];
 
@@ -2700,7 +2700,7 @@ function monitorApplyDirectUserClick(message, sender) {
 
   const hwnd=String(location?.hwnd || endpointOsWindowHandle(endpoint) || "").trim();
 
-  if (!/^\d+$/.test(hwnd) || hwnd==="0") { renderWorkers(monitorLastAiState); return true; }
+  if (!/^\d+$/.test(hwnd) || hwnd==="0") { renderWorkers(monitorObservedState.snapshot()); return true; }
 
   monitorAcknowledgePostWorkForHwnd(hwnd);
 
@@ -2719,11 +2719,11 @@ function monitorBrowserWindowIdForEndpoint(endpoint) { return globalThis.Monitor
 
 function refreshMonitorBctCurrentSessionWindowHwnd() {
   const resolution = monitorWindowHwndContract?.resolve?.({
-    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations, now: Date.now(),
+    nodes: monitorNodePanelListState.snapshot() || [], locations: monitorWindowDesktopLocations, now: Date.now(),
   });
   const bindings = monitorWindowHwndContract?.retainCurrentSessionBindings?.({
     bindings: resolution?.bindings || [], previousBindings: [...monitorBctCurrentSessionWindowHwnd.values()],
-    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations, now: Date.now(),
+    nodes: monitorNodePanelListState.snapshot() || [], locations: monitorWindowDesktopLocations, now: Date.now(),
   }) || (resolution?.bindings || []);
   const next = new Map();
   for (const binding of bindings) {
@@ -2734,7 +2734,7 @@ function refreshMonitorBctCurrentSessionWindowHwnd() {
 }
 
 async function refreshMonitorBctBrowserWindowGeometry() {
-  const ids = [...new Set((Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+  const ids = [...new Set((Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot() : [])
     .map((node) => Number(node?.windowId)).filter(Number.isInteger))];
   const observedAt = Date.now();
   const rows = await Promise.all(ids.map(async (windowId) => {
@@ -2763,7 +2763,7 @@ async function refreshMonitorBctBrowserWindowGeometry() {
 
 function refreshMonitorBctDisplayWindowHwnd() {
   const display = monitorWindowHwndContract?.resolveDisplay?.({
-    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations,
+    nodes: monitorNodePanelListState.snapshot() || [], locations: monitorWindowDesktopLocations,
     browserWindows: monitorBctBrowserWindows, now: Date.now(),
   });
   monitorBctDisplayWindowHwnd = new Map((display?.bindings || []).map((binding) => [String(binding.lineage || ""), binding]));
@@ -2802,7 +2802,7 @@ function monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue = "", sessi
   return new Set(matches).size === 1 ? matches[0] : "";
 }
 
-function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
+function monitorHwndForBrowserWindowId(windowIdValue, state = monitorObservedState.snapshot(), instanceIdValue = "", sessionIdValue = "") {
   const windowId = String(windowIdValue ?? "").trim();
   if (!/^\d+$/.test(windowId) || windowId === "0") return "";
   const currentSessionHwnd = monitorBctCurrentSessionHwnd(windowId, instanceIdValue, sessionIdValue);
@@ -2828,19 +2828,19 @@ function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState
   return candidates.size === 1 ? [...candidates][0] : "";
 }
 
-function monitorDisplayHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
+function monitorDisplayHwndForBrowserWindowId(windowIdValue, state = monitorObservedState.snapshot(), instanceIdValue = "", sessionIdValue = "") {
   return monitorHwndForBrowserWindowId(windowIdValue, state, instanceIdValue, sessionIdValue)
     || monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue, sessionIdValue);
 }
 
-function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState) {
+function applyMonitorChatNavigationIdentity(message, state = monitorObservedState.snapshot()) {
   const active = message?.active === true || String(message?.reason || "") === "tab-activated";
   if (!active) return { ok:true, changed:false, inactive:true };
 
   const conversationKey = String(message?.conversationKey || "").trim();
   const windowId = Number(message?.windowId);
   const tabId = Number(message?.tabId);
-  const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
+  const nodes = Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot() : [];
   // A tab without a conversation UUID is still a real observed `N?` entry.
   // Prefer its exact Chrome window/tab pair, so selecting it never guesses a
   // different unregistered tab in the same browser window.
@@ -2957,7 +2957,7 @@ async function flushMonitorBrowserVisualRefresh() {
     const hwnds = new Set();
     const desktopIds = new Set();
     for (const browserWindowId of windowIds) {
-      const hwnd = monitorHwndForBrowserWindowId(browserWindowId, monitorLastAiState);
+      const hwnd = monitorHwndForBrowserWindowId(browserWindowId, monitorObservedState.snapshot());
       if (!hwnd) continue;
       hwnds.add(hwnd);
       const desktopId = String(monitorWindowDesktopLocations.get(hwnd)?.desktopId || "");
@@ -2967,7 +2967,7 @@ async function flushMonitorBrowserVisualRefresh() {
     // Generic Chrome windows may not have an ACT browser-node mapping. In that case,
     // reconcile the currently known desktops once rather than introducing polling.
     if (!desktopIds.size) {
-      for (const desktopId of monitorDesktopState.desktopIds || []) {
+      for (const desktopId of monitorDesktopIdentityState.snapshot().desktopIds || []) {
         const key = String(desktopId || "");
         if (key) desktopIds.add(key);
       }
@@ -2987,7 +2987,7 @@ async function flushMonitorBrowserVisualRefresh() {
 
     invalidateMonitorDesktopFrames(...desktopIds);
 
-    const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
+    const selectedDesktopId = String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "");
     if (selectedDesktopId && desktopIds.has(selectedDesktopId)) {
       await refreshSelectedThumb().catch(() => false);
     }
@@ -3033,14 +3033,14 @@ async function flushMonitorPopupTopologyRefresh() {
   try {
     const desktopIds = [...monitorPopupTopologyPendingDesktopIds];
     monitorPopupTopologyPendingDesktopIds.clear();
-    if (!desktopIds.length || !monitorDesktopState.hostDesktopId || monitorDesktopState.hostDesktopId !== monitorDesktopState.currentDesktopId) return;
+    if (!desktopIds.length || !monitorDesktopIdentityState.snapshot().hostDesktopId || monitorDesktopIdentityState.snapshot().hostDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId) return;
     invalidateMonitorDesktopFrames(...desktopIds);
     for (const desktopId of desktopIds) {
       const tile = [...monitorDesktopThumbs.children].find((button) => String(button.dataset.desktopId || "") === desktopId);
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
       if (visual?.isConnected) await refreshDesktopThumb(visual, desktopId).catch(() => false);
     }
-    const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
+    const selectedDesktopId = String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "");
     if (selectedDesktopId && desktopIds.includes(selectedDesktopId)) await refreshObservedWindows().catch(() => false);
   } finally {
     monitorPopupTopologyRefreshInFlight = false;
@@ -3075,7 +3075,7 @@ function scheduleMonitorChatNavigationRefresh(message) {
       // Reuse the lightweight ACT state path once per event burst. Each event is
       // then applied to only its own browser window/HWND.
       await refreshMonitorConversationStateFast();
-      const state = monitorLastAiState;
+      const state = monitorObservedState.snapshot();
       let mappingMiss = false;
       for (const item of pending) {
         const result = applyMonitorChatNavigationIdentity(item, state);
@@ -3101,7 +3101,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
   if (message?.type === "desktop-window-user-click") { monitorApplyDirectUserClick(message, sender); return; }
   if (message?.type === "monitor-popup-topology-changed") {
-    if (!monitorDesktopState.hostDesktopId || monitorDesktopState.hostDesktopId !== monitorDesktopState.currentDesktopId) return;
+    if (!monitorDesktopIdentityState.snapshot().hostDesktopId || monitorDesktopIdentityState.snapshot().hostDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId) return;
     const desktopIds = [...new Set((Array.isArray(message?.desktopIds) ? message.desktopIds : []).map((value) => String(value || "").trim()).filter(Boolean))];
     if (!desktopIds.length) return;
     scheduleMonitorPopupTopologyRefresh(desktopIds);
@@ -3136,9 +3136,9 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
   if(senderTabId)monitorDirectGenerationByTab.set(`${key}:${senderTabId}`,next);
 
-  if(monitorLastAiState){
+  if(monitorObservedState.snapshot()){
 
-    const endpoints=Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[];
+    const endpoints=Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[];
     const exactEndpoint=senderTabId?endpoints.find((item)=>String(item?.conversation_key||"").trim()===key && String(item?.tab_id??"").trim()===senderTabId):null;
     const conversationEndpoints=endpoints.filter((item)=>String(item?.conversation_key||"").trim()===key && String(item?.presence_state||"").toUpperCase()==="OPEN");
     const endpoint=exactEndpoint || (conversationEndpoints.length===1?conversationEndpoints[0]:null);
@@ -3171,7 +3171,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
     for (const preview of document.querySelectorAll(".monitor-desktop-thumb-window, .monitor-window-preview")) applyPersistentMonitorRoleClass(preview, preview.dataset.hwnd||"");
 
-    if (monitorLastAiState) renderWorkers(monitorLastAiState);
+    if (monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
 
   }
 
@@ -3238,8 +3238,8 @@ function pruneMonitorEphemeralGenerationState(state, now = Date.now()) {
   const protectedConversation = (key) =>
     liveConversations.has(key)
     || monitorPostWorkAlerts.has(key)
-    || monitorGhostCache.has(key)
-    || monitorTrashRecords.has(key);
+    || monitorRecoveryRecordStore.ghosts.has(key)
+    || monitorRecoveryRecordStore.trash.has(key);
 
   for (const [key, record] of monitorDirectGenerationByConversation) {
     const at = Number(record?.at || 0);
@@ -3280,13 +3280,13 @@ async function monitorPublishSharedInstance(reason = "event") {
 
   if (!["GOOGLE","NAVER"].includes(hostProfile)) return;
 
-  const hwnd=String(monitorDesktopState.hostWindowHwnd||"").trim();
+  const hwnd=String(monitorDesktopIdentityState.snapshot().hostWindowHwnd||"").trim();
 
   const instanceId = /^\d+$/.test(hwnd) && hwnd !== "0" ? hwnd : String(document.title||"MONITOR").trim();
 
   // Runtime presence is one current record per browser profile. Using the
   // transient HWND in the key left old rows behind after an extension reload.
-  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),background_done:monitorInitialThumbBatchDone===true,windows_done:monitorInitialWindowBatchDone===true,desktop_ids:[...(monitorDesktopState?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
+  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),background_done:monitorInitialThumbBatchDone===true,windows_done:monitorInitialWindowBatchDone===true,desktop_ids:[...(monitorDesktopIdentityState.snapshot()?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
 
 }
 
@@ -3344,7 +3344,7 @@ async function monitorSyncSharedRuntime() {
 
       if(key===MONITOR_SHARED_REBOOT_SNAPSHOT_KEY){
 
-        try{const shared=JSON.parse(String(row.label||"{}"));const sharedAt=Number(shared?.captured_at_ms||0);if(Array.isArray(shared?.items)&&shared.items.length&&sharedAt>=Number(monitorRebootSnapshot?.captured_at_ms||0)){monitorRebootSnapshot=shared;monitorRebootSnapshotReady=true;chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:shared});}}catch(_){}
+        try{const shared=JSON.parse(String(row.label||"{}"));const sharedAt=Number(shared?.captured_at_ms||0);if(Array.isArray(shared?.items)&&shared.items.length&&sharedAt>=Number(monitorRecoverySnapshotState.snapshot()?.captured_at_ms||0)){monitorRecoverySnapshotState.replace(shared);monitorRebootSnapshotReady=true;chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:shared});}}catch(_){}
 
         continue;
 
@@ -3400,7 +3400,7 @@ async function monitorSyncSharedRuntime() {
 
     for (const preview of document.querySelectorAll(".monitor-desktop-thumb-window, .monitor-window-preview")) applyPersistentMonitorRoleClass(preview, preview.dataset.hwnd||"");
 
-    if(monitorLastAiState)renderWorkers(monitorLastAiState);
+    if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   } catch (_) {} finally { monitorSharedRuntimeSyncBusy=false; }
 
@@ -3626,7 +3626,7 @@ function monitorAcknowledgePostWorkForHwnd(hwnd) {
   for(const overlay of document.querySelectorAll(`.monitor-window-pause-overlay[data-hwnd="${target}"]`))overlay.remove();
   return true;
 
-  if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   return true;
 
@@ -3656,7 +3656,7 @@ function monitorConversationIsGenerating(conversationKey, state) {
   return monitorNodeGenerationAPI.conversationIsGenerating(conversationKey, state);
 }
 
-function monitorOpenEndpointForHwnd(hwnd, state = monitorLastAiState) {
+function monitorOpenEndpointForHwnd(hwnd, state = monitorObservedState.snapshot()) {
 
   const key=String(hwnd||"").trim();
 
@@ -3804,9 +3804,9 @@ function applyPersistentMonitorRoleClass(node, hwnd) {
 
   const key = String(hwnd || "");
 
-  const conversationKey = monitorVisualConversationForHwnd(key, monitorLastAiState);
+  const conversationKey = monitorVisualConversationForHwnd(key, monitorObservedState.snapshot());
 
-  const identityKnown = Boolean(conversationKey) || Boolean(monitorLastAiState && monitorActNodeNumbersForHwnd(key, monitorLastAiState).length);
+  const identityKnown = Boolean(conversationKey) || Boolean(monitorObservedState.snapshot() && monitorActNodeNumbersForHwnd(key, monitorObservedState.snapshot()).length);
 
   // Identity refresh is asynchronous. Preserve role/question decoration, but never preserve
 
@@ -3814,7 +3814,7 @@ function applyPersistentMonitorRoleClass(node, hwnd) {
 
   if (!identityKnown) {
 
-    const liveWorking = monitorLastAiState ? monitorHwndIsGenerating(key, monitorLastAiState) : false;
+    const liveWorking = monitorObservedState.snapshot() ? monitorHwndIsGenerating(key, monitorObservedState.snapshot()) : false;
 
     node.classList.toggle("monitor-window-working", liveWorking);
 
@@ -3827,13 +3827,13 @@ function applyPersistentMonitorRoleClass(node, hwnd) {
 
   for (const cls of Object.values(MONITOR_PERSISTENT_ROLE_CLASSES)) node.classList.remove(cls);
 
-  applyMonitorConversationGroupVisual(node, conversationKey, monitorLastAiState);
+  applyMonitorConversationGroupVisual(node, conversationKey, monitorObservedState.snapshot());
 
-  const liveRoleClass = conversationKey && monitorLastAiState ? monitorPersistentRoleClass(monitorLiveRoleForConversation(conversationKey, monitorLastAiState, key)) : "";
+  const liveRoleClass = conversationKey && monitorObservedState.snapshot() ? monitorPersistentRoleClass(monitorLiveRoleForConversation(conversationKey, monitorObservedState.snapshot(), key)) : "";
 
   if (liveRoleClass) node.classList.add(liveRoleClass);
 
-  const liveWorking = monitorLastAiState ? monitorHwndIsGenerating(key, monitorLastAiState) : false;
+  const liveWorking = monitorObservedState.snapshot() ? monitorHwndIsGenerating(key, monitorObservedState.snapshot()) : false;
 
   node.classList.toggle("monitor-window-working", liveWorking);
 
@@ -3872,7 +3872,7 @@ function publishMonitorSharedSelection() {
 
     hwndsCsv: [...monitorSelectedHwnds].join(","),
 
-    selectedDesktopId: monitorSharedSelectedDesktopId || monitorDesktopState.observedDesktopId || "",
+    selectedDesktopId: monitorSharedSelectedDesktopId || monitorDesktopIdentityState.snapshot().observedDesktopId || "",
 
   };
 
@@ -4293,7 +4293,7 @@ const MONITOR_GHOST_CACHE_MAX = 80;
 
 const MONITOR_GHOST_TEXT_MAX = 1200;
 
-const monitorGhostCache = new Map();
+
 
 const monitorHiddenGhosts = new Set();
 
@@ -4301,7 +4301,7 @@ let monitorGhostStorageReady = false;
 
 const monitorRecoveryPickerState = globalThis.MonitorRecoveryPickerState.create();
 
-let monitorRebootSnapshot = { captured_at_ms:0, items:[] };
+const monitorRecoverySnapshotState = globalThis.MonitorRecoverySnapshotState.create({ captured_at_ms:0, items:[] });
 const monitorRecoveryInventoryController = globalThis.MonitorRecoveryInventory.create({toEpoch: value => monitorGhostTime(value)});
 
 let monitorRebootSnapshotReady = false;
@@ -4418,7 +4418,7 @@ function monitorPatchContextTitleRows(conversationKey) {
   }
 }
 
-function monitorPublishSharedRebootSnapshot(snapshot=monitorRebootSnapshot){
+function monitorPublishSharedRebootSnapshot(snapshot=monitorRecoverySnapshotState.snapshot()){
   if (!MONITOR_FEATURE_RECOVERY_ENABLED) return;
 
   if(!snapshot||!Array.isArray(snapshot.items)||!snapshot.items.length)return;
@@ -4447,7 +4447,7 @@ function monitorCaptureRebootSnapshot(state) {
     const parts = monitorNodeIdentityParts(node?.node_label, node?.desktop_id);
     if (!parts.nodeNumber || !parts.desktop) continue;
     const rec = monitorContextTitleRecord(key);
-    const ghost = monitorGhostCache.get(key) || {};
+    const ghost = monitorRecoveryRecordStore.ghosts.get(key) || {};
     const display = monitorContextTitleDisplay(worker, state, endpoint)
       || String(rec.verified_title || "").trim()
       || (rec.manual_locked && String(rec.manual_title || "").trim())
@@ -4471,7 +4471,7 @@ function monitorCaptureRebootSnapshot(state) {
   }
   if (!items.length) return;
   items.sort((a, b) => a.desktop - b.desktop || a.slot - b.slot);
-  const previousItems = (Array.isArray(monitorRebootSnapshot?.items) ? monitorRebootSnapshot.items : []).map((item) => ({
+  const previousItems = (Array.isArray(monitorRecoverySnapshotState.snapshot()?.items) ? monitorRecoverySnapshotState.snapshot().items : []).map((item) => ({
     conversation_key: String(item?.conversation_key || ""),
     profile_id: String(item?.profile_id || ""),
     node_label: String(item?.node_label || ""),
@@ -4486,11 +4486,11 @@ function monitorCaptureRebootSnapshot(state) {
   }));
   if (JSON.stringify(previousItems) === JSON.stringify(items)) return;
   const capturedAt = Date.now();
-  monitorRebootSnapshot = {
+  monitorRecoverySnapshotState.replace({
     captured_at_ms: capturedAt,
     items: items.map((item) => ({ ...item, captured_at_ms: capturedAt })),
-  };
-  chrome.storage.local.set({ [MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRebootSnapshot });
+  });
+  chrome.storage.local.set({ [MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRecoverySnapshotState.snapshot() });
   monitorPublishSharedRebootSnapshot();
 }
 
@@ -4529,7 +4529,7 @@ function persistMonitorContextTitles() {
 
 function monitorContextTitleInput(worker,state,endpoint=null){
 
-  const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim(); const ghost=key?monitorGhostCache.get(key):null;
+  const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim(); const ghost=key?monitorRecoveryRecordStore.ghosts.get(key):null;
 
   const task=monitorGhostTaskForWorker(worker,state); const history=(Array.isArray(ghost?.history)?ghost.history:[]).slice(-5).map(x=>String(x?.text||"")).filter(Boolean);
 
@@ -4575,7 +4575,7 @@ function setMonitorManualContextTitle(key,title){
 
   key=String(key||"").trim(); title=String(title||"").trim(); if(!key)return;
 
-  const rec=monitorContextTitleRecord(key); monitorContextTitles.set(key,{...rec,manual_title:title,manual_locked:Boolean(title),title_source:title?"MANUAL":"AI",title_updated_ms:Date.now()}); persistMonitorContextTitles(); if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  const rec=monitorContextTitleRecord(key); monitorContextTitles.set(key,{...rec,manual_title:title,manual_locked:Boolean(title),title_source:title?"MANUAL":"AI",title_updated_ms:Date.now()}); persistMonitorContextTitles(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
 }
 
@@ -4583,7 +4583,7 @@ function resetMonitorContextTitleToBrowser(key){
 
   key=String(key||"").trim(); if(!key)return; const rec=monitorContextTitleRecord(key);
 
-  monitorContextTitles.set(key,{...rec,manual_title:"",context_title:"",context_summary:"",project_name:"",manual_locked:false,title_source:"BROWSER",title_updated_ms:Date.now(),signature:""}); persistMonitorContextTitles(); if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  monitorContextTitles.set(key,{...rec,manual_title:"",context_title:"",context_summary:"",project_name:"",manual_locked:false,title_source:"BROWSER",title_updated_ms:Date.now(),signature:""}); persistMonitorContextTitles(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
 }
 
@@ -4651,9 +4651,9 @@ async function requestMonitorConversationRename(key,title,endpoint,manualLock=tr
 
     monitorContextTitles.set(key,{...current,verified_title:verifiedTitle,manual_title:"",context_title:"",rename_pending_title:"",rename_pending_at_ms:0,rename_error:"",manual_locked:Boolean(manualLock),title_source:manualLock?"MANUAL_VERIFIED":"AI_VERIFIED",title_updated_ms:Date.now()});
 
-    if(monitorLastAiState&&Array.isArray(monitorLastAiState.endpoints)){
+    if(monitorObservedState.snapshot()&&Array.isArray(monitorObservedState.snapshot().endpoints)){
 
-      for(const item of monitorLastAiState.endpoints){
+      for(const item of monitorObservedState.snapshot().endpoints){
 
         if(String(item?.conversation_key||"").trim()===key&&String(item?.presence_state||"").toUpperCase()==="OPEN") item.title=verifiedTitle;
 
@@ -4675,13 +4675,13 @@ function attachMonitorContextTitleMenu(row,worker,state,endpoint){
 
   const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim(); if(!key)return;
 
-  row.addEventListener("contextmenu",(event)=>{event.preventDefault();event.stopPropagation(); const ghost=monitorGhostCache.get(key)||{}; const current=monitorContextTitleDisplay(worker,state,endpoint)||String(endpoint?.title||worker?.title||"");
+  row.addEventListener("contextmenu",(event)=>{event.preventDefault();event.stopPropagation(); const ghost=monitorRecoveryRecordStore.ghosts.get(key)||{}; const current=monitorContextTitleDisplay(worker,state,endpoint)||String(endpoint?.title||worker?.title||"");
 
     const next=window.prompt(`작업 제목을 입력하세요.\n\n${monitorLifecycleTooltip(key,endpoint,ghost)}\n\n빈 값: AI 제목 잠금 해제\n/browser: 실제 제목 다시 읽기\n/ai: AI 자동 제목 다시 사용`,current);
 
     if(next===null)return; const value=String(next).trim(); if(value==="/browser"){resetMonitorContextTitleToBrowser(key);return;} if(value==="/ai"){setMonitorManualContextTitle(key,"");void refreshMonitorContextTitle(worker,state,endpoint,true);return;} if(!value){setMonitorManualContextTitle(key,"");return;}
 
-    const liveState=monitorLastAiState||state;
+    const liveState=monitorObservedState.snapshot()||state;
 
     const liveEndpoints=(Array.isArray(liveState?.endpoints)?liveState.endpoints:[]).filter((item)=>String(item?.conversation_key||"").trim()===key&&String(item?.presence_state||"").toUpperCase()==="OPEN");
 
@@ -4723,7 +4723,7 @@ function monitorContextTitlePart(value) {
 
 function monitorWorkerMeaningfulTitle(worker, state, endpoint = null) {
 
-  const key = String(worker?.conversation_key || "").trim(); const cached = key ? monitorGhostCache.get(key) : null;
+  const key = String(worker?.conversation_key || "").trim(); const cached = key ? monitorRecoveryRecordStore.ghosts.get(key) : null;
 
   const task = monitorGhostTaskForWorker(worker, state);
 
@@ -4747,7 +4747,7 @@ function monitorWorkerContextTitle(worker, state, endpoint = null) {
 
   const current=monitorWorkerMeaningfulTitle(worker,state,endpoint);
 
-  const key=String(worker?.conversation_key||"").trim(), cached=key?monitorGhostCache.get(key):null;
+  const key=String(worker?.conversation_key||"").trim(), cached=key?monitorRecoveryRecordStore.ghosts.get(key):null;
 
   const previous=(Array.isArray(cached?.history)?cached.history:[]).map((item)=>String(item?.text||"").split(" [")[0].split(" · ")[0].trim()).filter(Boolean).reverse();
 
@@ -4782,7 +4782,7 @@ function monitorGhostPersist(immediate = false) {
 
   if (!monitorGhostStorageReady) return;
 
-  const write = () => { monitorGhostPersistTimer = 0; const cache=[...monitorGhostCache.values()].sort((a,b)=>Number(b?.last_activity_ms||0)-Number(a?.last_activity_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX); chrome.storage.local.set({ [MONITOR_GHOST_CACHE_KEY]:cache, [MONITOR_GHOST_HIDDEN_KEY]:[...monitorHiddenGhosts].slice(0,MONITOR_GHOST_CACHE_MAX) }); };
+  const write = () => { monitorGhostPersistTimer = 0; const cache=[...monitorRecoveryRecordStore.ghosts.values()].sort((a,b)=>Number(b?.last_activity_ms||0)-Number(a?.last_activity_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX); chrome.storage.local.set({ [MONITOR_GHOST_CACHE_KEY]:cache, [MONITOR_GHOST_HIDDEN_KEY]:[...monitorHiddenGhosts].slice(0,MONITOR_GHOST_CACHE_MAX) }); };
 
   if (immediate) { if (monitorGhostPersistTimer) clearTimeout(monitorGhostPersistTimer); write(); return; }
 
@@ -4792,14 +4792,14 @@ function monitorGhostPersist(immediate = false) {
 
 function monitorClosedConversationRecoveryItems(state = null) {
   const result = monitorRecoveryInventoryController.project({
-    ghosts: monitorGhostCache.values(),
-    snapshot: monitorRebootSnapshot,
-    trashedKeys: monitorTrashedConversationKeys,
+    ghosts: monitorRecoveryRecordStore.ghosts.values(),
+    snapshot: monitorRecoverySnapshotState.snapshot(),
+    trashedKeys: monitorRecoveryRecordStore.trashedKeys,
     endpoints: Array.isArray(state?.endpoints) ? state.endpoints : []
   });
   if (result.updatedSnapshot) {
-    monitorRebootSnapshot = result.updatedSnapshot;
-    chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRebootSnapshot});
+    monitorRecoverySnapshotState.replace(result.updatedSnapshot);
+    chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRecoverySnapshotState.snapshot()});
     monitorPublishSharedRebootSnapshot();
   }
   return result.items;
@@ -4854,7 +4854,7 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
         clearNotes: () => clearMonitorTrashedNotes(),
         restoreNote: id => restoreMonitorTrashedNote(id),
         deleteNote: id => deleteMonitorTrashedNote(id),
-        trashRecords: () => monitorTrashRecords,
+        trashRecords: () => monitorRecoveryRecordStore.trash,
         previousLocation: item => monitorClosedConversationPreviousLocation(item),
         contextTitle: item => monitorClosedConversationContextTitle(item),
         restoreTrash: key => restoreMonitorTrashRecord(key),
@@ -4863,8 +4863,8 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
         clearThumbnail: () => clearMonitorThumbnailRecovery(),
         restoreDesktop: (id,button) => restoreMonitorTrashedDesktop(id,button),
         deleteDesktop: id => deleteMonitorTrashedDesktop(id),
-        rebootSnapshot: () => monitorRebootSnapshot,
-        trashedKeys: () => monitorTrashedConversationKeys,
+        rebootSnapshot: () => monitorRecoverySnapshotState.snapshot(),
+        trashedKeys: () => monitorRecoveryRecordStore.trashedKeys,
         rebootRestoring: () => monitorRebootRestoreActive,
         restoreAll: (button,records,items) => restoreMonitorAllRecovery(button,records,items),
         restoreReboot: button => restoreMonitorRebootSnapshot(button),
@@ -4878,15 +4878,15 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
         confirm: message => confirm(message),
         pruneDropped: dropKeys => {
           for (const key of dropKeys) {
-            monitorTrashRecords.delete(key);
-            monitorGhostCache.delete(key);
+            monitorRecoveryRecordStore.trash.delete(key);
+            monitorRecoveryRecordStore.ghosts.delete(key);
             monitorHiddenGhosts.delete(key);
-            monitorTrashedConversationKeys.add(key);
+            monitorRecoveryRecordStore.trashedKeys.add(key);
           }
-          monitorRebootSnapshot={...monitorRebootSnapshot,
-            items:(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[])
-              .filter(x=>!dropKeys.has(String(x?.conversation_key||"")))};
-          chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRebootSnapshot});
+          monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),
+            items:(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[])
+              .filter(x=>!dropKeys.has(String(x?.conversation_key||"")))});
+          chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRecoverySnapshotState.snapshot()});
           monitorPublishSharedRebootSnapshot();
           monitorGhostPersist(true);
           persistMonitorTrashedNodes();
@@ -4915,7 +4915,7 @@ function rememberMonitorWorkerPlacement(worker, state, location) {
 
   const desktopIndex = Number(location.desktop) - 1;
 
-  const desktopId = monitorDesktopState.desktopIds[desktopIndex] || "";
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[desktopIndex] || "";
 
   if (!desktopId) return;
 
@@ -4997,7 +4997,7 @@ function monitorListDisplaySlots(members, state) {
 
 }
 
-function initializeMonitorWorkerOrderStorage() { chrome.storage.local.get([MONITOR_WORKER_ORDER_KEY],(data)=>{const raw=data?.[MONITOR_WORKER_ORDER_KEY]||{};for(const [id,keys] of Object.entries(raw))monitorWorkerOrderByDesktop.set(id,Array.isArray(keys)?keys.map(String):[]);monitorWorkerOrderReady=true;if(monitorLastAiState)renderWorkers(monitorLastAiState);}); }
+function initializeMonitorWorkerOrderStorage() { chrome.storage.local.get([MONITOR_WORKER_ORDER_KEY],(data)=>{const raw=data?.[MONITOR_WORKER_ORDER_KEY]||{};for(const [id,keys] of Object.entries(raw))monitorWorkerOrderByDesktop.set(id,Array.isArray(keys)?keys.map(String):[]);monitorWorkerOrderReady=true;if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}); }
 
 let monitorWorkerPointerInteractionActive = false;
 
@@ -5073,9 +5073,9 @@ function monitorRenderDiagnosticText(){
   const elapsedSec=elapsedMs/1000;
   let visibleWorkers=0;
   try{
-    if(monitorLastAiState){
-      const projected=monitorWorkersProjectionForState(monitorLastAiState);
-      visibleWorkers=projected.filter((worker)=>isMonitorVisibleWorker(worker,monitorLastAiState)).length;
+    if(monitorObservedState.snapshot()){
+      const projected=monitorWorkersProjectionForState(monitorObservedState.snapshot());
+      visibleWorkers=projected.filter((worker)=>isMonitorVisibleWorker(worker,monitorObservedState.snapshot())).length;
     }
   }catch(_){}
   const documentNodes=document.getElementsByTagName("*").length;
@@ -5205,13 +5205,13 @@ function monitorAdoptLocalLlmControlPayload(payload, render = true) {
 
   if (Array.isArray(payload.llm_nodes)) {
     monitorCachedLlmNodes = payload.llm_nodes;
-    if (monitorLastAiState && typeof monitorLastAiState === "object") {
-      monitorLastAiState = { ...monitorLastAiState, llm_nodes: payload.llm_nodes };
+    if (monitorObservedState.snapshot() && typeof monitorObservedState.snapshot() === "object") {
+      monitorObservedState.replace({ ...monitorObservedState.snapshot(), llm_nodes: payload.llm_nodes });
     }
   }
 
   monitorUpdateLocalLlmToggleButtons();
-  if (render && monitorLastAiState) renderWorkers(monitorLastAiState);
+  if (render && monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
   if (render && monitorStructurePanel?.isConnected && monitorStructurePanel.style.display !== "none") {
     renderMonitorStructure();
   }
@@ -5639,7 +5639,7 @@ function performMonitorWorkerRender(state) {
 
       if (group.key === "chatgpt" && conversationKey) {
 
-        const ghost=monitorGhostCache.get(conversationKey)||{};
+        const ghost=monitorRecoveryRecordStore.ghosts.get(conversationKey)||{};
 
         const rec=monitorContextTitleRecord(conversationKey);
 
@@ -5914,7 +5914,7 @@ function performMonitorWorkerRender(state) {
 
         if (hwnd) monitorPausedByHwnd.delete(String(hwnd));
 
-        if (monitorLastAiState) renderWorkers(monitorLastAiState);
+        if (monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
 
       });
 
@@ -5958,8 +5958,8 @@ function performMonitorWorkerRender(state) {
   // The BCT list owns this panel whenever it is enabled. A concurrent ACT
   // refresh must not replace it after Chrome has selected a real tab, because
   // that would erase the exact row selection just mirrored from Chrome.
-  if (MONITOR_BCT_NODE_SUMMARY_ENABLED && Array.isArray(monitorBctWindowNodesCache)) {
-    renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+  if (MONITOR_BCT_NODE_SUMMARY_ENABLED && Array.isArray(monitorNodePanelListState.snapshot())) {
+    renderMonitorBctWindowNodes(monitorNodePanelListState.snapshot());
     syncMonitorBctNodeTargetHighlight();
   }
 
@@ -5983,7 +5983,7 @@ if (monitorNodeTrash && monitorClosedRecoveryMenu) {
 
   monitorNodeTrash.style.cursor="pointer";
 
-  monitorNodeTrash.addEventListener("click",(event)=>{if(monitorNodeTrash.classList.contains("monitor-node-trash-drop-target")||monitorNodeTrash.classList.contains("monitor-node-trash-drop-success"))return;event.stopPropagation();monitorRecoveryPickerState.toggle();monitorClosedRecoveryMenu.hidden=!monitorRecoveryPickerState.isOpen();if(monitorRecoveryPickerState.isOpen()){positionMonitorTrashRecoveryMenu();if(monitorLastAiState)monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorLastAiState));}});
+  monitorNodeTrash.addEventListener("click",(event)=>{if(monitorNodeTrash.classList.contains("monitor-node-trash-drop-target")||monitorNodeTrash.classList.contains("monitor-node-trash-drop-success"))return;event.stopPropagation();monitorRecoveryPickerState.toggle();monitorClosedRecoveryMenu.hidden=!monitorRecoveryPickerState.isOpen();if(monitorRecoveryPickerState.isOpen()){positionMonitorTrashRecoveryMenu();if(monitorObservedState.snapshot())monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorObservedState.snapshot()));}});
 
   monitorClosedRecoveryMenu.addEventListener("pointerdown",()=>{clearTimeout(monitorWorkerPointerReleaseTimer);monitorWorkerPointerInteractionActive=true;},true);
 
@@ -6013,7 +6013,7 @@ const monitorBctShell = globalThis.MonitorBctShell?.create?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
-let monitorBctWindowNodesCache = null;
+const monitorNodePanelListState = globalThis.MonitorNodePanelListState.create();
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;
@@ -6047,17 +6047,17 @@ const MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object.freeze([0, 450, 1400
 
 function scheduleMonitorMinimizedBadgeConvergence(hwnd) {
   const key = String(hwnd || "").trim();
-  if (!key || !Array.isArray(monitorBctWindowNodesCache)) return;
+  if (!key || !Array.isArray(monitorNodePanelListState.snapshot())) return;
   if (monitorMinimizedBadgeConvergenceTimer) return;
   monitorMinimizedBadgeConvergenceTimer = setTimeout(async () => {
     monitorMinimizedBadgeConvergenceTimer = 0;
     // A BCT-initiated minimize can arrive before the Native identity snapshot.
     // Reconcile once; this is deliberately bounded, not a background poll.
     await refreshMonitorBctBrowserWindowGeometry();
-    await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
+    await refreshMonitorIdentityIndex(monitorObservedState.snapshot(), true).catch(() => false);
     refreshMonitorBctCurrentSessionWindowHwnd();
     refreshMonitorBctDisplayWindowHwnd();
-    syncMonitorMinimizedNodeBadges(monitorLastAiState);
+    syncMonitorMinimizedNodeBadges(monitorObservedState.snapshot());
   }, 250);
 }
 if (monitorWorkers) monitorWorkers.dataset.columns = "3";
@@ -6074,7 +6074,7 @@ function resetMonitorBctProjectionConvergence() {
 }
 
 async function refreshMonitorBctThumbnailProjectionForDesktop(desktopId) {
-  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorBctWindowNodesCache.length) return false;
+  if (!Array.isArray(monitorNodePanelListState.snapshot()) || !monitorNodePanelListState.snapshot().length) return false;
 
   // Native thumbnail capture and the RCC/Chrome snapshot arrive independently.
   // Resolve once while this desktop's HWND geometry is fresh so the semantic
@@ -6107,19 +6107,19 @@ async function refreshMonitorBctThumbnailProjectionForDesktop(desktopId) {
 }
 
 function monitorBctProjectionHasUnresolvedLineage() {
-  return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) =>
+  return Array.isArray(monitorNodePanelListState.snapshot()) && monitorNodePanelListState.snapshot().some((node) =>
     !monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId)
   );
 }
 
 function scheduleMonitorBctProjectionConvergence(reason = "state-ready") {
-  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorBctWindowNodesCache.length ||
-      !Array.isArray(monitorDesktopState?.desktopIds) || !monitorDesktopState.desktopIds.length ||
+  if (!Array.isArray(monitorNodePanelListState.snapshot()) || !monitorNodePanelListState.snapshot().length ||
+      !Array.isArray(monitorDesktopIdentityState.snapshot()?.desktopIds) || !monitorDesktopIdentityState.snapshot().desktopIds.length ||
       !monitorBctProjectionHasUnresolvedLineage()) return;
   const key = [
     monitorBctProjectionGeneration,
-    monitorDesktopState.desktopIds.join(","),
-    ...monitorBctWindowNodesCache.map((node) =>
+    monitorDesktopIdentityState.snapshot().desktopIds.join(","),
+    ...monitorNodePanelListState.snapshot().map((node) =>
       `${node.instanceId}:${node.sessionId}:${node.windowId}:${node.conversationKey}:${node.active ? 1 : 0}:${node.instanceState}`
     ),
   ].join("|");
@@ -6136,10 +6136,10 @@ function scheduleMonitorBctProjectionConvergence(reason = "state-ready") {
     monitorBctProjectionConvergenceInflight = true;
     try {
       await refreshMonitorBctBrowserWindowGeometry();
-      await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
+      await refreshMonitorIdentityIndex(monitorObservedState.snapshot(), true).catch(() => false);
       refreshMonitorBctCurrentSessionWindowHwnd();
       refreshMonitorBctDisplayWindowHwnd();
-      renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+      renderMonitorBctWindowNodes(monitorNodePanelListState.snapshot());
       syncMonitorAllDesktopThumbnailNodeBadges();
     } finally {
       monitorBctProjectionConvergenceInflight = false;
@@ -6437,23 +6437,23 @@ function getMonitorBctNodeInteractionService() {
 }
 
 async function resolveMonitorBctNodeHwnd(node) {
-  let hwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  let hwnd = monitorHwndForBrowserWindowId(node.windowId, monitorObservedState.snapshot(), node.instanceId, node.sessionId);
   if (hwnd) return String(hwnd);
-  await refreshMonitorIdentityIndex(monitorLastAiState, true);
+  await refreshMonitorIdentityIndex(monitorObservedState.snapshot(), true);
   refreshMonitorBctCurrentSessionWindowHwnd();
-  hwnd = monitorHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  hwnd = monitorHwndForBrowserWindowId(node.windowId, monitorObservedState.snapshot(), node.instanceId, node.sessionId);
   if (!hwnd) throw new Error("현재 세션에서 이 노드와 웹브라우저 창을 정확히 대조하지 못함");
   return String(hwnd);
 }
 
 async function resolveMonitorBctNodeDisplayHwnd(node) {
-  let hwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  let hwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorObservedState.snapshot(), node.instanceId, node.sessionId);
   if (hwnd) return String(hwnd);
   await refreshMonitorBctBrowserWindowGeometry();
-  await refreshMonitorIdentityIndex(monitorLastAiState, true);
+  await refreshMonitorIdentityIndex(monitorObservedState.snapshot(), true);
   refreshMonitorBctCurrentSessionWindowHwnd();
   refreshMonitorBctDisplayWindowHwnd();
-  hwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  hwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorObservedState.snapshot(), node.instanceId, node.sessionId);
   if (!hwnd) throw new Error("현재 세션에서 이 노드의 표시 위치를 고유하게 대조하지 못함");
   return String(hwnd);
 }
@@ -6492,9 +6492,9 @@ function renderMonitorBctWindowNodes(nodes) {
         cancelDrag: event => cancelMonitorBctNodePointerDrag(event),
         uniqueNodes: values => monitorUniqueBctConversationNodes(values),
         hwndForWindow: (...args) => monitorDisplayHwndForBrowserWindowId(...args),
-        lastAiState: () => monitorLastAiState,
+        lastAiState: () => monitorObservedState.snapshot(),
         locations: () => monitorWindowDesktopLocations,
-        desktopState: () => monitorDesktopState,
+        desktopState: () => monitorDesktopIdentityState.snapshot(),
         selectionKey: value => monitorBctNodeSelectionKey(value),
         compareNodeOrder: (a,b) => compareMonitorBctNodeDisplayOrder(a,b),
         managerHold: (row,node) => installMonitorBctManagerLongPress(row,node),
@@ -6659,7 +6659,7 @@ function updateMonitorBctNodePointerDrag(event) {
       type:"monitorDragPreviewStart",
       token:previewToken,
       label:monitorBctDragGhost.textContent,
-      sourceHwnd:String(monitorDesktopState?.hostWindowHwnd || ""),
+      sourceHwnd:String(monitorDesktopIdentityState.snapshot()?.hostWindowHwnd || ""),
     }).catch(() => {}); // An older installed Host keeps the DOM-only preview.
   }
   event.preventDefault();
@@ -6736,7 +6736,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     return;
   }
   const draggedKey = monitorBctDraggedNodeKey;
-  const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
+  const snapshot = Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot().slice() : [];
   const semanticSnapshot = monitorUniqueBctConversationNodes(snapshot);
   const dragged = semanticSnapshot.find((node) => node.conversationKey === draggedKey);
   const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
@@ -6776,7 +6776,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       });
     });
     monitorBctNodeReorderPending = true;
-    monitorBctWindowNodesCache = optimisticSnapshot;
+    monitorNodePanelListState.replace(optimisticSnapshot);
     finishMonitorBctNodeDrag();
     renderMonitorBctWindowNodes(optimisticSnapshot);
     try {
@@ -6792,8 +6792,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
         2200,
       );
     } catch (error) {
-      if (monitorBctWindowNodesCache === optimisticSnapshot) {
-        monitorBctWindowNodesCache = snapshot;
+      if (monitorNodePanelListState.snapshot() === optimisticSnapshot) {
+        monitorNodePanelListState.replace(snapshot);
         renderMonitorBctWindowNodes(snapshot);
       }
       setMonitorStatus(`대화망 이동 실패 · ${error?.message || error}`, false, 4200);
@@ -6813,7 +6813,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     });
   });
   monitorBctNodeReorderPending = true;
-  monitorBctWindowNodesCache = optimisticSnapshot;
+  monitorNodePanelListState.replace(optimisticSnapshot);
   finishMonitorBctNodeDrag();
   renderMonitorBctWindowNodes(optimisticSnapshot);
   try {
@@ -6824,8 +6824,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     setMonitorStatus("노드 표시 순서를 저장했습니다.", true, 2200);
   } catch (error) {
     // A newer RCC refresh replaces this exact snapshot. Never overwrite it.
-    if (monitorBctWindowNodesCache === optimisticSnapshot) {
-      monitorBctWindowNodesCache = snapshot;
+    if (monitorNodePanelListState.snapshot() === optimisticSnapshot) {
+      monitorNodePanelListState.replace(snapshot);
       renderMonitorBctWindowNodes(snapshot);
     }
     setMonitorStatus(`노드 순서 저장 실패 · ${error?.message || error}`, false, 4200);
@@ -6859,18 +6859,18 @@ async function refreshMonitorBctWindowNodes() {
       run: async () => {
         const state = await monitorBctShell.monitorState();
         renderMonitorGithubInbox(state);
-        monitorBctWindowNodesCache = monitorBctShell.displayWindowNodes
-          ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
-          : monitorBctShell.windowNodes(state);
+        monitorNodePanelListState.replace(monitorBctShell.displayWindowNodes
+          ? monitorBctShell.displayWindowNodes(state, monitorNodePanelListState.snapshot() || [])
+          : monitorBctShell.windowNodes(state));
         resetMonitorBctProjectionConvergence();
         await refreshMonitorBctBrowserWindowGeometry();
-        await refreshMonitorIdentityIndex(monitorLastAiState, true);
+        await refreshMonitorIdentityIndex(monitorObservedState.snapshot(), true);
         refreshMonitorBctCurrentSessionWindowHwnd();
         refreshMonitorBctDisplayWindowHwnd();
-        renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+        renderMonitorBctWindowNodes(monitorNodePanelListState.snapshot());
         syncMonitorAllDesktopThumbnailNodeBadges();
         scheduleMonitorBctProjectionConvergence("bct-state");
-        if (monitorBctWindowNodesCache.some(node => node.displayStale === true))
+        if (monitorNodePanelListState.snapshot().some(node => node.displayStale === true))
           scheduleMonitorBctNodeStartupRevalidation();
       },
       onError: error => {
@@ -7001,7 +7001,7 @@ if (monitorExtensionReload) monitorExtensionReload.addEventListener("click", () 
 });
 
 function monitorExactSelectedChatNode() {
-  const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
+  const nodes = Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot() : [];
   const selected = nodes.find((node) =>
     monitorNodePanelSelection.get() && monitorBctNodeSelectionKey(node) === monitorNodePanelSelection.get()
   );
@@ -7025,8 +7025,8 @@ async function runMonitorUtilityAction(button, pendingText, action) {
 
 monitorRccReload?.addEventListener("click", () => {
   void runMonitorUtilityAction(monitorRccReload, "RCC의 정확한 현재 인스턴스를 확인 중…", async () => {
-    if (!Array.isArray(monitorBctWindowNodesCache)) await refreshMonitorBctWindowNodes();
-    const instances = [...new Set((monitorBctWindowNodesCache || [])
+    if (!Array.isArray(monitorNodePanelListState.snapshot())) await refreshMonitorBctWindowNodes();
+    const instances = [...new Set((monitorNodePanelListState.snapshot() || [])
       .filter((node) => !node.displayStale && node.instanceState === "OPEN")
       .map((node) => String(node.instanceId || "").trim()).filter(Boolean))];
     if (instances.length !== 1) throw new Error(`RCC_RELOAD_EXACT_INSTANCE_REQUIRED:${instances.length}`);
@@ -7082,7 +7082,7 @@ if (monitorNodeSync) monitorNodeSync.addEventListener("click", async () => {
     await refreshAiMonitor();
     await refreshMonitorRoleAdmin();
 
-    const openEndpoints = (Array.isArray(monitorLastAiState?.endpoints) ? monitorLastAiState.endpoints : [])
+    const openEndpoints = (Array.isArray(monitorObservedState.snapshot()?.endpoints) ? monitorObservedState.snapshot().endpoints : [])
       .filter((endpoint) => String(endpoint?.presence_state || "").toUpperCase() === "OPEN");
     const conversationCounts = new Map();
     for (const endpoint of openEndpoints) {
@@ -7132,7 +7132,7 @@ chrome.storage.onChanged.addListener((changes,areaName)=>{
     monitorApprovedChatTransitionsReady=true;
     shouldRender=true;
   }
-  if(shouldRender&&monitorLastAiState)renderWorkers(monitorLastAiState);
+  if(shouldRender&&monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 });
 
 chrome.storage.local.get([MONITOR_NODE_BINDINGS_KEY,MONITOR_APPROVED_CHAT_TRANSITIONS_KEY],(data)=>{
@@ -7159,15 +7159,15 @@ chrome.storage.local.get([MONITOR_NODE_BINDINGS_KEY,MONITOR_APPROVED_CHAT_TRANSI
 
   monitorApprovedChatTransitionsReady=true;
 
-  if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
 });
 
-if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_GHOST_CACHE_KEY,MONITOR_GHOST_HIDDEN_KEY],(data)=>{for(const item of Array.isArray(data?.[MONITOR_GHOST_CACHE_KEY])?data[MONITOR_GHOST_CACHE_KEY]:[])if(item?.conversation_key)monitorGhostCache.set(String(item.conversation_key),item);for(const key of Array.isArray(data?.[MONITOR_GHOST_HIDDEN_KEY])?data[MONITOR_GHOST_HIDDEN_KEY]:[])monitorHiddenGhosts.add(String(key));monitorGhostStorageReady=true;});
+if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_GHOST_CACHE_KEY,MONITOR_GHOST_HIDDEN_KEY],(data)=>{for(const item of Array.isArray(data?.[MONITOR_GHOST_CACHE_KEY])?data[MONITOR_GHOST_CACHE_KEY]:[])if(item?.conversation_key)monitorRecoveryRecordStore.ghosts.set(String(item.conversation_key),item);for(const key of Array.isArray(data?.[MONITOR_GHOST_HIDDEN_KEY])?data[MONITOR_GHOST_HIDDEN_KEY]:[])monitorHiddenGhosts.add(String(key));monitorGhostStorageReady=true;});
 
-chrome.storage.local.get([MONITOR_CONTEXT_TITLE_STORAGE_KEY],(data)=>{const raw=data?.[MONITOR_CONTEXT_TITLE_STORAGE_KEY]||{};for(const [key,value] of Object.entries(raw))if(key&&value&&typeof value==="object")monitorContextTitles.set(String(key),value);monitorContextTitlesReady=true;for(const [key,value] of monitorContextTitles){monitorPublishedContextTitleSignatures.set(key,JSON.stringify(value||{}));monitorPublishSharedContextTitle(key,value);}void monitorSyncSharedRuntime();if(monitorLastAiState)renderWorkers(monitorLastAiState);});
+chrome.storage.local.get([MONITOR_CONTEXT_TITLE_STORAGE_KEY],(data)=>{const raw=data?.[MONITOR_CONTEXT_TITLE_STORAGE_KEY]||{};for(const [key,value] of Object.entries(raw))if(key&&value&&typeof value==="object")monitorContextTitles.set(String(key),value);monitorContextTitlesReady=true;for(const [key,value] of monitorContextTitles){monitorPublishedContextTitleSignatures.set(key,JSON.stringify(value||{}));monitorPublishSharedContextTitle(key,value);}void monitorSyncSharedRuntime();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());});
 
-if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_REBOOT_SNAPSHOT_KEY],(data)=>{const raw=data?.[MONITOR_REBOOT_SNAPSHOT_KEY];if(raw&&typeof raw==="object"&&Array.isArray(raw.items))monitorRebootSnapshot=raw;monitorRebootSnapshotReady=true;});
+if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_REBOOT_SNAPSHOT_KEY],(data)=>{const raw=data?.[MONITOR_REBOOT_SNAPSHOT_KEY];if(raw&&typeof raw==="object"&&Array.isArray(raw.items))monitorRecoverySnapshotState.replace(raw);monitorRebootSnapshotReady=true;});
 
 let monitorStateFailureCount = 0;
 
@@ -7276,9 +7276,9 @@ async function refreshAiMonitor() {
 
     const llmNodeState = llmNodesResponse?.ok ? await llmNodesResponse.json().catch(() => null) : null;
 
-    const previousLlmNodes = Array.isArray(monitorLastAiState?.llm_nodes) && monitorLastAiState.llm_nodes.length
+    const previousLlmNodes = Array.isArray(monitorObservedState.snapshot()?.llm_nodes) && monitorObservedState.snapshot().llm_nodes.length
 
-      ? monitorLastAiState.llm_nodes
+      ? monitorObservedState.snapshot().llm_nodes
 
       : monitorCachedLlmNodes;
 
@@ -7342,7 +7342,7 @@ async function refreshAiMonitor() {
 
     }
 
-    monitorLastAiState = state;
+    monitorObservedState.replace(state);
     pruneMonitorEphemeralGenerationState(state);
 
     chrome.storage.local.set({ [MONITOR_AI_STATE_CACHE_KEY]: { at: Date.now(), state } }).catch(() => {});
@@ -7489,8 +7489,8 @@ function ensureMonitorNativePort() {
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {
       const explicitId=String(response.desktopId||"").toLowerCase();
       const visuals=[...(monitorDesktopThumbs?.querySelectorAll?.(".monitor-desktop-thumb-visual")||[])];
-      const currentId=String(monitorDesktopState?.currentDesktopId||"").toLowerCase();
-      const selectedId=String(monitorDesktopState?.desktopIds?.[monitorDesktopState?.selectedIndex]||"").toLowerCase();
+      const currentId=String(monitorDesktopIdentityState.snapshot()?.currentDesktopId||"").toLowerCase();
+      const selectedId=String(monitorDesktopIdentityState.snapshot()?.desktopIds?.[monitorDesktopIdentityState.snapshot()?.selectedIndex]||"").toLowerCase();
       const priority=id=>id===explicitId?0:id===currentId?1:id===selectedId?2:3;
       // Windows only persists per-virtual-desktop picture paths.  A desktop
       // without one follows the current global picture/solid mode, so a change
@@ -7596,7 +7596,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const hwnd=String(event?.hwnd||"").trim();
 
   if (!/^\d+$/.test(hwnd)||hwnd==="0") return;
-  if (hwnd === String(monitorDesktopState.hostWindowHwnd || "")) {
+  if (hwnd === String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "")) {
     await chrome.runtime.sendMessage({ type:"monitor-save-popup-window-bounds" }).catch(() => null);
     scheduleMonitorExternalWindowDropTargets();
     return;
@@ -7635,8 +7635,8 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const eventVisual=eventTile?.querySelector(".monitor-desktop-thumb-visual");
   globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
 
-  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
-  syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
+  syncMonitorMinimizedNodeBadges(monitorObservedState.snapshot());
   if (minimized) scheduleMonitorMinimizedBadgeConvergence(hwnd);
   const badgeTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
   const badgeVisual=badgeTile?.querySelector(".monitor-desktop-thumb-visual");
@@ -7687,7 +7687,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
   invalidateMonitorDesktopFrames(desktopId);
 
-  const selectedDesktopId=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"");
+  const selectedDesktopId=String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex]||"");
   const selectedDesktop=desktopId===selectedDesktopId;
   if (selectedDesktop) {
     scheduleMonitorV2WindowRefresh(event);
@@ -7996,7 +7996,7 @@ async function restoreMonitorAllRecovery(button,listRecords,items){
 
 async function restoreMonitorRebootSnapshot(button) {
 
-  const items=[...(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[])];
+  const items=[...(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[])];
 
   if(!items.length||monitorRebootRestoreActive||!button)return {ok:false,status:"IGNORED",results:[]};
 
@@ -8028,7 +8028,7 @@ async function restoreMonitorRebootSnapshot(button) {
 
           const hwnd=String(resolved?.location?.hwnd||endpointOsWindowHandle(ep)||"").trim();
 
-          const target=monitorDesktopState.desktopIds[Math.max(0,Number(item.desktop||1)-1)]||String(item.desktop_id||"");
+          const target=monitorDesktopIdentityState.snapshot().desktopIds[Math.max(0,Number(item.desktop||1)-1)]||String(item.desktop_id||"");
 
           if(/^\d+$/.test(hwnd)&&hwnd!=="0"&&target){
 
@@ -8078,7 +8078,7 @@ async function restoreMonitorRebootSnapshot(button) {
 
     button.disabled=false; button.textContent=old;
 
-    if(monitorLastAiState){if(allVerified)monitorCaptureRebootSnapshot(monitorLastAiState);renderWorkers(monitorLastAiState);}
+    if(monitorObservedState.snapshot()){if(allVerified)monitorCaptureRebootSnapshot(monitorObservedState.snapshot());renderWorkers(monitorObservedState.snapshot());}
 
   }
 
@@ -8194,7 +8194,7 @@ async function restoreMonitorDetachedTask(item, button) {
 
     button.textContent=original; button.disabled=false;
 
-    if(monitorLastAiState)renderWorkers(monitorLastAiState);
+    if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   }
 
@@ -8505,8 +8505,8 @@ let monitorOwnFrozenCaptureAttemptedHwnd = "";
 let monitorOwnFrozenCaptureBusy = false;
 
 async function ensureMonitorOwnFrozenSnapshot() {
-  const hwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
-  const desktopId = String(monitorDesktopState.hostDesktopId || "").trim();
+  const hwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
+  const desktopId = String(monitorDesktopIdentityState.snapshot().hostDesktopId || "").trim();
   if (!monitorIsActiveDesktopRenderer()) {
     monitorOwnFrozenCaptureAttemptedHwnd = "";
     return false;
@@ -8519,7 +8519,7 @@ async function ensureMonitorOwnFrozenSnapshot() {
   monitorOwnFrozenCaptureBusy = true;
   try {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    if (String(monitorDesktopState.hostWindowHwnd || "") !== hwnd || !monitorIsActiveDesktopRenderer()) return false;
+    if (String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "") !== hwnd || !monitorIsActiveDesktopRenderer()) return false;
 
     const runtime = await chrome.runtime.sendMessage({ type:"monitor-list-popup-runtime" }).catch(() => null);
     const existing = (Array.isArray(runtime?.windows) ? runtime.windows : [])
@@ -8534,7 +8534,7 @@ async function ensureMonitorOwnFrozenSnapshot() {
     const retryDelays = [0, 160, 420];
     for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
       if (retryDelays[attempt] > 0) await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
-      if (String(monitorDesktopState.hostWindowHwnd || "") !== hwnd || !monitorIsActiveDesktopRenderer()) return false;
+      if (String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "") !== hwnd || !monitorIsActiveDesktopRenderer()) return false;
       const capture = await monitorCoreNative({
         type:"captureWindow",
         hwnd,
@@ -8567,7 +8567,7 @@ let monitorCurrentWallpaperCaptureBusy = false;
 
 async function ensureMonitorCurrentWallpaperSnapshot(desktopIdValue) {
   const desktopId = String(desktopIdValue || "").trim();
-  const currentDesktopId = String(monitorDesktopState.currentDesktopId || "").trim();
+  const currentDesktopId = String(monitorDesktopIdentityState.snapshot().currentDesktopId || "").trim();
   if (!desktopId || desktopId !== currentDesktopId || !monitorIsActiveDesktopRenderer() || monitorCurrentWallpaperCaptureBusy) return false;
 
   monitorCurrentWallpaperCaptureBusy = true;
@@ -8575,7 +8575,7 @@ async function ensureMonitorCurrentWallpaperSnapshot(desktopIdValue) {
     const retryDelays = [0, 160, 420];
     for (const delay of retryDelays) {
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-      if (String(monitorDesktopState.currentDesktopId || "").trim() !== desktopId || !monitorIsActiveDesktopRenderer()) return false;
+      if (String(monitorDesktopIdentityState.snapshot().currentDesktopId || "").trim() !== desktopId || !monitorIsActiveDesktopRenderer()) return false;
 
       const capture = await monitorCoreNative({
         type:"captureCurrentDesktopWallpaper",
@@ -8597,7 +8597,7 @@ async function ensureMonitorCurrentWallpaperSnapshot(desktopIdValue) {
       await chrome.runtime.sendMessage({
         type:"monitor-update-popup-runtime",
         desktopId,
-        hwnd:String(monitorDesktopState.hostWindowHwnd || ""),
+        hwnd:String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || ""),
         wallpaperDataUri:dataUri
       }).catch(() => null);
       return true;
@@ -8613,8 +8613,8 @@ let monitorThumbBatchGeneration = 0;
 let monitorThumbBatchInflight = null;
 
 function monitorIsActiveDesktopRenderer() {
-  const hostDesktopId = String(monitorDesktopState.hostDesktopId || "").trim();
-  const currentDesktopId = String(monitorDesktopState.currentDesktopId || "").trim();
+  const hostDesktopId = String(monitorDesktopIdentityState.snapshot().hostDesktopId || "").trim();
+  const currentDesktopId = String(monitorDesktopIdentityState.snapshot().currentDesktopId || "").trim();
   // Preserve startup/recovery until native host identity is known. After that,
   // only the Monitor on the current Windows virtual desktop may capture pixels.
   if (!hostDesktopId || !currentDesktopId) return true;
@@ -8671,7 +8671,7 @@ async function monitorAcceptedDesktopBackground(desktopId, force = false) {
 
 function syncMonitorPreviewBackground(visual,desktopId) {
   const id=String(desktopId||"").toLowerCase();
-  const selected=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"").toLowerCase();
+  const selected=String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex]||"").toLowerCase();
   if(!id||id!==selected)return false;
   const snapshot=globalThis.MonitorDesktopThumbnailV2?.acceptedBackground?.(visual,id)||null;
   return snapshot ? monitorPreviewBackground.apply(id,snapshot) : monitorPreviewBackground.failed(id);
@@ -8693,7 +8693,7 @@ async function applyObservedWallpaper(desktopId, force = false) {
   return syncMonitorPreviewBackground(visual,id);
 }
 
-function monitorActDesktopVisualForDesktop(desktopId, state = monitorLastAiState) {
+function monitorActDesktopVisualForDesktop(desktopId, state = monitorObservedState.snapshot()) {
 
   const visual = state?.node_state?.desktop_visual;
 
@@ -8725,7 +8725,7 @@ function monitorActDesktopVisualForDesktop(desktopId, state = monitorLastAiState
 
 function monitorWindowUsesFrozenCapture(item) {
   const itemHwnd = String(item?.hwnd || "").trim();
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
   return /^[0-9]+$/.test(hostHwnd) && hostHwnd !== "0"
     && itemHwnd === hostHwnd && monitorIsOwnWindowTitle(item?.title);
 }
@@ -8780,7 +8780,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
   if (!desktopId) return null;
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!/^\d+$/.test(hostHwnd) || hostHwnd === "0") return null;
 
@@ -8798,7 +8798,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
   const job = (async () => {
 
-    if (profile === "thumb" && String(desktopId) === String(monitorDesktopState.hostDesktopId || "")) {
+    if (profile === "thumb" && String(desktopId) === String(monitorDesktopIdentityState.snapshot().hostDesktopId || "")) {
       await ensureMonitorOwnFrozenSnapshot().catch(() => false);
     }
 
@@ -9029,11 +9029,11 @@ function syncMonitorPauseOverlay(img, hwnd) {
   }
 
   const paused = img.classList.contains("monitor-window-paused");
-  const userAttentionDetail = monitorHwndUserAttentionDetail(key, monitorLastAiState);
-  const conversationKey=monitorVisualConversationForHwnd(key,monitorLastAiState);
+  const userAttentionDetail = monitorHwndUserAttentionDetail(key, monitorObservedState.snapshot());
+  const conversationKey=monitorVisualConversationForHwnd(key,monitorObservedState.snapshot());
   const completionDetail=monitorChatAlertDetail(conversationKey);
 
-  const activity=monitorHwndIsGenerating(key, monitorLastAiState) ? "play" : (completionDetail?.activity || (paused ? "pause" : ""));
+  const activity=monitorHwndIsGenerating(key, monitorObservedState.snapshot()) ? "play" : (completionDetail?.activity || (paused ? "pause" : ""));
   const warning=userAttentionDetail?.warning === true || completionDetail?.warning === true;
   if (!activity && !warning) { overlay?.remove(); return; }
 
@@ -9056,7 +9056,7 @@ function syncMonitorPauseOverlay(img, hwnd) {
 
 }
 
-function monitorAgeIdentityForWorkerGroup(members, state = monitorLastAiState) {
+function monitorAgeIdentityForWorkerGroup(members, state = monitorObservedState.snapshot()) {
 
   const list=(Array.isArray(members)?members:[]).filter((worker)=>worker&&String(worker?.conversation_key||"").trim());
 
@@ -9080,13 +9080,13 @@ function monitorAgeIdentityForWorkerGroup(members, state = monitorLastAiState) {
 
   const profileId=String(worker?.profile_id||"").toUpperCase();
 
-  const ghost=conversationKey?monitorGhostCache.get(conversationKey):null;
+  const ghost=conversationKey?monitorRecoveryRecordStore.ghosts.get(conversationKey):null;
 
   return { worker, conversationKey, profileId, ageing:ghost?monitorGhostAgeing(ghost):0, nodeNumber:Number.isFinite(picked?.nodeNumber)&&picked.nodeNumber<Number.MAX_SAFE_INTEGER?picked.nodeNumber:0 };
 
 }
 
-function monitorAgeIdentityForHwnd(hwnd, state = monitorLastAiState) {
+function monitorAgeIdentityForHwnd(hwnd, state = monitorObservedState.snapshot()) {
 
   const key=String(hwnd||"").trim(); if(!key||!state)return { worker:null, conversationKey:"", profileId:"", ageing:0, nodeNumber:0 };
 
@@ -9104,7 +9104,7 @@ function monitorAgeIdentityForHwnd(hwnd, state = monitorLastAiState) {
 
 }
 
-function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
+function monitorObservedDesktopForHwnd(hwnd, state = monitorObservedState.snapshot()) {
   const key=String(hwnd||"").trim();
   if(!key||!state)return null;
   const observer=state?.node_state?.observer||null;
@@ -9120,11 +9120,11 @@ function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
   const remembered=monitorWindowDesktopLocations.get(key);
   const desktopId=String(remembered?.desktopId||"").trim();
   if(!desktopId)return null;
-  const desktop=monitorDesktopState.desktopIds.indexOf(desktopId)+1;
+  const desktop=monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId)+1;
   return {desktopId,desktop:desktop>0?desktop:0,authority:"MONITOR_NATIVE_EVENT"};
 }
 
-function monitorActNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
+function monitorActNodeNumbersForHwnd(hwnd, state = monitorObservedState.snapshot()) {
   const key=String(hwnd||"").trim();
   if(!key||!state)return [];
   if(String(state?.node_state?.observer?.source||"")!=="ACT_NATIVE_OBSERVER") return [];
@@ -9145,7 +9145,7 @@ function monitorActNodeNumbersForHwnd(hwnd, state = monitorLastAiState) {
   return [...numbers].sort((a,b)=>a-b);
 }
 
-function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, options = null) {
+function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorObservedState.snapshot(), options = null) {
   // BCT/RCC owns conversation labels, and Native/ACT maps the physical HWND.
   // Thumbnail labels use only the current-session/display contract. Legacy ACT
   // mappings may lag behind a Chrome tab detach/attach and must never merge two
@@ -9164,8 +9164,8 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, option
       tabId: Number.isInteger(numericTabId) && numericTabId >= 0 ? numericTabId : null,
     };
   };
-  if (Array.isArray(monitorBctWindowNodesCache)) {
-    const matched = monitorBctWindowNodesCache.filter((node) =>
+  if (Array.isArray(monitorNodePanelListState.snapshot())) {
+    const matched = monitorNodePanelListState.snapshot().filter((node) =>
       monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId) === String(hwnd))
       .sort((left,right) =>
         (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
@@ -9195,7 +9195,7 @@ function syncMonitorDesktopNumberBadge(img, hwnd) {
 
   if (!img?.parentElement) return;
 
-  const key=String(hwnd||""), state=monitorLastAiState;
+  const key=String(hwnd||""), state=monitorObservedState.snapshot();
 
   let badge=[...img.parentElement.querySelectorAll(".monitor-window-desktop-badge")].find((node)=>node.dataset.hwnd===key);
   if(img.classList.contains("monitor-desktop-thumb-window")){
@@ -9316,7 +9316,7 @@ function syncMonitorStatusLayer(img, hwnd) {
 
   if(hue) layer.style.setProperty("--monitor-conversation-hue",hue); else layer.style.removeProperty("--monitor-conversation-hue");
 
-  const ageIdentity=monitorAgeIdentityForHwnd(key,monitorLastAiState);
+  const ageIdentity=monitorAgeIdentityForHwnd(key,monitorObservedState.snapshot());
 
   const age=Math.max(0,Math.min(100,Number(ageIdentity.ageing)||0));
 
@@ -9497,15 +9497,15 @@ function syncMonitorThumbnailTabBadges(container, className) {
     container.dataset.monitorNodeOverlayRendered = "0";
     return;
   }
-  const selectedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : []).find((node) =>
+  const selectedNode = (Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot() : []).find((node) =>
     monitorNodePanelSelection.get() && monitorBctNodeSelectionKey(node) === monitorNodePanelSelection.get()
   );
   const selectedHwnd = selectedNode
-    ? monitorDisplayHwndForBrowserWindowId(selectedNode.windowId, monitorLastAiState, selectedNode.instanceId, selectedNode.sessionId)
+    ? monitorDisplayHwndForBrowserWindowId(selectedNode.windowId, monitorObservedState.snapshot(), selectedNode.instanceId, selectedNode.sessionId)
     : "";
   const diagnostics = projection.render({
     container,
-    state: monitorLastAiState,
+    state: monitorObservedState.snapshot(),
     locations: monitorWindowDesktopLocations,
     highlightedHwnd: monitorBctNodeHighlightedHwnd,
     selectedNodeHwnd: selectedHwnd,
@@ -9522,15 +9522,15 @@ function syncMonitorThumbnailTabBadges(container, className) {
 }
 function syncMonitorBctNodeLocationLabels() {
   // Refresh visible location only. No Chrome action, no polling, no stored binding.
-  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorWorkers) return;
+  if (!Array.isArray(monitorNodePanelListState.snapshot()) || !monitorWorkers) return;
   for (const row of monitorWorkers.querySelectorAll(".monitor-bct-node-row[data-window-id]")) {
-    const hwnd = monitorDisplayHwndForBrowserWindowId(row.dataset.windowId, monitorLastAiState, row.dataset.instanceId, row.dataset.sessionId);
+    const hwnd = monitorDisplayHwndForBrowserWindowId(row.dataset.windowId, monitorObservedState.snapshot(), row.dataset.instanceId, row.dataset.sessionId);
     const location = hwnd ? monitorWindowDesktopLocations.get(hwnd) : null;
     const index = location
-      ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))
+      ? monitorDesktopIdentityState.snapshot().desktopIds.indexOf(String(location.desktopId || ""))
       : -1;
     const position = row.querySelector(".monitor-bct-node-location");
-    const node = monitorBctWindowNodesCache.find((item) =>
+    const node = monitorNodePanelListState.snapshot().find((item) =>
       String(item?.conversationKey || "") === String(row.dataset.conversationKey || "")
     );
     if (position) {
@@ -9574,7 +9574,7 @@ function syncMonitorAllDesktopThumbnailNodeBadges() {
     if (visual?.isConnected) syncMonitorThumbnailTabBadges(visual,"monitor-desktop-thumb-window");
   }
   syncMonitorBctNodeLocationLabels();
-  syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  syncMonitorMinimizedNodeBadges(monitorObservedState.snapshot());
   syncMonitorBctNodeTargetHighlight();
   scheduleMonitorThumbnailProjectionReceipt();
 }
@@ -9653,7 +9653,7 @@ function monitorProfileIdForHwnd(hwnd) {
 
   const key = String(location?.conversationKey || "").trim();
 
-  const endpoint = (Array.isArray(monitorLastAiState?.endpoints) ? monitorLastAiState.endpoints : []).find((item) => String(item?.conversation_key || "").trim() === key);
+  const endpoint = (Array.isArray(monitorObservedState.snapshot()?.endpoints) ? monitorObservedState.snapshot().endpoints : []).find((item) => String(item?.conversation_key || "").trim() === key);
 
   const profile = String(endpoint?.profile_id || "").trim().toUpperCase();
 
@@ -9817,7 +9817,7 @@ function monitorTrashDropTargetAt(clientX, clientY) {
 
 function clearMonitorTrashDropTarget() { monitorNodeTrash?.classList.remove("monitor-node-trash-drop-target","monitor-node-trash-drop-success"); }
 
-function monitorConversationKeysForHwnd(hwnd,state=monitorLastAiState) {
+function monitorConversationKeysForHwnd(hwnd,state=monitorObservedState.snapshot()) {
 
   const target=String(hwnd||""); if(!target||!state)return [];
 
@@ -9829,14 +9829,14 @@ function monitorTrashRecordForKey(key,sourceKind="list"){
 
   key=String(key||"").trim(); if(!key)return null;
 
-  const state=monitorLastAiState, ghost=monitorGhostCache.get(key)||{};
+  const state=monitorObservedState.snapshot(), ghost=monitorRecoveryRecordStore.ghosts.get(key)||{};
 
   const worker=state?monitorWorkersForState(state).find((x)=>String(x?.conversation_key||"").trim()===key):null;
 
   const endpoint=worker&&state?endpointForMonitorWorker(worker,state):(Array.isArray(state?.endpoints)?state.endpoints.find((x)=>String(x?.conversation_key||"").trim()===key):null);
 
   const em=endpoint?.metadata||{}; const desktop=Number(ghost?.desktop||em.desktop_id||em.desktop_index||0), slot=Number(ghost?.slot||em.slot_index||0);
-  const bctNode=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).find((item)=>String(item?.conversationKey||"")===key)||{};
+  const bctNode=(Array.isArray(monitorNodePanelListState.snapshot())?monitorNodePanelListState.snapshot():[]).find((item)=>String(item?.conversationKey||"")===key)||{};
 
   return {...ghost,conversation_key:key,profile_id:String(ghost?.profile_id||worker?.profile_id||endpoint?.profile_id||"").toUpperCase(),title:String(ghost?.title||endpoint?.title||bctNode?.title||""),meaningful_title:String(ghost?.meaningful_title||worker?.task_title||endpoint?.title||bctNode?.title||""),node_label:String(bctNode?.nodeLabel||ghost?.node_label||""),network_id:String(bctNode?.scopeId||ghost?.network_id||""),network_name:String(bctNode?.scopeName||ghost?.network_name||""),role_tags:Array.isArray(bctNode?.roleTags)?[...bctNode.roleTags]:(Array.isArray(ghost?.role_tags)?ghost.role_tags:[]),desktop:Number.isInteger(desktop)&&desktop>0?desktop:null,slot:Number.isInteger(slot)&&slot>0?slot:null,first_seen_ms:Number(ghost?.first_seen_ms||monitorGhostTime(endpoint?.first_seen_at)||0),closed_at_ms:Number(ghost?.closed_at_ms||monitorGhostTime(endpoint?.closed_at)||0),trash_source:sourceKind==="thumbnail"?"thumbnail":"list",trashed_at_ms:Date.now()};
 
@@ -9844,9 +9844,9 @@ function monitorTrashRecordForKey(key,sourceKind="list"){
 
 function persistMonitorTrashedNodes(){
 
-  const records=[...monitorTrashRecords.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX);
+  const records=[...monitorRecoveryRecordStore.trash.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX);
 
-  chrome.storage.local.set({[MONITOR_TRASHED_NODES_KEY]:[...monitorTrashedConversationKeys],[MONITOR_TRASH_RECORDS_KEY]:records});
+  chrome.storage.local.set({[MONITOR_TRASHED_NODES_KEY]:[...monitorRecoveryRecordStore.trashedKeys],[MONITOR_TRASH_RECORDS_KEY]:records});
 
 }
 
@@ -9864,9 +9864,9 @@ function updateMonitorNodeTrashUndoUi(){
 
 async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
-  const unique=[...new Set((keys||[]).map(String).filter(Boolean))].filter((key)=>!monitorTrashedConversationKeys.has(key)); if(!unique.length)return false;
+  const unique=[...new Set((keys||[]).map(String).filter(Boolean))].filter((key)=>!monitorRecoveryRecordStore.trashedKeys.has(key)); if(!unique.length)return false;
 
-  const endpoints=Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[];
+  const endpoints=Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[];
 
   const pending=[];
 
@@ -9904,9 +9904,9 @@ async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
     }
 
-    if(item.record)monitorTrashRecords.set(item.key,item.record);
+    if(item.record)monitorRecoveryRecordStore.trash.set(item.key,item.record);
 
-    monitorTrashedConversationKeys.add(item.key);monitorHiddenGhosts.delete(item.key);
+    monitorRecoveryRecordStore.trashedKeys.add(item.key);monitorHiddenGhosts.delete(item.key);
 
   }
 
@@ -9914,7 +9914,7 @@ async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
   const succeeded=pending.filter((item)=>!failed.includes(item.key)).map((item)=>item.key);
 
-  if(succeeded.length){persistMonitorTrashedNodes();monitorNodeTrashUndoSnapshot={keys:succeeded};monitorNodeTrashUndoExpiresAt=Date.now()+MONITOR_NODE_TRASH_UNDO_MS;updateMonitorNodeTrashUndoUi();if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+  if(succeeded.length){persistMonitorTrashedNodes();monitorNodeTrashUndoSnapshot={keys:succeeded};monitorNodeTrashUndoExpiresAt=Date.now()+MONITOR_NODE_TRASH_UNDO_MS;updateMonitorNodeTrashUndoUi();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 
   if(succeeded.length&&!failed.length)setMonitorStatus(`노드 ${succeeded.length}개 삭제 · 연결 탭 닫힘 확인`,true);
 
@@ -9924,27 +9924,27 @@ async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
 function refreshMonitorRecoveryMenu(){
 
-  if(!(monitorRecoveryPickerState.isOpen()&&monitorClosedRecoveryMenu&&monitorLastAiState))return;
+  if(!(monitorRecoveryPickerState.isOpen()&&monitorClosedRecoveryMenu&&monitorObservedState.snapshot()))return;
 
   const panes=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane-scroll')].map((el)=>({cls:el.parentElement?.className||'',top:el.scrollTop}));
 
-  monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorLastAiState));
+  monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorObservedState.snapshot()));
 
   for(const saved of panes){const pane=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane')].find((el)=>(el.className||'')===saved.cls);const scroll=pane?.querySelector('.monitor-trash-pane-scroll');if(scroll)scroll.scrollTop=saved.top;}
 
 }
 
-function restoreMonitorTrashRecord(key){key=String(key||"");monitorTrashedConversationKeys.delete(key);monitorTrashRecords.delete(key);persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);refreshMonitorRecoveryMenu();}
+function restoreMonitorTrashRecord(key){key=String(key||"");monitorRecoveryRecordStore.trashedKeys.delete(key);monitorRecoveryRecordStore.trash.delete(key);persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());refreshMonitorRecoveryMenu();}
 
-function deleteMonitorTrashRecord(key){key=String(key||"");monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(key);persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);refreshMonitorRecoveryMenu();}
+function deleteMonitorTrashRecord(key){key=String(key||"");monitorRecoveryRecordStore.trash.delete(key);monitorRecoveryRecordStore.trashedKeys.add(key);persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());refreshMonitorRecoveryMenu();}
 
 function deleteMonitorRecoveryRecord(key){
 
-  key=String(key||""); if(!key)return; monitorTrashRecords.delete(key); monitorTrashedConversationKeys.add(key); monitorGhostCache.delete(key); monitorHiddenGhosts.delete(key);
+  key=String(key||""); if(!key)return; monitorRecoveryRecordStore.trash.delete(key); monitorRecoveryRecordStore.trashedKeys.add(key); monitorRecoveryRecordStore.ghosts.delete(key); monitorHiddenGhosts.delete(key);
 
-  const items=(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[]).filter((x)=>String(x?.conversation_key||"").trim()!==key); monitorRebootSnapshot={...monitorRebootSnapshot,items};
+  const items=(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[]).filter((x)=>String(x?.conversation_key||"").trim()!==key); monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),items});
 
-  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorLastAiState)renderWorkers(monitorLastAiState); refreshMonitorRecoveryMenu();
+  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRecoverySnapshotState.snapshot()}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); refreshMonitorRecoveryMenu();
 
 }
 
@@ -10068,9 +10068,9 @@ async function monitorFreezeDesktopThumbnail(desktopId,wallpaperDataUri=""){
 
 function persistMonitorTrashedDesktops(){chrome.storage.local.set({[MONITOR_TRASHED_DESKTOPS_KEY]:[...monitorTrashedDesktops.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,30)});}
 
-function monitorDesktopNodeSnapshots(desktopId,index,state=monitorLastAiState){const targetDesktop=Number(index)+1,out=[];for(const worker of monitorWorkersForState(state||{})){const key=String(worker?.conversation_key||worker?.__endpoint?.conversation_key||"").trim();if(!key)continue;const loc=monitorCanonicalPhysicalLocation(worker,state||{}),actNode=monitorActBrowserNode(worker,state||{}),sameId=desktopId&&String(actNode?.desktop_id||"").trim()===String(desktopId);if(!(sameId||Number(loc?.desktop)===targetDesktop))continue;out.push({conversation_key:key,profile_id:String(worker?.profile_id||worker?.__endpoint?.profile_id||"").toUpperCase(),title:String(worker?.task_title||worker?.title||worker?.__endpoint?.title||""),node_label:String(actNode?.node_label||loc?.label||""),slot:Number(loc?.slot||0)||null,hwnd:String(loc?.hwnd||actNode?.hwnd||"")});}return out;}
+function monitorDesktopNodeSnapshots(desktopId,index,state=monitorObservedState.snapshot()){const targetDesktop=Number(index)+1,out=[];for(const worker of monitorWorkersForState(state||{})){const key=String(worker?.conversation_key||worker?.__endpoint?.conversation_key||"").trim();if(!key)continue;const loc=monitorCanonicalPhysicalLocation(worker,state||{}),actNode=monitorActBrowserNode(worker,state||{}),sameId=desktopId&&String(actNode?.desktop_id||"").trim()===String(desktopId);if(!(sameId||Number(loc?.desktop)===targetDesktop))continue;out.push({conversation_key:key,profile_id:String(worker?.profile_id||worker?.__endpoint?.profile_id||"").toUpperCase(),title:String(worker?.task_title||worker?.title||worker?.__endpoint?.title||""),node_label:String(actNode?.node_label||loc?.label||""),slot:Number(loc?.slot||0)||null,hwnd:String(loc?.hwnd||actNode?.hwnd||"")});}return out;}
 
-function restoreMonitorDesktopNodeSnapshots(nodes){for(const item of Array.isArray(nodes)?nodes:[]){const key=String(item?.conversation_key||"");if(!key)continue;monitorTrashedConversationKeys.delete(key);monitorTrashRecords.delete(key);monitorHiddenGhosts.delete(key);}persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+function restoreMonitorDesktopNodeSnapshots(nodes){for(const item of Array.isArray(nodes)?nodes:[]){const key=String(item?.conversation_key||"");if(!key)continue;monitorRecoveryRecordStore.trashedKeys.delete(key);monitorRecoveryRecordStore.trash.delete(key);monitorHiddenGhosts.delete(key);}persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 
 function storeMonitorTrashedDesktop(snapshot){const id=String(snapshot?.desktopId||`desktop-${Date.now()}`);monitorTrashedDesktops.set(id,{...snapshot,id,trashed_at_ms:Date.now()});persistMonitorTrashedDesktops();refreshMonitorRecoveryMenu();}
 
@@ -10082,29 +10082,29 @@ function clearMonitorThumbnailRecovery(){
 
   monitorTrashedDesktops.clear(); persistMonitorTrashedDesktops();
 
-  for(const [key,item] of [...monitorTrashRecords]) if(String(item?.trash_source||"list")==="thumbnail"){monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(String(key));}
+  for(const [key,item] of [...monitorRecoveryRecordStore.trash]) if(String(item?.trash_source||"list")==="thumbnail"){monitorRecoveryRecordStore.trash.delete(key);monitorRecoveryRecordStore.trashedKeys.add(String(key));}
 
-  persistMonitorTrashedNodes(); if(monitorLastAiState)renderWorkers(monitorLastAiState); refreshMonitorRecoveryMenu();
+  persistMonitorTrashedNodes(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); refreshMonitorRecoveryMenu();
 
 }
 
 function clearMonitorConversationRecovery(){
 
-  const recovery=monitorClosedConversationRecoveryItems(monitorLastAiState);
+  const recovery=monitorClosedConversationRecoveryItems(monitorObservedState.snapshot());
 
-  for(const item of recovery){const key=String(item?.conversation_key||"").trim();if(key){monitorTrashedConversationKeys.add(key);monitorGhostCache.delete(key);monitorHiddenGhosts.delete(key);}}
+  for(const item of recovery){const key=String(item?.conversation_key||"").trim();if(key){monitorRecoveryRecordStore.trashedKeys.add(key);monitorRecoveryRecordStore.ghosts.delete(key);monitorHiddenGhosts.delete(key);}}
 
-  for(const [key,item] of [...monitorTrashRecords]) if(String(item?.trash_source||"list")!=="thumbnail"){monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(String(key));}
+  for(const [key,item] of [...monitorRecoveryRecordStore.trash]) if(String(item?.trash_source||"list")!=="thumbnail"){monitorRecoveryRecordStore.trash.delete(key);monitorRecoveryRecordStore.trashedKeys.add(String(key));}
 
-  monitorRebootSnapshot={...monitorRebootSnapshot,items:[]};
+  monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),items:[]});
 
-  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorLastAiState)renderWorkers(monitorLastAiState); refreshMonitorRecoveryMenu();
+  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRecoverySnapshotState.snapshot()}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); refreshMonitorRecoveryMenu();
 
 }
 
-monitorNodeTrashUndoButton.addEventListener("click",()=>{const snap=monitorNodeTrashUndoSnapshot;if(!snap||Date.now()>=monitorNodeTrashUndoExpiresAt)return;for(const key of snap.keys||[]){monitorTrashedConversationKeys.delete(String(key));monitorTrashRecords.delete(String(key));}persistMonitorTrashedNodes();monitorNodeTrashUndoSnapshot=null;monitorNodeTrashUndoExpiresAt=0;updateMonitorNodeTrashUndoUi();if(monitorLastAiState)renderWorkers(monitorLastAiState);});
+monitorNodeTrashUndoButton.addEventListener("click",()=>{const snap=monitorNodeTrashUndoSnapshot;if(!snap||Date.now()>=monitorNodeTrashUndoExpiresAt)return;for(const key of snap.keys||[]){monitorRecoveryRecordStore.trashedKeys.delete(String(key));monitorRecoveryRecordStore.trash.delete(String(key));}persistMonitorTrashedNodes();monitorNodeTrashUndoSnapshot=null;monitorNodeTrashUndoExpiresAt=0;updateMonitorNodeTrashUndoUi();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());});
 
-if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_TRASHED_NODES_KEY,MONITOR_TRASH_RECORDS_KEY,MONITOR_TRASHED_NOTES_KEY,MONITOR_TRASHED_DESKTOPS_KEY],(data)=>{for(const key of Array.isArray(data?.[MONITOR_TRASHED_NODES_KEY])?data[MONITOR_TRASHED_NODES_KEY]:[])monitorTrashedConversationKeys.add(String(key));for(const item of Array.isArray(data?.[MONITOR_TRASH_RECORDS_KEY])?data[MONITOR_TRASH_RECORDS_KEY]:[])if(item?.conversation_key)monitorTrashRecords.set(String(item.conversation_key),item);for(const item of Array.isArray(data?.[MONITOR_TRASHED_NOTES_KEY])?data[MONITOR_TRASHED_NOTES_KEY]:[])if(item?.id)monitorTrashedNotes.set(String(item.id),item);for(const item of Array.isArray(data?.[MONITOR_TRASHED_DESKTOPS_KEY])?data[MONITOR_TRASHED_DESKTOPS_KEY]:[])if(item?.id)monitorTrashedDesktops.set(String(item.id),item);if(monitorLastAiState)renderWorkers(monitorLastAiState);});
+if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_TRASHED_NODES_KEY,MONITOR_TRASH_RECORDS_KEY,MONITOR_TRASHED_NOTES_KEY,MONITOR_TRASHED_DESKTOPS_KEY],(data)=>{for(const key of Array.isArray(data?.[MONITOR_TRASHED_NODES_KEY])?data[MONITOR_TRASHED_NODES_KEY]:[])monitorRecoveryRecordStore.trashedKeys.add(String(key));for(const item of Array.isArray(data?.[MONITOR_TRASH_RECORDS_KEY])?data[MONITOR_TRASH_RECORDS_KEY]:[])if(item?.conversation_key)monitorRecoveryRecordStore.trash.set(String(item.conversation_key),item);for(const item of Array.isArray(data?.[MONITOR_TRASHED_NOTES_KEY])?data[MONITOR_TRASHED_NOTES_KEY]:[])if(item?.id)monitorTrashedNotes.set(String(item.id),item);for(const item of Array.isArray(data?.[MONITOR_TRASHED_DESKTOPS_KEY])?data[MONITOR_TRASHED_DESKTOPS_KEY]:[])if(item?.id)monitorTrashedDesktops.set(String(item.id),item);if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());});
 
 function monitorDesktopDropTargetAt(clientX, clientY) {
 
@@ -10151,7 +10151,7 @@ function recordMonitorExternalWindowDropPointer(event) {
 }
 
 async function syncMonitorExternalWindowDropTargets() {
-  const hostWindowHwnd = String(monitorDesktopState?.hostWindowHwnd || "").trim();
+  const hostWindowHwnd = String(monitorDesktopIdentityState.snapshot()?.hostWindowHwnd || "").trim();
   const screenScale = Math.max(.5, Math.min(4, Number(window.devicePixelRatio) || 1));
   const screenOrigin = monitorExternalWindowDropScreenOrigin || { left: Number(window.screenX || 0), top: Number(window.screenY || 0) };
   const targets = [...monitorDesktopThumbs.querySelectorAll(".monitor-desktop-thumb[data-desktop-id]")]
@@ -10314,7 +10314,7 @@ async function finishMonitorWorkerRowPointerDrag(event) {
 
     const targetKey=String(rowTarget.dataset.conversationKey||"");
 
-    if(monitorReorderWorkerKey(drag.sourceDesktopId,drag.key,targetKey,after)&&monitorLastAiState)renderWorkers(monitorLastAiState);
+    if(monitorReorderWorkerKey(drag.sourceDesktopId,drag.key,targetKey,after)&&monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   }
 
@@ -10568,7 +10568,7 @@ function updateMonitorDesktopPointerDrag(event) {
 
   clearMonitorDesktopDropTargets(); clearMonitorTrashDropTarget();
 
-  if (drag.sourceDesktopId !== monitorDesktopState.currentDesktopId && monitorTrashDropTargetAt(event.clientX,event.clientY)) { monitorNodeTrash.classList.add("monitor-node-trash-drop-target"); return; }
+  if (drag.sourceDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId && monitorTrashDropTargetAt(event.clientX,event.clientY)) { monitorNodeTrash.classList.add("monitor-node-trash-drop-target"); return; }
 
   if (monitorCreateDesktopDropTargetAt(event.clientX, event.clientY)) monitorCreateDesktop.classList.add("monitor-create-desktop-drop-target");
 
@@ -10594,7 +10594,7 @@ async function finishMonitorDesktopPointerDrag(event) {
 
   setTimeout(() => delete drag.button.dataset.monitorDropSuppressClick, 0);
 
-  const trashTarget = drag.sourceDesktopId !== monitorDesktopState.currentDesktopId ? monitorTrashDropTargetAt(event.clientX,event.clientY) : null;
+  const trashTarget = drag.sourceDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId ? monitorTrashDropTargetAt(event.clientX,event.clientY) : null;
 
   const createTarget = trashTarget ? null : monitorCreateDesktopDropTargetAt(event.clientX, event.clientY);
 
@@ -10602,7 +10602,7 @@ async function finishMonitorDesktopPointerDrag(event) {
 
   if (trashTarget) {
 
-    const sourceIndex=monitorDesktopState.desktopIds.indexOf(drag.sourceDesktopId);
+    const sourceIndex=monitorDesktopIdentityState.snapshot().desktopIds.indexOf(drag.sourceDesktopId);
 
     if(sourceIndex>=0){await removeVirtualDesktopPreview(sourceIndex,{trashDrop:true});monitorNodeTrash.classList.add("monitor-node-trash-drop-success");setTimeout(()=>clearMonitorTrashDropTarget(),650);}
 
@@ -10717,7 +10717,7 @@ async function moveMonitorWindowToDesktop(hwnd, sourceDesktopId, targetDesktopId
 
 async function getDesktopBrowserWindowHandles(desktopId) {
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!/^\d+$/.test(hostHwnd) || hostHwnd === "0") throw new Error("Monitor host HWND를 확인할 수 없어 데스크톱 이동을 중단했습니다.");
 
@@ -10761,7 +10761,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
   if (monitorCreateDesktopDropBusy) return { ok: false, error: "DROP_BUSY" };
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!sourceDesktopId || !/^\d+$/.test(hostHwnd) || hostHwnd === "0") throw new Error("Monitor host HWND 또는 원본 데스크톱을 확인할 수 없습니다.");
 
@@ -10783,7 +10783,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
   try {
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
@@ -10809,11 +10809,11 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     const failed = success ? [] : [...exactHwnds];
 
-    monitorDesktopState.observedDesktopId = createdId;
+    monitorDesktopIdentityState.patch({observedDesktopId: createdId});
 
     renderVirtualDesktops(result);
 
-    const createdIndex = monitorDesktopState.desktopIds.indexOf(createdId);
+    const createdIndex = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(createdId);
 
     if (createdIndex >= 0) selectVirtualDesktopPreview(createdIndex);
 
@@ -10932,14 +10932,14 @@ function monitorThumbnailBackgroundRuntimeDiagnostics() {
   }));
 }
 
-function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
+function syncMonitorMinimizedNodeBadges(state = monitorObservedState.snapshot()) {
   if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("summary") === false) {
     for (const host of monitorDesktopThumbs.querySelectorAll(".monitor-desktop-minimized-nodes")) host.remove();
     return;
   }
   const tokensByDesktop = monitorMinimizedNodeTokensByDesktop(state);
   const selectedKey = String(monitorNodePanelSelection.get() || "");
-  const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
+  const selectedNode = (Array.isArray(globalThis.monitorNodePanelListState.snapshot()) ? globalThis.monitorNodePanelListState.snapshot() : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
   const selectedToken = String(selectedNode?.nodeLabel || "").trim().replace(/^N/i, "") || "?";
   const selectedTabId = Number(selectedNode?.tabId) || 0;
   for (const button of monitorDesktopThumbs.children) {
@@ -10994,7 +10994,7 @@ function syncDesktopSwitcher() {
     monitorDesktopStripView = globalThis.MonitorDesktopStripView.create({
       root: monitorDesktopThumbs, document,
       ports: {
-        desktopState: () => monitorDesktopState,
+        desktopState: () => monitorDesktopIdentityState.snapshot(),
         attachManagement: (element,id) => monitorAttachDesktopManagementControl(element,id),
         beginDrag: event => beginMonitorDesktopPointerDrag(event),
         preview: index => selectVirtualDesktopPreview(index),
@@ -11020,13 +11020,13 @@ async function refreshObservedWindows() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
   if (!monitorIsActiveDesktopRenderer()) return false;
 
-  const desktopId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || null;
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || null;
 
   if (!desktopId) return;
 
   const frame = await captureDesktopFrame(desktopId, "main");
 
-  if (!frame || monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] !== desktopId) return;
+  if (!frame || monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] !== desktopId) return;
 
   monitorWindowLayer.dataset.desktopId = desktopId;
 
@@ -11041,12 +11041,12 @@ async function refreshObservedWindows() {
   const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
 
   if (visual?.isConnected) await refreshDesktopThumb(visual, desktopId);
-  syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  syncMonitorMinimizedNodeBadges(monitorObservedState.snapshot());
 
 }
 
 globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
-  const ids = [...(monitorDesktopState.desktopIds || [])].filter(Boolean);
+  const ids = [...(monitorDesktopIdentityState.snapshot().desktopIds || [])].filter(Boolean);
   if (!ids.length || !monitorIsActiveDesktopRenderer()) return;
   invalidateMonitorDesktopFrames(...ids);
   void refreshSelectedThumb().catch(() => false);
@@ -11055,7 +11055,7 @@ globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
 async function refreshSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
 
-  const desktopId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "";
 
   if (!desktopId) return false;
 
@@ -11076,10 +11076,10 @@ async function refreshInitialWindowThumbs() {
     monitorInitialThumbError = "THUMBNAIL_WINDOW_RENDERER_UNAVAILABLE";
     return false;
   }
-  const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
+  const selectedId = monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "";
   const desktopIds = [
     selectedId,
-    ...monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId)
+    ...monitorDesktopIdentityState.snapshot().desktopIds.filter((id) => id && id !== selectedId)
   ].filter(Boolean);
   if (!desktopIds.length) return false;
 
@@ -11132,7 +11132,7 @@ async function refreshInitialSelectedThumb({ allowWindows = true } = {}) {
     await monitorPublishSharedInstance("thumbnail-windows-awaiting-host").catch(() => null);
     return true;
   }
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
   if (!/^\d+$/.test(hostHwnd) || hostHwnd === "0") {
     monitorInitialThumbStage = "windows-awaiting-host";
     monitorInitialThumbError = "MONITOR_HOST_HWND_UNRESOLVED";
@@ -11157,7 +11157,7 @@ async function refreshBackgroundThumbs(...desktopIds) {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return [];
   const renderer = globalThis.MonitorDesktopThumbnailV2;
   if (!renderer?.refreshBackground) return desktopIds.filter(Boolean);
-  const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
+  const selectedDesktopId = String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "");
   const ids = new Set(desktopIds.map((id) => String(id || "")).filter(Boolean));
   if (selectedDesktopId) ids.delete(selectedDesktopId);
   const failed = [];
@@ -11178,7 +11178,7 @@ function scheduleInitialSemanticThumbSync(delay = 180) {
   monitorInitialSemanticThumbSyncTimer = setTimeout(async () => {
     monitorInitialSemanticThumbSyncTimer = 0;
     if (monitorInitialSemanticThumbSyncDone || monitorInitialSemanticThumbSyncInflight || !monitorInitialThumbBatchDone) return;
-    const state = monitorLastAiState;
+    const state = monitorObservedState.snapshot();
     const observer = state?.node_state?.observer;
     const semanticReady = state?.ok === true && (
       (String(observer?.source || "") === "ACT_NATIVE_OBSERVER" && Array.isArray(observer?.windows)) ||
@@ -11222,7 +11222,7 @@ function applyMonitorLiveWindowGeometry(desktopId, snap) {
 
   if (visual) targets.push(visual);
 
-  if (String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "") === String(desktopId || "")) targets.push(monitorWindowLayer);
+  if (String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "") === String(desktopId || "")) targets.push(monitorWindowLayer);
 
   for (const container of targets) for (const img of container.querySelectorAll(".monitor-desktop-thumb-window[data-hwnd], .monitor-window-preview[data-hwnd]")) {
 
@@ -11268,9 +11268,9 @@ function applyMonitorLiveWindowGeometry(desktopId, snap) {
 
 async function monitorThumbnailLayoutWatch() {
 
-  const desktopIds = monitorDesktopState.desktopIds.filter(Boolean);
+  const desktopIds = monitorDesktopIdentityState.snapshot().desktopIds.filter(Boolean);
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!desktopIds.length || !/^\d+$/.test(hostHwnd) || hostHwnd === "0") return;
 
@@ -11349,7 +11349,7 @@ async function refreshWindowsCurrentState() {
 function renderLightweightDesktopCards(reason = "EXPLICIT") {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) { monitorDesktopThumbs.replaceChildren(); return true; }
 
-  const ids = Array.isArray(monitorDesktopState.desktopIds) ? monitorDesktopState.desktopIds.filter(Boolean) : [];
+  const ids = Array.isArray(monitorDesktopIdentityState.snapshot().desktopIds) ? monitorDesktopIdentityState.snapshot().desktopIds.filter(Boolean) : [];
 
   if (!ids.length) return false;
 
@@ -11366,9 +11366,9 @@ function renderLightweightDesktopCards(reason = "EXPLICIT") {
 
     button.dataset.desktopId = desktopId; button.dataset.index = String(index);
 
-    button.classList.toggle("selected", index === monitorDesktopState.selectedIndex);
+    button.classList.toggle("selected", index === monitorDesktopIdentityState.snapshot().selectedIndex);
 
-    button.classList.toggle("current", index === monitorDesktopState.currentIndex);
+    button.classList.toggle("current", index === monitorDesktopIdentityState.snapshot().currentIndex);
 
     const visual = document.createElement("span");
 
@@ -11420,13 +11420,13 @@ function renderVirtualDesktops(state) {
   if (reportedHostTitle && reportedHostTitle !== monitorLocalHostWindowTitle) monitorLocalHostWindowTitle = reportedHostTitle;
 
   const topology = globalThis.MonitorDesktopTopology.project({
-    observed: state, previous: monitorDesktopState,
+    observed: state, previous: monitorDesktopIdentityState.snapshot(),
     sharedSelection: {ready: monitorSharedSelectionReady, desktopId: monitorSharedSelectedDesktopId}
   });
   const {desktopIds,count,currentIndex,selectedIndex,currentDesktopId,
     hostDesktopId,hostWindowHwnd,observedDesktopId} = topology.state;
   const {hostWindowChanged,previousCurrentDesktopId} = topology;
-  monitorDesktopState = topology.state;
+  monitorDesktopIdentityState.replace(topology.state);
   // BCT node state can arrive before Native desktop topology. Once the
   // desktop IDs exist, perform only a bounded exact identity reconciliation
   // so the semantic thumbnail overlay has a verified HWND to project onto.
@@ -11437,7 +11437,7 @@ function renderVirtualDesktops(state) {
     void ensureMonitorOwnFrozenSnapshot();
   }
 
-  monitorDesktopStageView.showTopology(monitorDesktopState);
+  monitorDesktopStageView.showTopology(monitorDesktopIdentityState.snapshot());
 
   const selectedId = observedDesktopId;
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) {
@@ -11616,7 +11616,7 @@ function flashDesktopTransition() {
 
   monitorTransitionFlash.classList.remove("active");
 
-  const button=[...monitorDesktopThumbs.children].find((node)=>Number(node.dataset.index)===monitorDesktopState.selectedIndex);
+  const button=[...monitorDesktopThumbs.children].find((node)=>Number(node.dataset.index)===monitorDesktopIdentityState.snapshot().selectedIndex);
 
   if(!button)return;
 
@@ -11650,21 +11650,21 @@ function primeSelectedDesktopPreview(desktopId) {
 
 function selectVirtualDesktopPreview(index) {
 
-  const bounded = Math.min(Math.max(0, index), monitorDesktopState.count - 1);
+  const bounded = Math.min(Math.max(0, index), monitorDesktopIdentityState.snapshot().count - 1);
 
-  const changed = bounded !== monitorDesktopState.selectedIndex;
+  const changed = bounded !== monitorDesktopIdentityState.snapshot().selectedIndex;
 
-  monitorDesktopState.selectedIndex = bounded;
+  monitorDesktopIdentityState.patch({selectedIndex: bounded});
 
-  const desktopId = monitorDesktopState.desktopIds[bounded] || null;
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[bounded] || null;
 
   monitorSharedSelectedDesktopId = desktopId || "";
 
-  monitorDesktopState.observedDesktopId = desktopId;
+  monitorDesktopIdentityState.patch({observedDesktopId: desktopId});
 
   publishMonitorSharedSelection();
 
-  monitorDesktopStageView.showPreview({desktopId,index:bounded,currentIndex:monitorDesktopState.currentIndex});
+  monitorDesktopStageView.showPreview({desktopId,index:bounded,currentIndex:monitorDesktopIdentityState.snapshot().currentIndex});
 
   if (changed) flashDesktopTransition();
 
@@ -11675,17 +11675,17 @@ function selectVirtualDesktopPreview(index) {
 
   window.dispatchEvent(new CustomEvent("desktopwindow-monitor-preview", {
 
-    detail: { index: bounded, desktopId, currentIndex: monitorDesktopState.currentIndex }
+    detail: { index: bounded, desktopId, currentIndex: monitorDesktopIdentityState.snapshot().currentIndex }
 
   }));
 
   renderVirtualDesktops({
 
-    count: monitorDesktopState.count,
+    count: monitorDesktopIdentityState.snapshot().count,
 
-    currentIndex: monitorDesktopState.currentIndex,
+    currentIndex: monitorDesktopIdentityState.snapshot().currentIndex,
 
-    desktopIds: monitorDesktopState.desktopIds
+    desktopIds: monitorDesktopIdentityState.snapshot().desktopIds
 
   });
 
@@ -11771,7 +11771,7 @@ async function undoDeletedDesktopTrash() {
 
   try {
 
-    const beforeIds=new Set(monitorDesktopState.desktopIds);
+    const beforeIds=new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:snapshot.hwnds});
 
@@ -11787,7 +11787,7 @@ async function undoDeletedDesktopTrash() {
 
     if(snapshot.desktopId) deleteMonitorTrashedDesktop(snapshot.desktopId);
 
-    monitorDesktopState.observedDesktopId=restoredId; renderVirtualDesktops(result); if(restoredId)settleNewDesktopWallpaper(restoredId).catch(()=>{});
+    monitorDesktopIdentityState.patch({observedDesktopId: restoredId}); renderVirtualDesktops(result); if(restoredId)settleNewDesktopWallpaper(restoredId).catch(()=>{});
 
   } catch(error) { setMonitorStatus(`데스크톱 복구 실패 · ${error?.message||error}`,false); if(button)button.disabled=false; }
 
@@ -11795,11 +11795,11 @@ async function undoDeletedDesktopTrash() {
 
 async function removeVirtualDesktopPreview(index, options={}) {
 
-  if (monitorDesktopState.count <= 1 || index < 0 || index >= monitorDesktopState.count) return;
+  if (monitorDesktopIdentityState.snapshot().count <= 1 || index < 0 || index >= monitorDesktopIdentityState.snapshot().count) return;
 
-  const desktopId = monitorDesktopState.desktopIds[index] || null;
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[index] || null;
 
-  const fallbackIndex = index < monitorDesktopState.count - 1 ? index + 1 : index - 1;
+  const fallbackIndex = index < monitorDesktopIdentityState.snapshot().count - 1 ? index + 1 : index - 1;
 
   try {
 
@@ -11821,9 +11821,9 @@ async function removeVirtualDesktopPreview(index, options={}) {
 
     const resultIds = Array.isArray(result.desktopIds) ? result.desktopIds : [];
 
-    if (monitorDesktopState.observedDesktopId === desktopId) {
+    if (monitorDesktopIdentityState.snapshot().observedDesktopId === desktopId) {
 
-      monitorDesktopState.observedDesktopId = resultIds[Math.min(index, Math.max(0, resultIds.length - 1))] || resultIds[0] || null;
+      monitorDesktopIdentityState.patch({observedDesktopId: resultIds[Math.min(index, Math.max(0, resultIds.length - 1))] || resultIds[0] || null});
 
     }
 
@@ -11853,11 +11853,11 @@ async function removeCreatedDesktopIfSafe(snapshot) {
 
   await refreshVirtualDesktops();
 
-  const index = monitorDesktopState.desktopIds.indexOf(createdId); if (index < 0 || monitorDesktopState.count <= 1) return;
+  const index = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(createdId); if (index < 0 || monitorDesktopIdentityState.snapshot().count <= 1) return;
 
-  const sourceIndex = Math.max(0, monitorDesktopState.desktopIds.indexOf(String(snapshot.sourceDesktopId || "")));
+  const sourceIndex = Math.max(0, monitorDesktopIdentityState.snapshot().desktopIds.indexOf(String(snapshot.sourceDesktopId || "")));
 
-  const fallbackIndex = sourceIndex === index ? (index > 0 ? index - 1 : Math.min(1, monitorDesktopState.count - 1)) : sourceIndex;
+  const fallbackIndex = sourceIndex === index ? (index > 0 ? index - 1 : Math.min(1, monitorDesktopIdentityState.snapshot().count - 1)) : sourceIndex;
 
   await monitorNative({ type: "removeVirtualDesktop", index, fallbackIndex }).catch(() => null);
 
@@ -11891,7 +11891,7 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
     }
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "restoreVirtualDesktop", hwnds: snapshot.hwnds });
 
@@ -11903,9 +11903,9 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
     commitDesktopUndoRestore(); updateDesktopUndoUi();
 
-    monitorDesktopState.observedDesktopId = restoredId;
+    monitorDesktopIdentityState.patch({observedDesktopId: restoredId});
 
-    renderVirtualDesktops(result); selectVirtualDesktopPreview(monitorDesktopState.selectedIndex); settleNewDesktopWallpaper(restoredId).catch(() => {});
+    renderVirtualDesktops(result); selectVirtualDesktopPreview(monitorDesktopIdentityState.snapshot().selectedIndex); settleNewDesktopWallpaper(restoredId).catch(() => {});
 
   } catch (error) { setMonitorStatus(`데스크톱 복구 실패 · ${error?.message || error}`, false); }
 
@@ -11951,7 +11951,7 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
   try {
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
@@ -11961,11 +11961,11 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const createdId = resultIds.find((id) => !beforeIds.has(id)) || resultIds[resultIds.length - 1] || null;
 
-    monitorDesktopState.observedDesktopId = createdId;
+    monitorDesktopIdentityState.patch({observedDesktopId: createdId});
 
     renderVirtualDesktops(result);
 
-    selectVirtualDesktopPreview(monitorDesktopState.selectedIndex);
+    selectVirtualDesktopPreview(monitorDesktopIdentityState.snapshot().selectedIndex);
 
     settleNewDesktopWallpaper(createdId).catch(() => {});
 
@@ -12152,8 +12152,8 @@ if (MONITOR_ACTIVE_STARTUP_ENABLED) {
     monitorCachedLlmNodes = Array.isArray(data?.[MONITOR_LLM_CACHE_STORAGE_KEY]) ? data[MONITOR_LLM_CACHE_STORAGE_KEY] : [];
     const cachedAiState=data?.[MONITOR_AI_STATE_CACHE_KEY];
     if(cachedAiState?.state?.ok===true && Date.now()-Number(cachedAiState?.at||0)<=MONITOR_AI_STATE_CACHE_TTL_MS){
-      monitorLastAiState=cachedAiState.state;
-      renderWorkers(monitorLastAiState);
+      monitorObservedState.replace(cachedAiState.state);
+      renderWorkers(monitorObservedState.snapshot());
     }
     monitorPostWorkStorageReady=true;
     if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) {
@@ -12189,14 +12189,14 @@ async function refreshMonitorConversationStateFast(forceBadgeSync = false) {
     const state = await response.json().catch(() => null);
     if (!state?.ok) return;
     const signature = monitorConversationStateSignature(state);
-    const previous = monitorConversationStateSignatureCache || monitorConversationStateSignature(monitorLastAiState);
+    const previous = monitorConversationStateSignatureCache || monitorConversationStateSignature(monitorObservedState.snapshot());
     const forceSync=monitorConversationStateForceBadgeSyncPending;
     monitorConversationStateForceBadgeSyncPending=false;
     monitorConversationStateSignatureCache = signature;
     const changed=signature!==previous;
     if (!changed && !forceSync) return;
-    state.llm_nodes = Array.isArray(monitorLastAiState?.llm_nodes) ? monitorLastAiState.llm_nodes : monitorCachedLlmNodes;
-    monitorLastAiState = state;
+    state.llm_nodes = Array.isArray(monitorObservedState.snapshot()?.llm_nodes) ? monitorObservedState.snapshot().llm_nodes : monitorCachedLlmNodes;
+    monitorObservedState.replace(state);
     pruneMonitorEphemeralGenerationState(state);
     chrome.storage.local.set({ [MONITOR_AI_STATE_CACHE_KEY]: { at: Date.now(), state } }).catch(() => {});
     if(changed) renderWorkers(state);
@@ -12407,7 +12407,7 @@ function monitorStructureNodeIdentityTokens(node) { return globalThis.MonitorDom
 
 function monitorStructureAvailableNodes(){
 
-  const state=monitorLastAiState||{}; const seen=new Set(), seenPhysicalNodes=new Set(), out=[];
+  const state=monitorObservedState.snapshot()||{}; const seen=new Set(), seenPhysicalNodes=new Set(), out=[];
 
   for(const worker of monitorWorkersForState(state)){
     const profile=String(worker?.profile_id||"").toUpperCase();
@@ -12450,12 +12450,12 @@ function monitorStructureMoveBundleToDesk(kind,desktopId,asManager=false){
 function monitorStructureBundleOrder() { return globalThis.MonitorDomainAPIs["organization"]["monitorStructureBundleOrder"].apply(this, arguments); }
 
 function monitorStructureBundleKinds(){
-  const projectedResources = monitorLastAiState && typeof monitorWorkersProjectionForState === "function"
-    ? monitorWorkersProjectionForState(monitorLastAiState).filter((node)=>node?.__kind==="LLM_NODE")
+  const projectedResources = monitorObservedState.snapshot() && typeof monitorWorkersProjectionForState === "function"
+    ? monitorWorkersProjectionForState(monitorObservedState.snapshot()).filter((node)=>node?.__kind==="LLM_NODE")
     : [];
   const merged=[
     ...(Array.isArray(monitorStructureAiNodes)?monitorStructureAiNodes:[]),
-    ...(Array.isArray(monitorLastAiState?.llm_nodes)?monitorLastAiState.llm_nodes:[]),
+    ...(Array.isArray(monitorObservedState.snapshot()?.llm_nodes)?monitorObservedState.snapshot().llm_nodes:[]),
     ...projectedResources,
   ];
   const by={local:[],external:[],"codex-google":[]},seen=new Set();
@@ -12624,7 +12624,7 @@ function monitorStructureDeskNodeGrid(nodes,desktopId){
 
 function monitorStructureAutoLayout(){
 
-  const nodes=monitorStructureAvailableNodes().map(node=>({...node,placement_exempt:monitorStructureNodeIsPlacementExempt(node)})); const used=new Set(); const isExempt=(node)=>Boolean(node?.placement_exempt); const liveByKey=new Map(nodes.map(n=>[String(n.conversation_key||""),n])); const liveDraft=(node)=>{const draft=node?liveByKey.get(String(node.conversation_key||""))||null:null;return draft&&!isExempt(draft)?draft:null;}; const pickRole=(role)=>nodes.find(n=>n.role===role&&!isExempt(n)&&!used.has(n.conversation_key))||null; const commandDesktopId=String(monitorDesktopState.desktopIds?.[0]||""); const pickCommandFallback=()=>nodes.find(n=>!isExempt(n)&&!used.has(n.conversation_key)&&commandDesktopId&&monitorStructureEffectiveDesktopId(n)===commandDesktopId)||null;
+  const nodes=monitorStructureAvailableNodes().map(node=>({...node,placement_exempt:monitorStructureNodeIsPlacementExempt(node)})); const used=new Set(); const isExempt=(node)=>Boolean(node?.placement_exempt); const liveByKey=new Map(nodes.map(n=>[String(n.conversation_key||""),n])); const liveDraft=(node)=>{const draft=node?liveByKey.get(String(node.conversation_key||""))||null:null;return draft&&!isExempt(draft)?draft:null;}; const pickRole=(role)=>nodes.find(n=>n.role===role&&!isExempt(n)&&!used.has(n.conversation_key))||null; const commandDesktopId=String(monitorDesktopIdentityState.snapshot().desktopIds?.[0]||""); const pickCommandFallback=()=>nodes.find(n=>!isExempt(n)&&!used.has(n.conversation_key)&&commandDesktopId&&monitorStructureEffectiveDesktopId(n)===commandDesktopId)||null;
 
   const orchestrator=liveDraft(monitorStructureSocketDraft.orchestrator)||pickRole("ORCHESTRATOR")||pickCommandFallback(); if(orchestrator)used.add(orchestrator.conversation_key);
 
@@ -12634,7 +12634,7 @@ function monitorStructureAutoLayout(){
 
   const desktops={};
 
-  const observedDesktopIds=monitorDesktopState.desktopIds.length?monitorDesktopState.desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean);
+  const observedDesktopIds=monitorDesktopIdentityState.snapshot().desktopIds.length?monitorDesktopIdentityState.snapshot().desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean);
   // D1 is a permanent command Desk in the organization projection.  A
   // transiently empty browser/native snapshot must not make it disappear.
   const desktopIds=observedDesktopIds.length?observedDesktopIds:["D1"];
@@ -12826,7 +12826,7 @@ function monitorStructureRenderResourcePools(){
 
   const local=document.getElementById("monitorStructureLocalPool"),external=document.getElementById("monitorStructureExternalPool"),codex=document.getElementById("monitorStructureCodexPool");if(!local||!external||!codex)return;local.replaceChildren();external.replaceChildren();codex.replaceChildren();
 
-  const legacy=Array.isArray(monitorLastAiState?.llm_nodes)?monitorLastAiState.llm_nodes:[];
+  const legacy=Array.isArray(monitorObservedState.snapshot()?.llm_nodes)?monitorObservedState.snapshot().llm_nodes:[];
 
   const merged=[...(Array.isArray(monitorStructureAiNodes)?monitorStructureAiNodes:[]),...legacy];
 
@@ -13025,7 +13025,7 @@ function monitorStructureReconcileSnapshot(snapshot){
   const next=monitorStructureCloneDraftValue(snapshot)||null;
   if(!next)return null;
   const liveKeys=new Set(monitorStructureAvailableNodes().map(node=>String(node?.conversation_key||"")).filter(Boolean));
-  const desktops=new Set((monitorDesktopState.desktopIds||[]).map(String));
+  const desktops=new Set((monitorDesktopIdentityState.snapshot().desktopIds||[]).map(String));
   const keepNode=node=>node&&liveKeys.has(String(node?.conversation_key||""))?node:null;
   next.socketDraft=next.socketDraft&&typeof next.socketDraft==="object"?next.socketDraft:{orchestrator:null,aux1:null,aux2:null,managers:{}};
   next.socketDraft.orchestrator=keepNode(next.socketDraft.orchestrator);
@@ -13038,7 +13038,7 @@ function monitorStructureReconcileSnapshot(snapshot){
   }
   next.socketDraft.managers=managers;
 
-  const commandDeskId=String((monitorDesktopState.desktopIds||[])[0]||"");
+  const commandDeskId=String((monitorDesktopIdentityState.snapshot().desktopIds||[])[0]||"");
   if(commandDeskId){
     const assigned=new Set([
       String(next.socketDraft.orchestrator?.conversation_key||""),
@@ -13102,7 +13102,7 @@ function monitorStructureRunAutoLayout(){
 
   monitorStructureLinkOverrides={};monitorStructurePlacementExemptions={};monitorStructureDeskMembership={};monitorStructureBundleDesk={};monitorStructureDirty=true;
 
-  const ids=monitorDesktopState.desktopIds.length?monitorDesktopState.desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean);
+  const ids=monitorDesktopIdentityState.snapshot().desktopIds.length?monitorDesktopIdentityState.snapshot().desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean);
 
   const commandDeskId=String(ids[0]||"");
   if(commandDeskId){
@@ -13204,7 +13204,7 @@ async function monitorStructureExecuteDeskMoves(){
 
   const byKey=new Map(monitorStructureAvailableNodes().map(node=>[String(node?.conversation_key||""),node])),planned=[];
 
-  const desktopIds=(monitorDesktopState.desktopIds.length?monitorDesktopState.desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean)).map(String);
+  const desktopIds=(monitorDesktopIdentityState.snapshot().desktopIds.length?monitorDesktopIdentityState.snapshot().desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean)).map(String);
 
   for(const [nodeKey,targetDesktopId] of requested){const node=byKey.get(nodeKey);if(!node){delete monitorStructureDeskMembership[nodeKey];continue;}const sourceDesktopId=String(node?.desktop_id||"");if(sourceDesktopId===targetDesktopId){delete monitorStructureDeskMembership[nodeKey];continue;}const hwnd=String(node?.hwnd||"");if(!/^\d+$/.test(hwnd)||hwnd==="0"||!sourceDesktopId)throw new Error(`Desk 이동 준비 실패 · ${String(node?.label||nodeKey.slice(0,8))}`);const targetDeskIndex=desktopIds.indexOf(targetDesktopId);if(targetDeskIndex<0)throw new Error(`대상 Desk 확인 실패 · ${String(node?.label||nodeKey.slice(0,8))}`);planned.push({nodeKey,hwnd,sourceDesktopId,targetDesktopId,targetDeskNumber:targetDeskIndex+1,label:String(node?.label||nodeKey.slice(0,8))});}
 
@@ -13519,7 +13519,7 @@ async function monitorHierarchyApplyDrop(target,hwnd){const node=monitorStructur
 
 async function openMonitorStructure(){
 
-  monitorStructureOpen=true;monitorStructurePanel.hidden=false;if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  monitorStructureOpen=true;monitorStructurePanel.hidden=false;if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
   monitorStructureHistoryReset();
 
   chrome.storage.local.get([MONITOR_STRUCTURE_BASELINE_KEY,MONITOR_STRUCTURE_WORKING_DRAFT_KEY,MONITOR_STRUCTURE_NODE_CONTROL_KEY],async data=>{
@@ -13566,7 +13566,7 @@ async function openMonitorStructure(){
 
 }
 
-function closeMonitorStructure(){void monitorStructurePersistWorkingDraft();monitorStructureOpen=false;monitorStructurePanel.hidden=true;if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+function closeMonitorStructure(){void monitorStructurePersistWorkingDraft();monitorStructureOpen=false;monitorStructurePanel.hidden=true;if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 
 function monitorDiagTextError(error){return String(error?.message||error||'unknown').slice(0,180);}
 
