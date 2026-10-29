@@ -186,6 +186,7 @@ files = [
   "src/bct/features/cdp_inspect.py",
   "src/bct/features/comfy_canvas_read.py",
   "src/bct/features/comfy_canvas_adapter.py",
+  "src/bct/features/comfy_reverse_channel.py",
   "src/bct/features/comfy_bridge_contract.py",
   "src/bct/features/comfy_graph_snapshot.py",
   "src/bct/features/comfy_live_read.py",

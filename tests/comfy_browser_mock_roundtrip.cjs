@@ -35,6 +35,6 @@ vm.runInContext(fs.readFileSync(path.join(root,"comfy-worker.js"),"utf8"),worker
  if(!response?.ok||response.requestId!==requestId||response.tab_id!==tabId
    ||response.url!==url||response.session_id!==sessionId)throw Error("ROUNDTRIP_INVALID");
  if(response.graph?.nodes?.[0]?.id!==42)throw Error("GRAPH_INVALID");
- process.stdout.write(JSON.stringify({tab_id:response.tab_id,url:response.url,
+ process.stdout.write(JSON.stringify({ok:response.ok,requestId:response.requestId,tab_id:response.tab_id,url:response.url,
   session_id:response.session_id,source:"live_canvas_memory",graph:response.graph}));
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -216,6 +216,36 @@ def build_mcp(
             duplicate = True
         return {"work": _work_dict(current), "duplicate": duplicate}
 
+    # Reverse ComfyUI control plane on this EXISTING authenticated BCT MCP.
+    # These tools do not create Work permission: every call rechecks exact Work scope.
+    def _comfy_channel_authorized(work_id: str) -> None:
+        from .core.models import DecisionKind
+        work = bct.store.get_work(work_id)
+        decision = bct.policy.decide(principal=principal, work=work,
+                                     action="comfy_canvas_read", approval_ref=None)
+        if decision.kind is not DecisionKind.ALLOW:
+            raise PermissionError("COMFY_CHANNEL_WORK_NOT_AUTHORIZED")
+
+    @server.tool(description="Bind the exact authorized ComfyUI Native Host session to the existing Core bridge. No browser mutation.", structured_output=True)
+    async def bct_comfy_bridge_bind(work_id: str, session_id: str) -> dict[str, Any]:
+        _comfy_channel_authorized(work_id)
+        generation = bct.comfy_reverse_channel.bind(work_id, session_id)
+        return {"work_id": work_id, "session_id": session_id, "generation": generation}
+
+    @server.tool(description="Claim at most one authorized pending ComfyUI READ for the exact Native Host session; bounded long wait.", structured_output=True)
+    async def bct_comfy_bridge_take(work_id: str, session_id: str, generation: int, wait_seconds: float = 15) -> dict[str, Any]:
+        _comfy_channel_authorized(work_id)
+        item = await asyncio.to_thread(bct.comfy_reverse_channel.take, work_id, session_id, generation, wait_seconds)
+        return {"request": item}
+
+    @server.tool(description="Return a bounded fixed ComfyUI READ response to its exact original Core Operation; duplicate results rejected.", structured_output=True)
+    async def bct_comfy_bridge_submit(work_id: str, session_id: str, generation: int, operation_id: str, response: dict[str, Any]) -> dict[str, Any]:
+        _comfy_channel_authorized(work_id)
+        if not isinstance(response,dict):
+            raise ValueError("COMFY_RESPONSE_INVALID")
+        applied = bct.comfy_reverse_channel.submit(work_id,session_id,generation,operation_id,response)
+        return {"accepted":applied}
+
     @server.tool(description="Read one exact operation receipt owned by the current MCP work.", structured_output=True)
     async def bct_operation_get(work_id: str, operation_id: str, wait_seconds: float = 0) -> dict[str, Any]:
         if not math.isfinite(wait_seconds) or not 0 <= wait_seconds <= 25:

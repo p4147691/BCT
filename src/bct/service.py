@@ -36,6 +36,7 @@ from .features.process_session import ProcessSessionFeature
 from .features.cdp_inspect import CDPInspectFeature
 from .features.comfy_canvas_read import ComfyCanvasReadFeature
 from .features.comfy_canvas_adapter import ComfyCanvasAdapter
+from .features.comfy_reverse_channel import ComfyReverseChannel
 from .features.browser_extension_manage import BrowserExtensionManageFeature
 from .features.monitor import MonitorFeature
 from .features.conversation_network import ConversationNetworkUpdateFeature
@@ -198,7 +199,8 @@ class BCT:
             )
             if self.orchestration.manager_wake_receipt_v2_active else None
         )
-        self.comfy_canvas_adapter = ComfyCanvasAdapter(comfy_canvas_transport)
+        self.comfy_reverse_channel = ComfyReverseChannel()
+        self.comfy_canvas_adapter = ComfyCanvasAdapter(comfy_canvas_transport if comfy_canvas_transport is not None else self.comfy_reverse_channel)
         self.operations = OperationCoordinator(store=self.store, policy=self.policy)
         github = github_client or GhCliClient()
         deployment_profiles = DeploymentProfiles(policy_path)
