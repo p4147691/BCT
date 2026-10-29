@@ -18,11 +18,11 @@ from typing import Any
 from bct.core.models import PreconditionError, UnknownEffectError
 
 EXACT_INSTALLED = Path(r"D:\ChromeExtensions\RCC\extension")
-EXACT_STAGE = Path(r"D:\BCT\data\RCC_FAVICON_PREP_N73_20261029\candidate_source_1_0_60")
-EXACT_ROLLBACK = Path(r"D:\BCT\data\RCC_FAVICON_PREP_N73_20261029\rollback_installed_1_0_59")
-EXACT_MANIFEST = Path(r"D:\BCT\data\RCC_FAVICON_PREP_N73_20261029\release_manifest_pr355_immutable.json")
+EXACT_STAGE = Path(r"D:\BCT\runtime\rehearsals\rcc-pr356-candidate58-20261029-a")
+EXACT_ROLLBACK = Path(r"D:\BCT\runtime\backups\rcc-pr356-live57-20261029-a")
+EXACT_MANIFEST = Path(r"D:\BCT\data\RCC_PR356_GUARDED_INSTALL_20261030\release_manifest_immutable.json")
 PINNED_MANIFEST_PATH = EXACT_MANIFEST
-PINNED_MANIFEST_SHA256 = "8b0b4419339f349eb729160154842d6bdf8676f4699c480feda92762bd4a8871"
+PINNED_MANIFEST_SHA256 = "c7c1f7f982fcc5669763af737315e3183293e8cfc39ec447d8c18addfc5b620e"
 EXACT_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
