@@ -24,6 +24,22 @@ class FakeTransport:
     def read_canvas(self, args):
         return {"tab_id":args["tab_id"],"url":args["url"],"session_id":args["session_id"],"source":"live_canvas_memory","graph":GRAPH}
 
+class NodeBridgeTransport:
+    """Run only the isolated MAIN/ISOLATED mock; no operating Chrome access."""
+    def read_canvas(self, args):
+        import json
+        import subprocess
+        completed = subprocess.run(
+            ["node", str(ROOT/"tests"/"comfy_browser_mock_roundtrip.cjs")],
+            cwd=ROOT, capture_output=True, text=True, check=True, timeout=10,
+        )
+        reply = json.loads(completed.stdout)
+        if any(reply.get(k) != args[k] for k in ("tab_id", "url", "session_id")):
+            raise ValueError("COMFY_MOCK_IDENTITY_MISMATCH")
+        return reply
+
+JS_GRAPH = {"nodes":[{"id":42,"type":"CLIPTextEncode","widgets_values":["untouched prompt"]}],"links":[]}
+
 class ComfyCoreIntegrationTests(unittest.TestCase):
     def test_policy_fence_and_durable_core_receipt(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -60,7 +76,7 @@ class ComfyCoreIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             token_file=Path(folder)/"token"
             token_file.write_text("test-only-token",encoding="utf-8")
-            bct=BCT(state_path=Path(folder)/"state.sqlite",policy_path=ROOT/"bct.toml",comfy_canvas_transport=FakeTransport())
+            bct=BCT(state_path=Path(folder)/"state.sqlite",policy_path=ROOT/"bct.toml",comfy_canvas_transport=NodeBridgeTransport())
             principal=Principal("native-comfy-tester","test",frozenset(bct.operations.capabilities))
             bct.create_work(work_id="native-bridge-work",request_summary="test",roots=[folder],actions=["comfy_canvas_read"],principal=principal)
             class FakeClient:
@@ -86,7 +102,7 @@ class ComfyCoreIntegrationTests(unittest.TestCase):
                     reply=asyncio.run(native_host.dispatch(message))
                 self.assertTrue(reply["ok"])
                 self.assertEqual(reply["request_id"],operation_id)
-                self.assertEqual(reply["result"]["output"]["graph"],GRAPH)
+                self.assertEqual(reply["result"]["output"]["graph"],JS_GRAPH)
                 receipt=bct.store.get_operation_for(operation_id=operation_id,work_id="native-bridge-work",principal_id=principal.principal_id)
                 self.assertEqual(receipt.outcome.value,"APPLIED")
             finally:
