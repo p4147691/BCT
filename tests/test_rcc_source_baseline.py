@@ -21,9 +21,14 @@ class RccSourceBaselineTests(unittest.TestCase):
         ).read_text(encoding="utf-8-sig"))
         self.assertEqual("RCC_REBUILD_V2_RC37_EXACT_CONVERSATION_TAB_CLOSE", release["candidate"])
         self.assertEqual(
-            "c557d8754acbf8429b75a7b4be10c320fd3553a63286a543e1ea5130d1cbe8e0",
+            "5e278244216f5a9e9a0d21a10236b923d4bc9f5b4c712a100e6c62d9691c7bda",
             release["rollbackBaseline"]["aggregateSha256"],
         )
+        self.assertEqual(57, release["rollbackBaseline"]["fileCount"])
+        self.assertEqual(58, release["candidateInventory"]["fileCount"])
+        self.assertTrue({"browser/tab_group_adapter.js", "browser/tab_group_contract.js",
+                         "domain/tab_group_service.js"}.issubset(
+                         {item["path"] for item in release["rollbackBaseline"]["files"]}))
         inventory = {item["path"]: item["sha256"]
                      for item in release["candidateInventory"]["files"]}
         critical = {

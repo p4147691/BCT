@@ -578,7 +578,8 @@ if (message.type === 'relay:renameConversation') {
     renameConversationUi(message).then(sendResponse).catch((error) => sendResponse({
       ok: false,
       effectState: String(error?.effectState || 'UNKNOWN'),
-      error: String(error?.message || error || 'RENAME_UI_UNKNOWN')
+      error: String(error?.message || error || 'RENAME_UI_UNKNOWN'),
+      renameDiagnostic: error?.renameDiagnostic || null
     }));
 
     return true;

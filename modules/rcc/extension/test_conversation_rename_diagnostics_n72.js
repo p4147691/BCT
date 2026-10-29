@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync(__dirname+'/content/conversation_rename.js','utf8');
+const button={disabled:false,textContent:'',getAttribute:(k)=>k==='aria-label'?'더 보기':null,getClientRects:()=>[{}],scrollIntoView(){},dispatchEvent(){},click(){opened=true;openedAt=Date.now();}};
+let opened=false, label='이름 변경', show=false, openedAt=0, menuDelay=0;
+const item=()=>({disabled:false,textContent:label,getAttribute:()=>null,getClientRects:()=>[{}]});
+const menu={getClientRects:()=>[{}],querySelectorAll:()=>show?[item()]:[]};
+const doc={querySelector:(s)=>s.includes('app-shell-header')?{getClientRects:()=>[{}],querySelectorAll:()=>[button]}:null,querySelectorAll:(s)=>s.includes('[role="menu"],')?(opened && Date.now()-openedAt>=menuDelay?[menu]:[]):[]};
+const c=vm.createContext({document:doc,window:{},location:{href:'https://chatgpt.com/c/exact-key'},URL,setTimeout,normalizedUiText:(s)=>String(s||'').trim(),isVisible:(n)=>!!n?.getClientRects?.().length,currentConversationKey:()=> 'exact-key',MouseEvent:class{constructor(){}},PointerEvent:undefined});
+vm.runInContext(source,c);
+(async()=>{let e;try{await vm.runInContext('openConversationRenameEditor("exact-key")',c)}catch(x){e=x};assert.equal(e.message,'RENAME_ACTION_NOT_FOUND');assert.equal(e.renameDiagnostic.menuVisible,'OBSERVED');assert.equal(e.renameDiagnostic.menuButton,'FOUND');show=false;opened=false;try{await vm.runInContext('openConversationRenameEditor("exact-key")',c)}catch(x){e=x};assert.equal(e.renameDiagnostic.renameAction,'NOT_FOUND');menuDelay=250;opened=false;try{await vm.runInContext('openConversationRenameEditor("exact-key")',c)}catch(x){e=x};assert.equal(e.renameDiagnostic.menuVisible,'OBSERVED');menuDelay=0;label='Change display title';show=true;opened=false;try{await vm.runInContext('openConversationRenameEditor("exact-key")',c)}catch(x){e=x};assert.equal(e.renameDiagnostic.renameAction,'NOT_FOUND');console.log('rename diagnostic missing action/changed label fixtures PASS')})().catch(e=>{console.error(e);process.exitCode=1});
