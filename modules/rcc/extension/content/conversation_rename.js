@@ -1,6 +1,7 @@
-function renameUiError(code, effectState = 'NOT_APPLIED') {
+function renameUiError(code, effectState = 'NOT_APPLIED', diagnostic = null) {
   const error = new Error(String(code || 'RENAME_UI_FAILED'));
   error.effectState = effectState;
+  if (diagnostic) error.renameDiagnostic = { ...diagnostic };
   return error;
 }
 
@@ -202,7 +203,16 @@ function findRenameEditor(anchor) {
 }
 
 async function openConversationRenameEditor(key) {
-  if (currentConversationKey() !== key) throw renameUiError('RENAME_TARGET_STALE');
+  // Diagnostic values are fixed stage/status flags, never DOM contents.
+  const diagnostic = {
+    version: 1, identity: 'MATCH', menuButton: 'NOT_FOUND',
+    menuClick: 'NOT_ATTEMPTED', menuVisible: 'NOT_OBSERVED',
+    renameAction: 'NOT_FOUND', editor: 'NOT_CHECKED',
+  };
+  if (currentConversationKey() !== key) {
+    diagnostic.identity = 'MISMATCH';
+    throw renameUiError('RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
+  }
   let anchor = visibleExactConversationAnchor(key);
   let menuButton = currentConversationMenuButton();
   if (!menuButton) {
@@ -211,21 +221,43 @@ async function openConversationRenameEditor(key) {
     menuButton = await waitForRenameUi(() => rowMenuButton(anchor), 1500);
   }
   if (menuButton) {
+    diagnostic.menuButton = 'FOUND';
+    diagnostic.menuClick = 'ATTEMPTED';
     activateRenameUiElement(menuButton);
   } else if (anchor) {
+    diagnostic.menuClick = 'CONTEXT_MENU_ATTEMPTED';
     openContextMenu(anchor);
   }
-  let renameItem = await waitForRenameUi(findRenameMenuItem, 2500);
+  // Observe only the existence of a menu, never its labels or inner HTML.
+  const visibleMenu = () => Array.from(
+    document.querySelectorAll('[role="menu"], [data-radix-menu-content]')
+  ).some(isVisible);
+  let renameItem = await waitForRenameUi(() => {
+    if (visibleMenu()) diagnostic.menuVisible = 'OBSERVED';
+    return findRenameMenuItem();
+  }, 2500);
   if (!renameItem && anchor) {
+    diagnostic.menuClick = 'CONTEXT_MENU_ATTEMPTED';
     openContextMenu(anchor);
-    renameItem = await waitForRenameUi(findRenameMenuItem, 2000);
+    renameItem = await waitForRenameUi(() => {
+      if (visibleMenu()) diagnostic.menuVisible = 'OBSERVED';
+      return findRenameMenuItem();
+    }, 2000);
   }
-  if (!renameItem) throw renameUiError('RENAME_ACTION_NOT_FOUND');
-  if (currentConversationKey() !== key) throw renameUiError('RENAME_TARGET_STALE');
+  if (!renameItem) throw renameUiError('RENAME_ACTION_NOT_FOUND', 'NOT_APPLIED', diagnostic);
+  diagnostic.renameAction = 'FOUND';
+  if (currentConversationKey() !== key) {
+    diagnostic.identity = 'MISMATCH';
+    throw renameUiError('RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
+  }
   activateRenameUiElement(renameItem);
   const input = await waitForRenameUi(() => findRenameEditor(anchor), 5000);
-  if (!input) throw renameUiError('RENAME_INPUT_NOT_FOUND');
-  return { anchor, input };
+  if (!input) {
+    diagnostic.editor = 'NOT_FOUND';
+    throw renameUiError('RENAME_INPUT_NOT_FOUND', 'NOT_APPLIED', diagnostic);
+  }
+  diagnostic.editor = 'FOUND';
+  return { anchor, input, diagnostic };
 }
 
 function setRenameEditorValue(input, title) {

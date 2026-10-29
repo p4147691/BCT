@@ -141,6 +141,9 @@ async function runConversationRename(message, requestId) {
     reply?.error || 'RENAME_CONTENT_ACK_INVALID',
     notApplied ? 'NOT_APPLIED' : 'UNKNOWN'
   );
+  if (reply?.renameDiagnostic && typeof reply.renameDiagnostic === 'object') {
+    result.renameDiagnostic = reply.renameDiagnostic;
+  }
   await writeRenameReceipt(operationId, {
     ...prepared,
     terminal: notApplied,
