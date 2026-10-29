@@ -36,6 +36,8 @@ MONITOR_PRINCIPAL_ID = "bct-monitor-extension"
 MONITOR_WORK_ID = "bct-monitor-extension-control"
 _OPERATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
 GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 5
+RCC_BACKGROUND_SOURCE_PATH = Path(r"D:\BCT\source\modules\rcc\extension\background.js")
+RCC_BACKGROUND_LIVE_PATH = Path(r"D:\ChromeExtensions\RCC\extension\background.js")
 
 
 def build_server_config(app: Any, *, port: int) -> uvicorn.Config:
@@ -429,8 +431,8 @@ def main() -> int:
             store=bct.store,
             service_state=state,
             data_root=runtime_root.parent / "data",
-            rcc_source_path=Path(r"D:\BCT\source\modules\rcc\extension\background.js"),
-            rcc_live_path=Path(r"D:\ChromeExtensions\RCC\extension\background.js"),
+            rcc_source_path=RCC_BACKGROUND_SOURCE_PATH,
+            rcc_live_path=RCC_BACKGROUND_LIVE_PATH,
         )
         return {
             "schema": 1,
@@ -467,6 +469,8 @@ def main() -> int:
             store=bct.store,
             service_state=state,
             data_root=runtime_root.parent / "data",
+            rcc_source_path=RCC_BACKGROUND_SOURCE_PATH,
+            rcc_live_path=RCC_BACKGROUND_LIVE_PATH,
         ))
 
     @mcp.custom_route("/monitor", methods=["GET"], include_in_schema=False)
