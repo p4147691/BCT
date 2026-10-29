@@ -34,7 +34,7 @@ class ProtectedRccRouteTests(unittest.TestCase):
         self.policy_manifest = self.base / "release.json"
         self.pub = b"safe-rcc-test-public-key-n73"
         alphabet = "abcdefghijklmnop"
-        self.id = "".join(alphabet[n] for b in hashlib.sha256(self.pub).digest()[:16]
+        self.extension_id = "".join(alphabet[n] for b in hashlib.sha256(self.pub).digest()[:16]
                           for n in (b >> 4, b & 15))
         manifest = lambda ver: {
             "manifest_version": 3, "name": "BCT RCC",
@@ -55,7 +55,7 @@ class ProtectedRccRouteTests(unittest.TestCase):
         }
         self.policy_manifest.write_text(json.dumps(self.release),encoding="utf-8")
         self.prev_id=ri.EXTENSION_ID
-        ri.EXTENSION_ID=self.id
+        ri.EXTENSION_ID=self.extension_id
         self.addCleanup(lambda: setattr(ri,"EXTENSION_ID",self.prev_id))
 
     @staticmethod
@@ -80,7 +80,7 @@ class ProtectedRccRouteTests(unittest.TestCase):
     def test_01_exact_read_only_preflight_57_58_identity(self):
         plan=self.inspect()
         self.assertEqual((plan["installed_files"],plan["candidate_files"]),(57,58))
-        self.assertEqual(plan["extension_id"],self.id)
+        self.assertEqual(plan["extension_id"],self.extension_id)
         self.assertFalse(self.journal.exists())
 
     def test_02_without_trusted_bct_authorization_installs_nothing(self):
