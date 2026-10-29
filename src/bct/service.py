@@ -17,6 +17,11 @@ from .relay_executor import RelayControlFeature
 from .worker_dispatch_recovery import WorkerDispatchRecovery
 from .manager_succession_recovery import ManagerSuccessionRecovery
 from .features.files import FileReadFeature, FileWriteFeature
+from .features.pc_safe_plans import FileActionPlanFeature, ProcessStopPlanFeature
+from .features.pc_safe_apply import FileActionApplyFeature
+from .features.approval_challenge import ApprovalChallengeFeature
+from .features.pc_process_apply import ProcessStopApplyFeature
+from .features.pc_local_mode import LocalFileActionFeature, LocalProcessStopFeature
 from .features.git import GitCommitFeature
 from .features.deploy import DeployFeature, DeploymentProfiles, ServiceControlFeature
 from .features.github import (
@@ -200,8 +205,12 @@ class BCT:
         github = github_client or GhCliClient()
         deployment_profiles = DeploymentProfiles(policy_path)
         desktop_session = desktop_session_client(policy_path, data_root=data_root)
+        sessions = ProcessSessionFeature(policy_path, data_root=data_root)
+        approved_stop = ProcessStopApplyFeature(sessions, self.store)
         for feature in (
-            FileReadFeature(self.store), FileWriteFeature(), TestFeature(), GitCommitFeature(policy_path),
+            FileReadFeature(self.store), FileWriteFeature(), FileActionPlanFeature(),
+            ProcessStopPlanFeature(), FileActionApplyFeature(), approved_stop,
+            LocalFileActionFeature(), LocalProcessStopFeature(approved_stop), TestFeature(), GitCommitFeature(policy_path),
             GitHubPushFeature(), GitHubPullRequestFeature(github),
             GitHubPullRequestStatusFeature(github), GitHubPullRequestMergeFeature(github, policy_path),
             GitHubRunInboxFeature(self.store, github, policy_path),
@@ -209,7 +218,7 @@ class BCT:
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
             relay_browser,
             SystemInspectFeature(), ExecuteFeature(),
-            ProcessSessionFeature(policy_path, data_root=data_root),
+            sessions,
             MonitorFeature(policy_path),
             ConversationNetworkUpdateFeature(self.store),
             ProjectContextFeature(data_root or Path(policy_path).parent),
@@ -243,6 +252,7 @@ class BCT:
         self.operations.register(RelayControlFeature(
             store=self.store, features=self.operations._features,
         ))
+        self.operations.register(ApprovalChallengeFeature(self.operations._features))
         self.operations.register(VerificationFeature(self.operations._features, self.store))
 
     def create_work(self, *, work_id: str, request_summary: str, roots: list[str],

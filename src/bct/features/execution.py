@@ -83,10 +83,29 @@ class SystemInspectFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "").strip().casefold()
-        if operation not in {"process_list", "process", "port"}:
+        if operation not in {"process_list", "process", "port", "diagnose"}:
             raise PreconditionError("SYSTEM_INSPECT_OPERATION_INVALID")
         normalized: dict[str, Any] = {"operation": operation}
-        if operation == "process_list":
+        if operation == "diagnose":
+            if set(arguments) - {"operation", "query", "ports", "limit"}:
+                raise PreconditionError("SYSTEM_DIAGNOSE_FIELDS_INVALID")
+            query = arguments.get("query", "")
+            ports = arguments.get("ports", [])
+            limit = arguments.get("limit", 50)
+            if (not isinstance(query, str) or len(query) > 200
+                    or "\x00" in query):
+                raise PreconditionError("SYSTEM_DIAGNOSE_QUERY_INVALID")
+            if (not isinstance(ports, list) or len(ports) > 8
+                    or len(ports) != len(set(str(port) for port in ports))
+                    or any(type(port) is not int or not 1 <= port <= 65535
+                           for port in ports)):
+                raise PreconditionError("SYSTEM_DIAGNOSE_PORTS_INVALID")
+            if type(limit) is not int or not 1 <= limit <= 200:
+                raise PreconditionError("SYSTEM_DIAGNOSE_LIMIT_INVALID")
+            if not query and not ports:
+                raise PreconditionError("SYSTEM_DIAGNOSE_SELECTOR_REQUIRED")
+            normalized.update({"query": query, "ports": list(ports), "limit": limit})
+        elif operation == "process_list":
             normalized["query"] = str(arguments.get("query") or "")
             normalized["limit"] = max(1, min(int(arguments.get("limit") or 200), 1000))
         elif operation == "process":
@@ -97,12 +116,29 @@ class SystemInspectFeature:
             normalized["port"] = int(arguments.get("port") or 0)
             if not 1 <= normalized["port"] <= 65535:
                 raise PreconditionError("PORT_INVALID")
-        target = f"system:{operation}:{normalized.get('pid', normalized.get('port', normalized.get('query', 'all')))}"
+        if operation == "diagnose":
+            target = ("system:diagnose:" + normalized["query"].casefold()
+                      + ":ports:" + ",".join(str(port) for port in normalized["ports"]))
+        else:
+            target = f"system:{operation}:{normalized.get('pid', normalized.get('port', normalized.get('query', 'all')))}"
         return FeatureRequest(self.capability, target, normalized, (target.casefold(),))
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
         operation = request.arguments["operation"]
-        if operation == "process_list":
+        if operation == "diagnose":
+            query = request.arguments["query"]
+            limit = request.arguments["limit"]
+            rows = list_processes(query=query, limit=limit) if query else []
+            ports = [
+                {"port": port, "owners": owners, "count": len(owners)}
+                for port in request.arguments["ports"]
+                for owners in [port_owners(port)]
+            ]
+            output = {"query": query, "processes": rows,
+                      "process_count": len(rows),
+                      "process_list_may_be_truncated": len(rows) == limit,
+                      "ports": ports, "read_only": True}
+        elif operation == "process_list":
             rows = list_processes(query=request.arguments["query"], limit=request.arguments["limit"])
             output = {"processes": rows, "count": len(rows)}
         elif operation == "process":
@@ -110,7 +146,7 @@ class SystemInspectFeature:
         else:
             rows = port_owners(request.arguments["port"])
             output = {"port": request.arguments["port"], "owners": rows, "count": len(rows)}
-        return FeatureResult(Outcome.APPLIED, {"operation": operation}, output=output)
+        return FeatureResult(Outcome.APPLIED, {"operation": operation, "read_only": True}, output=output)
 
 
 class ExecuteFeature:
