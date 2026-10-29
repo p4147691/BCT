@@ -114,7 +114,7 @@ class MonitorRuntimeTests(unittest.TestCase):
                 first = _rcc_states(ids)
                 self.assertEqual(2, len(calls))
                 self.assertEqual("UNKNOWN", first[2]["state"])
-                self.assertTrue(all(t <= 0.25 for _, t in calls))
+                self.assertTrue(all(t <= 1.0 for _, t in calls))
                 second = _rcc_states(ids)
                 self.assertEqual(4, len(calls))
                 self.assertEqual("OPEN", second[2]["state"])
@@ -154,22 +154,22 @@ class MonitorRuntimeTests(unittest.TestCase):
             _RCC_HEALTH.clear()
             _RCC_INFLIGHT.clear()
             try:
-                self.assertEqual(0.25, _RCC_FRESH_TIMEOUT_S)
-                self.assertEqual(0.35, _RCC_TIMEOUT_RETRY_TIMEOUT_S)
+                self.assertEqual(1.0, _RCC_FRESH_TIMEOUT_S)
+                self.assertEqual(1.2, _RCC_TIMEOUT_RETRY_TIMEOUT_S)
                 self.assertEqual(5.0, _RCC_TIMEOUT_RETRY_SECONDS)
                 self.assertEqual("PROBE_TIMEOUT", _rcc_states(["instance-a"])[0]["state"])
-                self.assertEqual([0.25], calls)
+                self.assertEqual([1.0], calls)
                 self.assertLessEqual(
                     _RCC_HEALTH["instance-a"]["retry_at"] - time.monotonic(), 5.0)
                 cache = _rcc_states(["instance-a"])[0]
                 self.assertEqual("PROBE_TIMEOUT", cache["state"])
                 self.assertTrue(cache["cached"])
-                self.assertEqual([0.25], calls)
+                self.assertEqual([1.0], calls)
                 _RCC_HEALTH["instance-a"]["retry_at"] = 0
                 live = _rcc_states(["instance-a"])[0]
                 self.assertEqual("OPEN", live["state"])
                 self.assertEqual("same-session", live["session_id"])
-                self.assertEqual([0.25, 0.35], calls)
+                self.assertEqual([1.0, 1.2], calls)
                 self.assertFalse(_RCC_INFLIGHT)
             finally:
                 _RCC_HEALTH.clear()
