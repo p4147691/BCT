@@ -401,7 +401,12 @@ function resolveRoutedTurn(record) {
     // A blank-route submission can acquire its UUID before the exact user
     // turn is mounted. Do not classify that interim state as a different
     // conversation. Never promote without one unique exact matching turn.
-    if (bootstrapRebind && matches.length === 0 && turns.length === 0) {
+    // A provisional assistant/route container can mount before the exact user
+    // turn. Wait only while no user text is visible; a different user turn
+    // remains a terminal identity mismatch. Never infer submission from a UUID.
+    const noUserTurnMounted = turns.length === 0
+      || turns.every((turn) => !turnUserText(turn));
+    if (bootstrapRebind && matches.length === 0 && noUserTurnMounted) {
       return { ok: false, terminal: false, reason: 'BOOTSTRAP_ROUTE_TURN_PENDING' };
     }
     if (!bootstrapRebind || matches.length !== 1) {
