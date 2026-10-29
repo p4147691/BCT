@@ -38,12 +38,15 @@ from ctypes import wintypes
 u = ctypes.WinDLL("user32", use_last_error=True)
 u.GetProcessWindowStation.restype = wintypes.HANDLE
 w = u.GetProcessWindowStation()
-flags = wintypes.DWORD(0)
+class USEROBJECTFLAGS(ctypes.Structure):
+    _fields_ = [("fInherit", wintypes.BOOL), ("fReserved", wintypes.BOOL),
+                ("dwFlags", wintypes.DWORD)]
+flags = USEROBJECTFLAGS()
 length = wintypes.DWORD(0)
 if not w or not u.GetUserObjectInformationW(w, 1, ctypes.byref(flags),
                                              ctypes.sizeof(flags), ctypes.byref(length)):
     sys.exit(3)
-if not flags.value & 1:
+if not flags.dwFlags & 1:
     sys.exit(3)
 title = "BCT — 복구 가능한 삭제 확인"
 details = sys.stdin.read(8192)
