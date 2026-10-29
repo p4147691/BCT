@@ -18,12 +18,12 @@ from typing import Any
 from bct.core.models import PreconditionError, UnknownEffectError
 
 EXACT_INSTALLED = Path(r"D:\ChromeExtensions\RCC\extension")
-EXACT_STAGE = Path(r"D:\BCT\runtime\rehearsals\rcc-pr356-candidate58-20261029-a")
-EXACT_ROLLBACK = Path(r"D:\BCT\runtime\backups\rcc-pr356-live57-20261029-a")
-EXACT_MANIFEST = Path(r"D:\BCT\data\RCC_PR356_GUARDED_INSTALL_20261030\release_manifest_immutable.json")
+EXACT_STAGE = Path(r"D:\BCT\data\RCC_PR362_58TO58_PREP_20261030\candidate_receipt_58")
+EXACT_ROLLBACK = Path(r"D:\BCT\data\RCC_PR362_58TO58_PREP_20261030\rollback_installed_58")
+EXACT_MANIFEST = Path(r"D:\BCT\data\RCC_PR362_58TO58_PREP_20261030\release_manifest_58to58_immutable.json")
 PINNED_MANIFEST_PATH = EXACT_MANIFEST
-PINNED_MANIFEST_SHA256 = "c7c1f7f982fcc5669763af737315e3183293e8cfc39ec447d8c18addfc5b620e"
-EXACT_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install")
+PINNED_MANIFEST_SHA256 = "b35f64eccce91c1263cb85932c7c882bb181790ab2b3d406937e380e87b9f244"
+EXACT_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-pr362")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
@@ -145,13 +145,13 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
     release = json.loads(manifest_file.read_text(encoding="utf-8-sig"))
     rollback = release["rollbackBaseline"]
     proposed = release["candidateInventory"]
-    if rollback.get("fileCount") != 57 or proposed.get("fileCount") != 58:
-        raise PreconditionError("RCC_INSTALL_57_58_CONTRACT_INVALID")
-    if _identity(live) != (EXTENSION_ID, "1.0.59"):
+    if rollback.get("fileCount") not in (57, 58) or proposed.get("fileCount") != 58:
+        raise PreconditionError("RCC_INSTALL_57_58_OR_58_58_CONTRACT_INVALID")
+    if _identity(live) != (EXTENSION_ID, "1.0.59" if rollback["fileCount"] == 57 else "1.0.60"):
         raise PreconditionError("RCC_INSTALL_LIVE_IDENTITY_MISMATCH")
     if _identity(candidate) != (EXTENSION_ID, "1.0.60"):
         raise PreconditionError("RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH")
-    if _identity(backup_source) != (EXTENSION_ID, "1.0.59"):
+    if _identity(backup_source) != (EXTENSION_ID, "1.0.59" if rollback["fileCount"] == 57 else "1.0.60"):
         raise PreconditionError("RCC_INSTALL_ROLLBACK_IDENTITY_MISMATCH")
     _exact(live, rollback)
     _exact(backup_source, rollback)
@@ -166,7 +166,7 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
         "candidate_aggregate": proposed["aggregateSha256"],
         "manifest_sha256": _sha(manifest_file.read_bytes()),
         "extension_id": EXTENSION_ID,
-        "installed_files": 57, "candidate_files": 58,
+        "installed_files": rollback["fileCount"], "candidate_files": proposed["fileCount"],
     }
 
 
