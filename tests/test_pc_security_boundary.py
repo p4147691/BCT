@@ -182,7 +182,13 @@ class BoundarySecurityTests(unittest.TestCase):
     def test_current_temporary_acl_not_assumed_protected(self):
         path = self.root / "probe.txt"
         path.write_text("read only audit", encoding="utf8")
-        inspected = inspect_dacl(path)
+        try:
+            inspected = inspect_dacl(path)
+        except AuthorizationError as exc:
+            # GitHub runners may use non-translatable virtual-account SIDs.
+            # Unobservable ACL is a fail-closed outcome, never a PASS.
+            self.assertIn("DACL_UNOBSERVABLE", str(exc))
+            return
         self.assertIn("owner", inspected)
         self.assertIn("aces", inspected)
         with self.assertRaises(AuthorizationError):
