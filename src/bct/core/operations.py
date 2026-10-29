@@ -13,6 +13,7 @@ from .models import (
     UnknownEffectError,
 )
 from .policy import Policy
+from .approval import ApprovalVerifier
 from bct.trace_timing import trace_stage
 from .store import Store
 
@@ -22,6 +23,9 @@ class OperationCoordinator:
         self.store = store
         self.policy = policy
         self._features: dict[str, Feature] = {}
+        self.approval_verifier = ApprovalVerifier(
+            policy_path=getattr(policy, "path", None), state_path=store.path,
+        )
 
     def register(self, feature: Feature) -> None:
         if feature.capability in self._features:
@@ -78,7 +82,15 @@ class OperationCoordinator:
         )
         decision = self.policy.decide(principal=principal, work=work, action=policy_action,
                                       approval_ref=approval_ref)
-        if decision.kind is not DecisionKind.ALLOW:
+        if (capability in self.approval_verifier.ALLOWED
+                and decision.kind is DecisionKind.ALLOW):
+            raise AuthorizationError("P2_APPROVAL_ONLY_POLICY_REQUIRED")
+        approval_required = (
+            decision.kind is DecisionKind.APPROVAL_REQUIRED
+            and capability in self.approval_verifier.ALLOWED
+            and policy_action == capability
+        )
+        if decision.kind is not DecisionKind.ALLOW and not approval_required:
             raise AuthorizationError(decision.reason_code + ":" + decision.next_action)
         rcc_command = str(arguments.get("command") or "").strip().lower()
         if capability == "relay_browser" and rcc_command in {
@@ -314,14 +326,21 @@ class OperationCoordinator:
             "arguments": request.arguments,
             "preconditions": request.preconditions,
         }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-        return feature, work, decision, request, digest
+        approval_nonce = None
+        if approval_required:
+            approval_nonce = self.approval_verifier.inspect(
+                approval_ref, principal_id=principal.principal_id,
+                work_id=work_id, operation_id=operation_id,
+                capability=capability, target=request.target, digest=digest,
+            )
+        return feature, work, decision, request, digest, approval_nonce
 
     def _begin(self, *, principal: Principal, work_id: str, operation_id: str,
                capability: str, arguments: dict[str, Any], approval_ref: str | None,
                background_job: dict[str, Any] | None = None):
         prepare_started = time.perf_counter_ns()
         try:
-            feature, work, decision, request, digest = self._prepare(
+            feature, work, decision, request, digest, nonce = self._prepare(
                 principal=principal, work_id=work_id, operation_id=operation_id,
                 capability=capability, arguments=arguments, approval_ref=approval_ref,
             )
@@ -339,6 +358,29 @@ class OperationCoordinator:
         finally:
             trace_stage("claim_reservation", tool_kind=capability,
                         elapsed_ms=(time.perf_counter_ns() - claim_started) / 1e6)
+        if nonce is not None and (
+            created or current.state is not OperationState.FINISHED
+        ):
+            try:
+                if not self.approval_verifier.consumed_for(
+                    nonce, principal_id=principal.principal_id,
+                    work_id=work_id, operation_id=operation_id, digest=digest,
+                ):
+                    self.approval_verifier.consume(
+                        nonce, principal_id=principal.principal_id,
+                        work_id=work_id, operation_id=operation_id, digest=digest,
+                    )
+            except AuthorizationError as exc:
+                # No effect starts until grant consumption is durable.
+                if created:
+                    current = self.store.finish_operation(
+                        operation_id=operation_id, outcome=Outcome.NOT_APPLIED,
+                        evidence={"phase": "AUTHORIZATION", "code": str(exc)},
+                        error=str(exc), release_claims=True,
+                    )
+                    created = False
+                else:
+                    raise
         return feature, request, created, current
 
     def begin(self, *, principal: Principal, work_id: str, operation_id: str,
