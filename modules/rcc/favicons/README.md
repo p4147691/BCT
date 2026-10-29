@@ -1,0 +1,32 @@
+# ChatGPT N번호 파비콘 — 격리 후보 0.1.2
+
+기존 자산 재사용: D:\BCT\data\chatgpt-node-favicon.user.js (0.1.1)
+원본 SHA256: a5066cb12b4a49dd1a0da729af537d02035f80e2c1760b92683cd7fde296f419
+이 디렉터리의 userscript는 배포 전 소스이며 원본/운영 Chrome과 RCC를 수정하지 않는다.
+
+## 동작 및 안전 경계
+- Core /monitor/state의 대화 UUID, 단일 OPEN 탭, tab_id/window_id, 실제 탭 URL, N번호를 교차 확인한다.
+- 중복 UUID, 노드 미등록, 신원 불일치, Core/RCC 오류는 fail-closed로 원래 favicon을 보존한다.
+- 실제 Chrome tabId는 userscript에서 알 수 없어 동일 UUID의 복수 탭은 표시하지 않는다.
+- SPA Navigation API, popstate/hashchange, pageshow/focus, visibilitychange, head mutation을 감지한다.
+- 선택적 window 이벤트 bct:conversation-roster-changed는 반드시 Core의 현재 상태 재조회만 유도한다.
+- 15초/30초 폴링과 일체의 주기적 상태 조회 타이머 없음. 제목/본문/RCC 메시지/포커스 조작 없음.
+
+## 검증 명령
+- node modules/rcc/favicons/test_chatgpt_node_favicon.cjs : 14개 모의 회귀
+- node modules/rcc/favicons/test_chatgpt_node_favicon_browser.cjs : 별도 headless Chrome/profile PNG 64×64 검증
+- 격리 브라우저의 DOM/PNG PASS는 운영 Chrome 탭 스트립 시각 확인과 구별한다.
+
+## 감독관 배포 전 차단
+1. 기존 RCC/BCT가 bct:conversation-roster-changed를 발행하는 영수증은 없다.
+   백그라운드 노드 등록 변경의 즉시 반영을 수락하려면 승인된 이벤트 연결을 검증해야 한다.
+   15초/30초 폴링 재도입 금지.
+2. Tampermonkey 목록 읽기는 TAMPERMONKEY_OPTIONS_PAGE_REQUIRED로 실패.
+   실제 설치 상태 및 기존 CDP watcher와 중복 갱신 경쟁을 감독관이 확인한다.
+3. 2026-10-23 기존 문서의 DOM 6/6 PASS는 운영 Chrome 탭 숫자 픽셀 확인이 아니다.
+   운영 N70/N71 및 중복/미등록 탭의 화면 표시, 제목 및 RCC 전달을 별도 실사용 수락한다.
+4. main 병합, LIVE, 운영 Chrome 확장 설치·재로드·사용자 탭 변경은 감독관 전담.
+
+## 범위 분리
+모든 변경 파일은 modules/rcc/favicons/ 아래이며 PR #349 Monitor 모듈화 파일은 수정하지 않는다.
+기존 데이터의 userscript 0.1.1도 원형 보존.
