@@ -13,7 +13,7 @@
 - 15초/30초 폴링과 일체의 주기적 상태 조회 타이머 없음. 제목/본문/RCC 메시지/포커스 조작 없음.
 
 ## 검증 명령
-- node modules/rcc/favicons/test_chatgpt_node_favicon.cjs : 14개 모의 회귀
+- node modules/rcc/favicons/test_chatgpt_node_favicon.cjs : 19개 모의 회귀
 - node modules/rcc/favicons/test_chatgpt_node_favicon_browser.cjs : 별도 headless Chrome/profile PNG 64×64 검증
 - python -m unittest discover -s tests -p test_rcc_favicon_userscript.py -v : CI core shard에서 위 Node 모의 시험 실행
 - 격리 브라우저의 DOM/PNG PASS는 운영 Chrome 탭 스트립 시각 확인과 구별한다.
@@ -31,3 +31,10 @@
 ## 범위 분리
 기능 소스와 JS 검증은 modules/rcc/favicons/ 아래이며 CI 연결 테스트만 tests/test_rcc_favicon_userscript.py를 사용한다. PR #349 Monitor 모듈화 파일은 수정하지 않는다.
 기존 데이터의 userscript 0.1.1도 원형 보존.
+
+## 후속 검증: RCC 이벤트 연결과 기존 감시기
+- RCC observation_gateway.js는 Chrome 탭 생성·갱신·삭제·이동을 받으며, endpoint_service.js는 host:endpoints snapshot/delta를 Native Host로 전송한다. 여기에는 Core의 N번호가 없다.
+- BCT monitor_runtime.py는 /monitor/state 조회 시 ensure_observed_node_labels로 N번호를 구성한다. 해당 결과를 사용자 스크립트에 알리는 bct:conversation-roster-changed 발행자·전달 경로는 현행 소스에서 확인되지 않았다.
+- 기존 CDP watcher는 15/30초 폴링과 data-bct-cdp-favicon-20261023을 사용한다. 후보 userscript는 data-bct-node-favicon-v1만 변경하며 다른 아이콘 태그를 삭제하지 않는다. 기존 watcher 등록 세션은 RUNNING으로 남아도 해당 PID들은 실존하지 않는 것으로 관측되었다. 운영 프로필·중복 설치 여부는 미검증이다.
+- 새 모의 회귀 5개 추가로 총 19/19 PASS: 백그라운드 등록·해제 이벤트, 백그라운드 SPA 이동, 옛 CDP 태그 공존, 이벤트가 없으면 배경 변경이 반영되지 않고 포커스 때 복구되는 한계.
+- 실제 노드 등록 변경 시 이벤트 미발행이므로 배경 탭 즉시 업데이트는 미수락. 별도 폴링 추가 금지; 감독관이 확정할 이벤트 공급 계약 없이는 READY_FOR_DEPLOY 아님.

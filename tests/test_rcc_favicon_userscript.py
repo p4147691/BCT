@@ -29,7 +29,7 @@ class RccFaviconUserscriptTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + "\n" + result.stderr)
-        self.assertIn("ALL 14 FAVICON ISOLATED REGRESSIONS PASS", result.stdout)
+        self.assertIn("ALL 19 FAVICON ISOLATED REGRESSIONS PASS", result.stdout)
 
 
 if __name__ == "__main__":

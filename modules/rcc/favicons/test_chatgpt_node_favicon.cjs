@@ -133,4 +133,43 @@ check(()=>{
   assert.doesNotMatch(src,/document\.title\s*=/);
   assert.doesNotMatch(src,/chrome\.runtime\.sendMessage\s*\(/);
 },'no 15-30 second polling, title writes or RCC message effects');
-console.log('ALL 14 FAVICON ISOLATED REGRESSIONS PASS');
+check(()=>{
+  const f=fixture();f.setRows([]);f.signal('bct:conversation-roster-changed');
+  assert.equal(f.icon,null);
+  f.document.hidden=true;f.setRows([row(A,'N71')]);
+  f.signal('bct:conversation-roster-changed');
+  assert.equal(f.icon,'N|71');assert.equal(f.document.hidden,true);
+},'background unregistered to registered event updates without focus or timer');
+check(()=>{
+  const f=fixture();f.document.hidden=true;f.setRows([]);
+  f.signal('bct:conversation-roster-changed');
+  assert.equal(f.icon,null);assert.equal(f.document.hidden,true);
+  assert.equal(f.originalPreserved,true);
+},'background deregistration event restores original icon');
+check(()=>{
+  const f=fixture();f.document.hidden=true;
+  const initial=f.requestCount;
+  f.setRows([row(A,'N71')]);
+  assert.equal(f.icon,'N|70');
+  assert.equal(f.requestCount,initial);
+  f.document.hidden=false;
+  f.signal('doc:visibilitychange');
+  assert.equal(f.icon,'N|71');
+},'without publisher no spontaneous background refresh; foreground catches up');
+check(()=>{
+  const f=fixture();f.document.hidden=true;
+  f.setRows([row(B,'N71')]);f.location.pathname='/c/'+B;
+  f.signal('nav:currententrychange');
+  assert.equal(f.icon,'N|71');
+},'hidden tab SPA navigation refreshes exact conversation identity');
+check(()=>{
+  const f=fixture();
+  const legacy={isConnected:true,hasAttribute:false,href:'legacy-watcher.ico',rel:'icon'};
+  f.document.head.append(legacy);
+  f.headChange();
+  assert.equal(legacy.isConnected,true);
+  assert.equal(legacy.href,'legacy-watcher.ico');
+  assert.equal(f.document.head.lastElementChild,f.ownLink);
+  assert.equal(f.document.title,'기존 ChatGPT 제목');
+},'old CDP watcher icon remains untouched while own favicon wins');
+console.log('ALL 19 FAVICON ISOLATED REGRESSIONS PASS');
