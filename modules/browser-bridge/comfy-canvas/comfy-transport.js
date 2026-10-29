@@ -20,3 +20,4 @@ async function sendComfyRead(chromeApi, request, timeoutMs=3000) {
  return result;
 }
 if(typeof module!=="undefined")module.exports={makeComfyReadRequest,sendComfyRead};
+if(typeof self!=="undefined")self.BctComfyTransport={makeComfyReadRequest,sendComfyRead};
