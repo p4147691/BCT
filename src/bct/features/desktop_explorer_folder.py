@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from typing import Any
 
 from bct.core.models import (
@@ -69,6 +70,18 @@ class DesktopExplorerFolderOpenFeature:
                 },
             })
 
+        def observe_bounded_after_launch(suffix: str):
+            # Shell registration can lag explorer.exe handoff even on a healthy
+            # Windows desktop. Never re-run the launch effect: reconcile its
+            # exact folder window with bounded read-only Shell observations.
+            for number, delay in enumerate((0.0, 0.35, 0.55, 0.85)):
+                if delay:
+                    time.sleep(delay)
+                decision = observe(f"{suffix}-{number}")
+                if decision.action == "reuse":
+                    return decision
+            return decision
+
         def control(command, suffix, arguments=None):
             return self.client.control(
                 request_id=rid + ":" + suffix, command=command,
@@ -93,11 +106,11 @@ class DesktopExplorerFolderOpenFeature:
                 except DesktopSessionRequestFailed:
                     # Explorer may delegate creation to an existing PID. Verify
                     # exact Shell folder path; never retry the launch effect.
-                    decision = observe("after-launch-failure")
+                    decision = observe_bounded_after_launch("after-launch-failure")
                     if decision.action != "reuse":
                         raise
                 # UNKNOWN is deliberately not reclassified as successful.
-                decision = observe("after-launch")
+                decision = observe_bounded_after_launch("after-launch")
                 if decision.action != "reuse":
                     raise ConfirmedFailure("EXPLORER_WINDOW_NOT_CONFIRMED", release_claims=True)
                 control("lease_release", "session-release", {

@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from bct.core.models import Work, UnknownEffectError, PreconditionError
 from bct.features.desktop_explorer_folder import DesktopExplorerFolderOpenFeature
@@ -132,6 +133,41 @@ class ExplorerFeatureTest(unittest.TestCase):
         self.client.fail_release = True
         with self.assertRaisesRegex(UnknownEffectError, "LEASE_RELEASE_UNVERIFIED"):
             self.run_feature()
+
+    def test_real_shell_registration_delay_reconciled_without_relaunch(self):
+        original = self.client.explorer_windows
+        post_reads = []
+
+        def late_read(*, request_id, **kwargs):
+            if ":after-launch-" in request_id:
+                post_reads.append(request_id)
+                if len(post_reads) == 1:
+                    prior = self.client.window_items
+                    self.client.window_items = []
+                    try:
+                        return original(request_id=request_id, **kwargs)
+                    finally:
+                        self.client.window_items = prior
+            return original(request_id=request_id, **kwargs)
+
+        with patch.object(self.client, "explorer_windows", side_effect=late_read):
+            with patch("bct.features.desktop_explorer_folder.time.sleep"):
+                result = self.run_feature(False)
+        self.assertTrue(result.evidence["verified"])
+        self.assertEqual(1, self.client.events.count("launch"))
+        self.assertEqual(2, len(post_reads))
+        self.assertEqual("lease_release", self.client.events[-1])
+
+    def test_shell_not_appearing_never_relaunches(self):
+        from bct.core.models import ConfirmedFailure
+        self.client.window_items = []
+        with patch.object(self.client, "launch") as launch:
+            launch.return_value = {"programLaunch": {"pid": 101}}
+            with patch("bct.features.desktop_explorer_folder.time.sleep"):
+                with self.assertRaisesRegex(ConfirmedFailure, "NOT_CONFIRMED"):
+                    self.run_feature(False)
+        launch.assert_called_once()
+        self.assertEqual("lease_release", self.client.events[-1])
 
     def test_reject_missing_folder(self):
         with self.assertRaises(PreconditionError):
