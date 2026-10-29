@@ -47,7 +47,7 @@ _MUTATING_COMMANDS = {
     "create-tab-group", "add-tab-to-group", "remove-tab-from-group", "move-tab-group",
     "update-tab-group", "close-conversation-tab",
     "rename-conversation", "reload-extension", "send", "send-to-tab", "send-to-self",
-    "node-continue", "create-and-send",
+    "node-continue", "create-and-send", "send-message",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
     "retire-composer-draft", "retire-recovered-execution",
@@ -505,8 +505,77 @@ class RelayBrowserFeature:
             raise PreconditionError("RCC_TARGET_REFERENCE_TARGET_EXPIRED")
         return dict(record)
 
+    def _prepare_send_message(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        """Single public alias, resolved before ONE Operation is reserved.
+
+        The old RCC commands remain the transport; neither command is retried.
+        """
+        allowed = {"command", "instance_id", "timeout_s", "session_id",
+                   "tab_id", "window_id", "conversation_key", "create_operation_id", "text"}
+        unknown = set(arguments) - allowed
+        if unknown:
+            raise PreconditionError("RCC_ARGUMENT_NOT_ALLOWED:" + ",".join(sorted(unknown)))
+        instance = validate_instance_id(arguments.get("instance_id"))
+        session = str(arguments.get("session_id") or "").strip()
+        tab_id = _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID")
+        window_id = _positive_int(arguments.get("window_id"), "RCC_WINDOW_ID_INVALID")
+        text = arguments.get("text")
+        if not isinstance(text, str) or not text or len(text) > 12000:
+            raise PreconditionError("RCC_DIRECT_TAB_TEXT_INVALID")
+        if not re.fullmatch(r"[a-f0-9]{32}", session):
+            raise PreconditionError("RCC_DIRECT_TAB_SESSION_ID_REQUIRED")
+        create_id = str(arguments.get("create_operation_id") or "").strip()
+        key = str(arguments.get("conversation_key") or "").strip().lower()
+        if create_id and key:
+            raise PreconditionError("RCC_SEND_MESSAGE_IDENTITY_AMBIGUOUS")
+        if create_id:
+            if self.store is None:
+                raise PreconditionError("RCC_SEND_MESSAGE_CREATION_STORE_REQUIRED")
+            try:
+                creation = self.store.get_operation_for(
+                    operation_id=create_id, work_id=work.work_id,
+                    principal_id=work.owner_principal_id,
+                )
+            except (KeyError, ConflictError) as exc:
+                raise PreconditionError("RCC_SEND_MESSAGE_CREATION_NOT_VERIFIED") from exc
+            proof = creation.evidence
+            if not (
+                creation.state.value == "FINISHED"
+                and creation.outcome == Outcome.APPLIED
+                and proof.get("command") in {"create-chat-tab", "create-chat-window"}
+                and proof.get("instance_id") == instance
+                and proof.get("created_tab_id") == tab_id
+                and proof.get("created_window_id") == window_id
+                and proof.get("created_request_id") == create_id
+            ):
+                raise PreconditionError("RCC_SEND_MESSAGE_CREATION_NOT_VERIFIED")
+            underlying = "send-to-created-tab"
+        else:
+            if "conversation_key" not in arguments:
+                raise PreconditionError("RCC_SEND_MESSAGE_CONVERSATION_REQUIRED")
+            underlying = "send-to-tab"
+        # READ before Operation reservation. Never infer a candidate or fall back
+        # to another transport on a failed precondition.
+        observed_session, tabs = self._read_target_state(
+            instance_id=instance,
+            request_id="rcc-target-send-message-" + secrets.token_hex(12),
+        )
+        matches = [t for t in tabs if int(t.get("tabId") or 0) == tab_id]
+        if (observed_session != session or len(matches) != 1
+                or int(matches[0].get("windowId") or 0) != window_id):
+            raise PreconditionError("RCC_SEND_MESSAGE_TARGET_CHANGED_OR_AMBIGUOUS")
+        # Chrome tabs alone do not carry a trusted page UUID. The existing
+        # direct-send RCC contract rechecks the UUID at the effect boundary.
+        legacy = {k:v for k,v in arguments.items() if k != "conversation_key" or not create_id}
+        legacy["command"] = underlying
+        if not create_id:
+            legacy.pop("create_operation_id", None)
+        return self.prepare(work=work, arguments=legacy)
+
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         command = str(arguments.get("command") or "").strip().lower()
+        if command == "send-message":
+            return self._prepare_send_message(work=work, arguments=arguments)
         if command not in _COMMANDS:
             raise PreconditionError("RCC_COMMAND_NOT_ALLOWED")
         try:
@@ -2430,9 +2499,22 @@ class RelayBrowserFeature:
             if values["command"] == "send" and result.get("type") == "host:ack":
                 if result.get("submitted") is not True or state != "SUBMITTED":
                     raise UnknownEffectError("RCC_SEND_ACK_NOT_SUBMITTED")
+            create_proof = {}
+            if values["command"] in {"create-chat-tab", "create-chat-window"}:
+                # The immediate output is not persisted in Store. Preserve the
+                # exact verified Chrome identity in the durable evidence.
+                if (result.get("requestId") == request.operation_id
+                        and type(result.get("tabId")) is int and result["tabId"] > 0
+                        and type(result.get("windowId")) is int and result["windowId"] > 0):
+                    create_proof = {
+                        "created_request_id": request.operation_id,
+                        "created_tab_id": result["tabId"],
+                        "created_window_id": result["windowId"],
+                    }
             return FeatureResult(Outcome.APPLIED, {
                 "instance_id": values["instance_id"], "command": values["command"],
                 "host_request_id": request.operation_id, "host_state": state or None,
+                **create_proof,
             }, output={"result": _sanitize(result)})
         host_error = str(result.get("error") or "")
         # Persist only a bounded symbolic error code, never host paths or secrets.

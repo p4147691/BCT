@@ -147,7 +147,9 @@ class MCPIntegrationTests(unittest.TestCase):
                     relay_description = next(tool.description for tool in catalogue.tools
                                              if tool.name == "bct_relay_browser")
                     self.assertIn("send-to-tab", relay_description)
-                    self.assertIn("기존 ChatGPT 탭", relay_description)
+                    self.assertIn("command=send-message", relay_description)
+                    self.assertIn("rcc-send-message-v1", relay_description)
+                    self.assertIn("send-to-created-tab", relay_description)
                     expected_capability_tools = {
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
                         "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push", "bct_github_run_watch",
