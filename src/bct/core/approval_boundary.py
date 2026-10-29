@@ -67,6 +67,24 @@ def _reject_reparse_chain(path: Path) -> None:
             raise AuthorizationError("P2_BOUNDARY_REPARSE_FORBIDDEN")
 
 
+def _system_powershell() -> str:
+    """Get the OS-owned PowerShell location, never search current dir/PATH."""
+    if os.name != "nt":
+        raise AuthorizationError("P2_BOUNDARY_WINDOWS_REQUIRED")
+    import ctypes
+    buffer = ctypes.create_unicode_buffer(32768)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetSystemDirectoryW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint]
+    kernel32.GetSystemDirectoryW.restype = ctypes.c_uint
+    length = kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    if not 0 < length < len(buffer):
+        raise AuthorizationError("P2_BOUNDARY_SYSTEM_DIRECTORY_UNVERIFIED")
+    binary = Path(buffer.value) / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    if not binary.is_file():
+        raise AuthorizationError("P2_BOUNDARY_SYSTEM_POWERSHELL_MISSING")
+    return str(binary)
+
+
 def inspect_dacl(path: Path) -> dict[str, Any]:
     """Read-only PowerShell Get-Acl: names translated to unambiguous SIDs.
 
@@ -93,7 +111,7 @@ $ownerSid = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
 '''
     try:
         result = subprocess.run(
-            ["powershell.exe", "-NoLogo", "-NoProfile",
+            [_system_powershell(), "-NoLogo", "-NoProfile",
              "-NonInteractive", "-Command", script],
             input=json.dumps({"path": str(path)}).encode("utf-8"),
             capture_output=True, timeout=12,
@@ -135,7 +153,7 @@ def current_sid() -> str:
         raise AuthorizationError("P2_BOUNDARY_WINDOWS_REQUIRED")
     try:
         result = subprocess.run(
-            ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+            [_system_powershell(), "-NoLogo", "-NoProfile", "-NonInteractive",
              "-Command", "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
             capture_output=True, timeout=10,
         )

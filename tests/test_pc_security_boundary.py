@@ -178,6 +178,20 @@ class BoundarySecurityTests(unittest.TestCase):
         with self.assertRaisesRegex(AuthorizationError, "MANIFEST_REQUIRED"):
             verifier._public_key()
 
+    @unittest.skipUnless(os.name == "nt", "Windows path required")
+    def test_acl_inspector_ignores_search_path_executable(self):
+        from unittest.mock import Mock
+        service = Mock()
+        service.returncode = 0
+        service.stdout = b'{"owner":"S-1-5-18","protected":true,"aces":[]}'
+        with patch("bct.core.approval_boundary.subprocess.run", return_value=service) as runner:
+            inspected = inspect_dacl(self.root / "no-effect-test-name.txt")
+        self.assertEqual("S-1-5-18", inspected["owner"])
+        executable = runner.call_args.args[0][0]
+        self.assertTrue(Path(executable).is_absolute())
+        self.assertNotEqual("powershell.exe", executable.casefold())
+        self.assertIn("windowspowershell", executable.casefold())
+
     @unittest.skipUnless(os.name == "nt", "Windows ACL API required")
     def test_current_temporary_acl_not_assumed_protected(self):
         path = self.root / "probe.txt"
