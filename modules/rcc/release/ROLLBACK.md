@@ -39,3 +39,10 @@ main CI와 LIVE preflight가 통과하기 전에는 설치본, Chrome, Native Ho
 
 Native Host와 Chrome profile은 이번 payload 전환의 변경 대상이 아니므로 rollback에서도 덮어쓰거나
 재등록하지 않는다. backup은 acceptance와 rollback 가능성이 모두 확인될 때까지 삭제하지 않는다.
+
+## 2026-10-29 N73 exact installed 1.0.59 baseline
+The former 54-file reference was **not** an exact copy of the installed 57-file RCC payload. N73 preserved the installed payload as an offline, byte-identical 57-file snapshot. No live installation or Chrome reload was performed.
+
+Preflight: verify candidate 58-file staging and 57-file rollback snapshot with verify_release_candidate.py --candidate-root and --live-root. Never use the previous 54-file rollback reference as proof of the installed 1.0.59 state.
+
+Supervisor only: record the accepted installed extension ID, profile and same-ID loader; back up the then-current installed payload again before applying a replacement. Promote the exact staged candidate atomically through the protected BCT deploy gate, not a manual partial overwrite. On failed acceptance, restore the exact 57-file snapshot only when its SHA and installation provenance still match the live target. Preserve all Core, RCC, Chrome, Work, Operation, Claim and UNKNOWN records. Never restart/reload for this preparation phase.
