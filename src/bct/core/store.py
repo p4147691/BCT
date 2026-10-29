@@ -63,6 +63,8 @@ class Store:
     def __init__(self, path: str | Path):
         self.path = str(path)
         self._lock = threading.RLock()
+        self._node_label_notifier = None
+        self._node_label_last_topology = None
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -294,6 +296,15 @@ class Store:
                     event_id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
                     subject_id TEXT NOT NULL, data_json TEXT NOT NULL, created_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS node_label_notification_outbox (
+                    event_id INTEGER PRIMARY KEY REFERENCES events(event_id),
+                    conversation_key TEXT NOT NULL, node_number INTEGER NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN
+                        ('PENDING','STARTED','ACKED','NOT_APPLIED','UNKNOWN')),
+                    operation_id TEXT, created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS node_label_notification_pending
+                    ON node_label_notification_outbox(status,conversation_key);
                 CREATE TABLE IF NOT EXISTS operation_effect_stages (
                     operation_id TEXT NOT NULL, sequence INTEGER NOT NULL,
                     stage TEXT NOT NULL, detail_json TEXT NOT NULL,
@@ -647,6 +658,103 @@ class Store:
                     "ALTER TABLE orchestration_manager_recovery_leases ADD COLUMN "
                     "scan_cursor TEXT NOT NULL DEFAULT ''"
                 )
+
+
+    def set_node_label_notifier(self, callback) -> None:
+        # The callback schedules an in-memory wake. It must not dispatch IO.
+        self._node_label_notifier = callback
+
+    def record_node_label_assignment(self, db, conversation_key: str, node_number: int) -> int:
+        if not conversation_key or node_number <= 0:
+            raise ValueError("NODE_LABEL_EVENT_IDENTITY_INVALID")
+        cursor = db.execute(
+            "INSERT INTO events(kind,subject_id,data_json,created_at) VALUES(?,?,?,?)",
+            ("NODE_LABEL_ASSIGNED", conversation_key,
+             json.dumps({"node_label": f"N{node_number}"}, sort_keys=True), time.time()),
+        )
+        event_id = int(cursor.lastrowid)
+        db.execute(
+            "INSERT INTO node_label_notification_outbox(event_id,conversation_key,node_number,status,created_at) "
+            "VALUES(?,?,?,'PENDING',?)",
+            (event_id, conversation_key, node_number, time.time()),
+        )
+        return event_id
+
+    def emit_node_label_notification(self, event_id: int) -> None:
+        # Always invoked after a successful COMMIT. Wake failures leave PENDING durable.
+        notifier = self._node_label_notifier
+        if notifier is not None:
+            try:
+                notifier(event_id)
+            except Exception:
+                pass
+
+    def pending_node_label_notifications(self, *, limit: int = 256,
+                                         conversation_keys=None) -> list[dict]:
+        limit = max(1, min(int(limit), 2048))
+        keys = list(dict.fromkeys(str(key).lower() for key in (conversation_keys or [])))
+        with self.transaction() as db:
+            if conversation_keys is not None:
+                if not keys:
+                    return []
+                placeholders = ",".join("?" for _ in keys)
+                rows = db.execute(
+                    f"SELECT * FROM node_label_notification_outbox WHERE status='PENDING' "
+                    f"AND conversation_key IN ({placeholders}) ORDER BY event_id LIMIT ?",
+                    (*keys,limit),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT * FROM node_label_notification_outbox WHERE status='PENDING' "
+                    "ORDER BY event_id LIMIT ?", (limit,),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def wake_node_label_notifications(self, conversation_keys, *, topology) -> None:
+        # Existing Monitor observations trigger only on a changed exact RCC
+        # tab/session roster, never on each /monitor/state GET. No new polling.
+        fingerprint = tuple(sorted(topology))
+        with self._lock:
+            if fingerprint == self._node_label_last_topology:
+                return
+            self._node_label_last_topology = fingerprint
+        for record in self.pending_node_label_notifications(conversation_keys=conversation_keys):
+            self.emit_node_label_notification(int(record["event_id"]))
+
+    def node_label_notification(self, event_id: int) -> dict | None:
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT o.*,e.kind FROM node_label_notification_outbox o "
+                "JOIN events e ON e.event_id=o.event_id WHERE o.event_id=?", (int(event_id),)
+            ).fetchone()
+            if row is None or row["kind"] != "NODE_LABEL_ASSIGNED":
+                return None
+            current = db.execute(
+                "SELECT node_number FROM conversation_network_node_labels "
+                "WHERE conversation_key=?", (row["conversation_key"],)
+            ).fetchone()
+            if current is None or int(current["node_number"]) != int(row["node_number"]):
+                return None
+        return dict(row)
+
+    def claim_node_label_notification(self, event_id: int, operation_id: str) -> bool:
+        with self.transaction() as db:
+            result = db.execute(
+                "UPDATE node_label_notification_outbox SET status='STARTED',operation_id=? "
+                "WHERE event_id=? AND status='PENDING'",
+                (operation_id,int(event_id)),
+            )
+            return result.rowcount == 1
+
+    def finish_node_label_notification(self, event_id: int, status: str) -> None:
+        if status not in {"ACKED","NOT_APPLIED","UNKNOWN"}:
+            raise ValueError("NODE_LABEL_NOTIFY_STATUS_INVALID")
+        with self.transaction() as db:
+            db.execute(
+                "UPDATE node_label_notification_outbox SET status=? "
+                "WHERE event_id=? AND status='STARTED'",
+                (status,int(event_id)),
+            )
 
     @staticmethod
     def _event(db: sqlite3.Connection, kind: str, subject_id: str, data: dict[str, Any]) -> None:

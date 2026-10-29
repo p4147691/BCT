@@ -127,6 +127,7 @@ def _verify_contracts(
         "nativeConversation": _set_values(policy, "CONVERSATION_COMMANDS"),
         "nativeAtomicChat": _set_values(policy, "ATOMIC_CHAT_COMMANDS"),
         "nativeOrchestration": _set_values(policy, "ORCHESTRATION_COMMANDS"),
+        "nativeNodeLabel": _set_values(policy, "NODE_LABEL_COMMANDS"),
         "nativeReadOnly": _set_values(policy, "READ_ONLY_COMMANDS"),
         "nativeMaintenance": _set_values(policy, "MAINTENANCE_COMMANDS"),
         "nativeBlockedLegacy": _set_values(policy, "LEGACY_MUTATION_COMMANDS"),

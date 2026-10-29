@@ -12,8 +12,8 @@
       },
       {
         "path": "background_loader.js",
-        "size": 1885,
-        "sha256": "836c1eed1fd3a73b3631a1bea8151b405b7d6d3047202af1c70f2b854e21b880"
+        "size": 1941,
+        "sha256": "0777a01f11c2cb2424c22d5155313bade31e858e390a4dc3e0984ebbf1c5bcfd"
       },
       {
         "path": "boot/background_app.js",
@@ -51,9 +51,9 @@
         "sha256": "eda1b67c38d0a921817db1c4a79617d51dd6214b879a79dda64366a44bb2531a"
       },
       {
-        "path": "browser/tab_move_adapter.js",
-        "size": 3591,
-        "sha256": "d1c07aa32664046bf71e758712b6ff39950726235164434f40161864265c510b"
+        "path": "browser/tab_group_adapter.js",
+        "size": 6824,
+        "sha256": "533c8bf34a4191c22e48a02ab6a719e21112939cf35c733f1cd89dd7f11e2d11"
       },
       {
         "path": "browser/tab_group_contract.js",
@@ -61,9 +61,9 @@
         "sha256": "d98df36688894c2861be8bb681a3896908006d35cfac53d45049b7c9b9ecebb6"
       },
       {
-        "path": "browser/tab_group_adapter.js",
-        "size": 6824,
-        "sha256": "533c8bf34a4191c22e48a02ab6a719e21112939cf35c733f1cd89dd7f11e2d11"
+        "path": "browser/tab_move_adapter.js",
+        "size": 3591,
+        "sha256": "d1c07aa32664046bf71e758712b6ff39950726235164434f40161864265c510b"
       },
       {
         "path": "browser/tab_move_contract.js",
@@ -102,8 +102,8 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 25239,
-        "sha256": "85e013a0cc0e9b9fb80203a66212abbfa281db8419af10568f18bfe50b73c46f"
+        "size": 26277,
+        "sha256": "d6f3a134019593a47076f098b0518219ef9f4546e42d3418a79b5072e683cdb9"
       },
       {
         "path": "content/conversation_dom.js",
@@ -186,19 +186,19 @@
         "sha256": "5c670686b8f03be0ca82ec65c63316bd5f55a460eb82726384f64ffd3a5f0d3a"
       },
       {
+        "path": "domain/node_favicon_notify_service.js",
+        "size": 3175,
+        "sha256": "29bf1bb7cf4bb753676c177e3fde1b9afebd0c26cdc358886957f6a4ad997af5"
+      },
+      {
         "path": "domain/orchestration_relay_service.js",
         "size": 13457,
         "sha256": "96a0659b5e04e65fa959602dc6298f3db0542e46986f14541bddc2097ee68cf1"
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 35941,
-        "sha256": "72b692a8fa92146a7091f8c9934c150c9a85fa121a3a36928b2caa9be969bfc0"
-      },
-      {
-        "path": "domain/tab_group_service.js",
-        "size": 5057,
-        "sha256": "89d78daffb25208e5206a7882fc43d880f9a560dd6ad8adfc2ccd1759fb9d91c"
+        "size": 36166,
+        "sha256": "88fb151def6941e2f2f704aa2b6a0dc2a6d18dd68f2809e020c4491ecc3c62ba"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -221,9 +221,14 @@
         "sha256": "3553f3e8447500de35b3eb6e9eea0e4b18c11f741c6969ef5186ed1548cf55ef"
       },
       {
+        "path": "domain/tab_group_service.js",
+        "size": 5057,
+        "sha256": "89d78daffb25208e5206a7882fc43d880f9a560dd6ad8adfc2ccd1759fb9d91c"
+      },
+      {
         "path": "legacy/command_policy.js",
-        "size": 4465,
-        "sha256": "83eacb410c52847d2f47a1987002fe66897d5aa9201073fd7ef5108bf722486a"
+        "size": 4635,
+        "sha256": "fc87926f25548c7df3ff78712a2c75fa3d45d74ceb9a3b5cefd253a3e7464887"
       },
       {
         "path": "manifest.json",
@@ -291,8 +296,8 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "fileCount": 57,
-    "aggregateSha256": "dca45a3e69e5fe8afe11bd7d046fcdfd56f8a3d8b0a1d8955f23c967e80eb865"
+    "fileCount": 58,
+    "aggregateSha256": "a512f76a60c9fa45f5a89531cc3537ff758cb3fa4796cff7adeaea5dea208805"
   },
   "activeLoaderGraph": {
     "background": [
@@ -334,6 +339,7 @@
       "domain/tab_group_service.js",
       "domain/exact_tab_send_service.js",
       "domain/conversation_rename_service.js",
+      "domain/node_favicon_notify_service.js",
       "domain/readonly_diagnostics.js",
       "domain/runtime_message_service.js",
       "boot/background_app.js",
@@ -513,10 +519,14 @@
         "relay:retireComposerDraft",
         "relay:retireExecution",
         "relay:simpleExecute",
-        "relay:simpleReadReply"
+        "relay:simpleReadReply",
+        "relay:nodeLabelNotify"
       ],
       "popupAccepted": [
         "relay:getState"
+      ],
+      "nativeNodeLabel": [
+        "node-label-notify"
       ]
     },
     "storage": {
@@ -574,7 +584,8 @@
         "relay:exactReplyProof",
         "relay:deliveryReadiness",
         "relay:retireComposerDraft",
-        "relay:retireExecution"
+        "relay:retireExecution",
+        "relay:nodeLabelNotify"
       ],
       "runtime": [
         "relay:getPendingStatus",
