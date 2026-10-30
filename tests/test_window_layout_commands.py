@@ -48,3 +48,48 @@ class IntegratedGatewayTests(unittest.TestCase):
             invoke=lambda cap,op,args:{"operation_id":op,"outcome":"APPLIED","state":"FINISHED"},
             readback=lambda:{"restored":False},verify=lambda x:x["restored"])
         self.assertEqual(r["outcome"],"UNKNOWN")
+
+
+class AuthorizedGatewayTests(unittest.TestCase):
+    def test_existing_work_operation_gateway_once(self):
+        from bct.features.window_layout_commands import execute_bct_verified_once
+        from bct.core.models import OperationResult, OperationState, Outcome
+        calls = []
+        class Gateway:
+            def run(self, **kwargs):
+                calls.append(kwargs)
+                return OperationResult(kwargs["operation_id"], OperationState.FINISHED,
+                                       Outcome.APPLIED, {"lease_verified": True})
+        result = execute_bct_verified_once(
+            operations=Gateway(), principal=object(), work_id="existing-work",
+            operation_id="exact-once-1", capability="desktop_window_manage",
+            arguments={"operation": "restore", "lease_id": "a"*32},
+            readback=lambda: {"restored": True}, verify=lambda x: x["restored"],
+        )
+        self.assertEqual("APPLIED", result["outcome"])
+        self.assertEqual(1, len(calls))
+        self.assertEqual("existing-work", calls[0]["work_id"])
+        self.assertEqual("desktop_window_manage", calls[0]["capability"])
+
+    def test_fail_closed_unknown_no_retry(self):
+        from bct.features.window_layout_commands import execute_bct_verified_once
+        from bct.core.models import OperationResult, OperationState, Outcome
+        calls = []
+        class Gateway:
+            def run(self, **kwargs):
+                calls.append(kwargs)
+                return OperationResult(kwargs["operation_id"], OperationState.FINISHED,
+                                       Outcome.UNKNOWN, {})
+        result = execute_bct_verified_once(
+            operations=Gateway(), principal=object(), work_id="existing-work",
+            operation_id="exact-once-2", capability="relay_browser",
+            arguments={"command": "move-tab"},
+            readback=lambda: self.fail("UNKNOWN must not probe as success"),
+            verify=lambda x: True,
+        )
+        self.assertEqual(("UNKNOWN", False, 1), (result["outcome"], result["retry"], len(calls)))
+
+    def test_missing_authentication_is_rejected_before_dispatch(self):
+        from bct.features.window_layout_commands import make_bct_operation_invoke
+        with self.assertRaises(ValueError):
+            make_bct_operation_invoke(operations=object(), principal=None, work_id="work")

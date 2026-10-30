@@ -67,3 +67,41 @@ def execute_verified_once(*, operation_id: str, capability: str, arguments: dict
         accepted = False
     return {"operation_id": operation_id, "diagnosis": "VERIFIED" if accepted is True else "READBACK_UNCERTAIN",
             "outcome": "APPLIED" if accepted is True else "UNKNOWN", "retry": False}
+
+
+def make_bct_operation_invoke(*, operations, principal, work_id: str, approval_ref=None):
+    """Bind the existing authorized BCT Operations gateway, not a new executor.
+
+    The caller supplies its authenticated principal and existing Work.  The BCT
+    store enforces capability, resource claim, and desktop lease constraints.
+    """
+    if not isinstance(work_id, str) or not work_id.strip():
+        raise ValueError("existing Work id required")
+    if operations is None or not callable(getattr(operations, "run", None)):
+        raise ValueError("BCT Operations gateway required")
+    if principal is None:
+        raise ValueError("authenticated principal required")
+
+    def invoke(capability: str, operation_id: str, arguments: dict) -> dict:
+        if capability not in {"relay_browser", "desktop_window_manage"}:
+            raise ValueError("unsupported delegated capability")
+        result = operations.run(
+            principal=principal, work_id=work_id, operation_id=operation_id,
+            capability=capability, arguments=dict(arguments), approval_ref=approval_ref,
+        )
+        return result.as_dict()
+    return invoke
+
+
+def execute_bct_verified_once(*, operations, principal, work_id: str,
+                              operation_id: str, capability: str, arguments: dict,
+                              readback, verify, approval_ref=None) -> dict:
+    """Exactly one authorized effect and independent post-effect observation."""
+    invoke = make_bct_operation_invoke(
+        operations=operations, principal=principal, work_id=work_id,
+        approval_ref=approval_ref,
+    )
+    return execute_verified_once(
+        operation_id=operation_id, capability=capability, arguments=arguments,
+        invoke=invoke, readback=readback, verify=verify,
+    )
