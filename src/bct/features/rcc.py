@@ -7,6 +7,7 @@ import secrets
 import time
 from typing import Any
 
+from bct.features.rcc_latency import send_latency_evidence
 from bct.core.delivery_ledger import DeliveryLedger
 from bct.relay_settings import utf16_units
 from bct.core.delivery_state import DeliveryEvent, DeliveryState
@@ -556,10 +557,12 @@ class RelayBrowserFeature:
             underlying = "send-to-tab"
         # READ before Operation reservation. Never infer a candidate or fall back
         # to another transport on a failed precondition.
+        state_read_started = time.monotonic()
         observed_session, tabs = self._read_target_state(
             instance_id=instance,
             request_id="rcc-target-send-message-" + secrets.token_hex(12),
         )
+        state_read_ms = round((time.monotonic() - state_read_started) * 1000, 3)
         matches = [t for t in tabs if int(t.get("tabId") or 0) == tab_id]
         if (observed_session != session or len(matches) != 1
                 or int(matches[0].get("windowId") or 0) != window_id):
@@ -570,7 +573,10 @@ class RelayBrowserFeature:
         legacy["command"] = underlying
         if not create_id:
             legacy.pop("create_operation_id", None)
-        return self.prepare(work=work, arguments=legacy)
+        prepared = self.prepare(work=work, arguments=legacy)
+        # Local pre-submit observation; never passed to RCC as a command.
+        prepared.preconditions["send_message_state_read_ms"] = state_read_ms
+        return prepared
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         command = str(arguments.get("command") or "").strip().lower()
@@ -2065,6 +2071,7 @@ class RelayBrowserFeature:
                 extra["instanceId"] = values["instance_id"]
         if values["command"] == "read-latest-assistant":
             extra["instanceId"] = values["instance_id"]
+        host_request_started = time.monotonic()
         try:
             host_command = (
                 "rename-receipt" if values["command"] in {
@@ -2093,6 +2100,7 @@ class RelayBrowserFeature:
             if values["command"] in _READ_COMMANDS:
                 raise ConfirmedFailure("RCC_READ_UNAVAILABLE", release_claims=True) from exc
             raise UnknownEffectError(str(exc)) from exc
+        host_request_ms = round((time.monotonic() - host_request_started) * 1000, 3)
         if values["command"] in _READ_COMMANDS and result.get("ok") is not True:
             return FeatureResult(Outcome.NOT_APPLIED, {
                 "instance_id": values["instance_id"], "command": values["command"],
@@ -2371,12 +2379,15 @@ class RelayBrowserFeature:
         if values["command"] == "send" and effect_state:
             state = effect_state
         if values["command"] == "send-to-created-tab" and state == "SUBMIT_UNKNOWN":
+            readback_started = time.monotonic()
+            readback_attempts = 0
             deadline = time.monotonic() + min(
                 self.result_readback_timeout_s, float(values["timeout_s"])
             )
             readback_id = _readback_request_id(request.operation_id)
             while time.monotonic() < deadline:
                 remaining = deadline - time.monotonic()
+                readback_attempts += 1
                 try:
                     terminal = self.client.request(
                         instance_id=values["instance_id"], request_id=readback_id,
@@ -2396,6 +2407,14 @@ class RelayBrowserFeature:
                         "host_state": "SUBMITTED_CONFIRMED_BY_TERMINAL_RESULT",
                         "conversation_key": str(receipt["conversationKey"]),
                         "result_state": "RESULT_PERSISTED",
+                        **send_latency_evidence(
+                            command=values["command"],
+                            preflight_state_ms=request.preconditions.get("send_message_state_read_ms"),
+                            host_request_ms=host_request_ms,
+                            stage_timing=receipt.get("stageTiming"),
+                            readback_ms=(time.monotonic() - readback_started) * 1000,
+                            readback_attempts=readback_attempts,
+                        ),
                     }, output={"result": _sanitize(terminal)})
                 if (
                     terminal.get("found") is True
@@ -2515,6 +2534,12 @@ class RelayBrowserFeature:
                 "instance_id": values["instance_id"], "command": values["command"],
                 "host_request_id": request.operation_id, "host_state": state or None,
                 **create_proof,
+                **(send_latency_evidence(
+                    command=values["command"],
+                    preflight_state_ms=request.preconditions.get("send_message_state_read_ms"),
+                    host_request_ms=host_request_ms,
+                    stage_timing=result.get("stageTiming"),
+                ) if values["command"] in {"send-to-tab", "send-to-created-tab"} else {}),
             }, output={"result": _sanitize(result)})
         host_error = str(result.get("error") or "")
         # Persist only a bounded symbolic error code, never host paths or secrets.
