@@ -197,6 +197,7 @@ files = [
   "src/bct/features/github.py",
   "src/bct/features/github_inbox.py",
   "src/bct/features/rcc.py",
+  "src/bct/features/window_layout_commands.py",
   "src/bct/features/execution.py",
   "src/bct/features/cdp_persistent.py",
   "src/bct/features/cdp_inspect.py",
