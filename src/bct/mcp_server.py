@@ -218,16 +218,78 @@ def build_mcp(
         return await bct_conversation_network_get(project)
 
     @server.tool(description="Read-only preflight for planning: current node/RCC state and optional registered network. Does not create plans, networks or messages.", structured_output=True)
-    async def bct_run_check(project: str = "", sort_by: str = "number") -> dict[str, Any]:
+    async def bct_run_check(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
         snapshot = await asyncio.to_thread(status_provider)
         nodes = status_view(snapshot, "node", sort_by=sort_by)
         rcc = status_view(snapshot, "rcc", sort_by=sort_by)
         network = await bct_network_get(project) if project else None
+        context = None
+        if project and work_id and operation_id:
+            context = await make_executor("project_context")(
+                work_id, operation_id, {"operation": "overview", "project": project}
+            )
         return {"status": "OK", "nodes": nodes, "rcc": rcc,
-                "network": network, "project_context": "SEPARATE_EXISTING_CAPABILITY",
-                "read_only": True}
+                "network": network, "project_context": context,
+                "context_requires_work": context is None, "read_only": True}
+
+    @server.tool(description="Persist an AI-authored execution plan as a versioned, Work-authorized project-context ledger. No AI planning or execution is performed.", structured_output=True)
+    async def bct_run_plan(
+        work_id: str, operation_id: str, plan_id: str, project: str,
+        objective: str, acceptance: str, steps: list[dict[str, Any]],
+        author: str, expected_revision: int = 0, discretion: str = "normal",
+        assumptions: list[str] | None = None,
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", plan_id):
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_ID_INVALID"}
+        if not project.strip() or not objective.strip() or not acceptance.strip():
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_REQUIRED_FIELDS"}
+        if not isinstance(steps, list) or not 1 <= len(steps) <= 50:
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEPS_INVALID"}
+        if discretion not in {"limited", "normal", "extended"}:
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_DISCRETION_INVALID"}
+        checked = []
+        for idx, step in enumerate(steps):
+            if not isinstance(step, dict) or not {"instruction", "acceptance"} <= step.keys():
+                return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEP_INVALID"}
+            instruction = step["instruction"]
+            criterion = step["acceptance"]
+            if not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 4000 or not isinstance(criterion, str) or not criterion.strip() or len(criterion) > 4000:
+                return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEP_INVALID"}
+            checked.append({"text": f"{idx + 1}/{len(steps)}: {instruction} | 완료: {criterion}", "evidence": []})
+        if not isinstance(expected_revision, int) or isinstance(expected_revision, bool) or expected_revision < 0:
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_REVISION_INVALID"}
+        assumptions = assumptions or []
+        if not isinstance(assumptions, list) or len(assumptions) > 30 or any(not isinstance(x, str) or len(x) > 2000 for x in assumptions):
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_ASSUMPTIONS_INVALID"}
+        record = {
+            "title": "Run plan " + plan_id, "goal": objective,
+            "scope_note": "Project: " + project + "; discretion: " + discretion,
+            "summary": acceptance, "links": [{"type": "bct_work", "id": work_id}],
+            "items": checked,
+            "decisions": [{"text": "재량: " + discretion, "evidence": []}],
+            "next_actions": [{"text": "가정: " + x, "evidence": []} for x in assumptions],
+            "checkpoints": {"external": {"plan_id": plan_id, "project": project, "stage": "PLANNED"}},
+        }
+        return await make_executor("project_context")(
+            work_id, operation_id, {"operation": "central-save",
+            "project": "run-plan-" + plan_id.lower(), "record": record,
+            "author": author, "expected_revision": expected_revision}, approval_ref
+        )
+
+    @server.tool(description="Set existing project membership or role tags through the authorized conversation_network_update capability; supports project-upsert, membership-assign and role-patch.", structured_output=True)
+    async def bct_network_set(
+        work_id: str, operation_id: str, arguments: dict[str, Any],
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        if arguments.get("operation") not in {"project-upsert", "membership-assign", "role-patch"}:
+            return {"status": "INVALID_REQUEST", "reason": "NETWORK_SET_OPERATION_INVALID"}
+        return await make_executor("conversation_network_update")(
+            work_id, operation_id, arguments, approval_ref
+        )
 
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
     async def bct_work_create(
