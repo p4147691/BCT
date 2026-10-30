@@ -141,7 +141,16 @@ A review candidate is not automatic deletion approval.
 - Do not delete or rename internal `node-sync` merely to simplify user-facing flow.
 - ACT and retired compatibility paths must not silently regain BCT authority.
 
-## 9. Verification
+## 9. Natural-language ChatGPT delivery routing
+
+- Interpret "새 창 열고 메시지 보내줘" as `create-chat-window` followed by `send-message` using the exact creation receipt in the same Work.
+- Interpret "새 탭 열고 메시지 보내줘" as `create-chat-tab` followed by `send-message` using the exact creation receipt in the same Work.
+- Interpret "기존 탭에 보내줘" as `send-message` only after fresh RCC `state` proves the exact target instance, session, window, tab, and conversation identity. If multiple targets remain, ask for disambiguation; do not guess by title or tab order.
+- The user need not provide numeric Chrome IDs. Derive identifiers from fresh trusted RCC state or the BCT creation receipt; never invent them.
+- Use `rcc-send-message-v1` with a single immutable send Operation, capture the assistant reply and verify the result receipt. Do not retry an ambiguous effect with a new Operation ID.
+- Public commands are `create-chat-window`, `create-chat-tab`, and `send-message`; `state` is read-only. Do not initiate new `send` or `create-and-send` calls. Retain historical receipt decoding and internal recovery compatibility.
+
+## 10. Verification
 
 For BCT source changes run the focused affected tests first, then the relevant
 repository gate. Typical static checks:
