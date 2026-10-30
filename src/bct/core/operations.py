@@ -19,6 +19,31 @@ from bct.features.rcc_unknown_diagnostics import diagnose_unknown_receipt
 from .store import Store
 
 
+# An unreliable observation is not evidence that the observed target failed or
+# that an external mutation may have applied.  This fixed allowlist is about
+# effects, not about whether a caller labels a measurement "read-only".
+_MEASUREMENT_ONLY_CAPABILITIES = frozenset({
+    "read", "system_inspect", "github_pr_status",
+    "desktop_session_status", "desktop_window_list", "cdp_inspect",
+    "desktop_capture",
+})
+_RCC_MEASUREMENT_COMMANDS = frozenset({
+    "state", "presence", "result", "result-of-create-and-send",
+    "target-discover", "tab-get", "windows-list", "window-get",
+    "tab-groups-list", "tab-group-get", "read-latest-assistant",
+})
+
+
+def _is_measurement_only_request(request) -> bool:
+    if request.capability in _MEASUREMENT_ONLY_CAPABILITIES:
+        return True
+    return (
+        request.capability == "relay_browser"
+        and request.preconditions.get("mutating") is False
+        and request.arguments.get("command") in _RCC_MEASUREMENT_COMMANDS
+    )
+
+
 class OperationCoordinator:
     def __init__(self, *, store: Store, policy: Policy):
         self.store = store
@@ -546,6 +571,26 @@ class OperationCoordinator:
                 release_claims=exc.release_claims,
             )
         except UnknownEffectError as exc:
+            if _is_measurement_only_request(request):
+                # The observation did not yield trustworthy data.  Its result
+                # must not decide target state or leave an external-effect UNKNOWN
+                # fence.  No mutation was authorized by this exact capability.
+                self.store.record_effect_stage(
+                    operation_id=operation_id, stage="EFFECT_RESULT_OBSERVED",
+                    detail={"outcome": Outcome.NOT_APPLIED.value,
+                            "error_code": "MEASUREMENT_UNVERIFIED"},
+                )
+                return self.store.finish_operation(
+                    operation_id=operation_id, outcome=Outcome.NOT_APPLIED,
+                    evidence={
+                        "phase": "MEASUREMENT",
+                        "classification": "MEASUREMENT_UNVERIFIED",
+                        "measurement_trusted": False,
+                        "target_state_inferred": False,
+                        "code": str(exc),
+                    },
+                    error=str(exc), release_claims=True,
+                )
             self.store.record_effect_stage(
                 operation_id=operation_id, stage="EFFECT_UNCERTAIN",
                 detail={"error_code": str(exc).split(":", 1)[0]},

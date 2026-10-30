@@ -33,6 +33,14 @@ class UnknownFeature(CountingFeature):
         raise UnknownEffectError("lost result after dispatch")
 
 
+class UnverifiedReadFeature(CountingFeature):
+    capability = "read"
+
+    def execute(self, request):
+        self.calls += 1
+        raise UnknownEffectError("READ_OBSERVATION_TIMEOUT")
+
+
 class UnexpectedFeature(CountingFeature):
     def execute(self, request):
         self.calls += 1
@@ -230,6 +238,64 @@ class CoreTests(unittest.TestCase):
         with self.assertRaises(ConflictError):
             self.bct.store.get_operation_for(operation_id="op-1", work_id="work-1",
                                              principal_id=self.other.principal_id)
+
+    def test_unreliable_read_measurement_is_not_external_unknown(self):
+        from bct.core.operations import _is_measurement_only_request
+        feature = UnverifiedReadFeature()
+        self.replace_feature(feature)
+        result = self.bct.operations.run(
+            principal=self.owner, work_id="work-1",
+            operation_id="read-measurement-unverified", capability="read",
+            arguments={"resource": "target-info"},
+        )
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        self.assertEqual("MEASUREMENT_UNVERIFIED",
+                         result.evidence["classification"])
+        self.assertFalse(result.evidence["measurement_trusted"])
+        self.assertFalse(result.evidence["target_state_inferred"])
+        self.assertEqual(1, feature.calls)
+        self.assertFalse(any(
+            item["operation_id"] == "read-measurement-unverified"
+            for item in self.bct.store.claim_diagnostics()
+        ))
+        saved = self.bct.store.get_operation_for(
+            operation_id="read-measurement-unverified",
+            work_id="work-1", principal_id=self.owner.principal_id,
+        )
+        self.assertEqual(Outcome.NOT_APPLIED, saved.outcome)
+        self.assertEqual("MEASUREMENT_UNVERIFIED",
+                         saved.evidence["classification"])
+        replay = self.bct.operations.run(
+            principal=self.owner, work_id="work-1",
+            operation_id="read-measurement-unverified", capability="read",
+            arguments={"resource": "target-info"},
+        )
+        self.assertTrue(replay.duplicate)
+        self.assertEqual(1, feature.calls)
+        journal = self.bct.store.get_effect_journal_for(
+            operation_id="read-measurement-unverified",
+            work_id="work-1", principal_id=self.owner.principal_id,
+        )
+        self.assertTrue(any(
+            item["stage"] == "EFFECT_RESULT_OBSERVED"
+            and item["detail"].get("outcome") == "NOT_APPLIED"
+            for item in journal
+        ))
+
+        # An arbitrary caller-provided flag cannot make a mutation
+        # eligible for the measurement-only downgrade.
+        self.assertTrue(_is_measurement_only_request(FeatureRequest(
+            "relay_browser", "state", {"command": "state"},
+            ("rcc:read",), {"mutating": False},
+        )))
+        self.assertFalse(_is_measurement_only_request(FeatureRequest(
+            "relay_browser", "send", {"command": "send-to-tab"},
+            ("rcc:send",), {"mutating": False},
+        )))
+        self.assertFalse(_is_measurement_only_request(FeatureRequest(
+            "write", "mutation", {"mutating": False},
+            ("file:mutation",), {"mutating": False},
+        )))
 
     def test_finished_unknown_does_not_block_next_operation(self):
         feature = UnknownFeature()
