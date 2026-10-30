@@ -19,11 +19,10 @@ credential store를 만들지 않고 기존 BCT operation/ownership/receipt와 �
 
 - 공통 BCT operation ID는 같은 요청의 executor 재진입을 막는다.
 - 새 operation ID로 같은 PR 요청이 들어와도 deterministic marker가 같은 PR을 반환한다.
-- push는 실패/timeout 뒤 remote ref를 다시 읽는다. exact target SHA이면 적용, 이전 SHA이면 실패,
-  그 외 상태이면 `UNKNOWN`으로 claim을 유지한다.
-- PR create/merge 응답이 유실되면 GitHub 상태를 재조회한다. exact 결과가 증명될 때만 `APPLIED`다.
-- merge는 API 응답만 신뢰하지 않고 PR의 merged state와 merge commit SHA를 다시 검증한다.
-- `UNKNOWN`은 자동 재시도하지 않으며 같은 resource의 새 operation도 공통 claim이 차단한다.
+- GitHub PR/CI/status **조회**가 실패하거나 시간이 초과돼도 그 측정은 `MEASUREMENT_UNVERIFIED`로 분류한다. 조회 실패는 GitHub PR 자체의 실패 증거가 아니며 Claim을 만들거나 정상 개발을 막지 않는다.
+- push/merge 같은 **실제 변경**은 GitHub ref·PR state와 exact SHA를 독립 조회해 결정한다. 불완전한 첫 조회만으로 실패/성공/새 작업 차단을 결정하지 않고, 조회 경로를 고친다.
+- 일반 상태 관측은 필요할 때 새 관측으로 다시 확인할 수 있다. 변경 작업의 동일 Operation ID 및 exact-SHA 보호는 유지하되, 과거 계측 UNKNOWN이나 Claim을 전역 작업 정지 근거로 사용하지 않는다.
+- 현재 운영 원칙은 `docs/MEASUREMENT_EVIDENCE_AND_PROGRESS_POLICY.md`를 따른다.
 
 ## Authentication and secrets
 

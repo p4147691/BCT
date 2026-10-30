@@ -83,12 +83,27 @@ requires a narrower reversible path:
 Core, Monitor and RCC are separate deployment targets. A changed source-main SHA
 does not by itself require redeploying an unaffected target.
 
-## 6. UNKNOWN, retries and completion
+## 6. Measurement evidence, progress, and action safety
 
-- Never replay an `UNKNOWN` external effect under a new Operation ID just to make
-  progress. Read the original receipt and current external state first.
-- Never erase UNKNOWN/Claim history or mass-change Work states to make dashboards
-  look clean.
+- The current binding policy is `docs/MEASUREMENT_EVIDENCE_AND_PROGRESS_POLICY.md`.
+  This clause supersedes contradictory procedures in older docs, active plans,
+  prior handoffs, and historic design notes without rewriting the old receipts.
+- Measurements are optional operator observability, never execution ownership,
+  approval, authorization, or an operational Claim. No measurement may allocate
+  a resource Claim or block unrelated Work, repair, diagnosis, or continuation.
+  If its collection validity, identity, timing, or integrity is not proven,
+  classify it `MEASUREMENT_UNVERIFIED`, ignore the reading for decisions,
+  identify and fix the sensor/adapter, and proceed using other reliable evidence.
+- `UNKNOWN` is a historic external-effect audit outcome, not a stop-work
+  instruction. Preserve original records. Distinguish instrumentation failure
+  from possible external changes before deciding what action is appropriate.
+- Ordinary duplicate messages are for their receiving node to interpret and
+  deduplicate. Do not freeze a network because one normal message/ACK is
+  ambiguous. Only genuinely high-impact changes require exact effect proof,
+  target-scoped safeguards, and explicit user approval. Do not blindly replay a
+  potentially executed destructive effect on an unverified response.
+- Never erase historical UNKNOWN/Claim records or mass-change Work states to
+  make dashboards look clean.
 - Separate request registration, message delivery, ACK, merge, verification,
   LIVE acceptance and GitHub publication; one is not proof of another.
 - Report `COMPLETE` only after the user's requested acceptance scope is actually

@@ -31,7 +31,7 @@
 | O02 | 같은 operation_id/다른 입력 | ID conflict 거부 |
 | O03 | intent 기록 후 executor 진입 전 실패 | 실행 부재 증거가 있을 때 NOT_APPLIED |
 | O04 | UI submit 후 결과 저장 전 crash | inspect_outcome; 증거 부족이면 UNKNOWN, resend 금지 |
-| O05 | UNKNOWN 뒤 새 operation_id로 같은 변경 | unresolved resource claim에서 거부 |
+| O05 | 이전 응답을 신뢰할 수 없는 상태에서 새 작업 | 먼저 관측 오류와 실제 외부 동작을 구분; 단순 측정 실패는 Claim 없이 무시하고 정상 진단·수리 진행. 위험한 동일 외부 변경만 정확한 대상/승인/실행 증거로 보호 |
 | O06 | 실행 전 거부 후 정상적인 수정 재시도 | 연결된 새 operation, 새 precondition으로 진행 |
 | O07 | 두 작업이 같은 파일/repo index 변경 | 원자적 claim 충돌 검출 |
 | O08 | 서로 다른 worktree 작업 | 실제 공유 자원 충돌이 없으면 병렬 가능 |
@@ -47,7 +47,7 @@
 
 1. node identity와 authenticated principal을 분리하여 이름·role 변경이 권한 변경으로 번지지 않게 했다.
 2. 설정 한 파일에 operation/동적 연결까지 몰아넣는 대신 단일 관리 entrypoint와 SQLite 상태를 구분했다.
-3. 같은 ID의 중복뿐 아니라 UNKNOWN 뒤 새 ID로 우회하는 중복 실행도 resource claim으로 다루도록 했다.
+3. *초기 설계 기록:* UNKNOWN 뒤 새 ID의 중복 실행을 Claim으로 다뤘으나, 현재는 관측 실패를 먼저 분리하고 관측 결과만으로 Claim/작업 중단을 허용하지 않는다. 외부 변경의 실제 중복 보호는 별도로 판단한다.
 4. 임대 만료/프로세스 부재만으로 안전한 인계를 인정하지 않고 terminal/effect evidence를 함께 요구했다.
 5. 외부 효과의 exactly-once를 보장한다고 쓰지 않고 crash gap과 증거 부재를 명시했다.
 6. BCT 내부 lock만으로 ACT의 기존 writer를 제어할 수 없다는 전환 경계를 명시했다.
@@ -74,7 +74,7 @@
 | I01, I02, I05 | `tests/test_core.py::CoreTests.test_node_properties_and_connection_are_independent_of_work` | 노드 이름·역할·그룹·연결 변경과 work 분리 |
 | O01 | `tests/test_core.py::CoreTests.test_duplicate_operation_executes_once` | 동일 작업 중복 실행 방지 |
 | O02 | `tests/test_core.py::CoreTests.test_same_operation_id_with_different_request_is_denied` | ID 충돌 거부 |
-| O05 | `tests/test_core.py::CoreTests.test_unknown_effect_blocks_new_operation_for_same_resource` | 불확실한 효과의 중복 실행 방지 |
+| O05 | `tests/test_core.py::CoreTests.test_finished_unknown_does_not_block_next_operation` | 이전 측정 UNKNOWN이 새로운 작업을 가로막지 않음 |
 | O07 | `tests/test_core.py::CoreTests.test_concurrent_writer_for_same_resource_is_denied` | 동시 writer 충돌 |
 | O11 | `tests/test_core.py::CoreTests.test_wrong_principal_cannot_run_or_read_result` | 타 principal 결과 접근 차단 |
 | P03 | `tests/test_development_flow.py::DevelopmentFlowTests.test_stale_file_hash_is_not_written`; `test_stale_head_is_not_committed` | 오래된 파일 SHA / HEAD 거부 |

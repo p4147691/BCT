@@ -19,10 +19,15 @@ Create one work allowing `verify` and each requested child (`read`, `test`,
 }
 ```
 
-Then retrieve `bct_operation_get(work_id, operation_id, wait_seconds=25)`. Reconnect and
-retrieve the same ID if transport is lost. RUNNING means wait/inspect, not resubmit under
-a new ID. FINISHED/UNKNOWN means investigate existing evidence; never retry the effect.
-The receipt is a permanent observation, not a current source or CI approval token.
+Then retrieve `bct_operation_get(work_id, operation_id, wait_seconds=25)`. An
+unverified measurement is `MEASUREMENT_UNVERIFIED`: discard its finding, fix the
+observation path, and continue normal work. It creates no resource Claim and
+must not become a global stop gate. Measurements can be repeated with a fresh
+observation ID because they do not execute an external mutation. For a real
+state-changing operation, inspect the original Operation and external state
+before deciding whether re-execution is safe. A receipt alone is not current
+health, CI approval, or proof that a target failed. See
+`docs/MEASUREMENT_EVIDENCE_AND_PROGRESS_POLICY.md`.
 
 Each prepared step is also stored in the SQLite `operation_steps` journal before the first
 child is dispatched. `bct_operation_get` returns this as `step_journal`, including the stable
