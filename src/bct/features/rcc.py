@@ -7,6 +7,7 @@ import secrets
 import time
 from typing import Any
 
+from bct.features.rcc_legacy_receipts import legacy_send_effect_state, legacy_send_ack_verified
 from bct.core.delivery_ledger import DeliveryLedger
 from bct.relay_settings import utf16_units
 from bct.core.delivery_state import DeliveryEvent, DeliveryState
@@ -2367,9 +2368,7 @@ class RelayBrowserFeature:
         # RCC native send failures use effectState, not state. Missing this field
         # erased the original failure (MISSING) and quarantined proven pre-submit
         # NOT_APPLIED failures as UNKNOWN. Never infer NOT_APPLIED from a draft.
-        effect_state = str(result.get("effectState") or "").upper()
-        if values["command"] == "send" and effect_state:
-            state = effect_state
+        state = legacy_send_effect_state(values["command"], result, state)
         if values["command"] == "send-to-created-tab" and state == "SUBMIT_UNKNOWN":
             deadline = time.monotonic() + min(
                 self.result_readback_timeout_s, float(values["timeout_s"])
@@ -2496,9 +2495,8 @@ class RelayBrowserFeature:
             ):
                 raise UnknownEffectError("RCC_SIMPLE_RELAY_RETURN_ACK_UNVERIFIED")
         if result.get("ok") is True:
-            if values["command"] == "send" and result.get("type") == "host:ack":
-                if result.get("submitted") is not True or state != "SUBMITTED":
-                    raise UnknownEffectError("RCC_SEND_ACK_NOT_SUBMITTED")
+            if not legacy_send_ack_verified(values["command"], result, state):
+                raise UnknownEffectError("RCC_SEND_ACK_NOT_SUBMITTED")
             create_proof = {}
             if values["command"] in {"create-chat-tab", "create-chat-window"}:
                 # The immediate output is not persisted in Store. Preserve the
