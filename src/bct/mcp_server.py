@@ -279,9 +279,9 @@ def build_mcp(
             await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
             wait_ms += (time.perf_counter_ns()-sleep_start)/1e6
 
-    @server.tool(description="Read only a node's durable GitHub completion Inbox. acknowledge is idempotent and only marks returned rows read.", structured_output=True)
-    async def bct_inbox_get(initiator_node_id: str, work_id: str,
-                            acknowledge: bool = False, limit: int = 80) -> dict[str, Any]:
+    @server.tool(description="Read GitHub CI/completion notifications for an owned BCT Work. acknowledge marks returned notifications read.", structured_output=True)
+    async def bct_github_inbox_get(initiator_node_id: str, work_id: str,
+                                   acknowledge: bool = False, limit: int = 80) -> dict[str, Any]:
         # MCP has one local principal.  Requiring an owned Work keeps this read
         # scoped to the caller's Work rather than exposing a node-wide inbox.
         work = await asyncio.to_thread(bct.store.get_work, work_id)
@@ -292,6 +292,14 @@ def build_mcp(
             work_id=work_id, acknowledge=acknowledge, limit=limit,
         )
         return {"items": rows, "wake": "AUTO_WAKE_NOT_CONFIGURED"}
+
+    @server.tool(description="Legacy compatibility alias for bct_github_inbox_get; GitHub completion notifications only.", structured_output=True)
+    async def bct_inbox_get(initiator_node_id: str, work_id: str,
+                            acknowledge: bool = False, limit: int = 80) -> dict[str, Any]:
+        return await bct_github_inbox_get(
+            initiator_node_id=initiator_node_id, work_id=work_id,
+            acknowledge=acknowledge, limit=limit,
+        )
 
     @server.tool(
         description="Return the verified current Windows interactive-session Agent status.",

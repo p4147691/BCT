@@ -182,6 +182,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
                             "bct_work_create", "bct_operation_get", "bct_inbox_get",
+                            "bct_github_inbox_get",
                         },
                         names,
                     )
@@ -194,6 +195,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
                             "bct_work_create", "bct_operation_get", "bct_inbox_get",
+                            "bct_github_inbox_get",
                         },
                         set(capabilities.structuredContent["tools"]),
                     )
