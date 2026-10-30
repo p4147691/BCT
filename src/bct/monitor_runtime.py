@@ -6,6 +6,7 @@ from threading import Lock
 from pathlib import Path
 from typing import Any
 
+from bct.current_nodes import classify_current_nodes
 from bct.conversation_network import (
     conversation_display_order_directory,
     conversation_scope_directory,
@@ -360,6 +361,7 @@ def build_monitor_state(
             "orchestration_assignments": len(snapshot["orchestration_assignments"]),
             "github_inbox": len(snapshot.get("github_run_inbox", [])),
         },
+        "current_nodes": classify_current_nodes(rcc, observed_at=time.time()),
         "rcc": {
             "instances": rcc,
             "payload": _rcc_payload_status(
