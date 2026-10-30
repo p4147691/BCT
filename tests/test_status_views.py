@@ -27,6 +27,32 @@ class StatusViewTests(unittest.TestCase):
         self.assertEqual("N7", view["current_nodes"]["items"][0]["node_number"])
         self.assertNotIn("nodes", view)
 
+    def test_node_enriches_exact_fresh_monitor_editor_data(self):
+        uuid = "11111111-2222-3333-4444-555555555555"
+        row = self.snapshot["monitor"]["current_nodes"]["items"][0]
+        row["conversation_uuid"] = uuid
+        row["window_id"] = 9
+        self.snapshot["monitor"]["rcc"]["instances"] = [{
+            "state": "OPEN", "cached": False,
+            "tabs": [{
+                "tab_id": 8, "window_id": 9, "conversation_key": uuid,
+                "presence": "OPEN", "title": "Worker A", "active": True,
+                "conversation_scope": {
+                    "scope_id": "project-one", "scope_name": "Project One",
+                    "role_tags": ["developer"], "display_order": 2,
+                },
+            }],
+        }]
+        view = status_view(self.snapshot, "node")
+        item = view["current_nodes"]["items"][0]
+        self.assertEqual("Worker A", item["name"])
+        self.assertEqual("Project One", item["network"])
+        self.assertEqual(["developer"], item["roles"])
+        self.assertEqual(1, view["current_nodes"]["counts"]["confirmed"])
+        self.snapshot["monitor"]["rcc"]["instances"][0]["cached"] = True
+        cached = status_view(self.snapshot, "node")["current_nodes"]["items"][0]
+        self.assertNotIn("roles", cached)
+
     def test_rcc_and_monitor_views(self):
         self.assertEqual("example", status_view(self.snapshot, "rcc")["rcc"]["instances"][0]["instance_id"])
         monitor = status_view(self.snapshot, "monitor")["monitor"]
