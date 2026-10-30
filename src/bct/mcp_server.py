@@ -429,6 +429,40 @@ def build_mcp(
         execute.__doc__ = f"Execute the registered BCT {capability!r} capability."
         return execute
 
+    # Independent public entrypoints; reuse the exact orchestration executor and
+    # durable Work/Operation authorization. No second dispatch or chain engine.
+    @server.tool(
+        description="Run one durable worker assignment using the existing orchestrate dispatch contract. "
+                    "Requires session_id, manager_epoch, assignment_id, worker_node_id, "
+                    "attachment_id, instruction and acceptance. No automatic session creation.",
+        structured_output=True,
+    )
+    async def bct_task_run(
+        work_id: str, operation_id: str, arguments: dict[str, Any],
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        if "operation" in arguments and arguments["operation"] != "dispatch":
+            raise ValueError("TASK_RUN_OPERATION_MISMATCH")
+        return await make_executor("orchestrate")(
+            work_id, operation_id, {**arguments, "operation": "dispatch"}, approval_ref
+        )
+
+    @server.tool(
+        description="Run 2-6 durable worker assignments and final synthesis using the "
+                    "existing orchestrate chain-run contract. Requires an existing session; "
+                    "does not create nodes, session or manager bindings.",
+        structured_output=True,
+    )
+    async def bct_chain_run(
+        work_id: str, operation_id: str, arguments: dict[str, Any],
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        if "operation" in arguments and arguments["operation"] != "chain-run":
+            raise ValueError("CHAIN_RUN_OPERATION_MISMATCH")
+        return await make_executor("orchestrate")(
+            work_id, operation_id, {**arguments, "operation": "chain-run"}, approval_ref
+        )
+
     if compact_catalogue:
         @server.tool(
             name="bct_dispatch",

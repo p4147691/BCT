@@ -27,7 +27,7 @@ class DummyOperations:
 # Exact shared catalogue: Inbox is a Work-scoped read endpoint in every mode.
 SHARED_MCP_TOOLS = {
     "bct_capabilities", "bct_conversation_network_get", "bct_desktop_capture",
-    "bct_desktop_session_status", "bct_inbox_get", "bct_github_inbox_get", "bct_operation_get",
+    "bct_desktop_session_status", "bct_inbox_get", "bct_github_inbox_get", "bct_task_run", "bct_chain_run", "bct_operation_get",
     "bct_status", "bct_work_create",
 }
 
