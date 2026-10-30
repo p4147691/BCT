@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "BCT ComfyUI Canvas Read Isolated",
+  "version": "0.0.1",
+  "permissions": [
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8188/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1:8188/*"
+      ],
+      "js": [
+        "comfy-main.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://127.0.0.1:8188/*"
+      ],
+      "js": [
+        "comfy-isolated.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ],
+  "background": {
+    "service_worker": "comfy-worker.js"
+  }
+}

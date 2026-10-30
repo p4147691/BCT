@@ -29,6 +29,7 @@ SHARED_MCP_TOOLS = {
     "bct_capabilities", "bct_conversation_network_get", "bct_desktop_capture",
     "bct_desktop_session_status", "bct_inbox_get", "bct_operation_get",
     "bct_status", "bct_work_create",
+    "bct_comfy_bridge_bind", "bct_comfy_bridge_take", "bct_comfy_bridge_submit",
 }
 
 

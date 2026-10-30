@@ -1,8 +1,10 @@
 "use strict";
+importScripts("comfy-canvas/comfy-transport.js");
 // No content scripts or external web-page command channel.
 const HOST = "com.bct.browser_bridge.prototype";
 let port = null;
 const pending = new Map();
+const handledComfy = new Set();
 const identifier = () => crypto.randomUUID().replace(/-/g, "");
 const unknown = code => ({ok: false, outcome: "UNKNOWN", error: code});
 function connect() {
@@ -10,6 +12,36 @@ function connect() {
   const current = chrome.runtime.connectNative(HOST);
   port = current;
   current.onMessage.addListener(reply => {
+    if (reply?.type === "core_comfy_read_command") {
+      // Core-created operations are distinct from replies to extension calls.
+      // No arbitrary script command, URL, or destination is accepted.
+      const id = reply.request_id;
+      const args = reply.arguments;
+      if (typeof id !== "string" || !/^[a-f0-9]{32}$/.test(id)
+          || reply.operation_id !== id || !Number.isInteger(reply.generation)
+          || typeof reply.session_id !== "string" || !reply.session_id
+          || !args || typeof args !== "object") return;
+      if (handledComfy.has(id)) return; // NEVER replay a fixed Core effect.
+      handledComfy.add(id);
+      if (handledComfy.size > 4096) handledComfy.delete(handledComfy.values().next().value);
+      const responseBase = {schema_version: 1, type: "comfy_canvas_result",
+        request_id: id, session_id: reply.session_id, generation: reply.generation};
+      Promise.resolve().then(() => {
+        const command = {requestId:id,tabId:args.tab_id,url:args.url,sessionId:args.session_id};
+        return self.BctComfyTransport.sendComfyRead(chrome,command);
+      }).then(response => {
+        // Never retry after a broken/uncertain Native Messaging connection.
+        if (port === current) current.postMessage({...responseBase,response});
+      }).catch(error => {
+        if (port === current) {
+          try { current.postMessage({...responseBase,response:{
+            ok:false,error:String(error?.message||"COMFY_READ_FAILED").slice(0,100),
+            tab_id:args.tab_id,url:args.url,session_id:args.session_id}}); }
+          catch (_) {}
+        }
+      });
+      return;
+    }
     const id = reply?.request_id;
     if (typeof id !== "string" || !pending.has(id)) return;
     const callback = pending.get(id); pending.delete(id); callback(reply);

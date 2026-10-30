@@ -157,7 +157,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_relay_browser", "bct_relay_control",
                         "bct_system_inspect", "bct_execute", "bct_monitor",
                         "bct_conversation_network_update", "bct_project_context",
-                        "bct_cdp_inspect", "bct_browser_extension_manage",
+                        "bct_cdp_inspect", "bct_comfy_canvas_read", "bct_browser_extension_manage",
                         "bct_process_session",
                         "bct_test", "bct_write", "bct_verify", "bct_orchestrate",
                         "bct_claim_reconcile",
@@ -182,6 +182,8 @@ class MCPIntegrationTests(unittest.TestCase):
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
                             "bct_work_create", "bct_operation_get", "bct_inbox_get",
+                            "bct_comfy_bridge_bind", "bct_comfy_bridge_take",
+                            "bct_comfy_bridge_submit",
                         },
                         names,
                     )
@@ -194,6 +196,8 @@ class MCPIntegrationTests(unittest.TestCase):
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get",
                             "bct_work_create", "bct_operation_get", "bct_inbox_get",
+                            "bct_comfy_bridge_bind", "bct_comfy_bridge_take",
+                            "bct_comfy_bridge_submit",
                         },
                         set(capabilities.structuredContent["tools"]),
                     )

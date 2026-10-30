@@ -1,6 +1,7 @@
 """Persistent Native Messaging host. BCT Core remains the execution authority."""
 import asyncio
 import sys
+import secrets
 
 import httpx
 from mcp import ClientSession
@@ -43,8 +44,16 @@ def core_reply(result, request_id, operation_type="bridge_read"):
             (not isinstance(content.get("output"), dict) or
              not isinstance(content["output"].get("text"), str))):
         return error_reply(request_id, "CORE_READ_OUTPUT_INVALID", "RECEIPT_ERROR")
-    if operation_type not in ("bridge_read", "receipt_lookup"):
+    if operation_type not in ("bridge_read", "receipt_lookup", "comfy_canvas_read"):
         return error_reply(request_id, "CORE_REQUEST_TYPE_INVALID", "RECEIPT_ERROR")
+    if operation_type == "comfy_canvas_read":
+        from bct.features.comfy_graph_snapshot import validate_snapshot
+        if not isinstance(content.get("output"), dict):
+            return error_reply(request_id, "COMFY_RECEIPT_OUTPUT_INVALID", "RECEIPT_ERROR")
+        try:
+            validate_snapshot(content["output"]["graph"])
+        except (KeyError, TypeError, ValueError):
+            return error_reply(request_id, "COMFY_RECEIPT_GRAPH_INVALID", "RECEIPT_ERROR")
     return {"ok": True, "request_id": request_id, "result": content}
 
 
@@ -66,37 +75,101 @@ async def serve(inp, out):
         async with streamable_http_client(MCP_URL, http_client=client) as (reader, writer, _):
             async with ClientSession(reader, writer) as session:
                 await session.initialize()
-                while True:
-                    try:
-                        message = pending_first if pending_first is not None else await asyncio.to_thread(read_frame, inp)
-                        pending_first = None
-                        if isinstance(message, dict):
-                            LAST_REQUEST_ID = message.get("request_id")
-                    except Exception:
-                        return 5
-                    if message is None:
-                        return 0
-                    try:
-                        request_id, arguments = validate(message)
-                        if TOKEN_PATH.read_text(encoding="utf-8").strip() != token:
-                            write_frame(out, error_reply(request_id, "HOST_TOKEN_CHANGED_RECONNECT_REQUIRED", "AUTH_DENIED"))
-                            return 0
+                # This is the already-authorized Native Host's existing persistent
+                # MCP session. The Core remains the sole Work/Operation authority.
+                bridge_session_id = secrets.token_hex(16)
+                bridge_generation = None
+                try:
+                    bound = await session.call_tool("bct_comfy_bridge_bind", {
+                        "work_id": WORK_ID, "session_id": bridge_session_id})
+                    if not bound.isError:
+                        bridge_generation = bound.structuredContent.get("generation")
+                except Exception:
+                    bridge_generation = None  # Existing file-read flow stays intact.
+                output_lock = asyncio.Lock()
+                async def write_reply(payload):
+                    async with output_lock:
+                        await asyncio.to_thread(write_frame, out, payload)
+                async def forward_core_commands():
+                    if not isinstance(bridge_generation, int):
+                        return
+                    while True:
                         try:
-                            if message["type"] == "receipt_lookup":
-                                result = await session.call_tool("bct_operation_get", {"work_id": WORK_ID, "operation_id": request_id})
-                            else:
-                                result = await session.call_tool("bct_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
+                            result = await session.call_tool("bct_comfy_bridge_take", {
+                                "work_id": WORK_ID, "session_id": bridge_session_id,
+                                "generation": bridge_generation, "wait_seconds": 15})
+                            if result.isError:
+                                return
+                            command = (result.structuredContent or {}).get("request")
+                            if command:
+                                await write_reply({
+                                    "schema_version": 1, "type": "core_comfy_read_command",
+                                    "request_id": command["operation_id"],
+                                    "operation_id": command["operation_id"],
+                                    "generation": bridge_generation,
+                                    "session_id": bridge_session_id,
+                                    "arguments": command["arguments"]})
                         except Exception:
-                            # The request may have been committed before transport failed.
-                            reply = error_reply(request_id, "DISPATCH_RESULT_AMBIGUOUS_NO_RETRY", "UNKNOWN")
-                        else:
-                            reply = core_reply(result, request_id, message["type"])
-                    except (ValueError, TypeError) as exc:
-                        reply = error_reply(message.get("request_id") if isinstance(message, dict) else None, str(exc), "INPUT_DENIED")
-                    except OSError:
-                        reply = error_reply(message.get("request_id") if isinstance(message, dict) else None, "LOCAL_AUTH_IO_ERROR", "AUTH_DENIED")
-                    write_frame(out, reply)
+                            # Never replay an uncertain command under a fresh ID.
+                            return
+                forward_task = asyncio.create_task(forward_core_commands())
+                try:
+                    await _serve_requests(inp,out,session,token,write_reply,
+                                          bridge_session_id,bridge_generation,pending_first)
+                finally:
+                    forward_task.cancel()
+                    try:
+                        await forward_task
+                    except asyncio.CancelledError:
+                        pass
+                return 0
 
+
+async def _serve_requests(inp,out,session,token,write_reply,bridge_session_id,bridge_generation,pending_first):
+    global LAST_REQUEST_ID
+    while True:
+        message = pending_first if pending_first is not None else await asyncio.to_thread(read_frame,inp)
+        pending_first = None
+        if message is None:
+            return
+        request_id = message.get("request_id") if isinstance(message,dict) else None
+        LAST_REQUEST_ID = request_id
+        if TOKEN_PATH.read_text(encoding="utf-8").strip() != token:
+            await write_reply(error_reply(request_id,"HOST_TOKEN_CHANGED_RECONNECT_REQUIRED","AUTH_DENIED"))
+            return
+        if isinstance(message,dict) and message.get("type")=="comfy_canvas_result":
+            if (bridge_generation is None or message.get("session_id") != bridge_session_id
+                    or message.get("generation") != bridge_generation
+                    or not isinstance(request_id,str)
+                    or len(request_id)!=32 or any(c not in "0123456789abcdef" for c in request_id)
+                    or not isinstance(message.get("response"),dict)):
+                await write_reply(error_reply(request_id,"COMFY_REVERSE_RESULT_DENIED","INPUT_DENIED"))
+                continue
+            try:
+                result = await session.call_tool("bct_comfy_bridge_submit",{
+                    "work_id":WORK_ID,"session_id":bridge_session_id,
+                    "generation":bridge_generation,"operation_id":request_id,
+                    "response":message["response"]})
+                ack = (result.structuredContent or {}).get("accepted") if not result.isError else False
+                if not ack:
+                    await write_reply(error_reply(request_id,"COMFY_REVERSE_DUPLICATE_OR_STALE","INPUT_DENIED"))
+            except Exception:
+                await write_reply(error_reply(request_id,"COMFY_REVERSE_SUBMIT_UNKNOWN_NO_RETRY","UNKNOWN"))
+            continue
+        try:
+            request_id,arguments=validate(message)
+            if message["type"] == "receipt_lookup":
+                result=await session.call_tool("bct_operation_get",{"work_id":WORK_ID,"operation_id":request_id})
+            elif message["type"] == "comfy_canvas_read":
+                result=await session.call_tool("bct_comfy_canvas_read",{"work_id":WORK_ID,"operation_id":request_id,"arguments":arguments})
+            else:
+                result=await session.call_tool("bct_read",{"work_id":WORK_ID,"operation_id":request_id,"arguments":arguments})
+            reply=core_reply(result,request_id,message["type"])
+        except (ValueError,TypeError) as exc:
+            reply=error_reply(request_id,str(exc),"INPUT_DENIED")
+        except Exception:
+            reply=error_reply(request_id,"DISPATCH_RESULT_AMBIGUOUS_NO_RETRY","UNKNOWN")
+        await write_reply(reply)
 
 def main():
     origin = sys.argv[1] if len(sys.argv) > 1 else ""
