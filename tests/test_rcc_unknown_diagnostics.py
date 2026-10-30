@@ -34,3 +34,42 @@ class UnknownDiagnosticTest(unittest.TestCase):
             original_error=None, effect_journal=[],
         )
         self.assertEqual(x["status"], "NOT_ELIGIBLE")
+
+
+class SeparateRecoveryReceiptTest(unittest.TestCase):
+    def test_missing_evidence_never_verifies(self):
+        from bct.features.rcc_unknown_diagnostics import build_separate_recovery_receipt
+        source = {"operation_id":"old", "outcome":"UNKNOWN", "state":"FINISHED"}
+        before = dict(source)
+        result = build_separate_recovery_receipt(
+            recovery_operation_id="recovery", original=source,
+            proof={}, expected={})
+        self.assertEqual(result["status"], "INSUFFICIENT_EVIDENCE")
+        self.assertIn("EXACT_RESPONSE_RECEIPT", result["missing_proof"])
+        self.assertEqual(source, before)
+        self.assertTrue(result["no_resend"])
+
+    def test_exact_evidence_verifies_without_mutation(self):
+        from hashlib import sha256
+        from bct.features.rcc_unknown_diagnostics import build_separate_recovery_receipt
+        digest = sha256(b"request").hexdigest()
+        text_hash = sha256(b"prompt").hexdigest()
+        response = "answer"
+        response_hash = sha256(response.encode()).hexdigest()
+        target = dict(instance_id="instance",session_id="session",
+                      tab_id=3,window_id=4,conversation_key="uuid")
+        original = dict(operation_id="old",outcome="UNKNOWN",
+                        state="FINISHED",request_digest=digest)
+        expected = dict(target,request_digest=digest,text_sha256=text_hash)
+        proof = dict(target,request_digest=digest,user_turn_count=1,
+                     user_turn_sha256=text_hash,submitted=True,
+                     ack_operation_id="old",result_state="RESULT_PERSISTED",
+                     response_text=response,response_sha256=response_hash,
+                     response_operation_id="old")
+        original_before = dict(original)
+        r = build_separate_recovery_receipt(
+            recovery_operation_id="recover-1",original=original,
+            proof=proof,expected=expected)
+        self.assertEqual(r["status"],"VERIFIED")
+        self.assertEqual(r["missing_proof"],[])
+        self.assertEqual(original,original_before)
