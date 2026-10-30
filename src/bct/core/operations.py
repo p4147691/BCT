@@ -22,7 +22,7 @@ from .store import Store
 # Only platform-defined read-only capabilities qualify: an arbitrary caller
 # cannot opt a mutating command into the measurement-only classification.
 _MEASUREMENT_ONLY_CAPABILITIES = frozenset({
-    "read", "system_inspect", "github_pr_status",
+    "read", "test", "verify", "system_inspect", "github_pr_status",
     "desktop_session_status", "desktop_window_list", "cdp_inspect",
     "desktop_capture",
 })

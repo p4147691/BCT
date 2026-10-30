@@ -297,6 +297,15 @@ class CoreTests(unittest.TestCase):
             "relay_browser", "state", {"command": "state"},
             ("rcc:read",), {"mutating": False},
         )))
+        for capability in ("test", "verify"):
+            self.assertTrue(_is_measurement_only_request(FeatureRequest(
+                capability, "bounded-measurement", {"kind": "unittest"},
+                ("test:isolated",), {},
+            )))
+        self.assertFalse(_is_measurement_only_request(FeatureRequest(
+            "execute", "arbitrary-command", {"command": "unknown"},
+            ("execution:arbitrary",), {},
+        )))
         self.assertFalse(_is_measurement_only_request(FeatureRequest(
             "relay_browser", "send", {"command": "send-to-tab"},
             ("rcc:send",), {"mutating": False},

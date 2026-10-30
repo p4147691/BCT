@@ -25,6 +25,16 @@ credential store를 만들지 않고 기존 BCT operation/ownership/receipt와 �
 - merge는 API 응답만 신뢰하지 않고 PR의 merged state와 merge commit SHA를 다시 검증한다.
 - `UNKNOWN`은 자동 재시도하지 않으며 같은 resource의 새 operation도 공통 claim이 차단한다.
 
+## Measurement-only CI/status checks
+
+`github_pr_status` is an observation, not a GitHub mutation. A failed or
+unverified status request is diagnostic-only (`MEASUREMENT_UNVERIFIED` when its
+observation cannot be trusted); it creates no Claim and cannot prevent an
+independent fix or new verified check. An actually failing required check still
+prevents the protected **merge** until corrected and proven successful. The
+`UNKNOWN`/same-resource mutating fences above apply to push/create/merge/sync,
+not to observation-only status.
+
 ## Authentication and secrets
 
 BCT는 token을 인자, TOML, SQLite receipt 또는 로그에 저장하지 않는다. `GhCliClient`는 `gh api`를

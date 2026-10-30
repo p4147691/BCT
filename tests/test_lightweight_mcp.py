@@ -296,8 +296,14 @@ class CompactUnknownHTTPTests(unittest.TestCase):
                                     "work_id": "unknown-http-work", "operation_id": "original-unknown",
                                 })
                                 self.assertEqual("UNKNOWN", original.structuredContent["outcome"])
-                                self.assertFalse(any(
+                                self.assertTrue(any(
                                     row["operation_id"] == "original-unknown"
+                                    for row in store.claim_diagnostics()
+                                ))
+                                # Historical synthetic UNKNOWN Claim is retained; the
+                                # successful new read must not create its own Claim.
+                                self.assertFalse(any(
+                                    row["operation_id"] == "blocked-read"
                                     for row in store.claim_diagnostics()
                                 ))
                                 # Mutating UNKNOWN must remain non-reconcilable; covered by

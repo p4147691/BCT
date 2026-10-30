@@ -26,8 +26,10 @@ it again. Receipt reuse is appropriate for immutable past results, not fresh hea
 `bct_verify` accepts up to eight `{id, capability, arguments}` steps, restricted to bounded
 read metadata, existing tests and exact-head GitHub PR status. It requires the work and
 principal to allow every child capability and verifies current policy before each step.
-All resources are claimed atomically. It stops on the first failed/pending/unknown step;
-UNKNOWN retains claims. File content and test console output are not persisted. The
+Verification records each child outcome without creating a resource Claim for the
+measurement-only plan. A failed or unverified observation stops only that
+verification plan; it cannot block unrelated normal repair work. A mutating
+UNKNOWN retains its exact Claim and duplicate-effect protection. File content and test console output are not persisted. The
 receipt contains ordered evidence and timings, including completed steps before failure.
 Use `bct_read` batch when file contents, rather than verification metadata, are needed.
 The same tool accepts fixed versioned `local-python-validation` and `pr-readiness` recipes.
@@ -73,7 +75,8 @@ operation, precondition, and outcome code used by direct BCT calls.
 Related file and directory inspection can use one `bct_read` call with `operation: "batch"`.
 Each item has a unique caller label, an absolute path, and optionally the existing
 `directory_tree` depth/limit fields. BCT validates every item before recording the operation,
-claims all resources in one SQLite transaction, and returns item evidence in input order. The
+does not reserve resource Claims for its read-only items, and returns item
+evidence in input order. The
 batch is bounded to 20 items, 512 KiB per file, 1 MiB total file content, and 2,000 requested
 directory entries. File content is returned only in the immediate response and is not persisted
 in the receipt; a duplicate operation returns the receipt without replaying the read or restoring

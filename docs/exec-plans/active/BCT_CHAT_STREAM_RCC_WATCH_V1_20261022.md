@@ -55,6 +55,11 @@ and RUNNING requires the original execution to be checked. No consumer of
 these reports is granted dispatch/retry permission. Core health shows a
 small observation status, not the user messages.
 
+An unavailable RCC watch observation is not proof that the conversation or
+Core has failed. It must not create an observation Claim or halt unrelated
+repair work. The `STOP_UNKNOWN_NO_RESEND` gate above applies only to the
+specific unverified *message effect*, not to failed measurement infrastructure.
+
 ## Limits and testing
 
 This is a 15-second sampled observation, so transient toasts may be missed.

@@ -34,6 +34,16 @@ manager promotion are deliberately not exposed by this slice.
   verifies the saved title, publishes a fresh endpoint snapshot, and uses the BCT operation ID
   for both BCT and RCC duplicate fencing.
 
+## Read-only observation versus browser mutation
+
+A platform-recognized RCC read command with feature-owned `mutating=false`
+creates no resource Claim. If its observation is missing or unverified, report
+`MEASUREMENT_UNVERIFIED` without inferring target state or blocking another
+normal corrective operation. An unverified message submit, rename, tab move or
+other browser mutation is different: preserve its original receipt and exact
+mutation duplicate fence, with no blind resend. A caller-supplied read-only
+label cannot turn a mutating command into a measurement.
+
 ## Secret boundary
 
 The legacy RCC state payload contains internal transport settings. BCT recursively removes
