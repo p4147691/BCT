@@ -94,6 +94,8 @@
               ? scope.role_tags.map((value) => String(value || "").trim()).filter(Boolean)
               : []),
             roleTagsSha256: String(scope?.role_tags_sha256 || "").trim().toLowerCase(),
+            nodeMemo: String(scope?.node_memo || ""),
+            assignedTask: String(scope?.assigned_task || ""),
             reasoningLevel: String(tab?.reasoning?.status || "").trim().toUpperCase() === "OBSERVED"
               ? String(tab?.reasoning?.level || "").trim()
               : "",
@@ -212,6 +214,9 @@
       const conversationKey = String(node?.conversationKey || "").trim();
       const displayName = String(values?.displayName || node?.title || "").trim();
       const scopeName = String(values?.scopeName || "").trim();
+      const nodeMemo = String(values?.nodeMemo ?? node?.nodeMemo ?? "");
+      const assignedTask = String(values?.assignedTask ?? node?.assignedTask ?? "");
+      if (nodeMemo.length > 2000 || assignedTask.length > 240) throw new Error("BCT_NODE_METADATA_TOO_LONG");
       const roleTags = Array.isArray(values?.roleTags)
         ? values.roleTags.map((value) => String(value || "").trim()).filter(Boolean)
         : [];
@@ -236,6 +241,8 @@
           display_name: displayName,
           scope_name: scopeName,
           role_tags: roleTags,
+          ...(Object.prototype.hasOwnProperty.call(values, "nodeMemo") ? { node_memo: nodeMemo } : {}),
+          ...(Object.prototype.hasOwnProperty.call(values, "assignedTask") ? { assigned_task: assignedTask } : {}),
           ...(expectedRoleTagsSha256
             ? { expected_role_tags_sha256: expectedRoleTagsSha256 }
             : {}),

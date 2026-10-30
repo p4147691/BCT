@@ -1056,6 +1056,8 @@ function openMonitorBctRenameEditor(node, row) {
     120,
     "비우면 미소속",
   );
+  const taskField = makeField("담당 작업", String(node.assignedTask || ""), 240);
+  const memoField = makeField("노드 메모", String(node.nodeMemo || ""), 2000);
   const rolesField = makeField(
     "역할 태그",
     Array.isArray(node.roleTags) ? node.roleTags.join(", ") : "",
@@ -1082,12 +1084,13 @@ function openMonitorBctRenameEditor(node, row) {
   confirm.className = "is-primary";
   confirm.textContent = "확인";
   actions.append(recovery, cancel, confirm);
-  dialog.append(head, facts, titleField.label, titleHint, scopeField.label, rolesField.label, roleHint, error, actions);
+  dialog.append(head, facts, titleField.label, titleHint, scopeField.label, rolesField.label, taskField.label, memoField.label, roleHint, error, actions);
   overlay.append(dialog);
   document.body.append(overlay);
   monitorBctRenameEditor = {
     overlay, dialog, input: titleField.control, scopeInput: scopeField.control,
-    rolesInput: rolesField.control, error, recovery, cancel, close, confirm, busy: false,
+    rolesInput: rolesField.control, taskInput: taskField.control, memoInput: memoField.control,
+    error, recovery, cancel, close, confirm, busy: false,
     canRenameTitle,
   };
 
@@ -1116,6 +1119,8 @@ function openMonitorBctRenameEditor(node, row) {
     const title = editor.canRenameTitle ? editor.input.value.trim() : currentTitle;
     const scopeName = editor.scopeInput.value.trim();
     const roleTags = monitorBctRoleTagsFromText(editor.rolesInput.value);
+    const assignedTask = editor.taskInput.value.trim();
+    const nodeMemo = editor.memoInput.value.trim();
     if (editor.canRenameTitle && !title) {
       editor.error.textContent = "이름을 입력하세요.";
       editor.input.focus();
@@ -1123,12 +1128,16 @@ function openMonitorBctRenameEditor(node, row) {
     }
     const titleChanged = editor.canRenameTitle && title !== currentTitle;
     const metadataChanged = scopeName !== String(node.scopeName || "").trim()
-      || JSON.stringify(roleTags) !== JSON.stringify(Array.isArray(node.roleTags) ? node.roleTags : []);
+      || JSON.stringify(roleTags) !== JSON.stringify(Array.isArray(node.roleTags) ? node.roleTags : [])
+      || assignedTask !== String(node.assignedTask || "").trim()
+      || nodeMemo !== String(node.nodeMemo || "").trim();
     if (!titleChanged && !metadataChanged) return closeMonitorBctRenameEditor();
     editor.busy = true;
     editor.input.disabled = true;
     editor.scopeInput.disabled = true;
     editor.rolesInput.disabled = true;
+    editor.taskInput.disabled = true;
+    editor.memoInput.disabled = true;
     editor.recovery.disabled = true;
     editor.cancel.disabled = true;
     editor.close.disabled = true;
@@ -1147,6 +1156,8 @@ function openMonitorBctRenameEditor(node, row) {
         displayName: title || String(node.title || node.nodeLabel || "").trim(),
         scopeName,
         roleTags,
+        assignedTask,
+        nodeMemo,
       });
       editor.overlay.remove();
       monitorBctRenameEditor = null;
@@ -1157,6 +1168,8 @@ function openMonitorBctRenameEditor(node, row) {
       editor.input.disabled = !editor.canRenameTitle;
       editor.scopeInput.disabled = false;
       editor.rolesInput.disabled = false;
+      editor.taskInput.disabled = false;
+      editor.memoInput.disabled = false;
       editor.recovery.disabled = false;
       editor.cancel.disabled = false;
       editor.close.disabled = false;

@@ -149,7 +149,7 @@ def build_mcp(
         ),
         structured_output=True,
     )
-    async def bct_status(compact: bool = True, scope: str = "bct") -> dict[str, Any]:
+    async def bct_status(compact: bool = True, scope: str = "bct", sort_by: str = "number") -> dict[str, Any]:
         started_ns = time.perf_counter_ns()
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
@@ -157,7 +157,7 @@ def build_mcp(
             return {"status": "INVALID_REQUEST", "reason": "BCT_STATUS_SCOPE_INVALID"}
         snapshot = await asyncio.to_thread(status_provider)
         if scope != "bct":
-            return status_view(snapshot, scope)
+            return status_view(snapshot, scope, sort_by=sort_by)
         if compact and isinstance(snapshot.get("monitor"), dict):
             monitor = dict(snapshot["monitor"])
             for key in (

@@ -30,6 +30,28 @@ class ConversationNetworkTests(unittest.TestCase):
         set_membership(self.store, project_id="bct.rcc", conversation_key=WORKER,
                        tags=["구현", "테스트"], now=100.0)
 
+    def test_node_memo_task_persist_and_legacy_edit_preserves_them(self):
+        saved = configure_conversation_scope(
+            self.store, conversation_key=WORKER, display_name="Worker",
+            scope_name="BCT RCC", role_tags=["개발"],
+            node_memo="GPU tests ready", assigned_task="Verify regression",
+        )
+        self.assertEqual("GPU tests ready", saved["node_memo"])
+        self.assertEqual("Verify regression", saved["assigned_task"])
+        # Older callers do not pass the new fields and must not erase them.
+        configure_conversation_scope(
+            self.store, conversation_key=WORKER, display_name="Worker",
+            scope_name="BCT RCC", role_tags=["개발", "검토"],
+        )
+        scope = conversation_scope_directory(self.store, conversation_keys=[WORKER])[WORKER]
+        self.assertEqual("GPU tests ready", scope["node_memo"])
+        self.assertEqual("Verify regression", scope["assigned_task"])
+        with self.assertRaises(ConversationNetworkError):
+            configure_conversation_scope(
+                self.store, conversation_key=WORKER, display_name="Worker",
+                scope_name="BCT RCC", node_memo="x" * 2001,
+            )
+
     def tearDown(self) -> None:
         self.temp.cleanup()
 

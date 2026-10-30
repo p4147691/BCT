@@ -587,6 +587,9 @@ class Store:
                     "PRAGMA table_info(conversation_network_conversations)"
                 ).fetchall()
             }
+            for column in ("node_memo", "assigned_task"):
+                if column not in conversation_columns:
+                    db.execute("ALTER TABLE conversation_network_conversations ADD COLUMN " + column + " TEXT NOT NULL DEFAULT ''")
             if "display_order" not in conversation_columns:
                 db.execute(
                     "ALTER TABLE conversation_network_conversations ADD COLUMN "

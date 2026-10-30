@@ -140,7 +140,7 @@ def run_monitor_conversation_scope_update(
     """
     allowed = {
         "conversation_key", "display_name", "scope_name", "role_tags",
-        "expected_role_tags_sha256",
+        "expected_role_tags_sha256", "node_memo", "assigned_task",
     }
     unknown = set(payload) - allowed
     if unknown:
@@ -152,6 +152,8 @@ def run_monitor_conversation_scope_update(
         scope_name=str(payload.get("scope_name") or ""),
         role_tags=payload.get("role_tags") or [],
         expected_role_tags_sha256=payload.get("expected_role_tags_sha256"),
+        node_memo=payload.get("node_memo"),
+        assigned_task=payload.get("assigned_task"),
     )
 
 

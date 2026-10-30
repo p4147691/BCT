@@ -53,6 +53,18 @@ class StatusViewTests(unittest.TestCase):
         cached = status_view(self.snapshot, "node")["current_nodes"]["items"][0]
         self.assertNotIn("roles", cached)
 
+    def test_node_sort_modes(self):
+        rows = self.snapshot["monitor"]["current_nodes"]["items"]
+        rows[0]["node_number"] = "N12"
+        rows[0]["generating"] = False
+        rows.append({"status": "CONFIRMED", "node_number": "N3", "generating": True})
+        self.assertEqual("N3", status_view(self.snapshot, "node")["current_nodes"]["items"][0]["node_number"])
+        self.assertEqual("N3", status_view(self.snapshot, "node", sort_by="activity")["current_nodes"]["items"][0]["node_number"])
+        for mode in ("network", "role"):
+            self.assertEqual(2, len(status_view(self.snapshot, "node", sort_by=mode)["current_nodes"]["items"]))
+        with self.assertRaises(ValueError):
+            status_view(self.snapshot, "node", sort_by="invalid")
+
     def test_rcc_and_monitor_views(self):
         self.assertEqual("example", status_view(self.snapshot, "rcc")["rcc"]["instances"][0]["instance_id"])
         monitor = status_view(self.snapshot, "monitor")["monitor"]
