@@ -371,6 +371,19 @@ def build_mcp(
                 handler_ms = (time.perf_counter_ns()-started_ns)/1e6
                 _trace_stage("handler_done", tool_kind=selected, handler_ms=handler_ms, wait_ms=0.0, execution_ms=handler_ms)
                 return result.as_dict()
+            if selected in {"desktop_window_manage", "relay_browser"}:
+                # Reuse the existing authenticated Work/Operation/Claim/Lease gateway.
+                # No second executor or automatic retry of UNKNOWN effects.
+                from bct.features.window_layout_commands import make_bct_operation_invoke
+                invoke = make_bct_operation_invoke(
+                    operations=bct.operations, principal=principal,
+                    work_id=work_id, approval_ref=approval_ref,
+                )
+                value = await asyncio.to_thread(invoke, selected, operation_id, arguments)
+                handler_ms = (time.perf_counter_ns()-started_ns)/1e6
+                _trace_stage("handler_done", tool_kind=selected, handler_ms=handler_ms,
+                             wait_ms=0.0, execution_ms=handler_ms)
+                return value
             result = await asyncio.to_thread(
                 bct.operations.run,
                 principal=principal,
