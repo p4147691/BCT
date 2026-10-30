@@ -29,3 +29,25 @@
 3. 운영 DB의 실제 send/create-and-send 호출자 및 historical recovery 의존성 전수 감사.
 4. 감독관 E2E 전체 4종 영수증/응답 전문 회수 및 아직 미검증인 경우 안전한 독립 수락시험.
 5. 변경 HEAD CI 및 최신 main merge-tree 충돌 검증.
+
+
+## 영속 복구 Store 구현 (추가)
+- `Store.record_independent_unknown_recovery`: 별도 FINISHED Operation 레코드와 이벤트를 단일 SQLite 트랜잭션으로 기록. Claim을 만들거나 수정하지 않음.
+- 정확한 Work/Principal, 원본 FINISHED/UNKNOWN, 원본 request_digest, 중복 ID 및 본문 차이 검사.
+- 안전 한계: 현재 신뢰된 호스트 증거 호출 경로가 없으므로 외부 입력의 `VERIFIED` 판정 저장을 명시적으로 차단. 미확인 근거의 `INSUFFICIENT_EVIDENCE`만 별도 영속화 가능. 정식 Core 공개 Operation/API 및 신뢰 출처 proof adapter는 다음 구현 필요.
+- 격리 SQLite fixture에서 원본 Operation 전체 행·원본 Claim 행 전후 동일, 동일 recovery ID idempotence, 다른 Work 접근 거부, 원본 digest 불일치 거부, 호출자 임의 성공 거부 확인.
+- 분할 회귀: diagnostics 6 PASS, direct tab 5 PASS, RCC integration 77 PASS = 88 PASS.
+
+## 운영 DB read-only 명령 기록 조사
+SQLite URI mode=ro, D:/BCT/runtime/state/state.sqlite. 변경 없음.
+- relay_browser evidence.command=create-and-send: 27
+- relay_browser evidence.command=send: 3
+- relay_browser evidence.command=reconcile-create-and-send: 6
+- relay_browser evidence.command=reconcile-send: 1
+- relay_browser evidence.command=send-to-tab: 28
+- relay_browser evidence.command=send-to-created-tab: 9
+- 명령 없는 relay_browser 레코드 53 (그중 UNKNOWN 37); orchestration 명령 없는 156 (그중 UNKNOWN 9).
+위 수치는 evidence.command 기준 집계이며 원본 request_digest만 존재하는 기록과 내부 오케스트레이션 호출까지 복원한 전수명세가 아님. 따라서 호출자 전수 감사 미완료 상태 보존.
+
+## 다음 필수 승인 경계
+복구 성공 VERIFIED를 처리할 신뢰된 RCC/Operation 원본 증거 adapter, 정식 Work-scoped API, 원본 Lease 별도 검증, 운영 기록 누락 호출자 분류, 감독관 4종 물리 E2E 근거 회수를 완료할 때까지 READY_FOR_REVIEW 금지.

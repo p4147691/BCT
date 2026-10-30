@@ -73,3 +73,56 @@ class SeparateRecoveryReceiptTest(unittest.TestCase):
         self.assertEqual(r["status"],"VERIFIED")
         self.assertEqual(r["missing_proof"],[])
         self.assertEqual(original,original_before)
+
+class DurableRecoveryStoreTest(unittest.TestCase):
+    def test_persist_separately_and_preserve_original(self):
+        import tempfile, sqlite3, json, hashlib
+        from pathlib import Path
+        from bct.core.store import Store
+        from bct.core.models import Outcome
+        with tempfile.TemporaryDirectory() as tmp:
+            store=Store(Path(tmp)/"test.sqlite")
+            now=1.0
+            digest=hashlib.sha256(b"request").hexdigest()
+            with store.transaction() as db:
+                db.execute("INSERT INTO works VALUES(?,?,?,?,?,?,?)",
+                    ("work","test","[]","[]","owner",1,"ACTIVE"))
+                db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    ("original","work","owner",digest,"relay_browser","instance",
+                     "FINISHED","UNKNOWN",json.dumps({"phase":"EXECUTION"}),"RCC_UNKNOWN",
+                     1,"test",now,now))
+                db.execute("INSERT INTO resource_claims VALUES(?,?,?,?,?)",
+                    ("exact:original","original","work",1,1))
+            with store.transaction() as db:
+                before_original=tuple(db.execute("SELECT * FROM operations WHERE operation_id='original'").fetchone())
+                before_claims=[tuple(r) for r in db.execute("SELECT * FROM resource_claims")]
+            evidence={"status":"INSUFFICIENT_EVIDENCE","original_operation_id":"original",
+                      "recovery_operation_id":"recovery","no_resend":True,
+                      "missing_proof":["EXACT_RESPONSE_RECEIPT"]}
+            first=store.record_independent_unknown_recovery(
+                recovery_operation_id="recovery",work_id="work",principal_id="owner",
+                original_operation_id="original",expected_original_digest=digest,evidence=evidence)
+            self.assertEqual(first.outcome,Outcome.NOT_APPLIED)
+            again=store.record_independent_unknown_recovery(
+                recovery_operation_id="recovery",work_id="work",principal_id="owner",
+                original_operation_id="original",expected_original_digest=digest,evidence=evidence)
+            self.assertTrue(again.duplicate)
+            with store.transaction() as db:
+                self.assertEqual(before_original,tuple(db.execute("SELECT * FROM operations WHERE operation_id='original'").fetchone()))
+                self.assertEqual(before_claims,[tuple(r) for r in db.execute("SELECT * FROM resource_claims")])
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM operations WHERE operation_id='recovery'").fetchone()[0],1)
+            with self.assertRaises(Exception):
+                store.record_independent_unknown_recovery(
+                    recovery_operation_id="other",work_id="foreign",principal_id="owner",
+                    original_operation_id="original",expected_original_digest=digest,evidence=evidence)
+            with self.assertRaises(Exception):
+                store.record_independent_unknown_recovery(
+                    recovery_operation_id="untrusted-success",work_id="work",
+                    principal_id="owner",original_operation_id="original",
+                    expected_original_digest=digest,
+                    evidence=dict(evidence, status="VERIFIED",
+                                  recovery_operation_id="untrusted-success"))
+            with self.assertRaises(Exception):
+                store.record_independent_unknown_recovery(
+                    recovery_operation_id="recovery",work_id="work",principal_id="owner",
+                    original_operation_id="original",expected_original_digest="bad",evidence=evidence)
