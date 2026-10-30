@@ -147,6 +147,7 @@ files = [
   "src/bct/runtime_server.py",
   "src/bct/supervisor.py",
   "src/bct/mcp_server.py",
+  "src/bct/status_views.py",
   "src/bct/trace_timing.py",
   "src/bct/monitor_runtime.py",
   "src/bct/current_nodes.py",

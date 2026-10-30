@@ -15,6 +15,7 @@ from .background_operations import BACKGROUND_CAPABILITIES, launch_background_op
 from .conversation_network import ConversationNetworkError, project_view, resolve_project_id
 from .core.models import Principal, Work
 from .mcp_catalogue_config import CatalogueSettings
+from .status_views import status_view, STATUS_SCOPES
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -148,11 +149,15 @@ def build_mcp(
         ),
         structured_output=True,
     )
-    async def bct_status(compact: bool = True) -> dict[str, Any]:
+    async def bct_status(compact: bool = True, scope: str = "bct") -> dict[str, Any]:
         started_ns = time.perf_counter_ns()
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
+        if scope not in STATUS_SCOPES:
+            return {"status": "INVALID_REQUEST", "reason": "BCT_STATUS_SCOPE_INVALID"}
         snapshot = await asyncio.to_thread(status_provider)
+        if scope != "bct":
+            return status_view(snapshot, scope)
         if compact and isinstance(snapshot.get("monitor"), dict):
             monitor = dict(snapshot["monitor"])
             for key in (

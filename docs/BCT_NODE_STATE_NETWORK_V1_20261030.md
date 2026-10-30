@@ -41,3 +41,13 @@ Monitor에서 관측한 **현재 실제 존재하는 노드**에 사람이 지�
 - 전역 감독관과 개별 대화망 매니저 역할의 권한/표시 분리.
 - 첫 접촉 메시지의 정보 정확성·길이·응답 회수 검증.
 - 기존 Core/RCC/Monitor/Browser Bridge의 운영 동작은 이 문서 작업으로 변경하지 않는다.
+
+## 상태 조회 명칭 V1 (2026-10-30 확정)
+- 사용자 표현: `status bct`, `status node`, `status rcc`, `status monitor`.
+- 실제 단일 MCP 도구: `bct_status(scope="bct"|"node"|"rcc"|"monitor")`. 기존 `bct_status()` 호출은 이전 전체 응답을 그대로 유지한다.
+- `status bct`: 기존 Core/Monitor 전체 응답. MCP/터널 정보가 확인되지 않으면 임의로 정상으로 채우지 않는다.
+- `status node`: `current_nodes`의 현재 실제 노드만. 등록 이력의 닫힌 노드는 포함하지 않는다. 역할/소속/메모는 Monitor 우클릭 데이터와 BCT 정본의 실제 연결이 검증되기 전에는 임의로 병합하지 않는다.
+- `status rcc`: 현재 RCC 관측 스냅샷.
+- `status monitor`: 현재 Monitor 서비스·관측·노드 표시 투영. 화면 픽셀/썸네일 원본을 이 명령이 가져온다고 주장하지 않는다.
+- 노드 정보는 하나의 논리적 객체이며 번호순/대화망별/역할별/활동순 정렬은 **같은 정보의 보기 방식**이다. 정렬이나 필터로 새 노드·소속·권한을 만들지 않는다.
+- `create-chat-tab`, `create-chat-window`, `send-message`는 이름과 계약을 변경하지 않는다.
