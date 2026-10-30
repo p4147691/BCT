@@ -18,6 +18,31 @@ from bct.trace_timing import trace_stage
 from .store import Store
 
 
+# Do not treat a failed observation as evidence of an external effect.
+# Only platform-defined read-only capabilities qualify: an arbitrary caller
+# cannot opt a mutating command into the measurement-only classification.
+_MEASUREMENT_ONLY_CAPABILITIES = frozenset({
+    "read", "test", "verify", "system_inspect", "github_pr_status",
+    "desktop_session_status", "desktop_window_list", "cdp_inspect",
+    "desktop_capture",
+})
+_RCC_MEASUREMENT_COMMANDS = frozenset({
+    "state", "presence", "result", "result-of-create-and-send",
+    "target-discover", "tab-get", "windows-list", "window-get",
+    "tab-groups-list", "tab-group-get", "read-latest-assistant",
+})
+
+
+def _is_measurement_only_request(request) -> bool:
+    if request.capability in _MEASUREMENT_ONLY_CAPABILITIES:
+        return True
+    return (
+        request.capability == "relay_browser"
+        and request.preconditions.get("mutating") is False
+        and request.arguments.get("command") in _RCC_MEASUREMENT_COMMANDS
+    )
+
+
 class OperationCoordinator:
     def __init__(self, *, store: Store, policy: Policy):
         self.store = store
@@ -352,7 +377,8 @@ class OperationCoordinator:
             created, current = self.store.begin_operation(
                 operation_id=operation_id, work=work, principal_id=principal.principal_id,
                 request_digest=digest, capability=capability, target=request.target,
-                resources=request.resources, policy_revision=decision.policy_revision,
+                resources=(() if _is_measurement_only_request(request) else request.resources),
+                policy_revision=decision.policy_revision,
                 background_job=background_job,
             )
         finally:
@@ -545,6 +571,25 @@ class OperationCoordinator:
                 release_claims=exc.release_claims,
             )
         except UnknownEffectError as exc:
+            if _is_measurement_only_request(request):
+                # The measurement yielded no trustworthy evidence about the
+                # target.  Do not infer target failure or external UNKNOWN.
+                self.store.record_effect_stage(
+                    operation_id=operation_id, stage="EFFECT_RESULT_OBSERVED",
+                    detail={"outcome": Outcome.NOT_APPLIED.value,
+                            "error_code": "MEASUREMENT_UNVERIFIED"},
+                )
+                return self.store.finish_operation(
+                    operation_id=operation_id, outcome=Outcome.NOT_APPLIED,
+                    evidence={
+                        "phase": "MEASUREMENT",
+                        "classification": "MEASUREMENT_UNVERIFIED",
+                        "measurement_trusted": False,
+                        "target_state_inferred": False,
+                        "code": str(exc),
+                    },
+                    error=str(exc), release_claims=True,
+                )
             self.store.record_effect_stage(
                 operation_id=operation_id, stage="EFFECT_UNCERTAIN",
                 detail={"error_code": str(exc).split(":", 1)[0]},

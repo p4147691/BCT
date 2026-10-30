@@ -1887,13 +1887,13 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertTrue(rejected.evidence["read"])
         db = self.bct.store._connect()
         try:
-            unresolved = db.execute(
+            claim_row = db.execute(
                 "SELECT unresolved FROM resource_claims WHERE operation_id=?",
                 ("tab-read-rejected",),
-            ).fetchone()[0]
+            ).fetchone()
         finally:
             db.close()
-        self.assertEqual(0, unresolved)
+        self.assertIsNone(claim_row)
 
         self.client.error = RelayEffectUnknown("read response lost")
         unavailable = self.call("presence-read-unavailable", {

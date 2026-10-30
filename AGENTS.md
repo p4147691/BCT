@@ -95,6 +95,25 @@ does not by itself require redeploying an unaffected target.
   satisfied. Otherwise report the verified progress, blocker and exact next step.
 - User-observed physical acceptance is evidence; unobserved UI behavior is not.
 
+## 6A. Evidence-based measurement (current user policy)
+
+- A measurement is not proof unless the observation itself is verified. Missing,
+  ambiguous or failed observation is `MEASUREMENT_UNVERIFIED`: keep diagnostic
+  evidence, do not infer target failure, and do not turn it into an external
+  mutation `UNKNOWN` or a development/dispatch stop condition.
+- Platform-recognized observation-only operations create **no resource Claim**.
+  This is decided by the BCT feature contract, never by a caller-supplied label.
+  Fix the faulty measurement path and repeat it separately if a trustworthy
+  measurement is necessary; ordinary unrelated corrective work continues.
+- A failed CI/test measurement is actionable diagnostic data, not an authority
+  to block unrelated fixes. Exact acceptance gates still apply to the actual
+  protected merge, release, destructive effects and same-target mutations.
+- Historical receipts and Claims remain immutable audit evidence; do not bulk
+  clear or misrepresent them. A truly ambiguous *mutating* effect still requires
+  original-receipt verification, duplicate-effect fencing and applicable approval.
+- Ordinary repeated chat messages should be idempotently handled by receivers
+  where possible; never blindly replay an unverified prior submission.
+
 ## 7. Worktree lifecycle
 
 - Before creating a new worktree, look for an owned reusable clean worktree for

@@ -1321,8 +1321,9 @@ class Store:
                     operation_created_at=now,
                 )
             self._event(db, "OPERATION_STARTED", operation_id, {"capability": capability, "resources": resources})
-            self._append_effect_stage(db, operation_id=operation_id,
-                                      stage="CLAIM_RESERVED", detail={})
+            if resources:
+                self._append_effect_stage(db, operation_id=operation_id,
+                                          stage="CLAIM_RESERVED", detail={})
             row = db.execute("SELECT * FROM operations WHERE operation_id=?", (operation_id,)).fetchone()
             return True, self._row_result(row)
 

@@ -14,6 +14,15 @@ remain byte-for-byte equal to the production profile, and a cutover requires a
 separate operating approval and a quiesced old Core.
 Wildcards, directories, path traversal, symlinks, and uncommitted source are rejected.
 
+## Observation must not become a deployment fence
+
+A failed health/status observation without verified evidence is only an
+untrusted measurement, not proof of service failure or a mutating deployment
+`UNKNOWN`. Observation-only operations reserve no Claim and must not block
+independent diagnosis or repair. The strict rollback, exact-release and
+same-target mutation protections below remain mandatory when deployment or
+service control actually begins.
+
 ## Deployment lifecycle
 
 1. Verify the source is the clean `main` checkout at the exact requested commit.
