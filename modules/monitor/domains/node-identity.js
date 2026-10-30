@@ -1358,7 +1358,6 @@ function monitorUniqueBctConversationNodes(nodes) {
 }
 //@@FN_END:monitorUniqueBctConversationNodes
 
-let monitorBctNodeSortMode = "network";
 //@@FN_START:renderMonitorBctWindowNodes
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
@@ -1374,11 +1373,11 @@ function renderMonitorBctWindowNodes(nodes) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = label;
-    option.selected = value === monitorBctNodeSortMode;
+    option.selected = value === renderMonitorBctWindowNodes.sortMode;
     sortSelect.append(option);
   }
   sortSelect.addEventListener("change", () => {
-    monitorBctNodeSortMode = sortSelect.value;
+    renderMonitorBctWindowNodes.sortMode = sortSelect.value;
     renderMonitorBctWindowNodes(nodes);
   });
   fragment.append(sortSelect);
@@ -1431,12 +1430,12 @@ function renderMonitorBctWindowNodes(nodes) {
         const digits = String(node.nodeLabel || "").replace(/^N/i, "");
         return /^\\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
       };
-      if (monitorBctNodeSortMode === "number") return nodeNumber(left) - nodeNumber(right);
-      if (monitorBctNodeSortMode === "role") {
+      if (renderMonitorBctWindowNodes.sortMode === "number") return nodeNumber(left) - nodeNumber(right);
+      if (renderMonitorBctWindowNodes.sortMode === "role") {
         const roleDiff = String(left.roleTags?.[0] || "").localeCompare(String(right.roleTags?.[0] || ""), "ko");
         return roleDiff || nodeNumber(left) - nodeNumber(right);
       }
-      if (monitorBctNodeSortMode === "activity") {
+      if (renderMonitorBctWindowNodes.sortMode === "activity") {
         const score = (node) => (node.generating === true ? 2 : node.active === true ? 1 : 0);
         return score(right) - score(left) || nodeNumber(left) - nodeNumber(right);
       }
