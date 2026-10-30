@@ -7,6 +7,7 @@ import secrets
 import time
 from typing import Any
 
+from bct.features.rcc_latency import send_latency_evidence
 from bct.core.delivery_ledger import DeliveryLedger
 from bct.relay_settings import utf16_units
 from bct.core.delivery_state import DeliveryEvent, DeliveryState
@@ -2406,13 +2407,14 @@ class RelayBrowserFeature:
                         "host_state": "SUBMITTED_CONFIRMED_BY_TERMINAL_RESULT",
                         "conversation_key": str(receipt["conversationKey"]),
                         "result_state": "RESULT_PERSISTED",
-                        "timing_ms": {
-                            "host_request": host_request_ms,
-                            **({"preflight_state": request.preconditions["send_message_state_read_ms"]}
-                               if "send_message_state_read_ms" in request.preconditions else {}),
-                            "readback": round((time.monotonic() - readback_started) * 1000, 3),
-                        },
-                        "readback_attempts": readback_attempts,
+                        **send_latency_evidence(
+                            command=values["command"],
+                            preflight_state_ms=request.preconditions.get("send_message_state_read_ms"),
+                            host_request_ms=host_request_ms,
+                            stage_timing=receipt.get("stageTiming"),
+                            readback_ms=(time.monotonic() - readback_started) * 1000,
+                            readback_attempts=readback_attempts,
+                        ),
                     }, output={"result": _sanitize(terminal)})
                 if (
                     terminal.get("found") is True
@@ -2532,12 +2534,12 @@ class RelayBrowserFeature:
                 "instance_id": values["instance_id"], "command": values["command"],
                 "host_request_id": request.operation_id, "host_state": state or None,
                 **create_proof,
-                **({"timing_ms": {
-                    "host_request": host_request_ms,
-                    **({"preflight_state": request.preconditions["send_message_state_read_ms"]}
-                       if "send_message_state_read_ms" in request.preconditions else {}),
-                }}
-                   if values["command"] in {"send-to-tab", "send-to-created-tab"} else {}),
+                **(send_latency_evidence(
+                    command=values["command"],
+                    preflight_state_ms=request.preconditions.get("send_message_state_read_ms"),
+                    host_request_ms=host_request_ms,
+                    stage_timing=result.get("stageTiming"),
+                ) if values["command"] in {"send-to-tab", "send-to-created-tab"} else {}),
             }, output={"result": _sanitize(result)})
         host_error = str(result.get("error") or "")
         # Persist only a bounded symbolic error code, never host paths or secrets.
