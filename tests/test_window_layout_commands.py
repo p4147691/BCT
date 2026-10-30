@@ -20,3 +20,31 @@ class CommandPlans(unittest.TestCase):
         with self.assertRaises(ValueError): plan_tab_move(**base)
         base["observed"]={**base["observed"],"generating":False,"window_id":99}
         with self.assertRaises(ValueError): plan_tab_move(**base)
+
+class IntegratedGatewayTests(unittest.TestCase):
+    def test_one_invoke_and_independent_readback(self):
+        from bct.features.window_layout_commands import execute_verified_once
+        calls = []
+        def invoke(cap, op, args):
+            calls.append((cap, op, args))
+            return {"operation_id":op,"outcome":"APPLIED","state":"FINISHED"}
+        result = execute_verified_once(operation_id="isolated-window-1", capability="desktop_window_manage",
+            arguments={"operation":"restore","lease_id":"a"*32}, invoke=invoke,
+            readback=lambda:{"restored":True}, verify=lambda x:x["restored"])
+        self.assertEqual(result["outcome"],"APPLIED")
+        self.assertEqual(len(calls),1)
+    def test_unknown_no_retry(self):
+        from bct.features.window_layout_commands import execute_verified_once
+        calls = []
+        def invoke(cap, op, args):
+            calls.append(op)
+            return {"operation_id":op,"outcome":"UNKNOWN","state":"FINISHED"}
+        r=execute_verified_once(operation_id="isolated-tab-1",capability="relay_browser",arguments={},
+            invoke=invoke,readback=lambda:None,verify=lambda x:False)
+        self.assertEqual((r["outcome"],r["retry"],len(calls)),("UNKNOWN",False,1))
+    def test_readback_mismatch_remains_unknown(self):
+        from bct.features.window_layout_commands import execute_verified_once
+        r=execute_verified_once(operation_id="isolated-window-2",capability="desktop_window_manage",arguments={},
+            invoke=lambda cap,op,args:{"operation_id":op,"outcome":"APPLIED","state":"FINISHED"},
+            readback=lambda:{"restored":False},verify=lambda x:x["restored"])
+        self.assertEqual(r["outcome"],"UNKNOWN")

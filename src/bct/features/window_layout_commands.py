@@ -41,3 +41,29 @@ def plan_tab_move(*, instance_id: str, session_id: str, tab_id: int,
         "target_window_id": target_window_id, "index": index,
         "conversation_key": conversation_key,
     }
+
+
+def execute_verified_once(*, operation_id: str, capability: str, arguments: dict,
+                          invoke, readback, verify) -> dict:
+    """One bounded BCT Operation through an injected authorized gateway.
+
+    invoke(capability, operation_id, arguments) MUST be the actual Work-scoped
+    BCT gateway; no internal privilege or retry is implemented here.
+    readback and verify are independent observations supplied by the caller.
+    """
+    if not isinstance(operation_id, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id):
+        raise ValueError("exact operation id required")
+    if capability not in {"relay_browser", "desktop_window_manage"}:
+        raise ValueError("capability not delegated")
+    receipt = invoke(capability, operation_id, dict(arguments))
+    if not isinstance(receipt, dict) or receipt.get("operation_id") != operation_id:
+        return {"operation_id": operation_id, "diagnosis": "RECEIPT_MISMATCH", "outcome": "UNKNOWN", "retry": False}
+    if receipt.get("outcome") != "APPLIED" or receipt.get("state") != "FINISHED":
+        return {"operation_id": operation_id, "diagnosis": "OPERATION_NOT_PROVEN", "outcome": "UNKNOWN", "retry": False}
+    try:
+        observed = readback()
+        accepted = verify(observed)
+    except Exception:
+        accepted = False
+    return {"operation_id": operation_id, "diagnosis": "VERIFIED" if accepted is True else "READBACK_UNCERTAIN",
+            "outcome": "APPLIED" if accepted is True else "UNKNOWN", "retry": False}
