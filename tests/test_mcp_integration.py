@@ -215,6 +215,23 @@ class MCPIntegrationTests(unittest.TestCase):
                     member = conversation_network.structuredContent["members"][0]
                     self.assertEqual("D1-3", member["monitor"]["node_label"])
                     self.assertNotIn(self.manager, json.dumps(conversation_network.structuredContent))
+                    network_alias = await session.call_tool(
+                        "bct_network_get", {"project": "BCT RCC"}
+                    )
+                    self.assertFalse(network_alias.isError)
+                    self.assertEqual(conversation_network.structuredContent,
+                                     network_alias.structuredContent)
+                    preflight = await session.call_tool(
+                        "bct_run_check", {"project": "BCT RCC"}
+                    )
+                    self.assertFalse(preflight.isError)
+                    self.assertEqual("OK", preflight.structuredContent["status"])
+                    self.assertTrue(preflight.structuredContent["read_only"])
+                    self.assertTrue(preflight.structuredContent["context_requires_work"])
+                    self.assertEqual("OK", preflight.structuredContent["network"]["status"])
+                    self.assertIn("nodes", preflight.structuredContent)
+                    self.assertIn("rcc", preflight.structuredContent)
+
                     work_arguments = {
                         "work_id": "mcp-read-work",
                         "request_summary": "read one exact test file",
