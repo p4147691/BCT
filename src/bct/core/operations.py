@@ -15,6 +15,7 @@ from .models import (
 from .policy import Policy
 from .approval import ApprovalVerifier
 from bct.trace_timing import trace_stage
+from bct.features.rcc_unknown_diagnostics import diagnose_unknown_receipt
 from .store import Store
 
 
@@ -549,9 +550,18 @@ class OperationCoordinator:
                 operation_id=operation_id, stage="EFFECT_UNCERTAIN",
                 detail={"error_code": str(exc).split(":", 1)[0]},
             )
+            evidence = {"phase": "EXECUTION", "code": str(exc)}
+            if request.capability == "relay_browser":
+                evidence["unknown_diagnosis"] = diagnose_unknown_receipt(
+                    original_operation_id=operation_id,
+                    original_outcome="UNKNOWN",
+                    original_error=str(exc),
+                    effect_journal=[{"stage": "DISPATCH_INTENT"},
+                                    {"stage": "EFFECT_UNCERTAIN"}],
+                )
             return self.store.finish_operation(
                 operation_id=operation_id, outcome=Outcome.UNKNOWN,
-                evidence={"phase": "EXECUTION", "code": str(exc)}, error=str(exc),
+                evidence=evidence, error=str(exc),
                 release_claims=exc.release_claims,
             )
         except Exception as exc:
