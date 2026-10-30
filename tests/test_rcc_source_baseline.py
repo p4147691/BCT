@@ -274,12 +274,29 @@ class RccSourceBaselineTests(unittest.TestCase):
         ):
             self._run_node(name, marker)
 
+    def test_retired_unshipped_source_shims_are_absent(self):
+        # Source-only cleanup. Keep exclusion names in the released manifest
+        # as the permanent packing gate; never delete historical receipts.
+        release = json.loads((
+            self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
+        ).read_text(encoding="utf-8-sig"))
+        excluded = set(release["excludedLegacyPayload"])
+        retired = {
+            "act_bridge.js", "act_command_bridge.js",
+            "act_content.js", "activity_bridge.js", "simple_relay_v0.js",
+        }
+        self.assertTrue(retired.issubset(excluded))
+        loader = (self.extension / "background_loader.js").read_text(encoding="utf-8")
+        for name in sorted(retired):
+            self.assertFalse((self.extension / name).exists(), name)
+            self.assertNotIn(f"importScripts('{name}')", loader)
+
     def test_runtime_javascript_has_valid_syntax(self):
         node = shutil.which("node")
         if not node:
             self.skipTest("node is unavailable")
         for name in (
-            "background.js", "content.js", "relay_core.js", "activity_bridge.js", "popup.js",
+            "background.js", "content.js", "relay_core.js", "popup.js",
             "core/identity.js", "core/state.js", "core/conversation.js", "core/transport.js",
             "core/shadow.js", "browser/read_adapter.js", "browser/tab_move_contract.js",
             "browser/tab_move_adapter.js", "browser/tab_create_contract.js",
