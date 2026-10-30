@@ -23,7 +23,7 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
-    "bct_capabilities", "bct_status", "bct_conversation_network_get",
+    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check",
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
@@ -212,6 +212,22 @@ def build_mcp(
             wait_ms=0.0, execution_ms=handler_ms,
         )
         return value
+
+    @server.tool(description="Read a registered project network. Canonical short name for bct_conversation_network_get.", structured_output=True)
+    async def bct_network_get(project: str) -> dict[str, Any]:
+        return await bct_conversation_network_get(project)
+
+    @server.tool(description="Read-only preflight for planning: current node/RCC state and optional registered network. Does not create plans, networks or messages.", structured_output=True)
+    async def bct_run_check(project: str = "", sort_by: str = "number") -> dict[str, Any]:
+        if status_provider is None:
+            return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
+        snapshot = await asyncio.to_thread(status_provider)
+        nodes = status_view(snapshot, "node", sort_by=sort_by)
+        rcc = status_view(snapshot, "rcc", sort_by=sort_by)
+        network = await bct_network_get(project) if project else None
+        return {"status": "OK", "nodes": nodes, "rcc": rcc,
+                "network": network, "project_context": "SEPARATE_EXISTING_CAPABILITY",
+                "read_only": True}
 
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
     async def bct_work_create(
