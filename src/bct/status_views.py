@@ -6,7 +6,7 @@ from typing import Any
 STATUS_SCOPES = ("bct", "node", "rcc", "monitor")
 
 
-def status_view(snapshot: dict[str, Any], scope: str) -> dict[str, Any]:
+def status_view(snapshot: dict[str, Any], scope: str, sort_by: str = "number") -> dict[str, Any]:
     if scope not in STATUS_SCOPES:
         raise ValueError("BCT_STATUS_SCOPE_INVALID")
     if scope == "bct":
@@ -49,10 +49,25 @@ def status_view(snapshot: dict[str, Any], scope: str) -> dict[str, Any]:
                         "network": str(scope_data.get("scope_name") or ""),
                         "network_id": str(scope_data.get("scope_id") or ""),
                         "roles": list(scope_data.get("role_tags") or []),
+                        "node_memo": str(scope_data.get("node_memo") or ""),
+                        "assigned_task": str(scope_data.get("assigned_task") or ""),
                         "display_order": scope_data.get("display_order"),
                         "active": tab.get("active") is True,
                     })
             projected.append(row)
+        if sort_by not in ("number", "network", "role", "activity"):
+            raise ValueError("BCT_NODE_SORT_INVALID")
+        def sort_key(row: dict[str, Any]):
+            number = str(row.get("node_number") or "")
+            numeric = int(number.lstrip("Nn")) if number.lstrip("Nn").isdigit() else 10**12
+            if sort_by == "network":
+                return (str(row.get("network") or "").casefold(), numeric)
+            if sort_by == "role":
+                return (str((row.get("roles") or [""])[0]).casefold(), numeric)
+            if sort_by == "activity":
+                return (not bool(row.get("generating")), not bool(row.get("active")), numeric)
+            return (numeric,)
+        projected.sort(key=sort_key)
         visible = dict(current)
         visible["items"] = projected
         visible["counts"] = {name: sum(x.get("status") == name.upper() for x in projected)

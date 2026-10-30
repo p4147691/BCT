@@ -373,6 +373,8 @@ def configure_conversation_scope(
     scope_name: str = "",
     role_tags: list[str] | tuple[str, ...] = (),
     expected_role_tags_sha256: str | None = None,
+    node_memo: str | None = None,
+    assigned_task: str | None = None,
     now: float | None = None,
 ) -> dict[str, object]:
     """Set the one current user-facing scope and advisory tags for a chat.
@@ -387,6 +389,9 @@ def configure_conversation_scope(
     if "\x00" in scope or len(scope) > 120:
         raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_NAME_INVALID")
     tags = _role_tags(role_tags)
+    for value, limit in ((node_memo, 2000), (assigned_task, 240)):
+        if value is not None and ("\\x00" in value or len(value) > limit):
+            raise ConversationNetworkError("CONVERSATION_NETWORK_NODE_METADATA_INVALID")
     if expected_role_tags_sha256 is not None:
         expected_role_tags_sha256 = str(expected_role_tags_sha256).strip().lower()
         if not _SHA256.fullmatch(expected_role_tags_sha256):
@@ -422,6 +427,12 @@ def configure_conversation_scope(
                 (name, when, key),
             )
 
+        if node_memo is not None or assigned_task is not None:
+            db.execute(
+                "UPDATE conversation_network_conversations SET "
+                "node_memo=COALESCE(?,node_memo),assigned_task=COALESCE(?,assigned_task) "
+                "WHERE conversation_key=?", (node_memo, assigned_task, key),
+            )
         project_id = ""
         if scope:
             matches = list(db.execute(
@@ -476,6 +487,10 @@ def configure_conversation_scope(
             )
     if new_label_event is not None:
         store.emit_node_label_notification(new_label_event)
+    with store.transaction() as db:
+        metadata = db.execute(
+            "SELECT node_memo,assigned_task FROM conversation_network_conversations WHERE conversation_key=?", (key,),
+        ).fetchone()
     label = node_labels_for_conversations(store, conversation_keys=[key]).get(key, "")
     return {
         "conversation_key": key,
@@ -483,6 +498,8 @@ def configure_conversation_scope(
         "node_label": label,
         "scope_id": project_id,
         "scope_name": scope,
+        "node_memo": str(metadata["node_memo"]) if metadata else "",
+        "assigned_task": str(metadata["assigned_task"]) if metadata else "",
         "role_tags": tags if project_id else [],
         "role_tags_sha256": role_tags_sha256(tags if project_id else []),
     }
@@ -509,6 +526,10 @@ def conversation_scope_directory(
             "ORDER BY m.conversation_key,m.updated_at DESC",
             keys,
         )]
+        metadata_rows = {str(row["conversation_key"]): dict(row) for row in db.execute(
+            f"SELECT conversation_key,node_memo,assigned_task FROM conversation_network_conversations "
+            f"WHERE conversation_key IN ({placeholders})", keys,
+        )}
         tag_rows = [dict(row) for row in db.execute(
             "SELECT t.conversation_key,t.project_id,t.tag "
             "FROM conversation_network_membership_tags t "
@@ -526,6 +547,8 @@ def conversation_scope_directory(
                 "scope_id": str(row["project_id"]),
                 "scope_name": str(row["scope_name"]),
                 "role_tags": [],
+                "node_memo": str(metadata_rows.get(key, {}).get("node_memo") or ""),
+                "assigned_task": str(metadata_rows.get(key, {}).get("assigned_task") or ""),
             }
     for row in tag_rows:
         key = str(row["conversation_key"])

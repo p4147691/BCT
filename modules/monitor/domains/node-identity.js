@@ -1358,6 +1358,7 @@ function monitorUniqueBctConversationNodes(nodes) {
 }
 //@@FN_END:monitorUniqueBctConversationNodes
 
+let monitorBctNodeSortMode = "network";
 //@@FN_START:renderMonitorBctWindowNodes
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
@@ -1366,6 +1367,21 @@ function renderMonitorBctWindowNodes(nodes) {
   if (monitorBctPointerDrag) cancelMonitorBctNodePointerDrag({ pointerId: monitorBctPointerDrag.pointerId });
   nodes = monitorUniqueBctConversationNodes(nodes);
   const fragment = document.createDocumentFragment();
+  const sortSelect = document.createElement("select");
+  sortSelect.className = "monitor-bct-node-sort";
+  sortSelect.setAttribute("aria-label", "노드 정렬 방식");
+  for (const [value, label] of [["network", "대화망별"], ["number", "그룹 내 번호순"], ["role", "그룹 내 역할별"], ["activity", "그룹 내 활동별"]]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.selected = value === monitorBctNodeSortMode;
+    sortSelect.append(option);
+  }
+  sortSelect.addEventListener("change", () => {
+    monitorBctNodeSortMode = sortSelect.value;
+    renderMonitorBctWindowNodes(nodes);
+  });
+  fragment.append(sortSelect);
   if (!nodes.length) {
     const empty = document.createElement("div");
     empty.className = "monitor-bct-node-empty";
@@ -1411,6 +1427,19 @@ function renderMonitorBctWindowNodes(nodes) {
       ]];
     }));
     group.nodes.sort((left, right) => {
+      const nodeNumber = (node) => {
+        const digits = String(node.nodeLabel || "").replace(/^N/i, "");
+        return /^\\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
+      };
+      if (monitorBctNodeSortMode === "number") return nodeNumber(left) - nodeNumber(right);
+      if (monitorBctNodeSortMode === "role") {
+        const roleDiff = String(left.roleTags?.[0] || "").localeCompare(String(right.roleTags?.[0] || ""), "ko");
+        return roleDiff || nodeNumber(left) - nodeNumber(right);
+      }
+      if (monitorBctNodeSortMode === "activity") {
+        const score = (node) => (node.generating === true ? 2 : node.active === true ? 1 : 0);
+        return score(right) - score(left) || nodeNumber(left) - nodeNumber(right);
+      }
       const leftManual = Number(left.displayOrder || 0);
       const rightManual = Number(right.displayOrder || 0);
       if (leftManual > 0 || rightManual > 0) {
