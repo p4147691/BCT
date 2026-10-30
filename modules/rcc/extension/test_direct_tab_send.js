@@ -146,6 +146,32 @@ const request = (operationId, tabId, key = '', windowId = 9) => ({
     /EXACT_TAB_SESSION_MISMATCH/,
   );
   assert.equal(sends.length, beforeWrongSessionSendCount);
+  // A receipt lookup must be Work/instance/session fenced and never resubmit.
+  const beforeReceiptReads = sends.length;
+  const submission = await context.readExactTabSendSubmissionProof({
+    relayId: 'direct-existing', workId: 'bounded-work', instanceId,
+  });
+  assert.equal(submission.source, 'RCC_PERSISTED_EXACT_SEND_V1');
+  assert.equal(submission.submitted, true);
+  assert.equal(submission.userTurnProven, false);
+  assert.equal(submission.responseProven, false);
+  assert.equal(submission.operationId, 'direct-existing');
+  assert.equal(submission.textSha256, await sha256('bounded prompt'));
+  assert.equal(await context.readExactTabSendSubmissionProof({
+    relayId: 'direct-existing', workId: 'another-work', instanceId,
+  }), null);
+  assert.equal(await context.readExactTabSendSubmissionProof({
+    relayId: 'direct-existing', workId: 'bounded-work', instanceId: 'other-instance',
+  }), null);
+  assert.equal(await context.readExactTabSendSubmissionProof({
+    relayId: 'not-recorded', workId: 'bounded-work', instanceId,
+  }), null);
+  const missingProof = await context.readExactTabSendSubmissionProof({
+    relayId: 'direct-unproven-receipt', workId: 'bounded-work', instanceId,
+  });
+  assert.equal(missingProof.submitted, false);
+  assert.equal(missingProof.responseProven, false);
+  assert.equal(sends.length, beforeReceiptReads, 'receipt reads must never send');
   console.log('RCC_DIRECT_TAB_TEST_PASS cases=8 sends=' + sends.length);
 })().catch((error) => {
   console.error(error);

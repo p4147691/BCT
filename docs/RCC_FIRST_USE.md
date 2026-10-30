@@ -4,7 +4,7 @@
 
 ## 먼저 기억할 한 가지
 
-**기존 ChatGPT 탭으로 메시지를 보낼 때는 항상 `send-to-tab`을 쓴다.**
+**새 메시지 제출의 단일 공개 진입점은 `send-message`다.** 내부적으로 기존 탭은 `send-to-tab`, BCT 생성 탭은 `send-to-created-tab` 계약으로 연결된다.
 
 대화 UUID가 이미 있든, 아직 빈 새 탭이든 명령은 같다. 빈 새 탭은
 `conversation_key`만 빈 문자열(`""`)이다.
@@ -27,11 +27,11 @@ instance_id + session_id + tab_id + window_id + conversation_key + text
 
 | 대상 | 호출 |
 | --- | --- |
-| 이미 대화가 있는 탭 | `send-to-tab` + 해당 UUID |
-| 기존 빈 ChatGPT 탭 | `send-to-tab` + `conversation_key: ""` |
+| 이미 대화가 있는 탭 | `send-message` + 해당 UUID |
+| 기존 빈 ChatGPT 탭 | `send-message` + `conversation_key: ""` |
 
 빈 탭의 첫 전송이 확인되면 영수증에 새 `conversation_key`가 기록된다. 이후 후속
-메시지는 그 UUID와 같은 `tab_id`를 사용해 다시 `send-to-tab`으로 보낸다.
+메시지는 그 UUID와 같은 `tab_id`를 사용해 다시 `send-message`로 보낸다.
 
 ## 지속 작업으로 이어갈 때: `node-continue`
 
@@ -39,7 +39,7 @@ instance_id + session_id + tab_id + window_id + conversation_key + text
 UUID를 확인한 뒤 해당 탭을 대화망의 노드로 결합했을 때, **같은 노드가 자기 작업을
 여러 차례 이어 가게 하는 조합 명령**이다.
 
-1. `send-to-tab`으로 최초 지시를 보내고 UUID를 영수증에서 확인한다.
+1. `send-message`로 최초 지시를 보내고 UUID를 영수증에서 확인한다.
 2. 해당 탭을 정확한 orchestration session의 node로 결합한다.
 3. `node-continue`의 `phase: "open"`으로 최초 연속 작업을 연다. 이때만
    `max_self_turns`와 `total_timeout_s` 예산을 정한다.
@@ -55,8 +55,7 @@ UUID를 확인한 뒤 해당 탭을 대화망의 노드로 결합했을 때, **�
 ## 새 탭을 BCT가 직접 만들 때만
 
 `create-chat-window` 또는 `create-chat-tab`으로 BCT가 새 탭을 만들었다면, 반환된
-생성 영수증을 근거로 `send-to-created-tab`을 쓴다. 이 경로에만
-`create_operation_id`가 필요하다. 사용자가 이미 열어 둔 빈 ChatGPT 탭에는 이 값을
+생성 영수증을 근거로 `send-message`에 `create_operation_id`를 전달한다. 사용자가 이미 열어 둔 빈 ChatGPT 탭에는 이 값을
 만들거나 요구하지 않는다.
 
 ## 새 호출에서 쓰지 않을 명령

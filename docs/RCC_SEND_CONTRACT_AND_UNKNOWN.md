@@ -3,8 +3,8 @@
 ## 정본 우선순위 (실행 전 필수)
 1. BCT `bct_status`의 `relay_browser_usage`를 먼저 확인한다. 이 값은 LIVE MCP의 `bct_relay_browser` 도구 설명과 같은 `_CAPABILITY_USAGE["relay_browser"]`에서 생성된다.
 2. 이 채팅/플러그인에 노출된 도구 설명이 위 값과 다르면 **클라이언트의 도구 메타데이터가 오래된 것**으로 분류한다. 새 명령을 추측하거나 설명을 근거로 전송하지 않는다. BCT Control 도구 새로 고침 후 실제 MCP 목록을 재대조한다.
-3. 기존 탭(빈 ChatGPT 홈 포함)에 단일 메시지: `send-to-tab` + 정확한 `instance_id/session_id/tab_id/window_id/conversation_key/text`. 빈 홈은 `conversation_key=""`를 사용한다.
-4. BCT가 `create-chat-window` 또는 `create-chat-tab`으로 **방금 생성한 탭**: 기존 생성 영수증의 `create_operation_id`로 `send-to-created-tab`을 사용한다. `create-and-send`는 레거시 조합 명령이며 기존 빈 탭의 기본 선택지가 아니다.
+3. 기존 탭(빈 ChatGPT 홈 포함)에 단일 메시지: `send-message` + 정확한 `instance_id/session_id/tab_id/window_id/conversation_key/text`. 빈 홈은 `conversation_key=""`를 사용한다.
+4. BCT가 `create-chat-window` 또는 `create-chat-tab`으로 **방금 생성한 탭**: 기존 생성 영수증의 `create_operation_id`로 `send-message`를 사용한다. 내부 구현만 `send-to-created-tab`을 호출한다. `create-and-send`는 레거시 조합 명령이며 기존 빈 탭의 기본 선택지가 아니다.
 5. 매 전송은 사용자 승인된 Work와 새 유일 Operation ID로 1회 실행한다. 같은 텍스트를 다른 Operation ID로 다시 보내지 않는다.
 
 ## 오류 분류 (원인 단정 금지)

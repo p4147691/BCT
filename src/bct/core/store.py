@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -1590,6 +1591,79 @@ class Store:
                 "SELECT * FROM operations WHERE operation_id=?",
                 (resolver_operation_id,)).fetchone()
         return self._row_result(row)
+
+    def record_independent_unknown_recovery(
+        self, *, recovery_operation_id: str, work_id: str,
+        principal_id: str, original_operation_id: str,
+        expected_original_digest: str, evidence: dict[str, Any],
+    ) -> OperationResult:
+        """Atomic, claim-free receipt. Original UNKNOWN and its claims never change."""
+        if not recovery_operation_id or recovery_operation_id == original_operation_id:
+            raise ConflictError("RECOVERY_OPERATION_ID_INVALID")
+        if not isinstance(evidence, dict):
+            raise ConflictError("RECOVERY_EVIDENCE_INVALID")
+        status = evidence.get("status")
+        if status not in {"VERIFIED", "INSUFFICIENT_EVIDENCE"}:
+            raise ConflictError("RECOVERY_EVIDENCE_STATUS_INVALID")
+        # This store method is not an authenticated host-proof verifier.
+        # A bare caller-provided VERIFIED field must never mint a success.
+        # Only a separately reviewed, trusted observation route may lift
+        # this fence in a future integration.
+        if status == "VERIFIED":
+            raise ConflictError("RECOVERY_VERIFIED_PROOF_ROUTE_NOT_AUTHORIZED")
+        if evidence.get("original_operation_id") != original_operation_id or (
+            evidence.get("recovery_operation_id") != recovery_operation_id
+        ) or evidence.get("no_resend") is not True:
+            raise ConflictError("RECOVERY_IDENTITY_MISMATCH")
+        payload = json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(json.dumps({
+            "original_operation_id": original_operation_id,
+            "expected_original_digest": expected_original_digest,
+            "evidence": evidence,
+        }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        with self.transaction() as db:
+            work = db.execute("SELECT * FROM works WHERE work_id=?", (work_id,)).fetchone()
+            if work is None or work["owner_principal_id"] != principal_id:
+                raise ConflictError("RECOVERY_WORK_ACCESS_DENIED")
+            original = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?",
+                (original_operation_id,),
+            ).fetchone()
+            if original is None or original["work_id"] != work_id or (
+                original["principal_id"] != principal_id
+            ):
+                raise ConflictError("RECOVERY_ORIGINAL_ACCESS_DENIED")
+            if original["state"] != OperationState.FINISHED.value or (
+                original["outcome"] != Outcome.UNKNOWN.value
+            ) or original["request_digest"] != expected_original_digest:
+                raise ConflictError("RECOVERY_ORIGINAL_FENCE_FAILED")
+            existing = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?",
+                (recovery_operation_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["work_id"] != work_id or existing["principal_id"] != principal_id:
+                    raise ConflictError("RECOVERY_RECEIPT_ACCESS_DENIED")
+                if existing["request_digest"] != digest:
+                    raise ConflictError("RECOVERY_RECEIPT_DUPLICATE_MISMATCH")
+                return self._row_result(existing, duplicate=True)
+            now = time.time()
+            outcome = (Outcome.APPLIED if status == "VERIFIED"
+                       else Outcome.NOT_APPLIED)
+            db.execute(
+                "INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (recovery_operation_id, work_id, principal_id, digest,
+                 "rcc_unknown_recovery_receipt", original_operation_id,
+                 OperationState.FINISHED.value, outcome.value, payload, None,
+                 work["assignment_epoch"], "rcc-recovery-v1", now, now),
+            )
+            self._event(db, "RCC_INDEPENDENT_RECOVERY_RECEIPT", recovery_operation_id, {
+                "original_operation_id": original_operation_id,
+                "status": status, "original_outcome_preserved": "UNKNOWN",
+            })
+            row = db.execute("SELECT * FROM operations WHERE operation_id=?",
+                             (recovery_operation_id,)).fetchone()
+            return self._row_result(row)
 
     def finish_operation(self, *, operation_id: str, outcome: Outcome,
                          evidence: dict[str, Any], error: str | None,
