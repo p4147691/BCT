@@ -1,43 +1,28 @@
-# BCT 프로젝트 맥락·보고 통합 설계 V1 — 2026-10-31
+# BCT 프로젝트 맥락 통합 설계 V2 — 2026-10-31
 
-## 조사 범위와 실제 정본
-- Core Gen254, main 0c915e2d764f283a274e178929ad59d800f767d8. 기존 PR #378 명명 기준 보존.
-- `project_context.ProjectContextFeature`는 기존 ProjectMemoryStore append-only ledger를 사용한다. `central-get/save`, `worklog-get/save`, `overview`가 구현돼 있다.
-- `worker_result_inbox.WorkerResultInbox`는 delivery_id, work_id, manager_uuid, worker_uuid, 결과 전문·SHA, capture_state, 매니저 판정과 시간을 저장한다. `pending`은 manager_uuid 중심의 **미처리 보고** 조회다.
-- **`bct_inbox_get`은 작업자 보고 Inbox가 아니다.** 기존 `get_github_run_inbox`로 initiator_node_id + owned work_id의 GitHub 완료 알림을 읽고, 선택적으로 acknowledge 처리한다.
-- `bct_conversation_network_get`은 등록된 프로젝트 구성원·역할·최근 Monitor 관측 조회다. 프로젝트 목표·결정·작업자 보고 전문은 제공하지 않는다.
+## 사용자 결정
+- **별도 `project-inbox` 공개 명령이나 신규 저장소를 만들지 않는다.**
+- 프로젝트 목표·결정·진행 요약·작업자 제출 보고 흐름·재개 정보는 **기존 `project-context` 하나의 논리적 보기**로 제공한다.
+- `bct_inbox_get`은 기존 **GitHub CI/작업 완료 알림** 조회·읽음 처리 용도로 유지하고 적극 활용한다.
+- `WorkerResultInbox`는 원본 작업자 결과·SHA·매니저 판정의 내부 저장소로 보존한다. 기존 데이터 복사·삭제·재귀속 금지.
 
-## 사용자 관점
-```text
-project-context (사용자용 논리 기능, 새 공개 명령 아님)
-├─ 목표/범위/현재 결정/진행 요약/남은 작업/재개 지침
-├─ 기존 central-get/save (내부 조회·저장)
-└─ 기존 worklog-get/save/overview (내부 조회·저장)
-project-inbox (사용자용 논리 기능, 새 공개 명령 아님)
-├─ 프로젝트 전체 시간순 보고·판정·인수인계
-├─ Work별·노드별·기간별 필터
-├─ 기존 WorkerResultInbox (작업자 결과 정본)
-├─ 기존 Work/Operation/Inbox 영수증 링크
-└─ 기존 bct_inbox_get (GitHub 완료 알림, 별도 소스)
-```
+## 실제 구현과 한계
+- `ProjectContextFeature`의 `central-get/save`, `worklog-get/save`, `overview`는 기존 append-only ProjectMemoryStore를 사용한다.
+- `WorkerResultInbox`의 `pending`은 매니저별 **미처리** 결과만 조회한다. 전체 프로젝트 보고를 자동으로 제공하는 것은 아니다.
+- `bct_inbox_get(initiator_node_id,work_id,acknowledge,limit)`은 소유 Work 범위의 GitHub 완료 알림을 읽는다. 자동 조치 실행·프로젝트 전체 작업자 보고 조회로 해석하지 않는다.
+- `bct_conversation_network_get`은 프로젝트 구성원·역할·Monitor 관측 정보를 제공하지만 맥락 요약/작업자 보고 전문은 제공하지 않는다.
 
-## 최소 통합 설계
-1. 프로젝트 ID를 정본 키로 사용한다. 표시 이름을 변경해도 구성원·보고 링크가 바뀌지 않아야 한다.
-2. 기존 `project-context` central 기록에 목표·범위·결정·현재 진행·남은 일·최종 갱신 시각과 출처를 저장한다. 새 테이블을 만들지 않는다.
-3. Work 기록은 기존 worklog로 연결한다. WorkerResultInbox 결과는 delivery_id + work_id를 통해 기존 Work 소속 프로젝트를 검증한 뒤 **읽기 전용으로 집계**한다.
-4. 시간순 프로젝트 보고는 WorkerResultInbox의 전체 결과(미처리만 아님)와 매니저 판정, 기존 Work 진행/영수증을 결합한다. 현재 `pending`만으로는 전체 이력이 완성되지 않으므로 별도 read-only 조회 계약이 필요하다.
-5. 결과 전문은 필요할 때만 정확한 Work/권한으로 열람한다. 기본 목록은 제출시각·작성 노드·Work·상태·요약·영수증 링크를 보여준다.
-6. GitHub 완료 알림은 동일한 `project-inbox` 보기에서 출처를 구분해 표시할 수 있지만 `bct_inbox_get`의 원래 조회/ack 계약은 바꾸지 않는다.
-7. 프로젝트 재개 시 `project-context`의 최신 공통 요약과 프로젝트 전체 보고 흐름을 함께 조회해 매니저에게 전달한다. 현재 열려 있지 않은 노드는 `status node`에 넣지 않는다.
-8. 기존 데이터의 프로젝트 연결 근거가 없는 보고는 **미분류**로 남기고 임의 귀속하지 않는다. 불명확한 측정 Claim/UNKNOWN은 진행 차단 근거로 쓰지 않는다.
+## 최소 구현 방향
+1. 프로젝트 고유 ID로 맥락을 연결한다. 프로젝트 표시 이름 변경이 Work 연결을 깨뜨리지 않도록 한다.
+2. 공통 맥락에는 목표·범위·주요 결정·현재 진행·미완료 작업·재개 지침을 저장한다.
+3. Work별 작업자 보고는 기존 Work journal 및 WorkerResultInbox의 정확한 Work·delivery ID·SHA를 **참조**한다. 프로젝트 소속이 검증된 결과만 맥락 보기에서 연결한다.
+4. `overview`를 프로젝트 재개용 기본 조회로 사용하고, 원본 보고 전문은 정확한 권한과 Work 식별이 확인될 때만 별도 열람한다.
+5. GitHub CI 완료 알림은 기존 `bct_inbox_get`을 사용한다. 알림 확인→정확한 GitHub 실행/영수증 검증→필요한 작업 판단→처리 결과 기록의 흐름을 설계한다. 자동 처리·ack는 호출 권한과 검증된 결과가 있을 때만 실행한다.
+6. 현재 열려 있지 않은 과거 노드는 `status node`에 포함하지 않는다. 프로젝트 맥락의 이력 참조로만 유지한다.
+7. `bct_orchestrate`의 25개 내부 작업, `node-sync`, `create-chat-tab`, `create-chat-window`, `send-message`는 보존한다. 실제 중복 증거 없는 삭제·개명 금지.
 
-## 오케스트레이션 경계
-- 현재 `bct_orchestrate`의 25개 하위 작업은 별개의 호출 계약이다. `project-run-plan`(계획), `session-start`(영속 실행), `node-sync`(노드 연결), `project-run-bind`(RCC attachment 검증), `dispatch`(작업 배정), `chain-run`(연쇄 실행)을 그대로 유지한다.
-- 기능이 비슷해 보인다는 이유만으로 삭제하지 않는다. 실제 호출 그래프·테스트·영수증에서 중복이 입증된 부분만 다음 PR에서 정리한다.
-- 이 설계 PR에서는 운영 DB, Chrome/RCC/Monitor, Core 실행 코드, 기존 메시지 3개를 변경하지 않는다.
-
-## 후속 구현 수락 기준
-- 같은 프로젝트의 완료·미처리·판정 보고를 시간순으로 조회하고 Work/노드 필터가 정확함.
-- 다른 프로젝트 결과가 섞이지 않음. 프로젝트 이름 변경 후에도 ID 연결 유지.
-- 재개용 맥락 요약과 원본 보고 영수증을 함께 제공.
-- 기존 bct_inbox_get, WorkerResultInbox, project-context 및 orchestrate 회귀 통과.
+## 후속 수락 조건
+- 프로젝트 맥락 조회에서 결정·진행·남은 일과 Work별 보고 참조를 일관되게 제공.
+- 다른 프로젝트·Work의 결과가 섞이지 않고, 이름 변경 후에도 정확한 ID 연결 유지.
+- 기존 GitHub Inbox의 조회/읽음 처리 계약·WorkerResultInbox 저장·ProjectContext 회귀 통과.
+- 기존 운영 Core/DB/Chrome/RCC/Monitor는 이 설계 문서 변경으로 수정하지 않는다.
