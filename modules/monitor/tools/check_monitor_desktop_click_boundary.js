@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, "..");
 const lifecycle = fs.readFileSync(path.join(root, "domains", "desktop-lifecycle.js"), "utf8");
 const shared = fs.readFileSync(path.join(root, "domains", "shared-ui.js"), "utf8");
 const native = fs.readFileSync(path.join(root, "native", "src", "MonitorDesktopHost.cs"), "utf8");
+const strip = fs.readFileSync(path.join(root,"extension","monitor-desktop-strip-view.js"),"utf8");
 
 function marked(source, name) {
   const start = source.indexOf(`//@@FN_START:${name}`);
@@ -25,8 +26,14 @@ for (const [name, source] of Object.entries({ select, applyShared, publishShared
 const compact = lifecycle.replace(/\r/g, "").replace(/^\s*$/gm, "");
 const singleClick = compact.match(/button\.addEventListener\("click",[\s\S]{0,420}?selectVirtualDesktopPreview/g) || [];
 const doubleClick = compact.match(/button\.addEventListener\("dblclick",[\s\S]{0,700}?type\s*:\s*"switchVirtualDesktop"/g) || [];
-assert.equal(singleClick.length, 2, "both thumbnail renderers must keep single click preview-only");
-assert.equal(doubleClick.length, 2, "both thumbnail renderers must require double click for a real desktop switch");
+assert.equal(singleClick.length, 1, "lightweight renderer must keep single-click preview");
+assert.equal(doubleClick.length, 1, "lightweight renderer must require double-click switching");
+assert.match(strip, /button[.]addEventListener\("click",[\s\S]{0,420}?ports[.]preview/,
+  "canonical DesktopStrip keeps single-click preview-only");
+assert.match(strip, /button[.]addEventListener\("dblclick",[\s\S]{0,700}?ports[.]switchDesktop\(index\)/,
+  "canonical DesktopStrip requires double-click for Native desktop switch");
+assert.match(lifecycle, /switchDesktop: index => monitorNative\(\{type:"switchVirtualDesktop",index\}\)/,
+  "only the injected Native authority may perform DesktopStrip switching");
 
 const switchStart = native.indexOf("private static object SwitchVirtualDesktop");
 const switchEnd = native.indexOf("private static object LaunchNaverChatGpt", switchStart);

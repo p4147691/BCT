@@ -5,6 +5,8 @@ const fs=require("node:fs");
 const path=require("node:path");
 const vm=require("node:vm");
 const src=fs.readFileSync(path.join(__dirname,"../extension/monitor.js"),"utf8");
+const stripSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-strip-view.js"),"utf8");
+assert.match(src,/MonitorDesktopStripView[.]create/);
 const thumbnailV2Src=fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-thumbnail-v2.js"),"utf8");
 const contractSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-minimized-node-badge-contract.js"),"utf8");
 const projectionSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-bct-thumbnail-projection.js"),"utf8");
@@ -60,12 +62,15 @@ const document={createElement(tag){
 const ctx={
   monitorWindowDesktopLocations:locationMap,
   monitorLastAiState:{},
+  monitorNodePanelListState:{snapshot:()=>[]},
   monitorBadgeNodeNumbersForHwnd:(hwnd)=>labels[hwnd]||[],
   monitorDesktopThumbs:{children:buttons},
   document,Map,Set,Boolean,String,Number,Array
 };
 vm.createContext(ctx);
 vm.runInContext(contractSrc,ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname,"../extension/monitor-node-panel-selection.js"),"utf8"),ctx);
+ctx.monitorNodePanelSelection=ctx.MonitorNodePanelSelection.create();
 ctx.monitorMinimizedNodeBadgeContract=ctx.MonitorMinimizedNodeBadgeContract;
 vm.runInContext(aggregate+"\n"+render,ctx);
 const arr=ctx.monitorMinimizedNodeSlotsByDesktop({});
@@ -82,16 +87,16 @@ assert.equal(label2.badges.children.map(x=>x.textContent).join(""),"8");
 // A UUID-less minimized Chrome tab is individually selected by exact tabId.
 labels["100"]=[{token:"?",tabId:701},{token:"?",tabId:702},{token:"61",tabId:703}];
 locationMap.set("200",{desktopId:"deskA",iconic:false});
-ctx.monitorBctWindowNodesCache=[{key:"selected-unknown",nodeLabel:"N?",tabId:702}];
-ctx.monitorBctSelectedNodeKey="selected-unknown";
+ctx.monitorNodePanelListState={snapshot:()=>[{key:"selected-unknown",nodeLabel:"N?",tabId:702}]};
+ctx.monitorNodePanelSelection.set("selected-unknown");
 ctx.monitorBctNodeSelectionKey=(node)=>node.key;
 ctx.syncMonitorMinimizedNodeBadges({});
 const selectedUnknown=label.badges.children.filter(x=>String(x.className).includes("monitor-desktop-minimized-node"));
 assert.deepEqual(selectedUnknown.map(x=>x.textContent),["?","?","61"]);
 assert.deepEqual(selectedUnknown.map(x=>String(x.className).includes("monitor-desktop-minimized-node-selected")),[false,true,false],
   "exact Chrome tabId selects only its own unknown minimized node");
-ctx.monitorBctSelectedNodeKey="";
-ctx.monitorBctWindowNodesCache=[];
+ctx.monitorNodePanelSelection.clear();
+ctx.monitorNodePanelListState={snapshot:()=>[]};
 
 locationMap.set("100",{desktopId:"deskA",iconic:false});
 locationMap.set("200",{desktopId:"deskA",iconic:false});
@@ -104,7 +109,7 @@ const css=fs.readFileSync(path.join(__dirname,"../extension/monitor.css"),"utf8"
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-minimized-nodes/);
 assert.match(css,/grid-column:3 \/ 5/);
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-label-text\s*\{ display:none!important; \}/);
-assert.match(src,/label\.append\(desktopBadge,\s*labelText,\s*minimizedNodes\)/);
+assert.match(stripSrc,/label\.append\(desktopBadge,\s*labelText,\s*minimizedNodes\)/);
 assert.match(src,/label\.append\(badge,\s*text,\s*minimizedNodes\)/);
 assert.match(src,/numbersForHwnd: \(hwnd\) => monitorBadgeNodeNumbersForHwnd\(hwnd, state\)/);
 assert.match(src,/iconic:minimized/);

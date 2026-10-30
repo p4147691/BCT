@@ -35,7 +35,7 @@ let monitorHighlightedHwnd = "";
 
 let monitorBctNodeHighlightedHwnd = "";
 
-let monitorBctSelectedNodeKey = "";
+const monitorNodePanelSelection = globalThis.MonitorNodePanelSelection.create();
 
 const monitorSelectedHwnds = new Set();
 
@@ -153,15 +153,16 @@ const MONITOR_GHOST_CACHE_MAX = 80;
 
 const MONITOR_GHOST_TEXT_MAX = 1200;
 
-const monitorGhostCache = new Map();
+
 
 const monitorHiddenGhosts = new Set();
 
 let monitorGhostStorageReady = false;
 
-let monitorClosedConversationPickerOpen = false;
+const monitorRecoveryPickerState = globalThis.MonitorRecoveryPickerState.create();
 
-let monitorRebootSnapshot = { captured_at_ms:0, items:[] };
+const monitorRecoverySnapshotState = globalThis.MonitorRecoverySnapshotState.create({ captured_at_ms:0, items:[] });
+const monitorRecoveryInventoryController = globalThis.MonitorRecoveryInventory.create({toEpoch: value => monitorGhostTime(value)});
 
 let monitorRebootSnapshotReady = false;
 

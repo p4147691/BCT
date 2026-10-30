@@ -3,7 +3,7 @@
 /*@@MONITOR_FUNCTION:refreshObservedWindows@@*/
 
 globalThis.addEventListener("bwm-thumbnail-policy-changed", () => {
-  const ids = [...(monitorDesktopState.desktopIds || [])].filter(Boolean);
+  const ids = [...(monitorDesktopIdentityState.snapshot().desktopIds || [])].filter(Boolean);
   if (!ids.length || !monitorIsActiveDesktopRenderer()) return;
   invalidateMonitorDesktopFrames(...ids);
   void refreshSelectedThumb().catch(() => false);
@@ -49,7 +49,7 @@ let monitorHostResolveRetryTimer = 0;
 
 /*@@MONITOR_FUNCTION:expireDesktopUndoSession@@*/
 
-/*@@MONITOR_FUNCTION:resetDesktopUndoSessionExpiry@@*/
+
 
 /*@@MONITOR_FUNCTION:pushDesktopUndoSnapshot@@*/
 
@@ -97,7 +97,7 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
     }
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "restoreVirtualDesktop", hwnds: snapshot.hwnds });
 
@@ -109,9 +109,9 @@ monitorDesktopUndoButton.addEventListener("click", async () => {
 
     commitDesktopUndoRestore(); updateDesktopUndoUi();
 
-    monitorDesktopState.observedDesktopId = restoredId;
+    monitorDesktopIdentityState.patch({observedDesktopId: restoredId});
 
-    renderVirtualDesktops(result); selectVirtualDesktopPreview(monitorDesktopState.selectedIndex); settleNewDesktopWallpaper(restoredId).catch(() => {});
+    renderVirtualDesktops(result); selectVirtualDesktopPreview(monitorDesktopIdentityState.snapshot().selectedIndex); settleNewDesktopWallpaper(restoredId).catch(() => {});
 
   } catch (error) { setMonitorStatus(`데스크톱 복구 실패 · ${error?.message || error}`, false); }
 
@@ -129,7 +129,7 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
   try {
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
@@ -139,11 +139,11 @@ monitorCreateDesktop.addEventListener("click", async () => {
 
     const createdId = resultIds.find((id) => !beforeIds.has(id)) || resultIds[resultIds.length - 1] || null;
 
-    monitorDesktopState.observedDesktopId = createdId;
+    monitorDesktopIdentityState.patch({observedDesktopId: createdId});
 
     renderVirtualDesktops(result);
 
-    selectVirtualDesktopPreview(monitorDesktopState.selectedIndex);
+    selectVirtualDesktopPreview(monitorDesktopIdentityState.snapshot().selectedIndex);
 
     settleNewDesktopWallpaper(createdId).catch(() => {});
 
@@ -256,8 +256,8 @@ if (MONITOR_ACTIVE_STARTUP_ENABLED) {
     monitorCachedLlmNodes = Array.isArray(data?.[MONITOR_LLM_CACHE_STORAGE_KEY]) ? data[MONITOR_LLM_CACHE_STORAGE_KEY] : [];
     const cachedAiState=data?.[MONITOR_AI_STATE_CACHE_KEY];
     if(cachedAiState?.state?.ok===true && Date.now()-Number(cachedAiState?.at||0)<=MONITOR_AI_STATE_CACHE_TTL_MS){
-      monitorLastAiState=cachedAiState.state;
-      renderWorkers(monitorLastAiState);
+      monitorObservedState.replace(cachedAiState.state);
+      renderWorkers(monitorObservedState.snapshot());
     }
     monitorPostWorkStorageReady=true;
     if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) {
@@ -391,6 +391,15 @@ monitorDiagnostics.hidden=true;
 
 monitorDiagnostics.innerHTML=`<summary class="monitor-diagnostics-summary"><span class="monitor-diagnostics-label">진단</span><span id="monitorServiceDiag" class="monitor-diagnostics-message">ACT 확인 중…</span><button id="monitorDiagToggle" class="monitor-diagnostics-toggle" type="button" title="진단 상세 화면 펼치기/접기" aria-label="진단 상세 화면 펼치기">펼치기</button></summary><div class="monitor-diagnostics-body"><div class="monitor-diagnostics-topline"><div id="monitorDiagStatusBar" class="monitor-diagnostics-status-bar"><span id="monitorDiagAct" class="monitor-diagnostics-status-item is-unknown">ACT: ?</span></div><div class="monitor-diagnostics-toolbar"><span id="monitorDiagLogCopyState" class="monitor-diagnostics-copy-state"></span><button id="monitorDiagLogCopy" class="monitor-diagnostics-icon-button" type="button" title="현재 관제 내용 복사" data-tip="현재 관제 내용 복사" aria-label="현재 관제 내용 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h11v13H8z"></path><path d="M5 17H3V4h11v2"></path></svg></button><button id="monitorDiagRefresh" class="monitor-diagnostics-icon-button" type="button" title="현재 선택한 관제 정보 다시 확인" data-tip="현재 선택한 관제 정보 다시 확인" aria-label="현재 선택한 관제 정보 다시 확인"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66"></path><path d="M20 4v7h-7"></path></svg></button></div></div><pre id="monitorDiagLog" class="monitor-diagnostics-log">종합 관제 · 아래 항목을 선택하면 이 영역에 세부 정보가 표시됩니다.</pre><div id="monitorDiagFooter" class="monitor-diagnostics-footer"><div class="monitor-diagnostics-tabs"><button class="monitor-diagnostics-tab is-active" type="button" data-monitor-diag-view="overview">종합</button><button class="monitor-diagnostics-tab" type="button" data-monitor-diag-view="act">ACT</button><button class="monitor-diagnostics-tab" type="button" data-monitor-diag-view="github">GitHub</button><button class="monitor-diagnostics-tab" type="button" data-monitor-diag-view="monitor">Monitor</button><button class="monitor-diagnostics-tab" type="button" data-monitor-diag-view="console">Console</button><button class="monitor-diagnostics-tab" type="button" data-monitor-diag-view="windows">Windows</button><button class="monitor-diagnostics-tab" type="button" data-monitor-diag-view="runner">Runner</button><button class="monitor-diagnostics-tab" type="button" data-monitor-diag-view="rcc">RCC</button><button class="monitor-diagnostics-tab" type="button" data-monitor-diag-view="rally">Rally</button></div></div></div>`;
 
+const monitorDiagCommandMount=document.createElement("div");
+monitorDiagCommandMount.className="monitor-diagnostics-command-mount";
+monitorDiagnostics.querySelector(".monitor-diagnostics-body")?.append(monitorDiagCommandMount);
+const monitorDiagnosticsCommandView=globalThis.MonitorDiagnosticsCommandView.create({
+  host:monitorDiagCommandMount,document
+  // No operational command authority is connected at source stage.
+  // A future authorized BCT adapter supplies exact prepare/run/reconcile ports.
+});
+monitorDiagnosticsCommandView.render();
 monitorRoot.append(monitorDiagnostics);
 
 const monitorServiceDiagInitial=document.getElementById('monitorServiceDiag');

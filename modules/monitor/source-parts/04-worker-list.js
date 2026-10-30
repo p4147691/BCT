@@ -121,15 +121,15 @@ if (monitorNodeTrash && monitorClosedRecoveryMenu) {
 
   monitorNodeTrash.style.cursor="pointer";
 
-  monitorNodeTrash.addEventListener("click",(event)=>{if(monitorNodeTrash.classList.contains("monitor-node-trash-drop-target")||monitorNodeTrash.classList.contains("monitor-node-trash-drop-success"))return;event.stopPropagation();monitorClosedConversationPickerOpen=!monitorClosedConversationPickerOpen;monitorClosedRecoveryMenu.hidden=!monitorClosedConversationPickerOpen;if(monitorClosedConversationPickerOpen){positionMonitorTrashRecoveryMenu();if(monitorLastAiState)monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorLastAiState));}});
+  monitorNodeTrash.addEventListener("click",(event)=>{if(monitorNodeTrash.classList.contains("monitor-node-trash-drop-target")||monitorNodeTrash.classList.contains("monitor-node-trash-drop-success"))return;event.stopPropagation();monitorRecoveryPickerState.toggle();monitorClosedRecoveryMenu.hidden=!monitorRecoveryPickerState.isOpen();if(monitorRecoveryPickerState.isOpen()){positionMonitorTrashRecoveryMenu();if(monitorObservedState.snapshot())monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorObservedState.snapshot()));}});
 
   monitorClosedRecoveryMenu.addEventListener("pointerdown",()=>{clearTimeout(monitorWorkerPointerReleaseTimer);monitorWorkerPointerInteractionActive=true;},true);
 
   monitorClosedRecoveryMenu.addEventListener("click",()=>settleMonitorWorkerPointerInteraction(),true);
 
-  window.addEventListener("resize",()=>{if(monitorClosedConversationPickerOpen)positionMonitorTrashRecoveryMenu();});
+  window.addEventListener("resize",()=>{if(monitorRecoveryPickerState.isOpen())positionMonitorTrashRecoveryMenu();});
 
-  document.addEventListener("pointerdown",(event)=>{if(!monitorClosedConversationPickerOpen)return;if(event.target.closest?.("#monitorNodeTrash,#monitorClosedRecoveryMenu"))return;monitorClosedConversationPickerOpen=false;monitorClosedRecoveryMenu.hidden=true;},true);
+  document.addEventListener("pointerdown",(event)=>{if(!monitorRecoveryPickerState.isOpen())return;if(event.target.closest?.("#monitorNodeTrash,#monitorClosedRecoveryMenu"))return;monitorRecoveryPickerState.close();monitorClosedRecoveryMenu.hidden=true;},true);
 
 }
 
@@ -151,7 +151,7 @@ const monitorBctShell = globalThis.MonitorBctShell?.create?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
-let monitorBctWindowNodesCache = null;
+const monitorNodePanelListState = globalThis.MonitorNodePanelListState.create();
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;
@@ -164,8 +164,7 @@ let monitorBctNodeReorderPending = false;
 let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
-let monitorBctWindowNodeRefreshBusy = false;
-let monitorBctWindowNodeRefreshPending = false;
+let monitorNodePanelRefreshController = null;
 // A reload can observe cached RCC rows while Chrome/RCC complete their own
 // restart. Revalidate only during this bounded warm-up; this is not a poll.
 const MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS = Object.freeze([250, 800, 1800, 3200]);

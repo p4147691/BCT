@@ -85,25 +85,28 @@ function loadModule() {
   await assert.rejects(() => focusFailure.activate("4242", target), /IDENTITY_MISMATCH/);
 
   const monitor = fs.readFileSync(monitorPath, "utf8");
+  const nodePanel = fs.readFileSync(path.join(root, "extension", "monitor-node-panel-view.js"), "utf8");
+  assert.match(monitor, /MonitorNodePanelView[.]create/);
+  const combinedSource = monitor + "\n" + nodePanel;
   const css = fs.readFileSync(cssPath, "utf8");
   const projection = fs.readFileSync(projectionPath, "utf8");
-  assert.match(monitor, /row\.addEventListener\("click"/);
-  assert.match(monitor, /row\.addEventListener\("dblclick"/);
-  assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
+  assert.match(combinedSource, /row\.addEventListener\("click"/);
+  assert.match(combinedSource, /row\.addEventListener\("dblclick"/);
+  assert.match(combinedSource, /row\.addEventListener\("pointerdown", \(event\) => ports[.]beginNodeDrag/);
   assert.match(monitor, /function updateMonitorBctNodePointerDrag/);
   assert.match(monitor, /function monitorBctNodeDropAt/);
-  assert.match(monitor, /groupList\.className = "monitor-bct-node-list"/);
-  assert.match(monitor, /groups\.has\("__unassigned__"\)/,
+  assert.match(combinedSource, /groupList\.className = "monitor-bct-node-list"/);
+  assert.match(combinedSource, /groups\.has\("__unassigned__"\)/,
     "an empty unassigned group must remain available as a drop destination");
-  assert.match(monitor, /monitor-bct-node-drop-empty/,
+  assert.match(combinedSource, /monitor-bct-node-drop-empty/,
     "empty unassigned drop surface must be rendered inside its list");
   assert.match(monitor, /const scopeName = String\(list\.dataset\.scopeName \|\| ""\)\.trim\(\)/,
     "drop resolution must carry the destination network name");
-  assert.doesNotMatch(monitor, /groupHeader\.addEventListener\("drop"/);
+  assert.doesNotMatch(combinedSource, /groupHeader\.addEventListener\("drop"/);
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
   assert.match(monitor, /tags\.filter\(\(tag\) => tag !== "Manager"\)/);
-  assert.match(monitor, /row\.classList\.toggle\("is-manager", !hadManager\)/);
+  assert.match(combinedSource, /row\.classList\.toggle\("is-manager", !hadManager\)/);
   assert.match(monitor, /if \(!monitorBctShell\?\.updateConversationScope \|\| !node\?\.conversationKey\)/,
     "conversation metadata editor must be available independently of exact tab rename identity");
   assert.match(monitor, /titleField\.control\.disabled = !canRenameTitle/,
@@ -115,7 +118,7 @@ function loadModule() {
   assert.match(monitor, /row\.setPointerCapture\(event\.pointerId\)/);
   assert.doesNotMatch(monitor, /monitor-bct-node-list-end/);
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
-  assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\)/);
+  assert.match(combinedSource, /ports[.]setSelected\(ports[.]selectionKey\(node\)\)/);
   assert.match(css, /monitor-bct-node-target-highlighted/);
   assert.doesNotMatch(css, /\.monitor-bct-node-row\.is-selected \.monitor-bct-node-number/,
     "the node-list number remains neutral; selection belongs only in the thumbnail");
@@ -133,7 +136,7 @@ function loadModule() {
     "tab activation must select by exact Chrome window/tab identity");
   assert.match(monitor, /syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
     "selection changes must reproject thumbnail number tokens immediately");
-  assert.match(monitor, /renderMonitorBctWindowNodes\(monitorBctWindowNodesCache\);\s*syncMonitorBctNodeTargetHighlight\(\);/,
+  assert.match(monitor, /renderMonitorBctWindowNodes\(monitorNodePanelListState[.]snapshot\(\)\);\s*syncMonitorBctNodeTargetHighlight\(\);/,
     "a regular Worker render must restore BCT-list ownership and exact row selection");
   assert.match(projection, /selectedNodeTabId/,
     "thumbnail selection must use the exact Chrome tabId, not a shared N? label");
@@ -183,6 +186,8 @@ function loadModule() {
   };
   holdContext.globalThis = holdContext;
   vm.createContext(holdContext);
+  vm.runInContext(fs.readFileSync(path.join(root,"extension","monitor-node-panel-interaction-state.js"),"utf8"),holdContext);
+  holdContext.monitorNodePanelInteractionState=holdContext.MonitorNodePanelInteractionState.create();
   vm.runInContext(monitor.slice(holdStart, holdEnd), holdContext);
   const rowOn = managerRow();
   const baseNode = { conversationKey: "conv-1", nodeLabel: "N33", title: "대화", scopeName: "대화망 A", roleTags: ["Worker"] };
@@ -273,12 +278,16 @@ function loadModule() {
   const first = row(11), second = row(12), third = row(13);
   const selectionContext = {
     monitorBctNodeHighlightedHwnd: "4242",
-    monitorBctSelectedNodeKey: "rcc-1:session-1:100:12",
+    monitorNodePanelSelection: null,
+    monitorBctNodeSelectionKey: node => selectionContext.monitorNodePanelSelection.key(node),
     monitorWorkers: { querySelectorAll: () => [first, second, third] },
     document: { querySelectorAll: () => [] },
     String, Boolean,
   };
   vm.createContext(selectionContext);
+  vm.runInContext(fs.readFileSync(path.join(root, "extension", "monitor-node-panel-selection.js"), "utf8"), selectionContext);
+  selectionContext.monitorNodePanelSelection=selectionContext.MonitorNodePanelSelection.create();
+  selectionContext.monitorNodePanelSelection.set("rcc-1:session-1:100:12");
   vm.runInContext(monitor.slice(selectionStart, selectionEnd), selectionContext);
   selectionContext.syncMonitorBctNodeTargetHighlight();
   assert.equal(first.classes.has("is-selected"), false);

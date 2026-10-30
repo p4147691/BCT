@@ -31,7 +31,7 @@ async function monitorAcceptedDesktopBackground(desktopId, force = false) {
 //@@FN_START:syncMonitorPreviewBackground
 function syncMonitorPreviewBackground(visual,desktopId) {
   const id=String(desktopId||"").toLowerCase();
-  const selected=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"").toLowerCase();
+  const selected=String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex]||"").toLowerCase();
   if(!id||id!==selected)return false;
   const snapshot=globalThis.MonitorDesktopThumbnailV2?.acceptedBackground?.(visual,id)||null;
   return snapshot ? monitorPreviewBackground.apply(id,snapshot) : monitorPreviewBackground.failed(id);
@@ -44,7 +44,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
   if (!desktopId) return null;
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!/^\d+$/.test(hostHwnd) || hostHwnd === "0") return null;
 
@@ -62,7 +62,7 @@ async function captureDesktopFrame(desktopId, profile = "main") {
 
   const job = (async () => {
 
-    if (profile === "thumb" && String(desktopId) === String(monitorDesktopState.hostDesktopId || "")) {
+    if (profile === "thumb" && String(desktopId) === String(monitorDesktopIdentityState.snapshot().hostDesktopId || "")) {
       await ensureMonitorOwnFrozenSnapshot().catch(() => false);
     }
 
@@ -284,9 +284,9 @@ function clearMonitorThumbnailRecovery(){
 
   monitorTrashedDesktops.clear(); persistMonitorTrashedDesktops();
 
-  for(const [key,item] of [...monitorTrashRecords]) if(String(item?.trash_source||"list")==="thumbnail"){monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(String(key));}
+  for(const [key,item] of [...monitorRecoveryRecordStore.trash]) if(String(item?.trash_source||"list")==="thumbnail"){monitorRecoveryRecordStore.trash.delete(key);monitorRecoveryRecordStore.trashedKeys.add(String(key));}
 
-  persistMonitorTrashedNodes(); if(monitorLastAiState)renderWorkers(monitorLastAiState); refreshMonitorRecoveryMenu();
+  persistMonitorTrashedNodes(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); refreshMonitorRecoveryMenu();
 
 }
 //@@FN_END:clearMonitorThumbnailRecovery
@@ -294,7 +294,7 @@ function clearMonitorThumbnailRecovery(){
 //@@FN_START:ensureMonitorCurrentWallpaperSnapshot
 async function ensureMonitorCurrentWallpaperSnapshot(desktopIdValue) {
   const desktopId = String(desktopIdValue || "").trim();
-  const currentDesktopId = String(monitorDesktopState.currentDesktopId || "").trim();
+  const currentDesktopId = String(monitorDesktopIdentityState.snapshot().currentDesktopId || "").trim();
   if (!desktopId || desktopId !== currentDesktopId || !monitorIsActiveDesktopRenderer() || monitorCurrentWallpaperCaptureBusy) return false;
 
   monitorCurrentWallpaperCaptureBusy = true;
@@ -302,7 +302,7 @@ async function ensureMonitorCurrentWallpaperSnapshot(desktopIdValue) {
     const retryDelays = [0, 160, 420];
     for (const delay of retryDelays) {
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-      if (String(monitorDesktopState.currentDesktopId || "").trim() !== desktopId || !monitorIsActiveDesktopRenderer()) return false;
+      if (String(monitorDesktopIdentityState.snapshot().currentDesktopId || "").trim() !== desktopId || !monitorIsActiveDesktopRenderer()) return false;
 
       const capture = await monitorCoreNative({
         type:"captureCurrentDesktopWallpaper",
@@ -324,7 +324,7 @@ async function ensureMonitorCurrentWallpaperSnapshot(desktopIdValue) {
       await chrome.runtime.sendMessage({
         type:"monitor-update-popup-runtime",
         desktopId,
-        hwnd:String(monitorDesktopState.hostWindowHwnd || ""),
+        hwnd:String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || ""),
         wallpaperDataUri:dataUri
       }).catch(() => null);
       return true;
@@ -521,9 +521,9 @@ function monitorRevokeThumbWindowCaptureSource(source) {
 //@@FN_START:monitorThumbnailLayoutWatch
 async function monitorThumbnailLayoutWatch() {
 
-  const desktopIds = monitorDesktopState.desktopIds.filter(Boolean);
+  const desktopIds = monitorDesktopIdentityState.snapshot().desktopIds.filter(Boolean);
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!desktopIds.length || !/^\d+$/.test(hostHwnd) || hostHwnd === "0") return;
 
@@ -762,7 +762,7 @@ async function refreshBackgroundThumbs(...desktopIds) {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return [];
   const renderer = globalThis.MonitorDesktopThumbnailV2;
   if (!renderer?.refreshBackground) return desktopIds.filter(Boolean);
-  const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
+  const selectedDesktopId = String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "");
   const ids = new Set(desktopIds.map((id) => String(id || "")).filter(Boolean));
   if (selectedDesktopId) ids.delete(selectedDesktopId);
   const failed = [];
@@ -860,7 +860,7 @@ async function refreshInitialBackgroundThumbs() {
     monitorInitialThumbStage = "disabled";
     return false;
   }
-  const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
+  const selectedId = monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "";
   const renderer = globalThis.MonitorDesktopThumbnailV2;
   if (!renderer?.refreshBackground) {
     monitorInitialThumbStage = "renderer-unavailable";
@@ -869,7 +869,7 @@ async function refreshInitialBackgroundThumbs() {
   }
   let pending = [
     selectedId,
-    ...monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId)
+    ...monitorDesktopIdentityState.snapshot().desktopIds.filter((id) => id && id !== selectedId)
   ].filter(Boolean);
   if (!pending.length) {
     monitorInitialThumbStage = "no-desktops";
@@ -908,10 +908,10 @@ async function refreshInitialWindowThumbs() {
     monitorInitialThumbError = "THUMBNAIL_WINDOW_RENDERER_UNAVAILABLE";
     return false;
   }
-  const selectedId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
+  const selectedId = monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "";
   const desktopIds = [
     selectedId,
-    ...monitorDesktopState.desktopIds.filter((id) => id && id !== selectedId)
+    ...monitorDesktopIdentityState.snapshot().desktopIds.filter((id) => id && id !== selectedId)
   ].filter(Boolean);
   if (!desktopIds.length) return false;
 
@@ -966,7 +966,7 @@ async function refreshInitialSelectedThumb({ allowWindows = true } = {}) {
     await monitorPublishSharedInstance("thumbnail-windows-awaiting-host").catch(() => null);
     return true;
   }
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
   if (!/^\d+$/.test(hostHwnd) || hostHwnd === "0") {
     monitorInitialThumbStage = "windows-awaiting-host";
     monitorInitialThumbError = "MONITOR_HOST_HWND_UNRESOLVED";
@@ -990,7 +990,7 @@ async function refreshInitialSelectedThumb({ allowWindows = true } = {}) {
 
 //@@FN_START:refreshMonitorBctThumbnailProjectionForDesktop
 async function refreshMonitorBctThumbnailProjectionForDesktop(desktopId) {
-  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorBctWindowNodesCache.length) return false;
+  if (!Array.isArray(monitorNodePanelListState.snapshot()) || !monitorNodePanelListState.snapshot().length) return false;
 
   // Native thumbnail capture and the RCC/Chrome snapshot arrive independently.
   // Resolve once while this desktop's HWND geometry is fresh so the semantic
@@ -1027,7 +1027,7 @@ async function refreshMonitorBctThumbnailProjectionForDesktop(desktopId) {
 async function refreshSelectedThumb() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
 
-  const desktopId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "";
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "";
 
   if (!desktopId) return false;
 
@@ -1049,7 +1049,7 @@ function scheduleInitialSemanticThumbSync(delay = 180) {
   monitorInitialSemanticThumbSyncTimer = setTimeout(async () => {
     monitorInitialSemanticThumbSyncTimer = 0;
     if (monitorInitialSemanticThumbSyncDone || monitorInitialSemanticThumbSyncInflight || !monitorInitialThumbBatchDone) return;
-    const state = monitorLastAiState;
+    const state = monitorObservedState.snapshot();
     const observer = state?.node_state?.observer;
     const semanticReady = state?.ok === true && (
       (String(observer?.source || "") === "ACT_NATIVE_OBSERVER" && Array.isArray(observer?.windows)) ||
@@ -1121,7 +1121,7 @@ function syncMonitorAllDesktopThumbnailNodeBadges() {
     if (visual?.isConnected) syncMonitorThumbnailTabBadges(visual,"monitor-desktop-thumb-window");
   }
   syncMonitorBctNodeLocationLabels();
-  syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  syncMonitorMinimizedNodeBadges(monitorObservedState.snapshot());
   syncMonitorBctNodeTargetHighlight();
   scheduleMonitorThumbnailProjectionReceipt();
 }
@@ -1147,15 +1147,15 @@ function syncMonitorThumbnailTabBadges(container, className) {
     container.dataset.monitorNodeOverlayRendered = "0";
     return;
   }
-  const selectedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : []).find((node) =>
-    monitorBctSelectedNodeKey && monitorBctNodeSelectionKey(node) === monitorBctSelectedNodeKey
+  const selectedNode = (Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot() : []).find((node) =>
+    monitorNodePanelSelection.get() && monitorBctNodeSelectionKey(node) === monitorNodePanelSelection.get()
   );
   const selectedHwnd = selectedNode
-    ? monitorDisplayHwndForBrowserWindowId(selectedNode.windowId, monitorLastAiState, selectedNode.instanceId, selectedNode.sessionId)
+    ? monitorDisplayHwndForBrowserWindowId(selectedNode.windowId, monitorObservedState.snapshot(), selectedNode.instanceId, selectedNode.sessionId)
     : "";
   const diagnostics = projection.render({
     container,
-    state: monitorLastAiState,
+    state: monitorObservedState.snapshot(),
     locations: monitorWindowDesktopLocations,
     highlightedHwnd: monitorBctNodeHighlightedHwnd,
     selectedNodeHwnd: selectedHwnd,

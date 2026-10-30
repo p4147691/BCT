@@ -190,3 +190,92 @@ READY가 아니면 먼저 `MONITOR_JS_MAP.md`와 `MONITOR_JS_INDEX.md`를 보강
 - A mismatch between extension document title and OS window title no longer permanently prevents initial desktop-thumbnail rendering. On unresolved host identity, try title-only then exact window-bounds Native lookup with empty hostTitle.
 - Fallback only accepts ok, unambiguous exact HWND, a matching desktop GUID and validated Monitor-only OS title. No cross-desktop guessing, cache fallback, Chrome tab enumeration or polling added.
 - check_monitor_host_window_identity.js verifies the contract, with check_monitor_structure.py enforcing its existence. Actual live D1/D2 acceptance remains required.
+
+## 2026-10-29 Header provider launch source boundary (N70)
+- Owner: `extension/monitor-provider-launch-feature.js`; public `MonitorProviderLaunchFeature.bind({button,provider,ports}) -> {destroy()}`.
+- Owns: exact G+/N+ button labels, click event binding and one active handler per button (WeakMap).
+- Injected ports: `launch({type})` for existing Native launch route, `fail(message)` for existing status reporting. No direct Native, Chrome, ACT or BCT calls.
+- The generated `monitor.js` retains only `configureMonitorProviderLaunchButton` adapter and injects the two ports. No duplicate launch orchestration, endpoint polling or fallback dispatch is introduced.
+- Independent verification: `tools/check_monitor_provider_launch_feature.js`; generated bundle and structure gate. LIVE UI acceptance remains the supervisor's separate responsibility.
+
+## 2026-10-29 Native window lifecycle event ownership (N70 follow-up)
+- Owner: `monitor-window-lifecycle-queue.js`; single private `Map<HWND, Event>`, drain state and disposal.
+- Public API: `MonitorWindowLifecycleQueue.create({handle,onError}) -> {schedule(event),drain(),destroy()}`.
+- Injected ports: `handle(event)` delegates to the existing V2 HWND geometry/pixel event handler; `onError(error,event)` reports an explicit failure through the existing status surface. No Native/Chrome/BCT calls inside the queue.
+- The generated compatibility `monitor.js` now has only the queue composition port and thin schedule/drain delegators; the former global queue/map and busy flag are removed.
+- The accepted event-flow fixture is updated to assert the new private queue owner, while retaining independent HWND geometry/WGC invariants.
+- Contract tests: `tools/check_monitor_window_lifecycle_queue.js`, `tools/check_monitor_thumbnail_window_event_path.js`, bundled structure gate.
+- Still open: full desktop stage/strip GUI controller, Native host provenance and actual Windows LIVE acceptance (supervisor).
+
+## 2026-10-29 Diagnostics view owner
+- monitor-diagnostics-view-feature.js owns refresh busy state and view projection via injected reader, refresh and renderer ports; it calls no Native/Chrome/BCT services directly.
+- API: MonitorDiagnosticsViewFeature.create({button,getActiveView,ports}).refresh(); independent contract test wired to structure gate.
+- Remaining diagnostics commands and LIVE acceptance are NOT complete.
+
+## 2026-10-29 N70 bounded state extraction (PR #349, follow-up)
+- **NodePanel selection**: `monitor-node-panel-selection.js`, `MonitorNodePanelSelection.create() -> {key,get,set,clear,matches}`. Private exact RCC instance/session/window/tab selection state; BCT/RCC remain identity and delivery authorities. Source `monitorBctNodeSelectionKey` is now a compatibility delegate.
+- **NodePanel conversation projection**: `monitor-conversation-projection-controller.js`, `MonitorConversationProjectionController.create({build}) -> {project,reset}`. Private WeakMap keyed by exact observed state; injected existing `monitorWorkersForState` builder. No second RCC query or cache.
+- **Desktop strip management mode**: `monitor-desktop-mode-controller.js`, `MonitorDesktopModeController.create({persist}) -> {get,set,hydrate,next,snapshot}`. Private GUID-scoped `OBSERVE_ONLY/MANAGED/PROTECTED` UI state, existing Chrome storage passed as a persistence port; no BCT/ACT authority changes.
+- **Desktop stage frame generation**: `monitor-desktop-frame-generation.js`, `MonitorDesktopFrameGeneration.create() -> {generation,invalidate}`. Private global and per-GUID generation fences. Original thumbnail frame cache invalidation and Native capture remain unchanged.
+- **Recovery desktop Undo**: `monitor-recovery-undo-session.js`, `MonitorRecoveryUndoSession.create({maxEntries,ttlMs}) -> {push,pop,expire,peek,resetExpiry,remainingMs}`. Owns bounded undo stack and TTL. Existing UI/countdown and mutations stay in compatibility wrappers.
+- The source-parts/domains contain only composition and compatibility delegates for these five states; generated `extension/monitor.js` remains derived, never hand-edited.
+- Independent tests: `check_monitor_node_panel_selection.js`, `check_monitor_conversation_projection_controller.js`, `check_monitor_desktop_mode_controller.js`, `check_monitor_desktop_frame_generation.js`, `check_monitor_recovery_undo_session.js`, all wired into `check_monitor_structure.py`.
+- **Not claimed complete**: full NodePanel DOM/row/controller, DesktopStage/Strip DOM and Native mutation, Recovery trash UI, remaining Diagnostics commands, Organization (PARKED), Native source provenance (2 HOLD), LIVE E2E. Do not merge/deploy until independent authority, public API and full behavior evidence are complete.
+
+## 2026-10-29 follow-up: recovery inventory and NodePanel refresh
+- `monitor-recovery-inventory.js`: owns closed/reboot conversation classification, exact conversation-key filtering, sorting, and read-only timestamp reconciliation. `MonitorRecoveryInventory.create({toEpoch}).project({ghosts,snapshot,trashedKeys,endpoints})` returns items and optional updated snapshot; existing composition root alone performs persistent writes. No second launch/recovery engine.
+- `monitor-node-panel-refresh.js`: owns refresh busy/pending state and at-most-one queued follow-up. `MonitorNodePanelRefresh.create({run,onBusy,onError,enqueue})` delegates existing BCT/RCC read, row rendering, geometry and thumbnail refresh to injected ports; no duplicated RCC transport.
+- `monitor-tool-connector-registry.js`: dormant future adapter contract; see `../MONITOR_TOOL_CONNECTOR_CONTRACT.md`. No actual tools connected or executed.
+- Independent tests: `check_monitor_recovery_inventory.js`, `check_monitor_node_panel_refresh.js`, `check_monitor_tool_connector_registry.js`, all wired into structure gate. Remaining NodePanel DOM and Recovery trash UI are not yet independent.
+
+## 2026-10-29 Recovery picker visibility state
+- `monitor-recovery-picker-state.js` is the sole owner of the picker open/closed boolean. Public `MonitorRecoveryPickerState.create() -> {isOpen,show,close,toggle}`.
+- Existing recovery menu events/rendering call the state API; no raw `monitorClosedConversationPickerOpen` global survives. No new restore/relaunch engine.
+- `check_monitor_recovery_picker_state.js` verifies state isolation and current caller contract, wired to the structure gate.
+- The full recovery trash UI DOM and exact restore executor remain in compatibility sources and require further review.
+
+## 2026-10-29 full-screen owner extraction follow-up (N70)
+
+These are **source-level, independently Mock-tested DOM/controller owners**. They replace original functions in the generated compatibility bundle; the original effects remain connected through explicit composition ports. None of them directly opens Chrome, Native or BCT connections.
+
+| Surface | Public owner | Explicit responsibility | Effect authority |
+| --- | --- | --- | --- |
+| NodePanel DOM | `MonitorNodePanelView.create({root,summary,document,interactionState,ports}).render(nodes)` | Network grouping, row creation/update, role/status icons, exact RCC tab/UUID label, collapse/drag/focus events | injected identity/BCT/RCC/Native selection/manager/rename ports |
+| NodePanel interaction | `MonitorNodePanelInteractionState.create()` | collapsed network keys, suppressed click, drag heading fence | no commands |
+| DesktopStrip DOM | `MonitorDesktopStripView.create({root,document,ports}).sync()` | D1/D2 card DOM, create/remove, bottom labels, click vs double-click routing, existing V2 thumb refresh | injected DesktopTopology/Native/preview/mutation ports |
+| Desktop topology | `MonitorDesktopTopology.project({observed,previous,sharedSelection})` | sole pure projection of GUID/current/host/observed desktop identity and HWND ambiguity | existing canonical `monitorDesktopState` assignment in composition |
+| DesktopStage DOM | `MonitorDesktopStageView.create({body}).showTopology(state)` and `.showPreview({desktopId,index,currentIndex})` | current/host/observed GUID body attributes and remote-preview CSS | no mutations |
+| Recovery panel DOM | `MonitorRecoveryPanelView.create({document,ports}).render(state)` | notes, desktop, closed/reboot/trash rows, UUID details, UNKNOWN status, recovery/action buttons | injected existing Recovery/Notes/Native/ACT/Storage ports; old automatic prune moved into a single explicit effect port |
+| Diagnostics command view | `MonitorDiagnosticsCommandView.create({host,document,run?,prepare?,reconcile?})` | registered command rows, disabled-by-default UI, RUNNING/APPLIED/NOT_APPLIED/UNKNOWN, exact receipt checking | authorized ToolConnectorRegistry bridge; **not wired in LIVE** |
+| External tool connector | `MonitorToolConnectorRegistry.create({authorize,verifyReceipt,onChange})` | state/receipt projection, Work/Operation/exact target/approval/UNKNOWN/explicit lifecycle | BCT adapter only; no connected programs |
+
+New contract tests are wired into `tools/check_monitor_structure.py`: NodePanel view & interaction state, DesktopStrip view & topology, DesktopStage view, Recovery panel view, Diagnostics command view, plus previously extracted state owners. 기존 Thumbnail V2/Sketch/Notes implementations are not duplicated.
+
+**IMPORTANT residual boundaries:**
+- Existing legacy `monitorDesktopState` and several other mutable maps are still used across `domains/*.js`; pure topology projection is not complete elimination of all lexical shared state.
+- NodePanel list mounting is extracted, but independent RCC/role/rename/drag handlers still execute existing compatibility functions behind ports.
+- DesktopStage visible window overlay and preview/Native asynchronous graphics retain legacy composition; V2 Thumbnail itself remains independently owned.
+- Recovery list panel DOM is extracted, but actual resurrection/handoff and durable UNKNOWN reconciliation still require existing backend authorities and end-to-end behavior acceptance.
+- Diagnostics command UI intentionally starts with **no registered commands**, no `prepare` and no execution port. It must not be considered a proven operational command link.
+- Organization remains PARKED. Native provenance 2 source files and MemoryGuard integration remain HOLD.
+- Do **not** certify total module independence or READY_FOR_MERGE solely from source-level Mock/structure tests.
+
+## 2026-10-29 final-phase single state owners and integrated Tool ports
+- `MonitorDesktopIdentityState.create(initial) -> {snapshot,replace,patch,revision}`: sole immutable-snapshot owner of canonical DesktopStage/DesktopStrip identity. Existing lexical `monitorDesktopState` removed from source-parts/domains. All changes use `replace/patch`, reads use `snapshot`. Indexed desktop IDs are frozen; `MonitorDesktopTopology` remains pure GUID projector.
+- `MonitorNodePanelListState.create() -> {snapshot,replace,rollbackIfCurrent,revision}`: sole Monitor-side observed RCC list state. Existing lexical `monitorBctWindowNodesCache` removed; optimistic drag rolls back only if its exact array is still current; BCT/RCC remains authoritative for the actual UUID/session/tab.
+- `MonitorRecoverySnapshotState.create(initial) -> {snapshot,replace,revision}`: sole persistent reboot recovery snapshot projection owner, with frozen item list. Existing lexical `monitorRebootSnapshot` removed.
+- `MonitorRecoveryRecordStore.create() -> {ghosts,trash,trashedKeys}`: private backing Map/Set store with public collection methods; existing `monitorGhostCache/monitorTrashRecords/monitorTrashedConversationKeys` global variables removed. No new restore/relaunch executor.
+- `MonitorDiagnosticsToolPort.create({registry,prepare})`: one injection adapter between the existing DiagnosticsCommandView and ToolConnectorRegistry. External authorization, exact Work/Operation/target hash, denied request and UNKNOWN reconciliation are checked in an isolated joined Mock test; no live adapter is registered or executed.
+- Independent tests: `check_monitor_desktop_identity_state.js`, `check_monitor_node_panel_list_state.js`, `check_monitor_recovery_snapshot_state.js`, `check_monitor_recovery_record_store.js`, `check_monitor_diagnostics_tool_integration.js`. All wired to the fail-closed Monitor structure gate.
+- Remaining limitation: Native window geometry/identity location cache, some shared runtime-state globals, inherited recovery backend commands and actual Core/RCC/Native permissioned UI E2E still need independent authority review. Do not infer READY_FOR_MERGE from static acceptance alone.
+
+## 2026-10-29 N70 final-phase runtime state consolidation
+- `MonitorDesktopIdentityState` now owns canonical current, host and observed GUIDs and selected index. All source-parts/domain direct `monitorDesktopState` reads/writes migrated to `snapshot/replace/patch`; consumers receive immutable top-level/desktopId-list snapshots.
+- `MonitorNodePanelListState` now owns observed RCC node-list projections; `monitorBctWindowNodesCache` global eliminated. The identity-preserving API supports rollback only if the exact optimistic snapshot remains current, protecting newer RCC updates.
+- `MonitorRecoverySnapshotState` owns the durable reboot list's display state; `monitorRebootSnapshot` global removed. Storage writes remain in existing explicit composition/callback ports; no new restore engine.
+- `MonitorRecoveryRecordStore` owns backing Map/Set of recovered/trashed conversation keys and ghost records; `monitorGhostCache`, `monitorTrashRecords`, `monitorTrashedConversationKeys` lexical globals removed. Mutation is through explicit public methods, and existing true UUID keys are preserved.
+- `MonitorObservedState` is an app-level ACT/RCC observation snapshot owner replacing lexical `monitorLastAiState` and providing `snapshot/replace/revision`; it is not an authority for RPC or mutations.
+- `MonitorDiagnosticsToolPort` is a tested composition adapter joining `MonitorDiagnosticsCommandView` with `MonitorToolConnectorRegistry`; approval and exact durable Work/Operation/receipt remain externally injected. No actual tool or operational adapter installed.
+- Dedicated tests for all six new owners/integration are in the fail-closed full structure gate, and legacy dependent VMs are updated to inject the new read ports rather than resurrect removed global state.
+
+**Residual limitations:** native geometry state `monitorWindowDesktopLocations`, DOM logic inside older shared UI and direct effect composition from existing recovery/desktop/role commands remain. Full physical Windows Monitor E2E and actual Core/RCC/Native command integration are outside this isolated candidate. Maintain Native provenance HOLD 2 and MemoryGuard HOLD. No claim of universal domain-level global isolation from this change alone.

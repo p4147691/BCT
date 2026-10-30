@@ -311,6 +311,88 @@ def main():
             if checked.returncode:
                 errors.append({'kind':'monitor_notes_feature_contract_regression',
                     'detail':(checked.stdout+checked.stderr)[-600:]})
+        provider_check = root/'tools'/'check_monitor_provider_launch_feature.js'
+        if not provider_check.is_file():
+            errors.append({'kind':'monitor_provider_launch_feature_contract_test_missing',
+                'path':str(provider_check)})
+        else:
+            checked=subprocess.run([node,str(provider_check)],cwd=str(root.parent.parent),
+                capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+            facts['monitor_provider_launch_feature_test_rc']=checked.returncode
+            if checked.returncode:
+                errors.append({'kind':'monitor_provider_launch_feature_contract_regression',
+                    'detail':(checked.stdout+checked.stderr)[-600:]})
+        diag_check = root/'tools'/'check_monitor_diagnostics_view_feature.js'
+        diag = subprocess.run([node,str(diag_check)],cwd=str(root.parent.parent),capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if diag_check.is_file() else None
+        facts['monitor_diagnostics_view_feature_test_rc'] = diag.returncode if diag else None
+        if diag is None or diag.returncode:
+            errors.append({'kind':'monitor_diagnostics_view_feature_contract_regression', 'detail':(diag.stdout+diag.stderr)[-600:] if diag else 'test missing'})
+        queue_check = root/'tools'/'check_monitor_window_lifecycle_queue.js'
+        checked = subprocess.run([node,str(queue_check)],cwd=str(root.parent.parent),capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if queue_check.is_file() else None
+        facts['monitor_window_lifecycle_queue_test_rc'] = checked.returncode if checked else None
+        if checked is None or checked.returncode:
+            errors.append({'kind':'monitor_window_lifecycle_queue_contract_regression', 'detail':(checked.stdout+checked.stderr)[-600:] if checked else 'test missing'})
+        desktop_mode_test = root/'tools'/'check_monitor_desktop_mode_controller.js'
+        conversation_projection_test = root/'tools'/'check_monitor_conversation_projection_controller.js'
+        node_selection_test = root/'tools'/'check_monitor_node_panel_selection.js'
+        recovery_undo_test = root/'tools'/'check_monitor_recovery_undo_session.js'
+        recovery_picker_test = root/'tools'/'check_monitor_recovery_picker_state.js'
+        picker_checked = subprocess.run([node,str(recovery_picker_test)],cwd=str(root.parent.parent),
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if recovery_picker_test.is_file() else None
+        facts['monitor_recovery_picker_test_rc'] = picker_checked.returncode if picker_checked else None
+        if picker_checked is None or picker_checked.returncode:
+            errors.append({'kind':'monitor_recovery_picker_contract_regression',
+                'detail':(picker_checked.stdout+picker_checked.stderr)[-600:] if picker_checked else 'missing'})
+        node_refresh_test = root/'tools'/'check_monitor_node_panel_refresh.js'
+        node_refresh_checked = subprocess.run([node,str(node_refresh_test)],cwd=str(root.parent.parent),
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if node_refresh_test.is_file() else None
+        facts['monitor_node_panel_refresh_test_rc'] = node_refresh_checked.returncode if node_refresh_checked else None
+        if node_refresh_checked is None or node_refresh_checked.returncode:
+            errors.append({'kind':'monitor_node_panel_refresh_contract_regression',
+                'detail':(node_refresh_checked.stdout+node_refresh_checked.stderr)[-600:] if node_refresh_checked else 'missing'})
+        recovery_inventory_test = root/'tools'/'check_monitor_recovery_inventory.js'
+        recovery_checked = subprocess.run([node,str(recovery_inventory_test)],cwd=str(root.parent.parent),
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if recovery_inventory_test.is_file() else None
+        facts['monitor_recovery_inventory_test_rc'] = recovery_checked.returncode if recovery_checked else None
+        if recovery_checked is None or recovery_checked.returncode:
+            errors.append({'kind':'monitor_recovery_inventory_contract_regression',
+                'detail':(recovery_checked.stdout+recovery_checked.stderr)[-600:] if recovery_checked else 'missing'})
+        tool_registry_test = root/'tools'/'check_monitor_tool_connector_registry.js'
+        registry_checked = subprocess.run([node,str(tool_registry_test)],cwd=str(root.parent.parent),
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if tool_registry_test.is_file() else None
+        facts['monitor_tool_registry_test_rc'] = registry_checked.returncode if registry_checked else None
+        if registry_checked is None or registry_checked.returncode:
+            errors.append({'kind':'monitor_tool_registry_contract_regression',
+                'detail':(registry_checked.stdout+registry_checked.stderr)[-600:] if registry_checked else 'missing'})
+        for new_view_test_name in ('check_monitor_node_panel_view.js',
+                                   'check_monitor_desktop_strip_view.js',
+                                   'check_monitor_desktop_topology.js',
+                                   'check_monitor_recovery_panel_view.js',
+                                   'check_monitor_diagnostics_command_view.js',
+                                   'check_monitor_desktop_stage_view.js',
+                                   'check_monitor_desktop_identity_state.js',
+                                   'check_monitor_node_panel_interaction_state.js',
+                                   'check_monitor_desktop_identity_state.js',
+                                   'check_monitor_node_panel_list_state.js',
+                                   'check_monitor_recovery_snapshot_state.js',
+                                   'check_monitor_recovery_record_store.js',
+                                   'check_monitor_diagnostics_tool_integration.js',
+                                   'check_monitor_observed_state.js'):
+            view_test = root / 'tools' / new_view_test_name
+            checked = subprocess.run([node,str(view_test)],cwd=str(root.parent.parent),
+                capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30) if view_test.is_file() else None
+            facts['view_test_'+view_test.stem] = checked.returncode if checked else None
+            if checked is None or checked.returncode:
+                errors.append({'kind':'monitor_view_owner_contract_regression','name':new_view_test_name,
+                               'detail':(checked.stdout+checked.stderr)[-600:] if checked else 'test missing'})
+        frame_generation_test = root/'tools'/'check_monitor_desktop_frame_generation.js'
+        for controller_test in (desktop_mode_test, conversation_projection_test, node_selection_test, recovery_undo_test, frame_generation_test):
+            checked = subprocess.run([node, str(controller_test)], cwd=str(root.parent.parent),
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30) if controller_test.is_file() else None
+            facts['controller_test_'+controller_test.stem] = checked.returncode if checked else None
+            if checked is None or checked.returncode:
+                errors.append({'kind':'monitor_controller_test_failed', 'name':controller_test.name,
+                    'detail':(checked.stdout+checked.stderr)[-600:] if checked else 'test missing'})
         thumbnail_checks = [
             root/'tools'/'check_monitor_thumbnail_architecture.js',
             root/'tools'/'check_monitor_thumbnail_background_only_mode.js',

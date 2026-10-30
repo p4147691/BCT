@@ -3,7 +3,7 @@ function clearMonitorHierarchyTargets(){for(const el of monitorStructurePanel.qu
 //@@FN_END:clearMonitorHierarchyTargets
 
 //@@FN_START:closeMonitorStructure
-function closeMonitorStructure(){void monitorStructurePersistWorkingDraft();monitorStructureOpen=false;monitorStructurePanel.hidden=true;if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+function closeMonitorStructure(){void monitorStructurePersistWorkingDraft();monitorStructureOpen=false;monitorStructurePanel.hidden=true;if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 //@@FN_END:closeMonitorStructure
 
 //@@FN_START:monitorHierarchyApplyDrop
@@ -89,7 +89,7 @@ function monitorStructureAuthorityOverrides(data,layout){
 //@@FN_START:monitorStructureAutoLayout
 function monitorStructureAutoLayout(){
 
-  const nodes=monitorStructureAvailableNodes().map(node=>({...node,placement_exempt:monitorStructureNodeIsPlacementExempt(node)})); const used=new Set(); const isExempt=(node)=>Boolean(node?.placement_exempt); const liveByKey=new Map(nodes.map(n=>[String(n.conversation_key||""),n])); const liveDraft=(node)=>{const draft=node?liveByKey.get(String(node.conversation_key||""))||null:null;return draft&&!isExempt(draft)?draft:null;}; const pickRole=(role)=>nodes.find(n=>n.role===role&&!isExempt(n)&&!used.has(n.conversation_key))||null; const commandDesktopId=String(monitorDesktopState.desktopIds?.[0]||""); const pickCommandFallback=()=>nodes.find(n=>!isExempt(n)&&!used.has(n.conversation_key)&&commandDesktopId&&monitorStructureEffectiveDesktopId(n)===commandDesktopId)||null;
+  const nodes=monitorStructureAvailableNodes().map(node=>({...node,placement_exempt:monitorStructureNodeIsPlacementExempt(node)})); const used=new Set(); const isExempt=(node)=>Boolean(node?.placement_exempt); const liveByKey=new Map(nodes.map(n=>[String(n.conversation_key||""),n])); const liveDraft=(node)=>{const draft=node?liveByKey.get(String(node.conversation_key||""))||null:null;return draft&&!isExempt(draft)?draft:null;}; const pickRole=(role)=>nodes.find(n=>n.role===role&&!isExempt(n)&&!used.has(n.conversation_key))||null; const commandDesktopId=String(monitorDesktopIdentityState.snapshot().desktopIds?.[0]||""); const pickCommandFallback=()=>nodes.find(n=>!isExempt(n)&&!used.has(n.conversation_key)&&commandDesktopId&&monitorStructureEffectiveDesktopId(n)===commandDesktopId)||null;
 
   const orchestrator=liveDraft(monitorStructureSocketDraft.orchestrator)||pickRole("ORCHESTRATOR")||pickCommandFallback(); if(orchestrator)used.add(orchestrator.conversation_key);
 
@@ -99,7 +99,7 @@ function monitorStructureAutoLayout(){
 
   const desktops={};
 
-  const observedDesktopIds=monitorDesktopState.desktopIds.length?monitorDesktopState.desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean);
+  const observedDesktopIds=monitorDesktopIdentityState.snapshot().desktopIds.length?monitorDesktopIdentityState.snapshot().desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean);
   // D1 is a permanent command Desk in the organization projection.  A
   // transiently empty browser/native snapshot must not make it disappear.
   const desktopIds=observedDesktopIds.length?observedDesktopIds:["D1"];
@@ -128,7 +128,7 @@ function monitorStructureAutoLayout(){
 //@@FN_START:monitorStructureAvailableNodes
 function monitorStructureAvailableNodes(){
 
-  const state=monitorLastAiState||{}; const seen=new Set(), seenPhysicalNodes=new Set(), out=[];
+  const state=monitorObservedState.snapshot()||{}; const seen=new Set(), seenPhysicalNodes=new Set(), out=[];
 
   for(const worker of monitorWorkersForState(state)){
     const profile=String(worker?.profile_id||"").toUpperCase();
@@ -229,12 +229,12 @@ function monitorStructureBundleIsActive(kind){
 
 //@@FN_START:monitorStructureBundleKinds
 function monitorStructureBundleKinds(){
-  const projectedResources = monitorLastAiState && typeof monitorWorkersProjectionForState === "function"
-    ? monitorWorkersProjectionForState(monitorLastAiState).filter((node)=>node?.__kind==="LLM_NODE")
+  const projectedResources = monitorObservedState.snapshot() && typeof monitorWorkersProjectionForState === "function"
+    ? monitorWorkersProjectionForState(monitorObservedState.snapshot()).filter((node)=>node?.__kind==="LLM_NODE")
     : [];
   const merged=[
     ...(Array.isArray(monitorStructureAiNodes)?monitorStructureAiNodes:[]),
-    ...(Array.isArray(monitorLastAiState?.llm_nodes)?monitorLastAiState.llm_nodes:[]),
+    ...(Array.isArray(monitorObservedState.snapshot()?.llm_nodes)?monitorObservedState.snapshot().llm_nodes:[]),
     ...projectedResources,
   ];
   const by={local:[],external:[],"codex-google":[]},seen=new Set();
@@ -449,7 +449,7 @@ async function monitorStructureExecuteDeskMoves(){
 
   const byKey=new Map(monitorStructureAvailableNodes().map(node=>[String(node?.conversation_key||""),node])),planned=[];
 
-  const desktopIds=(monitorDesktopState.desktopIds.length?monitorDesktopState.desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean)).map(String);
+  const desktopIds=(monitorDesktopIdentityState.snapshot().desktopIds.length?monitorDesktopIdentityState.snapshot().desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean)).map(String);
 
   for(const [nodeKey,targetDesktopId] of requested){const node=byKey.get(nodeKey);if(!node){delete monitorStructureDeskMembership[nodeKey];continue;}const sourceDesktopId=String(node?.desktop_id||"");if(sourceDesktopId===targetDesktopId){delete monitorStructureDeskMembership[nodeKey];continue;}const hwnd=String(node?.hwnd||"");if(!/^\d+$/.test(hwnd)||hwnd==="0"||!sourceDesktopId)throw new Error(`Desk 이동 준비 실패 · ${String(node?.label||nodeKey.slice(0,8))}`);const targetDeskIndex=desktopIds.indexOf(targetDesktopId);if(targetDeskIndex<0)throw new Error(`대상 Desk 확인 실패 · ${String(node?.label||nodeKey.slice(0,8))}`);planned.push({nodeKey,hwnd,sourceDesktopId,targetDesktopId,targetDeskNumber:targetDeskIndex+1,label:String(node?.label||nodeKey.slice(0,8))});}
 
@@ -674,7 +674,7 @@ function monitorStructureReconcileSnapshot(snapshot){
   const next=monitorStructureCloneDraftValue(snapshot)||null;
   if(!next)return null;
   const liveKeys=new Set(monitorStructureAvailableNodes().map(node=>String(node?.conversation_key||"")).filter(Boolean));
-  const desktops=new Set((monitorDesktopState.desktopIds||[]).map(String));
+  const desktops=new Set((monitorDesktopIdentityState.snapshot().desktopIds||[]).map(String));
   const keepNode=node=>node&&liveKeys.has(String(node?.conversation_key||""))?node:null;
   next.socketDraft=next.socketDraft&&typeof next.socketDraft==="object"?next.socketDraft:{orchestrator:null,aux1:null,aux2:null,managers:{}};
   next.socketDraft.orchestrator=keepNode(next.socketDraft.orchestrator);
@@ -687,7 +687,7 @@ function monitorStructureReconcileSnapshot(snapshot){
   }
   next.socketDraft.managers=managers;
 
-  const commandDeskId=String((monitorDesktopState.desktopIds||[])[0]||"");
+  const commandDeskId=String((monitorDesktopIdentityState.snapshot().desktopIds||[])[0]||"");
   if(commandDeskId){
     const assigned=new Set([
       String(next.socketDraft.orchestrator?.conversation_key||""),
@@ -781,7 +781,7 @@ function monitorStructureRenderResourcePools(){
 
   const local=document.getElementById("monitorStructureLocalPool"),external=document.getElementById("monitorStructureExternalPool"),codex=document.getElementById("monitorStructureCodexPool");if(!local||!external||!codex)return;local.replaceChildren();external.replaceChildren();codex.replaceChildren();
 
-  const legacy=Array.isArray(monitorLastAiState?.llm_nodes)?monitorLastAiState.llm_nodes:[];
+  const legacy=Array.isArray(monitorObservedState.snapshot()?.llm_nodes)?monitorObservedState.snapshot().llm_nodes:[];
 
   const merged=[...(Array.isArray(monitorStructureAiNodes)?monitorStructureAiNodes:[]),...legacy];
 
@@ -916,7 +916,7 @@ function monitorStructureRunAutoLayout(){
 
   monitorStructureLinkOverrides={};monitorStructurePlacementExemptions={};monitorStructureDeskMembership={};monitorStructureBundleDesk={};monitorStructureDirty=true;
 
-  const ids=monitorDesktopState.desktopIds.length?monitorDesktopState.desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean);
+  const ids=monitorDesktopIdentityState.snapshot().desktopIds.length?monitorDesktopIdentityState.snapshot().desktopIds.slice():[...monitorDesktopThumbs.querySelectorAll('.monitor-desktop-thumb[data-desktop-id]')].map(x=>String(x.dataset.desktopId||'')).filter(Boolean);
 
   const commandDeskId=String(ids[0]||"");
   if(commandDeskId){
@@ -1246,7 +1246,7 @@ function monitorStructureWouldCycle(child,parent,parents){let cur=parent;const s
 //@@FN_START:openMonitorStructure
 async function openMonitorStructure(){
 
-  monitorStructureOpen=true;monitorStructurePanel.hidden=false;if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  monitorStructureOpen=true;monitorStructurePanel.hidden=false;if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
   monitorStructureHistoryReset();
 
   chrome.storage.local.get([MONITOR_STRUCTURE_BASELINE_KEY,MONITOR_STRUCTURE_WORKING_DRAFT_KEY,MONITOR_STRUCTURE_NODE_CONTROL_KEY],async data=>{

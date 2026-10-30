@@ -1,9 +1,7 @@
 /*@@MONITOR_FUNCTION:openMonitorBctRenameEditor@@*/
 
 let monitorBctNodeInteractionService = null;
-const monitorBctCollapsedScopes = new Set();
-let monitorBctSuppressedClickKey = "";
-let monitorBctSuppressScopeClickUntil = 0;
+const monitorNodePanelInteractionState = globalThis.MonitorNodePanelInteractionState.create();
 
 /*@@MONITOR_FUNCTION:installMonitorBctManagerLongPress@@*/
 
@@ -103,8 +101,8 @@ if (monitorExtensionReload) monitorExtensionReload.addEventListener("click", () 
 
 monitorRccReload?.addEventListener("click", () => {
   void runMonitorUtilityAction(monitorRccReload, "RCC의 정확한 현재 인스턴스를 확인 중…", async () => {
-    if (!Array.isArray(monitorBctWindowNodesCache)) await refreshMonitorBctWindowNodes();
-    const instances = [...new Set((monitorBctWindowNodesCache || [])
+    if (!Array.isArray(monitorNodePanelListState.snapshot())) await refreshMonitorBctWindowNodes();
+    const instances = [...new Set((monitorNodePanelListState.snapshot() || [])
       .filter((node) => !node.displayStale && node.instanceState === "OPEN")
       .map((node) => String(node.instanceId || "").trim()).filter(Boolean))];
     if (instances.length !== 1) throw new Error(`RCC_RELOAD_EXACT_INSTANCE_REQUIRED:${instances.length}`);
@@ -160,7 +158,7 @@ if (monitorNodeSync) monitorNodeSync.addEventListener("click", async () => {
     await refreshAiMonitor();
     await refreshMonitorRoleAdmin();
 
-    const openEndpoints = (Array.isArray(monitorLastAiState?.endpoints) ? monitorLastAiState.endpoints : [])
+    const openEndpoints = (Array.isArray(monitorObservedState.snapshot()?.endpoints) ? monitorObservedState.snapshot().endpoints : [])
       .filter((endpoint) => String(endpoint?.presence_state || "").toUpperCase() === "OPEN");
     const conversationCounts = new Map();
     for (const endpoint of openEndpoints) {
@@ -210,7 +208,7 @@ chrome.storage.onChanged.addListener((changes,areaName)=>{
     monitorApprovedChatTransitionsReady=true;
     shouldRender=true;
   }
-  if(shouldRender&&monitorLastAiState)renderWorkers(monitorLastAiState);
+  if(shouldRender&&monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 });
 
 chrome.storage.local.get([MONITOR_NODE_BINDINGS_KEY,MONITOR_APPROVED_CHAT_TRANSITIONS_KEY],(data)=>{
@@ -237,15 +235,15 @@ chrome.storage.local.get([MONITOR_NODE_BINDINGS_KEY,MONITOR_APPROVED_CHAT_TRANSI
 
   monitorApprovedChatTransitionsReady=true;
 
-  if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
 });
 
-if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_GHOST_CACHE_KEY,MONITOR_GHOST_HIDDEN_KEY],(data)=>{for(const item of Array.isArray(data?.[MONITOR_GHOST_CACHE_KEY])?data[MONITOR_GHOST_CACHE_KEY]:[])if(item?.conversation_key)monitorGhostCache.set(String(item.conversation_key),item);for(const key of Array.isArray(data?.[MONITOR_GHOST_HIDDEN_KEY])?data[MONITOR_GHOST_HIDDEN_KEY]:[])monitorHiddenGhosts.add(String(key));monitorGhostStorageReady=true;});
+if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_GHOST_CACHE_KEY,MONITOR_GHOST_HIDDEN_KEY],(data)=>{for(const item of Array.isArray(data?.[MONITOR_GHOST_CACHE_KEY])?data[MONITOR_GHOST_CACHE_KEY]:[])if(item?.conversation_key)monitorRecoveryRecordStore.ghosts.set(String(item.conversation_key),item);for(const key of Array.isArray(data?.[MONITOR_GHOST_HIDDEN_KEY])?data[MONITOR_GHOST_HIDDEN_KEY]:[])monitorHiddenGhosts.add(String(key));monitorGhostStorageReady=true;});
 
-chrome.storage.local.get([MONITOR_CONTEXT_TITLE_STORAGE_KEY],(data)=>{const raw=data?.[MONITOR_CONTEXT_TITLE_STORAGE_KEY]||{};for(const [key,value] of Object.entries(raw))if(key&&value&&typeof value==="object")monitorContextTitles.set(String(key),value);monitorContextTitlesReady=true;for(const [key,value] of monitorContextTitles){monitorPublishedContextTitleSignatures.set(key,JSON.stringify(value||{}));monitorPublishSharedContextTitle(key,value);}void monitorSyncSharedRuntime();if(monitorLastAiState)renderWorkers(monitorLastAiState);});
+chrome.storage.local.get([MONITOR_CONTEXT_TITLE_STORAGE_KEY],(data)=>{const raw=data?.[MONITOR_CONTEXT_TITLE_STORAGE_KEY]||{};for(const [key,value] of Object.entries(raw))if(key&&value&&typeof value==="object")monitorContextTitles.set(String(key),value);monitorContextTitlesReady=true;for(const [key,value] of monitorContextTitles){monitorPublishedContextTitleSignatures.set(key,JSON.stringify(value||{}));monitorPublishSharedContextTitle(key,value);}void monitorSyncSharedRuntime();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());});
 
-if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_REBOOT_SNAPSHOT_KEY],(data)=>{const raw=data?.[MONITOR_REBOOT_SNAPSHOT_KEY];if(raw&&typeof raw==="object"&&Array.isArray(raw.items))monitorRebootSnapshot=raw;monitorRebootSnapshotReady=true;});
+if (MONITOR_FEATURE_RECOVERY_ENABLED) chrome.storage.local.get([MONITOR_REBOOT_SNAPSHOT_KEY],(data)=>{const raw=data?.[MONITOR_REBOOT_SNAPSHOT_KEY];if(raw&&typeof raw==="object"&&Array.isArray(raw.items))monitorRecoverySnapshotState.replace(raw);monitorRebootSnapshotReady=true;});
 
 let monitorStateFailureCount = 0;
 
@@ -297,12 +295,11 @@ globalThis.MonitorDesktopThumbnailV2.configure({
 /*@@MONITOR_FUNCTION:removeMonitorV2Window@@*/
 /*@@MONITOR_FUNCTION:scheduleMonitorV2WindowRefresh@@*/
 
-const monitorWindowLifecyclePendingEvents = new Map();
-let monitorWindowLifecycleDrainBusy = false;
+const monitorWindowLifecycleController = globalThis.MonitorWindowLifecycleQueue.create({handle: event => handleMonitorWindowLifecycleEvent(event), onError: error => setMonitorStatus(String(error), false)});
 
 /*@@MONITOR_FUNCTION:scheduleMonitorWindowLifecycleEvent@@*/
 
-/*@@MONITOR_FUNCTION:drainMonitorWindowLifecycleEvents@@*/
+
 
 /*@@MONITOR_FUNCTION:handleMonitorWindowLifecycleEvent@@*/
 

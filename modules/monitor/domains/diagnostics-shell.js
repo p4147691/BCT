@@ -7,7 +7,7 @@ function applyMonitorWindowHighlight(hwnd, options = {}) {
 
   if (!options.bctNode && !options.preserve && !options.remote) {
     monitorBctNodeHighlightedHwnd = "";
-    monitorBctSelectedNodeKey = "";
+    monitorNodePanelSelection.clear();
   }
 
   if (options.preserve) { if (nextHwnd) monitorHighlightedHwnd = nextHwnd; }
@@ -134,24 +134,11 @@ async function cloneMonitorWindowSet(entries, targetDesktopId, undoKind = "windo
 
 //@@FN_START:configureMonitorProviderLaunchButton
 function configureMonitorProviderLaunchButton(button, provider) {
-  const normalizedProvider = String(provider || "").toUpperCase() === "GOOGLE" ? "GOOGLE" : "NAVER";
-  const name = normalizedProvider === "GOOGLE" ? "Google" : "Naver";
-  const type = normalizedProvider === "GOOGLE" ? "launchGoogleChatGpt" : "launchNaverChatGpt";
-
-  button.dataset.provider = normalizedProvider;
-  button.textContent = normalizedProvider === "GOOGLE" ? "G+" : "N+";
-  button.title = `${name} ChatGPT 새 창 열기`;
-  button.setAttribute("aria-label", `${name} ChatGPT 새 창 열기`);
-  button.disabled = false;
-
-  button.addEventListener("click", async () => {
-    try {
-      const result = await monitorNativeLaunchIsolated({ type });
-      if (!result?.ok || !result?.launched) {
-        throw new Error(result?.error || `${name} ChatGPT 실행 실패`);
-      }
-    } catch (error) {
-      setMonitorStatus(`${name} ChatGPT 실행 실패 · ${error?.message || error}`, false);
+  return globalThis.MonitorProviderLaunchFeature.bind({
+    button, provider,
+    ports: {
+      launch: request => monitorNativeLaunchIsolated(request),
+      fail: message => setMonitorStatus(message, false)
     }
   });
 }
@@ -201,32 +188,13 @@ function createMonitorWindowCaptureService({ maxEntries, maxWidth, maxHeight, qu
 }
 //@@FN_END:createMonitorWindowCaptureService
 
-//@@FN_START:drainMonitorWindowLifecycleEvents
-async function drainMonitorWindowLifecycleEvents() {
-  if (monitorWindowLifecycleDrainBusy) return;
-  monitorWindowLifecycleDrainBusy = true;
-  try {
-    while (monitorWindowLifecyclePendingEvents.size) {
-      const next = monitorWindowLifecyclePendingEvents.entries().next().value;
-      if (!next) break;
-      const [hwnd, event] = next;
-      monitorWindowLifecyclePendingEvents.delete(hwnd);
-      await handleMonitorWindowLifecycleEvent(event);
-    }
-  } finally {
-    monitorWindowLifecycleDrainBusy = false;
-    if (monitorWindowLifecyclePendingEvents.size) void drainMonitorWindowLifecycleEvents();
-  }
-}
-//@@FN_END:drainMonitorWindowLifecycleEvents
-
 //@@FN_START:handleMonitorWindowLifecycleEvent
 async function handleMonitorWindowLifecycleEvent(event) {
 
   const hwnd=String(event?.hwnd||"").trim();
 
   if (!/^\d+$/.test(hwnd)||hwnd==="0") return;
-  if (hwnd === String(monitorDesktopState.hostWindowHwnd || "")) {
+  if (hwnd === String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "")) {
     await chrome.runtime.sendMessage({ type:"monitor-save-popup-window-bounds" }).catch(() => null);
     scheduleMonitorExternalWindowDropTargets();
     return;
@@ -265,8 +233,8 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const eventVisual=eventTile?.querySelector(".monitor-desktop-thumb-visual");
   globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
 
-  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
-  syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
+  syncMonitorMinimizedNodeBadges(monitorObservedState.snapshot());
   if (minimized) scheduleMonitorMinimizedBadgeConvergence(hwnd);
   const badgeTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
   const badgeVisual=badgeTile?.querySelector(".monitor-desktop-thumb-visual");
@@ -317,7 +285,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
 
   invalidateMonitorDesktopFrames(desktopId);
 
-  const selectedDesktopId=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"");
+  const selectedDesktopId=String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex]||"");
   const selectedDesktop=desktopId===selectedDesktopId;
   if (selectedDesktop) {
     scheduleMonitorV2WindowRefresh(event);
@@ -346,9 +314,9 @@ function monitorRenderDiagnosticText(){
   const elapsedSec=elapsedMs/1000;
   let visibleWorkers=0;
   try{
-    if(monitorLastAiState){
-      const projected=monitorWorkersProjectionForState(monitorLastAiState);
-      visibleWorkers=projected.filter((worker)=>isMonitorVisibleWorker(worker,monitorLastAiState)).length;
+    if(monitorObservedState.snapshot()){
+      const projected=monitorWorkersProjectionForState(monitorObservedState.snapshot());
+      visibleWorkers=projected.filter((worker)=>isMonitorVisibleWorker(worker,monitorObservedState.snapshot())).length;
     }
   }catch(_){}
   const documentNodes=document.getElementsByTagName("*").length;
@@ -422,7 +390,7 @@ function monitorWindowTitle() {
 //@@FN_START:monitorWindowUsesFrozenCapture
 function monitorWindowUsesFrozenCapture(item) {
   const itemHwnd = String(item?.hwnd || "").trim();
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
   return /^[0-9]+$/.test(hostHwnd) && hostHwnd !== "0"
     && itemHwnd === hostHwnd && monitorIsOwnWindowTitle(item?.title);
 }
@@ -531,42 +499,29 @@ async function refreshMonitorActDiagnostic(){
 //@@FN_END:refreshMonitorActDiagnostic
 
 //@@FN_START:refreshMonitorCurrentDiagnosticView
-async function refreshMonitorCurrentDiagnosticView(){
-  const button=document.getElementById('monitorDiagRefresh');
-  if(button?.disabled)return;
-  const active=monitorDiagnostics.querySelector('[data-monitor-diag-view].is-active');
-  const view=String(active?.dataset?.monitorDiagView||'overview');
-  const label=String(active?.textContent||view);
-  if(button){button.disabled=true;button.classList.add('is-refreshing');}
-  try{
-    if(view==='overview'){
-      await Promise.allSettled([refreshMonitorActDiagnostic(),refreshMonitorAutoProcess()]);
-      showMonitorDiagText(`종합 관제\n${monitorDiagAct.textContent} · ${monitorAutoProcessQuick.textContent}\n현재 관제 상태를 다시 확인했습니다.`);
-      return;
+async function refreshMonitorCurrentDiagnosticView() {
+  const button = document.getElementById("monitorDiagRefresh");
+  const viewFeature = globalThis.MonitorDiagnosticsViewFeature.create({
+    button,
+    getActiveView: () => {
+      const selected = monitorDiagnostics.querySelector("[data-monitor-diag-view].is-active");
+      return { view: selected?.dataset?.monitorDiagView, label: selected?.textContent };
+    },
+    ports: {
+      refreshOverview: () => Promise.allSettled([refreshMonitorActDiagnostic(), refreshMonitorAutoProcess()]),
+      refreshAct: () => refreshMonitorActDiagnostic(),
+      actStatus: () => monitorDiagAct.textContent,
+      autoStatus: () => monitorAutoProcessQuick.textContent,
+      renderMonitor: () => monitorRenderDiagnosticText(),
+      show: text => showMonitorDiagText(text)
     }
-    if(view==='act'){
-      await refreshMonitorActDiagnostic();
-      showMonitorDiagText(`ACT 관제\n${monitorDiagAct.textContent}`);
-      return;
-    }
-    if(view==='monitor'){
-      showMonitorDiagText(monitorRenderDiagnosticText());
-      return;
-    }
-    showMonitorDiagText(`${label} 관제 · 세부 수집기 연결 전`);
-  }finally{
-    if(button){button.disabled=false;button.classList.remove('is-refreshing');}
-  }
+  });
+  return viewFeature.refresh();
 }
 //@@FN_END:refreshMonitorCurrentDiagnosticView
 
 //@@FN_START:scheduleMonitorWindowLifecycleEvent
-function scheduleMonitorWindowLifecycleEvent(event) {
-  const hwnd = String(event?.hwnd || "").trim();
-  if (!/^\d+$/.test(hwnd) || hwnd === "0") return;
-  monitorWindowLifecyclePendingEvents.set(hwnd, event);
-  if (!monitorWindowLifecycleDrainBusy) void drainMonitorWindowLifecycleEvents();
-}
+function scheduleMonitorWindowLifecycleEvent(event) { monitorWindowLifecycleController.schedule(event); }
 //@@FN_END:scheduleMonitorWindowLifecycleEvent
 
 //@@FN_START:showMonitorDiagText

@@ -14,12 +14,12 @@
     {
       "domain": "desktop-lifecycle",
       "file": "desktop-lifecycle.js",
-      "functions": 103
+      "functions": 102
     },
     {
       "domain": "diagnostics-shell",
       "file": "diagnostics-shell.js",
-      "functions": 22
+      "functions": 21
     },
     {
       "domain": "native-transport",

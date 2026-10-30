@@ -29,7 +29,10 @@ assert.match(monitorSource,
 assert.match(monitorSource,
   /scheduleMonitorChatNavigationRefresh\(message\)[\s\S]*await refreshMonitorBctWindowNodes\(\);[\s\S]*syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
   "Chrome navigation must refresh RCC window membership and node badges without Monitor focus");
-assert.match(monitorSource, /monitorBctWindowNodeRefreshPending = true/,
+const refreshOwner = fs.readFileSync(path.join(__dirname, "../extension/monitor-node-panel-refresh.js"), "utf8");
+assert.match(monitorSource, /MonitorNodePanelRefresh[.]create/,
+  "NodePanel refresh must route through its independent lifecycle owner");
+assert.match(refreshOwner, /if\(busy\) \{ pending=true; return false; \}/,
   "a navigation refresh arriving during an in-flight RCC read must be coalesced, not lost");
 const monitorCss = fs.readFileSync(path.join(__dirname, "../extension/monitor.css"), "utf8");
 assert.match(monitorCss, /\.monitor-thumbnail-tab-badge\s*\{[^}]*overflow-wrap:normal[^}]*word-break:normal/s,

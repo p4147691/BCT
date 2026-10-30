@@ -26,15 +26,11 @@ const monitorDesktopUndoButton = document.getElementById("monitorDesktopUndoButt
 
 const monitorDesktopUndoCountdown = document.getElementById("monitorDesktopUndoCountdown");
 
-const monitorUndoStack = [];
-
 let monitorUndoTimer = 0;
 
-let monitorUndoSessionExpiresAt = 0;
-
 const MONITOR_UNDO_MAX = 8;
-
 const MONITOR_UNDO_TTL_MS = 10000;
+const monitorRecoveryUndoSession = globalThis.MonitorRecoveryUndoSession.create({maxEntries: MONITOR_UNDO_MAX, ttlMs: MONITOR_UNDO_TTL_MS});
 
 const MONITOR_TRASHED_NODES_KEY = "desktopWindowMonitorTrashedNodesV1";
 
@@ -46,9 +42,9 @@ const MONITOR_TRASHED_DESKTOPS_KEY = "desktopWindowMonitorTrashedDesktopsV1";
 
 const MONITOR_NODE_TRASH_UNDO_MS = 5000;
 
-const monitorTrashedConversationKeys = new Set();
+const monitorRecoveryRecordStore = globalThis.MonitorRecoveryRecordStore.create();
 
-const monitorTrashRecords = new Map();
+
 
 const monitorTrashedNotes = new Map();
 
@@ -70,13 +66,15 @@ let monitorDeletedDesktopUndoTimer = 0;
 
 let monitorLocalHostWindowTitle = "";
 
-let monitorDesktopState = { count: 1, currentIndex: 0, selectedIndex: null, currentDesktopId: null, hostDesktopId: null, hostWindowHwnd: null, observedDesktopId: null, desktopIds: [] };
+const monitorDesktopIdentityState = globalThis.MonitorDesktopIdentityState.create({ count: 1, currentIndex: 0, selectedIndex: null, currentDesktopId: null, hostDesktopId: null, hostWindowHwnd: null, observedDesktopId: null, desktopIds: [] });
+const monitorDesktopStageView = globalThis.MonitorDesktopStageView.create({body: document.body});
 
 // Per-desktop presentation policy is local Monitor state. It never changes ACT
 // organization, role or task ownership, and uses the immutable desktop id.
 const MONITOR_DESKTOP_MANAGEMENT_MODE_KEY = "desktopWindowMonitorDesktopManagementModesV1";
-const MONITOR_DESKTOP_MANAGEMENT_MODES = new Set(["MANAGED", "OBSERVE_ONLY", "PROTECTED"]);
-let monitorDesktopManagementModes = {};
+const monitorDesktopModeController = globalThis.MonitorDesktopModeController.create({
+  persist: snapshot => chrome.storage.local.set({ [MONITOR_DESKTOP_MANAGEMENT_MODE_KEY]: snapshot }).catch(() => {})
+});
 
 /*@@MONITOR_FUNCTION:monitorDesktopManagementMode@@*/
 
@@ -90,16 +88,8 @@ let monitorDesktopManagementModes = {};
 
 chrome.storage.local.get([MONITOR_DESKTOP_MANAGEMENT_MODE_KEY], (data) => {
   const raw = data?.[MONITOR_DESKTOP_MANAGEMENT_MODE_KEY];
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const normalized = {};
-    for (const [desktopId, mode] of Object.entries(raw)) {
-      const id = String(desktopId || "").trim();
-      const value = String(mode || "").toUpperCase();
-      if (id && MONITOR_DESKTOP_MANAGEMENT_MODES.has(value)) normalized[id] = value;
-    }
-    monitorDesktopManagementModes = normalized;
-  }
-  if (monitorDesktopState.desktopIds.length) syncDesktopSwitcher();
+  monitorDesktopModeController.hydrate(raw);
+  if (monitorDesktopIdentityState.snapshot().desktopIds.length) syncDesktopSwitcher();
 });
 
 let monitorRefreshBusy = false;
@@ -297,7 +287,7 @@ let monitorIdentityIndexInflight = null;
 
 /*@@MONITOR_FUNCTION:normalizeMonitorWindowTitle@@*/
 
-let monitorLastAiState = null;
+const monitorObservedState = globalThis.MonitorObservedState.create();
 
 const MONITOR_AI_STATE_CACHE_KEY = "desktopWindowMonitorAiStateCacheV1";
 

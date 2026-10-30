@@ -83,7 +83,7 @@ function flushDeferredMonitorWorkerRender() {
 //@@FN_END:flushDeferredMonitorWorkerRender
 
 //@@FN_START:initializeMonitorWorkerOrderStorage
-function initializeMonitorWorkerOrderStorage() { chrome.storage.local.get([MONITOR_WORKER_ORDER_KEY],(data)=>{const raw=data?.[MONITOR_WORKER_ORDER_KEY]||{};for(const [id,keys] of Object.entries(raw))monitorWorkerOrderByDesktop.set(id,Array.isArray(keys)?keys.map(String):[]);monitorWorkerOrderReady=true;if(monitorLastAiState)renderWorkers(monitorLastAiState);}); }
+function initializeMonitorWorkerOrderStorage() { chrome.storage.local.get([MONITOR_WORKER_ORDER_KEY],(data)=>{const raw=data?.[MONITOR_WORKER_ORDER_KEY]||{};for(const [id,keys] of Object.entries(raw))monitorWorkerOrderByDesktop.set(id,Array.isArray(keys)?keys.map(String):[]);monitorWorkerOrderReady=true;if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}); }
 //@@FN_END:initializeMonitorWorkerOrderStorage
 
 //@@FN_START:installMonitorBctManagerLongPress
@@ -105,9 +105,9 @@ function installMonitorBctManagerLongPress(row, node) {
       timer = 0;
       row.classList.remove("monitor-bct-manager-hold");
       const key = monitorBctNodeSelectionKey(node);
-      monitorBctSuppressedClickKey = key;
+      monitorNodePanelInteractionState.setSuppressedKey(key);
       globalThis.setTimeout(() => {
-        if (monitorBctSuppressedClickKey === key) monitorBctSuppressedClickKey = "";
+        monitorNodePanelInteractionState.clearSuppressedKeyIf(key);
       }, 900);
       if (!node.scopeName) {
         setMonitorStatus("먼저 우클릭 정보창에서 이 대화의 작업 범위를 지정하세요.", false, 3500);
@@ -148,7 +148,7 @@ function isMonitorVisibleWorker(worker, state) {
 
   const conversationKey = String(worker?.conversation_key || "").trim();
 
-  if (conversationKey && monitorTrashedConversationKeys.has(conversationKey)) return false;
+  if (conversationKey && monitorRecoveryRecordStore.trashedKeys.has(conversationKey)) return false;
 
   const profileId = String(worker?.profile_id || "").toUpperCase();
 
@@ -236,7 +236,7 @@ function monitorBctPointInsideScopeHeading(clientX, clientY) {
 
 //@@FN_START:monitorBctProjectionHasUnresolvedLineage
 function monitorBctProjectionHasUnresolvedLineage() {
-  return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) =>
+  return Array.isArray(monitorNodePanelListState.snapshot()) && monitorNodePanelListState.snapshot().some((node) =>
     !monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId)
   );
 }
@@ -374,7 +374,7 @@ function monitorConversationGroupVisual(conversationKey, state) {
 //@@FN_END:monitorConversationGroupVisual
 
 //@@FN_START:monitorConversationKeysForHwnd
-function monitorConversationKeysForHwnd(hwnd,state=monitorLastAiState) {
+function monitorConversationKeysForHwnd(hwnd,state=monitorObservedState.snapshot()) {
 
   const target=String(hwnd||""); if(!target||!state)return [];
 
@@ -412,7 +412,7 @@ function monitorExactConversationWindow(conversationKey, state, now = Date.now()
 
   const desktopId = String(location?.desktopId || "").trim();
 
-  const desktopIndex = monitorDesktopState.desktopIds.indexOf(desktopId);
+  const desktopIndex = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId);
 
   if (desktopIndex < 0) return { endpoint, location: null, reason: "UNKNOWN_DESKTOP" };
 
@@ -466,7 +466,7 @@ function monitorGhostPersist(immediate = false) {
 
   if (!monitorGhostStorageReady) return;
 
-  const write = () => { monitorGhostPersistTimer = 0; const cache=[...monitorGhostCache.values()].sort((a,b)=>Number(b?.last_activity_ms||0)-Number(a?.last_activity_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX); chrome.storage.local.set({ [MONITOR_GHOST_CACHE_KEY]:cache, [MONITOR_GHOST_HIDDEN_KEY]:[...monitorHiddenGhosts].slice(0,MONITOR_GHOST_CACHE_MAX) }); };
+  const write = () => { monitorGhostPersistTimer = 0; const cache=[...monitorRecoveryRecordStore.ghosts.values()].sort((a,b)=>Number(b?.last_activity_ms||0)-Number(a?.last_activity_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX); chrome.storage.local.set({ [MONITOR_GHOST_CACHE_KEY]:cache, [MONITOR_GHOST_HIDDEN_KEY]:[...monitorHiddenGhosts].slice(0,MONITOR_GHOST_CACHE_MAX) }); };
 
   if (immediate) { if (monitorGhostPersistTimer) clearTimeout(monitorGhostPersistTimer); write(); return; }
 
@@ -693,7 +693,7 @@ async function monitorTurnWorkerOff(worker,state) {
 
   } catch(error){setMonitorStatus(`OFF 실패 · ${monitorRoleAdminErrorText(error?.message||error)}`,false);}
 
-  finally {monitorRoleMutationInFlight.delete(key); if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+  finally {monitorRoleMutationInFlight.delete(key); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 
 }
 //@@FN_END:monitorTurnWorkerOff
@@ -755,7 +755,7 @@ function monitorWorkerContextTitle(worker, state, endpoint = null) {
 
   const current=monitorWorkerMeaningfulTitle(worker,state,endpoint);
 
-  const key=String(worker?.conversation_key||"").trim(), cached=key?monitorGhostCache.get(key):null;
+  const key=String(worker?.conversation_key||"").trim(), cached=key?monitorRecoveryRecordStore.ghosts.get(key):null;
 
   const previous=(Array.isArray(cached?.history)?cached.history:[]).map((item)=>String(item?.text||"").split(" [")[0].split(" · ")[0].trim()).filter(Boolean).reverse();
 
@@ -769,7 +769,7 @@ function monitorWorkerContextTitle(worker, state, endpoint = null) {
 //@@FN_START:monitorWorkerMeaningfulTitle
 function monitorWorkerMeaningfulTitle(worker, state, endpoint = null) {
 
-  const key = String(worker?.conversation_key || "").trim(); const cached = key ? monitorGhostCache.get(key) : null;
+  const key = String(worker?.conversation_key || "").trim(); const cached = key ? monitorRecoveryRecordStore.ghosts.get(key) : null;
 
   const task = monitorGhostTaskForWorker(worker, state);
 
@@ -971,14 +971,7 @@ function monitorWorkersForState(state) {
 //@@FN_END:monitorWorkersForState
 
 //@@FN_START:monitorWorkersProjectionForState
-function monitorWorkersProjectionForState(state) {
-  if (!state || typeof state !== "object") return monitorWorkersForState(state);
-  const cached = monitorWorkersProjectionCache.get(state);
-  if (cached) return cached;
-  const workers = monitorWorkersForState(state);
-  monitorWorkersProjectionCache.set(state, workers);
-  return workers;
-}
+function monitorWorkersProjectionForState(state) { return monitorConversationProjectionController.project(state); }
 //@@FN_END:monitorWorkersProjectionForState
 
 //@@FN_START:openMonitorBctRenameEditor
@@ -1507,7 +1500,7 @@ function performMonitorWorkerRender(state) {
 
       if (group.key === "chatgpt" && conversationKey) {
 
-        const ghost=monitorGhostCache.get(conversationKey)||{};
+        const ghost=monitorRecoveryRecordStore.ghosts.get(conversationKey)||{};
 
         const rec=monitorContextTitleRecord(conversationKey);
 
@@ -1782,7 +1775,7 @@ function performMonitorWorkerRender(state) {
 
         if (hwnd) monitorPausedByHwnd.delete(String(hwnd));
 
-        if (monitorLastAiState) renderWorkers(monitorLastAiState);
+        if (monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
 
       });
 
@@ -1826,19 +1819,19 @@ function performMonitorWorkerRender(state) {
   // The BCT list owns this panel whenever it is enabled. A concurrent ACT
   // refresh must not replace it after Chrome has selected a real tab, because
   // that would erase the exact row selection just mirrored from Chrome.
-  if (MONITOR_BCT_NODE_SUMMARY_ENABLED && Array.isArray(monitorBctWindowNodesCache)) {
-    renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+  if (MONITOR_BCT_NODE_SUMMARY_ENABLED && Array.isArray(monitorNodePanelListState.snapshot())) {
+    renderMonitorBctWindowNodes(monitorNodePanelListState.snapshot());
     syncMonitorBctNodeTargetHighlight();
   }
 
-  if(monitorClosedRecoveryMenu){monitorClosedRecoveryMenu.hidden=!monitorClosedConversationPickerOpen;if(monitorClosedConversationPickerOpen)monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(state));}
+  if(monitorClosedRecoveryMenu){monitorClosedRecoveryMenu.hidden=!monitorRecoveryPickerState.isOpen();if(monitorRecoveryPickerState.isOpen())monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(state));}
 
 }
 //@@FN_END:performMonitorWorkerRender
 
 //@@FN_START:refreshMonitorBctBrowserWindowGeometry
 async function refreshMonitorBctBrowserWindowGeometry() {
-  const ids = [...new Set((Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+  const ids = [...new Set((Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot() : [])
     .map((node) => Number(node?.windowId)).filter(Number.isInteger))];
   const observedAt = Date.now();
   const rows = await Promise.all(ids.map(async (windowId) => {
@@ -1869,11 +1862,11 @@ async function refreshMonitorBctBrowserWindowGeometry() {
 //@@FN_START:refreshMonitorBctCurrentSessionWindowHwnd
 function refreshMonitorBctCurrentSessionWindowHwnd() {
   const resolution = monitorWindowHwndContract?.resolve?.({
-    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations, now: Date.now(),
+    nodes: monitorNodePanelListState.snapshot() || [], locations: monitorWindowDesktopLocations, now: Date.now(),
   });
   const bindings = monitorWindowHwndContract?.retainCurrentSessionBindings?.({
     bindings: resolution?.bindings || [], previousBindings: [...monitorBctCurrentSessionWindowHwnd.values()],
-    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations, now: Date.now(),
+    nodes: monitorNodePanelListState.snapshot() || [], locations: monitorWindowDesktopLocations, now: Date.now(),
   }) || (resolution?.bindings || []);
   const next = new Map();
   for (const binding of bindings) {
@@ -1887,7 +1880,7 @@ function refreshMonitorBctCurrentSessionWindowHwnd() {
 //@@FN_START:refreshMonitorBctDisplayWindowHwnd
 function refreshMonitorBctDisplayWindowHwnd() {
   const display = monitorWindowHwndContract?.resolveDisplay?.({
-    nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations,
+    nodes: monitorNodePanelListState.snapshot() || [], locations: monitorWindowDesktopLocations,
     browserWindows: monitorBctBrowserWindows, now: Date.now(),
   });
   monitorBctDisplayWindowHwnd = new Map((display?.bindings || []).map((binding) => [String(binding.lineage || ""), binding]));
@@ -1924,14 +1917,14 @@ async function refreshMonitorConversationStateFast(forceBadgeSync = false) {
     const state = await response.json().catch(() => null);
     if (!state?.ok) return;
     const signature = monitorConversationStateSignature(state);
-    const previous = monitorConversationStateSignatureCache || monitorConversationStateSignature(monitorLastAiState);
+    const previous = monitorConversationStateSignatureCache || monitorConversationStateSignature(monitorObservedState.snapshot());
     const forceSync=monitorConversationStateForceBadgeSyncPending;
     monitorConversationStateForceBadgeSyncPending=false;
     monitorConversationStateSignatureCache = signature;
     const changed=signature!==previous;
     if (!changed && !forceSync) return;
-    state.llm_nodes = Array.isArray(monitorLastAiState?.llm_nodes) ? monitorLastAiState.llm_nodes : monitorCachedLlmNodes;
-    monitorLastAiState = state;
+    state.llm_nodes = Array.isArray(monitorObservedState.snapshot()?.llm_nodes) ? monitorObservedState.snapshot().llm_nodes : monitorCachedLlmNodes;
+    monitorObservedState.replace(state);
     pruneMonitorEphemeralGenerationState(state);
     chrome.storage.local.set({ [MONITOR_AI_STATE_CACHE_KEY]: { at: Date.now(), state } }).catch(() => {});
     if(changed) renderWorkers(state);
@@ -1953,7 +1946,7 @@ function rememberMonitorWorkerPlacement(worker, state, location) {
 
   const desktopIndex = Number(location.desktop) - 1;
 
-  const desktopId = monitorDesktopState.desktopIds[desktopIndex] || "";
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[desktopIndex] || "";
 
   if (!desktopId) return;
 
@@ -2051,9 +2044,9 @@ async function requestMonitorConversationRename(key,title,endpoint,manualLock=tr
 
     monitorContextTitles.set(key,{...current,verified_title:verifiedTitle,manual_title:"",context_title:"",rename_pending_title:"",rename_pending_at_ms:0,rename_error:"",manual_locked:Boolean(manualLock),title_source:manualLock?"MANUAL_VERIFIED":"AI_VERIFIED",title_updated_ms:Date.now()});
 
-    if(monitorLastAiState&&Array.isArray(monitorLastAiState.endpoints)){
+    if(monitorObservedState.snapshot()&&Array.isArray(monitorObservedState.snapshot().endpoints)){
 
-      for(const item of monitorLastAiState.endpoints){
+      for(const item of monitorObservedState.snapshot().endpoints){
 
         if(String(item?.conversation_key||"").trim()===key&&String(item?.presence_state||"").toUpperCase()==="OPEN") item.title=verifiedTitle;
 
@@ -2157,13 +2150,13 @@ function resolveWorkerWorkState(worker, state) {
 
 //@@FN_START:scheduleMonitorBctProjectionConvergence
 function scheduleMonitorBctProjectionConvergence(reason = "state-ready") {
-  if (!Array.isArray(monitorBctWindowNodesCache) || !monitorBctWindowNodesCache.length ||
-      !Array.isArray(monitorDesktopState?.desktopIds) || !monitorDesktopState.desktopIds.length ||
+  if (!Array.isArray(monitorNodePanelListState.snapshot()) || !monitorNodePanelListState.snapshot().length ||
+      !Array.isArray(monitorDesktopIdentityState.snapshot()?.desktopIds) || !monitorDesktopIdentityState.snapshot().desktopIds.length ||
       !monitorBctProjectionHasUnresolvedLineage()) return;
   const key = [
     monitorBctProjectionGeneration,
-    monitorDesktopState.desktopIds.join(","),
-    ...monitorBctWindowNodesCache.map((node) =>
+    monitorDesktopIdentityState.snapshot().desktopIds.join(","),
+    ...monitorNodePanelListState.snapshot().map((node) =>
       `${node.instanceId}:${node.sessionId}:${node.windowId}:${node.conversationKey}:${node.active ? 1 : 0}:${node.instanceState}`
     ),
   ].join("|");
@@ -2180,10 +2173,10 @@ function scheduleMonitorBctProjectionConvergence(reason = "state-ready") {
     monitorBctProjectionConvergenceInflight = true;
     try {
       await refreshMonitorBctBrowserWindowGeometry();
-      await refreshMonitorIdentityIndex(monitorLastAiState, true).catch(() => false);
+      await refreshMonitorIdentityIndex(monitorObservedState.snapshot(), true).catch(() => false);
       refreshMonitorBctCurrentSessionWindowHwnd();
       refreshMonitorBctDisplayWindowHwnd();
-      renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+      renderMonitorBctWindowNodes(monitorNodePanelListState.snapshot());
       syncMonitorAllDesktopThumbnailNodeBadges();
     } finally {
       monitorBctProjectionConvergenceInflight = false;

@@ -35,7 +35,7 @@ function fixture(){
  }};
  const commits=[];
  const nativeCalls=[];
- const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorDesktopState:{hostWindowHwnd:"42"},document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
+ const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorDesktopIdentityState:{snapshot:()=>({hostWindowHwnd:"42"})},monitorNodePanelInteractionState:{setScopeSuppressedUntil:()=>{},setSuppressedKey:()=>{},getSuppressedKey:()=>"",clearSuppressedKeyIf:()=>true},document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
   monitorBctNativePreviewToken:"",monitorBctNativePreviewSequence:0,
   monitorNative(message){nativeCalls.push(message);return Promise.resolve({ok:true});},
   stopMonitorBctNativePreview(){nativeCalls.push({type:"monitorDragPreviewStop"});},
@@ -86,6 +86,7 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
  else f.doc.fire(kind,{pointerId:9});
  assert.equal(f.commits.length,0);f.clean();
 }
-assert.match(original,/if \(monitorBctPointerDrag\) cancelMonitorBctNodePointerDrag/);
+const panelView=fs.readFileSync(path.join(__dirname,"../extension/monitor-node-panel-view.js"),"utf8");
+assert.match(panelView,/if \(ports[.]pointerDrag\(\)\) ports[.]cancelDrag/);
 assert.match(original,/document\.addEventListener\("pointerup", endMonitorBctNodePointerDrag, true\)/);
 console.log(JSON.stringify({status:"PASS",cases:11,coverage:"edge-preview-drop,far-cancel,final-pointerup,quick-drag,blur,cancel,lostcapture,cleanup"}));

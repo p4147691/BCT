@@ -229,15 +229,15 @@ function clearMonitorBctNodeDropFeedback() {
 //@@FN_START:clearMonitorConversationRecovery
 function clearMonitorConversationRecovery(){
 
-  const recovery=monitorClosedConversationRecoveryItems(monitorLastAiState);
+  const recovery=monitorClosedConversationRecoveryItems(monitorObservedState.snapshot());
 
-  for(const item of recovery){const key=String(item?.conversation_key||"").trim();if(key){monitorTrashedConversationKeys.add(key);monitorGhostCache.delete(key);monitorHiddenGhosts.delete(key);}}
+  for(const item of recovery){const key=String(item?.conversation_key||"").trim();if(key){monitorRecoveryRecordStore.trashedKeys.add(key);monitorRecoveryRecordStore.ghosts.delete(key);monitorHiddenGhosts.delete(key);}}
 
-  for(const [key,item] of [...monitorTrashRecords]) if(String(item?.trash_source||"list")!=="thumbnail"){monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(String(key));}
+  for(const [key,item] of [...monitorRecoveryRecordStore.trash]) if(String(item?.trash_source||"list")!=="thumbnail"){monitorRecoveryRecordStore.trash.delete(key);monitorRecoveryRecordStore.trashedKeys.add(String(key));}
 
-  monitorRebootSnapshot={...monitorRebootSnapshot,items:[]};
+  monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),items:[]});
 
-  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorLastAiState)renderWorkers(monitorLastAiState); refreshMonitorRecoveryMenu();
+  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRecoverySnapshotState.snapshot()}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); refreshMonitorRecoveryMenu();
 
 }
 //@@FN_END:clearMonitorConversationRecovery
@@ -278,7 +278,7 @@ function recordMonitorExternalWindowDropPointer(event) {
 
 //@@FN_START:syncMonitorExternalWindowDropTargets
 async function syncMonitorExternalWindowDropTargets() {
-  const hostWindowHwnd = String(monitorDesktopState?.hostWindowHwnd || "").trim();
+  const hostWindowHwnd = String(monitorDesktopIdentityState.snapshot()?.hostWindowHwnd || "").trim();
   const screenScale = Math.max(.5, Math.min(4, Number(window.devicePixelRatio) || 1));
   const screenOrigin = monitorExternalWindowDropScreenOrigin || { left: Number(window.screenX || 0), top: Number(window.screenY || 0) };
   const targets = [...monitorDesktopThumbs.querySelectorAll(".monitor-desktop-thumb[data-desktop-id]")]
@@ -313,13 +313,7 @@ function clearMonitorTrashDropTarget() { monitorNodeTrash?.classList.remove("mon
 //@@FN_END:clearMonitorTrashDropTarget
 
 //@@FN_START:commitDesktopUndoRestore
-function commitDesktopUndoRestore(now = Date.now()) {
-
-  if (monitorUndoStack.length) monitorUndoStack.pop();
-
-  resetDesktopUndoSessionExpiry(now);
-
-}
+function commitDesktopUndoRestore(now = Date.now()) { monitorRecoveryUndoSession.pop(now); }
 //@@FN_END:commitDesktopUndoRestore
 
 //@@FN_START:commitMonitorBctNodeDrop
@@ -329,7 +323,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     return;
   }
   const draggedKey = monitorBctDraggedNodeKey;
-  const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
+  const snapshot = Array.isArray(monitorNodePanelListState.snapshot()) ? monitorNodePanelListState.snapshot().slice() : [];
   const semanticSnapshot = monitorUniqueBctConversationNodes(snapshot);
   const dragged = semanticSnapshot.find((node) => node.conversationKey === draggedKey);
   const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
@@ -369,7 +363,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       });
     });
     monitorBctNodeReorderPending = true;
-    monitorBctWindowNodesCache = optimisticSnapshot;
+    monitorNodePanelListState.replace(optimisticSnapshot);
     finishMonitorBctNodeDrag();
     renderMonitorBctWindowNodes(optimisticSnapshot);
     try {
@@ -385,8 +379,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
         2200,
       );
     } catch (error) {
-      if (monitorBctWindowNodesCache === optimisticSnapshot) {
-        monitorBctWindowNodesCache = snapshot;
+      if (monitorNodePanelListState.snapshot() === optimisticSnapshot) {
+        monitorNodePanelListState.replace(snapshot);
         renderMonitorBctWindowNodes(snapshot);
       }
       setMonitorStatus(`대화망 이동 실패 · ${error?.message || error}`, false, 4200);
@@ -406,7 +400,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     });
   });
   monitorBctNodeReorderPending = true;
-  monitorBctWindowNodesCache = optimisticSnapshot;
+  monitorNodePanelListState.replace(optimisticSnapshot);
   finishMonitorBctNodeDrag();
   renderMonitorBctWindowNodes(optimisticSnapshot);
   try {
@@ -417,8 +411,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     setMonitorStatus("노드 표시 순서를 저장했습니다.", true, 2200);
   } catch (error) {
     // A newer RCC refresh replaces this exact snapshot. Never overwrite it.
-    if (monitorBctWindowNodesCache === optimisticSnapshot) {
-      monitorBctWindowNodesCache = snapshot;
+    if (monitorNodePanelListState.snapshot() === optimisticSnapshot) {
+      monitorNodePanelListState.replace(snapshot);
       renderMonitorBctWindowNodes(snapshot);
     }
     setMonitorStatus(`노드 순서 저장 실패 · ${error?.message || error}`, false, 4200);
@@ -433,7 +427,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
   if (monitorCreateDesktopDropBusy) return { ok: false, error: "DROP_BUSY" };
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!sourceDesktopId || !/^\d+$/.test(hostHwnd) || hostHwnd === "0") throw new Error("Monitor host HWND 또는 원본 데스크톱을 확인할 수 없습니다.");
 
@@ -455,7 +449,7 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
   try {
 
-    const beforeIds = new Set(monitorDesktopState.desktopIds);
+    const beforeIds = new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result = await monitorNative({ type: "createVirtualDesktop" });
 
@@ -481,11 +475,11 @@ async function createDesktopForDrop(sourceDesktopId, hwnds, copyMode = false) {
 
     const failed = success ? [] : [...exactHwnds];
 
-    monitorDesktopState.observedDesktopId = createdId;
+    monitorDesktopIdentityState.patch({observedDesktopId: createdId});
 
     renderVirtualDesktops(result);
 
-    const createdIndex = monitorDesktopState.desktopIds.indexOf(createdId);
+    const createdIndex = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(createdId);
 
     if (createdIndex >= 0) selectVirtualDesktopPreview(createdIndex);
 
@@ -548,17 +542,17 @@ function createMonitorWorkRecoveryButton() {
 //@@FN_START:deleteMonitorRecoveryRecord
 function deleteMonitorRecoveryRecord(key){
 
-  key=String(key||""); if(!key)return; monitorTrashRecords.delete(key); monitorTrashedConversationKeys.add(key); monitorGhostCache.delete(key); monitorHiddenGhosts.delete(key);
+  key=String(key||""); if(!key)return; monitorRecoveryRecordStore.trash.delete(key); monitorRecoveryRecordStore.trashedKeys.add(key); monitorRecoveryRecordStore.ghosts.delete(key); monitorHiddenGhosts.delete(key);
 
-  const items=(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[]).filter((x)=>String(x?.conversation_key||"").trim()!==key); monitorRebootSnapshot={...monitorRebootSnapshot,items};
+  const items=(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[]).filter((x)=>String(x?.conversation_key||"").trim()!==key); monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),items});
 
-  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorLastAiState)renderWorkers(monitorLastAiState); refreshMonitorRecoveryMenu();
+  chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRecoverySnapshotState.snapshot()}); monitorPublishSharedRebootSnapshot(); monitorGhostPersist(true); persistMonitorTrashedNodes(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); refreshMonitorRecoveryMenu();
 
 }
 //@@FN_END:deleteMonitorRecoveryRecord
 
 //@@FN_START:deleteMonitorTrashRecord
-function deleteMonitorTrashRecord(key){key=String(key||"");monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(key);persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);refreshMonitorRecoveryMenu();}
+function deleteMonitorTrashRecord(key){key=String(key||"");monitorRecoveryRecordStore.trash.delete(key);monitorRecoveryRecordStore.trashedKeys.add(key);persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());refreshMonitorRecoveryMenu();}
 //@@FN_END:deleteMonitorTrashRecord
 
 //@@FN_START:deleteMonitorTrashedDesktop
@@ -596,24 +590,14 @@ function endMonitorBctNodePointerDrag(event) {
 //@@FN_END:endMonitorBctNodePointerDrag
 
 //@@FN_START:expireDesktopUndoSession
-function expireDesktopUndoSession(now = Date.now()) {
-
-  if (!monitorUndoStack.length || !monitorUndoSessionExpiresAt || now < monitorUndoSessionExpiresAt) return false;
-
-  monitorUndoStack.length = 0;
-
-  monitorUndoSessionExpiresAt = 0;
-
-  return true;
-
-}
+function expireDesktopUndoSession(now = Date.now()) { return monitorRecoveryUndoSession.expire(now); }
 //@@FN_END:expireDesktopUndoSession
 
 //@@FN_START:finishMonitorBctNodeDrag
 function finishMonitorBctNodeDrag() {
   stopMonitorBctNativePreview();
-  const suppressedKey = monitorBctSuppressedClickKey;
-  monitorBctSuppressScopeClickUntil = Date.now() + 350;
+  const suppressedKey = monitorNodePanelInteractionState.getSuppressedKey();
+  monitorNodePanelInteractionState.setScopeSuppressedUntil(Date.now() + 350);
   monitorBctDraggedNodeKey = "";
   clearMonitorBctNodeDropFeedback();
   monitorWorkers?.querySelectorAll?.(".monitor-bct-node-row.is-dragging")
@@ -624,7 +608,7 @@ function finishMonitorBctNodeDrag() {
   monitorWorkers?.querySelectorAll?.(".monitor-bct-node-list-available")
     .forEach((list) => list.classList.remove("monitor-bct-node-list-available"));
   globalThis.setTimeout(() => {
-    if (monitorBctSuppressedClickKey === suppressedKey) monitorBctSuppressedClickKey = "";
+    monitorNodePanelInteractionState.clearSuppressedKeyIf(suppressedKey);
   }, 400);
 }
 //@@FN_END:finishMonitorBctNodeDrag
@@ -650,7 +634,7 @@ async function finishMonitorDesktopPointerDrag(event) {
 
   setTimeout(() => delete drag.button.dataset.monitorDropSuppressClick, 0);
 
-  const trashTarget = drag.sourceDesktopId !== monitorDesktopState.currentDesktopId ? monitorTrashDropTargetAt(event.clientX,event.clientY) : null;
+  const trashTarget = drag.sourceDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId ? monitorTrashDropTargetAt(event.clientX,event.clientY) : null;
 
   const createTarget = trashTarget ? null : monitorCreateDesktopDropTargetAt(event.clientX, event.clientY);
 
@@ -658,7 +642,7 @@ async function finishMonitorDesktopPointerDrag(event) {
 
   if (trashTarget) {
 
-    const sourceIndex=monitorDesktopState.desktopIds.indexOf(drag.sourceDesktopId);
+    const sourceIndex=monitorDesktopIdentityState.snapshot().desktopIds.indexOf(drag.sourceDesktopId);
 
     if(sourceIndex>=0){await removeVirtualDesktopPreview(sourceIndex,{trashDrop:true});monitorNodeTrash.classList.add("monitor-node-trash-drop-success");setTimeout(()=>clearMonitorTrashDropTarget(),650);}
 
@@ -848,7 +832,7 @@ async function finishMonitorWorkerRowPointerDrag(event) {
 
     const targetKey=String(rowTarget.dataset.conversationKey||"");
 
-    if(monitorReorderWorkerKey(drag.sourceDesktopId,drag.key,targetKey,after)&&monitorLastAiState)renderWorkers(monitorLastAiState);
+    if(monitorReorderWorkerKey(drag.sourceDesktopId,drag.key,targetKey,after)&&monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   }
 
@@ -860,7 +844,7 @@ function flashDesktopTransition() {
 
   monitorTransitionFlash.classList.remove("active");
 
-  const button=[...monitorDesktopThumbs.children].find((node)=>Number(node.dataset.index)===monitorDesktopState.selectedIndex);
+  const button=[...monitorDesktopThumbs.children].find((node)=>Number(node.dataset.index)===monitorDesktopIdentityState.snapshot().selectedIndex);
 
   if(!button)return;
 
@@ -878,7 +862,7 @@ function flashDesktopTransition() {
 //@@FN_START:getDesktopBrowserWindowHandles
 async function getDesktopBrowserWindowHandles(desktopId) {
 
-  const hostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
+  const hostHwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
 
   if (!/^\d+$/.test(hostHwnd) || hostHwnd === "0") throw new Error("Monitor host HWND를 확인할 수 없어 데스크톱 이동을 중단했습니다.");
 
@@ -910,16 +894,8 @@ function invalidateMonitorDesktopFrames(...desktopIds) {
 
   // Thumbnail batch generation only changes for a full invalidation.
 
-  const ids = new Set(desktopIds.filter(Boolean).map(String));
-  if (!ids.size) {
-    monitorFrameGeneration += 1;
-    monitorFrameDesktopGenerations.clear();
-    monitorThumbBatchGeneration += 1;
-  } else {
-    for (const desktopId of ids) {
-      monitorFrameDesktopGenerations.set(desktopId, Number(monitorFrameDesktopGenerations.get(desktopId) || 0) + 1);
-    }
-  }
+  const ids = monitorDesktopFrameGenerationController.invalidate(desktopIds);
+  if (!ids.size) monitorThumbBatchGeneration += 1;
 
   for (const key of [...monitorFrameCache.keys()]) {
 
@@ -935,7 +911,7 @@ function invalidateMonitorDesktopFrames(...desktopIds) {
 //@@FN_END:invalidateMonitorDesktopFrames
 
 //@@FN_START:monitorActDesktopVisualForDesktop
-function monitorActDesktopVisualForDesktop(desktopId, state = monitorLastAiState) {
+function monitorActDesktopVisualForDesktop(desktopId, state = monitorObservedState.snapshot()) {
 
   const visual = state?.node_state?.desktop_visual;
 
@@ -971,11 +947,11 @@ function monitorApplySharedDesktopSelection(desktopId) {
 
   const id = String(desktopId || "").trim(); monitorSharedSelectedDesktopId = id;
 
-  if (!monitorSharedSelectionReady || !id || !monitorDesktopState.desktopIds.includes(id) || monitorDesktopState.observedDesktopId === id) return;
+  if (!monitorSharedSelectionReady || !id || !monitorDesktopIdentityState.snapshot().desktopIds.includes(id) || monitorDesktopIdentityState.snapshot().observedDesktopId === id) return;
 
-  monitorDesktopState.observedDesktopId = id;
+  monitorDesktopIdentityState.patch({observedDesktopId: id});
 
-  renderVirtualDesktops({ count:monitorDesktopState.count, currentIndex:monitorDesktopState.currentIndex, desktopIds:monitorDesktopState.desktopIds, currentDesktopId:monitorDesktopState.currentDesktopId, hostDesktopId:monitorDesktopState.hostDesktopId, hostWindowHwnd:monitorDesktopState.hostWindowHwnd });
+  renderVirtualDesktops({ count:monitorDesktopIdentityState.snapshot().count, currentIndex:monitorDesktopIdentityState.snapshot().currentIndex, desktopIds:monitorDesktopIdentityState.snapshot().desktopIds, currentDesktopId:monitorDesktopIdentityState.snapshot().currentDesktopId, hostDesktopId:monitorDesktopIdentityState.snapshot().hostDesktopId, hostWindowHwnd:monitorDesktopIdentityState.snapshot().hostWindowHwnd });
 
   refreshObservedWindows();
 
@@ -1075,33 +1051,18 @@ function monitorBctStopDragInput(drag) {
 
 //@@FN_START:monitorClosedConversationRecoveryItems
 function monitorClosedConversationRecoveryItems(state = null) {
-
-  const byKey=new Map();
-
-  for(const g of monitorGhostCache.values()){const key=String(g?.conversation_key||"").trim();if(!g.open&&key&&!monitorTrashedConversationKeys.has(key))byKey.set(key,{...g,recovery_source:"일반 종료"});}
-
-  const endpoints=Array.isArray(state?.endpoints)?state.endpoints:[]; let sharedChanged=false;
-
-  const sharedItems=(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[]).map((snap)=>{
-
-    const key=String(snap?.conversation_key||"").trim(); if(!key)return snap; const ep=endpoints.find((x)=>String(x?.conversation_key||"").trim()===key)||null;
-
-    const firstSeen=Number(monitorGhostTime(ep?.first_seen_at)||snap?.first_seen_ms||0); const closedAt=Number(monitorGhostTime(ep?.closed_at)||snap?.closed_at_ms||snap?.captured_at_ms||monitorRebootSnapshot?.captured_at_ms||0);
-
-    if(firstSeen!==Number(snap?.first_seen_ms||0)||closedAt!==Number(snap?.closed_at_ms||0))sharedChanged=true;
-
-    return {...snap,first_seen_ms:firstSeen,closed_at_ms:closedAt};
-
+  const result = monitorRecoveryInventoryController.project({
+    ghosts: monitorRecoveryRecordStore.ghosts.values(),
+    snapshot: monitorRecoverySnapshotState.snapshot(),
+    trashedKeys: monitorRecoveryRecordStore.trashedKeys,
+    endpoints: Array.isArray(state?.endpoints) ? state.endpoints : []
   });
-
-  if(sharedChanged){monitorRebootSnapshot={...monitorRebootSnapshot,items:sharedItems};chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot});monitorPublishSharedRebootSnapshot();}
-
-  const openKeys=new Set(endpoints.filter((x)=>String(x?.presence_state||"").toUpperCase()==="OPEN").map((x)=>String(x?.conversation_key||"").trim()).filter(Boolean));
-
-  for(const snap of sharedItems){const key=String(snap?.conversation_key||"").trim();if(!key||monitorTrashedConversationKeys.has(key)||openKeys.has(key))continue;byKey.set(key,{...snap,open:false,recovery_source:"재부팅 이전"});}
-
-  return [...byKey.values()].sort((a,b)=>{const ar=a.recovery_source==="재부팅 이전",br=b.recovery_source==="재부팅 이전";if(ar&&br)return Number(a.desktop||999)-Number(b.desktop||999)||Number(a.slot||999)-Number(b.slot||999);if(ar!==br)return ar?-1:1;return Number(b.closed_at_ms||b.captured_at_ms||0)-Number(a.closed_at_ms||a.captured_at_ms||0);});
-
+  if (result.updatedSnapshot) {
+    monitorRecoverySnapshotState.replace(result.updatedSnapshot);
+    chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRecoverySnapshotState.snapshot()});
+    monitorPublishSharedRebootSnapshot();
+  }
+  return result.items;
 }
 //@@FN_END:monitorClosedConversationRecoveryItems
 
@@ -1162,17 +1123,11 @@ function monitorDesktopDropTargetAt(clientX, clientY) {
 //@@FN_END:monitorDesktopDropTargetAt
 
 //@@FN_START:monitorDesktopFrameGeneration
-function monitorDesktopFrameGeneration(desktopId) {
-  const key = String(desktopId || "");
-  return `${monitorFrameGeneration}.${Number(monitorFrameDesktopGenerations.get(key) || 0)}`;
-}
+function monitorDesktopFrameGeneration(desktopId) { return monitorDesktopFrameGenerationController.generation(desktopId); }
 //@@FN_END:monitorDesktopFrameGeneration
 
 //@@FN_START:monitorDesktopManagementMode
-function monitorDesktopManagementMode(desktopId) {
-  const value = String(monitorDesktopManagementModes[String(desktopId || "")] || "OBSERVE_ONLY").toUpperCase();
-  return MONITOR_DESKTOP_MANAGEMENT_MODES.has(value) ? value : "OBSERVE_ONLY";
-}
+function monitorDesktopManagementMode(desktopId) { return monitorDesktopModeController.get(desktopId); }
 //@@FN_END:monitorDesktopManagementMode
 
 //@@FN_START:monitorDesktopManagementModeText
@@ -1184,15 +1139,11 @@ function monitorDesktopManagementModeText(mode) {
 //@@FN_END:monitorDesktopManagementModeText
 
 //@@FN_START:monitorDesktopManagementNextMode
-function monitorDesktopManagementNextMode(mode) {
-  if (mode === "OBSERVE_ONLY") return "MANAGED";
-  if (mode === "MANAGED") return "PROTECTED";
-  return "OBSERVE_ONLY";
-}
+function monitorDesktopManagementNextMode(mode) { return monitorDesktopModeController.next(mode); }
 //@@FN_END:monitorDesktopManagementNextMode
 
 //@@FN_START:monitorDesktopNodeSnapshots
-function monitorDesktopNodeSnapshots(desktopId,index,state=monitorLastAiState){const targetDesktop=Number(index)+1,out=[];for(const worker of monitorWorkersForState(state||{})){const key=String(worker?.conversation_key||worker?.__endpoint?.conversation_key||"").trim();if(!key)continue;const loc=monitorCanonicalPhysicalLocation(worker,state||{}),actNode=monitorActBrowserNode(worker,state||{}),sameId=desktopId&&String(actNode?.desktop_id||"").trim()===String(desktopId);if(!(sameId||Number(loc?.desktop)===targetDesktop))continue;out.push({conversation_key:key,profile_id:String(worker?.profile_id||worker?.__endpoint?.profile_id||"").toUpperCase(),title:String(worker?.task_title||worker?.title||worker?.__endpoint?.title||""),node_label:String(actNode?.node_label||loc?.label||""),slot:Number(loc?.slot||0)||null,hwnd:String(loc?.hwnd||actNode?.hwnd||"")});}return out;}
+function monitorDesktopNodeSnapshots(desktopId,index,state=monitorObservedState.snapshot()){const targetDesktop=Number(index)+1,out=[];for(const worker of monitorWorkersForState(state||{})){const key=String(worker?.conversation_key||worker?.__endpoint?.conversation_key||"").trim();if(!key)continue;const loc=monitorCanonicalPhysicalLocation(worker,state||{}),actNode=monitorActBrowserNode(worker,state||{}),sameId=desktopId&&String(actNode?.desktop_id||"").trim()===String(desktopId);if(!(sameId||Number(loc?.desktop)===targetDesktop))continue;out.push({conversation_key:key,profile_id:String(worker?.profile_id||worker?.__endpoint?.profile_id||"").toUpperCase(),title:String(worker?.task_title||worker?.title||worker?.__endpoint?.title||""),node_label:String(actNode?.node_label||loc?.label||""),slot:Number(loc?.slot||0)||null,hwnd:String(loc?.hwnd||actNode?.hwnd||"")});}return out;}
 //@@FN_END:monitorDesktopNodeSnapshots
 
 //@@FN_START:monitorDesktopScrollStep
@@ -1201,8 +1152,8 @@ function monitorDesktopScrollStep(){const tile=monitorDesktopThumbs.querySelecto
 
 //@@FN_START:monitorIsActiveDesktopRenderer
 function monitorIsActiveDesktopRenderer() {
-  const hostDesktopId = String(monitorDesktopState.hostDesktopId || "").trim();
-  const currentDesktopId = String(monitorDesktopState.currentDesktopId || "").trim();
+  const hostDesktopId = String(monitorDesktopIdentityState.snapshot().hostDesktopId || "").trim();
+  const currentDesktopId = String(monitorDesktopIdentityState.snapshot().currentDesktopId || "").trim();
   // Preserve startup/recovery until native host identity is known. After that,
   // only the Monitor on the current Windows virtual desktop may capture pixels.
   if (!hostDesktopId || !currentDesktopId) return true;
@@ -1211,7 +1162,7 @@ function monitorIsActiveDesktopRenderer() {
 //@@FN_END:monitorIsActiveDesktopRenderer
 
 //@@FN_START:monitorMinimizedNodeSlotsByDesktop
-function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
+function monitorMinimizedNodeSlotsByDesktop(state = monitorObservedState.snapshot()) {
   return monitorMinimizedNodeBadgeContract?.slotsByDesktop?.({
     locations: monitorWindowDesktopLocations,
     numbersForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state),
@@ -1220,7 +1171,7 @@ function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
 //@@FN_END:monitorMinimizedNodeSlotsByDesktop
 
 //@@FN_START:monitorMinimizedNodeTokensByDesktop
-function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
+function monitorMinimizedNodeTokensByDesktop(state = monitorObservedState.snapshot()) {
   return monitorMinimizedNodeBadgeContract?.tokensByDesktop?.({
     locations: monitorWindowDesktopLocations,
     tokensForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
@@ -1228,7 +1179,7 @@ function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
 }
 //@@FN_END:monitorMinimizedNodeTokensByDesktop
 //@@FN_START:monitorObservedDesktopForHwnd
-function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
+function monitorObservedDesktopForHwnd(hwnd, state = monitorObservedState.snapshot()) {
   const key=String(hwnd||"").trim();
   if(!key||!state)return null;
   const observer=state?.node_state?.observer||null;
@@ -1244,7 +1195,7 @@ function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
   const remembered=monitorWindowDesktopLocations.get(key);
   const desktopId=String(remembered?.desktopId||"").trim();
   if(!desktopId)return null;
-  const desktop=monitorDesktopState.desktopIds.indexOf(desktopId)+1;
+  const desktop=monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId)+1;
   return {desktopId,desktop:desktop>0?desktop:0,authority:"MONITOR_NATIVE_EVENT"};
 }
 //@@FN_END:monitorObservedDesktopForHwnd
@@ -1253,11 +1204,8 @@ function monitorObservedDesktopForHwnd(hwnd, state = monitorLastAiState) {
 function monitorSetDesktopManagementMode(desktopId, nextMode) {
   const id = String(desktopId || "").trim();
   const mode = String(nextMode || "").toUpperCase();
-  if (!id || !MONITOR_DESKTOP_MANAGEMENT_MODES.has(mode)) return;
-  if (monitorDesktopManagementMode(id) === mode) return;
-  monitorDesktopManagementModes = { ...monitorDesktopManagementModes, [id]: mode };
-  chrome.storage.local.set({ [MONITOR_DESKTOP_MANAGEMENT_MODE_KEY]: monitorDesktopManagementModes }).catch(() => {});
-  setMonitorStatus(`D${Math.max(1, monitorDesktopState.desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)} 모드`, true);
+  if (!monitorDesktopModeController.set(id, mode)) return;
+  setMonitorStatus(`D${Math.max(1, monitorDesktopIdentityState.snapshot().desktopIds.indexOf(id) + 1)} · ${monitorDesktopManagementModeText(mode)}`, true);
   syncDesktopSwitcher();
 }
 //@@FN_END:monitorSetDesktopManagementMode
@@ -1279,14 +1227,14 @@ function monitorTrashRecordForKey(key,sourceKind="list"){
 
   key=String(key||"").trim(); if(!key)return null;
 
-  const state=monitorLastAiState, ghost=monitorGhostCache.get(key)||{};
+  const state=monitorObservedState.snapshot(), ghost=monitorRecoveryRecordStore.ghosts.get(key)||{};
 
   const worker=state?monitorWorkersForState(state).find((x)=>String(x?.conversation_key||"").trim()===key):null;
 
   const endpoint=worker&&state?endpointForMonitorWorker(worker,state):(Array.isArray(state?.endpoints)?state.endpoints.find((x)=>String(x?.conversation_key||"").trim()===key):null);
 
   const em=endpoint?.metadata||{}; const desktop=Number(ghost?.desktop||em.desktop_id||em.desktop_index||0), slot=Number(ghost?.slot||em.slot_index||0);
-  const bctNode=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).find((item)=>String(item?.conversationKey||"")===key)||{};
+  const bctNode=(Array.isArray(monitorNodePanelListState.snapshot())?monitorNodePanelListState.snapshot():[]).find((item)=>String(item?.conversationKey||"")===key)||{};
 
   return {...ghost,conversation_key:key,profile_id:String(ghost?.profile_id||worker?.profile_id||endpoint?.profile_id||"").toUpperCase(),title:String(ghost?.title||endpoint?.title||bctNode?.title||""),meaningful_title:String(ghost?.meaningful_title||worker?.task_title||endpoint?.title||bctNode?.title||""),node_label:String(bctNode?.nodeLabel||ghost?.node_label||""),network_id:String(bctNode?.scopeId||ghost?.network_id||""),network_name:String(bctNode?.scopeName||ghost?.network_name||""),role_tags:Array.isArray(bctNode?.roleTags)?[...bctNode.roleTags]:(Array.isArray(ghost?.role_tags)?ghost.role_tags:[]),desktop:Number.isInteger(desktop)&&desktop>0?desktop:null,slot:Number.isInteger(slot)&&slot>0?slot:null,first_seen_ms:Number(ghost?.first_seen_ms||monitorGhostTime(endpoint?.first_seen_at)||0),closed_at_ms:Number(ghost?.closed_at_ms||monitorGhostTime(endpoint?.closed_at)||0),trash_source:sourceKind==="thumbnail"?"thumbnail":"list",trashed_at_ms:Date.now()};
 
@@ -1326,18 +1274,12 @@ async function moveMonitorWindowToDesktop(hwnd, sourceDesktopId, targetDesktopId
 //@@FN_START:openMonitorTrashRecovery
 function openMonitorTrashRecovery() {
   if (!monitorNodeTrash || !monitorClosedRecoveryMenu) return;
-  if (!monitorClosedConversationPickerOpen) monitorNodeTrash.click();
+  if (!monitorRecoveryPickerState.isOpen()) monitorNodeTrash.click();
 }
 //@@FN_END:openMonitorTrashRecovery
 
 //@@FN_START:peekDesktopUndoSnapshot
-function peekDesktopUndoSnapshot(now = Date.now()) {
-
-  expireDesktopUndoSession(now);
-
-  return monitorUndoStack[monitorUndoStack.length - 1] || null;
-
-}
+function peekDesktopUndoSnapshot(now = Date.now()) { return monitorRecoveryUndoSession.peek(now); }
 //@@FN_END:peekDesktopUndoSnapshot
 
 //@@FN_START:performMonitorWindowDrop
@@ -1355,9 +1297,9 @@ function persistMonitorTrashedDesktops(){chrome.storage.local.set({[MONITOR_TRAS
 //@@FN_START:persistMonitorTrashedNodes
 function persistMonitorTrashedNodes(){
 
-  const records=[...monitorTrashRecords.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX);
+  const records=[...monitorRecoveryRecordStore.trash.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0)).slice(0,MONITOR_GHOST_CACHE_MAX);
 
-  chrome.storage.local.set({[MONITOR_TRASHED_NODES_KEY]:[...monitorTrashedConversationKeys],[MONITOR_TRASH_RECORDS_KEY]:records});
+  chrome.storage.local.set({[MONITOR_TRASHED_NODES_KEY]:[...monitorRecoveryRecordStore.trashedKeys],[MONITOR_TRASH_RECORDS_KEY]:records});
 
 }
 //@@FN_END:persistMonitorTrashedNodes
@@ -1397,25 +1339,17 @@ function primeSelectedDesktopPreview(desktopId) {
 //@@FN_END:primeSelectedDesktopPreview
 
 //@@FN_START:pushDesktopUndoSnapshot
-function pushDesktopUndoSnapshot(snapshot, now = Date.now()) {
-
-  monitorUndoStack.push({ ...snapshot });
-
-  while (monitorUndoStack.length > MONITOR_UNDO_MAX) monitorUndoStack.shift();
-
-  resetDesktopUndoSessionExpiry(now);
-
-}
+function pushDesktopUndoSnapshot(snapshot, now = Date.now()) { monitorRecoveryUndoSession.push(snapshot, now); }
 //@@FN_END:pushDesktopUndoSnapshot
 
 //@@FN_START:refreshMonitorRecoveryMenu
 function refreshMonitorRecoveryMenu(){
 
-  if(!(monitorClosedConversationPickerOpen&&monitorClosedRecoveryMenu&&monitorLastAiState))return;
+  if(!(monitorRecoveryPickerState.isOpen()&&monitorClosedRecoveryMenu&&monitorObservedState.snapshot()))return;
 
   const panes=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane-scroll')].map((el)=>({cls:el.parentElement?.className||'',top:el.scrollTop}));
 
-  monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorLastAiState));
+  monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorObservedState.snapshot()));
 
   for(const saved of panes){const pane=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane')].find((el)=>(el.className||'')===saved.cls);const scroll=pane?.querySelector('.monitor-trash-pane-scroll');if(scroll)scroll.scrollTop=saved.top;}
 
@@ -1526,7 +1460,7 @@ async function refreshVirtualDesktops() {
 //@@FN_START:rememberMonitorDesktopWindows
 function rememberMonitorDesktopWindows(desktopId, windows) {
 
-  const index = monitorDesktopState.desktopIds.indexOf(desktopId);
+  const index = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId);
 
   if (index < 0) return;
 
@@ -1581,7 +1515,7 @@ function rememberMonitorDesktopWindows(desktopId, windows) {
 
   }
 
-  if (changed && monitorLastAiState) renderWorkers(monitorLastAiState);
+  if (changed && monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
 
 }
 //@@FN_END:rememberMonitorDesktopWindows
@@ -1599,11 +1533,11 @@ async function removeCreatedDesktopIfSafe(snapshot) {
 
   await refreshVirtualDesktops();
 
-  const index = monitorDesktopState.desktopIds.indexOf(createdId); if (index < 0 || monitorDesktopState.count <= 1) return;
+  const index = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(createdId); if (index < 0 || monitorDesktopIdentityState.snapshot().count <= 1) return;
 
-  const sourceIndex = Math.max(0, monitorDesktopState.desktopIds.indexOf(String(snapshot.sourceDesktopId || "")));
+  const sourceIndex = Math.max(0, monitorDesktopIdentityState.snapshot().desktopIds.indexOf(String(snapshot.sourceDesktopId || "")));
 
-  const fallbackIndex = sourceIndex === index ? (index > 0 ? index - 1 : Math.min(1, monitorDesktopState.count - 1)) : sourceIndex;
+  const fallbackIndex = sourceIndex === index ? (index > 0 ? index - 1 : Math.min(1, monitorDesktopIdentityState.snapshot().count - 1)) : sourceIndex;
 
   await monitorNative({ type: "removeVirtualDesktop", index, fallbackIndex }).catch(() => null);
 
@@ -1615,11 +1549,11 @@ async function removeCreatedDesktopIfSafe(snapshot) {
 //@@FN_START:removeVirtualDesktopPreview
 async function removeVirtualDesktopPreview(index, options={}) {
 
-  if (monitorDesktopState.count <= 1 || index < 0 || index >= monitorDesktopState.count) return;
+  if (monitorDesktopIdentityState.snapshot().count <= 1 || index < 0 || index >= monitorDesktopIdentityState.snapshot().count) return;
 
-  const desktopId = monitorDesktopState.desktopIds[index] || null;
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[index] || null;
 
-  const fallbackIndex = index < monitorDesktopState.count - 1 ? index + 1 : index - 1;
+  const fallbackIndex = index < monitorDesktopIdentityState.snapshot().count - 1 ? index + 1 : index - 1;
 
   try {
 
@@ -1641,9 +1575,9 @@ async function removeVirtualDesktopPreview(index, options={}) {
 
     const resultIds = Array.isArray(result.desktopIds) ? result.desktopIds : [];
 
-    if (monitorDesktopState.observedDesktopId === desktopId) {
+    if (monitorDesktopIdentityState.snapshot().observedDesktopId === desktopId) {
 
-      monitorDesktopState.observedDesktopId = resultIds[Math.min(index, Math.max(0, resultIds.length - 1))] || resultIds[0] || null;
+      monitorDesktopIdentityState.patch({observedDesktopId: resultIds[Math.min(index, Math.max(0, resultIds.length - 1))] || resultIds[0] || null});
 
     }
 
@@ -1666,7 +1600,7 @@ async function removeVirtualDesktopPreview(index, options={}) {
 function renderLightweightDesktopCards(reason = "EXPLICIT") {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) { monitorDesktopThumbs.replaceChildren(); return true; }
 
-  const ids = Array.isArray(monitorDesktopState.desktopIds) ? monitorDesktopState.desktopIds.filter(Boolean) : [];
+  const ids = Array.isArray(monitorDesktopIdentityState.snapshot().desktopIds) ? monitorDesktopIdentityState.snapshot().desktopIds.filter(Boolean) : [];
 
   if (!ids.length) return false;
 
@@ -1683,9 +1617,9 @@ function renderLightweightDesktopCards(reason = "EXPLICIT") {
 
     button.dataset.desktopId = desktopId; button.dataset.index = String(index);
 
-    button.classList.toggle("selected", index === monitorDesktopState.selectedIndex);
+    button.classList.toggle("selected", index === monitorDesktopIdentityState.snapshot().selectedIndex);
 
-    button.classList.toggle("current", index === monitorDesktopState.currentIndex);
+    button.classList.toggle("current", index === monitorDesktopIdentityState.snapshot().currentIndex);
 
     const visual = document.createElement("span");
 
@@ -1732,136 +1666,60 @@ function renderLightweightDesktopCards(reason = "EXPLICIT") {
 //@@FN_END:renderLightweightDesktopCards
 
 //@@FN_START:renderMonitorClosedConversationRecoveryPanel
+let monitorRecoveryPanelView = null;
 function renderMonitorClosedConversationRecoveryPanel(state) {
-
-  const panel=document.createElement("div"); panel.className="monitor-closed-conversation-panel monitor-trash-recovery-panel";
-
-  const items=monitorClosedConversationRecoveryItems(state);
-
-  const makeHeader=(label,count,onClear,extras=[])=>{const head=document.createElement("div");head.className="monitor-trash-pane-header";const title=document.createElement("strong");title.textContent=`${label} (${count})`;const actions=document.createElement("span");actions.className="monitor-trash-pane-actions";for(const button of extras)if(button)actions.append(button);const clear=document.createElement("button");clear.type="button";clear.className="monitor-trash-clear-all";clear.textContent="다 비움";clear.disabled=!count;clear.addEventListener("click",(e)=>{e.stopPropagation();if(confirm(`${label} 항목을 모두 비울까요?`))onClear();});actions.append(clear);head.append(title,actions);return head;};
-
-  const recoveryWorkers=monitorWorkersForState(state||{});
-
-  const recoveryWorkerByKey=new Map(recoveryWorkers.map((worker)=>[String(worker?.conversation_key||worker?.__endpoint?.conversation_key||"").trim(),worker]).filter(([key])=>key));
-
-  const recoveryEndpoints=Array.isArray(state?.endpoints)?state.endpoints:[];
-
-  const recoveryNodeStatus=(key,record=null)=>{
-
-    key=String(key||"").trim();
-
-    const endpoint=recoveryEndpoints.find((ep)=>String(ep?.conversation_key||"").trim()===key)||null;
-
-    const open=String(endpoint?.presence_state||"").toUpperCase()==="OPEN";
-
-    const worker=recoveryWorkerByKey.get(key)||null;
-
-    const work=String(worker?resolveWorkerWorkState(worker,state):(record?.work_status||record?.task_status||"")).trim().toLowerCase();
-
-    if(["running","working","busy","executing","in_progress"].includes(work))return {label:"처리 중",tone:"processing"};
-
-    if(["waiting_resource","waiting","paused","queued","pending"].includes(work))return {label:"대기 중",tone:"waiting"};
-
-    if(["needs_review","failed","failure","blocked","recovery","recovery_pending","degraded"].includes(work))return {label:"확인 필요",tone:"attention"};
-
-    if(["succeeded","completed","complete","done"].includes(work))return {label:"완료",tone:"complete"};
-
-    if(open)return {label:"활동 중",tone:"active"};
-
-    return {label:"닫힘",tone:"closed"};
-
-  };
-
-  const appendRecoveryStatus=(row,key,record=null)=>{const status=recoveryNodeStatus(key,record);const badge=document.createElement("span");badge.className=`monitor-trash-node-status monitor-trash-node-status-${status.tone}`;badge.textContent=status.label;badge.title=`현재 상태: ${status.label}`;row.append(badge);};
-
-  const noteRecords=[...monitorTrashedNotes.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));
-
-  const notePane=document.createElement("section");notePane.className="monitor-trash-pane monitor-trash-note-pane";notePane.append(makeHeader("삭제된 메모",noteRecords.length,clearMonitorTrashedNotes));const noteScroll=document.createElement("div");noteScroll.className="monitor-trash-pane-scroll";
-
-  if(!noteRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";noteScroll.append(empty);}else for(const note of noteRecords){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-note-row";const info=document.createElement("div");info.className="monitor-closed-conversation-info monitor-trash-note-info";const noteTitle=document.createElement("strong");noteTitle.textContent=note.title||monitorNotesFeature.titleFromText(note.body)||"메모";const lines=String(note.body||"").split(/\r?\n/);const firstLineIndex=lines.findIndex((line)=>line.trim());const notePreview=document.createElement("span");notePreview.textContent=(firstLineIndex>=0?lines.slice(firstLineIndex+1).join(" "):"").replace(/\s+/g," ").trim()||"내용 없음";info.append(noteTitle,notePreview);const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashedNote(note.id);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();deleteMonitorTrashedNote(note.id);});row.append(info,restore,del);noteScroll.append(row);}notePane.append(noteScroll);panel.append(notePane);
-
-  const renderTrashRows=(source,container)=>{const records=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")===source).sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));if(!records.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";container.append(empty);return;}for(const ghost of records){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-record-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost),at=Number(ghost?.trashed_at_ms||0),scope=String(ghost?.network_name||"미소속"),roles=Array.isArray(ghost?.role_tags)&&ghost.role_tags.length?` · ${ghost.role_tags.join(", ")}`:"";info.textContent=`${String(ghost?.node_label||"")} ${context} · ${scope}${roles} · ${location} · ${at?new Date(at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"?"}`.trim();const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashRecord(ghost.conversation_key);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorTrashRecord(ghost.conversation_key),140);});row.append(info);if(source==="list")appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);container.append(row);}};
-
-  const thumbRecords=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")==="thumbnail");
-
-  const desktopRecords=[...monitorTrashedDesktops.values()].sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));
-
-  const thumbPane=document.createElement("section");thumbPane.className="monitor-trash-pane monitor-trash-thumbnail-pane";thumbPane.append(makeHeader("삭제된 데스크",thumbRecords.length+desktopRecords.length,clearMonitorThumbnailRecovery));const thumbScroll=document.createElement("div");thumbScroll.className="monitor-trash-pane-scroll";
-
-  if(desktopRecords.length){
-
-    const desktopGrid=document.createElement("div");desktopGrid.className="monitor-trash-desktop-grid";
-
-    for(const item of desktopRecords){
-
-      const card=document.createElement("div");card.className="monitor-trash-desktop-card";
-
-      const visual=document.createElement("div");visual.className="monitor-trash-desktop-card-visual";
-
-      const desktopNumber=Math.max(1,Number(item.desktop_number??item.desktopNumber??(Number(item.index||0)+1))||1);
-
-      const badge=document.createElement("span");badge.className="monitor-desktop-number-badge monitor-trash-desktop-number";badge.textContent=`D${desktopNumber}`;
-
-      const thumbnail=String(item.thumbnail||item.thumbnailDataUri||"");
-
-      if(thumbnail){const image=document.createElement("img");image.className="monitor-trash-desktop-card-image";image.src=thumbnail;image.alt="";visual.append(image);}
-
-      else{const placeholder=document.createElement("span");placeholder.className="monitor-trash-desktop-placeholder";placeholder.textContent="미리보기 없음";visual.append(placeholder);}
-
-      visual.append(badge);
-
-      const actions=document.createElement("div");actions.className="monitor-trash-desktop-card-actions";
-
-      const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();void restoreMonitorTrashedDesktop(item.id,restore);});
-
-      const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();deleteMonitorTrashedDesktop(item.id);});
-
-      actions.append(restore,del);card.append(visual,actions);desktopGrid.append(card);
-
-    }
-
-    thumbScroll.append(desktopGrid);
-
+  if (!monitorRecoveryPanelView) {
+    monitorRecoveryPanelView = globalThis.MonitorRecoveryPanelView.create({
+      document, ports: {
+        recoveryItems: current => monitorClosedConversationRecoveryItems(current),
+        workersForState: current => monitorWorkersForState(current),
+        workerWorkState: (worker,current) => resolveWorkerWorkState(worker,current),
+        trashedNotes: () => monitorTrashedNotes,
+        noteTitle: text => monitorNotesFeature.titleFromText(text),
+        clearNotes: () => clearMonitorTrashedNotes(),
+        restoreNote: id => restoreMonitorTrashedNote(id),
+        deleteNote: id => deleteMonitorTrashedNote(id),
+        trashRecords: () => monitorRecoveryRecordStore.trash,
+        previousLocation: item => monitorClosedConversationPreviousLocation(item),
+        contextTitle: item => monitorClosedConversationContextTitle(item),
+        restoreTrash: key => restoreMonitorTrashRecord(key),
+        deleteTrash: key => deleteMonitorTrashRecord(key),
+        trashedDesktops: () => monitorTrashedDesktops,
+        clearThumbnail: () => clearMonitorThumbnailRecovery(),
+        restoreDesktop: (id,button) => restoreMonitorTrashedDesktop(id,button),
+        deleteDesktop: id => deleteMonitorTrashedDesktop(id),
+        rebootSnapshot: () => monitorRecoverySnapshotState.snapshot(),
+        trashedKeys: () => monitorRecoveryRecordStore.trashedKeys,
+        rebootRestoring: () => monitorRebootRestoreActive,
+        restoreAll: (button,records,items) => restoreMonitorAllRecovery(button,records,items),
+        restoreReboot: button => restoreMonitorRebootSnapshot(button),
+        clearConversations: () => clearMonitorConversationRecovery(),
+        contextRecord: key => monitorContextTitleRecord(key),
+        pendingRestores: () => monitorDetachedRestorePending,
+        restoreDetached: (record,button) => restoreMonitorDetachedTask(record,button),
+        deleteRecovery: key => deleteMonitorRecoveryRecord(key),
+        contextContinueButton: record => createMonitorContextContinueButton(record),
+        after: (fn,ms) => setTimeout(fn,ms),
+        confirm: message => confirm(message),
+        pruneDropped: dropKeys => {
+          for (const key of dropKeys) {
+            monitorRecoveryRecordStore.trash.delete(key);
+            monitorRecoveryRecordStore.ghosts.delete(key);
+            monitorHiddenGhosts.delete(key);
+            monitorRecoveryRecordStore.trashedKeys.add(key);
+          }
+          monitorRecoverySnapshotState.replace({...monitorRecoverySnapshotState.snapshot(),
+            items:(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[])
+              .filter(x=>!dropKeys.has(String(x?.conversation_key||"")))});
+          chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRecoverySnapshotState.snapshot()});
+          monitorPublishSharedRebootSnapshot();
+          monitorGhostPersist(true);
+          persistMonitorTrashedNodes();
+        }
+      }
+    });
   }
-
-  renderTrashRows("thumbnail",thumbScroll);thumbPane.append(thumbScroll);
-
-  let listRecords=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")!=="thumbnail").sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));
-
-  const combined=[...listRecords.map((x)=>({kind:"trash",item:x,at:Number(x?.trashed_at_ms||0)})),...items.map((x)=>({kind:"closed",item:x,at:Number(x?.closed_at_ms||x?.captured_at_ms||0)}))].sort((a,b)=>b.at-a.at);
-
-  const kept=combined.slice(0,20), dropped=combined.slice(20), keptKeys=new Set(kept.map((x)=>String(x.item?.conversation_key||"")));
-
-  if(dropped.length){const dropKeys=new Set(dropped.map((x)=>String(x.item?.conversation_key||"")).filter(Boolean));for(const key of dropKeys){monitorTrashRecords.delete(key);monitorGhostCache.delete(key);monitorHiddenGhosts.delete(key);monitorTrashedConversationKeys.add(key);}monitorRebootSnapshot={...monitorRebootSnapshot,items:(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[]).filter((x)=>!dropKeys.has(String(x?.conversation_key||"")))};chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:monitorRebootSnapshot});monitorPublishSharedRebootSnapshot();monitorGhostPersist(true);persistMonitorTrashedNodes();}
-
-  listRecords=listRecords.filter((x)=>keptKeys.has(String(x?.conversation_key||"")));
-
-  const visibleItems=kept.filter((x)=>x.kind==="closed").map((x)=>x.item);
-
-  const convoCount=listRecords.length+visibleItems.length;
-
-  const snapItems=(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[]).filter((x)=>!monitorTrashedConversationKeys.has(String(x?.conversation_key||"")));
-
-  const full=document.createElement("button");full.type="button";full.className="monitor-detached-restore monitor-recovery-full";full.textContent=`전체 복원${convoCount?` (${convoCount})`:""}`;full.disabled=!convoCount||monitorRebootRestoreActive;full.title="삭제된 노드 복구 목록 전체 복원";full.addEventListener("click",(e)=>{e.stopPropagation();void restoreMonitorAllRecovery(full,listRecords,visibleItems);});
-
-  const reboot=document.createElement("button");reboot.type="button";reboot.className="monitor-detached-restore monitor-recovery-full";reboot.textContent=`재부팅 복원${snapItems.length?` (${snapItems.length})`:""}`;reboot.disabled=!snapItems.length||monitorRebootRestoreActive;reboot.title="재부팅 전 저장된 대화만 복원";reboot.addEventListener("click",(e)=>{e.stopPropagation();void restoreMonitorRebootSnapshot(reboot);});
-
-  const convoPane=document.createElement("section");convoPane.className="monitor-trash-pane monitor-trash-conversation-pane";convoPane.append(makeHeader("삭제된 노드",convoCount,clearMonitorConversationRecovery,[full,reboot]));const convoScroll=document.createElement("div");convoScroll.className="monitor-trash-pane-scroll";
-
-  if(listRecords.length)renderTrashRows("list",convoScroll);
-
-  if(!visibleItems.length&&!listRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";convoScroll.append(empty);}
-
-  for(const ghost of visibleItems){const row=document.createElement("div");row.className="monitor-closed-conversation-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost);const created=Number(ghost?.first_seen_ms||0),closed=Number(ghost?.closed_at_ms||ghost?.captured_at_ms||0),rec=monitorContextTitleRecord(String(ghost?.conversation_key||""));const displayContext=(rec.manual_locked&&rec.manual_title)||rec.context_title||ghost.meaningful_title||context;const source=ghost.recovery_source||"일반 종료";const fmtDateTime=(ms)=>ms?new Date(ms).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).replace(/\. /g,".").replace(/\.$/,""):"?";const fmtTime=(ms)=>ms?new Date(ms).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hour12:false}):"?";const sameDay=created&&closed&&new Date(created).toDateString()===new Date(closed).toDateString();info.textContent=`${location} · ${displayContext} · ${fmtDateTime(created)} - ${sameDay?fmtTime(closed):fmtDateTime(closed)}`;info.title=`이전 위치 ${location} · ${source}`;const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";const restoring=monitorDetachedRestorePending.has(String(ghost?.conversation_key||""));restore.textContent=restoring?"복구 중…":"복구";restore.disabled=restoring;restore.addEventListener("click",(event)=>{event.stopPropagation();void restoreMonitorDetachedTask(ghost,restore);});row.addEventListener("contextmenu",(event)=>{event.preventDefault();event.stopPropagation();const existing=row.querySelector(".monitor-recovery-details");if(existing){existing.remove();return;}panel.querySelectorAll(".monitor-recovery-details").forEach((node)=>node.remove());const detail=document.createElement("div");detail.className="monitor-recovery-details";const key=String(ghost?.conversation_key||"");for(const [label,value] of [["이전 위치",location],["제목",displayContext],["복구 출처",source],["생성",created?new Date(created).toLocaleString("ko-KR"):"알 수 없음"],["소멸",closed?new Date(closed).toLocaleString("ko-KR"):"알 수 없음"],["프로필",ghost.profile_id||"-"],["conversationKey",key||"-"]]){const line=document.createElement("div");line.className="monitor-recovery-detail-line";const k=document.createElement("b");k.textContent=label;const v=document.createElement("span");v.textContent=String(value);line.append(k,v);detail.append(line);}row.append(detail);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(event)=>{event.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorRecoveryRecord(ghost.conversation_key),140);});row.append(info);appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);convoScroll.append(row);}
-
-  const contextRows = new Map([...convoScroll.querySelectorAll('.monitor-closed-conversation-row[data-recovery-key]')]
-    .map(row => [row.dataset.recoveryKey, row]));
-  for (const ghost of visibleItems) {
-    const row = contextRows.get(String(ghost?.conversation_key || ''));
-    if (row) row.append(createMonitorContextContinueButton(ghost));
-  }
-  const recoveryRowsByKey=new Map([...convoScroll.querySelectorAll(".monitor-closed-conversation-row[data-recovery-key]")].map((row)=>[String(row.dataset.recoveryKey||""),row]));for(const entry of kept){const key=String(entry?.item?.conversation_key||"");const row=recoveryRowsByKey.get(key);if(row)convoScroll.append(row);}convoPane.append(convoScroll);panel.append(convoPane,thumbPane);return panel;
-
+  return monitorRecoveryPanelView.render(state);
 }
 //@@FN_END:renderMonitorClosedConversationRecoveryPanel
 
@@ -1872,40 +1730,14 @@ function renderVirtualDesktops(state) {
 
   if (reportedHostTitle && reportedHostTitle !== monitorLocalHostWindowTitle) monitorLocalHostWindowTitle = reportedHostTitle;
 
-  const desktopIds = Array.isArray(state?.desktopIds) ? state.desktopIds : [];
-
-  const count = Math.max(1, Number(state?.count) || desktopIds.length || 1);
-
-  const currentIndex = Math.min(Math.max(0, Number(state?.currentIndex) || 0), Math.max(0, count - 1));
-
-  const currentDesktopId = desktopIds[currentIndex] || null;
-
-  const reportedHostId = typeof state?.hostDesktopId === "string" && desktopIds.includes(state.hostDesktopId) ? state.hostDesktopId : null;
-
-  const hostAmbiguous = state?.hostWindowAmbiguous === true;
-
-  const previousCurrentDesktopId = monitorDesktopState.currentDesktopId;
-  const previousHostId = monitorDesktopState.hostDesktopId;
-
-  const hostDesktopId = hostAmbiguous ? null : (reportedHostId || (previousHostId && desktopIds.includes(previousHostId) ? previousHostId : null));
-
-  const previousHostHwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
-
-  const reportedHostHwnd = /^\d+$/.test(String(state?.hostWindowHwnd || "")) && String(state?.hostWindowHwnd || "") !== "0" ? String(state.hostWindowHwnd) : null;
-
-  const hostWindowHwnd = hostAmbiguous ? null : (reportedHostHwnd || monitorDesktopState.hostWindowHwnd || null);
-
-  const hostWindowChanged = hostAmbiguous ? Boolean(previousHostHwnd) : Boolean(reportedHostHwnd && reportedHostHwnd !== previousHostHwnd);
-
-  const previousObservedId = monitorDesktopState.observedDesktopId;
-
-  const sharedObservedId = monitorSharedSelectionReady && monitorSharedSelectedDesktopId && desktopIds.includes(monitorSharedSelectedDesktopId) ? monitorSharedSelectedDesktopId : null;
-
-  const observedDesktopId = sharedObservedId || (previousObservedId && desktopIds.includes(previousObservedId) ? previousObservedId : (reportedHostId || currentDesktopId || desktopIds[0] || null));
-
-  const selectedIndex = Math.max(0, desktopIds.indexOf(observedDesktopId));
-
-  monitorDesktopState = { count, currentIndex, selectedIndex, currentDesktopId, hostDesktopId, hostWindowHwnd, observedDesktopId, desktopIds };
+  const topology = globalThis.MonitorDesktopTopology.project({
+    observed: state, previous: monitorDesktopIdentityState.snapshot(),
+    sharedSelection: {ready: monitorSharedSelectionReady, desktopId: monitorSharedSelectedDesktopId}
+  });
+  const {desktopIds,count,currentIndex,selectedIndex,currentDesktopId,
+    hostDesktopId,hostWindowHwnd,observedDesktopId} = topology.state;
+  const {hostWindowChanged,previousCurrentDesktopId} = topology;
+  monitorDesktopIdentityState.replace(topology.state);
   // BCT node state can arrive before Native desktop topology. Once the
   // desktop IDs exist, perform only a bounded exact identity reconciliation
   // so the semantic thumbnail overlay has a verified HWND to project onto.
@@ -1916,15 +1748,7 @@ function renderVirtualDesktops(state) {
     void ensureMonitorOwnFrozenSnapshot();
   }
 
-  document.body.dataset.monitorActiveDesktopId = currentDesktopId || "";
-
-  document.body.dataset.monitorHostDesktopId = hostDesktopId || "";
-
-  document.body.dataset.monitorObservedDesktopId = observedDesktopId || "";
-
-  document.body.classList.toggle("monitor-preview-remote", selectedIndex !== currentIndex);
-
-  document.body.dataset.monitorPreviewDesktop = String(selectedIndex + 1);
+  monitorDesktopStageView.showTopology(monitorDesktopIdentityState.snapshot());
 
   const selectedId = observedDesktopId;
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) {
@@ -1997,13 +1821,7 @@ function renderVirtualDesktops(state) {
 }
 //@@FN_END:renderVirtualDesktops
 
-//@@FN_START:resetDesktopUndoSessionExpiry
-function resetDesktopUndoSessionExpiry(now = Date.now()) {
 
-  monitorUndoSessionExpiresAt = monitorUndoStack.length ? now + MONITOR_UNDO_TTL_MS : 0;
-
-}
-//@@FN_END:resetDesktopUndoSessionExpiry
 
 //@@FN_START:restoreMonitorAllRecovery
 async function restoreMonitorAllRecovery(button,listRecords,items){
@@ -2018,7 +1836,7 @@ async function restoreMonitorAllRecovery(button,listRecords,items){
 //@@FN_END:restoreMonitorAllRecovery
 
 //@@FN_START:restoreMonitorDesktopNodeSnapshots
-function restoreMonitorDesktopNodeSnapshots(nodes){for(const item of Array.isArray(nodes)?nodes:[]){const key=String(item?.conversation_key||"");if(!key)continue;monitorTrashedConversationKeys.delete(key);monitorTrashRecords.delete(key);monitorHiddenGhosts.delete(key);}persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+function restoreMonitorDesktopNodeSnapshots(nodes){for(const item of Array.isArray(nodes)?nodes:[]){const key=String(item?.conversation_key||"");if(!key)continue;monitorRecoveryRecordStore.trashedKeys.delete(key);monitorRecoveryRecordStore.trash.delete(key);monitorHiddenGhosts.delete(key);}persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 //@@FN_END:restoreMonitorDesktopNodeSnapshots
 
 //@@FN_START:restoreMonitorDetachedTask
@@ -2092,7 +1910,7 @@ async function restoreMonitorDetachedTask(item, button) {
 
     monitorHiddenGhosts.delete(key); monitorGhostPersist();
 
-    if(!item?.__reboot_restore)monitorClosedConversationPickerOpen=false;
+    if(!item?.__reboot_restore)monitorRecoveryPickerState.close();
 
     await refreshAiMonitor();
 
@@ -2116,7 +1934,7 @@ async function restoreMonitorDetachedTask(item, button) {
 
     button.textContent=original; button.disabled=false;
 
-    if(monitorLastAiState)renderWorkers(monitorLastAiState);
+    if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   }
 
@@ -2183,7 +2001,7 @@ async function restoreMonitorNodeChatChange(worker,nodeState,button){
 //@@FN_START:restoreMonitorRebootSnapshot
 async function restoreMonitorRebootSnapshot(button) {
 
-  const items=[...(Array.isArray(monitorRebootSnapshot?.items)?monitorRebootSnapshot.items:[])];
+  const items=[...(Array.isArray(monitorRecoverySnapshotState.snapshot()?.items)?monitorRecoverySnapshotState.snapshot().items:[])];
 
   if(!items.length||monitorRebootRestoreActive||!button)return {ok:false,status:"IGNORED",results:[]};
 
@@ -2215,7 +2033,7 @@ async function restoreMonitorRebootSnapshot(button) {
 
           const hwnd=String(resolved?.location?.hwnd||endpointOsWindowHandle(ep)||"").trim();
 
-          const target=monitorDesktopState.desktopIds[Math.max(0,Number(item.desktop||1)-1)]||String(item.desktop_id||"");
+          const target=monitorDesktopIdentityState.snapshot().desktopIds[Math.max(0,Number(item.desktop||1)-1)]||String(item.desktop_id||"");
 
           if(/^\d+$/.test(hwnd)&&hwnd!=="0"&&target){
 
@@ -2265,7 +2083,7 @@ async function restoreMonitorRebootSnapshot(button) {
 
     button.disabled=false; button.textContent=old;
 
-    if(monitorLastAiState){if(allVerified)monitorCaptureRebootSnapshot(monitorLastAiState);renderWorkers(monitorLastAiState);}
+    if(monitorObservedState.snapshot()){if(allVerified)monitorCaptureRebootSnapshot(monitorObservedState.snapshot());renderWorkers(monitorObservedState.snapshot());}
 
   }
 
@@ -2273,7 +2091,7 @@ async function restoreMonitorRebootSnapshot(button) {
 //@@FN_END:restoreMonitorRebootSnapshot
 
 //@@FN_START:restoreMonitorTrashRecord
-function restoreMonitorTrashRecord(key){key=String(key||"");monitorTrashedConversationKeys.delete(key);monitorTrashRecords.delete(key);persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);refreshMonitorRecoveryMenu();}
+function restoreMonitorTrashRecord(key){key=String(key||"");monitorRecoveryRecordStore.trashedKeys.delete(key);monitorRecoveryRecordStore.trash.delete(key);persistMonitorTrashedNodes();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());refreshMonitorRecoveryMenu();}
 //@@FN_END:restoreMonitorTrashRecord
 
 //@@FN_START:restoreMonitorTrashedDesktop
@@ -2307,27 +2125,23 @@ function scheduleMonitorStartupRecovery() {
 //@@FN_START:selectVirtualDesktopPreview
 function selectVirtualDesktopPreview(index) {
 
-  const bounded = Math.min(Math.max(0, index), monitorDesktopState.count - 1);
+  const bounded = Math.min(Math.max(0, index), monitorDesktopIdentityState.snapshot().count - 1);
 
-  const changed = bounded !== monitorDesktopState.selectedIndex;
+  const changed = bounded !== monitorDesktopIdentityState.snapshot().selectedIndex;
 
-  monitorDesktopState.selectedIndex = bounded;
+  monitorDesktopIdentityState.patch({selectedIndex: bounded});
 
-  const desktopId = monitorDesktopState.desktopIds[bounded] || null;
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[bounded] || null;
 
   monitorSharedSelectedDesktopId = desktopId || "";
 
-  monitorDesktopState.observedDesktopId = desktopId;
+  monitorDesktopIdentityState.patch({observedDesktopId: desktopId});
 
   publishMonitorSharedSelection();
 
-  document.body.dataset.monitorObservedDesktopId = desktopId || "";
+  monitorDesktopStageView.showPreview({desktopId,index:bounded,currentIndex:monitorDesktopIdentityState.snapshot().currentIndex});
 
   if (changed) flashDesktopTransition();
-
-  document.body.classList.toggle("monitor-preview-remote", bounded !== monitorDesktopState.currentIndex);
-
-  document.body.dataset.monitorPreviewDesktop = String(bounded + 1);
 
   if (changed && desktopId) {
     primeSelectedDesktopPreview(desktopId);
@@ -2336,17 +2150,17 @@ function selectVirtualDesktopPreview(index) {
 
   window.dispatchEvent(new CustomEvent("desktopwindow-monitor-preview", {
 
-    detail: { index: bounded, desktopId, currentIndex: monitorDesktopState.currentIndex }
+    detail: { index: bounded, desktopId, currentIndex: monitorDesktopIdentityState.snapshot().currentIndex }
 
   }));
 
   renderVirtualDesktops({
 
-    count: monitorDesktopState.count,
+    count: monitorDesktopIdentityState.snapshot().count,
 
-    currentIndex: monitorDesktopState.currentIndex,
+    currentIndex: monitorDesktopIdentityState.snapshot().currentIndex,
 
-    desktopIds: monitorDesktopState.desktopIds
+    desktopIds: monitorDesktopIdentityState.snapshot().desktopIds
 
   });
 
@@ -2382,126 +2196,32 @@ function storeMonitorTrashedDesktop(snapshot){const id=String(snapshot?.desktopI
 //@@FN_END:storeMonitorTrashedDesktop
 
 //@@FN_START:syncDesktopSwitcher
+let monitorDesktopStripView = null;
 function syncDesktopSwitcher() {
-  const createdDesktopIds = [];
-
-  const existing = new Map([...monitorDesktopThumbs.children].filter(button => !button.dataset.deletedPlaceholder).map(button => [button.dataset.desktopId, button]));
-
-  for (let index = 0; index < monitorDesktopState.count; index += 1) {
-
-    const desktopId = monitorDesktopState.desktopIds[index] || `index-${index}`;
-
-    let button = existing.get(desktopId);
-
-    if (!button) {
-
-      button = document.createElement("button"); button.type = "button"; button.className = "monitor-desktop-thumb"; button.dataset.desktopId = desktopId;
-
-      const visual = document.createElement("span"); visual.className = "monitor-desktop-thumb-visual"; visual.dataset.desktopId = desktopId;
-
-      const label = document.createElement("span"); label.className = "monitor-desktop-thumb-label";
-
-      const desktopBadge = document.createElement("span"); desktopBadge.className = "monitor-desktop-number-badge";
-
-      const labelText = document.createElement("span"); labelText.className = "monitor-desktop-label-text";
-
-      const minimizedNodes = document.createElement("span"); minimizedNodes.className = "monitor-desktop-minimized-nodes"; minimizedNodes.hidden = true;
-
-      label.append(desktopBadge, labelText, minimizedNodes);
-      monitorAttachDesktopManagementControl(label, desktopId);
-
-      button.append(visual, label);
-
-      button.addEventListener("pointerdown", beginMonitorDesktopPointerDrag);
-
-      button.addEventListener("click", (event) => {
-
-        if (button.dataset.monitorDropSuppressClick === "1") { event.preventDefault(); event.stopPropagation(); return; }
-
-        selectVirtualDesktopPreview(Number(button.dataset.index || 0));
-
-      });
-
-      button.addEventListener("dblclick", async (event) => {
-
-        event.preventDefault();
-
-        const index = Number(button.dataset.index || 0);
-
-        button.classList.add("monitor-desktop-switch-pending");
-
-        try {
-
-          const result = await monitorNative({ type: "switchVirtualDesktop", index });
-
-          if (!result?.ok) throw new Error(result?.error || "데스크톱 전환 실패");
-
-          renderVirtualDesktops(result);
-
-          selectVirtualDesktopPreview(index);
-
-        } catch (error) { setMonitorStatus(`데스크톱 전환 실패 · ${error?.message || error}`, false); }
-
-        finally { setTimeout(() => button.classList.remove("monitor-desktop-switch-pending"), 350); }
-
-      });
-
-      bindDesktopDropTarget(button);
-
-      monitorDesktopThumbs.append(button);
-      createdDesktopIds.push(desktopId);
-
-    }
-
-    button.dataset.index = String(index); button.classList.toggle("selected", index === monitorDesktopState.selectedIndex); button.classList.toggle("current", index === monitorDesktopState.currentIndex);
-    monitorAttachDesktopManagementControl(button.querySelector(".monitor-desktop-thumb-label"), desktopId);
-
-    const displayIndex = monitorDeletedDesktopUndo && Date.now() < monitorDeletedDesktopUndoExpiresAt && index >= Number(monitorDeletedDesktopUndo.index) ? index + 1 : index;
-
-    const labelText=button.querySelector(".monitor-desktop-label-text"); if(labelText)labelText.textContent=`데스크톱 ${displayIndex + 1}`; const desktopBadge=button.querySelector(".monitor-desktop-number-badge"); if(desktopBadge)desktopBadge.textContent=`D${displayIndex + 1}`;
-
-    existing.delete(desktopId);
-
+  if (!monitorDesktopStripView) {
+    monitorDesktopStripView = globalThis.MonitorDesktopStripView.create({
+      root: monitorDesktopThumbs, document,
+      ports: {
+        desktopState: () => monitorDesktopIdentityState.snapshot(),
+        attachManagement: (element,id) => monitorAttachDesktopManagementControl(element,id),
+        beginDrag: event => beginMonitorDesktopPointerDrag(event),
+        preview: index => selectVirtualDesktopPreview(index),
+        switchDesktop: index => monitorNative({type:"switchVirtualDesktop",index}),
+        renderDesktops: result => renderVirtualDesktops(result),
+        status: (...args) => setMonitorStatus(...args),
+        bindDrop: element => bindDesktopDropTarget(element),
+        deletedUndo: () => monitorDeletedDesktopUndo,
+        deletedUndoExpiresAt: () => monitorDeletedDesktopUndoExpiresAt,
+        undoDelete: (...args) => undoDeletedDesktopTrash(...args),
+        thumbnail: () => globalThis.MonitorDesktopThumbnailV2,
+        syncBadges: () => syncMonitorMinimizedNodeBadges(),
+        syncScrollArrows: () => syncMonitorDesktopScrollArrows(),
+        frame: callback => requestAnimationFrame(callback),
+        after: (callback,ms) => setTimeout(callback,ms)
+      }
+    });
   }
-
-  for (const stale of existing.values()) { const key=String(stale.dataset.hwnd||""); stale.parentElement?.querySelectorAll(".monitor-window-pause-overlay").forEach((node)=>{if(node.dataset.hwnd===key)node.remove();}); stale.remove(); }
-
-  for (const stalePlaceholder of [...monitorDesktopThumbs.querySelectorAll(".monitor-desktop-trash-placeholder")]) stalePlaceholder.remove();
-
-  if (monitorDeletedDesktopUndo && Date.now() < monitorDeletedDesktopUndoExpiresAt) {
-
-    const placeholder=document.createElement("div"); placeholder.className="monitor-desktop-thumb monitor-desktop-trash-placeholder"; placeholder.dataset.deletedPlaceholder="1";
-
-    const undo=document.createElement("button"); undo.type="button"; undo.className="monitor-desktop-trash-placeholder-undo"; undo.title="삭제한 데스크톱 되돌리기"; undo.setAttribute("aria-label","삭제한 데스크톱 되돌리기");
-
-    const icon=document.createElement("span"); icon.className="monitor-desktop-trash-placeholder-icon"; icon.textContent="↶";
-
-    const countdown=document.createElement("span"); countdown.className="monitor-desktop-trash-placeholder-countdown"; countdown.textContent=`${Math.max(0,Math.ceil((monitorDeletedDesktopUndoExpiresAt-Date.now())/1000))}s`;
-
-    undo.append(icon,countdown); undo.addEventListener("click", undoDeletedDesktopTrash); placeholder.append(undo);
-
-    const at=Math.max(0,Math.min(Number(monitorDeletedDesktopUndo.index)||0,monitorDesktopThumbs.children.length));
-
-    monitorDesktopThumbs.insertBefore(placeholder,monitorDesktopThumbs.children[at]||null);
-
-  }
-
-  // Background identity is the desktop GUID, not the Monitor popup's owning
-  // desktop. Every new canonical card enters the same bottom-layer port used
-  // by the lightweight renderer; V2 coalesces startup overlap per tile.
-  if (createdDesktopIds.length) requestAnimationFrame(() => {
-    const renderer = globalThis.MonitorDesktopThumbnailV2;
-    for (const desktopId of createdDesktopIds) {
-      const tile = [...monitorDesktopThumbs.children].find((item) => (
-        String(item.dataset.desktopId || "") === String(desktopId)
-      ));
-      const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
-      if (visual?.isConnected) void renderer?.refreshBackground?.(visual, desktopId).catch(() => null);
-    }
-  });
-  if (globalThis.MonitorDesktopThumbnailV2?.allowsLayer?.("summary") !== false) syncMonitorMinimizedNodeBadges();
-  requestAnimationFrame(syncMonitorDesktopScrollArrows);
-
+  return monitorDesktopStripView.sync();
 }
 //@@FN_END:syncDesktopSwitcher
 
@@ -2510,7 +2230,7 @@ function syncMonitorDesktopNumberBadge(img, hwnd) {
 
   if (!img?.parentElement) return;
 
-  const key=String(hwnd||""), state=monitorLastAiState;
+  const key=String(hwnd||""), state=monitorObservedState.snapshot();
 
   let badge=[...img.parentElement.querySelectorAll(".monitor-window-desktop-badge")].find((node)=>node.dataset.hwnd===key);
   if(img.classList.contains("monitor-desktop-thumb-window")){
@@ -2558,9 +2278,9 @@ function syncMonitorPanelToDesktopSwitcher() {
 //@@FN_START:trashMonitorConversationKeys
 async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
-  const unique=[...new Set((keys||[]).map(String).filter(Boolean))].filter((key)=>!monitorTrashedConversationKeys.has(key)); if(!unique.length)return false;
+  const unique=[...new Set((keys||[]).map(String).filter(Boolean))].filter((key)=>!monitorRecoveryRecordStore.trashedKeys.has(key)); if(!unique.length)return false;
 
-  const endpoints=Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[];
+  const endpoints=Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[];
 
   const pending=[];
 
@@ -2598,9 +2318,9 @@ async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
     }
 
-    if(item.record)monitorTrashRecords.set(item.key,item.record);
+    if(item.record)monitorRecoveryRecordStore.trash.set(item.key,item.record);
 
-    monitorTrashedConversationKeys.add(item.key);monitorHiddenGhosts.delete(item.key);
+    monitorRecoveryRecordStore.trashedKeys.add(item.key);monitorHiddenGhosts.delete(item.key);
 
   }
 
@@ -2608,7 +2328,7 @@ async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
   const succeeded=pending.filter((item)=>!failed.includes(item.key)).map((item)=>item.key);
 
-  if(succeeded.length){persistMonitorTrashedNodes();monitorNodeTrashUndoSnapshot={keys:succeeded};monitorNodeTrashUndoExpiresAt=Date.now()+MONITOR_NODE_TRASH_UNDO_MS;updateMonitorNodeTrashUndoUi();if(monitorLastAiState)renderWorkers(monitorLastAiState);}
+  if(succeeded.length){persistMonitorTrashedNodes();monitorNodeTrashUndoSnapshot={keys:succeeded};monitorNodeTrashUndoExpiresAt=Date.now()+MONITOR_NODE_TRASH_UNDO_MS;updateMonitorNodeTrashUndoUi();if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());}
 
   if(succeeded.length&&!failed.length)setMonitorStatus(`노드 ${succeeded.length}개 삭제 · 연결 탭 닫힘 확인`,true);
 
@@ -2626,7 +2346,7 @@ async function undoDeletedDesktopTrash() {
 
   try {
 
-    const beforeIds=new Set(monitorDesktopState.desktopIds);
+    const beforeIds=new Set(monitorDesktopIdentityState.snapshot().desktopIds);
 
     const result=await monitorNative({type:"restoreVirtualDesktop",hwnds:snapshot.hwnds});
 
@@ -2642,7 +2362,7 @@ async function undoDeletedDesktopTrash() {
 
     if(snapshot.desktopId) deleteMonitorTrashedDesktop(snapshot.desktopId);
 
-    monitorDesktopState.observedDesktopId=restoredId; renderVirtualDesktops(result); if(restoredId)settleNewDesktopWallpaper(restoredId).catch(()=>{});
+    monitorDesktopIdentityState.patch({observedDesktopId: restoredId}); renderVirtualDesktops(result); if(restoredId)settleNewDesktopWallpaper(restoredId).catch(()=>{});
 
   } catch(error) { setMonitorStatus(`데스크톱 복구 실패 · ${error?.message||error}`,false); if(button)button.disabled=false; }
 
@@ -2676,13 +2396,13 @@ function updateDesktopUndoUi() {
 
   clearTimeout(monitorUndoTimer);
 
-  const latest = monitorUndoStack[monitorUndoStack.length - 1] || null;
+  const latest = monitorRecoveryUndoSession.peek(now);
 
   monitorDesktopUndo.hidden = !latest;
 
   if (!latest) return;
 
-  const seconds = Math.max(0, Math.ceil((monitorUndoSessionExpiresAt - now) / 1000));
+  const seconds = Math.max(0, Math.ceil(monitorRecoveryUndoSession.remainingMs(now) / 1000));
 
   monitorDesktopUndoCountdown.textContent = `${seconds}s`;
 
@@ -2690,7 +2410,7 @@ function updateDesktopUndoUi() {
 
   monitorDesktopUndoButton.title = `Undo ${label} - ${seconds}s left`;
 
-  monitorUndoTimer = setTimeout(updateDesktopUndoUi, Math.min(250, Math.max(50, monitorUndoSessionExpiresAt - now)));
+  monitorUndoTimer = setTimeout(updateDesktopUndoUi, Math.min(250, Math.max(50, monitorRecoveryUndoSession.remainingMs(now))));
 
 }
 //@@FN_END:updateDesktopUndoUi
@@ -2702,9 +2422,9 @@ function updateMonitorBctNodePointerDrag(event) {
   if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 7) return;
   if (!drag.active) {
     drag.active = true;
-    monitorBctSuppressScopeClickUntil = Date.now() + 1000;
+    monitorNodePanelInteractionState.setScopeSuppressedUntil(Date.now() + 1000);
     monitorBctDraggedNodeKey = drag.node.conversationKey;
-    monitorBctSuppressedClickKey = monitorBctNodeSelectionKey(drag.node);
+    monitorNodePanelInteractionState.setSuppressedKey(monitorBctNodeSelectionKey(drag.node));
     drag.row.classList.add("is-dragging");
     document.documentElement.classList.add("monitor-bct-node-drag-active");
     monitorWorkers?.querySelectorAll?.(".monitor-bct-node-list")
@@ -2719,7 +2439,7 @@ function updateMonitorBctNodePointerDrag(event) {
       type:"monitorDragPreviewStart",
       token:previewToken,
       label:monitorBctDragGhost.textContent,
-      sourceHwnd:String(monitorDesktopState?.hostWindowHwnd || ""),
+      sourceHwnd:String(monitorDesktopIdentityState.snapshot()?.hostWindowHwnd || ""),
     }).catch(() => {}); // An older installed Host keeps the DOM-only preview.
   }
   event.preventDefault();
@@ -2752,7 +2472,7 @@ function updateMonitorDesktopPointerDrag(event) {
 
   clearMonitorDesktopDropTargets(); clearMonitorTrashDropTarget();
 
-  if (drag.sourceDesktopId !== monitorDesktopState.currentDesktopId && monitorTrashDropTargetAt(event.clientX,event.clientY)) { monitorNodeTrash.classList.add("monitor-node-trash-drop-target"); return; }
+  if (drag.sourceDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId && monitorTrashDropTargetAt(event.clientX,event.clientY)) { monitorNodeTrash.classList.add("monitor-node-trash-drop-target"); return; }
 
   if (monitorCreateDesktopDropTargetAt(event.clientX, event.clientY)) monitorCreateDesktop.classList.add("monitor-create-desktop-drop-target");
 

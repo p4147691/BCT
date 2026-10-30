@@ -34,7 +34,7 @@ function monitorAcknowledgePostWorkForHwnd(hwnd) {
   for(const overlay of document.querySelectorAll(`.monitor-window-pause-overlay[data-hwnd="${target}"]`))overlay.remove();
   return true;
 
-  if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   return true;
 
@@ -93,7 +93,7 @@ function monitorConversationIsGenerating(conversationKey, state) {
 //@@FN_END:monitorConversationIsGenerating
 
 //@@FN_START:monitorConversationUserAttentionDetail
-function monitorConversationUserAttentionDetail(conversationKey,state=monitorLastAiState) {
+function monitorConversationUserAttentionDetail(conversationKey,state=monitorObservedState.snapshot()) {
   const key=String(conversationKey||"").trim();
   if(!key)return null;
   const direct=monitorDirectGenerationByConversation.get(key)?.userAttention||null;
@@ -163,7 +163,7 @@ function monitorHwndIsGenerating(hwnd, state) {
 //@@FN_END:monitorHwndIsGenerating
 
 //@@FN_START:monitorHwndUserAttentionDetail
-function monitorHwndUserAttentionDetail(hwnd,state=monitorLastAiState) {
+function monitorHwndUserAttentionDetail(hwnd,state=monitorObservedState.snapshot()) {
   const conversationKey=monitorVisualConversationForHwnd(String(hwnd||""),state);
   return monitorConversationUserAttentionDetail(conversationKey,state);
 }
@@ -248,7 +248,7 @@ function monitorScheduleChatCompletionAlert(conversationKey, attentionCue="", co
 
     if(monitorDirectConversationGenerationState(key)===true)return;
 
-    const live=(Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[]).filter((endpoint)=>String(endpoint?.conversation_key||"").trim()===key&&String(endpoint?.presence_state||"").toUpperCase()==="OPEN");
+    const live=(Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[]).filter((endpoint)=>String(endpoint?.conversation_key||"").trim()===key&&String(endpoint?.presence_state||"").toUpperCase()==="OPEN");
 
     if(live.some((endpoint)=>monitorEndpointGenerationIsActive(endpoint)))return;
 

@@ -18,7 +18,7 @@ async function activateMonitorCodexResource(worker, row = null) {
       await new Promise((resolve) => setTimeout(resolve, 125));
     }
 
-    const desktopIds = Array.isArray(monitorDesktopState.desktopIds) ? monitorDesktopState.desktopIds : [];
+    const desktopIds = Array.isArray(monitorDesktopIdentityState.snapshot().desktopIds) ? monitorDesktopIdentityState.snapshot().desktopIds : [];
     const targetDesktopId = String(desktopIds[desktopIds.length - 1] || "").trim();
     if (!/^\d+$/.test(hwnd) || hwnd === "0") throw new Error("G-CODEX 창을 찾지 못했습니다");
     if (!targetDesktopId) throw new Error("마지막 데스크톱을 찾지 못했습니다");
@@ -62,7 +62,7 @@ function applyMonitorLiveWindowGeometry(desktopId, snap) {
 
   if (visual) targets.push(visual);
 
-  if (String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "") === String(desktopId || "")) targets.push(monitorWindowLayer);
+  if (String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "") === String(desktopId || "")) targets.push(monitorWindowLayer);
 
   for (const container of targets) for (const img of container.querySelectorAll(".monitor-desktop-thumb-window[data-hwnd], .monitor-window-preview[data-hwnd]")) {
 
@@ -146,9 +146,9 @@ function applyPersistentMonitorRoleClass(node, hwnd) {
 
   const key = String(hwnd || "");
 
-  const conversationKey = monitorVisualConversationForHwnd(key, monitorLastAiState);
+  const conversationKey = monitorVisualConversationForHwnd(key, monitorObservedState.snapshot());
 
-  const identityKnown = Boolean(conversationKey) || Boolean(monitorLastAiState && monitorActNodeNumbersForHwnd(key, monitorLastAiState).length);
+  const identityKnown = Boolean(conversationKey) || Boolean(monitorObservedState.snapshot() && monitorActNodeNumbersForHwnd(key, monitorObservedState.snapshot()).length);
 
   // Identity refresh is asynchronous. Preserve role/question decoration, but never preserve
 
@@ -156,7 +156,7 @@ function applyPersistentMonitorRoleClass(node, hwnd) {
 
   if (!identityKnown) {
 
-    const liveWorking = monitorLastAiState ? monitorHwndIsGenerating(key, monitorLastAiState) : false;
+    const liveWorking = monitorObservedState.snapshot() ? monitorHwndIsGenerating(key, monitorObservedState.snapshot()) : false;
 
     node.classList.toggle("monitor-window-working", liveWorking);
 
@@ -169,13 +169,13 @@ function applyPersistentMonitorRoleClass(node, hwnd) {
 
   for (const cls of Object.values(MONITOR_PERSISTENT_ROLE_CLASSES)) node.classList.remove(cls);
 
-  applyMonitorConversationGroupVisual(node, conversationKey, monitorLastAiState);
+  applyMonitorConversationGroupVisual(node, conversationKey, monitorObservedState.snapshot());
 
-  const liveRoleClass = conversationKey && monitorLastAiState ? monitorPersistentRoleClass(monitorLiveRoleForConversation(conversationKey, monitorLastAiState, key)) : "";
+  const liveRoleClass = conversationKey && monitorObservedState.snapshot() ? monitorPersistentRoleClass(monitorLiveRoleForConversation(conversationKey, monitorObservedState.snapshot(), key)) : "";
 
   if (liveRoleClass) node.classList.add(liveRoleClass);
 
-  const liveWorking = monitorLastAiState ? monitorHwndIsGenerating(key, monitorLastAiState) : false;
+  const liveWorking = monitorObservedState.snapshot() ? monitorHwndIsGenerating(key, monitorObservedState.snapshot()) : false;
 
   node.classList.toggle("monitor-window-working", liveWorking);
 
@@ -192,13 +192,13 @@ function attachMonitorContextTitleMenu(row,worker,state,endpoint){
 
   const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim(); if(!key)return;
 
-  row.addEventListener("contextmenu",(event)=>{event.preventDefault();event.stopPropagation(); const ghost=monitorGhostCache.get(key)||{}; const current=monitorContextTitleDisplay(worker,state,endpoint)||String(endpoint?.title||worker?.title||"");
+  row.addEventListener("contextmenu",(event)=>{event.preventDefault();event.stopPropagation(); const ghost=monitorRecoveryRecordStore.ghosts.get(key)||{}; const current=monitorContextTitleDisplay(worker,state,endpoint)||String(endpoint?.title||worker?.title||"");
 
     const next=window.prompt(`작업 제목을 입력하세요.\n\n${monitorLifecycleTooltip(key,endpoint,ghost)}\n\n빈 값: AI 제목 잠금 해제\n/browser: 실제 제목 다시 읽기\n/ai: AI 자동 제목 다시 사용`,current);
 
     if(next===null)return; const value=String(next).trim(); if(value==="/browser"){resetMonitorContextTitleToBrowser(key);return;} if(value==="/ai"){setMonitorManualContextTitle(key,"");void refreshMonitorContextTitle(worker,state,endpoint,true);return;} if(!value){setMonitorManualContextTitle(key,"");return;}
 
-    const liveState=monitorLastAiState||state;
+    const liveState=monitorObservedState.snapshot()||state;
 
     const liveEndpoints=(Array.isArray(liveState?.endpoints)?liveState.endpoints:[]).filter((item)=>String(item?.conversation_key||"").trim()===key&&String(item?.presence_state||"").toUpperCase()==="OPEN");
 
@@ -322,8 +322,8 @@ function createMonitorContextContinueButton(item) {
 
 //@@FN_START:ensureMonitorOwnFrozenSnapshot
 async function ensureMonitorOwnFrozenSnapshot() {
-  const hwnd = String(monitorDesktopState.hostWindowHwnd || "").trim();
-  const desktopId = String(monitorDesktopState.hostDesktopId || "").trim();
+  const hwnd = String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "").trim();
+  const desktopId = String(monitorDesktopIdentityState.snapshot().hostDesktopId || "").trim();
   if (!monitorIsActiveDesktopRenderer()) {
     monitorOwnFrozenCaptureAttemptedHwnd = "";
     return false;
@@ -336,7 +336,7 @@ async function ensureMonitorOwnFrozenSnapshot() {
   monitorOwnFrozenCaptureBusy = true;
   try {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    if (String(monitorDesktopState.hostWindowHwnd || "") !== hwnd || !monitorIsActiveDesktopRenderer()) return false;
+    if (String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "") !== hwnd || !monitorIsActiveDesktopRenderer()) return false;
 
     const runtime = await chrome.runtime.sendMessage({ type:"monitor-list-popup-runtime" }).catch(() => null);
     const existing = (Array.isArray(runtime?.windows) ? runtime.windows : [])
@@ -351,7 +351,7 @@ async function ensureMonitorOwnFrozenSnapshot() {
     const retryDelays = [0, 160, 420];
     for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
       if (retryDelays[attempt] > 0) await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
-      if (String(monitorDesktopState.hostWindowHwnd || "") !== hwnd || !monitorIsActiveDesktopRenderer()) return false;
+      if (String(monitorDesktopIdentityState.snapshot().hostWindowHwnd || "") !== hwnd || !monitorIsActiveDesktopRenderer()) return false;
       const capture = await monitorCoreNative({
         type:"captureWindow",
         hwnd,
@@ -394,7 +394,7 @@ async function flushMonitorBrowserVisualRefresh() {
     const hwnds = new Set();
     const desktopIds = new Set();
     for (const browserWindowId of windowIds) {
-      const hwnd = monitorHwndForBrowserWindowId(browserWindowId, monitorLastAiState);
+      const hwnd = monitorHwndForBrowserWindowId(browserWindowId, monitorObservedState.snapshot());
       if (!hwnd) continue;
       hwnds.add(hwnd);
       const desktopId = String(monitorWindowDesktopLocations.get(hwnd)?.desktopId || "");
@@ -404,7 +404,7 @@ async function flushMonitorBrowserVisualRefresh() {
     // Generic Chrome windows may not have an ACT browser-node mapping. In that case,
     // reconcile the currently known desktops once rather than introducing polling.
     if (!desktopIds.size) {
-      for (const desktopId of monitorDesktopState.desktopIds || []) {
+      for (const desktopId of monitorDesktopIdentityState.snapshot().desktopIds || []) {
         const key = String(desktopId || "");
         if (key) desktopIds.add(key);
       }
@@ -424,7 +424,7 @@ async function flushMonitorBrowserVisualRefresh() {
 
     invalidateMonitorDesktopFrames(...desktopIds);
 
-    const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
+    const selectedDesktopId = String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "");
     if (selectedDesktopId && desktopIds.has(selectedDesktopId)) {
       await refreshSelectedThumb().catch(() => false);
     }
@@ -455,14 +455,14 @@ async function flushMonitorPopupTopologyRefresh() {
   try {
     const desktopIds = [...monitorPopupTopologyPendingDesktopIds];
     monitorPopupTopologyPendingDesktopIds.clear();
-    if (!desktopIds.length || !monitorDesktopState.hostDesktopId || monitorDesktopState.hostDesktopId !== monitorDesktopState.currentDesktopId) return;
+    if (!desktopIds.length || !monitorDesktopIdentityState.snapshot().hostDesktopId || monitorDesktopIdentityState.snapshot().hostDesktopId !== monitorDesktopIdentityState.snapshot().currentDesktopId) return;
     invalidateMonitorDesktopFrames(...desktopIds);
     for (const desktopId of desktopIds) {
       const tile = [...monitorDesktopThumbs.children].find((button) => String(button.dataset.desktopId || "") === desktopId);
       const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
       if (visual?.isConnected) await refreshDesktopThumb(visual, desktopId).catch(() => false);
     }
-    const selectedDesktopId = String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || "");
+    const selectedDesktopId = String(monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || "");
     if (selectedDesktopId && desktopIds.includes(selectedDesktopId)) await refreshObservedWindows().catch(() => false);
   } finally {
     monitorPopupTopologyRefreshInFlight = false;
@@ -496,13 +496,13 @@ function monitorAdoptLocalLlmControlPayload(payload, render = true) {
 
   if (Array.isArray(payload.llm_nodes)) {
     monitorCachedLlmNodes = payload.llm_nodes;
-    if (monitorLastAiState && typeof monitorLastAiState === "object") {
-      monitorLastAiState = { ...monitorLastAiState, llm_nodes: payload.llm_nodes };
+    if (monitorObservedState.snapshot() && typeof monitorObservedState.snapshot() === "object") {
+      monitorObservedState.replace({ ...monitorObservedState.snapshot(), llm_nodes: payload.llm_nodes });
     }
   }
 
   monitorUpdateLocalLlmToggleButtons();
-  if (render && monitorLastAiState) renderWorkers(monitorLastAiState);
+  if (render && monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot());
   if (render && monitorStructurePanel?.isConnected && monitorStructurePanel.style.display !== "none") {
     renderMonitorStructure();
   }
@@ -528,9 +528,9 @@ function monitorApplyDirectUserClick(message, sender) {
 
   monitorAcknowledgePostWork(key, "");
 
-  if (!tabId || !monitorLastAiState) { if (monitorLastAiState) renderWorkers(monitorLastAiState); return true; }
+  if (!tabId || !monitorObservedState.snapshot()) { if (monitorObservedState.snapshot()) renderWorkers(monitorObservedState.snapshot()); return true; }
 
-  const candidates=(Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[]).filter((endpoint)=>
+  const candidates=(Array.isArray(monitorObservedState.snapshot()?.endpoints)?monitorObservedState.snapshot().endpoints:[]).filter((endpoint)=>
 
     String(endpoint?.presence_state||"").toUpperCase()==="OPEN"
 
@@ -542,7 +542,7 @@ function monitorApplyDirectUserClick(message, sender) {
 
   );
 
-  if (candidates.length!==1) { renderWorkers(monitorLastAiState); return true; }
+  if (candidates.length!==1) { renderWorkers(monitorObservedState.snapshot()); return true; }
 
   const endpoint=candidates[0];
 
@@ -550,7 +550,7 @@ function monitorApplyDirectUserClick(message, sender) {
 
   const hwnd=String(location?.hwnd || endpointOsWindowHandle(endpoint) || "").trim();
 
-  if (!/^\d+$/.test(hwnd) || hwnd==="0") { renderWorkers(monitorLastAiState); return true; }
+  if (!/^\d+$/.test(hwnd) || hwnd==="0") { renderWorkers(monitorObservedState.snapshot()); return true; }
 
   monitorAcknowledgePostWorkForHwnd(hwnd);
 
@@ -608,7 +608,7 @@ async function monitorApplyRoleMode(worker,state) {
 
   } catch(error){ setMonitorStatus(`역할 변경 실패 · ${monitorRoleAdminErrorText(error?.message||error)}`,false); }
 
-  finally { monitorRoleMutationInFlight.delete(key); if(monitorLastAiState)renderWorkers(monitorLastAiState); }
+  finally { monitorRoleMutationInFlight.delete(key); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot()); }
 
 }
 //@@FN_END:monitorApplyRoleMode
@@ -786,7 +786,7 @@ function monitorCaptureRebootSnapshot(state) {
     const parts = monitorNodeIdentityParts(node?.node_label, node?.desktop_id);
     if (!parts.nodeNumber || !parts.desktop) continue;
     const rec = monitorContextTitleRecord(key);
-    const ghost = monitorGhostCache.get(key) || {};
+    const ghost = monitorRecoveryRecordStore.ghosts.get(key) || {};
     const display = monitorContextTitleDisplay(worker, state, endpoint)
       || String(rec.verified_title || "").trim()
       || (rec.manual_locked && String(rec.manual_title || "").trim())
@@ -810,7 +810,7 @@ function monitorCaptureRebootSnapshot(state) {
   }
   if (!items.length) return;
   items.sort((a, b) => a.desktop - b.desktop || a.slot - b.slot);
-  const previousItems = (Array.isArray(monitorRebootSnapshot?.items) ? monitorRebootSnapshot.items : []).map((item) => ({
+  const previousItems = (Array.isArray(monitorRecoverySnapshotState.snapshot()?.items) ? monitorRecoverySnapshotState.snapshot().items : []).map((item) => ({
     conversation_key: String(item?.conversation_key || ""),
     profile_id: String(item?.profile_id || ""),
     node_label: String(item?.node_label || ""),
@@ -825,11 +825,11 @@ function monitorCaptureRebootSnapshot(state) {
   }));
   if (JSON.stringify(previousItems) === JSON.stringify(items)) return;
   const capturedAt = Date.now();
-  monitorRebootSnapshot = {
+  monitorRecoverySnapshotState.replace({
     captured_at_ms: capturedAt,
     items: items.map((item) => ({ ...item, captured_at_ms: capturedAt })),
-  };
-  chrome.storage.local.set({ [MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRebootSnapshot });
+  });
+  chrome.storage.local.set({ [MONITOR_REBOOT_SNAPSHOT_KEY]: monitorRecoverySnapshotState.snapshot() });
   monitorPublishSharedRebootSnapshot();
 }
 //@@FN_END:monitorCaptureRebootSnapshot
@@ -909,7 +909,7 @@ function monitorContextTitleDisplayFromRecord(rec, liveTitle = "", fallbackTitle
 //@@FN_START:monitorContextTitleInput
 function monitorContextTitleInput(worker,state,endpoint=null){
 
-  const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim(); const ghost=key?monitorGhostCache.get(key):null;
+  const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim(); const ghost=key?monitorRecoveryRecordStore.ghosts.get(key):null;
 
   const task=monitorGhostTaskForWorker(worker,state); const history=(Array.isArray(ghost?.history)?ghost.history:[]).slice(-5).map(x=>String(x?.text||"")).filter(Boolean);
 
@@ -943,7 +943,7 @@ function monitorContextTitleSignature(input) { return globalThis.MonitorDomainAP
 //@@FN_END:monitorContextTitleSignature
 
 //@@FN_START:monitorDisplayHwndForBrowserWindowId
-function monitorDisplayHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
+function monitorDisplayHwndForBrowserWindowId(windowIdValue, state = monitorObservedState.snapshot(), instanceIdValue = "", sessionIdValue = "") {
   return monitorHwndForBrowserWindowId(windowIdValue, state, instanceIdValue, sessionIdValue)
     || monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue, sessionIdValue);
 }
@@ -1023,7 +1023,7 @@ function monitorGroupChatgptMembersForDisplay(members,state) {
 //@@FN_END:monitorGroupChatgptMembersForDisplay
 
 //@@FN_START:monitorHwndForBrowserWindowId
-function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
+function monitorHwndForBrowserWindowId(windowIdValue, state = monitorObservedState.snapshot(), instanceIdValue = "", sessionIdValue = "") {
   const windowId = String(windowIdValue ?? "").trim();
   if (!/^\d+$/.test(windowId) || windowId === "0") return "";
   const currentSessionHwnd = monitorBctCurrentSessionHwnd(windowId, instanceIdValue, sessionIdValue);
@@ -1185,7 +1185,7 @@ function monitorPhysicalWindowPeerLocation(endpoint, state, now = Date.now()) {
 
     const desktopId = String(location?.desktopId || "").trim();
 
-    const desktopIndex = monitorDesktopState.desktopIds.indexOf(desktopId);
+    const desktopIndex = monitorDesktopIdentityState.snapshot().desktopIds.indexOf(desktopId);
 
     if (desktopIndex >= 0) return { ...location, desktop: desktopIndex + 1 };
 
@@ -1233,19 +1233,19 @@ async function monitorPublishSharedInstance(reason = "event") {
 
   if (!["GOOGLE","NAVER"].includes(hostProfile)) return;
 
-  const hwnd=String(monitorDesktopState.hostWindowHwnd||"").trim();
+  const hwnd=String(monitorDesktopIdentityState.snapshot().hostWindowHwnd||"").trim();
 
   const instanceId = /^\d+$/.test(hwnd) && hwnd !== "0" ? hwnd : String(document.title||"MONITOR").trim();
 
   // Runtime presence is one current record per browser profile. Using the
   // transient HWND in the key left old rows behind after an extension reload.
-  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),background_done:monitorInitialThumbBatchDone===true,windows_done:monitorInitialWindowBatchDone===true,desktop_ids:[...(monitorDesktopState?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
+  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),background_done:monitorInitialThumbBatchDone===true,windows_done:monitorInitialWindowBatchDone===true,desktop_ids:[...(monitorDesktopIdentityState.snapshot()?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
 
 }
 //@@FN_END:monitorPublishSharedInstance
 
 //@@FN_START:monitorPublishSharedRebootSnapshot
-function monitorPublishSharedRebootSnapshot(snapshot=monitorRebootSnapshot){
+function monitorPublishSharedRebootSnapshot(snapshot=monitorRecoverySnapshotState.snapshot()){
   if (!MONITOR_FEATURE_RECOVERY_ENABLED) return;
 
   if(!snapshot||!Array.isArray(snapshot.items)||!snapshot.items.length)return;
@@ -1413,7 +1413,7 @@ function monitorSetRoleAssignMode(mode) {
 
   }
 
-  const state = monitorLastAiState;
+  const state = monitorObservedState.snapshot();
 
   const selectedWorker = nextMode && state ? monitorSelectedRoleWorker(state) : null;
 
@@ -1518,7 +1518,7 @@ async function monitorSyncSharedRuntime() {
 
       if(key===MONITOR_SHARED_REBOOT_SNAPSHOT_KEY){
 
-        try{const shared=JSON.parse(String(row.label||"{}"));const sharedAt=Number(shared?.captured_at_ms||0);if(Array.isArray(shared?.items)&&shared.items.length&&sharedAt>=Number(monitorRebootSnapshot?.captured_at_ms||0)){monitorRebootSnapshot=shared;monitorRebootSnapshotReady=true;chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:shared});}}catch(_){}
+        try{const shared=JSON.parse(String(row.label||"{}"));const sharedAt=Number(shared?.captured_at_ms||0);if(Array.isArray(shared?.items)&&shared.items.length&&sharedAt>=Number(monitorRecoverySnapshotState.snapshot()?.captured_at_ms||0)){monitorRecoverySnapshotState.replace(shared);monitorRebootSnapshotReady=true;chrome.storage.local.set({[MONITOR_REBOOT_SNAPSHOT_KEY]:shared});}}catch(_){}
 
         continue;
 
@@ -1574,7 +1574,7 @@ async function monitorSyncSharedRuntime() {
 
     for (const preview of document.querySelectorAll(".monitor-desktop-thumb-window, .monitor-window-preview")) applyPersistentMonitorRoleClass(preview, preview.dataset.hwnd||"");
 
-    if(monitorLastAiState)renderWorkers(monitorLastAiState);
+    if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
   } catch (_) {} finally { monitorSharedRuntimeSyncBusy=false; }
 
@@ -1716,8 +1716,8 @@ function pruneMonitorEphemeralGenerationState(state, now = Date.now()) {
   const protectedConversation = (key) =>
     liveConversations.has(key)
     || monitorPostWorkAlerts.has(key)
-    || monitorGhostCache.has(key)
-    || monitorTrashRecords.has(key);
+    || monitorRecoveryRecordStore.ghosts.has(key)
+    || monitorRecoveryRecordStore.trash.has(key);
 
   for (const [key, record] of monitorDirectGenerationByConversation) {
     const at = Number(record?.at || 0);
@@ -1752,7 +1752,7 @@ function publishMonitorSharedSelection() {
 
     hwndsCsv: [...monitorSelectedHwnds].join(","),
 
-    selectedDesktopId: monitorSharedSelectedDesktopId || monitorDesktopState.observedDesktopId || "",
+    selectedDesktopId: monitorSharedSelectedDesktopId || monitorDesktopIdentityState.snapshot().observedDesktopId || "",
 
   };
 
@@ -1839,9 +1839,9 @@ async function refreshAiMonitor() {
 
     const llmNodeState = llmNodesResponse?.ok ? await llmNodesResponse.json().catch(() => null) : null;
 
-    const previousLlmNodes = Array.isArray(monitorLastAiState?.llm_nodes) && monitorLastAiState.llm_nodes.length
+    const previousLlmNodes = Array.isArray(monitorObservedState.snapshot()?.llm_nodes) && monitorObservedState.snapshot().llm_nodes.length
 
-      ? monitorLastAiState.llm_nodes
+      ? monitorObservedState.snapshot().llm_nodes
 
       : monitorCachedLlmNodes;
 
@@ -1905,7 +1905,7 @@ async function refreshAiMonitor() {
 
     }
 
-    monitorLastAiState = state;
+    monitorObservedState.replace(state);
     pruneMonitorEphemeralGenerationState(state);
 
     chrome.storage.local.set({ [MONITOR_AI_STATE_CACHE_KEY]: { at: Date.now(), state } }).catch(() => {});
@@ -2047,7 +2047,7 @@ async function refreshMonitorRoleAdmin() {
 
   if(monitorRoleAdminBusy)return; monitorRoleAdminBusy=true;
 
-  try{const r=await actFetch(ORCHESTRATOR_ROLE_ADMIN_URL,{cache:"no-store"});const data=await r.json();if(!r.ok||!data?.ok)throw new Error(data?.error||`HTTP ${r.status}`);const signature=JSON.stringify([data.roles,monitorRoleAdminCandidates(monitorLastAiState||{}).map(x=>x.conversation_key)]);monitorRoleAdminState=data;setMonitorRoleAdminStatus("");if(signature!==monitorRoleAdminSignature){monitorRoleAdminSignature=signature;renderMonitorRoleAdmin();}}
+  try{const r=await actFetch(ORCHESTRATOR_ROLE_ADMIN_URL,{cache:"no-store"});const data=await r.json();if(!r.ok||!data?.ok)throw new Error(data?.error||`HTTP ${r.status}`);const signature=JSON.stringify([data.roles,monitorRoleAdminCandidates(monitorObservedState.snapshot()||{}).map(x=>x.conversation_key)]);monitorRoleAdminState=data;setMonitorRoleAdminStatus("");if(signature!==monitorRoleAdminSignature){monitorRoleAdminSignature=signature;renderMonitorRoleAdmin();}}
 
   catch(error){setMonitorRoleAdminStatus(monitorRoleAdminErrorText(error?.message||error),true);}
 
@@ -2061,13 +2061,13 @@ async function refreshObservedWindows() {
   if (!MONITOR_FEATURE_DESKTOP_VISUALS_ENABLED) return false;
   if (!monitorIsActiveDesktopRenderer()) return false;
 
-  const desktopId = monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] || null;
+  const desktopId = monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] || null;
 
   if (!desktopId) return;
 
   const frame = await captureDesktopFrame(desktopId, "main");
 
-  if (!frame || monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex] !== desktopId) return;
+  if (!frame || monitorDesktopIdentityState.snapshot().desktopIds[monitorDesktopIdentityState.snapshot().selectedIndex] !== desktopId) return;
 
   monitorWindowLayer.dataset.desktopId = desktopId;
 
@@ -2082,7 +2082,7 @@ async function refreshObservedWindows() {
   const visual = tile?.querySelector(".monitor-desktop-thumb-visual");
 
   if (visual?.isConnected) await refreshDesktopThumb(visual, desktopId);
-  syncMonitorMinimizedNodeBadges(monitorLastAiState);
+  syncMonitorMinimizedNodeBadges(monitorObservedState.snapshot());
 
 }
 //@@FN_END:refreshObservedWindows
@@ -2128,7 +2128,7 @@ function renderMonitorRoleAdmin() {
 
   const roles=Array.isArray(monitorRoleAdminState?.roles)?monitorRoleAdminState.roles:[];
 
-  const candidates=monitorRoleAdminCandidates(monitorLastAiState||{});
+  const candidates=monitorRoleAdminCandidates(monitorObservedState.snapshot()||{});
 
   for(const role of MONITOR_ROLE_ADMIN_ROLES){
 
@@ -2164,7 +2164,7 @@ function resetMonitorContextTitleToBrowser(key){
 
   key=String(key||"").trim(); if(!key)return; const rec=monitorContextTitleRecord(key);
 
-  monitorContextTitles.set(key,{...rec,manual_title:"",context_title:"",context_summary:"",project_name:"",manual_locked:false,title_source:"BROWSER",title_updated_ms:Date.now(),signature:""}); persistMonitorContextTitles(); if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  monitorContextTitles.set(key,{...rec,manual_title:"",context_title:"",context_summary:"",project_name:"",manual_locked:false,title_source:"BROWSER",title_updated_ms:Date.now(),signature:""}); persistMonitorContextTitles(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
 }
 //@@FN_END:resetMonitorContextTitleToBrowser
@@ -2288,7 +2288,7 @@ function scheduleMonitorChatNavigationRefresh(message) {
       // Reuse the lightweight ACT state path once per event burst. Each event is
       // then applied to only its own browser window/HWND.
       await refreshMonitorConversationStateFast();
-      const state = monitorLastAiState;
+      const state = monitorObservedState.snapshot();
       let mappingMiss = false;
       for (const item of pending) {
         const result = applyMonitorChatNavigationIdentity(item, state);
@@ -2359,7 +2359,7 @@ function setMonitorManualContextTitle(key,title){
 
   key=String(key||"").trim(); title=String(title||"").trim(); if(!key)return;
 
-  const rec=monitorContextTitleRecord(key); monitorContextTitles.set(key,{...rec,manual_title:title,manual_locked:Boolean(title),title_source:title?"MANUAL":"AI",title_updated_ms:Date.now()}); persistMonitorContextTitles(); if(monitorLastAiState)renderWorkers(monitorLastAiState);
+  const rec=monitorContextTitleRecord(key); monitorContextTitles.set(key,{...rec,manual_title:title,manual_locked:Boolean(title),title_source:title?"MANUAL":"AI",title_updated_ms:Date.now()}); persistMonitorContextTitles(); if(monitorObservedState.snapshot())renderWorkers(monitorObservedState.snapshot());
 
 }
 //@@FN_END:setMonitorManualContextTitle
@@ -2433,11 +2433,11 @@ function syncMonitorPauseOverlay(img, hwnd) {
   }
 
   const paused = img.classList.contains("monitor-window-paused");
-  const userAttentionDetail = monitorHwndUserAttentionDetail(key, monitorLastAiState);
-  const conversationKey=monitorVisualConversationForHwnd(key,monitorLastAiState);
+  const userAttentionDetail = monitorHwndUserAttentionDetail(key, monitorObservedState.snapshot());
+  const conversationKey=monitorVisualConversationForHwnd(key,monitorObservedState.snapshot());
   const completionDetail=monitorChatAlertDetail(conversationKey);
 
-  const activity=monitorHwndIsGenerating(key, monitorLastAiState) ? "play" : (completionDetail?.activity || (paused ? "pause" : ""));
+  const activity=monitorHwndIsGenerating(key, monitorObservedState.snapshot()) ? "play" : (completionDetail?.activity || (paused ? "pause" : ""));
   const warning=userAttentionDetail?.warning === true || completionDetail?.warning === true;
   if (!activity && !warning) { overlay?.remove(); return; }
 
@@ -2546,7 +2546,7 @@ function syncMonitorStatusLayer(img, hwnd) {
 
   if(hue) layer.style.setProperty("--monitor-conversation-hue",hue); else layer.style.removeProperty("--monitor-conversation-hue");
 
-  const ageIdentity=monitorAgeIdentityForHwnd(key,monitorLastAiState);
+  const ageIdentity=monitorAgeIdentityForHwnd(key,monitorObservedState.snapshot());
 
   const age=Math.max(0,Math.min(100,Number(ageIdentity.ageing)||0));
 
