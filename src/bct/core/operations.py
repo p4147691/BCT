@@ -377,7 +377,8 @@ class OperationCoordinator:
             created, current = self.store.begin_operation(
                 operation_id=operation_id, work=work, principal_id=principal.principal_id,
                 request_digest=digest, capability=capability, target=request.target,
-                resources=request.resources, policy_revision=decision.policy_revision,
+                resources=(() if _is_measurement_only_request(request) else request.resources),
+                policy_revision=decision.policy_revision,
                 background_job=background_job,
             )
         finally:

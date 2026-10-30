@@ -36,8 +36,18 @@ class UnknownFeature(CountingFeature):
 class UnverifiedReadFeature(CountingFeature):
     capability = "read"
 
+    def __init__(self):
+        super().__init__()
+        self.store = None
+        self.claim_seen_during_measurement = None
+
     def execute(self, request):
         self.calls += 1
+        if self.store is not None:
+            self.claim_seen_during_measurement = any(
+                row["operation_id"] == request.operation_id
+                for row in self.store.claim_diagnostics()
+            )
         raise UnknownEffectError("READ_OBSERVATION_TIMEOUT")
 
 
@@ -242,6 +252,7 @@ class CoreTests(unittest.TestCase):
     def test_unreliable_read_measurement_is_not_external_unknown(self):
         from bct.core.operations import _is_measurement_only_request
         feature = UnverifiedReadFeature()
+        feature.store = self.bct.store
         self.replace_feature(feature)
         result = self.bct.operations.run(
             principal=self.owner, work_id="work-1",
@@ -254,6 +265,7 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(result.evidence["measurement_trusted"])
         self.assertFalse(result.evidence["target_state_inferred"])
         self.assertEqual(1, feature.calls)
+        self.assertIs(False, feature.claim_seen_during_measurement)
         self.assertFalse(any(
             item["operation_id"] == "read-measurement-unverified"
             for item in self.bct.store.claim_diagnostics()
