@@ -26,9 +26,15 @@ it again. Receipt reuse is appropriate for immutable past results, not fresh hea
 `bct_verify` accepts up to eight `{id, capability, arguments}` steps, restricted to bounded
 read metadata, existing tests and exact-head GitHub PR status. It requires the work and
 principal to allow every child capability and verifies current policy before each step.
-All resources are claimed atomically. It stops on the first failed/pending/unknown step;
-UNKNOWN retains claims. File content and test console output are not persisted. The
-receipt contains ordered evidence and timings, including completed steps before failure.
+Current rule: read-only measurements are advisory and create **no resource Claim**.
+A missing or untrusted measurement step is `MEASUREMENT_UNVERIFIED`; disregard its
+reading and continue unrelated diagnosis, repair, and tasks. For a sequential
+recipe, only actual dependencies of an unsafe external mutation may defer that
+specific mutation; do not stop the entire workflow for a sensor/CI/health
+observation error. Legacy UNKNOWN/Claim rows are audit history, not global locks.
+File content and test console output are not persisted. The receipt retains
+ordered evidence and timings, including any invalid observation and its cause.
+See `docs/MEASUREMENT_EVIDENCE_AND_PROGRESS_POLICY.md`.
 Use `bct_read` batch when file contents, rather than verification metadata, are needed.
 The same tool accepts fixed versioned `local-python-validation` and `pr-readiness` recipes.
 Every prepared child is checkpointed in SQLite before dispatch and exposed by

@@ -72,45 +72,57 @@ class VerificationTests(unittest.TestCase):
                 self.call(principal=replace(self.principal, capabilities=frozenset({"verify"})))
             execute.assert_not_called()
 
-    def test_fail_fast_preserves_unknown_receipt_without_blocking_successor(self):
+    def test_untrusted_measurement_is_ignored_and_later_steps_run(self):
         reader = self.bct.operations._features["read"]
         tester = self.bct.operations._features["test"]
-        with patch.object(reader, "execute", return_value=FeatureResult(Outcome.UNKNOWN, {"code": "lost"}, release_claims=False)), patch.object(tester, "execute") as execute:
+        with patch.object(reader, "execute", return_value=FeatureResult(
+            Outcome.UNKNOWN, {"code": "lost"}, release_claims=False,
+        )), patch.object(tester, "execute", return_value=FeatureResult(
+            Outcome.APPLIED, {"status": "PASS"},
+        )) as execute:
             result = self.call()
-            self.assertEqual(Outcome.UNKNOWN, result.outcome)
-            execute.assert_not_called()
+            self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+            self.assertEqual("MEASUREMENT_PARTIAL", result.evidence["status"])
+            self.assertEqual(["source"], result.evidence["unverified_measurements"])
+            self.assertTrue(result.evidence["measurement_did_not_block"])
+            execute.assert_called_once()
         journal = self.bct.store.get_operation_steps(operation_id="verify-1")
-        self.assertEqual("UNKNOWN", journal[0]["outcome"])
-        self.assertEqual("SKIPPED", journal[1]["state"])
+        self.assertEqual(["NOT_APPLIED", "APPLIED"], [x["outcome"] for x in journal])
+        self.assertEqual(["FINISHED", "FINISHED"], [x["state"] for x in journal])
         successor = self.call(operation="cannot-bypass")
         self.assertEqual(Outcome.APPLIED, successor.outcome)
         original = self.bct.store.get_operation_for(
             operation_id="verify-1", work_id="work", principal_id="owner",
         )
-        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual(Outcome.NOT_APPLIED, original.outcome)
 
-    def test_test_failure_stops_later_steps(self):
-        with patch.object(self.bct.operations._features["test"], "execute", return_value=FeatureResult(Outcome.APPLIED, {"status": "FAIL"})) as execute:
+    def test_failed_measurement_does_not_skip_later_checks(self):
+        with patch.object(self.bct.operations._features["test"], "execute", return_value=FeatureResult(
+            Outcome.APPLIED, {"status": "FAIL"},
+        )) as execute:
             result = self.call(steps=[self.steps[1], {**self.steps[1], "id": "later"}])
             self.assertEqual(Outcome.FAILED, result.outcome)
-            self.assertEqual(1, execute.call_count)
+            self.assertEqual("CHECKS_FAILED_NOT_BLOCKED", result.evidence["status"])
+            self.assertEqual(2, execute.call_count)
         journal = self.bct.store.get_operation_steps(operation_id="verify-1")
-        self.assertEqual("FAILED", journal[0]["outcome"])
-        self.assertEqual("SKIPPED", journal[1]["state"])
+        self.assertEqual(["FAILED", "FAILED"], [x["outcome"] for x in journal])
+        self.assertEqual(["FINISHED", "FINISHED"], [x["state"] for x in journal])
 
     def test_unexpected_verification_error_is_failed_not_unknown(self):
         reader = self.bct.operations._features["read"]
         tester = self.bct.operations._features["test"]
         with patch.object(
             reader, "execute", side_effect=RuntimeError("local reader defect")
-        ), patch.object(tester, "execute") as execute:
+        ), patch.object(tester, "execute", return_value=FeatureResult(
+            Outcome.APPLIED, {"status": "PASS"},
+        )) as execute:
             result = self.call(operation="verification-contract-failure")
         self.assertEqual(Outcome.FAILED, result.outcome)
         self.assertEqual(
             "VERIFY_STEP_CONTRACT_FAILURE",
             result.evidence["steps"][0]["evidence"]["code"],
         )
-        execute.assert_not_called()
+        execute.assert_called_once()
         self.assertFalse(any(
             item["operation_id"] == "verification-contract-failure"
             for item in self.bct.store.claim_diagnostics()

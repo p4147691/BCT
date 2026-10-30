@@ -1,3 +1,5 @@
+> **Current policy supersession (2026-10-30):** Read [measurement evidence and progress policy](MEASUREMENT_EVIDENCE_AND_PROGRESS_POLICY.md). Unproven measurements are ignored; they create no Claim, cannot stop diagnosis or unrelated work, and must be fixed at the observation source. Historical UNKNOWN/Claim statements below describe past effects, not current blanket operating restrictions. Real high-impact external changes still require exact authorization and operator approval.
+
 # BCT deployment and service contract
 
 ## Boundary

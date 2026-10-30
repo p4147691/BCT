@@ -175,9 +175,9 @@ feature의 세부 단계 증거는 같은 operation에 추가하고 두 번째 �
 operation_id는 사용자 소유 인스턴스 안에서 유일하다. digest에는 capability, 대상, 입력, work, 의미상 precondition을 포함하고 표시 이름은 제외한다.
 동일 ID 재호출은 read/reconcile만 수행하고 executor를 다시 호출하지 않는다.
 NOT_APPLIED 후 재시도가 필요하면 원래 결과와 연결된 새 operation_id를 발급하고 새 precondition을 검증한다.
-UNKNOWN 상태에서 ID만 바꿔 같은 효과를 실행하려 하면 관련 resource claim이 차단한다.
-FINISHED는 결과 기록 완료이지 항상 claim 해제를 의미하지 않는다. UNKNOWN이나 잔여 부분 효과가 있으면 claim을 유지한다.
-claim은 실행 부재와 검증된 terminal 결과/완료된 rollback 등 안전한 해제 증거가 있을 때만 해제한다. FAILED만 보고 자동 해제하지 않는다.
+현재 정책(2026-10-30): `docs/MEASUREMENT_EVIDENCE_AND_PROGRESS_POLICY.md`가 적용된다.
+상태 조회·계측·CI 관측 등의 결과를 신뢰할 근거가 없으면 `MEASUREMENT_UNVERIFIED`로 분리하고 결과를 판단에서 제외한다. **계측은 Claim을 생성하지 않고 다른 작업을 막지 않는다.** 관측 오류의 수리와 대상 작업은 별도로 진행한다.
+과거 UNKNOWN/Claim은 감사 기록이다. 이 값만으로 새 Work나 무관한 리소스를 차단하지 않는다. 실제 외부 변경이 중복될 위험이 있는 경우에 한해서 인증된 Work·정확한 대상·작업별 승인/중복 방지 경계를 검증한다. 단순 계측 실패는 그런 외부효과 증거가 아니다.
 
 외부 UI/프로세스/네트워크에 일반적인 exactly-once 보장을 주장하지 않는다.
 보장 목표는 durable intent + 중복 dispatch 차단 + 정확한 증거 기반 reconciliation이다.

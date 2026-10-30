@@ -169,8 +169,15 @@ class VerificationFeature:
                 result = FeatureResult(Outcome.NOT_APPLIED, {"code": str(exc)})
             except ConfirmedFailure as exc:
                 result = FeatureResult(Outcome.FAILED, {"code": str(exc)}, release_claims=exc.release_claims)
-            except UnknownEffectError:
-                result = FeatureResult(Outcome.UNKNOWN, {"code": "VERIFY_STEP_EFFECT_UNKNOWN"}, release_claims=False)
+            except UnknownEffectError as exc:
+                # A bounded verify step observes; it does not perform the
+                # target's external mutation. A missing reading is discarded.
+                result = FeatureResult(Outcome.NOT_APPLIED, {
+                    "classification": "MEASUREMENT_UNVERIFIED",
+                    "measurement_trusted": False,
+                    "target_state_inferred": False,
+                    "reason": type(exc).__name__,
+                })
             except Exception as exc:
                 # These bounded verification children are read/test/status
                 # observations. A generic implementation error is a failed
@@ -184,6 +191,12 @@ class VerificationFeature:
                     },
                     release_claims=True,
                 )
+            if result.outcome is Outcome.UNKNOWN:
+                result = FeatureResult(Outcome.NOT_APPLIED, {
+                    "classification": "MEASUREMENT_UNVERIFIED",
+                    "measurement_trusted": False,
+                    "target_state_inferred": False,
+                })
             evidence.append({"id": step["id"], "capability": child.capability,
                              "outcome": result.outcome.value, "evidence": result.evidence,
                              "elapsed_ms": round((time.monotonic() - tick) * 1000, 3)})
@@ -199,22 +212,31 @@ class VerificationFeature:
                 operation_id=request.operation_id, step_id=step["id"],
                 outcome=journal_outcome, evidence=result.evidence,
             )
-            if not passed:
-                self.store.skip_pending_operation_steps(
-                    operation_id=request.operation_id, after_ordinal=ordinal,
-                    reason="PRIOR_STEP_NOT_APPLIED:" + step["id"],
-                )
-                stopped = {"status": "STOPPED", "steps": evidence, "stopped_at": step["id"]}
-                if "recipe" in request.arguments:
-                    stopped["recipe"] = request.arguments["recipe"]
-                return FeatureResult(result.outcome if result.outcome is Outcome.UNKNOWN else Outcome.FAILED,
-                                     stopped,
-                                     release_claims=result.release_claims and result.outcome is not Outcome.UNKNOWN)
-        completed = {"status": "PASS", "steps": evidence,
+            # Continue every independent bounded check.  A faulty observer or
+            # failed check never suppresses the remaining diagnostics, while
+            # the terminal report still distinguishes actual test failure.
+        unverified = [item["id"] for item in evidence
+                      if item["evidence"].get("classification") == "MEASUREMENT_UNVERIFIED"]
+        failed = [item["id"] for item in evidence
+                  if item["evidence"].get("classification") != "MEASUREMENT_UNVERIFIED"
+                  and (item["outcome"] != Outcome.APPLIED.value
+                       or (item["capability"] == "test"
+                           and item["evidence"].get("status") != "PASS")
+                       or (item["capability"] == "github_pr_status"
+                           and item["evidence"].get("checks_ready") is not True))]
+        if failed:
+            outcome, status = Outcome.FAILED, "CHECKS_FAILED_NOT_BLOCKED"
+        elif unverified:
+            outcome, status = Outcome.NOT_APPLIED, "MEASUREMENT_PARTIAL"
+        else:
+            outcome, status = Outcome.APPLIED, "PASS"
+        completed = {"status": status, "steps": evidence,
+                     "failed_steps": failed, "unverified_measurements": unverified,
+                     "measurement_did_not_block": True,
                      "elapsed_ms": round((time.monotonic() - started) * 1000, 3)}
         if "recipe" in request.arguments:
             completed["recipe"] = request.arguments["recipe"]
-        return FeatureResult(Outcome.APPLIED, completed)
+        return FeatureResult(outcome, completed)
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
         raise RuntimeError("VERIFY_AUTHENTICATED_COORDINATOR_REQUIRED")
