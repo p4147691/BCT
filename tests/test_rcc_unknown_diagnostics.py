@@ -63,7 +63,8 @@ class SeparateRecoveryReceiptTest(unittest.TestCase):
         expected = dict(target,request_digest=digest,text_sha256=text_hash)
         proof = dict(target,request_digest=digest,user_turn_count=1,
                      user_turn_sha256=text_hash,submitted=True,
-                     ack_operation_id="old",result_state="RESULT_PERSISTED",
+                     ack_operation_id="old",ack_state="SUBMITTED",result_state="RESULT_PERSISTED",
+                     response_conversation_key="uuid",response_tab_id=3,
                      response_text=response,response_sha256=response_hash,
                      response_operation_id="old")
         original_before = dict(original)
@@ -73,6 +74,17 @@ class SeparateRecoveryReceiptTest(unittest.TestCase):
         self.assertEqual(r["status"],"VERIFIED")
         self.assertEqual(r["missing_proof"],[])
         self.assertEqual(original,original_before)
+        tampered_ack = dict(proof, ack_state="PENDING")
+        denied = build_separate_recovery_receipt(
+            recovery_operation_id="recover-2", original=original,
+            proof=tampered_ack, expected=expected)
+        self.assertEqual(denied["status"], "INSUFFICIENT_EVIDENCE")
+        self.assertIn("SUBMISSION_ACK", denied["missing_proof"])
+        tampered_target = dict(proof, response_tab_id=99)
+        denied = build_separate_recovery_receipt(
+            recovery_operation_id="recover-3", original=original,
+            proof=tampered_target, expected=expected)
+        self.assertIn("EXACT_RESPONSE_RECEIPT", denied["missing_proof"])
 
 class DurableRecoveryStoreTest(unittest.TestCase):
     def test_persist_separately_and_preserve_original(self):

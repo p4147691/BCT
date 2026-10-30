@@ -73,9 +73,12 @@ def build_separate_recovery_receipt(
             and re.fullmatch(r"[a-f0-9]{64}", expected["text_sha256"]) is not None
             and proof.get("user_turn_sha256") == expected["text_sha256"]),
         "SUBMISSION_ACK": proof.get("submitted") is True
-            and proof.get("ack_operation_id") == original.get("operation_id"),
+            and proof.get("ack_operation_id") == original.get("operation_id")
+            and proof.get("ack_state") == "SUBMITTED",
         "EXACT_RESPONSE_RECEIPT": (
             proof.get("result_state") == "RESULT_PERSISTED"
+            and proof.get("response_conversation_key") == expected.get("conversation_key")
+            and proof.get("response_tab_id") == expected.get("tab_id")
             and isinstance(proof.get("response_text"), str)
             and bool(proof["response_text"].strip())
             and proof.get("response_sha256") ==
