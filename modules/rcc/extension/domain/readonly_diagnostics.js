@@ -455,10 +455,15 @@ async function handleNativeCommand(message) {
             state.pending?.[relayId] || null;
 
 
+          const exactSubmission = await readExactTabSendSubmissionProof({
+            relayId, workId: message.workId, instanceId: message.instanceId,
+          });
+
           postNative({ type: 'host:result', requestId, ok: true, relayId, found: !!completed,
 
 
             completed: !!completed, pending: !!pending, result: completed,
+            exactSendSubmission: exactSubmission,
 
 
             pendingStatus: newChatPendingStatus || (pending ? { to: String(pending.to || ''), createdAt: Number(pending.createdAt || 0) || null,

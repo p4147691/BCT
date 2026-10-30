@@ -59,6 +59,37 @@ function publicExactTabSendResult(receipt, replayed = false) {
   };
 }
 
+// Read-only observation of the *exact* submitted message receipt.  This is
+// neither a response receipt nor proof of a rendered user turn, and never
+// authorizes replay or UNKNOWN reconciliation.
+async function readExactTabSendSubmissionProof(message) {
+  await endpointSessionReady;
+  const operationId = exactTabSendOperationId(message?.relayId || message?.text);
+  const workId = String(message?.workId || '').trim();
+  const instanceId = String(message?.instanceId || '').trim();
+  if (!workId || !instanceId) return null;
+  const state = await loadState();
+  if (instanceId !== String(state.settings?.instanceId || '')) return null;
+  const receipts = await readExactTabSendReceipts();
+  const receipt = receipts[operationId];
+  if (!receipt || String(receipt.operationId || '') !== operationId
+      || String(receipt.workId || '') !== workId
+      || String(receipt.instanceId || '') !== instanceId
+      || String(receipt.sessionId || '') !== String(endpointSessionId || '')) return null;
+  return {
+    source: 'RCC_PERSISTED_EXACT_SEND_V1',
+    operationId, instanceId, sessionId: String(receipt.sessionId),
+    tabId: Number(receipt.tabId) || null,
+    windowId: Number(receipt.windowId) || null,
+    conversationKey: String(receipt.conversationKey || ''),
+    textSha256: String(receipt.textSha256 || ''),
+    state: String(receipt.state || 'UNKNOWN'),
+    submitted: receipt.state === 'SUBMITTED',
+    userTurnProven: false,
+    responseProven: false,
+  };
+}
+
 function exactTabIsBlankChat(url, conversationKey) {
   return !conversationKey
     && /^https:\/\/(chatgpt\.com|chat\.openai\.com)\/?(?:[?#].*)?$/i.test(String(url || ''));

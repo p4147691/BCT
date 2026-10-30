@@ -8,6 +8,20 @@ class DirectTabPrepareTests(unittest.TestCase):
         self.feature=RelayBrowserFeature()
         self.work=Work("bounded-work","test",("D:\\BCT\\source",),frozenset({"relay_browser"}),"owner")
         self.args=dict(command="send-to-tab",instance_id="6174664e1c1b4e6db1d4729c841db3c9",session_id="786b7b6b9671446f85497e097111e5ec",tab_id=594834261,window_id=594834176,conversation_key="",text="test")
+    def test_result_read_exposes_only_authenticated_work_scope(self):
+        args = {
+            "command": "result", "instance_id": self.args["instance_id"],
+            "relay_id": "original-direct-operation",
+        }
+        request = self.feature.prepare(work=self.work, arguments=args)
+        self.assertEqual("original-direct-operation", request.arguments["text"])
+        self.assertEqual(self.work.work_id, request.arguments["extra"]["workId"])
+        self.assertFalse(request.preconditions["mutating"])
+        with self.assertRaises(PreconditionError):
+            self.feature.prepare(work=self.work, arguments={
+                **args, "work_id": "spoofed-other-work",
+            })
+
     def test_single_command_and_work_scoped_resource(self):
         req=self.feature.prepare(work=self.work,arguments=self.args)
         self.assertEqual("relay_browser",req.capability)

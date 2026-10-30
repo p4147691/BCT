@@ -602,6 +602,11 @@ class RelayBrowserFeature:
             if not relay_id or len(relay_id) > 80:
                 raise PreconditionError("RCC_RESULT_OPERATION_ID_REQUIRED")
             prepared["text"] = relay_id
+            if command == "result":
+                # The Store already fences relay_id to this exact Work and Principal.
+                # Pass only the authenticated Work ID to the host's read-only
+                # exact-tab submission receipt lookup; never supply caller text.
+                prepared["extra"]["workId"] = work.work_id
             if command == "reconcile-send":
                 allowed.update({"original_to", "original_text", "original_timeout_s"})
                 original_to = arguments.get("original_to")
