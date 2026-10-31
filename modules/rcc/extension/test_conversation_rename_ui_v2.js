@@ -25,7 +25,7 @@ menuRoot.querySelectorAll = (selector) =>
   selector === '[role="menuitem"], button, a[href]' ? [renameItem] : [];
 
 const toolbarButton = visibleNode({
-  'aria-label': '더보기',
+  'aria-label': 'Chat actions',
   'aria-haspopup': 'menu',
 });
 const toolbar = visibleNode({

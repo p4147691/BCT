@@ -119,7 +119,7 @@ function currentConversationMenuButton() {
     .filter((button) => isVisible(button) && !button.disabled);
   const matches = buttons.filter((button) => {
     const text = renameSemanticText(button);
-    return /^(more|more options|options|menu|더보기|더 보기|옵션|메뉴)$/i.test(text);
+    return /^(more|more options|options|menu|chat actions?|더보기|더 보기|옵션|메뉴|채팅 작업|대화 작업)$/i.test(text);
   });
   return matches.length === 1 ? matches[0] : null;
 }
