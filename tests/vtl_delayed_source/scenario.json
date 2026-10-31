@@ -21,6 +21,20 @@
       "type": "assertJs",
       "expression": "window.__testNegative().then(r => r.ok === true && r.responseTurnKey === 'current-assistant-turn' && r.responseSourceUserTurnKey === 'current-user-turn' && r.latestUserTurnKey === 'unrelated-followup-user-turn' && r.latestUserSha256 !== r.responseSourceUserSha256)",
       "message": "RCC must detect later unrelated user turn instead of accepting previous Assistant reply"
+    },
+    {
+      "type": "goto",
+      "file": "fixture.html"
+    },
+    {
+      "type": "assertJs",
+      "expression": "(async()=>{document.querySelector('[data-turn-key=\"current-user-turn\"]').setAttribute('data-turn-key','fallback-turn-4');document.querySelector('[data-turn-key=\"current-assistant-turn\"]').setAttribute('data-turn-key','fallback-turn-4');const r=await window.__rccRead();return r.ok===true && r.latestUserTurnKey==='fallback-turn-4' && r.responseSourceUserTurnKey==='fallback-turn-4' && r.latestUserTextOccurrenceCount===1 && r.responseSourceUserTextOccurrenceCount===1;})()",
+      "message": "Fallback-turn must be accepted only when the user text is unique"
+    },
+    {
+      "type": "assertJs",
+      "expression": "(async()=>{const old=document.querySelector('[data-turn-key=\"current-user-turn\"]')||document.querySelector('[data-turn-key=\"fallback-turn-4\"]');const duplicate=old.cloneNode(true);duplicate.setAttribute('data-turn-key','duplicate-user-turn');document.querySelector('main').insertBefore(duplicate,old);const r=await window.__rccRead();return r.ok===true && r.latestUserTextOccurrenceCount===2 && r.responseSourceUserTextOccurrenceCount===2;})()",
+      "message": "Duplicate user text must be detected and blocked by the Core gate"
     }
   ]
 }

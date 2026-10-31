@@ -40,6 +40,12 @@ DELAYED_SOURCE_PROOF_ROLLBACK = DELAYED_SOURCE_PROOF_ROOT / "rollback_installed_
 DELAYED_SOURCE_PROOF_MANIFEST = DELAYED_SOURCE_PROOF_ROOT / "release_manifest_delayed_source_proof_immutable.json"
 DELAYED_SOURCE_PROOF_MANIFEST_SHA256 = "4ec1e98529f784d63f75d8f7f07ebb490ecc7afc71247680c2d0674f8386143b"
 DELAYED_SOURCE_PROOF_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-delayed-source-proof")
+DELAYED_SOURCE_PROOF_V2_ROOT = Path(r"D:\BCT\data\RCC_DELAYED_SOURCE_PROOF_V2_20261101")
+DELAYED_SOURCE_PROOF_V2_STAGE = DELAYED_SOURCE_PROOF_V2_ROOT / "candidate_1_0_61"
+DELAYED_SOURCE_PROOF_V2_ROLLBACK = DELAYED_SOURCE_PROOF_V2_ROOT / "rollback_installed_1_0_61"
+DELAYED_SOURCE_PROOF_V2_MANIFEST = DELAYED_SOURCE_PROOF_V2_ROOT / "release_manifest_delayed_source_proof_v2_immutable.json"
+DELAYED_SOURCE_PROOF_V2_MANIFEST_SHA256 = "c1bf097f51bb1e4d0ea164e95b5edccd3dff7f6b64fa7c2b18a552bb71c5c1d8"
+DELAYED_SOURCE_PROOF_V2_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-delayed-source-proof-v2")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
