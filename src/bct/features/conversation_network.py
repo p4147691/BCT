@@ -9,6 +9,8 @@ from bct.conversation_network import (
     patch_conversation_role_tags,
     resolve_project_id,
     upsert_project,
+    configure_conversation_scope,
+    set_conversation_network_name,
 )
 from bct.core.models import FeatureRequest, FeatureResult, Outcome, PreconditionError, Work
 from bct.core.store import Store
@@ -44,6 +46,10 @@ class ConversationNetworkUpdateFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "role-patch").strip().casefold()
+        if operation == "node-info-set":
+            return self._prepare_node_info_set(arguments)
+        if operation == "network-name-set":
+            return self._prepare_network_name_set(arguments)
         if operation == "project-upsert":
             return self._prepare_project_upsert(arguments)
         if operation == "role-patch":
@@ -51,6 +57,50 @@ class ConversationNetworkUpdateFeature:
         if operation == "membership-assign":
             return self._prepare_membership_assign(arguments)
         raise PreconditionError("CONVERSATION_NETWORK_UPDATE_OPERATION_INVALID")
+
+    def _prepare_node_info_set(self, arguments: dict[str, Any]) -> FeatureRequest:
+        allowed = {"operation", "conversation_key", "display_name", "scope_name",
+                   "role_tags", "expected_scope_id", "expected_role_tags_sha256",
+                   "node_memo", "assigned_task"}
+        if set(arguments) - allowed:
+            raise PreconditionError("CONVERSATION_NETWORK_UPDATE_FIELD_NOT_ALLOWED")
+        key = str(arguments.get("conversation_key") or "").strip().lower()
+        if not _UUID.fullmatch(key):
+            raise PreconditionError("CONVERSATION_NETWORK_CONVERSATION_KEY_INVALID")
+        name = str(arguments.get("display_name") or "").strip()
+        scope = str(arguments.get("scope_name") or "").strip()
+        if not name or len(name) > 120 or len(scope) > 120:
+            raise PreconditionError("CONVERSATION_NETWORK_SCOPE_NAME_INVALID")
+        expected_scope = str(arguments.get("expected_scope_id") or "").strip()
+        expected_sha = str(arguments.get("expected_role_tags_sha256") or "").strip().lower()
+        if expected_sha and not _SHA256.fullmatch(expected_sha):
+            raise PreconditionError("CONVERSATION_NETWORK_ROLE_TAGS_SHA256_INVALID")
+        tags = self._tags(arguments.get("role_tags", []), "CONVERSATION_NETWORK_ROLE_TAGS_INVALID")
+        values = {"operation": "node-info-set", "conversation_key": key,
+                  "display_name": name, "scope_name": scope, "role_tags": tags,
+                  "expected_scope_id": expected_scope,
+                  "expected_role_tags_sha256": expected_sha}
+        for field, limit in (("node_memo", 2000), ("assigned_task", 240)):
+            if field in arguments:
+                value = arguments[field]
+                if not isinstance(value, str) or len(value) > limit or "\\x00" in value:
+                    raise PreconditionError("CONVERSATION_NETWORK_NODE_METADATA_INVALID")
+                values[field] = value
+        return FeatureRequest(self.capability, "conversation-network-node:" + key,
+                              values, ("conversation-network-membership:" + key,))
+
+    def _prepare_network_name_set(self, arguments: dict[str, Any]) -> FeatureRequest:
+        if set(arguments) != {"operation", "project_id", "expected_name", "new_name"}:
+            raise PreconditionError("CONVERSATION_NETWORK_UPDATE_FIELD_NOT_ALLOWED")
+        project = str(arguments["project_id"] or "").strip()
+        previous = str(arguments["expected_name"] or "").strip()
+        name = str(arguments["new_name"] or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,96}", project) or not previous or not name or len(name) > 120:
+            raise PreconditionError("CONVERSATION_NETWORK_PROJECT_NAME_INVALID")
+        return FeatureRequest(self.capability, "conversation-network:" + project,
+                              {"operation": "network-name-set", "project_id": project,
+                               "expected_name": previous, "new_name": name},
+                              ("conversation-network-project:" + project,))
 
     def _prepare_project_upsert(self, arguments: dict[str, Any]) -> FeatureRequest:
         if set(arguments) != {"operation", "project_id", "display_name"}:
@@ -143,6 +193,30 @@ class ConversationNetworkUpdateFeature:
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
         operation = request.arguments["operation"]
+        if operation == "node-info-set":
+            values = request.arguments
+            try:
+                result = configure_conversation_scope(
+                        self.store, conversation_key=values["conversation_key"],
+                        display_name=values["display_name"], scope_name=values["scope_name"],
+                        role_tags=values["role_tags"],
+                        expected_role_tags_sha256=values["expected_role_tags_sha256"] or None,
+                        expected_scope_id=values["expected_scope_id"],
+                        **{k: values[k] for k in ("node_memo", "assigned_task") if k in values},
+                    )
+            except ConversationNetworkError as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(Outcome.APPLIED, {"operation": operation, **result}, output=result)
+        if operation == "network-name-set":
+            try:
+                result = set_conversation_network_name(
+                    self.store, project_id=request.arguments["project_id"],
+                    expected_name=request.arguments["expected_name"],
+                    new_name=request.arguments["new_name"],
+                )
+            except ConversationNetworkError as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(Outcome.APPLIED, {"operation": operation, **result}, output=result)
         if operation == "project-upsert":
             try:
                 result = upsert_project(

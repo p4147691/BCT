@@ -7,6 +7,7 @@ from pathlib import Path
 
 from bct.conversation_network import (
     ConversationNetworkError, arrange_conversations, configure_conversation_scope,
+    set_conversation_network_name,
     conversation_display_order_directory, conversation_scope_directory,
     patch_conversation_role_tags, project_view, record_monitor_snapshot,
     resolve_project_id, set_membership, upsert_conversation, upsert_project,
@@ -29,6 +30,35 @@ class ConversationNetworkTests(unittest.TestCase):
                        tags=["조정", "병목 분석"], now=100.0)
         set_membership(self.store, project_id="bct.rcc", conversation_key=WORKER,
                        tags=["구현", "테스트"], now=100.0)
+
+    def test_network_name_set_keeps_id_members_and_node_metadata(self):
+        before = configure_conversation_scope(
+            self.store, conversation_key=WORKER, display_name="Worker",
+            scope_name="BCT RCC", role_tags=["Worker"],
+            node_memo="keep memo", assigned_task="keep task",
+        )
+        changed = set_conversation_network_name(
+            self.store, project_id=before["scope_id"],
+            expected_name="BCT RCC", new_name="Renamed Network",
+        )
+        self.assertEqual(before["scope_id"], changed["project_id"])
+        self.assertTrue(changed["changed"])
+        after = conversation_scope_directory(self.store, conversation_keys=[MANAGER, WORKER])
+        self.assertEqual("Renamed Network", after[MANAGER]["scope_name"])
+        self.assertEqual("Renamed Network", after[WORKER]["scope_name"])
+        self.assertEqual("keep memo", after[WORKER]["node_memo"])
+        self.assertEqual("keep task", after[WORKER]["assigned_task"])
+        with self.assertRaises(ConversationNetworkError):
+            set_conversation_network_name(
+                self.store, project_id=before["scope_id"],
+                expected_name="BCT RCC", new_name="stale",
+            )
+        upsert_project(self.store, project_id="other", display_name="Other Network")
+        with self.assertRaises(ConversationNetworkError):
+            set_conversation_network_name(
+                self.store, project_id=before["scope_id"],
+                expected_name="Renamed Network", new_name="Other Network",
+            )
 
     def test_node_memo_task_persist_and_legacy_edit_preserves_them(self):
         saved = configure_conversation_scope(
