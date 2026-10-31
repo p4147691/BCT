@@ -4110,7 +4110,14 @@ function monitorBctNodeSelectionKey(value) {
 
 function applyMonitorBctNodeHighlight(hwnd) {
   monitorBctNodeHighlightedHwnd = String(hwnd || "");
-  applyMonitorWindowHighlight(hwnd, { bctNode: true });
+  // A BCT node selection is a Monitor-only projection.  It must not become a
+  // generic HWND selection: that selection is shared with the native window
+  // path and can decorate the real Chrome window.  Clear any old generic
+  // selection, then keep only the node-list/thumbnail perimeter below.
+  monitorSelectedHwnds.clear();
+  monitorHighlightedHwnd = "";
+  applyMonitorWindowHighlight("", { preserve: true, remote: true });
+  publishMonitorSharedSelection();
   syncMonitorBctNodeTargetHighlight();
   // A selected node may be in a minimized Chrome window. Re-project the same
   // exact selection onto the desktop's minimized summary without changing any

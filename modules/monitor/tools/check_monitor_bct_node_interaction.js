@@ -116,6 +116,10 @@ function loadModule() {
   assert.doesNotMatch(monitor, /monitor-bct-node-list-end/);
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
   assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\)/);
+  assert.match(monitor, /function applyMonitorBctNodeHighlight\(hwnd\)[\s\S]{0,700}applyMonitorWindowHighlight\("", \{ preserve: true, remote: true \}\)[\s\S]{0,240}publishMonitorSharedSelection\(\)/,
+    "BCT node selection must clear generic HWND selection instead of decorating the real Chrome window");
+  assert.doesNotMatch(monitor, /function applyMonitorBctNodeHighlight\(hwnd\)[\s\S]{0,400}applyMonitorWindowHighlight\(hwnd/,
+    "BCT node selection must never forward its HWND to the generic window-selection path");
   assert.match(css, /monitor-bct-node-target-highlighted/);
   assert.doesNotMatch(css, /\.monitor-bct-node-row\.is-selected \.monitor-bct-node-number/,
     "the node-list number remains neutral; selection belongs only in the thumbnail");
