@@ -2331,6 +2331,12 @@ function scheduleMonitorChatNavigationRefresh(message) {
   const tabId = Number(message?.tabId);
   if (!Number.isInteger(tabId) || tabId < 0) return;
 
+  // A real Chrome tab activation must update Monitor selection immediately.
+  // The follow-up reads below can take variable time while RCC is refreshing;
+  // they refine membership and HWND data, but must never gate the visible
+  // list/thumbnail response to a user click.
+  applyMonitorChatNavigationIdentity(message, monitorLastAiState);
+
   monitorChatNavigationPendingByTab.set(tabId, { ...message, tabId });
   if (monitorChatNavigationRefreshTimer) clearTimeout(monitorChatNavigationRefreshTimer);
   monitorChatNavigationRefreshTimer = setTimeout(async () => {

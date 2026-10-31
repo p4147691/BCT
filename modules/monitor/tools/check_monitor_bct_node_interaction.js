@@ -145,6 +145,8 @@ function loadModule() {
     "an actual Chrome tab activation must also project the exact browser-window perimeter into Monitor");
   assert.match(monitor, /refreshMonitorBctDisplayWindowHwnd\(\);\s*\/\/ The first pass may happen[\s\S]{0,380}applyMonitorChatNavigationIdentity\(item, monitorLastAiState\)/,
     "an actual Chrome tab activation is re-projected after the current HWND index refresh");
+  assert.match(monitor, /function scheduleMonitorChatNavigationRefresh\(message\)[\s\S]*?applyMonitorChatNavigationIdentity\(message, monitorLastAiState\);[\s\S]*?monitorChatNavigationPendingByTab\.set/,
+    "a Chrome tab activation must paint current Monitor selection before slower state refreshes begin");
   assert.match(background, /chrome\.windows\.onFocusChanged\.addListener\(\(windowIdValue\) => \{[\s\S]{0,1200}chrome\.tabs\.query\(\{ windowId, active: true \}\)[\s\S]{0,850}publishMonitorChatNavigation\(tabId, tab\?\.url \|\| "", "window-focused", windowId, true\)/,
     "foregrounding an existing Chrome window must publish its already-active tab to Monitor");
   assert.match(background, /reasonText !== "tab-activated" && reasonText !== "window-focused"/,
