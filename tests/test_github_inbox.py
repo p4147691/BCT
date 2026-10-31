@@ -41,6 +41,14 @@ class GitHubInboxTests(unittest.TestCase):
             if rows and rows[0]["state"] != "WAITING_EXTERNAL": return rows
             time.sleep(.01)
         return self.bct.store.get_github_run_inbox(node_id="n1")
+    def test_production_inbox_timeout_covers_long_core_ci(self):
+        from bct.features.github_inbox import _settings
+        root = Path(__file__).resolve().parents[1]
+        initial, maximum, timeout = _settings(root / "bct.toml")
+        self.assertGreaterEqual(timeout, 1800)
+        self.assertLessEqual(maximum, 30)
+        self.assertGreaterEqual(initial, 5)
+
     def test_duplicate_merges_recipient_and_is_terminal_once(self):
         first = self.watch("w1"); second = self.watch("w2", node="n2")
         self.assertTrue(first.evidence["watcher_started"]); self.assertFalse(second.evidence["watcher_started"])
