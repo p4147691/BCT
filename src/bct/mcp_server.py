@@ -377,6 +377,31 @@ def build_mcp(
             work_id, operation_id, arguments, approval_ref
         )
 
+    @server.tool(
+        name="bct_delayed_send_message",
+        description=(
+            "Prearm one Delayed Send Message for the worker's current response. "
+            "On the first turn supply the exact RCC instance, worker conversation "
+            "and manager conversation. Later SELF turns need only work_id, "
+            "operation_id and task_id. The Core waits for a completed response "
+            "then sends its final NEXT TASK — SELF/MANAGER instruction."
+        ),
+        structured_output=True,
+    )
+    async def bct_delayed_send_message(
+        work_id: str, task_id: str, operation_id: str = "",
+        instance_id: str = "", conversation_key: str = "",
+        manager_conversation_key: str = "", manager_instance_id: str = "",
+    ) -> dict[str, Any]:
+        generated = operation_id or ("delayed-arm-" + uuid.uuid4().hex[:24])
+        return await make_executor("relay_browser")(
+            work_id, generated,
+            {"command":"delayed-send-message","task_id":task_id,
+             "instance_id":instance_id,"conversation_key":conversation_key,
+             "manager_conversation_key":manager_conversation_key,
+             "manager_instance_id":manager_instance_id},
+        )
+
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
     async def bct_work_create(
         work_id: str,

@@ -363,11 +363,25 @@ if (message.type === 'relay:readLatestAssistant') {
       return { ok: false, error: 'READ_LATEST_ASSISTANT_TOO_LARGE' };
     }
     const generating = isGenerating();
-    const terminal = !generating && (!node || hasCompletionAction());
+    const terminal = !generating && (!!node && hasCompletionAction());
+    const assistantUnits = getAssistantNodes();
+    const turn = node?.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]');
+    const responseTurnKey = turn?.getAttribute('data-turn-key')
+      || turn?.getAttribute('data-content-search-turn-key')
+      || turn?.getAttribute('data-testid') || '';
+    const composer = document.querySelector(
+      '#prompt-textarea, div[contenteditable="true"][data-virtualkeyboard="true"], '
+      + 'textarea[name="prompt-textarea"], form div[contenteditable="true"][role="textbox"]'
+    );
+    const inputReady = !!(terminal && composer
+      && !composer.disabled && composer.getAttribute('aria-disabled') !== 'true'
+      && !composer.closest('[inert]'));
     return {
       ok: true, conversationKey: actualConversationKey,
       observationState: node ? (terminal ? 'TERMINAL' : 'IN_PROGRESS') : 'EMPTY',
-      generating, terminal, responseText,
+      generating, terminal, inputReady, responseTurnKey,
+      responseTurnCount: assistantUnits.length,
+      responseText,
       responseSha256: responseText ? await newChatTextSha256(responseText) : '',
       responseLength: responseText.length,
       observedAt: Date.now(),
