@@ -191,3 +191,24 @@ class DurableWatchLedger:
                 raise ValueError("DELAYED_WATCH_NOT_RESERVED")
         return bound
 
+
+
+class DelayedSendRunner:
+    """Connect existing RCC read/send callbacks to durable continuation state."""
+    def __init__(self, ledger: DurableWatchLedger, *, read_response, send_message):
+        self.ledger = ledger
+        self.read_response = read_response
+        self.send_message = send_message
+
+    def poll_once(self, watch: Watch, *, manager_conversation_key: str) -> Continuation:
+        current = self.ledger.get(watch.task_id, watch.generation)
+        if current is None or current["state"] != "WATCHING":
+            return Continuation("WAITING_WATCH")
+        observation = self.read_response(watch)
+        return advance_from_rcc(
+            watch=watch, observation=observation,
+            manager_conversation_key=manager_conversation_key,
+            register_next_watch=self.ledger.reserve,
+            send_message=self.send_message,
+        )
+

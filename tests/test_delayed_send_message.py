@@ -4,7 +4,7 @@ from pathlib import Path
 from bct.core.store import Store
 
 from bct.delayed_send_message import (
-    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError, DurableWatchLedger,
+    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError, DurableWatchLedger, DelayedSendRunner,
 )
 
 
@@ -53,6 +53,26 @@ class DelayedSendMessageTests(unittest.TestCase):
                               response_turn_id="turn-2")
             self.assertEqual("turn-2",bound.response_turn_id)
             self.assertEqual("WATCHING",DurableWatchLedger(store).get("task-1",2)["state"])
+
+    def test_runner_reads_and_sends_using_durable_watch(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger=DurableWatchLedger(Store(Path(root)/"state.sqlite"))
+            ledger.reserve(Watch("task-1",1,"worker-uuid","",""))
+            ledger.bind(Watch("task-1",1,"worker-uuid","",""),
+                        send_receipt="send-1",response_turn_id="turn-1")
+            sent=[]
+            runner=DelayedSendRunner(
+                ledger,
+                read_response=lambda watch: {
+                    "conversation_key":"worker-uuid","response_turn_id":"turn-1",
+                    "response_text":"NEXT TASK — SELF\nContinue implementation.",
+                    "response_complete":True,"input_ready":True},
+                send_message=lambda target,body,key: (
+                    sent.append((target,body,key)) or "send-2"))
+            result=runner.poll_once(self.watch,manager_conversation_key="manager-uuid")
+            self.assertEqual("SELF_SENT",result.status)
+            self.assertEqual("worker-uuid",sent[0][0])
+            self.assertEqual("RESERVED",ledger.get("task-1",2)["state"])
 
     def test_self_reserves_next_watch_before_send(self):
         result = self.advance("Completed part 1.\nNEXT TASK — SELF\nFix remaining issue.")
