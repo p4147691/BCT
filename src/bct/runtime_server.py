@@ -234,6 +234,7 @@ def main() -> int:
         policy_path=policy_path,
         data_root=runtime_root.parent / "data",
     )
+    from .delayed_send_message import DelayedSendService
     from .background_operations import recover_orphaned_orchestration_operations
     orphan_recoveries = recover_orphaned_orchestration_operations(bct)
     monitor_principal = ensure_monitor_work(bct, runtime_root=runtime_root)
@@ -292,6 +293,7 @@ def main() -> int:
         },
         "bottleneck_ack": bottleneck_ack.status(),
         "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
+        "delayed_send_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
     }
 
     recovery_stop = threading.Event()
@@ -425,6 +427,28 @@ def main() -> int:
                     "state": "UNAVAILABLE", "error": type(exc).__name__,
                     "polls": int(state["chat_stream_rcc_watch"].get("polls", 0)) + 1,
                     "last_events": 0,
+                }
+
+    def delayed_send_watch_loop() -> None:
+        service = DelayedSendService(
+            store=bct.store,
+            relay_feature=bct.operations._features["relay_browser"],
+            operations=bct.operations,
+        )
+        while not recovery_stop.wait(2.0):
+            try:
+                outcome = service.poll_once(limit=8)
+                state["delayed_send_watch"] = {
+                    "state":"OBSERVED",
+                    "polls":int(state["delayed_send_watch"].get("polls",0))+1,
+                    "last_events":len(outcome["events"]),
+                    "last_result":outcome,
+                }
+            except Exception as exc:
+                state["delayed_send_watch"] = {
+                    "state":"UNAVAILABLE",
+                    "error":type(exc).__name__,
+                    "polls":int(state["delayed_send_watch"].get("polls",0))+1,
                 }
 
     def status_snapshot() -> dict[str, Any]:
@@ -594,6 +618,10 @@ def main() -> int:
         name="bct-chat-stream-rcc-watch", daemon=True,
     )
     chat_stream_watch_thread.start()
+    delayed_send_watch_thread = threading.Thread(
+        target=delayed_send_watch_loop, name="bct-delayed-send-watch", daemon=True,
+    )
+    delayed_send_watch_thread.start()
     if bct.manager_decision_recovery is not None:
         recovery_thread = threading.Thread(
             target=manager_decision_recovery_loop,

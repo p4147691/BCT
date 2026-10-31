@@ -85,7 +85,7 @@ class DelayedSendMessageTests(unittest.TestCase):
         payload = {"ok": True, "conversationKey": "worker-uuid",
                    "responseText": body, "responseSha256": digest,
                    "observationState": "TERMINAL", "terminal": True,
-                   "generating": False}
+                   "generating": False, "inputReady": True}
         observation = normalize_rcc_latest_assistant(
             payload, conversation_key="worker-uuid",
             expected_response_sha256="0"*64, response_turn_id="turn-1",
@@ -112,7 +112,7 @@ class DelayedSendMessageTests(unittest.TestCase):
                         "responseText":body,
                         "responseSha256":hashlib.sha256(body.encode()).hexdigest(),
                         "observationState":"TERMINAL","terminal":True,
-                        "generating":False}
+                        "generating":False,"inputReady":True}
         client=Client()
         reader=RccLatestAssistantReader(
             client,instance_id="instance123",session_id="a"*32,

@@ -6,6 +6,9 @@ existing durable watch registration and send-message implementations.
 from __future__ import annotations
 
 import hashlib
+import json
+import re
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
@@ -148,9 +151,13 @@ class DurableWatchLedger:
                     response_turn_id TEXT NOT NULL,
                     source_send_receipt TEXT NOT NULL,
                     state TEXT NOT NULL,
+                    context_json TEXT NOT NULL DEFAULT '{}',
                     PRIMARY KEY(task_id,generation)
                 )
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(delayed_send_watches)")}
+            if "context_json" not in columns:
+                db.execute("ALTER TABLE delayed_send_watches ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'")
 
     def reserve(self, watch: Watch) -> bool:
         with self.store.transaction() as db:
@@ -164,7 +171,7 @@ class DurableWatchLedger:
                     raise ValueError("DELAYED_WATCH_CONFLICT")
                 return False
             db.execute(
-                "INSERT INTO delayed_send_watches VALUES(?,?,?,?,?,?)",
+                "INSERT INTO delayed_send_watches(task_id,generation,conversation_key,response_turn_id,source_send_receipt,state) VALUES(?,?,?,?,?,?)",
                 (watch.task_id,watch.generation,watch.conversation_key,
                  watch.response_turn_id,watch.source_send_receipt,"RESERVED"))
             return True
@@ -180,6 +187,96 @@ class DurableWatchLedger:
                 "WHERE task_id=? AND generation=? AND state='RESERVED'",
                 (watch.task_id,watch.generation))
         return created
+
+    def prearm_task(self, *, task_id: str, work_id: str, principal_id: str,
+                    assignment_epoch: int, instance_id: str,
+                    conversation_key: str, manager_conversation_key: str,
+                    manager_instance_id: str, baseline: dict,
+                    registration_receipt: str) -> dict:
+        """Worker prearms one current response, reusing any reserved next turn."""
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id):
+            raise ValueError("DELAYED_TASK_ID_INVALID")
+        context = {
+            "work_id": work_id, "principal_id": principal_id,
+            "assignment_epoch": assignment_epoch,
+            "instance_id": instance_id, "manager_instance_id": manager_instance_id,
+            "conversation_key": conversation_key,
+            "manager_conversation_key": manager_conversation_key,
+            "baseline_count": baseline.get("responseTurnCount"),
+            "baseline_generating": baseline.get("generating") is True,
+            "baseline_key": str(baseline.get("responseTurnKey") or ""),
+            "baseline_sha": str(baseline.get("responseSha256") or ""),
+        }
+        if not isinstance(context["baseline_count"], int) or context["baseline_count"] < 0:
+            raise ValueError("DELAYED_RCC_TURN_COUNT_UNAVAILABLE")
+        with self.store.transaction() as db:
+            existing = db.execute(
+                "SELECT * FROM delayed_send_watches WHERE task_id=? "
+                "ORDER BY generation DESC LIMIT 1", (task_id,)
+            ).fetchone()
+            if existing is None:
+                gen = 1
+                db.execute(
+                    "INSERT INTO delayed_send_watches("
+                    "task_id,generation,conversation_key,response_turn_id,"
+                    "source_send_receipt,state,context_json) VALUES(?,?,?,?,?,?,?)",
+                    (task_id,gen,conversation_key,f"task:{task_id}:{gen}",
+                     registration_receipt,"WATCHING",
+                     json.dumps(context,sort_keys=True)),
+                )
+                created = True
+            elif existing["state"] == "RESERVED":
+                gen = int(existing["generation"])
+                if existing["conversation_key"] != conversation_key:
+                    raise ValueError("DELAYED_WORKER_CHANGED")
+                old = json.loads(existing["context_json"] or "{}")
+                if old and (old.get("work_id") != work_id
+                            or old.get("manager_conversation_key") != manager_conversation_key):
+                    raise ValueError("DELAYED_CONTEXT_CHANGED")
+                db.execute(
+                    "UPDATE delayed_send_watches SET response_turn_id=?, "
+                    "source_send_receipt=?,state='WATCHING',context_json=? "
+                    "WHERE task_id=? AND generation=? AND state='RESERVED'",
+                    (f"task:{task_id}:{gen}",registration_receipt,
+                     json.dumps(context,sort_keys=True),task_id,gen),
+                )
+                created = True
+            elif existing["state"] == "WATCHING":
+                gen = int(existing["generation"])
+                old = json.loads(existing["context_json"] or "{}")
+                if (existing["conversation_key"] != conversation_key
+                        or old.get("work_id") != work_id
+                        or old.get("manager_conversation_key") != manager_conversation_key):
+                    raise ValueError("DELAYED_CONTEXT_CHANGED")
+                created = False
+            else:
+                raise ValueError("DELAYED_TASK_ALREADY_FINISHED")
+        return {"task_id":task_id,"generation":gen,"state":"WATCHING","created":created}
+
+    def latest_binding(self, task_id: str) -> dict:
+        with self.store._readonly() as db:
+            row = db.execute(
+                "SELECT context_json FROM delayed_send_watches "
+                "WHERE task_id=? AND context_json!='{}' "
+                "ORDER BY generation DESC LIMIT 1", (task_id,)
+            ).fetchone()
+        return json.loads(row["context_json"]) if row else {}
+
+    def watching(self, *, limit: int = 12) -> list[dict]:
+        with self.store._readonly() as db:
+            rows = db.execute(
+                "SELECT d.* FROM delayed_send_watches d JOIN works w "
+                "ON w.work_id=json_extract(d.context_json,'$.work_id') "
+                "WHERE d.state='WATCHING' AND w.state='ACTIVE' "
+                "AND w.assignment_epoch=json_extract(d.context_json,'$.assignment_epoch') "
+                "ORDER BY d.task_id,d.generation LIMIT ?", (limit,),
+            ).fetchall()
+        result=[]
+        for row in rows:
+            value=dict(row)
+            value["context"]=json.loads(value.pop("context_json"))
+            result.append(value)
+        return result
 
     def claim_response(self, watch: Watch) -> bool:
         """Only one caller may execute the effect for this response."""
@@ -293,7 +390,7 @@ def normalize_rcc_latest_assistant(
         "response_complete": result.get("observationState") == "TERMINAL"
                              and result.get("terminal") is True
                              and result.get("generating") is False,
-        "input_ready": input_ready is True,
+        "input_ready": input_ready is True and result.get("inputReady") is True,
         "response_sha256": digest,
     }
 
@@ -333,3 +430,161 @@ class RccLatestAssistantReader:
             response_turn_id=watch.response_turn_id,
             input_ready=self.input_ready() is True,
         )
+
+
+class DelayedSendService:
+    """Core tick: observe a single reserved B response, then send using BCT receipts."""
+    def __init__(self, *, store, relay_feature, operations):
+        self.store = store
+        self.relay_feature = relay_feature
+        self.operations = operations
+        self.ledger = DurableWatchLedger(store)
+
+    def _locate(self, instance_id: str, conversation_key: str):
+        import secrets
+        session_id, tabs = self.relay_feature._read_target_state(
+            instance_id=instance_id,
+            request_id="delayed-state-" + secrets.token_hex(12),
+        )
+        matches = [tab for tab in tabs
+                   if str(tab.get("conversationKey") or "").lower() == conversation_key]
+        if len(matches) != 1:
+            raise ValueError("DELAYED_TARGET_NOT_EXACT")
+        target = matches[0]
+        return (session_id, int(target["tabId"]), int(target["windowId"]))
+
+    def latest(self, *, instance_id: str, conversation_key: str):
+        import secrets
+        session, tab, window = self._locate(instance_id, conversation_key)
+        return self.relay_feature.client.request(
+            instance_id=instance_id,
+            request_id="delayed-read-" + secrets.token_hex(12),
+            command="read-latest-assistant",
+            extra={"instanceId":instance_id, "sessionId":session,
+                   "tabId":tab,"windowId":window,"conversationKey":conversation_key},
+            timeout_s=5.0,
+        )
+
+    def prearm(self, *, task_id: str, work, instance_id: str,
+               conversation_key: str, manager_conversation_key: str,
+               manager_instance_id: str, operation_id: str) -> dict:
+        # Later SELF turns need only the stable Task ID; use the prior binding.
+        from bct.integrations.rcc import validate_instance_id
+        previous = self.ledger.latest_binding(task_id)
+        instance_id = instance_id or str(previous.get("instance_id") or "")
+        manager_instance_id = (manager_instance_id
+                               or str(previous.get("manager_instance_id") or "")
+                               or instance_id)
+        conversation_key = (conversation_key
+                            or str(previous.get("conversation_key") or ""))
+        manager_conversation_key = (manager_conversation_key
+                                    or str(previous.get("manager_conversation_key") or ""))
+        validate_instance_id(instance_id)
+        validate_instance_id(manager_instance_id)
+        uuid_pat = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+        if not re.fullmatch(uuid_pat, conversation_key) or not re.fullmatch(
+                uuid_pat, manager_conversation_key):
+            raise ValueError("DELAYED_CONVERSATION_INVALID")
+        self._locate(instance_id, conversation_key)
+        observed = self.latest(instance_id=instance_id,
+                               conversation_key=conversation_key)
+        if observed.get("ok") is not True:
+            raise ValueError("DELAYED_OBSERVATION_UNAVAILABLE")
+        return self.ledger.prearm_task(
+            task_id=task_id, work_id=work.work_id,
+            principal_id=work.owner_principal_id,
+            assignment_epoch=work.assignment_epoch,
+            instance_id=instance_id, conversation_key=conversation_key,
+            manager_conversation_key=manager_conversation_key,
+            manager_instance_id=manager_instance_id,baseline=observed,
+            registration_receipt=operation_id,
+        )
+
+    def _response_for(self, row: dict) -> dict:
+        ctx=row["context"]
+        instance, worker=ctx["instance_id"],row["conversation_key"]
+        observed=self.latest(instance_id=instance,conversation_key=worker)
+        if observed.get("ok") is not True:
+            return {}
+        current_count=observed.get("responseTurnCount")
+        baseline_count=ctx.get("baseline_count")
+        if not isinstance(current_count,int) or not isinstance(baseline_count,int):
+            return {}
+        changed = (current_count>baseline_count or (
+            ctx.get("baseline_generating") is True
+            and current_count>=baseline_count
+            and str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")
+        ))
+        if not changed:
+            return {}
+        if (observed.get("terminal") is not True
+                or observed.get("inputReady") is not True):
+            return {}
+        return normalize_rcc_latest_assistant(
+            observed,conversation_key=worker,
+            expected_response_sha256=str(ctx.get("baseline_sha") or ""),
+            response_turn_id=row["response_turn_id"],input_ready=True,
+        )
+
+    def _send_for(self, row: dict, *, destination: str, message: str,
+                  operation_id: str) -> str:
+        from bct.core.models import Principal, Outcome
+        ctx=row["context"]
+        work=self.store.get_work(ctx["work_id"])
+        if (work.state!="ACTIVE" or work.assignment_epoch!=ctx["assignment_epoch"]
+                or work.owner_principal_id!=ctx["principal_id"]
+                or "relay_browser" not in work.actions):
+            raise ValueError("DELAYED_WORK_CHANGED")
+        instance=(ctx["instance_id"] if destination==row["conversation_key"]
+                  else ctx["manager_instance_id"])
+        session,tab,window=self._locate(instance,destination)
+        if destination==row["conversation_key"]:
+            message=(
+                "작업 시작 전에 BCT Delayed Send Message를 다시 선예약하세요. "
+                f"work_id={work.work_id}, task_id={row['task_id']}. "
+                "이후 아래 작업을 수행하고 응답 마지막에 "
+                "NEXT TASK — SELF 또는 NEXT TASK — MANAGER 및 다음 지시서/보고서를 작성하세요.\n\n"
+                +message
+            )
+        principal=Principal(work.owner_principal_id,"delayed-send-existing-work",
+                            frozenset({"relay_browser"}))
+        result=self.operations.run(
+            principal=principal,work_id=work.work_id,operation_id=operation_id,
+            capability="relay_browser",
+            arguments={"command":"send-message","instance_id":instance,
+                       "session_id":session,"tab_id":tab,"window_id":window,
+                       "conversation_key":destination,"text":message},
+        )
+        if result.outcome!=Outcome.APPLIED:
+            raise ValueError("DELAYED_RCC_SEND_" + result.outcome.value)
+        return operation_id
+
+    def poll_once(self, limit: int = 8) -> dict:
+        events=[]
+        for row in self.ledger.watching(limit=limit):
+            try:
+                observation=self._response_for(row)
+                if not observation:
+                    continue
+                watch=Watch(row["task_id"],row["generation"],
+                            row["conversation_key"],row["response_turn_id"],
+                            row["source_send_receipt"])
+                ctx=row["context"]
+                runner=DelayedSendRunner(
+                    self.ledger,
+                    read_response=lambda _watch:observation,
+                    send_message=lambda dest,body,key:self._send_for(
+                        row,destination=dest,message=body,operation_id=key),
+                )
+                result=runner.poll_once(
+                    watch,manager_conversation_key=ctx["manager_conversation_key"])
+                if result.status not in {"WAITING_RESPONSE","INSTRUCTION_UNAVAILABLE",
+                                         "WAITING_WATCH"}:
+                    events.append({"task_id":watch.task_id,
+                                   "generation":watch.generation,
+                                   "status":result.status})
+            except Exception as exc:
+                events.append({"task_id":row["task_id"],"generation":row["generation"],
+                               "status":"ERROR","reason":type(exc).__name__})
+        return {"watched":len(self.ledger.watching(limit=limit)),
+                "events":events}

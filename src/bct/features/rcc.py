@@ -578,8 +578,33 @@ class RelayBrowserFeature:
         prepared.preconditions["send_message_state_read_ms"] = state_read_ms
         return prepared
 
+    def _prepare_delayed_send_message(
+        self, *, work: Work, arguments: dict[str, Any]
+    ) -> FeatureRequest:
+        allowed = {"command","task_id","instance_id","conversation_key",
+                   "manager_conversation_key","manager_instance_id"}
+        if set(arguments) - allowed:
+            raise PreconditionError("DELAYED_ARGUMENT_NOT_ALLOWED")
+        task_id = str(arguments.get("task_id") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id):
+            raise PreconditionError("DELAYED_TASK_ID_INVALID")
+        return FeatureRequest(
+            self.capability, f"delayed-send:{work.work_id}:{task_id}",
+            {"command":"delayed-send-message","task_id":task_id,
+             "work_id":work.work_id,
+             "instance_id":str(arguments.get("instance_id") or "").strip(),
+             "conversation_key":str(arguments.get("conversation_key") or "").strip().lower(),
+             "manager_conversation_key":str(
+                 arguments.get("manager_conversation_key") or "").strip().lower(),
+             "manager_instance_id":str(arguments.get("manager_instance_id") or "").strip()},
+            (f"delayed-send:{work.work_id}:{task_id}",),
+            {"command":"delayed-send-message","mutating":True},
+        )
+
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         command = str(arguments.get("command") or "").strip().lower()
+        if command == "delayed-send-message":
+            return self._prepare_delayed_send_message(work=work, arguments=arguments)
         if command == "send-message":
             return self._prepare_send_message(work=work, arguments=arguments)
         if command not in _COMMANDS:
@@ -1812,6 +1837,30 @@ class RelayBrowserFeature:
         }, output={"targets": targets})
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments["command"] == "delayed-send-message":
+            if self.store is None:
+                raise PreconditionError("DELAYED_STORE_UNAVAILABLE")
+            from bct.delayed_send_message import DelayedSendService
+            from bct.core.models import Work
+            values = request.arguments
+            work = self.store.get_work(values["work_id"])
+            service = DelayedSendService(
+                store=self.store, relay_feature=self, operations=None)
+            try:
+                result = service.prearm(
+                    task_id=values["task_id"],work=work,
+                    instance_id=values["instance_id"],
+                    conversation_key=values["conversation_key"],
+                    manager_conversation_key=values["manager_conversation_key"],
+                    manager_instance_id=values["manager_instance_id"],
+                    operation_id=request.operation_id,
+                )
+            except (ValueError, KeyError) as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(Outcome.APPLIED, {
+                "command":"delayed-send-message",**result,
+                "watch_registered":True,
+            }, output=result)
         if request.arguments["command"] in {"send-to-self", "node-continue"}:
             return self._execute_self_command(request)
         if request.arguments["command"] == "delivery-preview":
