@@ -276,7 +276,7 @@ def build_mcp(
                     ) else "QUERY_ERROR"
             except Exception as exc:
                 historical_contexts_status = "ACCESS_DENIED" if any(
-                    marker in str(exc).upper()
+                    marker in (type(exc).__name__ + ":" + str(exc)).upper()
                     for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
                 ) else "QUERY_ERROR"
         elif project:
@@ -305,7 +305,7 @@ def build_mcp(
                         ) else "QUERY_ERROR"
                 except Exception as exc:
                     context_status = "ACCESS_DENIED" if any(
-                        marker in str(exc).upper()
+                        marker in (type(exc).__name__ + ":" + str(exc)).upper()
                         for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
                     ) else "QUERY_ERROR"
                     context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
