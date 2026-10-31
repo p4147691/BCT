@@ -20,7 +20,7 @@ def _settings(path: Path) -> tuple[float, float, float]:
     import tomllib
     value = tomllib.loads(path.read_text(encoding="utf-8")).get("github_inbox", {})
     if not isinstance(value, dict): raise PreconditionError("GITHUB_INBOX_CONFIG_INVALID")
-    initial, maximum, timeout = (float(value.get(k, d)) for k, d in (("initial_seconds", 5), ("max_seconds", 30), ("timeout_seconds", 300)))
+    initial, maximum, timeout = (float(value.get(k, d)) for k, d in (("initial_seconds", 5), ("max_seconds", 30), ("timeout_seconds", 3600)))
     if not (5 <= initial <= maximum <= 30 and 30 <= timeout <= 86400): raise PreconditionError("GITHUB_INBOX_CONFIG_BOUNDS")
     return initial, maximum, timeout
 

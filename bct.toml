@@ -81,7 +81,7 @@ source_root = "D:\\BCT\\source"
 [github_inbox]
 initial_seconds = 5
 max_seconds = 30
-timeout_seconds = 300
+timeout_seconds = 3600
 
 [orchestration]
 # Emergency stop for durable Manager/Worker collaboration. When enabled, only
