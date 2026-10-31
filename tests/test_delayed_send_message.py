@@ -280,7 +280,9 @@ class DelayedSendMessageTests(unittest.TestCase):
                     outcome=Outcome.APPLIED,
                     evidence={"command":"send-to-tab",
                               "host_request_id":"trusted-self-op",
-                              "instance_id":"instance"})
+                              "instance_id":"instance",
+                              "conversation_key":"worker-uuid",
+                              "source_message_sha256":source_sha})
         service.store = ReceiptStore()
         service.latest = lambda **kwargs: payload
         row = {"task_id": "task", "generation": 2,

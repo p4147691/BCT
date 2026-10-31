@@ -52,8 +52,13 @@ class SimulatedRcc:
             return {
                 "latestUserTurnKey": latest_user_key,
                 "latestUserSha256": latest_user_sha,
-                "responseSourceUserTurnKey": latest_user_key if count else "",
-                "responseSourceUserSha256": latest_user_sha if count else "",
+                "latestUserTextOccurrenceCount": 1,
+                "responseSourceUserTextOccurrenceCount": 1,
+                "responseSourceUserTurnKey": ("manual-user-turn-1" if count == 1
+                    else latest_user_key) if count else "",
+                "responseSourceUserSha256": (_rcc_submitted_text_sha256(
+                    self.manual_user_text) if count == 1 else latest_user_sha)
+                    if count else "",
                 "ok": True, "conversationKey": key,
                 "responseTurnCount": (self.visible_count_override
                                       if self.visible_count_override is not None else count),
@@ -76,6 +81,80 @@ class SimulatedRcc:
 
 
 class DelayedSendRccFlowTests(unittest.TestCase):
+    def test_verified_prearm_before_send_handles_fast_completed_reply(self):
+        # Regression: real 2026-11-01 tests armed AFTER an already-terminal
+        # response. A planned, exact BCT send must be reserved BEFORE sending.
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            policy=root/"bct.toml"
+            policy.write_text('[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+                              encoding="utf-8")
+            bct=BCT(state_path=root/"state.sqlite",policy_path=policy)
+            rcc=SimulatedRcc()
+            feature=RelayBrowserFeature(rcc,store=bct.store)
+            bct.operations._features["relay_browser"]=feature
+            principal=Principal("tester","test",frozenset({"relay_browser"}))
+            work=bct.create_work(work_id="prearmed-test",request_summary="one exact send",
+                                 roots=[str(root)],actions=["relay_browser"],principal=principal)
+            service=DelayedSendService(store=bct.store,relay_feature=feature,
+                                       operations=bct.operations)
+            rcc.reply(WORKER,"Previous already finished assistant response.")
+            # The already finished user/assistant pair cannot be falsely armed.
+            late=bct.operations.run(principal=principal,work_id=work.work_id,
+                 operation_id="late-old-answer",capability="relay_browser",
+                 arguments={"command":"delayed-send-message","task_id":"late-task",
+                            "instance_id":INSTANCE,"conversation_key":WORKER,
+                            "manager_conversation_key":MANAGER})
+            self.assertEqual(Outcome.NOT_APPLIED,late.outcome)
+            self.assertEqual("DELAYED_PREARM_RESPONSE_ALREADY_TERMINAL",
+                             late.evidence["code"])
+            self.assertIsNone(service.ledger.get("late-task",1))
+            prompt="Complete exactly this task. NEXT TASK — MANAGER"
+            send_id="verified-exact-planned-send-01"
+            planned=bct.operations.run(principal=principal,work_id=work.work_id,
+                 operation_id="planned-prearm-first",capability="relay_browser",
+                 arguments={"command":"delayed-send-message","task_id":"planned-task",
+                            "instance_id":INSTANCE,"conversation_key":WORKER,
+                            "manager_conversation_key":MANAGER,
+                            "planned_send_operation_id":send_id,
+                            "planned_send_text":prompt})
+            self.assertEqual(Outcome.APPLIED,planned.outcome,planned.as_dict())
+            self.assertEqual("WATCHING",service.ledger.get("planned-task",1)["state"])
+            # No BCT send receipt yet -> no dispatch of the previous answer.
+            self.assertEqual([],service.poll_once()["events"])
+            send=bct.operations.run(principal=principal,work_id=work.work_id,
+                operation_id=send_id,capability="relay_browser",
+                arguments={"command":"send-message","instance_id":INSTANCE,
+                           "session_id":SESSION,"tab_id":10,"window_id":11,
+                           "conversation_key":WORKER,"text":prompt})
+            self.assertEqual(Outcome.APPLIED,send.outcome,send.as_dict())
+            self.assertEqual(WORKER,send.evidence["conversation_key"])
+            self.assertEqual(_rcc_submitted_text_sha256(prompt),
+                             send.evidence["source_message_sha256"])
+            # User prompt is now visible; earlier completed answer remains.
+            self.assertEqual([],service.poll_once()["events"])
+            # The real response may complete before the next polling cycle.
+            rcc.reply(WORKER,"NEXT TASK — MANAGER\nPLANNED_SEND_E2E_OK")
+            polled=service.poll_once()
+            self.assertEqual("RETURNED_TO_MANAGER",polled["events"][0]["status"])
+            self.assertEqual(MANAGER,rcc.sent[-1][0])
+            self.assertEqual("RETURNED_TO_MANAGER",
+                             service.ledger.get("planned-task",1)["state"])
+            self.assertEqual([],service.poll_once()["events"])
+            # The same already-applied send receipt cannot be reused as a new
+            # planned prearm even if a matching Assistant answer is terminal.
+            reused=bct.operations.run(principal=principal,work_id=work.work_id,
+                operation_id="stale-planned-reuse",capability="relay_browser",
+                arguments={"command":"delayed-send-message","task_id":"stale-reuse-task",
+                           "instance_id":INSTANCE,"conversation_key":WORKER,
+                           "manager_conversation_key":MANAGER,
+                           "planned_send_operation_id":send_id,
+                           "planned_send_text":prompt})
+            self.assertEqual(Outcome.NOT_APPLIED,reused.outcome)
+            self.assertEqual("DELAYED_PLANNED_SEND_OPERATION_ALREADY_EXISTS",
+                             reused.evidence["code"])
+            self.assertIsNone(service.ledger.get("stale-reuse-task",1))
+
     def test_worker_prearm_self_then_manager_live_path_with_exact_receipts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
