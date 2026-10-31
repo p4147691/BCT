@@ -129,5 +129,7 @@ assert.match(render,/monitorBctNodeSelectionKey\(node\) === selectedKey/,
   "minimized selection uses the same identity key as the BCT node list");
 assert.match(render,/monitorMinimizedNodeTokensByDesktop\(state\)/,
   "minimized summary retains tab identity instead of only numeric slots");
+assert.match(src,/fallbackHwndByLineage[\s\S]{0,900}monitorWindowHwndContract\?\.resolve/,
+  "a minimized node summary falls back to the exact current-session HWND join while cache refresh catches up");
 assert.doesNotMatch(css,/\.monitor-thumbnail-z-rail\s*\{/);
 console.log("PASS: minimized nodes use the bottom summary while open nodes keep natural HWND stacking");

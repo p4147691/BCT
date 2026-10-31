@@ -353,8 +353,22 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, option
     };
   };
   if (Array.isArray(monitorBctWindowNodesCache)) {
+    // The minimized summary is rendered while Chrome and the Monitor list are
+    // often refreshing together.  Prefer the retained display map, but build
+    // one read-only exact fallback from the same current-session contract when
+    // that cache has not caught up yet.  It never guesses an HWND.
+    const fallbackHwndByLineage = new Map((monitorWindowHwndContract?.resolve?.({
+      nodes: monitorBctWindowNodesCache,
+      locations: monitorWindowDesktopLocations,
+      now: Date.now(),
+    })?.bindings || []).map((binding) => [String(binding?.lineage || ""), String(binding?.hwnd || "")]));
+    const hwndForNode = (node) => {
+      const mapped = monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId);
+      if (mapped) return mapped;
+      return String(fallbackHwndByLineage.get(`${node?.instanceId || ""}:${node?.sessionId || ""}:${node?.windowId || ""}`) || "");
+    };
     const matched = monitorBctWindowNodesCache.filter((node) =>
-      monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId) === String(hwnd))
+      hwndForNode(node) === String(hwnd))
       .sort((left,right) =>
         (Number.isSafeInteger(left?.tabIndex) ? left.tabIndex : Number.MAX_SAFE_INTEGER) -
           (Number.isSafeInteger(right?.tabIndex) ? right.tabIndex : Number.MAX_SAFE_INTEGER) ||

@@ -2300,6 +2300,11 @@ function scheduleMonitorChatNavigationRefresh(message) {
       if (mappingMiss && state) await refreshMonitorIdentityIndex(state, true);
       refreshMonitorBctCurrentSessionWindowHwnd();
       refreshMonitorBctDisplayWindowHwnd();
+      // The first pass may happen before the native HWND index is refreshed.
+      // Apply the same exact tab event once more after that read-only join so
+      // a real Chrome tab activation cannot leave the Monitor list/thumbnail
+      // unselected merely because of refresh ordering.
+      for (const item of pending) applyMonitorChatNavigationIdentity(item, monitorLastAiState);
       syncMonitorAllDesktopThumbnailNodeBadges();
     } catch (error) {
       console.warn("DesktopWindow Monitor chat navigation refresh failed", {

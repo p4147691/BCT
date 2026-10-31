@@ -77,11 +77,20 @@ function createNativeClient() {
     const resolution = HwndContract.create().resolve({ nodes, locations, now: Date.now() });
     const mappedHwnds = new Set(resolution.bindings.map((binding) => binding.hwnd));
     const minimizedMapped = [...locations.values()].filter((location) => mappedHwnds.has(location.hwnd) && location.iconic).length;
+    const minimizedNodes = resolution.bindings
+      .filter((binding) => locations.get(binding.hwnd)?.iconic === true)
+      .map((binding) => {
+        const node = nodes.find((candidate) =>
+          String(candidate?.instanceId || "") === String(binding.instanceId || "") &&
+          String(candidate?.sessionId || "") === String(binding.sessionId || "") &&
+          String(candidate?.windowId || "") === String(binding.windowId || ""));
+        return { hwnd: binding.hwnd, nodeLabel: String(node?.nodeLabel || "N?"), tabId: Number(node?.tabId || 0) };
+      });
     console.log(JSON.stringify({
       ok: true, schema: resolution.schema, chatgpt_tabs: nodes.length,
       active_chatgpt_windows: nodes.filter((node) => node.active && node.conversationKey).length,
       native_chrome_windows: locations.size, mapped_windows: resolution.bindings.length,
-      rejected: resolution.rejected.length, mapped_minimized_windows: minimizedMapped,
+      rejected: resolution.rejected.length, mapped_minimized_windows: minimizedMapped, minimized_nodes: minimizedNodes,
       live_thumbnail_transition: "NOT_RUN_SOURCE_NOT_APPLIED",
     }));
   } finally { native.close(); }
