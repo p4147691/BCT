@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body>
+<main>
+  <div data-turn-key="old-user-turn"><div data-message-author-role="user" data-content-search-unit-key="u0:user"><span data-user-message-bubble="true">Previous instruction</span></div></div>
+  <div data-turn-key="old-assistant-turn"><div data-message-author-role="assistant" data-content-search-unit-key="a0:assistant"><div data-markdown-text-style="assistant-message">Previous result</div><button data-testid="copy-turn-action-button">Copy</button></div></div>
+  <div data-turn-key="current-user-turn"><div data-message-author-role="user" data-content-search-unit-key="u1:user"><span data-user-message-bubble="true">Complete current task</span></div></div>
+  <div data-turn-key="current-assistant-turn"><div data-message-author-role="assistant" data-content-search-unit-key="a1:assistant"><div data-markdown-text-style="assistant-message">NEXT TASK — MANAGER
+Finished.</div><button data-testid="copy-turn-action-button">Copy</button></div></div>
+</main>
+<div id="prompt-textarea" contenteditable="true"></div>
+<script>
+window.chrome={runtime:{id:"isolated-fixture",onMessage:{addListener(fn){window.__rccListener=fn;}}}};
+function currentConversationKey(){return "6ae5bc0d-bdd8-83ec-a9fa-5b1a0d959211";}
+async function newChatTextSha256(text){const b=new TextEncoder().encode(text);return [...new Uint8Array(await crypto.subtle.digest("SHA-256",b))].map(x=>x.toString(16).padStart(2,"0")).join("");}
+</script>
+<script src="../../modules/rcc/extension/relay_core.js"></script>
+<script src="../../modules/rcc/extension/content/conversation_dom.js"></script>
+<script src="../../modules/rcc/extension/content/content_router.js"></script>
+<script>
+window.__rccRead=()=>new Promise((resolve,reject)=>{
+try{
+  if(typeof window.__rccListener!=="function")throw Error("RCC_LISTENER_NOT_REGISTERED");
+  window.__rccListener({type:"relay:readLatestAssistant",conversationKey:currentConversationKey()}, {id:"isolated-fixture"},resolve);
+}catch(e){reject(String(e));}
+});
+window.__testPromise=window.__rccRead();
+window.__testNegative=async()=>{
+  const newTurn=document.createElement("div");
+  newTurn.setAttribute("data-turn-key","unrelated-followup-user-turn");
+  newTurn.innerHTML='<div data-message-author-role="user" data-content-search-unit-key="u2:user"><span data-user-message-bubble="true">Unrelated later user instruction</span></div>';
+  document.querySelector("main").appendChild(newTurn);
+  return window.__rccRead();
+};
+</script>
+</body></html>

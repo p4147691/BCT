@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "browser": "chromium",
+  "headless": true,
+  "viewport": {
+    "width": 1100,
+    "height": 850
+  },
+  "trace": "retain-on-failure",
+  "actions": [
+    {
+      "type": "goto",
+      "file": "fixture.html"
+    },
+    {
+      "type": "assertJs",
+      "expression": "window.__testPromise.then(r => r.ok === true && r.responseTurnKey === 'current-assistant-turn' && r.responseSourceUserTurnKey === 'current-user-turn' && r.latestUserTurnKey === 'current-user-turn' && r.responseSourceUserSha256 === r.latestUserSha256 && r.terminal === true && r.inputReady === true && r.responseTurnCount === 2)",
+      "message": "RCC did not bind newest Assistant to exact preceding user turn"
+    },
+    {
+      "type": "assertJs",
+      "expression": "window.__testNegative().then(r => r.ok === true && r.responseTurnKey === 'current-assistant-turn' && r.responseSourceUserTurnKey === 'current-user-turn' && r.latestUserTurnKey === 'unrelated-followup-user-turn' && r.latestUserSha256 !== r.responseSourceUserSha256)",
+      "message": "RCC must detect later unrelated user turn instead of accepting previous Assistant reply"
+    }
+  ]
+}
