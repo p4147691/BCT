@@ -34,6 +34,12 @@ RENAME_ACTIONS_ROLLBACK = Path(r"D:\BCT\data\RCC_RENAME_CHAT_ACTIONS_20261031\ro
 RENAME_ACTIONS_MANIFEST = Path(r"D:\BCT\data\RCC_RENAME_CHAT_ACTIONS_20261031\release_manifest_rename_actions_immutable.json")
 RENAME_ACTIONS_MANIFEST_SHA256 = "19659c2c2ceb53ff37b7d41c16d959d56af6460a31b66f6f9462ef33c89943cc"
 RENAME_ACTIONS_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-rename-actions")
+DELAYED_SOURCE_PROOF_ROOT = Path(r"D:\BCT\data\RCC_DELAYED_SOURCE_PROOF_20261031")
+DELAYED_SOURCE_PROOF_STAGE = DELAYED_SOURCE_PROOF_ROOT / "candidate_1_0_61"
+DELAYED_SOURCE_PROOF_ROLLBACK = DELAYED_SOURCE_PROOF_ROOT / "rollback_installed_1_0_61"
+DELAYED_SOURCE_PROOF_MANIFEST = DELAYED_SOURCE_PROOF_ROOT / "release_manifest_delayed_source_proof_immutable.json"
+DELAYED_SOURCE_PROOF_MANIFEST_SHA256 = "4ec1e98529f784d63f75d8f7f07ebb490ecc7afc71247680c2d0674f8386143b"
+DELAYED_SOURCE_PROOF_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-delayed-source-proof")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 

@@ -810,7 +810,9 @@ class DeployFeature:
         if operation in {"rcc-inspect", "rcc-install", "rcc-rollback",
                          "rcc-inspect-pr388", "rcc-install-pr388", "rcc-rollback-pr388",
                          "rcc-inspect-rename-actions", "rcc-install-rename-actions",
-                         "rcc-rollback-rename-actions"}:
+                         "rcc-rollback-rename-actions",
+                          "rcc-inspect-source-proof", "rcc-install-source-proof",
+                          "rcc-rollback-source-proof"}:
             return self._prepare_rcc(work, operation, arguments)
         if operation not in {"apply", "reconcile", "reconcile-rollback"}:
             raise PreconditionError("DEPLOYMENT_OPERATION_INVALID")
@@ -880,6 +882,8 @@ class DeployFeature:
             "rcc-inspect-pr388", "rcc-install-pr388", "rcc-rollback-pr388",
             "rcc-inspect-rename-actions", "rcc-install-rename-actions",
             "rcc-rollback-rename-actions",
+            "rcc-inspect-source-proof", "rcc-install-source-proof",
+            "rcc-rollback-source-proof",
         }:
             return self._execute_rcc(request)
         if request.arguments.get("operation") == "reconcile":
@@ -906,18 +910,20 @@ class DeployFeature:
         from bct import rcc_protected_install as rcc
         pr388 = operation.endswith("-pr388")
         rename_actions = operation.endswith("-rename-actions")
+        source_proof = operation.endswith("-source-proof")
         return {
             "pinned_manifest_sha256": (
-                rcc.RENAME_ACTIONS_MANIFEST_SHA256 if rename_actions
+                rcc.DELAYED_SOURCE_PROOF_MANIFEST_SHA256 if source_proof
+                else rcc.RENAME_ACTIONS_MANIFEST_SHA256 if rename_actions
                 else rcc.PR388_MANIFEST_SHA256 if pr388 else rcc.PINNED_MANIFEST_SHA256
             ),
             "live": rcc.EXACT_INSTALLED,
-            "candidate": rcc.RENAME_ACTIONS_STAGE if rename_actions else rcc.PR388_STAGE if pr388 else rcc.EXACT_STAGE,
-            "backup_source": rcc.RENAME_ACTIONS_ROLLBACK if rename_actions else rcc.PR388_ROLLBACK if pr388 else rcc.EXACT_ROLLBACK,
-            "manifest_file": rcc.RENAME_ACTIONS_MANIFEST if rename_actions else rcc.PR388_MANIFEST if pr388 else rcc.EXACT_MANIFEST,
-            "journal_root": rcc.RENAME_ACTIONS_JOURNAL if rename_actions else rcc.PR388_JOURNAL if pr388 else rcc.EXACT_JOURNAL,
-            "candidate_version": "1.0.61" if (pr388 or rename_actions) else "1.0.60",
-            "installed_version": "1.0.61" if rename_actions else None,
+            "candidate": rcc.DELAYED_SOURCE_PROOF_STAGE if source_proof else rcc.RENAME_ACTIONS_STAGE if rename_actions else rcc.PR388_STAGE if pr388 else rcc.EXACT_STAGE,
+            "backup_source": rcc.DELAYED_SOURCE_PROOF_ROLLBACK if source_proof else rcc.RENAME_ACTIONS_ROLLBACK if rename_actions else rcc.PR388_ROLLBACK if pr388 else rcc.EXACT_ROLLBACK,
+            "manifest_file": rcc.DELAYED_SOURCE_PROOF_MANIFEST if source_proof else rcc.RENAME_ACTIONS_MANIFEST if rename_actions else rcc.PR388_MANIFEST if pr388 else rcc.EXACT_MANIFEST,
+            "journal_root": rcc.DELAYED_SOURCE_PROOF_JOURNAL if source_proof else rcc.RENAME_ACTIONS_JOURNAL if rename_actions else rcc.PR388_JOURNAL if pr388 else rcc.EXACT_JOURNAL,
+            "candidate_version": "1.0.61" if (pr388 or rename_actions or source_proof) else "1.0.60",
+            "installed_version": "1.0.61" if (rename_actions or source_proof) else None,
         }
 
     @staticmethod
@@ -946,6 +952,7 @@ class DeployFeature:
             raise PreconditionError("RCC_INSTALL_INSTANCE_ID_REQUIRED")
         is_rollback = operation in {
             "rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions",
+            "rcc-rollback-source-proof",
         }
         if is_rollback and not rcc.OP_ID.fullmatch(original):
             raise PreconditionError("RCC_INSTALL_ORIGINAL_OPERATION_ID_INVALID")
@@ -992,7 +999,7 @@ class DeployFeature:
             values["manifest_sha256"],
         )
         route = DeployFeature._rcc_route_config(values["operation"])
-        if values["operation"].endswith(("-pr388", "-rename-actions")):
+        if values["operation"].endswith(("-pr388", "-rename-actions", "-source-proof")):
             from hashlib import sha256
             release_path = route["manifest_file"]
             if (not release_path.is_file() or sha256(release_path.read_bytes()).hexdigest()
@@ -1006,7 +1013,7 @@ class DeployFeature:
             "candidate_version": route["candidate_version"],
             "installed_version": route["installed_version"],
         }
-        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions"}:
+        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions", "rcc-rollback-source-proof"}:
             original_id = values["install_operation_id"]
             receipt = route["journal_root"] / (original_id + ".json")
             if not receipt.is_file():
@@ -1032,7 +1039,7 @@ class DeployFeature:
         if (plan["installed_aggregate"], plan["candidate_aggregate"],
                 plan["manifest_sha256"]) != expected:
             raise PreconditionError("RCC_INSTALL_EXPECTATIONS_CHANGED")
-        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388", "rcc-inspect-rename-actions"}:
+        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388", "rcc-inspect-rename-actions", "rcc-inspect-source-proof"}:
             return FeatureResult(
                 Outcome.APPLIED, {"read_only": True, "reload": "NOT_PERFORMED",
                                  "live_accepted": False},
