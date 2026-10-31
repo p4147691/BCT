@@ -446,8 +446,17 @@ class DelayedSendService:
             instance_id=instance_id,
             request_id="delayed-state-" + secrets.token_hex(12),
         )
-        matches = [tab for tab in tabs
-                   if str(tab.get("conversationKey") or "").lower() == conversation_key]
+        from urllib.parse import urlsplit
+        def observed_key(tab):
+            explicit = str(tab.get("conversationKey") or "").lower()
+            if explicit:
+                return explicit
+            url = urlsplit(str(tab.get("url") or ""))
+            if url.hostname not in {"chatgpt.com", "chat.openai.com"}:
+                return ""
+            parts = url.path.strip("/").split("/")
+            return parts[1].lower() if len(parts)==2 and parts[0]=="c" else ""
+        matches = [tab for tab in tabs if observed_key(tab) == conversation_key]
         if len(matches) != 1:
             raise ValueError("DELAYED_TARGET_NOT_EXACT")
         target = matches[0]
