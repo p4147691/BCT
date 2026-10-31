@@ -133,3 +133,61 @@ def advance_from_rcc(
         register_next_watch=register_next_watch,
         send_message=send_message,
     )
+
+
+class DurableWatchLedger:
+    """Persist watch generations inside the existing BCT SQLite database."""
+    def __init__(self, store):
+        self.store = store
+        with store.transaction() as db:
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS delayed_send_watches (
+                    task_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    conversation_key TEXT NOT NULL,
+                    response_turn_id TEXT NOT NULL,
+                    source_send_receipt TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    PRIMARY KEY(task_id,generation)
+                )
+            """)
+
+    def reserve(self, watch: Watch) -> bool:
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT * FROM delayed_send_watches WHERE task_id=? AND generation=?",
+                (watch.task_id,watch.generation)).fetchone()
+            if current is not None:
+                if (current["conversation_key"] != watch.conversation_key
+                    or current["response_turn_id"] != watch.response_turn_id
+                    or current["source_send_receipt"] != watch.source_send_receipt):
+                    raise ValueError("DELAYED_WATCH_CONFLICT")
+                return False
+            db.execute(
+                "INSERT INTO delayed_send_watches VALUES(?,?,?,?,?,?)",
+                (watch.task_id,watch.generation,watch.conversation_key,
+                 watch.response_turn_id,watch.source_send_receipt,"RESERVED"))
+            return True
+
+    def get(self, task_id: str, generation: int) -> dict | None:
+        with self.store._readonly() as db:
+            row=db.execute(
+                "SELECT * FROM delayed_send_watches WHERE task_id=? AND generation=?",
+                (task_id,generation)).fetchone()
+            return dict(row) if row else None
+
+    def bind(self, watch: Watch, *, send_receipt: str, response_turn_id: str) -> Watch:
+        bound = bind_next_response(watch,send_receipt=send_receipt,
+                                   response_turn_id=response_turn_id)
+        with self.store.transaction() as db:
+            result=db.execute(
+                "UPDATE delayed_send_watches SET response_turn_id=?,"
+                "source_send_receipt=?,state='WATCHING' "
+                "WHERE task_id=? AND generation=? AND state='RESERVED'"
+                " AND response_turn_id='' AND source_send_receipt=''",
+                (bound.response_turn_id,bound.source_send_receipt,
+                 watch.task_id,watch.generation))
+            if result.rowcount!=1:
+                raise ValueError("DELAYED_WATCH_NOT_RESERVED")
+        return bound
+

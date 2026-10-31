@@ -1,7 +1,10 @@
 import unittest
+import tempfile
+from pathlib import Path
+from bct.core.store import Store
 
 from bct.delayed_send_message import (
-    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError,
+    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError, DurableWatchLedger,
 )
 
 
@@ -38,6 +41,18 @@ class DelayedSendMessageTests(unittest.TestCase):
         self.assertFalse(self.events)
         self.assertEqual("SELF_SENT", run(observed).status)
         self.assertEqual(["watch", "send"], [x[0] for x in self.events])
+
+    def test_durable_watch_survives_ledger_reopen(self):
+        with tempfile.TemporaryDirectory() as root:
+            store=Store(Path(root)/"state.sqlite")
+            ledger=DurableWatchLedger(store)
+            next_watch=Watch("task-1",2,"worker-uuid","","")
+            self.assertTrue(ledger.reserve(next_watch))
+            self.assertFalse(DurableWatchLedger(store).reserve(next_watch))
+            bound=ledger.bind(next_watch,send_receipt="receipt-2",
+                              response_turn_id="turn-2")
+            self.assertEqual("turn-2",bound.response_turn_id)
+            self.assertEqual("WATCHING",DurableWatchLedger(store).get("task-1",2)["state"])
 
     def test_self_reserves_next_watch_before_send(self):
         result = self.advance("Completed part 1.\nNEXT TASK — SELF\nFix remaining issue.")
