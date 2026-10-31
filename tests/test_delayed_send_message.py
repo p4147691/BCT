@@ -1,10 +1,11 @@
 import unittest
+import hashlib
 import tempfile
 from pathlib import Path
 from bct.core.store import Store
 
 from bct.delayed_send_message import (
-    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError, DurableWatchLedger, DelayedSendRunner,
+    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError, DurableWatchLedger, DelayedSendRunner, normalize_rcc_latest_assistant,
 )
 
 
@@ -73,6 +74,29 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertEqual("SELF_SENT",result.status)
             self.assertEqual("worker-uuid",sent[0][0])
             self.assertEqual("RESERVED",ledger.get("task-1",2)["state"])
+
+    def test_real_rcc_terminal_payload_mapping(self):
+        body = "NEXT TASK — SELF\\nContinue."
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        payload = {"ok": True, "conversationKey": "worker-uuid",
+                   "responseText": body, "responseSha256": digest,
+                   "observationState": "TERMINAL", "terminal": True,
+                   "generating": False}
+        observation = normalize_rcc_latest_assistant(
+            payload, conversation_key="worker-uuid",
+            expected_response_sha256="0"*64, response_turn_id="turn-1",
+            input_ready=True)
+        self.assertTrue(observation["response_complete"])
+        self.assertTrue(observation["input_ready"])
+        self.assertEqual({}, normalize_rcc_latest_assistant(
+            payload, conversation_key="worker-uuid",
+            expected_response_sha256=digest, response_turn_id="turn-1",
+            input_ready=True))
+        self.assertEqual({}, normalize_rcc_latest_assistant(
+            {**payload, "responseSha256":"0"*64},
+            conversation_key="worker-uuid",
+            expected_response_sha256="1"*64, response_turn_id="turn-1",
+            input_ready=True))
 
     def test_self_reserves_next_watch_before_send(self):
         result = self.advance("Completed part 1.\nNEXT TASK — SELF\nFix remaining issue.")

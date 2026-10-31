@@ -212,3 +212,36 @@ class DelayedSendRunner:
             send_message=self.send_message,
         )
 
+
+
+def normalize_rcc_latest_assistant(
+    result: dict, *, conversation_key: str, expected_response_sha256: str,
+    response_turn_id: str, input_ready: bool,
+) -> dict:
+    """Normalize the *actual* RCC read-latest-assistant response contract.
+
+    RCC returns a terminal flag and response SHA, but no assistant turn ID.
+    The caller must establish the turn binding independently from the exact
+    originating send receipt before providing response_turn_id.
+    """
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        return {}
+    if result.get("conversationKey") != conversation_key:
+        return {}
+    body = result.get("responseText")
+    digest = result.get("responseSha256")
+    if not isinstance(body, str) or not isinstance(digest, str):
+        return {}
+    actual = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    if actual != digest or not digest or digest == expected_response_sha256:
+        return {}
+    return {
+        "conversation_key": conversation_key,
+        "response_turn_id": response_turn_id,
+        "response_text": body,
+        "response_complete": result.get("observationState") == "TERMINAL"
+                             and result.get("terminal") is True
+                             and result.get("generating") is False,
+        "input_ready": input_ready is True,
+        "response_sha256": digest,
+    }
