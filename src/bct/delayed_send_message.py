@@ -169,6 +169,18 @@ class DurableWatchLedger:
                  watch.response_turn_id,watch.source_send_receipt,"RESERVED"))
             return True
 
+    def prearm(self, watch: Watch) -> bool:
+        """Worker registers a one-turn watch before beginning its task."""
+        if not watch.response_turn_id or not watch.source_send_receipt:
+            raise ValueError("DELAYED_PREARM_SOURCE_REQUIRED")
+        created = self.reserve(watch)
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE delayed_send_watches SET state='WATCHING' "
+                "WHERE task_id=? AND generation=? AND state='RESERVED'",
+                (watch.task_id,watch.generation))
+        return created
+
     def claim_response(self, watch: Watch) -> bool:
         """Only one caller may execute the effect for this response."""
         with self.store.transaction() as db:

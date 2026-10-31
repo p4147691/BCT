@@ -123,6 +123,13 @@ class DelayedSendMessageTests(unittest.TestCase):
         self.assertEqual("read-latest-assistant",client.calls[0]["command"])
         self.assertEqual(10,client.calls[0]["extra"]["tabId"])
 
+    def test_worker_prearms_before_task_and_reuses_same_reservation(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger=DurableWatchLedger(Store(Path(root)/"state.sqlite"))
+            self.assertTrue(ledger.prearm(self.watch))
+            self.assertFalse(ledger.prearm(self.watch))
+            self.assertEqual("WATCHING",ledger.get("task-1",1)["state"])
+
     def test_self_reserves_next_watch_before_send(self):
         result = self.advance("Completed part 1.\nNEXT TASK — SELF\nFix remaining issue.")
         self.assertEqual("SELF_SENT", result.status)
