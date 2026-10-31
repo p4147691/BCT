@@ -255,6 +255,14 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertFalse(created.isError)
                     self.assertFalse(created.structuredContent["duplicate"])
                     self.assertTrue(repeated.structuredContent["duplicate"])
+                    denied_context = await session.call_tool("bct_run_check", {
+                        "project": "missingproject",
+                        "work_id": "mcp-read-work",
+                        "operation_id": "mcp-context-denied-1",
+                    })
+                    self.assertFalse(denied_context.isError)
+                    self.assertEqual("ACCESS_DENIED",
+                                     denied_context.structuredContent["context_status"])
                     call_arguments = {
                         "work_id": "mcp-read-work",
                         "operation_id": "mcp-read-1",
