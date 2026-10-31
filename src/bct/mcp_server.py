@@ -397,6 +397,28 @@ def build_mcp(
         )
 
     @server.tool(
+        name="bct_task_run",
+        description=(
+            "Dispatch ONE worker task in an already prepared orchestration session. "
+            "Uses existing authorized orchestrate dispatch and durable receipts. "
+            "Requires exact session_id, manager_epoch, assignment_id, "
+            "worker_node_id, attachment_id, instruction and acceptance. "
+            "Run session-start and node-sync separately first. "
+            "Chain Run remains a separate unfinished feature."
+        ),
+        structured_output=True,
+    )
+    async def bct_task_run(
+        work_id: str, operation_id: str, arguments: dict[str, Any],
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        if arguments.get("operation", "dispatch") != "dispatch":
+            return {"status": "INVALID_REQUEST", "reason": "TASK_RUN_OPERATION_MISMATCH"}
+        return await make_executor("orchestrate")(
+            work_id, operation_id, {**arguments, "operation": "dispatch"}, approval_ref
+        )
+
+    @server.tool(
         name="bct_delayed_send_message",
         description=(
             "Prearm one Delayed Send Message for the worker's current response. "
