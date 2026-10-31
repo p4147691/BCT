@@ -147,6 +147,8 @@ class MCPIntegrationTests(unittest.TestCase):
                     relay_description = next(tool.description for tool in catalogue.tools
                                              if tool.name == "bct_relay_browser")
                     self.assertNotIn("send-to-tab", relay_description)
+                    self.assertNotIn("command=state", relay_description)
+                    self.assertIn("bct_status", relay_description)
                     self.assertIn("command=send-message", relay_description)
                     self.assertIn("rcc-send-message-v1", relay_description)
                     self.assertNotIn("send-to-created-tab", relay_description)

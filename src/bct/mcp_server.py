@@ -55,8 +55,9 @@ _CAPABILITY_USAGE = {
         "UNKNOWN using a new operation. Use original receipt/result for recovery. "
         "create-chat-window and create-chat-tab are independent creation commands. "
         "The only caller-facing relay commands are create-chat-window, create-chat-tab, "
-        "and send-message. Lower-level compatibility commands are internal and unavailable "
-        "through this tool. Read-only command=state remains supported."
+        "and send-message. Lower-level compatibility commands, including raw state "
+        "inspection, are internal and unavailable through this tool. Use bct_status "
+        "for the current BCT state."
     ),
     "relay_control": "Execute one enabled hot-read relay purpose using arguments={\"purpose\":\"selected purpose\",\"scope_id\":\"project scope\",\"context\":{...},\"expected_settings_sha256\":\"preview revision\"}. The fixed registry permits one existing BCT operation step per invocation. Settings never grant authority: the Work must contain the delegated capability such as relay_browser or cdp_inspect. Reuse operation_id only for the exact same frozen request and never retry UNKNOWN with a new ID.",
     "orchestrate": "Durable read-evidence manager/worker sessions. Use project-run-plan to select one advisory Manager conversation from an existing conversation scope, then start and sync a session, select a manager epoch, and project-run-bind the exact active RCC attachment. A later attachment generation for the same conversation may be rebound; stale generations are rejected only at the effect boundary. Use dispatch, tool-build-request, or chain-run for work. dispatch is one exact immediate target, not a fallback scheduler. Durable Manager FOLLOW_UP successors may instead include routing={affinity: REQUIRED|PREFERRED|ANY, fallbacks:[{node_id,attachment_id,attachment_generation}], allow_provision:boolean}; it is evaluated only before a send. REQUIRED holds then escalates, PREFERRED/ANY may use an idle fallback after policy wait, and allow_provision records PROVISION_REQUIRED for Manager judgment rather than creating a node automatically. tool-build-request is usable from any ordinary connected ChatGPT conversation: give session_id, assignment_id, tool_name, problem, required_behaviors, acceptance, and actions including read/write/test. It auto-resolves exactly one active Worker when unambiguous; otherwise pass worker_node_id or attachment_id. manager_epoch is optional internal fencing. It may implement, test, and use a tool only within the existing Work authority, then records PENDING_USER_REPORT. Read that report with tool-build-report; user later chooses KEEP, CHANGE, or RETIRE. Browser mutations run in background; recover with bct_operation_get. Recovery never resends an UNKNOWN effect.",
@@ -90,7 +91,7 @@ _CAPABILITY_USAGE = {
 _SEALED_RELAY_COMMANDS = frozenset({
     "send", "create-and-send", "result-of-create-and-send",
     "send-to-tab", "send-to-created-tab", "send-to-self", "node-continue",
-    "read-latest-assistant",
+    "read-latest-assistant", "state",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "reconcile-send", "reconcile-send-to-created-tab", "reconcile-create-and-send",
     "target-discover", "retire-composer-draft", "retire-recovered-execution",
