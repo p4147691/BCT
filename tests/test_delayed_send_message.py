@@ -183,11 +183,42 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertEqual("rcc-key-2",json.loads(ledger.get("task-1",2)["context_json"])["observed_response_turn_key"])
             self.assertEqual("manager-uuid",sent[-1][0])
 
+    def test_initial_manual_prearm_requires_exact_rcc_user_proof(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = DurableWatchLedger(Store(Path(root) / "state.sqlite"))
+            source = {"responseTurnCount": 2, "generating": True,
+                      "responseTurnKey": "old-response", "responseSha256": "a" * 64}
+            kwargs = dict(task_id="manual-proof-task",work_id="work",
+                          principal_id="owner",assignment_epoch=1,
+                          instance_id="instance",conversation_key="worker",
+                          manager_conversation_key="manager",
+                          manager_instance_id="instance",registration_receipt="prearm")
+            for incomplete in (
+                source,
+                {**source,"latestUserTurnKey":"fallback-turn-1",
+                 "latestUserSha256":"b"*64},
+                {**source,"latestUserTurnKey":"actual-user",
+                 "latestUserSha256":"not-a-sha"},
+            ):
+                with self.assertRaisesRegex(ValueError,"DELAYED_SOURCE_USER_PROOF_REQUIRED"):
+                    ledger.prearm_task(**kwargs,baseline=incomplete)
+                self.assertIsNone(ledger.get("manual-proof-task",1))
+            verified = {**source,"latestUserTurnKey":"actual-user",
+                        "latestUserSha256":"b"*64}
+            result = ledger.prearm_task(**kwargs,baseline=verified)
+            self.assertEqual("WATCHING",result["state"])
+            import json
+            context = json.loads(ledger.get("manual-proof-task",1)["context_json"])
+            self.assertEqual("RCC_PREARM_USER_TURN",context["source_proof_kind"])
+            self.assertEqual("actual-user",context["source_user_turn_key"])
+
     def test_cancel_exact_watching_generation_and_idempotent_receipt(self):
         with tempfile.TemporaryDirectory() as root:
             ledger = DurableWatchLedger(Store(Path(root)/"state.sqlite"))
             baseline={"responseTurnCount":1,"generating":False,
-                      "responseTurnKey":"old","responseSha256":"a"*64}
+                      "responseTurnKey":"old","responseSha256":"a"*64,
+                      "latestUserTurnKey":"trusted-manual-user",
+                      "latestUserSha256":"b"*64}
             ledger.prearm_task(task_id="task-cancel",work_id="work-owner",
                 principal_id="principal-owner",assignment_epoch=1,
                 instance_id="instance",conversation_key="worker",
@@ -209,6 +240,79 @@ class DelayedSendMessageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"OWNER_MISMATCH"):
                 ledger.cancel_task(task_id="task-cancel",generation=1,
                     work_id="work-owner",principal_id="principal-owner",assignment_epoch=2)
+
+    def test_response_count_decrease_requires_exact_source_user_pairing(self):
+        from bct.delayed_send_message import DelayedSendService
+        body = "NEXT TASK — MANAGER\\nExact current result."
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        source_key = "trusted-user-turn-A"
+        source_sha = "b" * 64
+        baseline = {
+            "baseline_count": 6, "baseline_generating": True,
+            "baseline_sha": "a" * 64, "baseline_key": "old-assistant",
+            "work_id": "work-owner", "principal_id": "principal-owner",
+            "source_user_turn_key": source_key,
+            "source_user_sha256": source_sha,
+            "source_send_operation_id": "trusted-self-op",
+            "source_send_sha256": source_sha,
+            "instance_id": "instance", "conversation_key": "worker-uuid",
+        }
+        payload = {
+            "ok": True, "conversationKey": "worker-uuid",
+            "responseTurnCount": 5, "responseTurnKey": "new-assistant",
+            "responseSha256": digest, "responseText": body,
+            "observationState": "TERMINAL", "terminal": True,
+            "generating": False, "inputReady": True,
+            "latestUserTurnKey": source_key, "latestUserSha256": source_sha,
+            "responseSourceUserTurnKey": source_key,
+            "responseSourceUserSha256": source_sha,
+        }
+        service = DelayedSendService.__new__(DelayedSendService)
+        from types import SimpleNamespace
+        from bct.core.models import Outcome
+        class ReceiptStore:
+            valid = True
+            def get_operation_for(self, **kwargs):
+                if not self.valid:
+                    raise KeyError("SOURCE_RECEIPT_MISSING")
+                return SimpleNamespace(
+                    state=SimpleNamespace(value="FINISHED"),
+                    outcome=Outcome.APPLIED,
+                    evidence={"command":"send-to-tab",
+                              "host_request_id":"trusted-self-op",
+                              "instance_id":"instance"})
+        service.store = ReceiptStore()
+        service.latest = lambda **kwargs: payload
+        row = {"task_id": "task", "generation": 2,
+               "conversation_key": "worker-uuid",
+               "response_turn_id": "task:task:2",
+               "context": baseline}
+        result = service._response_for(row)
+        self.assertEqual("new-assistant", result["response_turn_key"])
+        self.assertEqual(body, result["response_text"])
+        for change in (
+            {"responseSourceUserTurnKey": "unrelated"},
+            {"responseSourceUserSha256": "c" * 64},
+            {"latestUserTurnKey": "other"},
+            {"responseTurnKey": "old-assistant"},
+            {"terminal": False},
+            {"inputReady": False},
+            {"generating": True},
+            {"conversationKey": "other"},
+        ):
+            service.latest = lambda data={**payload, **change}, **kwargs: data
+            self.assertEqual({}, service._response_for(row), change)
+        service.latest = lambda **kwargs: {**payload, "responseTurnCount": 5}
+        self.assertEqual({}, service._response_for(
+            {**row, "context": {**baseline, "source_user_turn_key": ""}}))
+        self.assertEqual({}, service._response_for(
+            {**row, "context": {**baseline, "source_user_turn_key": "fallback-turn-3"}}))
+        self.assertEqual({}, service._response_for(
+            {**row, "context": {**baseline, "source_send_operation_id": ""}}))
+        self.assertEqual({}, service._response_for(
+            {**row, "context": {**baseline, "source_send_sha256": "c" * 64}}))
+        service.store.valid = False
+        self.assertEqual({},service._response_for(row))
 
     def test_worker_prearms_before_task_and_reuses_same_reservation(self):
         with tempfile.TemporaryDirectory() as root:

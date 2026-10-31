@@ -103,8 +103,8 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 27158,
-        "sha256": "558f1de39bb6bee9eb1fa470102783cdbc7cf9e29d5952878ae77f5dfaa9c858"
+        "size": 28245,
+        "sha256": "4f1597bcb6a5939b1af461996c377a73258a4ef8662ea62161f98c23a92e621d"
       },
       {
         "path": "content/conversation_dom.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "25cddc819091bab2a65c7bb6b727496056900d50c558a4abbec99f4ee9be883b"
+    "aggregateSha256": "ed02fbdc8bf83a82714d542174621be50cdf900086d69190871e41cd7a423cf6"
   },
   "activeLoaderGraph": {
     "background": [

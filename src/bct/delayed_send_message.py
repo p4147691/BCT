@@ -14,6 +14,14 @@ from enum import Enum
 from typing import Callable
 
 
+def _rcc_submitted_text_sha256(message: str) -> str:
+    """Match RCC RelayCore.normalizeMessageText before comparing DOM source SHA."""
+    normalized = message.replace("\r\n", "\n").replace("\r", "\n").replace("\u00a0", " ")
+    normalized = "\n".join(re.sub(r"[ \t]+$", "", line)
+                           for line in normalized.split("\n")).strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 class NextTarget(str, Enum):
     SELF = "SELF"
     MANAGER = "MANAGER"
@@ -206,9 +214,19 @@ class DurableWatchLedger:
             "baseline_generating": baseline.get("generating") is True,
             "baseline_key": str(baseline.get("responseTurnKey") or ""),
             "baseline_sha": str(baseline.get("responseSha256") or ""),
+            "source_user_turn_key": str(baseline.get("latestUserTurnKey") or ""),
+            "source_user_sha256": str(baseline.get("latestUserSha256") or ""),
         }
         if not isinstance(context["baseline_count"], int) or context["baseline_count"] < 0:
             raise ValueError("DELAYED_RCC_TURN_COUNT_UNAVAILABLE")
+        # A manually submitted first task has no BCT send receipt. Anchor its
+        # source to an exact user turn observed over the authorized RCC channel
+        # at prearm time; this is observational evidence, not sender identity.
+        if (not context["source_user_turn_key"]
+                or context["source_user_turn_key"].startswith("fallback-turn-")
+                or not re.fullmatch(r"[0-9a-f]{64}", context["source_user_sha256"])):
+            raise ValueError("DELAYED_SOURCE_USER_PROOF_REQUIRED")
+        context["source_proof_kind"] = "RCC_PREARM_USER_TURN"
         with self.store.transaction() as db:
             existing = db.execute(
                 "SELECT * FROM delayed_send_watches WHERE task_id=? "
@@ -230,9 +248,14 @@ class DurableWatchLedger:
                 if existing["conversation_key"] != conversation_key:
                     raise ValueError("DELAYED_WORKER_CHANGED")
                 old = json.loads(existing["context_json"] or "{}")
-                if old and (old.get("work_id") != work_id
-                            or old.get("manager_conversation_key") != manager_conversation_key):
+                if (("work_id" in old and old["work_id"] != work_id)
+                        or ("manager_conversation_key" in old
+                            and old["manager_conversation_key"] != manager_conversation_key)):
                     raise ValueError("DELAYED_CONTEXT_CHANGED")
+                context.update({
+                    key: old[key] for key in
+                    ("source_send_operation_id", "source_send_sha256") if key in old
+                })
                 db.execute(
                     "UPDATE delayed_send_watches SET response_turn_id=?, "
                     "source_send_receipt=?,state='WATCHING',context_json=? "
@@ -291,7 +314,7 @@ class DurableWatchLedger:
         with self.store._readonly() as db:
             row = db.execute(
                 "SELECT context_json FROM delayed_send_watches "
-                "WHERE task_id=? AND context_json!='{}' "
+                "WHERE task_id=? AND json_extract(context_json,'$.instance_id') IS NOT NULL "
                 "ORDER BY generation DESC LIMIT 1", (task_id,)
             ).fetchone()
         return json.loads(row["context_json"]) if row else {}
@@ -311,6 +334,35 @@ class DurableWatchLedger:
             value["context"]=json.loads(value.pop("context_json"))
             result.append(value)
         return result
+
+    def bind_self_source_send(self, *, task_id: str, next_generation: int,
+                              operation_id: str, message_sha256: str) -> None:
+        """Bind one APPLIED BCT SELF send to its pre-reserved next generation."""
+        if (not operation_id or not re.fullmatch(r"[0-9a-f]{64}", message_sha256)):
+            raise ValueError("DELAYED_SOURCE_SEND_INVALID")
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='RESERVED'",
+                (task_id, next_generation),
+            ).fetchone()
+            if row is None:
+                raise ValueError("DELAYED_SOURCE_WATCH_NOT_RESERVED")
+            context = json.loads(row["context_json"] or "{}")
+            if context.get("source_send_operation_id"):
+                if (context["source_send_operation_id"] != operation_id
+                        or context.get("source_send_sha256") != message_sha256):
+                    raise ValueError("DELAYED_SOURCE_SEND_CONFLICT")
+                return
+            context["source_send_operation_id"] = operation_id
+            context["source_send_sha256"] = message_sha256
+            updated = db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='RESERVED'",
+                (json.dumps(context,sort_keys=True),task_id,next_generation),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("DELAYED_SOURCE_SEND_RACE")
 
     def bind_observed_turn(self, watch: Watch, turn_key: str, response_sha: str) -> bool:
         """Persist the exact RCC response identity before claiming any send."""
@@ -592,7 +644,55 @@ class DelayedSendService:
             and current_count>=baseline_count
             and str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")
         ))
-        if not changed:
+        # A DOM count can shrink after rerender. Only a source-user turn
+        # observed at prearm and matched to this response can compensate.
+        source_key = str(ctx.get("source_user_turn_key") or "")
+        source_sha = str(ctx.get("source_user_sha256") or "")
+        if (not source_key or source_key.startswith("fallback-turn-")
+                or not re.fullmatch(r"[0-9a-f]{64}", source_sha)):
+            return {}
+        source_match = (
+            bool(source_key and source_sha)
+            and not source_key.startswith("fallback-turn-")
+            and observed.get("responseSourceUserTurnKey") == source_key
+            and observed.get("responseSourceUserSha256") == source_sha
+            and observed.get("latestUserTurnKey") == source_key
+            and observed.get("latestUserSha256") == source_sha
+        )
+        if source_key and not source_match:
+            return {}
+        source_send_op = str(ctx.get("source_send_operation_id") or "")
+        source_send_sha = str(ctx.get("source_send_sha256") or "")
+        trusted_self_source = (
+            bool(source_send_op and re.fullmatch(r"[0-9a-f]{64}", source_send_sha))
+            and source_match and source_send_sha == source_sha
+        )
+        if source_send_op and not trusted_self_source:
+            return {}
+        if source_send_op:
+            from bct.core.models import Outcome
+            try:
+                receipt = self.store.get_operation_for(
+                    operation_id=source_send_op, work_id=ctx["work_id"],
+                    principal_id=ctx["principal_id"],
+                )
+            except (KeyError, ValueError):
+                return {}
+            except Exception:
+                return {}
+            evidence = receipt.evidence
+            if (receipt.state.value != "FINISHED"
+                    or receipt.outcome != Outcome.APPLIED
+                    or not isinstance(evidence, dict)
+                    or evidence.get("command") not in {"send-to-tab", "send-to-created-tab"}
+                    or evidence.get("host_request_id") != source_send_op
+                    or evidence.get("instance_id") != ctx["instance_id"]):
+                return {}
+        response_changed = (
+            str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")
+            and str(observed.get("responseTurnKey") or "") != ctx.get("baseline_key")
+        )
+        if not (changed or (trusted_self_source and response_changed)):
             return {}
         if (observed.get("terminal") is not True
                 or observed.get("inputReady") is not True
@@ -637,6 +737,12 @@ class DelayedSendService:
         )
         if result.outcome!=Outcome.APPLIED:
             raise ValueError("DELAYED_RCC_SEND_" + result.outcome.value)
+        if destination==row["conversation_key"]:
+            self.ledger.bind_self_source_send(
+                task_id=row["task_id"],next_generation=row["generation"]+1,
+                operation_id=operation_id,
+                message_sha256=_rcc_submitted_text_sha256(message),
+            )
         return operation_id
 
     def poll_once(self, limit: int = 8) -> dict:

@@ -8,7 +8,7 @@ from pathlib import Path
 from bct.service import BCT
 from bct.core.models import Principal, Outcome
 from bct.features.rcc import RelayBrowserFeature
-from bct.delayed_send_message import DelayedSendService
+from bct.delayed_send_message import DelayedSendService, _rcc_submitted_text_sha256
 
 INSTANCE = "instance123"
 SESSION = "a" * 32
@@ -20,6 +20,8 @@ class SimulatedRcc:
     """Contract-compatible fake RCC for the full Task B SELF→MANAGER cycle."""
     def __init__(self):
         self.sent = []
+        self.manual_user_text = "Initial manual work request"
+        self.visible_count_override = None
         self.responses = {WORKER: ("", 0), MANAGER: ("", 0)}
 
     def reply(self, conversation, body):
@@ -41,9 +43,20 @@ class SimulatedRcc:
         if command == "read-latest-assistant":
             key = extra["conversationKey"]
             body, count = self.responses[key]
+            latest_send = next((text for target,text,_ in reversed(self.sent)
+                                if target == key), "")
+            latest_user_key = "trusted-user-send-1" if latest_send else "manual-user-turn-1"
+            latest_user_sha = _rcc_submitted_text_sha256(
+                latest_send if latest_send else self.manual_user_text
+            )
             return {
+                "latestUserTurnKey": latest_user_key,
+                "latestUserSha256": latest_user_sha,
+                "responseSourceUserTurnKey": latest_user_key if count else "",
+                "responseSourceUserSha256": latest_user_sha if count else "",
                 "ok": True, "conversationKey": key,
-                "responseTurnCount": count,
+                "responseTurnCount": (self.visible_count_override
+                                      if self.visible_count_override is not None else count),
                 "responseTurnKey": f"assistant-{count}" if count else "",
                 "responseText": body,
                 "responseSha256": hashlib.sha256(body.encode()).hexdigest() if body else "",
@@ -102,15 +115,23 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             self.assertIn("Finish the remaining code.", rcc.sent[0][1])
             self.assertIn("Delayed Send Message", rcc.sent[0][1])
             self.assertEqual("RESERVED", service.ledger.get("task-1", 2)["state"])
+            import json
+            reserved = json.loads(service.ledger.get("task-1", 2)["context_json"])
+            self.assertEqual(rcc.sent[0][2], reserved["source_send_operation_id"])
+            self.assertEqual(_rcc_submitted_text_sha256(rcc.sent[0][1]),
+                             reserved["source_send_sha256"])
             # The next message asks B to prearm the same Task ID again.
             rearmed = bct.operations.run(
                 principal=principal, work_id=work.work_id,
                 operation_id="task-prearm-2", capability="relay_browser",
                 arguments={"command": "delayed-send-message", "task_id": "task-1"},
             )
-            self.assertEqual(Outcome.APPLIED, rearmed.outcome)
+            self.assertEqual(Outcome.APPLIED, rearmed.outcome, rearmed.as_dict())
             self.assertEqual(2, rearmed.output["generation"])
             rcc.reply(WORKER, "Final stage done.\nNEXT TASK — MANAGER\nFinished, report complete.")
+            # DOM may render fewer assistant nodes than at prearm; trusted SELF
+            # source receipt + exact user pair still identify this response.
+            rcc.visible_count_override = 0
             second = service.poll_once()
             self.assertEqual("RETURNED_TO_MANAGER", second["events"][0]["status"])
             self.assertEqual(2, len(rcc.sent))

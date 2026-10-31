@@ -365,6 +365,23 @@ if (message.type === 'relay:readLatestAssistant') {
     const generating = isGenerating();
     const terminal = !generating && (!!node && hasCompletionAction());
     const assistantUnits = getAssistantNodes();
+    const userUnits = getMessageUnits('user');
+    const latestUserUnit = userUnits.length ? userUnits[userUnits.length - 1] : null;
+    const sourceUserUnit = node ? userUnits.filter((unit) =>
+      !!(unit.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)
+    ).at(-1) : null;
+    const latestUserTurnKey = latestUserUnit ? turnIdentity(
+      latestUserUnit.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]')
+      || latestUserUnit
+    ) : '';
+    const responseSourceUserTurnKey = sourceUserUnit ? turnIdentity(
+      sourceUserUnit.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]')
+      || sourceUserUnit
+    ) : '';
+    const latestUserSha256 = latestUserUnit
+      ? await newChatTextSha256(messageUnitText(latestUserUnit, 'user')) : '';
+    const responseSourceUserSha256 = sourceUserUnit
+      ? await newChatTextSha256(messageUnitText(sourceUserUnit, 'user')) : '';
     const turn = node?.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]');
     const responseTurnKey = turn?.getAttribute('data-turn-key')
       || turn?.getAttribute('data-content-search-turn-key')
@@ -380,6 +397,8 @@ if (message.type === 'relay:readLatestAssistant') {
       ok: true, conversationKey: actualConversationKey,
       observationState: node ? (terminal ? 'TERMINAL' : 'IN_PROGRESS') : 'EMPTY',
       generating, terminal, inputReady, responseTurnKey,
+      latestUserTurnKey, latestUserSha256,
+      responseSourceUserTurnKey, responseSourceUserSha256,
       responseTurnCount: assistantUnits.length,
       responseText,
       responseSha256: responseText ? await newChatTextSha256(responseText) : '',
