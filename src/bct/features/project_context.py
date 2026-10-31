@@ -8,7 +8,7 @@ from typing import Any
 
 from bct.core.models import FeatureRequest, FeatureResult, Outcome, PreconditionError, Work
 from bct.core.project_memory import (
-    ProjectMemoryConflict, ProjectMemoryError, ProjectMemoryStore,
+    ProjectMemoryConflict, ProjectMemoryError, ProjectContextJStore,
 )
 
 
@@ -27,7 +27,7 @@ class ProjectContextFeature:
 
     def __init__(self, data_root: str | Path):
         root = Path(data_root) / "project-context"
-        self.central = ProjectMemoryStore(root / "central")
+        self.central = ProjectContextJStore(root / "central")
         self.journal_root = root / "work-journals"
 
     @staticmethod
@@ -45,9 +45,9 @@ class ProjectContextFeature:
             raise PreconditionError("PROJECT_CONTEXT_WORK_ID_INVALID")
         return work_id
 
-    def _journals(self, project: str) -> ProjectMemoryStore:
+    def _journals(self, project: str) -> ProjectContextJStore:
         digest = hashlib.sha256(project.encode("utf-8")).hexdigest()[:24]
-        return ProjectMemoryStore(self.journal_root / digest)
+        return ProjectContextJStore(self.journal_root / digest)
 
     @staticmethod
     def _journal_key(work_id: str) -> str:
@@ -87,27 +87,28 @@ class ProjectContextFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "").strip().lower()
+        operation = {'central-save': 'central-set', 'worklog-save': 'worklog-set', 'overview': 'overview-get'}.get(operation, operation)
         allowed = {"operation", "project"}
-        if operation in {"central-save", "worklog-save"}:
+        if operation in {"central-set", "worklog-set"}:
             allowed.update({"record", "author", "expected_revision"})
-        if operation in {"worklog-get", "worklog-save"}:
+        if operation in {"worklog-get", "worklog-set"}:
             allowed.add("journal_work_id")
-        if operation not in {"central-get", "central-save", "worklog-get", "worklog-save", "overview"}:
+        if operation not in {"central-get", "central-set", "worklog-get", "worklog-set", "overview-get", "directory-get"}:
             raise PreconditionError("PROJECT_CONTEXT_OPERATION_INVALID")
         if set(arguments) - allowed:
             raise PreconditionError("PROJECT_CONTEXT_FIELD_NOT_ALLOWED")
-        project = self._project(arguments.get("project"))
+        project = self._project(arguments.get("project")) if operation != "directory-get" else ""
         values: dict[str, Any] = {"operation": operation, "project": project}
-        if operation in {"central-save", "worklog-save"}:
+        if operation in {"central-set", "worklog-set"}:
             values.update({"record": self._record(arguments), "author": self._author(arguments),
                            "expected_revision": self._expected_revision(arguments)})
-        if operation in {"worklog-get", "worklog-save"}:
+        if operation in {"worklog-get", "worklog-set"}:
             work_id = self._work_id(arguments.get("journal_work_id"))
-            if operation == "worklog-save" and not self._journal_has_work(values["record"], work_id):
+            if operation == "worklog-set" and not self._journal_has_work(values["record"], work_id):
                 raise PreconditionError("PROJECT_CONTEXT_WORK_LINK_REQUIRED")
             values["journal_work_id"] = work_id
-        return FeatureRequest(self.capability, "project-context:" + project, values,
-                              ("project-context:" + project,))
+        return FeatureRequest(self.capability, "project-context:" + (project or "directory"), values,
+                              ("project-context:" + (project or "directory"),))
 
     @staticmethod
     def _public(row: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -120,14 +121,25 @@ class ProjectContextFeature:
         values = request.arguments
         operation, project = values["operation"], values["project"]
         try:
-            if operation == "central-get":
+            if operation == "directory-get":
+                summaries = []
+                for key in self.central.projects()[:200]:
+                    row = self.central.get(key)
+                    if row is None:
+                        continue
+                    record = row.get("record") or {}
+                    summaries.append({"project_id": key, "revision": row.get("revision"),
+                                      "title": record.get("title", ""), "goal": record.get("goal", ""),
+                                      "summary": record.get("summary", "")})
+                result = {"items": summaries, "limited": len(summaries) >= 200}
+            elif operation == "central-get":
                 result = self.central.get(project)
-            elif operation == "central-save":
+            elif operation == "central-set":
                 result = self.central.save(project, expected_revision=values["expected_revision"],
                                            author=values["author"], record=values["record"])
             elif operation == "worklog-get":
                 result = self._journals(project).get(self._journal_key(values["journal_work_id"]))
-            elif operation == "worklog-save":
+            elif operation == "worklog-set":
                 result = self._journals(project).save(
                     self._journal_key(values["journal_work_id"]),
                     expected_revision=values["expected_revision"], author=values["author"],

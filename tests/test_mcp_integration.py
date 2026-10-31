@@ -180,7 +180,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check", "bct_run_plan", "bct_network_set",
                             "bct_work_create", "bct_operation_get", "bct_inbox_get",
                             "bct_github_inbox_get",
                         },
@@ -193,7 +193,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertIn("create-and-send", live_relay_usage)
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check", "bct_run_plan", "bct_network_set",
                             "bct_work_create", "bct_operation_get", "bct_inbox_get",
                             "bct_github_inbox_get",
                         },
@@ -215,6 +215,35 @@ class MCPIntegrationTests(unittest.TestCase):
                     member = conversation_network.structuredContent["members"][0]
                     self.assertEqual("D1-3", member["monitor"]["node_label"])
                     self.assertNotIn(self.manager, json.dumps(conversation_network.structuredContent))
+                    network_alias = await session.call_tool(
+                        "bct_network_get", {"project": "BCT RCC"}
+                    )
+                    self.assertFalse(network_alias.isError)
+                    self.assertEqual(conversation_network.structuredContent,
+                                     network_alias.structuredContent)
+                    preflight = await session.call_tool(
+                        "bct_run_check", {"project": "BCT RCC"}
+                    )
+                    self.assertFalse(preflight.isError)
+                    self.assertEqual("OK", preflight.structuredContent["status"])
+                    self.assertTrue(preflight.structuredContent["read_only"])
+                    self.assertTrue(preflight.structuredContent["context_requires_work"])
+                    self.assertEqual("AUTH_CONTEXT_REQUIRED",
+                                     preflight.structuredContent["context_status"])
+                    self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
+                                     preflight.structuredContent["candidates_scope"])
+                    self.assertEqual("NOT_REQUESTED",
+                                     preflight.structuredContent["historical_contexts_status"])
+                    blank_preflight = await session.call_tool("bct_run_check", {})
+                    self.assertFalse(blank_preflight.isError)
+                    self.assertEqual("OK", blank_preflight.structuredContent["status"])
+                    self.assertEqual("NOT_REQUESTED", blank_preflight.structuredContent["context_status"])
+                    self.assertIsNone(blank_preflight.structuredContent["project_context"])
+
+                    self.assertEqual("OK", preflight.structuredContent["network"]["status"])
+                    self.assertIn("nodes", preflight.structuredContent)
+                    self.assertIn("rcc", preflight.structuredContent)
+
                     work_arguments = {
                         "work_id": "mcp-read-work",
                         "request_summary": "read one exact test file",

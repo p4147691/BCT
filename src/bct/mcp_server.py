@@ -23,7 +23,7 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
-    "bct_capabilities", "bct_status", "bct_conversation_network_get",
+    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check",
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
@@ -212,6 +212,170 @@ def build_mcp(
             wait_ms=0.0, execution_ms=handler_ms,
         )
         return value
+
+    @server.tool(description="Read a registered project network. Canonical short name for bct_conversation_network_get.", structured_output=True)
+    async def bct_network_get(project: str) -> dict[str, Any]:
+        return await bct_conversation_network_get(project)
+
+    @server.tool(description="Read-only preflight for planning: current node/RCC state and optional registered network. Does not create plans, networks or messages.", structured_output=True)
+    async def bct_run_check(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
+        if status_provider is None:
+            return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
+        snapshot = await asyncio.to_thread(status_provider)
+        nodes = status_view(snapshot, "node", sort_by=sort_by)
+        rcc = status_view(snapshot, "rcc", sort_by=sort_by)
+        # Candidates come from confirmed current nodes, never from guessed project IDs.
+        # Historical projects need a separately authorized directory/summary lookup.
+        candidates: dict[str, dict[str, str]] = {}
+        for node in nodes.get("items", []) if isinstance(nodes, dict) else []:
+            if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
+                continue
+            name = str(node.get("network") or "").strip()
+            scope_id = str(node.get("network_id") or "").strip()
+            if name:
+                key = scope_id or name.casefold()
+                candidates.setdefault(key, {"title": name, "network_id": scope_id})
+        network = None
+        context = None
+        context_status = "NOT_REQUESTED"
+        historical_contexts = []
+        historical_contexts_status = "AUTH_CONTEXT_REQUIRED"
+        if not project and work_id and operation_id:
+            try:
+                directory = await make_executor("project_context")(
+                    work_id, operation_id,
+                    {"operation": "directory-get"},
+                )
+                if directory.get("outcome") == "APPLIED":
+                    payload = directory.get("output") or {}
+                    historical_contexts = payload.get("items", []) if isinstance(payload, dict) else []
+                    historical_contexts_status = "OK" if historical_contexts else "NO_CONTEXT"
+                    # Combine authorized central summaries with the existing BCT network DB.
+                    summaries = {str(item["project_id"]): item for item in historical_contexts
+                                 if isinstance(item, dict) and item.get("project_id")}
+                    with bct.store.transaction() as db:
+                        rows = db.execute(
+                            "SELECT project_id,display_name,active FROM conversation_network_projects "
+                            "ORDER BY display_name,project_id LIMIT 200"
+                        ).fetchall()
+                    for row in rows:
+                        key = str(row["project_id"])
+                        candidates[key] = {"title": str(row["display_name"]), "network_id": key,
+                                           "active": bool(row["active"]),
+                                           "context_summary": summaries.get(key)}
+                    # A stored project can outlive its network: return evidence, not a selection.
+                    for key, item in summaries.items():
+                        if key not in candidates:
+                            candidates[key] = {"title": str(item.get("title") or key),
+                                               "network_id": key, "active": False,
+                                               "context_summary": item}
+                else:
+                    historical_contexts_status = "ACCESS_DENIED" if directory.get("error") and any(
+                        marker in str(directory.get("error")).upper()
+                        for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                    ) else "QUERY_ERROR"
+            except Exception as exc:
+                historical_contexts_status = "ACCESS_DENIED" if any(
+                    marker in str(exc).upper()
+                    for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                ) else "QUERY_ERROR"
+        elif project:
+            historical_contexts_status = "NOT_REQUESTED"
+        if project:
+            try:
+                network = await bct_network_get(project)
+            except (ConversationNetworkError, ValueError) as exc:
+                network = {"status": "NOT_FOUND", "reason": str(exc)}
+            if not work_id or not operation_id:
+                context_status = "AUTH_CONTEXT_REQUIRED"
+            else:
+                try:
+                    context = await make_executor("project_context")(
+                        work_id, operation_id, {"operation": "overview-get", "project": project}
+                    )
+                    if context.get("outcome") == "APPLIED":
+                        payload = context.get("output")
+                        context_status = ("NO_CONTEXT" if not isinstance(payload, dict)
+                                          or (payload.get("central") is None and not payload.get("worklogs"))
+                                          else "OK")
+                    else:
+                        reason = str(context.get("error") or "").upper()
+                        context_status = "ACCESS_DENIED" if any(
+                            marker in reason for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                        ) else "QUERY_ERROR"
+                except Exception as exc:
+                    context_status = "ACCESS_DENIED" if any(
+                        marker in str(exc).upper()
+                        for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                    ) else "QUERY_ERROR"
+                    context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
+        return {"status": "OK", "nodes": nodes, "rcc": rcc,
+                "network": network, "network_candidates": list(candidates.values()),
+                "candidates_scope": ("CURRENT_AND_HISTORICAL_AUTHORIZED"
+                                     if historical_contexts_status in {"OK", "NO_CONTEXT"}
+                                     else "CURRENT_CONFIRMED_NODES_ONLY"),
+                "historical_contexts": historical_contexts,
+                "historical_contexts_status": historical_contexts_status,
+                "project_context": context, "context_status": context_status,
+                "context_requires_work": bool(project and (not work_id or not operation_id)),
+                "read_only": True}
+
+    @server.tool(description="Persist an AI-authored execution plan as a versioned, Work-authorized project-context ledger. No AI planning or execution is performed.", structured_output=True)
+    async def bct_run_plan(
+        work_id: str, operation_id: str, plan_id: str, project: str,
+        objective: str, acceptance: str, steps: list[dict[str, Any]],
+        author: str, expected_revision: int = 0, discretion: str = "normal",
+        assumptions: list[str] | None = None,
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", plan_id):
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_ID_INVALID"}
+        if not project.strip() or not objective.strip() or not acceptance.strip():
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_REQUIRED_FIELDS"}
+        if not isinstance(steps, list) or not 1 <= len(steps) <= 50:
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEPS_INVALID"}
+        if discretion not in {"limited", "normal", "extended"}:
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_DISCRETION_INVALID"}
+        checked = []
+        for idx, step in enumerate(steps):
+            if not isinstance(step, dict) or not {"instruction", "acceptance"} <= step.keys():
+                return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEP_INVALID"}
+            instruction = step["instruction"]
+            criterion = step["acceptance"]
+            if not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 4000 or not isinstance(criterion, str) or not criterion.strip() or len(criterion) > 4000:
+                return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEP_INVALID"}
+            checked.append({"text": f"{idx + 1}/{len(steps)}: {instruction} | 완료: {criterion}", "evidence": []})
+        if not isinstance(expected_revision, int) or isinstance(expected_revision, bool) or expected_revision < 0:
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_REVISION_INVALID"}
+        assumptions = assumptions or []
+        if not isinstance(assumptions, list) or len(assumptions) > 30 or any(not isinstance(x, str) or len(x) > 2000 for x in assumptions):
+            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_ASSUMPTIONS_INVALID"}
+        record = {
+            "title": "Run plan " + plan_id, "goal": objective,
+            "scope_note": "Project: " + project + "; discretion: " + discretion,
+            "summary": acceptance, "links": [{"type": "bct_work", "id": work_id}],
+            "items": checked,
+            "decisions": [{"text": "재량: " + discretion, "evidence": []}],
+            "next_actions": [{"text": "가정: " + x, "evidence": []} for x in assumptions],
+            "checkpoints": {"external": {"plan_id": plan_id, "project": project, "stage": "PLANNED"}},
+        }
+        return await make_executor("project_context")(
+            work_id, operation_id, {"operation": "central-save",
+            "project": "run-plan-" + plan_id.lower(), "record": record,
+            "author": author, "expected_revision": expected_revision}, approval_ref
+        )
+
+    @server.tool(description="Set existing project membership or role tags through the authorized conversation_network_update capability; supports project-upsert, membership-assign and role-patch.", structured_output=True)
+    async def bct_network_set(
+        work_id: str, operation_id: str, arguments: dict[str, Any],
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        if arguments.get("operation") not in {"project-upsert", "membership-assign", "role-patch"}:
+            return {"status": "INVALID_REQUEST", "reason": "NETWORK_SET_OPERATION_INVALID"}
+        return await make_executor("conversation_network_update")(
+            work_id, operation_id, arguments, approval_ref
+        )
 
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
     async def bct_work_create(

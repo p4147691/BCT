@@ -43,6 +43,19 @@ class ProjectContextTests(unittest.TestCase):
         overview = self.run_feature(operation="overview", project="demo")
         self.assertEqual(1, len(overview.output["worklogs"]))
 
+    def test_directory_get_lists_only_saved_central_summaries(self):
+        self.run_feature(operation="central-set", project="demo", expected_revision=0,
+                         author="manager", record=record("demo title"))
+        self.run_feature(operation="worklog-set", project="other", journal_work_id="context-work",
+                         expected_revision=0, author="worker", record=record("private work", "context-work"))
+        result = self.run_feature(operation="directory-get")
+        self.assertEqual(1, len(result.output["items"]))
+        item = result.output["items"][0]
+        self.assertEqual("demo", item["project_id"])
+        self.assertEqual("demo title", item["title"])
+        self.assertNotIn("record", item)
+        self.assertNotIn("private work", str(result.output))
+
     def test_worklog_requires_exact_work_link(self):
         with self.assertRaisesRegex(Exception, "PROJECT_CONTEXT_WORK_LINK_REQUIRED"):
             self.feature.prepare(work=self.work, arguments={

@@ -8,6 +8,7 @@ from bct.conversation_network import (
     assign_conversation_membership,
     patch_conversation_role_tags,
     resolve_project_id,
+    upsert_project,
 )
 from bct.core.models import FeatureRequest, FeatureResult, Outcome, PreconditionError, Work
 from bct.core.store import Store
@@ -43,11 +44,29 @@ class ConversationNetworkUpdateFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "role-patch").strip().casefold()
+        if operation == "project-upsert":
+            return self._prepare_project_upsert(arguments)
         if operation == "role-patch":
             return self._prepare_role_patch(arguments)
         if operation == "membership-assign":
             return self._prepare_membership_assign(arguments)
         raise PreconditionError("CONVERSATION_NETWORK_UPDATE_OPERATION_INVALID")
+
+    def _prepare_project_upsert(self, arguments: dict[str, Any]) -> FeatureRequest:
+        if set(arguments) != {"operation", "project_id", "display_name"}:
+            raise PreconditionError("CONVERSATION_NETWORK_UPDATE_FIELD_NOT_ALLOWED")
+        project_id = str(arguments["project_id"] or "").strip()
+        display_name = str(arguments["display_name"] or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,96}", project_id):
+            raise PreconditionError("CONVERSATION_NETWORK_PROJECT_ID_INVALID")
+        if not display_name or len(display_name) > 120:
+            raise PreconditionError("CONVERSATION_NETWORK_PROJECT_NAME_INVALID")
+        return FeatureRequest(
+            self.capability, "conversation-network:" + project_id,
+            {"operation": "project-upsert", "project_id": project_id,
+             "display_name": display_name},
+            ("conversation-network-project:" + project_id,),
+        )
 
     def _project_id(self, project_reference: str) -> str:
         if not project_reference:
@@ -124,6 +143,17 @@ class ConversationNetworkUpdateFeature:
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
         operation = request.arguments["operation"]
+        if operation == "project-upsert":
+            try:
+                result = upsert_project(
+                    self.store, project_id=request.arguments["project_id"],
+                    display_name=request.arguments["display_name"],
+                )
+            except ConversationNetworkError as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(
+                Outcome.APPLIED, {"operation": operation, **result}, output=result
+            )
         if operation == "membership-assign":
             try:
                 result = assign_conversation_membership(
