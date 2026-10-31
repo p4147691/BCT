@@ -11,6 +11,10 @@ assert.doesNotMatch(source, /function monitorBctSharedWindowGroups\(/,
   "physical Chrome windows must not create node-list groups");
 assert.doesNotMatch(source, /monitorBctCollapsedWindowCards|Chrome 창 ·|monitor-bct-window-card/,
   "physical Chrome-window cards must not return");
+assert.doesNotMatch(source, /monitor-bct-node-sort|대화망별|그룹 내 번호순/,
+  "the node list stays network-first without a redundant sort selector");
+assert.match(source, /GitHub Inbox · .*새 결과/,
+  "GitHub results remain a one-line live summary instead of a stack of cards");
 assert.match(source, /const key = node\.scopeId \|\| "__unassigned__";/,
   "only the conversation scope owns grouping");
 assert.match(source, /Number\(left\.key === "__unassigned__"\) - Number\(right\.key === "__unassigned__"\)/,

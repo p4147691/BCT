@@ -1,8 +1,8 @@
 "use strict";
 
 // Project BCT node identity onto the physical browser windows already rendered
-// by the Native desktop capture. Node labels deliberately share each window's
-// z-order so a rear window and its label are covered together.
+// by the Native desktop capture. Node labels are a read-only Monitor layer:
+// they must remain readable even when thumbnail windows overlap.
 (function installMonitorBctThumbnailProjection(root) {
   function text(value) {
     return String(value ?? "").trim();
@@ -41,11 +41,6 @@
       height: text(img?.style?.height),
     };
     return Object.values(geometry).every(Boolean) ? geometry : null;
-  }
-
-  function windowZIndex(img) {
-    const value = Number(img?.style?.zIndex || img?.dataset?.nativeZIndex || 1);
-    return Number.isFinite(value) ? Math.max(1, value) : 1;
   }
 
   function render(options = {}) {
@@ -102,7 +97,10 @@
       windowLayer.className = "monitor-thumbnail-node-window";
       windowLayer.dataset.hwnd = hwnd;
       Object.assign(windowLayer.style, geometry);
-      windowLayer.style.zIndex = String(windowZIndex(img));
+      // This overlay sits above the captured-window layer.  Do not inherit
+      // physical window z-order here: a front browser window used to paint a
+      // blank overlay above a different node's number and hide it.
+      windowLayer.style.zIndex = "1";
       windowLayer.classList.toggle(
         "monitor-bct-node-target-highlighted",
         Boolean(options.highlightedHwnd) && hwnd === text(options.highlightedHwnd),

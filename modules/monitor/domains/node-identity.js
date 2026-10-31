@@ -1121,45 +1121,29 @@ function renderMonitorGithubInbox(state) {
   if (!monitorGithubInbox) return;
   const items = Array.isArray(state?.github_run_inbox) ? state.github_run_inbox.slice(0, 12) : [];
   monitorGithubInbox.replaceChildren();
+  monitorGithubInbox.className = "monitor-github-inbox-ticker";
   if (!items.length) {
-    monitorGithubInbox.textContent = "GitHub Inbox: no waiting or terminal results";
+    monitorGithubInbox.textContent = "GitHub Inbox · 새 결과 없음";
     return;
   }
-  const heading = document.createElement("strong");
   const unreadCount = items.filter((item) => item?.unread === true).length;
-  heading.textContent = `GitHub 완료 Inbox (${unreadCount} 미확인)`;
-  monitorGithubInbox.append(heading);
-  for (const item of items) {
-    const row = document.createElement("div");
-    row.className = "monitor-bct-node-empty";
-    const primary = document.createElement("strong");
-    const stateLabel = String(item?.state || "UNKNOWN");
-    const project = String(item?.repository || "");
-    const kind = String(item?.context?.kind || item?.context?.type || "CI");
-    primary.textContent = `${item?.unread ? "● " : ""}${stateLabel} · ${project} · ${kind} #${String(item?.run_id || "")}`;
-    const details = document.createElement("div");
-    const sha = String(item?.head_sha || "");
-    const when = Number(item?.created_at || 0);
-    const age = Number.isFinite(when) && when > 0 ? ` · ${Math.max(0, Math.floor(Date.now() / 1000 - when))}초 경과` : "";
-    details.textContent = `Work ${String(item?.work_id || "")} · ${String(item?.node_id || "")} · ${sha.slice(0, 12)}${age}`;
-    const action = document.createElement("div");
-    action.textContent = `다음: ${String(item?.next_step || "참고용 결과 확인").slice(0, 240)}`;
-    row.append(primary, details, action);
-    if (item?.error_summary) {
-      const error = document.createElement("div");
-      error.textContent = `실패: ${String(item.error_summary).slice(0, 260)}`;
-      row.append(error);
-    }
-    const target = String(item?.url || "");
-    if (/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/[1-9][0-9]*$/.test(target)) {
-      const link = document.createElement("a");
-      link.href = target;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "GitHub 결과 보기";
-      row.append(link);
-    }
-    monitorGithubInbox.append(row);
+  const latest = items[0];
+  const stateLabel = String(latest?.state || "확인 중");
+  const project = String(latest?.repository || "GitHub");
+  const kind = String(latest?.context?.kind || latest?.context?.type || "CI");
+  const runId = String(latest?.run_id || "");
+  const message = document.createElement("span");
+  message.textContent = `GitHub Inbox · ${unreadCount ? `${unreadCount}개 새 결과 · ` : ""}${stateLabel} · ${project} · ${kind}${runId ? ` #${runId}` : ""}`;
+  message.title = String(latest?.next_step || latest?.error_summary || "최신 GitHub 결과");
+  monitorGithubInbox.append(message);
+  const target = String(latest?.url || "");
+  if (/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/[1-9][0-9]*$/.test(target)) {
+    const link = document.createElement("a");
+    link.href = target;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "열기";
+    monitorGithubInbox.append(link);
   }
 }
 //@@FN_END:renderMonitorGithubInbox
@@ -1403,21 +1387,6 @@ function renderMonitorBctWindowNodes(nodes) {
   if (monitorBctPointerDrag) cancelMonitorBctNodePointerDrag({ pointerId: monitorBctPointerDrag.pointerId });
   nodes = monitorUniqueBctConversationNodes(nodes);
   const fragment = document.createDocumentFragment();
-  const sortSelect = document.createElement("select");
-  sortSelect.className = "monitor-bct-node-sort";
-  sortSelect.setAttribute("aria-label", "노드 정렬 방식");
-  for (const [value, label] of [["network", "대화망별"], ["number", "그룹 내 번호순"], ["role", "그룹 내 역할별"], ["activity", "그룹 내 활동별"]]) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    option.selected = value === renderMonitorBctWindowNodes.sortMode;
-    sortSelect.append(option);
-  }
-  sortSelect.addEventListener("change", () => {
-    renderMonitorBctWindowNodes.sortMode = sortSelect.value;
-    renderMonitorBctWindowNodes(nodes);
-  });
-  fragment.append(sortSelect);
   if (!nodes.length) {
     const empty = document.createElement("div");
     empty.className = "monitor-bct-node-empty";
@@ -1467,15 +1436,6 @@ function renderMonitorBctWindowNodes(nodes) {
         const digits = String(node.nodeLabel || "").replace(/^N/i, "");
         return /^\\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
       };
-      if (renderMonitorBctWindowNodes.sortMode === "number") return nodeNumber(left) - nodeNumber(right);
-      if (renderMonitorBctWindowNodes.sortMode === "role") {
-        const roleDiff = String(left.roleTags?.[0] || "").localeCompare(String(right.roleTags?.[0] || ""), "ko");
-        return roleDiff || nodeNumber(left) - nodeNumber(right);
-      }
-      if (renderMonitorBctWindowNodes.sortMode === "activity") {
-        const score = (node) => (node.generating === true ? 2 : node.active === true ? 1 : 0);
-        return score(right) - score(left) || nodeNumber(left) - nodeNumber(right);
-      }
       const leftManual = Number(left.displayOrder || 0);
       const rightManual = Number(right.displayOrder || 0);
       if (leftManual > 0 || rightManual > 0) {
@@ -1643,9 +1603,11 @@ function renderMonitorBctWindowNodes(nodes) {
   syncMonitorBctNodeTargetHighlight();
   if (monitorBctNodeSummary) {
     const stale = nodes.some((node) => node.displayStale === true);
+    const activeCount = nodes.filter((node) => node.active === true).length;
+    const generatingCount = nodes.filter((node) => node.generating === true).length;
     monitorBctNodeSummary.textContent = stale
-      ? `${nodes.length}개 · RCC 일시 지연 · 마지막 검증 목록`
-      : `${nodes.length}개 · BCT/RCC 실시간 상태`;
+      ? `${nodes.length}개 연결 · RCC 일시 지연 · 마지막 확인 목록`
+      : `${nodes.length}개 연결 · 활성 ${activeCount} · 응답 중 ${generatingCount}`;
   }
 }
 //@@FN_END:renderMonitorBctWindowNodes

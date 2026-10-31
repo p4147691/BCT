@@ -151,10 +151,10 @@ assert.ok(layer, "one dedicated node projection root must be created");
 assert.equal(layer.querySelectorAll(".monitor-thumbnail-node-window").length, 2);
 const overlays = new Map(layer.querySelectorAll(".monitor-thumbnail-node-window")
   .map((item) => [item.dataset.hwnd, item]));
-assert.equal(overlays.get("500").style.zIndex, rear.style.zIndex,
-  "a rear label must share the rear window z-order");
-assert.equal(overlays.get("600").style.zIndex, front.style.zIndex,
-  "a front label must share the front window z-order");
+assert.equal(overlays.get("500").style.zIndex, "1",
+  "node labels use one overlay plane above every captured window");
+assert.equal(overlays.get("600").style.zIndex, "1",
+  "a front browser window cannot cover a node number");
 assert.match(overlays.get("500").className, /monitor-bct-node-target-highlighted/);
 function badgeText(badge) {
   return (badge.children || []).map((part) => part.textContent).join("") || badge.textContent;
@@ -221,4 +221,4 @@ assert.equal(removed.candidates, 1);
 assert.equal(removed.rendered, 1,
   "Native geometry without a rendered image must not synthesize a label");
 
-console.log("PASS: simple top-left number labels keep tab order, wrap without truncation, and share physical HWND z-order");
+console.log("PASS: simple top-left number labels keep tab order, wrap without truncation, and stay above physical HWND thumbnails");
