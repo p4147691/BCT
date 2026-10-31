@@ -389,12 +389,13 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_delayed_send_message(
-        work_id: str, operation_id: str, task_id: str,
+        work_id: str, task_id: str, operation_id: str = "",
         instance_id: str = "", conversation_key: str = "",
         manager_conversation_key: str = "", manager_instance_id: str = "",
     ) -> dict[str, Any]:
+        generated = operation_id or ("delayed-arm-" + uuid.uuid4().hex[:24])
         return await make_executor("relay_browser")(
-            work_id, operation_id,
+            work_id, generated,
             {"command":"delayed-send-message","task_id":task_id,
              "instance_id":instance_id,"conversation_key":conversation_key,
              "manager_conversation_key":manager_conversation_key,

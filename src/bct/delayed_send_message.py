@@ -56,7 +56,7 @@ def extract_next_instruction(response: str) -> NextInstruction:
         raise InstructionError("NEXT_INSTRUCTION_MISSING_OR_AMBIGUOUS")
     idx = markers[0]
     body = "\n".join(lines[idx+1:]).strip()
-    if not body or len(body) > 16000:
+    if not body or len(body) > 10800:
         raise InstructionError("NEXT_INSTRUCTION_INVALID")
     return NextInstruction(
         NextTarget.SELF if lines[idx].strip().endswith("SELF") else NextTarget.MANAGER,
