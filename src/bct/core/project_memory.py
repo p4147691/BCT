@@ -216,7 +216,7 @@ def _writer_lock(path: Path) -> Iterator[None]:
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
-class ProjectMemoryStore:
+class ProjectContextJStore:
     def __init__(self, root: str | Path):
         self.root = Path(root).absolute()
 
@@ -375,7 +375,7 @@ def main() -> int:
     history.add_argument("project_id")
     sub.add_parser("list")
     args = parser.parse_args()
-    store = ProjectMemoryStore(args.root)
+    store = ProjectContextJStore(args.root)
     try:
         if args.action == "get":
             result = store.get(args.project_id)
@@ -398,3 +398,7 @@ def main() -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 
+
+
+# Compatibility for existing imports; canonical engine is ProjectContextJStore.
+ProjectMemoryStore = ProjectContextJStore
