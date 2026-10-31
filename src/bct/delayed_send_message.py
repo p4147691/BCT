@@ -169,6 +169,26 @@ class DurableWatchLedger:
                  watch.response_turn_id,watch.source_send_receipt,"RESERVED"))
             return True
 
+    def claim_response(self, watch: Watch) -> bool:
+        """Only one caller may execute the effect for this response."""
+        with self.store.transaction() as db:
+            updated = db.execute(
+                "UPDATE delayed_send_watches SET state='DISPATCHING' "
+                "WHERE task_id=? AND generation=? AND state='WATCHING' "
+                "AND response_turn_id=? AND source_send_receipt=?",
+                (watch.task_id,watch.generation,watch.response_turn_id,
+                 watch.source_send_receipt))
+            return updated.rowcount == 1
+
+    def mark_result(self, watch: Watch, status: str) -> None:
+        if status not in {"SELF_SENT","RETURNED_TO_MANAGER","UNKNOWN"}:
+            raise ValueError("DELAYED_RESULT_INVALID")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE delayed_send_watches SET state=? WHERE task_id=? "
+                "AND generation=? AND state='DISPATCHING'",
+                (status,watch.task_id,watch.generation))
+
     def get(self, task_id: str, generation: int) -> dict | None:
         with self.store._readonly() as db:
             row=db.execute(
@@ -205,12 +225,31 @@ class DelayedSendRunner:
         if current is None or current["state"] != "WATCHING":
             return Continuation("WAITING_WATCH")
         observation = self.read_response(watch)
-        return advance_from_rcc(
-            watch=watch, observation=observation,
-            manager_conversation_key=manager_conversation_key,
-            register_next_watch=self.ledger.reserve,
-            send_message=self.send_message,
-        )
+        if not isinstance(observation, dict):
+            return Continuation("WAITING_RESPONSE")
+        if (observation.get("conversation_key") != watch.conversation_key
+                or observation.get("response_turn_id") != watch.response_turn_id
+                or observation.get("response_complete") is not True
+                or observation.get("input_ready") is not True):
+            return Continuation("WAITING_RESPONSE")
+        try:
+            extract_next_instruction(observation.get("response_text"))
+        except InstructionError:
+            return Continuation("INSTRUCTION_UNAVAILABLE")
+        if not self.ledger.claim_response(watch):
+            return Continuation("ALREADY_DISPATCHING")
+        try:
+            result = advance_from_rcc(
+                watch=watch, observation=observation,
+                manager_conversation_key=manager_conversation_key,
+                register_next_watch=self.ledger.reserve,
+                send_message=self.send_message,
+            )
+        except Exception:
+            self.ledger.mark_result(watch, "UNKNOWN")
+            raise
+        self.ledger.mark_result(watch, result.status)
+        return result
 
 
 
@@ -245,3 +284,40 @@ def normalize_rcc_latest_assistant(
         "input_ready": input_ready is True,
         "response_sha256": digest,
     }
+
+
+class RccLatestAssistantReader:
+    """Call the existing RCC observation command for one exact worker tab."""
+    def __init__(self, client, *, instance_id: str, session_id: str,
+                 tab_id: int, window_id: int, conversation_key: str,
+                 baseline_response_sha256: str, input_ready):
+        self.client = client
+        self.instance_id = instance_id
+        self.session_id = session_id
+        self.tab_id = tab_id
+        self.window_id = window_id
+        self.conversation_key = conversation_key
+        self.baseline_response_sha256 = baseline_response_sha256
+        self.input_ready = input_ready
+
+    def __call__(self, watch: Watch) -> dict:
+        if watch.conversation_key != self.conversation_key:
+            return {}
+        result = self.client.request(
+            instance_id=self.instance_id,
+            request_id="delayed-read-" + hashlib.sha256(
+                f"{watch.task_id}|{watch.generation}".encode()
+            ).hexdigest()[:24],
+            command="read-latest-assistant",
+            extra={"sessionId":self.session_id,"tabId":self.tab_id,
+                   "windowId":self.window_id,
+                   "conversationKey":self.conversation_key,
+                   "instanceId":self.instance_id},
+            timeout_s=5.0,
+        )
+        return normalize_rcc_latest_assistant(
+            result, conversation_key=self.conversation_key,
+            expected_response_sha256=self.baseline_response_sha256,
+            response_turn_id=watch.response_turn_id,
+            input_ready=self.input_ready() is True,
+        )

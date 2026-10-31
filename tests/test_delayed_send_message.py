@@ -5,7 +5,7 @@ from pathlib import Path
 from bct.core.store import Store
 
 from bct.delayed_send_message import (
-    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError, DurableWatchLedger, DelayedSendRunner, normalize_rcc_latest_assistant,
+    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError, DurableWatchLedger, DelayedSendRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
 )
 
 
@@ -74,6 +74,10 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertEqual("SELF_SENT",result.status)
             self.assertEqual("worker-uuid",sent[0][0])
             self.assertEqual("RESERVED",ledger.get("task-1",2)["state"])
+            self.assertEqual("SELF_SENT",ledger.get("task-1",1)["state"])
+            self.assertEqual("WAITING_WATCH",runner.poll_once(
+                self.watch,manager_conversation_key="manager-uuid").status)
+            self.assertEqual(1,len(sent))
 
     def test_real_rcc_terminal_payload_mapping(self):
         body = "NEXT TASK — SELF\\nContinue."
@@ -97,6 +101,27 @@ class DelayedSendMessageTests(unittest.TestCase):
             conversation_key="worker-uuid",
             expected_response_sha256="1"*64, response_turn_id="turn-1",
             input_ready=True))
+
+    def test_rcc_reader_uses_exact_target_and_completion(self):
+        class Client:
+            calls = []
+            def request(self, **kwargs):
+                self.calls.append(kwargs)
+                body = "NEXT TASK — SELF\\nContinue."
+                return {"ok":True,"conversationKey":"worker-uuid",
+                        "responseText":body,
+                        "responseSha256":hashlib.sha256(body.encode()).hexdigest(),
+                        "observationState":"TERMINAL","terminal":True,
+                        "generating":False}
+        client=Client()
+        reader=RccLatestAssistantReader(
+            client,instance_id="instance123",session_id="a"*32,
+            tab_id=10,window_id=11,conversation_key="worker-uuid",
+            baseline_response_sha256="0"*64,input_ready=lambda:True)
+        result=reader(self.watch)
+        self.assertTrue(result["response_complete"])
+        self.assertEqual("read-latest-assistant",client.calls[0]["command"])
+        self.assertEqual(10,client.calls[0]["extra"]["tabId"])
 
     def test_self_reserves_next_watch_before_send(self):
         result = self.advance("Completed part 1.\nNEXT TASK — SELF\nFix remaining issue.")
