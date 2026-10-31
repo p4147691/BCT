@@ -371,7 +371,7 @@ def build_mcp(
         work_id: str, operation_id: str, arguments: dict[str, Any],
         approval_ref: str | None = None,
     ) -> dict[str, Any]:
-        if arguments.get("operation") not in {"project-upsert", "membership-assign", "role-patch"}:
+        if arguments.get("operation") not in {"project-upsert", "membership-assign", "role-patch", "node-info-set", "network-name-set"}:
             return {"status": "INVALID_REQUEST", "reason": "NETWORK_SET_OPERATION_INVALID"}
         return await make_executor("conversation_network_update")(
             work_id, operation_id, arguments, approval_ref

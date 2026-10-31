@@ -380,6 +380,7 @@ def configure_conversation_scope(
     scope_name: str = "",
     role_tags: list[str] | tuple[str, ...] = (),
     expected_role_tags_sha256: str | None = None,
+    expected_scope_id: str | None = None,
     node_memo: str | None = None,
     assigned_task: str | None = None,
     now: float | None = None,
@@ -407,6 +408,8 @@ def configure_conversation_scope(
     new_label_event = None
     with store.transaction() as db:
         _current_scope, current_tags = _active_role_tags(db, key)
+        if expected_scope_id is not None and _current_scope != expected_scope_id:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_CONFLICT")
         if (expected_role_tags_sha256 is not None
                 and role_tags_sha256(current_tags) != expected_role_tags_sha256):
             raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_CONFLICT")
@@ -915,3 +918,37 @@ def project_view(store: Store, *, project_id: str) -> dict[str, object]:
             for row in latest_rows if str(row["conversation_key"]) not in known_keys
         ],
     }
+
+def set_conversation_network_name(
+    store: Store, *, project_id: str, expected_name: str, new_name: str,
+    now: float | None = None,
+) -> dict[str, object]:
+    """Rename one exact network, retaining its ID and all member links."""
+    project = _identifier(project_id, "CONVERSATION_NETWORK_PROJECT_ID_INVALID")
+    previous = _text(expected_name, "CONVERSATION_NETWORK_EXPECTED_NAME_INVALID", 120)
+    name = _text(new_name, "CONVERSATION_NETWORK_PROJECT_NAME_INVALID", 120)
+    when = float(time.time() if now is None else now)
+    with store.transaction() as db:
+        row = db.execute(
+            "SELECT display_name FROM conversation_network_projects WHERE project_id=?",
+            (project,),
+        ).fetchone()
+        if row is None:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_PROJECT_NOT_FOUND")
+        if str(row["display_name"]) != previous:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_NAME_CONFLICT")
+        conflict = db.execute(
+            "SELECT project_id FROM conversation_network_projects "
+            "WHERE project_id<>? AND display_name=? COLLATE NOCASE LIMIT 1",
+            (project, name),
+        ).fetchone()
+        if conflict is not None:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_PROJECT_TITLE_DUPLICATE")
+        if previous != name:
+            db.execute(
+                "UPDATE conversation_network_projects SET display_name=?,updated_at=? "
+                "WHERE project_id=?",
+                (name, when, project),
+            )
+    return {"project_id": project, "display_name": name, "changed": previous != name}
+
