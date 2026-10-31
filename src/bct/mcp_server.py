@@ -294,7 +294,10 @@ def build_mcp(
                         work_id, operation_id, {"operation": "overview-get", "project": project}
                     )
                     if context.get("outcome") == "APPLIED":
-                        context_status = "OK" if context.get("output") else "NO_CONTEXT"
+                        payload = context.get("output")
+                        context_status = ("NO_CONTEXT" if not isinstance(payload, dict)
+                                          or (payload.get("central") is None and not payload.get("worklogs"))
+                                          else "OK")
                     else:
                         reason = str(context.get("error") or "").upper()
                         context_status = "ACCESS_DENIED" if any(
