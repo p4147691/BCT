@@ -87,6 +87,16 @@
       }
       matched += 1;
 
+      // The tab id is Chrome-wide and identifies one exact conversation tab.
+      // Prefer it over the browser-window/HWND lookup: that lookup can lag for
+      // one refresh after a foreground change, while the tab itself is already
+      // known.  The selected tab must still rise above other thumbnail labels.
+      const selectedToken = text(options.selectedNodeToken);
+      const selectedTabId = options.selectedNodeTabId == null ? null : Number(options.selectedNodeTabId);
+      const selectedByExactTab = Number.isInteger(selectedTabId) && tokens.some((item) => item.tabId === selectedTabId);
+      const selectedByKnownToken = !Number.isInteger(selectedTabId) && selectedToken !== "?" &&
+        tokens.some((item) => item.token === selectedToken);
+
       const geometry = geometryForImage(img);
       if (!geometry) {
         skipped.noGeometry += 1;
@@ -103,7 +113,8 @@
       windowLayer.style.zIndex = "1";
       windowLayer.classList.toggle(
         "monitor-bct-node-target-highlighted",
-        Boolean(options.highlightedHwnd) && hwnd === text(options.highlightedHwnd),
+        (Boolean(options.highlightedHwnd) && hwnd === text(options.highlightedHwnd)) ||
+        selectedByExactTab || selectedByKnownToken,
       );
 
       const badge = documentObject.createElement("span");
@@ -111,9 +122,6 @@
       badge.dataset.hwnd = hwnd;
       // Keep each slash+node pair atomic.  A line may begin at `/58`, but a
       // node number such as `57` can never be detached from its separator.
-      const selectedHere = hwnd === text(options.selectedNodeHwnd);
-      const selectedToken = text(options.selectedNodeToken);
-      const selectedTabId = options.selectedNodeTabId == null ? null : Number(options.selectedNodeTabId);
       const labelParts = [];
       for (const item of tokens) {
         const token = item.token;
@@ -124,9 +132,9 @@
           labelParts.push(separator);
         }
         const part = documentObject.createElement("span");
-        const selectedByTab = selectedHere && Number.isInteger(selectedTabId) && item.tabId === selectedTabId;
-        const selectedByKnownToken = selectedHere && !Number.isInteger(selectedTabId) && selectedToken !== "?" && token === selectedToken;
-        part.className = `monitor-thumbnail-tab-token${selectedByTab || selectedByKnownToken ? " is-selected" : ""}`;
+        const selectedByTab = Number.isInteger(selectedTabId) && item.tabId === selectedTabId;
+        const selectedByToken = !Number.isInteger(selectedTabId) && selectedToken !== "?" && token === selectedToken;
+        part.className = `monitor-thumbnail-tab-token${selectedByTab || selectedByToken ? " is-selected" : ""}`;
         part.textContent = token;
         labelParts.push(part);
       }

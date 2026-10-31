@@ -176,7 +176,9 @@ assert.equal(first.unresolvedCollisions, 0);
 const unknownSelection = context.MonitorBctThumbnailProjection.render({
   container: visual,
   state: null,
-  selectedNodeHwnd: "500",
+  // Simulate the one-refresh HWND delay after a Chrome tab change.  The exact
+  // tab id must still select and raise the right thumbnail label.
+  selectedNodeHwnd: "600",
   selectedNodeToken: "?",
   selectedNodeTabId: 202,
   numbersForHwnd: (hwnd) => hwnd === "500"
@@ -189,11 +191,13 @@ const unknownParts = layer.querySelector(".monitor-thumbnail-tab-badge").childre
 assert.equal(unknownParts.length, 2, "two UUID-less tabs must remain distinct visible tokens");
 assert.deepEqual(unknownParts.map((part) => String(part.className || "").includes("is-selected")), [false, true],
   "selecting one UUID-less tab must highlight only its exact Chrome tabId");
+assert.match(layer.querySelector(".monitor-thumbnail-node-window").className, /monitor-bct-node-target-highlighted/,
+  "an exact selected tab must raise its own thumbnail layer even while its HWND lookup is catching up");
 
 const knownSelection = context.MonitorBctThumbnailProjection.render({
   container: visual,
   state: null,
-  selectedNodeHwnd: "500",
+  selectedNodeHwnd: "600",
   selectedNodeToken: "33",
   numbersForHwnd: (hwnd) => hwnd === "500" ? [33, 35] : [],
 });
