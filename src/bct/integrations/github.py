@@ -17,6 +17,8 @@ class GitHubClient(Protocol):
 
     def get_pull_request(self, repository: str, number: int) -> dict[str, Any]: ...
 
+    def get_workflow_runs_for_head(self, repository: str, head_sha: str) -> list[dict[str, Any]]: ...
+
     def get_check_runs(self, repository: str, sha: str) -> list[dict[str, Any]]: ...
 
     def merge_pull_request(
@@ -55,6 +57,21 @@ class GhCliClient:
     def get_ref_sha(self, repository: str, branch: str) -> str:
         value = self._api(f"repos/{repository}/git/ref/heads/{branch}")
         return str(value["object"]["sha"]).lower()
+
+    def get_workflow_runs_for_head(self, repository: str, head_sha: str) -> list[dict[str, Any]]:
+        """Find exact Actions runs from the existing GitHub API, not guessed IDs."""
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+            raise ValueError("GITHUB_REPOSITORY_INVALID")
+        if not re.fullmatch(r"[a-f0-9]{40}", head_sha):
+            raise ValueError("GITHUB_HEAD_SHA_INVALID")
+        value = self._api(
+            f"repos/{repository}/actions/runs?head_sha={head_sha}&per_page=100"
+        )
+        runs = value.get("workflow_runs") if isinstance(value, dict) else None
+        if not isinstance(runs, list):
+            raise RuntimeError("GITHUB_WORKFLOW_RUNS_INVALID")
+        return [run for run in runs if isinstance(run, dict)
+                and str(run.get("head_sha") or "").lower() == head_sha]
 
     def get_workflow_run(self, repository: str, run_id: int) -> dict[str, Any]:
         """Read one Actions run; validate path components before invoking gh."""

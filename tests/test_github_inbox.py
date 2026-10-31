@@ -13,6 +13,11 @@ from bct.core.models import PreconditionError
 class Runs:
     def __init__(self, conclusion: str = "success", sha: str = "a" * 40):
         self.conclusion, self.sha, self.calls = conclusion, sha, 0
+        self.event = "pull_request"
+    def get_workflow_runs_for_head(self, repository, head_sha):
+        return [{"name": "BCT CI", "event": self.event, "id": 7,
+                 "head_sha": head_sha}]
+
     def get_workflow_run(self, repository, run_id):
         self.calls += 1
         return {"repository": {"full_name": repository}, "head_sha": self.sha,
@@ -48,6 +53,52 @@ class GitHubInboxTests(unittest.TestCase):
         self.assertGreaterEqual(timeout, 1800)
         self.assertLessEqual(maximum, 30)
         self.assertGreaterEqual(initial, 5)
+
+    def test_follow_head_auto_discovers_run_and_preserves_original_work(self):
+        result = self.bct.operations.run(
+            principal=self.principal, work_id="w1", operation_id="watch-head",
+            capability="github_run_watch", arguments={
+                "repository": "Owner/Repo", "head_sha": "a"*40,
+                "follow_head": True, "workflow": "BCT CI",
+                "initiator_node_id": "work:fixture",
+                "trigger": f"github-head:{'a'*40}:terminal",
+            },
+        )
+        self.assertEqual("APPLIED", result.outcome.value)
+        rows = self.bct.store.get_github_run_inbox(work_id="w1")
+        self.assertEqual(1, len(rows))
+        self.assertEqual(7, rows[0]["run_id"])
+        self.assertEqual("SUCCESS", rows[0]["state"])
+        self.assertTrue(rows[0]["unread"])
+
+    def test_follow_main_push_head_discovers_exact_run(self):
+        self.runs.event = "push"
+        result = self.bct.operations.run(
+            principal=self.principal, work_id="w1", operation_id="watch-main-head",
+            capability="github_run_watch", arguments={
+                "repository": "Owner/Repo", "head_sha": "a"*40,
+                "follow_head": True, "expected_event": "push",
+                "workflow": "BCT CI", "initiator_node_id": "work:fixture",
+                "trigger": f"github-head:{'a'*40}:push:terminal",
+            },
+        )
+        self.assertEqual("APPLIED", result.outcome.value)
+        self.assertEqual("SUCCESS", self.bct.store.get_github_run_inbox(work_id="w1")[0]["state"])
+
+    def test_follow_head_rejects_ambiguous_workflow_runs(self):
+        self.runs.get_workflow_runs_for_head = lambda repo, sha: [
+            {"name":"BCT CI","event":"pull_request","id":7,"head_sha":sha},
+            {"name":"BCT CI","event":"pull_request","id":8,"head_sha":sha},
+        ]
+        result = self.bct.operations.run(
+            principal=self.principal,work_id="w1",operation_id="watch-head-ambiguous",
+            capability="github_run_watch",arguments={
+                "repository":"owner/repo","head_sha":"a"*40,
+                "follow_head":True,"workflow":"BCT CI","initiator_node_id":"work:fixture",
+                "trigger":f"github-head:{'a'*40}:terminal",
+            })
+        self.assertNotEqual("APPLIED", result.outcome.value)
+        self.assertEqual([], self.bct.store.get_github_run_inbox(work_id="w1"))
 
     def test_duplicate_merges_recipient_and_is_terminal_once(self):
         first = self.watch("w1"); second = self.watch("w2", node="n2")

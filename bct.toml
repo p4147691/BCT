@@ -160,6 +160,7 @@ files = [
   "src/bct/worker_dispatch_recovery.py",
   "src/bct/delivery_continuation_recovery.py",
   "src/bct/github_manager_wake.py",
+  "src/bct/github_inbox_autofollow.py",
   "src/bct/background_operations.py",
   "src/bct/operation_worker.py",
   "src/bct/process_session_worker.py",

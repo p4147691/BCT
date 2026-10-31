@@ -444,8 +444,10 @@ def build_mcp(
             wait_ms += (time.perf_counter_ns()-sleep_start)/1e6
 
     @server.tool(description="Read GitHub CI/completion notifications for an owned BCT Work. acknowledge marks returned notifications read.", structured_output=True)
-    async def bct_github_inbox_get(initiator_node_id: str, work_id: str,
+    async def bct_github_inbox_get(initiator_node_id: str = "", work_id: str = "",
                                    acknowledge: bool = False, limit: int = 80) -> dict[str, Any]:
+        if not work_id:
+            raise ValueError("INBOX_WORK_REQUIRED")
         # MCP has one local principal.  Requiring an owned Work keeps this read
         # scoped to the caller's Work rather than exposing a node-wide inbox.
         work = await asyncio.to_thread(bct.store.get_work, work_id)
@@ -458,7 +460,7 @@ def build_mcp(
         return {"items": rows, "wake": "AUTO_WAKE_NOT_CONFIGURED"}
 
     @server.tool(description="Legacy compatibility alias for bct_github_inbox_get; GitHub completion notifications only.", structured_output=True)
-    async def bct_inbox_get(initiator_node_id: str, work_id: str,
+    async def bct_inbox_get(initiator_node_id: str = "", work_id: str = "",
                             acknowledge: bool = False, limit: int = 80) -> dict[str, Any]:
         return await bct_github_inbox_get(
             initiator_node_id=initiator_node_id, work_id=work_id,
@@ -585,9 +587,27 @@ def build_mcp(
                 arguments=arguments,
                 approval_ref=approval_ref,
             )
+            inbox_registration = None
+            if selected in {"github_pr_create", "github_push"} and result.outcome.value == "APPLIED":
+                try:
+                    from .github_inbox_autofollow import (
+                        schedule_pr_ci_inbox, schedule_main_ci_inbox,
+                    )
+                    scheduler = (schedule_pr_ci_inbox if selected == "github_pr_create"
+                                 else schedule_main_ci_inbox)
+                    inbox_registration = await asyncio.to_thread(
+                        scheduler, bct, principal, work_id,
+                        {**result.evidence, "repository": arguments.get("repository")},
+                    )
+                except Exception as exc:
+                    inbox_registration = {"status": "UNAVAILABLE",
+                                          "reason": type(exc).__name__}
             handler_ms = (time.perf_counter_ns()-started_ns)/1e6
             _trace_stage("handler_done", tool_kind=selected, handler_ms=handler_ms, wait_ms=0.0, execution_ms=handler_ms)
-            return result.as_dict()
+            value = result.as_dict()
+            if inbox_registration is not None:
+                value["inbox_registration"] = inbox_registration
+            return value
 
         execute.__name__ = "bct_" + capability
         execute.__doc__ = f"Execute the registered BCT {capability!r} capability."

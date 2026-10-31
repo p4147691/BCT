@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import time
 import uuid
@@ -34,9 +35,18 @@ class GitHubRunInboxFeature:
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         repository = str(arguments.get("repository") or "").lower()
         head_sha = str(arguments.get("head_sha") or "").lower()
+        follow_head = arguments.get("follow_head") is True
+        expected_event = str(arguments.get("expected_event") or "pull_request")
+        if expected_event not in {"pull_request", "push"}:
+            raise PreconditionError("GITHUB_RUN_EVENT_INVALID")
         raw_run_id = arguments.get("run_id")
-        try: run_id = int(raw_run_id)
-        except (TypeError, ValueError) as exc: raise PreconditionError("GITHUB_RUN_ID_INVALID") from exc
+        if follow_head:
+            if raw_run_id is not None:
+                raise PreconditionError("GITHUB_RUN_HEAD_MODE_ID_FORBIDDEN")
+            run_id = 0
+        else:
+            try: run_id = int(raw_run_id)
+            except (TypeError, ValueError) as exc: raise PreconditionError("GITHUB_RUN_ID_INVALID") from exc
         node_id, workflow = str(arguments.get("initiator_node_id") or ""), str(arguments.get("workflow") or "")
         notify_nodes = arguments.get("notify_nodes", [])
         manager_node_id = arguments.get("manager_node_id")
@@ -46,9 +56,20 @@ class GitHubRunInboxFeature:
             context_size = len(json.dumps(context, sort_keys=True, separators=(",", ":")))
         except (TypeError, ValueError) as exc:
             raise PreconditionError("GITHUB_RUN_WATCH_CONTEXT_INVALID") from exc
+        expected_trigger = ((f"github-head:{head_sha}:push:terminal" if expected_event == "push"
+                             else f"github-head:{head_sha}:terminal") if follow_head
+                            else f"github-run:{run_id}:terminal")
+        inbox_work_id = str(arguments.get("inbox_work_id") or work.work_id)
+        if inbox_work_id != work.work_id:
+            try:
+                original = self.store.get_work(inbox_work_id)
+                if original.owner_principal_id != work.owner_principal_id:
+                    raise PreconditionError("GITHUB_INBOX_WORK_OWNER_MISMATCH")
+            except KeyError as exc:
+                raise PreconditionError("GITHUB_INBOX_ORIGINAL_WORK_MISSING") from exc
         if (isinstance(raw_run_id, bool) or not _REPO.fullmatch(repository)
-                or not _SHA.fullmatch(head_sha) or run_id < 1 or not node_id
-                or len(node_id) > 128 or not workflow or len(workflow) > 200 or trigger != f"github-run:{run_id}:terminal"
+                or not _SHA.fullmatch(head_sha) or (not follow_head and run_id < 1) or not node_id
+                or len(node_id) > 128 or not workflow or len(workflow) > 200 or trigger != expected_trigger
                 or not isinstance(context, dict) or len(context) > 24
                 or context_size > 4096
                 or not isinstance(notify_nodes, list) or len(notify_nodes) > 16
@@ -57,19 +78,52 @@ class GitHubRunInboxFeature:
                 or (bool(arguments.get("notify_manager", False)) and not manager_node_id)):
             raise PreconditionError("GITHUB_RUN_WATCH_ARGUMENTS_INVALID")
         _settings(self.policy_path)
-        return FeatureRequest(self.capability, f"{repository}/actions/runs/{run_id}", {
-            "repository": repository, "run_id": run_id, "head_sha": head_sha, "work_id": work.work_id, "initiator_node_id": node_id,
+        target = f"{repository}/actions/head/{head_sha}" if follow_head else f"{repository}/actions/runs/{run_id}"
+        return FeatureRequest(self.capability, target, {
+            "repository": repository, "run_id": run_id, "follow_head": follow_head,
+            "expected_event": expected_event,
+            "head_sha": head_sha, "work_id": inbox_work_id, "initiator_node_id": node_id,
             "initiator_conversation_uuid": str(arguments.get("initiator_conversation_uuid") or "") or None,
             "workflow": workflow, "context": context, "trigger": trigger,
             "notify_user": bool(arguments.get("notify_user", True)), "notify_manager": bool(arguments.get("notify_manager", False)),
             "notify_nodes": list(dict.fromkeys(notify_nodes)), "manager_node_id": manager_node_id,
             "next_step": str(arguments.get("next_step") or "Review this terminal CI result before any follow-up.")[:500],
-        }, (f"github-inbox-registration:{work.work_id}:{node_id}:{run_id}:{head_sha}",),
+        }, (f"github-inbox-registration:{inbox_work_id}:{node_id}:{run_id}:{head_sha}",),
            {"head_sha": head_sha, "advisory_only": True})
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
         v = request.arguments
+        if v.get("follow_head"):
+            return self._follow_head(v)
         return self._register_and_watch(v)
+
+    def _follow_head(self, values: dict[str, Any]) -> FeatureResult:
+        """One existing detached watcher discovers the exact run before subscribing."""
+        initial, maximum, timeout = _settings(self.policy_path)
+        delay, deadline = initial, time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                runs = self.client.get_workflow_runs_for_head(values["repository"], values["head_sha"])
+                matches = [run for run in runs
+                           if str(run.get("name") or "") == values["workflow"]
+                           and str(run.get("event") or "") == values["expected_event"]
+                           and isinstance(run.get("id"), int) and run["id"] > 0]
+                if len(matches) == 1:
+                    v = dict(values)
+                    v["run_id"] = matches[0]["id"]
+                    v["trigger"] = f"github-run:{v['run_id']}:terminal"
+                    return self._register_and_watch(v)
+                if len(matches) > 1:
+                    raise PreconditionError("GITHUB_CI_MULTIPLE_MATCHING_RUNS")
+            except PreconditionError:
+                raise
+            except Exception:
+                # GitHub can start the workflow after PR creation; do not block
+                # the original PR operation or retry its remote effect.
+                pass
+            time.sleep(min(delay, max(0, deadline-time.monotonic())))
+            delay = min(maximum, delay * 2)
+        raise PreconditionError("GITHUB_CI_RUN_DISCOVERY_TIMEOUT")
 
     def register(self, *, work_id: str, work: Work, arguments: dict[str, Any]) -> FeatureResult:
         request = self.prepare(work=work, arguments=arguments); v = request.arguments
