@@ -249,8 +249,10 @@ def build_mcp(
                 if directory.get("outcome") == "APPLIED":
                     payload = directory.get("output") or {}
                     historical_contexts = payload.get("items", []) if isinstance(payload, dict) else []
-                    historical_contexts_status = "OK"
-                    # Reuse the existing BCT directory, not a second project registry.
+                    historical_contexts_status = "OK" if historical_contexts else "NO_CONTEXT"
+                    # Combine authorized central summaries with the existing BCT network DB.
+                    summaries = {str(item["project_id"]): item for item in historical_contexts
+                                 if isinstance(item, dict) and item.get("project_id")}
                     with bct.store.transaction() as db:
                         rows = db.execute(
                             "SELECT project_id,display_name,active FROM conversation_network_projects "
@@ -259,12 +261,24 @@ def build_mcp(
                     for row in rows:
                         key = str(row["project_id"])
                         candidates[key] = {"title": str(row["display_name"]), "network_id": key,
-                                           "active": bool(row["active"])}
-
+                                           "active": bool(row["active"]),
+                                           "context_summary": summaries.get(key)}
+                    # A stored project can outlive its network: return evidence, not a selection.
+                    for key, item in summaries.items():
+                        if key not in candidates:
+                            candidates[key] = {"title": str(item.get("title") or key),
+                                               "network_id": key, "active": False,
+                                               "context_summary": item}
                 else:
-                    historical_contexts_status = "UNAVAILABLE"
-            except Exception:
-                historical_contexts_status = "UNAVAILABLE"
+                    historical_contexts_status = "ACCESS_DENIED" if directory.get("error") and any(
+                        marker in str(directory.get("error")).upper()
+                        for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                    ) else "QUERY_ERROR"
+            except Exception as exc:
+                historical_contexts_status = "ACCESS_DENIED" if any(
+                    marker in str(exc).upper()
+                    for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                ) else "QUERY_ERROR"
         elif project:
             historical_contexts_status = "NOT_REQUESTED"
         if project:
@@ -279,13 +293,24 @@ def build_mcp(
                     context = await make_executor("project_context")(
                         work_id, operation_id, {"operation": "overview-get", "project": project}
                     )
-                    context_status = "OK" if context.get("outcome") == "APPLIED" else "UNAVAILABLE"
+                    if context.get("outcome") == "APPLIED":
+                        context_status = "OK" if context.get("output") else "NO_CONTEXT"
+                    else:
+                        reason = str(context.get("error") or "").upper()
+                        context_status = "ACCESS_DENIED" if any(
+                            marker in reason for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                        ) else "QUERY_ERROR"
                 except Exception as exc:
-                    context_status = "UNAVAILABLE"
+                    context_status = "ACCESS_DENIED" if any(
+                        marker in str(exc).upper()
+                        for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                    ) else "QUERY_ERROR"
                     context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
         return {"status": "OK", "nodes": nodes, "rcc": rcc,
                 "network": network, "network_candidates": list(candidates.values()),
-                "candidates_scope": "CURRENT_CONFIRMED_NODES_ONLY",
+                "candidates_scope": ("CURRENT_AND_HISTORICAL_AUTHORIZED"
+                                     if historical_contexts_status in {"OK", "NO_CONTEXT"}
+                                     else "CURRENT_CONFIRMED_NODES_ONLY"),
                 "historical_contexts": historical_contexts,
                 "historical_contexts_status": historical_contexts_status,
                 "project_context": context, "context_status": context_status,
