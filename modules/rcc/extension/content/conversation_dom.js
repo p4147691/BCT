@@ -94,13 +94,14 @@ function getMessageUnits(role, root = document) {
     : ['[data-message-author-role="user"]', '[data-content-search-unit-key$=":user"]', '[data-user-message-bubble="true"]'];
   const seen = new Set();
   const units = [];
-  for (const selector of selectors) {
-    for (const node of root.querySelectorAll(selector)) {
-      const unit = canonicalMessageUnit(node, role);
-      if (!unit || seen.has(unit) || messageUnitRole(unit) !== role) continue;
-      seen.add(unit);
-      units.push(unit);
-    }
+  // A single selector-list query preserves DOM order. Traversing selectors
+  // individually grouped old and new assistant turns by markup variant,
+  // allowing an earlier turn to appear last and be misread as the latest.
+  for (const node of root.querySelectorAll(selectors.join(', '))) {
+    const unit = canonicalMessageUnit(node, role);
+    if (!unit || seen.has(unit) || messageUnitRole(unit) !== role) continue;
+    seen.add(unit);
+    units.push(unit);
   }
   return units;
 }
