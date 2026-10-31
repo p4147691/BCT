@@ -105,3 +105,31 @@ def advance(
     receipt = send_message(manager_conversation_key, instruction.text,
                            "delayed-manager-" + key)
     return Continuation("RETURNED_TO_MANAGER", None, receipt)
+
+def advance_from_rcc(
+    *, watch: Watch, observation: dict, manager_conversation_key: str,
+    register_next_watch: Callable[[Watch], None],
+    send_message: Callable[[str, str, str], str],
+) -> Continuation:
+    """Translate an RCC response observation into one continuation transition.
+
+    The RCC adapter must supply the exact completed response turn and verified
+    input readiness. A missing field is a pending observation, never permission
+    to submit a message.
+    """
+    if not isinstance(observation, dict):
+        return Continuation("WAITING_RESPONSE")
+    if observation.get("conversation_key") != watch.conversation_key:
+        return Continuation("WAITING_EXPECTED_RESPONSE")
+    turn = str(observation.get("response_turn_id") or "")
+    body = observation.get("response_text")
+    if not isinstance(body, str):
+        return Continuation("WAITING_RESPONSE")
+    return advance(
+        watch=watch, response_turn_id=turn, response_text=body,
+        response_complete=observation.get("response_complete") is True,
+        input_ready=observation.get("input_ready") is True,
+        manager_conversation_key=manager_conversation_key,
+        register_next_watch=register_next_watch,
+        send_message=send_message,
+    )

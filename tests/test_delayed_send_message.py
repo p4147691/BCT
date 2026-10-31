@@ -1,7 +1,7 @@
 import unittest
 
 from bct.delayed_send_message import (
-    Watch, advance, extract_next_instruction, InstructionError,
+    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError,
 )
 
 
@@ -20,6 +20,24 @@ class DelayedSendMessageTests(unittest.TestCase):
                 self.events.append(("send", target, text, key)) or "receipt-2"
             ),
         )
+
+    def test_rcc_observation_dispatches_only_exact_completed_turn(self):
+        observed = {"conversation_key": "worker-uuid", "response_turn_id": "turn-1",
+                    "response_text": "NEXT TASK — SELF\nContinue coding.",
+                    "response_complete": True, "input_ready": True}
+        def run(data):
+            return advance_from_rcc(
+                watch=self.watch, observation=data,
+                manager_conversation_key="manager-uuid",
+                register_next_watch=lambda w: self.events.append(("watch", w)),
+                send_message=lambda target, body, key: (
+                    self.events.append(("send", target, body, key)) or "receipt"),
+            )
+        self.assertEqual("WAITING_RESPONSE", run({**observed, "input_ready": False}).status)
+        self.assertEqual("WAITING_EXPECTED_RESPONSE", run({**observed, "conversation_key": "other"}).status)
+        self.assertFalse(self.events)
+        self.assertEqual("SELF_SENT", run(observed).status)
+        self.assertEqual(["watch", "send"], [x[0] for x in self.events])
 
     def test_self_reserves_next_watch_before_send(self):
         result = self.advance("Completed part 1.\nNEXT TASK — SELF\nFix remaining issue.")
