@@ -224,15 +224,73 @@ def build_mcp(
         snapshot = await asyncio.to_thread(status_provider)
         nodes = status_view(snapshot, "node", sort_by=sort_by)
         rcc = status_view(snapshot, "rcc", sort_by=sort_by)
-        network = await bct_network_get(project) if project else None
+        # Candidates come from confirmed current nodes, never from guessed project IDs.
+        # Historical projects need a separately authorized directory/summary lookup.
+        candidates: dict[str, dict[str, str]] = {}
+        for node in nodes.get("items", []) if isinstance(nodes, dict) else []:
+            if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
+                continue
+            name = str(node.get("network") or "").strip()
+            scope_id = str(node.get("network_id") or "").strip()
+            if name:
+                key = scope_id or name.casefold()
+                candidates.setdefault(key, {"title": name, "network_id": scope_id})
+        network = None
         context = None
-        if project and work_id and operation_id:
-            context = await make_executor("project_context")(
-                work_id, operation_id, {"operation": "overview", "project": project}
-            )
+        context_status = "NOT_REQUESTED"
+        historical_contexts = []
+        historical_contexts_status = "AUTH_CONTEXT_REQUIRED"
+        if not project and work_id and operation_id:
+            try:
+                directory = await make_executor("project_context")(
+                    work_id, operation_id,
+                    {"operation": "directory-get"},
+                )
+                if directory.get("outcome") == "APPLIED":
+                    payload = directory.get("output") or {}
+                    historical_contexts = payload.get("items", []) if isinstance(payload, dict) else []
+                    historical_contexts_status = "OK"
+                    # Reuse the existing BCT directory, not a second project registry.
+                    with bct.store.transaction() as db:
+                        rows = db.execute(
+                            "SELECT project_id,display_name,active FROM conversation_network_projects "
+                            "ORDER BY display_name,project_id LIMIT 200"
+                        ).fetchall()
+                    for row in rows:
+                        key = str(row["project_id"])
+                        candidates[key] = {"title": str(row["display_name"]), "network_id": key,
+                                           "active": bool(row["active"])}
+
+                else:
+                    historical_contexts_status = "UNAVAILABLE"
+            except Exception:
+                historical_contexts_status = "UNAVAILABLE"
+        elif project:
+            historical_contexts_status = "NOT_REQUESTED"
+        if project:
+            try:
+                network = await bct_network_get(project)
+            except (ConversationNetworkError, ValueError) as exc:
+                network = {"status": "NOT_FOUND", "reason": str(exc)}
+            if not work_id or not operation_id:
+                context_status = "AUTH_CONTEXT_REQUIRED"
+            else:
+                try:
+                    context = await make_executor("project_context")(
+                        work_id, operation_id, {"operation": "overview-get", "project": project}
+                    )
+                    context_status = "OK" if context.get("outcome") == "APPLIED" else "UNAVAILABLE"
+                except Exception as exc:
+                    context_status = "UNAVAILABLE"
+                    context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
         return {"status": "OK", "nodes": nodes, "rcc": rcc,
-                "network": network, "project_context": context,
-                "context_requires_work": context is None, "read_only": True}
+                "network": network, "network_candidates": list(candidates.values()),
+                "candidates_scope": "CURRENT_CONFIRMED_NODES_ONLY",
+                "historical_contexts": historical_contexts,
+                "historical_contexts_status": historical_contexts_status,
+                "project_context": context, "context_status": context_status,
+                "context_requires_work": bool(project and (not work_id or not operation_id)),
+                "read_only": True}
 
     @server.tool(description="Persist an AI-authored execution plan as a versioned, Work-authorized project-context ledger. No AI planning or execution is performed.", structured_output=True)
     async def bct_run_plan(

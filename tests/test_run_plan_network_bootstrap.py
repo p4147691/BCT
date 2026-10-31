@@ -7,7 +7,7 @@ from pathlib import Path
 from bct.core.store import Store
 from bct.core.project_memory import ProjectMemoryStore
 from bct.features.conversation_network import ConversationNetworkUpdateFeature
-from bct.conversation_network import project_view
+from bct.conversation_network import project_view, upsert_project, ConversationNetworkError
 
 
 class RunPlanNetworkBootstrapTests(unittest.TestCase):
@@ -20,6 +20,17 @@ class RunPlanNetworkBootstrapTests(unittest.TestCase):
             self.assertEqual("APPLIED", feature.execute(request).outcome.value)
             self.assertEqual("APPLIED", feature.execute(request).outcome.value)
             self.assertEqual("New Project", project_view(store, project_id="new.project")["project"]["display_name"])
+
+    def test_duplicate_title_rejected_on_create_and_rename(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            upsert_project(store, project_id="first", display_name="Alpha")
+            with self.assertRaisesRegex(ConversationNetworkError, "TITLE_DUPLICATE"):
+                upsert_project(store, project_id="second", display_name=" alpha ")
+            upsert_project(store, project_id="second", display_name="Beta")
+            with self.assertRaisesRegex(ConversationNetworkError, "TITLE_DUPLICATE"):
+                upsert_project(store, project_id="second", display_name="ALPHA")
+            self.assertEqual("Beta", project_view(store, project_id="second")["project"]["display_name"])
 
     def test_plan_ledger_revision_and_duplicate(self):
         with tempfile.TemporaryDirectory() as root:

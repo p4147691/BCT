@@ -228,6 +228,18 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual("OK", preflight.structuredContent["status"])
                     self.assertTrue(preflight.structuredContent["read_only"])
                     self.assertTrue(preflight.structuredContent["context_requires_work"])
+                    self.assertEqual("AUTH_CONTEXT_REQUIRED",
+                                     preflight.structuredContent["context_status"])
+                    self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
+                                     preflight.structuredContent["candidates_scope"])
+                    self.assertEqual("NOT_REQUESTED",
+                                     preflight.structuredContent["historical_contexts_status"])
+                    blank_preflight = await session.call_tool("bct_run_check", {})
+                    self.assertFalse(blank_preflight.isError)
+                    self.assertEqual("OK", blank_preflight.structuredContent["status"])
+                    self.assertEqual("NOT_REQUESTED", blank_preflight.structuredContent["context_status"])
+                    self.assertIsNone(blank_preflight.structuredContent["project_context"])
+
                     self.assertEqual("OK", preflight.structuredContent["network"]["status"])
                     self.assertIn("nodes", preflight.structuredContent)
                     self.assertIn("rcc", preflight.structuredContent)

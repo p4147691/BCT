@@ -110,6 +110,13 @@ def upsert_project(store: Store, *, project_id: str, display_name: str,
     name = _text(display_name, "CONVERSATION_NETWORK_PROJECT_NAME_INVALID", 120)
     when = float(time.time() if now is None else now)
     with store.transaction() as db:
+        duplicate = db.execute(
+            "SELECT project_id,display_name FROM conversation_network_projects "
+            "WHERE project_id<>?", (project,)
+        ).fetchall()
+        if any(str(row["display_name"]).strip().casefold() == name.strip().casefold()
+               for row in duplicate):
+            raise ConversationNetworkError("CONVERSATION_NETWORK_PROJECT_TITLE_DUPLICATE")
         existing = db.execute(
             "SELECT project_id FROM conversation_network_projects WHERE project_id=?", (project,)
         ).fetchone()

@@ -144,10 +144,13 @@ class ConversationNetworkUpdateFeature:
     def execute(self, request: FeatureRequest) -> FeatureResult:
         operation = request.arguments["operation"]
         if operation == "project-upsert":
-            result = upsert_project(
-                self.store, project_id=request.arguments["project_id"],
-                display_name=request.arguments["display_name"],
-            )
+            try:
+                result = upsert_project(
+                    self.store, project_id=request.arguments["project_id"],
+                    display_name=request.arguments["display_name"],
+                )
+            except ConversationNetworkError as exc:
+                raise PreconditionError(str(exc)) from exc
             return FeatureResult(
                 Outcome.APPLIED, {"operation": operation, **result}, output=result
             )

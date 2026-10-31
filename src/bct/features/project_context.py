@@ -93,11 +93,11 @@ class ProjectContextFeature:
             allowed.update({"record", "author", "expected_revision"})
         if operation in {"worklog-get", "worklog-set"}:
             allowed.add("journal_work_id")
-        if operation not in {"central-get", "central-set", "worklog-get", "worklog-set", "overview-get"}:
+        if operation not in {"central-get", "central-set", "worklog-get", "worklog-set", "overview-get", "directory-get"}:
             raise PreconditionError("PROJECT_CONTEXT_OPERATION_INVALID")
         if set(arguments) - allowed:
             raise PreconditionError("PROJECT_CONTEXT_FIELD_NOT_ALLOWED")
-        project = self._project(arguments.get("project"))
+        project = self._project(arguments.get("project")) if operation != "directory-get" else ""
         values: dict[str, Any] = {"operation": operation, "project": project}
         if operation in {"central-set", "worklog-set"}:
             values.update({"record": self._record(arguments), "author": self._author(arguments),
@@ -107,8 +107,8 @@ class ProjectContextFeature:
             if operation == "worklog-set" and not self._journal_has_work(values["record"], work_id):
                 raise PreconditionError("PROJECT_CONTEXT_WORK_LINK_REQUIRED")
             values["journal_work_id"] = work_id
-        return FeatureRequest(self.capability, "project-context:" + project, values,
-                              ("project-context:" + project,))
+        return FeatureRequest(self.capability, "project-context:" + (project or "directory"), values,
+                              ("project-context:" + (project or "directory"),))
 
     @staticmethod
     def _public(row: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -121,7 +121,18 @@ class ProjectContextFeature:
         values = request.arguments
         operation, project = values["operation"], values["project"]
         try:
-            if operation == "central-get":
+            if operation == "directory-get":
+                summaries = []
+                for key in self.central.projects()[:200]:
+                    row = self.central.get(key)
+                    if row is None:
+                        continue
+                    record = row.get("record") or {}
+                    summaries.append({"project_id": key, "revision": row.get("revision"),
+                                      "title": record.get("title", ""), "goal": record.get("goal", ""),
+                                      "summary": record.get("summary", "")})
+                result = {"items": summaries, "limited": len(summaries) >= 200}
+            elif operation == "central-get":
                 result = self.central.get(project)
             elif operation == "central-set":
                 result = self.central.save(project, expected_revision=values["expected_revision"],
