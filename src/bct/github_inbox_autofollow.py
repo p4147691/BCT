@@ -1,4 +1,4 @@
-"""Reuse the durable GitHubRunInbox watcher when an exact PR creation succeeds."""
+"""Route exact PR and main CI completions into the existing durable GitHub Inbox."""
 from __future__ import annotations
 
 import hashlib
@@ -7,13 +7,10 @@ from .background_operations import launch_background_operation
 from .core.models import Work
 
 
-def schedule_pr_ci_inbox(bct, principal, source_work_id: str, evidence: dict) -> dict:
-    """Start a detached watcher; missing manager bindings remain Work Inbox only."""
-    repo = str(evidence.get("repository") or "").lower()
-    sha = str(evidence.get("head_sha") or "").lower()
-    number = evidence.get("number")
-    if not repo or len(sha) != 40 or not isinstance(number, int):
-        return {"status": "NO_EXACT_PR_EVIDENCE"}
+def _schedule(bct, principal, source_work_id: str, *, repository: str,
+              sha: str, event: str, context: dict) -> dict:
+    repo = repository.lower()
+    sha = sha.lower()
     if repo != "p4147691/bct":
         return {"status": "NOT_BCT_REPOSITORY"}
     if "github_run_watch" not in principal.capabilities:
@@ -32,9 +29,8 @@ def schedule_pr_ci_inbox(bct, principal, source_work_id: str, evidence: dict) ->
         ).fetchall()
     managers = {str(row["manager_node_id"]) for row in attached}
     manager = next(iter(managers)) if len(managers) == 1 else ""
-    # A Work Inbox recipient is not a fabricated conversation/manager identity.
     recipient = manager or ("work:" + hashlib.sha256(source_work_id.encode()).hexdigest()[:24])
-    digest = hashlib.sha256(f"{source_work_id}|{repo}|{sha}".encode()).hexdigest()[:24]
+    digest = hashlib.sha256(f"{source_work_id}|{repo}|{sha}|{event}".encode()).hexdigest()[:24]
     follow_work_id = "bct-ci-follow-" + digest
     follow_work = Work(follow_work_id, "Existing GitHub CI Inbox auto-follow",
                        work.roots, frozenset({"github_run_watch"}), principal.principal_id)
@@ -46,12 +42,14 @@ def schedule_pr_ci_inbox(bct, principal, source_work_id: str, evidence: dict) ->
             raise
     arguments = {
         "repository": repo, "head_sha": sha, "follow_head": True,
+        "expected_event": event,
         "workflow": "BCT CI", "initiator_node_id": recipient,
         "inbox_work_id": source_work_id,
         "notify_user": True, "notify_manager": bool(manager),
         "manager_node_id": manager or None,
-        "trigger": f"github-head:{sha}:terminal",
-        "context": {"pr": number, "source_work_id": source_work_id},
+        "trigger": (f"github-head:{sha}:push:terminal" if event == "push"
+                    else f"github-head:{sha}:terminal"),
+        "context": {**context, "source_work_id": source_work_id},
     }
     receipt = launch_background_operation(
         bct, principal=principal, work_id=follow_work_id,
@@ -62,3 +60,26 @@ def schedule_pr_ci_inbox(bct, principal, source_work_id: str, evidence: dict) ->
             "operation_id": "ci-follow-" + digest,
             "recipient_kind": "MANAGER" if manager else "WORK",
             "receipt_state": receipt.state.value}
+
+
+def schedule_pr_ci_inbox(bct, principal, source_work_id: str, evidence: dict) -> dict:
+    """Follow one exactly confirmed PR without another external mutation."""
+    sha = str(evidence.get("head_sha") or "")
+    repo = str(evidence.get("repository") or "")
+    number = evidence.get("number")
+    if len(sha) != 40 or not isinstance(number, int) or not repo:
+        return {"status": "NO_EXACT_PR_EVIDENCE"}
+    return _schedule(bct, principal, source_work_id, repository=repo,
+                     sha=sha, event="pull_request", context={"pr": number})
+
+
+def schedule_main_ci_inbox(bct, principal, source_work_id: str, evidence: dict) -> dict:
+    """Follow exact main SHA only after GitHub confirms the push state."""
+    repo = str(evidence.get("repository") or "")
+    sha = str(evidence.get("local_sha") or "")
+    if (evidence.get("branch") != "main" or len(sha) != 40
+            or sha != evidence.get("remote_sha")
+            or evidence.get("sync_state") != "IN_SYNC" or not repo):
+        return {"status": "NO_EXACT_MAIN_PUSH_EVIDENCE"}
+    return _schedule(bct, principal, source_work_id, repository=repo,
+                     sha=sha, event="push", context={"branch": "main"})

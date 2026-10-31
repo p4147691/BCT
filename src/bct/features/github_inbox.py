@@ -36,6 +36,9 @@ class GitHubRunInboxFeature:
         repository = str(arguments.get("repository") or "").lower()
         head_sha = str(arguments.get("head_sha") or "").lower()
         follow_head = arguments.get("follow_head") is True
+        expected_event = str(arguments.get("expected_event") or "pull_request")
+        if expected_event not in {"pull_request", "push"}:
+            raise PreconditionError("GITHUB_RUN_EVENT_INVALID")
         raw_run_id = arguments.get("run_id")
         if follow_head:
             if raw_run_id is not None:
@@ -53,7 +56,8 @@ class GitHubRunInboxFeature:
             context_size = len(json.dumps(context, sort_keys=True, separators=(",", ":")))
         except (TypeError, ValueError) as exc:
             raise PreconditionError("GITHUB_RUN_WATCH_CONTEXT_INVALID") from exc
-        expected_trigger = (f"github-head:{head_sha}:terminal" if follow_head
+        expected_trigger = ((f"github-head:{head_sha}:push:terminal" if expected_event == "push"
+                             else f"github-head:{head_sha}:terminal") if follow_head
                             else f"github-run:{run_id}:terminal")
         inbox_work_id = str(arguments.get("inbox_work_id") or work.work_id)
         if inbox_work_id != work.work_id:
@@ -77,6 +81,7 @@ class GitHubRunInboxFeature:
         target = f"{repository}/actions/head/{head_sha}" if follow_head else f"{repository}/actions/runs/{run_id}"
         return FeatureRequest(self.capability, target, {
             "repository": repository, "run_id": run_id, "follow_head": follow_head,
+            "expected_event": expected_event,
             "head_sha": head_sha, "work_id": inbox_work_id, "initiator_node_id": node_id,
             "initiator_conversation_uuid": str(arguments.get("initiator_conversation_uuid") or "") or None,
             "workflow": workflow, "context": context, "trigger": trigger,
@@ -101,7 +106,7 @@ class GitHubRunInboxFeature:
                 runs = self.client.get_workflow_runs_for_head(values["repository"], values["head_sha"])
                 matches = [run for run in runs
                            if str(run.get("name") or "") == values["workflow"]
-                           and str(run.get("event") or "") == "pull_request"
+                           and str(run.get("event") or "") == values["expected_event"]
                            and isinstance(run.get("id"), int) and run["id"] > 0]
                 if len(matches) == 1:
                     v = dict(values)

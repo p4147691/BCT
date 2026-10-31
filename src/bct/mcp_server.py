@@ -588,11 +588,15 @@ def build_mcp(
                 approval_ref=approval_ref,
             )
             inbox_registration = None
-            if selected == "github_pr_create" and result.outcome.value == "APPLIED":
+            if selected in {"github_pr_create", "github_push"} and result.outcome.value == "APPLIED":
                 try:
-                    from .github_inbox_autofollow import schedule_pr_ci_inbox
+                    from .github_inbox_autofollow import (
+                        schedule_pr_ci_inbox, schedule_main_ci_inbox,
+                    )
+                    scheduler = (schedule_pr_ci_inbox if selected == "github_pr_create"
+                                 else schedule_main_ci_inbox)
                     inbox_registration = await asyncio.to_thread(
-                        schedule_pr_ci_inbox, bct, principal, work_id,
+                        scheduler, bct, principal, work_id,
                         {**result.evidence, "repository": arguments.get("repository")},
                     )
                 except Exception as exc:
