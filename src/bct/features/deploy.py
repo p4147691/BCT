@@ -807,7 +807,8 @@ class DeployFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "apply").strip().lower()
-        if operation in {"rcc-inspect", "rcc-install", "rcc-rollback"}:
+        if operation in {"rcc-inspect", "rcc-install", "rcc-rollback",
+                         "rcc-inspect-pr388", "rcc-install-pr388", "rcc-rollback-pr388"}:
             return self._prepare_rcc(work, operation, arguments)
         if operation not in {"apply", "reconcile", "reconcile-rollback"}:
             raise PreconditionError("DEPLOYMENT_OPERATION_INVALID")
@@ -872,7 +873,10 @@ class DeployFeature:
         )
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
-        if request.arguments.get("operation") in {"rcc-inspect", "rcc-install", "rcc-rollback"}:
+        if request.arguments.get("operation") in {
+            "rcc-inspect", "rcc-install", "rcc-rollback",
+            "rcc-inspect-pr388", "rcc-install-pr388", "rcc-rollback-pr388",
+        }:
             return self._execute_rcc(request)
         if request.arguments.get("operation") == "reconcile":
             return self._reconcile(request)
@@ -891,6 +895,21 @@ class DeployFeature:
         finally:
             if source_lock is not None:
                 source_lock.close()
+
+    @staticmethod
+    def _rcc_route_config(operation: str) -> dict[str, Any]:
+        """Choose one immutable release without weakening prior install receipts."""
+        from bct import rcc_protected_install as rcc
+        pr388 = operation.endswith("-pr388")
+        return {
+            "pr388": pr388,
+            "live": rcc.EXACT_INSTALLED,
+            "candidate": rcc.PR388_STAGE if pr388 else rcc.EXACT_STAGE,
+            "backup_source": rcc.PR388_ROLLBACK if pr388 else rcc.EXACT_ROLLBACK,
+            "manifest_file": rcc.PR388_MANIFEST if pr388 else rcc.EXACT_MANIFEST,
+            "journal_root": rcc.PR388_JOURNAL if pr388 else rcc.EXACT_JOURNAL,
+            "candidate_version": "1.0.61" if pr388 else "1.0.60",
+        }
 
     @staticmethod
     def _prepare_rcc(work: Work, operation: str, arguments: dict[str, Any]) -> FeatureRequest:
@@ -916,15 +935,17 @@ class DeployFeature:
             raise PreconditionError("RCC_INSTALL_EXPECTED_DIGEST_REQUIRED")
         if not re.fullmatch("[a-f0-9]{32}", instance):
             raise PreconditionError("RCC_INSTALL_INSTANCE_ID_REQUIRED")
-        if operation == "rcc-rollback" and not rcc.OP_ID.fullmatch(original):
+        is_rollback = operation in {"rcc-rollback", "rcc-rollback-pr388"}
+        if is_rollback and not rcc.OP_ID.fullmatch(original):
             raise PreconditionError("RCC_INSTALL_ORIGINAL_OPERATION_ID_INVALID")
-        if operation != "rcc-rollback" and original:
+        if not is_rollback and original:
             raise PreconditionError("RCC_INSTALL_ORIGINAL_OPERATION_FORBIDDEN")
         roots = [Path(raw).resolve(strict=False) for raw in work.roots]
         def covered(target):
             target = target.resolve(strict=False)
             return any(target == base or base in target.parents for base in roots)
-        if not covered(rcc.EXACT_INSTALLED) or not covered(rcc.EXACT_MANIFEST):
+        route = DeployFeature._rcc_route_config(operation)
+        if not covered(route["live"]) or not covered(route["manifest_file"]):
             raise PreconditionError("RCC_INSTALL_WORK_ROOT_NOT_AUTHORIZED")
         resources = (
             "rcc-protected-install:" + str(rcc.EXACT_INSTALLED).casefold(),
@@ -959,9 +980,23 @@ class DeployFeature:
             values["installed_aggregate"], values["candidate_aggregate"],
             values["manifest_sha256"],
         )
-        if values["operation"] == "rcc-rollback":
+        route = DeployFeature._rcc_route_config(values["operation"])
+        if route["pr388"]:
+            from hashlib import sha256
+            release_path = route["manifest_file"]
+            if (not release_path.is_file() or sha256(release_path.read_bytes()).hexdigest()
+                    != rcc.PR388_MANIFEST_SHA256):
+                raise PreconditionError("RCC_PR388_PINNED_MANIFEST_MISMATCH")
+        release_kwargs = {
+            "live": route["live"], "candidate": route["candidate"],
+            "backup_source": route["backup_source"],
+            "manifest_file": route["manifest_file"],
+            "journal_root": route["journal_root"],
+            "candidate_version": route["candidate_version"],
+        }
+        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388"}:
             original_id = values["install_operation_id"]
-            receipt = rcc.EXACT_JOURNAL / (original_id + ".json")
+            receipt = route["journal_root"] / (original_id + ".json")
             if not receipt.is_file():
                 raise PreconditionError("RCC_INSTALL_ORIGINAL_RECEIPT_REQUIRED")
             original = json.loads(receipt.read_text(encoding="utf-8"))
@@ -971,25 +1006,29 @@ class DeployFeature:
             result = rcc.rollback(
                 original_id, authorization=lambda record:
                 record.get("operation_id") == original_id
-                and request.operation_id != original_id
+                and request.operation_id != original_id,
+                live=route["live"],
+                manifest_file=route["manifest_file"],
+                journal_root=route["journal_root"],
             )
             return FeatureResult(
                 Outcome.APPLIED, {"effect": "FILES_RESTORED",
                 "reload": "NOT_PERFORMED", "live_accepted": False,
                 "original_install_operation_id": original_id}, output=result,
             )
-        plan = rcc.inspect(request.operation_id)
+        plan = rcc.inspect(request.operation_id, **release_kwargs)
         if (plan["installed_aggregate"], plan["candidate_aggregate"],
                 plan["manifest_sha256"]) != expected:
             raise PreconditionError("RCC_INSTALL_EXPECTATIONS_CHANGED")
-        if values["operation"] == "rcc-inspect":
+        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388"}:
             return FeatureResult(
                 Outcome.APPLIED, {"read_only": True, "reload": "NOT_PERFORMED",
                                  "live_accepted": False},
                 output=plan,
             )
         result = rcc.install(plan, authorization=lambda data:
-                             data["operation_id"] == request.operation_id)
+                             data["operation_id"] == request.operation_id,
+                             **release_kwargs)
         return FeatureResult(
             Outcome.APPLIED, {"effect": "FILES_INSTALLED_PENDING_RELOAD",
                              "reload": "NOT_PERFORMED", "live_accepted": False},

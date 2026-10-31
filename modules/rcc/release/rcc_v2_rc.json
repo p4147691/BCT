@@ -23,8 +23,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1964,
-        "sha256": "137c111101838975ec4cd1d3e9f113b20f6140f7233bddecb8c469bf0f4f17eb"
+        "size": 1971,
+        "sha256": "313cc04216a0401e13ab8edba9461d1c0373234de6549b30d83460a7c51018c2"
       },
       {
         "path": "browser/read_adapter.js",
@@ -108,8 +108,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 22446,
-        "sha256": "060a87e31c5e536ca096c8dc77749ea1a2a7f95ac7cc9d3e31f3136ab46c6738"
+        "size": 22453,
+        "sha256": "87131a87f35481aa14bc235e167b236cf6c9238368cf6017c8f5c7d1ba811fa1"
       },
       {
         "path": "content/conversation_rename.js",
@@ -233,8 +233,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1568,
-        "sha256": "a2a48d75addb497a414ac516969bacebeac70866fd977802c4f737610c84967a"
+        "size": 1562,
+        "sha256": "a5f8e8d9969aad99db79442bbb6a107a2603bc5902890f10f09f5fb2d0b19a30"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "f5b05cf7fbd189227839808b5cd1ec67274034b746b2543735f94581739b4915"
+    "aggregateSha256": "e1fb593f2cd0ed071c7ee9fe732ed54fbb69ff72e470338aa184dad2adcf9018"
   },
   "activeLoaderGraph": {
     "background": [
