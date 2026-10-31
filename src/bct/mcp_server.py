@@ -454,7 +454,7 @@ def build_mcp(
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
         send_id=operation_id+"-send"
         arm_id=operation_id+"-arm"
-        if len(send_id)>120 or len(arm_id)>120:
+        if len(send_id)>80 or len(arm_id)>80:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
         armed=await make_executor("relay_browser")(
             work_id,arm_id,{"command":"delayed-send-message",
