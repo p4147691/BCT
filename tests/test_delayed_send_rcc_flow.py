@@ -34,8 +34,8 @@ class SimulatedRcc:
             return {"ok": True, "state": {
                 "instanceId": INSTANCE, "sessionId": SESSION,
                 "tabs": [
-                    {"tabId": 10, "windowId": 11, "conversationKey": WORKER},
-                    {"tabId": 12, "windowId": 11, "conversationKey": MANAGER},
+                    {"tabId": 10, "windowId": 11, "url": "https://chatgpt.com/c/" + WORKER},
+                    {"tabId": 12, "windowId": 11, "url": "https://chatgpt.com/c/" + MANAGER},
                 ],
             }}
         if command == "read-latest-assistant":
