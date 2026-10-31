@@ -200,10 +200,24 @@ class DurableWatchLedger:
                     assignment_epoch: int, instance_id: str,
                     conversation_key: str, manager_conversation_key: str,
                     manager_instance_id: str, baseline: dict,
-                    registration_receipt: str) -> dict:
+                    registration_receipt: str, planned_send_operation_id: str = "",
+                    planned_send_text: str = "") -> dict:
         """Worker prearms one current response, reusing any reserved next turn."""
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id):
             raise ValueError("DELAYED_TASK_ID_INVALID")
+        planned = bool(planned_send_operation_id or planned_send_text)
+        if planned:
+            if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", planned_send_operation_id)
+                    or not planned_send_text or len(planned_send_text) > 12000):
+                raise ValueError("DELAYED_PLANNED_SOURCE_INVALID")
+        elif (baseline.get("terminal") is True
+              and baseline.get("generating") is False
+              and baseline.get("inputReady") is True
+              and baseline.get("latestUserSha256")
+              and baseline.get("latestUserSha256") == baseline.get("responseSourceUserSha256")
+              and baseline.get("latestUserTurnKey")
+              and baseline.get("latestUserTurnKey") == baseline.get("responseSourceUserTurnKey")):
+            raise ValueError("DELAYED_PREARM_RESPONSE_ALREADY_TERMINAL")
         context = {
             "work_id": work_id, "principal_id": principal_id,
             "assignment_epoch": assignment_epoch,
@@ -219,15 +233,22 @@ class DurableWatchLedger:
         }
         if not isinstance(context["baseline_count"], int) or context["baseline_count"] < 0:
             raise ValueError("DELAYED_RCC_TURN_COUNT_UNAVAILABLE")
-        # A manually submitted first task has no BCT send receipt. Anchor its
-        # source to an exact user turn observed over the authorized RCC channel
-        # at prearm time; this is observational evidence, not sender identity.
-        if (not context["source_user_turn_key"]
-                or not re.fullmatch(r"[0-9a-f]{64}", context["source_user_sha256"])
-                or (context["source_user_turn_key"].startswith("fallback-turn-")
-                    and baseline.get("latestUserTextOccurrenceCount") != 1)):
-            raise ValueError("DELAYED_SOURCE_USER_PROOF_REQUIRED")
-        context["source_proof_kind"] = "RCC_PREARM_USER_TURN"
+        if planned:
+            # No user turn exists yet: reserve against the *previous* Assistant
+            # and bind the future source only via an exact BCT send receipt.
+            context["source_proof_kind"] = "BCT_PLANNED_SOURCE_SEND"
+            context["source_user_turn_key"] = ""
+            context["source_user_sha256"] = _rcc_submitted_text_sha256(planned_send_text)
+            context["source_send_operation_id"] = planned_send_operation_id
+            context["source_send_sha256"] = context["source_user_sha256"]
+        else:
+            # Manually submitted task: anchor the currently observed user turn.
+            if (not context["source_user_turn_key"]
+                    or not re.fullmatch(r"[0-9a-f]{64}", context["source_user_sha256"])
+                    or (context["source_user_turn_key"].startswith("fallback-turn-")
+                        and baseline.get("latestUserTextOccurrenceCount") != 1)):
+                raise ValueError("DELAYED_SOURCE_USER_PROOF_REQUIRED")
+            context["source_proof_kind"] = "RCC_PREARM_USER_TURN"
         with self.store.transaction() as db:
             existing = db.execute(
                 "SELECT * FROM delayed_send_watches WHERE task_id=? "
@@ -270,7 +291,9 @@ class DurableWatchLedger:
                 old = json.loads(existing["context_json"] or "{}")
                 if (existing["conversation_key"] != conversation_key
                         or old.get("work_id") != work_id
-                        or old.get("manager_conversation_key") != manager_conversation_key):
+                        or old.get("manager_conversation_key") != manager_conversation_key
+                    or (planned and (old.get("source_send_operation_id") != planned_send_operation_id
+                                     or old.get("source_send_sha256") != context["source_send_sha256"]))):
                     raise ValueError("DELAYED_CONTEXT_CHANGED")
                 created = False
             else:
@@ -597,7 +620,9 @@ class DelayedSendService:
 
     def prearm(self, *, task_id: str, work, instance_id: str,
                conversation_key: str, manager_conversation_key: str,
-               manager_instance_id: str, operation_id: str) -> dict:
+               manager_instance_id: str, operation_id: str,
+               planned_send_operation_id: str = "",
+               planned_send_text: str = "") -> dict:
         # Later SELF turns need only the stable Task ID; use the prior binding.
         from bct.integrations.rcc import validate_instance_id
         previous = self.ledger.latest_binding(task_id)
@@ -616,6 +641,20 @@ class DelayedSendService:
                 uuid_pat, manager_conversation_key):
             raise ValueError("DELAYED_CONVERSATION_INVALID")
         self._locate(instance_id, conversation_key)
+        if planned_send_operation_id:
+            from bct.core.models import ConflictError
+            try:
+                self.store.get_operation_for(
+                    operation_id=planned_send_operation_id,
+                    work_id=work.work_id,
+                    principal_id=work.owner_principal_id,
+                )
+            except KeyError:
+                pass
+            except ConflictError as exc:
+                raise ValueError("DELAYED_PLANNED_SEND_OPERATION_FOREIGN") from exc
+            else:
+                raise ValueError("DELAYED_PLANNED_SEND_OPERATION_ALREADY_EXISTS")
         observed = self.latest(instance_id=instance_id,
                                conversation_key=conversation_key)
         if observed.get("ok") is not True:
@@ -628,6 +667,8 @@ class DelayedSendService:
             manager_conversation_key=manager_conversation_key,
             manager_instance_id=manager_instance_id,baseline=observed,
             registration_receipt=operation_id,
+            planned_send_operation_id=planned_send_operation_id,
+            planned_send_text=planned_send_text,
         )
 
     def _response_for(self, row: dict) -> dict:
@@ -649,15 +690,17 @@ class DelayedSendService:
         # observed at prearm and matched to this response can compensate.
         source_key = str(ctx.get("source_user_turn_key") or "")
         source_sha = str(ctx.get("source_user_sha256") or "")
-        if (not source_key or not re.fullmatch(r"[0-9a-f]{64}", source_sha)):
+        planned_source = ctx.get("source_proof_kind") == "BCT_PLANNED_SOURCE_SEND"
+        if planned_source:
+            source_key = str(observed.get("latestUserTurnKey") or "")
+        if not source_key or not re.fullmatch(r"[0-9a-f]{64}", source_sha):
             return {}
-        if source_key.startswith("fallback-turn-") and (
-                observed.get("latestUserTextOccurrenceCount") != 1
-                or observed.get("responseSourceUserTextOccurrenceCount") != 1):
+        if (observed.get("latestUserTextOccurrenceCount") != 1
+                or observed.get("responseSourceUserTextOccurrenceCount") != 1
+                ) and (planned_source or source_key.startswith("fallback-turn-")):
             return {}
         source_match = (
-            bool(source_key and source_sha)
-            and observed.get("responseSourceUserTurnKey") == source_key
+            observed.get("responseSourceUserTurnKey") == source_key
             and observed.get("responseSourceUserSha256") == source_sha
             and observed.get("latestUserTurnKey") == source_key
             and observed.get("latestUserSha256") == source_sha
@@ -689,7 +732,9 @@ class DelayedSendService:
                     or not isinstance(evidence, dict)
                     or evidence.get("command") not in {"send-to-tab", "send-to-created-tab"}
                     or evidence.get("host_request_id") != source_send_op
-                    or evidence.get("instance_id") != ctx["instance_id"]):
+                    or evidence.get("instance_id") != ctx["instance_id"]
+                    or evidence.get("conversation_key") != row["conversation_key"]
+                    or evidence.get("source_message_sha256") != source_sha):
                 return {}
         response_changed = (
             str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")

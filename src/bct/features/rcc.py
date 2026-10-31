@@ -599,12 +599,19 @@ class RelayBrowserFeature:
         self, *, work: Work, arguments: dict[str, Any]
     ) -> FeatureRequest:
         allowed = {"command","task_id","instance_id","conversation_key",
-                   "manager_conversation_key","manager_instance_id"}
+                   "manager_conversation_key","manager_instance_id",
+                   "planned_send_operation_id", "planned_send_text"}
         if set(arguments) - allowed:
             raise PreconditionError("DELAYED_ARGUMENT_NOT_ALLOWED")
         task_id = str(arguments.get("task_id") or "").strip()
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id):
             raise PreconditionError("DELAYED_TASK_ID_INVALID")
+        plan_id = str(arguments.get("planned_send_operation_id") or "").strip()
+        plan_text = str(arguments.get("planned_send_text") or "")
+        if bool(plan_id) != bool(plan_text) or (plan_id and
+                (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", plan_id)
+                 or len(plan_text) > 12000)):
+            raise PreconditionError("DELAYED_PLANNED_SOURCE_INVALID")
         return FeatureRequest(
             self.capability, f"delayed-send:{work.work_id}:{task_id}",
             {"command":"delayed-send-message","task_id":task_id,
@@ -613,7 +620,8 @@ class RelayBrowserFeature:
              "conversation_key":str(arguments.get("conversation_key") or "").strip().lower(),
              "manager_conversation_key":str(
                  arguments.get("manager_conversation_key") or "").strip().lower(),
-             "manager_instance_id":str(arguments.get("manager_instance_id") or "").strip()},
+             "manager_instance_id":str(arguments.get("manager_instance_id") or "").strip(),
+             "planned_send_operation_id":plan_id,"planned_send_text":plan_text},
             (f"delayed-send:{work.work_id}:{task_id}",),
             {"command":"delayed-send-message","mutating":True},
         )
@@ -1888,6 +1896,8 @@ class RelayBrowserFeature:
                     manager_conversation_key=values["manager_conversation_key"],
                     manager_instance_id=values["manager_instance_id"],
                     operation_id=request.operation_id,
+                    planned_send_operation_id=values.get("planned_send_operation_id",""),
+                    planned_send_text=values.get("planned_send_text",""),
                 )
             except (ValueError, KeyError) as exc:
                 raise PreconditionError(str(exc)) from exc
@@ -2613,10 +2623,17 @@ class RelayBrowserFeature:
                         "created_tab_id": result["tabId"],
                         "created_window_id": result["windowId"],
                     }
+            source_proof = {}
+            if values["command"] == "send-to-tab":
+                from bct.delayed_send_message import _rcc_submitted_text_sha256
+                source_proof = {
+                    "conversation_key": extra["conversationKey"],
+                    "source_message_sha256": _rcc_submitted_text_sha256(values["text"]),
+                }
             return FeatureResult(Outcome.APPLIED, {
                 "instance_id": values["instance_id"], "command": values["command"],
                 "host_request_id": request.operation_id, "host_state": state or None,
-                **create_proof,
+                **create_proof, **source_proof,
                 **(send_latency_evidence(
                     command=values["command"],
                     preflight_state_ms=request.preconditions.get("send_message_state_read_ms"),

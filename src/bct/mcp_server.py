@@ -403,7 +403,11 @@ def build_mcp(
             "On the first turn supply the exact RCC instance, worker conversation "
             "and manager conversation. Later SELF turns need only work_id, "
             "operation_id and task_id. The Core waits for a completed response "
-            "then sends its final NEXT TASK — SELF/MANAGER instruction."
+            "then sends its final NEXT TASK — SELF/MANAGER instruction. "
+            "For a BCT-initiated message, first prearm with "
+            "planned_send_operation_id and planned_send_text, then submit "
+            "that exact text once using send-message and the reserved ID. "
+            "A late prearm after the matching reply is terminal is rejected."
         ),
         structured_output=True,
     )
@@ -411,6 +415,7 @@ def build_mcp(
         work_id: str, task_id: str, operation_id: str = "",
         instance_id: str = "", conversation_key: str = "",
         manager_conversation_key: str = "", manager_instance_id: str = "",
+        planned_send_operation_id: str = "", planned_send_text: str = "",
     ) -> dict[str, Any]:
         generated = operation_id or ("delayed-arm-" + uuid.uuid4().hex[:24])
         return await make_executor("relay_browser")(
@@ -418,7 +423,9 @@ def build_mcp(
             {"command":"delayed-send-message","task_id":task_id,
              "instance_id":instance_id,"conversation_key":conversation_key,
              "manager_conversation_key":manager_conversation_key,
-             "manager_instance_id":manager_instance_id},
+             "manager_instance_id":manager_instance_id,
+             "planned_send_operation_id":planned_send_operation_id,
+             "planned_send_text":planned_send_text},
         )
 
     @server.tool(
