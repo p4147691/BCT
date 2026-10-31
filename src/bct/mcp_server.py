@@ -91,7 +91,7 @@ _CAPABILITY_USAGE = {
 _SEALED_RELAY_COMMANDS = frozenset({
     "send", "create-and-send", "result-of-create-and-send",
     "send-to-tab", "send-to-created-tab", "send-to-self", "node-continue",
-    "read-latest-assistant", "state", "result",
+    "read-latest-assistant", "state", "result", "presence",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "reconcile-send", "reconcile-send-to-created-tab", "reconcile-create-and-send",
     "target-discover", "retire-composer-draft", "retire-recovered-execution",
