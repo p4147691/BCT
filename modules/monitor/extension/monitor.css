@@ -3598,7 +3598,14 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-desktop-thumb-window.monitor-bct-node-target-highlighted,
 .monitor-window-preview.monitor-bct-node-target-highlighted,
 .monitor-thumbnail-node-window.monitor-bct-node-target-highlighted {
-  outline:0!important;box-shadow:none!important;filter:none!important;
+  /* The selected node must identify both its number and its exact browser
+     window.  Keep this above role/foreground decoration rather than letting
+     those generic styles erase the perimeter. */
+  z-index:12!important;
+  outline:3px solid rgba(255,181,71,.98)!important;
+  outline-offset:-2px!important;
+  box-shadow:0 0 0 1px rgba(53,28,5,.94),0 0 12px rgba(255,181,71,.76)!important;
+  filter:none!important;
 }
 
 /* Minimized-node summary: one desktop-level N list.  The selected node alone
@@ -3609,7 +3616,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-thumbnail-tab-prefix,.monitor-thumbnail-tab-separator { color:inherit;font-size:inherit;font-weight:inherit;text-shadow:none; }
 .monitor-desktop-thumb-label { grid-template-columns:30px 18px minmax(0,1fr)!important; }
 .monitor-desktop-management-control { min-width:14px;height:16px;padding:0;font-size:9px;line-height:14px; }
-.monitor-desktop-thumb-label > .monitor-desktop-minimized-nodes { grid-column:3 / 4;justify-self:stretch;width:100%;max-width:100%;gap:1px;justify-content:flex-start;overflow:hidden;pointer-events:auto;white-space:nowrap; }
+.monitor-desktop-thumb-label > .monitor-desktop-minimized-nodes { grid-column:3 / 4;justify-self:end;width:auto;max-width:100%;gap:1px;justify-content:flex-end;overflow:hidden;pointer-events:none;white-space:nowrap; }
 .monitor-desktop-minimized-nodes.monitor-bct-minimized-selection { outline:0;background:transparent;box-shadow:none; }
 .monitor-desktop-minimized-node-selected { color:#ffd75a!important;font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.16);transform-origin:center;text-shadow:0 0 7px rgba(255,215,90,.88); }
 .monitor-desktop-minimized-prefix,.monitor-desktop-minimized-separator { color:rgba(255,255,255,.94);font:800 10px/14px "Segoe UI","Malgun Gothic",sans-serif; }

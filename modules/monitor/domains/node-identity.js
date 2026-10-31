@@ -31,12 +31,22 @@ function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState)
     : null);
   if (selectedNode) {
     monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(selectedNode);
-    // Chrome chose this tab; Monitor only mirrors that selection. Do not turn
-    // it into a Monitor-window/desktop highlight or activate anything.
-    monitorBctNodeHighlightedHwnd = "";
-    syncMonitorBctNodeTargetHighlight();
-    syncMonitorMinimizedNodeBadges(state);
-    syncMonitorAllDesktopThumbnailNodeBadges();
+    // Chrome chose this tab. Mirror that exact tab in Monitor, including the
+    // browser-window perimeter in the thumbnail. This is visual state only:
+    // it must never activate, move, or otherwise change the real window.
+    const displayHwnd = monitorDisplayHwndForBrowserWindowId(
+      selectedNode.windowId,
+      state,
+      selectedNode.instanceId,
+      selectedNode.sessionId,
+    );
+    if (displayHwnd) applyMonitorBctNodeHighlight(displayHwnd);
+    else {
+      monitorBctNodeHighlightedHwnd = "";
+      syncMonitorBctNodeTargetHighlight();
+      syncMonitorMinimizedNodeBadges(state);
+      syncMonitorAllDesktopThumbnailNodeBadges();
+    }
   }
   if (!conversationKey) return { ok:true, changed:Boolean(selectedNode), transitional:!selectedNode };
 

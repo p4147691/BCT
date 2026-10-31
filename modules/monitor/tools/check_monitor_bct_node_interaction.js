@@ -131,6 +131,8 @@ function loadModule() {
     "tab activation must retain an unregistered N? entry");
   assert.match(monitor, /Number\(node\?\.windowId\) === windowId && Number\(node\?\.tabId\) === tabId/,
     "tab activation must select by exact Chrome window/tab identity");
+  assert.match(monitor, /const displayHwnd = monitorDisplayHwndForBrowserWindowId\([\s\S]*?if \(displayHwnd\) applyMonitorBctNodeHighlight\(displayHwnd\)/,
+    "an actual Chrome tab activation must also project the exact browser-window perimeter into Monitor");
   assert.match(monitor, /syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
     "selection changes must reproject thumbnail number tokens immediately");
   assert.match(monitor, /renderMonitorBctWindowNodes\(monitorBctWindowNodesCache\);\s*syncMonitorBctNodeTargetHighlight\(\);/,
@@ -138,6 +140,8 @@ function loadModule() {
   assert.match(projection, /selectedNodeTabId/,
     "thumbnail selection must use the exact Chrome tabId, not a shared N? label");
   assert.match(css, /#ffd75a/);
+  assert.match(css, /monitor-bct-node-target-highlighted[\s\S]{0,480}outline:3px solid rgba\(255,181,71,\.98\)!important/,
+    "the exact selected browser window retains a visible thumbnail perimeter");
   assert.match(css, /monitor-bct-drop-before/);
   assert.doesNotMatch(css, /monitor-bct-node-list-end/);
   assert.match(css, /monitor-bct-node-drag-active \.monitor-bct-scope-heading \{ pointer-events:none!important; \}/);

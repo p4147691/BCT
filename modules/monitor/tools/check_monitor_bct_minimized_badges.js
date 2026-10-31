@@ -102,7 +102,8 @@ assert.equal(ctx.MonitorMinimizedNodeBadgeContract.minimizedEvent({reason:"minim
 assert.equal(ctx.MonitorMinimizedNodeBadgeContract.minimizedEvent({reason:"restored",iconic:false}),false);
 const css=fs.readFileSync(path.join(__dirname,"../extension/monitor.css"),"utf8");
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-minimized-nodes/);
-assert.match(css,/grid-column:3 \/ 5/);
+assert.match(css,/grid-column:3 \/ 4;justify-self:end/,
+  "minimized node numbers stay at the lower-right of the D1/D2 thumbnail label");
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-label-text\s*\{ display:none!important; \}/);
 assert.match(src,/label\.append\(desktopBadge,\s*labelText,\s*minimizedNodes\)/);
 assert.match(src,/label\.append\(badge,\s*text,\s*minimizedNodes\)/);
