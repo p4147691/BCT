@@ -93,6 +93,7 @@ _SEALED_RELAY_COMMANDS = frozenset({
     "send-to-tab", "send-to-created-tab", "send-to-self", "node-continue",
     "read-latest-assistant", "state", "result", "presence",
     "tab-get", "window-get", "windows-list",
+    "tab-groups-list", "tab-group-get",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "reconcile-send", "reconcile-send-to-created-tab", "reconcile-create-and-send",
     "target-discover", "retire-composer-draft", "retire-recovered-execution",
