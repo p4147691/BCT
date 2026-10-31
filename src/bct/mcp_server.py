@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import math
+import re
 import time
 import uuid
 from pathlib import Path
@@ -395,6 +396,87 @@ def build_mcp(
         return await make_executor("conversation_network_update")(
             work_id, operation_id, arguments, approval_ref
         )
+
+    @server.tool(
+        name="bct_chain_message",
+        description=(
+            "Start/status/cancel a durable one-worker message continuation using "
+            "existing BCT send-message, Delayed Send and their exact receipts. "
+            "For start supply task_id, a unique operation_id prefix, exact RCC "
+            "instance/session/tab/window/worker and manager conversation IDs, "
+            "and the work instruction text. The command PREARMS BEFORE sending, "
+            "then submits the reserved text under the exact planned operation ID. "
+            "Status reads the owning Work's exact durable watch. "
+            "This is the first message-flow stage, NOT a completed Run Plan/Task Run "
+            "or multi-worker Chain Run implementation. No UNKNOWN replay."
+        ),
+        structured_output=True,
+    )
+    async def bct_chain_message(
+        work_id: str, task_id: str, operation_id: str,
+        action: str = "start",
+        instance_id: str = "", session_id: str = "",
+        worker_tab_id: int = 0, worker_window_id: int = 0,
+        worker_conversation_key: str = "",
+        manager_conversation_key: str = "",
+        instruction: str = "", manager_instance_id: str = "",
+        generation: int = 1,
+    ) -> dict[str, Any]:
+        if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
+                or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ID_INVALID"}
+        if action == "status":
+            from bct.delayed_send_message import DurableWatchLedger
+            work=await asyncio.to_thread(bct.store.get_work,work_id)
+            watch=await asyncio.to_thread(DurableWatchLedger(bct.store).get,task_id,generation)
+            if watch is None:
+                return {"status":"NOT_FOUND","task_id":task_id,"generation":generation}
+            import json
+            ctx=json.loads(watch.get("context_json") or "{}")
+            if (ctx.get("work_id") != work.work_id
+                    or ctx.get("principal_id") != work.owner_principal_id
+                    or ctx.get("assignment_epoch") != work.assignment_epoch):
+                return {"status":"NOT_FOUND","task_id":task_id,"generation":generation}
+            return {"status":watch["state"],"task_id":task_id,
+                    "generation":generation,
+                    "response_turn_id":watch["response_turn_id"],
+                    "observed_response_turn_key":ctx.get("observed_response_turn_key",""),
+                    "source_send_operation_id":ctx.get("source_send_operation_id","")}
+        if action == "cancel":
+            return await make_executor("relay_browser")(
+                work_id,operation_id,{"command":"delayed-send-cancel",
+                 "task_id":task_id,"generation":generation})
+        if action != "start":
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ACTION_INVALID"}
+        if (not instruction or len(instruction)>12000 or
+                not re.fullmatch(r"[a-f0-9]{32}",session_id) or
+                worker_tab_id<=0 or worker_window_id<=0):
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
+        send_id=operation_id+"-send"
+        arm_id=operation_id+"-arm"
+        if len(send_id)>80 or len(arm_id)>80:
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
+        armed=await make_executor("relay_browser")(
+            work_id,arm_id,{"command":"delayed-send-message",
+             "task_id":task_id,"instance_id":instance_id,
+             "conversation_key":worker_conversation_key,
+             "manager_conversation_key":manager_conversation_key,
+             "manager_instance_id":manager_instance_id or instance_id,
+             "planned_send_operation_id":send_id,
+             "planned_send_text":instruction})
+        if armed.get("outcome") != "APPLIED":
+            return {"status":"PREARM_FAILED","prearm":armed}
+        sent=await make_executor("relay_browser")(
+            work_id,send_id,{"command":"send-message",
+             "instance_id":instance_id,"session_id":session_id,
+             "tab_id":worker_tab_id,"window_id":worker_window_id,
+             "conversation_key":worker_conversation_key,
+             "text":instruction})
+        if sent.get("outcome") != "APPLIED":
+            return {"status":"SEND_UNCONFIRMED","prearm":armed,
+                    "send":sent,"warning":"NO_UNKNOWN_REPLAY"}
+        return {"status":"WATCHING","task_id":task_id,"generation":generation,
+                "prearm":armed,"send":sent}
 
     @server.tool(
         name="bct_task_run",
