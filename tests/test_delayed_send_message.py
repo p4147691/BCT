@@ -67,7 +67,9 @@ class DelayedSendMessageTests(unittest.TestCase):
                 read_response=lambda watch: {
                     "conversation_key":"worker-uuid","response_turn_id":"turn-1",
                     "response_text":"NEXT TASK — SELF\nContinue implementation.",
-                    "response_complete":True,"input_ready":True},
+                    "response_complete":True,"input_ready":True,
+                    "response_turn_key":"rcc-turn-1",
+                    "response_sha256":"digest-1"},
                 send_message=lambda target,body,key: (
                     sent.append((target,body,key)) or "send-2"))
             result=runner.poll_once(self.watch,manager_conversation_key="manager-uuid")
@@ -75,6 +77,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertEqual("worker-uuid",sent[0][0])
             self.assertEqual("RESERVED",ledger.get("task-1",2)["state"])
             self.assertEqual("SELF_SENT",ledger.get("task-1",1)["state"])
+            self.assertEqual("rcc-turn-1", __import__("json").loads(ledger.get("task-1",1)["context_json"])["observed_response_turn_key"])
             self.assertEqual("WAITING_WATCH",runner.poll_once(
                 self.watch,manager_conversation_key="manager-uuid").status)
             self.assertEqual(1,len(sent))
@@ -84,6 +87,7 @@ class DelayedSendMessageTests(unittest.TestCase):
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         payload = {"ok": True, "conversationKey": "worker-uuid",
                    "responseText": body, "responseSha256": digest,
+                   "responseTurnKey":"rcc-turn-1",
                    "observationState": "TERMINAL", "terminal": True,
                    "generating": False, "inputReady": True}
         observation = normalize_rcc_latest_assistant(
@@ -109,7 +113,7 @@ class DelayedSendMessageTests(unittest.TestCase):
                 self.calls.append(kwargs)
                 body = "NEXT TASK — SELF\\nContinue."
                 return {"ok":True,"conversationKey":"worker-uuid",
-                        "responseText":body,
+                        "responseText":body,"responseTurnKey":"rcc-turn-1",
                         "responseSha256":hashlib.sha256(body.encode()).hexdigest(),
                         "observationState":"TERMINAL","terminal":True,
                         "generating":False,"inputReady":True}
@@ -122,6 +126,62 @@ class DelayedSendMessageTests(unittest.TestCase):
         self.assertTrue(result["response_complete"])
         self.assertEqual("read-latest-assistant",client.calls[0]["command"])
         self.assertEqual(10,client.calls[0]["extra"]["tabId"])
+
+    def test_missing_or_wrong_turn_key_never_dispatches(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = DurableWatchLedger(Store(Path(root)/"state.sqlite"))
+            ledger.reserve(Watch("task-1",1,"worker-uuid","",""))
+            ledger.bind(Watch("task-1",1,"worker-uuid","",""),
+                        send_receipt="send-1",response_turn_id="turn-1")
+            sent = []
+            observation = {
+                "conversation_key":"worker-uuid","response_turn_id":"turn-1",
+                "response_text":"NEXT TASK — MANAGER\nOnly current result.",
+                "response_complete":True,"input_ready":True,
+                "response_sha256":"sha-current"}
+            current = dict(observation)
+            runner = DelayedSendRunner(ledger, read_response=lambda _:current,
+                send_message=lambda *args:sent.append(args) or "receipt")
+            for change in ({"response_turn_key":""},
+                           {"response_turn_key":"current","response_complete":False},
+                           {"response_turn_key":"current","input_ready":False},
+                           {"response_turn_key":"current","conversation_key":"other"}):
+                current = {**observation, **change}
+                self.assertNotEqual("RETURNED_TO_MANAGER",
+                    runner.poll_once(self.watch,manager_conversation_key="manager-uuid").status)
+            self.assertFalse(sent)
+            current = {**observation,"response_turn_key":"current"}
+            self.assertEqual("RETURNED_TO_MANAGER",
+                runner.poll_once(self.watch,manager_conversation_key="manager-uuid").status)
+            self.assertEqual(("manager-uuid","Only current result."),sent[0][:2])
+
+    def test_self_generations_bind_independent_rcc_keys(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = DurableWatchLedger(Store(Path(root)/"state.sqlite"))
+            first = Watch("task-1",1,"worker-uuid","turn-1","send-1")
+            ledger.prearm(first)
+            sent = []
+            def sender(target, body, key):
+                sent.append((target,body,key))
+                return "receipt-" + str(len(sent))
+            runner = DelayedSendRunner(ledger,read_response=lambda w:{
+                "conversation_key":"worker-uuid",
+                "response_turn_id":w.response_turn_id,
+                "response_turn_key":"rcc-key-"+str(w.generation),
+                "response_sha256":"sha-"+str(w.generation),
+                "response_text":("NEXT TASK — SELF\nContinue." if w.generation==1
+                                 else "NEXT TASK — MANAGER\nFinal."),
+                "response_complete":True,"input_ready":True},
+                send_message=sender)
+            self.assertEqual("SELF_SENT",runner.poll_once(first,manager_conversation_key="manager-uuid").status)
+            second = ledger.bind(Watch("task-1",2,"worker-uuid","",""),
+                                 send_receipt="receipt-1",response_turn_id="turn-2")
+            self.assertEqual("RETURNED_TO_MANAGER",
+                runner.poll_once(second,manager_conversation_key="manager-uuid").status)
+            import json
+            self.assertEqual("rcc-key-1",json.loads(ledger.get("task-1",1)["context_json"])["observed_response_turn_key"])
+            self.assertEqual("rcc-key-2",json.loads(ledger.get("task-1",2)["context_json"])["observed_response_turn_key"])
+            self.assertEqual("manager-uuid",sent[-1][0])
 
     def test_worker_prearms_before_task_and_reuses_same_reservation(self):
         with tempfile.TemporaryDirectory() as root:

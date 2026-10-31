@@ -278,6 +278,32 @@ class DurableWatchLedger:
             result.append(value)
         return result
 
+    def bind_observed_turn(self, watch: Watch, turn_key: str, response_sha: str) -> bool:
+        """Persist the exact RCC response identity before claiming any send."""
+        if not isinstance(turn_key, str) or not turn_key.strip() or not response_sha:
+            return False
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING' AND response_turn_id=?",
+                (watch.task_id, watch.generation, watch.response_turn_id),
+            ).fetchone()
+            if row is None:
+                return False
+            context = json.loads(row["context_json"] or "{}")
+            existing = context.get("observed_response_turn_key")
+            if existing and (existing != turn_key or context.get("observed_response_sha") != response_sha):
+                return False
+            context["observed_response_turn_key"] = turn_key
+            context["observed_response_sha"] = response_sha
+            updated = db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='WATCHING' AND response_turn_id=?",
+                (json.dumps(context, sort_keys=True), watch.task_id,
+                 watch.generation, watch.response_turn_id),
+            )
+            return updated.rowcount == 1
+
     def claim_response(self, watch: Watch) -> bool:
         """Only one caller may execute the effect for this response."""
         with self.store.transaction() as db:
@@ -341,10 +367,16 @@ class DelayedSendRunner:
                 or observation.get("response_complete") is not True
                 or observation.get("input_ready") is not True):
             return Continuation("WAITING_RESPONSE")
+        turn_key = observation.get("response_turn_key")
+        response_sha = observation.get("response_sha256")
+        if not isinstance(turn_key, str) or not turn_key.strip() or not isinstance(response_sha, str):
+            return Continuation("WAITING_RESPONSE")
         try:
             extract_next_instruction(observation.get("response_text"))
         except InstructionError:
             return Continuation("INSTRUCTION_UNAVAILABLE")
+        if not self.ledger.bind_observed_turn(watch, turn_key, response_sha):
+            return Continuation("WAITING_EXPECTED_RESPONSE")
         if not self.ledger.claim_response(watch):
             return Continuation("ALREADY_DISPATCHING")
         try:
@@ -368,9 +400,8 @@ def normalize_rcc_latest_assistant(
 ) -> dict:
     """Normalize the *actual* RCC read-latest-assistant response contract.
 
-    RCC returns a terminal flag and response SHA, but no assistant turn ID.
-    The caller must establish the turn binding independently from the exact
-    originating send receipt before providing response_turn_id.
+    RCC returns a terminal flag, SHA and responseTurnKey. The task's
+    source receipt remains distinct from this observed assistant turn key.
     """
     if not isinstance(result, dict) or result.get("ok") is not True:
         return {}
@@ -381,11 +412,14 @@ def normalize_rcc_latest_assistant(
     if not isinstance(body, str) or not isinstance(digest, str):
         return {}
     actual = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    if actual != digest or not digest or digest == expected_response_sha256:
+    turn_key = result.get("responseTurnKey")
+    if (actual != digest or not digest or digest == expected_response_sha256
+            or not isinstance(turn_key, str) or not turn_key.strip()):
         return {}
     return {
         "conversation_key": conversation_key,
         "response_turn_id": response_turn_id,
+        "response_turn_key": turn_key,
         "response_text": body,
         "response_complete": result.get("observationState") == "TERMINAL"
                              and result.get("terminal") is True
@@ -527,7 +561,10 @@ class DelayedSendService:
         if not changed:
             return {}
         if (observed.get("terminal") is not True
-                or observed.get("inputReady") is not True):
+                or observed.get("inputReady") is not True
+                or observed.get("generating") is not False
+                or not str(observed.get("responseTurnKey") or "").strip()
+                or str(observed.get("responseTurnKey")) == ctx.get("baseline_key")):
             return {}
         return normalize_rcc_latest_assistant(
             observed,conversation_key=worker,
