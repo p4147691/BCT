@@ -1,0 +1,107 @@
+"""One-response Delayed Send Message continuation for BCT Task Run.
+
+This module owns the state transition, not RCC delivery. Callers supply the
+existing durable watch registration and send-message implementations.
+"""
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from enum import Enum
+from typing import Callable
+
+
+class NextTarget(str, Enum):
+    SELF = "SELF"
+    MANAGER = "MANAGER"
+
+
+@dataclass(frozen=True)
+class NextInstruction:
+    target: NextTarget
+    text: str
+
+
+@dataclass(frozen=True)
+class Watch:
+    task_id: str
+    generation: int
+    conversation_key: str
+    response_turn_id: str
+    source_send_receipt: str
+
+
+@dataclass(frozen=True)
+class Continuation:
+    status: str
+    next_watch: Watch | None = None
+    send_receipt: str | None = None
+
+
+class InstructionError(ValueError):
+    pass
+
+
+def extract_next_instruction(response: str) -> NextInstruction:
+    """Read an explicit final instruction block, never guess from ordinary prose."""
+    if not isinstance(response, str):
+        raise InstructionError("NEXT_INSTRUCTION_NOT_TEXT")
+    lines = response.rstrip().splitlines()
+    markers = [i for i, line in enumerate(lines)
+               if line.strip() in {"NEXT TASK — SELF", "NEXT TASK — MANAGER"}]
+    if len(markers) != 1 or markers[0] == len(lines)-1:
+        raise InstructionError("NEXT_INSTRUCTION_MISSING_OR_AMBIGUOUS")
+    idx = markers[0]
+    body = "\n".join(lines[idx+1:]).strip()
+    if not body or len(body) > 16000:
+        raise InstructionError("NEXT_INSTRUCTION_INVALID")
+    return NextInstruction(
+        NextTarget.SELF if lines[idx].strip().endswith("SELF") else NextTarget.MANAGER,
+        body,
+    )
+
+
+
+def bind_next_response(watch: Watch, *, send_receipt: str,
+                       response_turn_id: str) -> Watch:
+    """Bind the pre-reserved next watch to the exact new send and response."""
+    if watch.response_turn_id or watch.source_send_receipt:
+        raise ValueError("NEXT_WATCH_ALREADY_BOUND")
+    if not send_receipt or not response_turn_id:
+        raise ValueError("NEXT_WATCH_RECEIPT_REQUIRED")
+    return Watch(watch.task_id, watch.generation, watch.conversation_key,
+                 response_turn_id, send_receipt)
+
+
+def advance(
+    *, watch: Watch, response_turn_id: str, response_text: str,
+    response_complete: bool, input_ready: bool, manager_conversation_key: str,
+    register_next_watch: Callable[[Watch], None],
+    send_message: Callable[[str, str, str], str],
+) -> Continuation:
+    """Reserve next watch before SELF send; sender owns durable idempotency.
+
+    One call handles one observed assistant response. The caller persists the
+    watch/operation and uses the existing RCC send receipt for the effect.
+    """
+    if response_turn_id != watch.response_turn_id:
+        return Continuation("WAITING_EXPECTED_RESPONSE")
+    if not response_complete or not input_ready:
+        return Continuation("WAITING_RESPONSE")
+    try:
+        instruction = extract_next_instruction(response_text)
+    except InstructionError:
+        return Continuation("INSTRUCTION_UNAVAILABLE")
+    key = hashlib.sha256(
+        f"{watch.task_id}|{watch.generation}|{response_turn_id}".encode()
+    ).hexdigest()[:24]
+    if instruction.target == NextTarget.SELF:
+        next_watch = Watch(watch.task_id, watch.generation+1,
+                          watch.conversation_key, "", "")
+        register_next_watch(next_watch)
+        receipt = send_message(watch.conversation_key, instruction.text,
+                               "delayed-self-" + key)
+        return Continuation("SELF_SENT", next_watch, receipt)
+    receipt = send_message(manager_conversation_key, instruction.text,
+                           "delayed-manager-" + key)
+    return Continuation("RETURNED_TO_MANAGER", None, receipt)
