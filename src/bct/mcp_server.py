@@ -41,7 +41,7 @@ _CAPABILITY_USAGE = {
     "file_action_plan": "Read-only preview of one exact reversible file move or quarantine: operation=move_preview|quarantine_preview, source and destination in same Work root/device. Validates full SHA256 and produces restore plan. No file changes; apply disabled until approval verifier exists.",
     "process_stop_plan": "Read-only exact PID/process-birth/executable inspection. No process signals; use existing owned process_session.stop where authorized, and require verified approval for any new stop capability.",
     "monitor": "Use arguments.operation as status or validate.",
-    "conversation_network_update": "Update advisory conversation-network membership or role tags. For an existing member use arguments={\"operation\":\"role-patch\",\"project\":\"scope name or id\",\"node_label\":\"N14\",\"add\":[\"CI\"],\"remove\":[],\"expected_role_tags_sha256\":\"digest from bct_conversation_network_get\"}. To place an observed chat in a scope use operation=membership-assign with project, conversation_key, role_tags, and expected_scope_id (empty only when the chat is currently unassigned). This changes no tool permission, browser route, or current Delivery and applies to newly composed messages only.",
+    "conversation_network_update": "Update advisory conversation-network membership or role tags. For an existing member use arguments={\"operation\":\"role-patch\",\"project\":\"scope name or id\",\"node_label\":\"N14\",\"add\":[\"CI\"],\"remove\":[],\"expected_role_tags_sha256\":\"digest from bct_conversation_network_get\"}. To place an observed chat in a scope use operation=membership-assign with project, conversation_key, role_tags, and expected_scope_id (empty only when the chat is currently unassigned). This changes no tool permission or browser route; it applies to newly composed messages only.",
     "project_context": "Shared, bounded context records; this does not capture browser text or send a message. Use central-get/central-save for the one current project context, worklog-get/worklog-save for a project plus journal_work_id, and overview for central context plus compact worklog records. Saves require expected_revision and author. A work log must link its exact journal_work_id as links:[{type:'bct_work',id:'...'}].",
     "cdp_inspect": "Read-only existing Chrome tab listing via a single approved Chrome DevTools MCP connection. Use arguments={\\\"operation\\\":\\\"list_pages\\\"}. Requires a work with cdp_inspect permission and locally enabled CDP policy; does not send messages, create tabs, or bypass Chrome consent.",
     "browser_extension_manage": "Read-only Chrome extension inventory via CDP. arguments={\\\"operation\\\":\\\"inventory\\\"} (or pages). Work-scoped; create/update/delete not enabled in this initial common MCP adapter. CDP only. Do not infer Tampermonkey CRUD support from this tool yet.",
@@ -49,13 +49,14 @@ _CAPABILITY_USAGE = {
         "RCC contract rcc-send-message-v1. For ChatGPT messages use ONLY command=send-message "
         "with exact instance_id, session_id, tab_id, window_id, text, and either "
         "conversation_key (empty string for an existing blank tab) OR create_operation_id "
-        "(from a verified BCT-created window/tab in the SAME Work). The Core resolves "
-        "send-to-tab vs send-to-created-tab under ONE BCT Operation. Never select a tab "
+        "(from a verified BCT-created window/tab in the SAME Work). The Core selects the "
+        "exact existing- or newly-created-target implementation under ONE BCT Operation. Never select a tab "
         "by title or order, never fall back to another send command, and NEVER retry "
         "UNKNOWN using a new operation. Use original receipt/result for recovery. "
         "create-chat-window and create-chat-tab are independent creation commands. "
-        "send-to-tab, send-to-created-tab, send-to-self, node-continue, legacy send, "
-        "and create-and-send are deprecated internal compatibility only; never invoke them for new public requests. Read-only command=state remains supported."
+        "The only caller-facing relay commands are create-chat-window, create-chat-tab, "
+        "and send-message. Lower-level compatibility commands are internal and unavailable "
+        "through this tool. Read-only command=state remains supported."
     ),
     "relay_control": "Execute one enabled hot-read relay purpose using arguments={\"purpose\":\"selected purpose\",\"scope_id\":\"project scope\",\"context\":{...},\"expected_settings_sha256\":\"preview revision\"}. The fixed registry permits one existing BCT operation step per invocation. Settings never grant authority: the Work must contain the delegated capability such as relay_browser or cdp_inspect. Reuse operation_id only for the exact same frozen request and never retry UNKNOWN with a new ID.",
     "orchestrate": "Durable read-evidence manager/worker sessions. Use project-run-plan to select one advisory Manager conversation from an existing conversation scope, then start and sync a session, select a manager epoch, and project-run-bind the exact active RCC attachment. A later attachment generation for the same conversation may be rebound; stale generations are rejected only at the effect boundary. Use dispatch, tool-build-request, or chain-run for work. dispatch is one exact immediate target, not a fallback scheduler. Durable Manager FOLLOW_UP successors may instead include routing={affinity: REQUIRED|PREFERRED|ANY, fallbacks:[{node_id,attachment_id,attachment_generation}], allow_provision:boolean}; it is evaluated only before a send. REQUIRED holds then escalates, PREFERRED/ANY may use an idle fallback after policy wait, and allow_provision records PROVISION_REQUIRED for Manager judgment rather than creating a node automatically. tool-build-request is usable from any ordinary connected ChatGPT conversation: give session_id, assignment_id, tool_name, problem, required_behaviors, acceptance, and actions including read/write/test. It auto-resolves exactly one active Worker when unambiguous; otherwise pass worker_node_id or attachment_id. manager_epoch is optional internal fencing. It may implement, test, and use a tool only within the existing Work authority, then records PENDING_USER_REPORT. Read that report with tool-build-report; user later chooses KEEP, CHANGE, or RETIRE. Browser mutations run in background; recover with bct_operation_get. Recovery never resends an UNKNOWN effect.",
@@ -82,6 +83,20 @@ _CAPABILITY_USAGE = {
     "vtl_validate": "Run a project-owned browser or profile scenario directly through the exact immutable local VTL release. Returns PASS/FAIL and durable evidence without dispatching GitHub Actions.",
     "claim_reconcile": "Record a read-only reconciliation of one FINISHED UNKNOWN receipt when its no-effect proof is available. Claims never gate new operations, so this is not required to unlock a resource. Never retry original effects; preserve the original receipt.",
 }
+
+# These RCC commands remain implemented only so older internal paths can be
+# inspected or retired deliberately.  They are not part of the caller-facing
+# MCP contract: new message work goes through the public tools below.
+_SEALED_RELAY_COMMANDS = frozenset({
+    "send", "create-and-send", "result-of-create-and-send",
+    "send-to-tab", "send-to-created-tab", "send-to-self", "node-continue",
+    "read-latest-assistant",
+    "simple-relay-bind", "simple-relay-send", "simple-relay-return",
+    "reconcile-send", "retire-composer-draft", "retire-recovered-execution",
+    "delivery-start", "delivery-status", "delivery-response-read",
+    "delivery-return", "delivery-manager-status", "delivery-cancel",
+    "delivery-recovery-inspect", "delivery-preview",
+})
 _SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 
 
@@ -553,8 +568,8 @@ def build_mcp(
             approval_ref: str | None = None,
         ) -> dict[str, Any]:
             selected = capability
-            if selected == "relay_browser" and str(arguments.get("command") or "").strip().lower() in {"send", "create-and-send"}:
-                raise ValueError("RCC_LEGACY_PUBLIC_COMMAND_REMOVED:use send-message and create-chat-tab/create-chat-window")
+            if selected == "relay_browser" and str(arguments.get("command") or "").strip().lower() in _SEALED_RELAY_COMMANDS:
+                raise ValueError("RCC_INTERNAL_COMMAND_UNAVAILABLE:use create-chat-window, create-chat-tab, send-message, or bct_delayed_send_message")
             if capability == "test" and arguments.get("operation") == "verify":
                 selected = "verify"
                 arguments = {key: value for key, value in arguments.items() if key != "operation"}

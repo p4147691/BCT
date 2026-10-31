@@ -146,10 +146,10 @@ class MCPIntegrationTests(unittest.TestCase):
                     names = {tool.name for tool in catalogue.tools}
                     relay_description = next(tool.description for tool in catalogue.tools
                                              if tool.name == "bct_relay_browser")
-                    self.assertIn("send-to-tab", relay_description)
+                    self.assertNotIn("send-to-tab", relay_description)
                     self.assertIn("command=send-message", relay_description)
                     self.assertIn("rcc-send-message-v1", relay_description)
-                    self.assertIn("send-to-created-tab", relay_description)
+                    self.assertNotIn("send-to-created-tab", relay_description)
                     expected_capability_tools = {
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
                         "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push", "bct_github_run_watch",
@@ -189,8 +189,13 @@ class MCPIntegrationTests(unittest.TestCase):
                     capabilities = await session.call_tool("bct_capabilities", {})
                     self.assertFalse(capabilities.isError)
                     live_relay_usage = capabilities.structuredContent["relay_browser_usage"]
-                    self.assertIn("send-to-tab", live_relay_usage)
-                    self.assertIn("create-and-send", live_relay_usage)
+                    self.assertNotIn("send-to-tab", live_relay_usage)
+                    self.assertNotIn("create-and-send", live_relay_usage)
+                    self.assertNotIn("delivery-start", live_relay_usage)
+                    self.assertEqual(
+                        ["create-chat-window", "create-chat-tab", "send-message"],
+                        capabilities.structuredContent["relay_browser_public_commands"],
+                    )
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check", "bct_run_plan", "bct_network_set",
