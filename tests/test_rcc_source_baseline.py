@@ -60,8 +60,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.60", manifest["version"])
-        self.assertEqual("1.0.60 Exact Conversation Tab Close", manifest["version_name"])
+        self.assertEqual("1.0.61", manifest["version"])
+        self.assertEqual("1.0.61 Latest Assistant Order", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -186,7 +186,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-27-rcc-exact-tab-close-v1"
+        marker = "2026-10-31-rcc-latest-assistant-order-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 

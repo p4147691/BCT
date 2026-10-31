@@ -77,6 +77,29 @@ class ProtectedRccRouteTests(unittest.TestCase):
         return ri.rollback(op,authorization=approve,live=self.live,
                            manifest_file=self.policy_manifest,journal_root=self.journal)
 
+    def test_pr388_versioned_61_candidate_and_legacy_route_remain_separate(self):
+        old_route = DeployFeature._rcc_route_config("rcc-inspect")
+        new_route = DeployFeature._rcc_route_config("rcc-inspect-pr388")
+        self.assertEqual(old_route["candidate_version"], "1.0.60")
+        self.assertEqual(new_route["candidate_version"], "1.0.61")
+        self.assertEqual(new_route["manifest_file"], ri.PR388_MANIFEST)
+        self.assertEqual(new_route["candidate"], ri.PR388_STAGE)
+        self.assertNotEqual(old_route["journal_root"], new_route["journal_root"])
+        manifest_path = self.source / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["version"] = "1.0.61"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self.release["candidateInventory"] = self._inv(self.source)
+        self.policy_manifest.write_text(json.dumps(self.release), encoding="utf-8")
+        with self.assertRaisesRegex(PreconditionError, "RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH"):
+            self.inspect()
+        plan = ri.inspect("N73-TEST-PR388",
+            live=self.live, candidate=self.source, backup_source=self.reference,
+            manifest_file=self.policy_manifest, journal_root=self.journal,
+            candidate_version="1.0.61")
+        self.assertEqual(plan["candidate_files"], 58)
+        self.assertFalse(self.journal.exists())
+
     def test_01_exact_read_only_preflight_57_58_identity(self):
         plan=self.inspect()
         self.assertEqual((plan["installed_files"],plan["candidate_files"]),(57,58))

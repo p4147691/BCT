@@ -54,7 +54,7 @@ class RccFaviconLivePreparationTests(unittest.TestCase):
         self.assertEqual(self.payload["rollbackPlanSha256"],
                          hashlib.sha256((RELEASE / "ROLLBACK.md").read_bytes()).hexdigest())
         manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.0.60")
+        self.assertEqual(manifest["version"], "1.0.61")
 
 
 if __name__ == "__main__":

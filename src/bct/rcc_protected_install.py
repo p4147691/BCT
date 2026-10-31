@@ -24,6 +24,11 @@ EXACT_MANIFEST = Path(r"D:\BCT\data\RCC_PR362_58TO58_PREP_20261030\release_manif
 PINNED_MANIFEST_PATH = EXACT_MANIFEST
 PINNED_MANIFEST_SHA256 = "b35f64eccce91c1263cb85932c7c882bb181790ab2b3d406937e380e87b9f244"
 EXACT_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-pr362")
+PR388_STAGE = Path(r"D:\BCT\data\RCC_PR388_ORDER_20261031_V2\candidate_1_0_61")
+PR388_ROLLBACK = Path(r"D:\BCT\data\RCC_PR388_ORDER_20261031_V2\rollback_installed_1_0_60")
+PR388_MANIFEST = Path(r"D:\BCT\data\RCC_PR388_ORDER_20261031_V2\release_manifest_pr388_immutable.json")
+PR388_MANIFEST_SHA256 = "f0be94c972debe77b784c3979d944a1a37887a1b63f074c00d1bf13e6190a629"
+PR388_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-pr388")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
@@ -135,7 +140,7 @@ def _copy_exact(source: Path, target: Path, manifest: dict) -> None:
 
 
 def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path,
-          manifest_file: Path, journal: Path) -> dict:
+          manifest_file: Path, journal: Path, candidate_version: str = "1.0.60") -> dict:
     if not OP_ID.fullmatch(operation_id):
         raise PreconditionError("RCC_INSTALL_OPERATION_ID_INVALID")
     for item in (live, candidate, backup_source, manifest_file, journal):
@@ -149,7 +154,9 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
         raise PreconditionError("RCC_INSTALL_57_58_OR_58_58_CONTRACT_INVALID")
     if _identity(live) != (EXTENSION_ID, "1.0.59" if rollback["fileCount"] == 57 else "1.0.60"):
         raise PreconditionError("RCC_INSTALL_LIVE_IDENTITY_MISMATCH")
-    if _identity(candidate) != (EXTENSION_ID, "1.0.60"):
+    if candidate_version not in {"1.0.60", "1.0.61"}:
+        raise PreconditionError("RCC_INSTALL_CANDIDATE_VERSION_UNSUPPORTED")
+    if _identity(candidate) != (EXTENSION_ID, candidate_version):
         raise PreconditionError("RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH")
     if _identity(backup_source) != (EXTENSION_ID, "1.0.59" if rollback["fileCount"] == 57 else "1.0.60"):
         raise PreconditionError("RCC_INSTALL_ROLLBACK_IDENTITY_MISMATCH")
@@ -172,7 +179,8 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
 
 def inspect(operation_id: str, *, live: Path | None = None,
             candidate: Path | None = None, backup_source: Path | None = None,
-            manifest_file: Path | None = None, journal_root: Path | None = None) -> dict:
+            manifest_file: Path | None = None, journal_root: Path | None = None,
+            candidate_version: str = "1.0.60") -> dict:
     """Pure read-only validation. No staging, backup, Chrome or user profile changes."""
     live = EXACT_INSTALLED if live is None else live
     candidate = EXACT_STAGE if candidate is None else candidate
@@ -181,12 +189,14 @@ def inspect(operation_id: str, *, live: Path | None = None,
     journal_root = EXACT_JOURNAL if journal_root is None else journal_root
     return _plan(operation_id, live=live, candidate=candidate,
                  backup_source=backup_source, manifest_file=manifest_file,
-                 journal=journal_root / (operation_id + ".json"))
+                 journal=journal_root / (operation_id + ".json"),
+                 candidate_version=candidate_version)
 
 
 def install(plan: dict, *, authorization: Any = None, live: Path | None = None,
             candidate: Path | None = None, backup_source: Path | None = None,
-            manifest_file: Path | None = None, journal_root: Path | None = None) -> dict:
+            manifest_file: Path | None = None, journal_root: Path | None = None,
+            candidate_version: str = "1.0.60") -> dict:
     """Used only after an externally verified BCT deploy Work/Operation gate.
 
     An untrusted CLI string is not approval. Production dispatcher must provide
@@ -201,7 +211,7 @@ def install(plan: dict, *, authorization: Any = None, live: Path | None = None,
         raise PreconditionError("RCC_INSTALL_VERIFIED_BCT_AUTHORIZATION_REQUIRED")
     if plan != inspect(plan["operation_id"], live=live, candidate=candidate,
                        backup_source=backup_source, manifest_file=manifest_file,
-                       journal_root=journal_root):
+                       journal_root=journal_root, candidate_version=candidate_version):
         raise PreconditionError("RCC_INSTALL_PLAN_CHANGED")
     journal = journal_root / (plan["operation_id"] + ".json")
     if journal.exists():
