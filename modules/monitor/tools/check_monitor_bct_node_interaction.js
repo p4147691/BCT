@@ -139,6 +139,8 @@ function loadModule() {
     "an actual Chrome tab activation must also project the exact browser-window perimeter into Monitor");
   assert.match(monitor, /refreshMonitorBctDisplayWindowHwnd\(\);\s*\/\/ The first pass may happen[\s\S]{0,380}applyMonitorChatNavigationIdentity\(item, monitorLastAiState\)/,
     "an actual Chrome tab activation is re-projected after the current HWND index refresh");
+  assert.match(monitor, /function handleMonitorForegroundChangedEvent\(event\)[\s\S]{0,1100}if\(bctNodes\.length\)[\s\S]{0,700}return;[\s\S]{0,120}applyMonitorWindowHighlight\(hwnd\)/,
+    "a BCT Chrome foreground event bypasses generic HWND selection and waits for its exact tab event");
   assert.match(monitor, /syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
     "selection changes must reproject thumbnail number tokens immediately");
   assert.match(monitor, /renderMonitorBctWindowNodes\(monitorBctWindowNodesCache\);\s*syncMonitorBctNodeTargetHighlight\(\);/,

@@ -484,6 +484,20 @@ function handleMonitorForegroundChangedEvent(event) {
   const visibleNode=document.querySelector(`.monitor-desktop-thumb-window[data-hwnd="${hwnd}"], .monitor-window-preview[data-hwnd="${hwnd}"]`);
   if(!visibleNode)return;
   monitorAcknowledgePostWorkForHwnd(hwnd);
+  const bctNodes=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).filter((node)=>
+    monitorBctDisplaySessionHwnd(node?.windowId,node?.instanceId,node?.sessionId)===hwnd);
+  if(bctNodes.length){
+    // A foreground BCT Chrome window must never enter generic HWND selection:
+    // that path clears the exact node selection and can decorate the real
+    // browser window.  A single-node window can mirror immediately; a
+    // multi-tab window waits for Chrome's exact tab-activated event.
+    if(bctNodes.length===1){
+      monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(bctNodes[0]);
+      applyMonitorBctNodeHighlight(hwnd);
+    }
+    void syncMonitorNativeZOrder(desktopId);
+    return;
+  }
   applyMonitorWindowHighlight(hwnd);
   void syncMonitorNativeZOrder(desktopId);
 }
