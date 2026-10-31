@@ -421,6 +421,21 @@ def build_mcp(
              "manager_instance_id":manager_instance_id},
         )
 
+    @server.tool(
+        name="bct_delayed_send_cancel",
+        description="Cancel exactly one WATCHING Delayed Send task generation in its owning Work.",
+        structured_output=True,
+    )
+    async def bct_delayed_send_cancel(
+        work_id: str, task_id: str, generation: int, operation_id: str = "",
+    ) -> dict[str, Any]:
+        generated = operation_id or ("delayed-cancel-" + uuid.uuid4().hex[:24])
+        return await make_executor("relay_browser")(
+            work_id, generated,
+            {"command":"delayed-send-cancel","task_id":task_id,
+             "generation":generation},
+        )
+
     @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
     async def bct_work_create(
         work_id: str,

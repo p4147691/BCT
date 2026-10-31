@@ -183,6 +183,33 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertEqual("rcc-key-2",json.loads(ledger.get("task-1",2)["context_json"])["observed_response_turn_key"])
             self.assertEqual("manager-uuid",sent[-1][0])
 
+    def test_cancel_exact_watching_generation_and_idempotent_receipt(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = DurableWatchLedger(Store(Path(root)/"state.sqlite"))
+            baseline={"responseTurnCount":1,"generating":False,
+                      "responseTurnKey":"old","responseSha256":"a"*64}
+            ledger.prearm_task(task_id="task-cancel",work_id="work-owner",
+                principal_id="principal-owner",assignment_epoch=1,
+                instance_id="instance",conversation_key="worker",
+                manager_conversation_key="manager",manager_instance_id="instance",
+                baseline=baseline,registration_receipt="receipt")
+            with self.assertRaisesRegex(ValueError,"OWNER_MISMATCH"):
+                ledger.cancel_task(task_id="task-cancel",generation=1,
+                    work_id="foreign",principal_id="principal-owner",assignment_epoch=1)
+            with self.assertRaisesRegex(ValueError,"NOT_FOUND"):
+                ledger.cancel_task(task_id="task-cancel",generation=2,
+                    work_id="work-owner",principal_id="principal-owner",assignment_epoch=1)
+            self.assertEqual("WATCHING",ledger.get("task-cancel",1)["state"])
+            args={"task_id":"task-cancel","generation":1,"work_id":"work-owner",
+                  "principal_id":"principal-owner","assignment_epoch":1}
+            self.assertFalse(ledger.cancel_task(**args)["already_cancelled"])
+            self.assertEqual("CANCELLED",ledger.get("task-cancel",1)["state"])
+            self.assertTrue(DurableWatchLedger(ledger.store).cancel_task(**args)["already_cancelled"])
+            self.assertEqual([],ledger.watching())
+            with self.assertRaisesRegex(ValueError,"OWNER_MISMATCH"):
+                ledger.cancel_task(task_id="task-cancel",generation=1,
+                    work_id="work-owner",principal_id="principal-owner",assignment_epoch=2)
+
     def test_worker_prearms_before_task_and_reuses_same_reservation(self):
         with tempfile.TemporaryDirectory() as root:
             ledger=DurableWatchLedger(Store(Path(root)/"state.sqlite"))

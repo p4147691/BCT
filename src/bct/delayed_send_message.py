@@ -253,6 +253,40 @@ class DurableWatchLedger:
                 raise ValueError("DELAYED_TASK_ALREADY_FINISHED")
         return {"task_id":task_id,"generation":gen,"state":"WATCHING","created":created}
 
+    def cancel_task(self, *, task_id: str, generation: int,
+                    work_id: str, principal_id: str, assignment_epoch: int) -> dict:
+        """Cancel exactly one WATCHING generation, never dispatch or touch others."""
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id):
+            raise ValueError("DELAYED_TASK_ID_INVALID")
+        if type(generation) is not int or generation < 1:
+            raise ValueError("DELAYED_GENERATION_INVALID")
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT state,context_json FROM delayed_send_watches "
+                "WHERE task_id=? AND generation=?", (task_id, generation)
+            ).fetchone()
+            if row is None:
+                raise ValueError("DELAYED_WATCH_NOT_FOUND")
+            context = json.loads(row["context_json"] or "{}")
+            if (context.get("work_id") != work_id
+                    or context.get("principal_id") != principal_id
+                    or context.get("assignment_epoch") != assignment_epoch):
+                raise ValueError("DELAYED_CANCEL_OWNER_MISMATCH")
+            if row["state"] == "CANCELLED":
+                return {"task_id":task_id,"generation":generation,
+                        "state":"CANCELLED","already_cancelled":True}
+            if row["state"] != "WATCHING":
+                raise ValueError("DELAYED_CANCEL_NOT_WATCHING")
+            changed = db.execute(
+                "UPDATE delayed_send_watches SET state='CANCELLED' "
+                "WHERE task_id=? AND generation=? AND state='WATCHING'",
+                (task_id,generation)
+            )
+            if changed.rowcount != 1:
+                raise ValueError("DELAYED_CANCEL_RACE")
+        return {"task_id":task_id,"generation":generation,
+                "state":"CANCELLED","already_cancelled":False}
+
     def latest_binding(self, task_id: str) -> dict:
         with self.store._readonly() as db:
             row = db.execute(

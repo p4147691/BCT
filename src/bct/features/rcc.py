@@ -578,6 +578,23 @@ class RelayBrowserFeature:
         prepared.preconditions["send_message_state_read_ms"] = state_read_ms
         return prepared
 
+    def _prepare_delayed_cancel(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
+        if set(arguments) != {"command","task_id","generation"}:
+            raise PreconditionError("DELAYED_CANCEL_FIELDS_INVALID")
+        task_id = str(arguments["task_id"]).strip()
+        generation = arguments["generation"]
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}",task_id):
+            raise PreconditionError("DELAYED_TASK_ID_INVALID")
+        if type(generation) is not int or generation < 1:
+            raise PreconditionError("DELAYED_GENERATION_INVALID")
+        return FeatureRequest(
+            self.capability,f"delayed-send:{work.work_id}:{task_id}",
+            {"command":"delayed-send-cancel","task_id":task_id,
+             "generation":generation,"work_id":work.work_id},
+            (f"delayed-send:{work.work_id}:{task_id}",),
+            {"command":"delayed-send-cancel","mutating":True},
+        )
+
     def _prepare_delayed_send_message(
         self, *, work: Work, arguments: dict[str, Any]
     ) -> FeatureRequest:
@@ -603,6 +620,8 @@ class RelayBrowserFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         command = str(arguments.get("command") or "").strip().lower()
+        if command == "delayed-send-cancel":
+            return self._prepare_delayed_cancel(work=work,arguments=arguments)
         if command == "delayed-send-message":
             return self._prepare_delayed_send_message(work=work, arguments=arguments)
         if command == "send-message":
@@ -1837,6 +1856,21 @@ class RelayBrowserFeature:
         }, output={"targets": targets})
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
+        if request.arguments["command"] == "delayed-send-cancel":
+            if self.store is None:
+                raise PreconditionError("DELAYED_STORE_UNAVAILABLE")
+            from bct.delayed_send_message import DurableWatchLedger
+            values=request.arguments
+            work=self.store.get_work(values["work_id"])
+            try:
+                result=DurableWatchLedger(self.store).cancel_task(
+                    task_id=values["task_id"],generation=values["generation"],
+                    work_id=work.work_id,principal_id=work.owner_principal_id,
+                    assignment_epoch=work.assignment_epoch)
+            except ValueError as exc:
+                raise PreconditionError(str(exc)) from exc
+            return FeatureResult(Outcome.APPLIED,{"command":"delayed-send-cancel",**result},
+                                 output=result)
         if request.arguments["command"] == "delayed-send-message":
             if self.store is None:
                 raise PreconditionError("DELAYED_STORE_UNAVAILABLE")
