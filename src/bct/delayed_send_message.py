@@ -223,8 +223,9 @@ class DurableWatchLedger:
         # source to an exact user turn observed over the authorized RCC channel
         # at prearm time; this is observational evidence, not sender identity.
         if (not context["source_user_turn_key"]
-                or context["source_user_turn_key"].startswith("fallback-turn-")
-                or not re.fullmatch(r"[0-9a-f]{64}", context["source_user_sha256"])):
+                or not re.fullmatch(r"[0-9a-f]{64}", context["source_user_sha256"])
+                or (context["source_user_turn_key"].startswith("fallback-turn-")
+                    and baseline.get("latestUserTextOccurrenceCount") != 1)):
             raise ValueError("DELAYED_SOURCE_USER_PROOF_REQUIRED")
         context["source_proof_kind"] = "RCC_PREARM_USER_TURN"
         with self.store.transaction() as db:
@@ -648,12 +649,14 @@ class DelayedSendService:
         # observed at prearm and matched to this response can compensate.
         source_key = str(ctx.get("source_user_turn_key") or "")
         source_sha = str(ctx.get("source_user_sha256") or "")
-        if (not source_key or source_key.startswith("fallback-turn-")
-                or not re.fullmatch(r"[0-9a-f]{64}", source_sha)):
+        if (not source_key or not re.fullmatch(r"[0-9a-f]{64}", source_sha)):
+            return {}
+        if source_key.startswith("fallback-turn-") and (
+                observed.get("latestUserTextOccurrenceCount") != 1
+                or observed.get("responseSourceUserTextOccurrenceCount") != 1):
             return {}
         source_match = (
             bool(source_key and source_sha)
-            and not source_key.startswith("fallback-turn-")
             and observed.get("responseSourceUserTurnKey") == source_key
             and observed.get("responseSourceUserSha256") == source_sha
             and observed.get("latestUserTurnKey") == source_key

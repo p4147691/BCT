@@ -307,6 +307,18 @@ class DelayedSendMessageTests(unittest.TestCase):
             {**row, "context": {**baseline, "source_user_turn_key": ""}}))
         self.assertEqual({}, service._response_for(
             {**row, "context": {**baseline, "source_user_turn_key": "fallback-turn-3"}}))
+        fallback = {**baseline, "source_user_turn_key": "fallback-turn-4"}
+        validated = {**payload, "latestUserTurnKey": "fallback-turn-4",
+                     "responseSourceUserTurnKey": "fallback-turn-4",
+                     "latestUserTextOccurrenceCount": 1,
+                     "responseSourceUserTextOccurrenceCount": 1}
+        service.latest = lambda **kwargs: validated
+        self.assertEqual("new-assistant",
+                         service._response_for({**row,"context":fallback})["response_turn_key"])
+        service.latest = lambda **kwargs: {
+            **validated,"responseSourceUserTextOccurrenceCount": 2}
+        self.assertEqual({},service._response_for({**row,"context":fallback}))
+        service.latest = lambda **kwargs: payload
         self.assertEqual({}, service._response_for(
             {**row, "context": {**baseline, "source_send_operation_id": ""}}))
         self.assertEqual({}, service._response_for(

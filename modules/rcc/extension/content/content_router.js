@@ -382,6 +382,15 @@ if (message.type === 'relay:readLatestAssistant') {
       ? await newChatTextSha256(messageUnitText(latestUserUnit, 'user')) : '';
     const responseSourceUserSha256 = sourceUserUnit
       ? await newChatTextSha256(messageUnitText(sourceUserUnit, 'user')) : '';
+    // A fallback-turn-N key is positional, not a durable unique identity.
+    // Permit a source bound by SHA only if its exact user text occurs once in
+    // the rendered conversation. Duplicate prompts fail closed.
+    const userTextOccurrenceCount = (unit) => unit
+      ? userUnits.filter((candidate) =>
+          messageUnitText(candidate, 'user') === messageUnitText(unit, 'user')
+        ).length : 0;
+    const latestUserTextOccurrenceCount = userTextOccurrenceCount(latestUserUnit);
+    const responseSourceUserTextOccurrenceCount = userTextOccurrenceCount(sourceUserUnit);
     const turn = node?.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]');
     const responseTurnKey = turn?.getAttribute('data-turn-key')
       || turn?.getAttribute('data-content-search-turn-key')
@@ -397,8 +406,9 @@ if (message.type === 'relay:readLatestAssistant') {
       ok: true, conversationKey: actualConversationKey,
       observationState: node ? (terminal ? 'TERMINAL' : 'IN_PROGRESS') : 'EMPTY',
       generating, terminal, inputReady, responseTurnKey,
-      latestUserTurnKey, latestUserSha256,
+      latestUserTurnKey, latestUserSha256, latestUserTextOccurrenceCount,
       responseSourceUserTurnKey, responseSourceUserSha256,
+      responseSourceUserTextOccurrenceCount,
       responseTurnCount: assistantUnits.length,
       responseText,
       responseSha256: responseText ? await newChatTextSha256(responseText) : '',
