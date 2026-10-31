@@ -1267,6 +1267,12 @@ async function refreshMonitorIdentityIndex(state, force = false) {
 
     monitorIdentityIndexRefreshAt = Date.now();
     refreshMonitorBctCurrentSessionWindowHwnd();
+    // The initial desktop snapshot can arrive before the BCT identity join.
+    // Rebuild the display mapping and its minimized D# summary after that join
+    // even when no Worker-list row changed; otherwise already-minimized
+    // Chrome windows stay absent until a later unrelated lifecycle event.
+    refreshMonitorBctDisplayWindowHwnd();
+    syncMonitorMinimizedNodeBadges(monitorLastAiState);
     if (projectionChanged && monitorLastAiState) renderWorkers(monitorLastAiState);
     return projectionChanged;
   })().finally(() => { monitorIdentityIndexInflight = null; });
@@ -1587,6 +1593,13 @@ function renderMonitorBctWindowNodes(nodes) {
       }
       void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
+        // A minimized node has no visible thumbnail-window perimeter. Mirror
+        // the list selection directly into its D# summary before asking the
+        // generic interaction service to reveal the linked browser window.
+        // This keeps the selected minimized number yellow even when no HWND
+        // outline is available.
+        syncMonitorBctNodeTargetHighlight();
+        syncMonitorMinimizedNodeBadges(monitorLastAiState);
         getMonitorBctNodeInteractionService().select(hwnd);
         setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
       }).catch((error) => {
@@ -1736,8 +1749,11 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     return;
   }
   const tokensByDesktop = monitorMinimizedNodeTokensByDesktop(state);
-  const selectedKey = String(globalThis.monitorBctSelectedNodeKey || "");
-  const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
+  // This is a module-scoped `let`, not a property of `window`. Reading it via
+  // globalThis loses every list-originated selection, so minimized badges never
+  // receive their selected index even though the list row is highlighted.
+  const selectedKey = String(monitorBctSelectedNodeKey || "");
+  const selectedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
   const selectedToken = String(selectedNode?.nodeLabel || "").trim().replace(/^N/i, "") || "?";
   const selectedTabId = Number(selectedNode?.tabId) || 0;
   for (const button of monitorDesktopThumbs.children) {
@@ -1749,11 +1765,21 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     let host = label.querySelector(".monitor-desktop-minimized-nodes");
     if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; label.append(host); }
     const tokens = tokensByDesktop.get(String(button.dataset.desktopId || "")) || [];
-    const selectedIndex = tokens.findIndex((item) => selectedTabId ? Number(item.tabId) === selectedTabId : selectedToken !== "?" && item.token === selectedToken);
+    // A Chrome tab move may refresh the D# summary a moment before its tabId
+    // reaches the list cache.  Prefer the exact tabId, then fall back to the
+    // stable, unique BCT node number that is already rendered in this same
+    // desktop summary.  `?` never uses this fallback because it is not unique.
+    let selectedIndex = tokens.findIndex((item) => selectedTabId && Number(item.tabId) === selectedTabId);
+    if (selectedIndex < 0 && selectedToken !== "?") {
+      selectedIndex = tokens.findIndex((item) => item.token === selectedToken);
+    }
     const width = Number(label.getBoundingClientRect?.().width || 0);
     const budget = Math.max(9, Math.floor((width || 118) / 6.2));
     let first = 0, last = Math.max(0, tokens.length - 1);
-    const lengthFor = (left, right) => (left > 0 ? 1 : 0) + (right < tokens.length - 1 ? 1 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join("/").length;
+    // Each token is a separate compact badge. Count the visible spaces and
+    // ellipses too, so overflow becomes `… 2 3 4 …` rather than clipping the
+    // selected number at the edge.
+    const lengthFor = (left, right) => (left > 0 ? 2 : 0) + (right < tokens.length - 1 ? 2 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join(" ").length;
     if (tokens.length && lengthFor(first, last) > budget) {
       const center = selectedIndex >= 0 ? selectedIndex : 0;
       first = center; last = center;
@@ -1767,12 +1793,11 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
         preferRight = !preferRight;
       }
     }
-    const fullText = tokens.length ? tokens.map((item) => item.token).join("/") : "";
+    const fullText = tokens.length ? tokens.map((item) => item.token).join(" ") : "";
     const parts = [];
     if (tokens.length) {
       if (first > 0) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
       for (let index = first; index <= last; index += 1) {
-        if (index > first) { const slash = document.createElement("span"); slash.className = "monitor-desktop-minimized-separator"; slash.textContent = "/"; parts.push(slash); }
         const badge = document.createElement("span");
         const selected = index === selectedIndex;
         badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;

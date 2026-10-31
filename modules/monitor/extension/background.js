@@ -2498,7 +2498,10 @@ async function publishMonitorChatNavigation(tabIdValue, rawUrl, reason, windowId
   const reasonText = String(reason || "navigation");
   const previous = monitorChatNavigationLastByTab.get(tabId);
   // URL changes are deduped. Tab activation is itself a window-identity event.
-  if (reasonText !== "tab-activated" && previous?.signature === signature) return;
+  // Selecting an already-active Chrome window is a real user selection even
+  // when its URL and active tab have not changed.  It must be delivered to
+  // Monitor again so the corresponding BCT node can be selected there.
+  if (reasonText !== "tab-activated" && reasonText !== "window-focused" && previous?.signature === signature) return;
   monitorChatNavigationLastByTab.set(tabId, { signature, at: now });
 
   const tab = Number.isInteger(Number(windowIdHint)) && typeof activeHint === "boolean"
@@ -2586,9 +2589,23 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   }
 });
 
-chrome.windows.onFocusChanged.addListener(() => {
+chrome.windows.onFocusChanged.addListener((windowIdValue) => {
   listMonitorPopupRuntime()
     .then((result) => notifyMonitorPopupTopologyChanged((Array.isArray(result?.windows) ? result.windows : []).map((item) => item.desktopId)))
+    .catch(() => {});
+  const windowId = Number(windowIdValue);
+  if (!Number.isInteger(windowId) || windowId < 0) return;
+  // Chrome does not emit tabs.onActivated when a user simply brings a browser
+  // window to the foreground. Read its already-active tab and mirror that
+  // exact window/tab identity into Monitor without changing Chrome state.
+  chrome.tabs.query({ windowId, active: true })
+    .then((tabs) => {
+      const tab = Array.isArray(tabs) ? tabs[0] : null;
+      const tabId = Number(tab?.id);
+      if (!Number.isInteger(tabId) || tabId < 0) return null;
+      void publishMonitorBrowserVisualChange(tabId, "window-focused", tab);
+      return publishMonitorChatNavigation(tabId, tab?.url || "", "window-focused", windowId, true);
+    })
     .catch(() => {});
 });
 

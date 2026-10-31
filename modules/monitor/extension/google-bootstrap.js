@@ -59,6 +59,11 @@
     const key = directConversationKey(); if (!key) return;
     try { chrome.runtime.sendMessage({ type:"desktop-window-user-click", conversationKey:key, at:Date.now() }).catch(()=>{}); } catch (_) {}
   }, true);
+  const reportDirectTabSelection = () => {
+    if (document.hidden) return;
+    const key = directConversationKey();
+    try { chrome.runtime.sendMessage({ type:"monitor-chat-tab-selected", conversationKey:key, at:Date.now() }).catch(()=>{}); } catch (_) {}
+  };
   const directGenerating = () => {
     const stopSelectors = [
       "button[data-testid='stop-button']",
@@ -126,7 +131,7 @@
     }, document.hidden ? 450 : DIRECT_MUTATION_REPORT_DELAY_MS);
   };
   new MutationObserver(()=>scheduleDirectReport(false)).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["data-testid","aria-label","disabled"]});
-  window.addEventListener("focus", () => scheduleDirectReport(true));
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleDirectReport(true); });
+  window.addEventListener("focus", () => { reportDirectTabSelection(); scheduleDirectReport(true); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { reportDirectTabSelection(); scheduleDirectReport(true); } });
   directReport(true);
 })();

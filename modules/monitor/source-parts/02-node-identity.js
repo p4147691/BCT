@@ -120,6 +120,8 @@ const monitorCompletionAlertTimers = new Map();
 
 /*@@MONITOR_FUNCTION:monitorApplyDirectUserClick@@*/
 
+/*@@MONITOR_FUNCTION:monitorApplyObservedChatTabSelection@@*/
+
 let monitorChatNavigationRefreshTimer = 0;
 const monitorChatNavigationPendingByTab = new Map();
 
@@ -170,6 +172,7 @@ const MONITOR_POPUP_TOPOLOGY_REFRESH_DEBOUNCE_MS = 360;
 chrome.runtime.onMessage.addListener((message, sender) => {
 
   if (message?.type === "desktop-window-user-click") { monitorApplyDirectUserClick(message, sender); return; }
+  if (message?.type === "monitor-chat-tab-selected") { monitorApplyObservedChatTabSelection(message, sender); return; }
   if (message?.type === "monitor-popup-topology-changed") {
     if (!monitorDesktopState.hostDesktopId || monitorDesktopState.hostDesktopId !== monitorDesktopState.currentDesktopId) return;
     const desktopIds = [...new Set((Array.isArray(message?.desktopIds) ? message.desktopIds : []).map((value) => String(value || "").trim()).filter(Boolean))];

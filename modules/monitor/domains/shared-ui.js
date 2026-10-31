@@ -482,22 +482,39 @@ function handleMonitorForegroundChangedEvent(event) {
   const desktopId=String(event?.desktopId||"").trim();
   if(!/^\d+$/.test(hwnd)||hwnd==="0"||!desktopId)return;
   const visibleNode=document.querySelector(`.monitor-desktop-thumb-window[data-hwnd="${hwnd}"], .monitor-window-preview[data-hwnd="${hwnd}"]`);
-  if(!visibleNode)return;
   monitorAcknowledgePostWorkForHwnd(hwnd);
   const bctNodes=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).filter((node)=>
     monitorBctDisplaySessionHwnd(node?.windowId,node?.instanceId,node?.sessionId)===hwnd);
   if(bctNodes.length){
     // A foreground BCT Chrome window must never enter generic HWND selection:
     // that path clears the exact node selection and can decorate the real
-    // browser window.  A single-node window can mirror immediately; a
-    // multi-tab window waits for Chrome's exact tab-activated event.
+    // browser window. A single-node window can mirror immediately. For a
+    // multi-tab window, query Chrome's active tab too: foreground events and
+    // tab-activation broadcasts can arrive in either order.
     if(bctNodes.length===1){
       monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(bctNodes[0]);
       applyMonitorBctNodeHighlight(hwnd);
+    } else if (chrome?.tabs?.query) {
+      const windowIds=[...new Set(bctNodes.map((node)=>Number(node?.windowId)||0).filter(Boolean))];
+      void Promise.all(windowIds.map((windowId)=>chrome.tabs.query({ windowId, active:true })))
+        .then((groups)=>{
+          const activeTabs=groups.flat();
+          const node=bctNodes.find((candidate)=>activeTabs.some((tab)=>
+            Number(candidate?.windowId)===Number(tab?.windowId)
+            && Number(candidate?.tabId)===Number(tab?.id)));
+          if(!node)return;
+          monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(node);
+          applyMonitorBctNodeHighlight(hwnd);
+        })
+        .catch(()=>{});
     }
     void syncMonitorNativeZOrder(desktopId);
     return;
   }
+  // A BCT window can be on a non-rendered desktop while the user brings it
+  // forward. It still must select its node row; only generic window visuals
+  // require a currently rendered thumbnail.
+  if(!visibleNode)return;
   applyMonitorWindowHighlight(hwnd);
   void syncMonitorNativeZOrder(desktopId);
 }
@@ -542,6 +559,8 @@ function monitorApplyDirectUserClick(message, sender) {
 
   monitorAcknowledgePostWork(key, "");
 
+  if (monitorApplyObservedChatTabSelection(message, sender)) return true;
+
   if (!tabId || !monitorLastAiState) { if (monitorLastAiState) renderWorkers(monitorLastAiState); return true; }
 
   const candidates=(Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[]).filter((endpoint)=>
@@ -576,6 +595,34 @@ function monitorApplyDirectUserClick(message, sender) {
 
 }
 //@@FN_END:monitorApplyDirectUserClick
+
+//@@FN_START:monitorApplyObservedChatTabSelection
+function monitorApplyObservedChatTabSelection(message, sender) {
+  const key=String(message?.conversationKey||"").trim();
+  const tabId=Number(message?.sourceTabId ?? sender?.tab?.id);
+  if (!Number.isInteger(tabId) || tabId < 0) return false;
+  // The page event gives the exact tab that became visible. This is visual
+  // selection only; unlike a page click it must not acknowledge any work.
+  const nodes=Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[];
+  const clickedNode=nodes.find((node)=>
+    Number(node?.tabId)===tabId && key && String(node?.conversationKey||"").trim()===key)
+    // An observed N? may not have its UUID in the BCT registry yet. Its exact
+    // Chrome tab id is still unique, so it is safe to select that one row.
+    || nodes.find((node)=>Number(node?.tabId)===tabId && !String(node?.conversationKey||"").trim());
+  if(!clickedNode) return false;
+  monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(clickedNode);
+  const displayHwnd=monitorDisplayHwndForBrowserWindowId(
+    clickedNode.windowId,monitorLastAiState,clickedNode.instanceId,clickedNode.sessionId);
+  if(displayHwnd) applyMonitorBctNodeHighlight(displayHwnd);
+  else {
+    monitorBctNodeHighlightedHwnd="";
+    syncMonitorBctNodeTargetHighlight();
+    syncMonitorMinimizedNodeBadges(monitorLastAiState);
+    syncMonitorAllDesktopThumbnailNodeBadges();
+  }
+  return true;
+}
+//@@FN_END:monitorApplyObservedChatTabSelection
 
 //@@FN_START:monitorApplyRoleMode
 async function monitorApplyRoleMode(worker,state) {

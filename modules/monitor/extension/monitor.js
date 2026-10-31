@@ -1879,6 +1879,12 @@ async function refreshMonitorIdentityIndex(state, force = false) {
 
     monitorIdentityIndexRefreshAt = Date.now();
     refreshMonitorBctCurrentSessionWindowHwnd();
+    // The initial desktop snapshot can arrive before the BCT identity join.
+    // Rebuild the display mapping and its minimized D# summary after that join
+    // even when no Worker-list row changed; otherwise already-minimized
+    // Chrome windows stay absent until a later unrelated lifecycle event.
+    refreshMonitorBctDisplayWindowHwnd();
+    syncMonitorMinimizedNodeBadges(monitorLastAiState);
     if (projectionChanged && monitorLastAiState) renderWorkers(monitorLastAiState);
     return projectionChanged;
   })().finally(() => { monitorIdentityIndexInflight = null; });
@@ -2307,6 +2313,31 @@ function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
 }
 
 function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
+  // Use the already exact current-session join first.  The previous path
+  // asked the display projection to rediscover the same HWND; minimized
+  // Chrome windows have icon geometry, so that second lookup could be empty
+  // even while the N# -> HWND -> D# identity was already confirmed.
+  const direct = new Map();
+  const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
+  const bindings = monitorBctCurrentSessionWindowHwnd instanceof Map
+    ? monitorBctCurrentSessionWindowHwnd : new Map();
+  for (const node of nodes) {
+    const lineage = `${String(node?.instanceId || "")}:${String(node?.sessionId || "")}:${String(node?.windowId || "")}`;
+    const hwnd = String(bindings.get(lineage)?.hwnd || "");
+    const location = monitorWindowDesktopLocations.get(hwnd);
+    const desktopId = String(location?.desktopId || "");
+    if (!location?.iconic || !desktopId) continue;
+    const match = /^N(\d+)$/.exec(String(node?.nodeLabel || "").trim());
+    const token = match ? match[1] : "?";
+    const tabId = Number(node?.tabId) || 0;
+    const identity = token === "?" ? `tab:${tabId || lineage}` : `node:${token}`;
+    const group = direct.get(desktopId) || new Map();
+    if (!group.has(identity)) group.set(identity, { token, tabId, identity });
+    direct.set(desktopId, group);
+  }
+  if (direct.size) return new Map([...direct].map(([desktopId, items]) => [desktopId,
+    [...items.values()].sort((left, right) => Number(left.token) - Number(right.token) || left.tabId - right.tabId)
+  ]));
   return monitorMinimizedNodeBadgeContract?.tokensByDesktop?.({
     locations: monitorWindowDesktopLocations,
     tokensForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
@@ -2705,6 +2736,8 @@ function monitorApplyDirectUserClick(message, sender) {
 
   monitorAcknowledgePostWork(key, "");
 
+  if (monitorApplyObservedChatTabSelection(message, sender)) return true;
+
   if (!tabId || !monitorLastAiState) { if (monitorLastAiState) renderWorkers(monitorLastAiState); return true; }
 
   const candidates=(Array.isArray(monitorLastAiState?.endpoints)?monitorLastAiState.endpoints:[]).filter((endpoint)=>
@@ -2737,6 +2770,32 @@ function monitorApplyDirectUserClick(message, sender) {
 
   return true;
 
+}
+
+function monitorApplyObservedChatTabSelection(message, sender) {
+  const key=String(message?.conversationKey||"").trim();
+  const tabId=Number(message?.sourceTabId ?? sender?.tab?.id);
+  if (!Number.isInteger(tabId) || tabId < 0) return false;
+  // The page event gives the exact tab that became visible. This is visual
+  // selection only; unlike a page click it must not acknowledge any work.
+  const nodes=Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[];
+  const clickedNode=nodes.find((node)=>
+    Number(node?.tabId)===tabId && key && String(node?.conversationKey||"").trim()===key)
+    // An observed N? may not have its UUID in the BCT registry yet. Its exact
+    // Chrome tab id is still unique, so it is safe to select that one row.
+    || nodes.find((node)=>Number(node?.tabId)===tabId && !String(node?.conversationKey||"").trim());
+  if(!clickedNode) return false;
+  monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(clickedNode);
+  const displayHwnd=monitorDisplayHwndForBrowserWindowId(
+    clickedNode.windowId,monitorLastAiState,clickedNode.instanceId,clickedNode.sessionId);
+  if(displayHwnd) applyMonitorBctNodeHighlight(displayHwnd);
+  else {
+    monitorBctNodeHighlightedHwnd="";
+    syncMonitorBctNodeTargetHighlight();
+    syncMonitorMinimizedNodeBadges(monitorLastAiState);
+    syncMonitorAllDesktopThumbnailNodeBadges();
+  }
+  return true;
 }
 
 let monitorChatNavigationRefreshTimer = 0;
@@ -3142,6 +3201,7 @@ function scheduleMonitorChatNavigationRefresh(message) {
 chrome.runtime.onMessage.addListener((message, sender) => {
 
   if (message?.type === "desktop-window-user-click") { monitorApplyDirectUserClick(message, sender); return; }
+  if (message?.type === "monitor-chat-tab-selected") { monitorApplyObservedChatTabSelection(message, sender); return; }
   if (message?.type === "monitor-popup-topology-changed") {
     if (!monitorDesktopState.hostDesktopId || monitorDesktopState.hostDesktopId !== monitorDesktopState.currentDesktopId) return;
     const desktopIds = [...new Set((Array.isArray(message?.desktopIds) ? message.desktopIds : []).map((value) => String(value || "").trim()).filter(Boolean))];
@@ -6853,6 +6913,13 @@ function renderMonitorBctWindowNodes(nodes) {
       }
       void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
+        // A minimized node has no visible thumbnail-window perimeter. Mirror
+        // the list selection directly into its D# summary before asking the
+        // generic interaction service to reveal the linked browser window.
+        // This keeps the selected minimized number yellow even when no HWND
+        // outline is available.
+        syncMonitorBctNodeTargetHighlight();
+        syncMonitorMinimizedNodeBadges(monitorLastAiState);
         getMonitorBctNodeInteractionService().select(hwnd);
         setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
       }).catch((error) => {
@@ -7839,7 +7906,7 @@ let monitorWallpaperNativeQueue = Promise.resolve();
 
 const monitorDesktopVisualSource = globalThis.MonitorDesktopVisualSource.create({ request: monitorWallpaperNativeRequest });
 const monitorThumbnailLayerPolicy = globalThis.MonitorThumbnailLayerPolicy.create(
-  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS_INTERACTION_NODES
+  globalThis.MonitorThumbnailLayerPolicy.MODES.BACKGROUND_WINDOWS_INTERACTION_NODES_SUMMARY
 );
 globalThis.MonitorDesktopThumbnailV2.configure({
   visualSource: monitorDesktopVisualSource,
@@ -7938,22 +8005,39 @@ function handleMonitorForegroundChangedEvent(event) {
   const desktopId=String(event?.desktopId||"").trim();
   if(!/^\d+$/.test(hwnd)||hwnd==="0"||!desktopId)return;
   const visibleNode=document.querySelector(`.monitor-desktop-thumb-window[data-hwnd="${hwnd}"], .monitor-window-preview[data-hwnd="${hwnd}"]`);
-  if(!visibleNode)return;
   monitorAcknowledgePostWorkForHwnd(hwnd);
   const bctNodes=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).filter((node)=>
     monitorBctDisplaySessionHwnd(node?.windowId,node?.instanceId,node?.sessionId)===hwnd);
   if(bctNodes.length){
     // A foreground BCT Chrome window must never enter generic HWND selection:
     // that path clears the exact node selection and can decorate the real
-    // browser window.  A single-node window can mirror immediately; a
-    // multi-tab window waits for Chrome's exact tab-activated event.
+    // browser window. A single-node window can mirror immediately. For a
+    // multi-tab window, query Chrome's active tab too: foreground events and
+    // tab-activation broadcasts can arrive in either order.
     if(bctNodes.length===1){
       monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(bctNodes[0]);
       applyMonitorBctNodeHighlight(hwnd);
+    } else if (chrome?.tabs?.query) {
+      const windowIds=[...new Set(bctNodes.map((node)=>Number(node?.windowId)||0).filter(Boolean))];
+      void Promise.all(windowIds.map((windowId)=>chrome.tabs.query({ windowId, active:true })))
+        .then((groups)=>{
+          const activeTabs=groups.flat();
+          const node=bctNodes.find((candidate)=>activeTabs.some((tab)=>
+            Number(candidate?.windowId)===Number(tab?.windowId)
+            && Number(candidate?.tabId)===Number(tab?.id)));
+          if(!node)return;
+          monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(node);
+          applyMonitorBctNodeHighlight(hwnd);
+        })
+        .catch(()=>{});
     }
     void syncMonitorNativeZOrder(desktopId);
     return;
   }
+  // A BCT window can be on a non-rendered desktop while the user brings it
+  // forward. It still must select its node row; only generic window visuals
+  // require a currently rendered thumbnail.
+  if(!visibleNode)return;
   applyMonitorWindowHighlight(hwnd);
   void syncMonitorNativeZOrder(desktopId);
 }
@@ -11390,8 +11474,11 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     return;
   }
   const tokensByDesktop = monitorMinimizedNodeTokensByDesktop(state);
-  const selectedKey = String(globalThis.monitorBctSelectedNodeKey || "");
-  const selectedNode = (Array.isArray(globalThis.monitorBctWindowNodesCache) ? globalThis.monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
+  // This is a module-scoped `let`, not a property of `window`. Reading it via
+  // globalThis loses every list-originated selection, so minimized badges never
+  // receive their selected index even though the list row is highlighted.
+  const selectedKey = String(monitorBctSelectedNodeKey || "");
+  const selectedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : []).find((node) => monitorBctNodeSelectionKey(node) === selectedKey);
   const selectedToken = String(selectedNode?.nodeLabel || "").trim().replace(/^N/i, "") || "?";
   const selectedTabId = Number(selectedNode?.tabId) || 0;
   for (const button of monitorDesktopThumbs.children) {
@@ -11403,11 +11490,21 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
     let host = label.querySelector(".monitor-desktop-minimized-nodes");
     if (!host) { host = document.createElement("span"); host.className = "monitor-desktop-minimized-nodes"; label.append(host); }
     const tokens = tokensByDesktop.get(String(button.dataset.desktopId || "")) || [];
-    const selectedIndex = tokens.findIndex((item) => selectedTabId ? Number(item.tabId) === selectedTabId : selectedToken !== "?" && item.token === selectedToken);
+    // A Chrome tab move may refresh the D# summary a moment before its tabId
+    // reaches the list cache.  Prefer the exact tabId, then fall back to the
+    // stable, unique BCT node number that is already rendered in this same
+    // desktop summary.  `?` never uses this fallback because it is not unique.
+    let selectedIndex = tokens.findIndex((item) => selectedTabId && Number(item.tabId) === selectedTabId);
+    if (selectedIndex < 0 && selectedToken !== "?") {
+      selectedIndex = tokens.findIndex((item) => item.token === selectedToken);
+    }
     const width = Number(label.getBoundingClientRect?.().width || 0);
     const budget = Math.max(9, Math.floor((width || 118) / 6.2));
     let first = 0, last = Math.max(0, tokens.length - 1);
-    const lengthFor = (left, right) => (left > 0 ? 1 : 0) + (right < tokens.length - 1 ? 1 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join("/").length;
+    // Each token is a separate compact badge. Count the visible spaces and
+    // ellipses too, so overflow becomes `… 2 3 4 …` rather than clipping the
+    // selected number at the edge.
+    const lengthFor = (left, right) => (left > 0 ? 2 : 0) + (right < tokens.length - 1 ? 2 : 0) + tokens.slice(left, right + 1).map((item) => item.token).join(" ").length;
     if (tokens.length && lengthFor(first, last) > budget) {
       const center = selectedIndex >= 0 ? selectedIndex : 0;
       first = center; last = center;
@@ -11421,12 +11518,11 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
         preferRight = !preferRight;
       }
     }
-    const fullText = tokens.length ? tokens.map((item) => item.token).join("/") : "";
+    const fullText = tokens.length ? tokens.map((item) => item.token).join(" ") : "";
     const parts = [];
     if (tokens.length) {
       if (first > 0) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
       for (let index = first; index <= last; index += 1) {
-        if (index > first) { const slash = document.createElement("span"); slash.className = "monitor-desktop-minimized-separator"; slash.textContent = "/"; parts.push(slash); }
         const badge = document.createElement("span");
         const selected = index === selectedIndex;
         badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;

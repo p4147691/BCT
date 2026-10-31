@@ -1221,6 +1221,31 @@ function monitorMinimizedNodeSlotsByDesktop(state = monitorLastAiState) {
 
 //@@FN_START:monitorMinimizedNodeTokensByDesktop
 function monitorMinimizedNodeTokensByDesktop(state = monitorLastAiState) {
+  // Use the already exact current-session join first.  The previous path
+  // asked the display projection to rediscover the same HWND; minimized
+  // Chrome windows have icon geometry, so that second lookup could be empty
+  // even while the N# -> HWND -> D# identity was already confirmed.
+  const direct = new Map();
+  const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
+  const bindings = monitorBctCurrentSessionWindowHwnd instanceof Map
+    ? monitorBctCurrentSessionWindowHwnd : new Map();
+  for (const node of nodes) {
+    const lineage = `${String(node?.instanceId || "")}:${String(node?.sessionId || "")}:${String(node?.windowId || "")}`;
+    const hwnd = String(bindings.get(lineage)?.hwnd || "");
+    const location = monitorWindowDesktopLocations.get(hwnd);
+    const desktopId = String(location?.desktopId || "");
+    if (!location?.iconic || !desktopId) continue;
+    const match = /^N(\d+)$/.exec(String(node?.nodeLabel || "").trim());
+    const token = match ? match[1] : "?";
+    const tabId = Number(node?.tabId) || 0;
+    const identity = token === "?" ? `tab:${tabId || lineage}` : `node:${token}`;
+    const group = direct.get(desktopId) || new Map();
+    if (!group.has(identity)) group.set(identity, { token, tabId, identity });
+    direct.set(desktopId, group);
+  }
+  if (direct.size) return new Map([...direct].map(([desktopId, items]) => [desktopId,
+    [...items.values()].sort((left, right) => Number(left.token) - Number(right.token) || left.tabId - right.tabId)
+  ]));
   return monitorMinimizedNodeBadgeContract?.tokensByDesktop?.({
     locations: monitorWindowDesktopLocations,
     tokensForHwnd: (hwnd) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),

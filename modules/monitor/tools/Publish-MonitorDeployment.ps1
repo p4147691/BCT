@@ -70,7 +70,15 @@ function Get-MonitorExtensionPayloadSha256([string]$ExtensionPath) {
         "$relative`0$hash"
     }
     $bytes = [System.Text.Encoding]::UTF8.GetBytes(($rows -join "`n"))
-    return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+    # Windows PowerShell 5.1/.NET Framework has no static SHA256.HashData.
+    # Use the compatible instance API so the guarded installer works on the
+    # same Windows host that runs the Monitor.
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant())
+    } finally {
+        $sha256.Dispose()
+    }
 }
 
 function Set-MonitorManifestVersion([string]$ManifestPath, [string]$Version) {

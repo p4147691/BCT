@@ -10,6 +10,8 @@ const modulePath = path.join(root, "extension", "monitor-bct-node-interaction.js
 const monitorPath = path.join(root, "extension", "monitor.js");
 const cssPath = path.join(root, "extension", "monitor.css");
 const projectionPath = path.join(root, "extension", "monitor-bct-thumbnail-projection.js");
+const backgroundPath = path.join(root, "extension", "background.js");
+const bootstrapPath = path.join(root, "extension", "google-bootstrap.js");
 
 function loadModule() {
   const context = { globalThis: null, Object, String, Number, Array, Error, RegExp, Promise };
@@ -87,6 +89,8 @@ function loadModule() {
   const monitor = fs.readFileSync(monitorPath, "utf8");
   const css = fs.readFileSync(cssPath, "utf8");
   const projection = fs.readFileSync(projectionPath, "utf8");
+  const background = fs.readFileSync(backgroundPath, "utf8");
+  const bootstrap = fs.readFileSync(bootstrapPath, "utf8");
   assert.match(monitor, /row\.addEventListener\("click"/);
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
@@ -116,6 +120,8 @@ function loadModule() {
   assert.doesNotMatch(monitor, /monitor-bct-node-list-end/);
   assert.match(monitor, /resolveMonitorBctNodeHwnd/);
   assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\)/);
+  assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\);[\s\S]{0,500}syncMonitorMinimizedNodeBadges\(monitorLastAiState\);[\s\S]{0,240}getMonitorBctNodeInteractionService\(\)\.select\(hwnd\)/,
+    "selecting a node must immediately paint its minimized D# number before any window interaction");
   assert.match(monitor, /function applyMonitorBctNodeHighlight\(hwnd\)[\s\S]{0,700}applyMonitorWindowHighlight\("", \{ preserve: true, remote: true \}\)[\s\S]{0,240}publishMonitorSharedSelection\(\)/,
     "BCT node selection must clear generic HWND selection instead of decorating the real Chrome window");
   assert.doesNotMatch(monitor, /function applyMonitorBctNodeHighlight\(hwnd\)[\s\S]{0,400}applyMonitorWindowHighlight\(hwnd/,
@@ -139,8 +145,43 @@ function loadModule() {
     "an actual Chrome tab activation must also project the exact browser-window perimeter into Monitor");
   assert.match(monitor, /refreshMonitorBctDisplayWindowHwnd\(\);\s*\/\/ The first pass may happen[\s\S]{0,380}applyMonitorChatNavigationIdentity\(item, monitorLastAiState\)/,
     "an actual Chrome tab activation is re-projected after the current HWND index refresh");
-  assert.match(monitor, /function handleMonitorForegroundChangedEvent\(event\)[\s\S]{0,1100}if\(bctNodes\.length\)[\s\S]{0,700}return;[\s\S]{0,120}applyMonitorWindowHighlight\(hwnd\)/,
-    "a BCT Chrome foreground event bypasses generic HWND selection and waits for its exact tab event");
+  assert.match(background, /chrome\.windows\.onFocusChanged\.addListener\(\(windowIdValue\) => \{[\s\S]{0,1200}chrome\.tabs\.query\(\{ windowId, active: true \}\)[\s\S]{0,850}publishMonitorChatNavigation\(tabId, tab\?\.url \|\| "", "window-focused", windowId, true\)/,
+    "foregrounding an existing Chrome window must publish its already-active tab to Monitor");
+  assert.match(background, /reasonText !== "tab-activated" && reasonText !== "window-focused"/,
+    "a repeated window focus must not be suppressed just because the URL is unchanged");
+  const foregroundStart = monitor.indexOf("function handleMonitorForegroundChangedEvent(event)");
+  const foregroundEnd = monitor.indexOf("\nfunction removeMonitorV2Window", foregroundStart);
+  const foregroundHandler = monitor.slice(foregroundStart, foregroundEnd);
+  assert.match(foregroundHandler, /chrome\.tabs\.query\(\{ windowId, active:true \}\)/,
+    "a BCT Chrome foreground event reads the exact active tab immediately");
+  assert.match(foregroundHandler, /if\(bctNodes\.length\)[\s\S]*?return;[\s\S]*?applyMonitorWindowHighlight\(hwnd\)/,
+    "a BCT Chrome foreground event bypasses generic HWND selection");
+  assert.match(foregroundHandler, /if\(bctNodes\.length\)[\s\S]{0,1800}return;[\s\S]{0,800}if\(!visibleNode\)return;/,
+    "a BCT foreground selection reaches the node list even before its thumbnail is rendered");
+  const directClickStart = monitor.indexOf("function monitorApplyDirectUserClick(message, sender)");
+  const directClickEnd = monitor.indexOf("\nfunction monitorApplyObservedChatTabSelection(", directClickStart);
+  const directClickHandler = monitor.slice(directClickStart, directClickEnd);
+  assert.match(directClickHandler, /monitorApplyObservedChatTabSelection\(message, sender\)/,
+    "a real page click reuses exact observed-tab selection instead of generic HWND state");
+  const observedTabStart = monitor.indexOf("function monitorApplyObservedChatTabSelection(message, sender)");
+  const observedTabEnd = monitor.indexOf("\nfunction monitorApplyRoleMode(", observedTabStart);
+  const observedTabHandler = monitor.slice(observedTabStart, observedTabEnd);
+  assert.match(observedTabHandler, /Number\(node\?\.tabId\)===tabId && key && String\(node\?\.conversationKey\|\|""\)\.trim\(\)===key/,
+    "a real ChatGPT page click resolves the exact sender tab and conversation node");
+  assert.match(observedTabHandler, /nodes\.find\(\(node\)=>Number\(node\?\.tabId\)===tabId && !String\(node\?\.conversationKey\|\|""\)\.trim\(\)\)/,
+    "an N? tab without a UUID remains selectable by its exact Chrome tab id");
+  assert.doesNotMatch(observedTabHandler, /if \(!key \|\| !Number\.isInteger\(tabId\)/,
+    "an N? tab is not rejected merely because its ChatGPT route has no UUID");
+  assert.match(observedTabHandler, /monitorBctSelectedNodeKey=monitorBctNodeSelectionKey\(clickedNode\);[\s\S]{0,800}applyMonitorBctNodeHighlight\(displayHwnd\)/,
+    "a real ChatGPT page click selects the BCT row and thumbnail rather than generic HWND state");
+  assert.doesNotMatch(observedTabHandler, /if\(clickedNode\)[\s\S]{0,1000}applyMonitorWindowHighlight\(hwnd\)/,
+    "the exact BCT click path must not clear its selection through generic HWND highlighting");
+  assert.match(bootstrap, /const reportDirectTabSelection = \(\) => \{[\s\S]{0,500}type:"monitor-chat-tab-selected"/,
+    "a selected ChatGPT page reports its exact conversation independently of Chrome tab events");
+  assert.match(bootstrap, /visibilitychange[\s\S]{0,180}reportDirectTabSelection\(\)/,
+    "switching to a ChatGPT tab reports selection as it becomes visible");
+  assert.match(bootstrap, /const reportDirectTabSelection = \(\) => \{[\s\S]{0,240}const key = directConversationKey\(\);[\s\S]{0,240}conversationKey:key/,
+    "the ChatGPT home/new-chat route reports its selected tab even with an empty conversation key");
   assert.match(monitor, /syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
     "selection changes must reproject thumbnail number tokens immediately");
   assert.match(monitor, /renderMonitorBctWindowNodes\(monitorBctWindowNodesCache\);\s*syncMonitorBctNodeTargetHighlight\(\);/,

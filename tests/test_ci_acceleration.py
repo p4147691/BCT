@@ -25,57 +25,45 @@ sharding = _load("bct_ci_test_shard", ROOT / "scripts" / "ci_test_shard.py")
 class CIScopeTests(unittest.TestCase):
     def test_documentation_only_is_lightweight(self):
         plan = scope.classify(["PROJECT_HANDOFF.md", "docs/guide.md"])
-        self.assertTrue(plan.docs_only)
+        self.assertTrue(plan.skip)
         self.assertFalse(plan.core)
-        self.assertFalse(plan.bridge)
-        self.assertFalse(plan.vtl)
 
-    def test_desktop_change_runs_core_and_vtl_but_not_independent_transport(self):
+    def test_core_change_runs_core_validation(self):
         plan = scope.classify(["src/bct/features/desktop_session.py"])
-        self.assertFalse(plan.docs_only)
+        self.assertFalse(plan.skip)
         self.assertTrue(plan.core)
-        self.assertFalse(plan.bridge)
-        self.assertTrue(plan.vtl)
 
-    def test_browser_contract_runs_between_bounded_cleanup_and_rebuild(self):
+    def test_monitor_and_browser_bridge_only_changes_are_parked(self):
+        monitor = scope.classify(["modules/monitor/domains/node-identity.js"])
+        bridge = scope.classify(["modules/browser-bridge/host.py"])
+        baseline = scope.classify(["tests/test_browser_module_baselines.py"])
+        self.assertTrue(monitor.skip)
+        self.assertFalse(monitor.core)
+        self.assertTrue(bridge.skip)
+        self.assertFalse(bridge.core)
+        self.assertTrue(baseline.skip)
+        self.assertFalse(baseline.core)
+
+    def test_workflow_has_no_browser_bridge_or_timing_jobs(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
         self.assertIn("fail-fast: false", workflow)
-        cleanup = workflow.index(
-            "Remove only launcher artifacts created by the fail-fast build"
-        )
-        contract = workflow.index(
-            "python -m unittest discover -s modules/browser-bridge/tests -v"
-        )
-        rebuild = workflow.index(
-            "Rebuild launcher for the remaining Windows E2E checks"
-        )
-        self.assertLess(cleanup, contract)
-        self.assertLess(contract, rebuild)
-
-    def test_bridge_only_does_not_run_the_743_test_core(self):
-        plan = scope.classify(["modules/browser-bridge/host.py"])
-        self.assertFalse(plan.core)
-        self.assertTrue(plan.bridge)
-        self.assertFalse(plan.vtl)
+        self.assertNotIn("browser-bridge", workflow)
+        self.assertNotIn("duration-history", workflow)
+        self.assertNotIn("actions/upload-artifact", workflow)
+        self.assertNotIn("actions/cache/restore", workflow)
+        self.assertNotIn("actions/cache/save", workflow)
 
     def test_unknown_non_document_path_fails_closed(self):
         plan = scope.classify(["new-platform-boundary.bin"])
+        self.assertFalse(plan.skip)
         self.assertTrue(plan.core)
-        self.assertFalse(plan.bridge)
 
-    def test_ci_change_exercises_every_gate(self):
+    def test_ci_change_runs_core(self):
         plan = scope.classify([".github/workflows/ci.yml"])
+        self.assertFalse(plan.skip)
         self.assertTrue(plan.core)
-        self.assertFalse(plan.bridge)
-        self.assertTrue(plan.vtl)
-
-    def test_bridge_baseline_change_runs_only_its_own_gate(self):
-        plan = scope.classify(["tests/test_browser_module_baselines.py"])
-        self.assertFalse(plan.core)
-        self.assertTrue(plan.bridge)
-        self.assertFalse(plan.vtl)
 
 class CIShardTests(unittest.TestCase):
     def test_every_discovered_module_is_assigned_once_and_deterministically(self):

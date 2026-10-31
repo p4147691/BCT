@@ -406,7 +406,7 @@ Generated extension/monitor.js is not an edit target.
 - openMonitorStructure
 - renderMonitorStructure
 
-## shared-ui (111 functions)
+## shared-ui (112 functions)
 
 - activateMonitorCodexResource
 - applyMonitorBrowserVisualTabSnapshot
@@ -423,6 +423,7 @@ Generated extension/monitor.js is not an edit target.
 - handleMonitorForegroundChangedEvent
 - monitorAdoptLocalLlmControlPayload
 - monitorApplyDirectUserClick
+- monitorApplyObservedChatTabSelection
 - monitorApplyRoleMode
 - monitorBootstrapExempt
 - monitorBrowserLineageKey

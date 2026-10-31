@@ -9,28 +9,15 @@ from pathlib import PurePosixPath
 
 @dataclass(frozen=True)
 class CIPlan:
-    docs_only: bool
+    skip: bool
     core: bool
-    bridge: bool
-    vtl: bool
 
 
-_GLOBAL_CI_PATHS = {
-    ".github/workflows/ci.yml",
-    "pyproject.toml",
-    "scripts/ci_scope.py",
-    "scripts/ci_test_shard.py",
-    "scripts/ci_test_duration_seed.json",
-    "scripts/vtl_readonly_smoke.py",
-    "tests/test_ci_acceleration.py",
-}
-_DESKTOP_PATHS = {
-    "src/bct/features/desktop_session.py",
-    "src/bct/integrations/desktop_session.py",
-    "src/bct/mcp_server.py",
-    "tests/test_desktop_session.py",
-}
-_BROWSER_BRIDGE_PATHS = {
+_LIGHTWEIGHT_PREFIXES = (
+    "modules/browser-bridge/",
+    "modules/monitor/",
+)
+_LIGHTWEIGHT_PATHS = {
     "tests/test_browser_module_baselines.py",
 }
 
@@ -49,29 +36,23 @@ def _documentation(path: str) -> bool:
     )
 
 
+def _can_skip_validation(path: str) -> bool:
+    value = _normal(path)
+    return (
+        _documentation(value)
+        or value.startswith(_LIGHTWEIGHT_PREFIXES)
+        or value in _LIGHTWEIGHT_PATHS
+    )
+
+
 def classify(paths: list[str]) -> CIPlan:
     changed = {_normal(path) for path in paths if path.strip()}
-    if not changed or all(_documentation(path) for path in changed):
-        return CIPlan(docs_only=True, core=False, bridge=False, vtl=False)
+    if not changed or all(_can_skip_validation(path) for path in changed):
+        return CIPlan(skip=True, core=False)
 
-    active = {path for path in changed if not _documentation(path)}
-    global_change = bool(active & _GLOBAL_CI_PATHS)
-    bridge_only = all(
-        path.startswith("modules/browser-bridge/") or path in _BROWSER_BRIDGE_PATHS
-        for path in active
-    )
-    core = global_change or not bridge_only
-    # The browser-bridge tree is an independent transport experiment, not a
-    # BCT Core dependency or relay authority.  Its expensive Windows E2E must
-    # run only when that tree (or its exact source-baseline test) changes.
-    bridge = bool(active & _BROWSER_BRIDGE_PATHS) or any(
-        path.startswith("modules/browser-bridge/") for path in active
-    )
-    vtl = global_change or bool(active & _DESKTOP_PATHS) or any(
-        "desktop_session" in path or path.startswith("scripts/vtl_")
-        for path in active
-    )
-    return CIPlan(docs_only=False, core=core, bridge=bridge, vtl=vtl)
+    # New or mixed paths remain conservative: run Core unless the complete
+    # change set is documentation, Monitor UI, or the parked Browser Bridge.
+    return CIPlan(skip=False, core=True)
 
 
 def changed_paths(base: str, head: str) -> list[str]:

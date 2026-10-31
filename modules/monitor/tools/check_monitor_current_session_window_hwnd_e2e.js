@@ -84,7 +84,12 @@ function createNativeClient() {
           String(candidate?.instanceId || "") === String(binding.instanceId || "") &&
           String(candidate?.sessionId || "") === String(binding.sessionId || "") &&
           String(candidate?.windowId || "") === String(binding.windowId || ""));
-        return { hwnd: binding.hwnd, nodeLabel: String(node?.nodeLabel || "N?"), tabId: Number(node?.tabId || 0) };
+        const location = locations.get(binding.hwnd) || {};
+        const desktopId = String(location.desktopId || "");
+        return {
+          hwnd: binding.hwnd, nodeLabel: String(node?.nodeLabel || "N?"), tabId: Number(node?.tabId || 0),
+          desktopId, desktopNumber: desktops.desktopIds.indexOf(desktopId) + 1,
+        };
       });
     console.log(JSON.stringify({
       ok: true, schema: resolution.schema, chatgpt_tabs: nodes.length,

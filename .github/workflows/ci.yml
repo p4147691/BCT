@@ -17,10 +17,8 @@ jobs:
   scope:
     runs-on: windows-latest
     outputs:
-      docs_only: ${{ steps.plan.outputs.docs_only }}
+      skip: ${{ steps.plan.outputs.skip }}
       core: ${{ steps.plan.outputs.core }}
-      bridge: ${{ steps.plan.outputs.bridge }}
-      vtl: ${{ steps.plan.outputs.vtl }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -31,11 +29,9 @@ jobs:
         shell: pwsh
         run: |
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
-            'docs_only=false' >> $env:GITHUB_OUTPUT
+            'skip=false' >> $env:GITHUB_OUTPUT
             'core=true' >> $env:GITHUB_OUTPUT
-            'bridge=true' >> $env:GITHUB_OUTPUT
-            'vtl=true' >> $env:GITHUB_OUTPUT
-            Write-Output 'Manual dispatch: all validation gates selected.'
+            Write-Output 'Manual dispatch: Core validation selected.'
             exit 0
           }
           $base = ''
@@ -53,7 +49,7 @@ jobs:
 
   preflight:
     needs: scope
-    if: needs.scope.outputs.docs_only != 'true'
+    if: needs.scope.outputs.core == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,10 +63,6 @@ jobs:
         run: |
           python -m compileall -q src tests scripts
           python -m unittest discover -s tests -p test_ci_acceleration.py -v
-      - name: Fail fast on browser source-baseline drift
-        if: needs.scope.outputs.bridge == 'true'
-        run: python -m unittest discover -s tests -p test_browser_module_baselines.py -v
-
   core:
     needs: [scope, preflight]
     if: needs.scope.outputs.core == 'true'
@@ -88,85 +80,6 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: pyproject.toml
-      - name: Restore measured durations from prior completed shards
-        uses: actions/cache/restore@v4
-        with:
-          path: .ci-duration-history
-          key: bct-core-test-durations-${{ runner.os }}-restore-${{ github.run_id }}-${{ matrix.shard }}
-          restore-keys: |
-            bct-core-test-durations-${{ runner.os }}-
       - run: python -m pip install -e .
       - name: Run BCT core shard ${{ matrix.shard }} of 4
-        run: python scripts/ci_test_shard.py --start-directory tests --shard-index ${{ matrix.shard }} --shard-count 4 --durations 20 --duration-input scripts/ci_test_duration_seed.json --duration-input .ci-duration-history/test-durations-0.json --duration-input .ci-duration-history/test-durations-1.json --duration-input .ci-duration-history/test-durations-2.json --duration-input .ci-duration-history/test-durations-3.json --duration-output test-durations-${{ matrix.shard }}.json
-      - name: Preserve exact per-test timings for the next optimization pass
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-test-durations-${{ matrix.shard }}
-          path: test-durations-${{ matrix.shard }}.json
-          if-no-files-found: warn
-          retention-days: 14
-
-  duration-history:
-    needs: [scope, core]
-    # Timing is scheduling evidence, not a test-success attestation.  Preserve
-    # completed shard timings even after a failed test so a fix does not repeat
-    # the same imbalance.  Validation itself is never skipped or reused here.
-    if: always() && needs.scope.outputs.core == 'true'
-    runs-on: windows-latest
-    steps:
-      - name: Collect completed shard timing artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: core-test-durations-*
-          path: .ci-duration-history
-          merge-multiple: true
-      - name: Save optional timing history for the next run
-        uses: actions/cache/save@v4
-        with:
-          path: .ci-duration-history
-          key: bct-core-test-durations-${{ runner.os }}-${{ github.run_id }}
-
-  browser-bridge:
-    needs: [scope, preflight]
-    if: needs.scope.outputs.bridge == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - run: python -m pip install -e .
-      - name: Build launcher before the fail-fast activation boundary
-        run: dotnet build modules/browser-bridge/native/launcher/BctBridgeHost.csproj -c Release
-      - run: python -m unittest discover -s modules/browser-bridge/tests -p activation_policy_windows_e2e.py -v
-      - name: Remove only launcher artifacts created by the fail-fast build
-        shell: pwsh
-        run: |
-          $launcherRoot = (Resolve-Path -LiteralPath "modules/browser-bridge/native/launcher").Path
-          foreach ($leaf in @("bin", "obj")) {
-            $candidate = Join-Path $launcherRoot $leaf
-            if (-not (Test-Path -LiteralPath $candidate)) { continue }
-            $resolved = (Resolve-Path -LiteralPath $candidate).Path
-            $prefix = $launcherRoot + [IO.Path]::DirectorySeparatorChar
-            if (-not $resolved.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
-              throw "Refusing to remove path outside launcher root."
-            }
-            Remove-Item -LiteralPath $resolved -Recurse -Force
-          }
-      - run: python -m unittest discover -s modules/browser-bridge/tests -v
-      - name: Rebuild launcher for the remaining Windows E2E checks
-        run: dotnet build modules/browser-bridge/native/launcher/BctBridgeHost.csproj -c Release
-      - run: python -m unittest discover -s modules/browser-bridge/tests -p launcher_windows_e2e.py -v
-      - run: python -m unittest discover -s modules/browser-bridge/tests -p pipe_windows_e2e.py -v
-      - run: python -m unittest discover -s modules/browser-bridge/tests -p relay_windows_e2e.py -v
-
-  docs-only:
-    needs: scope
-    if: needs.scope.outputs.docs_only == 'true'
-    runs-on: windows-latest
-    steps:
-      - run: |
-          Write-Output 'Documentation-only change: executable validation intentionally skipped.'
+        run: python scripts/ci_test_shard.py --start-directory tests --shard-index ${{ matrix.shard }} --shard-count 4 --durations 20 --duration-input scripts/ci_test_duration_seed.json

@@ -8,6 +8,7 @@ const src=fs.readFileSync(path.join(__dirname,"../extension/monitor.js"),"utf8")
 const thumbnailV2Src=fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-thumbnail-v2.js"),"utf8");
 const contractSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-minimized-node-badge-contract.js"),"utf8");
 const projectionSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-bct-thumbnail-projection.js"),"utf8");
+const layerPolicySrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-thumbnail-layer-policy.js"),"utf8");
 function extract(name,until){
   const a=src.indexOf("function "+name+"(");
   const b=src.indexOf("\nfunction "+until+"(",a+1);
@@ -40,7 +41,8 @@ const visual2={
   append(child){this.badges=child;}
 };
 const label={
-  badges:null,
+  badges:null,width:0,
+  getBoundingClientRect(){return {width:this.width};},
   querySelector(query){return query===".monitor-desktop-minimized-nodes"?this.badges:null;},
   append(child){this.badges=child;}
 };
@@ -59,6 +61,8 @@ const document={createElement(tag){
 }};
 const ctx={
   monitorWindowDesktopLocations:locationMap,
+  monitorBctWindowNodesCache:[],
+  monitorBctCurrentSessionWindowHwnd:new Map(),
   monitorLastAiState:{},
   monitorBadgeNodeNumbersForHwnd:(hwnd)=>labels[hwnd]||[],
   monitorDesktopThumbs:{children:buttons},
@@ -67,7 +71,9 @@ const ctx={
 vm.createContext(ctx);
 vm.runInContext(contractSrc,ctx);
 ctx.monitorMinimizedNodeBadgeContract=ctx.MonitorMinimizedNodeBadgeContract;
-vm.runInContext(aggregate+"\n"+render,ctx);
+// In the live bundle the selection is a top-level lexical binding, not a
+// global-object property. Keep the isolated renderer under that same scope.
+vm.runInContext('let monitorBctSelectedNodeKey = ""; let monitorBctWindowNodesCache = globalThis.monitorBctWindowNodesCache; globalThis.setMinimizedBadgeSelectedKey = (value) => { monitorBctSelectedNodeKey = String(value || ""); }; globalThis.setMinimizedBadgeNodes = (value) => { monitorBctWindowNodesCache = Array.isArray(value) ? value : []; };\n'+aggregate+"\n"+render,ctx);
 const arr=ctx.monitorMinimizedNodeSlotsByDesktop({});
 assert.deepEqual(Array.from(arr.get("deskA")),[2,3,5,6,7]);
 assert.deepEqual(Array.from(arr.get("deskB")),[8]);
@@ -77,21 +83,47 @@ const unknownTokens = ctx.MonitorMinimizedNodeBadgeContract.tokensByDesktop({
 });
 assert.deepEqual(Array.from(unknownTokens.get("deskC")).map((item)=>[item.token,item.tabId]),[["?",701],["?",702]], "each unknown tab stays independently represented");
 ctx.syncMonitorMinimizedNodeBadges({});
-assert.equal(label.badges.children.map(x=>x.textContent).join(""),"2/3/5/6/7");
-assert.equal(label2.badges.children.map(x=>x.textContent).join(""),"8");
+assert.equal(label.badges.children.map(x=>x.textContent).join(" "),"2 3 5 6 7");
+assert.equal(label2.badges.children.map(x=>x.textContent).join(" "),"8");
 // A UUID-less minimized Chrome tab is individually selected by exact tabId.
 labels["100"]=[{token:"?",tabId:701},{token:"?",tabId:702},{token:"61",tabId:703}];
 locationMap.set("200",{desktopId:"deskA",iconic:false});
-ctx.monitorBctWindowNodesCache=[{key:"selected-unknown",nodeLabel:"N?",tabId:702}];
-ctx.monitorBctSelectedNodeKey="selected-unknown";
+ctx.setMinimizedBadgeNodes([{key:"selected-unknown",nodeLabel:"N?",tabId:702}]);
+ctx.setMinimizedBadgeSelectedKey("selected-unknown");
 ctx.monitorBctNodeSelectionKey=(node)=>node.key;
 ctx.syncMonitorMinimizedNodeBadges({});
 const selectedUnknown=label.badges.children.filter(x=>String(x.className).includes("monitor-desktop-minimized-node"));
 assert.deepEqual(selectedUnknown.map(x=>x.textContent),["?","?","61"]);
 assert.deepEqual(selectedUnknown.map(x=>String(x.className).includes("monitor-desktop-minimized-node-selected")),[false,true,false],
   "exact Chrome tabId selects only its own unknown minimized node");
-ctx.monitorBctSelectedNodeKey="";
-ctx.monitorBctWindowNodesCache=[];
+ctx.setMinimizedBadgeSelectedKey("");
+ctx.setMinimizedBadgeNodes([]);
+
+// A narrow D# row keeps the selected number in the middle and exposes where
+// the omitted numbers are, e.g. `… 3 4 5 …`.
+labels["100"]=[1,2,3,4,5,6].map((token)=>({token:String(token),tabId:token}));
+locationMap.set("100",{desktopId:"deskA",iconic:true});
+label.width=28;
+ctx.setMinimizedBadgeNodes([{key:"selected-4",nodeLabel:"N4",tabId:4}]);
+ctx.setMinimizedBadgeSelectedKey("selected-4");
+ctx.syncMonitorMinimizedNodeBadges({});
+const overflowText=label.badges.children.map((item)=>item.textContent);
+assert.equal(overflowText[0],"…");
+assert(overflowText.includes("4"),"overflow keeps the selected minimized node visible");
+assert(label.badges.children.some((item)=>String(item.className).includes("monitor-desktop-minimized-node-selected")),
+  "the selected minimized node remains orange inside an overflow summary");
+// The D# snapshot can arrive just before Chrome's tab id refresh. Its stable
+// N-number still identifies the same BCT node and must remain selectable.
+label.width=0;
+ctx.setMinimizedBadgeNodes([{key:"selected-stale-tab",nodeLabel:"N4",tabId:999999}]);
+ctx.setMinimizedBadgeSelectedKey("selected-stale-tab");
+ctx.syncMonitorMinimizedNodeBadges({});
+const staleTabSelection=label.badges.children.find((item)=>item.textContent==="4");
+assert(String(staleTabSelection.className).includes("monitor-desktop-minimized-node-selected"),
+  "a stale tab id falls back only to the stable N-number already shown in D#");
+label.width=0;
+ctx.setMinimizedBadgeSelectedKey("");
+ctx.setMinimizedBadgeNodes([]);
 
 locationMap.set("100",{desktopId:"deskA",iconic:false});
 locationMap.set("200",{desktopId:"deskA",iconic:false});
@@ -102,8 +134,16 @@ assert.equal(ctx.MonitorMinimizedNodeBadgeContract.minimizedEvent({reason:"minim
 assert.equal(ctx.MonitorMinimizedNodeBadgeContract.minimizedEvent({reason:"restored",iconic:false}),false);
 const css=fs.readFileSync(path.join(__dirname,"../extension/monitor.css"),"utf8");
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-minimized-nodes/);
-assert.match(css,/grid-column:3 \/ 4;justify-self:end/,
-  "minimized node numbers stay at the lower-right of the D1/D2 thumbnail label");
+assert.match(layerPolicySrc,/BACKGROUND_WINDOWS_INTERACTION_NODES_SUMMARY/,
+  "the normal Monitor policy has an explicit nodes-plus-summary mode");
+assert.match(src,/MonitorThumbnailLayerPolicy\.MODES\.BACKGROUND_WINDOWS_INTERACTION_NODES_SUMMARY/,
+  "the live Monitor enables the D# minimized-node summary layer");
+assert.match(css,/\.monitor-desktop-thumb-label\s*\{[\s\S]{0,500}display:flex!important/,
+  "the D1/D2 label uses one non-collapsing row for minimized node numbers");
+assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-minimized-nodes\s*\{[\s\S]{0,500}flex:1 1 auto/,
+  "minimized node numbers keep explicit space immediately after the D1/D2 controls");
+assert.match(css,/\.monitor-desktop-minimized-node-selected\s*\{[^}]*#ffd75a/,
+  "selecting a minimized node makes its D# number orange");
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-label-text\s*\{ display:none!important; \}/);
 assert.match(src,/label\.append\(desktopBadge,\s*labelText,\s*minimizedNodes\)/);
 assert.match(src,/label\.append\(badge,\s*text,\s*minimizedNodes\)/);
@@ -127,9 +167,25 @@ assert.match(src,/monitor-bct-minimized-selection/,
   "node selection must re-project into minimized summaries");
 assert.match(render,/monitorBctNodeSelectionKey\(node\) === selectedKey/,
   "minimized selection uses the same identity key as the BCT node list");
+assert.match(render,/const selectedKey = String\(monitorBctSelectedNodeKey \|\| ""\);/,
+  "the minimized summary reads the module selection state rather than an absent window property");
+assert.doesNotMatch(render,/globalThis\.monitorBctSelectedNodeKey/,
+  "a list selection must not be lost by looking it up on globalThis");
+assert.doesNotMatch(render,/globalThis\.monitorBctWindowNodesCache/,
+  "the selected BCT node must come from the same module cache as the node list");
 assert.match(render,/monitorMinimizedNodeTokensByDesktop\(state\)/,
   "minimized summary retains tab identity instead of only numeric slots");
+assert.doesNotMatch(render,/monitor-desktop-minimized-separator/,
+  "the compact D# summary displays node numbers without slash separators");
+assert.match(render,/const center = selectedIndex >= 0 \? selectedIndex : 0/,
+  "an overflowing minimized summary keeps the selected number in view");
+assert.match(render,/join\(" "\)/,
+  "overflow sizing accounts for spaces between compact node numbers");
+assert.match(src,/const bindings = monitorBctCurrentSessionWindowHwnd instanceof Map[\s\S]{0,1600}if \(direct\.size\) return new Map/,
+  "confirmed current-session N# to HWND bindings take priority for minimized D# summaries");
 assert.match(src,/fallbackHwndByLineage[\s\S]{0,900}monitorWindowHwndContract\?\.resolve/,
   "a minimized node summary falls back to the exact current-session HWND join while cache refresh catches up");
+assert.match(src,/refreshMonitorBctCurrentSessionWindowHwnd\(\);[\s\S]{0,420}refreshMonitorBctDisplayWindowHwnd\(\);[\s\S]{0,160}syncMonitorMinimizedNodeBadges\(monitorLastAiState\);/,
+  "the initial BCT identity join must immediately reproject already-minimized nodes into the D# summary");
 assert.doesNotMatch(css,/\.monitor-thumbnail-z-rail\s*\{/);
 console.log("PASS: minimized nodes use the bottom summary while open nodes keep natural HWND stacking");
