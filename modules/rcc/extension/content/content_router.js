@@ -236,6 +236,8 @@ if (message.type === 'relay:activityProbe') {
 
       reasoning: currentReasoningObservation(),
 
+      surface: observeConversationSurface(),
+
       connection: connectionProblem(),
 
 

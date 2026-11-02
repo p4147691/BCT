@@ -6564,6 +6564,23 @@ function monitorBctNodeRoleRank(node) {
 function monitorBctNodeLocationText(node, desktopPosition) {
   return desktopPosition >= 0 ? `D${desktopPosition + 1}` : "위치 확인 중";
 }
+function monitorBctNodeSurfaceText(node) {
+  if (!String(node?.conversationKey || "").trim()) return "New";
+  const kind = String(node?.surfaceKind || "UNKNOWN").trim().toUpperCase();
+  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "?";
+}
+function monitorBctNodeBurden(node) {
+  const telemetry = node?.telemetry && typeof node.telemetry === "object" ? node.telemetry : {};
+  const heap = Number(telemetry.js_heap_used_mb);
+  const limit = Number(telemetry.js_heap_limit_mb);
+  const chars = Number(telemetry.rendered_chars);
+  const performance = String(telemetry.performance_state || "NORMAL").toUpperCase();
+  const ratio = Number.isFinite(heap) && Number.isFinite(limit) && limit > 0 ? heap / limit : 0;
+  const score = (performance !== "NORMAL" ? 3 : 0) + (ratio >= .75 ? 3 : ratio >= .45 ? 2 : ratio > 0 ? 1 : 0) + (chars >= 800000 ? 2 : chars >= 250000 ? 1 : 0);
+  const label = score >= 4 ? "높음" : score >= 2 ? "보통" : score > 0 ? "낮음" : "?";
+  const evidence = [Number.isFinite(heap) ? `JS 힙 ${heap}MB${Number.isFinite(limit) ? `/${limit}MB` : ""}` : "", Number.isFinite(chars) ? `렌더 ${chars.toLocaleString()}자` : "", performance !== "NORMAL" ? `상태 ${performance}` : ""].filter(Boolean);
+  return Object.freeze({ label, title: evidence.length ? evidence.join(" · ") : "탭 부담 관측값 없음" });
+}
 function openMonitorBctRenameEditor(node, row) {
   if (!monitorBctShell?.updateConversationScope || !node?.conversationKey) {
     setMonitorStatus("이 대화의 영속 신원을 확인할 수 없어 정보를 바꾸지 않았습니다.", false, 5000);
@@ -7133,8 +7150,17 @@ function renderMonitorBctWindowNodes(nodes) {
     body.append(title);
     const location = document.createElement("small");
     location.className = "monitor-bct-node-location";
-    location.textContent = monitorBctNodeLocationText(node, desktopPosition);
-    location.title = location.textContent;
+    const minimized = nativeLocation?.iconic === true;
+    const burden = monitorBctNodeBurden(node);
+    const facts = [
+      monitorBctNodeLocationText(node, desktopPosition),
+      minimized ? "_" : "",
+      monitorBctNodeSurfaceText(node),
+      node.reasoningLevel || "?",
+      `부담:${burden.label}`,
+    ].filter(Boolean);
+    location.textContent = facts.join(" · ");
+    location.title = `${minimized ? "최소화됨 · " : ""}${burden.title}`;
     body.append(location);
     const presence = document.createElement("span");
     const stale = node.displayStale === true || node.instanceState !== "OPEN";

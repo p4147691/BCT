@@ -175,6 +175,17 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                     reasoning_status = "UNAVAILABLE"
                     reasoning_level = ""
                     reasoning_source = ""
+                surface = endpoint.get("surface")
+                if not isinstance(surface, dict):
+                    surface = {}
+                surface_kind = str(surface.get("kind") or "UNKNOWN").strip().upper()
+                surface_source = str(surface.get("source") or "").strip()
+                if surface_kind not in {"CHAT", "WORK", "CODEX", "UNKNOWN"} or len(surface_source) > 64:
+                    surface_kind = "UNKNOWN"
+                    surface_source = ""
+                telemetry = endpoint.get("telemetry")
+                if not isinstance(telemetry, dict):
+                    telemetry = {}
                 tabs.append({
                     "tab_id": item["tabId"],
                     "window_id": item.get("windowId"),
@@ -191,10 +202,17 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                         "source": reasoning_source,
                         "observed_at": reasoning.get("observedAt"),
                     },
+                    "surface": {"kind": surface_kind, "source": surface_source},
                     "telemetry": {
-                        "generation_started_at": (endpoint.get("telemetry") or {}).get("generationStartedAt"),
-                        "generation_finished_at": (endpoint.get("telemetry") or {}).get("generationFinishedAt"),
-                    } if isinstance(endpoint.get("telemetry"), dict) else {},
+                        "generation_started_at": telemetry.get("generationStartedAt"),
+                        "generation_finished_at": telemetry.get("generationFinishedAt"),
+                        "js_heap_used_mb": telemetry.get("js_heap_used_mb"),
+                        "js_heap_limit_mb": telemetry.get("js_heap_limit_mb"),
+                        "rendered_chars": telemetry.get("rendered_chars"),
+                        "turns": telemetry.get("turns"),
+                        "performance_state": telemetry.get("performanceState"),
+                        "rolling_avg_response_ms": telemetry.get("rollingAvgResponseMs"),
+                    },
                 })
             live_row = {
                 "instance_id": instance_id,

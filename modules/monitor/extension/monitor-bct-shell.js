@@ -100,6 +100,9 @@
               ? String(tab?.reasoning?.level || "").trim()
               : "",
             reasoningSource: String(tab?.reasoning?.source || "").trim(),
+            surfaceKind: String(tab?.surface?.kind || "UNKNOWN").trim().toUpperCase(),
+            surfaceSource: String(tab?.surface?.source || "").trim(),
+            telemetry: tab?.telemetry && typeof tab.telemetry === "object" ? Object.freeze({ ...tab.telemetry }) : Object.freeze({}),
             displayOrder: Number.isSafeInteger(Number(scope?.display_order))
               ? Math.max(0, Number(scope.display_order))
               : 0,

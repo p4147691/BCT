@@ -847,6 +847,20 @@ function classifyNewChatSurface() {
   });
 }
 
+// Read-only product-surface observation for Monitor. Chat and Work share URLs,
+// so this deliberately relies only on an active mode control or known surface
+// evidence; anything else remains UNKNOWN.
+function observeConversationSurface() {
+  const classified = classifyNewChatSurface();
+  if (classified.kind === 'CODEX_TASK') return Object.freeze({ kind: 'CODEX', source: 'CODEX_MARKERS' });
+  const selected = Array.from(document.querySelectorAll('[role="tab"][aria-selected="true"],button[aria-pressed="true"],[role="radio"][aria-checked="true"]'))
+    .map((element) => String(element?.textContent || element?.getAttribute?.('aria-label') || '').replace(/\s+/g, ' ').trim().toLowerCase());
+  if (selected.some((text) => text === 'work' || text === '워크')) return Object.freeze({ kind: 'WORK', source: 'ACTIVE_MODE_CONTROL' });
+  if (selected.some((text) => text === 'chat' || text === '챗')) return Object.freeze({ kind: 'CHAT', source: 'ACTIVE_MODE_CONTROL' });
+  if (classified.kind === 'GENERAL_CHAT') return Object.freeze({ kind: 'CHAT', source: 'GENERAL_CHAT_EVIDENCE' });
+  return Object.freeze({ kind: 'UNKNOWN', source: 'NO_STABLE_MODE_EVIDENCE' });
+}
+
 async function waitForNewChatSurface(timeoutMs = 4000) {
   const initial = classifyNewChatSurface();
   if (initial.kind !== 'UNKNOWN' || !document.body || typeof MutationObserver !== 'function') {
