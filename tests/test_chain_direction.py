@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from bct.chain_direction import ChainDirectionLedger
+from bct.chain_message_plan import ChainMessagePlanLedger
 from bct.core.models import Work
 from bct.core.store import Store
 from bct.delayed_send_message import DurableWatchLedger, DelayedSendMessageRunner, Watch
@@ -26,7 +27,7 @@ class Operations:
 
 
 class ChainDirectionLedgerTests(unittest.TestCase):
-    def test_new_task_direction_links_to_a_planned_then_started_chain(self):
+    def test_new_task_direction_derives_a_planned_then_started_message_plan(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
             ledger = ChainDirectionLedger(store)
@@ -35,20 +36,24 @@ class ChainDirectionLedgerTests(unittest.TestCase):
                 decision="NEW_TASK", direction_text="Check the release evidence, then ask B for E2E.",
             )
             self.assertFalse(saved["duplicate"])
-            planned = ledger.plan_chain(
-                direction_id="direction-1", work_id="work-1",
+            plans = ChainMessagePlanLedger(store)
+            plans.save(
+                plan_id="plan-1", direction_id="direction-1", work_id="work-1",
+                plan_text="Progress 1/1. Verify E2E and return exact evidence.",
+            )
+            planned = plans.bind_chain(
+                plan_id="plan-1", work_id="work-1",
                 task_id="task-1", operation_id="chain-1",
-                instruction_text="Check the release evidence, then ask B for E2E.",
             )
             self.assertEqual("CHAIN_PLANNED", planned["chain_state"])
-            started = ledger.mark_chain_started(
-                direction_id="direction-1", work_id="work-1",
+            started = plans.mark_chain_started(
+                plan_id="plan-1", work_id="work-1",
                 task_id="task-1", operation_id="chain-1",
             )
             self.assertEqual("CHAIN_STARTED", started["chain_state"])
             self.assertEqual("chain-1-send", started["chain_send_operation_id"])
 
-    def test_direction_rejects_a_different_delivery_text_before_planning(self):
+    def test_direction_and_concrete_plan_are_distinct_records(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
             ledger = ChainDirectionLedger(store)
@@ -56,13 +61,12 @@ class ChainDirectionLedgerTests(unittest.TestCase):
                 direction_id="direction-exact", work_id="work-1", source_kind="USER",
                 decision="NEW_TASK", direction_text="Send this exact instruction.",
             )
-            with self.assertRaisesRegex(ValueError, "TEXT_MISMATCH"):
-                ledger.plan_chain(
-                    direction_id="direction-exact", work_id="work-1",
-                    task_id="task-1", operation_id="chain-1",
-                    instruction_text="Send a different instruction.",
-                )
-            self.assertEqual("NOT_PLANNED", ledger.get(direction_id="direction-exact")["chain_state"])
+            plan = ChainMessagePlanLedger(store).save(
+                plan_id="plan-1", work_id="work-1", direction_id="direction-exact",
+                plan_text="Step 1 of 2: inspect evidence. Step 2 of 2: run E2E.",
+            )
+            self.assertNotEqual("Send this exact instruction.", plan["plan_text"])
+            self.assertEqual(64, len(plan["plan_sha256"]))
 
     def test_only_new_task_can_plan_a_chain(self):
         with tempfile.TemporaryDirectory() as root:
@@ -73,9 +77,9 @@ class ChainDirectionLedgerTests(unittest.TestCase):
                 decision="HOLD", direction_text="Wait for the listening review.",
             )
             with self.assertRaisesRegex(ValueError, "NOT_A_NEW_TASK"):
-                ledger.plan_chain(
-                    direction_id="direction-hold", work_id="work-1",
-                    task_id="task-1", operation_id="chain-1",
+                ChainMessagePlanLedger(store).save(
+                    plan_id="plan-hold", direction_id="direction-hold",
+                    work_id="work-1", plan_text="This must not become a task.",
                 )
 
 
@@ -170,18 +174,34 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual("NEW_TASK", direction["chain_direction"]["decision"])
 
-            # A2 → B2: a new Chain Message starts immediately.  The fake executor
-            # records the prearm/send pair in place of a real browser delivery.
+            # A2 turns its human direction into a concrete Chain Message Plan.
+            concrete_plan = (
+                "Progress 1/2. Inspect the exact release evidence; then run the bounded E2E. "
+                "Preserve existing artifacts and return the evidence to A."
+            )
+            _, planned = await mcp.call_tool("bct_set_chain_message_plan", {
+                "work_id": work.work_id, "direction_id": "direction-two",
+                "plan_id": "plan-two", "plan_text": concrete_plan,
+            })
+            self.assertEqual("OK", planned["status"])
+            self.assertNotEqual(
+                direction["chain_direction"]["direction_text"],
+                planned["chain_message_plan"]["plan_text"],
+            )
+
+            # A2 → B2: a new Chain Message starts immediately.  The exact Plan,
+            # not the Direction, is reserved and delivered.
             _, rejected = await mcp.call_tool("bct_chain_message", {
                 "work_id": work.work_id, "task_id": "task-two", "operation_id": "chain-two",
                 "instance_id": "worker-instance", "session_id": "a" * 32,
                 "worker_tab_id": 12, "worker_window_id": 13,
                 "worker_conversation_key": "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12,
                 "manager_conversation_key": "c" * 8 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 12,
-                "instruction": "A different instruction must never share this direction.",
+                "instruction": "A different instruction must never share this plan.",
                 "chain_direction_id": "direction-two",
+                "chain_message_plan_id": "plan-two",
             })
-            self.assertEqual("CHAIN_DIRECTION_TEXT_MISMATCH", rejected["reason"])
+            self.assertEqual("CHAIN_MESSAGE_PLAN_TEXT_MISMATCH", rejected["reason"])
             self.assertEqual([], ops.calls)
             _, started = await mcp.call_tool("bct_chain_message", {
                 "work_id": work.work_id, "task_id": "task-two", "operation_id": "chain-two",
@@ -190,12 +210,13 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "worker_conversation_key": "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12,
                 "manager_conversation_key": "c" * 8 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 12,
                 "chain_direction_id": "direction-two",
+                "chain_message_plan_id": "plan-two",
             })
             self.assertEqual("WATCHING", started["status"])
-            self.assertEqual("CHAIN_STARTED", started["chain_direction"]["chain_state"])
+            self.assertEqual("CHAIN_STARTED", started["chain_message_plan"]["chain_state"])
             self.assertEqual(["chain-two-arm", "chain-two-send"], [call["operation_id"] for call in ops.calls])
             self.assertEqual(
-                "Do the second bounded task, then return to A.",
+                concrete_plan,
                 ops.calls[1]["arguments"]["text"],
             )
 
@@ -208,4 +229,4 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "direction_text": "A3 accepts the final evidence and closes the chain.",
             })
             self.assertEqual("COMPLETE", completed["chain_direction"]["decision"])
-            self.assertEqual("NOT_PLANNED", completed["chain_direction"]["chain_state"])
+            self.assertNotIn("chain_state", completed["chain_direction"])

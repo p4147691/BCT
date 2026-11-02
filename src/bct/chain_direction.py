@@ -32,10 +32,6 @@ class ChainDirectionLedger:
                     source_result_sha256 TEXT NOT NULL,
                     decision TEXT NOT NULL,
                     direction_text TEXT NOT NULL,
-                    chain_task_id TEXT NOT NULL DEFAULT '',
-                    chain_operation_id TEXT NOT NULL DEFAULT '',
-                    chain_send_operation_id TEXT NOT NULL DEFAULT '',
-                    chain_state TEXT NOT NULL DEFAULT 'NOT_PLANNED',
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL
                 )
@@ -103,53 +99,3 @@ class ChainDirectionLedger:
                 "SELECT * FROM chain_directions WHERE direction_id=?", (direction_id,)
             ).fetchone()
         return dict(row) if row is not None else None
-
-    def plan_chain(self, *, direction_id: str, work_id: str, task_id: str,
-                   operation_id: str, instruction_text: str = "") -> dict[str, Any]:
-        if not all(isinstance(value, str) and _ID.fullmatch(value)
-                   for value in (direction_id, work_id, task_id, operation_id)):
-            raise ValueError("CHAIN_DIRECTION_ID_INVALID")
-        with self.store.transaction() as db:
-            row = db.execute(
-                "SELECT * FROM chain_directions WHERE direction_id=?", (direction_id,)
-            ).fetchone()
-            if row is None or row["work_id"] != work_id:
-                raise ValueError("CHAIN_DIRECTION_NOT_FOUND")
-            if row["decision"] != "NEW_TASK":
-                raise ValueError("CHAIN_DIRECTION_NOT_A_NEW_TASK")
-            if instruction_text and instruction_text != row["direction_text"]:
-                raise ValueError("CHAIN_DIRECTION_TEXT_MISMATCH")
-            current = (row["chain_task_id"], row["chain_operation_id"])
-            wanted = (task_id, operation_id)
-            if current != ("", "") and current != wanted:
-                raise ValueError("CHAIN_DIRECTION_CHAIN_CONFLICT")
-            if current == ("", ""):
-                db.execute("""
-                    UPDATE chain_directions
-                    SET chain_task_id=?,chain_operation_id=?,chain_state='CHAIN_PLANNED',updated_at=?
-                    WHERE direction_id=?
-                """, (task_id, operation_id, time.time(), direction_id))
-        return self.get(direction_id=direction_id) or {}
-
-    def mark_chain_started(self, *, direction_id: str, work_id: str,
-                           task_id: str, operation_id: str) -> dict[str, Any]:
-        with self.store.transaction() as db:
-            row = db.execute(
-                "SELECT * FROM chain_directions WHERE direction_id=?", (direction_id,)
-            ).fetchone()
-            if (row is None or row["work_id"] != work_id
-                    or row["chain_task_id"] != task_id
-                    or row["chain_operation_id"] != operation_id):
-                raise ValueError("CHAIN_DIRECTION_CHAIN_CONFLICT")
-            if row["chain_state"] == "CHAIN_STARTED":
-                return {**dict(row), "duplicate": True}
-            if row["chain_state"] != "CHAIN_PLANNED":
-                raise ValueError("CHAIN_DIRECTION_CHAIN_CONFLICT")
-            updated = db.execute("""
-                UPDATE chain_directions
-                SET chain_state='CHAIN_STARTED',chain_send_operation_id=?,updated_at=?
-                WHERE direction_id=? AND chain_state='CHAIN_PLANNED'
-            """, (operation_id + "-send", time.time(), direction_id))
-            if updated.rowcount != 1:
-                raise ValueError("CHAIN_DIRECTION_CHAIN_CONFLICT")
-        return {**(self.get(direction_id=direction_id) or {}), "duplicate": False}

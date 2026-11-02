@@ -28,6 +28,7 @@ MCP_PRINCIPAL_ID = "bct-mcp-local"
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network",
     "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
+    "bct_set_chain_message_plan", "bct_get_chain_message_plan",
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
@@ -442,9 +443,10 @@ def build_mcp(
             "existing BCT send-message, Delayed Send and their exact receipts. "
             "For start supply task_id, a unique operation_id prefix, exact RCC "
             "instance/session and canonical target_/origin_ identity fields, "
-            "and the work instruction text. When chain_direction_id is supplied, "
-            "its saved direction_text is the exact instruction; instruction may "
-            "be omitted, and any supplied copy must match exactly. The command PREARMS BEFORE sending, "
+            "and the work instruction text. A direction-derived continuation must "
+            "supply chain_message_plan_id; its saved plan_text is the exact instruction. "
+            "Direction text remains human intent and is never sent as an implicit plan. "
+            "The command PREARMS BEFORE sending, "
             "then submits the reserved text under the exact planned operation ID. "
             "Status reads the owning Work's exact durable watch. "
             "This is the first message-flow stage, NOT a completed Run Plan/Task Run "
@@ -462,6 +464,7 @@ def build_mcp(
         manager_conversation_key: str = "",
         instruction: str = "", manager_instance_id: str = "",
         generation: int = 1, chain_direction_id: str = "",
+        chain_message_plan_id: str = "",
         target_tab_id: int = 0, target_window_id: int = 0,
         target_conversation_key: str = "", origin_conversation_key: str = "",
         origin_instance_id: str = "",
@@ -510,21 +513,23 @@ def build_mcp(
         arm_id=operation_id+"-arm"
         if len(send_id)>80 or len(arm_id)>80:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
-        direction = None
-        if chain_direction_id:
-            from bct.chain_direction import ChainDirectionLedger
+        chain_plan = None
+        if chain_direction_id and not chain_message_plan_id:
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_PLAN_REQUIRED"}
+        if chain_message_plan_id:
+            from bct.chain_message_plan import ChainMessagePlanLedger
             try:
-                direction = await asyncio.to_thread(
-                    ChainDirectionLedger(bct.store).plan_chain,
-                    direction_id=chain_direction_id, work_id=work_id,
+                chain_plan = await asyncio.to_thread(
+                    ChainMessagePlanLedger(bct.store).bind_chain,
+                    plan_id=chain_message_plan_id, work_id=work_id,
                     task_id=task_id, operation_id=operation_id,
                     instruction_text=instruction,
                 )
             except ValueError as exc:
                 return {"status":"INVALID_REQUEST","reason":str(exc)}
-            # A linked Chain Direction is the exact A-authored instruction,
-            # not merely advisory metadata. Avoid a second copy that can drift.
-            instruction = str(direction["direction_text"])
+            if chain_direction_id and chain_plan["direction_id"] != chain_direction_id:
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_PLAN_DIRECTION_MISMATCH"}
+            instruction = str(chain_plan["plan_text"])
         if not instruction or len(instruction)>12000:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
         armed=await make_executor("browser")(
@@ -546,16 +551,16 @@ def build_mcp(
         if sent.get("outcome") != "APPLIED":
             return {"status":"SEND_UNCONFIRMED","prearm":armed,
                     "send":sent,"warning":"NO_UNKNOWN_REPLAY"}
-        if chain_direction_id:
-            from bct.chain_direction import ChainDirectionLedger
-            direction = await asyncio.to_thread(
-                ChainDirectionLedger(bct.store).mark_chain_started,
-                direction_id=chain_direction_id, work_id=work_id,
+        if chain_message_plan_id:
+            from bct.chain_message_plan import ChainMessagePlanLedger
+            chain_plan = await asyncio.to_thread(
+                ChainMessagePlanLedger(bct.store).mark_chain_started,
+                plan_id=chain_message_plan_id, work_id=work_id,
                 task_id=task_id, operation_id=operation_id,
             )
         return {"status":"WATCHING","task_id":task_id,"generation":generation,
                 "prearm":armed,"send":sent,
-                **({"chain_direction": direction} if direction is not None else {})}
+                **({"chain_message_plan": chain_plan} if chain_plan is not None else {})}
 
     @server.tool(
         name="bct_task_run",
@@ -819,6 +824,57 @@ def build_mcp(
         if direction is None or direction.get("work_id") != work.work_id:
             return {"status":"NOT_FOUND","direction_id":direction_id}
         return {"status":"OK","chain_direction":direction}
+
+    @server.tool(
+        name="bct_set_chain_message_plan",
+        description=(
+            "Save the concrete execution plan derived from one NEW_TASK Chain Direction. "
+            "BCT does not author the plan. Its exact plan_text becomes the reserved and "
+            "delivered Chain Message text when chain_message_plan_id is used."
+        ),
+        structured_output=True,
+    )
+    async def bct_set_chain_message_plan(
+        work_id: str, direction_id: str, plan_text: str, plan_id: str = "",
+    ) -> dict[str, Any]:
+        from bct.chain_message_plan import ChainMessagePlanLedger
+        if not plan_id:
+            plan_id = "chain-message-plan-" + uuid.uuid4().hex[:20]
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        try:
+            plan = await asyncio.to_thread(
+                ChainMessagePlanLedger(bct.store).save,
+                plan_id=plan_id, work_id=work_id, direction_id=direction_id,
+                plan_text=plan_text,
+            )
+        except ValueError as exc:
+            return {"status":"INVALID_REQUEST","reason":str(exc)}
+        return {"status":"OK","chain_message_plan":plan}
+
+    @server.tool(
+        name="bct_get_chain_message_plan",
+        description="Read one exact Chain Message Plan from its owning Work. Does not send or decide.",
+        structured_output=True,
+    )
+    async def bct_get_chain_message_plan(work_id: str, plan_id: str) -> dict[str, Any]:
+        from bct.chain_message_plan import ChainMessagePlanLedger
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        plan = await asyncio.to_thread(
+            ChainMessagePlanLedger(bct.store).get, plan_id=plan_id,
+        )
+        if plan is None or plan.get("work_id") != work.work_id:
+            return {"status":"NOT_FOUND","plan_id":plan_id}
+        return {"status":"OK","chain_message_plan":plan}
 
     @server.tool(
         name="bct_delayed_send_cancel",
