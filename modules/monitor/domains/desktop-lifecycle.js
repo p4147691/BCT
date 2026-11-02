@@ -21,7 +21,19 @@ function beginMonitorBctNodePointerDrag(event, row, node) {
     roleArmed: false,
     roleTimer: 0,
     drop: null,
+    traceDropSignature: "",
   };
+  if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
+    symbol: "",
+    tone: "monitor-node-drag-trace",
+    label: JSON.stringify({
+      stage: "pointerdown",
+      source: String(node.conversationKey || ""),
+      node: String(node.nodeLabel || ""),
+      scope: String(node.scopeId || ""),
+      at: Date.now(),
+    }),
+  });
   const drag = monitorBctPointerDrag;
   if (row.monitorBctRoleHoldClass && typeof row.monitorBctCommitRoleLongPress === "function") {
     row.classList.add(row.monitorBctRoleHoldClass);
@@ -346,6 +358,18 @@ function commitDesktopUndoRestore(now = Date.now()) {
 
 //@@FN_START:commitMonitorBctNodeDrop
 async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationKey, position, destinationScopeName = "", sourceConversationKey = "") {
+  if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
+    symbol: "",
+    tone: "monitor-node-drag-trace",
+    label: JSON.stringify({
+      stage: "commit-enter",
+      source: String(sourceConversationKey || monitorBctDraggedNodeKey || ""),
+      destination: String(destinationGroupKey || ""),
+      target: String(targetConversationKey || ""),
+      position: String(position || ""),
+      at: Date.now(),
+    }),
+  });
   if (monitorBctNodeReorderPending) {
     setMonitorStatus("노드 순서 저장이 아직 끝나지 않았습니다.", false, 2200);
     finishMonitorBctNodeDrag();
@@ -400,6 +424,17 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     .map((node) => node.conversationKey);
   const nextDestinationKeys = destination.map((node) => node.conversationKey);
   if (!movedAcrossScopes && previousDestinationKeys.join("\n") === nextDestinationKeys.join("\n")) {
+    if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
+      symbol: "",
+      tone: "monitor-node-drag-trace",
+      label: JSON.stringify({
+        stage: "commit-noop",
+        source: draggedKey,
+        previous: previousDestinationKeys,
+        next: nextDestinationKeys,
+        at: Date.now(),
+      }),
+    });
     finishMonitorBctNodeDrag();
     setMonitorStatus("노드가 이미 그 위치에 있습니다. Manager와 감독관은 목록 맨 앞에 고정됩니다.", true, 3000);
     return;
@@ -461,14 +496,46 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   finishMonitorBctNodeDrag();
   renderMonitorBctWindowNodes(optimisticSnapshot);
   try {
+    if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
+      symbol: "",
+      tone: "monitor-node-drag-trace",
+      label: JSON.stringify({
+        stage: "reorder-request",
+        source: draggedKey,
+        destination: destinationScopeId,
+        order: nextDestinationKeys,
+        at: Date.now(),
+      }),
+    });
     await monitorBctShell.reorderConversations(destination, {
       scopeId: destinationScopeId,
       movedConversationKey: "",
     });
     monitorBctNodeReorderPending = false;
     await refreshMonitorBctWindowNodes();
+    if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
+      symbol: "",
+      tone: "monitor-node-drag-trace",
+      label: JSON.stringify({
+        stage: "reorder-success",
+        source: draggedKey,
+        destination: destinationScopeId,
+        order: nextDestinationKeys,
+        at: Date.now(),
+      }),
+    });
     setMonitorStatus("노드 표시 순서를 저장했습니다.", true, 2200);
   } catch (error) {
+    if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
+      symbol: "",
+      tone: "monitor-node-drag-trace",
+      label: JSON.stringify({
+        stage: "reorder-error",
+        source: draggedKey,
+        error: String(error?.message || error || ""),
+        at: Date.now(),
+      }),
+    });
     // A newer RCC refresh replaces this exact snapshot. Never overwrite it.
     if (monitorBctWindowNodesCache === optimisticSnapshot) {
       monitorBctWindowNodesCache = snapshot;
@@ -630,6 +697,21 @@ function endMonitorBctNodePointerDrag(event) {
   // pointerup target made a visible valid line disappear on release in the
   // same grid, so commit the last previewed destination exactly as painted.
   const drop = drag.active ? drag.drop : null;
+  if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
+    symbol: "",
+    tone: "monitor-node-drag-trace",
+    label: JSON.stringify({
+      stage: "pointerup",
+      source: String(drag.node?.conversationKey || ""),
+      active: drag.active === true,
+      drop: drop ? {
+        destination: String(drop.scopeId || ""),
+        target: String(drop.targetConversationKey || ""),
+        position: String(drop.position || ""),
+      } : null,
+      at: Date.now(),
+    }),
+  });
   clearMonitorBctNodeDropFeedback();
   const commitRole = !drag.active && drag.roleArmed
     ? drag.row?.monitorBctCommitRoleLongPress
@@ -2829,6 +2911,24 @@ function updateMonitorBctNodePointerDrag(event) {
   moveMonitorNodeDragGhost(monitorBctDragGhost, event.clientX, event.clientY);
   clearMonitorBctNodeDropFeedback();
   drag.drop = monitorBctNodeDropAt(event.clientX, event.clientY, drag.node.conversationKey);
+  const traceDropSignature = JSON.stringify(drag.drop || null);
+  if (traceDropSignature !== drag.traceDropSignature) {
+    drag.traceDropSignature = traceDropSignature;
+    if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
+      symbol: "",
+      tone: "monitor-node-drag-trace",
+      label: JSON.stringify({
+        stage: "drop-preview",
+        source: String(drag.node?.conversationKey || ""),
+        drop: drag.drop ? {
+          destination: String(drag.drop.scopeId || ""),
+          target: String(drag.drop.targetConversationKey || ""),
+          position: String(drag.drop.position || ""),
+        } : null,
+        at: Date.now(),
+      }),
+    });
+  }
 }
 //@@FN_END:updateMonitorBctNodePointerDrag
 
