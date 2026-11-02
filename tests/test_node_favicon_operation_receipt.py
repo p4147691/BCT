@@ -93,6 +93,15 @@ class NodeFaviconOperationReceiptTests(unittest.TestCase):
         self.assertEqual("NO_PENDING_EVENT", notifier.deliver(self.event_id))
         self.assertEqual(1, sum(x["command"] == "node-label-notify" for x in client.calls))
 
+    def test_legacy_browser_named_notification_work_remains_usable(self):
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE works SET actions_json=? WHERE work_id=?",
+                ('["relay_browser"]', "bct-node-label-notifications"),
+            )
+        principal = ensure_notification_work(self.bct, self.root)
+        self.assertEqual("bct-core-node-label-notifier", principal.principal_id)
+
 
 if __name__ == "__main__":
     unittest.main()

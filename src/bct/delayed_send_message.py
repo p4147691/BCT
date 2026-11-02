@@ -984,9 +984,10 @@ class DelayedSendService:
         from bct.core.models import Principal, Outcome
         ctx=row["context"]
         work=self.store.get_work(ctx["work_id"])
+        from bct.core.capabilities import capability_matches
         if (work.state!="ACTIVE" or work.assignment_epoch!=ctx["assignment_epoch"]
                 or work.owner_principal_id!=ctx["principal_id"]
-                or "browser" not in work.actions):
+                or not any(capability_matches(action, "browser") for action in work.actions)):
             raise ValueError("DELAYED_WORK_CHANGED")
         instance=(ctx["instance_id"] if destination==row["conversation_key"]
                   else ctx["manager_instance_id"])

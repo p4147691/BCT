@@ -10,6 +10,7 @@ import re
 import threading
 from typing import Any
 
+from bct.core.capabilities import canonical_capability
 from bct.core.models import Principal, Work
 from bct.integrations.rcc import NamedPipeRelayClient, discover_instance_ids
 
@@ -28,7 +29,17 @@ def ensure_notification_work(bct: Any, runtime_root: Any) -> Principal:
     except KeyError:
         bct.store.create_work(expected)
     else:
-        if existing != expected:
+        legacy_browser_equivalent = (
+            existing.work_id == expected.work_id
+            and existing.request_summary == expected.request_summary
+            and existing.roots == expected.roots
+            and frozenset(canonical_capability(action) for action in existing.actions)
+            == expected.actions
+            and existing.owner_principal_id == expected.owner_principal_id
+            and existing.assignment_epoch == expected.assignment_epoch
+            and existing.state == expected.state
+        )
+        if existing != expected and not legacy_browser_equivalent:
             raise RuntimeError("NODE_LABEL_NOTIFY_WORK_CONTRACT_MISMATCH")
     return principal
 
