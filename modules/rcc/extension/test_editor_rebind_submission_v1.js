@@ -89,6 +89,40 @@ const textarea = {
 assert.equal(caretContext.focusEditorAtEndForTest(textarea), true);
 assert.equal(textarea.selectionStart, expected.length);
 assert.equal(textarea.selectionEnd, expected.length);
+
+// The composer wake pulse must never become part of the submitted payload.
+// A previous implementation appended one space and immediately compared the
+// draft with the unmodified expected text, producing a false UNKNOWN before
+// any physical submit.
+const pulseDocument = {activeElement: null};
+class PulseTextarea {
+  constructor(value) {
+    this.tagName = 'TEXTAREA'; this.value = value;
+    this.selectionStart = 0; this.selectionEnd = 0; this.isConnected = true;
+  }
+  focus() { pulseDocument.activeElement = this; }
+  contains() { return false; }
+  setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
+  dispatchEvent() { return true; }
+}
+const pulseContext = vm.createContext({
+  RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+  document: pulseDocument,
+  window: {getSelection() { throw new Error('textarea must not use DOM selection'); }},
+  HTMLTextAreaElement: PulseTextarea,
+  InputEvent: class InputEvent { constructor(type, init) { this.type = type; this.init = init; } },
+  editorDraftText: editor => String(editor.value || '').replace(/\r\n?/g, '\n').trim(),
+});
+vm.runInContext(
+  slice(source, 'function setEditorText(', 'function findReadySendButton(')
+    + ';globalThis.wakeEditorForTest = wakeEditorWithTrailingSpace;',
+  pulseContext
+);
+const pulseTextarea = new PulseTextarea(expected);
+assert.equal(pulseContext.wakeEditorForTest(pulseTextarea, expected), true);
+assert.equal(pulseTextarea.value, expected,
+  'trailing-space wake restores the exact planned payload before submission');
+
 vm.runInContext(
   slice(source, 'function editorDraftText(', 'function waitForExactUserSubmission(')
     + ';globalThis.editorDraftTextForTest = editorDraftText;',

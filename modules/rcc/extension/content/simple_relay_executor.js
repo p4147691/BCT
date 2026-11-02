@@ -74,8 +74,10 @@ function focusEditorAtEnd(editor) {
     && editor.contains(selection.getRangeAt(0).endContainer);
 }
 
-function wakeEditorWithTrailingSpace(editor) {
+function wakeEditorWithTrailingSpace(editor, expectedText = null) {
   if (!focusEditorAtEnd(editor)) return false;
+  const originalText = expectedText === null
+    ? editorDraftText(editor) : RelayCore.normalizeMessageText(expectedText);
   if (editor.tagName === 'TEXTAREA') {
     const value = String(editor.value || '') + ' ';
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
@@ -84,14 +86,19 @@ function wakeEditorWithTrailingSpace(editor) {
     editor.dispatchEvent(new InputEvent('input', {
       bubbles: true, inputType: 'insertText', data: ' ',
     }));
-    return focusEditorAtEnd(editor);
+    setEditorText(editor, originalText);
+    return editorDraftText(editor) === originalText && focusEditorAtEnd(editor);
   }
   const inserted = document.execCommand('insertText', false, ' ');
   if (!inserted) return false;
   editor.dispatchEvent(new InputEvent('input', {
     bubbles: true, inputType: 'insertText', data: ' ',
   }));
-  return focusEditorAtEnd(editor);
+  // The trailing space is only a bounded React/composer wake pulse. Leaving it
+  // in the draft makes the following exact-text fence reject our own change
+  // and can turn a proven pre-submit failure into DRAFT_CLEAR_UNPROVEN.
+  setEditorText(editor, originalText);
+  return editorDraftText(editor) === originalText && focusEditorAtEnd(editor);
 }
 
 
@@ -191,7 +198,7 @@ async function submitEditor(editor, options = {}) {
   }
   if (currentVerifiedEditor() && !findReadySendButton(liveEditor, options)
       && options?.composerWakeMode === 'trailing_space_once') {
-    if (!wakeEditorWithTrailingSpace(liveEditor)) {
+    if (!wakeEditorWithTrailingSpace(liveEditor, expected)) {
       throw new Error('RELAY_EDITOR_WAKE_FAILED');
     }
     liveEditor = currentVerifiedEditor();
