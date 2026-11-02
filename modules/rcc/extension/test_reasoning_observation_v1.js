@@ -39,6 +39,18 @@ const fallback = {
   innerText: 'Reasoning level\nMedium',
 };
 assert.equal(observe([fallback]).level, 'Medium');
+
+const unrelated = { ...fallback, innerText: 'GPT-6.1 Terra\nPersistent' };
+assert.equal(observe([unrelated]).status, 'UNAVAILABLE');
+const light = { ...exact, querySelector: () => ({textContent: 'Light'}), innerText: 'GPT-6.1 Terra Light' };
+assert.equal(observe([light]).level, 'Light');
+
+const combined = { ...fallback, innerText: 'GPT-6.1 Terra Light\nPersistent' };
+assert.equal(observe([combined]).level, 'Light');
+const ambiguous = { ...fallback, innerText: 'GPT-6.1 Terra Light\nHigh' };
+assert.equal(observe([ambiguous]).status, 'UNAVAILABLE');
+
+
 assert.deepEqual(observe([]), {
   status: 'UNAVAILABLE', level: '', source: 'chatgpt-model-selector',
 });

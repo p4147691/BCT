@@ -1530,7 +1530,10 @@ function renderMonitorBctWindowNodes(nodes) {
     body.append(title);
     const location = document.createElement("small");
     location.className = "monitor-bct-node-location";
-    location.textContent = monitorBctNodeLocationText(node, desktopPosition);
+    const observedReasoning = node.displayStale || node.instanceState !== "OPEN"
+      ? "" : String(node.reasoningLevel || "").trim();
+    location.textContent = [monitorBctNodeLocationText(node, desktopPosition),
+      observedReasoning ? `추론: ${observedReasoning}` : "추론: 확인 불가"].filter(Boolean).join(" · ");
     location.title = location.textContent;
     body.append(location);
     const presence = document.createElement("span");
