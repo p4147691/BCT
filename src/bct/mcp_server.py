@@ -406,10 +406,10 @@ def build_mcp(
     @server.tool(
         name="bct_chain_message",
         description=(
-            "Start/status/cancel a durable one-worker message continuation using "
+            "Start/status/cancel a durable one-target message continuation using "
             "existing BCT send-message, Delayed Send and their exact receipts. "
             "For start supply task_id, a unique operation_id prefix, exact RCC "
-            "instance/session/tab/window/worker and manager conversation IDs, "
+            "instance/session/tab/window/target and origin conversation IDs, "
             "and the work instruction text. The command PREARMS BEFORE sending, "
             "then submits the reserved text under the exact planned operation ID. "
             "Status reads the owning Work's exact durable watch. "
