@@ -14,6 +14,7 @@ function cl(){
 function emitter(){const m=new Map();return {m,addEventListener(k,v){m.set(k,v);},removeEventListener(k,v){if(m.get(k)===v)m.delete(k);},fire(k,e){m.get(k)?.(e);}};}
 function fixture(){
  const ghost=[];
+ const timers=[];
  function makeRow(key,x,y){
   let capture=false;
   const r={...emitter(),hidden:false,dataset:{conversationKey:key},classList:cl(),
@@ -35,7 +36,8 @@ function fixture(){
  }};
  const commits=[];
  const nativeCalls=[];
- const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDeferredNodeRender:null,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorBctSelectedNodeKey:"stale",monitorBctNodeHighlightedHwnd:"4242",monitorLastAiState:null,monitorDesktopState:{hostWindowHwnd:"42"},document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
+ const timerApi={setTimeout(callback,delay){timers.push({callback,delay,cleared:false});return timers.length;},clearTimeout(id){if(timers[id-1])timers[id-1].cleared=true;}};
+ const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDeferredNodeRender:null,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorBctSelectedNodeKey:"stale",monitorBctNodeHighlightedHwnd:"4242",monitorLastAiState:null,monitorDesktopState:{hostWindowHwnd:"42"},document:doc,window:win,monitorWorkers:workers,globalThis:timerApi,Date,Math,String,Array,
   monitorBctNativePreviewToken:"",monitorBctNativePreviewSequence:0,
   monitorNative(message){nativeCalls.push(message);return Promise.resolve({ok:true});},
   stopMonitorBctNativePreview(){nativeCalls.push({type:"monitorDragPreviewStop"});},
@@ -56,11 +58,11 @@ function fixture(){
   assert.equal(doc.documentElement.classList.contains("monitor-bct-node-drag-active"),false);
   assert.equal(list.classList.contains("monitor-bct-node-list-target"),false);
   for(const r of rows){assert.equal(r.classList.contains("monitor-bct-drop-before"),false);assert.equal(r.classList.contains("monitor-bct-drop-after"),false);}
-  assert.equal(ghost.at(-1)?.removed,true);
+  if(ghost.length)assert.equal(ghost.at(-1)?.removed,true);
   for(const k of ["pointermove","pointerup","pointercancel"])assert.equal(doc.m.has(k),false);
   assert.equal(win.m.has("blur"),false);assert.equal(rows[0].m.has("lostpointercapture"),false);
  }
- return {ctx,rows,list,doc,win,ghost,commits,nativeCalls,begin,move,up,clean};
+ return {ctx,rows,list,doc,win,ghost,timers,commits,nativeCalls,begin,move,up,clean};
 }
 for(const [x,key,place] of [[-12,"first","before"],[312,"second","after"]]){
  const f=fixture(), p=f.ctx.monitorBctNodeDropAt(x,55,"dragged");
@@ -88,6 +90,22 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
  else f.doc.fire(kind,{pointerId:9});
  assert.equal(f.commits.length,0);f.clean();
 }
+{
+ const f=fixture();let roles=0;
+ f.rows[0].monitorBctRoleHoldClass="monitor-bct-supervisor-hold";
+ f.rows[0].monitorBctCommitRoleLongPress=()=>{roles+=1;};
+ f.begin();assert.equal(f.timers[0].delay,600);f.timers[0].callback();f.up(30,50);
+ assert.equal(roles,1,"a stationary armed hold commits exactly one role write");
+ assert.equal(f.commits.length,0,"a role hold must not reorder the node");f.clean();
+}
+{
+ const f=fixture();let roles=0;
+ f.rows[0].monitorBctRoleHoldClass="monitor-bct-supervisor-hold";
+ f.rows[0].monitorBctCommitRoleLongPress=()=>{roles+=1;};
+ f.begin();f.timers[0].callback();f.move(120,55);f.up(120,55);
+ assert.equal(roles,0,"moving an armed hold into a drag cancels the role write");
+ assert.equal(f.commits.length,1,"the same gesture commits only the reorder");f.clean();
+}
 assert.match(original,/if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/);
 assert.match(original,/document\.addEventListener\("pointerup", endMonitorBctNodePointerDrag, true\)/);
-console.log(JSON.stringify({status:"PASS",cases:11,coverage:"edge-preview-drop,far-cancel,final-pointerup,quick-drag,blur,cancel,lostcapture,cleanup"}));
+console.log(JSON.stringify({status:"PASS",cases:13,coverage:"edge-preview-drop,far-cancel,final-pointerup,quick-drag,blur,cancel,lostcapture,cleanup,stationary-role-hold,hold-to-drag"}));

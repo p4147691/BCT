@@ -111,9 +111,12 @@ function loadModule() {
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
   assert.match(monitor, /function installMonitorBctRoleLongPress\(/);
-  assert.match(monitor, /armed = true;/,
-    "a role long-press must arm at 600ms and save only when released");
-  assert.match(monitor, /row\.addEventListener\("pointerup", commit\)/);
+  assert.match(monitor, /drag\.roleArmed = true;/,
+    "the unified node gesture must arm a role long-press at 600ms");
+  assert.match(monitor, /const commitRole = !drag\.active && drag\.roleArmed/,
+    "only a stationary armed gesture may commit a role on release");
+  assert.match(monitor, /row\.monitorBctCommitRoleLongPress = commit/,
+    "role persistence must be invoked by the unified drag or hold controller");
   assert.match(monitor, /row\.classList\.add\("monitor-bct-role-save-pending"\)/,
     "a role write must be visibly pending without pretending the role was already saved");
   assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\);[\s\S]{0,180}syncMonitorBctNodeTargetHighlight\(\)/,
@@ -234,7 +237,6 @@ function loadModule() {
       },
     };
   }
-  const holdTimers = [];
   const roleUpdates = [];
   const holdContext = {
     monitorBctSuppressedClickKey: "",
@@ -246,7 +248,7 @@ function loadModule() {
     refreshMonitorBctWindowNodes: async () => {},
     statusMessages: [],
     setMonitorStatus: (message) => { holdContext.statusMessages.push(message); },
-    setTimeout(callback, delay) { holdTimers.push({ callback, delay }); return holdTimers.length; },
+    setTimeout() { return 1; },
     clearTimeout: () => {},
     globalThis: null,
     Array, String, Math, Promise,
@@ -257,20 +259,15 @@ function loadModule() {
   const rowOn = managerRow();
   const baseNode = { conversationKey: "conv-1", nodeLabel: "N33", title: "대화", scopeName: "대화망 A", roleTags: ["Worker"] };
   holdContext.installMonitorBctRoleLongPress(rowOn, baseNode);
-  rowOn.listeners.get("pointerdown")({ button: 0, clientX: 10, clientY: 10, target: { closest: () => null } });
-  assert.equal(holdTimers[0].delay, 600);
-  holdTimers[0].callback();
-  assert.equal(roleUpdates.length, 0, "arming a hold must not save before release");
-  rowOn.listeners.get("pointerup")({});
+  assert.equal(rowOn.listeners.size, 0, "role persistence must not install a competing pointer handler");
+  rowOn.monitorBctCommitRoleLongPress();
+  assert.equal(rowOn.classes.has("is-manager"), true, "a released hold paints its committed role immediately");
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(Array.from(roleUpdates[0].roleTags), ["Worker", "Manager"]);
-  assert.equal(rowOn.classes.has("is-manager"), false, "role color comes from the refreshed persisted snapshot");
   const rowOff = managerRow();
   holdContext.installMonitorBctRoleLongPress(rowOff, { ...baseNode, roleTags: ["Worker", "Manager"] });
-  rowOff.listeners.get("pointerdown")({ button: 0, clientX: 20, clientY: 20, target: { closest: () => null } });
-  holdTimers.at(-1).callback();
-  rowOff.listeners.get("pointerup")({});
+  rowOff.monitorBctCommitRoleLongPress();
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(Array.from(roleUpdates[1].roleTags), ["Worker"]);
@@ -278,20 +275,16 @@ function loadModule() {
 
   const supervisorOn = managerRow();
   holdContext.installMonitorBctRoleLongPress(supervisorOn, { ...baseNode, scopeName: "", roleTags: ["Worker"] });
-  supervisorOn.listeners.get("pointerdown")({ button: 0, clientX: 30, clientY: 30, target: { closest: () => null } });
-  holdTimers.at(-1).callback();
-  supervisorOn.listeners.get("pointerup")({});
+  supervisorOn.monitorBctCommitRoleLongPress();
+  assert.equal(supervisorOn.classes.has("is-supervisor"), true);
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(roleUpdates[2].scopeName, "");
   assert.deepEqual(Array.from(roleUpdates[2].roleTags), ["Worker", "supervisor"]);
-  assert.equal(supervisorOn.classes.has("is-supervisor"), false);
 
   const supervisorOff = managerRow();
   holdContext.installMonitorBctRoleLongPress(supervisorOff, { ...baseNode, scopeName: "", roleTags: ["Worker", "supervisor"] });
-  supervisorOff.listeners.get("pointerdown")({ button: 0, clientX: 40, clientY: 40, target: { closest: () => null } });
-  holdTimers.at(-1).callback();
-  supervisorOff.listeners.get("pointerup")({});
+  supervisorOff.monitorBctCommitRoleLongPress();
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(roleUpdates[3].scopeName, "");
@@ -303,29 +296,10 @@ function loadModule() {
   }];
   const secondSupervisor = managerRow();
   holdContext.installMonitorBctRoleLongPress(secondSupervisor, { ...baseNode, conversationKey: "conv-2", scopeName: "", roleTags: ["Worker"] });
-  secondSupervisor.listeners.get("pointerdown")({ button: 0, clientX: 50, clientY: 50, target: { closest: () => null } });
-  holdTimers.at(-1).callback();
-  secondSupervisor.listeners.get("pointerup")({});
+  secondSupervisor.monitorBctCommitRoleLongPress();
   await Promise.resolve();
   assert.equal(roleUpdates.length, 4, "a second global supervisor must not be saved");
   assert.match(holdContext.statusMessages.at(-1), /감독관은 하나만/);
-
-  const cancelledSupervisor = managerRow();
-  holdContext.installMonitorBctRoleLongPress(cancelledSupervisor, { ...baseNode, conversationKey: "conv-3", scopeName: "", roleTags: ["Worker"] });
-  cancelledSupervisor.listeners.get("pointerdown")({ button: 0, clientX: 60, clientY: 60, target: { closest: () => null } });
-  holdTimers.at(-1).callback();
-  cancelledSupervisor.listeners.get("pointercancel")({});
-  await Promise.resolve();
-  assert.equal(roleUpdates.length, 4, "canceling an armed hold must not save any role");
-
-  const movedSupervisor = managerRow();
-  holdContext.installMonitorBctRoleLongPress(movedSupervisor, { ...baseNode, conversationKey: "conv-4", scopeName: "", roleTags: ["Worker"] });
-  movedSupervisor.listeners.get("pointerdown")({ button: 0, clientX: 70, clientY: 70, target: { closest: () => null } });
-  holdTimers.at(-1).callback();
-  movedSupervisor.listeners.get("pointermove")({ clientX: 90, clientY: 70 });
-  movedSupervisor.listeners.get("pointerup")({});
-  await Promise.resolve();
-  assert.equal(roleUpdates.length, 4, "moving an armed hold into a drag must cancel the role write");
 
   const dropStart = monitor.indexOf("function monitorBctPointInsideScopeHeading(");
   const dropEnd = monitor.indexOf("\nfunction updateMonitorBctNodePointerDrag(", dropStart);

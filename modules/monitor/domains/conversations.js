@@ -88,21 +88,9 @@ function initializeMonitorWorkerOrderStorage() { chrome.storage.local.get([MONIT
 
 //@@FN_START:installMonitorBctRoleLongPress
 function installMonitorBctRoleLongPress(row, node) {
-  let timer = 0;
-  let startX = 0;
-  let startY = 0;
-  let armed = false;
   let saving = false;
-  const clearHold = () => {
-    if (timer) clearTimeout(timer);
-    timer = 0;
-    armed = false;
-    row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
-  };
-  const cancel = () => clearHold();
   const commit = () => {
-    if (!armed || saving) return;
-    armed = false;
+    if (saving) return;
     row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
     const key = monitorBctNodeSelectionKey(node);
     monitorBctSuppressedClickKey = key;
@@ -148,6 +136,10 @@ function installMonitorBctRoleLongPress(row, node) {
       : [...tags, role];
     const nextScopeName = role === "supervisor" ? "" : node.scopeName;
     saving = true;
+    // This point is reached only after a stationary hold is released. Show the
+    // committed choice immediately while Core persists it; cancellation never
+    // changes the role color.
+    row.classList.toggle(role === "supervisor" ? "is-supervisor" : "is-manager", !hadRole);
     row.classList.add("monitor-bct-role-save-pending");
     void monitorBctShell.updateConversationScope(node, {
       displayName: node.title,
@@ -164,32 +156,23 @@ function installMonitorBctRoleLongPress(row, node) {
       // hold gesture.  Refresh immediately after a successful write.
       return refreshMonitorBctWindowNodes();
     }).catch((error) => {
+      row.classList.toggle(role === "supervisor" ? "is-supervisor" : "is-manager", hadRole);
       setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
     }).finally(() => {
       saving = false;
       row.classList.remove("monitor-bct-role-save-pending");
     });
   };
-  row.addEventListener("pointerdown", (event) => {
-    if (saving || event.button !== 0 || event.target.closest("button,input")) return;
-    startX = event.clientX;
-    startY = event.clientY;
-    const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
-    const isSupervisor = !String(node.scopeName || "").trim()
-      && tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
-    const isUnassigned = !String(node.scopeName || "").trim();
-    row.classList.add(isUnassigned || isSupervisor ? "monitor-bct-supervisor-hold" : "monitor-bct-manager-hold");
-    timer = setTimeout(() => {
-      timer = 0;
-      armed = true;
-    }, 600);
-  });
-  row.addEventListener("pointermove", (event) => {
-    if ((timer || armed) && Math.hypot(event.clientX - startX, event.clientY - startY) > 7) cancel();
-  });
-  row.addEventListener("pointerup", commit);
-  row.addEventListener("pointercancel", cancel);
-  row.addEventListener("dragstart", cancel);
+  const tags = Array.isArray(node.roleTags) ? node.roleTags : [];
+  const isSupervisor = !String(node.scopeName || "").trim()
+    && tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
+  row.monitorBctRoleHoldClass = !String(node.scopeName || "").trim() || isSupervisor
+    ? "monitor-bct-supervisor-hold"
+    : "monitor-bct-manager-hold";
+  // Drag and long-press used to install competing pointer handlers on the same
+  // card. The single node gesture controller now owns pointer events and calls
+  // this persistence action only for a stationary 600 ms hold.
+  row.monitorBctCommitRoleLongPress = commit;
 }
 //@@FN_END:installMonitorBctRoleLongPress
 
@@ -1202,17 +1185,32 @@ function openMonitorBctRenameEditor(node, row) {
         currentTitle = title;
         titleApplied = true;
       }
-      await monitorBctShell.updateConversationScope(node, {
+      const savedScope = await monitorBctShell.updateConversationScope(node, {
         displayName: title || String(node.title || node.nodeLabel || "").trim(),
         scopeName,
         roleTags,
         assignedTask,
         nodeMemo,
       });
+      const nextSnapshot = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+        .map((candidate) => candidate?.conversationKey === node.conversationKey
+          ? Object.freeze({
+            ...candidate,
+            title: title || candidate.title,
+            scopeId: String(savedScope?.scope_id ?? candidate.scopeId ?? ""),
+            scopeName: String(savedScope?.scope_name ?? scopeName),
+            roleTags: Object.freeze(Array.isArray(savedScope?.role_tags) ? [...savedScope.role_tags] : [...roleTags]),
+            roleTagsSha256: String(savedScope?.role_tags_sha256 ?? candidate.roleTagsSha256 ?? ""),
+            assignedTask: String(savedScope?.assigned_task ?? assignedTask),
+            nodeMemo: String(savedScope?.node_memo ?? nodeMemo),
+          })
+          : candidate);
+      monitorBctWindowNodesCache = nextSnapshot;
       editor.overlay.remove();
       monitorBctRenameEditor = null;
       setMonitorStatus(`대화 정보${titleChanged ? "와 실제 ChatGPT 이름" : ""}을 저장했습니다.`, true, 3500);
-      globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 600);
+      renderMonitorBctWindowNodes(nextSnapshot);
+      void refreshMonitorBctWindowNodes();
     } catch (renameError) {
       editor.busy = false;
       editor.input.disabled = !editor.canRenameTitle;

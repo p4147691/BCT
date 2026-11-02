@@ -1621,6 +1621,10 @@ function renderMonitorBctWindowNodes(nodes) {
     if (node.conversationKey) {
       row.addEventListener("contextmenu", (event) => {
         event.preventDefault();
+        monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
+        monitorBctNodeHighlightedHwnd = "";
+        syncMonitorBctNodeTargetHighlight();
+        syncMonitorMinimizedNodeBadges(monitorLastAiState);
         openMonitorBctRenameEditor(node, row);
       });
     }

@@ -18,8 +18,20 @@ function beginMonitorBctNodePointerDrag(event, row, node) {
     startX: event.clientX,
     startY: event.clientY,
     active: false,
+    roleArmed: false,
+    roleTimer: 0,
     drop: null,
   };
+  const drag = monitorBctPointerDrag;
+  if (row.monitorBctRoleHoldClass && typeof row.monitorBctCommitRoleLongPress === "function") {
+    row.classList.add(row.monitorBctRoleHoldClass);
+    drag.roleTimer = globalThis.setTimeout(() => {
+      if (monitorBctPointerDrag === drag && !drag.active) {
+        drag.roleTimer = 0;
+        drag.roleArmed = true;
+      }
+    }, 600);
+  }
   // Document capture receives pointerup even beyond the row or the list.
   document.addEventListener("pointermove", updateMonitorBctNodePointerDrag, true);
   document.addEventListener("pointerup", endMonitorBctNodePointerDrag, true);
@@ -602,8 +614,17 @@ function endMonitorBctNodePointerDrag(event) {
   const drop = drag.active
     ? monitorBctNodeDropAt(event.clientX, event.clientY, drag.node.conversationKey)
     : null;
+  const commitRole = !drag.active && drag.roleArmed
+    ? drag.row?.monitorBctCommitRoleLongPress
+    : null;
   monitorBctStopDragInput(drag);
-  if (!drag.active) return;
+  if (!drag.active) {
+    if (typeof commitRole === "function") {
+      event.preventDefault();
+      commitRole();
+    }
+    return;
+  }
   event.preventDefault();
   if (!drop) {
     finishMonitorBctNodeDrag();
@@ -1097,7 +1118,14 @@ function monitorBctStopDragInput(drag) {
   document.removeEventListener("pointercancel", cancelMonitorBctNodePointerDrag, true);
   window.removeEventListener("blur", cancelMonitorBctNodePointerDrag);
   drag.row?.removeEventListener("lostpointercapture", cancelMonitorBctNodePointerDrag);
-  drag.row?.classList.remove("is-dragging");
+  if (drag.roleTimer) globalThis.clearTimeout(drag.roleTimer);
+  drag.roleTimer = 0;
+  drag.roleArmed = false;
+  drag.row?.classList.remove(
+    "is-dragging",
+    "monitor-bct-manager-hold",
+    "monitor-bct-supervisor-hold",
+  );
   try { if (drag.row?.hasPointerCapture?.(drag.pointerId)) drag.row.releasePointerCapture(drag.pointerId); } catch (_) {}
 }
 //@@FN_END:monitorBctStopDragInput
@@ -2755,6 +2783,10 @@ function updateMonitorBctNodePointerDrag(event) {
   if (!drag || event.pointerId !== drag.pointerId) return;
   if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 7) return;
   if (!drag.active) {
+    if (drag.roleTimer) globalThis.clearTimeout(drag.roleTimer);
+    drag.roleTimer = 0;
+    drag.roleArmed = false;
+    drag.row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
     drag.active = true;
     monitorBctSuppressScopeClickUntil = Date.now() + 1000;
     monitorBctDraggedNodeKey = drag.node.conversationKey;
