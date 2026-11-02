@@ -121,7 +121,7 @@ def dispatch_delayed_send_message(
     The caller has already observed the exact response, created an alarm, and
     recorded the prior B turn's decision.  This function deliberately owns
     only the legacy ``SELF/MANAGER -> send message`` branch.  A future Delayed
-    Wake-up Message recipe can consume the same alarm and decision without
+    Wakeup Message recipe can consume the same alarm and decision without
     changing watch or alarm behavior.
     """
     action = action_for_decision(alarm=alarm, decision=decision)

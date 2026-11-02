@@ -363,7 +363,7 @@ legacy NEXT TASK 본문
 - 이 명령은 보내기·깨우기·재판단을 하지 않는다.
 
 `웨이크업 메시지`도 순수 행동 요청으로 분리했다. alarm과 실행 흐름 참조를
-입력으로 받아 `wake_up_message(worker, execution_ref)` 요청만 만든다. 이
+입력으로 받아 `wakeup_message(worker, execution_ref)` 요청만 만든다. 이
 행동은 SELF/MANAGER 판단을 알지 않으며, 아직 실제 RCC 메시지 전송과도
 연결하지 않았다. 따라서 기존 Delayed 센드 메시지의 동작을 유지하면서,
 다음 단계에서만 웨이크업 메시지 전달을 최소 맥락 참조로 바꿀 수 있다.
