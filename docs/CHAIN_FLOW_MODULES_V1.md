@@ -32,8 +32,11 @@ X가 더 필요함  → X → X → … → X → A
 ```text
 대화망 확인·준비 (전체 Chain Message의 고정 첫 블록)
   A → bct_check_network
-      supervisor=PRESENT: 그대로 사용
+      supervisor=PRESENT: 원래 작업 계획으로 진행
       supervisor=MISSING: A가 기존 노드 하나를 고르거나 새 노드를 준비
+        → 감독관 초기 지시를 한 번 보냄
+        → 대화 UUID 확인 뒤 supervisor 역할을 기록
+        → bct_check_network 재확인
       supervisor=MULTIPLE: A가 어느 하나를 정리할지 판단
   → 필요하면 bct_set_network(node-info-set)으로
       대화망·노드 이름·역할·메모·담당 작업을 함께 기록
@@ -79,6 +82,11 @@ A가 기존 노드를 고르거나 새 노드를 준비해 역할을 기록하�
 둘 이상이면 자동 삭제하지 않고 A가 정리 방향을 고른다. 이 확인은 레시피의
 준비 규칙이며, BCT가 감독관을 자동 선택·생성하거나 체인 전송을 몰래 막는
 강제 권한 규칙은 아니다.
+
+이 준비 단계는 감독관에게 곧바로 병합·배포 일을 맡기는 단계가 아니다. 예를
+들어 원래 작업이 A→B라면, 감독관이 없을 때의 실제 순서는 `감독관 C 초기화 →
+C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포·LIVE E2E로 이어질
+때만 그 통합 체인의 대상이 된다.
 
 ### 깨끗한 새 감독관 노드의 부트스트랩
 
