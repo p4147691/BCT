@@ -12,7 +12,16 @@ class CurrentNodesTests(unittest.TestCase):
     def test_confirmed(self):
         r=run([tab()])
         self.assertEqual(r["counts"]["confirmed"], 1)
+        self.assertEqual(r["observation"]["state"], "FRESH")
         self.assertEqual(r["items"][0]["tab_index"], 0)
+    def test_no_rcc_discovery_is_not_an_observed_empty_browser(self):
+        r=classify_current_nodes([])
+        self.assertEqual(r["counts"]["confirmed"], 0)
+        self.assertEqual(r["observation"]["state"], "NOT_OBSERVED")
+    def test_fresh_empty_rcc_is_an_observed_empty_browser(self):
+        r=classify_current_nodes([{"state":"OPEN","tabs":[]}])
+        self.assertEqual(r["counts"]["confirmed"], 0)
+        self.assertEqual(r["observation"]["state"], "FRESH")
     def test_temporary(self):
         r=run([{"url":"https://chatgpt.com/","presence":"OPEN","new_chat_confirmed":True}])
         self.assertEqual(r["counts"]["temporary"],1)
@@ -28,6 +37,7 @@ class CurrentNodesTests(unittest.TestCase):
     def test_rcc_failure(self):
         r=classify_current_nodes([{"state":"PROBE_TIMEOUT","tabs":[tab()]}])
         self.assertEqual(r["counts"]["unavailable"],1)
+        self.assertEqual(r["observation"]["state"], "UNAVAILABLE")
     def test_duplicate_uuid(self):
         a=tab()
         b={**tab(), "tab_id":6, "node_label":"N13"}
