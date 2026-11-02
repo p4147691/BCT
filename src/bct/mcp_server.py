@@ -25,7 +25,7 @@ MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network",
-    "bct_execution_context",
+    "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
@@ -426,7 +426,7 @@ def build_mcp(
         worker_conversation_key: str = "",
         manager_conversation_key: str = "",
         instruction: str = "", manager_instance_id: str = "",
-        generation: int = 1,
+        generation: int = 1, chain_direction_id: str = "",
     ) -> dict[str, Any]:
         if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
@@ -458,6 +458,16 @@ def build_mcp(
                 not re.fullmatch(r"[a-f0-9]{32}",session_id) or
                 worker_tab_id<=0 or worker_window_id<=0):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
+        if chain_direction_id:
+            from bct.chain_direction import ChainDirectionLedger
+            try:
+                await asyncio.to_thread(
+                    ChainDirectionLedger(bct.store).plan_chain,
+                    direction_id=chain_direction_id, work_id=work_id,
+                    task_id=task_id, operation_id=operation_id,
+                )
+            except ValueError as exc:
+                return {"status":"INVALID_REQUEST","reason":str(exc)}
         send_id=operation_id+"-send"
         arm_id=operation_id+"-arm"
         if len(send_id)>80 or len(arm_id)>80:
@@ -481,8 +491,17 @@ def build_mcp(
         if sent.get("outcome") != "APPLIED":
             return {"status":"SEND_UNCONFIRMED","prearm":armed,
                     "send":sent,"warning":"NO_UNKNOWN_REPLAY"}
+        direction = None
+        if chain_direction_id:
+            from bct.chain_direction import ChainDirectionLedger
+            direction = await asyncio.to_thread(
+                ChainDirectionLedger(bct.store).mark_chain_started,
+                direction_id=chain_direction_id, work_id=work_id,
+                task_id=task_id, operation_id=operation_id,
+            )
         return {"status":"WATCHING","task_id":task_id,"generation":generation,
-                "prearm":armed,"send":sent}
+                "prearm":armed,"send":sent,
+                **({"chain_direction": direction} if direction is not None else {})}
 
     @server.tool(
         name="bct_task_run",
@@ -652,6 +671,79 @@ def build_mcp(
         # The full binding contains only the exact existing target identity and
         # is needed by a later, separately authorized wake-delivery adapter.
         return {"status": "OK", "execution": context}
+
+    @server.tool(
+        name="bct_set_chain_direction",
+        description=(
+            "Save A's free-form direction for the next Chain Message. This records "
+            "A's decision; it never writes the direction, sends a message, or "
+            "interprets the report. Use source_kind=MANAGER_RETURN only with the "
+            "exact BA task/generation that supplied the report."
+        ),
+        structured_output=True,
+    )
+    async def bct_set_chain_direction(
+        work_id: str, direction_text: str, decision: str,
+        source_kind: str = "USER", source_task_id: str = "",
+        source_generation: int = 0, direction_id: str = "",
+    ) -> dict[str, Any]:
+        from bct.chain_direction import ChainDirectionLedger
+        if not direction_id:
+            direction_id = "chain-direction-" + uuid.uuid4().hex[:24]
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        result_sha = ""
+        if source_kind == "MANAGER_RETURN":
+            from bct.delayed_send_message import DurableWatchLedger
+            context = await asyncio.to_thread(
+                DurableWatchLedger(bct.store).read_execution_context,
+                task_id=source_task_id,
+                generation=source_generation,
+            )
+            binding = (context or {}).get("binding") or {}
+            prior = (context or {}).get("decision") or {}
+            if (context is None or binding.get("work_id") != work.work_id
+                    or binding.get("principal_id") != work.owner_principal_id
+                    or binding.get("assignment_epoch") != work.assignment_epoch
+                    or prior.get("route") != "MANAGER"):
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_RETURN_NOT_EXACT"}
+            result_sha = str(prior.get("response_sha256") or "")
+        try:
+            direction = await asyncio.to_thread(
+                ChainDirectionLedger(bct.store).save,
+                direction_id=direction_id, work_id=work_id,
+                source_kind=source_kind, source_task_id=source_task_id,
+                source_generation=source_generation,
+                source_result_sha256=result_sha, decision=decision,
+                direction_text=direction_text,
+            )
+        except ValueError as exc:
+            return {"status":"INVALID_REQUEST","reason":str(exc)}
+        return {"status":"OK","chain_direction":direction}
+
+    @server.tool(
+        name="bct_get_chain_direction",
+        description="Read one exact A-authored Chain Direction from its owning Work. Does not send or decide.",
+        structured_output=True,
+    )
+    async def bct_get_chain_direction(work_id: str, direction_id: str) -> dict[str, Any]:
+        from bct.chain_direction import ChainDirectionLedger
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        direction = await asyncio.to_thread(
+            ChainDirectionLedger(bct.store).get, direction_id=direction_id,
+        )
+        if direction is None or direction.get("work_id") != work.work_id:
+            return {"status":"NOT_FOUND","direction_id":direction_id}
+        return {"status":"OK","chain_direction":direction}
 
     @server.tool(
         name="bct_delayed_send_cancel",
