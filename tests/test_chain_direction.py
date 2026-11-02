@@ -81,6 +81,11 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 },
                 send_message=lambda *_: "send-receipt",
             ).poll_once(watch, manager_conversation_key="manager-uuid")
+            # Compatibility: an older real BA return recorded the exact
+            # RETURNED_TO_MANAGER watch but did not yet have the B-decision
+            # table.  Its observed response hash remains the safe link.
+            with store.transaction() as db:
+                db.execute("DELETE FROM continuation_decisions")
             mcp = build_mcp(SimpleNamespace(operations=Operations(), store=store), compact_catalogue=True)
             _, saved = await mcp.call_tool("bct_set_chain_direction", {
                 "work_id": "work-1", "direction_id": "direction-return-1",

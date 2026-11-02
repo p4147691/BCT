@@ -699,19 +699,40 @@ def build_mcp(
         result_sha = ""
         if source_kind == "MANAGER_RETURN":
             from bct.delayed_send_message import DurableWatchLedger
+            delayed_ledger = DurableWatchLedger(bct.store)
             context = await asyncio.to_thread(
-                DurableWatchLedger(bct.store).read_execution_context,
+                delayed_ledger.read_execution_context,
                 task_id=source_task_id,
                 generation=source_generation,
             )
             binding = (context or {}).get("binding") or {}
             prior = (context or {}).get("decision") or {}
-            if (context is None or binding.get("work_id") != work.work_id
-                    or binding.get("principal_id") != work.owner_principal_id
-                    or binding.get("assignment_epoch") != work.assignment_epoch
-                    or prior.get("route") != "MANAGER"):
-                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_RETURN_NOT_EXACT"}
-            result_sha = str(prior.get("response_sha256") or "")
+            if (context is not None and binding.get("work_id") == work.work_id
+                    and binding.get("principal_id") == work.owner_principal_id
+                    and binding.get("assignment_epoch") == work.assignment_epoch
+                    and prior.get("route") == "MANAGER"):
+                result_sha = str(prior.get("response_sha256") or "")
+            else:
+                # Older Delayed Send returns predate the explicit B-decision
+                # ledger.  They can still anchor a Chain Direction, but only
+                # when the exact watch itself is durably RETURNED_TO_MANAGER
+                # and carries the observed response hash.  This is a targeted
+                # compatibility bridge, not natural-language reconstruction.
+                row = await asyncio.to_thread(
+                    delayed_ledger.get, source_task_id, source_generation,
+                )
+                import json
+                try:
+                    legacy = json.loads(str((row or {}).get("context_json") or "{}"))
+                except ValueError:
+                    legacy = {}
+                result_sha = str(legacy.get("observed_response_sha") or "")
+                if (not row or row.get("state") != "RETURNED_TO_MANAGER"
+                        or legacy.get("work_id") != work.work_id
+                        or legacy.get("principal_id") != work.owner_principal_id
+                        or legacy.get("assignment_epoch") != work.assignment_epoch
+                        or not re.fullmatch(r"[0-9a-f]{64}", result_sha)):
+                    return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_RETURN_NOT_EXACT"}
         try:
             direction = await asyncio.to_thread(
                 ChainDirectionLedger(bct.store).save,
