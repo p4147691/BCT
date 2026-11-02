@@ -64,16 +64,25 @@ def extract_next_instruction(response: str) -> NextInstruction:
     if not isinstance(response, str):
         raise InstructionError("NEXT_INSTRUCTION_NOT_TEXT")
     lines = response.rstrip().splitlines()
-    markers = [i for i, line in enumerate(lines)
-               if line.strip() in {"NEXT TASK — SELF", "NEXT TASK — MANAGER"}]
-    if len(markers) != 1 or markers[0] == len(lines)-1:
+    marker_values = {"NEXT TASK — SELF", "NEXT TASK — MANAGER"}
+    markers = [(i, line.strip()) for i, line in enumerate(lines)
+               if line.strip() in marker_values]
+    if not markers or markers[0][0] == len(lines)-1:
         raise InstructionError("NEXT_INSTRUCTION_MISSING_OR_AMBIGUOUS")
-    idx = markers[0]
-    body = "\n".join(lines[idx+1:]).strip()
+    targets = {value for _, value in markers}
+    if len(targets) != 1:
+        raise InstructionError("NEXT_INSTRUCTION_MISSING_OR_AMBIGUOUS")
+    idx, marker = markers[0]
+    # ChatGPT may render the same semantic marker once as a response heading
+    # and once inside a generated report/artifact. Identical routes are not a
+    # branch ambiguity. Preserve every following line in order while removing
+    # only duplicate copies of that exact marker. Mixed SELF/MANAGER markers
+    # remain rejected above.
+    body = "\n".join(line for line in lines[idx+1:] if line.strip() != marker).strip()
     if not body or len(body) > 10800:
         raise InstructionError("NEXT_INSTRUCTION_INVALID")
     return NextInstruction(
-        NextTarget.SELF if lines[idx].strip().endswith("SELF") else NextTarget.MANAGER,
+        NextTarget.SELF if marker.endswith("SELF") else NextTarget.MANAGER,
         body,
     )
 

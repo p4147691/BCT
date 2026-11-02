@@ -426,6 +426,19 @@ class DelayedSendMessageTests(unittest.TestCase):
         self.assertEqual("SELF_SENT", result.status)
         self.assertEqual("Edit file X.\nRun focused test.", self.events[1][2])
 
+    def test_duplicate_same_target_marker_is_one_unambiguous_route(self):
+        body = (
+            "NEXT TASK — MANAGER\nA에게 보고:\n검증 PASS.\n"
+            "NEXT TASK — MANAGER\n요청 결과: 전체 PASS"
+        )
+        result = self.advance(body)
+        self.assertEqual("RETURNED_TO_MANAGER", result.status)
+        self.assertEqual("manager-uuid", self.events[0][1])
+        self.assertEqual(
+            "A에게 보고:\n검증 PASS.\n요청 결과: 전체 PASS",
+            self.events[0][2],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
