@@ -28,6 +28,7 @@ MCP_PRINCIPAL_ID = "bct-mcp-local"
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network",
     "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
+    "bct_set_chain_execution_plan", "bct_get_chain_execution_plan",
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
@@ -819,6 +820,58 @@ def build_mcp(
         if direction is None or direction.get("work_id") != work.work_id:
             return {"status":"NOT_FOUND","direction_id":direction_id}
         return {"status":"OK","chain_direction":direction}
+
+    @server.tool(
+        name="bct_set_chain_execution_plan",
+        description=(
+            "Save B's concrete execution plan after an exact Chain Direction has "
+            "already been delivered by Chain Message. The plan may interpret and "
+            "develop A's human direction; BCT stores it but never writes or executes it."
+        ),
+        structured_output=True,
+    )
+    async def bct_set_chain_execution_plan(
+        work_id: str, direction_id: str, task_id: str, plan_text: str,
+        generation: int = 1, plan_id: str = "",
+    ) -> dict[str, Any]:
+        from bct.chain_execution_plan import ChainExecutionPlanLedger
+        if not plan_id:
+            plan_id = "chain-execution-plan-" + uuid.uuid4().hex[:18]
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        try:
+            plan = await asyncio.to_thread(
+                ChainExecutionPlanLedger(bct.store).save,
+                plan_id=plan_id, work_id=work_id, direction_id=direction_id,
+                task_id=task_id, generation=generation, plan_text=plan_text,
+            )
+        except ValueError as exc:
+            return {"status":"INVALID_REQUEST","reason":str(exc)}
+        return {"status":"OK","chain_execution_plan":plan}
+
+    @server.tool(
+        name="bct_get_chain_execution_plan",
+        description="Read one exact B-authored Chain Execution Plan. Does not send, plan, or decide.",
+        structured_output=True,
+    )
+    async def bct_get_chain_execution_plan(work_id: str, plan_id: str) -> dict[str, Any]:
+        from bct.chain_execution_plan import ChainExecutionPlanLedger
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        plan = await asyncio.to_thread(
+            ChainExecutionPlanLedger(bct.store).get, plan_id=plan_id,
+        )
+        if plan is None or plan.get("work_id") != work.work_id:
+            return {"status":"NOT_FOUND","plan_id":plan_id}
+        return {"status":"OK","chain_execution_plan":plan}
 
     @server.tool(
         name="bct_delayed_send_cancel",

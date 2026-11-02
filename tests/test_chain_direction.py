@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from bct.chain_direction import ChainDirectionLedger
+from bct.chain_execution_plan import ChainExecutionPlanLedger
 from bct.core.models import Work
 from bct.core.store import Store
 from bct.delayed_send_message import DurableWatchLedger, DelayedSendMessageRunner, Watch
@@ -76,6 +77,20 @@ class ChainDirectionLedgerTests(unittest.TestCase):
                 ledger.plan_chain(
                     direction_id="direction-hold", work_id="work-1",
                     task_id="task-1", operation_id="chain-1",
+                )
+
+    def test_b_plan_cannot_exist_before_a_direction_is_delivered(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            ChainDirectionLedger(store).save(
+                direction_id="direction-waiting", work_id="work-1", source_kind="USER",
+                decision="NEW_TASK", direction_text="Improve the result without replacing the original.",
+            )
+            with self.assertRaisesRegex(ValueError, "SOURCE_NOT_STARTED"):
+                ChainExecutionPlanLedger(store).save(
+                    plan_id="plan-too-early", work_id="work-1",
+                    direction_id="direction-waiting", task_id="task-1",
+                    generation=1, plan_text="Inspect, modify reversibly, then verify.",
                 )
 
 
@@ -198,6 +213,27 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "Do the second bounded task, then return to A.",
                 ops.calls[1]["arguments"]["text"],
             )
+
+            # Only after delivery does B author its own concrete plan. It may
+            # develop A's direction and is intentionally not text-equal to it.
+            b_plan_text = (
+                "Progress 1/2. Inspect the current evidence, perform the bounded "
+                "change reversibly, verify E2E, and return exact artifacts to A."
+            )
+            _, b_plan = await mcp.call_tool("bct_set_chain_execution_plan", {
+                "work_id": work.work_id, "direction_id": "direction-two",
+                "task_id": "task-two", "generation": 1,
+                "plan_id": "b-plan-two", "plan_text": b_plan_text,
+            })
+            self.assertEqual("OK", b_plan["status"])
+            self.assertNotEqual(
+                direction["chain_direction"]["direction_text"],
+                b_plan["chain_execution_plan"]["plan_text"],
+            )
+            _, read_plan = await mcp.call_tool("bct_get_chain_execution_plan", {
+                "work_id": work.work_id, "plan_id": "b-plan-two",
+            })
+            self.assertEqual(b_plan_text, read_plan["chain_execution_plan"]["plan_text"])
 
             # B2 → A3: the final BA return; A3 closes instead of creating B3.
             return_to_manager("task-two", "d" * 64, "Second B report.")
