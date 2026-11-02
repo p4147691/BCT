@@ -152,6 +152,7 @@ const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
+let monitorBctDeferredNodeRender = null;
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;

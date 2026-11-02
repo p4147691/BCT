@@ -623,6 +623,11 @@ function finishMonitorBctNodeDrag() {
   document.documentElement.classList.remove("monitor-bct-node-drag-active");
   monitorWorkers?.querySelectorAll?.(".monitor-bct-node-list-available")
     .forEach((list) => list.classList.remove("monitor-bct-node-list-available"));
+  const deferred = monitorBctDeferredNodeRender;
+  monitorBctDeferredNodeRender = null;
+  // A canceled drag needs the latest deferred screen state. A committed drop
+  // has already prepared its own optimistic order, so it owns the next paint.
+  if (deferred && !monitorBctNodeReorderPending) renderMonitorBctWindowNodes(deferred);
   globalThis.setTimeout(() => {
     if (monitorBctSuppressedClickKey === suppressedKey) monitorBctSuppressedClickKey = "";
   }, 400);

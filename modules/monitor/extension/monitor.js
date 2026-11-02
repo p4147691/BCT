@@ -6241,6 +6241,7 @@ const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
+let monitorBctDeferredNodeRender = null;
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;
@@ -6758,9 +6759,14 @@ function monitorUniqueBctConversationNodes(nodes) {
 
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
-  // A background refresh may replace the captured row while the mouse is down.
-  // Cancel before detaching it, so no ghost or draggable visual state survives.
-  if (monitorBctPointerDrag) cancelMonitorBctNodePointerDrag({ pointerId: monitorBctPointerDrag.pointerId });
+  // A background refresh can arrive while the pointer is captured by a card.
+  // Replacing that card would silently cancel every drag, so retain the newest
+  // snapshot and paint it once the current drop has finished instead.
+  if (monitorBctPointerDrag) {
+    monitorBctDeferredNodeRender = nodes;
+    return;
+  }
+  monitorBctDeferredNodeRender = null;
   nodes = monitorUniqueBctConversationNodes(nodes);
   const fragment = document.createDocumentFragment();
   if (!nodes.length) {
@@ -7198,6 +7204,11 @@ function finishMonitorBctNodeDrag() {
   document.documentElement.classList.remove("monitor-bct-node-drag-active");
   monitorWorkers?.querySelectorAll?.(".monitor-bct-node-list-available")
     .forEach((list) => list.classList.remove("monitor-bct-node-list-available"));
+  const deferred = monitorBctDeferredNodeRender;
+  monitorBctDeferredNodeRender = null;
+  // A canceled drag needs the latest deferred screen state. A committed drop
+  // has already prepared its own optimistic order, so it owns the next paint.
+  if (deferred && !monitorBctNodeReorderPending) renderMonitorBctWindowNodes(deferred);
   globalThis.setTimeout(() => {
     if (monitorBctSuppressedClickKey === suppressedKey) monitorBctSuppressedClickKey = "";
   }, 400);

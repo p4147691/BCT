@@ -94,6 +94,10 @@ function loadModule() {
   assert.match(monitor, /row\.addEventListener\("click"/);
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
+  assert.match(monitor, /if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/,
+    "an RCC refresh must defer rather than cancel an active node drag");
+  assert.match(monitor, /const deferred = monitorBctDeferredNodeRender;[\s\S]{0,220}if \(deferred && !monitorBctNodeReorderPending\) renderMonitorBctWindowNodes\(deferred\)/,
+    "a canceled drag must repaint the newest deferred node snapshot");
   assert.match(monitor, /function updateMonitorBctNodePointerDrag/);
   assert.match(monitor, /function monitorBctNodeDropAt/);
   assert.match(monitor, /groupList\.className = "monitor-bct-node-list"/);

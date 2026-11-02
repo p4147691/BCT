@@ -35,14 +35,15 @@ function fixture(){
  }};
  const commits=[];
  const nativeCalls=[];
- const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorDesktopState:{hostWindowHwnd:"42"},document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
+ const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDeferredNodeRender:null,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorDesktopState:{hostWindowHwnd:"42"},document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
   monitorBctNativePreviewToken:"",monitorBctNativePreviewSequence:0,
   monitorNative(message){nativeCalls.push(message);return Promise.resolve({ok:true});},
   stopMonitorBctNativePreview(){nativeCalls.push({type:"monitorDragPreviewStop"});},
   monitorBctNodeSelectionKey:n=>n.conversationKey,
   createMonitorNodeDragGhost(){const g={classList:cl(),style:{},removed:false,remove(){this.removed=true;}};ghost.push(g);return g;},
   moveMonitorNodeDragGhost(g,x,y){g.style.transform="translate3d("+x+"px,"+y+"px,0)";},
-  commitMonitorBctNodeDrop(...a){commits.push(a);ctx.finishMonitorBctNodeDrag();}
+  commitMonitorBctNodeDrop(...a){commits.push(a);ctx.finishMonitorBctNodeDrag();},
+  renderMonitorBctWindowNodes(){}
  };
  vm.createContext(ctx);vm.runInContext(original.slice(start,end),ctx);
  function begin(){ctx.beginMonitorBctNodePointerDrag({button:0,pointerId:9,clientX:30,clientY:50},rows[0],{conversationKey:"dragged",nodeLabel:"N1",title:"First"});}
@@ -86,6 +87,6 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
  else f.doc.fire(kind,{pointerId:9});
  assert.equal(f.commits.length,0);f.clean();
 }
-assert.match(original,/if \(monitorBctPointerDrag\) cancelMonitorBctNodePointerDrag/);
+assert.match(original,/if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/);
 assert.match(original,/document\.addEventListener\("pointerup", endMonitorBctNodePointerDrag, true\)/);
 console.log(JSON.stringify({status:"PASS",cases:11,coverage:"edge-preview-drop,far-cancel,final-pointerup,quick-drag,blur,cancel,lostcapture,cleanup"}));

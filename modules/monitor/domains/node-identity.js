@@ -1382,9 +1382,14 @@ function monitorUniqueBctConversationNodes(nodes) {
 //@@FN_START:renderMonitorBctWindowNodes
 function renderMonitorBctWindowNodes(nodes) {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorWorkers) return;
-  // A background refresh may replace the captured row while the mouse is down.
-  // Cancel before detaching it, so no ghost or draggable visual state survives.
-  if (monitorBctPointerDrag) cancelMonitorBctNodePointerDrag({ pointerId: monitorBctPointerDrag.pointerId });
+  // A background refresh can arrive while the pointer is captured by a card.
+  // Replacing that card would silently cancel every drag, so retain the newest
+  // snapshot and paint it once the current drop has finished instead.
+  if (monitorBctPointerDrag) {
+    monitorBctDeferredNodeRender = nodes;
+    return;
+  }
+  monitorBctDeferredNodeRender = null;
   nodes = monitorUniqueBctConversationNodes(nodes);
   const fragment = document.createDocumentFragment();
   if (!nodes.length) {
