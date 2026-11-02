@@ -124,6 +124,7 @@ const monitorCompletionAlertTimers = new Map();
 
 let monitorChatNavigationRefreshTimer = 0;
 const monitorChatNavigationPendingByTab = new Map();
+let monitorChatNavigationRefreshGeneration = 0;
 
 /*@@MONITOR_FUNCTION:monitorBrowserWindowIdForEndpoint@@*/
 

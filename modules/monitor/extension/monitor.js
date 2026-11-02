@@ -2800,6 +2800,7 @@ function monitorApplyObservedChatTabSelection(message, sender) {
 
 let monitorChatNavigationRefreshTimer = 0;
 const monitorChatNavigationPendingByTab = new Map();
+let monitorChatNavigationRefreshGeneration = 0;
 
 function monitorBrowserWindowIdForEndpoint(endpoint) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorBrowserWindowIdForEndpoint"].apply(this, arguments); }
 
@@ -3152,6 +3153,7 @@ async function flushMonitorPopupTopologyRefresh() {
 function scheduleMonitorChatNavigationRefresh(message) {
   const tabId = Number(message?.tabId);
   if (!Number.isInteger(tabId) || tabId < 0) return;
+  const eventGeneration = ++monitorChatNavigationRefreshGeneration;
 
   // A real Chrome tab activation must update Monitor selection immediately.
   // The follow-up reads below can take variable time while RCC is refreshing;
@@ -3159,13 +3161,21 @@ function scheduleMonitorChatNavigationRefresh(message) {
   // list/thumbnail response to a user click.
   applyMonitorChatNavigationIdentity(message, monitorLastAiState);
 
-  monitorChatNavigationPendingByTab.set(tabId, { ...message, tabId });
+  monitorChatNavigationPendingByTab.set(tabId, {
+    ...message,
+    tabId,
+    monitorSelectionGeneration: eventGeneration,
+  });
   if (monitorChatNavigationRefreshTimer) clearTimeout(monitorChatNavigationRefreshTimer);
   monitorChatNavigationRefreshTimer = setTimeout(async () => {
     monitorChatNavigationRefreshTimer = 0;
-    const pending = [...monitorChatNavigationPendingByTab.values()];
+    const pending = [...monitorChatNavigationPendingByTab.values()].sort((left, right) =>
+      Number(left?.at || 0) - Number(right?.at || 0)
+      || Number(left?.monitorSelectionGeneration || 0) - Number(right?.monitorSelectionGeneration || 0)
+    );
     monitorChatNavigationPendingByTab.clear();
     if (!pending.length) return;
+    const refreshGeneration = Math.max(...pending.map((item) => Number(item?.monitorSelectionGeneration || 0)));
 
     try {
       await refreshMonitorEndpointRegistry();
@@ -3177,6 +3187,10 @@ function scheduleMonitorChatNavigationRefresh(message) {
       // Reuse the lightweight ACT state path once per event burst. Each event is
       // then applied to only its own browser window/HWND.
       await refreshMonitorConversationStateFast();
+      // A newer real Chrome selection may arrive while these reads are in
+      // flight.  The immediate path above has already selected that newer
+      // tab; an older refresh must never paint its stale selection over it.
+      if (refreshGeneration !== monitorChatNavigationRefreshGeneration) return;
       const state = monitorLastAiState;
       let mappingMiss = false;
       for (const item of pending) {
@@ -3187,6 +3201,7 @@ function scheduleMonitorChatNavigationRefresh(message) {
       // Full identity discovery is recovery-only and runs at most once for this
       // burst when targeted windowId -> HWND mapping is genuinely unavailable.
       if (mappingMiss && state) await refreshMonitorIdentityIndex(state, true);
+      if (refreshGeneration !== monitorChatNavigationRefreshGeneration) return;
       refreshMonitorBctCurrentSessionWindowHwnd();
       refreshMonitorBctDisplayWindowHwnd();
       // The first pass may happen before the native HWND index is refreshed.
