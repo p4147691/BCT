@@ -101,7 +101,8 @@ function installMonitorBctRoleLongPress(row, node) {
     startX = event.clientX;
     startY = event.clientY;
     const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
-    const isSupervisor = tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
+    const isSupervisor = !String(node.scopeName || "").trim()
+      && tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
     const isUnassigned = !String(node.scopeName || "").trim();
     row.classList.add(isUnassigned || isSupervisor ? "monitor-bct-supervisor-hold" : "monitor-bct-manager-hold");
     timer = setTimeout(() => {
@@ -117,13 +118,24 @@ function installMonitorBctRoleLongPress(row, node) {
         return;
       }
       const role = isUnassigned || isSupervisor ? "supervisor" : "Manager";
+      if (role === "Manager") {
+        const existingManager = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+          .find((candidate) => candidate?.conversationKey !== node.conversationKey
+            && String(candidate?.scopeId || "") === String(node.scopeId || "")
+            && Array.isArray(candidate?.roleTags)
+            && candidate.roleTags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
+        if (existingManager) {
+          setMonitorStatus(`${String(node.scopeName || "대화망")}에는 이미 ${existingManager.nodeLabel || "다른 노드"} Manager가 있습니다. 기존 Manager를 해제한 뒤 바꾸세요.`, false, 4200);
+          return;
+        }
+      }
       const hadRole = role === "supervisor"
         ? isSupervisor
         : tags.some((tag) => String(tag).trim().toLowerCase() === "manager");
       const nextTags = hadRole
         ? tags.filter((tag) => String(tag).trim().toLowerCase() !== role.toLowerCase())
         : [...tags, role];
-      const nextScopeName = role === "supervisor" && !hadRole ? "BCT Chain" : node.scopeName;
+      const nextScopeName = role === "supervisor" ? "" : node.scopeName;
       row.classList.toggle("is-manager", role === "Manager" ? !hadRole : tags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
       row.classList.toggle("is-supervisor", role === "supervisor" ? !hadRole : isSupervisor);
       void monitorBctShell.updateConversationScope(node, {

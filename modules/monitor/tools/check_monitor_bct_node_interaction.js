@@ -107,7 +107,7 @@ function loadModule() {
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
   assert.match(monitor, /function installMonitorBctRoleLongPress\(/);
-  assert.match(monitor, /const nextScopeName = role === "supervisor" && !hadRole \? "BCT Chain" : node\.scopeName/);
+  assert.match(monitor, /const nextScopeName = role === "supervisor" \? "" : node\.scopeName/);
   assert.match(monitor, /row\.classList\.toggle\("is-supervisor"/);
   assert.match(monitor, /if \(!monitorBctShell\?\.updateConversationScope \|\| !node\?\.conversationKey\)/,
     "conversation metadata editor must be available independently of exact tab rename identity");
@@ -226,6 +226,7 @@ function loadModule() {
   const roleUpdates = [];
   const holdContext = {
     monitorBctSuppressedClickKey: "",
+    monitorBctWindowNodesCache: [],
     monitorBctNodeSelectionKey: (node) => node.conversationKey,
     monitorBctShell: {
       updateConversationScope: async (_node, values) => { roleUpdates.push(values); return { ok: true }; },
@@ -262,16 +263,16 @@ function loadModule() {
   supervisorOn.listeners.get("pointerdown")({ button: 0, clientX: 30, clientY: 30, target: { closest: () => null } });
   holdTimers.at(-1).callback();
   await Promise.resolve();
-  assert.equal(roleUpdates[2].scopeName, "BCT Chain");
+  assert.equal(roleUpdates[2].scopeName, "");
   assert.deepEqual(Array.from(roleUpdates[2].roleTags), ["Worker", "supervisor"]);
   assert.equal(supervisorOn.classes.has("is-supervisor"), true);
 
   const supervisorOff = managerRow();
-  holdContext.installMonitorBctRoleLongPress(supervisorOff, { ...baseNode, scopeName: "BCT Chain", roleTags: ["Worker", "supervisor"] });
+  holdContext.installMonitorBctRoleLongPress(supervisorOff, { ...baseNode, scopeName: "", roleTags: ["Worker", "supervisor"] });
   supervisorOff.listeners.get("pointerdown")({ button: 0, clientX: 40, clientY: 40, target: { closest: () => null } });
   holdTimers.at(-1).callback();
   await Promise.resolve();
-  assert.equal(roleUpdates[3].scopeName, "BCT Chain");
+  assert.equal(roleUpdates[3].scopeName, "");
   assert.deepEqual(Array.from(roleUpdates[3].roleTags), ["Worker"]);
   assert.equal(supervisorOff.classes.has("is-supervisor"), false);
 

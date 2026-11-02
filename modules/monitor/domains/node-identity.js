@@ -1542,7 +1542,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.append(number, body, presence);
     const roleTags = Array.isArray(node.roleTags) ? node.roleTags.map((tag) => String(tag).trim().toLowerCase()) : [];
     row.classList.toggle("is-manager", roleTags.includes("manager"));
-    row.classList.toggle("is-supervisor", roleTags.includes("supervisor"));
+    row.classList.toggle("is-supervisor", !String(node.scopeName || "").trim() && roleTags.includes("supervisor"));
     installMonitorBctRoleLongPress(row, node);
     row.addEventListener("dragstart", (event) => event.preventDefault());
     row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
