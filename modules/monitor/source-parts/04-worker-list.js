@@ -203,4 +203,6 @@ let monitorBctRenameEditor = null;
 
 /*@@MONITOR_FUNCTION:monitorBctNodeRoleSummary@@*/
 
+/*@@MONITOR_FUNCTION:monitorBctNodeRoleRank@@*/
+
 /*@@MONITOR_FUNCTION:monitorBctNodeLocationText@@*/

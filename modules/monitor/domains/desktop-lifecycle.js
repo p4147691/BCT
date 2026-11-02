@@ -378,7 +378,9 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
 
   const destination = semanticSnapshot
     .filter((node) => String(node?.conversationKey || "").trim().toLowerCase() !== draggedKey && (node.scopeId || "") === destinationScopeId)
-    .sort(compareMonitorBctNodeDisplayOrder);
+    .sort((left, right) =>
+      monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right) ||
+      compareMonitorBctNodeDisplayOrder(left, right));
   let insertion = destination.length;
   if (targetConversationKey) {
     const targetKey = String(targetConversationKey || "").trim().toLowerCase();
@@ -386,6 +388,22 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     if (targetIndex >= 0) insertion = targetIndex + (position === "after" ? 1 : 0);
   }
   destination.splice(insertion, 0, dragged);
+  // Coordinator roles are visually pinned at the head. Keep the persisted
+  // sequence identical to that visible rule while preserving manual order
+  // among ordinary nodes.
+  destination.sort((left, right) => monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right));
+  const previousDestinationKeys = semanticSnapshot
+    .filter((node) => (node.scopeId || "") === destinationScopeId)
+    .sort((left, right) =>
+      monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right) ||
+      compareMonitorBctNodeDisplayOrder(left, right))
+    .map((node) => node.conversationKey);
+  const nextDestinationKeys = destination.map((node) => node.conversationKey);
+  if (!movedAcrossScopes && previousDestinationKeys.join("\n") === nextDestinationKeys.join("\n")) {
+    finishMonitorBctNodeDrag();
+    setMonitorStatus("노드가 이미 그 위치에 있습니다. Manager와 감독관은 목록 맨 앞에 고정됩니다.", true, 3000);
+    return;
+  }
   const nextOrders = new Map(destination.map((node, index) => [node.conversationKey, index + 1]));
 
   if (movedAcrossScopes) {
@@ -608,12 +626,11 @@ function destroyMonitorNodeDragGhost(ghost) { ghost?.remove(); }
 function endMonitorBctNodePointerDrag(event) {
   const drag = monitorBctPointerDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
-  // Re-evaluate at pointerup. The last preview is never authority if the
-  // pointer moved out of the hit-zone without another pointermove event.
+  // The insertion line is the user's drop contract. Recomputing from the
+  // pointerup target made a visible valid line disappear on release in the
+  // same grid, so commit the last previewed destination exactly as painted.
+  const drop = drag.active ? drag.drop : null;
   clearMonitorBctNodeDropFeedback();
-  const drop = drag.active
-    ? monitorBctNodeDropAt(event.clientX, event.clientY, drag.node.conversationKey)
-    : null;
   const commitRole = !drag.active && drag.roleArmed
     ? drag.row?.monitorBctCommitRoleLongPress
     : null;

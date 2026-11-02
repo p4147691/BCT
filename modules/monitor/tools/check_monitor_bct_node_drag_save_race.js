@@ -32,6 +32,7 @@ async function scenario(freshRefresh) {
   monitorUniqueBctConversationNodes:(nodes)=>[
     ...new Map(nodes.map((node)=>[node.conversationKey,node])).values()
   ],
+  monitorBctNodeRoleRank:()=>2,
   compareMonitorBctNodeDisplayOrder:(a,b)=>a.displayOrder-b.displayOrder,
   Object,Map,Array,String
  };
@@ -76,6 +77,7 @@ async function successfulSave(){
   monitorUniqueBctConversationNodes:(nodes)=>[
     ...new Map(nodes.map((node)=>[node.conversationKey,node])).values()
   ],
+  monitorBctNodeRoleRank:()=>2,
   compareMonitorBctNodeDisplayOrder:(a,b)=>a.displayOrder-b.displayOrder,Object,Map,Array,String
  };
  vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
@@ -84,6 +86,25 @@ async function successfulSave(){
  complete(true);await task;
  assert.equal(ctx.monitorBctNodeReorderPending,false);
  assert.equal(ctx.monitorBctWindowNodesCache[0].displayOrder,2);
+}
+async function pinnedCoordinatorWorkerReorder(){
+ const saved=[];
+ const ctx={
+  monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"W2",
+  monitorBctWindowNodesCache:[
+   {conversationKey:"M",scopeId:"team",displayOrder:1,roleTags:["Manager"]},
+   {conversationKey:"W1",scopeId:"team",displayOrder:2,roleTags:[]},
+   {conversationKey:"W2",scopeId:"team",displayOrder:3,roleTags:[]}
+  ],
+  monitorBctShell:{reorderConversations:async(nodes)=>{saved.push(nodes.map(node=>node.conversationKey));}},
+  finishMonitorBctNodeDrag(){},refreshMonitorBctWindowNodes:async()=>{},renderMonitorBctWindowNodes(){},setMonitorStatus(){},
+  monitorUniqueBctConversationNodes:(nodes)=>nodes,
+  monitorBctNodeRoleRank:(node)=>node.roleTags?.includes("Manager")?1:2,
+  compareMonitorBctNodeDisplayOrder:(a,b)=>a.displayOrder-b.displayOrder,Object,Map,Array,String
+ };
+ vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
+ await ctx.commitMonitorBctNodeDrop("team","W1","before","","W2");
+ assert.deepEqual(saved[0],["M","W2","W1"],"Manager stays first while workers keep the dropped order");
 }
 async function crossScopeMove(destinationGroupKey, destinationScopeName, expectedScopeName) {
  const updates=[],reorders=[],statuses=[];
@@ -102,6 +123,7 @@ async function crossScopeMove(destinationGroupKey, destinationScopeName, expecte
   renders:[],
   setMonitorStatus(...args){statuses.push(args);},
   monitorUniqueBctConversationNodes:(nodes)=>[...new Map(nodes.map((node)=>[node.conversationKey,node])).values()],
+  monitorBctNodeRoleRank:(node)=>node.roleTags?.includes("Manager")?1:2,
   compareMonitorBctNodeDisplayOrder:()=>0,Object,Map,Array,String
  };
  vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
@@ -126,8 +148,9 @@ async function crossScopeMove(destinationGroupKey, destinationScopeName, expecte
  await scenario(false);
  await scenario(true);
  await successfulSave();
+ await pinnedCoordinatorWorkerReorder();
  await crossScopeMove("__unassigned__","","");
  await crossScopeMove("team-b","Team B","Team B");
  assert.match(source,/monitorBctPointerDrag \|\| monitorBctNodeReorderPending\) return/);
- console.log(JSON.stringify({status:"PASS",cases:5,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,scope-move-to-unassigned,scope-move-to-network"}));
+ console.log(JSON.stringify({status:"PASS",cases:6,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,pinned-coordinator-worker-reorder,scope-move-to-unassigned,scope-move-to-network"}));
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});

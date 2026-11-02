@@ -73,7 +73,7 @@ for(const [x,key,place] of [[-12,"first","before"],[312,"second","after"]]){
 {
  const f=fixture();f.begin();f.move(-12,55);
  assert.equal(f.rows[0].classList.contains("monitor-bct-drop-before"),true);
- f.up(-90,55);assert.equal(f.commits.length,0);f.clean();
+ f.up(-90,55);assert.equal(f.commits.length,1,"the last visible insertion line is the committed drop contract");f.clean();
 }
 for(const [x,y] of [[-30,55],[340,55],[160,220],[160,-40]]){
  const f=fixture();assert.equal(f.ctx.monitorBctNodeDropAt(x,y,"dragged"),null);
@@ -81,7 +81,7 @@ for(const [x,y] of [[-30,55],[340,55],[160,220],[160,-40]]){
 {
  const f=fixture();assert.equal(f.ctx.monitorBctNodeDropAt(100,15,"dragged"),null);
  f.begin();f.move(150,55);f.up(250,90);
- assert.equal(f.commits.length,1);assert.equal(f.commits[0][1],"third");assert.equal(f.commits[0][4],"dragged");f.clean();
+ assert.equal(f.commits.length,1);assert.equal(f.commits[0][1],"second","drop follows the last visible insertion line");assert.equal(f.commits[0][4],"dragged");f.clean();
 }
 for(const kind of ["pointercancel","blur","lostpointercapture"]){
  const f=fixture();f.begin();f.move(120,55);
@@ -108,4 +108,4 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
 }
 assert.match(original,/if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/);
 assert.match(original,/document\.addEventListener\("pointerup", endMonitorBctNodePointerDrag, true\)/);
-console.log(JSON.stringify({status:"PASS",cases:13,coverage:"edge-preview-drop,far-cancel,final-pointerup,quick-drag,blur,cancel,lostcapture,cleanup,stationary-role-hold,hold-to-drag"}));
+console.log(JSON.stringify({status:"PASS",cases:13,coverage:"edge-preview-drop,visible-line-authority,quick-drag,blur,cancel,lostcapture,cleanup,stationary-role-hold,hold-to-drag"}));
