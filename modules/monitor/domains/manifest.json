@@ -9,7 +9,7 @@
     {
       "domain": "conversations",
       "file": "conversations.js",
-      "functions": 72
+      "functions": 76
     },
     {
       "domain": "desktop-lifecycle",

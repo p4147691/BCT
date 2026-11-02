@@ -396,8 +396,12 @@ function loadModule() {
     monitorBctRoleUndo: { disabled: true, addEventListener() {} }, monitorBctRoleRedo: { disabled: true, addEventListener() {} },
     monitorBctRoleUndoStack: [], monitorBctRoleRedoStack: [],
     monitorBctRoleHistoryBusy: false, MONITOR_BCT_ROLE_HISTORY_LIMIT: 30,
-    monitorBctWindowNodesCache: [{ conversationKey: "conv-1", scopeId: "scope-a", scopeName: "A", title: "Node", roleTagsSha256: "a".repeat(64) }],
-    monitorBctShell: { updateConversationScope: async (_node, values) => { historyWrites.push(values); return {}; } },
+    monitorBctWindowNodesCache: [{ conversationKey: "conv-1", scopeId: "scope-a", scopeName: "A", title: "Node", roleTags: ["Worker", "Manager"], roleTagsSha256: "a".repeat(64) }],
+    monitorBctShell: { updateConversationScope: async (_node, values) => {
+      historyWrites.push(values);
+      historyContext.monitorBctWindowNodesCache[0].roleTags = [...values.roleTags];
+      return {};
+    } },
     refreshMonitorBctWindowNodes: async () => {}, setMonitorStatus: () => {},
     Object, Array, String,
   };

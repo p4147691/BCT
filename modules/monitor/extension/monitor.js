@@ -6263,10 +6263,65 @@ function updateMonitorBctRoleHistoryUi() {
 }
 function recordMonitorBctRoleHistory(action) {
   if (!action?.conversationKey) return;
-  monitorBctRoleUndoStack.push(Object.freeze({ ...action }));
+  // Older callers only knew about role tags.  Normalize those entries into a
+  // complete node-state transition so one undo button can safely cover role,
+  // scope membership, and persisted order alike.
+  const sameScope = String(action.scopeId || "");
+  const legacyScopeName = Object.prototype.hasOwnProperty.call(action, "scopeName") ? String(action.scopeName || "") : null;
+  const normalized = action.before && action.after ? action : {
+    ...action,
+    before: Object.freeze({
+      conversationKey: action.conversationKey,
+      scopeId: sameScope,
+      scopeName: legacyScopeName,
+      roleTags: Array.isArray(action.beforeRoleTags) ? [...action.beforeRoleTags] : [],
+    }),
+    after: Object.freeze({
+      conversationKey: action.conversationKey,
+      scopeId: sameScope,
+      scopeName: legacyScopeName,
+      roleTags: Array.isArray(action.afterRoleTags) ? [...action.afterRoleTags] : [],
+    }),
+  };
+  monitorBctRoleUndoStack.push(Object.freeze(normalized));
   while (monitorBctRoleUndoStack.length > MONITOR_BCT_ROLE_HISTORY_LIMIT) monitorBctRoleUndoStack.shift();
   monitorBctRoleRedoStack.length = 0;
   updateMonitorBctRoleHistoryUi();
+}
+function monitorBctNodeHistoryState(node) {
+  if (!node?.conversationKey) return null;
+  return Object.freeze({
+    conversationKey: String(node.conversationKey).toLowerCase(),
+    scopeId: String(node.scopeId || ""),
+    scopeName: String(node.scopeName || ""),
+    roleTags: Object.freeze(Array.isArray(node.roleTags) ? [...node.roleTags] : []),
+  });
+}
+function monitorBctNodeHistoryOrders(nodes, scopeIds) {
+  const requested = [...new Set((Array.isArray(scopeIds) ? scopeIds : []).map((value) => String(value || "")))];
+  const result = {};
+  for (const scopeId of requested) {
+    result[scopeId] = (Array.isArray(nodes) ? nodes : [])
+      .filter((node) => String(node?.scopeId || "") === scopeId && node?.conversationKey)
+      .sort((left, right) => monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right) || compareMonitorBctNodeDisplayOrder(left, right))
+      .map((node) => String(node.conversationKey).toLowerCase());
+  }
+  return Object.freeze(result);
+}
+function monitorBctNodeHistoryMatches(node, state) {
+  if (!node || !state) return false;
+  const currentTags = Array.isArray(node.roleTags) ? node.roleTags.map(String).sort() : [];
+  const expectedTags = Array.isArray(state.roleTags) ? state.roleTags.map(String).sort() : [];
+  return String(node.conversationKey || "").toLowerCase() === String(state.conversationKey || "").toLowerCase()
+    && String(node.scopeId || "") === String(state.scopeId || "")
+    && (state.scopeName === null || String(node.scopeName || "") === String(state.scopeName || ""))
+    && currentTags.join("\n") === expectedTags.join("\n");
+}
+function monitorBctNodeHistoryOrdersMatch(nodes, expected) {
+  if (!expected || typeof expected !== "object") return true;
+  const actual = monitorBctNodeHistoryOrders(nodes, Object.keys(expected));
+  return Object.keys(expected).every((scopeId) =>
+    (actual[scopeId] || []).join("\n") === (Array.isArray(expected[scopeId]) ? expected[scopeId] : []).join("\n"));
 }
 async function applyMonitorBctRoleHistory(direction) {
   if (monitorBctRoleHistoryBusy || !monitorBctShell?.updateConversationScope) return;
@@ -6278,26 +6333,45 @@ async function applyMonitorBctRoleHistory(direction) {
   const node = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
     .find((candidate) => String(candidate?.conversationKey || "").toLowerCase() === String(action.conversationKey).toLowerCase());
   const expectedScopeId = String(action.scopeId || "");
-  if (!node || String(node.scopeId || "") !== expectedScopeId) {
+  const expected = undo ? action.after : action.before;
+  const target = undo ? action.before : action.after;
+  const expectedOrders = undo ? action.afterOrders : action.beforeOrders;
+  const targetOrders = undo ? action.beforeOrders : action.afterOrders;
+  if (!node || (expected ? !monitorBctNodeHistoryMatches(node, expected) : String(node.scopeId || "") !== expectedScopeId)
+    || !monitorBctNodeHistoryOrdersMatch(monitorBctWindowNodesCache, expectedOrders)) {
     source.push(action);
-    setMonitorStatus("역할 변경을 되돌릴 수 없습니다 · 노드의 대화망 위치가 달라졌습니다.", false, 4000);
+    setMonitorStatus("노드 상태를 되돌릴 수 없습니다 · 그 뒤에 다른 이동·역할·정렬 변경이 있습니다.", false, 4000);
     updateMonitorBctRoleHistoryUi();
     return;
   }
-  const targetTags = undo ? action.beforeRoleTags : action.afterRoleTags;
+  const targetTags = target?.roleTags || (undo ? action.beforeRoleTags : action.afterRoleTags);
   monitorBctRoleHistoryBusy = true;
   updateMonitorBctRoleHistoryUi();
   try {
     await monitorBctShell.updateConversationScope(node, {
       displayName: node.title,
-      scopeName: node.scopeName,
+      scopeName: target?.scopeName ?? node.scopeName,
       roleTags: Array.isArray(targetTags) ? targetTags : [],
       expectedRoleTagsSha256: node.roleTagsSha256,
     });
+    await refreshMonitorBctWindowNodes();
+    if (targetOrders && Object.keys(targetOrders).length) {
+      if (!monitorBctShell?.reorderConversations) throw new Error("BCT_CONVERSATION_ORDER_UNAVAILABLE");
+      for (const [scopeId, keys] of Object.entries(targetOrders)) {
+        const scopeNodes = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+          .filter((candidate) => String(candidate?.scopeId || "") === scopeId && candidate?.conversationKey);
+        const byKey = new Map(scopeNodes.map((candidate) => [String(candidate.conversationKey).toLowerCase(), candidate]));
+        const ordered = (Array.isArray(keys) ? keys : []).map((key) => byKey.get(String(key).toLowerCase()));
+        if (ordered.length !== scopeNodes.length || ordered.some((candidate) => !candidate)) {
+          throw new Error("BCT_NODE_HISTORY_SCOPE_CHANGED");
+        }
+        await monitorBctShell.reorderConversations(ordered, { scopeId, movedConversationKey: "" });
+      }
+      await refreshMonitorBctWindowNodes();
+    }
     destination.push(action);
     while (destination.length > MONITOR_BCT_ROLE_HISTORY_LIMIT) destination.shift();
-    await refreshMonitorBctWindowNodes();
-    setMonitorStatus(undo ? "Manager·감독관 변경을 되돌렸습니다." : "Manager·감독관 변경을 다시 적용했습니다.", true, 2600);
+    setMonitorStatus(undo ? "노드 상태를 되돌렸습니다." : "노드 상태를 다시 적용했습니다.", true, 2600);
   } catch (error) {
     source.push(action);
     setMonitorStatus(`역할 변경 ${undo ? "되돌리기" : "다시하기"} 실패 · ${error?.message || error}`, false, 4200);
@@ -6775,9 +6849,24 @@ function installMonitorBctRoleLongPress(row, node) {
       roleTags: nextTags,
       expectedRoleTagsSha256: node.roleTagsSha256,
     }).then((saved) => {
+      const before = typeof monitorBctNodeHistoryState === "function" ? monitorBctNodeHistoryState(node) : null;
+      const beforeOrders = typeof monitorBctNodeHistoryOrders === "function"
+        ? monitorBctNodeHistoryOrders(monitorBctWindowNodesCache, [String(node.scopeId || "")])
+        : null;
       recordMonitorBctRoleHistory({
         conversationKey: node.conversationKey,
         scopeId: String(node.scopeId || ""),
+        scopeName: String(node.scopeName || ""),
+        before,
+        // Keep the response as the authority for role tags, but retain the
+        // visible scope because a supervisor write deliberately uses no scope.
+        after: typeof Object.freeze === "function" ? Object.freeze({
+          conversationKey: String(node.conversationKey).toLowerCase(),
+          scopeId: role === "supervisor" ? "" : String(node.scopeId || ""),
+          scopeName: role === "supervisor" ? "" : String(node.scopeName || ""),
+          roleTags: Object.freeze(Array.isArray(saved?.role_tags) ? [...saved.role_tags] : [...nextTags]),
+        }) : null,
+        beforeOrders,
         beforeRoleTags,
         afterRoleTags: Array.isArray(saved?.role_tags) ? saved.role_tags : nextTags,
       });
@@ -7485,6 +7574,16 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     finishMonitorBctNodeDrag();
     return;
   }
+  // A move and a reorder are both node-state changes.  Capture the complete
+  // affected groups before any optimistic rendering so Undo can verify that no
+  // later user action has changed the same groups.
+  const historyScopeIds = [...new Set([String(dragged.scopeId || ""), String(destinationScopeId || "")])];
+  const historyBefore = typeof monitorBctNodeHistoryState === "function"
+    ? monitorBctNodeHistoryState(dragged)
+    : null;
+  const historyBeforeOrders = typeof monitorBctNodeHistoryOrders === "function"
+    ? monitorBctNodeHistoryOrders(snapshot, historyScopeIds)
+    : null;
 
   const destination = semanticSnapshot
     .filter((node) => nodeOrderKey(node) !== draggedKey &&
@@ -7575,6 +7674,18 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       });
       monitorBctNodeReorderPending = false;
       await refreshMonitorBctWindowNodes();
+      const savedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+        .find((candidate) => nodeOrderKey(candidate) === draggedKey);
+      if (historyBefore && savedNode && typeof recordMonitorBctRoleHistory === "function") {
+        recordMonitorBctRoleHistory({
+          conversationKey: dragged.conversationKey,
+          scopeId: String(dragged.scopeId || ""),
+          before: historyBefore,
+          after: monitorBctNodeHistoryState(savedNode),
+          beforeOrders: historyBeforeOrders,
+          afterOrders: monitorBctNodeHistoryOrders(monitorBctWindowNodesCache, historyScopeIds),
+        });
+      }
       setMonitorStatus(
         destinationScopeId ? "노드를 대화망으로 이동했습니다." : "노드를 미소속 대화로 이동했습니다.",
         true,
@@ -7632,6 +7743,18 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     });
     monitorBctNodeReorderPending = false;
     await refreshMonitorBctWindowNodes();
+    const savedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+      .find((candidate) => nodeOrderKey(candidate) === draggedKey);
+    if (historyBefore && savedNode && typeof recordMonitorBctRoleHistory === "function") {
+      recordMonitorBctRoleHistory({
+        conversationKey: dragged.conversationKey,
+        scopeId: String(dragged.scopeId || ""),
+        before: historyBefore,
+        after: monitorBctNodeHistoryState(savedNode),
+        beforeOrders: historyBeforeOrders,
+        afterOrders: monitorBctNodeHistoryOrders(monitorBctWindowNodesCache, historyScopeIds),
+      });
+    }
     if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
       symbol: "",
       tone: "monitor-node-drag-trace",

@@ -405,6 +405,16 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     finishMonitorBctNodeDrag();
     return;
   }
+  // A move and a reorder are both node-state changes.  Capture the complete
+  // affected groups before any optimistic rendering so Undo can verify that no
+  // later user action has changed the same groups.
+  const historyScopeIds = [...new Set([String(dragged.scopeId || ""), String(destinationScopeId || "")])];
+  const historyBefore = typeof monitorBctNodeHistoryState === "function"
+    ? monitorBctNodeHistoryState(dragged)
+    : null;
+  const historyBeforeOrders = typeof monitorBctNodeHistoryOrders === "function"
+    ? monitorBctNodeHistoryOrders(snapshot, historyScopeIds)
+    : null;
 
   const destination = semanticSnapshot
     .filter((node) => nodeOrderKey(node) !== draggedKey &&
@@ -495,6 +505,18 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       });
       monitorBctNodeReorderPending = false;
       await refreshMonitorBctWindowNodes();
+      const savedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+        .find((candidate) => nodeOrderKey(candidate) === draggedKey);
+      if (historyBefore && savedNode && typeof recordMonitorBctRoleHistory === "function") {
+        recordMonitorBctRoleHistory({
+          conversationKey: dragged.conversationKey,
+          scopeId: String(dragged.scopeId || ""),
+          before: historyBefore,
+          after: monitorBctNodeHistoryState(savedNode),
+          beforeOrders: historyBeforeOrders,
+          afterOrders: monitorBctNodeHistoryOrders(monitorBctWindowNodesCache, historyScopeIds),
+        });
+      }
       setMonitorStatus(
         destinationScopeId ? "노드를 대화망으로 이동했습니다." : "노드를 미소속 대화로 이동했습니다.",
         true,
@@ -552,6 +574,18 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     });
     monitorBctNodeReorderPending = false;
     await refreshMonitorBctWindowNodes();
+    const savedNode = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+      .find((candidate) => nodeOrderKey(candidate) === draggedKey);
+    if (historyBefore && savedNode && typeof recordMonitorBctRoleHistory === "function") {
+      recordMonitorBctRoleHistory({
+        conversationKey: dragged.conversationKey,
+        scopeId: String(dragged.scopeId || ""),
+        before: historyBefore,
+        after: monitorBctNodeHistoryState(savedNode),
+        beforeOrders: historyBeforeOrders,
+        afterOrders: monitorBctNodeHistoryOrders(monitorBctWindowNodesCache, historyScopeIds),
+      });
+    }
     if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
       symbol: "",
       tone: "monitor-node-drag-trace",

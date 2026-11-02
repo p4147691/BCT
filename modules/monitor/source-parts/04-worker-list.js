@@ -155,6 +155,10 @@ let monitorBctRoleHistoryBusy = false;
 const MONITOR_BCT_ROLE_HISTORY_LIMIT = 30;
 /*@@MONITOR_FUNCTION:updateMonitorBctRoleHistoryUi@@*/
 /*@@MONITOR_FUNCTION:recordMonitorBctRoleHistory@@*/
+/*@@MONITOR_FUNCTION:monitorBctNodeHistoryState@@*/
+/*@@MONITOR_FUNCTION:monitorBctNodeHistoryOrders@@*/
+/*@@MONITOR_FUNCTION:monitorBctNodeHistoryMatches@@*/
+/*@@MONITOR_FUNCTION:monitorBctNodeHistoryOrdersMatch@@*/
 /*@@MONITOR_FUNCTION:applyMonitorBctRoleHistory@@*/
 monitorBctRoleUndo?.addEventListener("click", () => void applyMonitorBctRoleHistory("undo"));
 monitorBctRoleRedo?.addEventListener("click", () => void applyMonitorBctRoleHistory("redo"));
