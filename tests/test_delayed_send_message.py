@@ -5,9 +5,9 @@ from pathlib import Path
 from bct.core.store import Store
 
 from bct.delayed_send_message import (
-    Watch, advance, advance_from_rcc, extract_next_instruction, next_instruction_action,
+    Watch, continue_delayed_send_message, continue_delayed_send_message_from_rcc, extract_next_instruction, next_instruction_action,
     next_instruction_decision, InstructionError, DurableWatchLedger,
-    DelayedSendRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
+    DelayedSendMessageRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
 )
 
 
@@ -17,7 +17,7 @@ class DelayedSendMessageTests(unittest.TestCase):
         self.events = []
 
     def advance(self, response, *, complete=True, ready=True, turn="turn-1"):
-        return advance(
+        return continue_delayed_send_message(
             watch=self.watch, response_turn_id=turn, response_text=response,
             response_complete=complete, input_ready=ready,
             manager_conversation_key="manager-uuid",
@@ -32,7 +32,7 @@ class DelayedSendMessageTests(unittest.TestCase):
                     "response_text": "NEXT TASK — SELF\nContinue coding.",
                     "response_complete": True, "input_ready": True}
         def run(data):
-            return advance_from_rcc(
+            return continue_delayed_send_message_from_rcc(
                 watch=self.watch, observation=data,
                 manager_conversation_key="manager-uuid",
                 register_next_watch=lambda w: self.events.append(("watch", w)),
@@ -89,7 +89,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             ledger.bind(Watch("task-1",1,"worker-uuid","",""),
                         send_receipt="send-1",response_turn_id="turn-1")
             sent=[]
-            runner=DelayedSendRunner(
+            runner=DelayedSendMessageRunner(
                 ledger,
                 read_response=lambda watch: {
                     "conversation_key":"worker-uuid","response_turn_id":"turn-1",
@@ -117,7 +117,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             ledger.reserve(Watch("task-1", 1, "worker-uuid", "", ""))
             watch = ledger.bind(Watch("task-1", 1, "worker-uuid", "", ""),
                                 send_receipt="send-1", response_turn_id="turn-1")
-            runner = DelayedSendRunner(
+            runner = DelayedSendMessageRunner(
                 ledger,
                 read_response=lambda _: {
                     "conversation_key": "worker-uuid", "response_turn_id": "turn-1",
@@ -193,7 +193,7 @@ class DelayedSendMessageTests(unittest.TestCase):
                 "response_complete":True,"input_ready":True,
                 "response_sha256":"sha-current"}
             current = dict(observation)
-            runner = DelayedSendRunner(ledger, read_response=lambda _:current,
+            runner = DelayedSendMessageRunner(ledger, read_response=lambda _:current,
                 send_message=lambda *args:sent.append(args) or "receipt")
             for change in ({"response_turn_key":""},
                            {"response_turn_key":"current","response_complete":False},
@@ -217,7 +217,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             def sender(target, body, key):
                 sent.append((target,body,key))
                 return "receipt-" + str(len(sent))
-            runner = DelayedSendRunner(ledger,read_response=lambda w:{
+            runner = DelayedSendMessageRunner(ledger,read_response=lambda w:{
                 "conversation_key":"worker-uuid",
                 "response_turn_id":w.response_turn_id,
                 "response_turn_key":"rcc-key-"+str(w.generation),

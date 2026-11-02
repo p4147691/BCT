@@ -24,7 +24,7 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
-    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check",
+    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network",
     "bct_execution_context",
     "bct_work_create", "bct_operation_get",
 )
@@ -243,8 +243,8 @@ def build_mcp(
     async def bct_network_get(project: str) -> dict[str, Any]:
         return await bct_conversation_network_get(project)
 
-    @server.tool(description="Read-only preflight for planning: current node/RCC state and optional registered network. Does not create plans, networks or messages.", structured_output=True)
-    async def bct_run_check(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
+    @server.tool(description="Read one registered conversation network and its currently observed node/RCC evidence. Optionally includes authorized project context. Does not create plans, networks or messages.", structured_output=True)
+    async def bct_check_network(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
         snapshot = await asyncio.to_thread(status_provider)
@@ -764,8 +764,10 @@ def build_mcp(
     _canonical_command_aliases = (
         ("bct_network", bct_network_get,
          "Show one registered conversation network. Canonical name; bct_network_get remains a compatibility alias."),
-        ("bct_check_run", bct_run_check,
-         "Check whether a run can be planned from current facts. Canonical name; bct_run_check remains a compatibility alias."),
+        ("bct_check_run", bct_check_network,
+         "Legacy compatibility alias for bct_check_network."),
+        ("bct_run_check", bct_check_network,
+         "Legacy compatibility alias for bct_check_network."),
         ("bct_plan_run", bct_run_plan,
          "Save one execution plan. Canonical name; bct_run_plan remains a compatibility alias."),
         ("bct_set_network", bct_network_set,

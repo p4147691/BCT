@@ -15,11 +15,10 @@ or Work authorization commands.
 
 ```text
 bct_status                         read the current Core, RCC and Monitor facts
-  -> bct_run_check                  read-only run preflight: nodes, RCC, network candidates
-  -> bct_network_get                read the selected registered network
+  -> 시작 점검                         use the bct_status facts; this is not a second status read
+  -> bct_check_network (when needed) read a selected conversation network and project context
   -> bct_work_create                establish the authorized Work boundary
-  -> bct_network_set (when needed)  set project membership/role metadata under that Work
-  -> bct_run_check (scoped)         re-check current facts and authorized project context
+  -> bct_set_network (when needed)  set project membership/role metadata under that Work
   -> bct_run_plan (when needed)     record a plan; it does not execute it
   -> choose one execution route
        A. session-start/node-sync -> bct_task_run -> one orchestration dispatch

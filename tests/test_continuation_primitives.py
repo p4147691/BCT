@@ -2,7 +2,7 @@ import unittest
 
 from bct.continuation_primitives import (
     AlarmKind, ActionKind, ActionRequest, ContinuationContext, ContinuationDecision,
-    ContinuationRoute, response_ready_alarm, wake_for_decision,
+    ContinuationRoute, response_ready_alarm, wake_up_message,
 )
 
 
@@ -15,7 +15,7 @@ class ContinuationPrimitiveTests(unittest.TestCase):
         )
         self.assertIsNotNone(alarm)
         self.assertEqual(AlarmKind.RESPONSE_READY, alarm.kind)
-        request = ActionRequest(ActionKind.WAKE, alarm, "manager")
+        request = ActionRequest(ActionKind.WAKE_UP_MESSAGE, alarm, "manager")
         self.assertEqual("manager", request.recipient_role)
 
     def test_wrong_or_incomplete_observation_never_emits_alarm(self):
@@ -45,23 +45,18 @@ class ContinuationPrimitiveTests(unittest.TestCase):
         self.assertEqual("worker-uuid", record["conversation_key"])
         self.assertEqual("manager-instance", record["manager_instance_id"])
 
-    def test_self_decision_becomes_a_wake_reference_without_a_send(self):
+    def test_wake_up_message_is_a_reference_without_a_send_or_decision(self):
         alarm = response_ready_alarm(
             watch_ref="task-1:1", subject_ref="worker-uuid",
             expected_response_turn_id="turn-1", response_turn_id="turn-1",
             response_text="Completed.", response_complete=True, input_ready=True,
         )
-        request = wake_for_decision(
+        request = wake_up_message(
             alarm=alarm,
-            decision=ContinuationDecision(ContinuationRoute.SELF, "Continue."),
             execution_ref="task-1:1",
         )
-        self.assertEqual(ActionKind.WAKE, request.kind)
+        self.assertEqual(ActionKind.WAKE_UP_MESSAGE, request.kind)
         self.assertEqual("worker", request.recipient_role)
         self.assertEqual("task-1:1", request.payload)
-        with self.assertRaisesRegex(ValueError, "REQUIRES_SELF"):
-            wake_for_decision(
-                alarm=alarm,
-                decision=ContinuationDecision(ContinuationRoute.MANAGER, "Return."),
-                execution_ref="task-1:1",
-            )
+        with self.assertRaisesRegex(ValueError, "REFERENCE_INVALID"):
+            wake_up_message(alarm=alarm, execution_ref="")

@@ -182,7 +182,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check", "bct_run_plan", "bct_network_set",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "bct_run_check", "bct_run_plan", "bct_network_set",
                             "bct_execution_context", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
                             "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
@@ -201,7 +201,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     )
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check", "bct_run_plan", "bct_network_set",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "bct_run_check", "bct_run_plan", "bct_network_set",
                             "bct_execution_context", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
                             "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
@@ -230,28 +230,28 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertFalse(network_alias.isError)
                     self.assertEqual(conversation_network.structuredContent,
                                      network_alias.structuredContent)
-                    preflight = await session.call_tool(
-                        "bct_run_check", {"project": "BCT RCC"}
+                    network_check = await session.call_tool(
+                        "bct_check_network", {"project": "BCT RCC"}
                     )
-                    self.assertFalse(preflight.isError)
-                    self.assertEqual("OK", preflight.structuredContent["status"])
-                    self.assertTrue(preflight.structuredContent["read_only"])
-                    self.assertTrue(preflight.structuredContent["context_requires_work"])
+                    self.assertFalse(network_check.isError)
+                    self.assertEqual("OK", network_check.structuredContent["status"])
+                    self.assertTrue(network_check.structuredContent["read_only"])
+                    self.assertTrue(network_check.structuredContent["context_requires_work"])
                     self.assertEqual("AUTH_CONTEXT_REQUIRED",
-                                     preflight.structuredContent["context_status"])
+                                     network_check.structuredContent["context_status"])
                     self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
-                                     preflight.structuredContent["candidates_scope"])
+                                     network_check.structuredContent["candidates_scope"])
                     self.assertEqual("NOT_REQUESTED",
-                                     preflight.structuredContent["historical_contexts_status"])
-                    blank_preflight = await session.call_tool("bct_run_check", {})
-                    self.assertFalse(blank_preflight.isError)
-                    self.assertEqual("OK", blank_preflight.structuredContent["status"])
-                    self.assertEqual("NOT_REQUESTED", blank_preflight.structuredContent["context_status"])
-                    self.assertIsNone(blank_preflight.structuredContent["project_context"])
+                                     network_check.structuredContent["historical_contexts_status"])
+                    blank_network_check = await session.call_tool("bct_check_network", {})
+                    self.assertFalse(blank_network_check.isError)
+                    self.assertEqual("OK", blank_network_check.structuredContent["status"])
+                    self.assertEqual("NOT_REQUESTED", blank_network_check.structuredContent["context_status"])
+                    self.assertIsNone(blank_network_check.structuredContent["project_context"])
 
-                    self.assertEqual("OK", preflight.structuredContent["network"]["status"])
-                    self.assertIn("nodes", preflight.structuredContent)
-                    self.assertIn("rcc", preflight.structuredContent)
+                    self.assertEqual("OK", network_check.structuredContent["network"]["status"])
+                    self.assertIn("nodes", network_check.structuredContent)
+                    self.assertIn("rcc", network_check.structuredContent)
 
                     work_arguments = {
                         "work_id": "mcp-read-work",
@@ -264,7 +264,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertFalse(created.isError)
                     self.assertFalse(created.structuredContent["duplicate"])
                     self.assertTrue(repeated.structuredContent["duplicate"])
-                    denied_context = await session.call_tool("bct_run_check", {
+                    denied_context = await session.call_tool("bct_check_network", {
                         "project": "missingproject",
                         "work_id": "mcp-read-work",
                         "operation_id": "mcp-context-denied-1",

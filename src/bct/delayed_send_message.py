@@ -111,7 +111,36 @@ def bind_next_response(watch: Watch, *, send_receipt: str,
                  response_turn_id, send_receipt)
 
 
-def advance(
+def dispatch_delayed_send_message(
+    *, watch: Watch, alarm: Alarm, decision: ContinuationDecision,
+    manager_conversation_key: str, register_next_watch: Callable[[Watch], None],
+    send_message: Callable[[str, str, str], str],
+) -> Continuation:
+    """Perform the message-only action of the Delayed Send Message recipe.
+
+    The caller has already observed the exact response, created an alarm, and
+    recorded the prior B turn's decision.  This function deliberately owns
+    only the legacy ``SELF/MANAGER -> send message`` branch.  A future Delayed
+    Wake-up Message recipe can consume the same alarm and decision without
+    changing watch or alarm behavior.
+    """
+    action = action_for_decision(alarm=alarm, decision=decision)
+    key = hashlib.sha256(
+        f"{watch.task_id}|{watch.generation}|{watch.response_turn_id}".encode()
+    ).hexdigest()[:24]
+    if action.recipient_role == "worker":
+        next_watch = Watch(watch.task_id, watch.generation+1,
+                           watch.conversation_key, "", "")
+        register_next_watch(next_watch)
+        receipt = send_message(watch.conversation_key, action.payload,
+                               "delayed-self-" + key)
+        return Continuation("SELF_SENT", next_watch, receipt)
+    receipt = send_message(manager_conversation_key, action.payload,
+                           "delayed-manager-" + key)
+    return Continuation("RETURNED_TO_MANAGER", None, receipt)
+
+
+def continue_delayed_send_message(
     *, watch: Watch, response_turn_id: str, response_text: str,
     response_complete: bool, input_ready: bool, manager_conversation_key: str,
     register_next_watch: Callable[[Watch], None],
@@ -139,24 +168,15 @@ def advance(
         return Continuation("WAITING_RESPONSE")
     try:
         decision = next_instruction_decision(alarm)
-        action = action_for_decision(alarm=alarm, decision=decision)
     except InstructionError:
         return Continuation("INSTRUCTION_UNAVAILABLE")
-    key = hashlib.sha256(
-        f"{watch.task_id}|{watch.generation}|{response_turn_id}".encode()
-    ).hexdigest()[:24]
-    if action.recipient_role == "worker":
-        next_watch = Watch(watch.task_id, watch.generation+1,
-                          watch.conversation_key, "", "")
-        register_next_watch(next_watch)
-        receipt = send_message(watch.conversation_key, action.payload,
-                               "delayed-self-" + key)
-        return Continuation("SELF_SENT", next_watch, receipt)
-    receipt = send_message(manager_conversation_key, action.payload,
-                           "delayed-manager-" + key)
-    return Continuation("RETURNED_TO_MANAGER", None, receipt)
+    return dispatch_delayed_send_message(
+        watch=watch, alarm=alarm, decision=decision,
+        manager_conversation_key=manager_conversation_key,
+        register_next_watch=register_next_watch, send_message=send_message,
+    )
 
-def advance_from_rcc(
+def continue_delayed_send_message_from_rcc(
     *, watch: Watch, observation: dict, manager_conversation_key: str,
     register_next_watch: Callable[[Watch], None],
     send_message: Callable[[str, str, str], str],
@@ -175,7 +195,7 @@ def advance_from_rcc(
     body = observation.get("response_text")
     if not isinstance(body, str):
         return Continuation("WAITING_RESPONSE")
-    return advance(
+    return continue_delayed_send_message(
         watch=watch, response_turn_id=turn, response_text=body,
         response_complete=observation.get("response_complete") is True,
         input_ready=observation.get("input_ready") is True,
@@ -663,7 +683,7 @@ class DurableWatchLedger:
 
 
 
-class DelayedSendRunner:
+class DelayedSendMessageRunner:
     """Connect existing RCC read/send callbacks to durable continuation state."""
     def __init__(self, ledger: DurableWatchLedger, *, read_response, send_message):
         self.ledger = ledger
@@ -713,8 +733,8 @@ class DelayedSendRunner:
             self.ledger.mark_result(watch, "UNKNOWN")
             return Continuation("ALREADY_DISPATCHING")
         try:
-            result = advance_from_rcc(
-                watch=watch, observation=observation,
+            result = dispatch_delayed_send_message(
+                watch=watch, alarm=alarm, decision=decision,
                 manager_conversation_key=manager_conversation_key,
                 register_next_watch=self.ledger.reserve,
                 send_message=self.send_message,
@@ -1030,7 +1050,7 @@ class DelayedSendService:
                             row["conversation_key"],row["response_turn_id"],
                             row["source_send_receipt"])
                 ctx=row["context"]
-                runner=DelayedSendRunner(
+                runner=DelayedSendMessageRunner(
                     self.ledger,
                     read_response=lambda _watch:observation,
                     send_message=lambda dest,body,key:self._send_for(

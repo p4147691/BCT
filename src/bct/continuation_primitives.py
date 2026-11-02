@@ -22,7 +22,7 @@ class AlarmKind(str, Enum):
 
 
 class ActionKind(str, Enum):
-    WAKE = "wake"
+    WAKE_UP_MESSAGE = "wake-up-message"
     RETURN = "return"
     SEND_MESSAGE = "send-message"
     CREATE_WATCH = "create-watch"
@@ -55,20 +55,17 @@ def action_for_decision(*, alarm: Alarm, decision: ContinuationDecision) -> Acti
     return ActionRequest(ActionKind.SEND_MESSAGE, alarm, role, decision.payload)
 
 
-def wake_for_decision(*, alarm: Alarm, decision: ContinuationDecision,
-                      execution_ref: str) -> ActionRequest:
-    """Make the BB wake request without choosing a target or sending it.
+def wake_up_message(*, alarm: Alarm, execution_ref: str) -> ActionRequest:
+    """Request one exact wake-up message without choosing or contacting a target.
 
-    This is deliberately separate from :func:`action_for_decision`: the latter
-    preserves the legacy full-text ``NEXT TASK`` delivery. A wake adapter may
-    later turn this reference into an exact, receipt-bound delivery, but this
-    primitive never performs that external effect.
+    A wake-up message is semantically different from an ordinary message: its
+    receiver must inspect its already-recorded execution context and continue.
+    The eventual delivery adapter may use ``bct_send_message`` as transport,
+    but this primitive does not know a SELF/MANAGER decision and cannot send.
     """
-    if decision.route != ContinuationRoute.SELF:
-        raise ValueError("CONTINUATION_WAKE_REQUIRES_SELF_DECISION")
     if not isinstance(execution_ref, str) or not execution_ref.strip():
         raise ValueError("CONTINUATION_WAKE_REFERENCE_INVALID")
-    return ActionRequest(ActionKind.WAKE, alarm, "worker", execution_ref)
+    return ActionRequest(ActionKind.WAKE_UP_MESSAGE, alarm, "worker", execution_ref)
 
 
 @dataclass(frozen=True)
