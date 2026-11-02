@@ -118,6 +118,8 @@ function loadModule() {
     "a role write must be visibly pending without pretending the role was already saved");
   assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\);[\s\S]{0,180}syncMonitorBctNodeTargetHighlight\(\)/,
     "starting a node drag must immediately select its source row");
+  assert.match(monitor, /if \(tags\.includes\("supervisor"\)\) return 0;[\s\S]{0,110}if \(tags\.includes\("manager"\)\) return 1;[\s\S]{0,170}if \(roleDifference\) return roleDifference;/,
+    "supervisor and Manager cards must remain before manually ordered worker cards");
   assert.match(monitor, /const nextScopeName = role === "supervisor" \? "" : node\.scopeName/);
   assert.match(monitor, /if \(!monitorBctShell\?\.updateConversationScope \|\| !node\?\.conversationKey\)/,
     "conversation metadata editor must be available independently of exact tab rename identity");

@@ -1445,6 +1445,19 @@ function renderMonitorBctWindowNodes(nodes) {
       ]];
     }));
     group.nodes.sort((left, right) => {
+      const roleRank = (node) => {
+        const tags = Array.isArray(node?.roleTags)
+          ? node.roleTags.map((tag) => String(tag).trim().toLowerCase())
+          : [];
+        // A supervisor is globally unassigned and a Manager is singular per
+        // network.  Keep either coordination role at the visual head; manual
+        // drag order applies to the ordinary nodes that follow.
+        if (tags.includes("supervisor")) return 0;
+        if (tags.includes("manager")) return 1;
+        return 2;
+      };
+      const roleDifference = roleRank(left) - roleRank(right);
+      if (roleDifference) return roleDifference;
       const nodeNumber = (node) => {
         const digits = String(node.nodeLabel || "").replace(/^N/i, "");
         return /^\\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
