@@ -35,18 +35,19 @@ function fixture(){
  }};
  const commits=[];
  const nativeCalls=[];
- const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDeferredNodeRender:null,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorDesktopState:{hostWindowHwnd:"42"},document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
+ const ctx={monitorBctPointerDrag:null,monitorBctNodeReorderPending:false,monitorBctDeferredNodeRender:null,monitorBctDraggedNodeKey:"",monitorBctSuppressedClickKey:"",monitorBctSuppressScopeClickUntil:0,monitorBctDragGhost:null,monitorBctSelectedNodeKey:"stale",monitorBctNodeHighlightedHwnd:"4242",monitorLastAiState:null,monitorDesktopState:{hostWindowHwnd:"42"},document:doc,window:win,monitorWorkers:workers,globalThis:{setTimeout:()=>1},Date,Math,String,Array,
   monitorBctNativePreviewToken:"",monitorBctNativePreviewSequence:0,
   monitorNative(message){nativeCalls.push(message);return Promise.resolve({ok:true});},
   stopMonitorBctNativePreview(){nativeCalls.push({type:"monitorDragPreviewStop"});},
   monitorBctNodeSelectionKey:n=>n.conversationKey,
+  syncMonitorBctNodeTargetHighlight(){},syncMonitorMinimizedNodeBadges(){},
   createMonitorNodeDragGhost(){const g={classList:cl(),style:{},removed:false,remove(){this.removed=true;}};ghost.push(g);return g;},
   moveMonitorNodeDragGhost(g,x,y){g.style.transform="translate3d("+x+"px,"+y+"px,0)";},
   commitMonitorBctNodeDrop(...a){commits.push(a);ctx.finishMonitorBctNodeDrag();},
   renderMonitorBctWindowNodes(){}
  };
  vm.createContext(ctx);vm.runInContext(original.slice(start,end),ctx);
- function begin(){ctx.beginMonitorBctNodePointerDrag({button:0,pointerId:9,clientX:30,clientY:50},rows[0],{conversationKey:"dragged",nodeLabel:"N1",title:"First"});}
+ function begin(){ctx.beginMonitorBctNodePointerDrag({button:0,pointerId:9,clientX:30,clientY:50},rows[0],{conversationKey:"dragged",nodeLabel:"N1",title:"First"});assert.equal(ctx.monitorBctSelectedNodeKey,"dragged");assert.equal(ctx.monitorBctNodeHighlightedHwnd,"");}
  function move(x,y){doc.fire("pointermove",{pointerId:9,clientX:x,clientY:y,preventDefault(){}});}
  function up(x,y){doc.fire("pointerup",{pointerId:9,clientX:x,clientY:y,preventDefault(){}});}
  function clean(){

@@ -111,8 +111,14 @@ function loadModule() {
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
   assert.match(monitor, /function installMonitorBctRoleLongPress\(/);
+  assert.match(monitor, /armed = true;/,
+    "a role long-press must arm at 600ms and save only when released");
+  assert.match(monitor, /row\.addEventListener\("pointerup", commit\)/);
+  assert.match(monitor, /row\.classList\.add\("monitor-bct-role-save-pending"\)/,
+    "a role write must be visibly pending without pretending the role was already saved");
+  assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\);[\s\S]{0,180}syncMonitorBctNodeTargetHighlight\(\)/,
+    "starting a node drag must immediately select its source row");
   assert.match(monitor, /const nextScopeName = role === "supervisor" \? "" : node\.scopeName/);
-  assert.match(monitor, /row\.classList\.toggle\("is-supervisor"/);
   assert.match(monitor, /if \(!monitorBctShell\?\.updateConversationScope \|\| !node\?\.conversationKey\)/,
     "conversation metadata editor must be available independently of exact tab rename identity");
   assert.match(monitor, /titleField\.control\.disabled = !canRenameTitle/,
@@ -252,13 +258,18 @@ function loadModule() {
   rowOn.listeners.get("pointerdown")({ button: 0, clientX: 10, clientY: 10, target: { closest: () => null } });
   assert.equal(holdTimers[0].delay, 600);
   holdTimers[0].callback();
+  assert.equal(roleUpdates.length, 0, "arming a hold must not save before release");
+  rowOn.listeners.get("pointerup")({});
+  await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(Array.from(roleUpdates[0].roleTags), ["Worker", "Manager"]);
-  assert.equal(rowOn.classes.has("is-manager"), true);
+  assert.equal(rowOn.classes.has("is-manager"), false, "role color comes from the refreshed persisted snapshot");
   const rowOff = managerRow();
   holdContext.installMonitorBctRoleLongPress(rowOff, { ...baseNode, roleTags: ["Worker", "Manager"] });
   rowOff.listeners.get("pointerdown")({ button: 0, clientX: 20, clientY: 20, target: { closest: () => null } });
   holdTimers.at(-1).callback();
+  rowOff.listeners.get("pointerup")({});
+  await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(Array.from(roleUpdates[1].roleTags), ["Worker"]);
   assert.equal(rowOff.classes.has("is-manager"), false);
@@ -267,15 +278,19 @@ function loadModule() {
   holdContext.installMonitorBctRoleLongPress(supervisorOn, { ...baseNode, scopeName: "", roleTags: ["Worker"] });
   supervisorOn.listeners.get("pointerdown")({ button: 0, clientX: 30, clientY: 30, target: { closest: () => null } });
   holdTimers.at(-1).callback();
+  supervisorOn.listeners.get("pointerup")({});
+  await Promise.resolve();
   await Promise.resolve();
   assert.equal(roleUpdates[2].scopeName, "");
   assert.deepEqual(Array.from(roleUpdates[2].roleTags), ["Worker", "supervisor"]);
-  assert.equal(supervisorOn.classes.has("is-supervisor"), true);
+  assert.equal(supervisorOn.classes.has("is-supervisor"), false);
 
   const supervisorOff = managerRow();
   holdContext.installMonitorBctRoleLongPress(supervisorOff, { ...baseNode, scopeName: "", roleTags: ["Worker", "supervisor"] });
   supervisorOff.listeners.get("pointerdown")({ button: 0, clientX: 40, clientY: 40, target: { closest: () => null } });
   holdTimers.at(-1).callback();
+  supervisorOff.listeners.get("pointerup")({});
+  await Promise.resolve();
   await Promise.resolve();
   assert.equal(roleUpdates[3].scopeName, "");
   assert.deepEqual(Array.from(roleUpdates[3].roleTags), ["Worker"]);
@@ -288,9 +303,27 @@ function loadModule() {
   holdContext.installMonitorBctRoleLongPress(secondSupervisor, { ...baseNode, conversationKey: "conv-2", scopeName: "", roleTags: ["Worker"] });
   secondSupervisor.listeners.get("pointerdown")({ button: 0, clientX: 50, clientY: 50, target: { closest: () => null } });
   holdTimers.at(-1).callback();
+  secondSupervisor.listeners.get("pointerup")({});
   await Promise.resolve();
   assert.equal(roleUpdates.length, 4, "a second global supervisor must not be saved");
   assert.match(holdContext.statusMessages.at(-1), /감독관은 하나만/);
+
+  const cancelledSupervisor = managerRow();
+  holdContext.installMonitorBctRoleLongPress(cancelledSupervisor, { ...baseNode, conversationKey: "conv-3", scopeName: "", roleTags: ["Worker"] });
+  cancelledSupervisor.listeners.get("pointerdown")({ button: 0, clientX: 60, clientY: 60, target: { closest: () => null } });
+  holdTimers.at(-1).callback();
+  cancelledSupervisor.listeners.get("pointercancel")({});
+  await Promise.resolve();
+  assert.equal(roleUpdates.length, 4, "canceling an armed hold must not save any role");
+
+  const movedSupervisor = managerRow();
+  holdContext.installMonitorBctRoleLongPress(movedSupervisor, { ...baseNode, conversationKey: "conv-4", scopeName: "", roleTags: ["Worker"] });
+  movedSupervisor.listeners.get("pointerdown")({ button: 0, clientX: 70, clientY: 70, target: { closest: () => null } });
+  holdTimers.at(-1).callback();
+  movedSupervisor.listeners.get("pointermove")({ clientX: 90, clientY: 70 });
+  movedSupervisor.listeners.get("pointerup")({});
+  await Promise.resolve();
+  assert.equal(roleUpdates.length, 4, "moving an armed hold into a drag must cancel the role write");
 
   const dropStart = monitor.indexOf("function monitorBctPointInsideScopeHeading(");
   const dropEnd = monitor.indexOf("\nfunction updateMonitorBctNodePointerDrag(", dropStart);

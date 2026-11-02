@@ -3545,6 +3545,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-bct-node-row.is-supervisor { background:rgba(38,112,196,.20);border-color:rgba(93,174,255,.50); }
 .monitor-bct-node-row.is-manager.is-supervisor { background:rgba(69,103,156,.24);border-color:rgba(155,185,235,.58); }
 .monitor-bct-node-row.monitor-bct-supervisor-hold { box-shadow:inset 0 0 0 2px rgba(104,182,255,.42); }
+.monitor-bct-node-row.monitor-bct-role-save-pending { cursor:wait; box-shadow:inset 0 0 0 2px rgba(214,228,245,.30); }
 .monitor-bct-node-row.monitor-bct-node-stale { opacity:.62; }
 .monitor-bct-node-body { min-width:0; }
 .monitor-bct-node-location { display:block; color:rgba(202,216,232,.64); font:600 10px/1.25 "Segoe UI","Malgun Gothic",sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

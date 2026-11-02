@@ -91,13 +91,87 @@ function installMonitorBctRoleLongPress(row, node) {
   let timer = 0;
   let startX = 0;
   let startY = 0;
-  const cancel = () => {
+  let armed = false;
+  let saving = false;
+  const clearHold = () => {
     if (timer) clearTimeout(timer);
     timer = 0;
+    armed = false;
     row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
   };
+  const cancel = () => clearHold();
+  const commit = () => {
+    if (!armed || saving) return;
+    armed = false;
+    row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
+    const key = monitorBctNodeSelectionKey(node);
+    monitorBctSuppressedClickKey = key;
+    globalThis.setTimeout(() => {
+      if (monitorBctSuppressedClickKey === key) monitorBctSuppressedClickKey = "";
+    }, 900);
+    if (!node.conversationKey) {
+      setMonitorStatus("새 대화는 첫 메시지로 UUID가 생긴 뒤 감독관으로 지정할 수 있습니다.", false, 3500);
+      return;
+    }
+    const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
+    const isSupervisor = !String(node.scopeName || "").trim()
+      && tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
+    const isUnassigned = !String(node.scopeName || "").trim();
+    const role = isUnassigned || isSupervisor ? "supervisor" : "Manager";
+    if (role === "Manager") {
+      const existingManager = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+        .find((candidate) => candidate?.conversationKey !== node.conversationKey
+          && String(candidate?.scopeId || "") === String(node.scopeId || "")
+          && Array.isArray(candidate?.roleTags)
+          && candidate.roleTags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
+      if (existingManager) {
+        setMonitorStatus(`${String(node.scopeName || "대화망")}에는 이미 ${existingManager.nodeLabel || "다른 노드"} Manager가 있습니다. 기존 Manager를 해제한 뒤 바꾸세요.`, false, 4200);
+        return;
+      }
+    }
+    const hadRole = role === "supervisor"
+      ? isSupervisor
+      : tags.some((tag) => String(tag).trim().toLowerCase() === "manager");
+    if (role === "supervisor" && !hadRole) {
+      const existingSupervisor = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+        .find((candidate) => candidate?.conversationKey !== node.conversationKey
+          && !String(candidate?.scopeName || "").trim()
+          && Array.isArray(candidate?.roleTags)
+          && candidate.roleTags.some((tag) => String(tag).trim().toLowerCase() === "supervisor"));
+      if (existingSupervisor) {
+        setMonitorStatus(`감독관은 하나만 둘 수 있습니다. 기존 ${existingSupervisor.nodeLabel || "감독관"}을 해제한 뒤 바꾸세요.`, false, 4200);
+        return;
+      }
+    }
+    const nextTags = hadRole
+      ? tags.filter((tag) => String(tag).trim().toLowerCase() !== role.toLowerCase())
+      : [...tags, role];
+    const nextScopeName = role === "supervisor" ? "" : node.scopeName;
+    saving = true;
+    row.classList.add("monitor-bct-role-save-pending");
+    void monitorBctShell.updateConversationScope(node, {
+      displayName: node.title,
+      scopeName: nextScopeName,
+      roleTags: nextTags,
+    }).then(() => {
+      const roleLabel = role === "supervisor" ? "감독관" : "Manager";
+      setMonitorStatus(
+        `${node.nodeLabel || "N?"}의 ${roleLabel} 안내 태그를 ${hadRole ? "해제했습니다" : "붙였습니다"}.`,
+        true,
+        2800,
+      );
+      // The role color belongs to the persisted BCT snapshot, never to the
+      // hold gesture.  Refresh immediately after a successful write.
+      return refreshMonitorBctWindowNodes();
+    }).catch((error) => {
+      setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
+    }).finally(() => {
+      saving = false;
+      row.classList.remove("monitor-bct-role-save-pending");
+    });
+  };
   row.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || event.target.closest("button,input")) return;
+    if (saving || event.button !== 0 || event.target.closest("button,input")) return;
     startX = event.clientX;
     startY = event.clientY;
     const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
@@ -107,71 +181,13 @@ function installMonitorBctRoleLongPress(row, node) {
     row.classList.add(isUnassigned || isSupervisor ? "monitor-bct-supervisor-hold" : "monitor-bct-manager-hold");
     timer = setTimeout(() => {
       timer = 0;
-      row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
-      const key = monitorBctNodeSelectionKey(node);
-      monitorBctSuppressedClickKey = key;
-      globalThis.setTimeout(() => {
-        if (monitorBctSuppressedClickKey === key) monitorBctSuppressedClickKey = "";
-      }, 900);
-      if (!node.conversationKey) {
-        setMonitorStatus("새 대화는 첫 메시지로 UUID가 생긴 뒤 감독관으로 지정할 수 있습니다.", false, 3500);
-        return;
-      }
-      const role = isUnassigned || isSupervisor ? "supervisor" : "Manager";
-      if (role === "Manager") {
-        const existingManager = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
-          .find((candidate) => candidate?.conversationKey !== node.conversationKey
-            && String(candidate?.scopeId || "") === String(node.scopeId || "")
-            && Array.isArray(candidate?.roleTags)
-            && candidate.roleTags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
-        if (existingManager) {
-          setMonitorStatus(`${String(node.scopeName || "대화망")}에는 이미 ${existingManager.nodeLabel || "다른 노드"} Manager가 있습니다. 기존 Manager를 해제한 뒤 바꾸세요.`, false, 4200);
-          return;
-        }
-      }
-      const hadRole = role === "supervisor"
-        ? isSupervisor
-        : tags.some((tag) => String(tag).trim().toLowerCase() === "manager");
-      if (role === "supervisor" && !hadRole) {
-        const existingSupervisor = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
-          .find((candidate) => candidate?.conversationKey !== node.conversationKey
-            && !String(candidate?.scopeName || "").trim()
-            && Array.isArray(candidate?.roleTags)
-            && candidate.roleTags.some((tag) => String(tag).trim().toLowerCase() === "supervisor"));
-        if (existingSupervisor) {
-          setMonitorStatus(`감독관은 하나만 둘 수 있습니다. 기존 ${existingSupervisor.nodeLabel || "감독관"}을 해제한 뒤 바꾸세요.`, false, 4200);
-          return;
-        }
-      }
-      const nextTags = hadRole
-        ? tags.filter((tag) => String(tag).trim().toLowerCase() !== role.toLowerCase())
-        : [...tags, role];
-      const nextScopeName = role === "supervisor" ? "" : node.scopeName;
-      row.classList.toggle("is-manager", role === "Manager" ? !hadRole : tags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
-      row.classList.toggle("is-supervisor", role === "supervisor" ? !hadRole : isSupervisor);
-      void monitorBctShell.updateConversationScope(node, {
-        displayName: node.title,
-        scopeName: nextScopeName,
-        roleTags: nextTags,
-      }).then(() => {
-        const roleLabel = role === "supervisor" ? "감독관" : "Manager";
-        setMonitorStatus(
-          `${node.nodeLabel || "N?"}의 ${roleLabel} 안내 태그를 ${hadRole ? "해제했습니다" : "붙였습니다"}.`,
-          true,
-          2800,
-        );
-        globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 250);
-      }).catch((error) => {
-        row.classList.toggle("is-manager", role === "Manager" ? hadRole : tags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
-        row.classList.toggle("is-supervisor", role === "supervisor" ? hadRole : isSupervisor);
-        setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
-      });
+      armed = true;
     }, 600);
   });
   row.addEventListener("pointermove", (event) => {
-    if (timer && Math.hypot(event.clientX - startX, event.clientY - startY) > 7) cancel();
+    if ((timer || armed) && Math.hypot(event.clientX - startX, event.clientY - startY) > 7) cancel();
   });
-  row.addEventListener("pointerup", cancel);
+  row.addEventListener("pointerup", commit);
   row.addEventListener("pointercancel", cancel);
   row.addEventListener("dragstart", cancel);
 }

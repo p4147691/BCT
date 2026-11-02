@@ -1,6 +1,12 @@
 //@@FN_START:beginMonitorBctNodePointerDrag
 function beginMonitorBctNodePointerDrag(event, row, node) {
   if (event.button !== 0 || !node?.conversationKey || monitorBctPointerDrag || monitorBctNodeReorderPending) return;
+  // A drag is also an explicit choice of its source node.  Do this before the
+  // first move so stale selection never remains visible while the card is held.
+  monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
+  monitorBctNodeHighlightedHwnd = "";
+  syncMonitorBctNodeTargetHighlight();
+  syncMonitorMinimizedNodeBadges(monitorLastAiState);
   monitorBctPointerDrag = {
     pointerId: event.pointerId,
     row,
