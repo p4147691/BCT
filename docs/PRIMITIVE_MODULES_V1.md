@@ -33,6 +33,9 @@
 부분 레시피:     bct_[수식어_]동사_명사
 ```
 
+한 기능을 가리키는 짧은 합성어는 임의로 동사 둘처럼 나누지 않는다.
+예를 들어 `wakeup`은 하나의 기능 이름이므로 `bct_wakeup_message`로 쓴다.
+
 그래서 `bct_send_message`는 메시지 보내기라는 기본 행동이고,
 `bct_delayed_send_message`는 그 행동에 감시·alarm·지연이라는 부분
 레시피를 얹은 이름이다. `delayed`는 뒤집힌 대상이 아니라 Send Message를

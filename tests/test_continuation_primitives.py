@@ -2,7 +2,8 @@ import unittest
 
 from bct.continuation_primitives import (
     AlarmKind, ActionKind, ActionRequest, ContinuationContext, ContinuationDecision,
-    ContinuationRoute, response_ready_alarm, wakeup_message,
+    ContinuationRoute, branch_for_decision, response_ready_alarm, send_message_for_branch,
+    wakeup_message,
 )
 
 
@@ -44,6 +45,23 @@ class ContinuationPrimitiveTests(unittest.TestCase):
         record = context.as_legacy_record()
         self.assertEqual("worker-uuid", record["conversation_key"])
         self.assertEqual("manager-instance", record["manager_instance_id"])
+
+    def test_recorded_decision_selects_a_branch_before_an_action(self):
+        alarm = response_ready_alarm(
+            watch_ref="task-1:1", subject_ref="worker-uuid",
+            expected_response_turn_id="turn-1", response_turn_id="turn-1",
+            response_text="Completed.", response_complete=True, input_ready=True,
+        )
+        self_branch = branch_for_decision(
+            ContinuationDecision(ContinuationRoute.SELF, "Continue."),
+        )
+        manager_branch = branch_for_decision(
+            ContinuationDecision(ContinuationRoute.MANAGER, "Return."),
+        )
+        self.assertEqual("worker", self_branch.recipient_role)
+        self.assertEqual("manager", manager_branch.recipient_role)
+        self.assertEqual(ActionKind.SEND_MESSAGE,
+                         send_message_for_branch(alarm=alarm, branch=self_branch).kind)
 
     def test_wakeup_message_is_a_reference_without_a_send_or_decision(self):
         alarm = response_ready_alarm(

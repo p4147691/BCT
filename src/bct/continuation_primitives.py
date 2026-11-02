@@ -49,10 +49,30 @@ class ContinuationDecision:
             raise ValueError("CONTINUATION_DECISION_INVALID")
 
 
-def action_for_decision(*, alarm: Alarm, decision: ContinuationDecision) -> ActionRequest:
-    """Translate a recorded decision into the legacy delivery action request."""
-    role = "worker" if decision.route == ContinuationRoute.SELF else "manager"
-    return ActionRequest(ActionKind.SEND_MESSAGE, alarm, role, decision.payload)
+@dataclass(frozen=True)
+class ContinuationBranch:
+    """One reusable SELF/MANAGER branch selected from a recorded decision.
+
+    This is the decision-routing part of a continuation recipe.  It selects a
+    named recipient role but does not decide which external action that role
+    will receive.
+    """
+    route: ContinuationRoute
+    recipient_role: str
+    payload: str
+
+
+def branch_for_decision(decision: ContinuationDecision) -> ContinuationBranch:
+    """Read a prior B decision and select its SELF or MANAGER branch only."""
+    recipient_role = "worker" if decision.route == ContinuationRoute.SELF else "manager"
+    return ContinuationBranch(
+        route=decision.route, recipient_role=recipient_role, payload=decision.payload,
+    )
+
+
+def send_message_for_branch(*, alarm: Alarm, branch: ContinuationBranch) -> ActionRequest:
+    """Make the ordinary message action for an already-selected branch."""
+    return ActionRequest(ActionKind.SEND_MESSAGE, alarm, branch.recipient_role, branch.payload)
 
 
 def wakeup_message(*, alarm: Alarm, execution_ref: str) -> ActionRequest:

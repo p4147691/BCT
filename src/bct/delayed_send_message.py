@@ -14,8 +14,9 @@ from enum import Enum
 from typing import Callable
 
 from .continuation_primitives import (
-    ActionKind, ActionRequest, Alarm, ContinuationContext, ContinuationDecision,
-    ContinuationRoute, action_for_decision, response_ready_alarm,
+    ActionRequest, Alarm, ContinuationContext, ContinuationDecision,
+    ContinuationRoute, branch_for_decision, response_ready_alarm,
+    send_message_for_branch,
 )
 
 
@@ -84,7 +85,9 @@ def next_instruction_action(alarm) -> ActionRequest:
     recipe interprets `NEXT TASK`.  The primitive alarm itself remains neutral
     about message syntax and destination policy.
     """
-    return action_for_decision(alarm=alarm, decision=next_instruction_decision(alarm))
+    return send_message_for_branch(
+        alarm=alarm, branch=branch_for_decision(next_instruction_decision(alarm)),
+    )
 
 
 def next_instruction_decision(alarm) -> ContinuationDecision:
@@ -124,7 +127,8 @@ def dispatch_delayed_send_message(
     Wakeup Message recipe can consume the same alarm and decision without
     changing watch or alarm behavior.
     """
-    action = action_for_decision(alarm=alarm, decision=decision)
+    branch = branch_for_decision(decision)
+    action = send_message_for_branch(alarm=alarm, branch=branch)
     key = hashlib.sha256(
         f"{watch.task_id}|{watch.generation}|{watch.response_turn_id}".encode()
     ).hexdigest()[:24]
