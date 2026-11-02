@@ -153,6 +153,17 @@ const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeCo
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
 let monitorBctDeferredNodeRender = null;
+const MONITOR_BCT_NODE_ORDER_KEY = "desktopWindowMonitorBctNodeOrderV1";
+const monitorBctNodeOrderByScope = new Map();
+let monitorBctNodeOrderReady = false;
+chrome.storage.local.get([MONITOR_BCT_NODE_ORDER_KEY], (data) => {
+  const saved = data?.[MONITOR_BCT_NODE_ORDER_KEY] || {};
+  for (const [scopeId, keys] of Object.entries(saved)) {
+    if (Array.isArray(keys)) monitorBctNodeOrderByScope.set(scopeId, keys.map(String).filter(Boolean));
+  }
+  monitorBctNodeOrderReady = true;
+  if (Array.isArray(monitorBctWindowNodesCache)) renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+});
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;

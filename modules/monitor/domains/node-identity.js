@@ -398,14 +398,14 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, option
 function monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey) {
   const rows = [...list.querySelectorAll(".monitor-bct-node-row")]
     .filter((row) => (!row.parentElement || row.parentElement === list) &&
-      String(row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
+      String(row.dataset.nodeSelectionKey || row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
     .map((row) => ({ row, rect: row.getBoundingClientRect() }))
     .filter(({ rect }) => rect.width > 0 && rect.height > 0);
   if (!rows.length) return null;
   const direct = hit?.closest?.(".monitor-bct-node-row");
   if (direct && (!direct.parentElement || direct.parentElement === list) &&
       hit?.closest?.(".monitor-bct-node-list") === list &&
-      String(direct.dataset.conversationKey || "") !== draggedKey) {
+      String(direct.dataset.nodeSelectionKey || direct.dataset.conversationKey || "") !== draggedKey) {
     const rect = direct.getBoundingClientRect();
     return { row: direct, position: clientX < rect.left + rect.width / 2 ? "before" : "after" };
   }
@@ -1438,6 +1438,9 @@ function renderMonitorBctWindowNodes(nodes) {
     Number(left.key === "__unassigned__") - Number(right.key === "__unassigned__") ||
     left.name.localeCompare(right.name, "ko"));
   for (const group of orderedGroups) {
+    const localNodeOrder = new Map(
+      (monitorBctNodeOrderByScope.get(group.key) || []).map((key, index) => [String(key).toLowerCase(), index]),
+    );
     const physicalOrder = new Map(group.nodes.map((node) => {
       const hwnd = monitorDisplayHwndForBrowserWindowId(
         node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
@@ -1461,6 +1464,13 @@ function renderMonitorBctWindowNodes(nodes) {
       // drag order applies to the ordinary nodes that follow.
       const roleDifference = monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right);
       if (roleDifference) return roleDifference;
+      const leftLocalOrder = localNodeOrder.get(monitorBctNodeSelectionKey(left).toLowerCase());
+      const rightLocalOrder = localNodeOrder.get(monitorBctNodeSelectionKey(right).toLowerCase());
+      if (leftLocalOrder != null || rightLocalOrder != null) {
+        if (leftLocalOrder == null) return 1;
+        if (rightLocalOrder == null) return -1;
+        if (leftLocalOrder !== rightLocalOrder) return leftLocalOrder - rightLocalOrder;
+      }
       const nodeNumber = (node) => {
         const digits = String(node.nodeLabel || "").replace(/^N/i, "");
         return /^\\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
@@ -1530,6 +1540,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.dataset.nodeIndex = String(index + 1);
     row.dataset.nodeLabel = node.nodeLabel || "";
     row.dataset.conversationKey = node.conversationKey;
+    row.dataset.nodeSelectionKey = monitorBctNodeSelectionKey(node);
     row.dataset.scopeId = node.scopeId || "";
     row.setAttribute("role", "button");
     row.setAttribute("aria-selected", String(node.active === true));

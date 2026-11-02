@@ -6242,6 +6242,17 @@ const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeCo
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
 let monitorBctDeferredNodeRender = null;
+const MONITOR_BCT_NODE_ORDER_KEY = "desktopWindowMonitorBctNodeOrderV1";
+const monitorBctNodeOrderByScope = new Map();
+let monitorBctNodeOrderReady = false;
+chrome.storage.local.get([MONITOR_BCT_NODE_ORDER_KEY], (data) => {
+  const saved = data?.[MONITOR_BCT_NODE_ORDER_KEY] || {};
+  for (const [scopeId, keys] of Object.entries(saved)) {
+    if (Array.isArray(keys)) monitorBctNodeOrderByScope.set(scopeId, keys.map(String).filter(Boolean));
+  }
+  monitorBctNodeOrderReady = true;
+  if (Array.isArray(monitorBctWindowNodesCache)) renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+});
 let monitorBctDraggedNodeKey = "";
 let monitorBctDragGhost = null;
 let monitorBctPointerDrag = null;
@@ -6819,6 +6830,9 @@ function renderMonitorBctWindowNodes(nodes) {
     Number(left.key === "__unassigned__") - Number(right.key === "__unassigned__") ||
     left.name.localeCompare(right.name, "ko"));
   for (const group of orderedGroups) {
+    const localNodeOrder = new Map(
+      (monitorBctNodeOrderByScope.get(group.key) || []).map((key, index) => [String(key).toLowerCase(), index]),
+    );
     const physicalOrder = new Map(group.nodes.map((node) => {
       const hwnd = monitorDisplayHwndForBrowserWindowId(
         node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
@@ -6842,6 +6856,13 @@ function renderMonitorBctWindowNodes(nodes) {
       // drag order applies to the ordinary nodes that follow.
       const roleDifference = monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right);
       if (roleDifference) return roleDifference;
+      const leftLocalOrder = localNodeOrder.get(monitorBctNodeSelectionKey(left).toLowerCase());
+      const rightLocalOrder = localNodeOrder.get(monitorBctNodeSelectionKey(right).toLowerCase());
+      if (leftLocalOrder != null || rightLocalOrder != null) {
+        if (leftLocalOrder == null) return 1;
+        if (rightLocalOrder == null) return -1;
+        if (leftLocalOrder !== rightLocalOrder) return leftLocalOrder - rightLocalOrder;
+      }
       const nodeNumber = (node) => {
         const digits = String(node.nodeLabel || "").replace(/^N/i, "");
         return /^\\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
@@ -6911,6 +6932,7 @@ function renderMonitorBctWindowNodes(nodes) {
     row.dataset.nodeIndex = String(index + 1);
     row.dataset.nodeLabel = node.nodeLabel || "";
     row.dataset.conversationKey = node.conversationKey;
+    row.dataset.nodeSelectionKey = monitorBctNodeSelectionKey(node);
     row.dataset.scopeId = node.scopeId || "";
     row.setAttribute("role", "button");
     row.setAttribute("aria-selected", String(node.active === true));
@@ -7029,10 +7051,6 @@ function renderMonitorBctWindowNodes(nodes) {
 
 function beginMonitorBctNodePointerDrag(event, row, node) {
   if (event.button !== 0 || monitorBctPointerDrag || monitorBctNodeReorderPending) return;
-  if (!node?.conversationKey) {
-    setMonitorStatus("N? 새 대화는 아직 UUID가 없어 순서 변경 대상이 아닙니다. 첫 메시지를 보낸 뒤 정렬할 수 있습니다.", false, 3400);
-    return;
-  }
   // A drag is also an explicit choice of its source node.  Do this before the
   // first move so stale selection never remains visible while the card is held.
   monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
@@ -7110,14 +7128,14 @@ function monitorBctPointInsideScopeHeading(clientX, clientY) {
 function monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey) {
   const rows = [...list.querySelectorAll(".monitor-bct-node-row")]
     .filter((row) => (!row.parentElement || row.parentElement === list) &&
-      String(row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
+      String(row.dataset.nodeSelectionKey || row.dataset.conversationKey || "") !== draggedKey && !row.hidden)
     .map((row) => ({ row, rect: row.getBoundingClientRect() }))
     .filter(({ rect }) => rect.width > 0 && rect.height > 0);
   if (!rows.length) return null;
   const direct = hit?.closest?.(".monitor-bct-node-row");
   if (direct && (!direct.parentElement || direct.parentElement === list) &&
       hit?.closest?.(".monitor-bct-node-list") === list &&
-      String(direct.dataset.conversationKey || "") !== draggedKey) {
+      String(direct.dataset.nodeSelectionKey || direct.dataset.conversationKey || "") !== draggedKey) {
     const rect = direct.getBoundingClientRect();
     return { row: direct, position: clientX < rect.left + rect.width / 2 ? "before" : "after" };
   }
@@ -7179,7 +7197,7 @@ function monitorBctNodeDropAt(clientX, clientY, draggedKey) {
     return {
       scopeId,
       scopeName,
-      targetConversationKey: String(row.dataset.conversationKey || ""),
+      targetConversationKey: String(row.dataset.nodeSelectionKey || row.dataset.conversationKey || ""),
       position,
     };
   }
@@ -7199,7 +7217,7 @@ function updateMonitorBctNodePointerDrag(event) {
     drag.row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
     drag.active = true;
     monitorBctSuppressScopeClickUntil = Date.now() + 1000;
-    monitorBctDraggedNodeKey = drag.node.conversationKey;
+    monitorBctDraggedNodeKey = monitorBctNodeSelectionKey(drag.node);
     monitorBctSuppressedClickKey = monitorBctNodeSelectionKey(drag.node);
     drag.row.classList.add("is-dragging");
     document.documentElement.classList.add("monitor-bct-node-drag-active");
@@ -7221,7 +7239,7 @@ function updateMonitorBctNodePointerDrag(event) {
   event.preventDefault();
   moveMonitorNodeDragGhost(monitorBctDragGhost, event.clientX, event.clientY);
   clearMonitorBctNodeDropFeedback();
-  drag.drop = monitorBctNodeDropAt(event.clientX, event.clientY, drag.node.conversationKey);
+  drag.drop = monitorBctNodeDropAt(event.clientX, event.clientY, monitorBctNodeSelectionKey(drag.node));
   const traceDropSignature = JSON.stringify(drag.drop || null);
   if (traceDropSignature !== drag.traceDropSignature) {
     drag.traceDropSignature = traceDropSignature;
@@ -7286,7 +7304,7 @@ function endMonitorBctNodePointerDrag(event) {
     drop.targetConversationKey,
     drop.position,
     drop.scopeName,
-    drag.node.conversationKey,
+    monitorBctNodeSelectionKey(drag.node),
   );
 }
 
@@ -7357,7 +7375,11 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
   const semanticSnapshot = monitorUniqueBctConversationNodes(snapshot);
   const hasPersistentConversationKey = (value) => Boolean(String(value || "").trim());
-  const dragged = semanticSnapshot.find((node) => String(node?.conversationKey || "").trim().toLowerCase() === draggedKey);
+  const nodeOrderKey = (node) => String(
+    (typeof monitorBctNodeSelectionKey === "function" ? monitorBctNodeSelectionKey(node) : "") ||
+    node?.conversationKey || "",
+  ).trim().toLowerCase();
+  const dragged = semanticSnapshot.find((node) => nodeOrderKey(node) === draggedKey);
   const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
   const destinationSample = semanticSnapshot.find((node) => (node.scopeId || "") === destinationScopeId);
   const movedAcrossScopes = (dragged?.scopeId || "") !== destinationScopeId;
@@ -7365,7 +7387,12 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     ? String(destinationScopeName || destinationSample?.scopeName || "").trim()
     : "";
   if (!dragged) {
-    setMonitorStatus("노드 순서를 저장하지 못했습니다 · 대화 UUID를 다시 확인하세요.", false, 3600);
+    setMonitorStatus("노드 순서를 저장하지 못했습니다 · 현재 탭 식별자를 다시 확인하세요.", false, 3600);
+    finishMonitorBctNodeDrag();
+    return;
+  }
+  if (movedAcrossScopes && !hasPersistentConversationKey(dragged?.conversationKey)) {
+    setMonitorStatus("N? 노드는 현재 목록 안에서 정렬할 수 있습니다. 대화가 시작되면 대화망 사이 이동도 가능합니다.", false, 3800);
     finishMonitorBctNodeDrag();
     return;
   }
@@ -7378,11 +7405,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   }
 
   const destination = semanticSnapshot
-    // UUID-less pending ChatGPT tabs remain visible as N?, but Core cannot
-    // persist an order for them yet. Never let one placeholder reject the
-    // reorder of every durable conversation in the same visible list.
-    .filter((node) => hasPersistentConversationKey(node?.conversationKey) &&
-      String(node?.conversationKey || "").trim().toLowerCase() !== draggedKey &&
+    .filter((node) => nodeOrderKey(node) !== draggedKey &&
       (node.scopeId || "") === destinationScopeId)
     .sort((left, right) =>
       monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right) ||
@@ -7390,7 +7413,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   let insertion = destination.length;
   if (targetConversationKey) {
     const targetKey = String(targetConversationKey || "").trim().toLowerCase();
-    const targetIndex = destination.findIndex((node) => String(node?.conversationKey || "").trim().toLowerCase() === targetKey);
+    const targetIndex = destination.findIndex((node) => nodeOrderKey(node) === targetKey);
     if (targetIndex >= 0) insertion = targetIndex + (position === "after" ? 1 : 0);
   }
   destination.splice(insertion, 0, dragged);
@@ -7398,6 +7421,13 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   // sequence identical to that visible rule while preserving manual order
   // among ordinary nodes.
   destination.sort((left, right) => monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right));
+  const previousDestinationNodeKeys = semanticSnapshot
+    .filter((node) => (node.scopeId || "") === destinationScopeId)
+    .sort((left, right) =>
+      monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right) ||
+      compareMonitorBctNodeDisplayOrder(left, right))
+    .map(nodeOrderKey);
+  const nextDestinationNodeKeys = destination.map(nodeOrderKey);
   const previousDestinationKeys = semanticSnapshot
     .filter((node) => hasPersistentConversationKey(node?.conversationKey) &&
       (node.scopeId || "") === destinationScopeId)
@@ -7405,16 +7435,17 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right) ||
       compareMonitorBctNodeDisplayOrder(left, right))
     .map((node) => node.conversationKey);
-  const nextDestinationKeys = destination.map((node) => node.conversationKey);
-  if (!movedAcrossScopes && previousDestinationKeys.join("\n") === nextDestinationKeys.join("\n")) {
+  const durableDestination = destination.filter((node) => hasPersistentConversationKey(node?.conversationKey));
+  const nextDestinationKeys = durableDestination.map((node) => node.conversationKey);
+  if (!movedAcrossScopes && previousDestinationNodeKeys.join("\n") === nextDestinationNodeKeys.join("\n")) {
     if (typeof monitorPublishSharedRuntime === "function") void monitorPublishSharedRuntime("alert", "__MONITOR_BCT_NODE_DRAG_TRACE__:GOOGLE", {
       symbol: "",
       tone: "monitor-node-drag-trace",
       label: JSON.stringify({
         stage: "commit-noop",
         source: draggedKey,
-        previous: previousDestinationKeys,
-        next: nextDestinationKeys,
+        previous: previousDestinationNodeKeys,
+        next: nextDestinationNodeKeys,
         at: Date.now(),
       }),
     });
@@ -7422,13 +7453,23 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     setMonitorStatus("노드가 이미 그 위치에 있습니다. Manager와 감독관은 목록 맨 앞에 고정됩니다.", true, 3000);
     return;
   }
-  const nextOrders = new Map(destination.map((node, index) => [node.conversationKey, index + 1]));
+  const nextOrders = new Map(destination.map((node, index) => [nodeOrderKey(node), index + 1]));
+  const localScopeKey = destinationGroupKey === "__unassigned__" ? "__unassigned__" : destinationGroupKey;
+  if (typeof monitorBctNodeOrderByScope !== "undefined") {
+    monitorBctNodeOrderByScope.set(localScopeKey, nextDestinationNodeKeys);
+  }
+  if (typeof monitorBctNodeOrderReady !== "undefined" && monitorBctNodeOrderReady &&
+      typeof chrome !== "undefined" && chrome.storage?.local) {
+    const saved = {};
+    for (const [scopeId, keys] of monitorBctNodeOrderByScope) saved[scopeId] = [...keys];
+    chrome.storage.local.set({ [MONITOR_BCT_NODE_ORDER_KEY]: saved });
+  }
 
   if (movedAcrossScopes) {
     // Move the card immediately.  The write still goes through the same Core
     // metadata contract as the context menu; only a failed write rolls back.
     const optimisticSnapshot = snapshot.map((node) => {
-      if (String(node?.conversationKey || "").trim().toLowerCase() !== draggedKey) return node;
+      if (nodeOrderKey(node) !== draggedKey) return node;
       return Object.freeze({
         ...node,
         scopeId: destinationScopeId,
@@ -7466,14 +7507,23 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   }
 
   const optimisticSnapshot = snapshot.map((node) => {
-    if (!nextOrders.has(node.conversationKey)) return node;
+    const orderKey = nodeOrderKey(node);
+    if (!nextOrders.has(orderKey)) return node;
     return Object.freeze({
       ...node,
       scopeId: destinationScopeId,
       scopeName: destinationScopeId ? String(destinationSample?.scopeName || "") : "",
-      displayOrder: nextOrders.get(node.conversationKey),
+      displayOrder: nextOrders.get(orderKey),
     });
   });
+  const durableOrderChanged = previousDestinationKeys.join("\n") !== nextDestinationKeys.join("\n");
+  if (!durableOrderChanged) {
+    monitorBctWindowNodesCache = optimisticSnapshot;
+    finishMonitorBctNodeDrag();
+    renderMonitorBctWindowNodes(optimisticSnapshot);
+    setMonitorStatus("노드 표시 순서를 저장했습니다.", true, 2200);
+    return;
+  }
   monitorBctNodeReorderPending = true;
   monitorBctWindowNodesCache = optimisticSnapshot;
   finishMonitorBctNodeDrag();
@@ -7490,7 +7540,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
         at: Date.now(),
       }),
     });
-    await monitorBctShell.reorderConversations(destination, {
+    await monitorBctShell.reorderConversations(durableDestination, {
       scopeId: destinationScopeId,
       movedConversationKey: "",
     });

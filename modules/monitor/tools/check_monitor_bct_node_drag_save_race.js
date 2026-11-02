@@ -125,6 +125,31 @@ async function uuidlessPlaceholderDoesNotRejectDurableReorder(){
  await ctx.commitMonitorBctNodeDrop("__unassigned__","A","before","","B");
  assert.deepEqual(saved[0],["B","A"],"an N? placeholder stays visible but never enters the Core reorder payload");
 }
+async function uuidlessNodeCanReorderInsideItsCurrentList(){
+ const renders=[],coreWrites=[];
+ const localOrder=new Map();
+ const ctx={
+  monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"pending-tab",
+  monitorBctWindowNodesCache:[
+   {conversationKey:"A",selectionKey:"node-a",scopeId:"",displayOrder:1,roleTags:[]},
+   {conversationKey:"",selectionKey:"pending-tab",scopeId:"",displayOrder:2,roleTags:[]},
+   {conversationKey:"B",selectionKey:"node-b",scopeId:"",displayOrder:3,roleTags:[]}
+  ],
+  monitorBctShell:{reorderConversations:async(nodes)=>{coreWrites.push(nodes);}},
+  monitorBctNodeOrderByScope:localOrder,monitorBctNodeOrderReady:false,
+  monitorBctNodeSelectionKey:(node)=>node.selectionKey,
+  finishMonitorBctNodeDrag(){},refreshMonitorBctWindowNodes:async()=>{},renderMonitorBctWindowNodes(nodes){renders.push(nodes);},setMonitorStatus(){},
+  monitorUniqueBctConversationNodes:(nodes)=>nodes,
+  monitorBctNodeRoleRank:()=>2,
+  compareMonitorBctNodeDisplayOrder:(a,b)=>a.displayOrder-b.displayOrder,Object,Map,Array,String,Boolean
+ };
+ vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
+ await ctx.commitMonitorBctNodeDrop("__unassigned__","node-a","before","","pending-tab");
+ assert.deepEqual(localOrder.get("__unassigned__"),["pending-tab","node-a","node-b"]);
+ assert.equal(coreWrites.length,0,"moving only N? does not require a conversation UUID or a Core order write");
+ assert.equal(renders.length,1,"the N? card moves immediately in the visible node list");
+ assert.equal(renders[0].find(node=>node.selectionKey==="pending-tab").displayOrder,1);
+}
 async function crossScopeMove(destinationGroupKey, destinationScopeName, expectedScopeName) {
  const updates=[],reorders=[],statuses=[];
  const ctx={
@@ -169,8 +194,9 @@ async function crossScopeMove(destinationGroupKey, destinationScopeName, expecte
  await successfulSave();
  await pinnedCoordinatorWorkerReorder();
  await uuidlessPlaceholderDoesNotRejectDurableReorder();
+ await uuidlessNodeCanReorderInsideItsCurrentList();
  await crossScopeMove("__unassigned__","","");
  await crossScopeMove("team-b","Team B","Team B");
  assert.match(source,/monitorBctPointerDrag \|\| monitorBctNodeReorderPending\) return/);
- console.log(JSON.stringify({status:"PASS",cases:7,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,pinned-coordinator-worker-reorder,uuidless-placeholder-exclusion,scope-move-to-unassigned,scope-move-to-network"}));
+ console.log(JSON.stringify({status:"PASS",cases:8,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,pinned-coordinator-worker-reorder,uuidless-placeholder-exclusion,uuidless-node-local-reorder,scope-move-to-unassigned,scope-move-to-network"}));
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});
