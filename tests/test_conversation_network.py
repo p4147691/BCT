@@ -208,6 +208,15 @@ class ConversationNetworkTests(unittest.TestCase):
                 self.store, conversation_key=WORKER, display_name="대화 기록 조회 구현",
                 scope_name="모니터 관리", role_tags=["supervisor"], now=301.0,
             )
+        configure_conversation_scope(
+            self.store, conversation_key=MANAGER, display_name="오류 병목 감시 측정기",
+            scope_name="", role_tags=["supervisor"], now=301.5,
+        )
+        with self.assertRaisesRegex(ConversationNetworkError, "CONVERSATION_NETWORK_SUPERVISOR_ALREADY_ASSIGNED"):
+            configure_conversation_scope(
+                self.store, conversation_key=WORKER, display_name="대화 기록 조회 구현",
+                scope_name="", role_tags=["supervisor"], now=301.6,
+            )
 
         moved = configure_conversation_scope(
             self.store,
