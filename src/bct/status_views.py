@@ -6,6 +6,21 @@ from typing import Any
 STATUS_SCOPES = ("bct", "node", "rcc", "monitor")
 
 
+def with_current_node_details(snapshot: dict[str, Any], *, sort_by: str = "number") -> dict[str, Any]:
+    """Add the same fresh node/network projection to a full BCT snapshot.
+
+    This does not perform another runtime read.  It projects only the exact
+    open RCC tabs already present in ``snapshot`` so the default status view
+    can be the common, complete "current state" block.
+    """
+    node_view = status_view(snapshot, "node", sort_by=sort_by)
+    current = node_view.get("current_nodes") if node_view.get("status") == "OK" else None
+    monitor = snapshot.get("monitor")
+    if not isinstance(current, dict) or not isinstance(monitor, dict):
+        return snapshot
+    return {**snapshot, "monitor": {**monitor, "current_nodes": current}}
+
+
 def status_view(snapshot: dict[str, Any], scope: str, sort_by: str = "number") -> dict[str, Any]:
     if scope not in STATUS_SCOPES:
         raise ValueError("BCT_STATUS_SCOPE_INVALID")

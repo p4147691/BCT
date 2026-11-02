@@ -23,7 +23,7 @@ class FakeRelayFeature:
 
     def prepare(self, *, work: Work, arguments: dict) -> FeatureRequest:
         return FeatureRequest(
-            "relay_browser", arguments["instance_id"], dict(arguments),
+            "browser", arguments["instance_id"], dict(arguments),
             ("delivery:" + arguments["delivery_id"],), {},
         )
 
@@ -62,7 +62,7 @@ class DeliveryContinuationRecoveryTests(unittest.TestCase):
         self.store = Store(Path(temporary.name) / "state.sqlite")
         self.work = self.store.create_work(Work(
             "work", "wake continuity", (temporary.name,),
-            frozenset({"relay_browser"}), "owner",
+            frozenset({"browser"}), "owner",
         ))
         self.ledger = DeliveryLedger(self.store)
         self.feature = FakeRelayFeature(self.ledger)

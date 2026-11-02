@@ -8,7 +8,7 @@ class Applied:
         return {"state":"FINISHED","outcome":"APPLIED","evidence":{"command":"tested"}}
 
 class Operations:
-    capabilities=("relay_browser",)
+    capabilities=("browser",)
     def __init__(self):self.calls=[]
     def run(self,**kwargs):
         self.calls.append(kwargs)
@@ -44,6 +44,35 @@ class ChainMessagePublicTests(unittest.IsolatedAsyncioTestCase):
     async def test_unsafe_action_does_not_send(self):
         await self.mcp.call_tool("bct_chain_message",self.arguments(action="chain-run"))
         self.assertEqual([],self.ops.calls)
+
+    async def test_standard_send_message_name_uses_existing_relay_contract(self):
+        await self.mcp.call_tool("bct_send_message", {
+            "work_id": "test-work", "operation_id": "send-message-01",
+            "instance_id": "instance-id", "session_id": "a" * 32,
+            "tab_id": 12, "window_id": 13,
+            "conversation_key": "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12,
+            "text": "one exact message",
+        })
+        self.assertEqual(1, len(self.ops.calls))
+        call = self.ops.calls[0]
+        self.assertEqual("browser", call["capability"])
+        self.assertEqual("send-message", call["arguments"]["command"])
+        self.assertEqual("one exact message", call["arguments"]["text"])
+
+    async def test_standard_tab_names_delegate_to_existing_exact_commands(self):
+        identity = {
+            "work_id": "test-work", "instance_id": "instance-id", "session_id": "a" * 32,
+            "tab_id": 12, "window_id": 13,
+            "conversation_key": "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12,
+        }
+        await self.mcp.call_tool("bct_move_tab", {
+            **identity, "operation_id": "move-tab-01", "target_window_id": 15, "index": 0,
+        })
+        await self.mcp.call_tool("bct_close_tab", {
+            **identity, "operation_id": "close-tab-01",
+        })
+        self.assertEqual(["move-tab", "close-conversation-tab"],
+                         [call["arguments"]["command"] for call in self.ops.calls])
     async def test_bad_session_does_not_send(self):
         await self.mcp.call_tool("bct_chain_message",self.arguments(session_id="invalid"))
         self.assertEqual([],self.ops.calls)

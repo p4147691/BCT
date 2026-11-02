@@ -55,7 +55,7 @@ probe_conversation_key = "22222222-2222-2222-2222-222222222222"
     def test_long_generation_submits_one_fixed_prompt_and_measures_completion(self):
         bct = _Bct()
         controller = BottleneckAckController(
-            self._policy(), bct=bct, principal=Principal("p", "test", frozenset({"relay_browser"})),
+            self._policy(), bct=bct, principal=Principal("p", "test", frozenset({"browser"})),
         )
         first = controller.observe(self._instances(), now_ms=1_000_001)
         self.assertEqual("SUBMITTED", first["state"])

@@ -64,7 +64,7 @@ def abandon_unknown_instance_claim(
             "FROM operations WHERE operation_id=?", (original_operation_id,),
         ).fetchone()
         if (op is None or op["work_id"] != original_work_id
-                or op["capability"] != "relay_browser"
+                or op["capability"] != "browser"
                 or op["target"] != instance_id
                 or op["state"] != "FINISHED" or op["outcome"] != "UNKNOWN"):
             raise ConflictError("CHAT_CONTINUITY_EXACT_UNKNOWN_REQUIRED")

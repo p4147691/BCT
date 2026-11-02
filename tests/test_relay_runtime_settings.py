@@ -34,7 +34,7 @@ class RelayRuntimeSettingsTests(unittest.TestCase):
         self.store = Store(self.root / "store.sqlite")
         self.work = self.store.create_work(Work(
             "test-configuration-work", "원래 프로젝트 목표를 검증",
-            (str(self.root),), frozenset({"relay_browser"}), "owner",
+            (str(self.root),), frozenset({"browser"}), "owner",
         ))
         upsert_project(self.store, project_id="network.test", display_name="브라우저 작업")
         upsert_conversation(self.store, conversation_key=MGR, display_name="Manager")

@@ -11,7 +11,7 @@ from bct.conversation_network import (
 )
 from bct.core.models import Principal, Work
 from bct.core.store import Store
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.node_label_notifications import NodeLabelNotifier
 
 A = "6ae269f6-130c-83ee-9384-dffa2d2a946d"
@@ -71,7 +71,7 @@ class NodeFaviconEventTests(unittest.TestCase):
     def _runner(self, client=None, ops=None):
         ops = ops or Ops()
         fake = SimpleNamespace(store=self.store, operations=ops)
-        notifier = NodeLabelNotifier(fake, Principal("bct-test", "test", frozenset({"relay_browser"})),
+        notifier = NodeLabelNotifier(fake, Principal("bct-test", "test", frozenset({"browser"})),
                                      client=client or FakeClient(), discover=lambda: [INSTANCE])
         return notifier, ops
 
@@ -154,8 +154,8 @@ class NodeFaviconEventTests(unittest.TestCase):
     def test_rcc_feature_rejects_fabricated_event_and_accepts_claimed_exact_event(self):
         upsert_conversation(self.store, conversation_key=A, display_name="new")
         eid = self._event()
-        feature = RelayBrowserFeature(client=FakeClient(), store=self.store)
-        work = Work("test", "test", (self.tmp.name,), frozenset({"relay_browser"}), "bct-test")
+        feature = BrowserFeature(client=FakeClient(), store=self.store)
+        work = Work("test", "test", (self.tmp.name,), frozenset({"browser"}), "bct-test")
         args = {"command": "node-label-notify", "instance_id": INSTANCE,
                 "session_id": SESSION, "tab_id": 71, "window_id": 22,
                 "conversation_key": A, "event_id": eid}

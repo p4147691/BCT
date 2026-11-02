@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from bct.core.models import Outcome, Principal
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.features.rcc_latency import send_latency_evidence
 from bct.service import BCT
 from tests.test_rcc_integration import FakeRelayClient
@@ -53,16 +53,16 @@ class SendLatencyIntegrationTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         config = root / "bct.toml"
-        config.write_text('[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n', encoding="utf-8")
+        config.write_text('[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n', encoding="utf-8")
         self.client = FakeRelayClient()
         self.bct = BCT(state_path=root / "state.sqlite", policy_path=config)
-        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(
+        self.bct.operations._features["browser"] = BrowserFeature(
             self.client, store=self.bct.store, result_readback_timeout_s=0.1
         )
-        self.principal = Principal("latency_test", "test", frozenset({"relay_browser"}))
+        self.principal = Principal("latency_test", "test", frozenset({"browser"}))
         self.bct.create_work(
             work_id="latency-work", request_summary="passive latency tests",
-            roots=[str(root)], actions=["relay_browser"], principal=self.principal
+            roots=[str(root)], actions=["browser"], principal=self.principal
         )
 
     def tearDown(self):
@@ -71,7 +71,7 @@ class SendLatencyIntegrationTests(unittest.TestCase):
     def invoke(self, id_: str, args: dict):
         return self.bct.operations.run(
             principal=self.principal, work_id="latency-work", operation_id=id_,
-            capability="relay_browser", arguments=args,
+            capability="browser", arguments=args,
         )
 
     @staticmethod

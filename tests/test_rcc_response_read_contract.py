@@ -2,7 +2,7 @@ import hashlib
 import json
 import unittest
 from unittest.mock import Mock
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.core.models import FeatureRequest, ConfirmedFailure
 from bct.integrations.rcc import RelayUnavailable, RelayEffectUnknown
 
@@ -14,7 +14,7 @@ DID = "fixture-1"
 class ReadContractTests(unittest.TestCase):
     def setUp(self):
         self.client = Mock()
-        self.feature = RelayBrowserFeature(client=self.client)
+        self.feature = BrowserFeature(client=self.client)
         self.feature.delivery_ledger = Mock()
         self.row = dict(instance_id="fixture-instance",
             manager_conversation_key="11111111-1111-1111-1111-111111111111",
@@ -22,7 +22,7 @@ class ReadContractTests(unittest.TestCase):
             request_sha256="a"*64, state="RETURNED",
             response_sha256=SHA, response_length=LENGTH)
         self.feature.delivery_ledger.get_for_work.return_value = self.row
-        self.request = FeatureRequest("relay_browser", "fixture-instance",
+        self.request = FeatureRequest("browser", "fixture-instance",
             dict(command="delivery-response-read",instance_id="fixture-instance",
                  extra=dict(deliveryId=DID,workId="fixture-work"),text="",timeout_s=1.0),
             ("fixture-resource",), {})

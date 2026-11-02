@@ -35,7 +35,7 @@ from .features.github_inbox import GitHubRunInboxFeature
 from .features.tests import TestFeature
 from .features.verification import VerificationFeature
 from .features.vtl import VtlValidateFeature
-from .features.rcc import RelayBrowserFeature
+from .features.rcc import BrowserFeature
 from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
 from .features.cdp_inspect import CDPInspectFeature
@@ -179,9 +179,9 @@ class BCT:
             require_current_session_instances=_require_current_session_instances(policy_path),
         )
         relay = NamedPipeRelayClient()
-        relay_browser = RelayBrowserFeature(relay, store=self.store)
+        browser = BrowserFeature(relay, store=self.store)
         self.delivery_continuation_recovery = DeliveryContinuationRecovery(
-            self.store, relay_browser,
+            self.store, browser,
         )
         self.worker_dispatch_recovery = (
             WorkerDispatchRecovery(self.orchestration, relay)
@@ -216,7 +216,7 @@ class BCT:
             GitHubRunInboxFeature(self.store, github, policy_path),
             GitHubSyncMainFeature(policy_path),
             DeployFeature(deployment_profiles), ServiceControlFeature(deployment_profiles),
-            relay_browser,
+            browser,
             SystemInspectFeature(), ExecuteFeature(),
             sessions,
             MonitorFeature(policy_path),

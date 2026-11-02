@@ -22,7 +22,7 @@ SCOPE = "network.runtime"
 
 
 class FakeRelayFeature:
-    capability = "relay_browser"
+    capability = "browser"
 
     def __init__(self):
         self.preparations = 0
@@ -91,11 +91,11 @@ class RelayControlExecutorTests(unittest.TestCase):
         self.write(control_document())
         self.child = FakeRelayFeature()
         self.feature = RelayControlFeature(
-            store=object(), features={"relay_browser": self.child},
+            store=object(), features={"browser": self.child},
         )
         self.work = Work(
             "work-runtime", "설정 실행 시험", (self.tmp.name,),
-            frozenset({"relay_browser"}), "principal",
+            frozenset({"browser"}), "principal",
         )
         self.context = {
             "instance_id": "instance123",
@@ -124,7 +124,7 @@ class RelayControlExecutorTests(unittest.TestCase):
     def test_registered_route_freezes_exact_delegated_request(self):
         request = self.feature.prepare(work=self.work, arguments=self.args())
         self.assertEqual("relay_control", request.capability)
-        self.assertEqual("relay_browser", request.preconditions["delegated_capability"])
+        self.assertEqual("browser", request.preconditions["delegated_capability"])
         self.assertEqual(self.revision(), request.preconditions["settings_sha256"])
         self.assertEqual("한글 업무 📦", request.arguments["delegated"]["arguments"]["text"])
         self.assertEqual("delivery-start", request.arguments["delegated"]["arguments"]["command"])
@@ -133,7 +133,7 @@ class RelayControlExecutorTests(unittest.TestCase):
             FeatureRequest(**{**request.__dict__, "operation_id": "configured-flow-01"})
         )
         self.assertEqual(Outcome.APPLIED, result.outcome)
-        self.assertEqual("relay_browser", result.evidence["delegated_capability"])
+        self.assertEqual("browser", result.evidence["delegated_capability"])
         self.assertEqual("delivery-start", result.evidence["command"])
         self.assertEqual("configured-flow-01", self.child.last_request.operation_id)
 
@@ -218,7 +218,7 @@ class RelayControlExecutorTests(unittest.TestCase):
         state = Path(self.tmp.name) / "state.sqlite3"
         policy_path = Path(self.tmp.name) / "policy.toml"
         policy_path.write_text(
-            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
             encoding="utf-8",
         )
         store = Store(state)
@@ -230,7 +230,7 @@ class RelayControlExecutorTests(unittest.TestCase):
         )
         coordinator.register(configured)
         principal = Principal(
-            "principal", "test", frozenset({"relay_browser", "relay_control"})
+            "principal", "test", frozenset({"browser", "relay_control"})
         )
         store.create_work(self.work)
         first = coordinator.run(
@@ -255,7 +255,7 @@ class RelayControlExecutorTests(unittest.TestCase):
         state = Path(self.tmp.name) / "denied.sqlite3"
         policy_path = Path(self.tmp.name) / "denied-policy.toml"
         policy_path.write_text(
-            '[policy]\nnormal_actions=["relay_browser","read"]\napproval_actions=[]\n',
+            '[policy]\nnormal_actions=["browser","read"]\napproval_actions=[]\n',
             encoding="utf-8",
         )
         store = Store(state)
@@ -271,7 +271,7 @@ class RelayControlExecutorTests(unittest.TestCase):
         )
         store.create_work(denied_work)
         principal = Principal(
-            "principal", "test", frozenset({"read", "relay_browser", "relay_control"})
+            "principal", "test", frozenset({"read", "browser", "relay_control"})
         )
         with self.assertRaises(AuthorizationError):
             coordinator.run(

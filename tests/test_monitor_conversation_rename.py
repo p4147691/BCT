@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from bct.core.models import Outcome, Work
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.runtime_server import (
     MONITOR_EXTENSION_ORIGIN,
     ensure_monitor_work,
@@ -50,12 +50,12 @@ class MonitorConversationRenameTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         policy = self.root / "bct.toml"
         policy.write_text(
-            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
             encoding="utf-8",
         )
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=policy)
         self.client = FakeRelayClient()
-        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(self.client)
+        self.bct.operations._features["browser"] = BrowserFeature(self.client)
         self.principal = ensure_monitor_work(self.bct, runtime_root=self.root)
 
     def tearDown(self):
@@ -222,7 +222,7 @@ class MonitorConversationRenameTests(unittest.TestCase):
             "bct-monitor-extension-control",
             "foreign",
             (str(other_root),),
-            frozenset({"relay_browser"}),
+            frozenset({"browser"}),
             "foreign-owner",
         ))
         with self.assertRaisesRegex(RuntimeError, "MONITOR_WORK_CONTRACT_MISMATCH"):

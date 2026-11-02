@@ -5,7 +5,9 @@ from pathlib import Path
 from bct.core.store import Store
 
 from bct.delayed_send_message import (
-    Watch, advance, advance_from_rcc, extract_next_instruction, InstructionError, DurableWatchLedger, DelayedSendRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
+    Watch, advance, advance_from_rcc, extract_next_instruction, next_instruction_action,
+    next_instruction_decision, InstructionError, DurableWatchLedger,
+    DelayedSendRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
 )
 
 
@@ -43,6 +45,31 @@ class DelayedSendMessageTests(unittest.TestCase):
         self.assertEqual("SELF_SENT", run(observed).status)
         self.assertEqual(["watch", "send"], [x[0] for x in self.events])
 
+    def test_next_instruction_is_a_bound_send_action(self):
+        from bct.continuation_primitives import ActionKind, response_ready_alarm
+        alarm = response_ready_alarm(
+            watch_ref="task-1:1", subject_ref="worker-uuid",
+            expected_response_turn_id="turn-1", response_turn_id="turn-1",
+            response_text="NEXT TASK — MANAGER\nReturn this exact result.",
+            response_complete=True, input_ready=True,
+        )
+        action = next_instruction_action(alarm)
+        self.assertEqual(ActionKind.SEND_MESSAGE, action.kind)
+        self.assertEqual("manager", action.recipient_role)
+        self.assertEqual("Return this exact result.", action.payload)
+
+    def test_legacy_marker_becomes_explicit_prior_turn_decision(self):
+        from bct.continuation_primitives import ContinuationRoute, response_ready_alarm
+        alarm = response_ready_alarm(
+            watch_ref="task-1:1", subject_ref="worker-uuid",
+            expected_response_turn_id="turn-1", response_turn_id="turn-1",
+            response_text="Done.\nNEXT TASK — SELF\nContinue verification.",
+            response_complete=True, input_ready=True,
+        )
+        decision = next_instruction_decision(alarm)
+        self.assertEqual(ContinuationRoute.SELF, decision.route)
+        self.assertEqual("Continue verification.", decision.payload)
+
     def test_durable_watch_survives_ledger_reopen(self):
         with tempfile.TemporaryDirectory() as root:
             store=Store(Path(root)/"state.sqlite")
@@ -77,10 +104,36 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertEqual("worker-uuid",sent[0][0])
             self.assertEqual("RESERVED",ledger.get("task-1",2)["state"])
             self.assertEqual("SELF_SENT",ledger.get("task-1",1)["state"])
+            self.assertEqual("CONSUMED", ledger.get_alarm(
+                self.watch, "conversation.response_ready")["state"])
             self.assertEqual("rcc-turn-1", __import__("json").loads(ledger.get("task-1",1)["context_json"])["observed_response_turn_key"])
             self.assertEqual("WAITING_WATCH",runner.poll_once(
                 self.watch,manager_conversation_key="manager-uuid").status)
             self.assertEqual(1,len(sent))
+
+    def test_runner_records_decision_before_self_delivery_for_next_turn_context(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = DurableWatchLedger(Store(Path(root) / "state.sqlite"))
+            ledger.reserve(Watch("task-1", 1, "worker-uuid", "", ""))
+            watch = ledger.bind(Watch("task-1", 1, "worker-uuid", "", ""),
+                                send_receipt="send-1", response_turn_id="turn-1")
+            runner = DelayedSendRunner(
+                ledger,
+                read_response=lambda _: {
+                    "conversation_key": "worker-uuid", "response_turn_id": "turn-1",
+                    "response_turn_key": "rcc-turn-1", "response_sha256": "digest-1",
+                    "response_text": "NEXT TASK — SELF\nContinue verification.",
+                    "response_complete": True, "input_ready": True,
+                },
+                send_message=lambda *_: "send-2",
+            )
+            self.assertEqual("SELF_SENT", runner.poll_once(
+                watch, manager_conversation_key="manager-uuid").status)
+            context = ledger.read_execution_context(task_id="task-1")
+            self.assertEqual(1, context["generation"])
+            self.assertEqual("SELF", context["decision"]["route"])
+            self.assertEqual("Continue verification.", context["decision"]["payload"])
+            self.assertEqual("worker-uuid", context["worker_conversation_key"])
 
     def test_real_rcc_terminal_payload_mapping(self):
         body = "NEXT TASK — SELF\\nContinue."
@@ -211,6 +264,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             context = json.loads(ledger.get("manual-proof-task",1)["context_json"])
             self.assertEqual("RCC_PREARM_USER_TURN",context["source_proof_kind"])
             self.assertEqual("actual-user",context["source_user_turn_key"])
+            self.assertEqual("worker", context["continuation_context_v1"]["subject_ref"])
 
     def test_cancel_exact_watching_generation_and_idempotent_receipt(self):
         with tempfile.TemporaryDirectory() as root:

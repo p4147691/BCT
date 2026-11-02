@@ -95,7 +95,7 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         self.claim("rcc-ack")
         with self.store.transaction() as db:
             db.execute("UPDATE operations SET capability=?, error=? WHERE operation_id=?",
-                       ("relay_browser", "RCC_COMPOSE_SEND_ACK_UNVERIFIED:PRIVATE_MESSAGE", "rcc-ack"))
+                       ("browser", "RCC_COMPOSE_SEND_ACK_UNVERIFIED:PRIVATE_MESSAGE", "rcc-ack"))
         self.store.finish_operation(operation_id="rcc-ack", outcome=Outcome.UNKNOWN,
                                     evidence={"private_payload": "PRIVATE"}, error="RCC_COMPOSE_SEND_ACK_UNVERIFIED:PRIVATE_MESSAGE",
                                     release_claims=False)
@@ -223,7 +223,7 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         created, _ = self.store.begin_operation(
             operation_id="legacy-send", work=self.work,
             principal_id="fixture-owner", request_digest="legacy-send",
-            capability="relay_browser", target="example",
+            capability="browser", target="example",
             resources=("rcc-instance:example",), policy_revision="fixture",
         )
         self.assertTrue(created)
@@ -233,7 +233,7 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         created, _ = self.store.begin_operation(
             operation_id="active-delivery", work=self.work,
             principal_id="fixture-owner", request_digest="active-delivery",
-            capability="relay_browser", target="example",
+            capability="browser", target="example",
             resources=("rcc-instance:example:delivery:one",), policy_revision="fixture",
         )
         self.assertTrue(created)

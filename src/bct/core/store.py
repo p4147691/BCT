@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .models import ConflictError, OperationResult, OperationState, Outcome, Work
+from .capabilities import capability_matches
 
 
 # Read-only cause hints. These describe where evidence was lost, never whether
@@ -28,7 +29,7 @@ def _claim_unknown_detail(error: str | None, outcome: str | None,
                           capability: str | None) -> dict[str, str | None]:
     if outcome != "UNKNOWN":
         return {"stage": None, "error_code": None, "evidence": None}
-    if capability != "relay_browser":
+    if not capability_matches(capability, "browser"):
         return {"stage": "UNCLASSIFIED", "error_code": None, "evidence": "INSUFFICIENT"}
     # Prefix-only decoding, with an explicit allowlist: no raw exception, user
     # prompt, tab content, path, token, or internal transport details are exposed.
@@ -1458,7 +1459,7 @@ class Store:
                     or resolver["work_id"] != expected_work_id
                     or original is None or original["work_id"] != expected_work_id
                     or original["principal_id"] != resolver["principal_id"]
-                    or original["capability"] != "relay_browser"
+                    or not capability_matches(original["capability"], "browser")
                     or original["target"] != instance_id
                     or original["state"] != OperationState.FINISHED.value
                     or original["outcome"] != Outcome.UNKNOWN.value
@@ -1546,7 +1547,7 @@ class Store:
                     or resolver["work_id"] != expected_work_id
                     or original is None or original["work_id"] != expected_work_id
                     or original["principal_id"] != resolver["principal_id"]
-                    or original["capability"] != "relay_browser"
+                    or not capability_matches(original["capability"], "browser")
                     or original["target"] != instance_id
                     or original["state"] != OperationState.FINISHED.value
                     or original["outcome"] != Outcome.UNKNOWN.value

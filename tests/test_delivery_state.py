@@ -141,7 +141,7 @@ class DeliveryLedgerTests(unittest.TestCase):
         self.store = Store(Path(self.temp.name) / "state.sqlite3")
         self.work = self.store.create_work(Work(
             "delivery-work", "thin relay", (self.temp.name,),
-            frozenset({"relay_browser"}), "owner",
+            frozenset({"browser"}), "owner",
         ))
         self.ledger = DeliveryLedger(self.store)
         self.identity = dict(

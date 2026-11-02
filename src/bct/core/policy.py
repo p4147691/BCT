@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 
 from .models import Decision, DecisionKind, Principal, Work
+from .capabilities import canonical_capability
 
 
 class Policy:
@@ -34,8 +35,8 @@ class Policy:
         overlap = set(normal) & set(approval)
         if overlap:
             raise ValueError("POLICY_ACTION_OVERLAP:" + ",".join(sorted(overlap)))
-        self._normal = frozenset(normal)
-        self._approval = frozenset(approval)
+        self._normal = frozenset(canonical_capability(action) for action in normal)
+        self._approval = frozenset(canonical_capability(action) for action in approval)
         self._revision = hashlib.sha256(raw).hexdigest()
 
     def validate_unattended_actions(self, actions: list[str]) -> str:
@@ -46,7 +47,7 @@ class Policy:
         actions that the *current* policy classifies as normal.
         """
         self.reload()
-        denied = sorted(set(actions) - self._normal)
+        denied = sorted({canonical_capability(action) for action in actions} - self._normal)
         if denied:
             raise ValueError("POLICY_ACTION_NOT_UNATTENDED:" + ",".join(denied))
         return self.revision
@@ -58,9 +59,14 @@ class Policy:
             return Decision(DecisionKind.DENY, "WRONG_WORK_OWNER", "use the assigned principal or hand off the work", self.revision)
         if work.state != "ACTIVE":
             return Decision(DecisionKind.DENY, "WORK_NOT_ACTIVE", "inspect the work state", self.revision)
-        if action not in work.actions:
+        action = canonical_capability(action)
+        work_actions = frozenset(canonical_capability(item) for item in work.actions)
+        principal_capabilities = frozenset(
+            canonical_capability(item) for item in principal.capabilities
+        )
+        if action not in work_actions:
             return Decision(DecisionKind.DENY, "ACTION_OUTSIDE_USER_SCOPE", "start or update work with the requested action", self.revision)
-        if action not in principal.capabilities:
+        if action not in principal_capabilities:
             return Decision(DecisionKind.DENY, "PRINCIPAL_CAPABILITY_MISSING", "use an authenticated principal with this capability", self.revision)
         if action in self._approval:
             # Only these two capabilities have independent signed approval

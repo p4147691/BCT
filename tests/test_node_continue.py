@@ -7,7 +7,7 @@ import unittest
 
 from bct.core.models import Outcome, Work
 from bct.core.store import Store
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 
 
 INSTANCE = "a" * 32
@@ -48,7 +48,7 @@ class NodeContinueTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.store = Store(Path(self.temp.name) / "state.sqlite")
         self.work = self.store.create_work(Work(
-            "continue-work", "bounded B to B", (self.temp.name,), frozenset({"relay_browser"}), "p",
+            "continue-work", "bounded B to B", (self.temp.name,), frozenset({"browser"}), "p",
         ))
         self.store.create_node(node_id="worker-b", name="Worker B")
         with self.store.transaction() as db:
@@ -65,7 +65,7 @@ class NodeContinueTests(unittest.TestCase):
                  CONVERSATION, CONVERSATION, "", "receipt", 1, 1.0),
             )
         self.relay = _Relay()
-        self.feature = RelayBrowserFeature(self.relay, store=self.store)
+        self.feature = BrowserFeature(self.relay, store=self.store)
 
     def tearDown(self):
         self.temp.cleanup()

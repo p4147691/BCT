@@ -17,7 +17,7 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
         self.store = Store(Path(self.tmp.name) / "state.sqlite")
         self.work = self.store.create_work(Work(
             "work", "fixture", (self.tmp.name,),
-            frozenset({"read", "write", "claim_reconcile", "relay_browser"}), "owner",
+            frozenset({"read", "write", "claim_reconcile", "browser"}), "owner",
         ))
 
     def tearDown(self):
@@ -139,7 +139,7 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
         )
 
     def test_legacy_missing_delivery_claim_is_proven_pre_dispatch(self):
-        self._unknown("legacy-missing-delivery", "relay_browser")
+        self._unknown("legacy-missing-delivery", "browser")
         with self.store.transaction() as db:
             db.execute(
                 "UPDATE operations SET evidence_json=?,error=? WHERE operation_id=?",
@@ -185,7 +185,7 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
             )
         policy_path = Path(self.tmp.name) / "policy.toml"
         policy_path.write_text(
-            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
             encoding="utf-8",
         )
         coordinator = OperationCoordinator(
@@ -195,7 +195,7 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
         result = coordinator.run(
             principal=Principal(
                 "owner", "fixture",
-                frozenset({"claim_reconcile", "relay_browser"}),
+                frozenset({"claim_reconcile", "browser"}),
             ),
             work_id="work", operation_id="legacy-relay-resolver",
             capability="claim_reconcile", arguments={
@@ -212,7 +212,7 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
         self.assertEqual([], self.store.claim_diagnostics())
 
     def test_coordinator_reconciles_exact_legacy_missing_delivery_claim(self):
-        self._unknown("legacy-missing-delivery-coordinator", "relay_browser")
+        self._unknown("legacy-missing-delivery-coordinator", "browser")
         with self.store.transaction() as db:
             db.execute(
                 "UPDATE operations SET evidence_json=?,error=? WHERE operation_id=?",
@@ -221,7 +221,7 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
             )
         policy_path = Path(self.tmp.name) / "policy.toml"
         policy_path.write_text(
-            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
             encoding="utf-8",
         )
         coordinator = OperationCoordinator(
@@ -231,7 +231,7 @@ class ReadOnlyClaimReconciliationTests(unittest.TestCase):
         result = coordinator.run(
             principal=Principal(
                 "owner", "fixture",
-                frozenset({"claim_reconcile", "relay_browser"}),
+                frozenset({"claim_reconcile", "browser"}),
             ),
             work_id="work", operation_id="legacy-missing-delivery-resolver",
             capability="claim_reconcile", arguments={

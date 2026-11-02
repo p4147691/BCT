@@ -10,7 +10,7 @@ from bct.core.models import AuthorizationError, Outcome, PreconditionError, Prin
 from bct.core.rcc_result import rcc_result_hash
 from bct.core.delivery_ledger import DeliveryLedger
 from bct.core.delivery_state import DeliveryEvent
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.integrations.rcc import RelayEffectUnknown, RelayUnavailable
 from bct.service import BCT
 
@@ -44,18 +44,18 @@ class RccIntegrationTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         policy = self.root / "bct.toml"
         policy.write_text(
-            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
             encoding="utf-8",
         )
         self.client = FakeRelayClient()
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=policy)
-        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(
+        self.bct.operations._features["browser"] = BrowserFeature(
             self.client, store=self.bct.store, result_readback_timeout_s=0.25,
         )
-        self.principal = Principal("codex", "test", frozenset({"relay_browser"}))
+        self.principal = Principal("codex", "test", frozenset({"browser"}))
         self.bct.create_work(
             work_id="rcc-work", request_summary="test exact relay integration",
-            roots=[str(self.root)], actions=["relay_browser"], principal=self.principal,
+            roots=[str(self.root)], actions=["browser"], principal=self.principal,
         )
 
     def tearDown(self):
@@ -64,7 +64,7 @@ class RccIntegrationTests(unittest.TestCase):
     def call(self, operation_id: str, arguments: dict):
         return self.bct.operations.run(
             principal=self.principal, work_id="rcc-work", operation_id=operation_id,
-            capability="relay_browser", arguments=arguments,
+            capability="browser", arguments=arguments,
         )
 
     @staticmethod
@@ -80,7 +80,7 @@ class RccIntegrationTests(unittest.TestCase):
 
     def _fresh_window_target(self, *, work_id="rcc-work") -> str:
         self.client.target_state = self._target_state()
-        feature = self.bct.operations._features["relay_browser"]
+        feature = self.bct.operations._features["browser"]
         targets = feature._issue_target_refs(
             work_id=work_id, instance_id="instance123", session_id="session1",
             tabs=self.client.target_state["state"]["tabs"],
@@ -195,7 +195,7 @@ class RccIntegrationTests(unittest.TestCase):
 
     def test_direct_send_request_digest_preserves_legacy_fingerprint(self):
         work = self.bct.store.get_work("rcc-work")
-        feature = self.bct.operations._features["relay_browser"]
+        feature = self.bct.operations._features["browser"]
         prepared = feature.prepare(work=work, arguments={
             "command": "send", "instance_id": "instance123",
             "to": "BCT_ROSTER", "text": "benign task", "timeout_s": 30,
@@ -348,13 +348,13 @@ class RccIntegrationTests(unittest.TestCase):
             self.call("result-of-read", {
                 "command": "result", "instance_id": "instance123", "relay_id": "result-read",
             })
-        other = Principal("foreign", "test", frozenset({"relay_browser"}))
+        other = Principal("foreign", "test", frozenset({"browser"}))
         self.bct.create_work(work_id="other-work", request_summary="foreign",
-                             roots=[str(self.root)], actions=["relay_browser"], principal=other)
+                             roots=[str(self.root)], actions=["browser"], principal=other)
         with self.assertRaisesRegex(Exception, "OPERATION_RESULT_ACCESS_DENIED"):
             self.bct.operations.run(
                 principal=other, work_id="other-work", operation_id="foreign-result",
-                capability="relay_browser",
+                capability="browser",
                 arguments={"command": "result", "instance_id": "instance123",
                            "relay_id": "original-send"},
             )
@@ -662,7 +662,7 @@ class RccIntegrationTests(unittest.TestCase):
         target_ref = self._fresh_window_target()
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
-            operation_id="compose-still-running", capability="relay_browser",
+            operation_id="compose-still-running", capability="browser",
             arguments={
                 "command": "create-and-send", "instance_id": "instance123",
                 "mode": "tab", "target_ref": target_ref, "text": "hello",
@@ -672,7 +672,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertTrue(created)
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
-            operation_id="reload-during-running-effect", capability="relay_browser",
+            operation_id="reload-during-running-effect", capability="browser",
             arguments={"command": "reload-extension", "instance_id": "instance123"},
         )
         self.assertTrue(created)
@@ -680,7 +680,7 @@ class RccIntegrationTests(unittest.TestCase):
     def test_active_exact_delivery_claim_does_not_block_maintenance_begin(self):
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
-            operation_id="delivery-submit-reserved", capability="relay_browser",
+            operation_id="delivery-submit-reserved", capability="browser",
             arguments={
                 "command": "delivery-start", "instance_id": "instance123",
                 "delivery_id": "delivery-reserved",
@@ -692,7 +692,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertTrue(created)
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
-            operation_id="reload-during-delivery-reservation", capability="relay_browser",
+            operation_id="reload-during-delivery-reservation", capability="browser",
             arguments={"command": "reload-extension", "instance_id": "instance123"},
         )
         self.assertTrue(created)
@@ -701,13 +701,13 @@ class RccIntegrationTests(unittest.TestCase):
     def test_exact_delivery_begin_ignores_reserved_reload_claim(self):
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
-            operation_id="reload-maintenance-reserved", capability="relay_browser",
+            operation_id="reload-maintenance-reserved", capability="browser",
             arguments={"command": "reload-extension", "instance_id": "instance123"},
         )
         self.assertTrue(created)
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
-            operation_id="delivery-during-maintenance", capability="relay_browser",
+            operation_id="delivery-during-maintenance", capability="browser",
             arguments={
                 "command": "delivery-start", "instance_id": "instance123",
                 "delivery_id": "delivery-during-maintenance",
@@ -722,7 +722,7 @@ class RccIntegrationTests(unittest.TestCase):
     def test_rcc_begin_ignores_reserved_reload_claim(self):
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
-            operation_id="reload-reserved", capability="relay_browser",
+            operation_id="reload-reserved", capability="browser",
             arguments={
                 "command": "reload-extension", "instance_id": "instance123",
             },
@@ -730,7 +730,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertTrue(created)
         created, _ = self.bct.operations.begin(
             principal=self.principal, work_id="rcc-work",
-            operation_id="send-during-reload", capability="relay_browser",
+            operation_id="send-during-reload", capability="browser",
             arguments={"command": "send", "instance_id": "instance123",
                        "to": "BCT_ROSTER", "text": "allowed despite measurement"},
         )
@@ -1058,14 +1058,14 @@ class RccIntegrationTests(unittest.TestCase):
         principal = principal or self.principal
         self.bct.create_work(
             work_id=work_id, request_summary="independent successor",
-            roots=[str(self.root)], actions=["relay_browser"], principal=principal,
+            roots=[str(self.root)], actions=["browser"], principal=principal,
         )
         return principal
 
     def _call_successor(self, operation_id, arguments, *, work_id="rcc-successor", principal=None):
         return self.bct.operations.run(
             principal=principal or self.principal, work_id=work_id,
-            operation_id=operation_id, capability="relay_browser", arguments=arguments,
+            operation_id=operation_id, capability="browser", arguments=arguments,
         )
 
     def test_successor_ignores_terminal_mismatch_claim_without_idle_proof(self):
@@ -1089,7 +1089,7 @@ class RccIntegrationTests(unittest.TestCase):
 
     def test_foreign_successor_ignores_terminal_mismatch_claim(self):
         original_id = self._terminal_mismatch_original()
-        foreign = Principal("foreign", "test", frozenset({"relay_browser"}))
+        foreign = Principal("foreign", "test", frozenset({"browser"}))
         self._successor_work(principal=foreign)
         target_ref = self._fresh_window_target(work_id="rcc-successor")
         self.client.results = [self._new_chat_result("foreign-independent")]
@@ -1564,13 +1564,13 @@ class RccIntegrationTests(unittest.TestCase):
         arguments["operator_acknowledgement"] = ""
         with self.assertRaisesRegex(PreconditionError, "OPERATOR_QUARANTINE_ACK_REQUIRED"):
             self.call("operator-quarantine-no-ack", arguments)
-        foreign = Principal("foreign", "test", frozenset({"relay_browser"}))
+        foreign = Principal("foreign", "test", frozenset({"browser"}))
         self.bct.create_work(work_id="foreign-work", request_summary="foreign",
-                             roots=[str(self.root)], actions=["relay_browser"], principal=foreign)
+                             roots=[str(self.root)], actions=["browser"], principal=foreign)
         with self.assertRaisesRegex(Exception, "OPERATION_RESULT_ACCESS_DENIED"):
             self.bct.operations.run(
                 principal=foreign, work_id="foreign-work", operation_id="operator-foreign",
-                capability="relay_browser", arguments=self._operator_quarantine_args(original_id),
+                capability="browser", arguments=self._operator_quarantine_args(original_id),
             )
 
     def test_operator_quarantine_requires_exact_original_request_digest_before_read(self):
@@ -1656,11 +1656,11 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual(Outcome.FAILED, result.outcome)
 
     def test_wrong_owner_and_unlisted_fields_are_denied(self):
-        other = Principal("other", "test", frozenset({"relay_browser"}))
+        other = Principal("other", "test", frozenset({"browser"}))
         with self.assertRaises(AuthorizationError):
             self.bct.operations.run(
                 principal=other, work_id="rcc-work", operation_id="wrong-owner",
-                capability="relay_browser",
+                capability="browser",
                 arguments={"command": "state", "instance_id": "instance123"},
             )
         with self.assertRaisesRegex(PreconditionError, "RCC_ARGUMENT_NOT_ALLOWED"):
@@ -1726,14 +1726,14 @@ class RccIntegrationTests(unittest.TestCase):
 
         self.bct.create_work(
             work_id="other-direct-tab-work", request_summary="strict owner",
-            roots=[str(self.root)], actions=["relay_browser"],
+            roots=[str(self.root)], actions=["browser"],
             principal=self.principal,
         )
         with self.assertRaisesRegex(Exception, "OPERATION_RESULT_ACCESS_DENIED"):
             self.bct.operations.run(
                 principal=self.principal, work_id="other-direct-tab-work",
                 operation_id="direct-tab-cross-work-denied",
-                capability="relay_browser",
+                capability="browser",
                 arguments={
                     "command": "result", "instance_id": "instance123",
                     "relay_id": direct_id,

@@ -20,9 +20,9 @@ _ACTIVE = {"PENDING"}
 
 
 def ensure_notification_work(bct: Any, runtime_root: Any) -> Principal:
-    principal = Principal(PRINCIPAL_ID, "durable-committed-node-label", frozenset({"relay_browser"}))
+    principal = Principal(PRINCIPAL_ID, "durable-committed-node-label", frozenset({"browser"}))
     expected = Work(WORK_ID, "Committed display-label favicon notifications",
-                    (str(runtime_root.resolve()),), frozenset({"relay_browser"}), principal.principal_id)
+                    (str(runtime_root.resolve()),), frozenset({"browser"}), principal.principal_id)
     try:
         existing = bct.store.get_work(WORK_ID)
     except KeyError:
@@ -140,7 +140,7 @@ class NodeLabelNotifier:
                 principal=self.principal,
                 work_id=WORK_ID,
                 operation_id=operation_id,
-                capability="relay_browser",
+                capability="browser",
                 arguments={
                     "command": "node-label-notify",
                     "instance_id": instance, "session_id": session,

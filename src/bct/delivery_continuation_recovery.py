@@ -20,9 +20,9 @@ from bct.core.store import Store
 class DeliveryContinuationRecovery:
     """Poll opted-in active Deliveries and return one captured reply exactly once."""
 
-    def __init__(self, store: Store, relay_feature: Any):
+    def __init__(self, store: Store, browser_feature: Any):
         self.store = store
-        self.relay_feature = relay_feature
+        self.browser_feature = browser_feature
         self._run_lock = threading.Lock()
 
     def plan_worker_result_inbox(self, *, inbox, manager_uuid: str,
@@ -80,13 +80,13 @@ class DeliveryContinuationRecovery:
         return f"continuity-{kind}-{digest}-{uuid.uuid4().hex[:8]}"
 
     def _execute(self, *, work: Any, row: dict[str, Any], command: str):
-        request = self.relay_feature.prepare(work=work, arguments={
+        request = self.browser_feature.prepare(work=work, arguments={
             "command": command,
             "instance_id": row["instance_id"],
             "delivery_id": row["delivery_id"],
             "timeout_s": 5.0,
         })
-        return self.relay_feature.execute(replace(
+        return self.browser_feature.execute(replace(
             request,
             operation_id=self._operation_id(command.removeprefix("delivery-"),
                                             row["delivery_id"]),

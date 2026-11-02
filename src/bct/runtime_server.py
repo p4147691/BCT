@@ -66,13 +66,13 @@ def ensure_monitor_work(bct: BCT, *, runtime_root: Path) -> Principal:
     principal = Principal(
         MONITOR_PRINCIPAL_ID,
         "monitor-extension-origin",
-        frozenset({"relay_browser"}),
+        frozenset({"browser"}),
     )
     expected = Work(
         MONITOR_WORK_ID,
         "BCT Monitor exact conversation controls",
         (str(runtime_root.resolve()),),
-        frozenset({"relay_browser"}),
+        frozenset({"browser"}),
         principal.principal_id,
     )
     try:
@@ -118,7 +118,7 @@ def run_monitor_conversation_rename(
         principal=principal,
         work_id=MONITOR_WORK_ID,
         operation_id=operation_id,
-        capability="relay_browser",
+        capability="browser",
         arguments=arguments,
     ).as_dict()
     if str(receipt.get("outcome") or "").upper() == "APPLIED":
@@ -199,7 +199,7 @@ def run_monitor_rcc_reload(
         principal=principal,
         work_id=MONITOR_WORK_ID,
         operation_id=operation_id,
-        capability="relay_browser",
+        capability="browser",
         arguments=arguments,
     ).as_dict()
 
@@ -432,7 +432,7 @@ def main() -> int:
     def delayed_send_watch_loop() -> None:
         service = DelayedSendService(
             store=bct.store,
-            relay_feature=bct.operations._features["relay_browser"],
+            browser_feature=bct.operations._features["browser"],
             operations=bct.operations,
         )
         while not recovery_stop.wait(2.0):

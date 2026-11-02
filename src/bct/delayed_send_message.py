@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
+from .continuation_primitives import (
+    ActionKind, ActionRequest, Alarm, ContinuationContext, ContinuationDecision,
+    ContinuationRoute, action_for_decision, response_ready_alarm,
+)
+
 
 def _rcc_submitted_text_sha256(message: str) -> str:
     """Match RCC RelayCore.normalizeMessageText before comparing DOM source SHA."""
@@ -72,6 +77,28 @@ def extract_next_instruction(response: str) -> NextInstruction:
     )
 
 
+def next_instruction_action(alarm) -> ActionRequest:
+    """Turn the legacy explicit marker into a recipe action request.
+
+    This is intentionally the only place where the Delayed Send compatibility
+    recipe interprets `NEXT TASK`.  The primitive alarm itself remains neutral
+    about message syntax and destination policy.
+    """
+    return action_for_decision(alarm=alarm, decision=next_instruction_decision(alarm))
+
+
+def next_instruction_decision(alarm) -> ContinuationDecision:
+    """Compatibility adapter: make the finishing B turn's decision explicit.
+
+    Legacy responses encode this decision in ``NEXT TASK``.  The continuation
+    boundary records the decoded decision before it routes a BB/BA delivery.
+    """
+    instruction = extract_next_instruction(alarm.evidence.response_text)
+    route = (ContinuationRoute.SELF if instruction.target == NextTarget.SELF
+             else ContinuationRoute.MANAGER)
+    return ContinuationDecision(route=route, payload=instruction.text)
+
+
 
 def bind_next_response(watch: Watch, *, send_receipt: str,
                        response_turn_id: str) -> Watch:
@@ -99,21 +126,33 @@ def advance(
         return Continuation("WAITING_EXPECTED_RESPONSE")
     if not response_complete or not input_ready:
         return Continuation("WAITING_RESPONSE")
+    alarm = response_ready_alarm(
+        watch_ref=f"{watch.task_id}:{watch.generation}",
+        subject_ref=watch.conversation_key,
+        expected_response_turn_id=watch.response_turn_id,
+        response_turn_id=response_turn_id,
+        response_text=response_text,
+        response_complete=response_complete,
+        input_ready=input_ready,
+    )
+    if alarm is None:
+        return Continuation("WAITING_RESPONSE")
     try:
-        instruction = extract_next_instruction(response_text)
+        decision = next_instruction_decision(alarm)
+        action = action_for_decision(alarm=alarm, decision=decision)
     except InstructionError:
         return Continuation("INSTRUCTION_UNAVAILABLE")
     key = hashlib.sha256(
         f"{watch.task_id}|{watch.generation}|{response_turn_id}".encode()
     ).hexdigest()[:24]
-    if instruction.target == NextTarget.SELF:
+    if action.recipient_role == "worker":
         next_watch = Watch(watch.task_id, watch.generation+1,
                           watch.conversation_key, "", "")
         register_next_watch(next_watch)
-        receipt = send_message(watch.conversation_key, instruction.text,
+        receipt = send_message(watch.conversation_key, action.payload,
                                "delayed-self-" + key)
         return Continuation("SELF_SENT", next_watch, receipt)
-    receipt = send_message(manager_conversation_key, instruction.text,
+    receipt = send_message(manager_conversation_key, action.payload,
                            "delayed-manager-" + key)
     return Continuation("RETURNED_TO_MANAGER", None, receipt)
 
@@ -166,6 +205,27 @@ class DurableWatchLedger:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(delayed_send_watches)")}
             if "context_json" not in columns:
                 db.execute("ALTER TABLE delayed_send_watches ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS continuation_alarms (
+                    task_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    evidence_json TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    PRIMARY KEY(task_id, generation, kind)
+                )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS continuation_decisions (
+                    task_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    route TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    response_turn_key TEXT NOT NULL,
+                    response_sha256 TEXT NOT NULL,
+                    PRIMARY KEY(task_id, generation)
+                )
+            """)
 
     def reserve(self, watch: Watch) -> bool:
         with self.store.transaction() as db:
@@ -218,12 +278,13 @@ class DurableWatchLedger:
               and baseline.get("latestUserTurnKey")
               and baseline.get("latestUserTurnKey") == baseline.get("responseSourceUserTurnKey")):
             raise ValueError("DELAYED_PREARM_RESPONSE_ALREADY_TERMINAL")
-        context = {
-            "work_id": work_id, "principal_id": principal_id,
-            "assignment_epoch": assignment_epoch,
-            "instance_id": instance_id, "manager_instance_id": manager_instance_id,
-            "conversation_key": conversation_key,
-            "manager_conversation_key": manager_conversation_key,
+        context = ContinuationContext.delayed_send(
+            work_id=work_id, principal_id=principal_id,
+            assignment_epoch=assignment_epoch, instance_id=instance_id,
+            conversation_key=conversation_key,
+            manager_conversation_key=manager_conversation_key,
+            manager_instance_id=manager_instance_id,
+        ).as_legacy_record() | {
             "baseline_count": baseline.get("responseTurnCount"),
             "baseline_generating": baseline.get("generating") is True,
             "baseline_key": str(baseline.get("responseTurnKey") or ""),
@@ -425,6 +486,150 @@ class DurableWatchLedger:
                  watch.source_send_receipt))
             return updated.rowcount == 1
 
+    def record_alarm(self, watch: Watch, alarm: Alarm) -> bool:
+        """Persist an immutable READY alarm before an action can consume it."""
+        if (alarm.watch_ref != f"{watch.task_id}:{watch.generation}"
+                or alarm.evidence.subject_ref != watch.conversation_key):
+            raise ValueError("CONTINUATION_ALARM_CONTEXT_MISMATCH")
+        evidence = {
+            "subject_ref": alarm.evidence.subject_ref,
+            "response_turn_id": alarm.evidence.response_turn_id,
+            "response_text": alarm.evidence.response_text,
+            "response_complete": alarm.evidence.response_complete,
+            "input_ready": alarm.evidence.input_ready,
+        }
+        encoded = json.dumps(evidence, sort_keys=True)
+        with self.store.transaction() as db:
+            existing = db.execute(
+                "SELECT evidence_json,state FROM continuation_alarms "
+                "WHERE task_id=? AND generation=? AND kind=?",
+                (watch.task_id, watch.generation, alarm.kind.value),
+            ).fetchone()
+            if existing is not None:
+                if existing["evidence_json"] != encoded:
+                    raise ValueError("CONTINUATION_ALARM_CONFLICT")
+                return False
+            db.execute(
+                "INSERT INTO continuation_alarms(task_id,generation,kind,evidence_json,state) "
+                "VALUES(?,?,?,?,?)",
+                (watch.task_id, watch.generation, alarm.kind.value, encoded, "READY"),
+            )
+            return True
+
+    def consume_alarm(self, watch: Watch, alarm: Alarm) -> bool:
+        """Claim one ready alarm exactly once, after its watch was claimed."""
+        with self.store.transaction() as db:
+            updated = db.execute(
+                "UPDATE continuation_alarms SET state='CONSUMING' "
+                "WHERE task_id=? AND generation=? AND kind=? AND state='READY'",
+                (watch.task_id, watch.generation, alarm.kind.value),
+            )
+            return updated.rowcount == 1
+
+    def mark_alarm_result(self, watch: Watch, alarm: Alarm, state: str) -> None:
+        if state not in {"CONSUMED", "UNKNOWN"}:
+            raise ValueError("CONTINUATION_ALARM_RESULT_INVALID")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE continuation_alarms SET state=? WHERE task_id=? "
+                "AND generation=? AND kind=? AND state='CONSUMING'",
+                (state, watch.task_id, watch.generation, alarm.kind.value),
+            )
+
+    def get_alarm(self, watch: Watch, kind: str) -> dict | None:
+        with self.store._readonly() as db:
+            row = db.execute(
+                "SELECT * FROM continuation_alarms WHERE task_id=? "
+                "AND generation=? AND kind=?",
+                (watch.task_id, watch.generation, kind),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def record_decision(self, watch: Watch, decision: ContinuationDecision,
+                        *, response_turn_key: str, response_sha256: str) -> bool:
+        """Persist B's BB/BA decision before any continuation delivery.
+
+        Repeating the same observation is idempotent; a different decision for
+        the exact same completed turn is a conflict and must not be routed.
+        """
+        if (not isinstance(response_turn_key, str) or not response_turn_key.strip()
+                or not isinstance(response_sha256, str) or not response_sha256):
+            raise ValueError("CONTINUATION_DECISION_EVIDENCE_INVALID")
+        values = (watch.task_id, watch.generation, decision.route.value,
+                  decision.payload, response_turn_key, response_sha256)
+        with self.store.transaction() as db:
+            existing = db.execute(
+                "SELECT route,payload,response_turn_key,response_sha256 "
+                "FROM continuation_decisions WHERE task_id=? AND generation=?",
+                (watch.task_id, watch.generation),
+            ).fetchone()
+            if existing is not None:
+                if tuple(existing) != values[2:]:
+                    raise ValueError("CONTINUATION_DECISION_CONFLICT")
+                return False
+            db.execute(
+                "INSERT INTO continuation_decisions("
+                "task_id,generation,route,payload,response_turn_key,response_sha256) "
+                "VALUES(?,?,?,?,?,?)", values,
+            )
+            return True
+
+    def read_execution_context(self, *, task_id: str, generation: int | None = None) -> dict | None:
+        """Read one execution's durable resume context without routing it.
+
+        A future wake-only public block can use this method.  It intentionally
+        returns the finishing B turn's already-recorded direction instead of
+        asking the resumed B turn to decide it again.
+        """
+        with self.store._readonly() as db:
+            if generation is None:
+                decision = db.execute(
+                    "SELECT * FROM continuation_decisions WHERE task_id=? "
+                    "ORDER BY generation DESC LIMIT 1", (task_id,),
+                ).fetchone()
+            else:
+                decision = db.execute(
+                    "SELECT * FROM continuation_decisions WHERE task_id=? AND generation=?",
+                    (task_id, generation),
+                ).fetchone()
+            if decision is None:
+                return None
+            watch = db.execute(
+                "SELECT context_json,state,conversation_key,response_turn_id "
+                "FROM delayed_send_watches WHERE task_id=? AND generation=?",
+                (decision["task_id"], decision["generation"]),
+            ).fetchone()
+            alarm = db.execute(
+                "SELECT evidence_json,state FROM continuation_alarms "
+                "WHERE task_id=? AND generation=? AND kind=?",
+                (decision["task_id"], decision["generation"], "conversation.response_ready"),
+            ).fetchone()
+        if watch is None:
+            return None
+        value = {
+            "task_id": str(decision["task_id"]),
+            "generation": int(decision["generation"]),
+            "watch_state": str(watch["state"]),
+            "worker_conversation_key": str(watch["conversation_key"]),
+            "response_turn_id": str(watch["response_turn_id"]),
+            "decision": {
+                "route": str(decision["route"]),
+                "payload": str(decision["payload"]),
+                "response_turn_key": str(decision["response_turn_key"]),
+                "response_sha256": str(decision["response_sha256"]),
+            },
+            "binding": json.loads(watch["context_json"] or "{}"),
+        }
+        # The response is durable evidence for the prior B turn. It is a
+        # record to be read, not a prompt to re-decide its already-recorded
+        # BB/BA direction.
+        if alarm is not None:
+            value["prior_turn"] = {
+                "alarm_state": str(alarm["state"]),
+                **json.loads(alarm["evidence_json"]),
+            }
+        return value
+
     def mark_result(self, watch: Watch, status: str) -> None:
         if status not in {"SELF_SENT","RETURNED_TO_MANAGER","UNKNOWN"}:
             raise ValueError("DELAYED_RESULT_INVALID")
@@ -482,12 +687,30 @@ class DelayedSendRunner:
         if not isinstance(turn_key, str) or not turn_key.strip() or not isinstance(response_sha, str):
             return Continuation("WAITING_RESPONSE")
         try:
-            extract_next_instruction(observation.get("response_text"))
+            alarm = response_ready_alarm(
+                watch_ref=f"{watch.task_id}:{watch.generation}",
+                subject_ref=watch.conversation_key,
+                expected_response_turn_id=watch.response_turn_id,
+                response_turn_id=str(observation.get("response_turn_id") or ""),
+                response_text=observation.get("response_text"),
+                response_complete=observation.get("response_complete") is True,
+                input_ready=observation.get("input_ready") is True,
+            )
+            if alarm is None:
+                return Continuation("WAITING_RESPONSE")
+            decision = next_instruction_decision(alarm)
         except InstructionError:
             return Continuation("INSTRUCTION_UNAVAILABLE")
         if not self.ledger.bind_observed_turn(watch, turn_key, response_sha):
             return Continuation("WAITING_EXPECTED_RESPONSE")
+        self.ledger.record_alarm(watch, alarm)
+        self.ledger.record_decision(
+            watch, decision, response_turn_key=turn_key, response_sha256=response_sha,
+        )
         if not self.ledger.claim_response(watch):
+            return Continuation("ALREADY_DISPATCHING")
+        if not self.ledger.consume_alarm(watch, alarm):
+            self.ledger.mark_result(watch, "UNKNOWN")
             return Continuation("ALREADY_DISPATCHING")
         try:
             result = advance_from_rcc(
@@ -498,8 +721,10 @@ class DelayedSendRunner:
             )
         except Exception:
             self.ledger.mark_result(watch, "UNKNOWN")
+            self.ledger.mark_alarm_result(watch, alarm, "UNKNOWN")
             raise
         self.ledger.mark_result(watch, result.status)
+        self.ledger.mark_alarm_result(watch, alarm, "CONSUMED")
         return result
 
 
@@ -578,15 +803,15 @@ class RccLatestAssistantReader:
 
 class DelayedSendService:
     """Core tick: observe a single reserved B response, then send using BCT receipts."""
-    def __init__(self, *, store, relay_feature, operations):
+    def __init__(self, *, store, browser_feature, operations):
         self.store = store
-        self.relay_feature = relay_feature
+        self.browser_feature = browser_feature
         self.operations = operations
         self.ledger = DurableWatchLedger(store)
 
     def _locate(self, instance_id: str, conversation_key: str):
         import secrets
-        session_id, tabs = self.relay_feature._read_target_state(
+        session_id, tabs = self.browser_feature._read_target_state(
             instance_id=instance_id,
             request_id="delayed-state-" + secrets.token_hex(12),
         )
@@ -609,7 +834,7 @@ class DelayedSendService:
     def latest(self, *, instance_id: str, conversation_key: str):
         import secrets
         session, tab, window = self._locate(instance_id, conversation_key)
-        return self.relay_feature.client.request(
+        return self.browser_feature.client.request(
             instance_id=instance_id,
             request_id="delayed-read-" + secrets.token_hex(12),
             command="read-latest-assistant",
@@ -761,7 +986,7 @@ class DelayedSendService:
         work=self.store.get_work(ctx["work_id"])
         if (work.state!="ACTIVE" or work.assignment_epoch!=ctx["assignment_epoch"]
                 or work.owner_principal_id!=ctx["principal_id"]
-                or "relay_browser" not in work.actions):
+                or "browser" not in work.actions):
             raise ValueError("DELAYED_WORK_CHANGED")
         instance=(ctx["instance_id"] if destination==row["conversation_key"]
                   else ctx["manager_instance_id"])
@@ -775,10 +1000,10 @@ class DelayedSendService:
                 +message
             )
         principal=Principal(work.owner_principal_id,"delayed-send-existing-work",
-                            frozenset({"relay_browser"}))
+                            frozenset({"browser"}))
         result=self.operations.run(
             principal=principal,work_id=work.work_id,operation_id=operation_id,
-            capability="relay_browser",
+            capability="browser",
             arguments={"command":"send-message","instance_id":instance,
                        "session_id":session,"tab_id":tab,"window_id":window,
                        "conversation_key":destination,"text":message},

@@ -12,7 +12,7 @@ from unittest.mock import patch
 from bct.conversation_network import upsert_project, upsert_conversation, set_membership
 from bct.core.models import ConfirmedFailure, Outcome, PreconditionError, Work
 from bct.core.store import Store
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 
 MGR = "6ad7f5b6-c834-83e8-9c00-ff70bab4204d"
 WORKER = "6ad7ff62-fa64-83ee-a485-1138f1538e53"
@@ -60,10 +60,10 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
                        conversation_key=WORKER, tags=["Worker"])
         self.work = self.store.create_work(Work(
             "prompt-work", "bounded one delivery", (self.tmp.name,),
-            frozenset({"relay_browser"}), "owner",
+            frozenset({"browser"}), "owner",
         ))
         self.host = StubExistingRcc()
-        self.feature = RelayBrowserFeature(self.host, store=self.store)
+        self.feature = BrowserFeature(self.host, store=self.store)
         self.settings = Path(self.tmp.name) / "relay-message-settings.json"
         self.settings_env = patch.dict(
             os.environ, {"BCT_RELAY_SETTINGS_PATH": str(self.settings)}

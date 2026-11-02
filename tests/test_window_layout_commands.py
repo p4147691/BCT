@@ -12,7 +12,7 @@ class CommandPlans(unittest.TestCase):
         base=dict(instance_id="a"*32,session_id="b"*32,tab_id=10,window_id=11,index=0,conversation_key=key,observed={"tab_id":10,"window_id":11,"conversation_key":key,"generating":False})
         for target in (11,12):
             capability, args=plan_tab_move(**base,target_window_id=target)
-            self.assertEqual(capability,"relay_browser")
+            self.assertEqual(capability,"browser")
             self.assertEqual(args["target_window_id"],target)
     def test_identity_and_generating_protected(self):
         key="11111111-2222-3333-4444-555555555555"
@@ -39,7 +39,7 @@ class IntegratedGatewayTests(unittest.TestCase):
         def invoke(cap, op, args):
             calls.append(op)
             return {"operation_id":op,"outcome":"UNKNOWN","state":"FINISHED"}
-        r=execute_verified_once(operation_id="isolated-tab-1",capability="relay_browser",arguments={},
+        r=execute_verified_once(operation_id="isolated-tab-1",capability="browser",arguments={},
             invoke=invoke,readback=lambda:None,verify=lambda x:False)
         self.assertEqual((r["outcome"],r["retry"],len(calls)),("UNKNOWN",False,1))
     def test_readback_mismatch_remains_unknown(self):
@@ -82,7 +82,7 @@ class AuthorizedGatewayTests(unittest.TestCase):
                                        Outcome.UNKNOWN, {})
         result = execute_bct_verified_once(
             operations=Gateway(), principal=object(), work_id="existing-work",
-            operation_id="exact-once-2", capability="relay_browser",
+            operation_id="exact-once-2", capability="browser",
             arguments={"command": "move-tab"},
             readback=lambda: self.fail("UNKNOWN must not probe as success"),
             verify=lambda x: True,

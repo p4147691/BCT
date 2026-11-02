@@ -189,8 +189,8 @@ def _exact_new_chat_terminal_success(
     return supplied_hash == expected_hash
 
 
-class RelayBrowserFeature:
-    capability = "relay_browser"
+class BrowserFeature:
+    capability = "browser"
 
     def __init__(
         self, client: RelayClient | None = None,
@@ -1887,7 +1887,7 @@ class RelayBrowserFeature:
             values = request.arguments
             work = self.store.get_work(values["work_id"])
             service = DelayedSendService(
-                store=self.store, relay_feature=self, operations=None)
+                store=self.store, browser_feature=self, operations=None)
             try:
                 result = service.prearm(
                     task_id=values["task_id"],work=work,
