@@ -228,6 +228,21 @@ class MonitorConversationRenameTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "MONITOR_WORK_CONTRACT_MISMATCH"):
             ensure_monitor_work(second, runtime_root=other_root)
 
+    def test_legacy_browser_named_monitor_work_remains_usable(self):
+        expected = self.bct.store.get_work("bct-monitor-extension-control")
+        legacy = Work(
+            expected.work_id, expected.request_summary, expected.roots,
+            frozenset({"relay_browser"}), expected.owner_principal_id,
+            expected.assignment_epoch, expected.state,
+        )
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE works SET actions_json=? WHERE work_id=?",
+                ('["relay_browser"]', legacy.work_id),
+            )
+        principal = ensure_monitor_work(self.bct, runtime_root=self.root)
+        self.assertEqual("bct-monitor-extension", principal.principal_id)
+
 
 if __name__ == "__main__":
     unittest.main()
