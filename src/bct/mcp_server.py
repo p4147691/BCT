@@ -409,12 +409,13 @@ def build_mcp(
             "Start/status/cancel a durable one-target message continuation using "
             "existing BCT send-message, Delayed Send and their exact receipts. "
             "For start supply task_id, a unique operation_id prefix, exact RCC "
-            "instance/session/tab/window/target and origin conversation IDs, "
+            "instance/session and canonical target_/origin_ identity fields, "
             "and the work instruction text. The command PREARMS BEFORE sending, "
             "then submits the reserved text under the exact planned operation ID. "
             "Status reads the owning Work's exact durable watch. "
             "This is the first message-flow stage, NOT a completed Run Plan/Task Run "
-            "or multi-worker Chain Run implementation. No UNKNOWN replay."
+            "or multi-worker Chain Run implementation. Legacy worker_/manager_ "
+            "identity fields remain accepted only for compatibility. No UNKNOWN replay."
         ),
         structured_output=True,
     )
@@ -427,6 +428,9 @@ def build_mcp(
         manager_conversation_key: str = "",
         instruction: str = "", manager_instance_id: str = "",
         generation: int = 1, chain_direction_id: str = "",
+        target_tab_id: int = 0, target_window_id: int = 0,
+        target_conversation_key: str = "", origin_conversation_key: str = "",
+        origin_instance_id: str = "",
     ) -> dict[str, Any]:
         if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
@@ -454,9 +458,20 @@ def build_mcp(
                  "task_id":task_id,"generation":generation})
         if action != "start":
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ACTION_INVALID"}
+        def select_identity(canonical, legacy):
+            if canonical and legacy and canonical != legacy:
+                return None
+            return canonical or legacy
+        target_tab = select_identity(target_tab_id, worker_tab_id)
+        target_window = select_identity(target_window_id, worker_window_id)
+        target_conversation = select_identity(target_conversation_key, worker_conversation_key)
+        origin_conversation = select_identity(origin_conversation_key, manager_conversation_key)
+        origin_instance = select_identity(origin_instance_id, manager_instance_id)
+        if None in {target_tab, target_window, target_conversation, origin_conversation, origin_instance}:
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_IDENTITY_CONFLICT"}
         if (not instruction or len(instruction)>12000 or
                 not re.fullmatch(r"[a-f0-9]{32}",session_id) or
-                worker_tab_id<=0 or worker_window_id<=0):
+                target_tab<=0 or target_window<=0):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
         if chain_direction_id:
             from bct.chain_direction import ChainDirectionLedger
@@ -475,9 +490,9 @@ def build_mcp(
         armed=await make_executor("browser")(
             work_id,arm_id,{"command":"delayed-send-message",
              "task_id":task_id,"instance_id":instance_id,
-             "conversation_key":worker_conversation_key,
-             "manager_conversation_key":manager_conversation_key,
-             "manager_instance_id":manager_instance_id or instance_id,
+             "conversation_key":target_conversation,
+             "manager_conversation_key":origin_conversation,
+             "manager_instance_id":origin_instance or instance_id,
              "planned_send_operation_id":send_id,
              "planned_send_text":instruction})
         if armed.get("outcome") != "APPLIED":
@@ -485,8 +500,8 @@ def build_mcp(
         sent=await make_executor("browser")(
             work_id,send_id,{"command":"send-message",
              "instance_id":instance_id,"session_id":session_id,
-             "tab_id":worker_tab_id,"window_id":worker_window_id,
-             "conversation_key":worker_conversation_key,
+             "tab_id":target_tab,"window_id":target_window,
+             "conversation_key":target_conversation,
              "text":instruction})
         if sent.get("outcome") != "APPLIED":
             return {"status":"SEND_UNCONFIRMED","prearm":armed,

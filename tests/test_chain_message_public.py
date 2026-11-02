@@ -41,6 +41,28 @@ class ChainMessagePublicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(arm["arguments"]["planned_send_operation_id"],send["operation_id"])
         self.assertEqual(arm["arguments"]["planned_send_text"],send["arguments"]["text"])
         self.assertEqual(send["arguments"]["tab_id"],12)
+    async def test_canonical_target_and_origin_names_start_the_same_recipe(self):
+        legacy = self.arguments()
+        canonical = {
+            key: value for key, value in legacy.items()
+            if key not in {
+                "worker_tab_id", "worker_window_id", "worker_conversation_key",
+                "manager_conversation_key",
+            }
+        }
+        canonical.update({
+            "target_tab_id": 12, "target_window_id": 13,
+            "target_conversation_key": legacy["worker_conversation_key"],
+            "origin_conversation_key": legacy["manager_conversation_key"],
+        })
+        await self.mcp.call_tool("bct_chain_message", canonical)
+        arm, send = self.ops.calls
+        self.assertEqual(legacy["worker_conversation_key"], arm["arguments"]["conversation_key"])
+        self.assertEqual(legacy["manager_conversation_key"], arm["arguments"]["manager_conversation_key"])
+        self.assertEqual(12, send["arguments"]["tab_id"])
+    async def test_conflicting_target_aliases_do_not_send(self):
+        await self.mcp.call_tool("bct_chain_message", self.arguments(target_tab_id=99))
+        self.assertEqual([], self.ops.calls)
     async def test_unsafe_action_does_not_send(self):
         await self.mcp.call_tool("bct_chain_message",self.arguments(action="chain-run"))
         self.assertEqual([],self.ops.calls)

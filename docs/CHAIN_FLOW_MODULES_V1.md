@@ -64,8 +64,10 @@ X가 더 필요함  → X → X → … → X → A
 ```
 
 `체인 시작`은 현재 `bct_chain_message`가 제공하는 부분 레시피다. 이 명령의
-기존 내부 인수 이름에 `worker`가 남아 있어도, 개념상 Worker는 **이번 정확한
-대상 X**를 뜻한다. X가 B든 C든 감독관이든 같은 경로를 쓴다.
+정식 인수는 `target_tab_id`, `target_window_id`, `target_conversation_key`와
+`origin_conversation_key`다. 기존 `worker_` / `manager_` 인수는 이전 호출을
+깨지 않도록 남긴 호환 별칭이다. 개념상 Target은 **이번 정확한 대상 X**를
+뜻한다. X가 B든 C든 감독관이든 같은 경로를 쓴다.
 
 ## 전체 레시피
 
