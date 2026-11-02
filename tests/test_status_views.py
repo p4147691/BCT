@@ -1,5 +1,5 @@
 import unittest
-from bct.status_views import status_view
+from bct.status_views import status_view, with_current_node_details
 
 
 class StatusViewTests(unittest.TestCase):
@@ -52,6 +52,26 @@ class StatusViewTests(unittest.TestCase):
         self.snapshot["monitor"]["rcc"]["instances"][0]["cached"] = True
         cached = status_view(self.snapshot, "node")["current_nodes"]["items"][0]
         self.assertNotIn("roles", cached)
+
+    def test_full_snapshot_includes_same_current_node_details(self):
+        uuid = "11111111-2222-3333-4444-555555555555"
+        row = self.snapshot["monitor"]["current_nodes"]["items"][0]
+        row.update({"conversation_uuid": uuid, "window_id": 9})
+        self.snapshot["monitor"]["rcc"]["instances"] = [{
+            "state": "OPEN", "cached": False,
+            "tabs": [{
+                "tab_id": 8, "window_id": 9, "conversation_key": uuid,
+                "presence": "OPEN", "title": "Worker A", "active": True,
+                "conversation_scope": {
+                    "scope_id": "project-one", "scope_name": "Project One",
+                    "role_tags": ["developer"],
+                },
+            }],
+        }]
+        item = with_current_node_details(self.snapshot)["monitor"]["current_nodes"]["items"][0]
+        self.assertEqual("Project One", item["network"])
+        self.assertEqual(["developer"], item["roles"])
+        self.assertTrue(item["active"])
 
     def test_node_sort_modes(self):
         rows = self.snapshot["monitor"]["current_nodes"]["items"]

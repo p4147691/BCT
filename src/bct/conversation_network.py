@@ -3,14 +3,16 @@
 This module does not call Monitor, RCC, Chrome, or an AI model. A caller may
 provide an observed Monitor snapshot; this module validates and durably records
 only that observation. Each registered conversation receives one durable BCT
-display label (``N1``, ``N2``, ...).  The label is an alias for people, never
+display label (``N1`` through ``N99``, then ``N1`` again). The label is an alias for people, never
 a route identity, policy subject, or BCT Node/Connection.
 
 ``conversation_network_projects`` is retained as the durable compatibility
 table, but its user-facing meaning is one *conversation scope*.  A scope can
 describe a Git project, a product, or any other group without introducing a
-second network object.  Role tags such as ``Manager`` are advisory metadata;
-they never grant authority and there may be zero, one, or many Managers.
+second network object. Role tags such as ``Manager`` are advisory metadata;
+they never grant authority. A scope has at most one Manager, while exactly
+zero or one global ``supervisor`` is always unassigned and never a scope
+member.
 """
 from __future__ import annotations
 
@@ -33,7 +35,8 @@ _COMPLETENESS = frozenset({"COMPLETE", "PARTIAL", "UNAVAILABLE"})
 _PRESENCE = frozenset({"OPEN", "CLOSED", "UNKNOWN"})
 _ACTIVITY = frozenset({"ACTIVE", "HOLD", "EXCLUDED"})
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
-_NODE_LABEL = re.compile(r"N([1-9][0-9]*)\Z", re.I)
+_NODE_LABEL = re.compile(r"N([1-9]|[1-9][0-9])\Z", re.I)
+_NODE_LABEL_LIMIT = 99
 
 
 class ConversationNetworkError(ValueError):
@@ -77,7 +80,7 @@ def _canonical(value: object) -> str:
 
 
 def _node_label(number: int) -> str:
-    return f"N{number}"
+    return f"N{((int(number) - 1) % _NODE_LABEL_LIMIT) + 1}"
 
 
 def role_tags_sha256(tags: list[str] | tuple[str, ...]) -> str:
@@ -101,6 +104,56 @@ def _active_role_tags(db, conversation_key: str) -> tuple[str, list[str]]:
         (project_id, conversation_key),
     )]
     return project_id, tags
+
+
+def _unassigned_role_tags(db, conversation_key: str) -> list[str]:
+    row = db.execute(
+        "SELECT unassigned_role_tags FROM conversation_network_conversations WHERE conversation_key=?",
+        (conversation_key,),
+    ).fetchone()
+    if row is None:
+        return []
+    try:
+        return _role_tags(json.loads(str(row["unassigned_role_tags"] or "[]")))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_UNASSIGNED_ROLE_TAGS_INVALID") from exc
+
+
+def _current_role_tags(db, conversation_key: str) -> tuple[str, list[str]]:
+    scope, tags = _active_role_tags(db, conversation_key)
+    return (scope, tags) if scope else ("", _unassigned_role_tags(db, conversation_key))
+
+
+def _validate_role_rules(db, *, project_id: str, conversation_key: str, tags: list[str]) -> None:
+    normalized = {tag.casefold() for tag in tags}
+    if project_id and "supervisor" in normalized:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_SUPERVISOR_MUST_BE_UNASSIGNED")
+    if not project_id and "supervisor" in normalized:
+        candidates = db.execute(
+            "SELECT conversation_key,unassigned_role_tags FROM conversation_network_conversations "
+            "WHERE conversation_key<>?",
+            (conversation_key,),
+        ).fetchall()
+        for candidate in candidates:
+            try:
+                candidate_tags = _role_tags(json.loads(str(candidate["unassigned_role_tags"] or "[]")))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise ConversationNetworkError("CONVERSATION_NETWORK_UNASSIGNED_ROLE_TAGS_INVALID") from exc
+            if any(tag.casefold() == "supervisor" for tag in candidate_tags):
+                raise ConversationNetworkError("CONVERSATION_NETWORK_SUPERVISOR_ALREADY_ASSIGNED")
+    if not project_id and "manager" in normalized:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_MANAGER_REQUIRES_SCOPE")
+    if project_id and "manager" in normalized:
+        conflict = db.execute(
+            "SELECT m.conversation_key FROM conversation_network_memberships m "
+            "JOIN conversation_network_membership_tags t "
+            "ON t.project_id=m.project_id AND t.conversation_key=m.conversation_key "
+            "WHERE m.project_id=? AND m.activity='ACTIVE' AND m.conversation_key<>? "
+            "AND lower(t.tag)='manager' LIMIT 1",
+            (project_id, conversation_key),
+        ).fetchone()
+        if conflict is not None:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_MANAGER_ALREADY_ASSIGNED")
 
 
 def upsert_project(store: Store, *, project_id: str, display_name: str,
@@ -242,6 +295,57 @@ def resolve_project_id(store: Store, *, project_reference: str) -> str:
     if len(matches) != 1:
         raise ConversationNetworkError("CONVERSATION_NETWORK_PROJECT_AMBIGUOUS")
     return str(matches[0]["project_id"])
+
+
+def scope_directory(store: Store) -> list[dict[str, object]]:
+    """List durable conversation scopes without requiring their tabs to be open.
+
+    A scope stays listed while its project row is active.  This deliberately
+    separates a closed or currently-unobserved ChatGPT tab from a user-declared
+    end of the project scope.  It is directory metadata only; project-context
+    prose is read through the separately authorised Project Context ledger.
+    """
+    with store.transaction() as db:
+        projects = [dict(row) for row in db.execute(
+            "SELECT project_id,display_name,active,created_at,updated_at "
+            "FROM conversation_network_projects "
+            "ORDER BY active DESC,updated_at DESC,display_name COLLATE NOCASE,project_id"
+        )]
+        memberships = [dict(row) for row in db.execute(
+            "SELECT project_id,conversation_key,activity FROM conversation_network_memberships"
+        )]
+        tags = [dict(row) for row in db.execute(
+            "SELECT t.project_id,t.conversation_key,t.tag "
+            "FROM conversation_network_membership_tags t "
+            "JOIN conversation_network_memberships m "
+            "ON m.project_id=t.project_id AND m.conversation_key=t.conversation_key "
+            "WHERE m.activity='ACTIVE'"
+        )]
+    members_by_project: dict[str, set[str]] = {}
+    for membership in memberships:
+        if str(membership["activity"]) == "ACTIVE":
+            members_by_project.setdefault(str(membership["project_id"]), set()).add(
+                str(membership["conversation_key"])
+            )
+    roles_by_project: dict[str, dict[str, int]] = {}
+    for tag in tags:
+        project = str(tag["project_id"])
+        role = str(tag["tag"]).strip().casefold()
+        if role:
+            counts = roles_by_project.setdefault(project, {})
+            counts[role] = counts.get(role, 0) + 1
+    return [
+        {
+            "scope_id": str(project["project_id"]),
+            "scope_name": str(project["display_name"]),
+            "state": "ACTIVE" if bool(project["active"]) else "CLOSED",
+            "member_count": len(members_by_project.get(str(project["project_id"]), set())),
+            "role_counts": roles_by_project.get(str(project["project_id"]), {}),
+            "created_at": project["created_at"],
+            "updated_at": project["updated_at"],
+        }
+        for project in projects
+    ]
 
 
 def set_membership(store: Store, *, project_id: str, conversation_key: str,
@@ -407,7 +511,7 @@ def configure_conversation_scope(
     when = float(time.time() if now is None else now)
     new_label_event = None
     with store.transaction() as db:
-        _current_scope, current_tags = _active_role_tags(db, key)
+        _current_scope, current_tags = _current_role_tags(db, key)
         if expected_scope_id is not None and _current_scope != expected_scope_id:
             raise ConversationNetworkError("CONVERSATION_NETWORK_SCOPE_CONFLICT")
         if (expected_role_tags_sha256 is not None
@@ -466,6 +570,8 @@ def configure_conversation_scope(
                     (project_id, scope, 1, when, when),
                 )
 
+        _validate_role_rules(db, project_id=project_id, conversation_key=key, tags=tags)
+
         # A chat has one current scope. Old rows remain queryable history and
         # are not deleted merely because the user moves the chat elsewhere.
         db.execute(
@@ -478,6 +584,11 @@ def configure_conversation_scope(
                 "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
                 "WHERE conversation_key=? AND activity='ACTIVE'",
                 (when, key),
+            )
+            db.execute(
+                "UPDATE conversation_network_conversations SET unassigned_role_tags=?,updated_at=? "
+                "WHERE conversation_key=?",
+                (_canonical(tags), when, key),
             )
         else:
             db.execute(
@@ -495,6 +606,11 @@ def configure_conversation_scope(
                 "VALUES(?,?,?,?)",
                 [(project_id, key, tag, when) for tag in tags],
             )
+            db.execute(
+                "UPDATE conversation_network_conversations SET unassigned_role_tags='[]',updated_at=? "
+                "WHERE conversation_key=?",
+                (when, key),
+            )
     if new_label_event is not None:
         store.emit_node_label_notification(new_label_event)
     with store.transaction() as db:
@@ -510,8 +626,8 @@ def configure_conversation_scope(
         "scope_name": scope,
         "node_memo": str(metadata["node_memo"]) if metadata else "",
         "assigned_task": str(metadata["assigned_task"]) if metadata else "",
-        "role_tags": tags if project_id else [],
-        "role_tags_sha256": role_tags_sha256(tags if project_id else []),
+        "role_tags": tags,
+        "role_tags_sha256": role_tags_sha256(tags),
     }
 
 
@@ -537,7 +653,7 @@ def conversation_scope_directory(
             keys,
         )]
         metadata_rows = {str(row["conversation_key"]): dict(row) for row in db.execute(
-            f"SELECT conversation_key,node_memo,assigned_task FROM conversation_network_conversations "
+            f"SELECT conversation_key,node_memo,assigned_task,unassigned_role_tags FROM conversation_network_conversations "
             f"WHERE conversation_key IN ({placeholders})", keys,
         )}
         tag_rows = [dict(row) for row in db.execute(
@@ -550,16 +666,27 @@ def conversation_scope_directory(
             keys,
         )]
     selected: dict[str, dict[str, object]] = {}
+    for key, metadata in metadata_rows.items():
+        try:
+            standalone_tags = _role_tags(json.loads(str(metadata.get("unassigned_role_tags") or "[]")))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_UNASSIGNED_ROLE_TAGS_INVALID") from exc
+        selected[key] = {
+            "scope_id": "",
+            "scope_name": "",
+            "role_tags": standalone_tags,
+            "node_memo": str(metadata.get("node_memo") or ""),
+            "assigned_task": str(metadata.get("assigned_task") or ""),
+        }
     for row in rows:
         key = str(row["conversation_key"])
-        if key not in selected:
-            selected[key] = {
-                "scope_id": str(row["project_id"]),
-                "scope_name": str(row["scope_name"]),
-                "role_tags": [],
-                "node_memo": str(metadata_rows.get(key, {}).get("node_memo") or ""),
-                "assigned_task": str(metadata_rows.get(key, {}).get("assigned_task") or ""),
-            }
+        selected[key] = {
+            "scope_id": str(row["project_id"]),
+            "scope_name": str(row["scope_name"]),
+            "role_tags": [],
+            "node_memo": str(metadata_rows.get(key, {}).get("node_memo") or ""),
+            "assigned_task": str(metadata_rows.get(key, {}).get("assigned_task") or ""),
+        }
     for row in tag_rows:
         key = str(row["conversation_key"])
         current = selected.get(key)
@@ -601,15 +728,18 @@ def patch_conversation_role_tags(
         raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_SHA256_INVALID")
     when = float(time.time() if now is None else now)
     with store.transaction() as db:
-        row = db.execute(
+        matching_rows = db.execute(
             "SELECT m.conversation_key,c.display_name FROM conversation_network_memberships m "
             "JOIN conversation_network_node_labels n ON n.conversation_key=m.conversation_key "
             "JOIN conversation_network_conversations c ON c.conversation_key=m.conversation_key "
-            "WHERE m.project_id=? AND m.activity='ACTIVE' AND n.node_number=?",
-            (project, node_number),
-        ).fetchone()
-        if row is None:
+            "WHERE m.project_id=? AND m.activity='ACTIVE' AND ((n.node_number - 1) % ?) + 1=?",
+            (project, _NODE_LABEL_LIMIT, node_number),
+        ).fetchall()
+        if not matching_rows:
             raise ConversationNetworkError("CONVERSATION_NETWORK_MEMBER_NOT_FOUND")
+        if len(matching_rows) != 1:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_NODE_LABEL_AMBIGUOUS")
+        row = matching_rows[0]
         conversation_key = str(row["conversation_key"])
         current = [str(item["tag"]) for item in db.execute(
             "SELECT tag FROM conversation_network_membership_tags "
@@ -624,6 +754,7 @@ def patch_conversation_role_tags(
             if tag not in updated:
                 updated.append(tag)
         updated.sort(key=lambda value: (value.casefold(), value))
+        _validate_role_rules(db, project_id=project, conversation_key=conversation_key, tags=updated)
         changed = updated != current
         if changed:
             db.execute(
@@ -725,13 +856,14 @@ def arrange_conversations(
 
         if moved and current.get(moved, "") != destination:
             old_scope = current.get(moved, "")
-            tags: list[str] = []
+            tags: list[str] = _unassigned_role_tags(db, moved) if not old_scope else []
             if old_scope:
                 tags = [str(row["tag"]) for row in db.execute(
                     "SELECT tag FROM conversation_network_membership_tags "
                     "WHERE project_id=? AND conversation_key=? ORDER BY tag COLLATE NOCASE",
                     (old_scope, moved),
                 )]
+            _validate_role_rules(db, project_id=destination, conversation_key=moved, tags=tags)
             db.execute(
                 "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
                 "WHERE conversation_key=? AND activity='ACTIVE'",
@@ -752,6 +884,17 @@ def arrange_conversations(
                     "INSERT INTO conversation_network_membership_tags(project_id,conversation_key,tag,created_at) "
                     "VALUES(?,?,?,?)",
                     [(destination, moved, tag, when) for tag in tags],
+                )
+                db.execute(
+                    "UPDATE conversation_network_conversations SET unassigned_role_tags='[]',updated_at=? "
+                    "WHERE conversation_key=?",
+                    (when, moved),
+                )
+            else:
+                db.execute(
+                    "UPDATE conversation_network_conversations SET unassigned_role_tags=?,updated_at=? "
+                    "WHERE conversation_key=?",
+                    (_canonical(tags), when, moved),
                 )
 
         db.executemany(

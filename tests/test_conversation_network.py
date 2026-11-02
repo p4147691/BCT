@@ -10,7 +10,7 @@ from bct.conversation_network import (
     set_conversation_network_name,
     conversation_display_order_directory, conversation_scope_directory,
     patch_conversation_role_tags, project_view, record_monitor_snapshot,
-    resolve_project_id, set_membership, upsert_conversation, upsert_project,
+    resolve_project_id, scope_directory, set_membership, upsert_conversation, upsert_project,
 )
 from bct.core.store import Store
 
@@ -30,6 +30,17 @@ class ConversationNetworkTests(unittest.TestCase):
                        tags=["조정", "병목 분석"], now=100.0)
         set_membership(self.store, project_id="bct.rcc", conversation_key=WORKER,
                        tags=["구현", "테스트"], now=100.0)
+
+    def test_scope_directory_retains_active_scope_without_open_node(self):
+        directory = scope_directory(self.store)
+        self.assertEqual(1, len(directory))
+        scope = directory[0]
+        self.assertEqual("bct.rcc", scope["scope_id"])
+        self.assertEqual("ACTIVE", scope["state"])
+        self.assertEqual(2, scope["member_count"])
+        # Directory state comes from durable scope membership, not an open-tab snapshot.
+        self.assertEqual({"구현": 1, "테스트": 1, "조정": 1, "병목 분석": 1},
+                         scope["role_counts"])
 
     def test_network_name_set_keeps_id_members_and_node_metadata(self):
         before = configure_conversation_scope(
@@ -160,7 +171,14 @@ class ConversationNetworkTests(unittest.TestCase):
         self.assertEqual("N1", first["node_label"])
         self.assertEqual("N3", third["node_label"])
 
-    def test_current_scope_is_singular_but_manager_tag_is_not(self):
+    def test_display_labels_cycle_after_ninety_nine_without_changing_identity(self):
+        last = None
+        for number in range(3, 101):
+            key = f"00000000-0000-4000-8000-{number:012d}"
+            last = upsert_conversation(self.store, conversation_key=key, display_name=f"node {number}")
+        self.assertEqual("N1", last["node_label"])
+
+    def test_scope_allows_only_one_manager_and_supervisor_is_unassigned(self):
         configured = configure_conversation_scope(
             self.store,
             conversation_key=MANAGER,
@@ -169,20 +187,36 @@ class ConversationNetworkTests(unittest.TestCase):
             role_tags=["Manager", "병목 분석"],
             now=300.0,
         )
-        configure_conversation_scope(
-            self.store,
-            conversation_key=WORKER,
-            display_name="대화 기록 조회 구현",
-            scope_name="모니터 관리",
-            role_tags=["Manager", "구현"],
-            now=301.0,
-        )
+        with self.assertRaisesRegex(ConversationNetworkError, "CONVERSATION_NETWORK_MANAGER_ALREADY_ASSIGNED"):
+            configure_conversation_scope(
+                self.store,
+                conversation_key=WORKER,
+                display_name="대화 기록 조회 구현",
+                scope_name="모니터 관리",
+                role_tags=["Manager", "구현"],
+                now=301.0,
+            )
         directory = conversation_scope_directory(
             self.store, conversation_keys=[MANAGER, WORKER]
         )
         self.assertEqual("모니터 관리", configured["scope_name"])
         self.assertIn("Manager", directory[MANAGER]["role_tags"])
-        self.assertIn("Manager", directory[WORKER]["role_tags"])
+        self.assertNotIn("Manager", directory[WORKER]["role_tags"])
+
+        with self.assertRaisesRegex(ConversationNetworkError, "CONVERSATION_NETWORK_SUPERVISOR_MUST_BE_UNASSIGNED"):
+            configure_conversation_scope(
+                self.store, conversation_key=WORKER, display_name="대화 기록 조회 구현",
+                scope_name="모니터 관리", role_tags=["supervisor"], now=301.0,
+            )
+        configure_conversation_scope(
+            self.store, conversation_key=MANAGER, display_name="오류 병목 감시 측정기",
+            scope_name="", role_tags=["supervisor"], now=301.5,
+        )
+        with self.assertRaisesRegex(ConversationNetworkError, "CONVERSATION_NETWORK_SUPERVISOR_ALREADY_ASSIGNED"):
+            configure_conversation_scope(
+                self.store, conversation_key=WORKER, display_name="대화 기록 조회 구현",
+                scope_name="", role_tags=["supervisor"], now=301.6,
+            )
 
         moved = configure_conversation_scope(
             self.store,
@@ -317,14 +351,14 @@ class ConversationNetworkTests(unittest.TestCase):
             conversation_key=MANAGER,
             display_name="이름",
             scope_name="",
-            role_tags=["Manager"],
+            role_tags=["supervisor"],
             now=301.0,
         )
         self.assertEqual("", cleared["scope_id"])
-        self.assertEqual([], cleared["role_tags"])
-        self.assertNotIn(MANAGER, conversation_scope_directory(
+        self.assertEqual(["supervisor"], cleared["role_tags"])
+        self.assertEqual(["supervisor"], conversation_scope_directory(
             self.store, conversation_keys=[MANAGER]
-        ))
+        )[MANAGER]["role_tags"])
         after = upsert_conversation(
             self.store, conversation_key=MANAGER, display_name="다시 열린 이름", now=302.0
         )["node_label"]

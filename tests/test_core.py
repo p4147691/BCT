@@ -294,7 +294,7 @@ class CoreTests(unittest.TestCase):
             for item in journal
         ))
         self.assertTrue(_is_measurement_only_request(FeatureRequest(
-            "relay_browser", "state", {"command": "state"},
+            "browser", "state", {"command": "state"},
             ("rcc:read",), {"mutating": False},
         )))
         for capability in ("test", "verify"):
@@ -307,7 +307,7 @@ class CoreTests(unittest.TestCase):
             ("execution:arbitrary",), {},
         )))
         self.assertFalse(_is_measurement_only_request(FeatureRequest(
-            "relay_browser", "send", {"command": "send-to-tab"},
+            "browser", "send", {"command": "send-to-tab"},
             ("rcc:send",), {"mutating": False},
         )))
         self.assertFalse(_is_measurement_only_request(FeatureRequest(

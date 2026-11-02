@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .models import ConflictError, OperationResult, OperationState, Outcome, Work
+from .capabilities import capability_matches
 
 
 # Read-only cause hints. These describe where evidence was lost, never whether
@@ -28,7 +29,7 @@ def _claim_unknown_detail(error: str | None, outcome: str | None,
                           capability: str | None) -> dict[str, str | None]:
     if outcome != "UNKNOWN":
         return {"stage": None, "error_code": None, "evidence": None}
-    if capability != "relay_browser":
+    if not capability_matches(capability, "browser"):
         return {"stage": "UNCLASSIFIED", "error_code": None, "evidence": "INSUFFICIENT"}
     # Prefix-only decoding, with an explicit allowlist: no raw exception, user
     # prompt, tab content, path, token, or internal transport details are exposed.
@@ -112,6 +113,7 @@ class Store:
                 CREATE TABLE IF NOT EXISTS conversation_network_conversations (
                     conversation_key TEXT PRIMARY KEY, display_name TEXT NOT NULL,
                     display_order INTEGER NOT NULL DEFAULT 0,
+                    unassigned_role_tags TEXT NOT NULL DEFAULT '[]',
                     created_at REAL NOT NULL, updated_at REAL NOT NULL
                 );
                 -- A durable, display-only number for a known conversation.  It
@@ -594,6 +596,42 @@ class Store:
                 db.execute(
                     "ALTER TABLE conversation_network_conversations ADD COLUMN "
                     "display_order INTEGER NOT NULL DEFAULT 0"
+                )
+            if "unassigned_role_tags" not in conversation_columns:
+                db.execute(
+                    "ALTER TABLE conversation_network_conversations ADD COLUMN "
+                    "unassigned_role_tags TEXT NOT NULL DEFAULT '[]'"
+                )
+            # Supervisor is an unassigned integration role, never a member of
+            # a conversation scope. Repair older metadata once at store open
+            # so the new invariant also applies to pre-rule records.
+            supervisor_rows = db.execute(
+                "SELECT DISTINCT m.conversation_key,c.unassigned_role_tags "
+                "FROM conversation_network_memberships m "
+                "JOIN conversation_network_membership_tags t "
+                "ON t.project_id=m.project_id AND t.conversation_key=m.conversation_key "
+                "JOIN conversation_network_conversations c ON c.conversation_key=m.conversation_key "
+                "WHERE m.activity='ACTIVE' AND lower(t.tag)='supervisor'"
+            ).fetchall()
+            for supervisor_row in supervisor_rows:
+                key = str(supervisor_row["conversation_key"])
+                try:
+                    role_tags = json.loads(str(supervisor_row["unassigned_role_tags"] or "[]"))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    role_tags = []
+                if not isinstance(role_tags, list):
+                    role_tags = []
+                if not any(str(tag).strip().casefold() == "supervisor" for tag in role_tags):
+                    role_tags.append("supervisor")
+                db.execute(
+                    "UPDATE conversation_network_conversations SET unassigned_role_tags=?,updated_at=? "
+                    "WHERE conversation_key=?",
+                    (json.dumps(role_tags, ensure_ascii=False, separators=(",", ":")), time.time(), key),
+                )
+                db.execute(
+                    "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+                    "WHERE conversation_key=? AND activity='ACTIVE'",
+                    (time.time(), key),
                 )
             inbox_recipient_columns = {
                 row["name"] for row in db.execute(
@@ -1458,7 +1496,7 @@ class Store:
                     or resolver["work_id"] != expected_work_id
                     or original is None or original["work_id"] != expected_work_id
                     or original["principal_id"] != resolver["principal_id"]
-                    or original["capability"] != "relay_browser"
+                    or not capability_matches(original["capability"], "browser")
                     or original["target"] != instance_id
                     or original["state"] != OperationState.FINISHED.value
                     or original["outcome"] != Outcome.UNKNOWN.value
@@ -1546,7 +1584,7 @@ class Store:
                     or resolver["work_id"] != expected_work_id
                     or original is None or original["work_id"] != expected_work_id
                     or original["principal_id"] != resolver["principal_id"]
-                    or original["capability"] != "relay_browser"
+                    or not capability_matches(original["capability"], "browser")
                     or original["target"] != instance_id
                     or original["state"] != OperationState.FINISHED.value
                     or original["outcome"] != Outcome.UNKNOWN.value

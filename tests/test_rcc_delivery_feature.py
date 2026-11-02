@@ -9,7 +9,7 @@ from pathlib import Path
 from bct.core.delivery_state import DeliveryEvent
 from bct.core.models import ConfirmedFailure, Outcome, PreconditionError, UnknownEffectError, Work
 from bct.core.store import Store
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.integrations.rcc import RelayUnavailable
 
 
@@ -75,10 +75,10 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.store = Store(Path(self.temp.name) / "state.sqlite3")
         self.work = self.store.create_work(Work(
             "work", "thin relay", (self.temp.name,),
-            frozenset({"relay_browser"}), "owner",
+            frozenset({"browser"}), "owner",
         ))
         self.host = FakeDeliveryHost()
-        self.feature = RelayBrowserFeature(self.host, store=self.store)
+        self.feature = BrowserFeature(self.host, store=self.store)
         self.base = {
             "instance_id": "6174664e1c1b4e6db1d4729c841db3c9",
             "delivery_id": "delivery-001",
@@ -350,7 +350,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         draft_sha = hashlib.sha256("과거 BCT 초안".encode()).hexdigest()
         old_work = self.store.create_work(Work(
             "old-work", "superseded relay", (self.temp.name,),
-            frozenset({"relay_browser"}), self.work.owner_principal_id,
+            frozenset({"browser"}), self.work.owner_principal_id,
         ))
         self.feature.delivery_ledger.create_or_get(
             delivery_id="old-delivery", work_id=old_work.work_id,
@@ -390,7 +390,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         )
         old_work = self.store.create_work(Work(
             "old-work", "superseded relay", (self.temp.name,),
-            frozenset({"relay_browser"}), self.work.owner_principal_id,
+            frozenset({"browser"}), self.work.owner_principal_id,
         ))
         self.feature.delivery_ledger.create_or_get(
             delivery_id="old-delivery", work_id=old_work.work_id,
@@ -422,7 +422,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         draft_sha = "a" * 64
         foreign = self.store.create_work(Work(
             "foreign-work", "foreign superseded relay", (self.temp.name,),
-            frozenset({"relay_browser"}), "different-owner",
+            frozenset({"browser"}), "different-owner",
         ))
         self.feature.delivery_ledger.create_or_get(
             delivery_id="foreign-delivery", work_id=foreign.work_id,
@@ -455,7 +455,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         expected_sha = "a" * 64
         old_work = self.store.create_work(Work(
             "old-work", "superseded relay", (self.temp.name,),
-            frozenset({"relay_browser"}), self.work.owner_principal_id,
+            frozenset({"browser"}), self.work.owner_principal_id,
         ))
         cases = (
             ("wrong-state", worker, expected_sha, False),

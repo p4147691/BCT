@@ -16,6 +16,7 @@ from .policy import Policy
 from .approval import ApprovalVerifier
 from bct.trace_timing import trace_stage
 from .store import Store
+from .capabilities import capability_matches
 
 
 # Do not treat a failed observation as evidence of an external effect.
@@ -37,7 +38,7 @@ def _is_measurement_only_request(request) -> bool:
     if request.capability in _MEASUREMENT_ONLY_CAPABILITIES:
         return True
     return (
-        request.capability == "relay_browser"
+        capability_matches(request.capability, "browser")
         and request.preconditions.get("mutating") is False
         and request.arguments.get("command") in _RCC_MEASUREMENT_COMMANDS
     )
@@ -95,7 +96,7 @@ class OperationCoordinator:
             if capability == "desktop_chrome_tab_reconcile"
             else "desktop_window_activate"
             if capability == "desktop_window_activate_reconcile"
-            else "relay_browser"
+            else "browser"
             if (capability == "claim_reconcile"
                 and claim_original["capability"] == "relay_control"
                 and claim_original.get("evidence") == {
@@ -118,7 +119,7 @@ class OperationCoordinator:
         if decision.kind is not DecisionKind.ALLOW and not approval_required:
             raise AuthorizationError(decision.reason_code + ":" + decision.next_action)
         rcc_command = str(arguments.get("command") or "").strip().lower()
-        if capability == "relay_browser" and rcc_command in {
+        if capability == "browser" and rcc_command in {
             "result", "reconcile-send-to-created-tab", "reconcile-send",
             "result-of-create-and-send", "reconcile-create-and-send",
             "inspect-rename-receipt", "reconcile-rename-conversation",
@@ -233,7 +234,7 @@ class OperationCoordinator:
             if original["capability"] not in {
                 "read", "system_inspect", "github_pr_status", "execute",
                 "desktop_uia_element_action", "relay_control",
-                "relay_browser",
+                "browser", "relay_browser",
             }:
                 raise PreconditionError("CLAIM_RECONCILE_CAPABILITY_NOT_SUPPORTED")
             request = replace(request, preconditions={
@@ -241,7 +242,7 @@ class OperationCoordinator:
                 "work_id": work_id,
                 "principal_id": principal.principal_id,
             })
-        if capability == "relay_browser" and rcc_command in {
+        if capability == "browser" and rcc_command in {
             "reclassify-rename-claim", "quarantine-legacy-rename-claim",
         }:
             request = replace(request, preconditions={
@@ -516,7 +517,7 @@ class OperationCoordinator:
                 trace_stage("receipt_persistence", tool_kind=request.capability,
                             elapsed_ms=(time.perf_counter_ns() - receipt_started) / 1e6)
                 return replace(current, output=result.output)
-            if (request.capability == "relay_browser"
+            if (request.capability == "browser"
                     and request.arguments["command"] == "reclassify-rename-claim"
                     and result.outcome is Outcome.APPLIED):
                 stored = self.store.finish_rename_claim_reclassification(
@@ -528,7 +529,7 @@ class OperationCoordinator:
                     new_resource_key=result.evidence["new_resource_key"],
                     evidence=result.evidence,
                 )
-            elif (request.capability == "relay_browser"
+            elif (request.capability == "browser"
                     and request.arguments["command"] == "quarantine-legacy-rename-claim"
                     and result.outcome is Outcome.APPLIED):
                 stored = self.store.finish_rename_claim_operator_quarantine(

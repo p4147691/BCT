@@ -93,7 +93,7 @@ def run_bottleneck_ack_probe(bct: Any, *, principal: Principal, payload: dict[st
         principal=principal,
         work_id="bct-monitor-extension-control",
         operation_id=operation_id,
-        capability="relay_browser",
+        capability="browser",
         arguments={
             "command": "send-to-tab",
             "instance_id": str(payload.get("instance_id") or "").strip(),

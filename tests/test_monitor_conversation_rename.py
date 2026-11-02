@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from bct.core.models import Outcome, Work
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.runtime_server import (
     MONITOR_EXTENSION_ORIGIN,
     ensure_monitor_work,
@@ -50,12 +50,12 @@ class MonitorConversationRenameTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         policy = self.root / "bct.toml"
         policy.write_text(
-            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
             encoding="utf-8",
         )
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=policy)
         self.client = FakeRelayClient()
-        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(self.client)
+        self.bct.operations._features["browser"] = BrowserFeature(self.client)
         self.principal = ensure_monitor_work(self.bct, runtime_root=self.root)
 
     def tearDown(self):
@@ -222,11 +222,26 @@ class MonitorConversationRenameTests(unittest.TestCase):
             "bct-monitor-extension-control",
             "foreign",
             (str(other_root),),
-            frozenset({"relay_browser"}),
+            frozenset({"browser"}),
             "foreign-owner",
         ))
         with self.assertRaisesRegex(RuntimeError, "MONITOR_WORK_CONTRACT_MISMATCH"):
             ensure_monitor_work(second, runtime_root=other_root)
+
+    def test_legacy_browser_named_monitor_work_remains_usable(self):
+        expected = self.bct.store.get_work("bct-monitor-extension-control")
+        legacy = Work(
+            expected.work_id, expected.request_summary, expected.roots,
+            frozenset({"relay_browser"}), expected.owner_principal_id,
+            expected.assignment_epoch, expected.state,
+        )
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE works SET actions_json=? WHERE work_id=?",
+                ('["relay_browser"]', legacy.work_id),
+            )
+        principal = ensure_monitor_work(self.bct, runtime_root=self.root)
+        self.assertEqual("bct-monitor-extension", principal.principal_id)
 
 
 if __name__ == "__main__":

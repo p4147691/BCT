@@ -13,7 +13,9 @@ from mcp.server.fastmcp import FastMCP, Image
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
-from .conversation_network import ConversationNetworkError, project_view, resolve_project_id
+from .conversation_network import (
+    ConversationNetworkError, project_view, resolve_project_id, scope_directory,
+)
 from .core.models import Principal, Work
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view, STATUS_SCOPES
@@ -24,7 +26,8 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
-    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check",
+    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network",
+    "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
@@ -46,7 +49,7 @@ _CAPABILITY_USAGE = {
     "project_context": "Shared, bounded context records; this does not capture browser text or send a message. Use central-get/central-save for the one current project context, worklog-get/worklog-save for a project plus journal_work_id, and overview for central context plus compact worklog records. Saves require expected_revision and author. A work log must link its exact journal_work_id as links:[{type:'bct_work',id:'...'}].",
     "cdp_inspect": "Read-only existing Chrome tab listing via a single approved Chrome DevTools MCP connection. Use arguments={\\\"operation\\\":\\\"list_pages\\\"}. Requires a work with cdp_inspect permission and locally enabled CDP policy; does not send messages, create tabs, or bypass Chrome consent.",
     "browser_extension_manage": "Read-only Chrome extension inventory via CDP. arguments={\\\"operation\\\":\\\"inventory\\\"} (or pages). Work-scoped; create/update/delete not enabled in this initial common MCP adapter. CDP only. Do not infer Tampermonkey CRUD support from this tool yet.",
-    "relay_browser": (
+    "browser": (
         "RCC contract rcc-send-message-v1. For ChatGPT messages use ONLY command=send-message "
         "with exact instance_id, session_id, tab_id, window_id, text, and either "
         "conversation_key (empty string for an existing blank tab) OR create_operation_id "
@@ -60,7 +63,7 @@ _CAPABILITY_USAGE = {
         "inspection, are internal and unavailable through this tool. Use bct_status "
         "for the current BCT state."
     ),
-    "relay_control": "Execute one enabled hot-read relay purpose using arguments={\"purpose\":\"selected purpose\",\"scope_id\":\"project scope\",\"context\":{...},\"expected_settings_sha256\":\"preview revision\"}. The fixed registry permits one existing BCT operation step per invocation. Settings never grant authority: the Work must contain the delegated capability such as relay_browser or cdp_inspect. Reuse operation_id only for the exact same frozen request and never retry UNKNOWN with a new ID.",
+    "relay_control": "Execute one enabled hot-read relay purpose using arguments={\"purpose\":\"selected purpose\",\"scope_id\":\"project scope\",\"context\":{...},\"expected_settings_sha256\":\"preview revision\"}. The fixed registry permits one existing BCT operation step per invocation. Settings never grant authority: the Work must contain the delegated capability such as browser or cdp_inspect. Reuse operation_id only for the exact same frozen request and never retry UNKNOWN with a new ID.",
     "orchestrate": "Durable read-evidence manager/worker sessions. Use project-run-plan to select one advisory Manager conversation from an existing conversation scope, then start and sync a session, select a manager epoch, and project-run-bind the exact active RCC attachment. A later attachment generation for the same conversation may be rebound; stale generations are rejected only at the effect boundary. Use dispatch, tool-build-request, or chain-run for work. dispatch is one exact immediate target, not a fallback scheduler. Durable Manager FOLLOW_UP successors may instead include routing={affinity: REQUIRED|PREFERRED|ANY, fallbacks:[{node_id,attachment_id,attachment_generation}], allow_provision:boolean}; it is evaluated only before a send. REQUIRED holds then escalates, PREFERRED/ANY may use an idle fallback after policy wait, and allow_provision records PROVISION_REQUIRED for Manager judgment rather than creating a node automatically. tool-build-request is usable from any ordinary connected ChatGPT conversation: give session_id, assignment_id, tool_name, problem, required_behaviors, acceptance, and actions including read/write/test. It auto-resolves exactly one active Worker when unambiguous; otherwise pass worker_node_id or attachment_id. manager_epoch is optional internal fencing. It may implement, test, and use a tool only within the existing Work authority, then records PENDING_USER_REPORT. Read that report with tool-build-report; user later chooses KEEP, CHANGE, or RETIRE. Browser mutations run in background; recover with bct_operation_get. Recovery never resends an UNKNOWN effect.",
     "desktop_session_status": "Return the exact current interactive user-session Agent identity, foreground window, monitor geometry, and capture readiness.",
     "desktop_capture": "Capture the current virtual screen, one monitor, or one exact HWND. The MCP result contains both metadata and an image content block.",
@@ -89,7 +92,7 @@ _CAPABILITY_USAGE = {
 # These RCC commands remain implemented only so older internal paths can be
 # inspected or retired deliberately.  They are not part of the caller-facing
 # MCP contract: new message work goes through the public tools below.
-_SEALED_RELAY_COMMANDS = frozenset({
+_SEALED_BROWSER_COMMANDS = frozenset({
     "send", "create-and-send", "result-of-create-and-send",
     "send-to-tab", "send-to-created-tab", "send-to-self", "node-continue",
     "read-latest-assistant", "state", "result", "presence",
@@ -148,9 +151,9 @@ def build_mcp(
             "capabilities": list(capabilities),
             "tools": [tool.name for tool in await server.list_tools()],
             # The live runtime contract takes precedence over client-cached tool descriptions.
-            "relay_browser_usage": _CAPABILITY_USAGE["relay_browser"],
-            "relay_browser_contract_version": "rcc-send-message-v1",
-            "relay_browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"],
+            "browser_usage": _CAPABILITY_USAGE["browser"],
+            "browser_contract_version": "rcc-send-message-v1",
+            "browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"],
         }
         settings = getattr(server, "catalogue_settings", None)
         if settings is not None and settings.last_error:
@@ -178,6 +181,11 @@ def build_mcp(
         snapshot = await asyncio.to_thread(status_provider)
         if scope != "bct":
             return status_view(snapshot, scope, sort_by=sort_by)
+        # The default status is the common current-state block.  Include the
+        # current node projection (network/roles/activity) from the same
+        # snapshot rather than making callers request scope=node separately.
+        from bct.status_views import with_current_node_details
+        snapshot = with_current_node_details(snapshot, sort_by=sort_by)
         if compact and isinstance(snapshot.get("monitor"), dict):
             monitor = dict(snapshot["monitor"])
             for key in (
@@ -191,7 +199,7 @@ def build_mcp(
             snapshot = {**snapshot, "monitor": monitor, "compact": True}
         # Always expose the canonical RCC command contract during the required
         # status preflight; client-side MCP tool metadata may be stale.
-        snapshot = {**snapshot, "relay_browser_usage": _CAPABILITY_USAGE["relay_browser"]}
+        snapshot = {**snapshot, "browser_usage": _CAPABILITY_USAGE["browser"]}
         current_trace_id = _MCP_TRACE_ID.get()
         if current_trace_id is not None:
             snapshot = {**snapshot, "mcp_trace_id": current_trace_id}
@@ -237,17 +245,24 @@ def build_mcp(
     async def bct_network_get(project: str) -> dict[str, Any]:
         return await bct_conversation_network_get(project)
 
-    @server.tool(description="Read-only preflight for planning: current node/RCC state and optional registered network. Does not create plans, networks or messages.", structured_output=True)
-    async def bct_run_check(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
+    @server.tool(description="Run the read-only Network Check recipe: current node/RCC evidence, durable active and closed scope directory, current supervisor readiness, and optionally authorized project-context summaries. Does not create plans, networks or messages.", structured_output=True)
+    async def bct_check_network(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
         snapshot = await asyncio.to_thread(status_provider)
         nodes = status_view(snapshot, "node", sort_by=sort_by)
         rcc = status_view(snapshot, "rcc", sort_by=sort_by)
+        scopes = await asyncio.to_thread(scope_directory, bct.store)
         # Candidates come from confirmed current nodes, never from guessed project IDs.
         # Historical projects need a separately authorized directory/summary lookup.
         candidates: dict[str, dict[str, str]] = {}
-        for node in nodes.get("items", []) if isinstance(nodes, dict) else []:
+        current_node_items = (
+            nodes.get("current_nodes", {}).get("items", [])
+            if isinstance(nodes, dict) and isinstance(nodes.get("current_nodes"), dict)
+            else []
+        )
+        supervisor_candidates: list[dict[str, Any]] = []
+        for node in current_node_items:
             if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
                 continue
             name = str(node.get("network") or "").strip()
@@ -255,6 +270,22 @@ def build_mcp(
             if name:
                 key = scope_id or name.casefold()
                 candidates.setdefault(key, {"title": name, "network_id": scope_id})
+            roles = node.get("roles") if isinstance(node.get("roles"), list) else []
+            if any(str(role).strip().casefold() == "supervisor" for role in roles):
+                supervisor_candidates.append({
+                    "node_number": str(node.get("node_number") or ""),
+                    "name": str(node.get("name") or ""),
+                    "conversation_uuid": str(node.get("conversation_uuid") or ""),
+                    "network": name,
+                    "network_id": scope_id,
+                    "roles": list(roles),
+                    "active": node.get("active") is True,
+                })
+        supervisor_status = (
+            "MISSING" if not supervisor_candidates else
+            "PRESENT" if len(supervisor_candidates) == 1 else
+            "MULTIPLE"
+        )
         network = None
         context = None
         context_status = "NOT_REQUESTED"
@@ -331,6 +362,13 @@ def build_mcp(
                     context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
         return {"status": "OK", "nodes": nodes, "rcc": rcc,
                 "network": network, "network_candidates": list(candidates.values()),
+                "scope_directory": scopes,
+                "supervisor": {
+                    "status": supervisor_status,
+                    "role_tag": "supervisor",
+                    "candidates": supervisor_candidates,
+                    "scope": "CURRENT_CONFIRMED_NODES_ONLY",
+                },
                 "candidates_scope": ("CURRENT_AND_HISTORICAL_AUTHORIZED"
                                      if historical_contexts_status in {"OK", "NO_CONTEXT"}
                                      else "CURRENT_CONFIRMED_NODES_ONLY"),
@@ -400,15 +438,16 @@ def build_mcp(
     @server.tool(
         name="bct_chain_message",
         description=(
-            "Start/status/cancel a durable one-worker message continuation using "
+            "Start/status/cancel a durable one-target message continuation using "
             "existing BCT send-message, Delayed Send and their exact receipts. "
             "For start supply task_id, a unique operation_id prefix, exact RCC "
-            "instance/session/tab/window/worker and manager conversation IDs, "
+            "instance/session and canonical target_/origin_ identity fields, "
             "and the work instruction text. The command PREARMS BEFORE sending, "
             "then submits the reserved text under the exact planned operation ID. "
             "Status reads the owning Work's exact durable watch. "
             "This is the first message-flow stage, NOT a completed Run Plan/Task Run "
-            "or multi-worker Chain Run implementation. No UNKNOWN replay."
+            "or multi-worker Chain Run implementation. Legacy worker_/manager_ "
+            "identity fields remain accepted only for compatibility. No UNKNOWN replay."
         ),
         structured_output=True,
     )
@@ -420,7 +459,10 @@ def build_mcp(
         worker_conversation_key: str = "",
         manager_conversation_key: str = "",
         instruction: str = "", manager_instance_id: str = "",
-        generation: int = 1,
+        generation: int = 1, chain_direction_id: str = "",
+        target_tab_id: int = 0, target_window_id: int = 0,
+        target_conversation_key: str = "", origin_conversation_key: str = "",
+        origin_instance_id: str = "",
     ) -> dict[str, Any]:
         if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
@@ -443,40 +485,70 @@ def build_mcp(
                     "observed_response_turn_key":ctx.get("observed_response_turn_key",""),
                     "source_send_operation_id":ctx.get("source_send_operation_id","")}
         if action == "cancel":
-            return await make_executor("relay_browser")(
+            return await make_executor("browser")(
                 work_id,operation_id,{"command":"delayed-send-cancel",
                  "task_id":task_id,"generation":generation})
         if action != "start":
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ACTION_INVALID"}
+        def select_identity(canonical, legacy):
+            if canonical and legacy and canonical != legacy:
+                return None
+            return canonical or legacy
+        target_tab = select_identity(target_tab_id, worker_tab_id)
+        target_window = select_identity(target_window_id, worker_window_id)
+        target_conversation = select_identity(target_conversation_key, worker_conversation_key)
+        origin_conversation = select_identity(origin_conversation_key, manager_conversation_key)
+        origin_instance = select_identity(origin_instance_id, manager_instance_id)
+        if None in {target_tab, target_window, target_conversation, origin_conversation, origin_instance}:
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_IDENTITY_CONFLICT"}
         if (not instruction or len(instruction)>12000 or
                 not re.fullmatch(r"[a-f0-9]{32}",session_id) or
-                worker_tab_id<=0 or worker_window_id<=0):
+                target_tab<=0 or target_window<=0):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
+        if chain_direction_id:
+            from bct.chain_direction import ChainDirectionLedger
+            try:
+                await asyncio.to_thread(
+                    ChainDirectionLedger(bct.store).plan_chain,
+                    direction_id=chain_direction_id, work_id=work_id,
+                    task_id=task_id, operation_id=operation_id,
+                )
+            except ValueError as exc:
+                return {"status":"INVALID_REQUEST","reason":str(exc)}
         send_id=operation_id+"-send"
         arm_id=operation_id+"-arm"
         if len(send_id)>80 or len(arm_id)>80:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
-        armed=await make_executor("relay_browser")(
+        armed=await make_executor("browser")(
             work_id,arm_id,{"command":"delayed-send-message",
              "task_id":task_id,"instance_id":instance_id,
-             "conversation_key":worker_conversation_key,
-             "manager_conversation_key":manager_conversation_key,
-             "manager_instance_id":manager_instance_id or instance_id,
+             "conversation_key":target_conversation,
+             "manager_conversation_key":origin_conversation,
+             "manager_instance_id":origin_instance or instance_id,
              "planned_send_operation_id":send_id,
              "planned_send_text":instruction})
         if armed.get("outcome") != "APPLIED":
             return {"status":"PREARM_FAILED","prearm":armed}
-        sent=await make_executor("relay_browser")(
+        sent=await make_executor("browser")(
             work_id,send_id,{"command":"send-message",
              "instance_id":instance_id,"session_id":session_id,
-             "tab_id":worker_tab_id,"window_id":worker_window_id,
-             "conversation_key":worker_conversation_key,
+             "tab_id":target_tab,"window_id":target_window,
+             "conversation_key":target_conversation,
              "text":instruction})
         if sent.get("outcome") != "APPLIED":
             return {"status":"SEND_UNCONFIRMED","prearm":armed,
                     "send":sent,"warning":"NO_UNKNOWN_REPLAY"}
+        direction = None
+        if chain_direction_id:
+            from bct.chain_direction import ChainDirectionLedger
+            direction = await asyncio.to_thread(
+                ChainDirectionLedger(bct.store).mark_chain_started,
+                direction_id=chain_direction_id, work_id=work_id,
+                task_id=task_id, operation_id=operation_id,
+            )
         return {"status":"WATCHING","task_id":task_id,"generation":generation,
-                "prearm":armed,"send":sent}
+                "prearm":armed,"send":sent,
+                **({"chain_direction": direction} if direction is not None else {})}
 
     @server.tool(
         name="bct_task_run",
@@ -522,7 +594,7 @@ def build_mcp(
         planned_send_operation_id: str = "", planned_send_text: str = "",
     ) -> dict[str, Any]:
         generated = operation_id or ("delayed-arm-" + uuid.uuid4().hex[:24])
-        return await make_executor("relay_browser")(
+        return await make_executor("browser")(
             work_id, generated,
             {"command":"delayed-send-message","task_id":task_id,
              "instance_id":instance_id,"conversation_key":conversation_key,
@@ -533,6 +605,215 @@ def build_mcp(
         )
 
     @server.tool(
+        name="bct_send_message",
+        description=(
+            "Send one exact message to an existing ChatGPT conversation or to a "
+            "BCT-created chat target. This is the standard public message-send "
+            "command. It preserves the existing exact identity, receipt, and "
+            "UNKNOWN-no-replay contract; internally it uses the browser capability."
+        ),
+        structured_output=True,
+    )
+    async def bct_send_message(
+        work_id: str, operation_id: str, instance_id: str, session_id: str,
+        tab_id: int, window_id: int, conversation_key: str, text: str,
+        create_operation_id: str = "", approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        arguments = {
+            "command": "send-message", "instance_id": instance_id,
+            "session_id": session_id, "tab_id": tab_id, "window_id": window_id,
+            "conversation_key": conversation_key, "text": text,
+        }
+        if create_operation_id:
+            arguments["create_operation_id"] = create_operation_id
+        return await make_executor("browser")(
+            work_id, operation_id, arguments, approval_ref,
+        )
+
+    @server.tool(
+        name="bct_move_tab",
+        description=(
+            "Move one exact ChatGPT tab to an exact target Chrome window and "
+            "position. Requires the current tab identity plus either its "
+            "conversation UUID or its verified BCT creation receipt."
+        ),
+        structured_output=True,
+    )
+    async def bct_move_tab(
+        work_id: str, operation_id: str, instance_id: str, session_id: str,
+        tab_id: int, window_id: int, target_window_id: int, index: int,
+        conversation_key: str = "", create_operation_id: str = "",
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        return await make_executor("browser")(
+            work_id, operation_id,
+            {
+                "command": "move-tab", "instance_id": instance_id,
+                "session_id": session_id, "tab_id": tab_id, "window_id": window_id,
+                "target_window_id": target_window_id, "index": index,
+                "conversation_key": conversation_key,
+                "create_operation_id": create_operation_id,
+            }, approval_ref,
+        )
+
+    @server.tool(
+        name="bct_close_tab",
+        description=(
+            "Close one exact ChatGPT conversation tab. Requires exact RCC "
+            "instance, session, window, tab, and conversation UUID. UNKNOWN is "
+            "preserved and never retried as a new close."
+        ),
+        structured_output=True,
+    )
+    async def bct_close_tab(
+        work_id: str, operation_id: str, instance_id: str, session_id: str,
+        tab_id: int, window_id: int, conversation_key: str,
+        approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        return await make_executor("browser")(
+            work_id, operation_id,
+            {
+                "command": "close-conversation-tab", "instance_id": instance_id,
+                "session_id": session_id, "tab_id": tab_id, "window_id": window_id,
+                "conversation_key": conversation_key,
+            }, approval_ref,
+        )
+
+    @server.tool(
+        name="bct_execution_context",
+        description=(
+            "Read one exact 1:1 continuation's durable execution context without "
+            "sending, waking, or re-deciding it. The result contains the prior B "
+            "turn's recorded SELF/MANAGER direction, its result evidence, and the "
+            "same Work/assignment binding. Use generation=0 for the latest recorded "
+            "decision, or name one exact generation."
+        ),
+        structured_output=True,
+    )
+    async def bct_execution_context(
+        work_id: str, task_id: str, generation: int = 0,
+    ) -> dict[str, Any]:
+        if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
+                or generation < 0):
+            return {"status": "INVALID_REQUEST", "reason": "EXECUTION_CONTEXT_INPUT_INVALID"}
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+            from bct.delayed_send_message import DurableWatchLedger
+            context = await asyncio.to_thread(
+                DurableWatchLedger(bct.store).read_execution_context,
+                task_id=task_id,
+                generation=None if generation == 0 else generation,
+            )
+        except KeyError:
+            return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+        if context is None:
+            return {"status": "NOT_FOUND", "task_id": task_id,
+                    "generation": generation or None}
+        binding = context.get("binding") or {}
+        if (binding.get("work_id") != work.work_id
+                or binding.get("principal_id") != work.owner_principal_id
+                or binding.get("assignment_epoch") != work.assignment_epoch):
+            return {"status": "NOT_FOUND", "task_id": task_id,
+                    "generation": context["generation"]}
+        # The full binding contains only the exact existing target identity and
+        # is needed by a later, separately authorized wake-delivery adapter.
+        return {"status": "OK", "execution": context}
+
+    @server.tool(
+        name="bct_set_chain_direction",
+        description=(
+            "Save A's free-form direction for the next Chain Message. This records "
+            "A's decision; it never writes the direction, sends a message, or "
+            "interprets the report. Use source_kind=MANAGER_RETURN only with the "
+            "exact BA task/generation that supplied the report."
+        ),
+        structured_output=True,
+    )
+    async def bct_set_chain_direction(
+        work_id: str, direction_text: str, decision: str,
+        source_kind: str = "USER", source_task_id: str = "",
+        source_generation: int = 0, direction_id: str = "",
+    ) -> dict[str, Any]:
+        from bct.chain_direction import ChainDirectionLedger
+        if not direction_id:
+            direction_id = "chain-direction-" + uuid.uuid4().hex[:24]
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        result_sha = ""
+        if source_kind == "MANAGER_RETURN":
+            from bct.delayed_send_message import DurableWatchLedger
+            delayed_ledger = DurableWatchLedger(bct.store)
+            context = await asyncio.to_thread(
+                delayed_ledger.read_execution_context,
+                task_id=source_task_id,
+                generation=source_generation,
+            )
+            binding = (context or {}).get("binding") or {}
+            prior = (context or {}).get("decision") or {}
+            if (context is not None and binding.get("work_id") == work.work_id
+                    and binding.get("principal_id") == work.owner_principal_id
+                    and binding.get("assignment_epoch") == work.assignment_epoch
+                    and prior.get("route") == "MANAGER"):
+                result_sha = str(prior.get("response_sha256") or "")
+            else:
+                # Older Delayed Send returns predate the explicit B-decision
+                # ledger.  They can still anchor a Chain Direction, but only
+                # when the exact watch itself is durably RETURNED_TO_MANAGER
+                # and carries the observed response hash.  This is a targeted
+                # compatibility bridge, not natural-language reconstruction.
+                row = await asyncio.to_thread(
+                    delayed_ledger.get, source_task_id, source_generation,
+                )
+                import json
+                try:
+                    legacy = json.loads(str((row or {}).get("context_json") or "{}"))
+                except ValueError:
+                    legacy = {}
+                result_sha = str(legacy.get("observed_response_sha") or "")
+                if (not row or row.get("state") != "RETURNED_TO_MANAGER"
+                        or legacy.get("work_id") != work.work_id
+                        or legacy.get("principal_id") != work.owner_principal_id
+                        or legacy.get("assignment_epoch") != work.assignment_epoch
+                        or not re.fullmatch(r"[0-9a-f]{64}", result_sha)):
+                    return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_RETURN_NOT_EXACT"}
+        try:
+            direction = await asyncio.to_thread(
+                ChainDirectionLedger(bct.store).save,
+                direction_id=direction_id, work_id=work_id,
+                source_kind=source_kind, source_task_id=source_task_id,
+                source_generation=source_generation,
+                source_result_sha256=result_sha, decision=decision,
+                direction_text=direction_text,
+            )
+        except ValueError as exc:
+            return {"status":"INVALID_REQUEST","reason":str(exc)}
+        return {"status":"OK","chain_direction":direction}
+
+    @server.tool(
+        name="bct_get_chain_direction",
+        description="Read one exact A-authored Chain Direction from its owning Work. Does not send or decide.",
+        structured_output=True,
+    )
+    async def bct_get_chain_direction(work_id: str, direction_id: str) -> dict[str, Any]:
+        from bct.chain_direction import ChainDirectionLedger
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        direction = await asyncio.to_thread(
+            ChainDirectionLedger(bct.store).get, direction_id=direction_id,
+        )
+        if direction is None or direction.get("work_id") != work.work_id:
+            return {"status":"NOT_FOUND","direction_id":direction_id}
+        return {"status":"OK","chain_direction":direction}
+
+    @server.tool(
         name="bct_delayed_send_cancel",
         description="Cancel exactly one WATCHING Delayed Send task generation in its owning Work.",
         structured_output=True,
@@ -541,7 +822,7 @@ def build_mcp(
         work_id: str, task_id: str, generation: int, operation_id: str = "",
     ) -> dict[str, Any]:
         generated = operation_id or ("delayed-cancel-" + uuid.uuid4().hex[:24])
-        return await make_executor("relay_browser")(
+        return await make_executor("browser")(
             work_id, generated,
             {"command":"delayed-send-cancel","task_id":task_id,
              "generation":generation},
@@ -637,6 +918,41 @@ def build_mcp(
             acknowledge=acknowledge, limit=limit,
         )
 
+    # Public names follow the agreed vocabulary.  The older reversed names
+    # remain visible only as compatibility aliases so existing Chats, receipts,
+    # and saved prompts are not broken during the vocabulary transition.
+    _canonical_command_aliases = (
+        ("bct_network", bct_network_get,
+         "Show one registered conversation network. Canonical name; bct_network_get remains a compatibility alias."),
+        ("bct_check_run", bct_check_network,
+         "Legacy compatibility alias for bct_check_network."),
+        ("bct_run_check", bct_check_network,
+         "Legacy compatibility alias for bct_check_network."),
+        ("bct_plan_run", bct_run_plan,
+         "Save one execution plan. Canonical name; bct_run_plan remains a compatibility alias."),
+        ("bct_set_network", bct_network_set,
+         "Change registered network metadata. Canonical name; bct_network_set remains a compatibility alias."),
+        ("bct_run_task", bct_task_run,
+         "Run one task in a prepared session. Canonical name; bct_task_run remains a compatibility alias."),
+        ("bct_context", bct_execution_context,
+         "Show one execution's complete continuation context. Canonical name; bct_execution_context remains a compatibility alias."),
+        ("bct_cancel_delayed_send", bct_delayed_send_cancel,
+         "Cancel one delayed send. Canonical name; bct_delayed_send_cancel remains a compatibility alias."),
+        ("bct_create_work", bct_work_create,
+         "Create or recover one Work. Canonical name; bct_work_create remains a compatibility alias."),
+        ("bct_operation", bct_operation_get,
+         "Show one operation receipt. Canonical name; bct_operation_get remains a compatibility alias."),
+        ("bct_github_inbox", bct_github_inbox_get,
+         "Show GitHub completion notifications. Canonical name; bct_github_inbox_get remains a compatibility alias."),
+        ("bct_inbox", bct_inbox_get,
+         "Show inbox notifications. Canonical name; bct_inbox_get remains a compatibility alias."),
+    )
+    for _canonical_name, _legacy_handler, _canonical_description in _canonical_command_aliases:
+        server.tool(
+            name=_canonical_name, description=_canonical_description,
+            structured_output=True,
+        )(_legacy_handler)
+
     @server.tool(
         description="Return the verified current Windows interactive-session Agent status.",
         structured_output=True,
@@ -698,7 +1014,7 @@ def build_mcp(
             approval_ref: str | None = None,
         ) -> dict[str, Any]:
             selected = capability
-            if selected == "relay_browser" and str(arguments.get("command") or "").strip().lower() in _SEALED_RELAY_COMMANDS:
+            if selected == "browser" and str(arguments.get("command") or "").strip().lower() in _SEALED_BROWSER_COMMANDS:
                 raise ValueError("RCC_INTERNAL_COMMAND_UNAVAILABLE:use create-chat-window, create-chat-tab, send-message, or bct_delayed_send_message")
             if capability == "test" and arguments.get("operation") == "verify":
                 selected = "verify"
@@ -735,7 +1051,7 @@ def build_mcp(
                 handler_ms = (time.perf_counter_ns()-started_ns)/1e6
                 _trace_stage("handler_done", tool_kind=selected, handler_ms=handler_ms, wait_ms=0.0, execution_ms=handler_ms)
                 return result.as_dict()
-            if selected in {"desktop_window_manage", "relay_browser"}:
+            if selected in {"desktop_window_manage", "browser"}:
                 # Reuse the existing authenticated Work/Operation/Claim/Lease gateway.
                 # No second executor or automatic retry of UNKNOWN effects.
                 from bct.features.window_layout_commands import make_bct_operation_invoke

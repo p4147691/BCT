@@ -7,7 +7,7 @@ from pathlib import Path
 
 from bct.service import BCT
 from bct.core.models import Principal, Outcome
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.delayed_send_message import DelayedSendService, _rcc_submitted_text_sha256
 
 INSTANCE = "instance123"
@@ -87,21 +87,21 @@ class DelayedSendRccFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             policy=root/"bct.toml"
-            policy.write_text('[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            policy.write_text('[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
                               encoding="utf-8")
             bct=BCT(state_path=root/"state.sqlite",policy_path=policy)
             rcc=SimulatedRcc()
-            feature=RelayBrowserFeature(rcc,store=bct.store)
-            bct.operations._features["relay_browser"]=feature
-            principal=Principal("tester","test",frozenset({"relay_browser"}))
+            feature=BrowserFeature(rcc,store=bct.store)
+            bct.operations._features["browser"]=feature
+            principal=Principal("tester","test",frozenset({"browser"}))
             work=bct.create_work(work_id="prearmed-test",request_summary="one exact send",
-                                 roots=[str(root)],actions=["relay_browser"],principal=principal)
-            service=DelayedSendService(store=bct.store,relay_feature=feature,
+                                 roots=[str(root)],actions=["browser"],principal=principal)
+            service=DelayedSendService(store=bct.store,browser_feature=feature,
                                        operations=bct.operations)
             rcc.reply(WORKER,"Previous already finished assistant response.")
             # The already finished user/assistant pair cannot be falsely armed.
             late=bct.operations.run(principal=principal,work_id=work.work_id,
-                 operation_id="late-old-answer",capability="relay_browser",
+                 operation_id="late-old-answer",capability="browser",
                  arguments={"command":"delayed-send-message","task_id":"late-task",
                             "instance_id":INSTANCE,"conversation_key":WORKER,
                             "manager_conversation_key":MANAGER})
@@ -112,7 +112,7 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             prompt="Complete exactly this task. NEXT TASK — MANAGER"
             send_id="verified-exact-planned-send-01"
             planned=bct.operations.run(principal=principal,work_id=work.work_id,
-                 operation_id="planned-prearm-first",capability="relay_browser",
+                 operation_id="planned-prearm-first",capability="browser",
                  arguments={"command":"delayed-send-message","task_id":"planned-task",
                             "instance_id":INSTANCE,"conversation_key":WORKER,
                             "manager_conversation_key":MANAGER,
@@ -123,7 +123,7 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             # No BCT send receipt yet -> no dispatch of the previous answer.
             self.assertEqual([],service.poll_once()["events"])
             send=bct.operations.run(principal=principal,work_id=work.work_id,
-                operation_id=send_id,capability="relay_browser",
+                operation_id=send_id,capability="browser",
                 arguments={"command":"send-message","instance_id":INSTANCE,
                            "session_id":SESSION,"tab_id":10,"window_id":11,
                            "conversation_key":WORKER,"text":prompt})
@@ -144,7 +144,7 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             # The same already-applied send receipt cannot be reused as a new
             # planned prearm even if a matching Assistant answer is terminal.
             reused=bct.operations.run(principal=principal,work_id=work.work_id,
-                operation_id="stale-planned-reuse",capability="relay_browser",
+                operation_id="stale-planned-reuse",capability="browser",
                 arguments={"command":"delayed-send-message","task_id":"stale-reuse-task",
                            "instance_id":INSTANCE,"conversation_key":WORKER,
                            "manager_conversation_key":MANAGER,
@@ -160,25 +160,25 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             root = Path(tmp)
             policy = root / "bct.toml"
             policy.write_text(
-                '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
                 encoding="utf-8",
             )
             bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
             rcc = SimulatedRcc()
-            browser = RelayBrowserFeature(rcc, store=bct.store)
-            bct.operations._features["relay_browser"] = browser
-            principal = Principal("tester", "test", frozenset({"relay_browser"}))
+            browser = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = browser
+            principal = Principal("tester", "test", frozenset({"browser"}))
             work = bct.create_work(
                 work_id="task-run-work", request_summary="SELF→MANAGER task",
-                roots=[str(root)], actions=["relay_browser"], principal=principal,
+                roots=[str(root)], actions=["browser"], principal=principal,
             )
             service = DelayedSendService(
-                store=bct.store, relay_feature=browser, operations=bct.operations,
+                store=bct.store, browser_feature=browser, operations=bct.operations,
             )
             # The worker calls the public Delayed Send operation BEFORE writing.
             armed = bct.operations.run(
                 principal=principal, work_id=work.work_id,
-                operation_id="task-prearm-1", capability="relay_browser",
+                operation_id="task-prearm-1", capability="browser",
                 arguments={"command": "delayed-send-message",
                            "task_id": "task-1", "instance_id": INSTANCE,
                            "conversation_key": WORKER,
@@ -202,7 +202,7 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             # The next message asks B to prearm the same Task ID again.
             rearmed = bct.operations.run(
                 principal=principal, work_id=work.work_id,
-                operation_id="task-prearm-2", capability="relay_browser",
+                operation_id="task-prearm-2", capability="browser",
                 arguments={"command": "delayed-send-message", "task_id": "task-1"},
             )
             self.assertEqual(Outcome.APPLIED, rearmed.outcome, rearmed.as_dict())

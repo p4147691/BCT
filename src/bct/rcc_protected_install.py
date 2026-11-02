@@ -1,7 +1,7 @@
 """RCC unpacked-extension bounded install/rollback, invoked only by BCT deploy Work/Operation.
 
 No Chrome/reload calls here. Caller must separately use existing
-relay_browser(reload-extension) fenced Operation and read back exact state.
+browser(reload-extension) fenced Operation and read back exact state.
 """
 from __future__ import annotations
 

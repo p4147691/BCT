@@ -10,6 +10,7 @@ import re
 import threading
 from typing import Any
 
+from bct.core.capabilities import canonical_capability
 from bct.core.models import Principal, Work
 from bct.integrations.rcc import NamedPipeRelayClient, discover_instance_ids
 
@@ -20,15 +21,25 @@ _ACTIVE = {"PENDING"}
 
 
 def ensure_notification_work(bct: Any, runtime_root: Any) -> Principal:
-    principal = Principal(PRINCIPAL_ID, "durable-committed-node-label", frozenset({"relay_browser"}))
+    principal = Principal(PRINCIPAL_ID, "durable-committed-node-label", frozenset({"browser"}))
     expected = Work(WORK_ID, "Committed display-label favicon notifications",
-                    (str(runtime_root.resolve()),), frozenset({"relay_browser"}), principal.principal_id)
+                    (str(runtime_root.resolve()),), frozenset({"browser"}), principal.principal_id)
     try:
         existing = bct.store.get_work(WORK_ID)
     except KeyError:
         bct.store.create_work(expected)
     else:
-        if existing != expected:
+        legacy_browser_equivalent = (
+            existing.work_id == expected.work_id
+            and existing.request_summary == expected.request_summary
+            and existing.roots == expected.roots
+            and frozenset(canonical_capability(action) for action in existing.actions)
+            == expected.actions
+            and existing.owner_principal_id == expected.owner_principal_id
+            and existing.assignment_epoch == expected.assignment_epoch
+            and existing.state == expected.state
+        )
+        if existing != expected and not legacy_browser_equivalent:
             raise RuntimeError("NODE_LABEL_NOTIFY_WORK_CONTRACT_MISMATCH")
     return principal
 
@@ -140,7 +151,7 @@ class NodeLabelNotifier:
                 principal=self.principal,
                 work_id=WORK_ID,
                 operation_id=operation_id,
-                capability="relay_browser",
+                capability="browser",
                 arguments={
                     "command": "node-label-notify",
                     "instance_id": instance, "session_id": session,

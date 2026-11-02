@@ -30,7 +30,7 @@ class ChatStreamCheckpointTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO operations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (operation_id, self.work.work_id, self.work.owner_principal_id,
-                 "digest-"+operation_id, "relay_browser", "exact-worker",
+                 "digest-"+operation_id, "browser", "exact-worker",
                  state, outcome, '{"source":"fixture","sha":"x"}',
                  None, self.work.assignment_epoch, "revision", 1., 1.),
             )
@@ -164,7 +164,7 @@ class ChatStreamCheckpointTests(unittest.TestCase):
         with core.store.transaction() as db:
             db.execute(
                 "INSERT INTO operations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                ("already-applied", "workflow","operator","digest","relay_browser",
+                ("already-applied", "workflow","operator","digest","browser",
                  "worker", "FINISHED","APPLIED",'{"ok":true}',None,1,"policy",1.,1.))
         saved=core.operations.run(principal=principal,work_id="workflow",
             operation_id="checkpoint-op-1",capability="orchestrate",

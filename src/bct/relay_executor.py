@@ -31,35 +31,35 @@ def runtime_registry_catalog() -> dict[tuple[str, str], dict[str, str]]:
             "kind": "pure", "effect": "pure", "capability": "",
         },
         ("rcc", "delivery.start"): {
-            "kind": "operation", "effect": "external", "capability": "relay_browser",
+            "kind": "operation", "effect": "external", "capability": "browser",
             "command": "delivery-start", "timeout_argument": "timeout_s",
         },
         ("rcc", "delivery.cancel"): {
-            "kind": "operation", "effect": "external", "capability": "relay_browser",
+            "kind": "operation", "effect": "external", "capability": "browser",
             "command": "delivery-cancel", "timeout_argument": "timeout_s",
         },
         ("rcc", "delivery.status"): {
-            "kind": "operation", "effect": "read", "capability": "relay_browser",
+            "kind": "operation", "effect": "read", "capability": "browser",
             "command": "delivery-status", "timeout_argument": "timeout_s",
         },
         ("rcc", "delivery.return"): {
-            "kind": "operation", "effect": "external", "capability": "relay_browser",
+            "kind": "operation", "effect": "external", "capability": "browser",
             "command": "delivery-return", "timeout_argument": "timeout_s",
         },
         ("rcc", "delivery.manager_status"): {
-            "kind": "operation", "effect": "read", "capability": "relay_browser",
+            "kind": "operation", "effect": "read", "capability": "browser",
             "command": "delivery-manager-status", "timeout_argument": "timeout_s",
         },
         ("rcc", "delivery.preview"): {
-            "kind": "operation", "effect": "pure", "capability": "relay_browser",
+            "kind": "operation", "effect": "pure", "capability": "browser",
             "command": "delivery-preview", "timeout_argument": "timeout_s",
         },
         ("rcc", "state"): {
-            "kind": "operation", "effect": "read", "capability": "relay_browser",
+            "kind": "operation", "effect": "read", "capability": "browser",
             "command": "state", "timeout_argument": "timeout_s",
         },
         ("rcc", "send.to_tab"): {
-            "kind": "operation", "effect": "external", "capability": "relay_browser",
+            "kind": "operation", "effect": "external", "capability": "browser",
             "command": "send-to-tab", "timeout_argument": "timeout_s",
         },
         ("cdp", "list_pages"): {

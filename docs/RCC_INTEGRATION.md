@@ -8,7 +8,7 @@ host executable, tabs, and role bindings remain in place. V1 adds a BCT control 
 the existing exact-instance Native Messaging pipe; it does not silently reinstall or
 reload Chrome components.
 
-The MCP capability is `relay_browser` (`bct_relay_browser`). It exposes only:
+The MCP capability is `browser` (`bct_browser`). It exposes only:
 
 - read-only: `state`, `presence`, `result`;
 - bounded side effects: `create-chat-tab`, `create-chat-window`,

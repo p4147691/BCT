@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from bct.conversation_network import upsert_conversation
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 from bct.node_label_notifications import NodeLabelNotifier, ensure_notification_work
 from bct.service import BCT
 
@@ -50,7 +50,7 @@ class NodeFaviconOperationReceiptTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         policy = self.root / "bct.toml"
         policy.write_text(
-            '[policy]\nnormal_actions=["relay_browser"]\napproval_actions=[]\n',
+            '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
             encoding="utf-8",
         )
         self.bct = BCT(state_path=self.root / "state.sqlite", policy_path=policy)
@@ -60,7 +60,7 @@ class NodeFaviconOperationReceiptTests(unittest.TestCase):
 
     def run_case(self, missing_ack):
         client = PipeFixture(missing_ack=missing_ack)
-        self.bct.operations._features["relay_browser"] = RelayBrowserFeature(
+        self.bct.operations._features["browser"] = BrowserFeature(
             client, store=self.bct.store,
         )
         notifier = NodeLabelNotifier(
@@ -92,6 +92,15 @@ class NodeFaviconOperationReceiptTests(unittest.TestCase):
         self.assertEqual("UNKNOWN", self.bct.store.node_label_notification(self.event_id)["status"])
         self.assertEqual("NO_PENDING_EVENT", notifier.deliver(self.event_id))
         self.assertEqual(1, sum(x["command"] == "node-label-notify" for x in client.calls))
+
+    def test_legacy_browser_named_notification_work_remains_usable(self):
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE works SET actions_json=? WHERE work_id=?",
+                ('["relay_browser"]', "bct-node-label-notifications"),
+            )
+        principal = ensure_notification_work(self.bct, self.root)
+        self.assertEqual("bct-core-node-label-notifier", principal.principal_id)
 
 
 if __name__ == "__main__":

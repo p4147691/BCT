@@ -15,6 +15,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 
 from bct import BCT
+from bct.core.capabilities import canonical_capability
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
@@ -66,13 +67,13 @@ def ensure_monitor_work(bct: BCT, *, runtime_root: Path) -> Principal:
     principal = Principal(
         MONITOR_PRINCIPAL_ID,
         "monitor-extension-origin",
-        frozenset({"relay_browser"}),
+        frozenset({"browser"}),
     )
     expected = Work(
         MONITOR_WORK_ID,
         "BCT Monitor exact conversation controls",
         (str(runtime_root.resolve()),),
-        frozenset({"relay_browser"}),
+        frozenset({"browser"}),
         principal.principal_id,
     )
     try:
@@ -80,7 +81,20 @@ def ensure_monitor_work(bct: BCT, *, runtime_root: Path) -> Principal:
     except KeyError:
         bct.store.create_work(expected)
     else:
-        if current != expected:
+        # Existing runtime state can still carry the old capability spelling
+        # ``relay_browser``.  It grants the same bounded browser authority,
+        # but must remain intact as historical Work evidence.
+        legacy_browser_equivalent = (
+            current.work_id == expected.work_id
+            and current.request_summary == expected.request_summary
+            and current.roots == expected.roots
+            and frozenset(canonical_capability(action) for action in current.actions)
+            == expected.actions
+            and current.owner_principal_id == expected.owner_principal_id
+            and current.assignment_epoch == expected.assignment_epoch
+            and current.state == expected.state
+        )
+        if current != expected and not legacy_browser_equivalent:
             raise RuntimeError("MONITOR_WORK_CONTRACT_MISMATCH")
     return principal
 
@@ -118,7 +132,7 @@ def run_monitor_conversation_rename(
         principal=principal,
         work_id=MONITOR_WORK_ID,
         operation_id=operation_id,
-        capability="relay_browser",
+        capability="browser",
         arguments=arguments,
     ).as_dict()
     if str(receipt.get("outcome") or "").upper() == "APPLIED":
@@ -199,7 +213,7 @@ def run_monitor_rcc_reload(
         principal=principal,
         work_id=MONITOR_WORK_ID,
         operation_id=operation_id,
-        capability="relay_browser",
+        capability="browser",
         arguments=arguments,
     ).as_dict()
 
@@ -432,7 +446,7 @@ def main() -> int:
     def delayed_send_watch_loop() -> None:
         service = DelayedSendService(
             store=bct.store,
-            relay_feature=bct.operations._features["relay_browser"],
+            browser_feature=bct.operations._features["browser"],
             operations=bct.operations,
         )
         while not recovery_stop.wait(2.0):

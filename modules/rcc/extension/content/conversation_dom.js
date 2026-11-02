@@ -594,10 +594,17 @@ function currentReasoningObservation() {
   const exact = selector.querySelector('[data-effort-only="true"]');
   const lines = String(selector.innerText || selector.textContent || '')
     .split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-  const level = String(exact?.textContent || lines.at(-1) || '').trim();
-  if (!level || level.length > 32 || /[\r\n\0]/.test(level)) {
+  // Read only known levels, including a model-and-effort combined label.
+  // Other button text, such as Persistent, is not an effort value.
+  const levels = /(?:^|\s)(extra\s+high|light|low|medium|high|xhigh|max|ultra|instant|즉각적인|즉시|가벼움|라이트|낮음|보통|중간|높음|매우\s+높음|최대|울트라)$/i;
+  const candidates = [String(exact?.textContent || '').trim(), ...lines]
+    .map((value) => value.match(levels)?.[1] || '')
+    .filter(Boolean);
+  const unique = [...new Set(candidates.map((value) => value.toLowerCase()))];
+  if (unique.length !== 1) {
     return { status: 'UNAVAILABLE', level: '', source: 'chatgpt-model-selector' };
   }
+  const level = candidates[0];
   return {
     status: 'OBSERVED',
     level,

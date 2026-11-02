@@ -57,7 +57,7 @@ class MCPIntegrationTests(unittest.TestCase):
         capabilities = [
             "read", "write", "test", "git_commit", "github_push", "github_pr_create",
             "github_pr_status", "github_pr_merge", "github_sync_main", "github_run_watch", "deploy", "service_control",
-            "relay_browser", "system_inspect", "execute", "monitor",
+            "browser", "system_inspect", "execute", "monitor",
             "process_session", "verify", "orchestrate",
             "claim_reconcile",
             "browser_extension_manage",
@@ -145,7 +145,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     catalogue = await session.list_tools()
                     names = {tool.name for tool in catalogue.tools}
                     relay_description = next(tool.description for tool in catalogue.tools
-                                             if tool.name == "bct_relay_browser")
+                                             if tool.name == "bct_browser")
                     self.assertNotIn("send-to-tab", relay_description)
                     self.assertNotIn("command=state", relay_description)
                     self.assertIn("bct_status", relay_description)
@@ -156,7 +156,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
                         "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push", "bct_github_run_watch",
                         "bct_github_sync_main", "bct_read", "bct_service_control",
-                        "bct_relay_browser", "bct_relay_control",
+                        "bct_browser", "bct_relay_control",
                         "bct_system_inspect", "bct_execute", "bct_monitor",
                         "bct_conversation_network_update", "bct_project_context",
                         "bct_cdp_inspect", "bct_browser_extension_manage",
@@ -182,27 +182,29 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check", "bct_run_plan", "bct_network_set",
-                            "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
-                            "bct_github_inbox_get",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "bct_run_check", "bct_run_plan", "bct_network_set",
+                            "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
+                            "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
+                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
                         },
                         names,
                     )
                     capabilities = await session.call_tool("bct_capabilities", {})
                     self.assertFalse(capabilities.isError)
-                    live_relay_usage = capabilities.structuredContent["relay_browser_usage"]
+                    live_relay_usage = capabilities.structuredContent["browser_usage"]
                     self.assertNotIn("send-to-tab", live_relay_usage)
                     self.assertNotIn("create-and-send", live_relay_usage)
                     self.assertNotIn("delivery-start", live_relay_usage)
                     self.assertEqual(
                         ["create-chat-window", "create-chat-tab", "send-message"],
-                        capabilities.structuredContent["relay_browser_public_commands"],
+                        capabilities.structuredContent["browser_public_commands"],
                     )
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_run_check", "bct_run_plan", "bct_network_set",
-                            "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
-                            "bct_github_inbox_get",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "bct_run_check", "bct_run_plan", "bct_network_set",
+                            "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
+                            "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
+                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
                         },
                         set(capabilities.structuredContent["tools"]),
                     )
@@ -210,7 +212,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertFalse(status.isError)
                     self.assertTrue(status.structuredContent["core"]["ready"])
                     self.assertEqual(live_relay_usage,
-                                     status.structuredContent["relay_browser_usage"])
+                                     status.structuredContent["browser_usage"])
                     self.assertRegex(status.structuredContent["mcp_trace_id"], r"^[0-9a-f]{32}$")
                     self.assertEqual(self.release_sha, status.structuredContent["runtime"]["release_sha"])
                     self.assertIn("rcc", status.structuredContent["monitor"])
@@ -228,28 +230,37 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertFalse(network_alias.isError)
                     self.assertEqual(conversation_network.structuredContent,
                                      network_alias.structuredContent)
-                    preflight = await session.call_tool(
-                        "bct_run_check", {"project": "BCT RCC"}
+                    network_check = await session.call_tool(
+                        "bct_check_network", {"project": "BCT RCC"}
                     )
-                    self.assertFalse(preflight.isError)
-                    self.assertEqual("OK", preflight.structuredContent["status"])
-                    self.assertTrue(preflight.structuredContent["read_only"])
-                    self.assertTrue(preflight.structuredContent["context_requires_work"])
+                    self.assertFalse(network_check.isError)
+                    self.assertEqual("OK", network_check.structuredContent["status"])
+                    self.assertTrue(network_check.structuredContent["read_only"])
+                    self.assertTrue(network_check.structuredContent["context_requires_work"])
                     self.assertEqual("AUTH_CONTEXT_REQUIRED",
-                                     preflight.structuredContent["context_status"])
+                                     network_check.structuredContent["context_status"])
                     self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
-                                     preflight.structuredContent["candidates_scope"])
+                                     network_check.structuredContent["candidates_scope"])
                     self.assertEqual("NOT_REQUESTED",
-                                     preflight.structuredContent["historical_contexts_status"])
-                    blank_preflight = await session.call_tool("bct_run_check", {})
-                    self.assertFalse(blank_preflight.isError)
-                    self.assertEqual("OK", blank_preflight.structuredContent["status"])
-                    self.assertEqual("NOT_REQUESTED", blank_preflight.structuredContent["context_status"])
-                    self.assertIsNone(blank_preflight.structuredContent["project_context"])
+                                     network_check.structuredContent["historical_contexts_status"])
+                    self.assertIn(network_check.structuredContent["supervisor"]["status"],
+                                  {"MISSING", "PRESENT", "MULTIPLE"})
+                    self.assertEqual("supervisor",
+                                     network_check.structuredContent["supervisor"]["role_tag"])
+                    self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
+                                     network_check.structuredContent["supervisor"]["scope"])
+                    scopes = network_check.structuredContent["scope_directory"]
+                    self.assertTrue(any(item["scope_name"] == "BCT RCC" and item["state"] == "ACTIVE"
+                                        for item in scopes))
+                    blank_network_check = await session.call_tool("bct_check_network", {})
+                    self.assertFalse(blank_network_check.isError)
+                    self.assertEqual("OK", blank_network_check.structuredContent["status"])
+                    self.assertEqual("NOT_REQUESTED", blank_network_check.structuredContent["context_status"])
+                    self.assertIsNone(blank_network_check.structuredContent["project_context"])
 
-                    self.assertEqual("OK", preflight.structuredContent["network"]["status"])
-                    self.assertIn("nodes", preflight.structuredContent)
-                    self.assertIn("rcc", preflight.structuredContent)
+                    self.assertEqual("OK", network_check.structuredContent["network"]["status"])
+                    self.assertIn("nodes", network_check.structuredContent)
+                    self.assertIn("rcc", network_check.structuredContent)
 
                     work_arguments = {
                         "work_id": "mcp-read-work",
@@ -262,7 +273,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertFalse(created.isError)
                     self.assertFalse(created.structuredContent["duplicate"])
                     self.assertTrue(repeated.structuredContent["duplicate"])
-                    denied_context = await session.call_tool("bct_run_check", {
+                    denied_context = await session.call_tool("bct_check_network", {
                         "project": "missingproject",
                         "work_id": "mcp-read-work",
                         "operation_id": "mcp-context-denied-1",

@@ -59,7 +59,7 @@ class ChatStreamRccWatchTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO operations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 ("source-op", self.work.work_id, "operator", "digest",
-                 "relay_browser", "worker", "FINISHED", outcome,
+                 "browser", "worker", "FINISHED", outcome,
                  '{"work":"scoped"}', None, 1, "policy", 1., 1.),
             )
         self.checkpoint.save(
@@ -223,7 +223,7 @@ class ChatStreamRccWatchTests(unittest.TestCase):
         with bct.store.transaction() as db:
             db.execute(
                 "INSERT INTO operations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                ("source-op", "bound", "operator", "digest", "relay_browser",
+                ("source-op", "bound", "operator", "digest", "browser",
                  "target", "FINISHED", "APPLIED", "{}", None, 1, "policy", 1., 1.),
             )
         saved = bct.operations.run(

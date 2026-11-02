@@ -2,15 +2,15 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 from bct.core.models import Work,PreconditionError
-from bct.features.rcc import RelayBrowserFeature
+from bct.features.rcc import BrowserFeature
 class DirectTabPrepareTests(unittest.TestCase):
     def setUp(self):
-        self.feature=RelayBrowserFeature()
-        self.work=Work("bounded-work","test",("D:\\BCT\\source",),frozenset({"relay_browser"}),"owner")
+        self.feature=BrowserFeature()
+        self.work=Work("bounded-work","test",("D:\\BCT\\source",),frozenset({"browser"}),"owner")
         self.args=dict(command="send-to-tab",instance_id="6174664e1c1b4e6db1d4729c841db3c9",session_id="786b7b6b9671446f85497e097111e5ec",tab_id=594834261,window_id=594834176,conversation_key="",text="test")
     def test_single_command_and_work_scoped_resource(self):
         req=self.feature.prepare(work=self.work,arguments=self.args)
-        self.assertEqual("relay_browser",req.capability)
+        self.assertEqual("browser",req.capability)
         self.assertEqual(("rcc-instance:6174664e1c1b4e6db1d4729c841db3c9:direct-tab:594834261",),req.resources)
         self.assertTrue(req.preconditions["mutating"])
         self.assertEqual(self.work.work_id,req.arguments["extra"]["workId"])
@@ -61,7 +61,7 @@ class DirectTabPrepareTests(unittest.TestCase):
         self.assertIn('conversation_key: ""', guide)
         self.assertIn("send-message", catalogue)
         self.assertIn("rcc-send-message-v1", catalogue)
-        self.assertIn('"relay_browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"]', catalogue)
+        self.assertIn('"browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"]', catalogue)
         relay_source = (root / "src" / "bct" / "features" / "rcc.py").read_text(encoding="utf-8")
         self.assertIn('if command == "send-message":', relay_source)
         self.assertIn('return self._prepare_send_message(work=work, arguments=arguments)', relay_source)

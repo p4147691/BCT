@@ -11,11 +11,27 @@ _NODE = re.compile(r"^N?[1-9][0-9]*$", re.I)
 
 
 def classify_current_nodes(instances: list[dict[str, Any]], *, observed_at: float | None = None) -> dict[str, Any]:
-    """Count only fresh RCC observations. Cached rows are never confirmed."""
+    """Count only fresh RCC observations. Cached rows are never confirmed.
+
+    ``counts.confirmed == 0`` alone is deliberately not a statement that
+    Chrome has no open conversations.  Callers must also inspect
+    ``observation.state``:
+
+    * ``FRESH``: at least one live RCC instance answered this read; zero is a
+      real observation of zero eligible ChatGPT conversation tabs.
+    * ``NOT_OBSERVED``: no RCC instance was discovered for this read.
+    * ``UNAVAILABLE``: instances were known, but none supplied a fresh state.
+
+    This keeps a transient RCC discovery/probe gap from looking like a user
+    closed every node.
+    """
     candidates: list[dict[str, Any]] = []
     unavailable = 0
+    fresh_instances = 0
     for instance in instances:
         fresh = instance.get("state") == "OPEN" and instance.get("cached") is not True
+        if fresh:
+            fresh_instances += 1
         if not fresh:
             unavailable += 1
         for tab in instance.get("tabs") or []:
@@ -62,5 +78,21 @@ def classify_current_nodes(instances: list[dict[str, Any]], *, observed_at: floa
             item["identity_conflict"] = True
     counts = {name.lower(): sum(x["status"] == name for x in candidates)
               for name in ("CONFIRMED", "TEMPORARY", "UNRESOLVED", "UNAVAILABLE")}
-    return {"schema": 1, "observed_at": observed_at, "counts": counts,
-            "unavailable_instances": unavailable, "items": candidates}
+    if fresh_instances:
+        observation_state = "FRESH"
+    elif instances:
+        observation_state = "UNAVAILABLE"
+    else:
+        observation_state = "NOT_OBSERVED"
+    return {
+        "schema": 2,
+        "observed_at": observed_at,
+        "observation": {
+            "state": observation_state,
+            "reported_instance_count": len(instances),
+            "fresh_instance_count": fresh_instances,
+        },
+        "counts": counts,
+        "unavailable_instances": unavailable,
+        "items": candidates,
+    }

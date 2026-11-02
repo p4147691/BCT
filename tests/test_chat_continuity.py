@@ -18,7 +18,7 @@ class ChatContinuityTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.store = Store(Path(self.tmp.name) / "state.sqlite")
         self.work = Work("original", "test dedicated chat", (self.tmp.name,),
-                         frozenset({"relay_browser"}), "test-owner")
+                         frozenset({"browser"}), "test-owner")
         self.store.create_work(self.work)
         self.instance = "instance-1"
         self.resource = "rcc-instance:" + self.instance
@@ -27,7 +27,7 @@ class ChatContinuityTests(unittest.TestCase):
     def _unknown(self, operation: str, instance: str):
         exists, _ = self.store.begin_operation(
             operation_id=operation, work=self.work, principal_id="test-owner",
-            request_digest="sha-" + operation, capability="relay_browser",
+            request_digest="sha-" + operation, capability="browser",
             target=instance, resources=("rcc-instance:" + instance,),
             policy_revision="test",
         )
@@ -152,7 +152,7 @@ class ChatContinuityTests(unittest.TestCase):
         self._retire()
         is_new, duplicate = self.store.begin_operation(
             operation_id="old-send", work=self.work, principal_id="test-owner",
-            request_digest="sha-old-send", capability="relay_browser",
+            request_digest="sha-old-send", capability="browser",
             target=self.instance, resources=(self.resource,),
             policy_revision="test",
         )
