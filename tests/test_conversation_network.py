@@ -10,7 +10,7 @@ from bct.conversation_network import (
     set_conversation_network_name,
     conversation_display_order_directory, conversation_scope_directory,
     patch_conversation_role_tags, project_view, record_monitor_snapshot,
-    resolve_project_id, set_membership, upsert_conversation, upsert_project,
+    resolve_project_id, scope_directory, set_membership, upsert_conversation, upsert_project,
 )
 from bct.core.store import Store
 
@@ -30,6 +30,17 @@ class ConversationNetworkTests(unittest.TestCase):
                        tags=["조정", "병목 분석"], now=100.0)
         set_membership(self.store, project_id="bct.rcc", conversation_key=WORKER,
                        tags=["구현", "테스트"], now=100.0)
+
+    def test_scope_directory_retains_active_scope_without_open_node(self):
+        directory = scope_directory(self.store)
+        self.assertEqual(1, len(directory))
+        scope = directory[0]
+        self.assertEqual("bct.rcc", scope["scope_id"])
+        self.assertEqual("ACTIVE", scope["state"])
+        self.assertEqual(2, scope["member_count"])
+        # Directory state comes from durable scope membership, not an open-tab snapshot.
+        self.assertEqual({"구현": 1, "테스트": 1, "조정": 1, "병목 분석": 1},
+                         scope["role_counts"])
 
     def test_network_name_set_keeps_id_members_and_node_metadata(self):
         before = configure_conversation_scope(

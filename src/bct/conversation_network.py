@@ -244,6 +244,57 @@ def resolve_project_id(store: Store, *, project_reference: str) -> str:
     return str(matches[0]["project_id"])
 
 
+def scope_directory(store: Store) -> list[dict[str, object]]:
+    """List durable conversation scopes without requiring their tabs to be open.
+
+    A scope stays listed while its project row is active.  This deliberately
+    separates a closed or currently-unobserved ChatGPT tab from a user-declared
+    end of the project scope.  It is directory metadata only; project-context
+    prose is read through the separately authorised Project Context ledger.
+    """
+    with store.transaction() as db:
+        projects = [dict(row) for row in db.execute(
+            "SELECT project_id,display_name,active,created_at,updated_at "
+            "FROM conversation_network_projects "
+            "ORDER BY active DESC,updated_at DESC,display_name COLLATE NOCASE,project_id"
+        )]
+        memberships = [dict(row) for row in db.execute(
+            "SELECT project_id,conversation_key,activity FROM conversation_network_memberships"
+        )]
+        tags = [dict(row) for row in db.execute(
+            "SELECT t.project_id,t.conversation_key,t.tag "
+            "FROM conversation_network_membership_tags t "
+            "JOIN conversation_network_memberships m "
+            "ON m.project_id=t.project_id AND m.conversation_key=t.conversation_key "
+            "WHERE m.activity='ACTIVE'"
+        )]
+    members_by_project: dict[str, set[str]] = {}
+    for membership in memberships:
+        if str(membership["activity"]) == "ACTIVE":
+            members_by_project.setdefault(str(membership["project_id"]), set()).add(
+                str(membership["conversation_key"])
+            )
+    roles_by_project: dict[str, dict[str, int]] = {}
+    for tag in tags:
+        project = str(tag["project_id"])
+        role = str(tag["tag"]).strip().casefold()
+        if role:
+            counts = roles_by_project.setdefault(project, {})
+            counts[role] = counts.get(role, 0) + 1
+    return [
+        {
+            "scope_id": str(project["project_id"]),
+            "scope_name": str(project["display_name"]),
+            "state": "ACTIVE" if bool(project["active"]) else "CLOSED",
+            "member_count": len(members_by_project.get(str(project["project_id"]), set())),
+            "role_counts": roles_by_project.get(str(project["project_id"]), {}),
+            "created_at": project["created_at"],
+            "updated_at": project["updated_at"],
+        }
+        for project in projects
+    ]
+
+
 def set_membership(store: Store, *, project_id: str, conversation_key: str,
                    activity: str = "ACTIVE", tags: list[str] | tuple[str, ...] = (),
                    now: float | None = None) -> dict[str, object]:

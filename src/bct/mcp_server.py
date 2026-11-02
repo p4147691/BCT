@@ -13,7 +13,9 @@ from mcp.server.fastmcp import FastMCP, Image
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
-from .conversation_network import ConversationNetworkError, project_view, resolve_project_id
+from .conversation_network import (
+    ConversationNetworkError, project_view, resolve_project_id, scope_directory,
+)
 from .core.models import Principal, Work
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view, STATUS_SCOPES
@@ -243,13 +245,14 @@ def build_mcp(
     async def bct_network_get(project: str) -> dict[str, Any]:
         return await bct_conversation_network_get(project)
 
-    @server.tool(description="Read one registered conversation network and its currently observed node/RCC evidence, including the current supervisor-role readiness. Optionally includes authorized project context. Does not create plans, networks or messages.", structured_output=True)
+    @server.tool(description="Run the read-only Network Check recipe: current node/RCC evidence, durable active and closed scope directory, current supervisor readiness, and optionally authorized project-context summaries. Does not create plans, networks or messages.", structured_output=True)
     async def bct_check_network(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
         snapshot = await asyncio.to_thread(status_provider)
         nodes = status_view(snapshot, "node", sort_by=sort_by)
         rcc = status_view(snapshot, "rcc", sort_by=sort_by)
+        scopes = await asyncio.to_thread(scope_directory, bct.store)
         # Candidates come from confirmed current nodes, never from guessed project IDs.
         # Historical projects need a separately authorized directory/summary lookup.
         candidates: dict[str, dict[str, str]] = {}
@@ -359,6 +362,7 @@ def build_mcp(
                     context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
         return {"status": "OK", "nodes": nodes, "rcc": rcc,
                 "network": network, "network_candidates": list(candidates.values()),
+                "scope_directory": scopes,
                 "supervisor": {
                     "status": supervisor_status,
                     "role_tag": "supervisor",

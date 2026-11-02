@@ -249,6 +249,9 @@ class MCPIntegrationTests(unittest.TestCase):
                                      network_check.structuredContent["supervisor"]["role_tag"])
                     self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
                                      network_check.structuredContent["supervisor"]["scope"])
+                    scopes = network_check.structuredContent["scope_directory"]
+                    self.assertTrue(any(item["scope_name"] == "BCT RCC" and item["state"] == "ACTIVE"
+                                        for item in scopes))
                     blank_network_check = await session.call_tool("bct_check_network", {})
                     self.assertFalse(blank_network_check.isError)
                     self.assertEqual("OK", blank_network_check.structuredContent["status"])
