@@ -232,7 +232,8 @@ function loadModule() {
       updateConversationScope: async (_node, values) => { roleUpdates.push(values); return { ok: true }; },
     },
     refreshMonitorBctWindowNodes: async () => {},
-    setMonitorStatus: () => {},
+    statusMessages: [],
+    setMonitorStatus: (message) => { holdContext.statusMessages.push(message); },
     setTimeout(callback, delay) { holdTimers.push({ callback, delay }); return holdTimers.length; },
     clearTimeout: () => {},
     globalThis: null,
@@ -275,6 +276,17 @@ function loadModule() {
   assert.equal(roleUpdates[3].scopeName, "");
   assert.deepEqual(Array.from(roleUpdates[3].roleTags), ["Worker"]);
   assert.equal(supervisorOff.classes.has("is-supervisor"), false);
+
+  holdContext.monitorBctWindowNodesCache = [{
+    conversationKey: "conv-supervisor", nodeLabel: "N97", scopeName: "", roleTags: ["supervisor"],
+  }];
+  const secondSupervisor = managerRow();
+  holdContext.installMonitorBctRoleLongPress(secondSupervisor, { ...baseNode, conversationKey: "conv-2", scopeName: "", roleTags: ["Worker"] });
+  secondSupervisor.listeners.get("pointerdown")({ button: 0, clientX: 50, clientY: 50, target: { closest: () => null } });
+  holdTimers.at(-1).callback();
+  await Promise.resolve();
+  assert.equal(roleUpdates.length, 4, "a second global supervisor must not be saved");
+  assert.match(holdContext.statusMessages.at(-1), /감독관은 하나만/);
 
   const dropStart = monitor.indexOf("function monitorBctPointInsideScopeHeading(");
   const dropEnd = monitor.indexOf("\nfunction updateMonitorBctNodePointerDrag(", dropStart);

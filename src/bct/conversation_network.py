@@ -10,8 +10,9 @@ a route identity, policy subject, or BCT Node/Connection.
 table, but its user-facing meaning is one *conversation scope*.  A scope can
 describe a Git project, a product, or any other group without introducing a
 second network object. Role tags such as ``Manager`` are advisory metadata;
-they never grant authority. A scope has at most one Manager, while a
-``supervisor`` is always unassigned and never a scope member.
+they never grant authority. A scope has at most one Manager, while exactly
+zero or one global ``supervisor`` is always unassigned and never a scope
+member.
 """
 from __future__ import annotations
 
@@ -127,6 +128,19 @@ def _validate_role_rules(db, *, project_id: str, conversation_key: str, tags: li
     normalized = {tag.casefold() for tag in tags}
     if project_id and "supervisor" in normalized:
         raise ConversationNetworkError("CONVERSATION_NETWORK_SUPERVISOR_MUST_BE_UNASSIGNED")
+    if not project_id and "supervisor" in normalized:
+        candidates = db.execute(
+            "SELECT conversation_key,unassigned_role_tags FROM conversation_network_conversations "
+            "WHERE conversation_key<>?",
+            (conversation_key,),
+        ).fetchall()
+        for candidate in candidates:
+            try:
+                candidate_tags = _role_tags(json.loads(str(candidate["unassigned_role_tags"] or "[]")))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise ConversationNetworkError("CONVERSATION_NETWORK_UNASSIGNED_ROLE_TAGS_INVALID") from exc
+            if any(tag.casefold() == "supervisor" for tag in candidate_tags):
+                raise ConversationNetworkError("CONVERSATION_NETWORK_SUPERVISOR_ALREADY_ASSIGNED")
     if not project_id and "manager" in normalized:
         raise ConversationNetworkError("CONVERSATION_NETWORK_MANAGER_REQUIRES_SCOPE")
     if project_id and "manager" in normalized:

@@ -132,6 +132,17 @@ function installMonitorBctRoleLongPress(row, node) {
       const hadRole = role === "supervisor"
         ? isSupervisor
         : tags.some((tag) => String(tag).trim().toLowerCase() === "manager");
+      if (role === "supervisor" && !hadRole) {
+        const existingSupervisor = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+          .find((candidate) => candidate?.conversationKey !== node.conversationKey
+            && !String(candidate?.scopeName || "").trim()
+            && Array.isArray(candidate?.roleTags)
+            && candidate.roleTags.some((tag) => String(tag).trim().toLowerCase() === "supervisor"));
+        if (existingSupervisor) {
+          setMonitorStatus(`감독관은 하나만 둘 수 있습니다. 기존 ${existingSupervisor.nodeLabel || "감독관"}을 해제한 뒤 바꾸세요.`, false, 4200);
+          return;
+        }
+      }
       const nextTags = hadRole
         ? tags.filter((tag) => String(tag).trim().toLowerCase() !== role.toLowerCase())
         : [...tags, role];
