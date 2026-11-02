@@ -25,8 +25,8 @@ assert.match(source, /groupList\.append\(row\)/,
   "every node row is a direct child of its network list for drag insertion");
 assert.match(source, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/,
   "all node rows keep the existing drag interaction");
-assert.match(source, /installMonitorBctManagerLongPress\(row, node\)/,
-  "the Manager long-press interaction remains installed");
+assert.match(source, /installMonitorBctRoleLongPress\(row, node\)/,
+  "the role long-press interaction remains installed");
 assert.match(source, /row\.append\(number, body, presence\)/,
   "flat rows retain node identity, title/location and existing status icon");
 assert.match(source, /monitor-bct-node-presence/,

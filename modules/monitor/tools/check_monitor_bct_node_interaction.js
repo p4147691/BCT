@@ -106,8 +106,9 @@ function loadModule() {
   assert.doesNotMatch(monitor, /groupHeader\.addEventListener\("drop"/);
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
-  assert.match(monitor, /tags\.filter\(\(tag\) => tag !== "Manager"\)/);
-  assert.match(monitor, /row\.classList\.toggle\("is-manager", !hadManager\)/);
+  assert.match(monitor, /function installMonitorBctRoleLongPress\(/);
+  assert.match(monitor, /const nextScopeName = role === "supervisor" && !hadRole \? "BCT Chain" : node\.scopeName/);
+  assert.match(monitor, /row\.classList\.toggle\("is-supervisor"/);
   assert.match(monitor, /if \(!monitorBctShell\?\.updateConversationScope \|\| !node\?\.conversationKey\)/,
     "conversation metadata editor must be available independently of exact tab rename identity");
   assert.match(monitor, /titleField\.control\.disabled = !canRenameTitle/,
@@ -204,7 +205,7 @@ function loadModule() {
   const selectedRule = css.match(/\.monitor-bct-node-row\.is-selected\s*\{([^}]+)\}/)?.[1] || "";
   assert.doesNotMatch(selectedRule, /background:/);
 
-  const holdStart = monitor.indexOf("function installMonitorBctManagerLongPress(");
+  const holdStart = monitor.indexOf("function installMonitorBctRoleLongPress(");
   const holdEnd = monitor.indexOf("\nfunction getMonitorBctNodeInteractionService(", holdStart);
   assert.ok(holdStart > 0 && holdEnd > holdStart);
   function managerRow() {
@@ -222,12 +223,12 @@ function loadModule() {
     };
   }
   const holdTimers = [];
-  const managerUpdates = [];
+  const roleUpdates = [];
   const holdContext = {
     monitorBctSuppressedClickKey: "",
     monitorBctNodeSelectionKey: (node) => node.conversationKey,
     monitorBctShell: {
-      updateConversationScope: async (_node, values) => { managerUpdates.push(values); return { ok: true }; },
+      updateConversationScope: async (_node, values) => { roleUpdates.push(values); return { ok: true }; },
     },
     refreshMonitorBctWindowNodes: async () => {},
     setMonitorStatus: () => {},
@@ -241,20 +242,38 @@ function loadModule() {
   vm.runInContext(monitor.slice(holdStart, holdEnd), holdContext);
   const rowOn = managerRow();
   const baseNode = { conversationKey: "conv-1", nodeLabel: "N33", title: "대화", scopeName: "대화망 A", roleTags: ["Worker"] };
-  holdContext.installMonitorBctManagerLongPress(rowOn, baseNode);
+  holdContext.installMonitorBctRoleLongPress(rowOn, baseNode);
   rowOn.listeners.get("pointerdown")({ button: 0, clientX: 10, clientY: 10, target: { closest: () => null } });
   assert.equal(holdTimers[0].delay, 600);
   holdTimers[0].callback();
   await Promise.resolve();
-  assert.deepEqual(Array.from(managerUpdates[0].roleTags), ["Worker", "Manager"]);
+  assert.deepEqual(Array.from(roleUpdates[0].roleTags), ["Worker", "Manager"]);
   assert.equal(rowOn.classes.has("is-manager"), true);
   const rowOff = managerRow();
-  holdContext.installMonitorBctManagerLongPress(rowOff, { ...baseNode, roleTags: ["Worker", "Manager"] });
+  holdContext.installMonitorBctRoleLongPress(rowOff, { ...baseNode, roleTags: ["Worker", "Manager"] });
   rowOff.listeners.get("pointerdown")({ button: 0, clientX: 20, clientY: 20, target: { closest: () => null } });
   holdTimers.at(-1).callback();
   await Promise.resolve();
-  assert.deepEqual(Array.from(managerUpdates[1].roleTags), ["Worker"]);
+  assert.deepEqual(Array.from(roleUpdates[1].roleTags), ["Worker"]);
   assert.equal(rowOff.classes.has("is-manager"), false);
+
+  const supervisorOn = managerRow();
+  holdContext.installMonitorBctRoleLongPress(supervisorOn, { ...baseNode, scopeName: "", roleTags: ["Worker"] });
+  supervisorOn.listeners.get("pointerdown")({ button: 0, clientX: 30, clientY: 30, target: { closest: () => null } });
+  holdTimers.at(-1).callback();
+  await Promise.resolve();
+  assert.equal(roleUpdates[2].scopeName, "BCT Chain");
+  assert.deepEqual(Array.from(roleUpdates[2].roleTags), ["Worker", "supervisor"]);
+  assert.equal(supervisorOn.classes.has("is-supervisor"), true);
+
+  const supervisorOff = managerRow();
+  holdContext.installMonitorBctRoleLongPress(supervisorOff, { ...baseNode, scopeName: "BCT Chain", roleTags: ["Worker", "supervisor"] });
+  supervisorOff.listeners.get("pointerdown")({ button: 0, clientX: 40, clientY: 40, target: { closest: () => null } });
+  holdTimers.at(-1).callback();
+  await Promise.resolve();
+  assert.equal(roleUpdates[3].scopeName, "BCT Chain");
+  assert.deepEqual(Array.from(roleUpdates[3].roleTags), ["Worker"]);
+  assert.equal(supervisorOff.classes.has("is-supervisor"), false);
 
   const dropStart = monitor.indexOf("function monitorBctPointInsideScopeHeading(");
   const dropEnd = monitor.indexOf("\nfunction updateMonitorBctNodePointerDrag(", dropStart);

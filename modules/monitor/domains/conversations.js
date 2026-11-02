@@ -86,51 +86,62 @@ function flushDeferredMonitorWorkerRender() {
 function initializeMonitorWorkerOrderStorage() { chrome.storage.local.get([MONITOR_WORKER_ORDER_KEY],(data)=>{const raw=data?.[MONITOR_WORKER_ORDER_KEY]||{};for(const [id,keys] of Object.entries(raw))monitorWorkerOrderByDesktop.set(id,Array.isArray(keys)?keys.map(String):[]);monitorWorkerOrderReady=true;if(monitorLastAiState)renderWorkers(monitorLastAiState);}); }
 //@@FN_END:initializeMonitorWorkerOrderStorage
 
-//@@FN_START:installMonitorBctManagerLongPress
-function installMonitorBctManagerLongPress(row, node) {
+//@@FN_START:installMonitorBctRoleLongPress
+function installMonitorBctRoleLongPress(row, node) {
   let timer = 0;
   let startX = 0;
   let startY = 0;
   const cancel = () => {
     if (timer) clearTimeout(timer);
     timer = 0;
-    row.classList.remove("monitor-bct-manager-hold");
+    row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
   };
   row.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || event.target.closest("button,input")) return;
     startX = event.clientX;
     startY = event.clientY;
-    row.classList.add("monitor-bct-manager-hold");
+    const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
+    const isSupervisor = tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
+    const isUnassigned = !String(node.scopeName || "").trim();
+    row.classList.add(isUnassigned || isSupervisor ? "monitor-bct-supervisor-hold" : "monitor-bct-manager-hold");
     timer = setTimeout(() => {
       timer = 0;
-      row.classList.remove("monitor-bct-manager-hold");
+      row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
       const key = monitorBctNodeSelectionKey(node);
       monitorBctSuppressedClickKey = key;
       globalThis.setTimeout(() => {
         if (monitorBctSuppressedClickKey === key) monitorBctSuppressedClickKey = "";
       }, 900);
-      if (!node.scopeName) {
-        setMonitorStatus("먼저 우클릭 정보창에서 이 대화의 작업 범위를 지정하세요.", false, 3500);
+      if (!node.conversationKey) {
+        setMonitorStatus("새 대화는 첫 메시지로 UUID가 생긴 뒤 감독관으로 지정할 수 있습니다.", false, 3500);
         return;
       }
-      const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
-      const hadManager = tags.includes("Manager");
-      const nextTags = hadManager ? tags.filter((tag) => tag !== "Manager") : [...tags, "Manager"];
-      row.classList.toggle("is-manager", !hadManager);
+      const role = isUnassigned || isSupervisor ? "supervisor" : "Manager";
+      const hadRole = role === "supervisor"
+        ? isSupervisor
+        : tags.some((tag) => String(tag).trim().toLowerCase() === "manager");
+      const nextTags = hadRole
+        ? tags.filter((tag) => String(tag).trim().toLowerCase() !== role.toLowerCase())
+        : [...tags, role];
+      const nextScopeName = role === "supervisor" && !hadRole ? "BCT Chain" : node.scopeName;
+      row.classList.toggle("is-manager", role === "Manager" ? !hadRole : tags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
+      row.classList.toggle("is-supervisor", role === "supervisor" ? !hadRole : isSupervisor);
       void monitorBctShell.updateConversationScope(node, {
         displayName: node.title,
-        scopeName: node.scopeName,
+        scopeName: nextScopeName,
         roleTags: nextTags,
       }).then(() => {
+        const roleLabel = role === "supervisor" ? "감독관" : "Manager";
         setMonitorStatus(
-          `${node.nodeLabel || "N?"}의 Manager 안내 태그를 ${hadManager ? "해제했습니다" : "붙였습니다"}.`,
+          `${node.nodeLabel || "N?"}의 ${roleLabel} 안내 태그를 ${hadRole ? "해제했습니다" : "붙였습니다"}.`,
           true,
           2800,
         );
         globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 250);
       }).catch((error) => {
-        row.classList.toggle("is-manager", hadManager);
-        setMonitorStatus(`Manager 태그 저장 실패 · ${error?.message || error}`, false, 4000);
+        row.classList.toggle("is-manager", role === "Manager" ? hadRole : tags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
+        row.classList.toggle("is-supervisor", role === "supervisor" ? hadRole : isSupervisor);
+        setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
       });
     }, 600);
   });
@@ -141,7 +152,7 @@ function installMonitorBctManagerLongPress(row, node) {
   row.addEventListener("pointercancel", cancel);
   row.addEventListener("dragstart", cancel);
 }
-//@@FN_END:installMonitorBctManagerLongPress
+//@@FN_END:installMonitorBctRoleLongPress
 
 //@@FN_START:isMonitorVisibleWorker
 function isMonitorVisibleWorker(worker, state) {
@@ -1062,7 +1073,7 @@ function openMonitorBctRenameEditor(node, row) {
     "역할 태그",
     Array.isArray(node.roleTags) ? node.roleTags.join(", ") : "",
     400,
-    "예: Manager, 구현, CI",
+    "예: Manager, supervisor, 구현, CI",
   );
   const roleHint = document.createElement("div");
   roleHint.className = "monitor-bct-info-hint";

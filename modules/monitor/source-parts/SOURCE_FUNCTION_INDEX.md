@@ -36,7 +36,7 @@ Generated extension/monitor.js is not an edit target.
 - compareMonitorWorkers
 - flushDeferredMonitorWorkerRender
 - initializeMonitorWorkerOrderStorage
-- installMonitorBctManagerLongPress
+- installMonitorBctRoleLongPress
 - isMonitorVisibleWorker
 - monitorAuthoritativeConversationForTask
 - monitorBctCurrentSessionHwnd

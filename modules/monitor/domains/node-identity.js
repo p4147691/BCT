@@ -1540,8 +1540,10 @@ function renderMonitorBctWindowNodes(nodes) {
     presence.title = stale ? "관측 지연" : node.generating === true ? "응답 생성 중" : "열려 있음";
     globalThis.MonitorStatusIcon?.render?.(presence, { activity: !stale && node.generating === true ? "play" : "pause" });
     row.append(number, body, presence);
-    row.classList.toggle("is-manager", Array.isArray(node.roleTags) && node.roleTags.includes("Manager"));
-    installMonitorBctManagerLongPress(row, node);
+    const roleTags = Array.isArray(node.roleTags) ? node.roleTags.map((tag) => String(tag).trim().toLowerCase()) : [];
+    row.classList.toggle("is-manager", roleTags.includes("manager"));
+    row.classList.toggle("is-supervisor", roleTags.includes("supervisor"));
+    installMonitorBctRoleLongPress(row, node);
     row.addEventListener("dragstart", (event) => event.preventDefault());
     row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
     row.addEventListener("click", (event) => {

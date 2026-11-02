@@ -186,7 +186,7 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /monitorBctShell\.renameConversation\(node, title\)/);
   assert.match(monitorSource, /monitorBctShell\.updateConversationScope\(node,/);
   assert.match(monitorSource, /monitorBctNodeLocationText/);
-  assert.match(monitorSource, /installMonitorBctManagerLongPress\(row, node\)/);
+assert.match(monitorSource, /installMonitorBctRoleLongPress\(row, node\)/);
   assert.match(monitorSource, /Manager는 안내용 역할 태그입니다/);
   assert.match(monitorSource, /setTimeout\(\(\) => \{[\s\S]*?\}, 600\)/);
   assert.match(monitorSource, /network_name:String\(bctNode\?\.scopeName/);
