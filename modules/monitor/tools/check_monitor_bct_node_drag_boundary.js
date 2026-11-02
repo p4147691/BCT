@@ -66,7 +66,7 @@ for(const [x,key,place] of [[-12,"first","before"],[312,"second","after"]]){
  const f=fixture(), p=f.ctx.monitorBctNodeDropAt(x,55,"dragged");
  assert.equal(p?.targetConversationKey,key);assert.equal(p?.position,place);
  f.begin();f.move(x,55);f.up(x,55);
- assert.equal(f.commits.length,1);assert.equal(f.commits[0][1],key);assert.equal(f.commits[0][2],place);f.clean();
+ assert.equal(f.commits.length,1);assert.equal(f.commits[0][1],key);assert.equal(f.commits[0][2],place);assert.equal(f.commits[0][4],"dragged");f.clean();
 }
 {
  const f=fixture();f.begin();f.move(-12,55);
@@ -79,7 +79,7 @@ for(const [x,y] of [[-30,55],[340,55],[160,220],[160,-40]]){
 {
  const f=fixture();assert.equal(f.ctx.monitorBctNodeDropAt(100,15,"dragged"),null);
  f.begin();f.move(150,55);f.up(250,90);
- assert.equal(f.commits.length,1);assert.equal(f.commits[0][1],"third");f.clean();
+ assert.equal(f.commits.length,1);assert.equal(f.commits[0][1],"third");assert.equal(f.commits[0][4],"dragged");f.clean();
 }
 for(const kind of ["pointercancel","blur","lostpointercapture"]){
  const f=fixture();f.begin();f.move(120,55);

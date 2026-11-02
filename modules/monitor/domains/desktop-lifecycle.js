@@ -1,6 +1,10 @@
 //@@FN_START:beginMonitorBctNodePointerDrag
 function beginMonitorBctNodePointerDrag(event, row, node) {
-  if (event.button !== 0 || !node?.conversationKey || monitorBctPointerDrag || monitorBctNodeReorderPending) return;
+  if (event.button !== 0 || monitorBctPointerDrag || monitorBctNodeReorderPending) return;
+  if (!node?.conversationKey) {
+    setMonitorStatus("N? 새 대화는 아직 UUID가 없어 순서 변경 대상이 아닙니다. 첫 메시지를 보낸 뒤 정렬할 수 있습니다.", false, 3400);
+    return;
+  }
   // A drag is also an explicit choice of its source node.  Do this before the
   // first move so stale selection never remains visible while the card is held.
   monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
@@ -329,34 +333,44 @@ function commitDesktopUndoRestore(now = Date.now()) {
 //@@FN_END:commitDesktopUndoRestore
 
 //@@FN_START:commitMonitorBctNodeDrop
-async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationKey, position, destinationScopeName = "") {
+async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationKey, position, destinationScopeName = "", sourceConversationKey = "") {
   if (monitorBctNodeReorderPending) {
+    setMonitorStatus("노드 순서 저장이 아직 끝나지 않았습니다.", false, 2200);
     finishMonitorBctNodeDrag();
     return;
   }
-  const draggedKey = monitorBctDraggedNodeKey;
+  // Keep the source identity captured at pointerup. The global drag marker can
+  // be cleared by an unrelated UI cleanup before this asynchronous save starts.
+  const draggedKey = String(sourceConversationKey || monitorBctDraggedNodeKey || "").trim().toLowerCase();
   const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
   const semanticSnapshot = monitorUniqueBctConversationNodes(snapshot);
-  const dragged = semanticSnapshot.find((node) => node.conversationKey === draggedKey);
+  const dragged = semanticSnapshot.find((node) => String(node?.conversationKey || "").trim().toLowerCase() === draggedKey);
   const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
   const destinationSample = semanticSnapshot.find((node) => (node.scopeId || "") === destinationScopeId);
   const movedAcrossScopes = (dragged?.scopeId || "") !== destinationScopeId;
   const resolvedDestinationScopeName = destinationScopeId
     ? String(destinationScopeName || destinationSample?.scopeName || "").trim()
     : "";
-  if (!dragged || (movedAcrossScopes
+  if (!dragged) {
+    setMonitorStatus("노드 순서를 저장하지 못했습니다 · 대화 UUID를 다시 확인하세요.", false, 3600);
+    finishMonitorBctNodeDrag();
+    return;
+  }
+  if (movedAcrossScopes
     ? !monitorBctShell?.updateConversationScope || (destinationScopeId && !resolvedDestinationScopeName)
-    : !monitorBctShell?.reorderConversations)) {
+    : !monitorBctShell?.reorderConversations) {
+    setMonitorStatus("노드 이동 기능을 준비하지 못했습니다 · Monitor를 새로고침하세요.", false, 3600);
     finishMonitorBctNodeDrag();
     return;
   }
 
   const destination = semanticSnapshot
-    .filter((node) => node.conversationKey !== draggedKey && (node.scopeId || "") === destinationScopeId)
+    .filter((node) => String(node?.conversationKey || "").trim().toLowerCase() !== draggedKey && (node.scopeId || "") === destinationScopeId)
     .sort(compareMonitorBctNodeDisplayOrder);
   let insertion = destination.length;
   if (targetConversationKey) {
-    const targetIndex = destination.findIndex((node) => node.conversationKey === targetConversationKey);
+    const targetKey = String(targetConversationKey || "").trim().toLowerCase();
+    const targetIndex = destination.findIndex((node) => String(node?.conversationKey || "").trim().toLowerCase() === targetKey);
     if (targetIndex >= 0) insertion = targetIndex + (position === "after" ? 1 : 0);
   }
   destination.splice(insertion, 0, dragged);
@@ -366,7 +380,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
     // Move the card immediately.  The write still goes through the same Core
     // metadata contract as the context menu; only a failed write rolls back.
     const optimisticSnapshot = snapshot.map((node) => {
-      if (node.conversationKey !== draggedKey) return node;
+      if (String(node?.conversationKey || "").trim().toLowerCase() !== draggedKey) return node;
       return Object.freeze({
         ...node,
         scopeId: destinationScopeId,
@@ -597,6 +611,7 @@ function endMonitorBctNodePointerDrag(event) {
     drop.targetConversationKey,
     drop.position,
     drop.scopeName,
+    drag.node.conversationKey,
   );
 }
 //@@FN_END:endMonitorBctNodePointerDrag

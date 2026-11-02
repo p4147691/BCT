@@ -62,13 +62,13 @@ async function scenario(freshRefresh) {
   assert.equal(ctx.monitorBctWindowNodesCache[2].displayOrder,2);
   assert.equal(renders.length,2,"rollback repaint completed");
  }
- assert.equal(statuses.length,1);
+ assert.equal(statuses.length,2,"a second drop must explain that the first save is still pending");
 }
 async function successfulSave(){
  let complete;
  const promise=new Promise(resolve=>{complete=resolve;});
  const ctx={
-  monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"A",
+  monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"",
   monitorBctWindowNodesCache:[{conversationKey:"A",scopeId:"a",displayOrder:1},{conversationKey:"B",scopeId:"a",displayOrder:2}],
   monitorBctShell:{reorderConversations:()=>promise},
   finishMonitorBctNodeDrag(){},renderMonitorBctWindowNodes(){},setMonitorStatus(){},
@@ -78,7 +78,7 @@ async function successfulSave(){
   compareMonitorBctNodeDisplayOrder:(a,b)=>a.displayOrder-b.displayOrder,Object,Map,Array,String
  };
  vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
- const task=ctx.commitMonitorBctNodeDrop("a","B","after");
+ const task=ctx.commitMonitorBctNodeDrop("a","B","after","","A");
  assert.equal(ctx.monitorBctNodeReorderPending,true);
  complete(true);await task;
  assert.equal(ctx.monitorBctNodeReorderPending,false);
