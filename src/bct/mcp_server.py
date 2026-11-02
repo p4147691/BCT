@@ -442,7 +442,9 @@ def build_mcp(
             "existing BCT send-message, Delayed Send and their exact receipts. "
             "For start supply task_id, a unique operation_id prefix, exact RCC "
             "instance/session and canonical target_/origin_ identity fields, "
-            "and the work instruction text. The command PREARMS BEFORE sending, "
+            "and the work instruction text. When chain_direction_id is supplied, "
+            "its saved direction_text is the exact instruction; instruction may "
+            "be omitted, and any supplied copy must match exactly. The command PREARMS BEFORE sending, "
             "then submits the reserved text under the exact planned operation ID. "
             "Status reads the owning Work's exact durable watch. "
             "This is the first message-flow stage, NOT a completed Run Plan/Task Run "
@@ -501,24 +503,30 @@ def build_mcp(
         origin_instance = select_identity(origin_instance_id, manager_instance_id)
         if None in {target_tab, target_window, target_conversation, origin_conversation, origin_instance}:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_IDENTITY_CONFLICT"}
-        if (not instruction or len(instruction)>12000 or
-                not re.fullmatch(r"[a-f0-9]{32}",session_id) or
+        if (not re.fullmatch(r"[a-f0-9]{32}",session_id) or
                 target_tab<=0 or target_window<=0):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
-        if chain_direction_id:
-            from bct.chain_direction import ChainDirectionLedger
-            try:
-                await asyncio.to_thread(
-                    ChainDirectionLedger(bct.store).plan_chain,
-                    direction_id=chain_direction_id, work_id=work_id,
-                    task_id=task_id, operation_id=operation_id,
-                )
-            except ValueError as exc:
-                return {"status":"INVALID_REQUEST","reason":str(exc)}
         send_id=operation_id+"-send"
         arm_id=operation_id+"-arm"
         if len(send_id)>80 or len(arm_id)>80:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
+        direction = None
+        if chain_direction_id:
+            from bct.chain_direction import ChainDirectionLedger
+            try:
+                direction = await asyncio.to_thread(
+                    ChainDirectionLedger(bct.store).plan_chain,
+                    direction_id=chain_direction_id, work_id=work_id,
+                    task_id=task_id, operation_id=operation_id,
+                    instruction_text=instruction,
+                )
+            except ValueError as exc:
+                return {"status":"INVALID_REQUEST","reason":str(exc)}
+            # A linked Chain Direction is the exact A-authored instruction,
+            # not merely advisory metadata. Avoid a second copy that can drift.
+            instruction = str(direction["direction_text"])
+        if not instruction or len(instruction)>12000:
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
         armed=await make_executor("browser")(
             work_id,arm_id,{"command":"delayed-send-message",
              "task_id":task_id,"instance_id":instance_id,
@@ -538,7 +546,6 @@ def build_mcp(
         if sent.get("outcome") != "APPLIED":
             return {"status":"SEND_UNCONFIRMED","prearm":armed,
                     "send":sent,"warning":"NO_UNKNOWN_REPLAY"}
-        direction = None
         if chain_direction_id:
             from bct.chain_direction import ChainDirectionLedger
             direction = await asyncio.to_thread(

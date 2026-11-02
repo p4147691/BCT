@@ -38,6 +38,7 @@ class ChainDirectionLedgerTests(unittest.TestCase):
             planned = ledger.plan_chain(
                 direction_id="direction-1", work_id="work-1",
                 task_id="task-1", operation_id="chain-1",
+                instruction_text="Check the release evidence, then ask B for E2E.",
             )
             self.assertEqual("CHAIN_PLANNED", planned["chain_state"])
             started = ledger.mark_chain_started(
@@ -46,6 +47,22 @@ class ChainDirectionLedgerTests(unittest.TestCase):
             )
             self.assertEqual("CHAIN_STARTED", started["chain_state"])
             self.assertEqual("chain-1-send", started["chain_send_operation_id"])
+
+    def test_direction_rejects_a_different_delivery_text_before_planning(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            ledger = ChainDirectionLedger(store)
+            ledger.save(
+                direction_id="direction-exact", work_id="work-1", source_kind="USER",
+                decision="NEW_TASK", direction_text="Send this exact instruction.",
+            )
+            with self.assertRaisesRegex(ValueError, "TEXT_MISMATCH"):
+                ledger.plan_chain(
+                    direction_id="direction-exact", work_id="work-1",
+                    task_id="task-1", operation_id="chain-1",
+                    instruction_text="Send a different instruction.",
+                )
+            self.assertEqual("NOT_PLANNED", ledger.get(direction_id="direction-exact")["chain_state"])
 
     def test_only_new_task_can_plan_a_chain(self):
         with tempfile.TemporaryDirectory() as root:
@@ -149,24 +166,38 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "work_id": work.work_id, "direction_id": "direction-two",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-one",
                 "source_generation": 1, "decision": "NEW_TASK",
-                "direction_text": "A2 directs the second, bounded B task.",
+                "direction_text": "Do the second bounded task, then return to A.",
             })
             self.assertEqual("NEW_TASK", direction["chain_direction"]["decision"])
 
             # A2 → B2: a new Chain Message starts immediately.  The fake executor
             # records the prearm/send pair in place of a real browser delivery.
+            _, rejected = await mcp.call_tool("bct_chain_message", {
+                "work_id": work.work_id, "task_id": "task-two", "operation_id": "chain-two",
+                "instance_id": "worker-instance", "session_id": "a" * 32,
+                "worker_tab_id": 12, "worker_window_id": 13,
+                "worker_conversation_key": "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12,
+                "manager_conversation_key": "c" * 8 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 12,
+                "instruction": "A different instruction must never share this direction.",
+                "chain_direction_id": "direction-two",
+            })
+            self.assertEqual("CHAIN_DIRECTION_TEXT_MISMATCH", rejected["reason"])
+            self.assertEqual([], ops.calls)
             _, started = await mcp.call_tool("bct_chain_message", {
                 "work_id": work.work_id, "task_id": "task-two", "operation_id": "chain-two",
                 "instance_id": "worker-instance", "session_id": "a" * 32,
                 "worker_tab_id": 12, "worker_window_id": 13,
                 "worker_conversation_key": "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12,
                 "manager_conversation_key": "c" * 8 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 12,
-                "instruction": "Do the second bounded task, then return to A.",
                 "chain_direction_id": "direction-two",
             })
             self.assertEqual("WATCHING", started["status"])
             self.assertEqual("CHAIN_STARTED", started["chain_direction"]["chain_state"])
             self.assertEqual(["chain-two-arm", "chain-two-send"], [call["operation_id"] for call in ops.calls])
+            self.assertEqual(
+                "Do the second bounded task, then return to A.",
+                ops.calls[1]["arguments"]["text"],
+            )
 
             # B2 → A3: the final BA return; A3 closes instead of creating B3.
             return_to_manager("task-two", "d" * 64, "Second B report.")
