@@ -364,7 +364,7 @@ class ConversationNetworkTests(unittest.TestCase):
         )["node_label"]
         self.assertEqual(before, after)
 
-    def test_display_order_is_durable_and_scope_move_preserves_advisory_tags(self):
+    def test_display_order_is_durable_and_scope_move_releases_manager(self):
         arranged = arrange_conversations(
             self.store,
             conversation_keys=[WORKER, MANAGER],
@@ -397,8 +397,47 @@ class ConversationNetworkTests(unittest.TestCase):
             self.store, conversation_keys=[MANAGER, WORKER]
         )
         self.assertEqual("bct.rcc", directory[MANAGER]["scope_id"])
-        self.assertCountEqual(["Manager", "병목 분석"], directory[MANAGER]["role_tags"])
+        self.assertCountEqual(["병목 분석"], directory[MANAGER]["role_tags"])
         self.assertTrue(configured["scope_id"].startswith("network."))
+
+    def test_scope_editor_releases_manager_when_moved_or_unassigned(self):
+        configured = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="Manager 이동 규칙",
+            scope_name="원래 대화망",
+            role_tags=["Manager", "검토"],
+            now=450.0,
+        )
+        moved = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="Manager 이동 규칙",
+            scope_name="새 대화망",
+            role_tags=configured["role_tags"],
+            expected_role_tags_sha256=configured["role_tags_sha256"],
+            now=451.0,
+        )
+        self.assertEqual(["검토"], moved["role_tags"])
+        reassigned = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="Manager 이동 규칙",
+            scope_name="새 대화망",
+            role_tags=["Manager", "검토"],
+            expected_role_tags_sha256=moved["role_tags_sha256"],
+            now=451.5,
+        )
+        unassigned = configure_conversation_scope(
+            self.store,
+            conversation_key=MANAGER,
+            display_name="Manager 이동 규칙",
+            scope_name="",
+            role_tags=reassigned["role_tags"],
+            expected_role_tags_sha256=reassigned["role_tags_sha256"],
+            now=452.0,
+        )
+        self.assertEqual(["검토"], unassigned["role_tags"])
 
     def test_reorder_rejects_scope_mismatch_without_partial_write(self):
         other = configure_conversation_scope(

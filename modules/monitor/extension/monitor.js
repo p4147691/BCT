@@ -186,7 +186,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-bct-nodes-head monitor-bct-status-board"><strong>상태</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
+    <div class="monitor-bct-nodes-head monitor-bct-status-board"><strong>상태</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctRoleUndo" class="monitor-bct-role-history" type="button" title="Manager·감독관 변경 되돌리기" aria-label="Manager·감독관 변경 되돌리기" disabled>↶</button><button id="monitorBctRoleRedo" class="monitor-bct-role-history" type="button" title="Manager·감독관 변경 다시하기" aria-label="Manager·감독관 변경 다시하기" disabled>↷</button><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
     <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
     <div id="monitorGithubInbox" class="monitor-bct-node-empty" aria-live="polite"></div>
 
@@ -6236,6 +6236,63 @@ const monitorNodeSync = document.getElementById("monitorNodeSync");
 
 const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
+const monitorBctRoleUndo = document.getElementById("monitorBctRoleUndo");
+const monitorBctRoleRedo = document.getElementById("monitorBctRoleRedo");
+const monitorBctRoleUndoStack = [];
+const monitorBctRoleRedoStack = [];
+let monitorBctRoleHistoryBusy = false;
+const MONITOR_BCT_ROLE_HISTORY_LIMIT = 30;
+function updateMonitorBctRoleHistoryUi() {
+  if (monitorBctRoleUndo) monitorBctRoleUndo.disabled = monitorBctRoleHistoryBusy || !monitorBctRoleUndoStack.length;
+  if (monitorBctRoleRedo) monitorBctRoleRedo.disabled = monitorBctRoleHistoryBusy || !monitorBctRoleRedoStack.length;
+}
+function recordMonitorBctRoleHistory(action) {
+  if (!action?.conversationKey) return;
+  monitorBctRoleUndoStack.push(Object.freeze({ ...action }));
+  while (monitorBctRoleUndoStack.length > MONITOR_BCT_ROLE_HISTORY_LIMIT) monitorBctRoleUndoStack.shift();
+  monitorBctRoleRedoStack.length = 0;
+  updateMonitorBctRoleHistoryUi();
+}
+async function applyMonitorBctRoleHistory(direction) {
+  if (monitorBctRoleHistoryBusy || !monitorBctShell?.updateConversationScope) return;
+  const undo = direction === "undo";
+  const source = undo ? monitorBctRoleUndoStack : monitorBctRoleRedoStack;
+  const destination = undo ? monitorBctRoleRedoStack : monitorBctRoleUndoStack;
+  const action = source.pop();
+  if (!action) return;
+  const node = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+    .find((candidate) => String(candidate?.conversationKey || "").toLowerCase() === String(action.conversationKey).toLowerCase());
+  const expectedScopeId = String(action.scopeId || "");
+  if (!node || String(node.scopeId || "") !== expectedScopeId) {
+    source.push(action);
+    setMonitorStatus("역할 변경을 되돌릴 수 없습니다 · 노드의 대화망 위치가 달라졌습니다.", false, 4000);
+    updateMonitorBctRoleHistoryUi();
+    return;
+  }
+  const targetTags = undo ? action.beforeRoleTags : action.afterRoleTags;
+  monitorBctRoleHistoryBusy = true;
+  updateMonitorBctRoleHistoryUi();
+  try {
+    await monitorBctShell.updateConversationScope(node, {
+      displayName: node.title,
+      scopeName: node.scopeName,
+      roleTags: Array.isArray(targetTags) ? targetTags : [],
+      expectedRoleTagsSha256: node.roleTagsSha256,
+    });
+    destination.push(action);
+    while (destination.length > MONITOR_BCT_ROLE_HISTORY_LIMIT) destination.shift();
+    await refreshMonitorBctWindowNodes();
+    setMonitorStatus(undo ? "Manager·감독관 변경을 되돌렸습니다." : "Manager·감독관 변경을 다시 적용했습니다.", true, 2600);
+  } catch (error) {
+    source.push(action);
+    setMonitorStatus(`역할 변경 ${undo ? "되돌리기" : "다시하기"} 실패 · ${error?.message || error}`, false, 4200);
+  } finally {
+    monitorBctRoleHistoryBusy = false;
+    updateMonitorBctRoleHistoryUi();
+  }
+}
+monitorBctRoleUndo?.addEventListener("click", () => void applyMonitorBctRoleHistory("undo"));
+monitorBctRoleRedo?.addEventListener("click", () => void applyMonitorBctRoleHistory("redo"));
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
@@ -6696,11 +6753,19 @@ function installMonitorBctRoleLongPress(row, node) {
     // changes the role color.
     row.classList.toggle(role === "supervisor" ? "is-supervisor" : "is-manager", !hadRole);
     row.classList.add("monitor-bct-role-save-pending");
+    const beforeRoleTags = [...tags];
     void monitorBctShell.updateConversationScope(node, {
       displayName: node.title,
       scopeName: nextScopeName,
       roleTags: nextTags,
-    }).then(() => {
+      expectedRoleTagsSha256: node.roleTagsSha256,
+    }).then((saved) => {
+      recordMonitorBctRoleHistory({
+        conversationKey: node.conversationKey,
+        scopeId: String(node.scopeId || ""),
+        beforeRoleTags,
+        afterRoleTags: Array.isArray(saved?.role_tags) ? saved.role_tags : nextTags,
+      });
       const roleLabel = role === "supervisor" ? "감독관" : "Manager";
       setMonitorStatus(
         `${node.nodeLabel || "N?"}의 ${roleLabel} 안내 태그를 ${hadRole ? "해제했습니다" : "붙였습니다"}.`,
@@ -6874,6 +6939,8 @@ function renderMonitorBctWindowNodes(nodes) {
         if (rightManual <= 0) return -1;
         if (leftManual !== rightManual) return leftManual - rightManual;
       }
+      const numberDifference = nodeNumber(left) - nodeNumber(right);
+      if (numberDifference) return numberDifference;
       const leftPhysical = physicalOrder.get(monitorBctNodeSelectionKey(left)) || [];
       const rightPhysical = physicalOrder.get(monitorBctNodeSelectionKey(right)) || [];
       for (let index = 0; index < Math.max(leftPhysical.length, rightPhysical.length); index += 1) {
@@ -7466,6 +7533,9 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   }
 
   if (movedAcrossScopes) {
+    const movedRoleTags = Array.isArray(dragged.roleTags)
+      ? dragged.roleTags.filter((tag) => !["manager", "supervisor"].includes(String(tag).trim().toLowerCase()))
+      : [];
     // Move the card immediately.  The write still goes through the same Core
     // metadata contract as the context menu; only a failed write rolls back.
     const optimisticSnapshot = snapshot.map((node) => {
@@ -7474,6 +7544,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
         ...node,
         scopeId: destinationScopeId,
         scopeName: resolvedDestinationScopeName,
+        roleTags: Object.freeze(movedRoleTags),
         displayOrder: nextOrders.get(draggedKey) || 1,
       });
     });
@@ -7485,7 +7556,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       await monitorBctShell.updateConversationScope(dragged, {
         displayName: String(dragged.title || dragged.nodeLabel || dragged.conversationKey || "ChatGPT").trim(),
         scopeName: resolvedDestinationScopeName,
-        roleTags: Array.isArray(dragged.roleTags) ? dragged.roleTags : [],
+        roleTags: movedRoleTags,
       });
       monitorBctNodeReorderPending = false;
       await refreshMonitorBctWindowNodes();

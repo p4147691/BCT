@@ -156,6 +156,17 @@ def _validate_role_rules(db, *, project_id: str, conversation_key: str, tags: li
             raise ConversationNetworkError("CONVERSATION_NETWORK_MANAGER_ALREADY_ASSIGNED")
 
 
+def _roles_after_scope_change(
+    tags: list[str], *, previous_tags: list[str] | None = None
+) -> list[str]:
+    """Keep ordinary advisory tags but release scope-bound coordination roles."""
+    coordination = {"manager", "supervisor"}
+    released = coordination if previous_tags is None else {
+        tag.casefold() for tag in previous_tags if tag.casefold() in coordination
+    }
+    return [tag for tag in tags if tag.casefold() not in released]
+
+
 def upsert_project(store: Store, *, project_id: str, display_name: str,
                    active: bool = True, now: float | None = None) -> dict[str, object]:
     """Create or update a project directory entry; it has no routing effect."""
@@ -570,6 +581,8 @@ def configure_conversation_scope(
                     (project_id, scope, 1, when, when),
                 )
 
+        if _current_scope != project_id:
+            tags = _roles_after_scope_change(tags, previous_tags=current_tags)
         _validate_role_rules(db, project_id=project_id, conversation_key=key, tags=tags)
 
         # A chat has one current scope. Old rows remain queryable history and
@@ -812,8 +825,9 @@ def arrange_conversations(
 ) -> dict[str, object]:
     """Atomically reorder visible chats and optionally move one between scopes.
 
-    This is display metadata only.  It preserves a moved chat's advisory role
-    tags, never changes its N label, and does not grant policy authority.
+    This is display metadata only. A scope move preserves ordinary advisory
+    tags but releases Manager/supervisor, never changes its N label, and does
+    not grant policy authority.
     """
     if not isinstance(conversation_keys, (list, tuple)):
         raise ConversationNetworkError("CONVERSATION_NETWORK_ORDER_INVALID")
@@ -863,6 +877,7 @@ def arrange_conversations(
                     "WHERE project_id=? AND conversation_key=? ORDER BY tag COLLATE NOCASE",
                     (old_scope, moved),
                 )]
+            tags = _roles_after_scope_change(tags)
             _validate_role_rules(db, project_id=destination, conversation_key=moved, tags=tags)
             db.execute(
                 "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "

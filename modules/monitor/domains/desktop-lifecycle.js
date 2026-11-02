@@ -468,6 +468,9 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   }
 
   if (movedAcrossScopes) {
+    const movedRoleTags = Array.isArray(dragged.roleTags)
+      ? dragged.roleTags.filter((tag) => !["manager", "supervisor"].includes(String(tag).trim().toLowerCase()))
+      : [];
     // Move the card immediately.  The write still goes through the same Core
     // metadata contract as the context menu; only a failed write rolls back.
     const optimisticSnapshot = snapshot.map((node) => {
@@ -476,6 +479,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
         ...node,
         scopeId: destinationScopeId,
         scopeName: resolvedDestinationScopeName,
+        roleTags: Object.freeze(movedRoleTags),
         displayOrder: nextOrders.get(draggedKey) || 1,
       });
     });
@@ -487,7 +491,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       await monitorBctShell.updateConversationScope(dragged, {
         displayName: String(dragged.title || dragged.nodeLabel || dragged.conversationKey || "ChatGPT").trim(),
         scopeName: resolvedDestinationScopeName,
-        roleTags: Array.isArray(dragged.roleTags) ? dragged.roleTags : [],
+        roleTags: movedRoleTags,
       });
       monitorBctNodeReorderPending = false;
       await refreshMonitorBctWindowNodes();

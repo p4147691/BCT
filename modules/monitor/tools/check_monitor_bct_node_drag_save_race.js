@@ -150,12 +150,12 @@ async function uuidlessNodeCanReorderInsideItsCurrentList(){
  assert.equal(renders.length,1,"the N? card moves immediately in the visible node list");
  assert.equal(renders[0].find(node=>node.selectionKey==="pending-tab").displayOrder,1);
 }
-async function crossScopeMove(destinationGroupKey, destinationScopeName, expectedScopeName) {
+async function crossScopeMove(destinationGroupKey, destinationScopeName, expectedScopeName, sourceRoleTags=["Worker","Review"], expectedRoleTags=sourceRoleTags) {
  const updates=[],reorders=[],statuses=[];
  const ctx={
   monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"A",
   monitorBctWindowNodesCache:[
-   {conversationKey:"A",title:"Worker A",scopeId:"team-a",scopeName:"Team A",roleTags:["Worker","Review"]},
+   {conversationKey:"A",title:"Worker A",scopeId:"team-a",scopeName:"Team A",roleTags:sourceRoleTags},
    {conversationKey:"B",title:"Worker B",scopeId:"team-b",scopeName:"Team B",roleTags:["Manager"]}
   ],
   monitorBctShell:{
@@ -184,7 +184,7 @@ async function crossScopeMove(destinationGroupKey, destinationScopeName, expecte
  assert.equal(updates[0].node.conversationKey,"A");
  assert.equal(updates[0].values.displayName,"Worker A");
  assert.equal(updates[0].values.scopeName,expectedScopeName);
- assert.deepEqual(updates[0].values.roleTags,["Worker","Review"],"role tags survive scope changes");
+ assert.deepEqual(updates[0].values.roleTags,expectedRoleTags,"ordinary roles survive, but scope-bound coordinator roles are released");
  assert.equal(ctx.refreshed,1,"scope changes re-read authoritative Monitor state");
  assert.equal(statuses.length,1);
 }
@@ -197,6 +197,7 @@ async function crossScopeMove(destinationGroupKey, destinationScopeName, expecte
  await uuidlessNodeCanReorderInsideItsCurrentList();
  await crossScopeMove("__unassigned__","","");
  await crossScopeMove("team-b","Team B","Team B");
+ await crossScopeMove("__unassigned__","","",["Worker","Manager"],["Worker"]);
  assert.match(source,/monitorBctPointerDrag \|\| monitorBctNodeReorderPending\) return/);
- console.log(JSON.stringify({status:"PASS",cases:8,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,pinned-coordinator-worker-reorder,uuidless-placeholder-exclusion,uuidless-node-local-reorder,scope-move-to-unassigned,scope-move-to-network"}));
+ console.log(JSON.stringify({status:"PASS",cases:9,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,pinned-coordinator-worker-reorder,uuidless-placeholder-exclusion,uuidless-node-local-reorder,scope-move-to-unassigned,scope-move-to-network,scope-move-releases-manager"}));
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});

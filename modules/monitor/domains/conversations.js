@@ -86,6 +86,64 @@ function flushDeferredMonitorWorkerRender() {
 function initializeMonitorWorkerOrderStorage() { chrome.storage.local.get([MONITOR_WORKER_ORDER_KEY],(data)=>{const raw=data?.[MONITOR_WORKER_ORDER_KEY]||{};for(const [id,keys] of Object.entries(raw))monitorWorkerOrderByDesktop.set(id,Array.isArray(keys)?keys.map(String):[]);monitorWorkerOrderReady=true;if(monitorLastAiState)renderWorkers(monitorLastAiState);}); }
 //@@FN_END:initializeMonitorWorkerOrderStorage
 
+//@@FN_START:updateMonitorBctRoleHistoryUi
+function updateMonitorBctRoleHistoryUi() {
+  if (monitorBctRoleUndo) monitorBctRoleUndo.disabled = monitorBctRoleHistoryBusy || !monitorBctRoleUndoStack.length;
+  if (monitorBctRoleRedo) monitorBctRoleRedo.disabled = monitorBctRoleHistoryBusy || !monitorBctRoleRedoStack.length;
+}
+//@@FN_END:updateMonitorBctRoleHistoryUi
+
+//@@FN_START:recordMonitorBctRoleHistory
+function recordMonitorBctRoleHistory(action) {
+  if (!action?.conversationKey) return;
+  monitorBctRoleUndoStack.push(Object.freeze({ ...action }));
+  while (monitorBctRoleUndoStack.length > MONITOR_BCT_ROLE_HISTORY_LIMIT) monitorBctRoleUndoStack.shift();
+  monitorBctRoleRedoStack.length = 0;
+  updateMonitorBctRoleHistoryUi();
+}
+//@@FN_END:recordMonitorBctRoleHistory
+
+//@@FN_START:applyMonitorBctRoleHistory
+async function applyMonitorBctRoleHistory(direction) {
+  if (monitorBctRoleHistoryBusy || !monitorBctShell?.updateConversationScope) return;
+  const undo = direction === "undo";
+  const source = undo ? monitorBctRoleUndoStack : monitorBctRoleRedoStack;
+  const destination = undo ? monitorBctRoleRedoStack : monitorBctRoleUndoStack;
+  const action = source.pop();
+  if (!action) return;
+  const node = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+    .find((candidate) => String(candidate?.conversationKey || "").toLowerCase() === String(action.conversationKey).toLowerCase());
+  const expectedScopeId = String(action.scopeId || "");
+  if (!node || String(node.scopeId || "") !== expectedScopeId) {
+    source.push(action);
+    setMonitorStatus("역할 변경을 되돌릴 수 없습니다 · 노드의 대화망 위치가 달라졌습니다.", false, 4000);
+    updateMonitorBctRoleHistoryUi();
+    return;
+  }
+  const targetTags = undo ? action.beforeRoleTags : action.afterRoleTags;
+  monitorBctRoleHistoryBusy = true;
+  updateMonitorBctRoleHistoryUi();
+  try {
+    await monitorBctShell.updateConversationScope(node, {
+      displayName: node.title,
+      scopeName: node.scopeName,
+      roleTags: Array.isArray(targetTags) ? targetTags : [],
+      expectedRoleTagsSha256: node.roleTagsSha256,
+    });
+    destination.push(action);
+    while (destination.length > MONITOR_BCT_ROLE_HISTORY_LIMIT) destination.shift();
+    await refreshMonitorBctWindowNodes();
+    setMonitorStatus(undo ? "Manager·감독관 변경을 되돌렸습니다." : "Manager·감독관 변경을 다시 적용했습니다.", true, 2600);
+  } catch (error) {
+    source.push(action);
+    setMonitorStatus(`역할 변경 ${undo ? "되돌리기" : "다시하기"} 실패 · ${error?.message || error}`, false, 4200);
+  } finally {
+    monitorBctRoleHistoryBusy = false;
+    updateMonitorBctRoleHistoryUi();
+  }
+}
+//@@FN_END:applyMonitorBctRoleHistory
+
 //@@FN_START:installMonitorBctRoleLongPress
 function installMonitorBctRoleLongPress(row, node) {
   let saving = false;
@@ -141,11 +199,19 @@ function installMonitorBctRoleLongPress(row, node) {
     // changes the role color.
     row.classList.toggle(role === "supervisor" ? "is-supervisor" : "is-manager", !hadRole);
     row.classList.add("monitor-bct-role-save-pending");
+    const beforeRoleTags = [...tags];
     void monitorBctShell.updateConversationScope(node, {
       displayName: node.title,
       scopeName: nextScopeName,
       roleTags: nextTags,
-    }).then(() => {
+      expectedRoleTagsSha256: node.roleTagsSha256,
+    }).then((saved) => {
+      recordMonitorBctRoleHistory({
+        conversationKey: node.conversationKey,
+        scopeId: String(node.scopeId || ""),
+        beforeRoleTags,
+        afterRoleTags: Array.isArray(saved?.role_tags) ? saved.role_tags : nextTags,
+      });
       const roleLabel = role === "supervisor" ? "감독관" : "Manager";
       setMonitorStatus(
         `${node.nodeLabel || "N?"}의 ${roleLabel} 안내 태그를 ${hadRole ? "해제했습니다" : "붙였습니다"}.`,

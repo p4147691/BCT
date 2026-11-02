@@ -176,7 +176,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-bct-nodes-head monitor-bct-status-board"><strong>상태</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
+    <div class="monitor-bct-nodes-head monitor-bct-status-board"><strong>상태</strong><span id="monitorBctNodeSummary">확인 중…</span><button id="monitorBctRoleUndo" class="monitor-bct-role-history" type="button" title="Manager·감독관 변경 되돌리기" aria-label="Manager·감독관 변경 되돌리기" disabled>↶</button><button id="monitorBctRoleRedo" class="monitor-bct-role-history" type="button" title="Manager·감독관 변경 다시하기" aria-label="Manager·감독관 변경 다시하기" disabled>↷</button><button id="monitorBctNodesRefresh" type="button" title="RCC 노드 목록 다시 조회" hidden>새로고침</button></div>
     <div id="monitorWorkers" class="monitor-workers monitor-bct-nodes" aria-live="polite"></div>
     <div id="monitorGithubInbox" class="monitor-bct-node-empty" aria-live="polite"></div>
 

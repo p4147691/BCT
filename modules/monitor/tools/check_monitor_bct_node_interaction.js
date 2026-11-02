@@ -248,6 +248,7 @@ function loadModule() {
       updateConversationScope: async (_node, values) => { roleUpdates.push(values); return { ok: true }; },
     },
     refreshMonitorBctWindowNodes: async () => {},
+    recordMonitorBctRoleHistory: () => {},
     statusMessages: [],
     setMonitorStatus: (message) => { holdContext.statusMessages.push(message); },
     setTimeout() { return 1; },
@@ -386,6 +387,32 @@ function loadModule() {
   assert.equal(first.classes.has("is-selected"), false);
   assert.equal(second.classes.has("is-selected"), true);
   assert.equal(third.classes.has("is-selected"), false);
+
+  const historyStart = monitor.indexOf("function updateMonitorBctRoleHistoryUi(");
+  const historyEnd = monitor.indexOf("monitorBctRoleUndo?.addEventListener", historyStart);
+  assert.ok(historyStart > 0 && historyEnd > historyStart);
+  const historyWrites = [];
+  const historyContext = {
+    monitorBctRoleUndo: { disabled: true, addEventListener() {} }, monitorBctRoleRedo: { disabled: true, addEventListener() {} },
+    monitorBctRoleUndoStack: [], monitorBctRoleRedoStack: [],
+    monitorBctRoleHistoryBusy: false, MONITOR_BCT_ROLE_HISTORY_LIMIT: 30,
+    monitorBctWindowNodesCache: [{ conversationKey: "conv-1", scopeId: "scope-a", scopeName: "A", title: "Node", roleTagsSha256: "a".repeat(64) }],
+    monitorBctShell: { updateConversationScope: async (_node, values) => { historyWrites.push(values); return {}; } },
+    refreshMonitorBctWindowNodes: async () => {}, setMonitorStatus: () => {},
+    Object, Array, String,
+  };
+  vm.createContext(historyContext);
+  vm.runInContext(monitor.slice(historyStart, historyEnd), historyContext);
+  historyContext.recordMonitorBctRoleHistory({
+    conversationKey: "conv-1", scopeId: "scope-a",
+    beforeRoleTags: ["Worker"], afterRoleTags: ["Worker", "Manager"],
+  });
+  assert.equal(historyContext.monitorBctRoleUndo.disabled, false);
+  await historyContext.applyMonitorBctRoleHistory("undo");
+  assert.deepEqual(Array.from(historyWrites[0].roleTags), ["Worker"]);
+  assert.equal(historyContext.monitorBctRoleRedo.disabled, false);
+  await historyContext.applyMonitorBctRoleHistory("redo");
+  assert.deepEqual(Array.from(historyWrites[1].roleTags), ["Worker", "Manager"]);
   console.log(JSON.stringify({
     status: "PASS",
     exact_hwnd: result.hwnd,
@@ -396,6 +423,7 @@ function loadModule() {
     exact_node_card_selection: true,
     exact_tab_focus: true,
     manager_long_press_toggle: true,
+    role_history_undo_redo: true,
     title_is_not_drop_target: true,
     wrapped_row_append_uses_last_node_edge: true,
   }));

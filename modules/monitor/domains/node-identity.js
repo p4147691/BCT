@@ -1482,6 +1482,8 @@ function renderMonitorBctWindowNodes(nodes) {
         if (rightManual <= 0) return -1;
         if (leftManual !== rightManual) return leftManual - rightManual;
       }
+      const numberDifference = nodeNumber(left) - nodeNumber(right);
+      if (numberDifference) return numberDifference;
       const leftPhysical = physicalOrder.get(monitorBctNodeSelectionKey(left)) || [];
       const rightPhysical = physicalOrder.get(monitorBctNodeSelectionKey(right)) || [];
       for (let index = 0; index < Math.max(leftPhysical.length, rightPhysical.length); index += 1) {

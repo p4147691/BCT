@@ -147,6 +147,17 @@ const monitorNodeSync = document.getElementById("monitorNodeSync");
 
 const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
+const monitorBctRoleUndo = document.getElementById("monitorBctRoleUndo");
+const monitorBctRoleRedo = document.getElementById("monitorBctRoleRedo");
+const monitorBctRoleUndoStack = [];
+const monitorBctRoleRedoStack = [];
+let monitorBctRoleHistoryBusy = false;
+const MONITOR_BCT_ROLE_HISTORY_LIMIT = 30;
+/*@@MONITOR_FUNCTION:updateMonitorBctRoleHistoryUi@@*/
+/*@@MONITOR_FUNCTION:recordMonitorBctRoleHistory@@*/
+/*@@MONITOR_FUNCTION:applyMonitorBctRoleHistory@@*/
+monitorBctRoleUndo?.addEventListener("click", () => void applyMonitorBctRoleHistory("undo"));
+monitorBctRoleRedo?.addEventListener("click", () => void applyMonitorBctRoleHistory("redo"));
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
