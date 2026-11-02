@@ -398,6 +398,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
         scopeName: resolvedDestinationScopeName,
         roleTags: Array.isArray(dragged.roleTags) ? dragged.roleTags : [],
       });
+      monitorBctNodeReorderPending = false;
       await refreshMonitorBctWindowNodes();
       setMonitorStatus(
         destinationScopeId ? "노드를 대화망으로 이동했습니다." : "노드를 미소속 대화로 이동했습니다.",
@@ -434,6 +435,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       scopeId: destinationScopeId,
       movedConversationKey: "",
     });
+    monitorBctNodeReorderPending = false;
+    await refreshMonitorBctWindowNodes();
     setMonitorStatus("노드 표시 순서를 저장했습니다.", true, 2200);
   } catch (error) {
     // A newer RCC refresh replaces this exact snapshot. Never overwrite it.

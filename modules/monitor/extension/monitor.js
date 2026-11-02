@@ -7306,6 +7306,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
         scopeName: resolvedDestinationScopeName,
         roleTags: Array.isArray(dragged.roleTags) ? dragged.roleTags : [],
       });
+      monitorBctNodeReorderPending = false;
       await refreshMonitorBctWindowNodes();
       setMonitorStatus(
         destinationScopeId ? "노드를 대화망으로 이동했습니다." : "노드를 미소속 대화로 이동했습니다.",
@@ -7342,6 +7343,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
       scopeId: destinationScopeId,
       movedConversationKey: "",
     });
+    monitorBctNodeReorderPending = false;
+    await refreshMonitorBctWindowNodes();
     setMonitorStatus("노드 표시 순서를 저장했습니다.", true, 2200);
   } catch (error) {
     // A newer RCC refresh replaces this exact snapshot. Never overwrite it.
@@ -7381,9 +7384,17 @@ async function refreshMonitorBctWindowNodes() {
   try {
     const state = await monitorBctShell.monitorState();
     renderMonitorGithubInbox(state);
-    monitorBctWindowNodesCache = monitorBctShell.displayWindowNodes
+    const nextNodes = monitorBctShell.displayWindowNodes
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
+    // A saved reorder owns the visible list until the Core reply is available.
+    // Do not let an unrelated, older status refresh paint the previous order
+    // over the optimistic order while that write is in flight.
+    if (monitorBctNodeReorderPending) {
+      monitorBctDeferredNodeRender = nextNodes;
+      return;
+    }
+    monitorBctWindowNodesCache = nextNodes;
     resetMonitorBctProjectionConvergence();
     await refreshMonitorBctBrowserWindowGeometry();
     await refreshMonitorIdentityIndex(monitorLastAiState, true);

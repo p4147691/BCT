@@ -26,6 +26,7 @@ async function scenario(freshRefresh) {
     calls++;return promise;
   }},
   finishMonitorBctNodeDrag(){},
+  refreshMonitorBctWindowNodes:async()=>{},
   renderMonitorBctWindowNodes(nodes){renders.push(nodes);},
   setMonitorStatus(...args){statuses.push(args);},
   monitorUniqueBctConversationNodes:(nodes)=>[
@@ -71,7 +72,7 @@ async function successfulSave(){
   monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"",
   monitorBctWindowNodesCache:[{conversationKey:"A",scopeId:"a",displayOrder:1},{conversationKey:"B",scopeId:"a",displayOrder:2}],
   monitorBctShell:{reorderConversations:()=>promise},
-  finishMonitorBctNodeDrag(){},renderMonitorBctWindowNodes(){},setMonitorStatus(){},
+  finishMonitorBctNodeDrag(){},refreshMonitorBctWindowNodes:async()=>{},renderMonitorBctWindowNodes(){},setMonitorStatus(){},
   monitorUniqueBctConversationNodes:(nodes)=>[
     ...new Map(nodes.map((node)=>[node.conversationKey,node])).values()
   ],

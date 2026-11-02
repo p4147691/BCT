@@ -1085,9 +1085,17 @@ async function refreshMonitorBctWindowNodes() {
   try {
     const state = await monitorBctShell.monitorState();
     renderMonitorGithubInbox(state);
-    monitorBctWindowNodesCache = monitorBctShell.displayWindowNodes
+    const nextNodes = monitorBctShell.displayWindowNodes
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
+    // A saved reorder owns the visible list until the Core reply is available.
+    // Do not let an unrelated, older status refresh paint the previous order
+    // over the optimistic order while that write is in flight.
+    if (monitorBctNodeReorderPending) {
+      monitorBctDeferredNodeRender = nextNodes;
+      return;
+    }
+    monitorBctWindowNodesCache = nextNodes;
     resetMonitorBctProjectionConvergence();
     await refreshMonitorBctBrowserWindowGeometry();
     await refreshMonitorIdentityIndex(monitorLastAiState, true);
