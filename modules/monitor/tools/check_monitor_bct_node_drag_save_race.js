@@ -106,6 +106,25 @@ async function pinnedCoordinatorWorkerReorder(){
  await ctx.commitMonitorBctNodeDrop("team","W1","before","","W2");
  assert.deepEqual(saved[0],["M","W2","W1"],"Manager stays first while workers keep the dropped order");
 }
+async function uuidlessPlaceholderDoesNotRejectDurableReorder(){
+ const saved=[];
+ const ctx={
+  monitorBctNodeReorderPending:false,monitorBctDraggedNodeKey:"B",
+  monitorBctWindowNodesCache:[
+   {conversationKey:"A",scopeId:"",displayOrder:1,roleTags:[]},
+   {conversationKey:"",scopeId:"",displayOrder:0,roleTags:[],tabId:99},
+   {conversationKey:"B",scopeId:"",displayOrder:2,roleTags:[]}
+  ],
+  monitorBctShell:{reorderConversations:async(nodes)=>{saved.push(nodes.map(node=>node.conversationKey));}},
+  finishMonitorBctNodeDrag(){},refreshMonitorBctWindowNodes:async()=>{},renderMonitorBctWindowNodes(){},setMonitorStatus(){},
+  monitorUniqueBctConversationNodes:(nodes)=>nodes,
+  monitorBctNodeRoleRank:()=>2,
+  compareMonitorBctNodeDisplayOrder:(a,b)=>a.displayOrder-b.displayOrder,Object,Map,Array,String,Boolean
+ };
+ vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
+ await ctx.commitMonitorBctNodeDrop("__unassigned__","A","before","","B");
+ assert.deepEqual(saved[0],["B","A"],"an N? placeholder stays visible but never enters the Core reorder payload");
+}
 async function crossScopeMove(destinationGroupKey, destinationScopeName, expectedScopeName) {
  const updates=[],reorders=[],statuses=[];
  const ctx={
@@ -149,8 +168,9 @@ async function crossScopeMove(destinationGroupKey, destinationScopeName, expecte
  await scenario(true);
  await successfulSave();
  await pinnedCoordinatorWorkerReorder();
+ await uuidlessPlaceholderDoesNotRejectDurableReorder();
  await crossScopeMove("__unassigned__","","");
  await crossScopeMove("team-b","Team B","Team B");
  assert.match(source,/monitorBctPointerDrag \|\| monitorBctNodeReorderPending\) return/);
- console.log(JSON.stringify({status:"PASS",cases:6,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,pinned-coordinator-worker-reorder,scope-move-to-unassigned,scope-move-to-network"}));
+ console.log(JSON.stringify({status:"PASS",cases:7,coverage:"save-failure-rollback,refresh-generation-guard,serial-save-success,pinned-coordinator-worker-reorder,uuidless-placeholder-exclusion,scope-move-to-unassigned,scope-move-to-network"}));
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});

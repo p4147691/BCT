@@ -7356,6 +7356,7 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   const draggedKey = String(sourceConversationKey || monitorBctDraggedNodeKey || "").trim().toLowerCase();
   const snapshot = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache.slice() : [];
   const semanticSnapshot = monitorUniqueBctConversationNodes(snapshot);
+  const hasPersistentConversationKey = (value) => Boolean(String(value || "").trim());
   const dragged = semanticSnapshot.find((node) => String(node?.conversationKey || "").trim().toLowerCase() === draggedKey);
   const destinationScopeId = destinationGroupKey === "__unassigned__" ? "" : destinationGroupKey;
   const destinationSample = semanticSnapshot.find((node) => (node.scopeId || "") === destinationScopeId);
@@ -7377,7 +7378,12 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   }
 
   const destination = semanticSnapshot
-    .filter((node) => String(node?.conversationKey || "").trim().toLowerCase() !== draggedKey && (node.scopeId || "") === destinationScopeId)
+    // UUID-less pending ChatGPT tabs remain visible as N?, but Core cannot
+    // persist an order for them yet. Never let one placeholder reject the
+    // reorder of every durable conversation in the same visible list.
+    .filter((node) => hasPersistentConversationKey(node?.conversationKey) &&
+      String(node?.conversationKey || "").trim().toLowerCase() !== draggedKey &&
+      (node.scopeId || "") === destinationScopeId)
     .sort((left, right) =>
       monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right) ||
       compareMonitorBctNodeDisplayOrder(left, right));
@@ -7393,7 +7399,8 @@ async function commitMonitorBctNodeDrop(destinationGroupKey, targetConversationK
   // among ordinary nodes.
   destination.sort((left, right) => monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right));
   const previousDestinationKeys = semanticSnapshot
-    .filter((node) => (node.scopeId || "") === destinationScopeId)
+    .filter((node) => hasPersistentConversationKey(node?.conversationKey) &&
+      (node.scopeId || "") === destinationScopeId)
     .sort((left, right) =>
       monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right) ||
       compareMonitorBctNodeDisplayOrder(left, right))
