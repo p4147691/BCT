@@ -243,7 +243,7 @@ def build_mcp(
     async def bct_network_get(project: str) -> dict[str, Any]:
         return await bct_conversation_network_get(project)
 
-    @server.tool(description="Read one registered conversation network and its currently observed node/RCC evidence. Optionally includes authorized project context. Does not create plans, networks or messages.", structured_output=True)
+    @server.tool(description="Read one registered conversation network and its currently observed node/RCC evidence, including the current supervisor-role readiness. Optionally includes authorized project context. Does not create plans, networks or messages.", structured_output=True)
     async def bct_check_network(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
@@ -253,7 +253,13 @@ def build_mcp(
         # Candidates come from confirmed current nodes, never from guessed project IDs.
         # Historical projects need a separately authorized directory/summary lookup.
         candidates: dict[str, dict[str, str]] = {}
-        for node in nodes.get("items", []) if isinstance(nodes, dict) else []:
+        current_node_items = (
+            nodes.get("current_nodes", {}).get("items", [])
+            if isinstance(nodes, dict) and isinstance(nodes.get("current_nodes"), dict)
+            else []
+        )
+        supervisor_candidates: list[dict[str, Any]] = []
+        for node in current_node_items:
             if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
                 continue
             name = str(node.get("network") or "").strip()
@@ -261,6 +267,22 @@ def build_mcp(
             if name:
                 key = scope_id or name.casefold()
                 candidates.setdefault(key, {"title": name, "network_id": scope_id})
+            roles = node.get("roles") if isinstance(node.get("roles"), list) else []
+            if any(str(role).strip().casefold() == "supervisor" for role in roles):
+                supervisor_candidates.append({
+                    "node_number": str(node.get("node_number") or ""),
+                    "name": str(node.get("name") or ""),
+                    "conversation_uuid": str(node.get("conversation_uuid") or ""),
+                    "network": name,
+                    "network_id": scope_id,
+                    "roles": list(roles),
+                    "active": node.get("active") is True,
+                })
+        supervisor_status = (
+            "MISSING" if not supervisor_candidates else
+            "PRESENT" if len(supervisor_candidates) == 1 else
+            "MULTIPLE"
+        )
         network = None
         context = None
         context_status = "NOT_REQUESTED"
@@ -337,6 +359,12 @@ def build_mcp(
                     context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
         return {"status": "OK", "nodes": nodes, "rcc": rcc,
                 "network": network, "network_candidates": list(candidates.values()),
+                "supervisor": {
+                    "status": supervisor_status,
+                    "role_tag": "supervisor",
+                    "candidates": supervisor_candidates,
+                    "scope": "CURRENT_CONFIRMED_NODES_ONLY",
+                },
                 "candidates_scope": ("CURRENT_AND_HISTORICAL_AUTHORIZED"
                                      if historical_contexts_status in {"OK", "NO_CONTEXT"}
                                      else "CURRENT_CONFIRMED_NODES_ONLY"),

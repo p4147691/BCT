@@ -183,7 +183,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "bct_run_check", "bct_run_plan", "bct_network_set",
-                            "bct_execution_context", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
+                            "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
                             "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
                         },
@@ -202,7 +202,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "bct_run_check", "bct_run_plan", "bct_network_set",
-                            "bct_execution_context", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
+                            "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
                             "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
                         },
@@ -243,6 +243,12 @@ class MCPIntegrationTests(unittest.TestCase):
                                      network_check.structuredContent["candidates_scope"])
                     self.assertEqual("NOT_REQUESTED",
                                      network_check.structuredContent["historical_contexts_status"])
+                    self.assertIn(network_check.structuredContent["supervisor"]["status"],
+                                  {"MISSING", "PRESENT", "MULTIPLE"})
+                    self.assertEqual("supervisor",
+                                     network_check.structuredContent["supervisor"]["role_tag"])
+                    self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
+                                     network_check.structuredContent["supervisor"]["scope"])
                     blank_network_check = await session.call_tool("bct_check_network", {})
                     self.assertFalse(blank_network_check.isError)
                     self.assertEqual("OK", blank_network_check.structuredContent["status"])
