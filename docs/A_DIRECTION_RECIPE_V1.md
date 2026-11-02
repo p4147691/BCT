@@ -23,6 +23,24 @@ B의 보고, 영수증, 현재 확인값을 읽고 만든 **다음 지시 방향
 `Delayed Send Message`는 B 내부의 BB 반복에 쓰는 부품이다. A가 BA 보고를
 받아 다음 지시 방향을 정리한다고 해서 자동으로 필요하지는 않다.
 
+## ABABA: 두 번 왕복하고 종료
+
+사용자가 보는 `A → B → A → B → A`는 하나의 거대한 Chain Message가 아니다.
+각 `A → B → A`는 독립된 1:1 Chain Message이고, 가운데 A가 끊지 않고 다음
+Chain Direction을 만들어 두 번째 체인을 시작해 연결한다.
+
+```text
+A1 → B1
+B1 → A2  (BA 보고)
+A2 → Chain Direction(NEW_TASK) → B2
+B2 → A3  (마지막 BA 보고)
+A3 → Chain Direction(COMPLETE) → 종료
+```
+
+`A2`는 이미 B1의 보고 메시지로 깨어 있으므로, B2를 시작하기 전에 A 자신에게
+Delayed Send를 보낼 필요가 없다. `A3`가 `COMPLETE`를 남기면 새 체인은 만들지
+않으며, 이 2회 왕복 흐름은 끝난다.
+
 ## 입력: A가 반드시 읽는 것
 
 ```text
