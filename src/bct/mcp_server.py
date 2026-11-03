@@ -537,7 +537,8 @@ def build_mcp(
                     "response_turn_key_state": (
                         "BOUND" if response_key else
                         "AWAITING_VERIFIED_RESPONSE" if watch["state"] == "WATCHING"
-                        else "UNAVAILABLE")}
+                        else "UNAVAILABLE"),
+                    "watch_diagnostic_reason": ctx.get("watch_diagnostic_reason", "")}
         if action == "cancel":
             return await make_executor("browser")(
                 work_id,operation_id,{"command":"delayed-send-cancel",

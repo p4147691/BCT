@@ -482,6 +482,34 @@ class DurableWatchLedger:
             if updated.rowcount != 1:
                 raise ValueError("DELAYED_SOURCE_SEND_RACE")
 
+    def record_watch_diagnostic(self, row: dict, reason: str) -> bool:
+        """Persist a symbolic rejection code only; no user text or turn content."""
+        if reason not in {
+            "RCC_READ_UNAVAILABLE", "TURN_COUNT_UNAVAILABLE",
+            "SOURCE_KEY_OR_SHA_MISSING", "SOURCE_OCCURRENCE_AMBIGUOUS",
+            "SOURCE_PROVENANCE_MISMATCH", "SEND_PROOF_MISMATCH",
+            "SEND_RECEIPT_UNAVAILABLE", "SEND_RECEIPT_INVALID",
+            "RESPONSE_NOT_NEW", "RESPONSE_NOT_TERMINAL",
+        }:
+            return False
+        with self.store.transaction() as db:
+            found = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if found is None:
+                return False
+            ctx = json.loads(found["context_json"] or "{}")
+            if ctx.get("watch_diagnostic_reason") == reason:
+                return True
+            ctx["watch_diagnostic_reason"] = reason
+            return db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (json.dumps(ctx, sort_keys=True), row["task_id"], row["generation"]),
+            ).rowcount == 1
+
     def bind_observed_turn(self, watch: Watch, turn_key: str, response_sha: str) -> bool:
         """Persist the exact RCC response identity before claiming any send."""
         if not isinstance(turn_key, str) or not turn_key.strip() or not response_sha:
@@ -931,14 +959,19 @@ class DelayedSendService:
 
     def _response_for(self, row: dict) -> dict:
         ctx=row["context"]
+        def reject(reason: str) -> dict:
+            # Diagnostic only: never bypass source, receipt, or terminal checks.
+            if getattr(self, "ledger", None) is not None:
+                self.ledger.record_watch_diagnostic(row, reason)
+            return {}
         instance, worker=ctx["instance_id"],row["conversation_key"]
         observed=self.latest(instance_id=instance,conversation_key=worker)
         if observed.get("ok") is not True:
-            return {}
+            return reject("RCC_READ_UNAVAILABLE")
         current_count=observed.get("responseTurnCount")
         baseline_count=ctx.get("baseline_count")
         if not isinstance(current_count,int) or not isinstance(baseline_count,int):
-            return {}
+            return reject("TURN_COUNT_UNAVAILABLE")
         changed = (current_count>baseline_count or (
             ctx.get("baseline_generating") is True
             and current_count>=baseline_count
@@ -952,11 +985,11 @@ class DelayedSendService:
         if planned_source:
             source_key = str(observed.get("latestUserTurnKey") or "")
         if not source_key or not re.fullmatch(r"[0-9a-f]{64}", source_sha):
-            return {}
+            return reject("SOURCE_KEY_OR_SHA_MISSING")
         if (observed.get("latestUserTextOccurrenceCount") != 1
                 or observed.get("responseSourceUserTextOccurrenceCount") != 1
                 ) and (planned_source or source_key.startswith("fallback-turn-")):
-            return {}
+            return reject("SOURCE_OCCURRENCE_AMBIGUOUS")
         source_match = (
             observed.get("responseSourceUserTurnKey") == source_key
             and observed.get("responseSourceUserSha256") == source_sha
@@ -964,7 +997,7 @@ class DelayedSendService:
             and observed.get("latestUserSha256") == source_sha
         )
         if source_key and not source_match:
-            return {}
+            return reject("SOURCE_PROVENANCE_MISMATCH")
         source_send_op = str(ctx.get("source_send_operation_id") or "")
         source_send_sha = str(ctx.get("source_send_sha256") or "")
         trusted_self_source = (
@@ -972,7 +1005,7 @@ class DelayedSendService:
             and source_match and source_send_sha == source_sha
         )
         if source_send_op and not trusted_self_source:
-            return {}
+            return reject("SEND_PROOF_MISMATCH")
         if source_send_op:
             from bct.core.models import Outcome
             try:
@@ -981,9 +1014,9 @@ class DelayedSendService:
                     principal_id=ctx["principal_id"],
                 )
             except (KeyError, ValueError):
-                return {}
+                return reject("SEND_RECEIPT_UNAVAILABLE")
             except Exception:
-                return {}
+                return reject("SEND_RECEIPT_UNAVAILABLE")
             evidence = receipt.evidence
             if (receipt.state.value != "FINISHED"
                     or receipt.outcome != Outcome.APPLIED
@@ -993,19 +1026,19 @@ class DelayedSendService:
                     or evidence.get("instance_id") != ctx["instance_id"]
                     or evidence.get("conversation_key") != row["conversation_key"]
                     or evidence.get("source_message_sha256") != source_sha):
-                return {}
+                return reject("SEND_RECEIPT_INVALID")
         response_changed = (
             str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")
             and str(observed.get("responseTurnKey") or "") != ctx.get("baseline_key")
         )
         if not (changed or (trusted_self_source and response_changed)):
-            return {}
+            return reject("RESPONSE_NOT_NEW")
         if (observed.get("terminal") is not True
                 or observed.get("inputReady") is not True
                 or observed.get("generating") is not False
                 or not str(observed.get("responseTurnKey") or "").strip()
                 or str(observed.get("responseTurnKey")) == ctx.get("baseline_key")):
-            return {}
+            return reject("RESPONSE_NOT_TERMINAL")
         return normalize_rcc_latest_assistant(
             observed,conversation_key=worker,
             expected_response_sha256=str(ctx.get("baseline_sha") or ""),
