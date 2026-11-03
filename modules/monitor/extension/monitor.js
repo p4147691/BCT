@@ -7267,16 +7267,26 @@ function renderMonitorBctWindowNodes(nodes) {
     location.className = "monitor-bct-node-location";
     const minimized = nativeLocation?.iconic === true;
     const burden = monitorBctNodeBurden(node);
+    const reasoning = String(node.reasoningLevel || "?").trim();
+    const reasoningCompact = ({ instant:"I", low:"L", medium:"M", high:"H", xhigh:"XH", max:"MAX" })[reasoning.toLowerCase()] || reasoning;
+    const observedAge = monitorBctNodeObservedAgeText(node);
+    const observedAgeCompact = observedAge
+      .replace("관측 확인 중", "…")
+      .replace("관측 방금", "0m")
+      .replace(/^관측 (\d+)분$/, "$1m")
+      .replace(/^관측 (\d+)시간$/, "$1h")
+      .replace(/^관측 (\d+)일$/, "$1d");
+    const locationText = monitorBctNodeLocationText(node, desktopPosition);
+    const surfaceText = monitorBctNodeSurfaceText(node);
     const facts = [
-      monitorBctNodeLocationText(node, desktopPosition),
-      minimized ? "_" : "",
-      monitorBctNodeSurfaceText(node),
-      node.reasoningLevel || "?",
-      monitorBctNodeObservedAgeText(node),
-      `부담:${burden.label}`,
+      `${locationText}${minimized ? "_" : ""}`,
+      surfaceText,
+      reasoningCompact,
+      observedAgeCompact,
+      burden.label,
     ].filter(Boolean);
-    location.textContent = facts.join(" · ");
-    location.title = `${minimized ? "최소화됨 · " : ""}${burden.title}`;
+    location.textContent = facts.join("·");
+    location.title = `위치 ${locationText} · ${minimized ? "최소화됨" : "표시 중"} · 종류 ${surfaceText} · 추론 ${reasoning} · ${observedAge} · 부담 ${burden.label} (${burden.title})`;
     body.append(location);
     const presence = document.createElement("span");
     const stale = node.displayStale === true || node.instanceState !== "OPEN";
