@@ -149,6 +149,15 @@ assert.equal(projectedLabel(openNodes, display.bindings), "N4/9/7",
 assert.equal(display.bindings[0].displayOnly, true);
 assert.equal(contract.resolve({ nodes: openNodes, locations: geometryLocations, now }).bindings.length, 0,
   "display-only geometry must never weaken the exact conversation identity contract");
+const tiledDisplay = contract.resolveDisplay({
+  nodes: openNodes, now,
+  locations: new Map([
+    ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", left: 1273, top: 696, width: 1294, height: 703, iconic: false, at: now - 100 }],
+  ]),
+  browserWindows: [{ windowId: 594834491, left: 1280, top: 696, width: 1280, height: 696, state: "normal", observedAt: now - 50 }],
+});
+assert.equal(projectedLabel(openNodes, tiledDisplay.bindings), "N4/9/7",
+  "ordinary Chrome outer-frame deltas must not erase the right-hand tiled window projection");
 const minimizedDisplay = contract.resolveDisplay({
   nodes: openNodes, locations: new Map([
     ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "N4 - Google Chrome", left: 12, top: 12, width: 160, height: 28, iconic: true, at: now - 100 }],

@@ -31,8 +31,8 @@ assert.match(source, /row\.append\(number, body, presence\)/,
   "flat rows retain node identity, title/location and existing status icon");
 assert.match(source, /monitor-bct-node-presence/,
   "existing status icon must not be removed by unrelated label work");
-assert.match(source, /return desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "…";/,
-  "the visible location is D1, D2, and so on, with only a brief unresolved mark");
+assert.match(source, /return desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "D\?";/,
+  "the visible location is D1, D2, and so on, with an explicit unresolved D?");
 assert.match(source, /function monitorUniqueBctConversationNodes\(nodes\)/,
   "the renderer and drag persistence share one semantic-node normalization path");
 assert.match(source, /conversation:\$\{conversationKey\}/,

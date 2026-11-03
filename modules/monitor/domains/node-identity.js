@@ -124,14 +124,14 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
     ? "미확인"
     : reasoningObserved;
   const reasoningLabel = ({
-    instant: "Instant",
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "Extra\u00a0High",
-    "extra high": "Extra\u00a0High",
-    "extra-high": "Extra\u00a0High",
-    pro: "Pro",
+    instant: "I",
+    low: "L",
+    medium: "M",
+    high: "H",
+    xhigh: "E",
+    "extra high": "E",
+    "extra-high": "E",
+    pro: "P",
     max: "Max",
     ultra: "Ultra",
   })[reasoning.toLowerCase()] || reasoning;
@@ -578,7 +578,7 @@ function monitorBctNodeInsertionAt(list, hit, clientX, clientY, draggedKey) {
 
 //@@FN_START:monitorBctNodeLocationText
 function monitorBctNodeLocationText(node, desktopPosition) {
-  return desktopPosition >= 0 ? `D${desktopPosition + 1}` : "…";
+  return desktopPosition >= 0 ? `D${desktopPosition + 1}` : "D?";
 }
 //@@FN_END:monitorBctNodeLocationText
 

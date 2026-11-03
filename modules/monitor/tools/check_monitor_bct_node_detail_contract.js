@@ -56,7 +56,7 @@ const minimized = context.monitorBctNodeDetail({
   reasoningLevel: "xhigh",
   telemetry: { js_heap_used_mb: 800, js_heap_limit_mb: 1000, rendered_chars: 900000 },
 }, 0, { iconic: true });
-assert.equal(minimized.text, "D1 − Work Extra\u00a0High 120분 높음");
+assert.equal(minimized.text, "D1 − Work E 120분 높음");
 assert.match(minimized.title, /위치 D1 · 최소화됨 · 종류 Work · 추론 xhigh · 관측 120분 · 부담 높음/);
 
 const ordinary = context.monitorBctNodeDetail({
@@ -69,7 +69,7 @@ assert.doesNotMatch(ordinary.text, /[_−]/);
 assert.doesNotMatch(ordinary.text, /Chat\/Work/);
 
 const blank = context.monitorBctNodeDetail({ tabId: "blank", reasoningLevel: "UNKNOWN" }, -1, null);
-assert.equal(blank.text, "… New 미확인 0분 미확인");
+assert.equal(blank.text, "D? New 미확인 0분 미확인");
 
 const conversations = fs.readFileSync(path.join(__dirname, "../domains/conversations.js"), "utf8");
 const editor = conversations.match(/\/\/@@FN_START:openMonitorBctRenameEditor\n([\s\S]*?)\n\/\/@@FN_END:openMonitorBctRenameEditor/);

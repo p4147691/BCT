@@ -23,8 +23,17 @@
       && geometry.width > 0 && geometry.height > 0 ? geometry : null;
   }
   function geometryScore(left, right) {
-    return Math.abs(left.left - right.left) + Math.abs(left.top - right.top)
-      + Math.abs(left.width - right.width) + Math.abs(left.height - right.height);
+    // Chrome reports client/window bounds while Native observes the outer HWND
+    // rectangle.  A tiled window can therefore differ by 7-14px on several
+    // fields at once.  Summing those harmless border deltas rejected the exact
+    // right-hand Chrome window even though every individual edge was within
+    // tolerance.  The largest per-field delta expresses the intended contract.
+    return Math.max(
+      Math.abs(left.left - right.left),
+      Math.abs(left.top - right.top),
+      Math.abs(left.width - right.width),
+      Math.abs(left.height - right.height),
+    );
   }
   function chromeWindowTitle(value) {
     return text(value).replace(/\s+-\s+(?:Google\s+Chrome|Chrome)$/i, "").trim();

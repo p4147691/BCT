@@ -113,12 +113,12 @@ function loadModule() {
     "an unresolved pre-observation conversation must use one stable Chat fallback rather than a Chat\/Work union");
   assert.doesNotMatch(monitor, /\|\| "Chat\/Work";/,
     "node cards must never expose Chat\/Work as a final product kind");
-  assert.match(monitor, /instant: "Instant"[\s\S]{0,260}medium: "Medium"[\s\S]{0,260}high: "High"[\s\S]{0,260}xhigh: "Extra\\u00a0High"[\s\S]{0,260}pro: "Pro"/,
-    "reasoning levels must use readable English names including Extra High and Pro");
+  assert.match(monitor, /instant: "I"[\s\S]{0,260}low: "L"[\s\S]{0,260}medium: "M"[\s\S]{0,260}high: "H"[\s\S]{0,260}xhigh: "E"[\s\S]{0,260}pro: "P"/,
+    "reasoning levels must use compact I/L/M/H/E/P card labels");
   assert.match(monitor, /return `관측 \$\{minutes\}분`;/,
     "observed age must remain in minutes at every age");
-  assert.match(monitor, /desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "…"/,
-    "unresolved location must be a short loading mark rather than persistent explanatory text");
+  assert.match(monitor, /desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "D\?"/,
+    "unresolved location must be an explicit D? rather than an ambiguous underscore-like glyph");
   assert.match(monitor, /`\$\{locationText\}\$\{minimized \? " \\u2212" : ""\}`/,
     "a minimized node must use the Windows-like minus mark rather than an underscore");
   assert.doesNotMatch(monitor, /minimized \? "_"/,
