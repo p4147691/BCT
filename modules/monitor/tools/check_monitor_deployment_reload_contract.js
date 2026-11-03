@@ -25,6 +25,8 @@ assert.match(update, /monitorInitialThumbBatchDone[\s\S]*?ackExtensionReload/,
   "reload ACK must wait for the initial thumbnail acceptance gate");
 assert.match(update, /monitorReloadAckToken !== reloadToken/,
   "the same accepted reload token is acknowledged at most once per runtime");
+assert.match(monitor, /setInterval\(\(\) => \{[\s\S]*?checkMonitorDeploymentUpdate\(\)[\s\S]*?\}, 2000\)/,
+  "the owned Monitor must observe gate-published ordinary-Chat tokens without focus or DevTools");
 
 for (const source of [publish, request]) {
   assert.match(source, /shared-runtime\.json/);

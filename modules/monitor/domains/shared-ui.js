@@ -287,8 +287,9 @@ async function checkMonitorDeploymentUpdate() {
     }
 
     // A reload can recreate the popup after its HWND-change event has already
-    // run. Publish one fresh presence record once the token is known; this is
-    // a startup/deployment event, not a timer or a background polling loop.
+    // run. Publish one fresh presence record once the token is known. The
+    // low-frequency owned-token poll may enter here too, but an unchanged
+    // token can only refresh observation; it cannot request another reload.
     if (reloadToken && monitorReloadToken === reloadToken) {
       await monitorPublishSharedInstance("deployment-token-ready");
     }
