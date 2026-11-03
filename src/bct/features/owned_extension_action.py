@@ -16,7 +16,6 @@ import re
 import subprocess
 import time
 import tomllib
-import uuid
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -45,10 +44,6 @@ class OwnedExtensionActionFeature:
     def __init__(self, browser_feature, *, policy_path: str | Path):
         self.browser = browser_feature
         self.policy_path = Path(policy_path)
-        self.monitor_dispatch_adapter = (
-            Path(__file__).resolve().parents[3]
-            / "scripts" / "owned_extension_monitor_reload.cjs"
-        )
 
     def _monitor_root(self) -> Path:
         try:
@@ -62,6 +57,7 @@ class OwnedExtensionActionFeature:
 
     def _verify_monitor_identity(self, root: Path) -> dict[str, str]:
         manifest_path = root / "extension" / "manifest.json"
+        tool_path = root / "tools" / "Request-MonitorDeploymentCheck.ps1"
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
             extension_id = extension_id_from_key(str(manifest.get("key") or ""))
@@ -70,55 +66,14 @@ class OwnedExtensionActionFeature:
         if (
             extension_id != self._MONITOR_ID
             or manifest.get("name") != "BCT Window Monitor"
+            or not tool_path.is_file()
         ):
             raise PreconditionError("OWNED_EXTENSION_MONITOR_IDENTITY_MISMATCH")
         return {
             "extension_id": extension_id,
             "version": str(manifest.get("version") or ""),
+            "tool_path": str(tool_path),
         }
-
-    @staticmethod
-    def _monitor_runtime_telemetry_path() -> Path:
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if not local_app_data or not Path(local_app_data).is_absolute():
-            raise PreconditionError("OWNED_EXTENSION_MONITOR_TELEMETRY_ROOT_REQUIRED")
-        return Path(local_app_data) / "DesktopWindowMonitor" / "shared-runtime.json"
-
-    @staticmethod
-    def _monitor_reload_observed(
-        *, ack_path: Path, telemetry_path: Path, token: str,
-        version: str, published_at_ms: int,
-    ) -> bool:
-        try:
-            if ack_path.read_text(encoding="utf-8-sig").strip() != token:
-                return False
-            runtime = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
-            row = runtime.get("__MONITOR_INSTANCE__:GOOGLE") or {}
-            label = json.loads(row.get("label") or "{}")
-            return (
-                str(label.get("manifest_version") or "") == version
-                and str(label.get("reload_token") or "") == token
-                and int(label.get("seen_at_ms") or 0) >= published_at_ms
-            )
-        except (OSError, ValueError, TypeError, AttributeError):
-            return False
-
-    def _chrome_connection_settings(self) -> dict[str, str]:
-        try:
-            section = tomllib.loads(
-                self.policy_path.read_text(encoding="utf-8")
-            ).get("browser_extension_manage", {})
-        except (OSError, ValueError, AttributeError) as exc:
-            raise PreconditionError("OWNED_EXTENSION_CHROME_POLICY_INVALID") from exc
-        if not isinstance(section, dict) or section.get("enabled") is not True:
-            raise PreconditionError("OWNED_EXTENSION_CHROME_CONNECTION_DISABLED")
-        values = {}
-        for key in ("profile_root", "puppeteer_module", "node_executable"):
-            value = section.get(key)
-            if not isinstance(value, str) or not Path(value).is_absolute():
-                raise PreconditionError("OWNED_EXTENSION_CHROME_PATH_REQUIRED:" + key)
-            values[key] = value
-        return values
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         if not isinstance(arguments, dict):
@@ -135,7 +90,6 @@ class OwnedExtensionActionFeature:
 
         if target == "monitor":
             identity = self._verify_monitor_identity(self._monitor_root())
-            self._chrome_connection_settings()
             return FeatureRequest(
                 self.capability,
                 "chrome-extension:" + identity["extension_id"],
@@ -169,64 +123,79 @@ class OwnedExtensionActionFeature:
 
     def _reload_monitor(self, request: FeatureRequest) -> FeatureResult:
         identity = self._verify_monitor_identity(self._monitor_root())
-        settings = self._chrome_connection_settings()
         if identity["version"] != request.arguments["version"]:
             raise ConfirmedFailure(
                 "OWNED_EXTENSION_MONITOR_VERSION_CHANGED", release_claims=True
             )
-        extension_root = self._monitor_root() / "extension"
-        token_path = extension_root / ".reload-token"
-        ack_path = extension_root / ".reload-ack"
-        telemetry_path = self._monitor_runtime_telemetry_path()
-        token = uuid.uuid4().hex
-        published_at_ms = int(time.time() * 1000)
+        observation_command = [
+            "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+            "-ExecutionPolicy", "Bypass", "-File", identity["tool_path"],
+            "-TimeoutSeconds", "35",
+        ]
+        token_path = self._monitor_root() / "extension" / ".reload-token"
+        old_token = token_path.read_text(encoding="utf-8-sig").strip() if token_path.is_file() else ""
         try:
-            token_path.write_text(token, encoding="utf-8")
-        except OSError as exc:
-            raise ConfirmedFailure(
-                "OWNED_EXTENSION_MONITOR_TOKEN_NOT_PUBLISHED", release_claims=True
-            ) from exc
-
-        # Once the token is published, a later Monitor startup/focus can
-        # consume it.  Every uncertainty from here is therefore UNKNOWN and
-        # must be reconciled from this exact operation instead of retried.
-        if not self.monitor_dispatch_adapter.is_file():
-            raise UnknownEffectError("OWNED_EXTENSION_MONITOR_DISPATCH_ADAPTER_MISSING")
-        payload = json.dumps({
-            "profile_root": settings["profile_root"],
-            "puppeteer_module": settings["puppeteer_module"],
-        })
-        try:
-            dispatch = subprocess.run(
-                [settings["node_executable"], str(self.monitor_dispatch_adapter)],
-                input=payload, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=15, check=False,
+            observation_environment = os.environ.copy()
+            observation_environment["PYTHONUTF8"] = "1"
+            observation_environment["PYTHONIOENCODING"] = "utf-8"
+            observation = subprocess.Popen(
+                observation_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=observation_environment,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            dispatch_result = json.loads(dispatch.stdout.strip())
-        except (OSError, subprocess.TimeoutExpired, ValueError, TypeError):
-            dispatch_result = {"status": "UNKNOWN"}
-        # The adapter may lose its CDP context because the requested reload
-        # destroys that page.  The exact token ACK plus telemetry written by
-        # the newly loaded Monitor instance are the sole terminal proof.
-        deadline = time.monotonic() + 30.0
-        while time.monotonic() < deadline:
-            if self._monitor_reload_observed(
-                ack_path=ack_path, telemetry_path=telemetry_path, token=token,
-                version=identity["version"], published_at_ms=published_at_ms,
-            ):
-                return FeatureResult(
-                    Outcome.APPLIED,
-                    {
-                        "target": "monitor", "action": "reload",
-                        "extension_id": identity["extension_id"],
-                        "manifest_version": identity["version"],
-                        "reload_ack": True, "runtime_telemetry_verified": True,
-                        "dispatch_observation": str(dispatch_result.get("status") or "UNKNOWN"),
-                    },
-                    output={"target": "monitor", "action": "reload", "status": "APPLIED"},
-                )
+        except OSError as exc:
+            raise ConfirmedFailure(
+                "OWNED_EXTENSION_MONITOR_TOOL_UNAVAILABLE", release_claims=True
+            ) from exc
+
+        # The bounded installed tool publishes only after the complete Monitor
+        # structure gate passes.  Once the token changes, the Monitor poller
+        # can consume it, so all later uncertainty is non-retryable UNKNOWN.
+        published = False
+        deadline = time.monotonic() + 12.0
+        while time.monotonic() < deadline and observation.poll() is None:
+            try:
+                published = token_path.read_text(encoding="utf-8-sig").strip() != old_token
+            except OSError:
+                published = False
+            if published:
+                break
             time.sleep(0.1)
+        if not published:
+            try:
+                stdout, stderr = observation.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                observation.kill()
+                stdout, stderr = observation.communicate(timeout=3)
+            combined = (stdout + "\n" + stderr).strip()
+            raise ConfirmedFailure(
+                "OWNED_EXTENSION_MONITOR_OBSERVATION_NOT_PUBLISHED:" + combined[:120],
+                release_claims=True,
+            )
+
+        try:
+            stdout, stderr = observation.communicate(timeout=40)
+        except subprocess.TimeoutExpired as exc:
+            raise UnknownEffectError("OWNED_EXTENSION_MONITOR_RELOAD_RESULT_UNKNOWN") from exc
+        combined = (stdout + "\n" + stderr).strip()
+        match = self._MONITOR_RESULT.search(combined)
+        if observation.returncode == 0 and match and match.group(1) == identity["version"]:
+            return FeatureResult(
+                Outcome.APPLIED,
+                {
+                    "target": "monitor", "action": "reload",
+                    "extension_id": identity["extension_id"],
+                    "manifest_version": identity["version"],
+                    "reload_ack": True, "runtime_telemetry_verified": True,
+                    "dispatch_observation": "monitor-token-poll",
+                },
+                output={"target": "monitor", "action": "reload", "status": "APPLIED"},
+            )
         raise UnknownEffectError("OWNED_EXTENSION_MONITOR_RELOAD_ACK_UNKNOWN")
 
     def execute(self, request: FeatureRequest) -> FeatureResult:

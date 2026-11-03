@@ -16,9 +16,10 @@ function name, installed path, or raw command. Unknown keys fail closed.
 - Monitor uses the installed `Request-MonitorDeploymentCheck.ps1` contract.
   It validates the installed extension identity and structure, publishes one
   reload-observation token, and requires the matching ACK, manifest version,
-  and fresh runtime telemetry. A fixed adapter then invokes only the existing
-  `monitor-reload-extension` message on the exact owned Monitor page, so an
-  ordinary Chat caller does not need to focus Monitor first.
+  and fresh runtime telemetry. The owned Monitor page checks this bounded
+  token every two seconds and invokes its existing `monitor-reload-extension`
+  message only when the gate-published token changes. Ordinary Chat therefore
+  does not need DevTools, an extension URL, or a focused Monitor window.
 - RCC delegates to the existing `BrowserFeature` `reload-extension` operation.
   Exact instance identity, idle proof, active Delivery fencing, durable receipt,
   and UNKNOWN no-retry behavior remain unchanged.

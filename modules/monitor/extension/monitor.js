@@ -13688,8 +13688,9 @@ async function checkMonitorDeploymentUpdate() {
     }
 
     // A reload can recreate the popup after its HWND-change event has already
-    // run. Publish one fresh presence record once the token is known; this is
-    // a startup/deployment event, not a timer or a background polling loop.
+    // run. Publish one fresh presence record once the token is known. The
+    // low-frequency owned-token poll may enter here too, but an unchanged
+    // token can only refresh observation; it cannot request another reload.
     if (reloadToken && monitorReloadToken === reloadToken) {
       await monitorPublishSharedInstance("deployment-token-ready");
     }
@@ -13741,6 +13742,14 @@ if (MONITOR_ACTIVE_STARTUP_ENABLED) {
   if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) refreshActHealth();
   void refreshWindowsCurrentState();
   checkMonitorDeploymentUpdate();
+
+  // Ordinary Chat can request the same bounded reload token used by the
+  // deployment path without focusing this window or using DevTools.  The
+  // function is re-entrancy guarded and the native read is intentionally
+  // low-frequency; only a changed, gate-published token can cause a reload.
+  globalThis.setInterval(() => {
+    void checkMonitorDeploymentUpdate();
+  }, 2000);
 }
 
 // Lightweight endpoint/node-state refresh keeps same-tab conversation changes responsive

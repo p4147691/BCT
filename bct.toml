@@ -216,7 +216,6 @@ files = [
   "src/bct/features/cdp_inspect.py",
   "src/bct/features/browser_extension_manage.py",
   "src/bct/features/owned_extension_action.py",
-  "scripts/owned_extension_monitor_reload.cjs",
   "scripts/browser_extension_manage.cjs",
   "src/bct/features/process_session.py",
   "src/bct/features/snapshot.py",
