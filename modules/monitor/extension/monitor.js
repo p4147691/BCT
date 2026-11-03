@@ -6469,6 +6469,31 @@ function monitorBctNodeBurdenScore(node) {
   const burden = monitorBctNodeBurden(node);
   return burden.label === "높음" ? 3 : burden.label === "보통" ? 2 : burden.label === "낮음" ? 1 : 0;
 }
+function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
+  const minimized = nativeLocation?.iconic === true;
+  const burden = monitorBctNodeBurden(node);
+  const reasoning = String(node?.reasoningLevel || "?").trim();
+  const reasoningCompact = ({ instant:"I", low:"L", medium:"M", high:"H", xhigh:"XH", max:"MAX" })[reasoning.toLowerCase()] || reasoning;
+  const observedAge = monitorBctNodeObservedAgeText(node);
+  const observedAgeCompact = observedAge
+    .replace("관측 확인 중", "…")
+    .replace("관측 방금", "0m")
+    .replace(/^관측 (\d+)분$/, "$1m")
+    .replace(/^관측 (\d+)시간$/, "$1h")
+    .replace(/^관측 (\d+)일$/, "$1d");
+  const locationText = monitorBctNodeLocationText(node, desktopPosition);
+  const surfaceText = monitorBctNodeSurfaceText(node);
+  return {
+    text: [
+      `${locationText}${minimized ? "_" : ""}`,
+      surfaceText,
+      reasoningCompact,
+      observedAgeCompact,
+      burden.label,
+    ].filter(Boolean).join("·"),
+    title: `위치 ${locationText} · ${minimized ? "최소화됨" : "표시 중"} · 종류 ${surfaceText} · 추론 ${reasoning} · ${observedAge} · 부담 ${burden.label} (${burden.title})`,
+  };
+}
 function setMonitorBctNodeViewMode(value) {
   const next = ["manual", "number", "observed", "burden"].includes(String(value)) ? String(value) : "manual";
   monitorBctNodeDisplayState().viewMode = next;
@@ -7265,28 +7290,9 @@ function renderMonitorBctWindowNodes(nodes) {
     body.append(title);
     const location = document.createElement("small");
     location.className = "monitor-bct-node-location";
-    const minimized = nativeLocation?.iconic === true;
-    const burden = monitorBctNodeBurden(node);
-    const reasoning = String(node.reasoningLevel || "?").trim();
-    const reasoningCompact = ({ instant:"I", low:"L", medium:"M", high:"H", xhigh:"XH", max:"MAX" })[reasoning.toLowerCase()] || reasoning;
-    const observedAge = monitorBctNodeObservedAgeText(node);
-    const observedAgeCompact = observedAge
-      .replace("관측 확인 중", "…")
-      .replace("관측 방금", "0m")
-      .replace(/^관측 (\d+)분$/, "$1m")
-      .replace(/^관측 (\d+)시간$/, "$1h")
-      .replace(/^관측 (\d+)일$/, "$1d");
-    const locationText = monitorBctNodeLocationText(node, desktopPosition);
-    const surfaceText = monitorBctNodeSurfaceText(node);
-    const facts = [
-      `${locationText}${minimized ? "_" : ""}`,
-      surfaceText,
-      reasoningCompact,
-      observedAgeCompact,
-      burden.label,
-    ].filter(Boolean);
-    location.textContent = facts.join("·");
-    location.title = `위치 ${locationText} · ${minimized ? "최소화됨" : "표시 중"} · 종류 ${surfaceText} · 추론 ${reasoning} · ${observedAge} · 부담 ${burden.label} (${burden.title})`;
+    const detail = monitorBctNodeDetail(node, desktopPosition, nativeLocation);
+    location.textContent = detail.text;
+    location.title = detail.title;
     body.append(location);
     const presence = document.createElement("span");
     const stale = node.displayStale === true || node.instanceState !== "OPEN";
@@ -10727,10 +10733,9 @@ function syncMonitorBctNodeLocationLabels() {
       String(item?.conversationKey || "") === String(row.dataset.conversationKey || "")
     );
     if (position) {
-      position.textContent = monitorBctNodeLocationText(node, index);
-      position.title = Array.isArray(node?.roleTags) && node.roleTags.length
-        ? `${index >= 0 ? `D${index + 1}` : "위치 확인 중"} · ${node.roleTags.join(" · ")}`
-        : position.textContent;
+      const detail = monitorBctNodeDetail(node, index, location);
+      position.textContent = detail.text;
+      position.title = detail.title;
     }
     row.dataset.desktopNumber = index >= 0 ? String(index + 1) : "";
   }

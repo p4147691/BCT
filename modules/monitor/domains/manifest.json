@@ -9,7 +9,7 @@
     {
       "domain": "conversations",
       "file": "conversations.js",
-      "functions": 77
+      "functions": 76
     },
     {
       "domain": "desktop-lifecycle",
@@ -29,7 +29,7 @@
     {
       "domain": "node-identity",
       "file": "node-identity.js",
-      "functions": 76
+      "functions": 77
     },
     {
       "domain": "organization",

@@ -254,7 +254,7 @@ Generated extension/monitor.js is not an edit target.
 - stopMonitorBctNativePreview
 - syncMonitorNativeZOrder
 
-## node-identity (76 functions)
+## node-identity (77 functions)
 
 - applyMonitorBctNodeHighlight
 - applyMonitorChatNavigationIdentity
@@ -272,6 +272,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorBadgeNodeNumbersForHwnd
 - monitorBctNodeBurden
 - monitorBctNodeBurdenScore
+- monitorBctNodeDetail
 - monitorBctNodeDisplayState
 - monitorBctNodeInsertionAt
 - monitorBctNodeLocationText
