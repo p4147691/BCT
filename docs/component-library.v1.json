@@ -99,6 +99,18 @@
       "used_by": ["monitor.recovery_bin"]
     },
     {
+      "id": "monitor.recovery_bin",
+      "kind": "full_recipe",
+      "maturity": "embedded",
+      "implementation": [
+        {"path": "modules/monitor/domains/desktop-lifecycle.js", "symbol": "renderMonitorClosedConversationRecoveryPanel"}
+      ],
+      "contract": "Present deleted memo summaries, recoverable node metadata, and desktop thumbnails in a three-pane recovery view; expand memo bodies on demand and prefer current node metadata when the same conversation is live.",
+      "effects": ["monitor.restore_conversation", "restore-note", "restore-desktop", "delete-recovery-record"],
+      "safety": ["current-metadata-preferred", "saved-metadata-fallback", "full-body-hidden-until-requested", "independent-pane-scroll"],
+      "used_by": ["monitor.node_trash"]
+    },
+    {
       "id": "code.scan_blocks",
       "kind": "full_recipe",
       "maturity": "isolated",
@@ -109,7 +121,32 @@
       "contract": "Read one Work-scoped source tree and produce a bounded static Block Map, Block Candidates, Refactor Targets, Block Cards, catalog candidates, and ordered work list.",
       "effects": [],
       "safety": ["read-only", "work-root-bound", "bounded-files-bytes-blocks", "partial-never-reported-complete", "static-candidates-not-runtime-proof"],
-      "used_by": ["future:code.organize_blocks"]
+      "used_by": ["code.organize_blocks"]
+    },
+    {
+      "id": "code.replace_block",
+      "kind": "primitive",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/code_block_organize.py", "symbol": "plan_block_replacement"},
+        {"path": "src/bct/code_block_organize.py", "symbol": "prepare_block_apply"}
+      ],
+      "contract": "Select one exact scanned block, produce a reviewable hash-bound replacement plan, and assemble only that block range for the existing atomic write primitive.",
+      "effects": [],
+      "safety": ["one-block-only", "exact-file-and-block-hashes", "source-drift-fails-closed", "no-marker-injection", "no-direct-write"],
+      "used_by": ["code.organize_blocks"]
+    },
+    {
+      "id": "code.organize_blocks",
+      "kind": "full_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/mcp_server.py", "symbol": "organize_code_blocks"}
+      ],
+      "contract": "Plan or apply one selected Code Block Scan replacement. Apply delegates to the existing Work-authorized write capability and its durable operation receipt.",
+      "effects": ["filesystem_write_via:write"],
+      "safety": ["plan-is-read-only", "apply-requires-operation-id", "exact-plan-hash", "atomic-write-reuse", "tests-not-implied"],
+      "used_by": []
     },
     {
       "id": "node.check",
