@@ -26,6 +26,7 @@ from bct.conversation_network import (
     arrange_conversations,
     ConversationNetworkError,
     configure_conversation_scope,
+    retire_conversation_node_label,
     upsert_conversation,
 )
 from bct.bottleneck_ack import BottleneckAckController, load_bottleneck_ack_policy
@@ -184,6 +185,20 @@ def run_monitor_conversation_order_update(
         conversation_keys=payload.get("conversation_keys") or [],
         scope_id=str(payload.get("scope_id") or ""),
         moved_conversation_key=str(payload.get("moved_conversation_key") or ""),
+    )
+
+
+def run_monitor_conversation_node_retire(
+    bct: BCT, *, payload: dict[str, Any]
+) -> dict[str, object]:
+    allowed = {"conversation_key", "expected_node_label"}
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError("MONITOR_CONVERSATION_NODE_RETIRE_FIELD_NOT_ALLOWED:" + ",".join(sorted(unknown)))
+    return retire_conversation_node_label(
+        bct.store,
+        conversation_key=str(payload.get("conversation_key") or ""),
+        expected_node_label=str(payload.get("expected_node_label") or ""),
     )
 
 
@@ -605,6 +620,27 @@ def main() -> int:
         except (ValueError, ConversationNetworkError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse({"status": "OK", "order": result})
+
+    @mcp.custom_route(
+        "/monitor/conversation-node/retire",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def monitor_conversation_node_retire(request: Request) -> JSONResponse:
+        if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+            return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_INVALID"}, status_code=403)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("MONITOR_CONVERSATION_NODE_RETIRE_OBJECT_REQUIRED")
+            result = await asyncio.to_thread(
+                run_monitor_conversation_node_retire,
+                bct,
+                payload=payload,
+            )
+        except (ValueError, ConversationNetworkError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse({"status": "OK", "retirement": result})
 
     @mcp.custom_route("/shutdown", methods=["POST"], include_in_schema=False)
     async def shutdown(request: Request) -> JSONResponse:

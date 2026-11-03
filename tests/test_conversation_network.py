@@ -7,6 +7,7 @@ from pathlib import Path
 
 from bct.conversation_network import (
     ConversationNetworkError, arrange_conversations, configure_conversation_scope,
+    ensure_observed_node_labels, retire_conversation_node_label,
     set_conversation_network_name,
     conversation_display_order_directory, conversation_scope_directory,
     patch_conversation_role_tags, project_view, record_monitor_snapshot,
@@ -177,6 +178,23 @@ class ConversationNetworkTests(unittest.TestCase):
             key = f"00000000-0000-4000-8000-{number:012d}"
             last = upsert_conversation(self.store, conversation_key=key, display_name=f"node {number}")
         self.assertEqual("N1", last["node_label"])
+
+    def test_retired_closed_node_gets_new_non_conflicting_label_when_observed_again(self):
+        retired = retire_conversation_node_label(
+            self.store, conversation_key=MANAGER, expected_node_label="N1",
+        )
+        self.assertEqual("RETIRED", retired["status"])
+        directory = conversation_scope_directory(self.store, conversation_keys=[MANAGER])
+        self.assertEqual("BCT RCC", directory[MANAGER]["scope_name"])
+        labels = ensure_observed_node_labels(self.store, conversations=[
+            (WORKER, "still open"), (MANAGER, "restored"),
+        ])
+        self.assertEqual("N2", labels[WORKER])
+        self.assertEqual("N3", labels[MANAGER])
+        with self.assertRaisesRegex(ConversationNetworkError, "NODE_LABEL_CHANGED"):
+            retire_conversation_node_label(
+                self.store, conversation_key=MANAGER, expected_node_label="N1",
+            )
 
     def test_scope_allows_only_one_manager_and_supervisor_is_unassigned(self):
         configured = configure_conversation_scope(

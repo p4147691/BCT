@@ -43,8 +43,6 @@ const ORCHESTRATOR_CONTEXT_TITLE_URL = "act:/monitor/context-title";
 
 const ORCHESTRATOR_CONVERSATION_RENAME_URL = "act:/monitor/conversation-title/rename";
 
-const ORCHESTRATOR_CONVERSATION_CLOSE_TAB_URL = "act:/monitor/conversation/close-tab";
-
 // ACT transport is isolated in monitor-act-transport.js.
 // Monitor consumes one narrow public boundary: actFetch.
 const actFetch = globalThis.MonitorActTransport && globalThis.MonitorActTransport.actFetch;

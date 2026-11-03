@@ -114,6 +114,18 @@ const context = {
         async json() { return { status: "OK", order: { scope_id: "network.monitor" } }; },
       };
     }
+    if (url === "http://127.0.0.1:18790/monitor/conversation-node/retire") {
+      assert.equal(init.method, "POST");
+      assert.deepEqual(JSON.parse(init.body), {
+        conversation_key: "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+        expected_node_label: "N8",
+      });
+      return {
+        ok: true,
+        status: 200,
+        async json() { return { status: "OK", retirement: { status: "RETIRED", node_label: "N8" } }; },
+      };
+    }
     if (url === "http://127.0.0.1:18790/monitor/state") {
       return { ok: true, status: 200, async json() { return monitorState; } };
     }
@@ -271,6 +283,11 @@ assert.match(monitorSource, /installMonitorBctRoleLongPress\(row, node\)/);
     movedConversationKey: "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
   });
   assert.equal(arranged.scope_id, "network.monitor");
+  const retired = await shell.retireConversationNode({
+    conversation_key: "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+    node_label: "N8",
+  });
+  assert.equal(retired.status, "RETIRED");
   await assert.rejects(shell.reloadRcc("x"), /BCT_RCC_RELOAD_EXACT_INSTANCE_REQUIRED/);
   await assert.rejects(shell.renameConversation(nodes[1], "이름"), /BCT_RENAME_EXACT_IDENTITY_REQUIRED/);
   await shell.openStatus();

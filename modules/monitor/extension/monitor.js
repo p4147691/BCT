@@ -43,8 +43,6 @@ const ORCHESTRATOR_CONTEXT_TITLE_URL = "act:/monitor/context-title";
 
 const ORCHESTRATOR_CONVERSATION_RENAME_URL = "act:/monitor/conversation-title/rename";
 
-const ORCHESTRATOR_CONVERSATION_CLOSE_TAB_URL = "act:/monitor/conversation/close-tab";
-
 // ACT transport is isolated in monitor-act-transport.js.
 // Monitor consumes one narrow public boundary: actFetch.
 const actFetch = globalThis.MonitorActTransport && globalThis.MonitorActTransport.actFetch;
@@ -5053,7 +5051,7 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
 
   if(!noteRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";noteScroll.append(empty);}else for(const note of noteRecords){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-note-row";const info=document.createElement("div");info.className="monitor-closed-conversation-info monitor-trash-note-info";const noteTitle=document.createElement("strong");noteTitle.textContent=note.title||monitorNotesFeature.titleFromText(note.body)||"메모";const lines=String(note.body||"").split(/\r?\n/);const firstLineIndex=lines.findIndex((line)=>line.trim());const notePreview=document.createElement("span");notePreview.textContent=(firstLineIndex>=0?lines.slice(firstLineIndex+1).join(" "):"").replace(/\s+/g," ").trim()||"내용 없음";info.append(noteTitle,notePreview);const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashedNote(note.id);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();deleteMonitorTrashedNote(note.id);});row.append(info,restore,del);noteScroll.append(row);}notePane.append(noteScroll);panel.append(notePane);
 
-  const renderTrashRows=(source,container)=>{const records=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")===source).sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));if(!records.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";container.append(empty);return;}for(const ghost of records){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-record-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost),at=Number(ghost?.trashed_at_ms||0),scope=String(ghost?.network_name||"미소속"),roles=Array.isArray(ghost?.role_tags)&&ghost.role_tags.length?` · ${ghost.role_tags.join(", ")}`:"";info.textContent=`${String(ghost?.node_label||"")} ${context} · ${scope}${roles} · ${location} · ${at?new Date(at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"?"}`.trim();const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashRecord(ghost.conversation_key);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorTrashRecord(ghost.conversation_key),140);});row.append(info);if(source==="list")appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);container.append(row);}};
+  const renderTrashRows=(source,container)=>{const records=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")===source).sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));if(!records.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";container.append(empty);return;}for(const ghost of records){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-record-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost),at=Number(ghost?.trashed_at_ms||0),scope=String(ghost?.network_name||"미소속"),roles=Array.isArray(ghost?.role_tags)&&ghost.role_tags.length?` · ${ghost.role_tags.join(", ")}`:"";info.textContent=`${String(ghost?.node_label||"")} ${context} · ${scope}${roles} · ${location} · ${at?new Date(at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"?"}`.trim();const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();void restoreMonitorTrashedConversation(ghost,restore);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorTrashRecord(ghost.conversation_key),140);});row.append(info);if(source==="list")appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);container.append(row);}};
 
   const thumbRecords=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")==="thumbnail");
 
@@ -9208,7 +9206,7 @@ async function restoreMonitorAllRecovery(button,listRecords,items){
 
   if(!button||button.disabled)return; button.disabled=true; const old=button.textContent; button.textContent="전체 복원 중…";
 
-  try{for(const item of listRecords||[])restoreMonitorTrashRecord(item?.conversation_key);for(const item of items||[]){const temp=document.createElement("button");temp.textContent="복구";await restoreMonitorDetachedTask(item,temp);}}
+  try{for(const item of listRecords||[]){const temp=document.createElement("button");temp.textContent="복구";await restoreMonitorTrashedConversation(item,temp);}for(const item of items||[]){const temp=document.createElement("button");temp.textContent="복구";await restoreMonitorDetachedTask(item,temp);}}
 
   finally{button.textContent=old;button.disabled=false;refreshMonitorRecoveryMenu();}
 
@@ -11075,7 +11073,7 @@ function monitorTrashRecordForKey(key,sourceKind="list"){
   const em=endpoint?.metadata||{}; const desktop=Number(ghost?.desktop||em.desktop_id||em.desktop_index||0), slot=Number(ghost?.slot||em.slot_index||0);
   const bctNode=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).find((item)=>String(item?.conversationKey||"")===key)||{};
 
-  return {...ghost,conversation_key:key,profile_id:String(ghost?.profile_id||worker?.profile_id||endpoint?.profile_id||"").toUpperCase(),title:String(ghost?.title||endpoint?.title||bctNode?.title||""),meaningful_title:String(ghost?.meaningful_title||worker?.task_title||endpoint?.title||bctNode?.title||""),node_label:String(bctNode?.nodeLabel||ghost?.node_label||""),network_id:String(bctNode?.scopeId||ghost?.network_id||""),network_name:String(bctNode?.scopeName||ghost?.network_name||""),role_tags:Array.isArray(bctNode?.roleTags)?[...bctNode.roleTags]:(Array.isArray(ghost?.role_tags)?ghost.role_tags:[]),desktop:Number.isInteger(desktop)&&desktop>0?desktop:null,slot:Number.isInteger(slot)&&slot>0?slot:null,first_seen_ms:Number(ghost?.first_seen_ms||monitorGhostTime(endpoint?.first_seen_at)||0),closed_at_ms:Number(ghost?.closed_at_ms||monitorGhostTime(endpoint?.closed_at)||0),trash_source:sourceKind==="thumbnail"?"thumbnail":"list",trashed_at_ms:Date.now()};
+  return {...ghost,conversation_key:key,profile_id:String(ghost?.profile_id||worker?.profile_id||endpoint?.profile_id||"").toUpperCase(),title:String(ghost?.title||endpoint?.title||bctNode?.title||""),meaningful_title:String(ghost?.meaningful_title||worker?.task_title||endpoint?.title||bctNode?.title||""),node_label:String(bctNode?.nodeLabel||ghost?.node_label||""),network_id:String(bctNode?.scopeId||ghost?.network_id||""),network_name:String(bctNode?.scopeName||ghost?.network_name||""),role_tags:Array.isArray(bctNode?.roleTags)?[...bctNode.roleTags]:(Array.isArray(ghost?.role_tags)?ghost.role_tags:[]),role_tags_sha256:String(bctNode?.roleTagsSha256||ghost?.role_tags_sha256||""),assigned_task:String(bctNode?.assignedTask??ghost?.assigned_task??""),node_memo:String(bctNode?.nodeMemo??ghost?.node_memo??""),desktop:Number.isInteger(desktop)&&desktop>0?desktop:null,slot:Number.isInteger(slot)&&slot>0?slot:null,first_seen_ms:Number(ghost?.first_seen_ms||monitorGhostTime(endpoint?.first_seen_at)||0),closed_at_ms:Number(ghost?.closed_at_ms||monitorGhostTime(endpoint?.closed_at)||0),trash_source:sourceKind==="thumbnail"?"thumbnail":"list",trashed_at_ms:Date.now()};
 
 }
 
@@ -11123,22 +11121,37 @@ async function trashMonitorConversationKeys(keys,sourceKind="list"){
 
   for(const item of pending){
 
+    if(!item.open||!Number.isInteger(item.tabId)||item.tabId<0){failed.push(item.key);continue;}
+
     if(item.open&&Number.isInteger(item.tabId)&&item.tabId>=0){
 
       try{
 
         const ep=item.open;
 
-        const body={conversation_key:item.key,tab_id:item.tabId,transport_instance_id:String(ep?.transport_instance_id||""),session_id:String(ep?.session_id||""),profile_id:String(ep?.profile_id||"")};
+        const data=await chrome.runtime.sendMessage({type:"monitor-close-chat-tab",tabId:item.tabId,
+          windowId:Number(ep?.window_id??ep?.metadata?.window_id),conversationKey:item.key});
 
-        const r=await actFetch(ORCHESTRATOR_CONVERSATION_CLOSE_TAB_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-
-        const data=await r.json().catch(()=>({}));
-
-        if(!r.ok||!data?.ok||!data?.verified||!data?.closed){failed.push(item.key);continue;}
+        if(!data?.ok||data?.status!=="CLOSED"||!data?.verified||!data?.closed){failed.push(item.key);continue;}
 
       }catch(_){failed.push(item.key);continue;}
 
+    }
+
+    if(item.record&&monitorBctShell?.retireConversationNode){
+      try{const retirement=await monitorBctShell.retireConversationNode(item.record);item.record.node_label_retirement=String(retirement?.status||"RETIRED");}
+      catch(error){item.record.node_label_retirement="PENDING";item.record.node_label_retirement_error=String(error?.message||error);}
+    }
+
+    if(item.record&&monitorBctShell?.updateConversationScope){
+      const retainedRoles=(item.record.role_tags||[]).filter((tag)=>!["manager","supervisor"].includes(String(tag||"").trim().toLowerCase()));
+      try{await monitorBctShell.updateConversationScope({conversationKey:item.key,title:item.record.title,
+        nodeMemo:item.record.node_memo,assignedTask:item.record.assigned_task,
+        roleTagsSha256:item.record.role_tags_sha256},{displayName:item.record.title||"ChatGPT",
+        scopeName:item.record.network_name||"",roleTags:retainedRoles,
+        nodeMemo:item.record.node_memo||"",assignedTask:item.record.assigned_task||"",
+        expectedRoleTagsSha256:item.record.role_tags_sha256||""});item.record.coordination_roles_released=true;}
+      catch(error){item.record.coordination_roles_released=false;item.record.coordination_roles_release_error=String(error?.message||error);}
     }
 
     if(item.record)monitorTrashRecords.set(item.key,item.record);
@@ -11172,6 +11185,65 @@ function refreshMonitorRecoveryMenu(){
 }
 
 function restoreMonitorTrashRecord(key){key=String(key||"");monitorTrashedConversationKeys.delete(key);monitorTrashRecords.delete(key);persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);refreshMonitorRecoveryMenu();}
+
+async function restoreMonitorTrashMetadata(record){
+  const key=String(record?.conversation_key||"").trim();
+  if(!key||!monitorBctShell?.updateConversationScope)return {ok:false,status:"METADATA_UNAVAILABLE"};
+  await refreshAiMonitor().catch(()=>null);
+  let restored=null;
+  for(let attempt=0;attempt<8&&!restored;attempt+=1){
+    await refreshMonitorBctWindowNodes().catch(()=>null);
+    restored=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[]).find((node)=>String(node?.conversationKey||"").trim()===key)||null;
+    if(!restored)await new Promise((resolve)=>setTimeout(resolve,350));
+  }
+  if(!restored)return {ok:false,status:"RESTORED_NODE_NOT_OBSERVED"};
+  const nodes=Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[];
+  const desired=Array.isArray(record?.role_tags)?record.role_tags.map((tag)=>String(tag||"").trim()).filter(Boolean):[];
+  let scopeName=String(record?.network_name||"").trim();
+  const others=nodes.filter((node)=>String(node?.conversationKey||"").trim()!==key);
+  const hasManagerConflict=desired.some((tag)=>tag.toLowerCase()==="manager")&&others.some((node)=>
+    String(node?.scopeName||"").trim().toLowerCase()===scopeName.toLowerCase()&&
+    (node?.roleTags||[]).some((tag)=>String(tag||"").trim().toLowerCase()==="manager"));
+  const hasSupervisorConflict=desired.some((tag)=>tag.toLowerCase()==="supervisor")&&others.some((node)=>
+    (node?.roleTags||[]).some((tag)=>String(tag||"").trim().toLowerCase()==="supervisor"));
+  const roleTags=desired.filter((tag)=>{
+    const value=tag.toLowerCase();
+    return !(value==="manager"&&hasManagerConflict)&&!(value==="supervisor"&&hasSupervisorConflict);
+  });
+  if(roleTags.some((tag)=>tag.toLowerCase()==="supervisor"))scopeName="";
+  const result=await monitorBctShell.updateConversationScope(restored,{
+    displayName:String(record?.title||restored?.title||"ChatGPT"),scopeName,roleTags,
+    nodeMemo:String(record?.node_memo||""),assignedTask:String(record?.assigned_task||""),
+    expectedRoleTagsSha256:String(restored?.roleTagsSha256||"")
+  });
+  return {ok:true,status:(hasManagerConflict||hasSupervisorConflict)?"RESTORED_WITH_ROLE_CONFLICT_REMOVED":"RESTORED",conversation:result};
+}
+
+async function restoreMonitorTrashedConversation(record,button){
+  const key=String(record?.conversation_key||"").trim();
+  if(!key)return {ok:false,status:"INVALID"};
+  const opened=await restoreMonitorDetachedTask(record,button);
+  if(!opened?.ok)return opened;
+  if(opened.status==="RESTORED"){record.restore_launch_completed=true;persistMonitorTrashedNodes();}
+  const shouldRetireOldLabel=opened.status==="RESTORED"||record?.restore_launch_completed===true;
+  if(shouldRetireOldLabel&&monitorBctShell?.retireConversationNode&&String(record?.node_label_retirement||"")!=="RETIRED"&&String(record?.node_label_retirement||"")!=="ALREADY_RETIRED"){
+    try{const retirement=await monitorBctShell.retireConversationNode(record);record.node_label_retirement=String(retirement?.status||"RETIRED");persistMonitorTrashedNodes();}
+    catch(error){const message=String(error?.message||error);setMonitorStatus(`탭은 열렸지만 이전 노드 번호 정리 실패 · 복구 기록 유지 · ${message}`,false);return {...opened,ok:false,status:"NODE_LABEL_RETIRE_FAILED",error:message};}
+  }
+  try{
+    const metadata=await restoreMonitorTrashMetadata(record);
+    if(!metadata?.ok)throw new Error(metadata?.status||"복구 메타데이터 적용 실패");
+    restoreMonitorTrashRecord(key);
+    const already=opened.status==="ALREADY_OPEN"?" · 이미 열려 있어 중복 생성 안 함":"";
+    const adjusted=metadata.status==="RESTORED_WITH_ROLE_CONFLICT_REMOVED"?" · 중복 Manager/Supervisor 역할 제외":"";
+    setMonitorStatus(`${String(record?.node_label||"대화")} 실제 탭 복구 완료${already}${adjusted}`,true);
+    return {...opened,metadataStatus:metadata.status};
+  }catch(error){
+    const message=String(error?.message||error);
+    setMonitorStatus(`탭은 열렸지만 노드 정보 복구 실패 · 복구 기록 유지 · ${message}`,false);
+    return {...opened,ok:false,status:"METADATA_FAILED",error:message};
+  }
+}
 
 function deleteMonitorTrashRecord(key){key=String(key||"");monitorTrashRecords.delete(key);monitorTrashedConversationKeys.add(key);persistMonitorTrashedNodes();if(monitorLastAiState)renderWorkers(monitorLastAiState);refreshMonitorRecoveryMenu();}
 

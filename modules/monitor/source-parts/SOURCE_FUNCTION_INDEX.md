@@ -105,7 +105,7 @@ Generated extension/monitor.js is not an edit target.
 - stationForMonitorWorker
 - updateMonitorBctRoleHistoryUi
 
-## desktop-lifecycle (103 functions)
+## desktop-lifecycle (105 functions)
 
 - beginMonitorBctNodePointerDrag
 - beginMonitorDesktopPointerDrag
@@ -188,7 +188,9 @@ Generated extension/monitor.js is not an edit target.
 - restoreMonitorDetachedTask
 - restoreMonitorNodeChatChange
 - restoreMonitorRebootSnapshot
+- restoreMonitorTrashMetadata
 - restoreMonitorTrashRecord
+- restoreMonitorTrashedConversation
 - restoreMonitorTrashedDesktop
 - scheduleMonitorExternalWindowDropTargets
 - scheduleMonitorStartupRecovery

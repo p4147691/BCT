@@ -22,6 +22,11 @@ assert.doesNotMatch(nativeSource, /cmd\.exe/);
 assert.match(background, /monitor-refresh-exact-chatgpt-tab/);
 assert.match(background, /MonitorBcToolRefreshAdapter\.create\(chrome\)/);
 assert.match(background, /monitorBcToolRefreshAdapter\.refreshExactChatTab\(message\)/);
+assert.match(background, /monitor-close-chat-tab/);
+assert.match(background, /monitor\.browser\.tab-close\.receipt\.v1/);
+assert.match(background, /observedConversationKey!==expectedConversationKey/);
+assert.match(background, /await chrome\.tabs\.remove\(tabId\)/);
+assert.match(background, /status:"CLOSED",verified:true,closed:true/);
 
 assert.match(monitor, /monitorBctShell\.reloadRcc\(instanceId\)/);
 assert.match(monitor, /node\.generating === true/);
@@ -31,5 +36,9 @@ assert.match(monitor, /RCC 리로드 요청 수락/);
 assert.match(monitor, /RCC 리로드 완료 · 새 연결 확인됨/);
 assert.match(monitor, /새 연결은 아직 미확인/);
 assert.match(monitor, /beforeSessions/);
+assert.match(monitor, /restoreMonitorTrashedConversation/);
+assert.match(monitor, /monitorBctShell\.retireConversationNode/);
+assert.match(monitor, /type:"monitor-close-chat-tab"/);
+assert.doesNotMatch(monitor, /ORCHESTRATOR_CONVERSATION_CLOSE_TAB_URL,\{method:"POST"/);
 
 console.log("PASS: bounded BWM recovery actions and exact BC tab refresh contracts");

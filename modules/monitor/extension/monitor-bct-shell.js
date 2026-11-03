@@ -9,6 +9,7 @@
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
     updateConversationScope: "http://127.0.0.1:18790/monitor/conversation-network/update",
     reorderConversations: "http://127.0.0.1:18790/monitor/conversation-network/reorder",
+    retireConversationNode: "http://127.0.0.1:18790/monitor/conversation-node/retire",
     rccReload: "http://127.0.0.1:18790/monitor/rcc/reload",
     status: "http://127.0.0.1:18790/monitor",
     localLlm: "http://127.0.0.1:18790/monitor#local-llm",
@@ -288,6 +289,27 @@
       return Object.freeze(result.order || {});
     }
 
+    async function retireConversationNode(record) {
+      if (typeof fetcher !== "function") throw new Error("BCT_CONVERSATION_NODE_RETIRE_FETCH_UNAVAILABLE");
+      const conversationKey = String(record?.conversation_key || record?.conversationKey || "").trim().toLowerCase();
+      const expectedNodeLabel = String(record?.node_label || record?.nodeLabel || "").trim().toUpperCase();
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(conversationKey) ||
+          (expectedNodeLabel && !/^N(?:[1-9]|[1-9][0-9])$/.test(expectedNodeLabel))) {
+        throw new Error("BCT_CONVERSATION_NODE_RETIRE_IDENTITY_INVALID");
+      }
+      const response = await fetcher(URLS.retireConversationNode, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ conversation_key: conversationKey, expected_node_label: expectedNodeLabel }),
+      });
+      const result = await response?.json?.().catch(() => null);
+      if (!response?.ok || result?.status !== "OK") {
+        throw new Error(String(result?.error || `BCT_CONVERSATION_NODE_RETIRE_HTTP_${Number(response?.status || 0)}`));
+      }
+      return Object.freeze(result.retirement || {});
+    }
+
     async function open(url, size) {
       if (!windowsApi?.create) throw new Error("BCT_WINDOW_CREATE_UNAVAILABLE");
       return windowsApi.create({
@@ -307,6 +329,7 @@
       renameConversation,
       updateConversationScope,
       reorderConversations,
+      retireConversationNode,
       reloadRcc,
       openStatus: () => open(URLS.status, { width: 1120, height: 820 }),
       openLocalLlm: () => open(URLS.localLlm, { width: 1200, height: 820 }),

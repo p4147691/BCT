@@ -2345,33 +2345,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "monitor-close-chat-tab") {
-
-
-
     const tabId=Number(message?.tabId);
-
-
-
-    if(!Number.isInteger(tabId)||tabId<0){sendResponse({ok:false,error:"invalid tab id"});return false;}
-
-
-
-    chrome.tabs.remove(tabId)
-
-
-
-      .then(()=>sendResponse({ok:true,tabId}))
-
-
-
-      .catch((error)=>sendResponse({ok:false,error:error?.message||String(error)}));
-
-
-
+    const expectedWindowId=Number(message?.windowId);
+    const expectedConversationKey=String(message?.conversationKey||"").trim().toLowerCase();
+    const receipt=(values={})=>({schema:"monitor.browser.tab-close.receipt.v1",...values});
+    if(!Number.isInteger(tabId)||tabId<0||!expectedConversationKey){
+      sendResponse(receipt({ok:false,status:"NOT_APPLIED",error:"exact tab and conversation identity required"}));
+      return false;
+    }
+    chrome.tabs.get(tabId).then(async(tab)=>{
+      const observedConversationKey=monitorConversationKeyFromUrl(tab?.url||"");
+      if(!tab||observedConversationKey!==expectedConversationKey||
+          (Number.isInteger(expectedWindowId)&&expectedWindowId>=0&&Number(tab.windowId)!==expectedWindowId)){
+        sendResponse(receipt({ok:false,status:"NOT_APPLIED",tabId,windowId:tab?.windowId??null,
+          conversationKey:observedConversationKey,error:"exact tab identity mismatch"}));
+        return;
+      }
+      try{
+        await chrome.tabs.remove(tabId);
+        let stillOpen=null;
+        try{stillOpen=await chrome.tabs.get(tabId);}catch(_){stillOpen=null;}
+        if(stillOpen){
+          sendResponse(receipt({ok:false,status:"UNKNOWN",tabId,windowId:tab.windowId,
+            conversationKey:expectedConversationKey,error:"tab removal could not be verified"}));
+          return;
+        }
+        sendResponse(receipt({ok:true,status:"CLOSED",verified:true,closed:true,tabId,
+          windowId:tab.windowId,conversationKey:expectedConversationKey}));
+      }catch(error){
+        sendResponse(receipt({ok:false,status:"NOT_APPLIED",tabId,windowId:tab.windowId,
+          conversationKey:expectedConversationKey,error:error?.message||String(error)}));
+      }
+    }).catch((error)=>sendResponse(receipt({ok:false,status:"NOT_APPLIED",tabId,
+      conversationKey:expectedConversationKey,error:error?.message||String(error)})));
     return true;
-
-
-
   }
 
 

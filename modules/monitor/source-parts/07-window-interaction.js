@@ -60,6 +60,10 @@ let monitorExternalWindowDropScreenOrigin = null;
 
 /*@@MONITOR_FUNCTION:restoreMonitorTrashRecord@@*/
 
+/*@@MONITOR_FUNCTION:restoreMonitorTrashMetadata@@*/
+
+/*@@MONITOR_FUNCTION:restoreMonitorTrashedConversation@@*/
+
 /*@@MONITOR_FUNCTION:deleteMonitorTrashRecord@@*/
 
 /*@@MONITOR_FUNCTION:deleteMonitorRecoveryRecord@@*/

@@ -83,6 +83,16 @@ def _node_label(number: int) -> str:
     return f"N{((int(number) - 1) % _NODE_LABEL_LIMIT) + 1}"
 
 
+def _next_node_number(db) -> int:
+    """Allocate from durable assignment history, including retired labels."""
+    row = db.execute(
+        "SELECT MAX(node_number) AS maximum FROM ("
+        "SELECT node_number FROM conversation_network_node_labels UNION ALL "
+        "SELECT node_number FROM node_label_notification_outbox)"
+    ).fetchone()
+    return int(row["maximum"] or 0) + 1
+
+
 def role_tags_sha256(tags: list[str] | tuple[str, ...]) -> str:
     """Return the UTF-8 digest for one canonical advisory-role list."""
     ordered = sorted((str(tag) for tag in tags), key=lambda value: (value.casefold(), value))
@@ -222,9 +232,7 @@ def upsert_conversation(store: Store, *, conversation_key: str, display_name: st
             "SELECT node_number FROM conversation_network_node_labels WHERE conversation_key=?", (key,)
         ).fetchone()
         if label_row is None:
-            next_number = int(db.execute(
-                "SELECT COALESCE(MAX(node_number),0)+1 AS next_number FROM conversation_network_node_labels"
-            ).fetchone()["next_number"])
+            next_number = _next_node_number(db)
             db.execute(
                 "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
                 (key, next_number, when),
@@ -264,9 +272,13 @@ def ensure_observed_node_labels(store: Store, *, conversations: list[tuple[str, 
         return {}
     new_label_events = []
     with store.transaction() as db:
-        next_number = int(db.execute(
-            "SELECT COALESCE(MAX(node_number),0)+1 AS next_number FROM conversation_network_node_labels"
-        ).fetchone()["next_number"])
+        next_number = _next_node_number(db)
+        placeholders = ",".join("?" for _ in titles)
+        observed_rows = list(db.execute(
+            "SELECT conversation_key,node_number FROM conversation_network_node_labels "
+            f"WHERE conversation_key IN ({placeholders})", list(titles),
+        ))
+        used_labels = {_node_label(int(row["node_number"])) for row in observed_rows}
         for key in sorted(titles):
             if db.execute(
                 "SELECT 1 FROM conversation_network_conversations WHERE conversation_key=?", (key,)
@@ -278,15 +290,44 @@ def ensure_observed_node_labels(store: Store, *, conversations: list[tuple[str, 
             if db.execute(
                 "SELECT 1 FROM conversation_network_node_labels WHERE conversation_key=?", (key,)
             ).fetchone() is None:
+                attempts = 0
+                while _node_label(next_number) in used_labels and attempts < _NODE_LABEL_LIMIT:
+                    next_number += 1
+                    attempts += 1
+                if attempts >= _NODE_LABEL_LIMIT:
+                    raise ConversationNetworkError("CONVERSATION_NETWORK_NODE_LABELS_EXHAUSTED")
                 db.execute(
                     "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
                     (key, next_number, time.time()),
                 )
                 new_label_events.append(store.record_node_label_assignment(db, key, next_number))
+                used_labels.add(_node_label(next_number))
                 next_number += 1
     for event_id in new_label_events:
         store.emit_node_label_notification(event_id)
     return node_labels_for_conversations(store, conversation_keys=list(titles))
+
+
+def retire_conversation_node_label(
+    store: Store, *, conversation_key: str, expected_node_label: str = ""
+) -> dict[str, object]:
+    """Retire one closed tab's display label without deleting its durable context."""
+    key = _conversation_key(conversation_key)
+    expected = str(expected_node_label or "").strip().upper()
+    if expected and not _NODE_LABEL.fullmatch(expected):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_NODE_LABEL_INVALID")
+    with store.transaction() as db:
+        row = db.execute(
+            "SELECT node_number FROM conversation_network_node_labels WHERE conversation_key=?", (key,)
+        ).fetchone()
+        if row is None:
+            return {"conversation_key": key, "status": "ALREADY_RETIRED", "node_label": expected}
+        number = int(row["node_number"])
+        current = _node_label(number)
+        if expected and current != expected:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_NODE_LABEL_CHANGED")
+        db.execute("DELETE FROM conversation_network_node_labels WHERE conversation_key=?", (key,))
+    return {"conversation_key": key, "status": "RETIRED", "node_label": current}
 
 
 def resolve_project_id(store: Store, *, project_reference: str) -> str:
@@ -538,9 +579,7 @@ def configure_conversation_scope(
                 "VALUES(?,?,?,?)",
                 (key, name, when, when),
             )
-            next_number = int(db.execute(
-                "SELECT COALESCE(MAX(node_number),0)+1 AS next_number FROM conversation_network_node_labels"
-            ).fetchone()["next_number"])
+            next_number = _next_node_number(db)
             db.execute(
                 "INSERT INTO conversation_network_node_labels(conversation_key,node_number,assigned_at) VALUES(?,?,?)",
                 (key, next_number, when),
