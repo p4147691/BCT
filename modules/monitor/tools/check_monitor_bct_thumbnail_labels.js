@@ -19,11 +19,13 @@ const ctx={
   monitorBctWindowNodesCache:nodes,
   monitorLastAiState:{},
   monitorBctDisplaySessionHwnd:(windowId)=>({491:"5000",319:"6000"})[windowId]||"",
+  monitorWindowHwndContract:{resolve:()=>({bindings:[]})},
+  monitorWindowDesktopLocations:new Map(),
   monitorBrowserVisualTabsForWindow:(windowId)=>windowId===491
     ? [{tabId:42,tabIndex:0},{tabId:43,tabIndex:1},{tabId:44,tabIndex:2},{tabId:45,tabIndex:3}]
     :windowId===319?[{tabId:51,tabIndex:0}]:[],
   monitorActNodeNumbersForHwnd:()=>[99],
-  String,Number,Array,Set,Map,
+  String,Number,Array,Set,Map,Date,
 };
 vm.createContext(ctx);
 vm.runInContext(source.slice(start,end),ctx);
@@ -41,7 +43,8 @@ ctx.monitorBctWindowNodesCache=null;
 assert.deepEqual(lookup("5000"),[99],"legacy fallback limited to before first BCT read");
 assert.match(projectionSource,/part\.textContent = token;/,"each node number renders without N prefix");
 assert.doesNotMatch(projectionSource,/prefix\.textContent = "N"/,"visual prefix removed only");
-assert.match(projectionSource,/windowLayer\.style\.zIndex = String\(windowZIndex\(img\)\)/);
+assert.match(projectionSource,/windowLayer\.style\.zIndex = "1";/,
+  "node-number overlays share one readable layer instead of inheriting physical window z-order");
 assert.match(source,/monitorBctShell\.displayWindowNodes/);
 assert.match(source,/syncMonitorAllDesktopThumbnailNodeBadges\(\)/);
 assert.match(source,/monitorBctNodeSelectionKey\(node\)/);

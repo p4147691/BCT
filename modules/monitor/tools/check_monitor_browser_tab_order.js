@@ -25,7 +25,10 @@ const context = {
     { windowId: 41, tabId: 105, tabIndex: 4, nodeLabel: "N38" },
   ],
   monitorBctDisplaySessionHwnd: () => "900",
+  monitorWindowHwndContract: { resolve: () => ({ bindings: [] }) },
+  monitorWindowDesktopLocations: new Map(),
   monitorActNodeNumbersForHwnd: () => [],
+  Date,
 };
 vm.createContext(context);
 vm.runInContext([

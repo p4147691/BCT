@@ -119,7 +119,10 @@ function monitorBctNodeBurdenScore(node) {
 function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const minimized = nativeLocation?.iconic === true;
   const burden = monitorBctNodeBurden(node);
-  const reasoning = String(node?.reasoningLevel || "미확인").trim();
+  const reasoningObserved = String(node?.reasoningLevel || "").trim();
+  const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
+    ? "미확인"
+    : reasoningObserved;
   const reasoningLabel = ({
     instant: "Instant",
     low: "Low",

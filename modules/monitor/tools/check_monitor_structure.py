@@ -41,6 +41,7 @@ def main():
         root/'tools'/'Request-MonitorDeploymentCheck.ps1',
         root/'tools'/'Publish-MonitorDeployment.ps1',
         root/'tools'/'build_monitor_js_index.py',
+        root/'tools'/'check_monitor_bct_node_detail_contract.js',
         root/'tools'/'check_monitor_organization_model.py',
         root/'tools'/'check_monitor_live_organization.py',
     ]
@@ -190,6 +191,15 @@ def main():
             if outcome.returncode:
                 errors.append({'kind':'node_generation_state_contract_regression',
                   'detail':(outcome.stdout+outcome.stderr)[-450:]})
+
+    node_detail_contract=root/'tools'/'check_monitor_bct_node_detail_contract.js'
+    if node_detail_contract.is_file() and shutil.which('node'):
+        outcome=subprocess.run([shutil.which('node'),str(node_detail_contract)],
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=25)
+        facts['bct_node_detail_contract_test_rc']=outcome.returncode
+        if outcome.returncode:
+            errors.append({'kind':'bct_node_detail_contract_regression',
+                'detail':(outcome.stdout+outcome.stderr)[-450:]})
 
     # Exact Monitor host-identity fallback is a separate bounded dependency.
     host_script=ext/'monitor-host-window-identity.js'

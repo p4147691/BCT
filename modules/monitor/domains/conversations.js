@@ -1227,9 +1227,23 @@ function openMonitorBctRenameEditor(node, row) {
     facts.append(line);
   };
   fact("대화 UUID", String(node.conversationKey || ""));
-  fact("현재 위치", row?.querySelector?.(".monitor-bct-node-location")?.textContent || "확인 중");
+  const mappedHwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
+  const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
+  const desktopPosition = nativeLocation
+    ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
+    : -1;
+  const reasoningObserved = String(node.reasoningLevel || "").trim();
+  const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
+    ? "미확인"
+    : reasoningObserved;
+  const burden = monitorBctNodeBurden(node);
+  fact("현재 위치", monitorBctNodeLocationText(node, desktopPosition));
+  fact("창 상태", nativeLocation?.iconic === true ? "최소화" : "표시 중");
+  fact("종류", monitorBctNodeSurfaceText(node));
+  fact("관측 추론 수준", reasoning);
+  fact("관측 경과", monitorBctNodeObservedAgeText(node).replace(/^관측 /, ""));
+  fact("탭 부담", `${burden.label} · ${burden.title}`);
   fact("연결", `창 ${node.windowId} · 탭 ${node.tabId}`);
-  fact("실제 추론 수준", String(node.reasoningLevel || "확인 불가"));
 
   const makeField = (labelText, value, maximum, placeholder = "") => {
     const label = document.createElement("label");
