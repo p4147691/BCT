@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from bct.conversation_network import ConversationNetworkError
 from bct.core.models import Outcome, Work
 from bct.features.rcc import BrowserFeature
 from bct.runtime_server import (
@@ -99,23 +100,25 @@ class MonitorConversationRenameTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual("바뀐 실제 제목", stored["display_name"])
 
-    def test_scope_update_has_no_manager_uniqueness_or_execution_claim(self):
+    def test_scope_update_enforces_manager_uniqueness_without_execution_claim(self):
         first = run_monitor_conversation_scope_update(self.bct, payload={
             "conversation_key": self.payload()["conversation_key"],
             "display_name": "첫 대화",
             "scope_name": "BCT 작업",
             "role_tags": ["Manager", "구현"],
         })
-        second = run_monitor_conversation_scope_update(self.bct, payload={
-            "conversation_key": "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
-            "display_name": "둘째 대화",
-            "scope_name": "BCT 작업",
-            "role_tags": ["Manager", "검토"],
-        })
+        with self.assertRaisesRegex(
+            ConversationNetworkError,
+            "CONVERSATION_NETWORK_MANAGER_ALREADY_ASSIGNED",
+        ):
+            run_monitor_conversation_scope_update(self.bct, payload={
+                "conversation_key": "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+                "display_name": "둘째 대화",
+                "scope_name": "BCT 작업",
+                "role_tags": ["Manager", "검토"],
+            })
         self.assertEqual("BCT 작업", first["scope_name"])
-        self.assertEqual("BCT 작업", second["scope_name"])
         self.assertIn("Manager", first["role_tags"])
-        self.assertIn("Manager", second["role_tags"])
         self.assertEqual([], self.bct.store.claim_diagnostics())
 
     def test_scope_update_rejects_a_stale_role_revision(self):

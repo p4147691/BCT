@@ -22,12 +22,11 @@ class RccFaviconLivePreparationTests(unittest.TestCase):
         cls.rollback = {entry["path"]: entry for entry in cls.payload["rollbackBaseline"]["files"]}
         cls.candidate = {entry["path"]: entry for entry in cls.payload["candidateInventory"]["files"]}
 
-    def test_old_installed_three_files_stay_in_exact_rollback(self):
-        self.assertEqual(57, len(self.rollback))
+    def test_current_rollback_and_candidate_share_the_58_file_shape(self):
+        self.assertEqual(58, len(self.rollback))
         self.assertTrue(ROLLBACK_EXTRA.issubset(self.rollback))
         self.assertEqual(58, len(self.candidate))
-        self.assertEqual(set(self.candidate) - set(self.rollback),
-                         {"domain/node_favicon_notify_service.js"})
+        self.assertEqual(set(self.candidate), set(self.rollback))
 
     def test_candidate_contains_both_rename_diagnostic_and_node_favicon(self):
         router = (EXT / "content" / "content_router.js").read_text(encoding="utf-8")
@@ -47,14 +46,14 @@ class RccFaviconLivePreparationTests(unittest.TestCase):
                 self.assertEqual(len(raw), entry["size"])
                 self.assertEqual(hashlib.sha256(raw).hexdigest(), entry["sha256"])
 
-    def test_rollback_plan_is_pinned_to_exact_installed_57(self):
+    def test_rollback_plan_preserves_n73_history_and_tracks_current_manifest(self):
         doc = (RELEASE / "ROLLBACK.md").read_text(encoding="utf-8")
         self.assertIn("installed 1.0.59 baseline", doc)
         self.assertIn("57-file", doc)
         self.assertEqual(self.payload["rollbackPlanSha256"],
                          hashlib.sha256((RELEASE / "ROLLBACK.md").read_bytes()).hexdigest())
         manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.0.61")
+        self.assertEqual(manifest["version"], "1.0.63")
 
 
 if __name__ == "__main__":
