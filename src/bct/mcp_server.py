@@ -597,11 +597,21 @@ def build_mcp(
                     or ctx.get("principal_id") != work.owner_principal_id
                     or ctx.get("assignment_epoch") != work.assignment_epoch):
                 return {"status":"NOT_FOUND","task_id":task_id,"generation":generation}
+            planned_source = ctx.get("source_proof_kind") == "BCT_PLANNED_SOURCE_SEND"
+            response_key = str(ctx.get("observed_response_turn_key") or "")
             return {"status":watch["state"],"task_id":task_id,
                     "generation":generation,
                     "response_turn_id":watch["response_turn_id"],
-                    "observed_response_turn_key":ctx.get("observed_response_turn_key",""),
-                    "source_send_operation_id":ctx.get("source_send_operation_id","")}
+                    "observed_response_turn_key":response_key,
+                    "source_send_operation_id":ctx.get("source_send_operation_id",""),
+                    "source_turn_key_state": (
+                        "DEFERRED_TO_VERIFIED_SEND_RECEIPT" if planned_source
+                        else "BOUND" if ctx.get("source_user_turn_key") else "UNAVAILABLE"),
+                    "response_turn_key_state": (
+                        "BOUND" if response_key else
+                        "AWAITING_VERIFIED_RESPONSE" if watch["state"] == "WATCHING"
+                        else "UNAVAILABLE"),
+                    "watch_diagnostic_reason": ctx.get("watch_diagnostic_reason", "")}
         if action == "cancel":
             return await make_executor("browser")(
                 work_id,operation_id,{"command":"delayed-send-cancel",
