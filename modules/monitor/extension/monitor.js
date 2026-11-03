@@ -2854,6 +2854,11 @@ function refreshMonitorBctDisplayWindowHwnd() {
     browserWindows: monitorBctBrowserWindows, now: Date.now(),
   });
   monitorBctDisplayWindowHwnd = new Map((display?.bindings || []).map((binding) => [String(binding.lineage || ""), binding]));
+  // The thumbnail and the node list share this display-only binding, but they
+  // render on independent schedules.  Repaint existing list labels whenever
+  // the binding changes so a row cannot remain at D? after its D# thumbnail
+  // badge has already converged (or after a click refreshes the same binding).
+  if (monitorWorkers?.isConnected) syncMonitorBctNodeLocationLabels();
   return display || null;
 }
 

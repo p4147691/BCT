@@ -123,6 +123,8 @@ function loadModule() {
     "a minimized node must use the compact underscore mark requested by the user");
   assert.match(monitor, /monitorBctDisplaySessionHwnd\(windowIdValue\);/,
     "display-only location must fall back to one unique Chrome window id while exact session identity converges");
+  assert.match(monitor, /monitorBctDisplayWindowHwnd = new Map[\s\S]*monitorWorkers\?\.isConnected\) syncMonitorBctNodeLocationLabels\(\);/,
+    "a refreshed display binding must repaint existing D? node-list labels without requiring another click");
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
   assert.match(monitor, /if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/,
     "an RCC refresh must defer rather than cancel an active node drag");
