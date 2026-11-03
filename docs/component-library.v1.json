@@ -149,6 +149,18 @@
       "used_by": []
     },
     {
+      "id": "browser.owned_extension_action",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/features/owned_extension_action.py", "symbol": "OwnedExtensionActionFeature"}
+      ],
+      "contract": "Route one public reload request to the existing Monitor or RCC owned-extension contract without accepting caller-selected browser internals.",
+      "effects": ["monitor.reload", "rcc.reload-extension"],
+      "safety": ["fixed-targets", "reload-only", "no-url-input", "no-extension-id-input", "no-arbitrary-code", "durable-operation", "unknown-no-retry"],
+      "used_by": ["ordinary-chat.extension-reload", "monitor.extension-reload"]
+    },
+    {
       "id": "node.check",
       "kind": "partial_recipe",
       "maturity": "isolated",

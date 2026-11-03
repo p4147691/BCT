@@ -40,6 +40,7 @@ from .features.execution import ExecuteFeature, SystemInspectFeature
 from .features.process_session import ProcessSessionFeature
 from .features.cdp_inspect import CDPInspectFeature
 from .features.browser_extension_manage import BrowserExtensionManageFeature
+from .features.owned_extension_action import OwnedExtensionActionFeature
 from .features.monitor import MonitorFeature
 from .features.conversation_network import ConversationNetworkUpdateFeature
 from .features.project_context import ProjectContextFeature
@@ -224,6 +225,7 @@ class BCT:
             ProjectContextFeature(data_root or Path(policy_path).parent),
             CDPInspectFeature(self.cdp_connections),
             BrowserExtensionManageFeature(self.cdp_connections, policy_path=policy_path, data_root=data_root),
+            OwnedExtensionActionFeature(browser, policy_path=policy_path),
             ReadOnlyClaimReconcileFeature(self.store, desktop_session),
             OrchestrationFeature(self.orchestration),
             DesktopSessionStatusFeature(desktop_session),
