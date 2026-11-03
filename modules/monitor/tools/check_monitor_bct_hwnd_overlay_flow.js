@@ -158,6 +158,27 @@ const tiledDisplay = contract.resolveDisplay({
 });
 assert.equal(projectedLabel(openNodes, tiledDisplay.bindings), "N4/9/7",
   "ordinary Chrome outer-frame deltas must not erase the right-hand tiled window projection");
+const dpiFallbackDisplay = contract.resolveDisplay({
+  nodes: openNodes, now,
+  locations: new Map([
+    ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "Active task - Google Chrome", left: 1280, top: 0, width: 1280, height: 720, iconic: false, at: now - 100 }],
+    ["888", { hwnd: "888", className: "Chrome_WidgetWin_1", title: "Another task - Google Chrome", left: 0, top: 0, width: 1280, height: 720, iconic: false, at: now - 100 }],
+  ]),
+  browserWindows: [{ windowId: 594834491, left: 1024, top: 0, width: 1024, height: 576, state: "normal", activeTabTitle: "Active task", observedAt: now - 50 }],
+});
+assert.equal(projectedLabel(openNodes, dpiFallbackDisplay.bindings), "N4/9/7",
+  "one exact active-tab/native-window title must restore display location when DPI-scaled geometry cannot join");
+assert.equal(dpiFallbackDisplay.bindings[0].matchKind, "exact-title");
+const duplicateTitleFallback = contract.resolveDisplay({
+  nodes: openNodes, now,
+  locations: new Map([
+    ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "Active task - Google Chrome", left: 1280, top: 0, width: 1280, height: 720, iconic: false, at: now - 100 }],
+    ["888", { hwnd: "888", className: "Chrome_WidgetWin_1", title: "Active task - Google Chrome", left: 0, top: 0, width: 1280, height: 720, iconic: false, at: now - 100 }],
+  ]),
+  browserWindows: [{ windowId: 594834491, left: 1024, top: 0, width: 1024, height: 576, state: "normal", activeTabTitle: "Active task", observedAt: now - 50 }],
+});
+assert.equal(duplicateTitleFallback.bindings.length, 0,
+  "duplicate active titles must stay at D? rather than guessing a display HWND");
 const minimizedDisplay = contract.resolveDisplay({
   nodes: openNodes, locations: new Map([
     ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "N4 - Google Chrome", left: 12, top: 12, width: 160, height: 28, iconic: true, at: now - 100 }],

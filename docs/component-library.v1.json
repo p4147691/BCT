@@ -15,6 +15,18 @@
   },
   "components": [
     {
+      "id": "monitor.resolve_display_window",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "modules/monitor/extension/monitor-window-hwnd-contract.js", "symbol": "create().resolveDisplay"}
+      ],
+      "contract": "Read-only join from one RCC Chrome window lineage to one uniquely observed Windows HWND for location display.",
+      "effects": [],
+      "safety": ["display-only", "unique-match-only", "dpi-title-fallback-never-authorizes-effects"],
+      "used_by": ["monitor.node_location", "monitor.thumbnail_node_badges"]
+    },
+    {
       "id": "browser.close_exact_chat_tab",
       "kind": "primitive",
       "maturity": "isolated",
