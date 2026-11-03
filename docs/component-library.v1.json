@@ -15,6 +15,36 @@
   },
   "components": [
     {
+      "id": "bct.chat_input_queue",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/chat_input_queue.py",
+          "symbol": "ChatInputQueue"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "queue_message"
+        }
+      ],
+      "contract": "Durable per-conversation FIFO instruction inbox with idempotent enqueue, exactly-one active claim, explicit complete/hold/resume and read-only status.",
+      "effects": [
+        "bct-sqlite-queue-metadata"
+      ],
+      "safety": [
+        "work-owner-bound",
+        "read-for-status-orchestrate-for-mutation",
+        "exact-conversation-uuid",
+        "message-and-claim-idempotence",
+        "strict-head-of-line",
+        "unknown-held-no-auto-replay",
+        "no-external-message-send",
+        "verified-worker-idle-required-by-future-adapter"
+      ],
+      "used_by": []
+    },
+    {
       "id": "monitor.resolve_display_window",
       "kind": "module",
       "maturity": "isolated",

@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP, Image
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
+from .chat_input_queue import ChatInputQueue
 from .code_block_scan import resolve_scan_root, scan as run_code_block_scan
 from .code_block_organize import plan_block_replacement, prepare_block_apply
 from .conversation_network import (
@@ -28,7 +29,7 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
-    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "organize_code_blocks",
+    "bct_capabilities", "bct_status", "queue_message", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "organize_code_blocks",
     "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
     "bct_set_chain_execution_plan", "bct_get_chain_execution_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
@@ -399,6 +400,66 @@ def build_mcp(
                 "project_context": context, "context_status": context_status,
                 "context_requires_work": bool(project and (not work_id or not operation_id)),
                 "read_only": True}
+
+    @server.tool(
+        description=(
+            "Store instructions in an isolated per-target FIFO inbox; never sends to ChatGPT. "
+            "action=enqueue registers one stable message_id; status reads without consuming; "
+            "claim returns only the next eligible instruction for a verified idle Worker; "
+            "complete acknowledges that claim, hold fences uncertain work, resume only "
+            "requeues a PRE_DISPATCH hold. No automatic retransmission or lease expiry. "
+            "The future delivery adapter must verify exact RCC identity and its own effects."
+        ),
+        structured_output=True,
+    )
+    async def queue_message(
+        work_id: str,
+        target_conversation_key: str,
+        action: str = "status",
+        message_id: str = "",
+        instruction: str = "",
+        origin_conversation_key: str = "",
+        claim_id: str = "",
+        result_sha256: str = "",
+        reason: str = "",
+        hold_kind: str = "UNKNOWN",
+        limit: int = 30,
+    ) -> dict[str, Any]:
+        work = await asyncio.to_thread(bct.store.get_work, work_id)
+        if work.owner_principal_id != principal.principal_id:
+            raise PermissionError("CHAT_QUEUE_WORK_OWNER_INVALID")
+        if work.state != "ACTIVE":
+            raise PermissionError("CHAT_QUEUE_WORK_INACTIVE")
+        selected = str(action or "").strip().lower()
+        if selected not in {"enqueue", "status", "claim", "complete", "hold", "resume"}:
+            raise ValueError("CHAT_QUEUE_ACTION_INVALID")
+        permission = "read" if selected == "status" else "orchestrate"
+        if permission not in work.actions:
+            raise PermissionError("CHAT_QUEUE_" + permission.upper() + "_REQUIRED")
+        ledger = await asyncio.to_thread(ChatInputQueue, bct.store)
+        common = {"work_id": work_id, "target_conversation_key": target_conversation_key}
+        if selected == "status":
+            return await asyncio.to_thread(ledger.status, **common, limit=limit)
+        if selected == "enqueue":
+            return await asyncio.to_thread(
+                ledger.enqueue, **common, message_id=message_id,
+                instruction=instruction, origin_conversation_key=origin_conversation_key,
+            )
+        if selected == "claim":
+            return await asyncio.to_thread(ledger.claim, **common, claim_id=claim_id)
+        if selected == "complete":
+            return await asyncio.to_thread(
+                ledger.complete, **common, message_id=message_id, claim_id=claim_id,
+                result_sha256=result_sha256,
+            )
+        if selected == "hold":
+            return await asyncio.to_thread(
+                ledger.hold, **common, message_id=message_id, claim_id=claim_id,
+                reason=reason, kind=hold_kind,
+            )
+        return await asyncio.to_thread(
+            ledger.resume, **common, message_id=message_id, claim_id=claim_id,
+        )
 
     @server.tool(
         description=(
