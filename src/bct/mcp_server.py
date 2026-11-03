@@ -53,6 +53,14 @@ _CAPABILITY_USAGE = {
     "project_context": "Shared, bounded context records; this does not capture browser text or send a message. Use central-get/central-save for the one current project context, worklog-get/worklog-save for a project plus journal_work_id, and overview for central context plus compact worklog records. Saves require expected_revision and author. A work log must link its exact journal_work_id as links:[{type:'bct_work',id:'...'}].",
     "cdp_inspect": "Read-only existing Chrome tab listing via a single approved Chrome DevTools MCP connection. Use arguments={\\\"operation\\\":\\\"list_pages\\\"}. Requires a work with cdp_inspect permission and locally enabled CDP policy; does not send messages, create tabs, or bypass Chrome consent.",
     "browser_extension_manage": "Read-only Chrome extension inventory via CDP. arguments={\\\"operation\\\":\\\"inventory\\\"} (or pages). Work-scoped; create/update/delete not enabled in this initial common MCP adapter. CDP only. Do not infer Tampermonkey CRUD support from this tool yet.",
+    "owned_extension_action": (
+        "Reload only a BCT-owned Chrome extension through an allowlisted existing contract. "
+        "Monitor: arguments={\"target\":\"monitor\",\"action\":\"reload\"}. "
+        "RCC: arguments={\"target\":\"rcc\",\"action\":\"reload\","
+        "\"instance_id\":\"exact current RCC instance\"}. No URL, extension ID, "
+        "JavaScript, DevTools method, function name, or arbitrary command is accepted. "
+        "Use one operation_id and never retry UNKNOWN with a new ID."
+    ),
     "browser": (
         "RCC contract rcc-send-message-v1. For ChatGPT messages use ONLY command=send-message "
         "with exact instance_id, session_id, tab_id, window_id, text, and either "
