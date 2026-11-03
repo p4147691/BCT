@@ -25,10 +25,10 @@ class RccReleaseCandidateTests(unittest.TestCase):
         self.assertFalse(receipt["liveBaselineVerified"])
         self.assertFalse(receipt["stagedCandidateVerified"])
         self.assertGreater(receipt["candidateFileCount"], 30)
-        self.assertEqual(receipt["rollbackFileCount"], 57)
+        self.assertEqual(receipt["rollbackFileCount"], 58)
         self.assertEqual(receipt["candidateFileCount"], 58)
         self.assertEqual(
-            "5e278244216f5a9e9a0d21a10236b923d4bc9f5b4c712a100e6c62d9691c7bda",
+            "4cd89e02cf89e84c6c34e3055c2682908c1ee76bdb62675c36e3c30d41d7b1c3",
             receipt["rollbackAggregateSha256"],
         )
 

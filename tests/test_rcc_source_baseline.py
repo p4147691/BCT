@@ -21,10 +21,10 @@ class RccSourceBaselineTests(unittest.TestCase):
         ).read_text(encoding="utf-8-sig"))
         self.assertEqual("RCC_REBUILD_V2_RC39_SURFACE_HANDOFF", release["candidate"])
         self.assertEqual(
-            "5e278244216f5a9e9a0d21a10236b923d4bc9f5b4c712a100e6c62d9691c7bda",
+            "4cd89e02cf89e84c6c34e3055c2682908c1ee76bdb62675c36e3c30d41d7b1c3",
             release["rollbackBaseline"]["aggregateSha256"],
         )
-        self.assertEqual(57, release["rollbackBaseline"]["fileCount"])
+        self.assertEqual(58, release["rollbackBaseline"]["fileCount"])
         self.assertEqual(58, release["candidateInventory"]["fileCount"])
         self.assertTrue({"browser/tab_group_adapter.js", "browser/tab_group_contract.js",
                          "domain/tab_group_service.js"}.issubset(
