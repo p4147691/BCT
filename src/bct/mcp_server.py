@@ -29,6 +29,7 @@ _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network",
     "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
     "bct_set_chain_execution_plan", "bct_get_chain_execution_plan",
+    "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
@@ -144,6 +145,16 @@ def build_mcp(
         json_response=True,
         streamable_http_path="/mcp",
     )
+
+    def _assert_node_send_allowed(work_id: str, conversation_key: str) -> None:
+        # Transport-only contract tests do not construct a Store. The real
+        # runtime always does and therefore always enforces this durable fence.
+        if not conversation_key or not hasattr(bct, "store"):
+            return
+        from bct.node_recovery import NodeRecoveryLedger
+        NodeRecoveryLedger(bct.store).assert_send_allowed(
+            work_id=work_id, conversation_key=conversation_key,
+        )
 
     @server.tool(description="List the exact BCT capabilities exposed by this runtime.", structured_output=True)
     async def bct_capabilities() -> dict[str, Any]:
@@ -528,6 +539,12 @@ def build_mcp(
             instruction = str(direction["direction_text"])
         if not instruction or len(instruction)>12000:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
+        try:
+            await asyncio.to_thread(
+                _assert_node_send_allowed, work_id, str(target_conversation),
+            )
+        except ValueError as exc:
+            return {"status":"PAUSED","reason":str(exc)}
         armed=await make_executor("browser")(
             work_id,arm_id,{"command":"delayed-send-message",
              "task_id":task_id,"instance_id":instance_id,
@@ -601,6 +618,20 @@ def build_mcp(
         manager_conversation_key: str = "", manager_instance_id: str = "",
         planned_send_operation_id: str = "", planned_send_text: str = "",
     ) -> dict[str, Any]:
+        guarded_conversation = conversation_key
+        try:
+            if guarded_conversation:
+                await asyncio.to_thread(
+                    _assert_node_send_allowed, work_id, guarded_conversation,
+                )
+            elif hasattr(bct, "store"):
+                from bct.node_recovery import NodeRecoveryLedger
+                await asyncio.to_thread(
+                    NodeRecoveryLedger(bct.store).assert_task_send_allowed,
+                    work_id=work_id, task_id=task_id,
+                )
+        except ValueError as exc:
+            return {"status":"PAUSED","reason":str(exc)}
         generated = operation_id or ("delayed-arm-" + uuid.uuid4().hex[:24])
         return await make_executor("browser")(
             work_id, generated,
@@ -726,6 +757,216 @@ def build_mcp(
         # The full binding contains only the exact existing target identity and
         # is needed by a later, separately authorized wake-delivery adapter.
         return {"status": "OK", "execution": context}
+
+    def _current_node_evidence(conversation_key: str) -> dict[str, Any]:
+        if status_provider is None:
+            raise ValueError("NODE_RECOVERY_STATUS_UNAVAILABLE")
+        from bct.node_recovery import observe_node
+        return observe_node(status_view(status_provider(), "node"), conversation_key)
+
+    async def _recovery_work(work_id: str):
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except KeyError as exc:
+            raise ValueError("WORK_NOT_FOUND") from exc
+        if work.owner_principal_id != principal.principal_id:
+            raise ValueError("WORK_NOT_FOUND")
+        return work
+
+    @server.tool(
+        name="bct_check_node",
+        description=(
+            "Check one exact node without sending or changing it. Stores a bounded "
+            "observation case and returns OK, WAIT, or CHECK plus exact evidence. "
+            "BCT does not decide replacement."
+        ),
+        structured_output=True,
+    )
+    async def bct_check_node(
+        work_id: str, conversation_key: str, task_id: str = "", case_id: str = "",
+    ) -> dict[str, Any]:
+        from bct.node_recovery import NodeRecoveryLedger
+        work = await _recovery_work(work_id)
+        case_id = case_id or ("node-recovery-" + uuid.uuid4().hex[:24])
+        try:
+            result = await asyncio.to_thread(
+                NodeRecoveryLedger(bct.store).check,
+                work=work, case_id=case_id, task_id=task_id,
+                conversation_key=conversation_key,
+                evidence=_current_node_evidence(conversation_key), kind="CHECK",
+            )
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return {"status": "OK", "check_node": result}
+
+    @server.tool(
+        name="bct_recheck_node",
+        description=(
+            "Recheck the same exact node case after the caller's Delayed Send/wait "
+            "boundary. Compares durable evidence and suggests CONTINUE, RECHECK, or "
+            "PAUSE_REVIEW; it does not send, pause, or replace by itself."
+        ),
+        structured_output=True,
+    )
+    async def bct_recheck_node(work_id: str, case_id: str) -> dict[str, Any]:
+        from bct.node_recovery import NodeRecoveryLedger
+        work = await _recovery_work(work_id)
+        ledger = NodeRecoveryLedger(bct.store)
+        case = await asyncio.to_thread(ledger.get, work=work, case_id=case_id)
+        if case is None:
+            return {"status": "NOT_FOUND", "case_id": case_id}
+        try:
+            result = await asyncio.to_thread(
+                ledger.check, work=work, case_id=case_id,
+                task_id=str(case["task_id"]),
+                conversation_key=str(case["conversation_key"]),
+                evidence=_current_node_evidence(str(case["conversation_key"])),
+                kind="RECHECK",
+            )
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return {"status": "OK", "recheck_node": result}
+
+    @server.tool(
+        name="bct_pause_node",
+        description=(
+            "Pause one checked node recovery case. Fences new Chain/Delayed Send "
+            "delivery to the exact old conversation and pauses its WATCHING/RESERVED "
+            "continuations while preserving plans, receipts, identities, and UNKNOWN evidence."
+        ),
+        structured_output=True,
+    )
+    async def bct_pause_node(work_id: str, case_id: str, reason: str) -> dict[str, Any]:
+        from bct.node_recovery import NodeRecoveryLedger
+        work = await _recovery_work(work_id)
+        try:
+            result = await asyncio.to_thread(
+                NodeRecoveryLedger(bct.store).pause,
+                work=work, case_id=case_id, reason=reason,
+            )
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return {"status": "OK", "pause_node": result}
+
+    @server.tool(
+        name="bct_replace_node",
+        description=(
+            "Stage or commit replacement of one PAUSED node. action=prepare records an "
+            "exact healthy successor and returns an inheritance instruction; action=start "
+            "also sends that instruction through Chain Message using exact RCC identities; "
+            "action=commit succeeds only after the successor's inheritance watch exists. "
+            "No UNKNOWN effect is replayed and BCT never chooses the successor."
+        ),
+        structured_output=True,
+    )
+    async def bct_replace_node(
+        work_id: str, case_id: str, successor_conversation_key: str = "",
+        inheritance_task_id: str = "", action: str = "status",
+        operation_id: str = "", instance_id: str = "", session_id: str = "",
+        target_tab_id: int = 0, target_window_id: int = 0,
+        origin_conversation_key: str = "", origin_instance_id: str = "",
+    ) -> dict[str, Any]:
+        from bct.node_recovery import NodeRecoveryLedger
+        work = await _recovery_work(work_id)
+        ledger = NodeRecoveryLedger(bct.store)
+        if action == "status":
+            case = await asyncio.to_thread(ledger.get, work=work, case_id=case_id)
+            return ({"status": "NOT_FOUND", "case_id": case_id} if case is None
+                    else {"status": "OK", "replace_node": case})
+        if action not in {"prepare", "start", "commit"}:
+            return {"status": "INVALID_REQUEST", "reason": "NODE_REPLACEMENT_ACTION_INVALID"}
+        if action == "start" and not operation_id:
+            return {"status": "INVALID_REQUEST", "reason": "NODE_REPLACEMENT_OPERATION_REQUIRED"}
+        try:
+            if action in {"prepare", "start"}:
+                prepared = await asyncio.to_thread(
+                    ledger.prepare_replace, work=work, case_id=case_id,
+                    successor_conversation_key=successor_conversation_key,
+                    inheritance_task_id=inheritance_task_id,
+                    successor_evidence=_current_node_evidence(successor_conversation_key),
+                )
+                if action == "prepare":
+                    return {"status": "OK", "replace_node": prepared}
+                sent = await bct_chain_message(
+                    work_id=work_id, task_id=inheritance_task_id,
+                    operation_id=operation_id, action="start", instance_id=instance_id,
+                    session_id=session_id, target_tab_id=target_tab_id,
+                    target_window_id=target_window_id,
+                    target_conversation_key=successor_conversation_key,
+                    origin_conversation_key=origin_conversation_key,
+                    origin_instance_id=origin_instance_id,
+                    instruction=str(prepared["inheritance_instruction"]),
+                )
+                return {"status": "INHERITANCE_SENT" if sent.get("status") == "WATCHING"
+                        else "INHERITANCE_UNCONFIRMED",
+                        "replace_node": prepared, "chain_message": sent}
+            if action == "commit":
+                current_case = await asyncio.to_thread(
+                    ledger.get, work=work, case_id=case_id,
+                )
+                successor_key = successor_conversation_key or str(
+                    (current_case or {}).get("replacement_conversation_key") or ""
+                )
+                result = await asyncio.to_thread(
+                    ledger.commit_replace, work=work, case_id=case_id,
+                    successor_evidence=_current_node_evidence(successor_key),
+                )
+                return {"status": "OK", "replace_node": result}
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+
+    @server.tool(
+        name="bct_reset_node",
+        description=(
+            "Finish cleanup of a PAUSED or REPLACED node. action=plan stores its "
+            "recoverable context before any external effect. action=apply then closes the "
+            "exact tab once through the existing close contract and records RESET, "
+            "RESET_FAILED, or RESET_UNKNOWN. UNKNOWN is preserved and never retried."
+        ),
+        structured_output=True,
+    )
+    async def bct_reset_node(
+        work_id: str, case_id: str, action: str = "status", operation_id: str = "",
+        instance_id: str = "", session_id: str = "", tab_id: int = 0,
+        window_id: int = 0, conversation_key: str = "",
+    ) -> dict[str, Any]:
+        from bct.node_recovery import NodeRecoveryLedger
+        work = await _recovery_work(work_id)
+        ledger = NodeRecoveryLedger(bct.store)
+        case = await asyncio.to_thread(ledger.get, work=work, case_id=case_id)
+        if case is None:
+            return {"status": "NOT_FOUND", "case_id": case_id}
+        if action == "status":
+            return {"status": "OK", "reset_node": case}
+        if action not in {"plan", "apply"}:
+            return {"status": "INVALID_REQUEST", "reason": "NODE_RESET_ACTION_INVALID"}
+        if action == "apply" and not operation_id:
+            return {"status": "INVALID_REQUEST", "reason": "NODE_RESET_OPERATION_REQUIRED"}
+        key = str(case["conversation_key"])
+        if conversation_key and conversation_key.lower() != key:
+            return {"status": "INVALID_REQUEST", "reason": "NODE_RESET_CONVERSATION_CONFLICT"}
+        try:
+            planned = await asyncio.to_thread(
+                ledger.prepare_reset, work=work, case_id=case_id,
+                node_evidence=_current_node_evidence(key),
+            )
+            if action == "plan":
+                return {"status": "OK", "reset_node": planned}
+            closed = await make_executor("browser")(
+                work_id, operation_id,
+                {"command": "close-conversation-tab", "instance_id": instance_id,
+                 "session_id": session_id, "tab_id": tab_id, "window_id": window_id,
+                 "conversation_key": key},
+            )
+            outcome = str(closed.get("outcome") or "UNKNOWN")
+            finished = await asyncio.to_thread(
+                ledger.finish_reset, work=work, case_id=case_id,
+                close_outcome=outcome, operation_id=operation_id,
+            )
+            return {"status": "OK" if outcome == "APPLIED" else "CLOSE_" + outcome,
+                    "reset_node": finished, "close": closed}
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
 
     @server.tool(
         name="bct_set_chain_direction",

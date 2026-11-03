@@ -515,6 +515,116 @@ def assign_conversation_membership(
     }
 
 
+def _transfer_conversation_state(
+    db, *, predecessor: str, successor: str, when: float,
+) -> dict[str, object]:
+    rows = {
+        str(row["conversation_key"]): row for row in db.execute(
+            "SELECT conversation_key,node_memo,assigned_task FROM conversation_network_conversations "
+            "WHERE conversation_key IN (?,?)", (predecessor, successor),
+        )
+    }
+    if set(rows) != {predecessor, successor}:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_SUCCESSION_NODE_NOT_FOUND")
+    predecessor_scope, predecessor_tags = _current_role_tags(db, predecessor)
+    successor_scope, _successor_tags = _current_role_tags(db, successor)
+    if successor_scope not in {"", predecessor_scope}:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_SUCCESSOR_SCOPE_CONFLICT")
+
+    if predecessor_scope:
+        db.execute(
+            "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+            "WHERE conversation_key=? AND project_id=? AND activity='ACTIVE'",
+            (when, predecessor, predecessor_scope),
+        )
+        _validate_role_rules(
+            db, project_id=predecessor_scope,
+            conversation_key=successor, tags=predecessor_tags,
+        )
+        db.execute(
+            "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+            "WHERE conversation_key=? AND activity='ACTIVE' AND project_id<>?",
+            (when, successor, predecessor_scope),
+        )
+        db.execute(
+            "INSERT INTO conversation_network_memberships(project_id,conversation_key,activity,created_at,updated_at) "
+            "VALUES(?,?,?,?,?) ON CONFLICT(project_id,conversation_key) DO UPDATE SET "
+            "activity='ACTIVE',updated_at=excluded.updated_at",
+            (predecessor_scope, successor, "ACTIVE", when, when),
+        )
+        db.execute(
+            "DELETE FROM conversation_network_membership_tags WHERE project_id=? AND conversation_key=?",
+            (predecessor_scope, successor),
+        )
+        db.executemany(
+            "INSERT INTO conversation_network_membership_tags(project_id,conversation_key,tag,created_at) "
+            "VALUES(?,?,?,?)",
+            [(predecessor_scope, successor, tag, when) for tag in predecessor_tags],
+        )
+        db.execute(
+            "UPDATE conversation_network_conversations SET unassigned_role_tags='[]' WHERE conversation_key=?",
+            (successor,),
+        )
+    else:
+        db.execute(
+            "UPDATE conversation_network_conversations SET unassigned_role_tags='[]',updated_at=? "
+            "WHERE conversation_key=?", (when, predecessor),
+        )
+        _validate_role_rules(
+            db, project_id="", conversation_key=successor, tags=predecessor_tags,
+        )
+        db.execute(
+            "UPDATE conversation_network_memberships SET activity='EXCLUDED',updated_at=? "
+            "WHERE conversation_key=? AND activity='ACTIVE'",
+            (when, successor),
+        )
+        db.execute(
+            "UPDATE conversation_network_conversations SET unassigned_role_tags=?,updated_at=? "
+            "WHERE conversation_key=?",
+            (_canonical(predecessor_tags), when, successor),
+        )
+
+    predecessor_row = rows[predecessor]
+    db.execute(
+        "UPDATE conversation_network_conversations SET "
+        "node_memo=CASE WHEN trim(node_memo)='' THEN ? ELSE node_memo END,"
+        "assigned_task=CASE WHEN trim(assigned_task)='' THEN ? ELSE assigned_task END,"
+        "updated_at=? WHERE conversation_key=?",
+        (str(predecessor_row["node_memo"] or ""),
+         str(predecessor_row["assigned_task"] or ""), when, successor),
+    )
+    return {
+        "predecessor_conversation_key": predecessor,
+        "successor_conversation_key": successor,
+        "project_id": predecessor_scope,
+        "role_tags": predecessor_tags,
+        "role_tags_sha256": role_tags_sha256(predecessor_tags),
+        "metadata_transferred": True,
+    }
+
+
+def transfer_conversation_state(
+    store: Store, *, predecessor_conversation_key: str,
+    successor_conversation_key: str, now: float | None = None,
+) -> dict[str, object]:
+    """Atomically move advisory scope, roles and task context to a successor.
+
+    This is used only after a replacement Chain Message is durably watching.
+    It does not send a message or grant permission.  Manager and global
+    supervisor uniqueness are checked in the same transaction, so there is no
+    intermediate two-Manager/two-supervisor state.
+    """
+    predecessor = _conversation_key(predecessor_conversation_key)
+    successor = _conversation_key(successor_conversation_key)
+    if predecessor == successor:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_SUCCESSOR_SAME")
+    when = float(time.time() if now is None else now)
+    with store.transaction() as db:
+        return _transfer_conversation_state(
+            db, predecessor=predecessor, successor=successor, when=when,
+        )
+
+
 def _role_tags(values: object) -> list[str]:
     if not isinstance(values, (list, tuple)):
         raise ConversationNetworkError("CONVERSATION_NETWORK_TAGS_INVALID")

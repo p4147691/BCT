@@ -57,8 +57,12 @@ const buttons=[
 ];
 const document={createElement(tag){
   assert.equal(tag,"span");
-  return {className:"",textContent:"",title:"",hidden:false,replaceChildren(...children){this.children=children;}};
+  return {className:"",textContent:"",title:"",hidden:false,
+    setAttribute(name,value){this[name]=String(value);},
+    addEventListener(name,listener){this.listeners||={};this.listeners[name]=listener;},
+    replaceChildren(...children){this.children=children;}};
 }};
+let acknowledged="";
 const ctx={
   monitorWindowDesktopLocations:locationMap,
   monitorBctWindowNodesCache:[],
@@ -66,6 +70,10 @@ const ctx={
   monitorLastAiState:{},
   monitorBadgeNodeNumbersForHwnd:(hwnd)=>labels[hwnd]||[],
   monitorDesktopThumbs:{children:buttons},
+  monitorNodeReportState:(node)=>node?.report||null,
+  monitorAcknowledgePostWork:(key)=>{acknowledged=key;},
+  syncMonitorAllDesktopThumbnailNodeBadges:()=>{},
+  renderWorkers:()=>{},
   document,Map,Set,Boolean,String,Number,Array
 };
 vm.createContext(ctx);
@@ -97,6 +105,24 @@ assert.deepEqual(selectedUnknown.map(x=>x.textContent),["?","?","61"]);
 assert.deepEqual(selectedUnknown.map(x=>String(x.className).includes("monitor-desktop-minimized-node-selected")),[false,true,false],
   "exact Chrome tabId selects only its own unknown minimized node");
 ctx.setMinimizedBadgeSelectedKey("");
+ctx.setMinimizedBadgeNodes([]);
+
+// Status is carried by the minimized node number itself. Terminal states are
+// acknowledged through the exact conversation while processing is display-only.
+labels["100"]=[{token:"7",tabId:707},{token:"8",tabId:708},{token:"9",tabId:709}];
+ctx.setMinimizedBadgeNodes([
+  {key:"working",nodeLabel:"N7",tabId:707,report:{kind:"working",conversationKey:"c7",label:"처리 중"}},
+  {key:"ready",nodeLabel:"N8",tabId:708,report:{kind:"ready",conversationKey:"c8",label:"확인 대기"}},
+  {key:"abnormal",nodeLabel:"N9",tabId:709,report:{kind:"abnormal",conversationKey:"c9",label:"상태 확인 필요"}},
+]);
+ctx.syncMonitorMinimizedNodeBadges({});
+const statusBadges=label.badges.children.filter((item)=>String(item.className).includes("monitor-desktop-minimized-node"));
+assert.match(statusBadges[0].className,/has-report is-working/);
+assert.match(statusBadges[1].className,/has-report is-ready/);
+assert.match(statusBadges[2].className,/has-report is-abnormal/);
+assert.equal(statusBadges[0].listeners,undefined,"working minimized node is display-only");
+statusBadges[1].listeners.click({preventDefault(){},stopPropagation(){}});
+assert.equal(acknowledged,"c8","ready minimized node acknowledges its exact conversation");
 ctx.setMinimizedBadgeNodes([]);
 
 // A narrow D# row keeps the selected number in the middle and exposes where
@@ -144,12 +170,22 @@ assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-minimize
   "minimized node numbers keep explicit space immediately after the D1/D2 controls");
 assert.match(css,/\.monitor-desktop-minimized-node-selected\s*\{[^}]*#ffd75a/,
   "selecting a minimized node makes its D# number orange");
+assert.match(css,/\.monitor-desktop-minimized-node\.is-working\s*\{[^}]*#45e67b/,
+  "a processing minimized node number is green");
+assert.match(css,/\.monitor-desktop-minimized-node\.is-ready\s*\{[^}]*#55a9ff/,
+  "a ready minimized node number is blue");
+assert.match(css,/\.monitor-desktop-minimized-node\.is-abnormal\s*\{[^}]*#ff5f67/,
+  "an abnormal minimized node number is red");
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-label-text\s*\{ display:none!important; \}/);
 assert.match(src,/label\.append\(desktopBadge,\s*labelText,\s*minimizedNodes\)/);
 assert.match(src,/label\.append\(badge,\s*text,\s*minimizedNodes\)/);
 assert.match(src,/numbersForHwnd: \(hwnd\) => monitorBadgeNodeNumbersForHwnd\(hwnd, state\)/);
 assert.match(src,/iconic:minimized/);
 assert.match(src,/scheduleMonitorMinimizedBadgeConvergence\(hwnd\)/);
+assert.match(src,/const iconicLifecycleLocked=explicitMinimized \? true : explicitRestored \? false : prior\.iconicLifecycleLocked===true/,
+  "explicit minimize remains authoritative until an explicit restore event");
+assert.match(src,/iconic: iconicLifecycleLocked \|\| Boolean\(item\?\.iconic\), iconicLifecycleLocked/,
+  "later geometry snapshots cannot erase a confirmed minimized state");
 assert.match(contractSrc,/if \(!Boolean\(location\?\.iconic\)\) continue;/);
 assert.match(thumbnailV2Src,/windowLayer\.windowFrame\(visual,desktopId,frame/,
   "V2 owns the window-frame render instead of the compatibility bundle");

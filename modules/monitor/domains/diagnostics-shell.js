@@ -252,8 +252,11 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const lifecycleReason=String(event?.reason||"").toLowerCase();
   // Native notifications are allowed to use either `iconic: true` or the
   // lifecycle reason. The picture-hiding and node-badge paths must agree.
-  const minimized=monitorMinimizedNodeBadgeContract?.minimizedEvent?.(event) || lifecycleReason==="minimized" || Boolean(event.iconic);
-  const restoring=Boolean(prior.iconic)&&!minimized&&event.visible!==false;
+  const explicitMinimized=lifecycleReason==="minimized" || event.iconic===true;
+  const explicitRestored=lifecycleReason==="restored";
+  const iconicLifecycleLocked=explicitMinimized ? true : explicitRestored ? false : prior.iconicLifecycleLocked===true;
+  const minimized=iconicLifecycleLocked || monitorMinimizedNodeBadgeContract?.minimizedEvent?.(event) || Boolean(event.iconic);
+  const restoring=Boolean(prior.iconic)&&explicitRestored&&!minimized&&event.visible!==false;
 
   const apply=(img)=>{ img.style.display=(minimized||event.visible===false)?"none":""; img.style.left=`${((Number(event.left)-vl)/vw)*100}%`; img.style.top=`${((Number(event.top)-vt)/vh)*100}%`; img.style.width=`${(Number(event.width)/vw)*100}%`; img.style.height=`${(Number(event.height)/vh)*100}%`; syncMonitorStatusLayer(img,hwnd); syncMonitorPauseOverlay(img,hwnd); if(!restoring)syncMonitorDesktopNumberBadge(img,hwnd); syncMonitorNonChatCountdown(img,hwnd); };
 
@@ -265,7 +268,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const eventVisual=eventTile?.querySelector(".monitor-desktop-thumb-visual");
   globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
 
-  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
+  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,iconicLifecycleLocked,visible:event.visible!==false,at:Date.now()});
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
   if (minimized) scheduleMonitorMinimizedBadgeConvergence(hwnd);
   const badgeTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);

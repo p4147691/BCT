@@ -150,7 +150,36 @@ A review candidate is not automatic deletion approval.
 - Use `rcc-send-message-v1` with a single immutable send Operation, capture the assistant reply and verify the result receipt. Do not retry an ambiguous effect with a new Operation ID.
 - Public commands are `create-chat-window`, `create-chat-tab`, and `send-message`; `state` is read-only. Do not initiate new `send` or `create-and-send` calls. Retain historical receipt decoding and internal recovery compatibility.
 
-## 10. Verification
+## 10. Block-assembly AI coding
+
+- Default every new or changed implementation to reusable, composable boundaries.
+  Before writing code, search `docs/component-library.v1.json` and the current
+  source for an existing compatible block; extend or adapt it instead of copying it.
+- Classify meaningful behavior as `primitive`, `module`, `partial_recipe`, or
+  `full_recipe`. Keep user-visible recipes separate from the lower-level effects
+  they compose.
+- Every reusable block must make its purpose, inputs, outputs, external effects,
+  failure/UNKNOWN behavior, receipts, tests and known callers explainable. A user
+  must be able to descend from a recipe to its parts and source when desired.
+- Treat contact points as first-class parts. Use explicit ports/contracts plus
+  small connector, adapter, validator and state/receipt components where block
+  shapes differ; do not hide one-off glue inside a recipe.
+- Maximize compatibility through small stable contracts, not premature universal
+  abstractions. A boundary must have independent meaning and a realistic reuse,
+  replacement or isolated-test value; do not turn individual code lines into blocks.
+- Recipes call shared blocks rather than duplicating their implementation. Test the
+  isolated block contract and the composed recipe boundary. Preserve exact identity,
+  idempotency, rollback and UNKNOWN/no-replay rules for external effects.
+- Update the component catalogue when a block is added, promoted, replaced or
+  retired. Label embedded boundaries honestly; do not claim isolation or LIVE proof
+  merely because a function or wrapper exists.
+- Refactor legacy code incrementally at the touched boundary. Do not broad-rewrite
+  unrelated working code solely to make the catalogue look complete.
+- Explain implementation work as a block map: reused blocks, new blocks, connection
+  parts, changed effects and verification evidence. File diffs remain supporting
+  evidence, not the primary user-facing model.
+
+## 11. Verification
 
 For BCT source changes run the focused affected tests first, then the relevant
 repository gate. Typical static checks:

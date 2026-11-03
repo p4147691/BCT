@@ -46,6 +46,11 @@ assert.match(backgroundSource, /chrome\.tabs\.query\(\{ windowId \}\)/,
   "a tab-order event must carry the complete current Chrome ordering, not only the active tab");
 assert.match(monitorSource, /function applyMonitorBrowserVisualTabSnapshot[\s\S]*function monitorBrowserVisualTabsForWindow/,
   "Monitor must retain the observed tab order independently of a later Core refresh");
+const bootstrapSource = fs.readFileSync(path.join(__dirname, "../extension/google-bootstrap.js"), "utf8");
+assert.match(bootstrapSource, /button\[data-testid\*='stop'\]/,
+  "processing telemetry must tolerate current ChatGPT stop-button test ids");
+assert.match(bootstrapSource, /aria-label\*='\\uC751\\uB2F5'/,
+  "processing telemetry must recognize the Korean response-stop control");
 
 function node(className = "") {
   const result = {
@@ -241,11 +246,29 @@ const stateProjection = context.MonitorBctThumbnailProjection.render({
   onAcknowledge: (report) => { acknowledged = report.conversationKey; },
 });
 assert.equal(stateProjection.rendered, 1);
-const reports = layer.querySelectorAll(".monitor-thumbnail-state-report");
-assert.deepEqual(reports.map((item) => item.textContent), [">", "Ⅱ", "ㅁ"],
-  "thumbnail states must use the requested working, ready, and abnormal marks");
-assert.equal(reports[0].listeners, undefined, "working is display-only");
-reports[1].listeners.click({ preventDefault() {}, stopPropagation() {} });
+const stateTokens = layer.querySelectorAll(".monitor-thumbnail-tab-token");
+assert.deepEqual(stateTokens.map((item) => item.textContent), ["7", "8", "9"],
+  "status changes the node number itself instead of adding a separate symbol");
+assert.match(stateTokens[0].className,/has-report is-working/);
+assert.match(stateTokens[1].className,/has-report is-ready/);
+assert.match(stateTokens[2].className,/has-report is-abnormal/);
+assert.equal(layer.querySelector(".monitor-thumbnail-state-report"),null,
+  "the old > / II / square overlay is removed");
+assert.equal(stateTokens[0].listeners,undefined,"processing is display-only");
+stateTokens[1].listeners.click({ preventDefault() {}, stopPropagation() {} });
 assert.equal(acknowledged, "c8", "ready report is dismissed through its exact conversation acknowledgement");
 
-console.log("PASS: node labels and translucent > / Ⅱ / ㅁ reports remain readable and terminal reports acknowledge exactly");
+const selectedWorkingProjection = context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  selectedNodeHwnd:"600",
+  selectedNodeTabId:701,
+  numbersForHwnd: () => [{ token: 7, tabId: 701 }],
+  statusForTab: () => ({ kind:"working", conversationKey:"c7", label:"처리 중" }),
+});
+assert.equal(selectedWorkingProjection.rendered,1);
+const selectedWorking=layer.querySelector(".monitor-thumbnail-tab-token");
+assert.match(selectedWorking.className,/is-working/);
+assert.match(selectedWorking.className,/is-selected/,
+  "a status color and the orange selection outline coexist on one number");
+
+console.log("PASS: node-number colors report working, ready, and abnormal states with exact acknowledgement");

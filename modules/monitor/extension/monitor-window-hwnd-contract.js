@@ -136,15 +136,17 @@
           continue;
         }
         const minimized = text(browser?.state).toLowerCase() === "minimized";
+        const activeTitle = chromeWindowTitle(browser?.activeTabTitle);
+        const exactTitleMatches = activeTitle ? native.filter((item) =>
+          chromeWindowTitle(item.location?.title) === activeTitle) : [];
         let ranked = [];
         if (minimized) {
           // Windows reduces minimized HWNDs to an icon rectangle.  Geometry is
           // therefore not a stable identity signal.  Use an exact normalized
           // active-tab title only when it identifies one minimized Chrome HWND;
           // ambiguity remains unbound rather than guessed.
-          const activeTitle = chromeWindowTitle(browser?.activeTabTitle);
-          if (activeTitle) ranked = native
-            .filter((item) => Boolean(item.location?.iconic) && chromeWindowTitle(item.location?.title) === activeTitle)
+          if (activeTitle) ranked = exactTitleMatches
+            .filter((item) => Boolean(item.location?.iconic))
             .map((item) => ({ ...item, score: 0 }));
           if (!ranked.length) {
             rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "MINIMIZED_WINDOW_TITLE_UNAVAILABLE" }));
@@ -158,6 +160,18 @@
           ranked = native.filter((item) => Boolean(item.location?.iconic) === false)
             .map((item) => ({ ...item, score: geometryScore(browserGeometry, item.geometry) }))
             .sort((a, b) => a.score - b.score || a.hwnd.localeCompare(b.hwnd));
+          if (!ranked.length || ranked[0].score > tolerance || (ranked.length > 1 && ranked[1].score <= tolerance)) {
+            // chrome.windows bounds can be device-independent pixels while the
+            // Native host observes physical HWND pixels.  A tab activation
+            // later supplies an exact conversation join, but location labels
+            // should not wait for that click.  For this display-only contract,
+            // accept one uniquely matching active-tab/native-window title as a
+            // bounded DPI fallback.  Duplicate titles remain unresolved.
+            const normalTitleMatches = exactTitleMatches.filter((item) => Boolean(item.location?.iconic) === false);
+            if (normalTitleMatches.length === 1) {
+              ranked = [{ ...normalTitleMatches[0], score: 0, matchKind: "exact-title" }];
+            }
+          }
         }
         if (!ranked.length || ranked[0].score > tolerance) {
           rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "HWND_GEOMETRY_UNAVAILABLE" }));
@@ -167,7 +181,10 @@
           rejected.push(Object.freeze({ lineage: candidate.lineage, reason: "HWND_GEOMETRY_AMBIGUOUS" }));
           continue;
         }
-        bindings.push(Object.freeze({ ...candidate, hwnd: ranked[0].hwnd, observedAt: now, displayOnly: true }));
+        bindings.push(Object.freeze({
+          ...candidate, hwnd: ranked[0].hwnd, observedAt: now, displayOnly: true,
+          matchKind: text(ranked[0]?.matchKind) || (minimized ? "exact-title" : "geometry"),
+        }));
       }
       const lineagesByHwnd = new Map();
       for (const item of bindings) { const values = lineagesByHwnd.get(item.hwnd) || []; values.push(item); lineagesByHwnd.set(item.hwnd, values); }

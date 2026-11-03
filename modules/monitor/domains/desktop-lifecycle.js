@@ -1805,7 +1805,8 @@ function rememberMonitorDesktopWindows(desktopId, windows) {
 
     const frozenDataUri = String(item?.frozenDataUri || previous?.frozenDataUri || "");
     const frozenAt = frozenDataUri ? Number(item?.frozenAt || previous?.frozenAt || now) : 0;
-    const next = { hwnd, title: String(item?.title || ""), className: String(item?.className || ""), desktopId, desktop: index + 1, left: Number(item?.left) || 0, top: Number(item?.top) || 0, width: Number(item?.width) || 0, height: Number(item?.height) || 0, z: Number(item?.z) || 0, iconic: Boolean(item?.iconic), visible: Boolean(item?.visible), frozenDataUri, frozenAt, at: now, desktopEnteredAt: sameDesktop ? Number(previous?.desktopEnteredAt || previous?.at || now) : now };
+    const iconicLifecycleLocked = previous?.iconicLifecycleLocked === true;
+    const next = { hwnd, title: String(item?.title || ""), className: String(item?.className || ""), desktopId, desktop: index + 1, left: Number(item?.left) || 0, top: Number(item?.top) || 0, width: Number(item?.width) || 0, height: Number(item?.height) || 0, z: Number(item?.z) || 0, iconic: iconicLifecycleLocked || Boolean(item?.iconic), iconicLifecycleLocked, visible: Boolean(item?.visible), frozenDataUri, frozenAt, at: now, desktopEnteredAt: sameDesktop ? Number(previous?.desktopEnteredAt || previous?.at || now) : now };
 
     // Preserve the last confirmed conversation identity across transient title/identity lookup churn.
 

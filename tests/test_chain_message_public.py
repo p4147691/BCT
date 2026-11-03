@@ -29,6 +29,10 @@ class ChainMessagePublicTests(unittest.IsolatedAsyncioTestCase):
     async def test_exposed_without_chain_run(self):
         names={x.name for x in await self.mcp.list_tools()}
         self.assertIn("bct_chain_message",names)
+        self.assertTrue({
+            "bct_check_node", "bct_recheck_node", "bct_pause_node",
+            "bct_replace_node", "bct_reset_node",
+        }.issubset(names))
         self.assertNotIn("bct_chain_run",names)
     async def test_prearms_before_single_send_with_exact_identity(self):
         await self.mcp.call_tool("bct_chain_message",self.arguments())

@@ -69,12 +69,16 @@
       "button[data-testid='stop-button']",
       "button[data-testid='stop-generating-button']",
       "button[data-testid='composer-stop-button']",
+      "button[data-testid*='stop']",
       "button[aria-label='Stop generating']",
       "button[aria-label='Stop streaming']",
       "button[aria-label='Stop']",
       "button[aria-label='\uB2F5\uBCC0 \uC911\uC9C0']",
       "button[aria-label='\uC911\uC9C0']",
-      "button[aria-label*='\uC0DD\uC131 \uC911\uC9C0']"
+      "button[aria-label*='\uC0DD\uC131 \uC911\uC9C0']",
+      "button[aria-label*='\uC751\uB2F5'][aria-label*='\uC911\uC9C0']",
+      "button[title*='Stop']",
+      "button[title*='\uC911\uC9C0']"
     ];
     if (stopSelectors.some((selector) => !!document.querySelector(selector))) return true;
     const nodes=[...document.querySelectorAll('[data-message-author-role="assistant"]')];

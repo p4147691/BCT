@@ -407,3 +407,65 @@ Work / 실행 세션 / B의 정확한 대화 UUID·탭 / Task Run·Delayed Send 
 Delayed Send BB 반복이 같은 작업 식별자로 항상 함께 준비·확인되도록
 묶는 조합 경계는 아직 없다. 이 연결을 설계·구현하기 전에는 1:1 조합을
 완성됐다고 부르지 않는다.
+
+## 4. 노드 이상과 교체 조합
+
+노드 복구는 하나의 거대한 자동 명령이 아니다. AI가 상태 증거를 읽고
+교체 여부를 판단할 수 있도록 아래 부품과 부분 레시피를 순서대로 조립한다.
+
+```text
+Check Node
+  = 읽기/관측 부분 레시피
+  = 정확한 현재 노드를 읽고 OK / WAIT / CHECK 증거를 저장
+
+Recheck Node
+  = 비교 부분 레시피
+  = Delayed Send 또는 대기 경계 뒤 같은 노드를 다시 읽고 이전 증거와 비교
+  = CONTINUE / RECHECK / PAUSE_REVIEW를 제안하지만 스스로 교체하지 않음
+
+Pause Node
+  = 상태 변경 원시 부품
+  = 기존 노드의 새 Chain/Delayed Send를 막고 WATCHING/RESERVED를 PAUSED로 변경
+  = 계획, 영수증, 정확한 신원, UNKNOWN 기록은 보존
+
+Replace Node
+  = 부분 레시피
+  = 준비 → 승계 Chain Message → 승계 감시 확인 → commit
+  = BCT는 후임을 고르지 않으며, commit 전에는 기존 노드가 계속 PAUSED
+
+Reset Node
+  = 마무리 부분 레시피
+  = 복구 스냅샷 저장 → 기존 Delayed Send 정리 → 정확한 탭 닫기 → 결과 기록
+  = UNKNOWN close는 RESET_UNKNOWN으로 보존하고 새 Operation으로 재시도하지 않음
+```
+
+다섯 개를 순서대로 묶은 **Node Recovery**가 전체 레시피다. 공개 명령은
+각 경계를 따로 노출하므로 Manager가 증거를 읽고 다음 단계를 선택할 수 있다.
+
+```text
+bct_check_node
+bct_recheck_node
+bct_pause_node
+bct_replace_node(action=status|prepare|start|commit)
+bct_reset_node(action=status|plan|apply)
+```
+
+### 체인 안에서의 위치
+
+```text
+정상: A → B → BB ... → BA → A
+
+이상 관측:
+  Check Node
+    → WAIT/CHECK이면 Delayed Send 또는 정해진 대기 뒤 Recheck Node
+    → 회복되면 기존 체인 계속
+    → 여전히 이상하면 Manager가 Pause Node 결정
+      → Replace Node가 후임에게 승계 Chain Message
+      → 후임 감시가 실제로 준비된 뒤 commit
+      → Reset Node가 이전 노드를 복구 가능하게 정리
+      → 후임은 다음 미완료 단계부터 계속
+```
+
+`Check`와 `Recheck`의 결과는 관측 증거이지 AI 판단을 대신하는 정책이 아니다.
+`UNKNOWN`은 노드 장애의 자동 증거도, 재전송 허가도 아니다. 같은 Operation
+영수증과 현재 외부 상태를 먼저 대조한다.

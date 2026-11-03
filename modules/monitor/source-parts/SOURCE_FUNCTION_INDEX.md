@@ -3,7 +3,7 @@
 Edit source in domains/*.js, ordered statements in source-parts/*.js.
 Generated extension/monitor.js is not an edit target.
 
-## activity (20 functions)
+## activity (21 functions)
 
 - monitorAcknowledgePostWork
 - monitorAcknowledgePostWorkForHwnd
@@ -19,6 +19,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorHwndUserAttentionDetail
 - monitorIsPostWorkWaiting
 - monitorLocalLlmActivityText
+- monitorNodeReportState
 - monitorPostWorkPersist
 - monitorScheduleChatCompletionAlert
 - monitorSyncAuthoritativeCompletionAlerts

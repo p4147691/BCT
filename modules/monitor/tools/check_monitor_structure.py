@@ -38,6 +38,7 @@ def main():
         ext/'features'/'notes'/'monitor-notes-feature.js',
         ext/'features'/'notes'/'monitor-notes-feature.css',
         ext/'browser'/'tab-focus-adapter.js',
+        ext/'browser'/'tab-close-adapter.js',
         root/'tools'/'Request-MonitorDeploymentCheck.ps1',
         root/'tools'/'Publish-MonitorDeployment.ps1',
         root/'tools'/'build_monitor_js_index.py',
