@@ -119,6 +119,10 @@ function loadModule() {
     "observed age must remain in minutes at every age");
   assert.match(monitor, /desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "…"/,
     "unresolved location must be a short loading mark rather than persistent explanatory text");
+  assert.match(monitor, /`\$\{locationText\}\$\{minimized \? " \\u2212" : ""\}`/,
+    "a minimized node must use the Windows-like minus mark rather than an underscore");
+  assert.doesNotMatch(monitor, /minimized \? "_"/,
+    "underscore is not a minimized-state icon");
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
   assert.match(monitor, /if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/,
     "an RCC refresh must defer rather than cancel an active node drag");

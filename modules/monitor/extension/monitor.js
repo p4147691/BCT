@@ -6489,7 +6489,7 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const surfaceText = monitorBctNodeSurfaceText(node);
   return {
     text: [
-      `${locationText}${minimized ? "_" : ""}`,
+      `${locationText}${minimized ? " \u2212" : ""}`,
       surfaceText,
       reasoningLabel,
       observedAgeCompact,
