@@ -99,6 +99,18 @@
       "used_by": ["monitor.recovery_bin"]
     },
     {
+      "id": "monitor.recovery_bin",
+      "kind": "full_recipe",
+      "maturity": "embedded",
+      "implementation": [
+        {"path": "modules/monitor/domains/desktop-lifecycle.js", "symbol": "renderMonitorClosedConversationRecoveryPanel"}
+      ],
+      "contract": "Present deleted memo summaries, recoverable node metadata, and desktop thumbnails in a three-pane recovery view; expand memo bodies on demand and prefer current node metadata when the same conversation is live.",
+      "effects": ["monitor.restore_conversation", "restore-note", "restore-desktop", "delete-recovery-record"],
+      "safety": ["current-metadata-preferred", "saved-metadata-fallback", "full-body-hidden-until-requested", "independent-pane-scroll"],
+      "used_by": ["monitor.node_trash"]
+    },
+    {
       "id": "code.scan_blocks",
       "kind": "full_recipe",
       "maturity": "isolated",

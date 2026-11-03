@@ -19,11 +19,17 @@ assert.match(panel, /if\(thumbRecords\.length\)renderTrashRows\("thumbnail",thum
 assert.match(panel, /삭제된 메모 없음/);
 assert.match(panel, /삭제된 노드 없음/);
 assert.match(panel, /삭제된 데스크 없음/);
-assert.match(css, /monitor-trash-note-row\{[^}]*grid-template-columns:minmax\(96px,\.38fr\) minmax\(120px,1fr\)/,
-  "memo title and compact preview need separate columns");
-assert.match(css, /monitor-trash-conversation-pane\{[^}]*min-height:150px/,
-  "deleted node pane must retain useful height");
-assert.match(css, /monitor-trash-desktop-grid\{[^}]*minmax\(178px,1fr\)/,
-  "deleted desktop cards must be large enough to inspect");
+assert.match(css, /TRASH_RECOVERY_THREE_PANE_V7[\s\S]*monitor-trash-recovery-panel\{[^}]*display:grid!important;[^}]*grid-template-columns:minmax\(0,\.9fr\) minmax\(0,1\.35fr\)/,
+  "memo and node panes must share the top row of a three-pane grid");
+assert.match(css, /monitor-trash-thumbnail-pane\{[^}]*grid-column:1\/-1;grid-row:2/,
+  "desktop thumbnails must span the full bottom row");
+assert.match(panel, /monitor-trash-note-detail/,
+  "memo rows must include an expandable full-body detail");
+assert.match(panel, /row\.setAttribute\("aria-expanded","false"\)/,
+  "memo expansion must expose accessible state");
+assert.match(panel, /recoveryCurrentNodeByKey/,
+  "deleted node display must prefer current node metadata");
+assert.match(css, /monitor-trash-desktop-grid\{[^}]*minmax\(132px,1fr\)/,
+  "deleted desktop cards must stay compact in the bottom strip");
 
-console.log(JSON.stringify({ok: true, contract: "trash-recovery-layout-v6"}));
+console.log(JSON.stringify({ok: true, contract: "trash-recovery-layout-v7"}));
