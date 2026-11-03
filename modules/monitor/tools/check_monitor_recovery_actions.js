@@ -23,9 +23,13 @@ assert.match(background, /monitor-refresh-exact-chatgpt-tab/);
 assert.match(background, /MonitorBcToolRefreshAdapter\.create\(chrome\)/);
 assert.match(background, /monitorBcToolRefreshAdapter\.refreshExactChatTab\(message\)/);
 
-assert.match(monitor, /monitorBctShell\.reloadRcc\(instances\[0\]\)/);
+assert.match(monitor, /monitorBctShell\.reloadRcc\(instanceId\)/);
 assert.match(monitor, /node\.generating === true/);
 assert.match(monitor, /BC_REFRESH_SELECT_EXACT_CHAT_NODE_FIRST/);
 assert.match(monitor, /RCC_RELOAD_EXACT_INSTANCE_REQUIRED/);
+assert.match(monitor, /RCC 리로드 요청 수락/);
+assert.match(monitor, /RCC 리로드 완료 · 새 연결 확인됨/);
+assert.match(monitor, /새 연결은 아직 미확인/);
+assert.match(monitor, /beforeSessions/);
 
 console.log("PASS: bounded BWM recovery actions and exact BC tab refresh contracts");

@@ -108,10 +108,29 @@ monitorRccReload?.addEventListener("click", () => {
       .filter((node) => !node.displayStale && node.instanceState === "OPEN")
       .map((node) => String(node.instanceId || "").trim()).filter(Boolean))];
     if (instances.length !== 1) throw new Error(`RCC_RELOAD_EXACT_INSTANCE_REQUIRED:${instances.length}`);
-    await monitorBctShell.reloadRcc(instances[0]);
-    setMonitorStatus("RCC 리로드 영수증을 확인했습니다. 연결 복구를 기다립니다.", true, 5000);
-    globalThis.setTimeout(() => void refreshMonitorBctWindowNodes(), 1400);
-    return { ok:true };
+    const instanceId = instances[0];
+    const beforeSessions = new Set((monitorBctWindowNodesCache || [])
+      .filter((node) => String(node?.instanceId || "") === instanceId)
+      .map((node) => String(node?.sessionId || "").trim()).filter(Boolean));
+    const result = await monitorBctShell.reloadRcc(instanceId);
+    const receipt = String(result?.operationId || "").trim();
+    setMonitorStatus(`RCC 리로드 요청 수락 · 영수증 ${receipt || "확인됨"} · 새 연결 확인 중…`, true, 12000);
+
+    // The extension acknowledges immediately before it restarts.  A new
+    // session is the separate, user-visible proof that the restart returned.
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 700));
+      await refreshMonitorBctWindowNodes();
+      const afterSessions = new Set((monitorBctWindowNodesCache || [])
+        .filter((node) => String(node?.instanceId || "") === instanceId)
+        .map((node) => String(node?.sessionId || "").trim()).filter(Boolean));
+      if ([...afterSessions].some((sessionId) => !beforeSessions.has(sessionId))) {
+        setMonitorStatus(`RCC 리로드 완료 · 새 연결 확인됨 · 영수증 ${receipt}`, true, 12000);
+        return { ok:true, receipt, reconnected:true };
+      }
+    }
+    setMonitorStatus(`RCC 리로드 요청은 수락됨 · 새 연결은 아직 미확인 · 영수증 ${receipt}`, false, 12000);
+    return { ok:true, receipt, reconnected:false };
   }).catch((error) => setMonitorStatus(`RCC 리로드 실패 · ${error?.message || error}`, false, 6000));
 });
 
