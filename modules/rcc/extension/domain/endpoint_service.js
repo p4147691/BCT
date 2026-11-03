@@ -217,7 +217,15 @@ async function captureEndpointSnapshot(reason = 'snapshot', tabsValue = null) {
       endpoint.reasoning = prior.reasoning;
     }
 
-    if (!endpoint.surface && prior?.surface && typeof prior.surface === 'object') endpoint.surface = prior.surface;
+    const surfaceKind = String(endpoint?.surface?.kind || '').trim().toUpperCase();
+    const priorSurfaceKind = String(prior?.surface?.kind || '').trim().toUpperCase();
+    const sameConversation = String(endpoint?.conversationKey || '').trim()
+      && String(endpoint?.conversationKey || '').trim() === String(prior?.conversationKey || '').trim();
+    if ((!endpoint.surface || surfaceKind === 'UNKNOWN') && sameConversation
+        && prior?.surface && typeof prior.surface === 'object'
+        && ['CHAT', 'WORK', 'CODEX'].includes(priorSurfaceKind)) {
+      endpoint.surface = prior.surface;
+    }
 
     if (prior?.telemetry && typeof prior.telemetry === 'object') endpoint.telemetry = { ...prior.telemetry, ...(endpoint.telemetry && typeof endpoint.telemetry === 'object' ? endpoint.telemetry : {}) };
 

@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-10-31-rcc-latest-assistant-order-v1';
+const RCC_BUILD_VERSION = '2026-11-03-rcc-surface-continuity-v1';
 
 function editorCandidates() {
 

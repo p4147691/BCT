@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC37_EXACT_CONVERSATION_TAB_CLOSE", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC38_SURFACE_CONTINUITY", release["candidate"])
         self.assertEqual(
             "5e278244216f5a9e9a0d21a10236b923d4bc9f5b4c712a100e6c62d9691c7bda",
             release["rollbackBaseline"]["aggregateSha256"],
@@ -60,8 +60,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.61", manifest["version"])
-        self.assertEqual("1.0.61 Latest Assistant Order", manifest["version_name"])
+        self.assertEqual("1.0.62", manifest["version"])
+        self.assertEqual("1.0.62 Surface Continuity", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -186,7 +186,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-10-31-rcc-latest-assistant-order-v1"
+        marker = "2026-11-03-rcc-surface-continuity-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 

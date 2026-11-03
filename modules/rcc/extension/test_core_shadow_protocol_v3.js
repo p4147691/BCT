@@ -23,6 +23,12 @@ assert(snapshot.includes('endpoint.connection = probe?.connection'));
 assert(!snapshot.includes('executeScript'));
 assert(!snapshot.includes('sendToChatTab('));
 
+const capture = background.split('async function captureEndpointSnapshot(')[1]
+  .split('async function postEndpointPresence(', 1)[0];
+assert(capture.includes("surfaceKind === 'UNKNOWN'"));
+assert(capture.includes('sameConversation'));
+assert(capture.includes("['CHAT', 'WORK', 'CODEX'].includes(priorSurfaceKind)"));
+
 const nativeState = background.split("if (message.command === 'state')")[1]
   .split("if (message.command === 'simple-relay-bind')", 1)[0];
 assert(nativeState.includes('coreShadowSnapshot(tabs, endpoints, state.simpleRelayV0Binding)'));

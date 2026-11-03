@@ -6456,14 +6456,10 @@ function monitorBctNodeObservedAgeText(node, now = Date.now()) {
   const state = monitorBctNodeDisplayState();
   if (!state.loaded) return "관측 확인 중";
   const observedAt = Number(state.firstObservedAt.get(monitorBctNodeObservedKey(node)) || 0);
-  if (!observedAt) return "관측 방금";
+  if (!observedAt) return "관측 0분";
   const seconds = Math.max(0, Math.floor((now - observedAt) / 1000));
-  if (seconds < 60) return "관측 방금";
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `관측 ${minutes}분`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `관측 ${hours}시간`;
-  return `관측 ${Math.floor(hours / 24)}일`;
+  return `관측 ${minutes}분`;
 }
 function monitorBctNodeBurdenScore(node) {
   const burden = monitorBctNodeBurden(node);
@@ -6473,21 +6469,29 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const minimized = nativeLocation?.iconic === true;
   const burden = monitorBctNodeBurden(node);
   const reasoning = String(node?.reasoningLevel || "?").trim();
-  const reasoningCompact = ({ instant:"I", low:"L", medium:"M", high:"H", xhigh:"XH", max:"MAX" })[reasoning.toLowerCase()] || reasoning;
+  const reasoningLabel = ({
+    instant: "Instant",
+    low: "Low",
+    medium: "Medium",
+    high: "High",
+    xhigh: "Extra High",
+    "extra high": "Extra High",
+    "extra-high": "Extra High",
+    pro: "Pro",
+    max: "Max",
+    ultra: "Ultra",
+  })[reasoning.toLowerCase()] || reasoning;
   const observedAge = monitorBctNodeObservedAgeText(node);
   const observedAgeCompact = observedAge
     .replace("관측 확인 중", "확인중")
-    .replace("관측 방금", "방금")
-    .replace(/^관측 (\d+)분$/, "$1분")
-    .replace(/^관측 (\d+)시간$/, "$1시간")
-    .replace(/^관측 (\d+)일$/, "$1일");
+    .replace(/^관측 (\d+)분$/, "$1분");
   const locationText = monitorBctNodeLocationText(node, desktopPosition);
   const surfaceText = monitorBctNodeSurfaceText(node);
   return {
     text: [
       `${locationText}${minimized ? "_" : ""}`,
       surfaceText,
-      reasoningCompact,
+      reasoningLabel,
       observedAgeCompact,
       burden.label,
     ].filter(Boolean).join("\u00a0\u00a0"),
@@ -6615,9 +6619,12 @@ async function refreshMonitorBctThumbnailProjectionForDesktop(desktopId) {
 }
 
 function monitorBctProjectionHasUnresolvedLineage() {
-  return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) =>
-    !monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId)
-  );
+  return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) => {
+    const hwnd = monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId);
+    if (!hwnd) return true;
+    const location = monitorWindowDesktopLocations.get(String(hwnd));
+    return !location || monitorDesktopState.desktopIds.indexOf(String(location.desktopId || "")) < 0;
+  });
 }
 
 function scheduleMonitorBctProjectionConvergence(reason = "state-ready") {
@@ -6684,12 +6691,12 @@ function monitorBctNodeRoleRank(node) {
 }
 
 function monitorBctNodeLocationText(node, desktopPosition) {
-  return desktopPosition >= 0 ? `D${desktopPosition + 1}` : "위치 확인 중";
+  return desktopPosition >= 0 ? `D${desktopPosition + 1}` : "…";
 }
 function monitorBctNodeSurfaceText(node) {
   if (!String(node?.conversationKey || "").trim()) return "New";
   const kind = String(node?.surfaceKind || "UNKNOWN").trim().toUpperCase();
-  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "미확인";
+  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "Chat/Work";
 }
 function monitorBctNodeBurden(node) {
   const telemetry = node?.telemetry && typeof node.telemetry === "object" ? node.telemetry : {};

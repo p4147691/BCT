@@ -107,8 +107,14 @@ function loadModule() {
     "node detail fields must use visible spacing without punctuation separators");
   assert.match(monitor, /if \(!String\(node\?\.conversationKey \|\| ""\)\.trim\(\)\) return "New";/,
     "a blank conversation node must be labeled New");
-  assert.match(monitor, /\|\| "미확인";/,
-    "an unresolved existing surface must use a readable label instead of a question-mark symbol");
+  assert.match(monitor, /\|\| "Chat\/Work";/,
+    "an unresolved pre-observation conversation must name the remaining possibilities instead of showing a question mark");
+  assert.match(monitor, /instant: "Instant"[\s\S]{0,260}medium: "Medium"[\s\S]{0,260}high: "High"[\s\S]{0,260}xhigh: "Extra High"[\s\S]{0,260}pro: "Pro"/,
+    "reasoning levels must use readable English names including Extra High and Pro");
+  assert.match(monitor, /return `관측 \$\{minutes\}분`;/,
+    "observed age must remain in minutes at every age");
+  assert.match(monitor, /desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "…"/,
+    "unresolved location must be a short loading mark rather than persistent explanatory text");
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
   assert.match(monitor, /if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/,
     "an RCC refresh must defer rather than cancel an active node drag");

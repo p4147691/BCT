@@ -436,9 +436,12 @@ function monitorBctPointInsideScopeHeading(clientX, clientY) {
 
 //@@FN_START:monitorBctProjectionHasUnresolvedLineage
 function monitorBctProjectionHasUnresolvedLineage() {
-  return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) =>
-    !monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId)
-  );
+  return Array.isArray(monitorBctWindowNodesCache) && monitorBctWindowNodesCache.some((node) => {
+    const hwnd = monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId);
+    if (!hwnd) return true;
+    const location = monitorWindowDesktopLocations.get(String(hwnd));
+    return !location || monitorDesktopState.desktopIds.indexOf(String(location.desktopId || "")) < 0;
+  });
 }
 //@@FN_END:monitorBctProjectionHasUnresolvedLineage
 

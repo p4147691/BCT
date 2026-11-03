@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC37_EXACT_CONVERSATION_TAB_CLOSE",
+  "candidate": "RCC_REBUILD_V2_RC38_SURFACE_CONTINUITY",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -23,8 +23,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1971,
-        "sha256": "313cc04216a0401e13ab8edba9461d1c0373234de6549b30d83460a7c51018c2"
+        "size": 1967,
+        "sha256": "f181b6b26e7901287522989e63b4c43824bfb8c30ba178c4468a1bfaf96cb7f8"
       },
       {
         "path": "browser/read_adapter.js",
@@ -103,13 +103,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 28906,
-        "sha256": "757234742d6146941ecfc1437465f45a2601cd21d8c4641569546643819a22a0"
+        "size": 28952,
+        "sha256": "4944283a0e30102a9c97b842693cc04db07c89b1f0eee75a663a08cdaefc013a"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 22453,
-        "sha256": "87131a87f35481aa14bc235e167b236cf6c9238368cf6017c8f5c7d1ba811fa1"
+        "size": 22448,
+        "sha256": "452971d17e87e4eddc57fcbe23452691cd80a9ad9f7f4349a4739736bdf5a050"
       },
       {
         "path": "content/conversation_rename.js",
@@ -123,8 +123,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 39643,
-        "sha256": "f729b587a78810583edeba75d7bd092781ff42247cab1f10674563a9f2e010ca"
+        "size": 40815,
+        "sha256": "9557a616a0e2d49044b9a10b89fce8bc0bde66a662277f191bacafb78037a41e"
       },
       {
         "path": "core/conversation.js",
@@ -173,8 +173,8 @@
       },
       {
         "path": "domain/endpoint_service.js",
-        "size": 8190,
-        "sha256": "1a52732317dbf3295fa3326fc4d3d7b573f2ad890885b76e373738fdee93ca33"
+        "size": 9063,
+        "sha256": "3ee5a800fab839a9e582c610d13d759bb46a8a2e7e63c1ab52d965502422452e"
       },
       {
         "path": "domain/exact_tab_send_service.js",
@@ -233,8 +233,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1562,
-        "sha256": "a5f8e8d9969aad99db79442bbb6a107a2603bc5902890f10f09f5fb2d0b19a30"
+        "size": 1558,
+        "sha256": "d519fdac98ddeb03ad914ee122498ce30de7bd5344f5fdb5beb7bc9d2057bd92"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "b2660a8717912989ff0e1b60f6e31c1c57ced70e45950aa570b73ee23d7261a9"
+    "aggregateSha256": "4cd89e02cf89e84c6c34e3055c2682908c1ee76bdb62675c36e3c30d41d7b1c3"
   },
   "activeLoaderGraph": {
     "background": [
