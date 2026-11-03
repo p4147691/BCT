@@ -147,6 +147,7 @@ const monitorNodeSync = document.getElementById("monitorNodeSync");
 
 const monitorBctNodeSummary = document.getElementById("monitorBctNodeSummary");
 const monitorBctNodesRefresh = document.getElementById("monitorBctNodesRefresh");
+const monitorBctNodeViewModeControl = document.getElementById("monitorBctNodeViewMode");
 const monitorBctRoleUndo = document.getElementById("monitorBctRoleUndo");
 const monitorBctRoleRedo = document.getElementById("monitorBctRoleRedo");
 const monitorBctRoleUndoStack = [];
@@ -167,6 +168,22 @@ const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
+
+/*@@MONITOR_FUNCTION:monitorBctNodeDisplayState@@*/
+/*@@MONITOR_FUNCTION:monitorBctNodeObservedKey@@*/
+/*@@MONITOR_FUNCTION:loadMonitorBctNodeFirstObservedAt@@*/
+/*@@MONITOR_FUNCTION:persistMonitorBctNodeFirstObservedAt@@*/
+/*@@MONITOR_FUNCTION:observeMonitorBctNodeFirstSeen@@*/
+/*@@MONITOR_FUNCTION:monitorBctNodeObservedAgeText@@*/
+/*@@MONITOR_FUNCTION:monitorBctNodeBurdenScore@@*/
+/*@@MONITOR_FUNCTION:setMonitorBctNodeViewMode@@*/
+
+if (monitorBctNodeViewModeControl) {
+  monitorBctNodeViewModeControl.value = monitorBctNodeDisplayState().viewMode;
+  monitorBctNodeViewModeControl.addEventListener("change", () => {
+    setMonitorBctNodeViewMode(monitorBctNodeViewModeControl.value);
+  });
+}
 let monitorBctDeferredNodeRender = null;
 const MONITOR_BCT_NODE_ORDER_KEY = "desktopWindowMonitorBctNodeOrderV1";
 const monitorBctNodeOrderByScope = new Map();

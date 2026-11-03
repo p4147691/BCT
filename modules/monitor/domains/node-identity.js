@@ -18,6 +18,118 @@ function applyMonitorBctNodeHighlight(hwnd) {
 }
 //@@FN_END:applyMonitorBctNodeHighlight
 
+//@@FN_START:monitorBctNodeDisplayState
+function monitorBctNodeDisplayState() {
+  const stateKey = "__monitorBctNodeDisplayState";
+  if (!globalThis[stateKey]) {
+    let viewMode = "manual";
+    try {
+      const saved = String(globalThis.localStorage?.getItem("monitor.bct-node-view-mode.v1") || "");
+      if (["manual", "number", "observed", "burden"].includes(saved)) viewMode = saved;
+    } catch (_) {}
+    globalThis[stateKey] = { firstObservedAt:new Map(), loaded:false, load:null, saveTimer:0, viewMode };
+  }
+  return globalThis[stateKey];
+}
+//@@FN_END:monitorBctNodeDisplayState
+
+//@@FN_START:monitorBctNodeObservedKey
+function monitorBctNodeObservedKey(node) {
+  return String(monitorBctNodeSelectionKey(node) || node?.conversationKey || "").trim().toLowerCase();
+}
+//@@FN_END:monitorBctNodeObservedKey
+
+//@@FN_START:loadMonitorBctNodeFirstObservedAt
+function loadMonitorBctNodeFirstObservedAt() {
+  const state = monitorBctNodeDisplayState();
+  if (state.load) return state.load;
+  const storage = globalThis.chrome?.storage?.local;
+  if (!storage?.get) {
+    state.loaded = true;
+    return Promise.resolve();
+  }
+  state.load = storage.get("monitor.bct-node-first-observed.v1").then((stored) => {
+    const values = stored?.["monitor.bct-node-first-observed.v1"];
+    if (values && typeof values === "object") {
+      for (const [key, observedAt] of Object.entries(values)) {
+        const time = Number(observedAt || 0);
+        if (key && Number.isFinite(time) && time > 0) state.firstObservedAt.set(key, time);
+      }
+    }
+  }).catch(() => {}).finally(() => {
+    state.loaded = true;
+    if (Array.isArray(monitorBctWindowNodesCache)) renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+  });
+  return state.load;
+}
+//@@FN_END:loadMonitorBctNodeFirstObservedAt
+
+//@@FN_START:persistMonitorBctNodeFirstObservedAt
+function persistMonitorBctNodeFirstObservedAt() {
+  const storage = globalThis.chrome?.storage?.local;
+  if (!storage?.set) return;
+  const values = Object.fromEntries([...monitorBctNodeDisplayState().firstObservedAt.entries()].slice(-300));
+  storage.set({ "monitor.bct-node-first-observed.v1": values }).catch(() => {});
+}
+//@@FN_END:persistMonitorBctNodeFirstObservedAt
+
+//@@FN_START:observeMonitorBctNodeFirstSeen
+function observeMonitorBctNodeFirstSeen(nodes) {
+  const state = monitorBctNodeDisplayState();
+  const now = Date.now();
+  let changed = false;
+  for (const node of nodes || []) {
+    const key = monitorBctNodeObservedKey(node);
+    if (key && !state.firstObservedAt.has(key)) {
+      state.firstObservedAt.set(key, now);
+      changed = true;
+    }
+  }
+  if (!changed || state.saveTimer) return;
+  void loadMonitorBctNodeFirstObservedAt().finally(() => {
+    if (state.saveTimer) return;
+    state.saveTimer = setTimeout(() => {
+      state.saveTimer = 0;
+      persistMonitorBctNodeFirstObservedAt();
+    }, 200);
+  });
+}
+//@@FN_END:observeMonitorBctNodeFirstSeen
+
+//@@FN_START:monitorBctNodeObservedAgeText
+function monitorBctNodeObservedAgeText(node, now = Date.now()) {
+  const state = monitorBctNodeDisplayState();
+  if (!state.loaded) return "관측 확인 중";
+  const observedAt = Number(state.firstObservedAt.get(monitorBctNodeObservedKey(node)) || 0);
+  if (!observedAt) return "관측 방금";
+  const seconds = Math.max(0, Math.floor((now - observedAt) / 1000));
+  if (seconds < 60) return "관측 방금";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `관측 ${minutes}분`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `관측 ${hours}시간`;
+  return `관측 ${Math.floor(hours / 24)}일`;
+}
+//@@FN_END:monitorBctNodeObservedAgeText
+
+//@@FN_START:monitorBctNodeBurdenScore
+function monitorBctNodeBurdenScore(node) {
+  const burden = monitorBctNodeBurden(node);
+  return burden.label === "높음" ? 3 : burden.label === "보통" ? 2 : burden.label === "낮음" ? 1 : 0;
+}
+//@@FN_END:monitorBctNodeBurdenScore
+
+//@@FN_START:setMonitorBctNodeViewMode
+function setMonitorBctNodeViewMode(value) {
+  const next = ["manual", "number", "observed", "burden"].includes(String(value)) ? String(value) : "manual";
+  monitorBctNodeDisplayState().viewMode = next;
+  try { globalThis.localStorage?.setItem("monitor.bct-node-view-mode.v1", next); } catch (_) {}
+  const control = document.getElementById("monitorBctNodeViewMode");
+  if (control) control.value = next;
+  if (Array.isArray(monitorBctWindowNodesCache)) renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+}
+//@@FN_END:setMonitorBctNodeViewMode
+
 //@@FN_START:applyMonitorChatNavigationIdentity
 function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState) {
   const active = message?.active === true || String(message?.reason || "") === "tab-activated";
@@ -1433,6 +1545,7 @@ function renderMonitorBctWindowNodes(nodes) {
   }
   monitorBctDeferredNodeRender = null;
   nodes = monitorUniqueBctConversationNodes(nodes);
+  observeMonitorBctNodeFirstSeen(nodes);
   const fragment = document.createDocumentFragment();
   if (!nodes.length) {
     const empty = document.createElement("div");
@@ -1487,6 +1600,23 @@ function renderMonitorBctWindowNodes(nodes) {
       // drag order applies to the ordinary nodes that follow.
       const roleDifference = monitorBctNodeRoleRank(left) - monitorBctNodeRoleRank(right);
       if (roleDifference) return roleDifference;
+      const viewNodeNumber = (node) => {
+        const digits = String(node.nodeLabel || "").replace(/^N/i, "");
+        return /^\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
+      };
+      if (monitorBctNodeDisplayState().viewMode === "number") {
+        const difference = viewNodeNumber(left) - viewNodeNumber(right);
+        if (difference) return difference;
+      }
+      if (monitorBctNodeDisplayState().viewMode === "observed") {
+        const difference = Number(monitorBctNodeDisplayState().firstObservedAt.get(monitorBctNodeObservedKey(left)) || Number.MAX_SAFE_INTEGER)
+          - Number(monitorBctNodeDisplayState().firstObservedAt.get(monitorBctNodeObservedKey(right)) || Number.MAX_SAFE_INTEGER);
+        if (difference) return difference;
+      }
+      if (monitorBctNodeDisplayState().viewMode === "burden") {
+        const difference = monitorBctNodeBurdenScore(right) - monitorBctNodeBurdenScore(left);
+        if (difference) return difference;
+      }
       const leftLocalOrder = localNodeOrder.get(monitorBctNodeSelectionKey(left).toLowerCase());
       const rightLocalOrder = localNodeOrder.get(monitorBctNodeSelectionKey(right).toLowerCase());
       if (leftLocalOrder != null || rightLocalOrder != null) {
@@ -1496,7 +1626,7 @@ function renderMonitorBctWindowNodes(nodes) {
       }
       const nodeNumber = (node) => {
         const digits = String(node.nodeLabel || "").replace(/^N/i, "");
-        return /^\\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
+        return /^\d+$/.test(digits) ? Number(digits) : Number.MAX_SAFE_INTEGER;
       };
       const leftManual = Number(left.displayOrder || 0);
       const rightManual = Number(right.displayOrder || 0);
@@ -1602,6 +1732,7 @@ function renderMonitorBctWindowNodes(nodes) {
       minimized ? "_" : "",
       monitorBctNodeSurfaceText(node),
       node.reasoningLevel || "?",
+      monitorBctNodeObservedAgeText(node),
       `부담:${burden.label}`,
     ].filter(Boolean);
     location.textContent = facts.join(" · ");

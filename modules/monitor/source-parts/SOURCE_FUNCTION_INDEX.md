@@ -254,7 +254,7 @@ Generated extension/monitor.js is not an edit target.
 - stopMonitorBctNativePreview
 - syncMonitorNativeZOrder
 
-## node-identity (68 functions)
+## node-identity (76 functions)
 
 - applyMonitorBctNodeHighlight
 - applyMonitorChatNavigationIdentity
@@ -264,14 +264,19 @@ Generated extension/monitor.js is not an edit target.
 - endpointOsWindowHandle
 - endpointRegistryIsAuthoritative
 - getMonitorBctNodeInteractionService
+- loadMonitorBctNodeFirstObservedAt
 - monitorActBrowserNode
 - monitorActNodeNumbersForHwnd
 - monitorAgeIdentityForHwnd
 - monitorAgeIdentityForWorkerGroup
 - monitorBadgeNodeNumbersForHwnd
 - monitorBctNodeBurden
+- monitorBctNodeBurdenScore
+- monitorBctNodeDisplayState
 - monitorBctNodeInsertionAt
 - monitorBctNodeLocationText
+- monitorBctNodeObservedAgeText
+- monitorBctNodeObservedKey
 - monitorBctNodeRoleRank
 - monitorBctNodeRoleSummary
 - monitorBctNodeSelectionKey
@@ -309,6 +314,8 @@ Generated extension/monitor.js is not an edit target.
 - monitorStableNodeSlotRecord
 - monitorStoreNodeBinding
 - monitorUniqueBctConversationNodes
+- observeMonitorBctNodeFirstSeen
+- persistMonitorBctNodeFirstObservedAt
 - profileForMonitorWorker
 - refreshMonitorBctWindowNodes
 - refreshMonitorEndpointRegistry
@@ -321,6 +328,7 @@ Generated extension/monitor.js is not an edit target.
 - resolveStableMonitorLocation
 - scheduleMonitorBctNodeStartupRevalidation
 - scheduleMonitorMinimizedBadgeConvergence
+- setMonitorBctNodeViewMode
 - syncMonitorBctNodeLocationLabels
 - syncMonitorBctNodeTargetHighlight
 - syncMonitorMinimizedNodeBadges
