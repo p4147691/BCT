@@ -583,7 +583,11 @@ function monitorBctNodeLocationText(node, desktopPosition) {
 function monitorBctNodeSurfaceText(node) {
   if (!String(node?.conversationKey || "").trim()) return "New";
   const kind = String(node?.surfaceKind || "UNKNOWN").trim().toUpperCase();
-  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "Chat/Work";
+  // Old conversations can predate RCC surface observation.  The compact card
+  // still needs one usable product kind, not an unresolved union.  General
+  // Chat is the conservative default; later positive Work/Codex evidence
+  // replaces it on the next projection refresh.
+  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "Chat";
 }
 //@@FN_END:monitorBctNodeSurfaceText
 

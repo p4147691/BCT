@@ -109,8 +109,10 @@ function loadModule() {
     "node detail must wrap to at most two readable lines instead of clipping the burden field");
   assert.match(monitor, /if \(!String\(node\?\.conversationKey \|\| ""\)\.trim\(\)\) return "New";/,
     "a blank conversation node must be labeled New");
-  assert.match(monitor, /\|\| "Chat\/Work";/,
-    "an unresolved pre-observation conversation must name the remaining possibilities instead of showing a question mark");
+  assert.match(monitor, /\|\| "Chat";/,
+    "an unresolved pre-observation conversation must use one stable Chat fallback rather than a Chat\/Work union");
+  assert.doesNotMatch(monitor, /\|\| "Chat\/Work";/,
+    "node cards must never expose Chat\/Work as a final product kind");
   assert.match(monitor, /instant: "Instant"[\s\S]{0,260}medium: "Medium"[\s\S]{0,260}high: "High"[\s\S]{0,260}xhigh: "Extra\\u00a0High"[\s\S]{0,260}pro: "Pro"/,
     "reasoning levels must use readable English names including Extra High and Pro");
   assert.match(monitor, /return `관측 \$\{minutes\}분`;/,
