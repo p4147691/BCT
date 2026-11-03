@@ -64,21 +64,37 @@ def extract_next_instruction(response: str) -> NextInstruction:
     if not isinstance(response, str):
         raise InstructionError("NEXT_INSTRUCTION_NOT_TEXT")
     lines = response.rstrip().splitlines()
-    marker_values = {"NEXT TASK — SELF", "NEXT TASK — MANAGER"}
-    markers = [(i, line.strip()) for i, line in enumerate(lines)
-               if line.strip() in marker_values]
+    marker_pattern = re.compile(
+        r"^(NEXT TASK — (?:SELF|MANAGER))(?:\s*[:：]\s*(.*))?$"
+    )
+    markers = []
+    for index, line in enumerate(lines):
+        match = marker_pattern.fullmatch(line.strip())
+        if match is not None:
+            markers.append((index, match.group(1), match.group(2) or ""))
     if not markers or markers[0][0] == len(lines)-1:
-        raise InstructionError("NEXT_INSTRUCTION_MISSING_OR_AMBIGUOUS")
-    targets = {value for _, value in markers}
+        # An inline body after ':' is a complete instruction even when the
+        # marker is the final rendered line.
+        if not markers or not markers[0][2].strip():
+            raise InstructionError("NEXT_INSTRUCTION_MISSING_OR_AMBIGUOUS")
+    targets = {value for _, value, _ in markers}
     if len(targets) != 1:
         raise InstructionError("NEXT_INSTRUCTION_MISSING_OR_AMBIGUOUS")
-    idx, marker = markers[0]
+    idx, marker, inline_body = markers[0]
     # ChatGPT may render the same semantic marker once as a response heading
     # and once inside a generated report/artifact. Identical routes are not a
     # branch ambiguity. Preserve every following line in order while removing
     # only duplicate copies of that exact marker. Mixed SELF/MANAGER markers
     # remain rejected above.
-    body = "\n".join(line for line in lines[idx+1:] if line.strip() != marker).strip()
+    body_lines = [inline_body] if inline_body.strip() else []
+    for line in lines[idx+1:]:
+        duplicate = marker_pattern.fullmatch(line.strip())
+        if duplicate is not None:
+            if duplicate.group(1) == marker and (duplicate.group(2) or "").strip():
+                body_lines.append(duplicate.group(2))
+            continue
+        body_lines.append(line)
+    body = "\n".join(body_lines).strip()
     if not body or len(body) > 10800:
         raise InstructionError("NEXT_INSTRUCTION_INVALID")
     return NextInstruction(
@@ -490,6 +506,7 @@ class DurableWatchLedger:
             "SOURCE_PROVENANCE_MISMATCH", "SEND_PROOF_MISMATCH",
             "SEND_RECEIPT_UNAVAILABLE", "SEND_RECEIPT_INVALID",
             "RESPONSE_NOT_NEW", "RESPONSE_NOT_TERMINAL",
+            "NEXT_INSTRUCTION_UNAVAILABLE",
         }:
             return False
         with self.store.transaction() as db:
@@ -747,6 +764,12 @@ class DelayedSendMessageRunner:
         response_sha = observation.get("response_sha256")
         if not isinstance(turn_key, str) or not turn_key.strip() or not isinstance(response_sha, str):
             return Continuation("WAITING_RESPONSE")
+        # The exact terminal response identity is durable evidence independent
+        # of whether its continuation instruction can be decoded.  Binding it
+        # first prevents an instruction-format problem from masquerading as a
+        # missing/unterminated response in public status.
+        if not self.ledger.bind_observed_turn(watch, turn_key, response_sha):
+            return Continuation("WAITING_EXPECTED_RESPONSE")
         try:
             alarm = response_ready_alarm(
                 watch_ref=f"{watch.task_id}:{watch.generation}",
@@ -762,8 +785,6 @@ class DelayedSendMessageRunner:
             decision = next_instruction_decision(alarm)
         except InstructionError:
             return Continuation("INSTRUCTION_UNAVAILABLE")
-        if not self.ledger.bind_observed_turn(watch, turn_key, response_sha):
-            return Continuation("WAITING_EXPECTED_RESPONSE")
         self.ledger.record_alarm(watch, alarm)
         self.ledger.record_decision(
             watch, decision, response_turn_key=turn_key, response_sha256=response_sha,
@@ -1108,6 +1129,10 @@ class DelayedSendService:
                 )
                 result=runner.poll_once(
                     watch,manager_conversation_key=ctx["manager_conversation_key"])
+                if result.status == "INSTRUCTION_UNAVAILABLE":
+                    self.ledger.record_watch_diagnostic(
+                        row, "NEXT_INSTRUCTION_UNAVAILABLE"
+                    )
                 if result.status not in {"WAITING_RESPONSE","INSTRUCTION_UNAVAILABLE",
                                          "WAITING_WATCH"}:
                     events.append({"task_id":watch.task_id,
