@@ -70,6 +70,14 @@ class DelayedSendMessageTests(unittest.TestCase):
         self.assertEqual(ContinuationRoute.SELF, decision.route)
         self.assertEqual("Continue verification.", decision.payload)
 
+    def test_inline_colon_marker_is_an_explicit_instruction(self):
+        for separator in (":", "："):
+            instruction = extract_next_instruction(
+                f"Done.\nNEXT TASK — MANAGER{separator} return this exact result."
+            )
+            self.assertEqual("MANAGER", instruction.target.value)
+            self.assertEqual("return this exact result.", instruction.text)
+
     def test_durable_watch_survives_ledger_reopen(self):
         with tempfile.TemporaryDirectory() as root:
             store=Store(Path(root)/"state.sqlite")
@@ -110,6 +118,29 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertEqual("WAITING_WATCH",runner.poll_once(
                 self.watch,manager_conversation_key="manager-uuid").status)
             self.assertEqual(1,len(sent))
+
+    def test_runner_binds_terminal_turn_before_instruction_parse(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger=DurableWatchLedger(Store(Path(root)/"state.sqlite"))
+            ledger.reserve(Watch("task-1",1,"worker-uuid","",""))
+            ledger.bind(Watch("task-1",1,"worker-uuid","",""),
+                        send_receipt="send-1",response_turn_id="turn-1")
+            runner=DelayedSendMessageRunner(
+                ledger,
+                read_response=lambda watch: {
+                    "conversation_key":"worker-uuid","response_turn_id":"turn-1",
+                    "response_text":"Completed without a continuation marker.",
+                    "response_complete":True,"input_ready":True,
+                    "response_turn_key":"rcc-turn-1",
+                    "response_sha256":"digest-1"},
+                send_message=lambda *_: self.fail("invalid instruction must not send"))
+            result=runner.poll_once(self.watch,manager_conversation_key="manager-uuid")
+            self.assertEqual("INSTRUCTION_UNAVAILABLE",result.status)
+            import json
+            context=json.loads(ledger.get("task-1",1)["context_json"])
+            self.assertEqual("rcc-turn-1",context["observed_response_turn_key"])
+            self.assertEqual("digest-1",context["observed_response_sha"])
+            self.assertEqual("WATCHING",ledger.get("task-1",1)["state"])
 
     def test_runner_records_decision_before_self_delivery_for_next_turn_context(self):
         with tempfile.TemporaryDirectory() as root:

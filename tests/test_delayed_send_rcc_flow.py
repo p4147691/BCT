@@ -134,10 +134,13 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             # User prompt is now visible; earlier completed answer remains.
             self.assertEqual([],service.poll_once()["events"])
             # The real response may complete before the next polling cycle.
-            rcc.reply(WORKER,"NEXT TASK — MANAGER\nPLANNED_SEND_E2E_OK")
+            # ChatGPT commonly keeps a short continuation body on the marker
+            # line.  This remains an explicit, unambiguous MANAGER branch.
+            rcc.reply(WORKER,"NEXT TASK — MANAGER: PLANNED_SEND_E2E_OK")
             polled=service.poll_once()
             self.assertEqual("RETURNED_TO_MANAGER",polled["events"][0]["status"])
             self.assertEqual(MANAGER,rcc.sent[-1][0])
+            self.assertEqual("PLANNED_SEND_E2E_OK",rcc.sent[-1][1])
             self.assertEqual("RETURNED_TO_MANAGER",
                              service.ledger.get("planned-task",1)["state"])
             self.assertEqual([],service.poll_once()["events"])
