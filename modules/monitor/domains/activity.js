@@ -92,6 +92,23 @@ function monitorConversationIsGenerating(conversationKey, state) {
 }
 //@@FN_END:monitorConversationIsGenerating
 
+//@@FN_START:monitorNodeReportState
+function monitorNodeReportState(node, state = monitorLastAiState) {
+  const conversationKey=String(node?.conversationKey||"").trim();
+  if(!conversationKey)return null;
+  if(node?.generating===true || monitorConversationIsGenerating(conversationKey,state)){
+    return {kind:"working",conversationKey,label:"처리 중"};
+  }
+  const detail=monitorChatAlertDetail(conversationKey);
+  if(!detail)return null;
+  return {
+    kind:detail.warning===true?"abnormal":"ready",
+    conversationKey,
+    label:String(detail.label||""),
+  };
+}
+//@@FN_END:monitorNodeReportState
+
 //@@FN_START:monitorConversationUserAttentionDetail
 function monitorConversationUserAttentionDetail(conversationKey,state=monitorLastAiState) {
   const key=String(conversationKey||"").trim();
@@ -399,4 +416,3 @@ function syncMonitorNonChatCountdown(img, hwnd, now = Date.now()) {
 
 }
 //@@FN_END:syncMonitorNonChatCountdown
-

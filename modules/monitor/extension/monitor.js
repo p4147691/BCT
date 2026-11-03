@@ -1645,7 +1645,8 @@ function rememberMonitorDesktopWindows(desktopId, windows) {
 
     const frozenDataUri = String(item?.frozenDataUri || previous?.frozenDataUri || "");
     const frozenAt = frozenDataUri ? Number(item?.frozenAt || previous?.frozenAt || now) : 0;
-    const next = { hwnd, title: String(item?.title || ""), className: String(item?.className || ""), desktopId, desktop: index + 1, left: Number(item?.left) || 0, top: Number(item?.top) || 0, width: Number(item?.width) || 0, height: Number(item?.height) || 0, z: Number(item?.z) || 0, iconic: Boolean(item?.iconic), visible: Boolean(item?.visible), frozenDataUri, frozenAt, at: now, desktopEnteredAt: sameDesktop ? Number(previous?.desktopEnteredAt || previous?.at || now) : now };
+    const iconicLifecycleLocked = previous?.iconicLifecycleLocked === true;
+    const next = { hwnd, title: String(item?.title || ""), className: String(item?.className || ""), desktopId, desktop: index + 1, left: Number(item?.left) || 0, top: Number(item?.top) || 0, width: Number(item?.width) || 0, height: Number(item?.height) || 0, z: Number(item?.z) || 0, iconic: iconicLifecycleLocked || Boolean(item?.iconic), iconicLifecycleLocked, visible: Boolean(item?.visible), frozenDataUri, frozenAt, at: now, desktopEnteredAt: sameDesktop ? Number(previous?.desktopEnteredAt || previous?.at || now) : now };
 
     // Preserve the last confirmed conversation identity across transient title/identity lookup churn.
 
@@ -1834,12 +1835,13 @@ async function refreshMonitorIdentityIndex(state, force = false) {
         if (!/^\d+$/.test(hwnd) || hwnd === "0") return;
 
         const previous = monitorWindowDesktopLocations.get(hwnd);
+        const iconicLifecycleLocked = previous?.iconicLifecycleLocked === true;
         const nextLocation = {
           ...(previous || {}), hwnd, title: String(item?.title || previous?.title || ""),
           className: "Chrome_WidgetWin_1", desktopId, desktop: i + 1,
           left: Number(item?.left ?? previous?.left) || 0, top: Number(item?.top ?? previous?.top) || 0,
           width: Number(item?.width ?? previous?.width) || 0, height: Number(item?.height ?? previous?.height) || 0,
-          z: Number(item?.z ?? previous?.z) || 0, iconic: Boolean(item?.iconic), visible: Boolean(item?.visible), at: now,
+          z: Number(item?.z ?? previous?.z) || 0, iconic: iconicLifecycleLocked || Boolean(item?.iconic), iconicLifecycleLocked, visible: Boolean(item?.visible), at: now,
           desktopEnteredAt: previous?.desktopEnteredAt || now
         };
         if (renderSignature(previous) !== renderSignature(nextLocation)) projectionChanged = true;
@@ -3786,6 +3788,21 @@ function monitorEndpointGenerationIsActive(endpoint) {
 
 function monitorConversationIsGenerating(conversationKey, state) {
   return monitorNodeGenerationAPI.conversationIsGenerating(conversationKey, state);
+}
+
+function monitorNodeReportState(node, state = monitorLastAiState) {
+  const conversationKey=String(node?.conversationKey||"").trim();
+  if(!conversationKey)return null;
+  if(node?.generating===true || monitorConversationIsGenerating(conversationKey,state)){
+    return {kind:"working",conversationKey,label:"처리 중"};
+  }
+  const detail=monitorChatAlertDetail(conversationKey);
+  if(!detail)return null;
+  return {
+    kind:detail.warning===true?"abnormal":"ready",
+    conversationKey,
+    label:String(detail.label||""),
+  };
 }
 
 function monitorOpenEndpointForHwnd(hwnd, state = monitorLastAiState) {
@@ -8840,8 +8857,11 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const lifecycleReason=String(event?.reason||"").toLowerCase();
   // Native notifications are allowed to use either `iconic: true` or the
   // lifecycle reason. The picture-hiding and node-badge paths must agree.
-  const minimized=monitorMinimizedNodeBadgeContract?.minimizedEvent?.(event) || lifecycleReason==="minimized" || Boolean(event.iconic);
-  const restoring=Boolean(prior.iconic)&&!minimized&&event.visible!==false;
+  const explicitMinimized=lifecycleReason==="minimized" || event.iconic===true;
+  const explicitRestored=lifecycleReason==="restored";
+  const iconicLifecycleLocked=explicitMinimized ? true : explicitRestored ? false : prior.iconicLifecycleLocked===true;
+  const minimized=iconicLifecycleLocked || monitorMinimizedNodeBadgeContract?.minimizedEvent?.(event) || Boolean(event.iconic);
+  const restoring=Boolean(prior.iconic)&&explicitRestored&&!minimized&&event.visible!==false;
 
   const apply=(img)=>{ img.style.display=(minimized||event.visible===false)?"none":""; img.style.left=`${((Number(event.left)-vl)/vw)*100}%`; img.style.top=`${((Number(event.top)-vt)/vh)*100}%`; img.style.width=`${(Number(event.width)/vw)*100}%`; img.style.height=`${(Number(event.height)/vh)*100}%`; syncMonitorStatusLayer(img,hwnd); syncMonitorPauseOverlay(img,hwnd); if(!restoring)syncMonitorDesktopNumberBadge(img,hwnd); syncMonitorNonChatCountdown(img,hwnd); };
 
@@ -8853,7 +8873,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   const eventVisual=eventTile?.querySelector(".monitor-desktop-thumb-visual");
   globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
 
-  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,visible:event.visible!==false,at:Date.now()});
+  monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,iconicLifecycleLocked,visible:event.visible!==false,at:Date.now()});
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
   if (minimized) scheduleMonitorMinimizedBadgeConvergence(hwnd);
   const badgeTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
@@ -10751,19 +10771,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
     statusForTab: (tabId, hwnd) => {
       const node=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])
         .find((candidate)=>Number(candidate?.tabId)===Number(tabId));
-      const conversationKey=String(node?.conversationKey||"").trim();
-      if(node?.generating===true || (conversationKey && monitorConversationIsGenerating(conversationKey,monitorLastAiState))){
-        return {kind:"working",conversationKey,label:"처리 중"};
-      }
-      if(!conversationKey)return null;
-      const alert=monitorChatAlertDetail(conversationKey);
-      const detail=alert;
-      if(!detail)return null;
-      return {
-        kind:detail.warning===true?"abnormal":"ready",
-        conversationKey,
-        label:String(detail.label||""),
-      };
+      return monitorNodeReportState(node,monitorLastAiState);
     },
     onAcknowledge: (report,{hwnd}) => {
       const conversationKey=String(report?.conversationKey||"").trim();
@@ -12330,8 +12338,38 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
       for (let index = first; index <= last; index += 1) {
         const badge = document.createElement("span");
         const selected = index === selectedIndex;
-        badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
-        badge.textContent = tokens[index].token; badge.title = `최소화 노드 ${tokens[index].token}`; parts.push(badge);
+        const token = tokens[index];
+        const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
+        let node = Number.isInteger(Number(token.tabId))
+          ? nodes.find((candidate) => Number(candidate?.tabId) === Number(token.tabId))
+          : null;
+        if (!node && token.token !== "?") {
+          const matches = nodes.filter((candidate) => String(candidate?.nodeLabel || "").trim().replace(/^N/i, "") === token.token);
+          if (matches.length === 1) node = matches[0];
+        }
+        const report = monitorNodeReportState(node,state);
+        const kind = String(report?.kind || "").toLowerCase();
+        const reportClass = ["working","ready","abnormal"].includes(kind) ? ` has-report is-${kind}` : "";
+        badge.className = `monitor-desktop-minimized-node${reportClass}${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
+        badge.textContent = token.token;
+        const interactive = reportClass && kind !== "working";
+        badge.title = `최소화 노드 ${token.token}${reportClass ? ` · ${String(report?.label || (kind === "working" ? "처리 중" : kind === "abnormal" ? "상태 확인 필요" : "확인 대기"))}${interactive ? " · 클릭하여 확인" : ""}` : ""}`;
+        if (interactive) {
+          badge.setAttribute("role","button");
+          badge.setAttribute("tabindex","0");
+          badge.addEventListener("pointerdown",(event)=>event.stopPropagation());
+          badge.addEventListener("click",(event)=>{
+            event.preventDefault();
+            event.stopPropagation();
+            const conversationKey=String(report?.conversationKey||"").trim();
+            if(!conversationKey)return;
+            monitorAcknowledgePostWork(conversationKey,"");
+            syncMonitorMinimizedNodeBadges(state);
+            syncMonitorAllDesktopThumbnailNodeBadges();
+            if(monitorLastAiState)renderWorkers(monitorLastAiState);
+          });
+        }
+        parts.push(badge);
       }
       if (last < tokens.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
     }

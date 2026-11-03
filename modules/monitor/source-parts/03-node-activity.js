@@ -19,6 +19,8 @@
 
 /*@@MONITOR_FUNCTION:monitorConversationIsGenerating@@*/
 
+/*@@MONITOR_FUNCTION:monitorNodeReportState@@*/
+
 /*@@MONITOR_FUNCTION:monitorOpenEndpointForHwnd@@*/
 
 /*@@MONITOR_FUNCTION:monitorHwndIsGenerating@@*/

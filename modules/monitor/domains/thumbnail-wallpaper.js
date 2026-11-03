@@ -1165,19 +1165,7 @@ function syncMonitorThumbnailTabBadges(container, className) {
     statusForTab: (tabId, hwnd) => {
       const node=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])
         .find((candidate)=>Number(candidate?.tabId)===Number(tabId));
-      const conversationKey=String(node?.conversationKey||"").trim();
-      if(node?.generating===true || (conversationKey && monitorConversationIsGenerating(conversationKey,monitorLastAiState))){
-        return {kind:"working",conversationKey,label:"처리 중"};
-      }
-      if(!conversationKey)return null;
-      const alert=monitorChatAlertDetail(conversationKey);
-      const detail=alert;
-      if(!detail)return null;
-      return {
-        kind:detail.warning===true?"abnormal":"ready",
-        conversationKey,
-        label:String(detail.label||""),
-      };
+      return monitorNodeReportState(node,monitorLastAiState);
     },
     onAcknowledge: (report,{hwnd}) => {
       const conversationKey=String(report?.conversationKey||"").trim();

@@ -1401,12 +1401,13 @@ async function refreshMonitorIdentityIndex(state, force = false) {
         if (!/^\d+$/.test(hwnd) || hwnd === "0") return;
 
         const previous = monitorWindowDesktopLocations.get(hwnd);
+        const iconicLifecycleLocked = previous?.iconicLifecycleLocked === true;
         const nextLocation = {
           ...(previous || {}), hwnd, title: String(item?.title || previous?.title || ""),
           className: "Chrome_WidgetWin_1", desktopId, desktop: i + 1,
           left: Number(item?.left ?? previous?.left) || 0, top: Number(item?.top ?? previous?.top) || 0,
           width: Number(item?.width ?? previous?.width) || 0, height: Number(item?.height ?? previous?.height) || 0,
-          z: Number(item?.z ?? previous?.z) || 0, iconic: Boolean(item?.iconic), visible: Boolean(item?.visible), at: now,
+          z: Number(item?.z ?? previous?.z) || 0, iconic: iconicLifecycleLocked || Boolean(item?.iconic), iconicLifecycleLocked, visible: Boolean(item?.visible), at: now,
           desktopEnteredAt: previous?.desktopEnteredAt || now
         };
         if (renderSignature(previous) !== renderSignature(nextLocation)) projectionChanged = true;
@@ -2002,8 +2003,38 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
       for (let index = first; index <= last; index += 1) {
         const badge = document.createElement("span");
         const selected = index === selectedIndex;
-        badge.className = `monitor-desktop-minimized-node${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
-        badge.textContent = tokens[index].token; badge.title = `최소화 노드 ${tokens[index].token}`; parts.push(badge);
+        const token = tokens[index];
+        const nodes = Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [];
+        let node = Number.isInteger(Number(token.tabId))
+          ? nodes.find((candidate) => Number(candidate?.tabId) === Number(token.tabId))
+          : null;
+        if (!node && token.token !== "?") {
+          const matches = nodes.filter((candidate) => String(candidate?.nodeLabel || "").trim().replace(/^N/i, "") === token.token);
+          if (matches.length === 1) node = matches[0];
+        }
+        const report = monitorNodeReportState(node,state);
+        const kind = String(report?.kind || "").toLowerCase();
+        const reportClass = ["working","ready","abnormal"].includes(kind) ? ` has-report is-${kind}` : "";
+        badge.className = `monitor-desktop-minimized-node${reportClass}${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
+        badge.textContent = token.token;
+        const interactive = reportClass && kind !== "working";
+        badge.title = `최소화 노드 ${token.token}${reportClass ? ` · ${String(report?.label || (kind === "working" ? "처리 중" : kind === "abnormal" ? "상태 확인 필요" : "확인 대기"))}${interactive ? " · 클릭하여 확인" : ""}` : ""}`;
+        if (interactive) {
+          badge.setAttribute("role","button");
+          badge.setAttribute("tabindex","0");
+          badge.addEventListener("pointerdown",(event)=>event.stopPropagation());
+          badge.addEventListener("click",(event)=>{
+            event.preventDefault();
+            event.stopPropagation();
+            const conversationKey=String(report?.conversationKey||"").trim();
+            if(!conversationKey)return;
+            monitorAcknowledgePostWork(conversationKey,"");
+            syncMonitorMinimizedNodeBadges(state);
+            syncMonitorAllDesktopThumbnailNodeBadges();
+            if(monitorLastAiState)renderWorkers(monitorLastAiState);
+          });
+        }
+        parts.push(badge);
       }
       if (last < tokens.length - 1) { const more = document.createElement("span"); more.className = "monitor-desktop-minimized-more"; more.textContent = "…"; parts.push(more); }
     }

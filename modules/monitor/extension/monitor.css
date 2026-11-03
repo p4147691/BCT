@@ -379,13 +379,6 @@
 .monitor-thumbnail-tab-badge[data-anchor="top-right"] { left:auto; right:2px; top:2px; bottom:auto; }
 .monitor-thumbnail-tab-badge[data-anchor="bottom-left"] { left:2px; right:auto; top:auto; bottom:2px; }
 .monitor-thumbnail-tab-badge[data-anchor="bottom-right"] { left:auto; right:2px; top:auto; bottom:2px; }
-.monitor-thumbnail-state-reports{position:absolute;right:3px;top:3px;z-index:3;display:flex;align-items:center;gap:3px;pointer-events:none;}
-.monitor-thumbnail-state-report{appearance:none;min-width:18px;height:18px;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;border:1px solid rgba(255,255,255,.48);border-radius:5px;background:rgba(5,10,18,.58);color:rgba(255,255,255,.95);font:900 12px/16px "Segoe UI Symbol","Segoe UI","Malgun Gothic",sans-serif;text-shadow:0 1px 2px rgba(0,0,0,.9);box-shadow:0 1px 4px rgba(0,0,0,.34);backdrop-filter:blur(2px);pointer-events:none;}
-.monitor-thumbnail-state-report.is-working{color:rgba(150,225,255,.98);border-color:rgba(105,203,255,.58);}
-.monitor-thumbnail-state-report.is-ready{color:rgba(192,255,211,.98);border-color:rgba(108,239,153,.64);cursor:pointer;pointer-events:auto;}
-.monitor-thumbnail-state-report.is-abnormal{color:rgba(255,202,123,.98);border-color:rgba(255,164,72,.72);cursor:pointer;pointer-events:auto;}
-.monitor-thumbnail-state-report.is-ready:hover,.monitor-thumbnail-state-report.is-abnormal:hover{background:rgba(18,27,39,.86);filter:brightness(1.18);}
-.monitor-thumbnail-state-report:focus-visible{outline:2px solid rgba(255,255,255,.92);outline-offset:1px;}
 
 
 .monitor-worker-row.monitor-worker-working {
@@ -3637,6 +3630,11 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-thumbnail-tab-badge { display:block;max-width:calc(100% - 4px);white-space:normal;overflow-wrap:normal;word-break:normal;line-height:1.15; }
 .monitor-thumbnail-tab-token { display:inline-block;white-space:nowrap; }
 .monitor-thumbnail-tab-token.is-selected { color:#ffd75a!important;font-size:13px!important;font-weight:900;text-shadow:0 0 7px rgba(255,215,90,.88); }
+.monitor-thumbnail-tab-token.has-report { font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.13);transform-origin:center;border-radius:3px;padding:0 1px; }
+.monitor-thumbnail-tab-token.is-working { color:#45e67b!important;text-shadow:0 0 7px rgba(69,230,123,.82); }
+.monitor-thumbnail-tab-token.is-ready { color:#55a9ff!important;text-shadow:0 0 7px rgba(85,169,255,.88);cursor:pointer;pointer-events:auto; }
+.monitor-thumbnail-tab-token.is-abnormal { color:#ff5f67!important;text-shadow:0 0 7px rgba(255,95,103,.88);cursor:pointer;pointer-events:auto; }
+.monitor-thumbnail-tab-token.has-report.is-selected { outline:1px solid rgba(255,181,71,.98);outline-offset:1px;box-shadow:0 0 6px rgba(255,181,71,.78); }
 .monitor-thumbnail-tab-prefix,.monitor-thumbnail-tab-separator { color:inherit;font-size:inherit;font-weight:inherit;text-shadow:none; }
 .monitor-desktop-thumb-label {
   /* The overlapping grid placed this late-added host in an implicit cell. On
@@ -3652,5 +3650,10 @@ body.desktop-window-monitor-active { background-image:none!important; background
 }
 .monitor-desktop-minimized-nodes.monitor-bct-minimized-selection { outline:0;background:transparent;box-shadow:none; }
 .monitor-desktop-minimized-node-selected { color:#ffd75a!important;font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.16);transform-origin:center;text-shadow:0 0 7px rgba(255,215,90,.88); }
+.monitor-desktop-minimized-node.has-report { font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.13);transform-origin:center;border-radius:3px;padding:0 1px; }
+.monitor-desktop-minimized-node.is-working { color:#45e67b!important;text-shadow:0 0 7px rgba(69,230,123,.82); }
+.monitor-desktop-minimized-node.is-ready { color:#55a9ff!important;text-shadow:0 0 7px rgba(85,169,255,.88);cursor:pointer;pointer-events:auto; }
+.monitor-desktop-minimized-node.is-abnormal { color:#ff5f67!important;text-shadow:0 0 7px rgba(255,95,103,.88);cursor:pointer;pointer-events:auto; }
+.monitor-desktop-minimized-node.has-report.monitor-desktop-minimized-node-selected { outline:1px solid rgba(255,181,71,.98);outline-offset:1px;box-shadow:0 0 6px rgba(255,181,71,.78); }
 .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more { flex:0 0 auto;letter-spacing:.04em; }
 .monitor-desktop-minimized-prefix,.monitor-desktop-minimized-separator { color:rgba(255,255,255,.94);font:800 10px/14px "Segoe UI","Malgun Gothic",sans-serif; }
