@@ -31,8 +31,8 @@ assert.match(source, /row\.append\(number, body, presence\)/,
   "flat rows retain node identity, title/location and existing status icon");
 assert.match(source, /monitor-bct-node-presence/,
   "existing status icon must not be removed by unrelated label work");
-assert.match(source, /return desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "위치 확인 중";/,
-  "the visible location is only D1, D2, and so on");
+assert.match(source, /return desktopPosition >= 0 \? `D\$\{desktopPosition \+ 1\}` : "…";/,
+  "the visible location is D1, D2, and so on, with only a brief unresolved mark");
 assert.match(source, /function monitorUniqueBctConversationNodes\(nodes\)/,
   "the renderer and drag persistence share one semantic-node normalization path");
 assert.match(source, /conversation:\$\{conversationKey\}/,
@@ -52,4 +52,4 @@ assert.match(css, /\.monitor-bct-node-row \{ grid-template-columns:29px minmax\(
 assert.doesNotMatch(css, /\.monitor-bct-window-card|\.monitor-bct-window-tab-rows/,
   "physical-window grouping styles are removed");
 
-console.log("PASS: network-only flat node list, D-only location, three columns, drag and Manager hold preserved");
+console.log("PASS: network-only flat node list, compact location, three columns, drag and Manager hold preserved");

@@ -103,13 +103,15 @@ function loadModule() {
     "location refresh must preserve surface, reasoning, age, and burden details");
   assert.doesNotMatch(monitor, /position\.textContent = monitorBctNodeLocationText\(node, index\)/,
     "location refresh must not collapse the detail line back to D# only");
-  assert.match(monitor, /\.filter\(Boolean\)\.join\("\\u00a0\\u00a0"\)/,
-    "node detail fields must use visible spacing without punctuation separators");
+  assert.match(monitor, /\.filter\(Boolean\)\.join\(" "\)/,
+    "node detail fields must use wrappable spacing without punctuation separators");
+  assert.match(css, /\.monitor-bct-node-location \{[^}]*word-spacing:3px;[^}]*white-space:normal;[^}]*max-height:2\.5em;/,
+    "node detail must wrap to at most two readable lines instead of clipping the burden field");
   assert.match(monitor, /if \(!String\(node\?\.conversationKey \|\| ""\)\.trim\(\)\) return "New";/,
     "a blank conversation node must be labeled New");
   assert.match(monitor, /\|\| "Chat\/Work";/,
     "an unresolved pre-observation conversation must name the remaining possibilities instead of showing a question mark");
-  assert.match(monitor, /instant: "Instant"[\s\S]{0,260}medium: "Medium"[\s\S]{0,260}high: "High"[\s\S]{0,260}xhigh: "Extra High"[\s\S]{0,260}pro: "Pro"/,
+  assert.match(monitor, /instant: "Instant"[\s\S]{0,260}medium: "Medium"[\s\S]{0,260}high: "High"[\s\S]{0,260}xhigh: "Extra\\u00a0High"[\s\S]{0,260}pro: "Pro"/,
     "reasoning levels must use readable English names including Extra High and Pro");
   assert.match(monitor, /return `관측 \$\{minutes\}분`;/,
     "observed age must remain in minutes at every age");

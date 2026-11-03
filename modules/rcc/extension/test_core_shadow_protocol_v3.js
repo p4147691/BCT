@@ -25,9 +25,26 @@ assert(!snapshot.includes('sendToChatTab('));
 
 const capture = background.split('async function captureEndpointSnapshot(')[1]
   .split('async function postEndpointPresence(', 1)[0];
-assert(capture.includes("surfaceKind === 'UNKNOWN'"));
-assert(capture.includes('sameConversation'));
-assert(capture.includes("['CHAT', 'WORK', 'CODEX'].includes(priorSurfaceKind)"));
+assert(background.includes("surfaceKind === 'UNKNOWN'"));
+assert(background.includes('function preserveKnownSurface(endpoint, prior)'));
+assert(background.includes('newConversationInSameTab'));
+assert(background.includes("['CHAT', 'WORK', 'CODEX'].includes(priorSurfaceKind)"));
+const preserveKnownSurfaceSource = background.match(/function preserveKnownSurface\(endpoint, prior\) \{[\s\S]*?\n\}/)?.[0];
+assert(preserveKnownSurfaceSource, 'surface continuity helper must be extractable');
+const preserveKnownSurface = Function(`${preserveKnownSurfaceSource}; return preserveKnownSurface;`)();
+const knownChat = { kind: 'CHAT', evidence: 'mode-control' };
+const createdConversation = preserveKnownSurface(
+  { conversationKey: 'conversation-a', surface: { kind: 'UNKNOWN' } },
+  { conversationKey: '', surface: knownChat },
+);
+assert.strictEqual(createdConversation.surface, knownChat,
+  'a known blank-tab mode must survive first-message navigation in the same tab');
+const unrelatedConversation = preserveKnownSurface(
+  { conversationKey: 'conversation-b', surface: { kind: 'UNKNOWN' } },
+  { conversationKey: 'conversation-a', surface: knownChat },
+);
+assert.strictEqual(unrelatedConversation.surface.kind, 'UNKNOWN',
+  'surface evidence must not leak across two different existing conversations');
 
 const nativeState = background.split("if (message.command === 'state')")[1]
   .split("if (message.command === 'simple-relay-bind')", 1)[0];

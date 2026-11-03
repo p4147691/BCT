@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-11-03-rcc-surface-continuity-v1';
+const RCC_BUILD_VERSION = '2026-11-03-rcc-surface-handoff-v1';
 
 function editorCandidates() {
 

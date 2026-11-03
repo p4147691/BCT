@@ -119,15 +119,15 @@ function monitorBctNodeBurdenScore(node) {
 function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const minimized = nativeLocation?.iconic === true;
   const burden = monitorBctNodeBurden(node);
-  const reasoning = String(node?.reasoningLevel || "?").trim();
+  const reasoning = String(node?.reasoningLevel || "미확인").trim();
   const reasoningLabel = ({
     instant: "Instant",
     low: "Low",
     medium: "Medium",
     high: "High",
-    xhigh: "Extra High",
-    "extra high": "Extra High",
-    "extra-high": "Extra High",
+    xhigh: "Extra\u00a0High",
+    "extra high": "Extra\u00a0High",
+    "extra-high": "Extra\u00a0High",
     pro: "Pro",
     max: "Max",
     ultra: "Ultra",
@@ -145,7 +145,7 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
       reasoningLabel,
       observedAgeCompact,
       burden.label,
-    ].filter(Boolean).join("\u00a0\u00a0"),
+    ].filter(Boolean).join(" "),
     title: `위치 ${locationText} · ${minimized ? "최소화됨" : "표시 중"} · 종류 ${surfaceText} · 추론 ${reasoning} · ${observedAge} · 부담 ${burden.label} (${burden.title})`,
   };
 }
@@ -596,7 +596,7 @@ function monitorBctNodeBurden(node) {
   const performance = String(telemetry.performance_state || "NORMAL").toUpperCase();
   const ratio = Number.isFinite(heap) && Number.isFinite(limit) && limit > 0 ? heap / limit : 0;
   const score = (performance !== "NORMAL" ? 3 : 0) + (ratio >= .75 ? 3 : ratio >= .45 ? 2 : ratio > 0 ? 1 : 0) + (chars >= 800000 ? 2 : chars >= 250000 ? 1 : 0);
-  const label = score >= 4 ? "높음" : score >= 2 ? "보통" : score > 0 ? "낮음" : "?";
+  const label = score >= 4 ? "높음" : score >= 2 ? "보통" : score > 0 ? "낮음" : "미확인";
   const evidence = [Number.isFinite(heap) ? `JS 힙 ${heap}MB${Number.isFinite(limit) ? `/${limit}MB` : ""}` : "", Number.isFinite(chars) ? `렌더 ${chars.toLocaleString()}자` : "", performance !== "NORMAL" ? `상태 ${performance}` : ""].filter(Boolean);
   return Object.freeze({ label, title: evidence.length ? evidence.join(" · ") : "탭 부담 관측값 없음" });
 }

@@ -197,6 +197,32 @@ async function endpointFromTabWithActivity(tab, presence = 'OPEN', reason = '') 
 }
 
 
+function preserveKnownSurface(endpoint, prior) {
+
+  const surfaceKind = String(endpoint?.surface?.kind || '').trim().toUpperCase();
+
+  const priorSurfaceKind = String(prior?.surface?.kind || '').trim().toUpperCase();
+
+  const conversationKey = String(endpoint?.conversationKey || '').trim();
+
+  const priorConversationKey = String(prior?.conversationKey || '').trim();
+
+  const sameConversation = conversationKey && conversationKey === priorConversationKey;
+
+  const newConversationInSameTab = conversationKey && !priorConversationKey;
+
+  if ((!endpoint.surface || surfaceKind === 'UNKNOWN')
+      && (sameConversation || newConversationInSameTab)
+      && prior?.surface && typeof prior.surface === 'object'
+      && ['CHAT', 'WORK', 'CODEX'].includes(priorSurfaceKind)) {
+    endpoint.surface = prior.surface;
+  }
+
+  return endpoint;
+
+}
+
+
 async function captureEndpointSnapshot(reason = 'snapshot', tabsValue = null) {
 
   const tabs = Array.isArray(tabsValue) ? tabsValue : await getChatTabs();
@@ -217,15 +243,7 @@ async function captureEndpointSnapshot(reason = 'snapshot', tabsValue = null) {
       endpoint.reasoning = prior.reasoning;
     }
 
-    const surfaceKind = String(endpoint?.surface?.kind || '').trim().toUpperCase();
-    const priorSurfaceKind = String(prior?.surface?.kind || '').trim().toUpperCase();
-    const sameConversation = String(endpoint?.conversationKey || '').trim()
-      && String(endpoint?.conversationKey || '').trim() === String(prior?.conversationKey || '').trim();
-    if ((!endpoint.surface || surfaceKind === 'UNKNOWN') && sameConversation
-        && prior?.surface && typeof prior.surface === 'object'
-        && ['CHAT', 'WORK', 'CODEX'].includes(priorSurfaceKind)) {
-      endpoint.surface = prior.surface;
-    }
+    preserveKnownSurface(endpoint, prior);
 
     if (prior?.telemetry && typeof prior.telemetry === 'object') endpoint.telemetry = { ...prior.telemetry, ...(endpoint.telemetry && typeof endpoint.telemetry === 'object' ? endpoint.telemetry : {}) };
 
@@ -312,6 +330,8 @@ async function handleEndpointTabUpdated(tabId, changeInfo, tab) {
   }
 
   const next = endpointFromTab(tab, 'OPEN', previous ? 'updated' : 'opened');
+
+  preserveKnownSurface(next, previous);
 
   if (previous && endpointComparable(previous) === endpointComparable(next)) return;
 
