@@ -1065,11 +1065,19 @@ class DelayedSendService:
         )
         if not (changed or (trusted_self_source and response_changed)):
             return reject("RESPONSE_NOT_NEW")
+        response_key = str(observed.get("responseTurnKey") or "")
+        same_inflight_turn_completed = (
+            ctx.get("baseline_generating") is True
+            and current_count >= baseline_count
+            and response_key == str(ctx.get("baseline_key") or "")
+            and str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")
+        )
         if (observed.get("terminal") is not True
                 or observed.get("inputReady") is not True
                 or observed.get("generating") is not False
-                or not str(observed.get("responseTurnKey") or "").strip()
-                or str(observed.get("responseTurnKey")) == ctx.get("baseline_key")):
+                or not response_key.strip()
+                or (response_key == ctx.get("baseline_key")
+                    and not same_inflight_turn_completed)):
             return reject("RESPONSE_NOT_TERMINAL")
         return normalize_rcc_latest_assistant(
             observed,conversation_key=worker,
