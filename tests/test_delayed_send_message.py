@@ -8,6 +8,7 @@ from bct.delayed_send_message import (
     Watch, continue_delayed_send_message, continue_delayed_send_message_from_rcc, extract_next_instruction, next_instruction_action,
     next_instruction_decision, InstructionError, DurableWatchLedger,
     DelayedSendMessageRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
+    watch_diagnostic_for_status,
 )
 
 
@@ -77,6 +78,13 @@ class DelayedSendMessageTests(unittest.TestCase):
             )
             self.assertEqual("MANAGER", instruction.target.value)
             self.assertEqual("return this exact result.", instruction.text)
+
+    def test_watch_diagnostic_is_visible_only_while_watching(self):
+        context = {"watch_diagnostic_reason": "RESPONSE_NOT_TERMINAL"}
+        self.assertEqual("RESPONSE_NOT_TERMINAL",
+                         watch_diagnostic_for_status("WATCHING", context))
+        self.assertEqual("", watch_diagnostic_for_status(
+            "RETURNED_TO_MANAGER", context))
 
     def test_durable_watch_survives_ledger_reopen(self):
         with tempfile.TemporaryDirectory() as root:

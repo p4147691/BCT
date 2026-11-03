@@ -814,6 +814,13 @@ class DelayedSendMessageRunner:
         return result
 
 
+def watch_diagnostic_for_status(state: str, context: dict) -> str:
+    """Expose a watch rejection only while that watch can still be waiting."""
+    if state != "WATCHING" or not isinstance(context, dict):
+        return ""
+    return str(context.get("watch_diagnostic_reason") or "")
+
+
 
 def normalize_rcc_latest_assistant(
     result: dict, *, conversation_key: str, expected_response_sha256: str,
