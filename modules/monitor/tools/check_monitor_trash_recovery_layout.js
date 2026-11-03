@@ -29,7 +29,15 @@ assert.match(panel, /row\.setAttribute\("aria-expanded","false"\)/,
   "memo expansion must expose accessible state");
 assert.match(panel, /recoveryCurrentNodeByKey/,
   "deleted node display must prefer current node metadata");
+assert.doesNotMatch(panel, /recoveryNodeStatus|appendRecoveryStatus|monitor-trash-node-status/,
+  "deleted-node rows must not repeat an open/closed status badge");
+assert.match(css, /monitor-trash-record-row\{[^}]*grid-template-columns:minmax\(0,1fr\) repeat\(3,max-content\)/,
+  "deleted-node rows must reserve aligned columns for restore, delete, and continue actions");
+assert.match(css, /monitor-trash-record-row>\.monitor-context-continue\{[^}]*grid-column:4;[^}]*justify-self:stretch/,
+  "continue must stay in the fourth action column instead of dropping to a new row");
+assert.doesNotMatch(css, /monitor-trash-record-row>\.monitor-context-continue\{[^}]*grid-column:1\/-1/,
+  "continue must not span the full row");
 assert.match(css, /monitor-trash-desktop-grid\{[^}]*minmax\(132px,1fr\)/,
   "deleted desktop cards must stay compact in the bottom strip");
 
-console.log(JSON.stringify({ok: true, contract: "trash-recovery-layout-v7"}));
+console.log(JSON.stringify({ok: true, contract: "trash-recovery-layout-v8"}));

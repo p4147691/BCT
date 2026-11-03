@@ -105,7 +105,7 @@
       "implementation": [
         {"path": "modules/monitor/domains/desktop-lifecycle.js", "symbol": "renderMonitorClosedConversationRecoveryPanel"}
       ],
-      "contract": "Present deleted memo summaries, recoverable node metadata, and desktop thumbnails in a three-pane recovery view; expand memo bodies on demand and prefer current node metadata when the same conversation is live.",
+      "contract": "Present deleted memo summaries, recoverable node metadata, and desktop thumbnails in a three-pane recovery view; expand memo bodies on demand, prefer current node metadata when the same conversation is live, omit the redundant open/closed badge, and align restore, delete, and continue actions in stable columns.",
       "effects": ["monitor.restore_conversation", "restore-note", "restore-desktop", "delete-recovery-record"],
       "safety": ["current-metadata-preferred", "saved-metadata-fallback", "full-body-hidden-until-requested", "independent-pane-scroll"],
       "used_by": ["monitor.node_trash"]
