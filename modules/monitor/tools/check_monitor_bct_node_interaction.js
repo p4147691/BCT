@@ -91,6 +91,10 @@ function loadModule() {
   const projection = fs.readFileSync(projectionPath, "utf8");
   const background = fs.readFileSync(backgroundPath, "utf8");
   const bootstrap = fs.readFileSync(bootstrapPath, "utf8");
+  assert.match(css, /\.monitor-bct-node-view-mode \{[^}]*color-scheme:dark;/,
+    "node view selector must request a readable dark native popup");
+  assert.match(css, /\.monitor-bct-node-view-mode option \{[^}]*background:#172535;[^}]*color:#eef6ff;/,
+    "node view selector options must keep explicit contrast before hover");
   assert.match(monitor, /row\.addEventListener\("click"/);
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
   assert.match(monitor, /const detail = monitorBctNodeDetail\(node, desktopPosition, nativeLocation\);\s*location\.textContent = detail\.text;/,
