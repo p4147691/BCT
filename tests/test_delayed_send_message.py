@@ -454,6 +454,15 @@ class DelayedSendMessageTests(unittest.TestCase):
             "latestUserTurnKey": "fallback-turn-5:1:user",
             "responseSourceUserTurnKey": "fallback-turn-5:1:user",
         }
+        self.assertEqual(
+            "new-assistant",
+            service._response_for({**row, "context": fallback})["response_turn_key"],
+        )
+        service.latest = lambda **kwargs: {
+            **upgraded_fallback,
+            "latestUserTurnKey": "stable-user-turn",
+            "responseSourceUserTurnKey": "stable-user-turn",
+        }
         self.assertEqual({}, service._response_for({**row, "context": fallback}))
         service.latest = lambda **kwargs: {
             **validated,"responseSourceUserTextOccurrenceCount": 2}

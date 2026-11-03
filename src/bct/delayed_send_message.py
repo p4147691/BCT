@@ -1028,15 +1028,16 @@ class DelayedSendService:
             observed_source_key == source_key
             and observed_latest_key == source_key
         )
-        # Older RCC content scripts stored the enclosing positional turn key
-        # (``fallback-turn-N``).  Current ChatGPT DOM units expose the same
-        # user turn as ``fallback-turn-N:K:user``.  Permit only that narrow
-        # representation upgrade, while the exact SHA and unique-occurrence
-        # gates above continue to bind the source text.
+        # Fallback keys are positional rather than durable identity.  Older
+        # RCC scripts could count nested message units twice, so a page reload
+        # may both add the current ``:K:user`` suffix and renumber N.  Permit
+        # that representation upgrade only when both current observations
+        # identify the same fallback user unit.  The exact source/send SHA and
+        # unique-occurrence gates above remain the durable identity proof.
         if (not source_keys_match
                 and re.fullmatch(r"fallback-turn-\d+", source_key)
                 and observed_source_key == observed_latest_key
-                and re.fullmatch(re.escape(source_key) + r":\d+:user",
+                and re.fullmatch(r"fallback-turn-\d+:\d+:user",
                                  observed_source_key)):
             source_keys_match = True
         source_match = (
