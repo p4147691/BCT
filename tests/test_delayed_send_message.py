@@ -442,6 +442,23 @@ class DelayedSendMessageTests(unittest.TestCase):
             {**row, "context": {**baseline, "source_send_operation_id": ""}}))
         self.assertEqual({}, service._response_for(
             {**row, "context": {**baseline, "source_send_sha256": "c" * 64}}))
+        # ChatGPT can keep the same positional fallback key while an already
+        # rendered in-progress response becomes terminal.  The exact source,
+        # send receipt and changed response SHA still bind this completion.
+        service.latest = lambda **kwargs: {
+            **payload,
+            "responseTurnCount": baseline["baseline_count"],
+            "responseTurnKey": baseline["baseline_key"],
+        }
+        completed = service._response_for(row)
+        self.assertEqual(baseline["baseline_key"], completed["response_turn_key"])
+        service.latest = lambda **kwargs: {
+            **payload,
+            "responseTurnCount": baseline["baseline_count"] - 1,
+            "responseTurnKey": baseline["baseline_key"],
+        }
+        self.assertEqual({}, service._response_for(row))
+        service.latest = lambda **kwargs: payload
         service.store.valid = False
         self.assertEqual({},service._response_for(row))
 
