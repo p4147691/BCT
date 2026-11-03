@@ -66,6 +66,24 @@ class SourceFile:
     sha256: str
 
 
+class CodeBlockParseError(ValueError):
+    """Exact source-analysis failure that must not look like a complete scan."""
+
+    def __init__(self, source: SourceFile, error: SyntaxError):
+        self.issue = {
+            "path": source.relative,
+            "language": source.language,
+            "code": "PYTHON_SYNTAX_ERROR",
+            "line": int(error.lineno or 0),
+            "offset": int(error.offset or 0),
+            "message": str(error.msg or "invalid syntax")[:240],
+        }
+        super().__init__(
+            "CODE_BLOCK_PYTHON_SYNTAX_ERROR:"
+            f"{source.relative}:{self.issue['line']}:{self.issue['offset']}"
+        )
+
+
 def _source_files(root: Path, *, max_files: int, max_bytes_per_file: int) -> tuple[list[SourceFile], dict[str, Any]]:
     files: list[SourceFile] = []
     skipped_large = 0
@@ -140,8 +158,8 @@ def _branch_count(body: str) -> int:
 def _python_blocks(source: SourceFile) -> tuple[list[dict[str, Any]], list[str]]:
     try:
         tree = ast.parse(source.text)
-    except SyntaxError:
-        return [], []
+    except SyntaxError as exc:
+        raise CodeBlockParseError(source, exc) from exc
     lines = source.text.splitlines()
     blocks: list[dict[str, Any]] = []
     imports: list[str] = []
@@ -334,8 +352,25 @@ def scan(root: Path, *, max_files: int = 1000, max_bytes_per_file: int = 1_000_0
     path_set = {source.relative for source in files}
     stem_index = {Path(path).stem: path for path in path_set}
     block_truncated = False
+    parse_errors: list[dict[str, Any]] = []
     for source in files:
-        blocks, imports = _python_blocks(source) if source.language == "python" else _generic_blocks(source)
+        parse_error = None
+        try:
+            blocks, imports = (
+                _python_blocks(source)
+                if source.language == "python"
+                else _generic_blocks(source)
+            )
+            remaining = max_blocks - len(cards)
+            source_cards, source_truncated = _cards_for_source(
+                source, max_blocks=max(0, remaining),
+            )
+        except CodeBlockParseError as exc:
+            # A project scan may continue so it can report every affected file,
+            # but it must become PARTIAL and expose the exact parse failures.
+            parse_error = exc.issue
+            parse_errors.append(parse_error)
+            blocks, imports, source_cards, source_truncated = [], [], [], False
         for imported in imports:
             target = stem_index.get(Path(imported.replace(".", "/")).name)
             dependencies.append({"from": source.relative, "to": target or imported, "resolved": str(bool(target)).lower()})
@@ -344,9 +379,8 @@ def scan(root: Path, *, max_files: int = 1000, max_bytes_per_file: int = 1_000_0
             "sha256": source.sha256, "bytes": len(source.data),
             "lines": source.text.count("\n") + (1 if source.text else 0),
             "imports": imports[:80],
+            "analysis_status": "PARSE_ERROR" if parse_error else "OK",
         })
-        remaining = max_blocks - len(cards)
-        source_cards, source_truncated = _cards_for_source(source, max_blocks=max(0, remaining))
         cards.extend(source_cards)
         if source_truncated:
             block_truncated = True
@@ -363,7 +397,10 @@ def scan(root: Path, *, max_files: int = 1000, max_bytes_per_file: int = 1_000_0
                 "body_sha256": digest,
                 "blocks": [{"block_id": item["block_id"], "path": item["path"], "name": item["name"]} for item in group],
             })
-    refactor_targets: list[dict[str, Any]] = []
+    refactor_targets: list[dict[str, Any]] = [
+        {"priority": "high", "reason": "python_syntax_error", "evidence": issue}
+        for issue in parse_errors
+    ]
     for group in duplicate_groups:
         refactor_targets.append({"priority": "high", "reason": "exact_duplicate_block", "evidence": group})
     for card in cards:
@@ -381,16 +418,21 @@ def scan(root: Path, *, max_files: int = 1000, max_bytes_per_file: int = 1_000_0
     catalog = [item for item in candidates if item["reusability"] == "high"][:300]
     ordered = sorted(refactor_targets, key=lambda item: ({"high": 0, "medium": 1, "low": 2}.get(item["priority"], 3), item["reason"]))
     scan_fingerprint = _sha256("\n".join(f"{item['path']}\0{item['sha256']}" for item in file_rows).encode())
+    complete = limits["complete"] and not block_truncated and not parse_errors
+    warnings = ["STATIC_ANALYSIS_CANDIDATES_REQUIRE_HUMAN_OR_TEST_VALIDATION"]
+    if parse_errors:
+        warnings.append("PYTHON_PARSE_ERRORS_PRESENT")
     return {
         "schema": SCHEMA,
-        "status": "PARTIAL" if (not limits["complete"] or block_truncated) else "OK",
+        "status": "OK" if complete else "PARTIAL",
         "read_only": True,
         "root": str(root),
         "scan": {
             "files": len(file_rows), "blocks": len(cards), "scan_fingerprint": scan_fingerprint,
-            "complete": limits["complete"] and not block_truncated,
+            "complete": complete,
             "limits": {**limits, "block_truncated": block_truncated, "max_files": max_files,
                        "max_bytes_per_file": max_bytes_per_file, "max_blocks": max_blocks},
+            "parse_errors": parse_errors,
             "incremental_index": [{"path": item["path"], "sha256": item["sha256"]} for item in file_rows],
         },
         "block_map": {"files": file_rows, "dependency_edges": dependencies},
@@ -406,5 +448,5 @@ def scan(root: Path, *, max_files: int = 1000, max_bytes_per_file: int = 1_000_0
         } for card in cards],
         "component_catalog_candidates": catalog,
         "work_order": ordered[:100],
-        "warnings": ["STATIC_ANALYSIS_CANDIDATES_REQUIRE_HUMAN_OR_TEST_VALIDATION"],
+        "warnings": warnings,
     }

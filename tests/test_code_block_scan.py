@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from bct.code_block_scan import resolve_scan_root, scan
+from bct.code_block_scan import inspect_file, resolve_scan_root, scan
 from bct.code_block_organize import plan_block_replacement, prepare_block_apply
 from bct.core.models import Work
 
@@ -73,6 +73,42 @@ class CodeBlockScanTests(unittest.TestCase):
         self.assertEqual(report["status"], "PARTIAL")
         self.assertFalse(report["scan"]["complete"])
         self.assertTrue(report["scan"]["limits"]["truncated"])
+
+    def test_python_syntax_error_is_explicit_and_makes_scan_partial(self) -> None:
+        (self.root / "broken.py").write_text(
+            "def broken(:\n    return 1\n", encoding="utf-8",
+        )
+
+        report = scan(self.root)
+
+        self.assertEqual("PARTIAL", report["status"])
+        self.assertFalse(report["scan"]["complete"])
+        self.assertEqual(1, len(report["scan"]["parse_errors"]))
+        issue = report["scan"]["parse_errors"][0]
+        self.assertEqual("broken.py", issue["path"])
+        self.assertEqual("PYTHON_SYNTAX_ERROR", issue["code"])
+        self.assertGreater(issue["line"], 0)
+        self.assertIn("PYTHON_PARSE_ERRORS_PRESENT", report["warnings"])
+        self.assertTrue(any(
+            item["reason"] == "python_syntax_error"
+            and item["evidence"]["path"] == "broken.py"
+            for item in report["refactor_targets"]
+        ))
+        broken_row = next(
+            item for item in report["block_map"]["files"]
+            if item["path"] == "broken.py"
+        )
+        self.assertEqual("PARSE_ERROR", broken_row["analysis_status"])
+
+    def test_exact_file_index_rejects_python_syntax_error(self) -> None:
+        (self.root / "broken.py").write_text(
+            "def broken(:\n    return 1\n", encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            ValueError, r"CODE_BLOCK_PYTHON_SYNTAX_ERROR:broken\.py:1:",
+        ):
+            inspect_file(self.root, "broken.py")
 
     def test_plan_and_partial_replacement_preserve_other_blocks(self) -> None:
         source = self.root / "one.py"
