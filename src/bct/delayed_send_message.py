@@ -1022,10 +1022,26 @@ class DelayedSendService:
                 or observed.get("responseSourceUserTextOccurrenceCount") != 1
                 ) and (planned_source or source_key.startswith("fallback-turn-")):
             return reject("SOURCE_OCCURRENCE_AMBIGUOUS")
+        observed_source_key = str(observed.get("responseSourceUserTurnKey") or "")
+        observed_latest_key = str(observed.get("latestUserTurnKey") or "")
+        source_keys_match = (
+            observed_source_key == source_key
+            and observed_latest_key == source_key
+        )
+        # Older RCC content scripts stored the enclosing positional turn key
+        # (``fallback-turn-N``).  Current ChatGPT DOM units expose the same
+        # user turn as ``fallback-turn-N:K:user``.  Permit only that narrow
+        # representation upgrade, while the exact SHA and unique-occurrence
+        # gates above continue to bind the source text.
+        if (not source_keys_match
+                and re.fullmatch(r"fallback-turn-\d+", source_key)
+                and observed_source_key == observed_latest_key
+                and re.fullmatch(re.escape(source_key) + r":\d+:user",
+                                 observed_source_key)):
+            source_keys_match = True
         source_match = (
-            observed.get("responseSourceUserTurnKey") == source_key
+            source_keys_match
             and observed.get("responseSourceUserSha256") == source_sha
-            and observed.get("latestUserTurnKey") == source_key
             and observed.get("latestUserSha256") == source_sha
         )
         if source_key and not source_match:
