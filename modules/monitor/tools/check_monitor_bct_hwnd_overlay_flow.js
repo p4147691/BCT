@@ -19,6 +19,24 @@ assert.match(monitorSource,
   /function monitorBctProjectionHasUnresolvedLineage\([\s\S]*const hwnd = monitorBctDisplaySessionHwnd\(node\.windowId, node\.instanceId, node\.sessionId\);[\s\S]*if \(!hwnd\) return true;/,
   "projection convergence must continue while the strict BCT HWND lineage is unresolved");
 
+const geometryStart = monitorSource.indexOf("async function refreshMonitorBctBrowserWindowGeometry(");
+const geometryEnd = monitorSource.indexOf("\nfunction refreshMonitorBctDisplayWindowHwnd(", geometryStart);
+assert.ok(geometryStart > 0 && geometryEnd > geometryStart, "Chrome geometry refresh helper must be extractable");
+const geometryContext = {
+  monitorBctWindowNodesCache: [{ windowId: 12 }, { windowId: 13 }],
+  monitorBctBrowserWindows: new Map(),
+  chrome: {
+    windows: {
+      async getAll() { return [{ id: 12, left: 0, top: 0, width: 100, height: 100, state: "normal", tabs: [] }]; },
+      async get(id) { return { id, left: 100, top: 0, width: 100, height: 100, state: "normal", tabs: [] }; },
+    },
+    tabs: { async query() { throw new Error("active-tab title unavailable"); } },
+  },
+  Array, Boolean, Map, Set, String, Number, Date, Promise,
+};
+vm.createContext(geometryContext);
+vm.runInContext(monitorSource.slice(geometryStart, geometryEnd), geometryContext);
+
 const projectionStart = monitorSource.indexOf("async function refreshMonitorBctThumbnailProjectionForDesktop(");
 const projectionEnd = monitorSource.indexOf("\nfunction monitorBctProjectionHasUnresolvedLineage(", projectionStart);
 assert.ok(projectionStart > 0 && projectionEnd > projectionStart, "thumbnail projection helper must be extractable");
@@ -65,6 +83,14 @@ context.globalThis = context;
 vm.createContext(context);
 
 (async () => {
+  const geometryRows = await geometryContext.refreshMonitorBctBrowserWindowGeometry();
+  assert.equal(geometryRows.size, 2,
+    "Chrome window bounds must survive an unavailable active-tab title");
+  assert.equal(geometryRows.get("12").left, 0,
+    "getAll geometry is preferred for a known RCC window id");
+  assert.equal(geometryRows.get("13").left, 100,
+    "an exact get fallback fills a window absent from getAll");
+
   assert.equal(await projectionContext.refreshMonitorBctThumbnailProjectionForDesktop("desktop-2"), true,
     "fresh Native HWND geometry must be joined after refreshing Chrome window geometry");
   assert.equal(browserGeometryRefreshes, 1);

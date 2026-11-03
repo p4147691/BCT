@@ -2086,13 +2086,25 @@ async function refreshMonitorBctBrowserWindowGeometry() {
   const ids = [...new Set((Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
     .map((node) => Number(node?.windowId)).filter(Number.isInteger))];
   const observedAt = Date.now();
+  // Read every Chrome window once.  The node list is supplied by RCC, while
+  // geometry is Chrome-owned state; keeping those reads independent prevents
+  // a denied/missing active-tab title from discarding otherwise valid window
+  // bounds and leaving every node at D? until the user clicks a tab.
+  const allWindows = await chrome.windows.getAll({ populate: true }).catch(() => []);
+  const windowsById = new Map((Array.isArray(allWindows) ? allWindows : [])
+    .filter((item) => Number.isInteger(Number(item?.id)))
+    .map((item) => [Number(item.id), item]));
   const rows = await Promise.all(ids.map(async (windowId) => {
     try {
-      const [browserWindow, activeTabs] = await Promise.all([
-        chrome.windows.get(windowId, { populate: false }),
-        chrome.tabs.query({ windowId, active: true }),
-      ]);
-      const activeTab = Array.isArray(activeTabs) ? activeTabs[0] : null;
+      const browserWindow = windowsById.get(windowId)
+        || await chrome.windows.get(windowId, { populate: true });
+      let activeTab = (Array.isArray(browserWindow?.tabs)
+        ? browserWindow.tabs.find((tab) => tab?.active === true)
+        : null) || null;
+      if (!activeTab) {
+        const activeTabs = await chrome.tabs.query({ windowId, active: true }).catch(() => []);
+        activeTab = Array.isArray(activeTabs) ? activeTabs[0] : null;
+      }
       return {
         windowId, observedAt,
         left: Number(browserWindow?.left), top: Number(browserWindow?.top),
