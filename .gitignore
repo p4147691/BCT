@@ -6,3 +6,7 @@ build/
 dist/
 *.egg-info/
 
+# Monitor deployment observation markers are runtime state, not source.
+modules/monitor/extension/.reload-token
+modules/monitor/extension/.reload-ack
+
