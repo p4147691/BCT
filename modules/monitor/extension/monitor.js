@@ -2917,7 +2917,13 @@ function monitorHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState
 
 function monitorDisplayHwndForBrowserWindowId(windowIdValue, state = monitorLastAiState, instanceIdValue = "", sessionIdValue = "") {
   return monitorHwndForBrowserWindowId(windowIdValue, state, instanceIdValue, sessionIdValue)
-    || monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue, sessionIdValue);
+    || monitorBctDisplaySessionHwnd(windowIdValue, instanceIdValue, sessionIdValue)
+    // A freshly reloaded Monitor can receive an older per-node session pair
+    // before RCC publishes the next exact node snapshot.  Location text is a
+    // display-only projection, so retain the unambiguous Chrome window_id join
+    // instead of showing D? until the user clicks that node.  Mutation paths
+    // continue to use monitorHwndForBrowserWindowId with exact identity.
+    || monitorBctDisplaySessionHwnd(windowIdValue);
 }
 
 function applyMonitorChatNavigationIdentity(message, state = monitorLastAiState) {

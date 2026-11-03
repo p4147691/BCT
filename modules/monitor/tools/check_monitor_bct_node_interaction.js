@@ -121,6 +121,8 @@ function loadModule() {
     "unresolved location must be an explicit D? rather than an ambiguous underscore-like glyph");
   assert.match(monitor, /`\$\{locationText\}\$\{minimized \? " _" : ""\}`/,
     "a minimized node must use the compact underscore mark requested by the user");
+  assert.match(monitor, /monitorBctDisplaySessionHwnd\(windowIdValue\);/,
+    "display-only location must fall back to one unique Chrome window id while exact session identity converges");
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
   assert.match(monitor, /if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/,
     "an RCC refresh must defer rather than cancel an active node drag");
