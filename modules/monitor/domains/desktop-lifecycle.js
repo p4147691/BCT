@@ -1665,11 +1665,11 @@ function pushDesktopUndoSnapshot(snapshot, now = Date.now()) {
 //@@FN_START:refreshMonitorRecoveryMenu
 function refreshMonitorRecoveryMenu(){
 
-  if(!(monitorClosedConversationPickerOpen&&monitorClosedRecoveryMenu&&monitorLastAiState))return;
+  if(!(monitorClosedConversationPickerOpen&&monitorClosedRecoveryMenu))return;
 
   const panes=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane-scroll')].map((el)=>({cls:el.parentElement?.className||'',top:el.scrollTop}));
 
-  monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorLastAiState));
+  monitorClosedRecoveryMenu.replaceChildren(renderMonitorClosedConversationRecoveryPanel(monitorLastAiState||{}));
 
   for(const saved of panes){const pane=[...monitorClosedRecoveryMenu.querySelectorAll('.monitor-trash-pane')].find((el)=>(el.className||'')===saved.cls);const scroll=pane?.querySelector('.monitor-trash-pane-scroll');if(scroll)scroll.scrollTop=saved.top;}
 

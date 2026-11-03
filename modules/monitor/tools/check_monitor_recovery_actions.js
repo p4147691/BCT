@@ -40,6 +40,16 @@ assert.match(monitor, /RCC 리로드 완료 · 새 연결 확인됨/);
 assert.match(monitor, /새 연결은 아직 미확인/);
 assert.match(monitor, /beforeSessions/);
 assert.match(monitor, /restoreMonitorTrashedConversation/);
+assert.match(
+  monitor,
+  /renderMonitorClosedConversationRecoveryPanel\(monitorLastAiState\|\|\{\}\)/,
+  "the recovery bin must render its empty sections before the first AI state snapshot",
+);
+assert.doesNotMatch(
+  monitor,
+  /monitorClosedConversationPickerOpen&&monitorClosedRecoveryMenu&&monitorLastAiState/,
+  "an absent AI state snapshot must not suppress an already-open recovery bin",
+);
 assert.match(monitor, /monitorBctShell\.retireConversationNode/);
 assert.match(monitor, /type:"monitor-close-chat-tab"/);
 assert.doesNotMatch(monitor, /ORCHESTRATOR_CONVERSATION_CLOSE_TAB_URL,\{method:"POST"/);
