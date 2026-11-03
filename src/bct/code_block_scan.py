@@ -4,6 +4,7 @@ import ast
 import hashlib
 import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -115,6 +116,12 @@ def _normalized_body(lines: list[str], start: int, end: int) -> str:
     return body
 
 
+def _exact_body(text: str, start: int, end: int) -> str:
+    """Return the exact decoded source slice for one 1-based line range."""
+    lines = text.splitlines(keepends=True)
+    return "".join(lines[max(0, start - 1):max(start, end)])
+
+
 def _effect_hints(body: str) -> list[str]:
     checks = (
         (r"\b(?:write|unlink|remove|delete|rename|replace|mkdir|rmdir)\b", "filesystem_write"),
@@ -146,7 +153,11 @@ def _python_blocks(source: SourceFile) -> tuple[list[dict[str, Any]], list[str]]
                 imports.append(node.module)
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        start, end = int(node.lineno), int(getattr(node, "end_lineno", node.lineno))
+        decorators = getattr(node, "decorator_list", ())
+        start = min(
+            [int(node.lineno), *(int(item.lineno) for item in decorators)],
+        )
+        end = int(getattr(node, "end_lineno", node.lineno))
         body = _normalized_body(lines, start, end)
         params = []
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -162,6 +173,96 @@ def _python_blocks(source: SourceFile) -> tuple[list[dict[str, Any]], list[str]]
             "normalized": body,
         })
     return blocks, sorted(set(imports))
+
+
+def _cards_for_source(source: SourceFile, *, max_blocks: int) -> tuple[list[dict[str, Any]], bool]:
+    blocks, _ = _python_blocks(source) if source.language == "python" else _generic_blocks(source)
+    cards: list[dict[str, Any]] = []
+    truncated = False
+    for block in blocks:
+        if len(cards) >= max_blocks:
+            truncated = True
+            break
+        normalized = block.pop("normalized")
+        lines = max(1, int(block["line_end"]) - int(block["line_start"]) + 1)
+        exact = _exact_body(source.text, int(block["line_start"]), int(block["line_end"]))
+        card = {
+            "block_id": _sha256(
+                f"{source.relative}:{block['line_start']}:{block['name']}".encode()
+            )[:16],
+            "path": source.relative,
+            "language": source.language,
+            **block,
+            "metrics": {"lines": lines, "branches": _branch_count(normalized)},
+            "inputs": block.get("parameters", []),
+            "outputs": "STATIC_SCAN_UNKNOWN",
+            "side_effect_hints": _effect_hints(normalized),
+            "failure_conditions": ["STATIC_SCAN_NOT_RUNTIME_PROOF"],
+            # body_sha256 remains the similarity hash used for duplicate detection.
+            "body_sha256": _sha256(normalized.encode()) if normalized else "",
+            # Exact hashes are the fail-closed boundary for partial replacement.
+            "source_sha256": _sha256(exact.encode("utf-8")),
+            "file_sha256": source.sha256,
+        }
+        card["candidate_kind"] = _candidate_kind(card)
+        cards.append(card)
+    return cards, truncated
+
+
+def inspect_file(root: Path, relative_path: str, *, max_bytes: int = 5_000_000,
+                 max_blocks: int = 10_000) -> dict[str, Any]:
+    """Build the exact block index for one regular UTF-8 source file."""
+    relative = Path(relative_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("CODE_BLOCK_PATH_INVALID")
+    root = root.resolve()
+    candidate = root / relative
+    current = candidate
+    while True:
+        if current.exists() or current.is_symlink():
+            info = os.lstat(current)
+            if stat.S_ISLNK(info.st_mode) or (
+                getattr(info, "st_file_attributes", 0)
+                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+            ):
+                raise ValueError("CODE_BLOCK_REPARSE_PATH_FORBIDDEN")
+        if current == root:
+            break
+        current = current.parent
+    path = candidate.resolve()
+    if not _inside(path, (root,)):
+        raise ValueError("CODE_BLOCK_PATH_OUTSIDE_ROOT")
+    language = LANGUAGES.get(path.suffix.lower())
+    if not language:
+        raise ValueError("CODE_BLOCK_LANGUAGE_UNSUPPORTED")
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("CODE_BLOCK_SOURCE_NOT_REGULAR")
+    data = path.read_bytes()
+    if len(data) > max_bytes:
+        raise ValueError("CODE_BLOCK_SOURCE_TOO_LARGE")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("CODE_BLOCK_SOURCE_NOT_UTF8") from exc
+    source = SourceFile(
+        path=path,
+        relative=path.relative_to(root).as_posix(),
+        language=language,
+        data=data,
+        text=text,
+        sha256=_sha256(data),
+    )
+    cards, truncated = _cards_for_source(source, max_blocks=max_blocks)
+    if truncated:
+        raise ValueError("CODE_BLOCK_INDEX_TRUNCATED")
+    return {
+        "path": source.relative,
+        "language": source.language,
+        "file_sha256": source.sha256,
+        "bytes": len(source.data),
+        "text": source.text,
+        "blocks": cards,
+    }
 
 
 _DECLARATION = re.compile(
@@ -244,24 +345,11 @@ def scan(root: Path, *, max_files: int = 1000, max_bytes_per_file: int = 1_000_0
             "lines": source.text.count("\n") + (1 if source.text else 0),
             "imports": imports[:80],
         })
-        for block in blocks:
-            if len(cards) >= max_blocks:
-                block_truncated = True
-                break
-            normalized = block.pop("normalized")
-            lines = max(1, int(block["line_end"]) - int(block["line_start"]) + 1)
-            card = {
-                "block_id": _sha256(f"{source.relative}:{block['line_start']}:{block['name']}".encode())[:16],
-                "path": source.relative, "language": source.language, **block,
-                "metrics": {"lines": lines, "branches": _branch_count(normalized)},
-                "inputs": block.get("parameters", []),
-                "outputs": "STATIC_SCAN_UNKNOWN",
-                "side_effect_hints": _effect_hints(normalized),
-                "failure_conditions": ["STATIC_SCAN_NOT_RUNTIME_PROOF"],
-                "body_sha256": _sha256(normalized.encode()) if normalized else "",
-            }
-            card["candidate_kind"] = _candidate_kind(card)
-            cards.append(card)
+        remaining = max_blocks - len(cards)
+        source_cards, source_truncated = _cards_for_source(source, max_blocks=max(0, remaining))
+        cards.extend(source_cards)
+        if source_truncated:
+            block_truncated = True
         if block_truncated:
             break
     duplicate_groups: list[dict[str, Any]] = []
@@ -309,6 +397,13 @@ def scan(root: Path, *, max_files: int = 1000, max_bytes_per_file: int = 1_000_0
         "block_candidates": candidates,
         "refactor_targets": ordered,
         "block_cards": cards,
+        "block_index": [{
+            "block_id": card["block_id"], "path": card["path"],
+            "name": card["name"], "kind": card["kind"],
+            "line_start": card["line_start"], "line_end": card["line_end"],
+            "file_sha256": card["file_sha256"],
+            "source_sha256": card["source_sha256"],
+        } for card in cards],
         "component_catalog_candidates": catalog,
         "work_order": ordered[:100],
         "warnings": ["STATIC_ANALYSIS_CANDIDATES_REQUIRE_HUMAN_OR_TEST_VALIDATION"],

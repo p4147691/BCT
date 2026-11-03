@@ -148,6 +148,7 @@ files = [
   "src/bct/supervisor.py",
   "src/bct/mcp_server.py",
   "src/bct/code_block_scan.py",
+  "src/bct/code_block_organize.py",
   "src/bct/status_views.py",
   "src/bct/trace_timing.py",
   "src/bct/monitor_runtime.py",

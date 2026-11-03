@@ -45,6 +45,11 @@ class MCPIntegrationTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        (self.project / "blocks.py").write_text(
+            "def keep():\n    return 'keep'\n\n"
+            "def change(value):\n    return value + 1\n",
+            encoding="utf-8",
+        )
         self.release_sha = "1" * 40
         self.manifest_sha = hashlib.sha256(b"mcp-test").hexdigest()
         self.release = self.runtime / "releases" / self.release_sha
@@ -182,7 +187,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "bct_run_check", "bct_run_plan", "bct_network_set",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "organize_code_blocks", "bct_run_check", "bct_run_plan", "bct_network_set",
                             "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_set_chain_execution_plan", "bct_get_chain_execution_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
@@ -202,7 +207,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     )
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "bct_run_check", "bct_run_plan", "bct_network_set",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "organize_code_blocks", "bct_run_check", "bct_run_plan", "bct_network_set",
                             "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_set_chain_execution_plan", "bct_get_chain_execution_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
@@ -281,6 +286,46 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertTrue(scanned.structuredContent["read_only"])
                     self.assertIn("block_map", scanned.structuredContent)
                     self.assertIn("block_cards", scanned.structuredContent)
+                    block = next(
+                        item for item in scanned.structuredContent["block_cards"]
+                        if item["path"] == "blocks.py" and item["name"] == "change"
+                    )
+                    planned_block = await session.call_tool("organize_code_blocks", {
+                        "work_id": "mcp-read-work", "action": "plan",
+                        "path": "blocks.py", "block_id": block["block_id"],
+                        "replacement": "def change(value):\n    return value * 2",
+                        "expected_file_sha256": block["file_sha256"],
+                        "expected_block_sha256": block["source_sha256"],
+                    })
+                    self.assertFalse(planned_block.isError, planned_block)
+                    plan = planned_block.structuredContent
+                    self.assertTrue(plan["read_only"])
+                    self.assertIn("return value * 2", plan["diff"])
+                    write_work = await session.call_tool("bct_work_create", {
+                        "work_id": "mcp-block-write-work",
+                        "request_summary": "apply one exact scanned block",
+                        "roots": [str(self.project)], "actions": ["read", "write"],
+                    })
+                    self.assertFalse(write_work.isError, write_work)
+                    apply_args = {
+                        "work_id": "mcp-block-write-work", "action": "apply",
+                        "operation_id": "mcp-block-apply-1",
+                        "path": "blocks.py", "block_id": block["block_id"],
+                        "replacement": plan["replacement"],
+                        "expected_file_sha256": plan["expected_file_sha256"],
+                        "expected_block_sha256": plan["expected_block_sha256"],
+                        "expected_after_sha256": plan["after_file_sha256"],
+                        "plan_sha256": plan["plan_sha256"],
+                    }
+                    applied_block = await session.call_tool("organize_code_blocks", apply_args)
+                    replayed_block = await session.call_tool("organize_code_blocks", apply_args)
+                    self.assertFalse(applied_block.isError, applied_block)
+                    self.assertEqual("APPLIED", applied_block.structuredContent["outcome"])
+                    self.assertTrue(replayed_block.structuredContent["duplicate"])
+                    updated = (self.project / "blocks.py").read_text(encoding="utf-8")
+                    self.assertIn("return 'keep'", updated)
+                    self.assertIn("return value * 2", updated)
+                    self.assertNotIn("return value + 1", updated)
                     self.assertFalse(created.structuredContent["duplicate"])
                     self.assertTrue(repeated.structuredContent["duplicate"])
                     denied_context = await session.call_tool("bct_check_network", {
