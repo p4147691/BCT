@@ -127,11 +127,11 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const reasoningCompact = ({ instant:"I", low:"L", medium:"M", high:"H", xhigh:"XH", max:"MAX" })[reasoning.toLowerCase()] || reasoning;
   const observedAge = monitorBctNodeObservedAgeText(node);
   const observedAgeCompact = observedAge
-    .replace("관측 확인 중", "…")
-    .replace("관측 방금", "0m")
-    .replace(/^관측 (\d+)분$/, "$1m")
-    .replace(/^관측 (\d+)시간$/, "$1h")
-    .replace(/^관측 (\d+)일$/, "$1d");
+    .replace("관측 확인 중", "확인중")
+    .replace("관측 방금", "방금")
+    .replace(/^관측 (\d+)분$/, "$1분")
+    .replace(/^관측 (\d+)시간$/, "$1시간")
+    .replace(/^관측 (\d+)일$/, "$1일");
   const locationText = monitorBctNodeLocationText(node, desktopPosition);
   const surfaceText = monitorBctNodeSurfaceText(node);
   return {
@@ -141,7 +141,7 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
       reasoningCompact,
       observedAgeCompact,
       burden.label,
-    ].filter(Boolean).join("·"),
+    ].filter(Boolean).join("\u00a0\u00a0"),
     title: `위치 ${locationText} · ${minimized ? "최소화됨" : "표시 중"} · 종류 ${surfaceText} · 추론 ${reasoning} · ${observedAge} · 부담 ${burden.label} (${burden.title})`,
   };
 }
@@ -579,7 +579,7 @@ function monitorBctNodeLocationText(node, desktopPosition) {
 function monitorBctNodeSurfaceText(node) {
   if (!String(node?.conversationKey || "").trim()) return "New";
   const kind = String(node?.surfaceKind || "UNKNOWN").trim().toUpperCase();
-  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "?";
+  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "미확인";
 }
 //@@FN_END:monitorBctNodeSurfaceText
 

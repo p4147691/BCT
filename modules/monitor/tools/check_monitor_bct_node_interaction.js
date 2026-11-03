@@ -99,6 +99,12 @@ function loadModule() {
     "location refresh must preserve surface, reasoning, age, and burden details");
   assert.doesNotMatch(monitor, /position\.textContent = monitorBctNodeLocationText\(node, index\)/,
     "location refresh must not collapse the detail line back to D# only");
+  assert.match(monitor, /\.filter\(Boolean\)\.join\("\\u00a0\\u00a0"\)/,
+    "node detail fields must use visible spacing without punctuation separators");
+  assert.match(monitor, /if \(!String\(node\?\.conversationKey \|\| ""\)\.trim\(\)\) return "New";/,
+    "a blank conversation node must be labeled New");
+  assert.match(monitor, /\|\| "미확인";/,
+    "an unresolved existing surface must use a readable label instead of a question-mark symbol");
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
   assert.match(monitor, /if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/,
     "an RCC refresh must defer rather than cancel an active node drag");
