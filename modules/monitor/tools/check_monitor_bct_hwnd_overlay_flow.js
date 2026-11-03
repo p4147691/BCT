@@ -164,18 +164,40 @@ const dpiFallbackDisplay = contract.resolveDisplay({
     ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "Active task - Google Chrome", left: 1280, top: 0, width: 1280, height: 720, iconic: false, at: now - 100 }],
     ["888", { hwnd: "888", className: "Chrome_WidgetWin_1", title: "Another task - Google Chrome", left: 0, top: 0, width: 1280, height: 720, iconic: false, at: now - 100 }],
   ]),
-  browserWindows: [{ windowId: 594834491, left: 1024, top: 0, width: 1024, height: 576, state: "normal", activeTabTitle: "Active task", observedAt: now - 50 }],
+  browserWindows: [{ windowId: 594834491, left: 1000, top: 0, width: 1000, height: 500, state: "normal", activeTabTitle: "Active task", observedAt: now - 50 }],
 });
 assert.equal(projectedLabel(openNodes, dpiFallbackDisplay.bindings), "N4/9/7",
   "one exact active-tab/native-window title must restore display location when DPI-scaled geometry cannot join");
 assert.equal(dpiFallbackDisplay.bindings[0].matchKind, "exact-title");
+const scaledGeometryDisplay = contract.resolveDisplay({
+  nodes: openNodes, now,
+  locations: new Map([
+    ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "ChatGPT", left: 1280, top: 0, width: 1269, height: 1392, iconic: false, at: now - 100 }],
+    ["888", { hwnd: "888", className: "Chrome_WidgetWin_1", title: "Unrelated - Chrome", left: -8, top: -8, width: 2576, height: 1408, iconic: false, at: now - 100 }],
+  ]),
+  browserWindows: [{ windowId: 594834491, left: 1024, top: 0, width: 1024, height: 1114, state: "normal", activeTabTitle: "Different active tab", observedAt: now - 50 }],
+});
+assert.equal(projectedLabel(openNodes, scaledGeometryDisplay.bindings), "N4/9/7",
+  "125% Windows scaling must join Chrome logical bounds to the physical right-hand HWND without a tab click");
+assert.equal(scaledGeometryDisplay.bindings[0].matchKind, "scaled-geometry");
+assert.equal(scaledGeometryDisplay.bindings[0].geometryScale, 1.25);
+const scaledFullscreenDisplay = contract.resolveDisplay({
+  nodes: openNodes, now,
+  locations: new Map([
+    ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "Unrelated - Chrome", left: -8, top: -8, width: 2576, height: 1408, iconic: false, at: now - 100 }],
+  ]),
+  browserWindows: [{ windowId: 594834491, left: 0, top: 0, width: 2048, height: 1120, state: "normal", activeTabTitle: "Different active tab", observedAt: now - 50 }],
+});
+assert.equal(projectedLabel(openNodes, scaledFullscreenDisplay.bindings), "N4/9/7",
+  "scaled maximized Chrome bounds may differ by the physical outer frame while remaining a unique display join");
+assert.equal(scaledFullscreenDisplay.bindings[0].geometryScale, 1.25);
 const duplicateTitleFallback = contract.resolveDisplay({
   nodes: openNodes, now,
   locations: new Map([
     ["777", { hwnd: "777", className: "Chrome_WidgetWin_1", title: "Active task - Google Chrome", left: 1280, top: 0, width: 1280, height: 720, iconic: false, at: now - 100 }],
     ["888", { hwnd: "888", className: "Chrome_WidgetWin_1", title: "Active task - Google Chrome", left: 0, top: 0, width: 1280, height: 720, iconic: false, at: now - 100 }],
   ]),
-  browserWindows: [{ windowId: 594834491, left: 1024, top: 0, width: 1024, height: 576, state: "normal", activeTabTitle: "Active task", observedAt: now - 50 }],
+  browserWindows: [{ windowId: 594834491, left: 1000, top: 0, width: 1000, height: 500, state: "normal", activeTabTitle: "Active task", observedAt: now - 50 }],
 });
 assert.equal(duplicateTitleFallback.bindings.length, 0,
   "duplicate active titles must stay at D? rather than guessing a display HWND");

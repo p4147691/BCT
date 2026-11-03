@@ -21,9 +21,9 @@
       "implementation": [
         {"path": "modules/monitor/extension/monitor-window-hwnd-contract.js", "symbol": "create().resolveDisplay"}
       ],
-      "contract": "Read-only join from one RCC Chrome window lineage to one uniquely observed Windows HWND for location display.",
+      "contract": "Read-only join from one RCC Chrome window lineage to one uniquely observed Windows HWND for location display, including bounded Windows logical-to-physical display scaling.",
       "effects": [],
-      "safety": ["display-only", "unique-match-only", "dpi-title-fallback-never-authorizes-effects"],
+      "safety": ["display-only", "unique-match-only", "bounded-standard-display-scales", "dpi-title-fallback-never-authorizes-effects"],
       "used_by": ["monitor.node_location", "monitor.thumbnail_node_badges"]
     },
     {

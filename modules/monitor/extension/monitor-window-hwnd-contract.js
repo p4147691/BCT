@@ -35,6 +35,22 @@
       Math.abs(left.height - right.height),
     );
   }
+  const DISPLAY_SCALE_FACTORS = Object.freeze([1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3]);
+  function scaledGeometryMatch(browserGeometry, nativeGeometry) {
+    // chrome.windows reports device-independent coordinates on scaled Windows
+    // displays, while the Native host observes physical HWND pixels. Compare a
+    // bounded set of Windows display scales and keep the best physical-pixel
+    // score. This is display-only evidence and never authorizes a window action.
+    return DISPLAY_SCALE_FACTORS.map((scale) => ({
+      scale,
+      score: geometryScore({
+        left: browserGeometry.left * scale,
+        top: browserGeometry.top * scale,
+        width: browserGeometry.width * scale,
+        height: browserGeometry.height * scale,
+      }, nativeGeometry),
+    })).sort((a, b) => a.score - b.score || a.scale - b.scale)[0];
+  }
   function chromeWindowTitle(value) {
     return text(value).replace(/\s+-\s+(?:Google\s+Chrome|Chrome)$/i, "").trim();
   }
@@ -158,7 +174,13 @@
             continue;
           }
           ranked = native.filter((item) => Boolean(item.location?.iconic) === false)
-            .map((item) => ({ ...item, score: geometryScore(browserGeometry, item.geometry) }))
+            .map((item) => {
+              const match = scaledGeometryMatch(browserGeometry, item.geometry);
+              return {
+                ...item, score: match.score, geometryScale: match.scale,
+                matchKind: match.scale === 1 ? "geometry" : "scaled-geometry",
+              };
+            })
             .sort((a, b) => a.score - b.score || a.hwnd.localeCompare(b.hwnd));
           if (!ranked.length || ranked[0].score > tolerance || (ranked.length > 1 && ranked[1].score <= tolerance)) {
             // chrome.windows bounds can be device-independent pixels while the
@@ -184,6 +206,7 @@
         bindings.push(Object.freeze({
           ...candidate, hwnd: ranked[0].hwnd, observedAt: now, displayOnly: true,
           matchKind: text(ranked[0]?.matchKind) || (minimized ? "exact-title" : "geometry"),
+          geometryScale: Number(ranked[0]?.geometryScale) || 0,
         }));
       }
       const lineagesByHwnd = new Map();
