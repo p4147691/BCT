@@ -1017,6 +1017,10 @@ class DelayedSendService:
         from bct.core.models import Principal, Outcome
         ctx=row["context"]
         work=self.store.get_work(ctx["work_id"])
+        from bct.node_recovery import NodeRecoveryLedger
+        NodeRecoveryLedger(self.store).assert_send_allowed(
+            work_id=work.work_id, conversation_key=destination,
+        )
         from bct.core.capabilities import capability_matches
         if (work.state!="ACTIVE" or work.assignment_epoch!=ctx["assignment_epoch"]
                 or work.owner_principal_id!=ctx["principal_id"]
