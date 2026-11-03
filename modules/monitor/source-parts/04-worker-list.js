@@ -209,6 +209,7 @@ let monitorBctNodeReorderPending = false;
 let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
+let monitorBctLastDisplayResolution = null;
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorBctWindowNodeRefreshPending = false;
 // A reload can observe cached RCC rows while Chrome/RCC complete their own

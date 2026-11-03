@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP, Image
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
+from .code_block_scan import resolve_scan_root, scan as run_code_block_scan
 from .conversation_network import (
     ConversationNetworkError, project_view, resolve_project_id, scope_directory,
 )
@@ -26,7 +27,7 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
-    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network",
+    "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks",
     "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
     "bct_set_chain_execution_plan", "bct_get_chain_execution_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
@@ -389,6 +390,36 @@ def build_mcp(
                 "project_context": context, "context_status": context_status,
                 "context_requires_work": bool(project and (not work_id or not operation_id)),
                 "read_only": True}
+
+    @server.tool(
+        description=(
+            "Run the read-only Code Block Scan recipe inside one owned Work root. "
+            "Returns a Block Map, Block Candidates, Refactor Targets, Block Cards, "
+            "component-catalog candidates and a risk-ordered work list. It never edits code, "
+            "registers components, runs tests, or performs organize_code_blocks."
+        ),
+        structured_output=True,
+    )
+    async def scan_code_blocks(
+        work_id: str,
+        root: str = "",
+        max_files: int = 1000,
+        max_bytes_per_file: int = 1_000_000,
+        max_blocks: int = 4000,
+    ) -> dict[str, Any]:
+        if not hasattr(bct, "store"):
+            raise RuntimeError("CODE_BLOCK_SCAN_STORE_REQUIRED")
+        work = await asyncio.to_thread(bct.store.get_work, work_id)
+        if work.owner_principal_id != principal.principal_id:
+            raise PermissionError("CODE_BLOCK_SCAN_WORK_ACCESS_DENIED")
+        scan_root = resolve_scan_root(work, root)
+        return await asyncio.to_thread(
+            run_code_block_scan,
+            scan_root,
+            max_files=max_files,
+            max_bytes_per_file=max_bytes_per_file,
+            max_blocks=max_blocks,
+        )
 
     @server.tool(description="Persist an AI-authored execution plan as a versioned, Work-authorized project-context ledger. No AI planning or execution is performed.", structured_output=True)
     async def bct_run_plan(

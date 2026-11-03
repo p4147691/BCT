@@ -2135,6 +2135,7 @@ function refreshMonitorBctDisplayWindowHwnd() {
     nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations,
     browserWindows: monitorBctBrowserWindows, now: Date.now(),
   });
+  monitorBctLastDisplayResolution = display || null;
   monitorBctDisplayWindowHwnd = new Map((display?.bindings || []).map((binding) => [String(binding.lineage || ""), binding]));
   // The thumbnail and the node list share this display-only binding, but they
   // render on independent schedules.  Repaint existing list labels whenever

@@ -99,6 +99,19 @@
       "used_by": ["monitor.recovery_bin"]
     },
     {
+      "id": "code.scan_blocks",
+      "kind": "full_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/code_block_scan.py", "symbol": "scan"},
+        {"path": "src/bct/mcp_server.py", "symbol": "scan_code_blocks"}
+      ],
+      "contract": "Read one Work-scoped source tree and produce a bounded static Block Map, Block Candidates, Refactor Targets, Block Cards, catalog candidates, and ordered work list.",
+      "effects": [],
+      "safety": ["read-only", "work-root-bound", "bounded-files-bytes-blocks", "partial-never-reported-complete", "static-candidates-not-runtime-proof"],
+      "used_by": ["future:code.organize_blocks"]
+    },
+    {
       "id": "node.check",
       "kind": "partial_recipe",
       "maturity": "isolated",

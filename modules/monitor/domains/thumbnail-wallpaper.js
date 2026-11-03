@@ -604,6 +604,32 @@ function monitorThumbnailProjectionRuntimeDiagnostics() {
 }
 //@@FN_END:monitorThumbnailProjectionRuntimeDiagnostics
 
+//@@FN_START:monitorDisplayJoinRuntimeDiagnostics
+function monitorDisplayJoinRuntimeDiagnostics() {
+  const now = Date.now();
+  const compactGeometry = (item) => ({
+    id: String(item?.windowId ?? item?.hwnd ?? ""),
+    left: Number(item?.left), top: Number(item?.top),
+    width: Number(item?.width), height: Number(item?.height),
+    state: String(item?.state || ""), iconic: item?.iconic === true,
+    age_ms: Math.max(0, now - Number(item?.observedAt || item?.at || 0)),
+  });
+  return {
+    bindings: [...(monitorBctLastDisplayResolution?.bindings || [])].slice(0, 12).map((item) => ({
+      lineage: String(item?.lineage || ""), hwnd: String(item?.hwnd || ""),
+      match: String(item?.matchKind || ""), scale: Number(item?.geometryScale) || 0,
+    })),
+    rejected: [...(monitorBctLastDisplayResolution?.rejected || [])].slice(0, 12).map((item) => ({
+      lineage: String(item?.lineage || ""), reason: String(item?.reason || ""),
+    })),
+    browser_windows: [...monitorBctBrowserWindows.values()].slice(0, 12).map(compactGeometry),
+    native_chrome_windows: [...monitorWindowDesktopLocations.values()]
+      .filter((item) => String(item?.className || "") === "Chrome_WidgetWin_1")
+      .slice(0, 12).map(compactGeometry),
+  };
+}
+//@@FN_END:monitorDisplayJoinRuntimeDiagnostics
+
 //@@FN_START:reconcileFrame
 function reconcileFrame(container, frame, className) {
 

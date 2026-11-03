@@ -2853,6 +2853,7 @@ function refreshMonitorBctDisplayWindowHwnd() {
     nodes: monitorBctWindowNodesCache || [], locations: monitorWindowDesktopLocations,
     browserWindows: monitorBctBrowserWindows, now: Date.now(),
   });
+  monitorBctLastDisplayResolution = display || null;
   monitorBctDisplayWindowHwnd = new Map((display?.bindings || []).map((binding) => [String(binding.lineage || ""), binding]));
   // The thumbnail and the node list share this display-only binding, but they
   // render on independent schedules.  Repaint existing list labels whenever
@@ -3420,7 +3421,7 @@ async function monitorPublishSharedInstance(reason = "event") {
 
   // Runtime presence is one current record per browser profile. Using the
   // transient HWND in the key left old rows behind after an extension reload.
-  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),background_done:monitorInitialThumbBatchDone===true,windows_done:monitorInitialWindowBatchDone===true,desktop_ids:[...(monitorDesktopState?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),seen_at_ms:Date.now()})});
+  await monitorPublishSharedRuntime("alert",`${MONITOR_SHARED_INSTANCE_PREFIX}${hostProfile}`,{symbol:"",tone:"monitor-instance",label:JSON.stringify({profile:hostProfile,build_id:MONITOR_RUNTIME_BUILD_ID,manifest_version:chrome.runtime.getManifest().version,reload_token:String(monitorReloadToken||""),monitor_title:document.title,hwnd,reason:String(reason||"event"),thumbnail_initial:{stage:String(monitorInitialThumbStage||"unknown"),error:String(monitorInitialThumbError||"").slice(0,160),background_done:monitorInitialThumbBatchDone===true,windows_done:monitorInitialWindowBatchDone===true,desktop_ids:[...(monitorDesktopState?.desktopIds||[])].map(String)},thumbnail_background:monitorThumbnailBackgroundRuntimeDiagnostics(),thumbnail_native_trace:globalThis.MonitorNativeTrace?.summary?.("getDesktopVisualSnapshot")||null,thumbnail_projection:monitorThumbnailProjectionRuntimeDiagnostics(),display_join:monitorDisplayJoinRuntimeDiagnostics(),seen_at_ms:Date.now()})});
 
 }
 
@@ -5066,9 +5067,9 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
 
   const notePane=document.createElement("section");notePane.className="monitor-trash-pane monitor-trash-note-pane";notePane.append(makeHeader("삭제된 메모",noteRecords.length,clearMonitorTrashedNotes));const noteScroll=document.createElement("div");noteScroll.className="monitor-trash-pane-scroll";
 
-  if(!noteRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";noteScroll.append(empty);}else for(const note of noteRecords){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-note-row";const info=document.createElement("div");info.className="monitor-closed-conversation-info monitor-trash-note-info";const noteTitle=document.createElement("strong");noteTitle.textContent=note.title||monitorNotesFeature.titleFromText(note.body)||"메모";const lines=String(note.body||"").split(/\r?\n/);const firstLineIndex=lines.findIndex((line)=>line.trim());const notePreview=document.createElement("span");notePreview.textContent=(firstLineIndex>=0?lines.slice(firstLineIndex+1).join(" "):"").replace(/\s+/g," ").trim()||"내용 없음";info.append(noteTitle,notePreview);const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashedNote(note.id);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();deleteMonitorTrashedNote(note.id);});row.append(info,restore,del);noteScroll.append(row);}notePane.append(noteScroll);panel.append(notePane);
+  if(!noteRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="삭제된 메모 없음";noteScroll.append(empty);}else for(const note of noteRecords){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-note-row";const info=document.createElement("div");info.className="monitor-closed-conversation-info monitor-trash-note-info";const noteTitle=document.createElement("strong");noteTitle.textContent=note.title||monitorNotesFeature.titleFromText(note.body)||"메모";const lines=String(note.body||"").split(/\r?\n/);const firstLineIndex=lines.findIndex((line)=>line.trim());const notePreview=document.createElement("span");notePreview.textContent=(firstLineIndex>=0?lines.slice(firstLineIndex+1).join(" "):"").replace(/\s+/g," ").trim()||"내용 없음";info.append(noteTitle,notePreview);const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();restoreMonitorTrashedNote(note.id);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();deleteMonitorTrashedNote(note.id);});row.append(info,restore,del);noteScroll.append(row);}notePane.append(noteScroll);panel.append(notePane);
 
-  const renderTrashRows=(source,container)=>{const records=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")===source).sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));if(!records.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";container.append(empty);return;}for(const ghost of records){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-record-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost),at=Number(ghost?.trashed_at_ms||0),scope=String(ghost?.network_name||"미소속"),roles=Array.isArray(ghost?.role_tags)&&ghost.role_tags.length?` · ${ghost.role_tags.join(", ")}`:"";info.textContent=`${String(ghost?.node_label||"")} ${context} · ${scope}${roles} · ${location} · ${at?new Date(at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"?"}`.trim();const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();void restoreMonitorTrashedConversation(ghost,restore);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorTrashRecord(ghost.conversation_key),140);});row.append(info);if(source==="list")appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);container.append(row);}};
+  const renderTrashRows=(source,container)=>{const records=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")===source).sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));for(const ghost of records){const row=document.createElement("div");row.className="monitor-closed-conversation-row monitor-trash-record-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost),at=Number(ghost?.trashed_at_ms||0),scope=String(ghost?.network_name||"미소속"),roles=Array.isArray(ghost?.role_tags)&&ghost.role_tags.length?` · ${ghost.role_tags.join(", ")}`:"";info.textContent=`${String(ghost?.node_label||"")} ${context} · ${scope}${roles} · ${location} · ${at?new Date(at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"?"}`.trim();const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";restore.textContent="복구";restore.addEventListener("click",(e)=>{e.stopPropagation();void restoreMonitorTrashedConversation(ghost,restore);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(e)=>{e.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorTrashRecord(ghost.conversation_key),140);});row.append(info);if(source==="list")appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);container.append(row);}return records.length;};
 
   const thumbRecords=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")==="thumbnail");
 
@@ -5112,7 +5113,9 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
 
   }
 
-  renderTrashRows("thumbnail",thumbScroll);thumbPane.append(thumbScroll);
+  if(thumbRecords.length)renderTrashRows("thumbnail",thumbScroll);
+  else if(!desktopRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="삭제된 데스크 없음";thumbScroll.append(empty);}
+  thumbPane.append(thumbScroll);
 
   let listRecords=[...monitorTrashRecords.values()].filter((x)=>String(x?.trash_source||"list")!=="thumbnail").sort((a,b)=>Number(b?.trashed_at_ms||0)-Number(a?.trashed_at_ms||0));
 
@@ -5138,7 +5141,7 @@ function renderMonitorClosedConversationRecoveryPanel(state) {
 
   if(listRecords.length)renderTrashRows("list",convoScroll);
 
-  if(!visibleItems.length&&!listRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="비어 있음";convoScroll.append(empty);}
+  if(!visibleItems.length&&!listRecords.length){const empty=document.createElement("div");empty.className="monitor-trash-empty";empty.textContent="삭제된 노드 없음";convoScroll.append(empty);}
 
   for(const ghost of visibleItems){const row=document.createElement("div");row.className="monitor-closed-conversation-row";row.dataset.recoveryKey=String(ghost?.conversation_key||"");const info=document.createElement("span");info.className="monitor-closed-conversation-info";const location=monitorClosedConversationPreviousLocation(ghost),context=monitorClosedConversationContextTitle(ghost);const created=Number(ghost?.first_seen_ms||0),closed=Number(ghost?.closed_at_ms||ghost?.captured_at_ms||0),rec=monitorContextTitleRecord(String(ghost?.conversation_key||""));const displayContext=(rec.manual_locked&&rec.manual_title)||rec.context_title||ghost.meaningful_title||context;const source=ghost.recovery_source||"일반 종료";const fmtDateTime=(ms)=>ms?new Date(ms).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).replace(/\. /g,".").replace(/\.$/,""):"?";const fmtTime=(ms)=>ms?new Date(ms).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hour12:false}):"?";const sameDay=created&&closed&&new Date(created).toDateString()===new Date(closed).toDateString();info.textContent=`${location} · ${displayContext} · ${fmtDateTime(created)} - ${sameDay?fmtTime(closed):fmtDateTime(closed)}`;info.title=`이전 위치 ${location} · ${source}`;const restore=document.createElement("button");restore.type="button";restore.className="monitor-detached-restore";const restoring=monitorDetachedRestorePending.has(String(ghost?.conversation_key||""));restore.textContent=restoring?"복구 중…":"복구";restore.disabled=restoring;restore.addEventListener("click",(event)=>{event.stopPropagation();void restoreMonitorDetachedTask(ghost,restore);});row.addEventListener("contextmenu",(event)=>{event.preventDefault();event.stopPropagation();const existing=row.querySelector(".monitor-recovery-details");if(existing){existing.remove();return;}panel.querySelectorAll(".monitor-recovery-details").forEach((node)=>node.remove());const detail=document.createElement("div");detail.className="monitor-recovery-details";const key=String(ghost?.conversation_key||"");for(const [label,value] of [["이전 위치",location],["제목",displayContext],["복구 출처",source],["생성",created?new Date(created).toLocaleString("ko-KR"):"알 수 없음"],["소멸",closed?new Date(closed).toLocaleString("ko-KR"):"알 수 없음"],["프로필",ghost.profile_id||"-"],["conversationKey",key||"-"]]){const line=document.createElement("div");line.className="monitor-recovery-detail-line";const k=document.createElement("b");k.textContent=label;const v=document.createElement("span");v.textContent=String(value);line.append(k,v);detail.append(line);}row.append(detail);});const del=document.createElement("button");del.type="button";del.className="monitor-trash-delete";del.textContent="삭제";del.addEventListener("click",(event)=>{event.stopPropagation();row.classList.add("monitor-trash-removing");setTimeout(()=>deleteMonitorRecoveryRecord(ghost.conversation_key),140);});row.append(info);appendRecoveryStatus(row,ghost.conversation_key,ghost);row.append(restore,del);convoScroll.append(row);}
 
@@ -6570,6 +6573,7 @@ let monitorBctNodeReorderPending = false;
 let monitorBctCurrentSessionWindowHwnd = new Map();
 let monitorBctDisplayWindowHwnd = new Map();
 let monitorBctBrowserWindows = new Map();
+let monitorBctLastDisplayResolution = null;
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorBctWindowNodeRefreshPending = false;
 // A reload can observe cached RCC rows while Chrome/RCC complete their own
@@ -10823,6 +10827,29 @@ function monitorThumbnailProjectionRuntimeDiagnostics() {
       rendered:Number(visual?.dataset?.monitorNodeOverlayRendered)||0,
     };
   });
+}
+function monitorDisplayJoinRuntimeDiagnostics() {
+  const now = Date.now();
+  const compactGeometry = (item) => ({
+    id: String(item?.windowId ?? item?.hwnd ?? ""),
+    left: Number(item?.left), top: Number(item?.top),
+    width: Number(item?.width), height: Number(item?.height),
+    state: String(item?.state || ""), iconic: item?.iconic === true,
+    age_ms: Math.max(0, now - Number(item?.observedAt || item?.at || 0)),
+  });
+  return {
+    bindings: [...(monitorBctLastDisplayResolution?.bindings || [])].slice(0, 12).map((item) => ({
+      lineage: String(item?.lineage || ""), hwnd: String(item?.hwnd || ""),
+      match: String(item?.matchKind || ""), scale: Number(item?.geometryScale) || 0,
+    })),
+    rejected: [...(monitorBctLastDisplayResolution?.rejected || [])].slice(0, 12).map((item) => ({
+      lineage: String(item?.lineage || ""), reason: String(item?.reason || ""),
+    })),
+    browser_windows: [...monitorBctBrowserWindows.values()].slice(0, 12).map(compactGeometry),
+    native_chrome_windows: [...monitorWindowDesktopLocations.values()]
+      .filter((item) => String(item?.className || "") === "Chrome_WidgetWin_1")
+      .slice(0, 12).map(compactGeometry),
+  };
 }
 function scheduleMonitorThumbnailProjectionReceipt() {
   const diagnostics=monitorThumbnailProjectionRuntimeDiagnostics();

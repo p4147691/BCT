@@ -182,7 +182,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "bct_run_check", "bct_run_plan", "bct_network_set",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "bct_run_check", "bct_run_plan", "bct_network_set",
                             "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_set_chain_execution_plan", "bct_get_chain_execution_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
@@ -202,7 +202,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     )
                     self.assertEqual(
                         expected_capability_tools | {
-                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "bct_run_check", "bct_run_plan", "bct_network_set",
+                            "bct_capabilities", "bct_status", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "bct_run_check", "bct_run_plan", "bct_network_set",
                             "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_set_chain_execution_plan", "bct_get_chain_execution_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
@@ -273,6 +273,14 @@ class MCPIntegrationTests(unittest.TestCase):
                     created = await session.call_tool("bct_work_create", work_arguments)
                     repeated = await session.call_tool("bct_work_create", work_arguments)
                     self.assertFalse(created.isError)
+                    scanned = await session.call_tool("scan_code_blocks", {
+                        "work_id": "mcp-read-work", "max_files": 20, "max_blocks": 100,
+                    })
+                    self.assertFalse(scanned.isError, scanned)
+                    self.assertEqual("bct.code-block-scan.v1", scanned.structuredContent["schema"])
+                    self.assertTrue(scanned.structuredContent["read_only"])
+                    self.assertIn("block_map", scanned.structuredContent)
+                    self.assertIn("block_cards", scanned.structuredContent)
                     self.assertFalse(created.structuredContent["duplicate"])
                     self.assertTrue(repeated.structuredContent["duplicate"])
                     denied_context = await session.call_tool("bct_check_network", {

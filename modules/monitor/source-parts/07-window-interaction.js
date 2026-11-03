@@ -3,6 +3,7 @@
 let monitorThumbnailProjectionPublishSignature="";
 let monitorThumbnailProjectionPublishTimer=0;
 /*@@MONITOR_FUNCTION:monitorThumbnailProjectionRuntimeDiagnostics@@*/
+/*@@MONITOR_FUNCTION:monitorDisplayJoinRuntimeDiagnostics@@*/
 /*@@MONITOR_FUNCTION:scheduleMonitorThumbnailProjectionReceipt@@*/
 /*@@MONITOR_FUNCTION:syncMonitorAllDesktopThumbnailNodeBadges@@*/
 
