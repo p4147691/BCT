@@ -545,6 +545,10 @@ class DurableWatchLedger:
                 return False
             context["observed_response_turn_key"] = turn_key
             context["observed_response_sha"] = response_sha
+            # A bound terminal response supersedes every WATCHING diagnostic.
+            # Keep later instruction-parse failures visible by allowing the
+            # caller to record NEXT_INSTRUCTION_UNAVAILABLE after this bind.
+            context.pop("watch_diagnostic_reason", None)
             updated = db.execute(
                 "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
                 "AND generation=? AND state='WATCHING' AND response_turn_id=?",
@@ -808,6 +812,13 @@ class DelayedSendMessageRunner:
         self.ledger.mark_result(watch, result.status)
         self.ledger.mark_alarm_result(watch, alarm, "CONSUMED")
         return result
+
+
+def watch_diagnostic_for_status(state: str, context: dict) -> str:
+    """Expose a watch rejection only while that watch can still be waiting."""
+    if state != "WATCHING" or not isinstance(context, dict):
+        return ""
+    return str(context.get("watch_diagnostic_reason") or "")
 
 
 

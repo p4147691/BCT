@@ -586,7 +586,9 @@ def build_mcp(
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ID_INVALID"}
         if action == "status":
-            from bct.delayed_send_message import DurableWatchLedger
+            from bct.delayed_send_message import (
+                DurableWatchLedger, watch_diagnostic_for_status,
+            )
             work=await asyncio.to_thread(bct.store.get_work,work_id)
             watch=await asyncio.to_thread(DurableWatchLedger(bct.store).get,task_id,generation)
             if watch is None:
@@ -611,7 +613,9 @@ def build_mcp(
                         "BOUND" if response_key else
                         "AWAITING_VERIFIED_RESPONSE" if watch["state"] == "WATCHING"
                         else "UNAVAILABLE"),
-                    "watch_diagnostic_reason": ctx.get("watch_diagnostic_reason", "")}
+                    "watch_diagnostic_reason": watch_diagnostic_for_status(
+                        str(watch["state"]), ctx,
+                    )}
         if action == "cancel":
             return await make_executor("browser")(
                 work_id,operation_id,{"command":"delayed-send-cancel",
