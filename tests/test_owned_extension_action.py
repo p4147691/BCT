@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -110,56 +111,47 @@ class OwnedExtensionActionTests(unittest.TestCase):
         self.assertEqual("rcc", result.evidence["target"])
 
     @patch("bct.features.owned_extension_action.subprocess.run")
-    @patch("bct.features.owned_extension_action.subprocess.Popen")
-    def test_monitor_requires_ack_and_verified_runtime(self, popen, run):
+    def test_monitor_requires_ack_and_verified_runtime(self, run):
         request = self.feature.prepare(
             work=self.work, arguments={"target": "monitor", "action": "reload"}
         )
         token_path = self.root / "monitor-live" / "extension" / ".reload-token"
-        class Observation:
-            returncode = 0
-            def poll(self): return None
-            def communicate(self, timeout=None):
-                return (("MONITOR_DEPLOYMENT_OBSERVED version="
-                         + request.arguments["version"]
-                         + " token=0123456789abcdef0123456789abcdef runtime=verified\n"), "")
-        def start(*args, **kwargs):
-            token_path.write_text("0123456789abcdef0123456789abcdef", encoding="utf-8")
-            return Observation()
-        popen.side_effect = start
-        run.return_value = subprocess.CompletedProcess(
-            [], 0, stdout='{"status":"PASS","effect_started":true,"queued":true}', stderr="",
-        )
-        result = self.feature.execute(request)
+        telemetry_path = self.root / "DesktopWindowMonitor" / "shared-runtime.json"
+        def dispatch(*args, **kwargs):
+            token = token_path.read_text(encoding="utf-8-sig").strip()
+            (token_path.parent / ".reload-ack").write_text(token, encoding="utf-8")
+            telemetry_path.parent.mkdir(parents=True, exist_ok=True)
+            telemetry_path.write_text(json.dumps({"__MONITOR_INSTANCE__:GOOGLE": {
+                "label": json.dumps({
+                    "manifest_version": request.arguments["version"],
+                    "reload_token": token,
+                    "seen_at_ms": 9999999999999,
+                })
+            }}), encoding="utf-8")
+            return subprocess.CompletedProcess(
+                [], 0, stdout='{"status":"PASS","effect_started":true,"queued":true}', stderr="",
+            )
+        run.side_effect = dispatch
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(self.root)}):
+            result = self.feature.execute(request)
         self.assertEqual(Outcome.APPLIED, result.outcome)
         self.assertTrue(result.evidence["reload_ack"])
-        observation_command = popen.call_args.args[0]
-        self.assertIn("Request-MonitorDeploymentCheck.ps1", observation_command[-3])
-        self.assertNotIn("chrome-extension://", " ".join(observation_command))
         dispatch_input = json.loads(run.call_args.kwargs["input"])
         self.assertEqual({"profile_root", "puppeteer_module"}, set(dispatch_input))
 
+    @patch("bct.features.owned_extension_action.time.sleep", return_value=None)
+    @patch("bct.features.owned_extension_action.time.monotonic", side_effect=[0.0, 31.0])
     @patch("bct.features.owned_extension_action.subprocess.run")
-    @patch("bct.features.owned_extension_action.subprocess.Popen")
-    def test_monitor_ack_timeout_is_unknown_and_not_retryable(self, popen, run):
+    def test_monitor_ack_timeout_is_unknown_and_not_retryable(self, run, monotonic, sleep):
         request = self.feature.prepare(
             work=self.work, arguments={"target": "monitor", "action": "reload"}
         )
-        token_path = self.root / "monitor-live" / "extension" / ".reload-token"
-        class Observation:
-            returncode = 1
-            def poll(self): return None
-            def communicate(self, timeout=None):
-                return ("", "Monitor deployment observation ACK timeout: abcdef")
-        def start(*args, **kwargs):
-            token_path.write_text("abcdef", encoding="utf-8")
-            return Observation()
-        popen.side_effect = start
         run.return_value = subprocess.CompletedProcess(
             [], 0, stdout='{"status":"PASS","effect_started":true,"queued":true}', stderr="",
         )
-        with self.assertRaises(UnknownEffectError):
-            self.feature.execute(request)
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(self.root)}):
+            with self.assertRaises(UnknownEffectError):
+                self.feature.execute(request)
 
 
 if __name__ == "__main__":
