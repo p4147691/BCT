@@ -176,6 +176,7 @@ let monitorBctWindowNodesCache = null;
 /*@@MONITOR_FUNCTION:observeMonitorBctNodeFirstSeen@@*/
 /*@@MONITOR_FUNCTION:monitorBctNodeObservedAgeText@@*/
 /*@@MONITOR_FUNCTION:monitorBctNodeBurdenScore@@*/
+/*@@MONITOR_FUNCTION:monitorBctNodeDetail@@*/
 /*@@MONITOR_FUNCTION:setMonitorBctNodeViewMode@@*/
 
 if (monitorBctNodeViewModeControl) {
