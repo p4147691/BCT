@@ -70,6 +70,10 @@ function node(className = "") {
       child.parentElement = this;
       this.children.push(child);
     },
+    addEventListener(name, listener) {
+      this.listeners ||= {};
+      this.listeners[name] = listener;
+    },
     replaceChildren(...children) {
       for (const child of this.children) child.parentElement = null;
       this.children = children;
@@ -225,4 +229,23 @@ assert.equal(removed.candidates, 1);
 assert.equal(removed.rendered, 1,
   "Native geometry without a rendered image must not synthesize a label");
 
-console.log("PASS: simple top-left number labels keep tab order, wrap without truncation, and stay above physical HWND thumbnails");
+let acknowledged = "";
+const stateProjection = context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  numbersForHwnd: () => [{ token: 7, tabId: 701 }, { token: 8, tabId: 702 }, { token: 9, tabId: 703 }],
+  statusForTab: (tabId) => tabId === 701
+    ? { kind: "working", conversationKey: "c7", label: "처리 중" }
+    : tabId === 702
+      ? { kind: "ready", conversationKey: "c8", label: "입력 가능" }
+      : { kind: "abnormal", conversationKey: "c9", label: "상태 확인 필요" },
+  onAcknowledge: (report) => { acknowledged = report.conversationKey; },
+});
+assert.equal(stateProjection.rendered, 1);
+const reports = layer.querySelectorAll(".monitor-thumbnail-state-report");
+assert.deepEqual(reports.map((item) => item.textContent), [">", "Ⅱ", "ㅁ"],
+  "thumbnail states must use the requested working, ready, and abnormal marks");
+assert.equal(reports[0].listeners, undefined, "working is display-only");
+reports[1].listeners.click({ preventDefault() {}, stopPropagation() {} });
+assert.equal(acknowledged, "c8", "ready report is dismissed through its exact conversation acknowledgement");
+
+console.log("PASS: node labels and translucent > / Ⅱ / ㅁ reports remain readable and terminal reports acknowledge exactly");

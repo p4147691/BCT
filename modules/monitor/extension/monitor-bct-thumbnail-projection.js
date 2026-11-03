@@ -58,7 +58,7 @@
     if (!layer) {
       layer = documentObject.createElement("span");
       layer.className = "monitor-thumbnail-node-overlay";
-      layer.setAttribute("aria-hidden", "true");
+      layer.setAttribute("aria-hidden", "false");
     }
     layer.replaceChildren();
     container.append(layer);
@@ -141,6 +141,38 @@
       badge.replaceChildren(...labelParts);
       badge.title = `BCT 노드 ${tokens.map((item) => item.token).join(" / ")}`;
       windowLayer.append(badge);
+
+      const statusForTab = typeof options.statusForTab === "function"
+        ? options.statusForTab
+        : () => null;
+      const reports = documentObject.createElement("span");
+      reports.className = "monitor-thumbnail-state-reports";
+      for (const item of tokens) {
+        const report = statusForTab(item.tabId, hwnd, item.token, state);
+        const kind = text(report?.kind).toLowerCase();
+        if (!['working', 'ready', 'abnormal'].includes(kind)) continue;
+        const interactive = kind !== "working" && typeof options.onAcknowledge === "function";
+        const marker = documentObject.createElement(interactive ? "button" : "span");
+        marker.className = `monitor-thumbnail-state-report is-${kind}`;
+        marker.dataset.hwnd = hwnd;
+        if (item.tabId != null) marker.dataset.tabId = String(item.tabId);
+        marker.dataset.nodeToken = item.token;
+        marker.textContent = kind === "working" ? ">" : kind === "abnormal" ? "ㅁ" : "Ⅱ";
+        const nodeName = item.token === "?" ? "새 노드" : `N${item.token}`;
+        marker.title = `${nodeName} · ${text(report?.label) || (kind === "working" ? "처리 중" : kind === "abnormal" ? "상태 확인 필요" : "입력 가능")}${interactive ? " · 클릭하여 확인" : ""}`;
+        marker.setAttribute("aria-label", marker.title);
+        if (interactive) {
+          marker.type = "button";
+          marker.addEventListener("pointerdown", (event) => event.stopPropagation());
+          marker.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            options.onAcknowledge(report, { hwnd, tabId: item.tabId, token: item.token });
+          });
+        }
+        reports.append(marker);
+      }
+      if (reports.children.length) windowLayer.append(reports);
       layer.append(windowLayer);
       rendered += 1;
     }
