@@ -7,6 +7,7 @@ const path = require("node:path");
 const root = path.join(__dirname, "..");
 const nativeSource = fs.readFileSync(path.join(root, "native", "src", "MonitorDesktopHost.cs"), "utf8");
 const background = fs.readFileSync(path.join(root, "extension", "background.js"), "utf8");
+const tabClose = fs.readFileSync(path.join(root, "extension", "browser", "tab-close-adapter.js"), "utf8");
 const monitor = fs.readFileSync(path.join(root, "extension", "monitor.js"), "utf8");
 
 assert.match(nativeSource, /recoverBctCore/);
@@ -23,10 +24,12 @@ assert.match(background, /monitor-refresh-exact-chatgpt-tab/);
 assert.match(background, /MonitorBcToolRefreshAdapter\.create\(chrome\)/);
 assert.match(background, /monitorBcToolRefreshAdapter\.refreshExactChatTab\(message\)/);
 assert.match(background, /monitor-close-chat-tab/);
-assert.match(background, /monitor\.browser\.tab-close\.receipt\.v1/);
-assert.match(background, /observedConversationKey!==expectedConversationKey/);
-assert.match(background, /await chrome\.tabs\.remove\(tabId\)/);
-assert.match(background, /status:"CLOSED",verified:true,closed:true/);
+assert.match(background, /MonitorTabCloseAdapter\.create\(chrome\)/);
+assert.match(background, /monitorTabCloseAdapter\.close\(message\)/);
+assert.match(tabClose, /monitor\.browser\.tab-close\.receipt\.v1/);
+assert.match(tabClose, /MONITOR_TAB_CLOSE_IDENTITY_MISMATCH/);
+assert.match(tabClose, /await chromeApi\.tabs\.remove\(target\.tabId\)/);
+assert.match(tabClose, /receipt\("CLOSED", target, \{ verified: true, closed: true \}\)/);
 
 assert.match(monitor, /monitorBctShell\.reloadRcc\(instanceId\)/);
 assert.match(monitor, /node\.generating === true/);

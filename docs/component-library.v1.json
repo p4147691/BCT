@@ -1,0 +1,169 @@
+{
+  "schema": "bct.component-library.v1",
+  "version": 1,
+  "coverage": "curated-not-exhaustive",
+  "kind_definitions": {
+    "primitive": "One smallest verified read, effect, or atomic state transition.",
+    "module": "A reusable capability with a stable input and output contract.",
+    "partial_recipe": "A reusable ordered composition that still needs a caller decision or another recipe.",
+    "full_recipe": "A user-visible end-to-end composition with completion and recovery boundaries."
+  },
+  "maturity_definitions": {
+    "isolated": "Own source file and focused contract test.",
+    "bounded": "Clear callable boundary but shares a larger source module.",
+    "embedded": "Reusable function boundary still embedded in a large recipe module."
+  },
+  "components": [
+    {
+      "id": "browser.close_exact_chat_tab",
+      "kind": "primitive",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "modules/monitor/extension/browser/tab-close-adapter.js", "symbol": "create().close"}
+      ],
+      "contract": "Exact tab, window, and conversation identity to CLOSED, NOT_APPLIED, or UNKNOWN receipt.",
+      "effects": ["chrome.tabs.remove"],
+      "safety": ["identity-before-effect", "postcondition-readback", "unknown-no-retry"],
+      "used_by": ["monitor.trash_conversation"]
+    },
+    {
+      "id": "bct.close_tab",
+      "kind": "module",
+      "maturity": "bounded",
+      "implementation": [
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_close_tab"}
+      ],
+      "contract": "Public exact close-conversation-tab entry with one durable BCT operation receipt.",
+      "effects": ["rcc.close-conversation-tab"],
+      "safety": ["work-bound", "exact-rcc-identity", "unknown-no-retry"],
+      "used_by": ["node.reset"]
+    },
+    {
+      "id": "monitor.capture_trash_record",
+      "kind": "module",
+      "maturity": "embedded",
+      "implementation": [
+        {"path": "modules/monitor/domains/desktop-lifecycle.js", "symbol": "monitorTrashRecordForKey"}
+      ],
+      "contract": "Capture recoverable node, conversation, network, role, task, memo, desktop, and slot context without closing a tab.",
+      "effects": [],
+      "safety": ["node-number-is-history-only"],
+      "used_by": ["monitor.trash_conversation"]
+    },
+    {
+      "id": "monitor.restore_node_metadata",
+      "kind": "module",
+      "maturity": "embedded",
+      "implementation": [
+        {"path": "modules/monitor/domains/desktop-lifecycle.js", "symbol": "restoreMonitorTrashMetadata"}
+      ],
+      "contract": "Restore scope, memo, task, and non-conflicting roles to a newly observed node.",
+      "effects": ["conversation-network-update"],
+      "safety": ["manager-unique-per-network", "supervisor-global-unique", "new-node-number"],
+      "used_by": ["monitor.restore_conversation"]
+    },
+    {
+      "id": "monitor.trash_conversation",
+      "kind": "partial_recipe",
+      "maturity": "embedded",
+      "implementation": [
+        {"path": "modules/monitor/domains/desktop-lifecycle.js", "symbol": "trashMonitorConversationKeys"}
+      ],
+      "contract": "Capture recovery context, close the exact real tab, retire its display label, release coordination roles, and retain a recovery record.",
+      "effects": ["browser.close_exact_chat_tab", "node-label-retire", "conversation-network-update", "chrome.storage.local"],
+      "safety": ["no-visual-only-delete", "close-must-be-verified", "failed-close-keeps-node"],
+      "used_by": ["monitor.node_trash"]
+    },
+    {
+      "id": "monitor.restore_conversation",
+      "kind": "partial_recipe",
+      "maturity": "embedded",
+      "implementation": [
+        {"path": "modules/monitor/domains/desktop-lifecycle.js", "symbol": "restoreMonitorTrashedConversation"}
+      ],
+      "contract": "Open or reconcile the saved conversation, assign a fresh node number, and restore only non-conflicting metadata.",
+      "effects": ["browser.open-or-reconcile-chat", "node-label-retire", "conversation-network-update", "chrome.storage.local"],
+      "safety": ["already-open-no-duplicate", "role-conflicts-removed", "recovery-record-kept-on-partial-failure"],
+      "used_by": ["monitor.recovery_bin"]
+    },
+    {
+      "id": "node.check",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.check"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_check_node"}
+      ],
+      "contract": "Read and durably normalize one exact node observation without mutation.",
+      "effects": ["recovery-check-record"],
+      "safety": ["unknown-is-not-failure", "bct-does-not-decide-replacement"],
+      "used_by": ["node.recovery"]
+    },
+    {
+      "id": "node.recheck",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.check"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_recheck_node"}
+      ],
+      "contract": "Compare a later observation with the same durable recovery case.",
+      "effects": ["recovery-check-record"],
+      "safety": ["same-case", "same-conversation"],
+      "used_by": ["node.recovery"]
+    },
+    {
+      "id": "node.pause",
+      "kind": "primitive",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.pause"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_pause_node"}
+      ],
+      "contract": "Atomically fence new continuation delivery to one exact node while preserving evidence.",
+      "effects": ["recovery-case-state", "delayed-watch-state"],
+      "safety": ["receipts-preserved", "unknown-preserved", "plans-preserved"],
+      "used_by": ["node.replace", "node.reset", "node.recovery"]
+    },
+    {
+      "id": "node.replace",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.prepare_replace"},
+        {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.commit_replace"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_replace_node"}
+      ],
+      "contract": "Prepare an AI-chosen successor, send inheritance through Chain Message, and commit only after watch proof.",
+      "effects": ["chain-message", "conversation-network-transfer", "recovery-case-state"],
+      "safety": ["bct-never-chooses-successor", "atomic-conflict-rollback", "successor-watch-required"],
+      "used_by": ["node.recovery"]
+    },
+    {
+      "id": "node.reset",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.prepare_reset"},
+        {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.finish_reset"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_reset_node"}
+      ],
+      "contract": "Save a recoverable snapshot, close once through the exact browser contract, and preserve terminal result.",
+      "effects": ["recovery-snapshot", "bct.close_tab", "recovery-case-state"],
+      "safety": ["snapshot-before-close", "unknown-no-retry", "old-node-number-not-restored"],
+      "used_by": ["node.recovery"]
+    },
+    {
+      "id": "node.recovery",
+      "kind": "full_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "docs/PRIMITIVE_MODULES_V1.md", "symbol": "Node Recovery"}
+      ],
+      "contract": "Check, recheck, pause, replace when needed, then reset the old node without duplicate external effects.",
+      "effects": ["node.check", "node.recheck", "node.pause", "node.replace", "node.reset"],
+      "safety": ["manager-judgment-between-stages", "unknown-no-resend", "bounded-old-node-cleanup"],
+      "used_by": []
+    }
+  ]
+}

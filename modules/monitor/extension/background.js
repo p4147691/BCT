@@ -1,9 +1,11 @@
 importScripts("browser/tab-focus-adapter.js");
 importScripts("browser/bc-tool-refresh-adapter.js");
+importScripts("browser/tab-close-adapter.js");
 
 const HOST_NAME = "com.pas40.desktop_window_monitor";
 const monitorTabFocusAdapter = globalThis.MonitorTabFocusAdapter.create(chrome);
 const monitorBcToolRefreshAdapter = globalThis.MonitorBcToolRefreshAdapter.create(chrome);
+const monitorTabCloseAdapter = globalThis.MonitorTabCloseAdapter.create(chrome);
 
 
 
@@ -2345,39 +2347,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "monitor-close-chat-tab") {
-    const tabId=Number(message?.tabId);
-    const expectedWindowId=Number(message?.windowId);
-    const expectedConversationKey=String(message?.conversationKey||"").trim().toLowerCase();
-    const receipt=(values={})=>({schema:"monitor.browser.tab-close.receipt.v1",...values});
-    if(!Number.isInteger(tabId)||tabId<0||!expectedConversationKey){
-      sendResponse(receipt({ok:false,status:"NOT_APPLIED",error:"exact tab and conversation identity required"}));
-      return false;
-    }
-    chrome.tabs.get(tabId).then(async(tab)=>{
-      const observedConversationKey=monitorConversationKeyFromUrl(tab?.url||"");
-      if(!tab||observedConversationKey!==expectedConversationKey||
-          (Number.isInteger(expectedWindowId)&&expectedWindowId>=0&&Number(tab.windowId)!==expectedWindowId)){
-        sendResponse(receipt({ok:false,status:"NOT_APPLIED",tabId,windowId:tab?.windowId??null,
-          conversationKey:observedConversationKey,error:"exact tab identity mismatch"}));
-        return;
-      }
-      try{
-        await chrome.tabs.remove(tabId);
-        let stillOpen=null;
-        try{stillOpen=await chrome.tabs.get(tabId);}catch(_){stillOpen=null;}
-        if(stillOpen){
-          sendResponse(receipt({ok:false,status:"UNKNOWN",tabId,windowId:tab.windowId,
-            conversationKey:expectedConversationKey,error:"tab removal could not be verified"}));
-          return;
-        }
-        sendResponse(receipt({ok:true,status:"CLOSED",verified:true,closed:true,tabId,
-          windowId:tab.windowId,conversationKey:expectedConversationKey}));
-      }catch(error){
-        sendResponse(receipt({ok:false,status:"NOT_APPLIED",tabId,windowId:tab.windowId,
-          conversationKey:expectedConversationKey,error:error?.message||String(error)}));
-      }
-    }).catch((error)=>sendResponse(receipt({ok:false,status:"NOT_APPLIED",tabId,
-      conversationKey:expectedConversationKey,error:error?.message||String(error)})));
+    monitorTabCloseAdapter.close(message).then(sendResponse).catch((error) => sendResponse({
+      schema: "monitor.browser.tab-close.receipt.v1",
+      ok: false,
+      status: "UNKNOWN",
+      error: error?.message || String(error),
+    }));
     return true;
   }
 
