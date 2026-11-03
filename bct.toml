@@ -162,6 +162,7 @@ files = [
   "src/bct/github_manager_wake.py",
   "src/bct/github_inbox_autofollow.py",
   "src/bct/delayed_send_message.py",
+  "src/bct/node_recovery.py",
   "src/bct/continuation_primitives.py",
   "src/bct/chain_direction.py",
   "src/bct/chain_execution_plan.py",
