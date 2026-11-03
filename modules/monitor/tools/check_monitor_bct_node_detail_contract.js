@@ -56,7 +56,7 @@ const minimized = context.monitorBctNodeDetail({
   reasoningLevel: "xhigh",
   telemetry: { js_heap_used_mb: 800, js_heap_limit_mb: 1000, rendered_chars: 900000 },
 }, 0, { iconic: true });
-assert.equal(minimized.text, "D1 − Work E 120분 높음");
+assert.equal(minimized.text, "D1 _ Work E 120분 높음");
 assert.match(minimized.title, /위치 D1 · 최소화됨 · 종류 Work · 추론 xhigh · 관측 120분 · 부담 높음/);
 
 const ordinary = context.monitorBctNodeDetail({

@@ -3,7 +3,7 @@
 Generated from the deployed runtime. Do not edit by hand.
 
 - source: `D:\BCT\source\modules\monitor\extension\monitor.js`
-- sha256: `c1329e5e4615cf9c20fc011fddb2390a791a3c1c65419f3a3ced26fc725a7c7a`
+- sha256: `ecf0171815eb9bace2921717b1e4ce27931fbbff1408c4345154bfed5ca68914`
 - line count: 15318
 - declared functions: 548
 
