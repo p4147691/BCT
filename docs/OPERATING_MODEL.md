@@ -27,19 +27,28 @@ exact bytes와 SHA를 회수해 baseline commit으로 만든 뒤, 이후 변경�
 1. 격리 worktree에서 수정한다.
 2. focused test와 관련 회귀 테스트를 통과한다.
 3. local commit을 만든다.
-4. 로컬 main 계약으로 통합한 뒤 exact commit을 GitHub에 fast-forward 게시하고 CI를 수행한다.
-5. exact main SHA의 release를 배포한다.
-6. 필요한 구성요소만 최소 재시작한다.
-7. source SHA, loaded release, health와 실제 기능을 확인한다.
+4. 변경의 영향 경로를 `LOCAL_FIRST` 또는 `GUARDED_CI_FIRST`로 기록한다.
+5. `GUARDED_CI_FIRST`이면 이 지점에서 exact 후보 CI·리뷰를 먼저 통과한다.
+6. 로컬 main 계약으로 통합하고 exact main SHA를 검증한다.
+7. `LOCAL_FIRST`이면 exact main release를 먼저 배포·E2E한 뒤 GitHub에
+   fast-forward 게시하고 CI 감사를 받는다. `GUARDED_CI_FIRST`이면 검증된
+   exact main을 배포·E2E한 뒤 GitHub main에 게시하고 main CI 감사를 받는다.
+8. 필요한 구성요소만 최소 재시작하고 source SHA, loaded release, health,
+   실제 기능, 게시 및 CI 상태를 서로 구분해 확인한다.
 
-7단계까지 끝나지 않은 작업은 `SOURCE_COMPLETE`가 아니라 `INTEGRATION_PENDING` 또는
+8단계까지 끝나지 않은 작업은 `SOURCE_COMPLETE`가 아니라 `INTEGRATION_PENDING` 또는
 `LIVE_ACCEPTANCE_PENDING`이다. 사용자가 소스·로컬·Runtime 중 무엇을 기준으로 삼을지
 매번 선택하지 않는다.
 
 GitHub 또는 네트워크가 일시적으로 사용할 수 없어도 로컬 수정·테스트·main 통합과, 이미
 검증된 로컬 commit의 복구 가능한 표시 전용 LIVE 수락은 계속할 수 있다. 이 경우 게시 상태를
-`SYNC_PENDING`으로 기록한다. Core/RCC/Native Host·프로토콜·DB/Claim·메시지 효과는 exact-head
-CI 성공 뒤 배포한다.
+`SYNC_PENDING`으로 기록한다. Core/RCC/Native Host·프로토콜·DB/Claim/UNKNOWN·메시지 효과,
+credential/security와 배포기 변경은 `GUARDED_CI_FIRST`이며 exact-head CI 성공 뒤 배포한다.
+그 밖의 작업도 영향이나 rollback을 분류하지 못했으면 임의로 `LOCAL_FIRST`로 낮추지 않는다.
+
+`LOCAL_FIRST`는 CI를 생략한다는 뜻이 아니다. 로컬 정본과 실제 LIVE 수락을 먼저 끝내고
+GitHub main CI를 후속 감사로 수행한다는 뜻이다. `GUARDED_CI_FIRST`는 CI 성공만으로 LIVE를
+증명한다는 뜻이 아니라, 위험한 후보를 설치하기 전에 한 번 더 막는 사전 게이트다.
 
 ## 자유로운 작업과 단계별 안전
 
