@@ -155,6 +155,47 @@ class DelayedSendMessageTests(unittest.TestCase):
                 "NEXT_INSTRUCTION_UNAVAILABLE", context["watch_terminal_reason"],
             )
 
+    def test_confirmed_not_applied_return_requires_manager_without_unknown(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = DurableWatchLedger(Store(Path(root) / "state.sqlite"))
+            ledger.reserve(Watch("task-1", 1, "worker-uuid", "", ""))
+            watch = ledger.bind(
+                Watch("task-1", 1, "worker-uuid", "", ""),
+                send_receipt="send-1", response_turn_id="turn-1",
+            )
+            runner = DelayedSendMessageRunner(
+                ledger,
+                read_response=lambda _: {
+                    "conversation_key": "worker-uuid",
+                    "response_turn_id": "turn-1",
+                    "response_text": "Done.\nNEXT TASK — MANAGER: Review once.",
+                    "response_complete": True,
+                    "input_ready": True,
+                    "response_turn_key": "rcc-turn-1",
+                    "response_sha256": "digest-1",
+                },
+                send_message=lambda *_: (_ for _ in ()).throw(
+                    ValueError("DELAYED_RCC_SEND_NOT_APPLIED")
+                ),
+            )
+            result = runner.poll_once(
+                watch, manager_conversation_key="manager-uuid",
+            )
+            self.assertEqual("MANAGER_DECISION_REQUIRED", result.status)
+            saved = ledger.get("task-1", 1)
+            self.assertEqual("MANAGER_DECISION_REQUIRED", saved["state"])
+            context = __import__("json").loads(saved["context_json"])
+            self.assertEqual(
+                "CONTINUATION_SEND_NOT_APPLIED",
+                context["watch_terminal_reason"],
+            )
+            self.assertEqual("MANAGER", context["continuation_route"])
+            self.assertEqual(
+                "NOT_APPLIED",
+                ledger.get_alarm(watch, "conversation.response_ready")["state"],
+            )
+            self.assertEqual([], ledger.watching())
+
     def test_terminal_turn_clears_stale_watching_diagnostic(self):
         with tempfile.TemporaryDirectory() as root:
             ledger=DurableWatchLedger(Store(Path(root)/"state.sqlite"))

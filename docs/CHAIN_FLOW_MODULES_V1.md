@@ -172,6 +172,13 @@ Worker가 지시를 따르지 않아 마커를 누락하거나, 서로 충돌하
 `NEXT_INSTRUCTION_UNAVAILABLE`로 A의 검토를 기다린다. 불확실한 전송의
 자동 재전송도 없다.
 
+응답 해석과 결정 기록까지 끝났지만 후속 SELF/MANAGER 전송이 RCC에서
+확정적으로 `NOT_APPLIED`이면, 이는 효과가 불확실한 `UNKNOWN`이 아니다.
+watch는 `MANAGER_DECISION_REQUIRED` / `CONTINUATION_SEND_NOT_APPLIED`로
+종료하고 정확한 응답·결정·미적용 alarm을 보존한다. BCT는 재전송하지 않으며
+A가 보존된 응답을 검토해 새 메시지를 작성한다. 외부 효과가 실제로
+불명확한 경우에만 기존 `UNKNOWN` 경계를 유지한다.
+
 ## 전체 레시피
 
 ### 전체 Chain Message 레시피

@@ -715,7 +715,7 @@ class DurableWatchLedger:
             return updated.rowcount == 1
 
     def mark_alarm_result(self, watch: Watch, alarm: Alarm, state: str) -> None:
-        if state not in {"CONSUMED", "UNKNOWN"}:
+        if state not in {"CONSUMED", "NOT_APPLIED", "UNKNOWN"}:
             raise ValueError("CONTINUATION_ALARM_RESULT_INVALID")
         with self.store.transaction() as db:
             db.execute(
@@ -723,6 +723,48 @@ class DurableWatchLedger:
                 "AND generation=? AND kind=? AND state='CONSUMING'",
                 (state, watch.task_id, watch.generation, alarm.kind.value),
             )
+
+    def mark_send_not_applied(
+        self, watch: Watch, alarm: Alarm, *, route: str
+    ) -> bool:
+        """Preserve a completed response when continuation send had no effect.
+
+        RCC ``NOT_APPLIED`` is confirmed absence of an external send, not an
+        ambiguous effect.  End the watch for Manager review without retrying or
+        degrading the exact response and decision evidence to ``UNKNOWN``.
+        """
+        if route not in {"SELF", "MANAGER"}:
+            raise ValueError("CONTINUATION_ROUTE_INVALID")
+        with self.store.transaction() as db:
+            found = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='DISPATCHING' AND response_turn_id=?",
+                (watch.task_id, watch.generation, watch.response_turn_id),
+            ).fetchone()
+            if found is None:
+                return False
+            context = json.loads(found["context_json"] or "{}")
+            context["watch_terminal_reason"] = "CONTINUATION_SEND_NOT_APPLIED"
+            context["manager_action"] = "REVIEW_RESPONSE_AND_AUTHOR_NEXT_MESSAGE"
+            context["continuation_route"] = route
+            updated = db.execute(
+                "UPDATE delayed_send_watches SET state='MANAGER_DECISION_REQUIRED',"
+                "context_json=? WHERE task_id=? AND generation=? "
+                "AND state='DISPATCHING' AND response_turn_id=?",
+                (json.dumps(context, sort_keys=True), watch.task_id,
+                 watch.generation, watch.response_turn_id),
+            )
+            if updated.rowcount != 1:
+                return False
+            alarm_updated = db.execute(
+                "UPDATE continuation_alarms SET state='NOT_APPLIED' "
+                "WHERE task_id=? AND generation=? AND kind=? "
+                "AND state='CONSUMING'",
+                (watch.task_id, watch.generation, alarm.kind.value),
+            )
+            if alarm_updated.rowcount != 1:
+                raise ValueError("CONTINUATION_ALARM_NOT_CONSUMING")
+            return True
 
     def get_alarm(self, watch: Watch, kind: str) -> dict | None:
         with self.store._readonly() as db:
@@ -917,6 +959,16 @@ class DelayedSendMessageRunner:
                 register_next_watch=self.ledger.reserve,
                 send_message=self.send_message,
             )
+        except ValueError as exc:
+            if str(exc) == "DELAYED_RCC_SEND_NOT_APPLIED":
+                if self.ledger.mark_send_not_applied(
+                    watch, alarm, route=decision.route.value,
+                ):
+                    return Continuation("MANAGER_DECISION_REQUIRED")
+                return Continuation("WAITING_WATCH")
+            self.ledger.mark_result(watch, "UNKNOWN")
+            self.ledger.mark_alarm_result(watch, alarm, "UNKNOWN")
+            raise
         except Exception:
             self.ledger.mark_result(watch, "UNKNOWN")
             self.ledger.mark_alarm_result(watch, alarm, "UNKNOWN")
