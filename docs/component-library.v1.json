@@ -49,6 +49,42 @@
       ]
     },
     {
+      "id": "bct.task_message",
+      "kind": "full_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/task_message.py",
+          "symbol": "prepare_task_message_instruction"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "bct_task_message"
+        },
+        {
+          "path": "src/bct/delayed_send_message.py",
+          "symbol": "DurableWatchLedger.enforce_generation_limit"
+        }
+      ],
+      "contract": "One Manager-authored task is sent to one exact Worker. The Worker may select bounded SELF continuation for small safe BB steps; completion, blockage, risk, missing instruction, send failure or the Core-enforced generation limit returns control to Manager or requires Manager review.",
+      "effects": [
+        "exact-rcc-worker-send",
+        "durable-response-watch",
+        "bounded-self-or-manager-send"
+      ],
+      "safety": [
+        "active-owned-browser-work-required",
+        "prearm-before-send",
+        "exact-manager-and-worker-conversations",
+        "max-12-worker-rounds",
+        "requested-and-effective-route-evidence",
+        "no-automatic-manager-election",
+        "no-multi-worker-orchestration",
+        "unknown-no-replay"
+      ],
+      "used_by": []
+    },
+    {
       "id": "monitor.node_token_visual",
       "kind": "module",
       "maturity": "isolated",

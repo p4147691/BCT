@@ -293,6 +293,40 @@ class DurableWatchLedger:
                  watch.response_turn_id,watch.source_send_receipt,"RESERVED"))
             return True
 
+    def reserve_next(self, parent: Watch, next_watch: Watch) -> bool:
+        """Reserve BB's next turn and carry only recipe invariants forward."""
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT * FROM delayed_send_watches WHERE task_id=? AND generation=?",
+                (next_watch.task_id, next_watch.generation),
+            ).fetchone()
+            if current is not None:
+                if (current["conversation_key"] != next_watch.conversation_key
+                    or current["response_turn_id"] != next_watch.response_turn_id
+                    or current["source_send_receipt"] != next_watch.source_send_receipt):
+                    raise ValueError("DELAYED_WATCH_CONFLICT")
+                return False
+            row = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=?",
+                (parent.task_id, parent.generation),
+            ).fetchone()
+            parent_context = json.loads(row["context_json"] or "{}") if row else {}
+            carried = {
+                key: parent_context[key] for key in
+                ("recipe", "max_generations") if key in parent_context
+            }
+            db.execute(
+                "INSERT INTO delayed_send_watches("
+                "task_id,generation,conversation_key,response_turn_id,"
+                "source_send_receipt,state,context_json) VALUES(?,?,?,?,?,?,?)",
+                (next_watch.task_id, next_watch.generation,
+                 next_watch.conversation_key, next_watch.response_turn_id,
+                 next_watch.source_send_receipt, "RESERVED",
+                 json.dumps(carried, sort_keys=True)),
+            )
+        return True
+
     def prearm(self, watch: Watch) -> bool:
         """Worker registers a one-turn watch before beginning its task."""
         if not watch.response_turn_id or not watch.source_send_receipt:
@@ -311,10 +345,13 @@ class DurableWatchLedger:
                     manager_instance_id: str, baseline: dict,
                     registration_receipt: str, planned_send_operation_id: str = "",
                     planned_send_text: str = "",
-                    exclusive_conversation_watch: bool = False) -> dict:
+                    exclusive_conversation_watch: bool = False,
+                    max_generations: int = 0) -> dict:
         """Worker prearms one current response, reusing any reserved next turn."""
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id):
             raise ValueError("DELAYED_TASK_ID_INVALID")
+        if type(max_generations) is not int or not 0 <= max_generations <= 12:
+            raise ValueError("DELAYED_MAX_GENERATIONS_INVALID")
         planned = bool(planned_send_operation_id or planned_send_text)
         if planned:
             if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", planned_send_operation_id)
@@ -341,7 +378,10 @@ class DurableWatchLedger:
             "baseline_sha": str(baseline.get("responseSha256") or ""),
             "source_user_turn_key": str(baseline.get("latestUserTurnKey") or ""),
             "source_user_sha256": str(baseline.get("latestUserSha256") or ""),
+            "max_generations": max_generations,
         }
+        if max_generations:
+            context["recipe"] = "task-message-v1"
         if not isinstance(context["baseline_count"], int) or context["baseline_count"] < 0:
             raise ValueError("DELAYED_RCC_TURN_COUNT_UNAVAILABLE")
         if planned:
@@ -398,7 +438,8 @@ class DurableWatchLedger:
                     raise ValueError("DELAYED_CONTEXT_CHANGED")
                 context.update({
                     key: old[key] for key in
-                    ("source_send_operation_id", "source_send_sha256") if key in old
+                    ("source_send_operation_id", "source_send_sha256",
+                     "recipe", "max_generations") if key in old
                 })
                 db.execute(
                     "UPDATE delayed_send_watches SET response_turn_id=?, "
@@ -414,6 +455,7 @@ class DurableWatchLedger:
                 if (existing["conversation_key"] != conversation_key
                         or old.get("work_id") != work_id
                         or old.get("manager_conversation_key") != manager_conversation_key
+                    or old.get("max_generations", 0) != max_generations
                     or (planned and (old.get("source_send_operation_id") != planned_send_operation_id
                                      or old.get("source_send_sha256") != context["source_send_sha256"]))):
                     raise ValueError("DELAYED_CONTEXT_CHANGED")
@@ -804,6 +846,44 @@ class DurableWatchLedger:
             )
             return True
 
+    def enforce_generation_limit(
+        self, watch: Watch, decision: ContinuationDecision
+    ) -> ContinuationDecision:
+        """Return BB to Manager at the durable recipe limit, preserving B's request."""
+        current = self.get(watch.task_id, watch.generation)
+        context = json.loads(current["context_json"] or "{}") if current else {}
+        maximum = context.get("max_generations", 0)
+        if (type(maximum) is not int or maximum <= 0
+                or decision.route != ContinuationRoute.SELF
+                or watch.generation < maximum):
+            return decision
+        effective = ContinuationDecision(
+            route=ContinuationRoute.MANAGER,
+            payload=(
+                f"BB 반복 한도({maximum}회)에 도달했습니다. Worker가 요청한 다음 "
+                f"작업은 실행하지 않고 Manager 판단으로 반환합니다.\n\n"
+                f"Worker의 다음 제안:\n{decision.payload}"
+            ),
+        )
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (watch.task_id, watch.generation),
+            ).fetchone()
+            if row is not None:
+                saved = json.loads(row["context_json"] or "{}")
+                saved["requested_continuation_route"] = decision.route.value
+                saved["effective_continuation_route"] = effective.route.value
+                saved["continuation_route_override_reason"] = "BB_LIMIT_REACHED"
+                db.execute(
+                    "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                    "AND generation=? AND state='WATCHING'",
+                    (json.dumps(saved, sort_keys=True), watch.task_id,
+                     watch.generation),
+                )
+        return effective
+
     def read_execution_context(self, *, task_id: str, generation: int | None = None) -> dict | None:
         """Read one execution's durable resume context without routing it.
 
@@ -943,6 +1023,7 @@ class DelayedSendMessageRunner:
                     watch, reason="NEXT_INSTRUCTION_UNAVAILABLE"):
                 return Continuation("MANAGER_DECISION_REQUIRED")
             return Continuation("WAITING_WATCH")
+        decision = self.ledger.enforce_generation_limit(watch, decision)
         self.ledger.record_alarm(watch, alarm)
         self.ledger.record_decision(
             watch, decision, response_turn_key=turn_key, response_sha256=response_sha,
@@ -956,7 +1037,9 @@ class DelayedSendMessageRunner:
             result = dispatch_delayed_send_message(
                 watch=watch, alarm=alarm, decision=decision,
                 manager_conversation_key=manager_conversation_key,
-                register_next_watch=self.ledger.reserve,
+                register_next_watch=lambda next_watch: self.ledger.reserve_next(
+                    watch, next_watch,
+                ),
                 send_message=self.send_message,
             )
         except ValueError as exc:
@@ -1105,7 +1188,8 @@ class DelayedSendService:
                manager_instance_id: str, operation_id: str,
                planned_send_operation_id: str = "",
                planned_send_text: str = "",
-               exclusive_conversation_watch: bool = False) -> dict:
+               exclusive_conversation_watch: bool = False,
+               max_generations: int = 0) -> dict:
         # Later SELF turns need only the stable Task ID; use the prior binding.
         from bct.integrations.rcc import validate_instance_id
         previous = self.ledger.latest_binding(task_id)
@@ -1153,6 +1237,7 @@ class DelayedSendService:
             planned_send_operation_id=planned_send_operation_id,
             planned_send_text=planned_send_text,
             exclusive_conversation_watch=exclusive_conversation_watch,
+            max_generations=max_generations,
         )
 
     def _response_for(self, row: dict) -> dict:

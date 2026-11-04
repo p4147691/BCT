@@ -601,7 +601,7 @@ class BrowserFeature:
         allowed = {"command","task_id","instance_id","conversation_key",
                    "manager_conversation_key","manager_instance_id",
                    "planned_send_operation_id", "planned_send_text",
-                   "exclusive_conversation_watch"}
+                   "exclusive_conversation_watch", "max_generations"}
         if set(arguments) - allowed:
             raise PreconditionError("DELAYED_ARGUMENT_NOT_ALLOWED")
         task_id = str(arguments.get("task_id") or "").strip()
@@ -612,6 +612,9 @@ class BrowserFeature:
         exclusive = arguments.get("exclusive_conversation_watch", False)
         if type(exclusive) is not bool:
             raise PreconditionError("DELAYED_EXCLUSIVE_WATCH_INVALID")
+        max_generations = arguments.get("max_generations", 0)
+        if type(max_generations) is not int or not 0 <= max_generations <= 12:
+            raise PreconditionError("DELAYED_MAX_GENERATIONS_INVALID")
         if bool(plan_id) != bool(plan_text) or (plan_id and
                 (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", plan_id)
                  or len(plan_text) > 12000)):
@@ -626,7 +629,8 @@ class BrowserFeature:
                  arguments.get("manager_conversation_key") or "").strip().lower(),
              "manager_instance_id":str(arguments.get("manager_instance_id") or "").strip(),
              "planned_send_operation_id":plan_id,"planned_send_text":plan_text,
-             "exclusive_conversation_watch":exclusive},
+             "exclusive_conversation_watch":exclusive,
+             "max_generations":max_generations},
             (f"delayed-send:{work.work_id}:{task_id}",),
             {"command":"delayed-send-message","mutating":True},
         )
@@ -1905,6 +1909,7 @@ class BrowserFeature:
                     planned_send_text=values.get("planned_send_text",""),
                     exclusive_conversation_watch=values.get(
                         "exclusive_conversation_watch", False),
+                    max_generations=values.get("max_generations", 0),
                 )
             except (ValueError, KeyError) as exc:
                 raise PreconditionError(str(exc)) from exc

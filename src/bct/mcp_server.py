@@ -25,6 +25,7 @@ from .conversation_network import (
 from .core.models import Principal, Work
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view, STATUS_SCOPES
+from .task_message import prepare_task_message_instruction
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -691,6 +692,7 @@ def build_mcp(
         target_conversation_key: str = "", origin_conversation_key: str = "",
         origin_instance_id: str = "",
         continuation_output_contract: str = "none",
+        max_generations: int = 0,
     ) -> dict[str, Any]:
         if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
@@ -726,6 +728,14 @@ def build_mcp(
                         else "UNAVAILABLE"),
                     "terminal_reason":ctx.get("watch_terminal_reason", ""),
                     "manager_action":ctx.get("manager_action", "") if manager_decision else "",
+                    "recipe":ctx.get("recipe", ""),
+                    "max_generations":ctx.get("max_generations", 0),
+                    "requested_continuation_route":ctx.get(
+                        "requested_continuation_route", ""),
+                    "effective_continuation_route":ctx.get(
+                        "effective_continuation_route", ""),
+                    "continuation_route_override_reason":ctx.get(
+                        "continuation_route_override_reason", ""),
                     "watch_diagnostic_reason": watch_diagnostic_for_status(
                         str(watch["state"]), ctx,
                     )}
@@ -807,6 +817,8 @@ def build_mcp(
             )
         except ValueError as exc:
             return {"status":"INVALID_REQUEST","reason":str(exc)}
+        if type(max_generations) is not int or not 0 <= max_generations <= 12:
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_MAX_GENERATIONS_INVALID"}
         outgoing_instruction = prepared_text["instruction"]
         if action == "preflight":
             return {
@@ -819,6 +831,7 @@ def build_mcp(
                     if prepared_text["output_contract_appended"] else "",
                 "outgoing_instruction_sha256": prepared_text["instruction_sha256"],
                 "outgoing_instruction_characters": prepared_text["instruction_characters"],
+                "max_generations": max_generations,
                 "effects": "NONE_READ_ONLY", "authorizes_send": False,
             }
         if chain_direction_id:
@@ -846,7 +859,8 @@ def build_mcp(
              "manager_instance_id":origin_instance or instance_id,
              "planned_send_operation_id":send_id,
              "planned_send_text":outgoing_instruction,
-             "exclusive_conversation_watch":True})
+             "exclusive_conversation_watch":True,
+             "max_generations":max_generations})
         if armed.get("outcome") != "APPLIED":
             return {"status":"PREARM_FAILED","prearm":armed}
         sent=await make_executor("browser")(
@@ -866,8 +880,68 @@ def build_mcp(
                 task_id=task_id, operation_id=operation_id,
             )
         return {"status":"WATCHING","task_id":task_id,"generation":generation,
+                "max_generations":max_generations,
                 "prearm":armed,"send":sent,
                 **({"chain_direction": direction} if direction is not None else {})}
+
+    @server.tool(
+        name="bct_task_message",
+        description=(
+            "Run one bounded Manager-to-Worker Task Message. It composes the exact "
+            "Chain Message send/watch with explicit SELF/MANAGER continuation and a "
+            "Core-enforced max_rounds limit. Worker may repeat small BB steps; BCT "
+            "returns to Manager on BA or when the limit is reached. This is a 1:1 "
+            "message recipe, not multi-worker orchestration and not automatic Manager election."
+        ),
+        structured_output=True,
+    )
+    async def bct_task_message(
+        work_id: str, task_id: str, operation_id: str,
+        action: str = "start",
+        instance_id: str = "", session_id: str = "",
+        target_tab_id: int = 0, target_window_id: int = 0,
+        target_conversation_key: str = "",
+        origin_conversation_key: str = "", origin_instance_id: str = "",
+        instruction: str = "", acceptance: str = "",
+        bb_rule: str = "Continue only with one safe, bounded next step.",
+        manager_return_rule: str = "Return on completion, blockage, risk, or need for judgment.",
+        max_rounds: int = 4, generation: int = 1,
+    ) -> dict[str, Any]:
+        if action in {"status", "cancel"}:
+            result = await bct_chain_message(
+                work_id=work_id, task_id=task_id, operation_id=operation_id,
+                action=action, generation=generation,
+            )
+            return {
+                **result, "recipe": "Task Message",
+                "max_rounds": result.get("max_generations", max_rounds),
+            }
+        if action not in {"start", "preflight"}:
+            return {"status":"INVALID_REQUEST","reason":"TASK_MESSAGE_ACTION_INVALID"}
+        try:
+            prepared = prepare_task_message_instruction(
+                instruction, acceptance=acceptance, bb_rule=bb_rule,
+                manager_return_rule=manager_return_rule, max_rounds=max_rounds,
+            )
+        except ValueError as exc:
+            return {"status":"INVALID_REQUEST","reason":str(exc)}
+        result = await bct_chain_message(
+            work_id=work_id, task_id=task_id, operation_id=operation_id,
+            action=action, instance_id=instance_id, session_id=session_id,
+            target_tab_id=target_tab_id, target_window_id=target_window_id,
+            target_conversation_key=target_conversation_key,
+            origin_conversation_key=origin_conversation_key,
+            origin_instance_id=origin_instance_id,
+            instruction=str(prepared["instruction"]), generation=generation,
+            continuation_output_contract="explicit-next-task-v1",
+            max_generations=max_rounds,
+        )
+        return {
+            **result,
+            "recipe": "Task Message",
+            "max_rounds": max_rounds,
+            "task_instruction_sha256": prepared["instruction_sha256"],
+        }
 
     @server.tool(
         name="bct_task_run",
