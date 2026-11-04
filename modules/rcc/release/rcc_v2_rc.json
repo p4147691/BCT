@@ -618,8 +618,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1967,
-        "sha256": "f181b6b26e7901287522989e63b4c43824bfb8c30ba178c4468a1bfaf96cb7f8"
+        "size": 1964,
+        "sha256": "c356ce6e9ee7faac2abdcc1042d9708c9ee1cf99ecc6a365f62bcd1283a7431f"
       },
       {
         "path": "browser/read_adapter.js",
@@ -703,8 +703,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 22448,
-        "sha256": "452971d17e87e4eddc57fcbe23452691cd80a9ad9f7f4349a4739736bdf5a050"
+        "size": 22445,
+        "sha256": "a0979805a0eee7255a683b08b3e8289cb8ebd2dfdaac50e1c843e92cef055420"
       },
       {
         "path": "content/conversation_rename.js",
@@ -768,8 +768,8 @@
       },
       {
         "path": "domain/endpoint_service.js",
-        "size": 9063,
-        "sha256": "3ee5a800fab839a9e582c610d13d759bb46a8a2e7e63c1ab52d965502422452e"
+        "size": 9384,
+        "sha256": "b25d04fefb436739bb23529cfca8d2e9ecd02a17e55c826af5252e9a0703bf41"
       },
       {
         "path": "domain/exact_tab_send_service.js",
@@ -828,8 +828,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1558,
-        "sha256": "d519fdac98ddeb03ad914ee122498ce30de7bd5344f5fdb5beb7bc9d2057bd92"
+        "size": 1555,
+        "sha256": "30430045f47e5037a98bec47dc7b119eba8344ea62ba2287447d3d90b5a68ee6"
       },
       {
         "path": "network/directory.js",
@@ -892,6 +892,6 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "4cd89e02cf89e84c6c34e3055c2682908c1ee76bdb62675c36e3c30d41d7b1c3"
+    "aggregateSha256": "e9bbe36c8b9ddae0de4899d05b363392ad98d58f1d894817d49b3519c9ab720e"
   }
 }
