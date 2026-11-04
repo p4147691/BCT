@@ -67,8 +67,9 @@ sys.exit(0 if reply == 6 else 2)
         raise PreconditionError("LOCAL_DELETE_CONFIRMATION_TOO_LARGE")
     try:
         process = subprocess.run(
-            [sys.executable, "-I", "-c", child_code],
-            input=message, text=True, capture_output=True, timeout=120,
+            [sys.executable, "-I", "-X", "utf8", "-c", child_code],
+            input=message, text=True, encoding="utf-8", errors="replace",
+            capture_output=True, timeout=120,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (subprocess.TimeoutExpired, OSError) as exc:

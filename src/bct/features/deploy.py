@@ -1014,7 +1014,8 @@ class DeployFeature:
         values = request.arguments
         source = subprocess.run(
             ["git", "-C", str(DeployFeature.RCC_SOURCE_ROOT), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=10, check=False,
         )
         if source.returncode or source.stdout.strip().lower() != values["source_head"]:
             raise PreconditionError("RCC_INSTALL_CURRENT_SOURCE_SHA_CHANGED")
