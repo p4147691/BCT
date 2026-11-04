@@ -41,11 +41,18 @@ assert.ok((publish.match(/Invoke-MonitorStructureGate/g) || []).length >= 3,
   "publish must run the dependency gate before and after its manifest write");
 assert.match(publish, /ExpectedInstalledPayloadSha256/,
   "source-to-installed publication must require an exact installed payload guard");
+assert.match(publish, /ExpectedInstalledToolsSha256/,
+  "source-to-installed publication must guard the installed operational tools");
 assert.match(publish, /Assert-MonitorInstalledGuard/);
+assert.match(publish, /Assert-MonitorInstalledToolsGuard/);
 assert.match(publish, /Move-Item -LiteralPath \$targetExt -Destination \$backupPath/,
   "external publication must preserve the prior complete extension directory");
 assert.match(publish, /Move-Item -LiteralPath \$stageExt -Destination \$targetExt/,
   "external publication must cut over one coherent staged extension directory");
+assert.match(publish, /Move-Item -LiteralPath \$targetTools -Destination \$backupToolsPath/,
+  "external publication must preserve the prior operational tools directory");
+assert.match(publish, /Move-Item -LiteralPath \$stageTools -Destination \$targetTools/,
+  "external publication must install tools matching the extension candidate");
 assert.match(publish, /Test-MonitorExtensionCandidate/,
   "the staged and installed candidate must be syntax/load-graph checked");
 assert.match(structure, /monitor_ui_layout_dependency_contract_broken/);

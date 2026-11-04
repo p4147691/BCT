@@ -20,6 +20,10 @@ function name, installed path, or raw command. Unknown keys fail closed.
   token every two seconds and invokes its existing `monitor-reload-extension`
   message only when the gate-published token changes. Ordinary Chat therefore
   does not need DevTools, an extension URL, or a focused Monitor window.
+  Guarded external Monitor publication installs the matching operational
+  `tools` directory beside the extension and backs both directories up. This
+  keeps the installed pre-reload checker on the same source revision as the
+  payload it validates instead of letting a stale checker reject a newer UI.
 - RCC delegates to the existing `BrowserFeature` `reload-extension` operation.
   Exact instance identity, idle proof, active Delivery fencing, durable receipt,
   and UNKNOWN no-retry behavior remain unchanged.

@@ -5,7 +5,8 @@ param(
     [switch]$WaitForObservation,
     [string]$InstalledRoot = '',
     [string]$ExpectedInstalledPayloadSha256 = '',
-    [string]$ExpectedInstalledVersion = ''
+    [string]$ExpectedInstalledVersion = '',
+    [string]$ExpectedInstalledToolsSha256 = ''
 )
 
 # Publish either this exact source tree in place, or install it into a separately
@@ -15,6 +16,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $sourceRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $sourceExt = Join-Path $sourceRoot 'extension'
+$sourceTools = Join-Path $sourceRoot 'tools'
 $checkerPath = Join-Path $sourceRoot 'tools\check_monitor_structure.py'
 $runtimeTelemetryPath = Join-Path $env:LOCALAPPDATA 'DesktopWindowMonitor\shared-runtime.json'
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
@@ -73,6 +75,22 @@ function Get-MonitorExtensionPayloadSha256([string]$ExtensionPath) {
     # Windows PowerShell 5.1/.NET Framework has no static SHA256.HashData.
     # Use the compatible instance API so the guarded installer works on the
     # same Windows host that runs the Monitor.
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant())
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
+function Get-MonitorDirectorySha256([string]$DirectoryPath) {
+    $resolved = (Resolve-Path -LiteralPath $DirectoryPath).Path.TrimEnd('\')
+    $rows = foreach ($file in Get-ChildItem -LiteralPath $resolved -Recurse -File | Sort-Object FullName) {
+        $relative = $file.FullName.Substring($resolved.Length).TrimStart('\').Replace('\', '/')
+        $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+        "$relative`0$hash"
+    }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($rows -join "`n"))
     $sha256 = [Security.Cryptography.SHA256]::Create()
     try {
         return ([BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant())
@@ -150,6 +168,17 @@ function Assert-MonitorInstalledGuard([string]$TargetExt, [string]$ExpectedVersi
     return $observedPayload
 }
 
+function Assert-MonitorInstalledToolsGuard([string]$TargetTools, [string]$ExpectedPayload) {
+    if (!(Test-Path -LiteralPath $TargetTools -PathType Container)) {
+        throw "Installed Monitor tools directory not found: $TargetTools"
+    }
+    $observedPayload = Get-MonitorDirectorySha256 $TargetTools
+    if ($observedPayload -ne $ExpectedPayload.ToLowerInvariant()) {
+        throw "Installed Monitor tools guard failed: expected=$ExpectedPayload observed=$observedPayload"
+    }
+    return $observedPayload
+}
+
 Invoke-MonitorStructureGate
 
 # Prevent publishing an extension whose file and control Native Messaging
@@ -166,8 +195,9 @@ if ($LASTEXITCODE -ne 0) {
 $externalInstall = ![string]::IsNullOrWhiteSpace($InstalledRoot)
 if ($externalInstall) {
     if ([string]::IsNullOrWhiteSpace($ExpectedInstalledPayloadSha256) -or
-        [string]::IsNullOrWhiteSpace($ExpectedInstalledVersion)) {
-        throw 'External Monitor installation requires ExpectedInstalledPayloadSha256 and ExpectedInstalledVersion'
+        [string]::IsNullOrWhiteSpace($ExpectedInstalledVersion) -or
+        [string]::IsNullOrWhiteSpace($ExpectedInstalledToolsSha256)) {
+        throw 'External Monitor installation requires ExpectedInstalledPayloadSha256, ExpectedInstalledVersion, and ExpectedInstalledToolsSha256'
     }
     $targetRoot = (Resolve-Path -LiteralPath $InstalledRoot).Path
     if ($targetRoot -eq $sourceRoot) { throw 'InstalledRoot must be separate from the source root' }
@@ -176,6 +206,7 @@ if ($externalInstall) {
 }
 
 $targetExt = Join-Path $targetRoot 'extension'
+$targetTools = Join-Path $targetRoot 'tools'
 $manifestPath = Join-Path $targetExt 'manifest.json'
 $tokenPath = Join-Path $targetExt '.reload-token'
 $ackPath = Join-Path $targetExt '.reload-ack'
@@ -186,8 +217,10 @@ if (!(Test-Path -LiteralPath $targetExt -PathType Container)) {
 $currentVersion = [string]((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).version)
 $nextVersion = Get-MonitorNextVersion $currentVersion
 $observedInstalledPayload = ''
+$observedInstalledToolsPayload = ''
 if ($externalInstall) {
     $observedInstalledPayload = Assert-MonitorInstalledGuard $targetExt $ExpectedInstalledVersion $ExpectedInstalledPayloadSha256
+    $observedInstalledToolsPayload = Assert-MonitorInstalledToolsGuard $targetTools $ExpectedInstalledToolsSha256
     Assert-MonitorExtensionIdentity (Join-Path $sourceExt 'manifest.json') $manifestPath
 }
 
@@ -198,24 +231,31 @@ $action = if ($externalInstall) {
     "publish Monitor extension version $currentVersion -> $nextVersion"
 }
 if (!$PSCmdlet.ShouldProcess($actionTarget, $action)) {
-    $payloadText = if ($externalInstall) { " installedPayload=$observedInstalledPayload" } else { '' }
+    $payloadText = if ($externalInstall) { " installedPayload=$observedInstalledPayload installedToolsPayload=$observedInstalledToolsPayload" } else { '' }
     Write-Output "MONITOR_DEPLOYMENT_PREVIEW version=$nextVersion$payloadText"
     return
 }
 
 $backupPath = ''
+$backupToolsPath = ''
 $publishedPayload = ''
+$publishedToolsPayload = ''
 if ($externalInstall) {
     $stageRoot = Join-Path $targetRoot ('.monitor-deployment-stage-' + [guid]::NewGuid().ToString('N'))
     $stageExt = Join-Path $stageRoot 'extension'
+    $stageTools = Join-Path $stageRoot 'tools'
     $backupRoot = Join-Path $targetRoot 'backup'
     $backupName = 'monitor-live-pre-' + $nextVersion + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
     $backupPath = Join-Path $backupRoot $backupName
+    $backupToolsPath = $backupPath + '-tools'
     $failedCandidatePath = $backupPath + '-failed-candidate'
+    $failedToolsCandidatePath = $backupToolsPath + '-failed-candidate'
     $oldMoved = $false
+    $oldToolsMoved = $false
     try {
         New-Item -ItemType Directory -Path $stageRoot | Out-Null
         Copy-Item -LiteralPath $sourceExt -Destination $stageExt -Recurse
+        Copy-Item -LiteralPath $sourceTools -Destination $stageTools -Recurse
         Set-MonitorManifestVersion (Join-Path $stageExt 'manifest.json') $nextVersion
         foreach ($marker in @('.reload-token', '.reload-ack')) {
             $existingMarker = Join-Path $targetExt $marker
@@ -226,14 +266,21 @@ if ($externalInstall) {
         Assert-MonitorExtensionIdentity (Join-Path $sourceExt 'manifest.json') (Join-Path $stageExt 'manifest.json')
         Test-MonitorExtensionCandidate $stageExt
         $publishedPayload = Get-MonitorExtensionPayloadSha256 $stageExt
+        $publishedToolsPayload = Get-MonitorDirectorySha256 $stageTools
 
         # Recheck immediately before the directory swap so a concurrent writer
         # cannot be silently overwritten after the earlier inspection.
         [void](Assert-MonitorInstalledGuard $targetExt $ExpectedInstalledVersion $ExpectedInstalledPayloadSha256)
+        [void](Assert-MonitorInstalledToolsGuard $targetTools $ExpectedInstalledToolsSha256)
         New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
         if (Test-Path -LiteralPath $backupPath) { throw "Monitor backup path already exists: $backupPath" }
+        if (Test-Path -LiteralPath $backupToolsPath) { throw "Monitor tools backup path already exists: $backupToolsPath" }
+        Move-Item -LiteralPath $targetTools -Destination $backupToolsPath
+        $oldToolsMoved = $true
         Move-Item -LiteralPath $targetExt -Destination $backupPath
         $oldMoved = $true
+        Move-Item -LiteralPath $stageTools -Destination $targetTools
+        $oldToolsMoved = $false
         Move-Item -LiteralPath $stageExt -Destination $targetExt
         $oldMoved = $false
 
@@ -241,6 +288,10 @@ if ($externalInstall) {
         $installedPayload = Get-MonitorExtensionPayloadSha256 $targetExt
         if ($installedPayload -ne $publishedPayload) {
             throw "Installed Monitor candidate hash mismatch: expected=$publishedPayload observed=$installedPayload"
+        }
+        $installedToolsPayload = Get-MonitorDirectorySha256 $targetTools
+        if ($installedToolsPayload -ne $publishedToolsPayload) {
+            throw "Installed Monitor tools hash mismatch: expected=$publishedToolsPayload observed=$installedToolsPayload"
         }
     } catch {
         if ($oldMoved -or (!(Test-Path -LiteralPath $targetExt) -and (Test-Path -LiteralPath $backupPath))) {
@@ -251,6 +302,15 @@ if ($externalInstall) {
         } elseif ((Test-Path -LiteralPath $targetExt) -and (Test-Path -LiteralPath $backupPath)) {
             Move-Item -LiteralPath $targetExt -Destination $failedCandidatePath
             Move-Item -LiteralPath $backupPath -Destination $targetExt
+        }
+        if ($oldToolsMoved -or (!(Test-Path -LiteralPath $targetTools) -and (Test-Path -LiteralPath $backupToolsPath))) {
+            if (Test-Path -LiteralPath $targetTools) {
+                Move-Item -LiteralPath $targetTools -Destination $failedToolsCandidatePath
+            }
+            Move-Item -LiteralPath $backupToolsPath -Destination $targetTools
+        } elseif ((Test-Path -LiteralPath $targetTools) -and (Test-Path -LiteralPath $backupToolsPath)) {
+            Move-Item -LiteralPath $targetTools -Destination $failedToolsCandidatePath
+            Move-Item -LiteralPath $backupToolsPath -Destination $targetTools
         }
         throw
     } finally {
@@ -284,7 +344,8 @@ $token = [guid]::NewGuid().ToString('N')
 $publishedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 [System.IO.File]::WriteAllText($tokenPath, $token + [Environment]::NewLine, $utf8NoBom)
 $backupText = if ($backupPath) { " backup=$backupPath" } else { '' }
-Write-Output "MONITOR_DEPLOYMENT_PUBLISHED version=$nextVersion token=$token payload=$publishedPayload$backupText"
+$toolsText = if ($publishedToolsPayload) { " toolsPayload=$publishedToolsPayload" } else { '' }
+Write-Output "MONITOR_DEPLOYMENT_PUBLISHED version=$nextVersion token=$token payload=$publishedPayload$toolsText$backupText"
 
 if (!$WaitForObservation) {
     Write-Output 'MONITOR_DEPLOYMENT_PENDING reload the Monitor extension, then verify the running version and token acknowledgement.'
