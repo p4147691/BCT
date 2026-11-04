@@ -372,14 +372,8 @@ if (message.type === 'relay:readLatestAssistant') {
     const sourceUserUnit = node ? userUnits.filter((unit) =>
       !!(unit.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)
     ).at(-1) : null;
-    const latestUserTurnKey = latestUserUnit ? turnIdentity(
-      latestUserUnit.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]')
-      || latestUserUnit
-    ) : '';
-    const responseSourceUserTurnKey = sourceUserUnit ? turnIdentity(
-      sourceUserUnit.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]')
-      || sourceUserUnit
-    ) : '';
+    const latestUserTurnKey = latestUserUnit ? messageUnitIdentity(latestUserUnit) : '';
+    const responseSourceUserTurnKey = sourceUserUnit ? messageUnitIdentity(sourceUserUnit) : '';
     const latestUserSha256 = latestUserUnit
       ? await newChatTextSha256(messageUnitText(latestUserUnit, 'user')) : '';
     const responseSourceUserSha256 = sourceUserUnit
