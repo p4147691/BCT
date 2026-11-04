@@ -887,11 +887,10 @@ def build_mcp(
     @server.tool(
         name="bct_task_message",
         description=(
-            "Default public command for one Manager-to-Worker task. It composes the "
-            "Task Message envelope with exact Chain Message send/watch and explicit "
-            "SELF/MANAGER continuation. Use this for a new Worker assignment; use "
-            "bct_send_message only for a direct human/operational message that is not "
-            "a delegated task. The normal "
+            "Optional technical envelope for one already-planned Manager-to-Worker "
+            "instruction. It composes exact Chain Message send/watch with explicit "
+            "SELF/MANAGER continuation, but it does not replace A's user direction "
+            "or overall plan recorded by bct_set_direction. The normal "
             "max_rounds=0 policy has no fixed limit: Worker continues only while real "
             "progress and a safe next step exist, then returns to Manager on BA. A positive "
             "max_rounds is an explicit budget. This is a 1:1 message recipe, not the overall "
@@ -1019,13 +1018,10 @@ def build_mcp(
         name="bct_send_message",
         description=(
             "Send one exact message to an existing ChatGPT conversation or to a "
-            "BCT-created chat target. This is the direct-message exception for "
-            "human/Manager operating instructions, acknowledgements, or recovery "
-            "messages that are not a Worker task. For a new Manager-to-Worker task, "
-            "start with bct_task_message so Chain Message prearm, response watch, "
-            "receipt, and SELF/MANAGER routing are present. It preserves the existing "
-            "exact identity, receipt, and UNKNOWN-no-replay contract; internally it "
-            "uses the browser capability."
+            "BCT-created chat target. This is an exact-message transport component, "
+            "not A's user-direction or whole Chain Message recipe. It preserves the "
+            "existing exact identity, receipt, and UNKNOWN-no-replay contract; "
+            "internally it uses the browser capability."
         ),
         structured_output=True,
     )

@@ -81,7 +81,7 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("explicit-next-task-v1", result["continuation_output_contract"])
             self.assertEqual([], effects.calls)
 
-    async def test_catalogue_makes_task_message_the_default_worker_assignment(self):
+    async def test_catalogue_keeps_task_message_separate_from_user_direction(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
             store.create_work(Work(
@@ -90,8 +90,8 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
             ))
             mcp = build_mcp(SimpleNamespace(store=store, operations=NoEffects()), compact_catalogue=True)
             tools = {tool.name: tool for tool in await mcp.list_tools()}
-            self.assertIn("Default public command", tools["bct_task_message"].description)
-            self.assertIn("direct-message exception", tools["bct_send_message"].description)
+            self.assertIn("Optional technical envelope", tools["bct_task_message"].description)
+            self.assertIn("does not replace A's user direction", tools["bct_task_message"].description)
 
     async def test_public_recipe_defaults_to_progress_based_continuation(self):
         with tempfile.TemporaryDirectory() as root:
