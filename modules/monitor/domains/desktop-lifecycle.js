@@ -3010,7 +3010,10 @@ function updateDesktopUndoUi() {
 function updateMonitorBctNodePointerDrag(event) {
   const drag = monitorBctPointerDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
-  if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 7) return;
+  // A 600 ms long-press naturally drifts a few physical pixels. Seven pixels
+  // was small enough that a valid role hold frequently turned into a drag
+  // before release, especially on scaled Windows displays.
+  if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 12) return;
   if (!drag.active) {
     if (drag.roleTimer) globalThis.clearTimeout(drag.roleTimer);
     drag.roleTimer = 0;

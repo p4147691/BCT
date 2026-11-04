@@ -48,7 +48,7 @@ vm.runInContext([
 assert.equal(context.monitorBctNodeSurfaceText({ conversationKey: "" }), "New");
 assert.equal(context.monitorBctNodeSurfaceText({ conversationKey: "old", surfaceKind: "UNKNOWN" }), "Chat");
 assert.equal(context.monitorBctNodeSurfaceText({ conversationKey: "work", surfaceKind: "WORK" }), "Work");
-assert.equal(context.monitorBctNodeSurfaceText({ conversationKey: "codex", surfaceKind: "CODEX" }), "Codex");
+assert.equal(context.monitorBctNodeSurfaceText({ conversationKey: "codex", surfaceKind: "CODEX" }), "Chat");
 
 const minimized = context.monitorBctNodeDetail({
   conversationKey: "work-1",

@@ -109,8 +109,8 @@ function loadModule() {
     "node detail must wrap to at most two readable lines instead of clipping the burden field");
   assert.match(monitor, /if \(!String\(node\?\.conversationKey \|\| ""\)\.trim\(\)\) return "New";/,
     "a blank conversation node must be labeled New");
-  assert.match(monitor, /\|\| "Chat";/,
-    "an unresolved pre-observation conversation must use one stable Chat fallback rather than a Chat\/Work union");
+  assert.match(monitor, /return kind === "WORK" \? "Work" : "Chat";/,
+    "only positive Work evidence may override the stable Chat browser-surface fallback");
   assert.doesNotMatch(monitor, /\|\| "Chat\/Work";/,
     "node cards must never expose Chat\/Work as a final product kind");
   assert.match(monitor, /instant: "I"[\s\S]{0,260}low: "L"[\s\S]{0,260}medium: "M"[\s\S]{0,260}high: "H"[\s\S]{0,260}xhigh: "E"[\s\S]{0,260}pro: "P"/,
@@ -290,6 +290,8 @@ function loadModule() {
       updateConversationScope: async (_node, values) => { roleUpdates.push(values); return { ok: true }; },
     },
     refreshMonitorBctWindowNodes: async () => {},
+    renderMonitorBctWindowNodes: () => {},
+    syncMonitorAllDesktopThumbnailNodeBadges: () => {},
     recordMonitorBctRoleHistory: () => {},
     statusMessages: [],
     setMonitorStatus: (message) => { holdContext.statusMessages.push(message); },
@@ -303,13 +305,17 @@ function loadModule() {
   vm.runInContext(monitor.slice(holdStart, holdEnd), holdContext);
   const rowOn = managerRow();
   const baseNode = { conversationKey: "conv-1", nodeLabel: "N33", title: "대화", scopeName: "대화망 A", roleTags: ["Worker"] };
+  holdContext.monitorBctWindowNodesCache = [baseNode];
   holdContext.installMonitorBctRoleLongPress(rowOn, baseNode);
   assert.equal(rowOn.listeners.size, 0, "role persistence must not install a competing pointer handler");
   rowOn.monitorBctCommitRoleLongPress();
   assert.equal(rowOn.classes.has("is-manager"), true, "a released hold paints its committed role immediately");
   await Promise.resolve();
   await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(Array.from(roleUpdates[0].roleTags), ["Worker", "Manager"]);
+  assert.equal(holdContext.monitorBctWindowNodesCache[0]?.roleTags?.includes?.("Manager"), true,
+    "the persisted reply updates the visible cache before the full status refresh finishes");
   const rowOff = managerRow();
   holdContext.installMonitorBctRoleLongPress(rowOff, { ...baseNode, roleTags: ["Worker", "Manager"] });
   rowOff.monitorBctCommitRoleLongPress();

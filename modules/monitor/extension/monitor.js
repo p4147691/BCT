@@ -6729,11 +6729,10 @@ function monitorBctNodeLocationText(node, desktopPosition) {
 function monitorBctNodeSurfaceText(node) {
   if (!String(node?.conversationKey || "").trim()) return "New";
   const kind = String(node?.surfaceKind || "UNKNOWN").trim().toUpperCase();
-  // Old conversations can predate RCC surface observation.  The compact card
-  // still needs one usable product kind, not an unresolved union.  General
-  // Chat is the conservative default; later positive Work/Codex evidence
-  // replaces it on the next projection refresh.
-  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "Chat";
+  // The browser product surface is Chat or Work. CODEX_MARKERS describe who
+  // is directing an ordinary ChatGPT conversation; they do not turn that
+  // chatgpt.com/c page into a third browser surface.
+  return kind === "WORK" ? "Work" : "Chat";
 }
 function monitorBctNodeBurden(node) {
   const telemetry = node?.telemetry && typeof node.telemetry === "object" ? node.telemetry : {};
@@ -7073,9 +7072,26 @@ function installMonitorBctRoleLongPress(row, node) {
         true,
         2800,
       );
-      // The role color belongs to the persisted BCT snapshot, never to the
-      // hold gesture.  Refresh immediately after a successful write.
-      return refreshMonitorBctWindowNodes();
+      // Paint the exact persisted reply immediately. A complete BCT status
+      // refresh also scans RCC and physical window identity, so waiting for it
+      // made a simple Supervisor toggle look stuck for several seconds.
+      const nextSnapshot = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+        .map((candidate) => candidate?.conversationKey === node.conversationKey
+          ? Object.freeze({
+            ...candidate,
+            scopeId: String(saved?.scope_id ?? (role === "supervisor" ? "" : candidate.scopeId) ?? ""),
+            scopeName: String(saved?.scope_name ?? (role === "supervisor" ? "" : candidate.scopeName) ?? ""),
+            roleTags: Object.freeze(Array.isArray(saved?.role_tags) ? [...saved.role_tags] : [...nextTags]),
+            roleTagsSha256: String(saved?.role_tags_sha256 ?? candidate.roleTagsSha256 ?? ""),
+          })
+          : candidate);
+      monitorBctWindowNodesCache = nextSnapshot;
+      renderMonitorBctWindowNodes(nextSnapshot);
+      syncMonitorAllDesktopThumbnailNodeBadges();
+      // Reconcile in the background; it verifies rather than gates the saved
+      // role color and therefore cannot stretch the long-press interaction.
+      void refreshMonitorBctWindowNodes();
+      return saved;
     }).catch((error) => {
       row.classList.toggle(role === "supervisor" ? "is-supervisor" : "is-manager", hadRole);
       setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
@@ -7602,7 +7618,10 @@ function monitorBctNodeDropAt(clientX, clientY, draggedKey) {
 function updateMonitorBctNodePointerDrag(event) {
   const drag = monitorBctPointerDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
-  if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 7) return;
+  // A 600 ms long-press naturally drifts a few physical pixels. Seven pixels
+  // was small enough that a valid role hold frequently turned into a drag
+  // before release, especially on scaled Windows displays.
+  if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 12) return;
   if (!drag.active) {
     if (drag.roleTimer) globalThis.clearTimeout(drag.roleTimer);
     drag.roleTimer = 0;

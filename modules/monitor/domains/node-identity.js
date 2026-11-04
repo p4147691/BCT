@@ -590,11 +590,10 @@ function monitorBctNodeLocationText(node, desktopPosition) {
 function monitorBctNodeSurfaceText(node) {
   if (!String(node?.conversationKey || "").trim()) return "New";
   const kind = String(node?.surfaceKind || "UNKNOWN").trim().toUpperCase();
-  // Old conversations can predate RCC surface observation.  The compact card
-  // still needs one usable product kind, not an unresolved union.  General
-  // Chat is the conservative default; later positive Work/Codex evidence
-  // replaces it on the next projection refresh.
-  return ({ CHAT: "Chat", WORK: "Work", CODEX: "Codex" })[kind] || "Chat";
+  // The browser product surface is Chat or Work. CODEX_MARKERS describe who
+  // is directing an ordinary ChatGPT conversation; they do not turn that
+  // chatgpt.com/c page into a third browser surface.
+  return kind === "WORK" ? "Work" : "Chat";
 }
 //@@FN_END:monitorBctNodeSurfaceText
 

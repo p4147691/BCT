@@ -100,6 +100,14 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
 }
 {
  const f=fixture();let roles=0;
+ f.rows[0].monitorBctRoleHoldClass="monitor-bct-manager-hold";
+ f.rows[0].monitorBctCommitRoleLongPress=()=>{roles+=1;};
+ f.begin();f.timers[0].callback();f.move(38,50);f.up(38,50);
+ assert.equal(roles,1,"a held role gesture tolerates normal pointer drift on a scaled display");
+ assert.equal(f.commits.length,0,"sub-threshold hold drift must not become a reorder");f.clean();
+}
+{
+ const f=fixture();let roles=0;
  f.rows[0].monitorBctRoleHoldClass="monitor-bct-supervisor-hold";
  f.rows[0].monitorBctCommitRoleLongPress=()=>{roles+=1;};
  f.begin();f.timers[0].callback();f.move(120,55);f.up(120,55);
@@ -108,4 +116,4 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
 }
 assert.match(original,/if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/);
 assert.match(original,/document\.addEventListener\("pointerup", endMonitorBctNodePointerDrag, true\)/);
-console.log(JSON.stringify({status:"PASS",cases:13,coverage:"edge-preview-drop,visible-line-authority,quick-drag,blur,cancel,lostcapture,cleanup,stationary-role-hold,hold-to-drag"}));
+console.log(JSON.stringify({status:"PASS",cases:14,coverage:"edge-preview-drop,visible-line-authority,quick-drag,blur,cancel,lostcapture,cleanup,stationary-role-hold,hold-drift,hold-to-drag"}));

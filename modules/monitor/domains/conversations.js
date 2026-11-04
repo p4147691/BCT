@@ -319,9 +319,26 @@ function installMonitorBctRoleLongPress(row, node) {
         true,
         2800,
       );
-      // The role color belongs to the persisted BCT snapshot, never to the
-      // hold gesture.  Refresh immediately after a successful write.
-      return refreshMonitorBctWindowNodes();
+      // Paint the exact persisted reply immediately. A complete BCT status
+      // refresh also scans RCC and physical window identity, so waiting for it
+      // made a simple Supervisor toggle look stuck for several seconds.
+      const nextSnapshot = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+        .map((candidate) => candidate?.conversationKey === node.conversationKey
+          ? Object.freeze({
+            ...candidate,
+            scopeId: String(saved?.scope_id ?? (role === "supervisor" ? "" : candidate.scopeId) ?? ""),
+            scopeName: String(saved?.scope_name ?? (role === "supervisor" ? "" : candidate.scopeName) ?? ""),
+            roleTags: Object.freeze(Array.isArray(saved?.role_tags) ? [...saved.role_tags] : [...nextTags]),
+            roleTagsSha256: String(saved?.role_tags_sha256 ?? candidate.roleTagsSha256 ?? ""),
+          })
+          : candidate);
+      monitorBctWindowNodesCache = nextSnapshot;
+      renderMonitorBctWindowNodes(nextSnapshot);
+      syncMonitorAllDesktopThumbnailNodeBadges();
+      // Reconcile in the background; it verifies rather than gates the saved
+      // role color and therefore cannot stretch the long-press interaction.
+      void refreshMonitorBctWindowNodes();
+      return saved;
     }).catch((error) => {
       row.classList.toggle(role === "supervisor" ? "is-supervisor" : "is-manager", hadRole);
       setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
