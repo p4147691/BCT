@@ -3557,10 +3557,10 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-bct-scope-caret { width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid rgba(220,233,247,.72);transform-origin:50% 35%; }
 .monitor-bct-scope-heading[aria-expanded="false"] .monitor-bct-scope-caret { transform:rotate(-90deg); }
 .monitor-bct-node-row { grid-template-columns:29px minmax(0,1fr) 17px; }
-.monitor-bct-node-row.is-manager { background:linear-gradient(90deg,rgba(196,124,8,.58),rgba(238,169,20,.34));border-color:rgba(255,205,74,.92);box-shadow:inset 0 0 0 1px rgba(255,211,92,.28),0 0 10px rgba(235,155,20,.20); }
+.monitor-bct-node-row.is-manager { background:linear-gradient(90deg,rgba(196,124,8,.58),rgba(238,169,20,.34));border-color:rgba(255,255,255,.12);box-shadow:inset 0 1px 0 rgba(255,255,255,.04); }
 .monitor-bct-node-row.monitor-bct-manager-hold { box-shadow:inset 0 0 0 2px rgba(255,215,90,.42); }
-.monitor-bct-node-row.is-supervisor { background:linear-gradient(90deg,rgba(20,87,205,.58),rgba(25,115,235,.34));border-color:rgba(89,184,255,.92);box-shadow:inset 0 0 0 1px rgba(107,192,255,.28),0 0 10px rgba(37,125,245,.20); }
-.monitor-bct-node-row.is-manager.is-supervisor { background:rgba(69,103,156,.24);border-color:rgba(155,185,235,.58); }
+.monitor-bct-node-row.is-supervisor { background:linear-gradient(90deg,rgba(20,87,205,.58),rgba(25,115,235,.34));border-color:rgba(255,255,255,.12);box-shadow:inset 0 1px 0 rgba(255,255,255,.04); }
+.monitor-bct-node-row.is-manager.is-supervisor { background:rgba(69,103,156,.24);border-color:rgba(255,255,255,.12); }
 .monitor-bct-node-row.monitor-bct-supervisor-hold { box-shadow:inset 0 0 0 2px rgba(104,182,255,.42); }
 .monitor-bct-node-row.monitor-bct-role-save-pending { cursor:wait; box-shadow:inset 0 0 0 2px rgba(214,228,245,.30); }
 .monitor-bct-node-row.monitor-bct-node-stale { opacity:.62; }
@@ -3597,7 +3597,9 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-bct-node-row { cursor:grab;touch-action:none; }
 .monitor-bct-node-row.is-selected {
   border-color:rgba(255,181,71,.98)!important;
-  box-shadow:inset 0 0 0 1px rgba(255,215,90,.28),0 0 8px rgba(255,181,71,.30)!important;
+  outline:2px solid rgba(255,181,71,.98)!important;
+  outline-offset:1px!important;
+  box-shadow:0 0 10px rgba(255,181,71,.38)!important;
 }
 
 .monitor-bct-node-row.is-dragging { opacity:.34!important;cursor:grabbing!important; }

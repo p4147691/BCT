@@ -249,6 +249,12 @@ function loadModule() {
   assert.match(projection, /selectedNodeTabId/,
     "thumbnail selection must use the exact Chrome tabId, not a shared N? label");
   assert.match(css, /#ffd75a/);
+  assert.match(css, /\.monitor-bct-node-row\.is-manager\s*\{[^}]*border-color:rgba\(255,255,255,\.12\)/,
+    "Manager role color must stay in the fill while its resting border remains neutral");
+  assert.match(css, /\.monitor-bct-node-row\.is-supervisor\s*\{[^}]*border-color:rgba\(255,255,255,\.12\)/,
+    "Supervisor role color must stay in the fill while its resting border remains neutral");
+  assert.match(css, /\.monitor-bct-node-row\.is-selected\s*\{[^}]*outline:2px solid rgba\(255,181,71,\.98\)!important/,
+    "exact tab selection must use a separate strong outline rather than the role border");
   assert.match(css, /monitor-bct-node-target-highlighted[\s\S]{0,480}outline:3px solid rgba\(255,181,71,\.98\)!important/,
     "the exact selected browser window retains a visible thumbnail perimeter");
   assert.match(css, /monitor-bct-drop-before/);
@@ -265,12 +271,12 @@ function loadModule() {
   const supervisorRoleRule = css.match(/\.monitor-bct-node-row\.is-supervisor\s*\{([^}]+)\}/)?.[1] || "";
   assert.match(managerRoleRule, /linear-gradient\(90deg,rgba\(196,124,8,\.58\),rgba\(238,169,20,\.34\)\)/,
     "Manager amber must carry the same saturated gradient weight as Supervisor blue");
-  assert.match(managerRoleRule, /border-color:rgba\(255,205,74,\.92\)/,
-    "Manager and Supervisor role borders must have matching visual strength");
-  assert.match(managerRoleRule, /box-shadow:inset 0 0 0 1px[^;]+,0 0 10px/,
-    "Manager role contrast must remain visible without depending on selection state");
+  assert.match(managerRoleRule, /border-color:rgba\(255,255,255,\.12\)/,
+    "Manager role border must stay neutral so exact selection remains unambiguous");
+  assert.match(managerRoleRule, /box-shadow:inset 0 1px 0 rgba\(255,255,255,\.04\)/,
+    "Manager role contrast must come from its fill rather than a selection-like glow");
   assert.match(supervisorRoleRule, /linear-gradient\(90deg/);
-  assert.match(supervisorRoleRule, /border-color:rgba\(89,184,255,\.92\)/);
+  assert.match(supervisorRoleRule, /border-color:rgba\(255,255,255,\.12\)/);
   assert.match(css, /\.monitor-bct-rename-dialog[^}]+max-height:calc\(100vh - 24px\)[^}]+overflow:auto/,
     "the node editor must scroll inside the viewport instead of clipping its confirmation buttons");
   assert.match(css, /\.monitor-bct-rename-actions[^}]+position:sticky[^}]+bottom:-13px/,
