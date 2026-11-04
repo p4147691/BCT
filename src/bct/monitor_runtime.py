@@ -295,6 +295,62 @@ def _rcc_payload_status(
     }
 
 
+def _conversation_network_manager_statuses(
+    store: Any, *, observed_conversation_keys: list[str],
+) -> list[dict[str, Any]]:
+    """Project durable Manager state without assigning or replacing a role."""
+    # Narrow contract fixtures used by current-node integration tests expose
+    # only monitor_snapshot(). Production Store always owns transaction().
+    if not callable(getattr(store, "transaction", None)):
+        return []
+    observed = {
+        str(value or "").strip().lower()
+        for value in observed_conversation_keys
+        if str(value or "").strip()
+    }
+    with store.transaction() as db:
+        projects = [dict(row) for row in db.execute(
+            "SELECT project_id,display_name FROM conversation_network_projects "
+            "WHERE active=1 ORDER BY display_name COLLATE NOCASE,project_id"
+        )]
+        managers = [dict(row) for row in db.execute(
+            "SELECT m.project_id,m.conversation_key,c.display_name,n.node_number "
+            "FROM conversation_network_memberships m "
+            "JOIN conversation_network_membership_tags t "
+            "ON t.project_id=m.project_id AND t.conversation_key=m.conversation_key "
+            "JOIN conversation_network_conversations c ON c.conversation_key=m.conversation_key "
+            "JOIN conversation_network_node_labels n ON n.conversation_key=m.conversation_key "
+            "WHERE m.activity='ACTIVE' AND lower(t.tag)='manager' "
+            "ORDER BY m.project_id,n.node_number,m.conversation_key"
+        )]
+    managers_by_project: dict[str, list[dict[str, Any]]] = {}
+    for manager in managers:
+        managers_by_project.setdefault(str(manager["project_id"]), []).append(manager)
+    result: list[dict[str, Any]] = []
+    for project in projects:
+        project_id = str(project["project_id"])
+        candidates = managers_by_project.get(project_id, [])
+        manager = candidates[0] if len(candidates) == 1 else None
+        conversation_key = "" if manager is None else str(manager["conversation_key"]).lower()
+        if not candidates:
+            status = "MISSING"
+        elif len(candidates) > 1:
+            status = "CONFLICT"
+        else:
+            status = "OPEN" if conversation_key in observed else "NOT_OPEN"
+        node_number = 0 if manager is None else int(manager["node_number"])
+        result.append({
+            "scope_id": project_id,
+            "scope_name": str(project["display_name"]),
+            "status": status,
+            "manager_conversation_key": conversation_key,
+            "manager_node_label": "" if node_number <= 0 else f"N{((node_number - 1) % 99) + 1}",
+            "manager_title": "" if manager is None else str(manager["display_name"]),
+            "manager_count": len(candidates),
+        })
+    return result
+
+
 def build_monitor_state(
     *, store: Any, service_state: dict[str, Any], data_root: Path,
     rcc_source_path: Path | None = None, rcc_live_path: Path | None = None,
@@ -313,6 +369,10 @@ def build_monitor_state(
         for instance in rcc for tab in instance.get("tabs", [])
         if isinstance(tab, dict)
     ]
+    manager_statuses = _conversation_network_manager_statuses(
+        store,
+        observed_conversation_keys=[key for key, _title in observed_conversations],
+    )
     labels = ensure_observed_node_labels(store, conversations=observed_conversations)
     # Existing Monitor GET is a legitimate observation wake, not a new poller.
     # Requeue only never-dispatched PENDING committed label events.
@@ -380,6 +440,7 @@ def build_monitor_state(
             "github_inbox": len(snapshot.get("github_run_inbox", [])),
         },
         "current_nodes": classify_current_nodes(rcc, observed_at=time.time()),
+        "conversation_network_managers": manager_statuses,
         "rcc": {
             "instances": rcc,
             "payload": _rcc_payload_status(

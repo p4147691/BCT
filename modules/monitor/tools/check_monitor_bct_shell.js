@@ -28,6 +28,11 @@ const manifest = JSON.parse(fs.readFileSync(
 const opened = [];
 const monitorState = {
   service: { status: "OK", ready: true, service: "bct-core" },
+  conversation_network_managers: [{
+    scope_id: "network.monitor", scope_name: "모니터 관리", status: "NOT_OPEN",
+    manager_conversation_key: "chat-manager", manager_node_label: "N98",
+    manager_title: "닫힌 Manager", manager_count: 1,
+  }],
   rcc: {
     instances: [{
       instance_id: "rcc-live",
@@ -216,6 +221,10 @@ assert.match(monitorSource, /installMonitorBctRoleLongPress\(row, node\)/);
   assert.equal(health.generation, 3);
   const state = await shell.monitorState();
   const nodes = shell.windowNodes(state);
+  const managers = shell.managerStatuses(state);
+  assert.equal(managers.length, 1);
+  assert.equal(managers[0].status, "NOT_OPEN");
+  assert.equal(managers[0].managerNodeLabel, "N98");
   assert.equal(nodes.length, 2);
   assert.deepEqual(
     Array.from(nodes, (node) => [node.windowId, node.tabId, node.presence, node.active, node.generating]),

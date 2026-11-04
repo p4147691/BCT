@@ -362,6 +362,31 @@ class MonitorRuntimeTests(unittest.TestCase):
         )
         self.assertEqual("OBSERVED", tab["reasoning"]["status"])
         self.assertEqual("High", tab["reasoning"]["level"])
+        self.assertEqual("OPEN", state["conversation_network_managers"][0]["status"])
+        self.assertEqual("N1", state["conversation_network_managers"][0]["manager_node_label"])
+
+    def test_closed_durable_manager_is_reported_without_automatic_succession(self):
+        conversation = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "state.sqlite")
+            configure_conversation_scope(
+                store,
+                conversation_key=conversation,
+                display_name="Closed Manager",
+                scope_name="BCT Chain",
+                role_tags=["Worker", "Manager"],
+            )
+            with patch("bct.monitor_runtime.discover_instance_ids", return_value=[]):
+                state = build_monitor_state(
+                    store=store, service_state={"ready": True}, data_root=root / "data"
+                )
+        managers = state["conversation_network_managers"]
+        self.assertEqual(1, len(managers))
+        self.assertEqual("NOT_OPEN", managers[0]["status"])
+        self.assertEqual("N1", managers[0]["manager_node_label"])
+        self.assertEqual(conversation, managers[0]["manager_conversation_key"])
+        self.assertEqual(1, managers[0]["manager_count"])
 
     def test_observed_conversation_is_registered_once_for_display_only(self):
         conversation = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"

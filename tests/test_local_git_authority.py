@@ -189,7 +189,7 @@ class LocalGitAuthorityTests(unittest.TestCase):
         )
         execution = subprocess.run(
             [sys.executable, "-B", str(self.runtime/"releases"/local_sha/"app.py")],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
         )
         self.assertEqual("LOCAL_E2E_OK", execution.stdout.strip())
         self.assertEqual(0, execution.returncode)

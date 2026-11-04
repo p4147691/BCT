@@ -94,6 +94,8 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
  const f=fixture();let roles=0;
  f.rows[0].monitorBctRoleHoldClass="monitor-bct-supervisor-hold";
  f.rows[0].monitorBctCommitRoleLongPress=()=>{roles+=1;};
+ f.rows[0].monitorBctPreviewRoleLongPress=()=>true;
+ f.rows[0].monitorBctCancelRoleLongPressPreview=()=>{};
  f.begin();assert.equal(f.timers[0].delay,600);f.timers[0].callback();f.up(30,50);
  assert.equal(roles,1,"a stationary armed hold commits exactly one role write");
  assert.equal(f.commits.length,0,"a role hold must not reorder the node");f.clean();
@@ -102,6 +104,8 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
  const f=fixture();let roles=0;
  f.rows[0].monitorBctRoleHoldClass="monitor-bct-manager-hold";
  f.rows[0].monitorBctCommitRoleLongPress=()=>{roles+=1;};
+ f.rows[0].monitorBctPreviewRoleLongPress=()=>true;
+ f.rows[0].monitorBctCancelRoleLongPressPreview=()=>{};
  f.begin();f.timers[0].callback();f.move(38,50);f.up(38,50);
  assert.equal(roles,1,"a held role gesture tolerates normal pointer drift on a scaled display");
  assert.equal(f.commits.length,0,"sub-threshold hold drift must not become a reorder");f.clean();
@@ -110,6 +114,8 @@ for(const kind of ["pointercancel","blur","lostpointercapture"]){
  const f=fixture();let roles=0;
  f.rows[0].monitorBctRoleHoldClass="monitor-bct-supervisor-hold";
  f.rows[0].monitorBctCommitRoleLongPress=()=>{roles+=1;};
+ f.rows[0].monitorBctPreviewRoleLongPress=()=>true;
+ f.rows[0].monitorBctCancelRoleLongPressPreview=()=>{};
  f.begin();f.timers[0].callback();f.move(120,55);f.up(120,55);
  assert.equal(roles,0,"moving an armed hold into a drag cancels the role write");
  assert.equal(f.commits.length,1,"the same gesture commits only the reorder");f.clean();

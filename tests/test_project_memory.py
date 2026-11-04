@@ -248,7 +248,7 @@ class ProjectMemoryTests(unittest.TestCase):
         junction = self.root / "subtitle-auto"
         linked = subprocess.run(["cmd.exe", "/d", "/c", "mklink", "/J",
                                  str(junction), str(destination)],
-                                capture_output=True, text=True, errors="replace")
+                                capture_output=True, text=True, encoding="utf-8", errors="replace")
         if linked.returncode:
             self.skipTest("Junction setup unavailable: " + linked.stderr[-100:])
         with self.assertRaisesRegex(ProjectMemoryError, "REDIRECT_FORBIDDEN"):
@@ -264,7 +264,7 @@ class ProjectMemoryTests(unittest.TestCase):
         destination.mkdir()
         linked = subprocess.run(["cmd.exe", "/d", "/c", "mklink", "/J",
                                  str(parent / "revisions"), str(destination)],
-                                capture_output=True, text=True, errors="replace")
+                                capture_output=True, text=True, encoding="utf-8", errors="replace")
         if linked.returncode:
             self.skipTest("Junction setup unavailable: " + linked.stderr[-100:])
         with self.assertRaisesRegex(ProjectMemoryError, "REDIRECT_FORBIDDEN"):

@@ -36,7 +36,7 @@ function beginMonitorBctNodePointerDrag(event, row, node) {
     drag.roleTimer = globalThis.setTimeout(() => {
       if (monitorBctPointerDrag === drag && !drag.active) {
         drag.roleTimer = 0;
-        drag.roleArmed = true;
+        drag.roleArmed = drag.row?.monitorBctPreviewRoleLongPress?.() === true;
       }
     }, 600);
   }
@@ -789,7 +789,7 @@ function endMonitorBctNodePointerDrag(event) {
   const commitRole = !drag.active && drag.roleArmed
     ? drag.row?.monitorBctCommitRoleLongPress
     : null;
-  monitorBctStopDragInput(drag);
+  monitorBctStopDragInput(drag, { preserveRolePreview: typeof commitRole === "function" });
   if (!drag.active) {
     if (typeof commitRole === "function") {
       event.preventDefault();
@@ -1282,7 +1282,7 @@ function monitorBctNodeDropListAt(clientX, clientY, hit) {
 //@@FN_END:monitorBctNodeDropListAt
 
 //@@FN_START:monitorBctStopDragInput
-function monitorBctStopDragInput(drag) {
+function monitorBctStopDragInput(drag, options = {}) {
   if (monitorBctPointerDrag !== drag) return;
   monitorBctPointerDrag = null;
   document.removeEventListener("pointermove", updateMonitorBctNodePointerDrag, true);
@@ -1293,6 +1293,7 @@ function monitorBctStopDragInput(drag) {
   if (drag.roleTimer) globalThis.clearTimeout(drag.roleTimer);
   drag.roleTimer = 0;
   drag.roleArmed = false;
+  if (options.preserveRolePreview !== true) drag.row?.monitorBctCancelRoleLongPressPreview?.();
   drag.row?.classList.remove(
     "is-dragging",
     "monitor-bct-manager-hold",
@@ -3018,6 +3019,7 @@ function updateMonitorBctNodePointerDrag(event) {
     if (drag.roleTimer) globalThis.clearTimeout(drag.roleTimer);
     drag.roleTimer = 0;
     drag.roleArmed = false;
+    drag.row?.monitorBctCancelRoleLongPressPreview?.();
     drag.row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
     drag.active = true;
     monitorBctSuppressScopeClickUntil = Date.now() + 1000;

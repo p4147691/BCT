@@ -171,7 +171,7 @@ class IndependentApprovalIssuerTests(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, "-m", "bct.approval_issuer", "--approve"],
             cwd=self.root, env=environment, capture_output=True,
-            text=True, timeout=8,
+            text=True, encoding="utf-8", errors="replace", timeout=8,
         )
         self.assertNotEqual(0, result.returncode)
         self.assertIn("GUI_ONLY", result.stderr + result.stdout)

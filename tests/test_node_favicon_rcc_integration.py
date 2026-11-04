@@ -23,7 +23,8 @@ class NodeFaviconRccIntegrationTests(unittest.TestCase):
             with self.subTest(script=script):
                 result = subprocess.run(
                     [node, str(ROOT / script)],
-                    cwd=ROOT, capture_output=True, text=True, timeout=25, check=False
+                    cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=25, check=False
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + "\n" + result.stderr)
 

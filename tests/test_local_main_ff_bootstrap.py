@@ -63,7 +63,7 @@ class N63BootstrapTests(unittest.TestCase):
         other = self.base / "remote-author"
         proc = subprocess.run(
             ["git", "clone", "-b", "main", str(remote), str(other)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
         self.assertEqual(0, proc.returncode, proc.stderr)
         git(other, "config", "user.name", "remote")

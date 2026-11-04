@@ -1273,6 +1273,9 @@ async function refreshMonitorBctWindowNodes() {
   try {
     const state = await monitorBctShell.monitorState();
     renderMonitorGithubInbox(state);
+    monitorBctManagerStatuses = monitorBctShell.managerStatuses
+      ? monitorBctShell.managerStatuses(state)
+      : Object.freeze([]);
     const nextNodes = monitorBctShell.displayWindowNodes
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
@@ -1700,7 +1703,20 @@ function renderMonitorBctWindowNodes(nodes) {
     groupCaret.className = "monitor-bct-scope-caret";
     groupCaret.setAttribute("aria-hidden", "true");
     const groupText = document.createElement("span");
-    groupText.textContent = `${group.name} · ${group.nodes.length}`;
+    const managerStatus = group.key === "__unassigned__" ? null
+      : (Array.isArray(monitorBctManagerStatuses) ? monitorBctManagerStatuses : [])
+        .find((item) => String(item?.scopeId || "") === String(group.key || ""));
+    let managerNotice = "";
+    if (managerStatus?.status === "NOT_OPEN") {
+      managerNotice = ` · Manager 닫힘: ${managerStatus.managerNodeLabel || "기록됨"}`;
+      groupSection.classList.add("monitor-bct-manager-not-open");
+    } else if (managerStatus?.status === "MISSING") {
+      managerNotice = " · Manager 없음";
+    } else if (managerStatus?.status === "CONFLICT") {
+      managerNotice = " · Manager 충돌";
+      groupSection.classList.add("monitor-bct-manager-conflict");
+    }
+    groupText.textContent = `${group.name} · ${group.nodes.length}${managerNotice}`;
     groupHeader.append(groupCaret, groupText);
     groupHeader.addEventListener("click", (event) => {
       if (monitorBctPointerDrag?.active || Date.now() < monitorBctSuppressScopeClickUntil) {

@@ -51,7 +51,8 @@ class LocalMainGuardedFastForwardTests(unittest.TestCase):
         self.other = self.base / "remote-writer"
         clone = subprocess.run(["git", "clone", "-b", "main",
                                 str(self.remote), str(self.other)],
-                               capture_output=True, text=True, timeout=35)
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=35)
         self.assertEqual(0, clone.returncode, clone.stderr)
         git(self.other, "config", "user.name", "N63 Remote")
         git(self.other, "config", "user.email", "remote@example.invalid")

@@ -207,6 +207,8 @@ class DeploymentServiceTests(unittest.TestCase):
                         ["taskkill", "/PID", str(receipt["pid"]), "/T"],
                         capture_output=True,
                         text=True,
+                        encoding="utf-8",
+                        errors="replace",
                         shell=False,
                     )
                     if process.returncode not in {0, 128}:

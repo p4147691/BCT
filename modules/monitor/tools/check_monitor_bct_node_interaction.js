@@ -143,8 +143,8 @@ function loadModule() {
   assert.match(monitor, /commitMonitorBctNodeDrop/);
   assert.match(monitor, /monitorBctShell\.reorderConversations/);
   assert.match(monitor, /function installMonitorBctRoleLongPress\(/);
-  assert.match(monitor, /drag\.roleArmed = true;/,
-    "the unified node gesture must arm a role long-press at 600ms");
+  assert.match(monitor, /drag\.roleArmed = drag\.row\?\.monitorBctPreviewRoleLongPress\?\.\(\) === true;/,
+    "the unified node gesture must preview and arm a role long-press at 600ms");
   assert.match(monitor, /const commitRole = !drag\.active && drag\.roleArmed/,
     "only a stationary armed gesture may commit a role on release");
   assert.match(monitor, /row\.monitorBctCommitRoleLongPress = commit/,
@@ -285,6 +285,7 @@ function loadModule() {
   const holdContext = {
     monitorBctSuppressedClickKey: "",
     monitorBctWindowNodesCache: [],
+    monitorBctManagerStatuses: [],
     monitorBctNodeSelectionKey: (node) => node.conversationKey,
     monitorBctShell: {
       updateConversationScope: async (_node, values) => { roleUpdates.push(values); return { ok: true }; },
@@ -308,6 +309,11 @@ function loadModule() {
   holdContext.monitorBctWindowNodesCache = [baseNode];
   holdContext.installMonitorBctRoleLongPress(rowOn, baseNode);
   assert.equal(rowOn.listeners.size, 0, "role persistence must not install a competing pointer handler");
+  assert.equal(rowOn.monitorBctPreviewRoleLongPress(), true);
+  assert.equal(rowOn.classes.has("is-manager"), true, "the role color appears at the hold threshold");
+  rowOn.monitorBctCancelRoleLongPressPreview();
+  assert.equal(rowOn.classes.has("is-manager"), false, "a canceled hold restores the previous role color");
+  rowOn.monitorBctPreviewRoleLongPress();
   rowOn.monitorBctCommitRoleLongPress();
   assert.equal(rowOn.classes.has("is-manager"), true, "a released hold paints its committed role immediately");
   await Promise.resolve();
@@ -351,6 +357,19 @@ function loadModule() {
   await Promise.resolve();
   assert.equal(roleUpdates.length, 4, "a second global supervisor must not be saved");
   assert.match(holdContext.statusMessages.at(-1), /감독관은 하나만/);
+
+  holdContext.monitorBctManagerStatuses = [{
+    scopeId: "scope-a", status: "NOT_OPEN", managerConversationKey: "closed-manager", managerNodeLabel: "N98",
+  }];
+  const blockedManager = managerRow();
+  holdContext.installMonitorBctRoleLongPress(blockedManager, {
+    ...baseNode, conversationKey: "conv-3", scopeId: "scope-a", scopeName: "대화망 A", roleTags: ["Worker"],
+  });
+  assert.equal(blockedManager.monitorBctPreviewRoleLongPress(), false);
+  blockedManager.monitorBctCommitRoleLongPress();
+  await Promise.resolve();
+  assert.equal(roleUpdates.length, 4, "a closed durable Manager must block automatic succession");
+  assert.match(holdContext.statusMessages.at(-1), /복구 또는 명시적 역할 승계/);
 
   const dropStart = monitor.indexOf("function monitorBctPointInsideScopeHeading(");
   const dropEnd = monitor.indexOf("\nfunction updateMonitorBctNodePointerDrag(", dropStart);

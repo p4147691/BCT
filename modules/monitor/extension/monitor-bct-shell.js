@@ -121,6 +121,21 @@
       return Object.freeze(nodes);
     }
 
+    function managerStatuses(state) {
+      const rows = Array.isArray(state?.conversation_network_managers)
+        ? state.conversation_network_managers.slice(0, 100)
+        : [];
+      return Object.freeze(rows.map((row) => Object.freeze({
+        scopeId: String(row?.scope_id || "").trim(),
+        scopeName: String(row?.scope_name || "").trim(),
+        status: String(row?.status || "MISSING").trim().toUpperCase(),
+        managerConversationKey: String(row?.manager_conversation_key || "").trim().toLowerCase(),
+        managerNodeLabel: String(row?.manager_node_label || "").trim().toUpperCase(),
+        managerTitle: String(row?.manager_title || "").trim(),
+        managerCount: Math.max(0, Number(row?.manager_count || 0)),
+      })).filter((row) => row.scopeId));
+    }
+
     // The first failed RCC probe can contain no tabs even though the previous
     // exact display snapshot is still valid. Preserve that snapshot only as a
     // stale display candidate. The HWND contract may retain an existing exact
@@ -325,6 +340,7 @@
       health,
       monitorState,
       windowNodes,
+      managerStatuses,
       displayWindowNodes,
       renameConversation,
       updateConversationScope,

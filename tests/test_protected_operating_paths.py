@@ -226,7 +226,7 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         subprocess.run(["git", "-C", str(source), "commit", "-m", "fixture"], check=True, capture_output=True)
         head = subprocess.run(
             ["git", "-C", str(source), "rev-parse", "HEAD"],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
         release = runtime / "releases" / head
         files = {}
@@ -373,7 +373,7 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         subprocess.run(["git", "-C", str(rcc_source), "commit", "-m", "fixture"], check=True, capture_output=True)
         rcc_head = subprocess.run(
             ["git", "-C", str(rcc_source), "rev-parse", "HEAD"], check=True,
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
         with patch("bct.operating_paths.atomic_json", side_effect=RuntimeError("receipt-failure")):
             with self.assertRaisesRegex(RuntimeError, "receipt-failure"):
@@ -823,7 +823,7 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         subprocess.run(["git", "-C", str(source), "commit", "-m", "fixture"], check=True, capture_output=True)
         head = subprocess.run(
             ["git", "-C", str(source), "rev-parse", "HEAD"], check=True,
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
         target = OperatingPathLayout.from_local_app_data(self.base / "LocalAppData")
         target.root.mkdir(parents=True)

@@ -168,6 +168,10 @@ const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
+// Durable Manager truth includes closed conversations that cannot appear in
+// the RCC window list. It is display/conflict evidence only, never authority
+// to perform automatic role succession.
+let monitorBctManagerStatuses = Object.freeze([]);
 
 /*@@MONITOR_FUNCTION:monitorBctNodeDisplayState@@*/
 /*@@MONITOR_FUNCTION:monitorBctNodeObservedKey@@*/

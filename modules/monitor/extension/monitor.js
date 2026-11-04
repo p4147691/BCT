@@ -6417,6 +6417,10 @@ const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
 let monitorBctWindowNodesCache = null;
+// Durable Manager truth includes closed conversations that cannot appear in
+// the RCC window list. It is display/conflict evidence only, never authority
+// to perform automatic role succession.
+let monitorBctManagerStatuses = Object.freeze([]);
 
 function monitorBctNodeDisplayState() {
   const stateKey = "__monitorBctNodeDisplayState";
@@ -6986,6 +6990,38 @@ let monitorBctSuppressScopeClickUntil = 0;
 
 function installMonitorBctRoleLongPress(row, node) {
   let saving = false;
+  const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
+  const isSupervisor = !String(node.scopeName || "").trim()
+    && tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
+  const isUnassigned = !String(node.scopeName || "").trim();
+  const role = isUnassigned || isSupervisor ? "supervisor" : "Manager";
+  const hadRole = role === "supervisor"
+    ? isSupervisor
+    : tags.some((tag) => String(tag).trim().toLowerCase() === "manager");
+  const roleClass = role === "supervisor" ? "is-supervisor" : "is-manager";
+  const durableManagerConflict = () => {
+    if (role !== "Manager" || hadRole) return null;
+    return (Array.isArray(monitorBctManagerStatuses) ? monitorBctManagerStatuses : [])
+      .find((item) => String(item?.scopeId || "") === String(node.scopeId || "")
+        && ["NOT_OPEN", "CONFLICT"].includes(String(item?.status || "").toUpperCase())
+        && String(item?.managerConversationKey || "") !== String(node.conversationKey || "").toLowerCase()) || null;
+  };
+  const cancelPreview = () => {
+    if (!row.monitorBctRolePreviewActive) return;
+    row.classList.toggle(roleClass, hadRole);
+    row.monitorBctRolePreviewActive = false;
+  };
+  const preview = () => {
+    const conflict = durableManagerConflict();
+    if (conflict) {
+      const label = conflict.status === "CONFLICT" ? "여러 Manager 기록" : `${conflict.managerNodeLabel || "기존 Manager"} 닫힘`;
+      setMonitorStatus(`${String(node.scopeName || "대화망")} · ${label}. 복구하거나 명시적으로 승계하기 전에는 자동 교체하지 않습니다.`, false, 4600);
+      return false;
+    }
+    row.classList.toggle(roleClass, !hadRole);
+    row.monitorBctRolePreviewActive = true;
+    return true;
+  };
   const commit = () => {
     if (saving) return;
     row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
@@ -6995,28 +7031,29 @@ function installMonitorBctRoleLongPress(row, node) {
       if (monitorBctSuppressedClickKey === key) monitorBctSuppressedClickKey = "";
     }, 900);
     if (!node.conversationKey) {
+      cancelPreview();
       setMonitorStatus("새 대화는 첫 메시지로 UUID가 생긴 뒤 감독관으로 지정할 수 있습니다.", false, 3500);
       return;
     }
-    const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
-    const isSupervisor = !String(node.scopeName || "").trim()
-      && tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
-    const isUnassigned = !String(node.scopeName || "").trim();
-    const role = isUnassigned || isSupervisor ? "supervisor" : "Manager";
     if (role === "Manager") {
+      const durableConflict = durableManagerConflict();
+      if (durableConflict) {
+        cancelPreview();
+        const label = durableConflict.status === "CONFLICT" ? "여러 Manager 기록" : `${durableConflict.managerNodeLabel || "기존 Manager"} 닫힘`;
+        setMonitorStatus(`${String(node.scopeName || "대화망")} · ${label}. 복구 또는 명시적 역할 승계가 필요합니다.`, false, 4600);
+        return;
+      }
       const existingManager = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
         .find((candidate) => candidate?.conversationKey !== node.conversationKey
           && String(candidate?.scopeId || "") === String(node.scopeId || "")
           && Array.isArray(candidate?.roleTags)
           && candidate.roleTags.some((tag) => String(tag).trim().toLowerCase() === "manager"));
       if (existingManager) {
+        cancelPreview();
         setMonitorStatus(`${String(node.scopeName || "대화망")}에는 이미 ${existingManager.nodeLabel || "다른 노드"} Manager가 있습니다. 기존 Manager를 해제한 뒤 바꾸세요.`, false, 4200);
         return;
       }
     }
-    const hadRole = role === "supervisor"
-      ? isSupervisor
-      : tags.some((tag) => String(tag).trim().toLowerCase() === "manager");
     if (role === "supervisor" && !hadRole) {
       const existingSupervisor = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
         .find((candidate) => candidate?.conversationKey !== node.conversationKey
@@ -7024,6 +7061,7 @@ function installMonitorBctRoleLongPress(row, node) {
           && Array.isArray(candidate?.roleTags)
           && candidate.roleTags.some((tag) => String(tag).trim().toLowerCase() === "supervisor"));
       if (existingSupervisor) {
+        cancelPreview();
         setMonitorStatus(`감독관은 하나만 둘 수 있습니다. 기존 ${existingSupervisor.nodeLabel || "감독관"}을 해제한 뒤 바꾸세요.`, false, 4200);
         return;
       }
@@ -7036,7 +7074,8 @@ function installMonitorBctRoleLongPress(row, node) {
     // This point is reached only after a stationary hold is released. Show the
     // committed choice immediately while Core persists it; cancellation never
     // changes the role color.
-    row.classList.toggle(role === "supervisor" ? "is-supervisor" : "is-manager", !hadRole);
+    row.classList.toggle(roleClass, !hadRole);
+    row.monitorBctRolePreviewActive = false;
     row.classList.add("monitor-bct-role-save-pending");
     const beforeRoleTags = [...tags];
     void monitorBctShell.updateConversationScope(node, {
@@ -7093,16 +7132,13 @@ function installMonitorBctRoleLongPress(row, node) {
       void refreshMonitorBctWindowNodes();
       return saved;
     }).catch((error) => {
-      row.classList.toggle(role === "supervisor" ? "is-supervisor" : "is-manager", hadRole);
+      row.classList.toggle(roleClass, hadRole);
       setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
     }).finally(() => {
       saving = false;
       row.classList.remove("monitor-bct-role-save-pending");
     });
   };
-  const tags = Array.isArray(node.roleTags) ? node.roleTags : [];
-  const isSupervisor = !String(node.scopeName || "").trim()
-    && tags.some((tag) => String(tag).trim().toLowerCase() === "supervisor");
   row.monitorBctRoleHoldClass = !String(node.scopeName || "").trim() || isSupervisor
     ? "monitor-bct-supervisor-hold"
     : "monitor-bct-manager-hold";
@@ -7110,6 +7146,8 @@ function installMonitorBctRoleLongPress(row, node) {
   // card. The single node gesture controller now owns pointer events and calls
   // this persistence action only for a stationary 600 ms hold.
   row.monitorBctCommitRoleLongPress = commit;
+  row.monitorBctPreviewRoleLongPress = preview;
+  row.monitorBctCancelRoleLongPressPreview = cancelPreview;
 }
 
 function getMonitorBctNodeInteractionService() {
@@ -7296,7 +7334,20 @@ function renderMonitorBctWindowNodes(nodes) {
     groupCaret.className = "monitor-bct-scope-caret";
     groupCaret.setAttribute("aria-hidden", "true");
     const groupText = document.createElement("span");
-    groupText.textContent = `${group.name} · ${group.nodes.length}`;
+    const managerStatus = group.key === "__unassigned__" ? null
+      : (Array.isArray(monitorBctManagerStatuses) ? monitorBctManagerStatuses : [])
+        .find((item) => String(item?.scopeId || "") === String(group.key || ""));
+    let managerNotice = "";
+    if (managerStatus?.status === "NOT_OPEN") {
+      managerNotice = ` · Manager 닫힘: ${managerStatus.managerNodeLabel || "기록됨"}`;
+      groupSection.classList.add("monitor-bct-manager-not-open");
+    } else if (managerStatus?.status === "MISSING") {
+      managerNotice = " · Manager 없음";
+    } else if (managerStatus?.status === "CONFLICT") {
+      managerNotice = " · Manager 충돌";
+      groupSection.classList.add("monitor-bct-manager-conflict");
+    }
+    groupText.textContent = `${group.name} · ${group.nodes.length}${managerNotice}`;
     groupHeader.append(groupCaret, groupText);
     groupHeader.addEventListener("click", (event) => {
       if (monitorBctPointerDrag?.active || Date.now() < monitorBctSuppressScopeClickUntil) {
@@ -7495,7 +7546,7 @@ function beginMonitorBctNodePointerDrag(event, row, node) {
     drag.roleTimer = globalThis.setTimeout(() => {
       if (monitorBctPointerDrag === drag && !drag.active) {
         drag.roleTimer = 0;
-        drag.roleArmed = true;
+        drag.roleArmed = drag.row?.monitorBctPreviewRoleLongPress?.() === true;
       }
     }, 600);
   }
@@ -7508,7 +7559,7 @@ function beginMonitorBctNodePointerDrag(event, row, node) {
   try { row.setPointerCapture(event.pointerId); } catch (_) {}
 }
 
-function monitorBctStopDragInput(drag) {
+function monitorBctStopDragInput(drag, options = {}) {
   if (monitorBctPointerDrag !== drag) return;
   monitorBctPointerDrag = null;
   document.removeEventListener("pointermove", updateMonitorBctNodePointerDrag, true);
@@ -7519,6 +7570,7 @@ function monitorBctStopDragInput(drag) {
   if (drag.roleTimer) globalThis.clearTimeout(drag.roleTimer);
   drag.roleTimer = 0;
   drag.roleArmed = false;
+  if (options.preserveRolePreview !== true) drag.row?.monitorBctCancelRoleLongPressPreview?.();
   drag.row?.classList.remove(
     "is-dragging",
     "monitor-bct-manager-hold",
@@ -7626,6 +7678,7 @@ function updateMonitorBctNodePointerDrag(event) {
     if (drag.roleTimer) globalThis.clearTimeout(drag.roleTimer);
     drag.roleTimer = 0;
     drag.roleArmed = false;
+    drag.row?.monitorBctCancelRoleLongPressPreview?.();
     drag.row.classList.remove("monitor-bct-manager-hold", "monitor-bct-supervisor-hold");
     drag.active = true;
     monitorBctSuppressScopeClickUntil = Date.now() + 1000;
@@ -7698,7 +7751,7 @@ function endMonitorBctNodePointerDrag(event) {
   const commitRole = !drag.active && drag.roleArmed
     ? drag.row?.monitorBctCommitRoleLongPress
     : null;
-  monitorBctStopDragInput(drag);
+  monitorBctStopDragInput(drag, { preserveRolePreview: typeof commitRole === "function" });
   if (!drag.active) {
     if (typeof commitRole === "function") {
       event.preventDefault();
@@ -8056,6 +8109,9 @@ async function refreshMonitorBctWindowNodes() {
   try {
     const state = await monitorBctShell.monitorState();
     renderMonitorGithubInbox(state);
+    monitorBctManagerStatuses = monitorBctShell.managerStatuses
+      ? monitorBctShell.managerStatuses(state)
+      : Object.freeze([]);
     const nextNodes = monitorBctShell.displayWindowNodes
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
