@@ -253,6 +253,16 @@ function loadModule() {
   assert.doesNotMatch(css, /monitor-bct-node-drag-ghost[\s\S]{0,240}background:rgba\(12,24,38,\.92\)/);
   const selectedRule = css.match(/\.monitor-bct-node-row\.is-selected\s*\{([^}]+)\}/)?.[1] || "";
   assert.doesNotMatch(selectedRule, /background:/);
+  const managerRoleRule = css.match(/\.monitor-bct-node-row\.is-manager\s*\{([^}]+)\}/)?.[1] || "";
+  const supervisorRoleRule = css.match(/\.monitor-bct-node-row\.is-supervisor\s*\{([^}]+)\}/)?.[1] || "";
+  assert.match(managerRoleRule, /linear-gradient\(90deg,rgba\(196,124,8,\.58\),rgba\(238,169,20,\.34\)\)/,
+    "Manager amber must carry the same saturated gradient weight as Supervisor blue");
+  assert.match(managerRoleRule, /border-color:rgba\(255,205,74,\.92\)/,
+    "Manager and Supervisor role borders must have matching visual strength");
+  assert.match(managerRoleRule, /box-shadow:inset 0 0 0 1px[^;]+,0 0 10px/,
+    "Manager role contrast must remain visible without depending on selection state");
+  assert.match(supervisorRoleRule, /linear-gradient\(90deg/);
+  assert.match(supervisorRoleRule, /border-color:rgba\(89,184,255,\.92\)/);
 
   const holdStart = monitor.indexOf("function installMonitorBctRoleLongPress(");
   const holdEnd = monitor.indexOf("\nfunction getMonitorBctNodeInteractionService(", holdStart);
