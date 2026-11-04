@@ -1276,9 +1276,10 @@ async function refreshMonitorBctWindowNodes() {
     monitorBctManagerStatuses = monitorBctShell.managerStatuses
       ? monitorBctShell.managerStatuses(state)
       : Object.freeze([]);
-    const nextNodes = monitorBctShell.displayWindowNodes
+    const observedNodes = monitorBctShell.displayWindowNodes
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
+    const nextNodes = applyMonitorBctPendingRoleProjections(observedNodes);
     // A saved reorder owns the visible list until the Core reply is available.
     // Do not let an unrelated, older status refresh paint the previous order
     // over the optimistic order while that write is in flight.

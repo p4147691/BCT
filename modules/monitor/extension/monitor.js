@@ -6550,6 +6550,10 @@ if (monitorBctNodeViewModeControl) {
   });
 }
 let monitorBctDeferredNodeRender = null;
+// Exact-conversation optimistic role projections survive unrelated stale
+// status replies while a role write is being persisted.  A projection is
+// removed only after Core reports the same state or the bounded hold expires.
+const monitorBctRoleSavePendingByKey = new Map();
 const MONITOR_BCT_NODE_ORDER_KEY = "desktopWindowMonitorBctNodeOrderV1";
 const monitorBctNodeOrderByScope = new Map();
 let monitorBctNodeOrderReady = false;
@@ -6988,6 +6992,34 @@ const monitorBctCollapsedScopes = new Set();
 let monitorBctSuppressedClickKey = "";
 let monitorBctSuppressScopeClickUntil = 0;
 
+function applyMonitorBctPendingRoleProjections(nodes, now = Date.now()) {
+  return (Array.isArray(nodes) ? nodes : []).map((node) => {
+    const key = String(node?.conversationKey || "").trim().toLowerCase();
+    const pending = key ? monitorBctRoleSavePendingByKey.get(key) : null;
+    if (!pending) return node;
+    const actualTags = (Array.isArray(node?.roleTags) ? node.roleTags : [])
+      .map((tag) => String(tag).trim().toLowerCase()).sort();
+    const expectedTags = pending.roleTags
+      .map((tag) => String(tag).trim().toLowerCase()).sort();
+    const actualScopeId = String(node?.scopeId || "");
+    if (actualScopeId === pending.scopeId
+        && JSON.stringify(actualTags) === JSON.stringify(expectedTags)) {
+      monitorBctRoleSavePendingByKey.delete(key);
+      return node;
+    }
+    if (now >= pending.expiresAt) {
+      monitorBctRoleSavePendingByKey.delete(key);
+      return node;
+    }
+    return Object.freeze({
+      ...node,
+      scopeId: pending.scopeId,
+      scopeName: pending.scopeName,
+      roleTags: Object.freeze([...pending.roleTags]),
+      roleTagsSha256: pending.roleTagsSha256 || String(node?.roleTagsSha256 || ""),
+    });
+  });
+}
 function installMonitorBctRoleLongPress(row, node) {
   let saving = false;
   const tags = Array.isArray(node.roleTags) ? [...node.roleTags] : [];
@@ -7068,6 +7100,14 @@ function installMonitorBctRoleLongPress(row, node) {
       ? tags.filter((tag) => String(tag).trim().toLowerCase() !== role.toLowerCase())
       : [...tags, role];
     const nextScopeName = role === "supervisor" ? "" : node.scopeName;
+    const pendingKey = String(node.conversationKey || "").trim().toLowerCase();
+    monitorBctRoleSavePendingByKey.set(pendingKey, {
+      scopeId: role === "supervisor" ? "" : String(node.scopeId || ""),
+      scopeName: String(nextScopeName || ""),
+      roleTags: [...nextTags],
+      roleTagsSha256: "",
+      expiresAt: Date.now() + 30000,
+    });
     saving = true;
     // This point is reached only after a stationary hold is released. Show the
     // committed choice immediately while Core persists it; cancellation never
@@ -7088,6 +7128,14 @@ function installMonitorBctRoleLongPress(row, node) {
       expectedRoleTagsSha256: node.roleTagsSha256,
     });
     void saveRole.then((saved) => {
+      const pending = monitorBctRoleSavePendingByKey.get(pendingKey);
+      if (pending) {
+        pending.scopeId = String(saved?.scope_id ?? saved?.project_id ?? pending.scopeId ?? "");
+        pending.scopeName = String(saved?.scope_name ?? pending.scopeName ?? "");
+        pending.roleTags = Array.isArray(saved?.role_tags) ? [...saved.role_tags] : [...nextTags];
+        pending.roleTagsSha256 = String(saved?.role_tags_sha256 || "");
+        pending.expiresAt = Date.now() + 30000;
+      }
       const before = typeof monitorBctNodeHistoryState === "function" ? monitorBctNodeHistoryState(node) : null;
       const beforeOrders = typeof monitorBctNodeHistoryOrders === "function"
         ? monitorBctNodeHistoryOrders(monitorBctWindowNodesCache, [String(node.scopeId || "")])
@@ -7141,7 +7189,10 @@ function installMonitorBctRoleLongPress(row, node) {
       void refreshMonitorBctWindowNodes();
       return saved;
     }).catch((error) => {
+      monitorBctRoleSavePendingByKey.delete(pendingKey);
       row.classList.toggle(roleClass, hadRole);
+      renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+      syncMonitorAllDesktopThumbnailNodeBadges();
       setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
     }).finally(() => {
       saving = false;
@@ -8121,9 +8172,10 @@ async function refreshMonitorBctWindowNodes() {
     monitorBctManagerStatuses = monitorBctShell.managerStatuses
       ? monitorBctShell.managerStatuses(state)
       : Object.freeze([]);
-    const nextNodes = monitorBctShell.displayWindowNodes
+    const observedNodes = monitorBctShell.displayWindowNodes
       ? monitorBctShell.displayWindowNodes(state, monitorBctWindowNodesCache || [])
       : monitorBctShell.windowNodes(state);
+    const nextNodes = applyMonitorBctPendingRoleProjections(observedNodes);
     // A saved reorder owns the visible list until the Core reply is available.
     // Do not let an unrelated, older status refresh paint the previous order
     // over the optimistic order while that write is in flight.

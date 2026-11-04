@@ -5,6 +5,7 @@ const monitorBctCollapsedScopes = new Set();
 let monitorBctSuppressedClickKey = "";
 let monitorBctSuppressScopeClickUntil = 0;
 
+/*@@MONITOR_FUNCTION:applyMonitorBctPendingRoleProjections@@*/
 /*@@MONITOR_FUNCTION:installMonitorBctRoleLongPress@@*/
 
 /*@@MONITOR_FUNCTION:getMonitorBctNodeInteractionService@@*/

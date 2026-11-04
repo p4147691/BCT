@@ -190,6 +190,10 @@ if (monitorBctNodeViewModeControl) {
   });
 }
 let monitorBctDeferredNodeRender = null;
+// Exact-conversation optimistic role projections survive unrelated stale
+// status replies while a role write is being persisted.  A projection is
+// removed only after Core reports the same state or the bounded hold expires.
+const monitorBctRoleSavePendingByKey = new Map();
 const MONITOR_BCT_NODE_ORDER_KEY = "desktopWindowMonitorBctNodeOrderV1";
 const monitorBctNodeOrderByScope = new Map();
 let monitorBctNodeOrderReady = false;

@@ -151,6 +151,14 @@ function loadModule() {
     "role persistence must be invoked by the unified drag or hold controller");
   assert.match(monitor, /row\.classList\.add\("monitor-bct-role-save-pending"\)/,
     "a role write must be visibly pending without pretending the role was already saved");
+  assert.match(monitor, /function applyMonitorBctPendingRoleProjections\(nodes, now = Date\.now\(\)\)/,
+    "role saves must project by exact conversation while stale status replies are in flight");
+  assert.match(monitor, /const nextNodes = applyMonitorBctPendingRoleProjections\(observedNodes\)/,
+    "status refreshes must retain the exact pending role projection");
+  assert.match(monitor, /actualScopeId === pending\.scopeId[\s\S]{0,220}monitorBctRoleSavePendingByKey\.delete\(key\)/,
+    "the optimistic role projection must clear only after Core reports the same state");
+  assert.match(monitor, /now >= pending\.expiresAt[\s\S]{0,100}monitorBctRoleSavePendingByKey\.delete\(key\)/,
+    "a missing convergence must release the optimistic role projection after a bounded hold");
   assert.match(monitor, /monitorBctSelectedNodeKey = monitorBctNodeSelectionKey\(node\);[\s\S]{0,180}syncMonitorBctNodeTargetHighlight\(\)/,
     "starting a node drag must immediately select its source row");
   assert.match(monitor, /function monitorBctNodeRoleRank\(node\)[\s\S]{0,260}if \(tags\.includes\("supervisor"\)\) return 0;[\s\S]{0,80}if \(tags\.includes\("manager"\)\) return 1;/,
@@ -268,9 +276,10 @@ function loadModule() {
   assert.match(css, /\.monitor-bct-rename-actions[^}]+position:sticky[^}]+bottom:-13px/,
     "the node editor actions must remain visible while fields scroll");
 
+  const pendingStart = monitor.indexOf("function applyMonitorBctPendingRoleProjections(");
   const holdStart = monitor.indexOf("function installMonitorBctRoleLongPress(");
   const holdEnd = monitor.indexOf("\nfunction getMonitorBctNodeInteractionService(", holdStart);
-  assert.ok(holdStart > 0 && holdEnd > holdStart);
+  assert.ok(pendingStart > 0 && holdStart > pendingStart && holdEnd > holdStart);
   function managerRow() {
     const listeners = new Map();
     const classes = new Set();
@@ -289,6 +298,7 @@ function loadModule() {
   const managerTransfers = [];
   const holdContext = {
     monitorBctSuppressedClickKey: "",
+    monitorBctRoleSavePendingByKey: new Map(),
     monitorBctWindowNodesCache: [],
     monitorBctManagerStatuses: [],
     monitorBctNodeSelectionKey: (node) => node.conversationKey,
@@ -308,11 +318,27 @@ function loadModule() {
     setTimeout() { return 1; },
     clearTimeout: () => {},
     globalThis: null,
-    Array, String, Math, Promise,
+    Array, String, Math, Promise, Date,
   };
   holdContext.globalThis = holdContext;
   vm.createContext(holdContext);
+  vm.runInContext(monitor.slice(pendingStart, holdStart), holdContext);
   vm.runInContext(monitor.slice(holdStart, holdEnd), holdContext);
+  holdContext.monitorBctRoleSavePendingByKey.set("conv-pending", {
+    scopeId: "network-a", scopeName: "대화망 A", roleTags: ["Worker", "Manager"],
+    roleTagsSha256: "", expiresAt: 2000,
+  });
+  const projected = holdContext.applyMonitorBctPendingRoleProjections([
+    { conversationKey: "conv-pending", scopeId: "network-a", roleTags: ["Worker"] },
+  ], 1000);
+  assert.equal(projected[0].roleTags.includes("Manager"), true,
+    "an older status reply must not flash the pending Manager role off");
+  const converged = holdContext.applyMonitorBctPendingRoleProjections([
+    { conversationKey: "conv-pending", scopeId: "network-a", roleTags: ["Worker", "Manager"] },
+  ], 1100);
+  assert.equal(converged[0].roleTags.includes("Manager"), true);
+  assert.equal(holdContext.monitorBctRoleSavePendingByKey.has("conv-pending"), false,
+    "the pending projection clears when Core reports the same exact role state");
   const rowOn = managerRow();
   const baseNode = { conversationKey: "conv-1", nodeLabel: "N33", title: "대화", scopeName: "대화망 A", roleTags: ["Worker"] };
   holdContext.monitorBctWindowNodesCache = [baseNode];

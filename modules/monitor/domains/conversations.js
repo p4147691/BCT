@@ -230,6 +230,37 @@ async function applyMonitorBctRoleHistory(direction) {
 }
 //@@FN_END:applyMonitorBctRoleHistory
 
+//@@FN_START:applyMonitorBctPendingRoleProjections
+function applyMonitorBctPendingRoleProjections(nodes, now = Date.now()) {
+  return (Array.isArray(nodes) ? nodes : []).map((node) => {
+    const key = String(node?.conversationKey || "").trim().toLowerCase();
+    const pending = key ? monitorBctRoleSavePendingByKey.get(key) : null;
+    if (!pending) return node;
+    const actualTags = (Array.isArray(node?.roleTags) ? node.roleTags : [])
+      .map((tag) => String(tag).trim().toLowerCase()).sort();
+    const expectedTags = pending.roleTags
+      .map((tag) => String(tag).trim().toLowerCase()).sort();
+    const actualScopeId = String(node?.scopeId || "");
+    if (actualScopeId === pending.scopeId
+        && JSON.stringify(actualTags) === JSON.stringify(expectedTags)) {
+      monitorBctRoleSavePendingByKey.delete(key);
+      return node;
+    }
+    if (now >= pending.expiresAt) {
+      monitorBctRoleSavePendingByKey.delete(key);
+      return node;
+    }
+    return Object.freeze({
+      ...node,
+      scopeId: pending.scopeId,
+      scopeName: pending.scopeName,
+      roleTags: Object.freeze([...pending.roleTags]),
+      roleTagsSha256: pending.roleTagsSha256 || String(node?.roleTagsSha256 || ""),
+    });
+  });
+}
+//@@FN_END:applyMonitorBctPendingRoleProjections
+
 //@@FN_START:installMonitorBctRoleLongPress
 function installMonitorBctRoleLongPress(row, node) {
   let saving = false;
@@ -311,6 +342,14 @@ function installMonitorBctRoleLongPress(row, node) {
       ? tags.filter((tag) => String(tag).trim().toLowerCase() !== role.toLowerCase())
       : [...tags, role];
     const nextScopeName = role === "supervisor" ? "" : node.scopeName;
+    const pendingKey = String(node.conversationKey || "").trim().toLowerCase();
+    monitorBctRoleSavePendingByKey.set(pendingKey, {
+      scopeId: role === "supervisor" ? "" : String(node.scopeId || ""),
+      scopeName: String(nextScopeName || ""),
+      roleTags: [...nextTags],
+      roleTagsSha256: "",
+      expiresAt: Date.now() + 30000,
+    });
     saving = true;
     // This point is reached only after a stationary hold is released. Show the
     // committed choice immediately while Core persists it; cancellation never
@@ -331,6 +370,14 @@ function installMonitorBctRoleLongPress(row, node) {
       expectedRoleTagsSha256: node.roleTagsSha256,
     });
     void saveRole.then((saved) => {
+      const pending = monitorBctRoleSavePendingByKey.get(pendingKey);
+      if (pending) {
+        pending.scopeId = String(saved?.scope_id ?? saved?.project_id ?? pending.scopeId ?? "");
+        pending.scopeName = String(saved?.scope_name ?? pending.scopeName ?? "");
+        pending.roleTags = Array.isArray(saved?.role_tags) ? [...saved.role_tags] : [...nextTags];
+        pending.roleTagsSha256 = String(saved?.role_tags_sha256 || "");
+        pending.expiresAt = Date.now() + 30000;
+      }
       const before = typeof monitorBctNodeHistoryState === "function" ? monitorBctNodeHistoryState(node) : null;
       const beforeOrders = typeof monitorBctNodeHistoryOrders === "function"
         ? monitorBctNodeHistoryOrders(monitorBctWindowNodesCache, [String(node.scopeId || "")])
@@ -384,7 +431,10 @@ function installMonitorBctRoleLongPress(row, node) {
       void refreshMonitorBctWindowNodes();
       return saved;
     }).catch((error) => {
+      monitorBctRoleSavePendingByKey.delete(pendingKey);
       row.classList.toggle(roleClass, hadRole);
+      renderMonitorBctWindowNodes(monitorBctWindowNodesCache);
+      syncMonitorAllDesktopThumbnailNodeBadges();
       setMonitorStatus(`${role === "supervisor" ? "감독관" : "Manager"} 태그 저장 실패 · ${error?.message || error}`, false, 4000);
     }).finally(() => {
       saving = false;
