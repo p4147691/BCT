@@ -360,7 +360,39 @@ def build_mcp(
             historical_contexts_status = "NOT_REQUESTED"
         if project:
             try:
-                network = await bct_network_get(project)
+                project_id = await asyncio.to_thread(
+                    resolve_project_id, bct.store, project_reference=project,
+                )
+                raw_network = await asyncio.to_thread(
+                    project_view, bct.store, project_id=project_id,
+                    include_internal_identity=True,
+                )
+                current_keys: dict[str, list[dict[str, Any]]] = {}
+                for node in current_node_items:
+                    if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
+                        continue
+                    key = str(node.get("conversation_uuid") or "").strip()
+                    if key:
+                        current_keys.setdefault(key, []).append(node)
+                for member in raw_network.get("members", []):
+                    if not isinstance(member, dict):
+                        continue
+                    key = str(member.pop("_conversation_key", ""))
+                    matches = current_keys.get(key, [])
+                    member["current_node_presence"] = (
+                        "NOT_OPEN" if not matches else
+                        "CONFIRMED" if len(matches) == 1 else
+                        "AMBIGUOUS"
+                    )
+                    if len(matches) == 1:
+                        member["current_node"] = {
+                            "node_number": str(matches[0].get("node_number") or ""),
+                            "active": matches[0].get("active") is True,
+                            "generating": matches[0].get("generating") is True,
+                        }
+                    else:
+                        member["current_node"] = None
+                network = {"status": "OK", **raw_network}
             except (ConversationNetworkError, ValueError) as exc:
                 network = {"status": "NOT_FOUND", "reason": str(exc)}
             if not work_id or not operation_id:

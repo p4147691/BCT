@@ -1149,7 +1149,9 @@ def record_monitor_snapshot(store: Store, snapshot: object, *, now: float | None
             "completeness": checked["completeness"], "node_count": len(checked["nodes"])}
 
 
-def project_view(store: Store, *, project_id: str) -> dict[str, object]:
+def project_view(
+    store: Store, *, project_id: str, include_internal_identity: bool = False,
+) -> dict[str, object]:
     """Return a read-only project directory with its latest Monitor observation."""
     project = _identifier(project_id, "CONVERSATION_NETWORK_PROJECT_ID_INVALID")
     with store.transaction() as db:
@@ -1202,7 +1204,7 @@ def project_view(store: Store, *, project_id: str) -> dict[str, object]:
             match = "PARTIAL_UNOBSERVED"
         else:
             match = "NETWORK_UNOBSERVED"
-        result_members.append({
+        item = {
             "node_label": _node_label(int(member["node_number"])),
             "display_name": str(member["display_name"]), "activity": str(member["activity"]),
             "role_tags": tags_by_key.get(key, []), "monitor_match": match,
@@ -1212,7 +1214,10 @@ def project_view(store: Store, *, project_id: str) -> dict[str, object]:
                 "presence": str(monitor["presence"]),
                 "observed_at": str(latest_available["observed_at"]),
             },
-        })
+        }
+        if include_internal_identity:
+            item["_conversation_key"] = key
+        result_members.append(item)
     return {
         "project": {"display_name": str(project_row["display_name"]), "active": bool(project_row["active"])},
         "monitor_snapshot": None if snapshots is None else {

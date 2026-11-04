@@ -267,6 +267,10 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertIsNone(blank_network_check.structuredContent["project_context"])
 
                     self.assertEqual("OK", network_check.structuredContent["network"]["status"])
+                    checked_member = network_check.structuredContent["network"]["members"][0]
+                    self.assertEqual("NOT_OPEN", checked_member["current_node_presence"])
+                    self.assertIsNone(checked_member["current_node"])
+                    self.assertNotIn("_conversation_key", checked_member)
                     self.assertIn("nodes", network_check.structuredContent)
                     self.assertIn("rcc", network_check.structuredContent)
 

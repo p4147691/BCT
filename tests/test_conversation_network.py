@@ -125,6 +125,18 @@ class ConversationNetworkTests(unittest.TestCase):
         self.assertNotIn(MANAGER, json.dumps(view, ensure_ascii=False))
         self.assertNotIn("snapshot_id", view["monitor_snapshot"])
 
+    def test_internal_identity_is_opt_in_for_current_presence_join(self):
+        public = project_view(self.store, project_id="bct.rcc")
+        internal = project_view(
+            self.store, project_id="bct.rcc", include_internal_identity=True,
+        )
+        self.assertTrue(all("_conversation_key" not in item for item in public["members"]))
+        manager = next(
+            item for item in internal["members"]
+            if item["display_name"] == "오류 병목 감시 측정기"
+        )
+        self.assertEqual(MANAGER, manager["_conversation_key"])
+
     def test_partial_snapshot_never_treats_missing_member_as_removed(self):
         record_monitor_snapshot(self.store, self.snapshot(nodes=[
             {"node_label": "D1-4", "conversation_key": WORKER,
