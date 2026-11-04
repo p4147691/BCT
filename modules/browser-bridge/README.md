@@ -1,41 +1,75 @@
 # BCT Browser Bridge
 
-`BCT Browser Bridge` is an independent, manual, read-only Chrome extension and Native Messaging host.  It is not RCC and it does not share an extension ID, host name, executable, registration, token, profile, or `allowed_origins` entry with RCC.
+Independent Chrome MV3 extension and Native Messaging Host. This is NOT RCC.
+No RCC extension ID, origin, Host registration, executable, token or Chrome
+profile is reused. BCT Core remains the only Work/Policy/receipt authority.
 
-The extension can only request BCT's existing `read` capability and receipt lookup.  BCT Core remains the owner of authorization, work scope, execution, and receipts.  The bridge has no content scripts, host permissions, page-command channel, custom executor, database, or automatic model invocation.
+## Source-only Local Bridge parity candidate
+
+The legacy Local Bridge used assistant text markers in a rendered ChatGPT
+conversation, a Chrome extension, Native Host and local read result return.
+The new independent extension now contains a parallel opt-in flow:
+
+1. The user explicitly enables the current exact ChatGPT tab in the popup.
+   Consent is stored in Chrome session storage for that one conversation+tab.
+2. A content script on https://chatgpt.com/c/* observes only a completed
+   assistant message with the canonical two-field marker below.
+3. The background verifies exact origin, main frame, tab/conversation identity,
+   session consent, and a lowercase 32-hex operation ID.
+4. The request is read-only through the independent Native Messaging Host.
+   It still targets only the isolated test MCP endpoint, not BCT LIVE.
+5. The same exact ChatGPT conversation receives a bounded result message,
+   subject to editor-empty, generation-stopped and stable-conversation checks.
+
+Canonical marker (operation must be read, then path, with no extra keys):
+
+    [[BCT_LOCAL_READ_REQUEST]]
+    {"operation":"read","path":"D:\\BCT\\source\\README.md"}
+    [[/BCT_LOCAL_READ_REQUEST]]
+
+The extension generates a fresh operation ID and records a fingerprint before
+dispatch. An ambiguous Host/Core result is not retried. A pending result is
+removed from the queue before possibly effectful ChatGPT UI submission, so an
+uncertain result send is also not repeated. Model-produced text and returned
+file content remain untrusted data.
+
+No WRITE, EXEC, shell, arbitrary page-command channel, automatic tab creation,
+credential storage inside Chrome, model-provided caller identity, RCC wiring
+or independent receipt authority is introduced.
 
 ## Fixed product identities
 
-| Boundary | Value |
-| --- | --- |
-| Extension ID | `acdgnmbgpkfjkckccbhmccojgigbfcge` |
-| Native host | `com.bct.browser_bridge.prototype` |
-| Native host origin | `chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/` |
+- Extension ID: acdgnmbgpkfjkckccbhmccojgigbfcge
+- Native Host: com.bct.browser_bridge.prototype
+- Native Host origin: chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/
 
-The manifest's public key pins the extension ID.  Do not replace it, reuse RCC identities, or broaden the host manifest's origin list.
+The committed manifest public key pins that extension ID.
 
-## What is committed
+## Acceptance state: SOURCE_ONLY / NOT LIVE
 
-- `extension/`: MV3 extension source and popup.
-- `native/`: native-message framing and persistent Python host.
-- `native/peer_frame.py`: a disconnected PR3-e peer-frame encoder; it does not
-  load a credential, dispatch a request, or change the existing read-only Host.
-- `native/host-manifest.template.json`: deliberately non-installable template.
-- `tests/`: deterministic framing and fail-closed host tests.
-- `docs/CHROME_E2E.md`: gated real-browser procedure and rollback.
-- `docs/CREDENTIAL_IPC_GATE.md`: the non-implementing activation contract for
-  Bridge-only credentials and protected Host/Core IPC.
+The source and Node/host fixture tests are separate evidence from a real
+Chrome E2E. The installed Chrome extensions, RCC, Native Host registrations,
+Core LIVE, operating tokens and existing conversation tabs are unchanged.
+The new content script and automatic editor-submit path have NOT been installed
+or used in a real ChatGPT tab, so DOM drift, ACK and result delivery remain
+unproven. The production Bridge peer binding/listener, credential lifecycle
+and general Manager/Worker delivery remain blocked on the separate product gate.
 
-No compiled executable, native-host registration, browser profile, token, test runtime, or private key is committed.
+The existing Python Host accepts ONLY fixture read and receipt lookup through
+a non-production loopback MCP URL. Using local MCP does not require an OpenAI
+hosted MCP tunnel, but the Bridge is NOT yet a live BCT connector.
 
 ## Source checks
 
 From repository root:
 
-```powershell
-python -m unittest discover -s modules/browser-bridge/tests -v
-python -m compileall -q modules/browser-bridge
-git diff --check
-```
+- python -m unittest discover -s modules/browser-bridge/tests -v
+- node modules/browser-bridge/tests/check_chat_parity.cjs
+- node --check modules/browser-bridge/extension/chat_protocol.js
+- node --check modules/browser-bridge/extension/chat_content.js
+- node --check modules/browser-bridge/extension/background.js
+- python -m compileall -q modules/browser-bridge
+- git diff --check
 
-Real Chrome E2E is intentionally not part of CI or these checks.  It needs the explicit approval listed in `docs/CHROME_E2E.md`.
+Real Chrome acceptance, test-only Native Host registration and cleanup
+still require the separate gate in docs/CHROME_E2E.md.
