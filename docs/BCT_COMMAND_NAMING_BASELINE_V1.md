@@ -50,7 +50,7 @@
 
 ## 운영 규칙
 
-1. **로컬 main 정본**: 격리 개발 → PR CI → 로컬 main 병합·회귀 → 정확한 LIVE 배포·E2E → GitHub main 게시·main CI.
+1. **로컬 main 정본**: 격리 개발·로컬 검증 뒤 영향 경로를 고른다. `LOCAL_FIRST`는 로컬 main 병합·회귀 → 정확한 LIVE 배포·E2E → GitHub main 게시·CI 감사 순서다. 외부 효과·신원·Core/RCC/Native Host·프로토콜·DB/Claim/UNKNOWN·보안·배포기 변경은 `GUARDED_CI_FIRST`로 후보 CI를 로컬 main/LIVE 앞에 둔다.
 2. 새 채팅은 현재 BCT capabilities/실제 도구 계약을 확인한다. 본 문서의 사용자용 이름만으로 도구가 존재한다고 가정하지 않는다.
 3. 신규 명령 추가 시 정확한 실제 이름·인자·분류(공개/내부 실행/내부 지원/내부 호환/결과 처리)·대체 관계를 함께 갱신한다.
 4. 이 단계는 이름과 책임 경계의 **기준선**이며 Core/RCC/Monitor/Chrome 및 운영 DB의 동작 변경을 수반하지 않는다.

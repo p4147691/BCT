@@ -1022,10 +1022,27 @@ class DelayedSendService:
                 or observed.get("responseSourceUserTextOccurrenceCount") != 1
                 ) and (planned_source or source_key.startswith("fallback-turn-")):
             return reject("SOURCE_OCCURRENCE_AMBIGUOUS")
+        observed_source_key = str(observed.get("responseSourceUserTurnKey") or "")
+        observed_latest_key = str(observed.get("latestUserTurnKey") or "")
+        source_keys_match = (
+            observed_source_key == source_key
+            and observed_latest_key == source_key
+        )
+        # Fallback keys are positional rather than durable identity.  Older
+        # RCC scripts could count nested message units twice, so a page reload
+        # may both add the current ``:K:user`` suffix and renumber N.  Permit
+        # that representation upgrade only when both current observations
+        # identify the same fallback user unit.  The exact source/send SHA and
+        # unique-occurrence gates above remain the durable identity proof.
+        if (not source_keys_match
+                and re.fullmatch(r"fallback-turn-\d+", source_key)
+                and observed_source_key == observed_latest_key
+                and re.fullmatch(r"fallback-turn-\d+:\d+:user",
+                                 observed_source_key)):
+            source_keys_match = True
         source_match = (
-            observed.get("responseSourceUserTurnKey") == source_key
+            source_keys_match
             and observed.get("responseSourceUserSha256") == source_sha
-            and observed.get("latestUserTurnKey") == source_key
             and observed.get("latestUserSha256") == source_sha
         )
         if source_key and not source_match:
@@ -1065,11 +1082,19 @@ class DelayedSendService:
         )
         if not (changed or (trusted_self_source and response_changed)):
             return reject("RESPONSE_NOT_NEW")
+        response_key = str(observed.get("responseTurnKey") or "")
+        same_inflight_turn_completed = (
+            ctx.get("baseline_generating") is True
+            and current_count >= baseline_count
+            and response_key == str(ctx.get("baseline_key") or "")
+            and str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")
+        )
         if (observed.get("terminal") is not True
                 or observed.get("inputReady") is not True
                 or observed.get("generating") is not False
-                or not str(observed.get("responseTurnKey") or "").strip()
-                or str(observed.get("responseTurnKey")) == ctx.get("baseline_key")):
+                or not response_key.strip()
+                or (response_key == ctx.get("baseline_key")
+                    and not same_inflight_turn_completed)):
             return reject("RESPONSE_NOT_TERMINAL")
         return normalize_rcc_latest_assistant(
             observed,conversation_key=worker,

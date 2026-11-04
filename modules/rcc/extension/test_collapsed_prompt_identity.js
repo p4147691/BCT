@@ -80,7 +80,7 @@ function slice(source, start, end) {
 }
 vm.runInContext(slice(content, 'function canonicalMessageUnit(', 'function getAssistantNodes(')
   + slice(content, 'function turnUserText(', 'function isVisible(')
-  + ';globalThis.api={getConversationTurns,messageUnitText,turnUserText,resolveRoutedTurn,exactUserTurnsBySubmittedSha256};', context);
+  + ';globalThis.api={getConversationTurns,messageUnitText,messageUnitIdentity,turnUserText,resolveRoutedTurn,exactUserTurnsBySubmittedSha256};', context);
 const directContext = vm.createContext({RelayCore, isChatTab: () => true,
   getComputedStyle: () => ({visibility: 'visible', display: 'block'}),
   get document() { return document; },
@@ -163,6 +163,15 @@ const longPrompt = '[BCT_ORCHESTRATION_ASSIGNMENT_V1]\n' + 'bounded task '.repea
   const secondHash = await context.newChatTextSha256('only second message');
   assert.equal((await context.api.exactUserTurnsBySubmittedSha256(secondHash))[0]
     .getAttribute('data-content-search-unit-key'), 'new:user');
+  // LIVE fallback wrappers may be renumbered after reload. The semantic unit
+  // key is the correct current observation and must win over its wrapper.
+  const semanticInFallback = el('div', {'data-chatgpt-search-unit-key': 'fallback-turn-4:0:user'},
+    el('div', {'data-user-message-bubble': 'true'}, 'queued instruction'));
+  const fallbackWrapper = el('article', {'data-content-search-turn-key': 'fallback-turn-4'},
+    el('div', {'data-message-author-role': 'user'}, semanticInFallback));
+  document = el('main', {}, fallbackWrapper);
+  assert.equal(context.api.messageUnitIdentity(semanticInFallback), 'fallback-turn-4:0:user',
+    'semantic unit identity must win over a positional fallback wrapper');
   document = el('main', {}, el('div', {}, el('div', {
     'data-content-search-unit-key': 'wrong:assistant'
   }, longPrompt)));

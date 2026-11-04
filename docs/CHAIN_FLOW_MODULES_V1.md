@@ -50,6 +50,15 @@ X가 더 필요함  → X → X → … → X → A
   → 필요한 역할의 후보를 본다
   → A가 이번 작업을 맡길 정확한 X를 고른다
 
+통합 경로 고르기
+  A가 변경 대상·외부 효과·rollback을 확인
+  → LOCAL_FIRST
+      로컬 검증 → 로컬 main → 영향 대상 LIVE E2E → GitHub 게시·CI 감사
+  → GUARDED_CI_FIRST
+      로컬 검증 → exact 후보 CI·리뷰 → 로컬 main → LIVE E2E → GitHub 게시·main CI
+  → 분류 불가
+      GUARDED_CI_FIRST로 유지하고 불명확한 경계를 보고
+
 체인 시작
   A의 지시문 + 정확한 X
   → 감시 선준비
@@ -137,6 +146,7 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 → 대화망 확인·준비 (bct_check_network는 항상 실행)
 → 실행 전 점검
 → A의 작업 방향 정리
+→ 통합 경로 선택 (LOCAL_FIRST / GUARDED_CI_FIRST)
 → 대상 X 고르기
 → 체인 시작: A → X
 → X 내부 반복 또는 X → A 반환
@@ -145,6 +155,12 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 여기서 `bct_chain_message`는 마지막의 **체인 시작** 부분 레시피다. 전체
 Chain Message 레시피가 대화망 준비까지 포함한다고 해서, 전송 부품 하나가
 대화망을 몰래 바꾸는 것은 아니다.
+
+통합 경로 역시 `bct_chain_message`가 자동으로 정하지 않는다. A가 현재 공통
+운영 정책과 실제 영향 범위를 읽고 방향에 기록하며, X는 실행계획과 반환 보고에
+선택 경로·선택 이유·각 단계의 증거를 남긴다. 작업 도중 외부 효과나 rollback
+불확실성이 새로 발견되면 `LOCAL_FIRST`를 계속 밀어붙이지 않고 공유 효과 전에
+멈춰 `GUARDED_CI_FIRST`로 올려 다시 계획한다.
 
 ### 한 번에 끝나는 A-X-A
 

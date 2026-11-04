@@ -16,6 +16,17 @@ class InstructionAuthorityTests(unittest.TestCase):
         self.assertIn("Work**: one durable BCT scope/authorization record", agents)
         self.assertNotIn("46-file RC2", agents)
         self.assertNotIn(r"runtime\backups\rcc-", agents)
+        self.assertIn("`LOCAL_FIRST`", agents)
+        self.assertIn("`GUARDED_CI_FIRST`", agents)
+        self.assertIn("GitHub main fast-forward publication and CI audit after LIVE acceptance", agents)
+
+        operating = (ROOT / "docs" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
+        chain = (ROOT / "docs" / "CHAIN_FLOW_MODULES_V1.md").read_text(encoding="utf-8")
+        direction = (ROOT / "docs" / "A_DIRECTION_RECIPE_V1.md").read_text(encoding="utf-8")
+        for text in (operating, chain, direction):
+            self.assertIn("LOCAL_FIRST", text)
+            self.assertIn("GUARDED_CI_FIRST", text)
+        self.assertIn("Chain Message 자체는 어느 경로도 몰래 선택하지", direction)
 
         rules = sorted((ROOT / ".cursor" / "rules").glob("*.mdc"))
         self.assertEqual(["bct-delivery-flow.mdc"], [x.name for x in rules])

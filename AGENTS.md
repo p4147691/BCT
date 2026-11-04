@@ -54,7 +54,10 @@ candidate needs a rebase/cherry-pick/manual reconciliation.
 - Develop and test in an owned isolated worktree. Do not make ordinary feature
   edits directly in shared local main.
 - Keep one coherent candidate with exact changed files, feature HEAD and focused
-  regression evidence. Use exact candidate CI when the impact gate requires it.
+  regression evidence. Classify its integration lane before any shared effect:
+  `LOCAL_FIRST` or `GUARDED_CI_FIRST`. Use exact candidate CI only when the
+  guarded impact gate requires it; an unclassified boundary uses the guarded
+  lane until its effects and rollback are understood.
 - Project Managers normally stop at **READY_FOR_INTEGRATION**: verify the
   candidate and submit one durable integration request when the currently
   running Core exposes `bct_integration_queue`. If that tool is not live, retain
@@ -69,16 +72,35 @@ candidate needs a rebase/cherry-pick/manual reconciliation.
 Serialize only the actual shared effect. Independent inspection, preparation
 and unrelated repositories may proceed in parallel.
 
-For a normal accepted candidate, use this order unless a verified product gate
-requires a narrower reversible path:
+Every accepted candidate uses one of two explicit lanes.  `LOCAL_FIRST` is the
+default only for a bounded, reversible change whose affected behavior is
+covered locally and whose LIVE target has an exact backup/rollback path:
 
-1. isolated implementation + focused tests;
+1. isolated implementation + focused affected tests;
+2. guarded local-main integration with expected main/feature SHA and clean tree;
+3. exact resulting-main verification;
+4. guarded LIVE deployment and real E2E for **affected targets only**;
+5. GitHub main fast-forward publication and CI audit after LIVE acceptance;
+6. final reconciliation of exact source, installed/running state, publication,
+   CI and receipts.  A later CI failure is an audit failure to investigate; it
+   does not silently roll back an already accepted local/LIVE effect.
+
+Use `GUARDED_CI_FIRST` when a change can create or misattribute an external
+effect, weaken an identity or authorization fence, make rollback uncertain, or
+changes Core/RCC/Native Host, protocol, durable DB/Claim/UNKNOWN semantics,
+message delivery, credentials/security, or the deployment mechanism:
+
+1. isolated implementation + focused and required regression tests;
 2. exact candidate CI/review;
-3. guarded local-main integration with expected main/feature SHA and clean tree;
-4. exact resulting-main verification / required CI;
-5. guarded LIVE deployment and real E2E for **affected targets only**;
-6. GitHub main fast-forward publication last;
-7. final reconciliation of exact source, installed/running state and receipts.
+3. guarded local-main integration and exact resulting-main verification;
+4. guarded LIVE deployment and real E2E for affected targets only;
+5. GitHub main fast-forward publication and resulting-main CI audit;
+6. final reconciliation of exact source, installed/running state, publication,
+   CI and receipts.
+
+Documentation-only or source-only work with no LIVE target skips the deployment
+step.  GitHub/network unavailability does not invalidate verified local main,
+but never use the local-first lane to bypass an applicable guarded impact gate.
 
 Core, Monitor and RCC are separate deployment targets. A changed source-main SHA
 does not by itself require redeploying an unaffected target.

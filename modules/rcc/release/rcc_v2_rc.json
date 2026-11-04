@@ -103,13 +103,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 28952,
-        "sha256": "4944283a0e30102a9c97b842693cc04db07c89b1f0eee75a663a08cdaefc013a"
+        "size": 28702,
+        "sha256": "31b4e52fba75260b2a91a4c7cec858c71d730a465a2e199295252c7db6325ce0"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 22445,
-        "sha256": "a0979805a0eee7255a683b08b3e8289cb8ebd2dfdaac50e1c843e92cef055420"
+        "size": 23049,
+        "sha256": "c0ec659fbf07302adec32027e4b5a0452d096357b633ad6c8843640afb83a699"
       },
       {
         "path": "content/conversation_rename.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "e9bbe36c8b9ddae0de4899d05b363392ad98d58f1d894817d49b3519c9ab720e"
+    "aggregateSha256": "42a45dfe7b6aa936876663e0a34413022c41cfb1dabf1e397afa6f960e8171bc"
   },
   "activeLoaderGraph": {
     "background": [

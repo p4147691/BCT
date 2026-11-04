@@ -147,6 +147,19 @@ function turnIdentity(turn) {
     || '';
 }
 
+function messageUnitIdentity(unit) {
+  if (!(unit instanceof Element)) return '';
+  // Prefer the semantic message-unit key. Enclosing fallback turn numbers are
+  // positional and can be renumbered when ChatGPT rebuilds the page, while
+  // the role-keyed unit remains the exact user/assistant identity observed by
+  // the RCC content script.
+  return unit.getAttribute('data-content-search-unit-key')
+    || unit.getAttribute('data-chatgpt-search-unit-key')
+    || turnIdentity(unit.closest(
+      '[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]'
+    ) || unit);
+}
+
 
 function messageUnitText(node, role) {
   if (!(node instanceof Element)) return '';
