@@ -550,7 +550,23 @@ function monitorBctProjectionHasUnresolvedLineage() {
     const hwnd = monitorBctDisplaySessionHwnd(node.windowId, node.instanceId, node.sessionId);
     if (!hwnd) return true;
     const location = monitorWindowDesktopLocations.get(String(hwnd));
-    return !location || monitorDesktopState.desktopIds.indexOf(String(location.desktopId || "")) < 0;
+    if (!location || monitorDesktopState.desktopIds.indexOf(String(location.desktopId || "")) < 0) return true;
+
+    // A Native location alone is not enough for a visible node number.  The
+    // desktop thumbnail frame can still be one render behind that location.
+    // Treat a missing *visible* frame as unresolved so the bounded startup
+    // convergence runs without requiring the user to focus or click Monitor.
+    // Minimized Chrome windows intentionally have no captured rectangle here;
+    // their node numbers are rendered by the separate minimized-summary path.
+    if (location.iconic === true) return false;
+    const tile = [...(monitorDesktopThumbs?.children || [])].find((item) =>
+      String(item?.dataset?.desktopId || "") === String(location.desktopId || "")
+    );
+    const visual = tile?.querySelector?.(".monitor-desktop-thumb-visual");
+    if (!visual?.isConnected) return true;
+    const frame = [...visual.querySelectorAll(".monitor-desktop-thumb-window[data-hwnd]")]
+      .find((image) => String(image?.dataset?.hwnd || "") === String(hwnd));
+    return !frame || frame.hidden || frame.style.display === "none";
   });
 }
 //@@FN_END:monitorBctProjectionHasUnresolvedLineage

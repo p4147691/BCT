@@ -18,6 +18,9 @@ assert.match(monitorSource,
 assert.match(monitorSource,
   /function monitorBctProjectionHasUnresolvedLineage\([\s\S]*const hwnd = monitorBctDisplaySessionHwnd\(node\.windowId, node\.instanceId, node\.sessionId\);[\s\S]*if \(!hwnd\) return true;/,
   "projection convergence must continue while the strict BCT HWND lineage is unresolved");
+assert.match(monitorSource,
+  /Minimized Chrome windows intentionally have no captured rectangle here;[\s\S]*?if \(location\.iconic === true\) return false;[\s\S]*?monitor-desktop-thumb-window\[data-hwnd\][\s\S]*?return !frame \|\| frame\.hidden \|\| frame\.style\.display === "none";/,
+  "projection convergence must also retry when a resolved, non-minimized Chrome HWND is absent from the actual thumbnail frame");
 
 const geometryStart = monitorSource.indexOf("async function refreshMonitorBctBrowserWindowGeometry(");
 const geometryEnd = monitorSource.indexOf("\nfunction refreshMonitorBctDisplayWindowHwnd(", geometryStart);
