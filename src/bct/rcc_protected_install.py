@@ -46,6 +46,12 @@ DELAYED_SOURCE_PROOF_V2_ROLLBACK = DELAYED_SOURCE_PROOF_V2_ROOT / "rollback_inst
 DELAYED_SOURCE_PROOF_V2_MANIFEST = DELAYED_SOURCE_PROOF_V2_ROOT / "release_manifest_delayed_source_proof_v2_immutable.json"
 DELAYED_SOURCE_PROOF_V2_MANIFEST_SHA256 = "c1bf097f51bb1e4d0ea164e95b5edccd3dff7f6b64fa7c2b18a552bb71c5c1d8"
 DELAYED_SOURCE_PROOF_V2_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-delayed-source-proof-v2")
+SEMANTIC_TURN_ROOT = Path(r"D:\BCT\data\RCC_SEMANTIC_TURN_20261104")
+SEMANTIC_TURN_STAGE = SEMANTIC_TURN_ROOT / "candidate_1_0_63"
+SEMANTIC_TURN_ROLLBACK = SEMANTIC_TURN_ROOT / "rollback_installed_1_0_63"
+SEMANTIC_TURN_MANIFEST = SEMANTIC_TURN_ROOT / "release_manifest_semantic_turn_immutable.json"
+SEMANTIC_TURN_MANIFEST_SHA256 = "56caa01e0e1ba700f39e51ae58b91836931a461c2710683a87fd2ab4550d6653"
+SEMANTIC_TURN_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-semantic-turn")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
@@ -173,7 +179,7 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
     baseline_version = installed_version or ("1.0.59" if rollback["fileCount"] == 57 else "1.0.60")
     if _identity(live) != (EXTENSION_ID, baseline_version):
         raise PreconditionError("RCC_INSTALL_LIVE_IDENTITY_MISMATCH")
-    if candidate_version not in {"1.0.60", "1.0.61"}:
+    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63"}:
         raise PreconditionError("RCC_INSTALL_CANDIDATE_VERSION_UNSUPPORTED")
     if _identity(candidate) != (EXTENSION_ID, candidate_version):
         raise PreconditionError("RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH")

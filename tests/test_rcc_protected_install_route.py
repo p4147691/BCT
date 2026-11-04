@@ -100,6 +100,19 @@ class ProtectedRccRouteTests(unittest.TestCase):
         self.assertEqual(plan["candidate_files"], 58)
         self.assertFalse(self.journal.exists())
 
+    def test_semantic_turn_route_is_exact_63_and_separate(self):
+        route = DeployFeature._rcc_route_config("rcc-inspect-semantic-turn")
+        self.assertEqual(route["candidate_version"], "1.0.63")
+        self.assertEqual(route["installed_version"], "1.0.63")
+        self.assertEqual(route["manifest_file"], ri.SEMANTIC_TURN_MANIFEST)
+        self.assertEqual(route["candidate"], ri.SEMANTIC_TURN_STAGE)
+        self.assertEqual(route["backup_source"], ri.SEMANTIC_TURN_ROLLBACK)
+        self.assertEqual(route["journal_root"], ri.SEMANTIC_TURN_JOURNAL)
+        self.assertEqual(
+            route["pinned_manifest_sha256"],
+            ri.SEMANTIC_TURN_MANIFEST_SHA256,
+        )
+
     def test_01_exact_read_only_preflight_57_58_identity(self):
         plan=self.inspect()
         self.assertEqual((plan["installed_files"],plan["candidate_files"]),(57,58))
