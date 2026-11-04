@@ -23,7 +23,7 @@ A / Manager
   2. check_run      : 현재 현실 확인
   3. set_network    : 이번 A→B에 필요한 최소 망 준비
   4. check_ready    : Work·대상·영수증·UNKNOWN 최종 확인
-  5. send_message   : 감시 선등록 후 정확히 한 번 전송
+  5. task_message   : 감시 선등록 후 정확히 한 번 전송
   ───────────── 실제 대화 턴과 판단 주체 변경 ─────────────
 B / Worker
   6. plan_run       : B의 구체적인 실행계획과 자원 선택
@@ -92,10 +92,15 @@ B는 A의 목표·범위·금지사항·위험 경계를 변경할 수 없다. �
 검사하는 부분 부품이다. 물리적인 탭 상태까지 포함한 `check_ready` 전체 레시피는
 별도 조립 대상으로 남아 있다.
 
-### 5. `send_message`
+### 5. `task_message`
 
-감시를 먼저 준비한 후 정확한 대상에게 한 번 전송하고 영수증을 남긴다. UNKNOWN은
-새 Operation으로 재전송하지 않는다.
+새 Manager→Worker 작업의 기본 공개 명령이다. Task Message가 작업·완료 기준·BB/BA
+규칙을 한 묶음으로 만들고, 내부에서 Chain Message가 감시를 먼저 준비한 후 정확한
+대상에게 한 번 전송하고 영수증을 남긴다. UNKNOWN은 새 Operation으로 재전송하지
+않는다.
+
+`send_message`는 사람이 Manager에게 운영 지시를 주거나, 승인·복구처럼 Worker
+작업이 아닌 직접 메시지가 필요한 예외에만 사용한다.
 
 ## BB와 BA
 
