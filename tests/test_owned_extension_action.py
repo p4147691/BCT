@@ -153,6 +153,41 @@ class OwnedExtensionActionTests(unittest.TestCase):
         with self.assertRaises(UnknownEffectError):
             self.feature.execute(request)
 
+    @patch("bct.features.owned_extension_action.subprocess.Popen")
+    def test_monitor_reconciles_exact_token_ack_and_runtime_after_output_failure(self, popen):
+        request = self.feature.prepare(
+            work=self.work, arguments={"target": "monitor", "action": "reload"}
+        )
+        live = self.root / "monitor-live"
+        token = "fedcba9876543210fedcba9876543210"
+        runtime_dir = self.root / "DesktopWindowMonitor"
+        runtime_dir.mkdir()
+
+        class Observation:
+            returncode = 1
+            def poll(self): return None
+            def communicate(self, timeout=None):
+                return ("", "late command result")
+
+        def start(*args, **kwargs):
+            (live / "extension" / ".reload-token").write_text(token, encoding="utf-8")
+            (live / "extension" / ".reload-ack").write_text(token, encoding="utf-8")
+            (runtime_dir / "shared-runtime.json").write_text(json.dumps({
+                "__MONITOR_INSTANCE__:GOOGLE": {"label": json.dumps({
+                    "manifest_version": request.arguments["version"],
+                    "reload_token": token,
+                    "seen_at_ms": 9999999999999,
+                })}
+            }), encoding="utf-8")
+            return Observation()
+
+        popen.side_effect = start
+        with patch.dict("os.environ", {"LOCALAPPDATA": str(self.root)}):
+            result = self.feature.execute(request)
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertTrue(result.evidence["reconciled_from_runtime"])
+        self.assertEqual(token, result.evidence["reload_token"])
+
 
 if __name__ == "__main__":
     unittest.main()

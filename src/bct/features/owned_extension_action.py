@@ -75,6 +75,44 @@ class OwnedExtensionActionFeature:
             "tool_path": str(tool_path),
         }
 
+    def _verified_monitor_post_state(
+        self, *, root: Path, version: str, old_token: str, published_after_ms: int
+    ) -> dict[str, Any] | None:
+        """Reconcile one dispatched reload from its exact durable token evidence."""
+        try:
+            token = (root / "extension" / ".reload-token").read_text(
+                encoding="utf-8-sig"
+            ).strip()
+            ack = (root / "extension" / ".reload-ack").read_text(
+                encoding="utf-8-sig"
+            ).strip()
+            if not re.fullmatch(r"[a-f0-9]{32}", token) or token == old_token or ack != token:
+                return None
+            runtime = json.loads(
+                (Path(os.environ["LOCALAPPDATA"]) / "DesktopWindowMonitor" / "shared-runtime.json")
+                .read_text(encoding="utf-8-sig")
+            )
+            row = runtime["__MONITOR_INSTANCE__:GOOGLE"]
+            loaded = json.loads(row["label"])
+            if (
+                str(loaded.get("manifest_version") or "") != version
+                or str(loaded.get("reload_token") or "") != token
+                or int(loaded.get("seen_at_ms") or 0) < published_after_ms
+            ):
+                return None
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return {
+            "target": "monitor", "action": "reload",
+            "extension_id": self._MONITOR_ID,
+            "manifest_version": version,
+            "reload_ack": True,
+            "runtime_telemetry_verified": True,
+            "dispatch_observation": "monitor-token-poll",
+            "reconciled_from_runtime": True,
+            "reload_token": token,
+        }
+
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         if not isinstance(arguments, dict):
             raise PreconditionError("OWNED_EXTENSION_ARGUMENTS_INVALID")
@@ -134,6 +172,7 @@ class OwnedExtensionActionFeature:
         ]
         token_path = self._monitor_root() / "extension" / ".reload-token"
         old_token = token_path.read_text(encoding="utf-8-sig").strip() if token_path.is_file() else ""
+        published_after_ms = int(time.time() * 1000)
         try:
             observation_environment = os.environ.copy()
             observation_environment["PYTHONUTF8"] = "1"
@@ -181,6 +220,15 @@ class OwnedExtensionActionFeature:
         try:
             stdout, stderr = observation.communicate(timeout=40)
         except subprocess.TimeoutExpired as exc:
+            reconciled = self._verified_monitor_post_state(
+                root=self._monitor_root(), version=identity["version"],
+                old_token=old_token, published_after_ms=published_after_ms,
+            )
+            if reconciled is not None:
+                return FeatureResult(
+                    Outcome.APPLIED, reconciled,
+                    output={"target": "monitor", "action": "reload", "status": "APPLIED"},
+                )
             raise UnknownEffectError("OWNED_EXTENSION_MONITOR_RELOAD_RESULT_UNKNOWN") from exc
         combined = (stdout + "\n" + stderr).strip()
         match = self._MONITOR_RESULT.search(combined)
@@ -194,6 +242,15 @@ class OwnedExtensionActionFeature:
                     "reload_ack": True, "runtime_telemetry_verified": True,
                     "dispatch_observation": "monitor-token-poll",
                 },
+                output={"target": "monitor", "action": "reload", "status": "APPLIED"},
+            )
+        reconciled = self._verified_monitor_post_state(
+            root=self._monitor_root(), version=identity["version"],
+            old_token=old_token, published_after_ms=published_after_ms,
+        )
+        if reconciled is not None:
+            return FeatureResult(
+                Outcome.APPLIED, reconciled,
                 output={"target": "monitor", "action": "reload", "status": "APPLIED"},
             )
         raise UnknownEffectError("OWNED_EXTENSION_MONITOR_RELOAD_ACK_UNKNOWN")
