@@ -526,12 +526,16 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, option
       .filter((windowId) => Number.isInteger(windowId)))];
 
     // When Chrome has just told us the current tab order, it is more current
-    // than Core's next membership refresh. Keep non-BCT/UUID-less tabs visible
-    // as `?` in that exact position rather than silently dropping them.
+    // than Core's next membership refresh. Keep only ChatGPT tabs whose BCT
+    // identity is not available yet visible as `?`. Ordinary tabs in the same
+    // Chrome window (YouTube, GitHub, etc.) are physical thumbnail content,
+    // not candidate BCT nodes.
     if (browserWindowIds.length === 1) {
       const browserTabs = monitorBrowserVisualTabsForWindow(browserWindowIds[0]);
       if (browserTabs.length) {
-        return browserTabs.map((tab) => itemFor(byTabId.get(Number(tab.tabId)), tab.tabId));
+        return browserTabs
+          .filter((tab) => byTabId.has(Number(tab.tabId)) || tab?.chatGpt === true)
+          .map((tab) => itemFor(byTabId.get(Number(tab.tabId)), tab.tabId));
       }
     }
 

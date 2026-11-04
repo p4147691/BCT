@@ -15,7 +15,7 @@ function domainFunction(file, name) {
 }
 
 const context = {
-  Map, Set, Number, String, Array,
+  Map, Set, Number, String, Array, URL,
   monitorLastAiState: {},
   monitorBrowserVisualTabsByWindow: new Map(),
   monitorBctWindowNodesCache: [
@@ -43,8 +43,9 @@ assert.equal(context.applyMonitorBrowserVisualTabSnapshot({
     { tabId: 101, tabIndex: 0 },
     { tabId: 102, tabIndex: 1 },
     { tabId: 103, tabIndex: 2 },
-    { tabId: 104, tabIndex: 3 },
-    { tabId: 105, tabIndex: 4 },
+    { tabId: 104, tabIndex: 3, url: "https://chatgpt.com/" },
+    { tabId: 106, tabIndex: 4, url: "https://www.youtube.com/watch?v=test" },
+    { tabId: 105, tabIndex: 5 },
   ],
 }), true);
 assert.deepEqual(
@@ -60,7 +61,8 @@ assert.equal(context.applyMonitorBrowserVisualTabSnapshot({
     { tabId: 101, tabIndex: 1 },
     { tabId: 102, tabIndex: 2 },
     { tabId: 103, tabIndex: 3 },
-    { tabId: 104, tabIndex: 4 },
+    { tabId: 106, tabIndex: 4, url: "https://www.youtube.com/watch?v=test" },
+    { tabId: 104, tabIndex: 5, url: "https://chatgpt.com/" },
   ],
 }), true);
 assert.deepEqual(

@@ -23,10 +23,19 @@ class SimulatedRcc:
         self.manual_user_text = "Initial manual work request"
         self.visible_count_override = None
         self.responses = {WORKER: ("", 0), MANAGER: ("", 0)}
+        self.locations = {
+            WORKER: {"tabId": 10, "windowId": 11, "index": 0},
+            MANAGER: {"tabId": 12, "windowId": 11, "index": 1},
+        }
 
     def reply(self, conversation, body):
         _, count = self.responses[conversation]
         self.responses[conversation] = (body, count + 1)
+
+    def move(self, conversation, *, window_id, index):
+        self.locations[conversation] = {
+            **self.locations[conversation], "windowId": window_id, "index": index,
+        }
 
     def request(self, *, instance_id, request_id, command, to="", text="",
                 extra=None, timeout_s=30, before_write=None):
@@ -36,12 +45,15 @@ class SimulatedRcc:
             return {"ok": True, "state": {
                 "instanceId": INSTANCE, "sessionId": SESSION,
                 "tabs": [
-                    {"tabId": 10, "windowId": 11, "url": "https://chatgpt.com/c/" + WORKER},
-                    {"tabId": 12, "windowId": 11, "url": "https://chatgpt.com/c/" + MANAGER},
+                    {**self.locations[WORKER], "url": "https://chatgpt.com/c/" + WORKER},
+                    {**self.locations[MANAGER], "url": "https://chatgpt.com/c/" + MANAGER},
                 ],
             }}
         if command == "read-latest-assistant":
             key = extra["conversationKey"]
+            location = self.locations[key]
+            assert extra["tabId"] == location["tabId"]
+            assert extra["windowId"] == location["windowId"]
             body, count = self.responses[key]
             latest_send = next((text for target,text,_ in reversed(self.sent)
                                 if target == key), "")
@@ -70,6 +82,9 @@ class SimulatedRcc:
                 "inputReady": bool(count),
             }
         if command == "send-to-tab":
+            location = self.locations[extra["conversationKey"]]
+            assert extra["tabId"] == location["tabId"]
+            assert extra["windowId"] == location["windowId"]
             self.sent.append((extra["conversationKey"], text, request_id))
             return {
                 "type": "host:result", "ok": True, "state": "SUBMITTED",
@@ -137,6 +152,11 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             # ChatGPT commonly keeps a short continuation body on the marker
             # line.  This remains an explicit, unambiguous MANAGER branch.
             rcc.reply(WORKER,"NEXT TASK — MANAGER: PLANNED_SEND_E2E_OK")
+            # A tab may be reordered or attached to a different Chrome window
+            # while the durable watch is active. The watch and return path
+            # reacquire both conversations by unique conversation identity.
+            rcc.move(WORKER, window_id=22, index=3)
+            rcc.move(MANAGER, window_id=23, index=0)
             polled=service.poll_once()
             self.assertEqual("RETURNED_TO_MANAGER",polled["events"][0]["status"])
             self.assertEqual(MANAGER,rcc.sent[-1][0])

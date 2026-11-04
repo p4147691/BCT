@@ -3020,7 +3020,13 @@ function applyMonitorBrowserVisualTabSnapshot(message) {
       const tabId = Number(item?.tabId);
       const tabIndex = Number(item?.tabIndex);
       if (!Number.isInteger(tabId) || tabId < 0 || !Number.isInteger(tabIndex) || tabIndex < 0) continue;
-      tabs.set(tabId, { tabId, tabIndex });
+      const url = String(item?.url || "");
+      let chatGpt = false;
+      try {
+        const parsed = new URL(url);
+        chatGpt = parsed.hostname === "chatgpt.com" || parsed.hostname === "chat.openai.com";
+      } catch (_) {}
+      tabs.set(tabId, { tabId, tabIndex, chatGpt });
     }
     monitorBrowserVisualTabsByWindow.set(windowId, tabs);
     return true;
@@ -3032,7 +3038,13 @@ function applyMonitorBrowserVisualTabSnapshot(message) {
   if (message?.tabRemoved === true) tabs.delete(tabId);
   else {
     const tabIndex = Number(message?.tabIndex);
-    tabs.set(tabId, { tabId, tabIndex: Number.isInteger(tabIndex) && tabIndex >= 0 ? tabIndex : Number.MAX_SAFE_INTEGER });
+    const url = String(message?.url || "");
+    let chatGpt = false;
+    try {
+      const parsed = new URL(url);
+      chatGpt = parsed.hostname === "chatgpt.com" || parsed.hostname === "chat.openai.com";
+    } catch (_) {}
+    tabs.set(tabId, { tabId, tabIndex: Number.isInteger(tabIndex) && tabIndex >= 0 ? tabIndex : Number.MAX_SAFE_INTEGER, chatGpt });
   }
   monitorBrowserVisualTabsByWindow.set(windowId, tabs);
   return true;
@@ -10425,12 +10437,16 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, option
       .filter((windowId) => Number.isInteger(windowId)))];
 
     // When Chrome has just told us the current tab order, it is more current
-    // than Core's next membership refresh. Keep non-BCT/UUID-less tabs visible
-    // as `?` in that exact position rather than silently dropping them.
+    // than Core's next membership refresh. Keep only ChatGPT tabs whose BCT
+    // identity is not available yet visible as `?`. Ordinary tabs in the same
+    // Chrome window (YouTube, GitHub, etc.) are physical thumbnail content,
+    // not candidate BCT nodes.
     if (browserWindowIds.length === 1) {
       const browserTabs = monitorBrowserVisualTabsForWindow(browserWindowIds[0]);
       if (browserTabs.length) {
-        return browserTabs.map((tab) => itemFor(byTabId.get(Number(tab.tabId)), tab.tabId));
+        return browserTabs
+          .filter((tab) => byTabId.has(Number(tab.tabId)) || tab?.chatGpt === true)
+          .map((tab) => itemFor(byTabId.get(Number(tab.tabId)), tab.tabId));
       }
     }
 

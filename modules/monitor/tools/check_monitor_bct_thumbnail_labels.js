@@ -22,21 +22,21 @@ const ctx={
   monitorWindowHwndContract:{resolve:()=>({bindings:[]})},
   monitorWindowDesktopLocations:new Map(),
   monitorBrowserVisualTabsForWindow:(windowId)=>windowId===491
-    ? [{tabId:42,tabIndex:0},{tabId:43,tabIndex:1},{tabId:44,tabIndex:2},{tabId:45,tabIndex:3}]
-    :windowId===319?[{tabId:51,tabIndex:0}]:[],
+    ? [{tabId:42,tabIndex:0,chatGpt:true},{tabId:43,tabIndex:1,chatGpt:true},{tabId:46,tabIndex:2,chatGpt:false},{tabId:44,tabIndex:3,chatGpt:true},{tabId:45,tabIndex:4,chatGpt:true}]
+    :windowId===319?[{tabId:51,tabIndex:0,chatGpt:true}]:[],
   monitorActNodeNumbersForHwnd:()=>[99],
   String,Number,Array,Set,Map,Date,
 };
 vm.createContext(ctx);
 vm.runInContext(source.slice(start,end),ctx);
 const lookup=(hwnd,options)=>Array.from(ctx.monitorBadgeNodeNumbersForHwnd(hwnd,ctx.monitorLastAiState,options));
-assert.deepEqual(lookup("5000"),[4,"?",9,7],"real Chrome tab order and UUID-less slot preserved");
+assert.deepEqual(lookup("5000"),[4,"?",9,7],"ChatGPT order and UUID-less slot preserved while ordinary tabs are excluded");
 assert.deepEqual(lookup("6000"),[3],"other Chrome window isolated by HWND");
 assert.deepEqual(lookup("7000"),[],"unmapped window has no fabricated node");
 assert.deepEqual(lookup(""),[],"invalid HWND has no fabricated node");
 const exact=lookup("5000",{includeTabIds:true}).map(x=>[x.token,x.tabId]);
 assert.deepEqual(exact,[[4,42],["?",43],[9,44],[7,45]],
-  "every Chrome tab maintains its own selectable tabId");
+  "every ChatGPT tab maintains its own selectable tabId and YouTube-like tabs do not become N?");
 ctx.monitorBctWindowNodesCache=[];
 assert.deepEqual(lookup("5000"),[],"authoritative empty membership suppresses stale labels");
 ctx.monitorBctWindowNodesCache=null;

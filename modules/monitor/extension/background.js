@@ -2445,6 +2445,11 @@ async function publishMonitorBrowserWindowVisualChange(windowIdValue, reason, de
     tabs: tabs.map((item) => ({
       tabId: Number(item?.id),
       tabIndex: Number(item?.index),
+      // The thumbnail projection may show `?` only for an observed ChatGPT
+      // tab whose conversation/node identity is not available yet.  Carry the
+      // URL as observation data so ordinary tabs (YouTube, GitHub, etc.) are
+      // never turned into apparent BCT nodes.
+      url: String(item?.url || ""),
     })).filter((item) => Number.isInteger(item.tabId) && item.tabId >= 0 && Number.isInteger(item.tabIndex)),
     at: Date.now(),
     ...details,
