@@ -263,6 +263,10 @@ function loadModule() {
     "Manager role contrast must remain visible without depending on selection state");
   assert.match(supervisorRoleRule, /linear-gradient\(90deg/);
   assert.match(supervisorRoleRule, /border-color:rgba\(89,184,255,\.92\)/);
+  assert.match(css, /\.monitor-bct-rename-dialog[^}]+max-height:calc\(100vh - 24px\)[^}]+overflow:auto/,
+    "the node editor must scroll inside the viewport instead of clipping its confirmation buttons");
+  assert.match(css, /\.monitor-bct-rename-actions[^}]+position:sticky[^}]+bottom:-13px/,
+    "the node editor actions must remain visible while fields scroll");
 
   const holdStart = monitor.indexOf("function installMonitorBctRoleLongPress(");
   const holdEnd = monitor.indexOf("\nfunction getMonitorBctNodeInteractionService(", holdStart);
@@ -282,6 +286,7 @@ function loadModule() {
     };
   }
   const roleUpdates = [];
+  const managerTransfers = [];
   const holdContext = {
     monitorBctSuppressedClickKey: "",
     monitorBctWindowNodesCache: [],
@@ -289,6 +294,10 @@ function loadModule() {
     monitorBctNodeSelectionKey: (node) => node.conversationKey,
     monitorBctShell: {
       updateConversationScope: async (_node, values) => { roleUpdates.push(values); return { ok: true }; },
+      transferManagerRole: async (node, manager) => {
+        managerTransfers.push({ node, manager });
+        return { project_id: node.scopeId, role_tags: [...node.roleTags, "Manager"], role_tags_sha256: "b".repeat(64) };
+      },
     },
     refreshMonitorBctWindowNodes: async () => {},
     renderMonitorBctWindowNodes: () => {},
@@ -361,15 +370,20 @@ function loadModule() {
   holdContext.monitorBctManagerStatuses = [{
     scopeId: "scope-a", status: "NOT_OPEN", managerConversationKey: "closed-manager", managerNodeLabel: "N98",
   }];
-  const blockedManager = managerRow();
-  holdContext.installMonitorBctRoleLongPress(blockedManager, {
+  const successorManager = managerRow();
+  holdContext.installMonitorBctRoleLongPress(successorManager, {
     ...baseNode, conversationKey: "conv-3", scopeId: "scope-a", scopeName: "대화망 A", roleTags: ["Worker"],
+    roleTagsSha256: "a".repeat(64),
   });
-  assert.equal(blockedManager.monitorBctPreviewRoleLongPress(), false);
-  blockedManager.monitorBctCommitRoleLongPress();
+  assert.equal(successorManager.monitorBctPreviewRoleLongPress(), true,
+    "a user's explicit hold may preview succession from a closed Manager");
+  successorManager.monitorBctCommitRoleLongPress();
   await Promise.resolve();
-  assert.equal(roleUpdates.length, 4, "a closed durable Manager must block automatic succession");
-  assert.match(holdContext.statusMessages.at(-1), /복구 또는 명시적 역할 승계/);
+  await Promise.resolve();
+  assert.equal(roleUpdates.length, 4, "explicit succession must not create a second Manager through node-info-set");
+  assert.equal(managerTransfers.length, 1, "explicit succession uses the atomic Manager transfer path");
+  assert.equal(managerTransfers[0].manager.managerNodeLabel, "N98");
+  assert.match(holdContext.statusMessages.at(-1), /역할을 넘겼습니다/);
 
   const dropStart = monitor.indexOf("function monitorBctPointInsideScopeHeading(");
   const dropEnd = monitor.indexOf("\nfunction updateMonitorBctNodePointerDrag(", dropStart);

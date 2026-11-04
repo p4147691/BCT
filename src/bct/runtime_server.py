@@ -26,6 +26,7 @@ from bct.conversation_network import (
     arrange_conversations,
     ConversationNetworkError,
     configure_conversation_scope,
+    transfer_conversation_manager_role,
     retire_conversation_node_label,
     upsert_conversation,
 )
@@ -153,7 +154,24 @@ def run_monitor_conversation_scope_update(
     This is metadata only. It does not create a Work, acquire a Claim, elect a
     privileged Manager, or perform any browser action.
     """
+    operation = str(payload.get("operation") or "node-info-set").strip().casefold()
+    if operation == "manager-transfer":
+        allowed = {
+            "operation", "project_id", "predecessor_conversation_key",
+            "successor_conversation_key", "expected_successor_role_tags_sha256",
+        }
+        unknown = set(payload) - allowed
+        if unknown:
+            raise ValueError("MONITOR_CONVERSATION_SCOPE_FIELD_NOT_ALLOWED:" + ",".join(sorted(unknown)))
+        return transfer_conversation_manager_role(
+            bct.store,
+            project_id=str(payload.get("project_id") or ""),
+            predecessor_conversation_key=str(payload.get("predecessor_conversation_key") or ""),
+            successor_conversation_key=str(payload.get("successor_conversation_key") or ""),
+            expected_successor_role_tags_sha256=str(payload.get("expected_successor_role_tags_sha256") or ""),
+        )
     allowed = {
+        "operation",
         "conversation_key", "display_name", "scope_name", "role_tags",
         "expected_role_tags_sha256", "node_memo", "assigned_task",
     }

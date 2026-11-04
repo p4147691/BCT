@@ -6848,7 +6848,7 @@ function openMonitorBctRenameEditor(node, row) {
   );
   const roleHint = document.createElement("div");
   roleHint.className = "monitor-bct-info-hint";
-  roleHint.textContent = "Manager는 안내용 역할 태그입니다. 0명 또는 여러 명이어도 기능과 권한은 제한되지 않습니다.";
+  roleHint.textContent = "Manager는 대화망마다 한 명입니다. 닫힌 Manager가 있으면 목록에서 새 노드를 길게 눌러 역할만 명시적으로 넘길 수 있습니다.";
   const error = document.createElement("div");
   error.className = "monitor-bct-rename-error";
   error.setAttribute("aria-live", "polite");
@@ -7013,9 +7013,8 @@ function installMonitorBctRoleLongPress(row, node) {
   };
   const preview = () => {
     const conflict = durableManagerConflict();
-    if (conflict) {
-      const label = conflict.status === "CONFLICT" ? "여러 Manager 기록" : `${conflict.managerNodeLabel || "기존 Manager"} 닫힘`;
-      setMonitorStatus(`${String(node.scopeName || "대화망")} · ${label}. 복구하거나 명시적으로 승계하기 전에는 자동 교체하지 않습니다.`, false, 4600);
+    if (conflict?.status === "CONFLICT") {
+      setMonitorStatus(`${String(node.scopeName || "대화망")} · 여러 Manager 기록이 있어 먼저 정리가 필요합니다.`, false, 4600);
       return false;
     }
     row.classList.toggle(roleClass, !hadRole);
@@ -7037,10 +7036,9 @@ function installMonitorBctRoleLongPress(row, node) {
     }
     if (role === "Manager") {
       const durableConflict = durableManagerConflict();
-      if (durableConflict) {
+      if (durableConflict?.status === "CONFLICT") {
         cancelPreview();
-        const label = durableConflict.status === "CONFLICT" ? "여러 Manager 기록" : `${durableConflict.managerNodeLabel || "기존 Manager"} 닫힘`;
-        setMonitorStatus(`${String(node.scopeName || "대화망")} · ${label}. 복구 또는 명시적 역할 승계가 필요합니다.`, false, 4600);
+        setMonitorStatus(`${String(node.scopeName || "대화망")} · 여러 Manager 기록이 있어 먼저 정리가 필요합니다.`, false, 4600);
         return;
       }
       const existingManager = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
@@ -7078,17 +7076,26 @@ function installMonitorBctRoleLongPress(row, node) {
     row.monitorBctRolePreviewActive = false;
     row.classList.add("monitor-bct-role-save-pending");
     const beforeRoleTags = [...tags];
-    void monitorBctShell.updateConversationScope(node, {
+    const durablePredecessor = role === "Manager" && !hadRole
+      ? durableManagerConflict()
+      : null;
+    const saveRole = durablePredecessor?.status === "NOT_OPEN"
+      ? monitorBctShell.transferManagerRole(node, durablePredecessor)
+      : monitorBctShell.updateConversationScope(node, {
       displayName: node.title,
       scopeName: nextScopeName,
       roleTags: nextTags,
       expectedRoleTagsSha256: node.roleTagsSha256,
-    }).then((saved) => {
+    });
+    void saveRole.then((saved) => {
       const before = typeof monitorBctNodeHistoryState === "function" ? monitorBctNodeHistoryState(node) : null;
       const beforeOrders = typeof monitorBctNodeHistoryOrders === "function"
         ? monitorBctNodeHistoryOrders(monitorBctWindowNodesCache, [String(node.scopeId || "")])
         : null;
-      recordMonitorBctRoleHistory({
+      // A transfer changes two durable members atomically. The single-node
+      // undo stack cannot safely reconstruct its predecessor, so do not record
+      // a misleading partial undo entry for this explicit succession.
+      if (durablePredecessor?.status !== "NOT_OPEN") recordMonitorBctRoleHistory({
         conversationKey: node.conversationKey,
         scopeId: String(node.scopeId || ""),
         scopeName: String(node.scopeName || ""),
@@ -7107,7 +7114,9 @@ function installMonitorBctRoleLongPress(row, node) {
       });
       const roleLabel = role === "supervisor" ? "감독관" : "Manager";
       setMonitorStatus(
-        `${node.nodeLabel || "N?"}의 ${roleLabel} 안내 태그를 ${hadRole ? "해제했습니다" : "붙였습니다"}.`,
+        durablePredecessor?.status === "NOT_OPEN"
+          ? `${durablePredecessor.managerNodeLabel || "닫힌 Manager"}에서 ${node.nodeLabel || "N?"}(으)로 Manager 역할을 넘겼습니다.`
+          : `${node.nodeLabel || "N?"}의 ${roleLabel} 안내 태그를 ${hadRole ? "해제했습니다" : "붙였습니다"}.`,
         true,
         2800,
       );
@@ -7118,7 +7127,7 @@ function installMonitorBctRoleLongPress(row, node) {
         .map((candidate) => candidate?.conversationKey === node.conversationKey
           ? Object.freeze({
             ...candidate,
-            scopeId: String(saved?.scope_id ?? (role === "supervisor" ? "" : candidate.scopeId) ?? ""),
+            scopeId: String(saved?.scope_id ?? saved?.project_id ?? (role === "supervisor" ? "" : candidate.scopeId) ?? ""),
             scopeName: String(saved?.scope_name ?? (role === "supervisor" ? "" : candidate.scopeName) ?? ""),
             roleTags: Object.freeze(Array.isArray(saved?.role_tags) ? [...saved.role_tags] : [...nextTags]),
             roleTagsSha256: String(saved?.role_tags_sha256 ?? candidate.roleTagsSha256 ?? ""),

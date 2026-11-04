@@ -274,6 +274,35 @@
       return Object.freeze(result.conversation || {});
     }
 
+    async function transferManagerRole(node, managerStatus) {
+      if (typeof fetcher !== "function") throw new Error("BCT_MANAGER_TRANSFER_FETCH_UNAVAILABLE");
+      const projectId = String(node?.scopeId || "").trim();
+      const predecessor = String(managerStatus?.managerConversationKey || "").trim().toLowerCase();
+      const successor = String(node?.conversationKey || "").trim().toLowerCase();
+      const expected = String(node?.roleTagsSha256 || "").trim().toLowerCase();
+      const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+      if (!projectId || !uuid.test(predecessor) || !uuid.test(successor) || !/^[0-9a-f]{64}$/.test(expected)) {
+        throw new Error("BCT_MANAGER_TRANSFER_IDENTITY_INVALID");
+      }
+      const response = await fetcher(URLS.updateConversationScope, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          operation: "manager-transfer",
+          project_id: projectId,
+          predecessor_conversation_key: predecessor,
+          successor_conversation_key: successor,
+          expected_successor_role_tags_sha256: expected,
+        }),
+      });
+      const result = await response?.json?.().catch(() => null);
+      if (!response?.ok || result?.status !== "OK") {
+        throw new Error(String(result?.error || `BCT_MANAGER_TRANSFER_HTTP_${Number(response?.status || 0)}`));
+      }
+      return Object.freeze(result.conversation || {});
+    }
+
     async function reorderConversations(nodes, options = {}) {
       if (typeof fetcher !== "function") throw new Error("BCT_CONVERSATION_ORDER_FETCH_UNAVAILABLE");
       const conversationKeys = (Array.isArray(nodes) ? nodes : [])
@@ -344,6 +373,7 @@
       displayWindowNodes,
       renameConversation,
       updateConversationScope,
+      transferManagerRole,
       reorderConversations,
       retireConversationNode,
       reloadRcc,

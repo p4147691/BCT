@@ -88,7 +88,22 @@ const context = {
     }
     if (url === "http://127.0.0.1:18790/monitor/conversation-network/update") {
       assert.equal(init.method, "POST");
-      assert.deepEqual(JSON.parse(init.body), {
+      const body = JSON.parse(init.body);
+      if (body.operation === "manager-transfer") {
+        assert.deepEqual(body, {
+          operation: "manager-transfer",
+          project_id: "network.monitor",
+          predecessor_conversation_key: "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+          successor_conversation_key: "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+          expected_successor_role_tags_sha256: "a".repeat(64),
+        });
+        return {
+          ok: true,
+          status: 200,
+          async json() { return { status: "OK", conversation: { project_id: "network.monitor", role_tags: ["Worker", "Manager"] } }; },
+        };
+      }
+      assert.deepEqual(body, {
         conversation_key: "chat-one",
         display_name: "새 이름",
         scope_name: "모니터 관리",
@@ -206,7 +221,7 @@ vm.runInContext(source, context);
   assert.match(monitorSource, /monitorBctShell\.updateConversationScope\(node,/);
   assert.match(monitorSource, /monitorBctNodeLocationText/);
 assert.match(monitorSource, /installMonitorBctRoleLongPress\(row, node\)/);
-  assert.match(monitorSource, /Manager는 안내용 역할 태그입니다/);
+  assert.match(monitorSource, /Manager는 대화망마다 한 명입니다/);
   assert.match(monitorSource, /setTimeout\(\(\) => \{[\s\S]*?\}, 600\)/);
   assert.match(monitorSource, /network_name:String\(bctNode\?\.scopeName/);
   assert.match(monitorSource, /openMonitorTrashRecovery/);
@@ -284,6 +299,15 @@ assert.match(monitorSource, /installMonitorBctRoleLongPress\(row, node\)/);
     roleTags: ["Manager", "검토"],
   });
   assert.equal(scoped.scope_name, "모니터 관리");
+  const transferred = await shell.transferManagerRole({
+    ...nodes[0],
+    conversationKey: "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+    scopeId: "network.monitor",
+    roleTagsSha256: "a".repeat(64),
+  }, {
+    managerConversationKey: "6ad5afa4-b1e0-83ee-8692-aec4bb51523e",
+  });
+  assert.deepEqual(Array.from(transferred.role_tags), ["Worker", "Manager"]);
   const arranged = await shell.reorderConversations([
     { conversationKey: "6ad4bb5d-6624-83ee-b045-e57fdad5120e" },
     { conversationKey: "6ad5afa4-b1e0-83ee-8692-aec4bb51523e" },

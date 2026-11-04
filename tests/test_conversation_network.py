@@ -12,6 +12,7 @@ from bct.conversation_network import (
     conversation_display_order_directory, conversation_scope_directory,
     patch_conversation_role_tags, project_view, record_monitor_snapshot,
     resolve_project_id, scope_directory, set_membership, upsert_conversation, upsert_project,
+    transfer_conversation_manager_role,
 )
 from bct.core.store import Store
 
@@ -92,6 +93,39 @@ class ConversationNetworkTests(unittest.TestCase):
             configure_conversation_scope(
                 self.store, conversation_key=WORKER, display_name="Worker",
                 scope_name="BCT RCC", node_memo="x" * 2001,
+            )
+
+    def test_explicit_manager_transfer_is_atomic_and_preserves_other_roles(self):
+        manager = configure_conversation_scope(
+            self.store, conversation_key=MANAGER, display_name="Manager",
+            scope_name="BCT RCC", role_tags=["Manager", "계획"],
+        )
+        worker = configure_conversation_scope(
+            self.store, conversation_key=WORKER, display_name="Worker",
+            scope_name="BCT RCC", role_tags=["Worker", "실행"],
+        )
+        moved = transfer_conversation_manager_role(
+            self.store,
+            project_id=manager["scope_id"],
+            predecessor_conversation_key=MANAGER,
+            successor_conversation_key=WORKER,
+            expected_successor_role_tags_sha256=worker["role_tags_sha256"],
+            now=200.0,
+        )
+        self.assertCountEqual(["계획"], moved["predecessor_role_tags"])
+        self.assertCountEqual(["Worker", "실행", "Manager"], moved["role_tags"])
+        current = conversation_scope_directory(
+            self.store, conversation_keys=[MANAGER, WORKER]
+        )
+        self.assertCountEqual(["계획"], current[MANAGER]["role_tags"])
+        self.assertCountEqual(["Worker", "실행", "Manager"], current[WORKER]["role_tags"])
+        with self.assertRaisesRegex(ConversationNetworkError, "PREDECESSOR_MISMATCH"):
+            transfer_conversation_manager_role(
+                self.store,
+                project_id=manager["scope_id"],
+                predecessor_conversation_key=MANAGER,
+                successor_conversation_key=WORKER,
+                expected_successor_role_tags_sha256=moved["role_tags_sha256"],
             )
 
     def tearDown(self) -> None:

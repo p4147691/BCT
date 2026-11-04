@@ -142,6 +142,31 @@ class MonitorConversationRenameTests(unittest.TestCase):
             })
         self.assertNotEqual(first["role_tags_sha256"], current["role_tags_sha256"])
 
+    def test_explicit_monitor_manager_transfer_keeps_both_members(self):
+        predecessor = run_monitor_conversation_scope_update(self.bct, payload={
+            "conversation_key": self.payload()["conversation_key"],
+            "display_name": "닫힌 Manager",
+            "scope_name": "BCT 작업",
+            "role_tags": ["Manager", "계획"],
+        })
+        successor_key = "6ad5afa4-b1e0-83ee-8692-aec4bb51523e"
+        successor = run_monitor_conversation_scope_update(self.bct, payload={
+            "conversation_key": successor_key,
+            "display_name": "열린 Worker",
+            "scope_name": "BCT 작업",
+            "role_tags": ["Worker", "실행"],
+        })
+        moved = run_monitor_conversation_scope_update(self.bct, payload={
+            "operation": "manager-transfer",
+            "project_id": predecessor["scope_id"],
+            "predecessor_conversation_key": self.payload()["conversation_key"],
+            "successor_conversation_key": successor_key,
+            "expected_successor_role_tags_sha256": successor["role_tags_sha256"],
+        })
+        self.assertCountEqual(["계획"], moved["predecessor_role_tags"])
+        self.assertCountEqual(["Worker", "실행", "Manager"], moved["role_tags"])
+        self.assertEqual([], self.bct.store.claim_diagnostics())
+
     def test_order_update_is_metadata_only_and_keeps_claims_empty(self):
         keys = [
             self.payload()["conversation_key"],

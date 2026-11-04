@@ -943,6 +943,93 @@ def patch_conversation_role_tags(
     }
 
 
+def transfer_conversation_manager_role(
+    store: Store,
+    *,
+    project_id: str,
+    predecessor_conversation_key: str,
+    successor_conversation_key: str,
+    expected_successor_role_tags_sha256: str,
+    now: float | None = None,
+) -> dict[str, object]:
+    """Atomically move only the advisory Manager role to an explicit successor.
+
+    This is the user-driven Monitor gesture path.  It is deliberately narrower
+    than recovery succession: both chats stay in the same conversation network,
+    no task context or browser state moves, and no automatic election occurs.
+    """
+    project = _identifier(project_id, "CONVERSATION_NETWORK_PROJECT_ID_INVALID")
+    predecessor = _conversation_key(predecessor_conversation_key)
+    successor = _conversation_key(successor_conversation_key)
+    if predecessor == successor:
+        raise ConversationNetworkError("CONVERSATION_NETWORK_MANAGER_SUCCESSOR_SAME")
+    expected = str(expected_successor_role_tags_sha256 or "").strip().lower()
+    if not _SHA256.fullmatch(expected):
+        raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_SHA256_INVALID")
+    when = float(time.time() if now is None else now)
+    with store.transaction() as db:
+        active = {
+            str(row["conversation_key"])
+            for row in db.execute(
+                "SELECT conversation_key FROM conversation_network_memberships "
+                "WHERE project_id=? AND activity='ACTIVE' AND conversation_key IN (?,?)",
+                (project, predecessor, successor),
+            )
+        }
+        if active != {predecessor, successor}:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_MANAGER_SUCCESSION_SCOPE_CONFLICT")
+        rows = db.execute(
+            "SELECT conversation_key,tag FROM conversation_network_membership_tags "
+            "WHERE project_id=? AND conversation_key IN (?,?) "
+            "ORDER BY tag COLLATE NOCASE,tag",
+            (project, predecessor, successor),
+        ).fetchall()
+        tags_by_key = {predecessor: [], successor: []}
+        for row in rows:
+            tags_by_key[str(row["conversation_key"])].append(str(row["tag"]))
+        predecessor_tags = tags_by_key[predecessor]
+        successor_tags = tags_by_key[successor]
+        manager_tags = [tag for tag in predecessor_tags if tag.casefold() == "manager"]
+        if len(manager_tags) != 1:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_MANAGER_PREDECESSOR_MISMATCH")
+        if any(tag.casefold() == "manager" for tag in successor_tags):
+            raise ConversationNetworkError("CONVERSATION_NETWORK_MANAGER_SUCCESSOR_ALREADY_ASSIGNED")
+        if role_tags_sha256(successor_tags) != expected:
+            raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_CONFLICT")
+        next_predecessor = [tag for tag in predecessor_tags if tag.casefold() != "manager"]
+        next_successor = [*successor_tags, manager_tags[0]]
+        next_predecessor.sort(key=lambda value: (value.casefold(), value))
+        next_successor.sort(key=lambda value: (value.casefold(), value))
+        db.execute(
+            "DELETE FROM conversation_network_membership_tags "
+            "WHERE project_id=? AND conversation_key=? AND lower(tag)='manager'",
+            (project, predecessor),
+        )
+        _validate_role_rules(
+            db, project_id=project, conversation_key=successor, tags=next_successor,
+        )
+        db.execute(
+            "INSERT INTO conversation_network_membership_tags"
+            "(project_id,conversation_key,tag,created_at) VALUES(?,?,?,?)",
+            (project, successor, manager_tags[0], when),
+        )
+        db.execute(
+            "UPDATE conversation_network_memberships SET updated_at=? "
+            "WHERE project_id=? AND conversation_key IN (?,?)",
+            (when, project, predecessor, successor),
+        )
+    return {
+        "project_id": project,
+        "predecessor_conversation_key": predecessor,
+        "successor_conversation_key": successor,
+        "predecessor_role_tags": next_predecessor,
+        "predecessor_role_tags_sha256": role_tags_sha256(next_predecessor),
+        "role_tags": next_successor,
+        "role_tags_sha256": role_tags_sha256(next_successor),
+        "changed": True,
+    }
+
+
 def conversation_display_order_directory(
     store: Store, *, conversation_keys: list[str] | tuple[str, ...]
 ) -> dict[str, int]:
