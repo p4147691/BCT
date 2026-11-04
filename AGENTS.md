@@ -105,6 +105,33 @@ but never use the local-first lane to bypass an applicable guarded impact gate.
 Core, Monitor and RCC are separate deployment targets. A changed source-main SHA
 does not by itself require redeploying an unaffected target.
 
+### 5.1 CI runs asynchronously by default
+
+- CI is an exact-SHA verification stream, not a reason to idle the whole task.
+  After the required local affected checks pass, freeze the candidate commit,
+  start CI, register `github_run_watch`/Inbox notification, and continue work
+  that does not depend on that CI result or modify the same unstable boundary.
+- Do not hold an interactive `gh run watch` or equivalent wait unless the next
+  protected action is unsafe without that exact result. Poll or reconcile the
+  registered receipt only at a dependency, integration, release or final-report
+  boundary.
+- Use Code Block Scan/Block Cards and changed-path contracts to identify the
+  affected blocks. Run focused checks on small commits, checkpoint CI on a
+  completed feature bundle, and full CI when the impact gate or repository
+  contract requires it. Risk boundaries override a narrow scan result.
+- A newer commit that contains an older candidate may become the active CI
+  checkpoint when no separate acceptance receipt is required for the older SHA.
+  Keep every result attributed to its exact SHA; never present an older success
+  as proof for newer code.
+- CI failure stops only work that depends on the failed boundary. Preserve the
+  evidence, repair that line, and continue unrelated work. A CI success marks
+  only that SHA as verified; it does not prove deployment or LIVE acceptance.
+- `GUARDED_CI_FIRST` still blocks its protected integration/deployment boundary
+  on exact candidate CI. `LOCAL_FIRST` may deploy after its local and rollback
+  gates, while GitHub CI continues as the documented follow-up audit.
+- Final reports separate local affected checks, candidate/checkpoint CI,
+  integrated local main, GitHub main, deployed release and physical LIVE E2E.
+
 ## 5A. Chain Message is the default execution route
 
 - When the user assigns an implementation, inspection, repair, verification,
