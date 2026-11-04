@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .chat_input_queue import ChatInputQueue
+from .chain_entry_policy import public_entry_policy
 from .chain_message_preflight import (
     EXPLICIT_NEXT_TASK_SUFFIX, check_chain_work, prepare_chain_instruction,
 )
@@ -181,6 +182,7 @@ def build_mcp(
             "browser_usage": _CAPABILITY_USAGE["browser"],
             "browser_contract_version": "rcc-send-message-v1",
             "browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"],
+            "message_entry_policy": public_entry_policy(),
         }
         settings = getattr(server, "catalogue_settings", None)
         if settings is not None and settings.last_error:
@@ -659,6 +661,8 @@ def build_mcp(
     @server.tool(
         name="bct_chain_message",
         description=(
+            "DEFAULT ENTRY for ordinary assigned work: use this Chain Message route "
+            "unless the user explicitly asks for Task Message or Send Message. "
             "Start/status/cancel a durable one-target message continuation using "
             "existing BCT send-message, Delayed Send and their exact receipts. "
             "For start supply task_id, a unique operation_id prefix, exact RCC "
@@ -887,7 +891,7 @@ def build_mcp(
     @server.tool(
         name="bct_task_message",
         description=(
-            "Optional technical envelope for one already-planned Manager-to-Worker "
+            "EXPLICIT REQUEST ONLY: Optional technical envelope for one already-planned Manager-to-Worker "
             "instruction. It composes exact Chain Message send/watch with explicit "
             "SELF/MANAGER continuation, but it does not replace A's user direction "
             "or overall plan recorded by bct_set_direction. The normal "
@@ -1017,9 +1021,9 @@ def build_mcp(
     @server.tool(
         name="bct_send_message",
         description=(
-            "Send one exact message to an existing ChatGPT conversation or to a "
+            "EXPLICIT REQUEST ONLY: send one exact message to an existing ChatGPT conversation or to a "
             "BCT-created chat target. This is an exact-message transport component, "
-            "not A's user-direction or whole Chain Message recipe. It preserves the "
+            "not the default route for ordinary work, A's user-direction, or whole Chain Message recipe. It preserves the "
             "existing exact identity, receipt, and UNKNOWN-no-replay contract; "
             "internally it uses the browser capability."
         ),

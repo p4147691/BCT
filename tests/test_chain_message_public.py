@@ -32,13 +32,25 @@ class ChainMessagePublicTests(unittest.IsolatedAsyncioTestCase):
               "instruction":"Please complete a normal test and return NEXT TASK - MANAGER."}
         data.update(other);return data
     async def test_exposed_without_chain_run(self):
-        names={x.name for x in await self.mcp.list_tools()}
+        tools={x.name: x for x in await self.mcp.list_tools()}
+        names=set(tools)
         self.assertIn("bct_chain_message",names)
+        self.assertIn("DEFAULT ENTRY", tools["bct_chain_message"].description)
+        self.assertIn("EXPLICIT REQUEST ONLY", tools["bct_send_message"].description)
         self.assertTrue({
             "bct_check_node", "bct_recheck_node", "bct_pause_node",
             "bct_replace_node", "bct_reset_node",
         }.issubset(names))
         self.assertNotIn("bct_chain_run",names)
+
+    async def test_capabilities_publish_the_default_message_entry_rule(self):
+        _, capabilities = await self.mcp.call_tool("bct_capabilities", {})
+        self.assertEqual("CHAIN_MESSAGE", capabilities["message_entry_policy"]["default_entry"])
+        self.assertEqual("bct_chain_message", capabilities["message_entry_policy"]["ordinary_request_tool"])
+        self.assertEqual(
+            ["bct_task_message", "bct_send_message"],
+            capabilities["message_entry_policy"]["explicit_only_tools"],
+        )
     async def test_prearms_before_single_send_with_exact_identity(self):
         await self.mcp.call_tool("bct_chain_message",self.arguments())
         self.assertEqual(2,len(self.ops.calls))

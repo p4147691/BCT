@@ -90,6 +90,7 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
             ))
             mcp = build_mcp(SimpleNamespace(store=store, operations=NoEffects()), compact_catalogue=True)
             tools = {tool.name: tool for tool in await mcp.list_tools()}
+            self.assertIn("EXPLICIT REQUEST ONLY", tools["bct_task_message"].description)
             self.assertIn("Optional technical envelope", tools["bct_task_message"].description)
             self.assertIn("does not replace A's user direction", tools["bct_task_message"].description)
 

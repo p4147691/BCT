@@ -150,6 +150,7 @@ files = [
   "src/bct/mcp_server.py",
   "src/bct/code_block_scan.py",
   "src/bct/chat_input_queue.py",
+  "src/bct/chain_entry_policy.py",
   "src/bct/chain_message_preflight.py",
   "src/bct/task_message.py",
   "src/bct/code_block_organize.py",

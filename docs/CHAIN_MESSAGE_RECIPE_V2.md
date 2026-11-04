@@ -13,6 +13,22 @@ BB 반복 또는 BA 반환으로 끝내는 전체 레시피다.
 `bct_chain_message`는 이 레시피 안의 정확한 전송·응답 감시 부품이다. 그것만으로
 전체 Chain Message가 완성되지는 않는다.
 
+## 입구 선택 규칙
+
+일반적인 사용자 요청, 예를 들어 “이것을 고쳐줘”, “계속 진행해줘”, “점검해줘”는
+항상 **Chain Message**로 시작한다. 즉 A가 Direction·현재 상태·필요한 대화망을
+정리한 뒤 `bct_chain_message`의 정확 전송/감시 부품을 사용한다.
+
+- `bct_task_message`는 사용자가 **Task Message** 방식을 명시했을 때만 쓰는
+  Worker용 기술 봉투다.
+- `bct_send_message`는 사용자가 **Send Message** 또는 정확한 직접 전달을
+  명시했을 때만 쓰는 전송 부품이다.
+- `Task Run`, `Plan Run`은 이 기본 입구의 대체물이 아니다.
+
+따라서 일반 요청을 받았을 때 Task Message나 Send Message를 먼저 고르는 우회
+경로는 없다. 다만 Chain Message가 정확한 대상·권한·UNKNOWN 상태 때문에 안전하게
+시작될 수 없으면 다른 전송 방식으로 몰래 바꾸지 않고, 해당 준비/판단 단계에서 멈춘다.
+
 ## 전체 맵
 
 ```text

@@ -15,6 +15,31 @@
   },
   "components": [
     {
+      "id": "bct.chain_entry_policy",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/chain_entry_policy.py",
+          "symbol": "select_message_entry"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "bct_capabilities"
+        }
+      ],
+      "contract": "Select Chain Message as the sole ordinary-work message entry; Task Message and Send Message are explicit user-request opt-ins.",
+      "effects": [],
+      "safety": [
+        "no-natural-language-guessing",
+        "task-and-send-explicit-only",
+        "unknown-no-route-substitution"
+      ],
+      "used_by": [
+        "bct.chain_message"
+      ]
+    },
+    {
       "id": "bct.chain_message_caller_preflight",
       "kind": "module",
       "maturity": "isolated",
