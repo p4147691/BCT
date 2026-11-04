@@ -40,6 +40,16 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("NEXT TASK", result["instruction"])
         self.assertEqual(3, result["max_rounds"])
 
+    def test_zero_rounds_means_progress_based_continuation(self):
+        result = prepare_task_message_instruction(
+            "Fix one focused defect.", acceptance="Focused test passes.",
+            bb_rule="Continue one safe check.",
+            manager_return_rule="Return on complete, risk, or blockage.",
+            max_rounds=0,
+        )
+        self.assertIn("고정 횟수로 종료하지 않습니다", result["instruction"])
+        self.assertEqual(0, result["max_rounds"])
+
     async def test_public_recipe_preflight_composes_chain_contract_without_effect(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
@@ -70,6 +80,31 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(4, result["max_rounds"])
             self.assertEqual("explicit-next-task-v1", result["continuation_output_contract"])
             self.assertEqual([], effects.calls)
+
+    async def test_public_recipe_defaults_to_progress_based_continuation(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            store.create_work(Work(
+                "task-message-default", "fixture", (root,), frozenset({"browser"}),
+                "bct-mcp-local", 1,
+            ))
+            effects = NoEffects()
+            mcp = build_mcp(
+                SimpleNamespace(store=store, operations=effects),
+                compact_catalogue=True,
+            )
+            _, result = await mcp.call_tool("bct_task_message", {
+                "work_id": "task-message-default", "task_id": "progress-task",
+                "operation_id": "progress-operation", "action": "preflight",
+                "instance_id": "instance", "session_id": "a" * 32,
+                "target_tab_id": 10, "target_window_id": 20,
+                "target_conversation_key": WORKER,
+                "origin_conversation_key": MANAGER,
+                "instruction": "Implement one focused repair.",
+                "acceptance": "The focused regression test passes.",
+            })
+            self.assertEqual("READY", result["status"])
+            self.assertEqual(0, result["max_rounds"])
 
     def test_worker_self_at_limit_returns_to_manager_and_preserves_requested_route(self):
         with tempfile.TemporaryDirectory() as root:

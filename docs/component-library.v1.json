@@ -49,8 +49,65 @@
       ]
     },
     {
+      "id": "bct.manager_direction",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/chain_direction.py",
+          "symbol": "ChainDirectionLedger"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "bct_set_direction / bct_get_direction"
+        }
+      ],
+      "contract": "Durably records A's user direction and high-level work plan for one next Chain Message without sending, choosing a Worker, or interpreting the result.",
+      "effects": [
+        "bct-sqlite-direction-metadata"
+      ],
+      "safety": [
+        "work-owner-bound",
+        "exact-manager-return-source-when-applicable",
+        "idempotent-direction-id",
+        "no-external-message-send"
+      ],
+      "used_by": [
+        "bct.chain_message"
+      ]
+    },
+    {
+      "id": "bct.worker_execution_plan",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/chain_execution_plan.py",
+          "symbol": "ChainExecutionPlanLedger"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "bct_set_execution_plan / bct_get_execution_plan"
+        }
+      ],
+      "contract": "Durably records B's concrete execution plan only after the linked A direction has been delivered. B may choose files, tools, tests, and safe next steps within A's stated boundaries.",
+      "effects": [
+        "bct-sqlite-execution-plan-metadata"
+      ],
+      "safety": [
+        "requires-started-exact-direction",
+        "direction-and-task-bound",
+        "plan-hash-recorded",
+        "no-external-message-send",
+        "does-not-change-a-boundaries"
+      ],
+      "used_by": [
+        "bct.chain_message"
+      ]
+    },
+    {
       "id": "bct.task_message",
-      "kind": "full_recipe",
+      "kind": "partial_recipe",
       "maturity": "isolated",
       "implementation": [
         {
@@ -66,7 +123,7 @@
           "symbol": "DurableWatchLedger.enforce_generation_limit"
         }
       ],
-      "contract": "One Manager-authored task is sent to one exact Worker. The Worker may select bounded SELF continuation for small safe BB steps; completion, blockage, risk, missing instruction, send failure or the Core-enforced generation limit returns control to Manager or requires Manager review.",
+      "contract": "Optional Manager-authored instruction envelope for one exact Worker. The default policy continues only while real progress and a safe next step exist; completion, blockage, risk, missing instruction, or send failure returns control to Manager or requires Manager review. A positive round budget is optional.",
       "effects": [
         "exact-rcc-worker-send",
         "durable-response-watch",
@@ -76,7 +133,8 @@
         "active-owned-browser-work-required",
         "prearm-before-send",
         "exact-manager-and-worker-conversations",
-        "max-12-worker-rounds",
+        "progress-based-default",
+        "optional-max-12-worker-round-budget",
         "requested-and-effective-route-evidence",
         "no-automatic-manager-election",
         "no-multi-worker-orchestration",

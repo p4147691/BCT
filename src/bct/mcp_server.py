@@ -887,11 +887,12 @@ def build_mcp(
     @server.tool(
         name="bct_task_message",
         description=(
-            "Run one bounded Manager-to-Worker Task Message. It composes the exact "
-            "Chain Message send/watch with explicit SELF/MANAGER continuation and a "
-            "Core-enforced max_rounds limit. Worker may repeat small BB steps; BCT "
-            "returns to Manager on BA or when the limit is reached. This is a 1:1 "
-            "message recipe, not multi-worker orchestration and not automatic Manager election."
+            "Run one optional Manager-to-Worker instruction envelope. It composes the exact "
+            "Chain Message send/watch with explicit SELF/MANAGER continuation. The normal "
+            "max_rounds=0 policy has no fixed limit: Worker continues only while real "
+            "progress and a safe next step exist, then returns to Manager on BA. A positive "
+            "max_rounds is an explicit budget. This is a 1:1 message recipe, not the overall "
+            "Chain Message lifecycle, multi-worker orchestration, or automatic Manager election."
         ),
         structured_output=True,
     )
@@ -905,7 +906,7 @@ def build_mcp(
         instruction: str = "", acceptance: str = "",
         bb_rule: str = "Continue only with one safe, bounded next step.",
         manager_return_rule: str = "Return on completion, blockage, risk, or need for judgment.",
-        max_rounds: int = 4, generation: int = 1,
+        max_rounds: int = 0, generation: int = 1,
     ) -> dict[str, Any]:
         if action in {"status", "cancel"}:
             result = await bct_chain_message(
@@ -1339,10 +1340,12 @@ def build_mcp(
     @server.tool(
         name="bct_set_chain_direction",
         description=(
-            "Save A's free-form direction for the next Chain Message. This records "
-            "A's decision; it never writes the direction, sends a message, or "
-            "interprets the report. Use source_kind=MANAGER_RETURN only with the "
-            "exact BA task/generation that supplied the report."
+            "Save A's free-form direction and overall plan for the next Chain Message. "
+            "A records the user goal, acceptance, scope, boundaries, and high-level "
+            "work order; B later writes its own concrete execution plan. This never "
+            "writes the direction, sends a message, or interprets a report. Use "
+            "source_kind=MANAGER_RETURN only with the exact BA task/generation that "
+            "supplied the report."
         ),
         structured_output=True,
     )
@@ -1433,9 +1436,10 @@ def build_mcp(
     @server.tool(
         name="bct_set_chain_execution_plan",
         description=(
-            "Save B's concrete execution plan after an exact Chain Direction has "
-            "already been delivered by Chain Message. The plan may interpret and "
-            "develop A's human direction; BCT stores it but never writes or executes it."
+            "Save B's concrete execution plan after an exact A Direction has already "
+            "been delivered by Chain Message. A's direction supplies the goal and "
+            "boundaries; B's plan supplies the files, tools, checks, and safe next "
+            "steps. BCT stores it but never writes or executes it."
         ),
         structured_output=True,
     )
@@ -1591,6 +1595,14 @@ def build_mcp(
     # remain visible only as compatibility aliases so existing Chats, receipts,
     # and saved prompts are not broken during the vocabulary transition.
     _canonical_command_aliases = (
+        ("bct_set_direction", bct_set_chain_direction,
+         "Save A's user direction and overall plan for the next Chain Message. Canonical short name; bct_set_chain_direction remains available."),
+        ("bct_get_direction", bct_get_chain_direction,
+         "Read one exact A direction and overall plan. Canonical short name; bct_get_chain_direction remains available."),
+        ("bct_set_execution_plan", bct_set_chain_execution_plan,
+         "Save B's concrete execution plan for a delivered A direction. Canonical short name; bct_set_chain_execution_plan remains available."),
+        ("bct_get_execution_plan", bct_get_chain_execution_plan,
+         "Read one exact B execution plan. Canonical short name; bct_get_chain_execution_plan remains available."),
         ("bct_network", bct_network_get,
          "Show one registered conversation network. Canonical name; bct_network_get remains a compatibility alias."),
         ("bct_check_run", bct_check_network,

@@ -96,6 +96,16 @@ class ChainDirectionLedgerTests(unittest.TestCase):
 
 
 class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_short_direction_and_execution_plan_names_are_public(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            mcp = build_mcp(SimpleNamespace(operations=Operations(), store=store), compact_catalogue=True)
+            names = {tool.name for tool in await mcp.list_tools()}
+            self.assertTrue({
+                "bct_set_direction", "bct_get_direction",
+                "bct_set_execution_plan", "bct_get_execution_plan",
+            } <= names)
+
     async def test_exact_manager_return_can_become_an_a_direction(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")

@@ -389,17 +389,18 @@ legacy NEXT TASK 본문
   Manager의 작업·완료 기준·BB/BA 기준 작성
   → Chain Message 선준비·정확 전송
   → Worker의 작은 BB 반복
-  → 완료·정체·위험·반복 한도에서 Manager 반환
+  → 완료·정체·위험·진전 없음에서 Manager 반환
 ```
 
 - `bct_task_run`은 준비된 세션에서 Worker 한 명에게 작업 하나를
   dispatch하는 실행 단위다. 현재는 자체 결과 영수증을 기다린다.
 - `bct_delayed_send_message`와 `bct_chain_message`는 감시를 먼저
   준비한 뒤 정확한 메시지를 보내는 경로다.
-- `bct_task_message`는 한 Manager와 한 Worker 사이의 메시지 운용을
-  조립한 전체 레시피다. `max_rounds`는 1~12이며 Core가 직접 강제한다.
-  Worker가 한도에서 SELF를 요청하면 요청 증거는 보존하고 실제 경로만
-  Manager 반환으로 바꾼다.
+- `bct_task_message`는 한 Manager와 한 Worker 사이에서 사용할 수 있는
+  선택형 지시문 봉투다. 기본 `max_rounds=0`은 진전 기반 반복이며, 고정 한도는
+  사용자나 Manager가 비용·시간 예산으로 명시할 때만 1~12로 둔다. 양수 한도에서
+  Worker가 SELF를 요청하면 요청 증거는 보존하고 실제 경로만 Manager 반환으로
+  바꾼다.
 - `bct_operation_get`은 전달 행동 하나의 정확한 영수증을 읽는다.
 - `bct_status(scope="bct")`는 결과 이후의 전체 현재 보기를 갱신할 때만
   다시 읽는다.
@@ -407,8 +408,9 @@ legacy NEXT TASK 본문
 ### Task Run과 Task Message의 경계
 
 두 경로를 단순히 연달아 호출하면 같은 작업이 두 번 전송될 수 있다.
-따라서 `Task Message`는 메시지 흐름의 완성 레시피이고, 준비된 오케스트레이션
-세션의 `Task Run`을 내부에서 다시 호출하지 않는다.
+따라서 `Task Message`는 전체 Chain Message 안에서 선택적으로 쓸 수 있는
+메시지 지시문 부품이며, 준비된 오케스트레이션 세션의 `Task Run`을 내부에서
+다시 호출하지 않는다.
 
 ```text
 Work / 실행 세션 / B의 정확한 대화 UUID·탭 / Task Run·Delayed Send 영수증
@@ -416,8 +418,8 @@ Work / 실행 세션 / B의 정확한 대화 UUID·탭 / Task Run·Delayed Send 
 
 `Task Run` 영수증과 `Task Message`를 하나의 오케스트레이션 세션으로 묶는
 상위 다중 실행 조합은 여전히 별도 과제다. 하지만 사용자가 요청한 자연스러운
-1:1 Manager → Worker → 제한 BB → Manager 메시지 흐름은 `Task Message`가
-완결한다. 이를 다중 Worker `Chain Run`으로 부르지 않는다.
+1:1 Manager → Worker → 진전 기반 BB → Manager 메시지 흐름에서 `Task Message`는
+필요할 때 쓰는 지시문 부품이다. 이를 다중 Worker `Chain Run`으로 부르지 않는다.
 
 ## 4. 노드 이상과 교체 조합
 
