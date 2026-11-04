@@ -149,6 +149,7 @@ files = [
   "src/bct/supervisor.py",
   "src/bct/mcp_server.py",
   "src/bct/code_block_scan.py",
+  "src/bct/desktop_recipes.py",
   "src/bct/chat_input_queue.py",
   "src/bct/chain_message_preflight.py",
   "src/bct/task_message.py",

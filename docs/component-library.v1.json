@@ -15,6 +15,61 @@
   },
   "components": [
     {
+      "id": "bdc.desktop_component_catalogue",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/desktop_recipes.py",
+          "symbol": "desktop_catalogue"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "bct_desktop(action=catalog)"
+        }
+      ],
+      "contract": "Read-only BDC bookshelf that classifies the existing desktop observation, exact target and lease, window, native UI, Chrome UI, session I/O, launch/open and emergency-stop parts without executing them.",
+      "effects": [],
+      "safety": [
+        "plan-only",
+        "existing-public-capabilities-only",
+        "no-lease-acquisition",
+        "no-desktop-effect",
+        "no-hidden-executor"
+      ],
+      "used_by": [
+        "bdc.desktop_recipe_planner"
+      ]
+    },
+    {
+      "id": "bdc.desktop_recipe_planner",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/desktop_recipes.py",
+          "symbol": "plan_desktop_recipe"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "bct_desktop(action=plan)"
+        }
+      ],
+      "contract": "Plan one named BDC workflow as an ordered composition of existing public capabilities. The caller still chooses fresh observed targets and executes every effect through a separate Work-scoped Operation and receipt.",
+      "effects": [],
+      "safety": [
+        "plan-only",
+        "exact-target-before-effect",
+        "lease-before-control",
+        "explicit-release-after-readback",
+        "unknown-no-replay",
+        "emergency-stop-independent"
+      ],
+      "used_by": [
+        "bct_desktop"
+      ]
+    },
+    {
       "id": "bct.chain_message_caller_preflight",
       "kind": "module",
       "maturity": "isolated",

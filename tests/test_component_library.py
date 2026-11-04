@@ -19,6 +19,8 @@ class ComponentLibraryTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertIn("browser.close_exact_chat_tab", ids)
         self.assertIn("node.recovery", ids)
+        self.assertIn("bdc.desktop_component_catalogue", ids)
+        self.assertIn("bdc.desktop_recipe_planner", ids)
         allowed_kinds = {"primitive", "module", "partial_recipe", "full_recipe"}
         allowed_maturity = {"isolated", "bounded", "embedded"}
         for item in components:
