@@ -599,6 +599,40 @@ class DurableWatchLedger:
                 (json.dumps(ctx, sort_keys=True), row["task_id"], row["generation"]),
             ).rowcount == 1
 
+    def mark_manager_decision_required(self, watch: Watch, *, reason: str) -> bool:
+        """Finish an exact response watch when B supplied no safe BB/BA route.
+
+        A terminal Worker response is already durable evidence at this point,
+        so leaving the row WATCHING would falsely describe it as unfinished.
+        Do not guess a destination and do not send anything.  The Manager can
+        review the bound response and author a new Chain Message explicitly.
+        """
+        if reason != "NEXT_INSTRUCTION_UNAVAILABLE":
+            raise ValueError("DELAYED_MANAGER_DECISION_REASON_INVALID")
+        with self.store.transaction() as db:
+            found = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING' AND response_turn_id=?",
+                (watch.task_id, watch.generation, watch.response_turn_id),
+            ).fetchone()
+            if found is None:
+                return False
+            ctx = json.loads(found["context_json"] or "{}")
+            if (not ctx.get("observed_response_turn_key")
+                    or not ctx.get("observed_response_sha")):
+                return False
+            ctx.pop("watch_diagnostic_reason", None)
+            ctx["watch_terminal_reason"] = reason
+            ctx["manager_action"] = "REVIEW_RESPONSE_AND_AUTHOR_NEXT_MESSAGE"
+            return db.execute(
+                "UPDATE delayed_send_watches "
+                "SET state='MANAGER_DECISION_REQUIRED',context_json=? "
+                "WHERE task_id=? AND generation=? AND state='WATCHING' "
+                "AND response_turn_id=?",
+                (json.dumps(ctx, sort_keys=True), watch.task_id,
+                 watch.generation, watch.response_turn_id),
+            ).rowcount == 1
+
     def bind_observed_turn(self, watch: Watch, turn_key: str, response_sha: str) -> bool:
         """Persist the exact RCC response identity before claiming any send."""
         if not isinstance(turn_key, str) or not turn_key.strip() or not response_sha:
@@ -846,21 +880,27 @@ class DelayedSendMessageRunner:
         # missing/unterminated response in public status.
         if not self.ledger.bind_observed_turn(watch, turn_key, response_sha):
             return Continuation("WAITING_EXPECTED_RESPONSE")
+        alarm = response_ready_alarm(
+            watch_ref=f"{watch.task_id}:{watch.generation}",
+            subject_ref=watch.conversation_key,
+            expected_response_turn_id=watch.response_turn_id,
+            response_turn_id=str(observation.get("response_turn_id") or ""),
+            response_text=observation.get("response_text"),
+            response_complete=observation.get("response_complete") is True,
+            input_ready=observation.get("input_ready") is True,
+        )
+        if alarm is None:
+            return Continuation("WAITING_RESPONSE")
         try:
-            alarm = response_ready_alarm(
-                watch_ref=f"{watch.task_id}:{watch.generation}",
-                subject_ref=watch.conversation_key,
-                expected_response_turn_id=watch.response_turn_id,
-                response_turn_id=str(observation.get("response_turn_id") or ""),
-                response_text=observation.get("response_text"),
-                response_complete=observation.get("response_complete") is True,
-                input_ready=observation.get("input_ready") is True,
-            )
-            if alarm is None:
-                return Continuation("WAITING_RESPONSE")
             decision = next_instruction_decision(alarm)
         except InstructionError:
-            return Continuation("INSTRUCTION_UNAVAILABLE")
+            # Preserve the exact completed response as a ready, unconsumed
+            # alarm, then end the watch without inventing a route or effect.
+            self.ledger.record_alarm(watch, alarm)
+            if self.ledger.mark_manager_decision_required(
+                    watch, reason="NEXT_INSTRUCTION_UNAVAILABLE"):
+                return Continuation("MANAGER_DECISION_REQUIRED")
+            return Continuation("WAITING_WATCH")
         self.ledger.record_alarm(watch, alarm)
         self.ledger.record_decision(
             watch, decision, response_turn_key=turn_key, response_sha256=response_sha,
@@ -1242,12 +1282,7 @@ class DelayedSendService:
                 )
                 result=runner.poll_once(
                     watch,manager_conversation_key=ctx["manager_conversation_key"])
-                if result.status == "INSTRUCTION_UNAVAILABLE":
-                    self.ledger.record_watch_diagnostic(
-                        row, "NEXT_INSTRUCTION_UNAVAILABLE"
-                    )
-                if result.status not in {"WAITING_RESPONSE","INSTRUCTION_UNAVAILABLE",
-                                         "WAITING_WATCH"}:
+                if result.status not in {"WAITING_RESPONSE", "WAITING_WATCH"}:
                     events.append({"task_id":watch.task_id,
                                    "generation":watch.generation,
                                    "status":result.status})

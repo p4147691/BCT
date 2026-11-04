@@ -670,6 +670,7 @@ def build_mcp(
                 return {"status":"NOT_FOUND","task_id":task_id,"generation":generation}
             planned_source = ctx.get("source_proof_kind") == "BCT_PLANNED_SOURCE_SEND"
             response_key = str(ctx.get("observed_response_turn_key") or "")
+            manager_decision = watch["state"] == "MANAGER_DECISION_REQUIRED"
             return {"status":watch["state"],"task_id":task_id,
                     "generation":generation,
                     "response_turn_id":watch["response_turn_id"],
@@ -683,6 +684,7 @@ def build_mcp(
                         "AWAITING_VERIFIED_RESPONSE" if watch["state"] == "WATCHING"
                         else "UNAVAILABLE"),
                     "terminal_reason":ctx.get("watch_terminal_reason", ""),
+                    "manager_action":ctx.get("manager_action", "") if manager_decision else "",
                     "watch_diagnostic_reason": watch_diagnostic_for_status(
                         str(watch["state"]), ctx,
                     )}

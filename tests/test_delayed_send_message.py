@@ -143,12 +143,17 @@ class DelayedSendMessageTests(unittest.TestCase):
                     "response_sha256":"digest-1"},
                 send_message=lambda *_: self.fail("invalid instruction must not send"))
             result=runner.poll_once(self.watch,manager_conversation_key="manager-uuid")
-            self.assertEqual("INSTRUCTION_UNAVAILABLE",result.status)
+            self.assertEqual("MANAGER_DECISION_REQUIRED",result.status)
             import json
             context=json.loads(ledger.get("task-1",1)["context_json"])
             self.assertEqual("rcc-turn-1",context["observed_response_turn_key"])
             self.assertEqual("digest-1",context["observed_response_sha"])
-            self.assertEqual("WATCHING",ledger.get("task-1",1)["state"])
+            self.assertEqual(
+                "MANAGER_DECISION_REQUIRED", ledger.get("task-1",1)["state"],
+            )
+            self.assertEqual(
+                "NEXT_INSTRUCTION_UNAVAILABLE", context["watch_terminal_reason"],
+            )
 
     def test_terminal_turn_clears_stale_watching_diagnostic(self):
         with tempfile.TemporaryDirectory() as root:
@@ -553,6 +558,41 @@ class DelayedSendMessageTests(unittest.TestCase):
                      "NEXT TASK — SELF\nA\nNEXT TASK — MANAGER\nB"]:
             self.assertEqual("INSTRUCTION_UNAVAILABLE", self.advance(body).status)
         self.assertFalse(self.events)
+
+    def test_durable_runner_finishes_exact_response_for_manager_review(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = DurableWatchLedger(Store(Path(root) / "state.sqlite"))
+            watch = Watch("manager-review", 1, "worker-uuid", "turn-1", "send-1")
+            ledger.prearm(watch)
+            runner = DelayedSendMessageRunner(
+                ledger,
+                read_response=lambda _watch: {
+                    "conversation_key": "worker-uuid",
+                    "response_turn_id": "turn-1",
+                    "response_turn_key": "assistant-1",
+                    "response_sha256": "a" * 64,
+                    "response_text": "Completed, but omitted the routing marker.",
+                    "response_complete": True,
+                    "input_ready": True,
+                },
+                send_message=lambda *_args: self.fail("must not send"),
+            )
+            result = runner.poll_once(
+                watch, manager_conversation_key="manager-uuid",
+            )
+            self.assertEqual("MANAGER_DECISION_REQUIRED", result.status)
+            saved = ledger.get("manager-review", 1)
+            self.assertEqual("MANAGER_DECISION_REQUIRED", saved["state"])
+            context = __import__("json").loads(saved["context_json"])
+            self.assertEqual(
+                "NEXT_INSTRUCTION_UNAVAILABLE", context["watch_terminal_reason"],
+            )
+            self.assertEqual(
+                "REVIEW_RESPONSE_AND_AUTHOR_NEXT_MESSAGE", context["manager_action"],
+            )
+            alarm = ledger.get_alarm(watch, "conversation.response_ready")
+            self.assertEqual("READY", alarm["state"])
+            self.assertEqual([], ledger.watching())
 
     def test_exact_instruction_text_is_preserved(self):
         body = "NEXT TASK — SELF\n  Edit file X.\nRun focused test."

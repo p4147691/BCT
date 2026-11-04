@@ -1,6 +1,11 @@
 from __future__ import annotations
 import unittest
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
+from bct.core.models import Work
+from bct.core.store import Store
+from bct.delayed_send_message import DurableWatchLedger, DelayedSendMessageRunner, Watch
 from bct.mcp_server import build_mcp
 
 class Applied:
@@ -71,6 +76,62 @@ class ChainMessagePublicTests(unittest.IsolatedAsyncioTestCase):
     async def test_unsafe_action_does_not_send(self):
         await self.mcp.call_tool("bct_chain_message",self.arguments(action="chain-run"))
         self.assertEqual([],self.ops.calls)
+
+    async def test_status_exposes_terminal_manager_review_without_sending(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            work = store.create_work(Work(
+                "test-work", "fixture", (), frozenset(), "bct-mcp-local", 1,
+            ))
+            ledger = DurableWatchLedger(store)
+            ledger.prearm_task(
+                task_id="test-task", work_id=work.work_id,
+                principal_id=work.owner_principal_id,
+                assignment_epoch=work.assignment_epoch,
+                instance_id="worker-instance", conversation_key="worker-uuid",
+                manager_conversation_key="manager-uuid",
+                manager_instance_id="manager-instance",
+                baseline={
+                    "responseTurnCount": 1, "generating": False,
+                    "responseTurnKey": "old", "responseSha256": "b" * 64,
+                },
+                registration_receipt="arm-1",
+                planned_send_operation_id="send-1",
+                planned_send_text="Complete the task and report the next route.",
+            )
+            watch = Watch(
+                "test-task", 1, "worker-uuid", "task:test-task:1", "arm-1",
+            )
+            result = DelayedSendMessageRunner(
+                ledger,
+                read_response=lambda _watch: {
+                    "conversation_key": "worker-uuid",
+                    "response_turn_id": "task:test-task:1",
+                    "response_turn_key": "assistant-2",
+                    "response_sha256": "c" * 64,
+                    "response_text": "Finished without a route marker.",
+                    "response_complete": True, "input_ready": True,
+                },
+                send_message=lambda *_args: self.fail("must not send"),
+            ).poll_once(watch, manager_conversation_key="manager-uuid")
+            self.assertEqual("MANAGER_DECISION_REQUIRED", result.status)
+            mcp = build_mcp(
+                SimpleNamespace(operations=Operations(), store=store),
+                compact_catalogue=True,
+            )
+            _, status = await mcp.call_tool("bct_chain_message", {
+                "work_id": "test-work", "task_id": "test-task",
+                "operation_id": "status-01", "action": "status",
+                "generation": 1,
+            })
+            self.assertEqual("MANAGER_DECISION_REQUIRED", status["status"])
+            self.assertEqual(
+                "NEXT_INSTRUCTION_UNAVAILABLE", status["terminal_reason"],
+            )
+            self.assertEqual(
+                "REVIEW_RESPONSE_AND_AUTHOR_NEXT_MESSAGE",
+                status["manager_action"],
+            )
 
     async def test_standard_send_message_name_uses_existing_relay_contract(self):
         await self.mcp.call_tool("bct_send_message", {
