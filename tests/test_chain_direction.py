@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from bct.chain_direction import ChainDirectionLedger
 from bct.chain_execution_plan import ChainExecutionPlanLedger
@@ -145,7 +146,10 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
         """A1→B1→A2→B2→A3 stays two exact 1:1 chains, not a hidden loop."""
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
-            work = store.create_work(Work("work-ababa", "fixture", (), frozenset(), "bct-mcp-local", 1))
+            work = store.create_work(Work("work-ababa", "fixture", (), frozenset({"browser"}), "bct-mcp-local", 1))
+            node_guard = patch("bct.node_recovery.NodeRecoveryLedger.assert_send_allowed", return_value=None)
+            node_guard.start()
+            self.addCleanup(node_guard.stop)
             delayed = DurableWatchLedger(store)
             ops = Operations()
             mcp = build_mcp(SimpleNamespace(operations=ops, store=store), compact_catalogue=True)

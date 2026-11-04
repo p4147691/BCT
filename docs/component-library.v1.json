@@ -15,6 +15,40 @@
   },
   "components": [
     {
+      "id": "bct.chain_message_caller_preflight",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/chain_message_preflight.py",
+          "symbol": "check_chain_work"
+        },
+        {
+          "path": "src/bct/chain_message_preflight.py",
+          "symbol": "prepare_chain_instruction"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "bct_chain_message(action=preflight)"
+        }
+      ],
+      "contract": "Read-only existing-Work browser-authority preflight and opt-in explicit NEXT TASK output instruction with exact preview SHA; default Chain Message text and durable watch semantics remain unchanged.",
+      "effects": [],
+      "safety": [
+        "never-grants-work-actions",
+        "requires-active-owned-work-with-browser",
+        "preflight-never-reserves-or-sends",
+        "same-text-for-prearm-and-send",
+        "opt-in-only",
+        "no-invented-follow-up",
+        "manager-review-on-missing-marker",
+        "unknown-no-replay"
+      ],
+      "used_by": [
+        "bct.chain_message"
+      ]
+    },
+    {
       "id": "monitor.node_token_visual",
       "kind": "module",
       "maturity": "isolated",

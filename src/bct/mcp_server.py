@@ -14,6 +14,9 @@ from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .chat_input_queue import ChatInputQueue
+from .chain_message_preflight import (
+    EXPLICIT_NEXT_TASK_SUFFIX, check_chain_work, prepare_chain_instruction,
+)
 from .code_block_scan import resolve_scan_root, scan as run_code_block_scan
 from .code_block_organize import plan_block_replacement, prepare_block_apply
 from .conversation_network import (
@@ -632,6 +635,11 @@ def build_mcp(
             "be omitted, and any supplied copy must match exactly. The command PREARMS BEFORE sending, "
             "then submits the reserved text under the exact planned operation ID. "
             "Status reads the owning Work's exact durable watch. "
+            "Use action=preflight to verify existing Work browser authority and exact "
+            "outgoing instruction digest without sending or recording an Operation. "
+            "An opt-in continuation_output_contract=explicit-next-task-v1 appends an "
+            "explicit SELF/MANAGER marker request to both prearm and sent text; it "
+            "never creates a follow-up or relaxes response parsing. "
             "This is the first message-flow stage, NOT a completed Run Plan/Task Run "
             "or multi-worker Chain Run implementation. Legacy worker_/manager_ "
             "identity fields remain accepted only for compatibility. No UNKNOWN replay."
@@ -650,6 +658,7 @@ def build_mcp(
         target_tab_id: int = 0, target_window_id: int = 0,
         target_conversation_key: str = "", origin_conversation_key: str = "",
         origin_instance_id: str = "",
+        continuation_output_contract: str = "none",
     ) -> dict[str, Any]:
         if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
@@ -692,7 +701,7 @@ def build_mcp(
             return await make_executor("browser")(
                 work_id,operation_id,{"command":"delayed-send-cancel",
                  "task_id":task_id,"generation":generation})
-        if action != "start":
+        if action not in {"start", "preflight"}:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ACTION_INVALID"}
         def select_identity(canonical, legacy):
             if canonical and legacy and canonical != legacy:
@@ -712,7 +721,74 @@ def build_mcp(
         arm_id=operation_id+"-arm"
         if len(send_id)>80 or len(arm_id)>80:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
+
+        # Read-only Work authority check BEFORE direction planning or prearm.
+        # It never adds browser (or any other) action to an existing Work.
+        if not hasattr(bct, "store"):
+            if action == "preflight":
+                return {"status":"UNAVAILABLE","reason":"CHAIN_MESSAGE_WORK_STORE_UNAVAILABLE"}
+            # Historical transport-only unit tests instantiate no Store. A
+            # production BCT runtime always has one and enforces this fence.
+        else:
+            try:
+                work = await asyncio.to_thread(bct.store.get_work, work_id)
+            except (KeyError, ValueError):
+                return {"status":"BLOCKED","reason":"CHAIN_MESSAGE_WORK_NOT_FOUND"}
+            permission = check_chain_work(work, principal_id=principal.principal_id)
+            if permission["status"] != "READY":
+                return permission
+
         direction = None
+        if chain_direction_id:
+            if not hasattr(bct, "store"):
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_STORE_REQUIRED"}
+            if (not isinstance(chain_direction_id, str)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", chain_direction_id)):
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_ID_INVALID"}
+            # Do not construct ChainDirectionLedger here: its constructor
+            # creates tables. Preflight must be a pure read even for a missing
+            # direction schema; start plans only after every earlier gate.
+            def read_existing_direction():
+                with bct.store._readonly() as db:
+                    row = db.execute(
+                        "SELECT * FROM chain_directions WHERE direction_id=?",
+                        (chain_direction_id,),
+                    ).fetchone()
+                    return dict(row) if row is not None else None
+            try:
+                direction = await asyncio.to_thread(read_existing_direction)
+            except Exception:
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_READ_UNAVAILABLE"}
+            if direction is None or direction.get("work_id") != work_id:
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_NOT_FOUND"}
+            if direction.get("decision") != "NEW_TASK":
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_NOT_A_NEW_TASK"}
+            if instruction and instruction != direction.get("direction_text"):
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_TEXT_MISMATCH"}
+            if (direction.get("chain_task_id",""), direction.get("chain_operation_id","")) not in {
+                    ("",""), (task_id,operation_id)}:
+                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_CHAIN_CONFLICT"}
+            instruction = str(direction["direction_text"])
+        try:
+            prepared_text = prepare_chain_instruction(
+                instruction, output_contract=continuation_output_contract,
+            )
+        except ValueError as exc:
+            return {"status":"INVALID_REQUEST","reason":str(exc)}
+        outgoing_instruction = prepared_text["instruction"]
+        if action == "preflight":
+            return {
+                "status": "READY", "work_id": work_id, "task_id": task_id,
+                "target_conversation_key": target_conversation,
+                "required_action": "browser",
+                "continuation_output_contract": continuation_output_contract,
+                "contract_appended": prepared_text["output_contract_appended"],
+                "contract_suffix": EXPLICIT_NEXT_TASK_SUFFIX
+                    if prepared_text["output_contract_appended"] else "",
+                "outgoing_instruction_sha256": prepared_text["instruction_sha256"],
+                "outgoing_instruction_characters": prepared_text["instruction_characters"],
+                "effects": "NONE_READ_ONLY", "authorizes_send": False,
+            }
         if chain_direction_id:
             from bct.chain_direction import ChainDirectionLedger
             try:
@@ -724,11 +800,6 @@ def build_mcp(
                 )
             except ValueError as exc:
                 return {"status":"INVALID_REQUEST","reason":str(exc)}
-            # A linked Chain Direction is the exact A-authored instruction,
-            # not merely advisory metadata. Avoid a second copy that can drift.
-            instruction = str(direction["direction_text"])
-        if not instruction or len(instruction)>12000:
-            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_INPUT_INVALID"}
         try:
             await asyncio.to_thread(
                 _assert_node_send_allowed, work_id, str(target_conversation),
@@ -742,7 +813,7 @@ def build_mcp(
              "manager_conversation_key":origin_conversation,
              "manager_instance_id":origin_instance or instance_id,
              "planned_send_operation_id":send_id,
-             "planned_send_text":instruction,
+             "planned_send_text":outgoing_instruction,
              "exclusive_conversation_watch":True})
         if armed.get("outcome") != "APPLIED":
             return {"status":"PREARM_FAILED","prearm":armed}
@@ -751,7 +822,7 @@ def build_mcp(
              "instance_id":instance_id,"session_id":session_id,
              "tab_id":target_tab,"window_id":target_window,
              "conversation_key":target_conversation,
-             "text":instruction})
+             "text":outgoing_instruction})
         if sent.get("outcome") != "APPLIED":
             return {"status":"SEND_UNCONFIRMED","prearm":armed,
                     "send":sent,"warning":"NO_UNKNOWN_REPLAY"}

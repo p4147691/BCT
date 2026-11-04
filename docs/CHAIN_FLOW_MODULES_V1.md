@@ -137,6 +137,41 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 깨지 않도록 남긴 호환 별칭이다. 개념상 Target은 **이번 정확한 대상 X**를
 뜻한다. X가 B든 C든 감독관이든 같은 경로를 쓴다.
 
+### Chain Message 전송 전 권한·응답 출력 계약 (선택형)
+
+`bct_chain_message(action="preflight", ...)`는 실제 `start`에 사용할 **같은 Work,
+Task/Operation ID, 정확한 대상·발신자 식별자와 지시문**을 입력받아 기존
+Work의 `browser` 작업 권한 및 출력 계약을 점검한다. 이 호출은
+**읽기 전용**이다. Chain Direction 연결 상태를 예약하거나 감시를 선등록하거나
+메시지를 보내지 않으며 Work에 작업 권한을 자동 추가하지 않는다.
+
+- `READY`: 현재 Work가 ACTIVE이고 소유자가 맞으며 `browser` 권한을
+  이미 보유한다. 반환하는 `outgoing_instruction_sha256`은 그대로 전송할
+  최종 UTF-8 문자열의 SHA-256이다. 실제 RCC 창·탭 상태와 이후 외부 전송
+  성공을 증명하는 것은 아니므로 기존 전송 사전 검사/Operation 영수증은 계속 필요하다.
+- `BLOCKED` + `CHAIN_MESSAGE_BROWSER_ACTION_REQUIRED`: 해당 Work에
+  브라우저 권한이 없다. 기존 Work는 변경하지 않는다. 호출자가 별도 승인된
+  적합한 Work를 선택·생성한 뒤에만 재검토한다.
+- `INVALID_REQUEST`: 대상/지시문·출력 계약이 부적합하다. 어떤 외부
+  Operation도 예약하지 않는다.
+- `continuation_output_contract="none"` (기본값): 종전 지시문을 바이트
+  그대로 보존하며 기존 Chain/Delayed Send 응답 정책을 변경하지 않는다.
+- `continuation_output_contract="explicit-next-task-v1"` (선택): Worker가
+  **스스로 결정한** SELF 또는 MANAGER 경로를 실제 응답 마지막 줄에
+  `NEXT TASK — SELF: 구체적 다음 작업` 또는
+  `NEXT TASK — MANAGER: 구체적 검토/수용 작업`으로 명시하도록 요청하는
+  짧은 고정 문구를 덧붙인다. 이 확장된 **동일한 원문**이 Delayed Send
+  선예약의 `planned_send_text`와 단일 `send-message`의 `text`가 된다.
+  연결된 Chain Direction의 A 작성 원본 `direction_text`는 수정하지 않는다.
+  A가 이 옵션을 명시적으로 선택하지 않으면 문구는 덧붙이지 않는다.
+
+Worker가 지시를 따르지 않아 마커를 누락하거나, 서로 충돌하거나, 구체적인
+후속 지시가 없다면 기존 `extract_next_instruction`과 durable watch가
+**임의의 SELF/MANAGER 후속 작업을 생성하지 않는다**.
+응답은 정확한 응답 턴에 결합된 채 `MANAGER_DECISION_REQUIRED` /
+`NEXT_INSTRUCTION_UNAVAILABLE`로 A의 검토를 기다린다. 불확실한 전송의
+자동 재전송도 없다.
+
 ## 전체 레시피
 
 ### 전체 Chain Message 레시피
