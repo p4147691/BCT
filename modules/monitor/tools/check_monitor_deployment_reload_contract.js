@@ -7,6 +7,7 @@ const root = path.join(__dirname, "..");
 const monitor = fs.readFileSync(path.join(root, "extension", "monitor.js"), "utf8");
 const publish = fs.readFileSync(path.join(__dirname, "Publish-MonitorDeployment.ps1"), "utf8");
 const request = fs.readFileSync(path.join(__dirname, "Request-MonitorDeploymentCheck.ps1"), "utf8");
+const installedRuntime = fs.readFileSync(path.join(__dirname, "check_monitor_installed_runtime.py"), "utf8");
 const structure = fs.readFileSync(path.join(__dirname, "check_monitor_structure.py"), "utf8");
 
 const start = monitor.indexOf("async function checkMonitorDeploymentUpdate()");
@@ -57,6 +58,10 @@ assert.match(publish, /Move-Item -LiteralPath \$stageTools -Destination \$target
   "external publication must install tools matching the extension candidate");
 assert.match(publish, /Test-MonitorExtensionCandidate/,
   "the staged and installed candidate must be syntax/load-graph checked");
+assert.match(request, /check_monitor_installed_runtime\.py/,
+  "reload requests must validate the installed runtime rather than require a source checkout");
+assert.match(installedRuntime, /installed_monitor_bundle_hash_mismatch/);
+assert.match(installedRuntime, /installed_script_order_invalid/);
 assert.match(structure, /monitor_ui_layout_dependency_contract_broken/);
 assert.match(structure, /choose_capture_view_declared/);
 assert.match(structure, /layout_script_loaded_before_monitor/);

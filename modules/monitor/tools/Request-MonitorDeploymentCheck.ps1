@@ -15,9 +15,9 @@ if (!(Test-Path -LiteralPath $ext -PathType Container)) {
   throw "DesktopWindow Monitor extension directory not found: $ext"
 }
 
-$checkerPath = Join-Path $runtimeRoot 'tools\check_monitor_structure.py'
+$checkerPath = Join-Path $runtimeRoot 'tools\check_monitor_installed_runtime.py'
 if (!(Test-Path -LiteralPath $checkerPath -PathType Leaf)) {
-  throw "Monitor pre-reload gate checker not found: $checkerPath"
+  throw "Monitor installed-runtime gate checker not found: $checkerPath"
 }
 $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
 if ($null -eq $pythonCommand) {

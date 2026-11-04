@@ -14,7 +14,8 @@ function name, installed path, or raw command. Unknown keys fail closed.
 ## Existing blocks reused
 
 - Monitor uses the installed `Request-MonitorDeploymentCheck.ps1` contract.
-  It validates the installed extension identity and structure, publishes one
+  It validates the installed extension identity and runtime-only structure,
+  without requiring repository documents, native source, or source-only tests, publishes one
   reload-observation token, and requires the matching ACK, manifest version,
   and fresh runtime telemetry. The owned Monitor page checks this bounded
   token every two seconds and invokes its existing `monitor-reload-extension`
