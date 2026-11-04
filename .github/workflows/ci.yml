@@ -45,7 +45,7 @@ jobs:
             $base = 'HEAD^'
           }
           git fetch --no-tags --depth=1 origin $base
-          python scripts/ci_scope.py --base $base --head $env:GITHUB_SHA --github-output $env:GITHUB_OUTPUT
+          python scripts/ci_scope.py --base $base --head $env:GITHUB_SHA --scan-root . --github-output $env:GITHUB_OUTPUT
 
   preflight:
     needs: scope

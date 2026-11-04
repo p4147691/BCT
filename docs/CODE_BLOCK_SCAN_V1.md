@@ -35,3 +35,12 @@ The source file is not polluted with marker comments and no parallel storage is
 needed. The deterministic Block Index plus exact hashes are the block boundary.
 Tests remain a separate caller-selected step; a successful replacement receipt
 does not claim that the changed project passed its test suite.
+
+## CI impact selection
+
+`scripts/ci_scope.py --scan-root .` generates the same Code Block Scan map for
+the checked-out revision and expands changed files through reverse static
+dependency edges. A complete map may keep an isolated Monitor or Browser Bridge
+change on the lightweight path. A partial map, malformed map, or changed source
+file missing from the index always fails closed to Core validation. The map is
+selection evidence only; it never turns unknown or high-risk work into a skip.

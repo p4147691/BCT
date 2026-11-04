@@ -23,6 +23,17 @@ sharding = _load("bct_ci_test_shard", ROOT / "scripts" / "ci_test_shard.py")
 
 
 class CIScopeTests(unittest.TestCase):
+    @staticmethod
+    def block_map(files, edges=()):
+        return {
+            "schema": "bct.code-block-scan.v1", "status": "OK",
+            "scan": {"complete": True, "scan_fingerprint": "f" * 64},
+            "block_map": {
+                "files": [{"path": path} for path in files],
+                "dependency_edges": list(edges),
+            },
+        }
+
     def test_documentation_only_is_lightweight(self):
         plan = scope.classify(["PROJECT_HANDOFF.md", "docs/guide.md"])
         self.assertTrue(plan.skip)
@@ -64,6 +75,43 @@ class CIScopeTests(unittest.TestCase):
         plan = scope.classify([".github/workflows/ci.yml"])
         self.assertFalse(plan.skip)
         self.assertTrue(plan.core)
+
+    def test_block_map_keeps_isolated_monitor_change_lightweight(self):
+        changed = "modules/monitor/domains/node-identity.js"
+        report = self.block_map([changed, "modules/monitor/domains/shared-ui.js"])
+        plan = scope.classify([changed], report)
+        impact = scope.select_impact([changed], report)
+        self.assertTrue(plan.skip)
+        self.assertEqual("BLOCK_MAP", impact["mode"])
+        self.assertTrue(impact["trusted"])
+
+    def test_block_map_reverse_dependency_selects_core_consumer(self):
+        changed = "modules/monitor/domains/node-identity.js"
+        consumer = "src/bct/monitor_contract.py"
+        report = self.block_map([changed, consumer], [{
+            "from": consumer, "to": changed, "resolved": "true",
+        }])
+        plan = scope.classify([changed], report)
+        impact = scope.select_impact([changed], report)
+        self.assertFalse(plan.skip)
+        self.assertTrue(plan.core)
+        self.assertIn(consumer, impact["affected"])
+
+    def test_partial_or_missing_block_map_evidence_fails_closed(self):
+        changed = "modules/monitor/domains/node-identity.js"
+        partial = self.block_map([changed])
+        partial["status"] = "PARTIAL"
+        self.assertTrue(scope.classify([changed], partial).core)
+        missing = self.block_map(["modules/monitor/other.js"])
+        impact = scope.select_impact([changed], missing)
+        self.assertEqual("FAIL_CLOSED", impact["mode"])
+        self.assertEqual("CHANGED_SOURCE_NOT_INDEXED", impact["reason"])
+
+    def test_workflow_generates_current_code_block_scan_for_scope(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("--scan-root .", workflow)
 
 class CIShardTests(unittest.TestCase):
     def test_every_discovered_module_is_assigned_once_and_deterministically(self):

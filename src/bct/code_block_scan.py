@@ -23,6 +23,8 @@ LANGUAGES = {
     ".java": "java", ".go": "go", ".rs": "rust", ".c": "c",
     ".h": "c", ".cpp": "cpp", ".hpp": "cpp", ".rb": "ruby",
     ".php": "php", ".sh": "shell",
+    ".css": "css", ".html": "html", ".htm": "html",
+    ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".toml": "toml",
 }
 
 
@@ -350,7 +352,15 @@ def scan(root: Path, *, max_files: int = 1000, max_bytes_per_file: int = 1_000_0
     file_rows: list[dict[str, Any]] = []
     dependencies: list[dict[str, str]] = []
     path_set = {source.relative for source in files}
-    stem_index = {Path(path).stem: path for path in path_set}
+    stem_candidates: dict[str, list[str]] = {}
+    for path in sorted(path_set):
+        stem_candidates.setdefault(Path(path).stem, []).append(path)
+    # A basename is only identity when it resolves to one source file.  Picking
+    # the last duplicate stem creates false cross-module impact edges.
+    stem_index = {
+        stem: candidates[0]
+        for stem, candidates in stem_candidates.items() if len(candidates) == 1
+    }
     block_truncated = False
     parse_errors: list[dict[str, Any]] = []
     for source in files:

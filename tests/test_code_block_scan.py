@@ -58,6 +58,28 @@ class CodeBlockScanTests(unittest.TestCase):
         self.assertEqual(64, len(first["file_sha256"]))
         self.assertEqual(64, len(first["source_sha256"]))
 
+    def test_configuration_and_ui_files_are_indexed_for_ci_impact_selection(self) -> None:
+        (self.root / "surface.css").write_text(".node { color: blue; }\n", encoding="utf-8")
+        (self.root / "policy.yml").write_text("safe: true\n", encoding="utf-8")
+        report = scan(self.root)
+        paths = {item["path"] for item in report["block_map"]["files"]}
+        self.assertIn("surface.css", paths)
+        self.assertIn("policy.yml", paths)
+
+    def test_duplicate_file_stems_do_not_create_false_dependency_edges(self) -> None:
+        (self.root / "left").mkdir()
+        (self.root / "right").mkdir()
+        (self.root / "left" / "shared.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (self.root / "right" / "shared.js").write_text("const VALUE = 2;\n", encoding="utf-8")
+        (self.root / "consumer.js").write_text(
+            "const shared = require('shared');\n", encoding="utf-8"
+        )
+        report = scan(self.root)
+        edge = next(item for item in report["block_map"]["dependency_edges"]
+                    if item["from"] == "consumer.js")
+        self.assertEqual("shared", edge["to"])
+        self.assertEqual("false", edge["resolved"])
+
     def test_work_root_and_read_capability_are_enforced(self) -> None:
         self.assertEqual(resolve_scan_root(self.work), self.root.resolve())
         outside = self.root.parent / "outside-code-scan"

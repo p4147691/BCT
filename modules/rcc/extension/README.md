@@ -60,3 +60,10 @@ Run from `D:\BCT\source`:
 
 To verify the already assembled non-LIVE candidate and current rollback baseline without changing
 either, add `--candidate-root <rehearsal path>` and `--live-root D:\ChromeExtensions\RCC\extension`.
+
+After a protected install, do not rerun the pre-install `rcc-inspect*` command:
+it intentionally expects the rollback baseline at LIVE. Use the separate
+read-only `rcc-verify-installed*` deploy operation with the original install
+operation ID. It verifies the installed candidate inventory, extension ID,
+version, immutable manifest, and receipt without reloading Chrome or accepting
+LIVE behavior.

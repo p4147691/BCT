@@ -276,6 +276,55 @@ def install(plan: dict, *, authorization: Any = None, live: Path | None = None,
             "extension_id": EXTENSION_ID, "reload_performed": False}
 
 
+def verify_installed(operation_id: str, install_operation_id: str, *,
+                     live: Path | None = None, manifest_file: Path | None = None,
+                     journal_root: Path | None = None,
+                     candidate_version: str = "1.0.60") -> dict:
+    """Read-only proof that LIVE is the exact installed candidate.
+
+    This deliberately does not call ``inspect`` because pre-install inspection
+    expects LIVE to equal the rollback baseline.  The original immutable
+    install receipt binds this check to one approved candidate transition.
+    """
+    live = EXACT_INSTALLED if live is None else live
+    manifest_file = EXACT_MANIFEST if manifest_file is None else manifest_file
+    journal_root = EXACT_JOURNAL if journal_root is None else journal_root
+    if not OP_ID.fullmatch(operation_id) or not OP_ID.fullmatch(install_operation_id):
+        raise PreconditionError("RCC_INSTALL_OPERATION_ID_INVALID")
+    _no_links(live)
+    _no_links(manifest_file)
+    _no_links(journal_root)
+    journal = journal_root / (install_operation_id + ".json")
+    if not journal.is_file():
+        raise PreconditionError("RCC_INSTALL_ORIGINAL_RECEIPT_NOT_FOUND")
+    record = json.loads(journal.read_text(encoding="utf-8"))
+    if record.get("operation_id") != install_operation_id:
+        raise PreconditionError("RCC_INSTALL_ORIGINAL_RECEIPT_MISMATCH")
+    if record.get("state") != "INSTALLED_AWAITING_RELOAD":
+        raise PreconditionError("RCC_INSTALL_POSTCHECK_STATE_INVALID")
+    if record.get("live") != str(live):
+        raise PreconditionError("RCC_INSTALL_POSTCHECK_TARGET_MISMATCH")
+    release_raw = manifest_file.read_bytes()
+    if _sha(release_raw) != record.get("manifest_sha256"):
+        raise PreconditionError("RCC_INSTALL_POSTCHECK_MANIFEST_CHANGED")
+    release = json.loads(release_raw.decode("utf-8-sig"))
+    candidate = release["candidateInventory"]
+    if record.get("candidate_aggregate") != candidate.get("aggregateSha256"):
+        raise PreconditionError("RCC_INSTALL_POSTCHECK_CANDIDATE_CHANGED")
+    _exact(live, candidate)
+    if _identity(live) != (EXTENSION_ID, candidate_version):
+        raise PreconditionError("RCC_INSTALL_POSTCHECK_IDENTITY_MISMATCH")
+    return {
+        "state": "INSTALLED_CANDIDATE_VERIFIED",
+        "read_only": True,
+        "install_operation_id": install_operation_id,
+        "extension_id": EXTENSION_ID,
+        "candidate_files": candidate["fileCount"],
+        "candidate_aggregate": candidate["aggregateSha256"],
+        "reload_performed": False,
+    }
+
+
 def rollback(operation_id: str, *, authorization: Any = None,
              live: Path | None = None, manifest_file: Path | None = None,
              journal_root: Path | None = None) -> dict:

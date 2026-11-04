@@ -137,6 +137,27 @@ class ProtectedRccRouteTests(unittest.TestCase):
                          self.release["rollbackBaseline"]["files"])
         self.assertTrue((self.journal/"N73-TEST-01.json").is_file())
 
+    def test_03b_post_install_candidate_verification_is_separate_and_read_only(self):
+        self.install(self.inspect())
+        result = ri.verify_installed(
+            "N73-VERIFY-01", "N73-TEST-01", live=self.live,
+            manifest_file=self.policy_manifest, journal_root=self.journal,
+        )
+        self.assertEqual("INSTALLED_CANDIDATE_VERIFIED", result["state"])
+        self.assertTrue(result["read_only"])
+        self.assertEqual(58, result["candidate_files"])
+        self.assertFalse(result["reload_performed"])
+        self.assertEqual(ri._inventory(self.live), self.release["candidateInventory"]["files"])
+
+    def test_03c_post_install_candidate_verification_rejects_tamper(self):
+        self.install(self.inspect())
+        (self.live / "f01.txt").write_text("tampered", encoding="utf-8")
+        with self.assertRaisesRegex(PreconditionError, "PAYLOAD_DIGEST_MISMATCH"):
+            ri.verify_installed(
+                "N73-VERIFY-TAMPER", "N73-TEST-01", live=self.live,
+                manifest_file=self.policy_manifest, journal_root=self.journal,
+            )
+
     def test_04_exact_rollback_original_57_and_no_automatic_reload(self):
         self.install(self.inspect())
         result=self.rollback("N73-TEST-01")
@@ -243,6 +264,13 @@ class ProtectedRccRouteTests(unittest.TestCase):
             self.assertTrue(installed.evidence["effect"]=="FILES_INSTALLED_PENDING_RELOAD")
             self.assertEqual(installed.evidence["reload"],"NOT_PERFORMED")
             self.assertTrue(effect("rcc-install-1","rcc-install").duplicate)
+            verified=effect("rcc-verify-1","rcc-verify-installed","rcc-install-1")
+            self.assertEqual(verified.outcome,Outcome.APPLIED)
+            self.assertTrue(verified.evidence["installed_candidate_verified"])
+            self.assertEqual(
+                verified.output["candidate_aggregate"],
+                self.release["candidateInventory"]["aggregateSha256"],
+            )
             restored=effect("rcc-rollback-1","rcc-rollback","rcc-install-1")
             self.assertEqual(restored.outcome,Outcome.APPLIED)
             self.assertEqual(ri._inventory(self.live),self.release["rollbackBaseline"]["files"])

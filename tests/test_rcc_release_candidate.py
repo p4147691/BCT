@@ -61,6 +61,11 @@ class RccReleaseCandidateTests(unittest.TestCase):
             with self.assertRaises(self.verifier.VerificationError):
                 self.verifier._verify_inventory(root, inventory, exact=True)
 
+    def test_cli_exposes_candidate_root_as_post_install_candidate_check(self):
+        source = (self.release / "verify_release_candidate.py").read_text(encoding="utf-8")
+        self.assertIn('parser.add_argument("--candidate-root"', source)
+        self.assertIn('"stagedCandidateVerified": candidate_root is not None', source)
+
 
 if __name__ == "__main__":
     unittest.main()

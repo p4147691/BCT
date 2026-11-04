@@ -816,7 +816,12 @@ class DeployFeature:
                           "rcc-inspect-source-proof-v2", "rcc-install-source-proof-v2",
                           "rcc-rollback-source-proof-v2",
                           "rcc-inspect-semantic-turn", "rcc-install-semantic-turn",
-                          "rcc-rollback-semantic-turn"}:
+                          "rcc-rollback-semantic-turn",
+                          "rcc-verify-installed", "rcc-verify-installed-pr388",
+                          "rcc-verify-installed-rename-actions",
+                          "rcc-verify-installed-source-proof",
+                          "rcc-verify-installed-source-proof-v2",
+                          "rcc-verify-installed-semantic-turn"}:
             return self._prepare_rcc(work, operation, arguments)
         if operation not in {"apply", "reconcile", "reconcile-rollback"}:
             raise PreconditionError("DEPLOYMENT_OPERATION_INVALID")
@@ -892,6 +897,11 @@ class DeployFeature:
             "rcc-rollback-source-proof-v2",
             "rcc-inspect-semantic-turn", "rcc-install-semantic-turn",
             "rcc-rollback-semantic-turn",
+            "rcc-verify-installed", "rcc-verify-installed-pr388",
+            "rcc-verify-installed-rename-actions",
+            "rcc-verify-installed-source-proof",
+            "rcc-verify-installed-source-proof-v2",
+            "rcc-verify-installed-semantic-turn",
         }:
             return self._execute_rcc(request)
         if request.arguments.get("operation") == "reconcile":
@@ -967,9 +977,10 @@ class DeployFeature:
             "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2",
             "rcc-rollback-semantic-turn",
         }
-        if is_rollback and not rcc.OP_ID.fullmatch(original):
+        is_post_install_verify = operation.startswith("rcc-verify-installed")
+        if (is_rollback or is_post_install_verify) and not rcc.OP_ID.fullmatch(original):
             raise PreconditionError("RCC_INSTALL_ORIGINAL_OPERATION_ID_INVALID")
-        if not is_rollback and original:
+        if not (is_rollback or is_post_install_verify) and original:
             raise PreconditionError("RCC_INSTALL_ORIGINAL_OPERATION_FORBIDDEN")
         roots = [Path(raw).resolve(strict=False) for raw in work.roots]
         def covered(target):
@@ -1026,6 +1037,28 @@ class DeployFeature:
             "candidate_version": route["candidate_version"],
             "installed_version": route["installed_version"],
         }
+        if values["operation"].startswith("rcc-verify-installed"):
+            original_id = values["install_operation_id"]
+            receipt = route["journal_root"] / (original_id + ".json")
+            if not receipt.is_file():
+                raise PreconditionError("RCC_INSTALL_ORIGINAL_RECEIPT_REQUIRED")
+            original = json.loads(receipt.read_text(encoding="utf-8"))
+            if (original.get("installed_aggregate"), original.get("candidate_aggregate"),
+                    original.get("manifest_sha256")) != expected:
+                raise PreconditionError("RCC_INSTALL_POSTCHECK_EXPECTATIONS_CHANGED")
+            result = rcc.verify_installed(
+                request.operation_id, original_id,
+                live=route["live"], manifest_file=route["manifest_file"],
+                journal_root=route["journal_root"],
+                candidate_version=route["candidate_version"],
+            )
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"read_only": True, "installed_candidate_verified": True,
+                 "reload": "NOT_PERFORMED", "live_accepted": False,
+                 "original_install_operation_id": original_id},
+                output=result,
+            )
         if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions", "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2", "rcc-rollback-semantic-turn"}:
             original_id = values["install_operation_id"]
             receipt = route["journal_root"] / (original_id + ".json")
