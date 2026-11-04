@@ -7373,15 +7373,21 @@ function renderMonitorBctWindowNodes(nodes) {
         return;
       }
       void resolveMonitorBctNodeDisplayHwnd(node).then((hwnd) => {
+        // Explicit row selection acknowledges a terminal report; observed
+        // Chrome tab/foreground changes never acknowledge work.
+        const selectedReport = monitorNodeReportState(node,monitorLastAiState);
+        const acknowledge = globalThis.MonitorNodeTokenVisualContract?.shouldAcknowledge(selectedReport) === true;
+        if (acknowledge) monitorAcknowledgePostWork(selectedReport.conversationKey,"");
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
-        // A minimized node has no visible thumbnail-window perimeter. Mirror
-        // the list selection directly into its D# summary before asking the
-        // generic interaction service to reveal the linked browser window.
-        // This keeps the selected minimized number yellow even when no HWND
-        // outline is available.
+        // Preserve the exact D# selected number (white and enlarged) before
+        // attempting any linked window interaction.
         syncMonitorBctNodeTargetHighlight();
         syncMonitorMinimizedNodeBadges(monitorLastAiState);
         getMonitorBctNodeInteractionService().select(hwnd);
+        if (acknowledge) {
+          syncMonitorAllDesktopThumbnailNodeBadges();
+          if (monitorLastAiState) renderWorkers(monitorLastAiState);
+        }
         setMonitorStatus(`${node.nodeLabel || "N?"} 연결 웹브라우저 창을 표시했습니다.`, true, 1800);
       }).catch((error) => {
         setMonitorStatus(`연결 창 표시 실패 · ${error?.message || error}`, false, 3500);
@@ -10776,14 +10782,20 @@ function syncMonitorThumbnailTabBadges(container, className) {
     selectedNodeToken: String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
     selectedNodeTabId: Number(selectedNode?.tabId),
     numbersForHwnd: (hwnd, state) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
-    statusForTab: (tabId, hwnd) => {
+    nodeForTab: (tabId) => (Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])
+      .find((candidate)=>Number(candidate?.tabId)===Number(tabId)) || null,
+    statusForTab: (tabId) => {
       const node=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])
         .find((candidate)=>Number(candidate?.tabId)===Number(tabId));
       return monitorNodeReportState(node,monitorLastAiState);
     },
-    onAcknowledge: (report,{hwnd}) => {
+    onAcknowledge: (report,{hwnd,tabId}) => {
+      if(!globalThis.MonitorNodeTokenVisualContract?.shouldAcknowledge(report))return;
       const conversationKey=String(report?.conversationKey||"").trim();
-      if(!conversationKey)return;
+      const selected=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])
+        .find((candidate)=>Number(candidate?.tabId)===Number(tabId) &&
+          String(candidate?.conversationKey||"")===conversationKey);
+      if(selected) monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(selected);
       monitorAcknowledgePostWork(conversationKey,String(hwnd||""));
       syncMonitorAllDesktopThumbnailNodeBadges();
       if(monitorLastAiState)renderWorkers(monitorLastAiState);
@@ -12379,11 +12391,14 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
           if (matches.length === 1) node = matches[0];
         }
         const report = monitorNodeReportState(node,state);
-        const kind = String(report?.kind || "").toLowerCase();
-        const reportClass = ["working","ready","abnormal"].includes(kind) ? ` has-report is-${kind}` : "";
-        badge.className = `monitor-desktop-minimized-node${reportClass}${selected ? " monitor-desktop-minimized-node-selected" : ""}`;
+        const visuals = globalThis.MonitorNodeTokenVisualContract;
+        const kind = visuals?.activityFor(report) || "";
+        const roleClasses = visuals?.classesFor(node,report,selected) || [];
+        const reportClass = kind ? " has-report is-" + kind : "";
+        badge.className = ["monitor-desktop-minimized-node",...roleClasses,
+          selected ? "monitor-desktop-minimized-node-selected" : ""].filter(Boolean).join(" ");
         badge.textContent = token.token;
-        const interactive = reportClass && kind !== "working";
+        const interactive = visuals?.shouldAcknowledge(report) === true;
         badge.title = `최소화 노드 ${token.token}${reportClass ? ` · ${String(report?.label || (kind === "working" ? "처리 중" : kind === "abnormal" ? "상태 확인 필요" : "확인 대기"))}${interactive ? " · 클릭하여 확인" : ""}` : ""}`;
         if (interactive) {
           badge.setAttribute("role","button");
@@ -12394,6 +12409,8 @@ function syncMonitorMinimizedNodeBadges(state = monitorLastAiState) {
             event.stopPropagation();
             const conversationKey=String(report?.conversationKey||"").trim();
             if(!conversationKey)return;
+            if(node && typeof monitorBctNodeSelectionKey === "function")
+              monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(node);
             monitorAcknowledgePostWork(conversationKey,"");
             syncMonitorMinimizedNodeBadges(state);
             syncMonitorAllDesktopThumbnailNodeBadges();

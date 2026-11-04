@@ -15,6 +15,41 @@
   },
   "components": [
     {
+      "id": "monitor.node_token_visual",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "modules/monitor/extension/monitor-node-token-visual-contract.js",
+          "symbol": "MonitorNodeTokenVisualContract.classesFor"
+        },
+        {
+          "path": "modules/monitor/extension/monitor-bct-thumbnail-projection.js",
+          "symbol": "render"
+        },
+        {
+          "path": "modules/monitor/domains/node-identity.js",
+          "symbol": "syncMonitorMinimizedNodeBadges"
+        }
+      ],
+      "contract": "Shared presentation-only token classification for exact Monitor node roleTags, working/ready/abnormal activity and explicit white/enlarged selection across window and minimized desktop labels. Only ready/abnormal reports may be acknowledged on explicit selection.",
+      "effects": [],
+      "safety": [
+        "current-monitor-roleTags-only",
+        "role-outline-independent-of-activity",
+        "selected-white-overrides-activity",
+        "no-role-guess-for-unknown-tab",
+        "conflicting-roles-render-no-role",
+        "acknowledgement-only-explicit-user-selection",
+        "working-display-only",
+        "no-browser-mutation"
+      ],
+      "used_by": [
+        "monitor.thumbnail_node_badges",
+        "monitor.minimized_node_summary"
+      ]
+    },
+    {
       "id": "bct.chat_input_queue",
       "kind": "module",
       "maturity": "isolated",

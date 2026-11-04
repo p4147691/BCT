@@ -1188,14 +1188,20 @@ function syncMonitorThumbnailTabBadges(container, className) {
     selectedNodeToken: String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
     selectedNodeTabId: Number(selectedNode?.tabId),
     numbersForHwnd: (hwnd, state) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
-    statusForTab: (tabId, hwnd) => {
+    nodeForTab: (tabId) => (Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])
+      .find((candidate)=>Number(candidate?.tabId)===Number(tabId)) || null,
+    statusForTab: (tabId) => {
       const node=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])
         .find((candidate)=>Number(candidate?.tabId)===Number(tabId));
       return monitorNodeReportState(node,monitorLastAiState);
     },
-    onAcknowledge: (report,{hwnd}) => {
+    onAcknowledge: (report,{hwnd,tabId}) => {
+      if(!globalThis.MonitorNodeTokenVisualContract?.shouldAcknowledge(report))return;
       const conversationKey=String(report?.conversationKey||"").trim();
-      if(!conversationKey)return;
+      const selected=(Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])
+        .find((candidate)=>Number(candidate?.tabId)===Number(tabId) &&
+          String(candidate?.conversationKey||"")===conversationKey);
+      if(selected) monitorBctSelectedNodeKey=monitorBctNodeSelectionKey(selected);
       monitorAcknowledgePostWork(conversationKey,String(hwnd||""));
       syncMonitorAllDesktopThumbnailNodeBadges();
       if(monitorLastAiState)renderWorkers(monitorLastAiState);

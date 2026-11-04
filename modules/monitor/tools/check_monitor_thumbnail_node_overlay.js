@@ -8,6 +8,9 @@ const vm = require("node:vm");
 const source = fs.readFileSync(
   path.join(__dirname, "../extension/monitor-bct-thumbnail-projection.js"), "utf8",
 );
+const tokenVisualSrc = fs.readFileSync(
+  path.join(__dirname, "../extension/monitor-node-token-visual-contract.js"), "utf8",
+);
 const monitorSource = fs.readFileSync(path.join(__dirname, "../extension/monitor.js"), "utf8");
 const backgroundSource = fs.readFileSync(path.join(__dirname, "../extension/background.js"), "utf8");
 assert.match(monitorSource,
@@ -116,6 +119,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
+vm.runInContext(tokenVisualSrc, context);
 vm.runInContext(source, context);
 
 const visual = node("monitor-desktop-thumb-visual");
@@ -238,6 +242,8 @@ let acknowledged = "";
 const stateProjection = context.MonitorBctThumbnailProjection.render({
   container: visual,
   numbersForHwnd: () => [{ token: 7, tabId: 701 }, { token: 8, tabId: 702 }, { token: 9, tabId: 703 }],
+  nodeForTab: (tabId) => tabId === 701 ? {roleTags:["manager"]} :
+    tabId === 702 ? {roleTags:["supervisor"]} : {roleTags:[]},
   statusForTab: (tabId) => tabId === 701
     ? { kind: "working", conversationKey: "c7", label: "처리 중" }
     : tabId === 702
@@ -252,11 +258,29 @@ assert.deepEqual(stateTokens.map((item) => item.textContent), ["7", "8", "9"],
 assert.match(stateTokens[0].className,/has-report is-working/);
 assert.match(stateTokens[1].className,/has-report is-ready/);
 assert.match(stateTokens[2].className,/has-report is-abnormal/);
+assert.match(stateTokens[0].className,/is-role-manager/, "working manager retains role outline");
+assert.match(stateTokens[1].className,/is-role-supervisor/, "ready supervisor retains role outline");
 assert.equal(layer.querySelector(".monitor-thumbnail-state-report"),null,
   "the old > / II / square overlay is removed");
 assert.equal(stateTokens[0].listeners,undefined,"processing is display-only");
 stateTokens[1].listeners.click({ preventDefault() {}, stopPropagation() {} });
 assert.equal(acknowledged, "c8", "ready report is dismissed through its exact conversation acknowledgement");
+stateTokens[2].listeners.click({preventDefault(){},stopPropagation(){}});
+assert.equal(acknowledged, "c9", "abnormal report is dismissed through its exact conversation acknowledgement");
+const cleared = context.MonitorBctThumbnailProjection.render({
+  container: visual,
+  numbersForHwnd: () => [{token:7,tabId:701},{token:8,tabId:702},{token:9,tabId:703}],
+  nodeForTab: (tabId) => tabId === 701 ? {roleTags:["manager"]} :
+    tabId === 702 ? {roleTags:["supervisor"]} : {roleTags:[]},
+  statusForTab: (tabId) => tabId === 701 ? {kind:"working",conversationKey:"c7"} : null,
+});
+assert.equal(cleared.rendered, 1);
+const clearedTokens = layer.querySelectorAll(".monitor-thumbnail-tab-token");
+assert.match(clearedTokens[0].className,/has-report is-working/);
+assert.doesNotMatch(clearedTokens[1].className,/is-ready/);
+assert.doesNotMatch(clearedTokens[2].className,/is-abnormal/);
+assert.match(clearedTokens[0].className,/is-role-manager/);
+assert.match(clearedTokens[1].className,/is-role-supervisor/);
 
 const selectedWorkingProjection = context.MonitorBctThumbnailProjection.render({
   container: visual,
@@ -269,6 +293,6 @@ assert.equal(selectedWorkingProjection.rendered,1);
 const selectedWorking=layer.querySelector(".monitor-thumbnail-tab-token");
 assert.match(selectedWorking.className,/is-working/);
 assert.match(selectedWorking.className,/is-selected/,
-  "a status color and the orange selection outline coexist on one number");
+  "a selected number stays white while retaining its report class");
 
 console.log("PASS: node-number colors report working, ready, and abnormal states with exact acknowledgement");

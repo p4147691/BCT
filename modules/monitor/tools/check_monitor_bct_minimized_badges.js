@@ -7,6 +7,7 @@ const vm=require("node:vm");
 const src=fs.readFileSync(path.join(__dirname,"../extension/monitor.js"),"utf8");
 const thumbnailV2Src=fs.readFileSync(path.join(__dirname,"../extension/monitor-desktop-thumbnail-v2.js"),"utf8");
 const contractSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-minimized-node-badge-contract.js"),"utf8");
+const tokenVisualSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-node-token-visual-contract.js"),"utf8");
 const projectionSrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-bct-thumbnail-projection.js"),"utf8");
 const layerPolicySrc=fs.readFileSync(path.join(__dirname,"../extension/monitor-thumbnail-layer-policy.js"),"utf8");
 function extract(name,until){
@@ -63,6 +64,7 @@ const document={createElement(tag){
     replaceChildren(...children){this.children=children;}};
 }};
 let acknowledged="";
+const acknowledgedReportKeys = new Set();
 const ctx={
   monitorWindowDesktopLocations:locationMap,
   monitorBctWindowNodesCache:[],
@@ -70,14 +72,15 @@ const ctx={
   monitorLastAiState:{},
   monitorBadgeNodeNumbersForHwnd:(hwnd)=>labels[hwnd]||[],
   monitorDesktopThumbs:{children:buttons},
-  monitorNodeReportState:(node)=>node?.report||null,
-  monitorAcknowledgePostWork:(key)=>{acknowledged=key;},
+  monitorNodeReportState:(node)=>acknowledgedReportKeys.has(node?.report?.conversationKey) ? null : node?.report||null,
+  monitorAcknowledgePostWork:(key)=>{acknowledged=key;acknowledgedReportKeys.add(key);},
   syncMonitorAllDesktopThumbnailNodeBadges:()=>{},
   renderWorkers:()=>{},
   document,Map,Set,Boolean,String,Number,Array
 };
 vm.createContext(ctx);
 vm.runInContext(contractSrc,ctx);
+vm.runInContext(tokenVisualSrc,ctx);
 ctx.monitorMinimizedNodeBadgeContract=ctx.MonitorMinimizedNodeBadgeContract;
 // In the live bundle the selection is a top-level lexical binding, not a
 // global-object property. Keep the isolated renderer under that same scope.
@@ -111,8 +114,8 @@ ctx.setMinimizedBadgeNodes([]);
 // acknowledged through the exact conversation while processing is display-only.
 labels["100"]=[{token:"7",tabId:707},{token:"8",tabId:708},{token:"9",tabId:709}];
 ctx.setMinimizedBadgeNodes([
-  {key:"working",nodeLabel:"N7",tabId:707,report:{kind:"working",conversationKey:"c7",label:"처리 중"}},
-  {key:"ready",nodeLabel:"N8",tabId:708,report:{kind:"ready",conversationKey:"c8",label:"확인 대기"}},
+  {key:"working",nodeLabel:"N7",tabId:707,roleTags:["manager"],report:{kind:"working",conversationKey:"c7",label:"처리 중"}},
+  {key:"ready",nodeLabel:"N8",tabId:708,roleTags:["supervisor"],report:{kind:"ready",conversationKey:"c8",label:"확인 대기"}},
   {key:"abnormal",nodeLabel:"N9",tabId:709,report:{kind:"abnormal",conversationKey:"c9",label:"상태 확인 필요"}},
 ]);
 ctx.syncMonitorMinimizedNodeBadges({});
@@ -120,9 +123,19 @@ const statusBadges=label.badges.children.filter((item)=>String(item.className).i
 assert.match(statusBadges[0].className,/has-report is-working/);
 assert.match(statusBadges[1].className,/has-report is-ready/);
 assert.match(statusBadges[2].className,/has-report is-abnormal/);
+assert.match(statusBadges[0].className,/is-role-manager/, "manager outline persists while working");
+assert.match(statusBadges[1].className,/is-role-supervisor/, "supervisor outline persists while ready");
 assert.equal(statusBadges[0].listeners,undefined,"working minimized node is display-only");
 statusBadges[1].listeners.click({preventDefault(){},stopPropagation(){}});
 assert.equal(acknowledged,"c8","ready minimized node acknowledges its exact conversation");
+statusBadges[2].listeners.click({preventDefault(){},stopPropagation(){}});
+assert.equal(acknowledged,"c9","abnormal minimized node acknowledges its exact conversation");
+const clearedBadges=label.badges.children.filter((item)=>String(item.className).includes("monitor-desktop-minimized-node"));
+assert.match(clearedBadges[0].className,/has-report is-working/);
+assert.doesNotMatch(clearedBadges[1].className,/is-ready/);
+assert.doesNotMatch(clearedBadges[2].className,/is-abnormal/);
+assert.match(clearedBadges[0].className,/is-role-manager/);
+assert.match(clearedBadges[1].className,/is-role-supervisor/);
 ctx.setMinimizedBadgeNodes([]);
 
 // A narrow D# row keeps the selected number in the middle and exposes where
@@ -137,7 +150,7 @@ const overflowText=label.badges.children.map((item)=>item.textContent);
 assert.equal(overflowText[0],"…");
 assert(overflowText.includes("4"),"overflow keeps the selected minimized node visible");
 assert(label.badges.children.some((item)=>String(item.className).includes("monitor-desktop-minimized-node-selected")),
-  "the selected minimized node remains orange inside an overflow summary");
+  "the selected minimized node remains highlighted in white inside an overflow summary");
 // The D# snapshot can arrive just before Chrome's tab id refresh. Its stable
 // N-number still identifies the same BCT node and must remain selectable.
 label.width=0;
@@ -168,11 +181,11 @@ assert.match(css,/\.monitor-desktop-thumb-label\s*\{[\s\S]{0,500}display:flex!im
   "the D1/D2 label uses one non-collapsing row for minimized node numbers");
 assert.match(css,/\.monitor-desktop-thumb-label\s*>\s*\.monitor-desktop-minimized-nodes\s*\{[\s\S]{0,500}flex:1 1 auto/,
   "minimized node numbers keep explicit space immediately after the D1/D2 controls");
-assert.match(css,/\.monitor-desktop-minimized-node-selected\s*\{[^}]*#ffd75a/,
-  "selecting a minimized node makes its D# number orange");
-assert.match(css,/\.monitor-desktop-minimized-node\.is-working\s*\{[^}]*#45e67b/,
+assert.match(css,/\.monitor-desktop-minimized-node-selected\s*\{[^}]*#fff!important/,
+  "selected minimized node stays white regardless of report");
+assert.match(css,/\.monitor-desktop-minimized-node\.is-working\s*\{[^}]*#ff9e35/,
   "a processing minimized node number is green");
-assert.match(css,/\.monitor-desktop-minimized-node\.is-ready\s*\{[^}]*#55a9ff/,
+assert.match(css,/\.monitor-desktop-minimized-node\.is-ready\s*\{[^}]*#45e67b/,
   "a ready minimized node number is blue");
 assert.match(css,/\.monitor-desktop-minimized-node\.is-abnormal\s*\{[^}]*#ff5f67/,
   "an abnormal minimized node number is red");

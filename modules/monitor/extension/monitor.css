@@ -3638,13 +3638,16 @@ body.desktop-window-monitor-active { background-image:none!important; background
 /* Minimized-node summary: one desktop-level N list.  The selected node alone
    grows; all other node numbers retain the compact baseline size. */
 .monitor-thumbnail-tab-badge { display:block;max-width:calc(100% - 4px);white-space:normal;overflow-wrap:normal;word-break:normal;line-height:1.15; }
-.monitor-thumbnail-tab-token { display:inline-block;white-space:nowrap; }
-.monitor-thumbnail-tab-token.is-selected { color:#ffd75a!important;font-size:13px!important;font-weight:900;text-shadow:0 0 7px rgba(255,215,90,.88); }
-.monitor-thumbnail-tab-token.has-report { font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.13);transform-origin:center;border-radius:3px;padding:0 1px; }
-.monitor-thumbnail-tab-token.is-working { color:#45e67b!important;text-shadow:0 0 7px rgba(69,230,123,.82); }
-.monitor-thumbnail-tab-token.is-ready { color:#55a9ff!important;text-shadow:0 0 7px rgba(85,169,255,.88);cursor:pointer;pointer-events:auto; }
-.monitor-thumbnail-tab-token.is-abnormal { color:#ff5f67!important;text-shadow:0 0 7px rgba(255,95,103,.88);cursor:pointer;pointer-events:auto; }
-.monitor-thumbnail-tab-token.has-report.is-selected { outline:1px solid rgba(255,181,71,.98);outline-offset:1px;box-shadow:0 0 6px rgba(255,181,71,.78); }
+/* Shared number-token contract: role is a permanent square outline,
+   activity colors the number, and explicit selection ONLY enlarges in white. */
+.monitor-thumbnail-tab-token { display:inline-block;white-space:nowrap;transform-origin:center; }
+.monitor-thumbnail-tab-token.has-report { font-weight:900;line-height:14px;padding:0 1px; }
+.monitor-thumbnail-tab-token.is-working { color:#ff9e35!important; }
+.monitor-thumbnail-tab-token.is-ready { color:#45e67b!important;cursor:pointer;pointer-events:auto; }
+.monitor-thumbnail-tab-token.is-abnormal { color:#ff5f67!important;cursor:pointer;pointer-events:auto; }
+.monitor-thumbnail-tab-token.is-role-manager { outline:1px solid #ffd75a!important;outline-offset:1px;border-radius:0!important; }
+.monitor-thumbnail-tab-token.is-role-supervisor { outline:1px solid #55a9ff!important;outline-offset:1px;border-radius:0!important; }
+.monitor-thumbnail-tab-token.is-selected { color:#fff!important;font-size:13px!important;font-weight:900;transform:scale(1.16);text-shadow:none!important; }
 .monitor-thumbnail-tab-prefix,.monitor-thumbnail-tab-separator { color:inherit;font-size:inherit;font-weight:inherit;text-shadow:none; }
 .monitor-desktop-thumb-label {
   /* The overlapping grid placed this late-added host in an implicit cell. On
@@ -3659,11 +3662,12 @@ body.desktop-window-monitor-active { background-image:none!important; background
   justify-content:flex-start;overflow:hidden;pointer-events:none;white-space:nowrap;
 }
 .monitor-desktop-minimized-nodes.monitor-bct-minimized-selection { outline:0;background:transparent;box-shadow:none; }
-.monitor-desktop-minimized-node-selected { color:#ffd75a!important;font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.16);transform-origin:center;text-shadow:0 0 7px rgba(255,215,90,.88); }
-.monitor-desktop-minimized-node.has-report { font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.13);transform-origin:center;border-radius:3px;padding:0 1px; }
-.monitor-desktop-minimized-node.is-working { color:#45e67b!important;text-shadow:0 0 7px rgba(69,230,123,.82); }
-.monitor-desktop-minimized-node.is-ready { color:#55a9ff!important;text-shadow:0 0 7px rgba(85,169,255,.88);cursor:pointer;pointer-events:auto; }
-.monitor-desktop-minimized-node.is-abnormal { color:#ff5f67!important;text-shadow:0 0 7px rgba(255,95,103,.88);cursor:pointer;pointer-events:auto; }
-.monitor-desktop-minimized-node.has-report.monitor-desktop-minimized-node-selected { outline:1px solid rgba(255,181,71,.98);outline-offset:1px;box-shadow:0 0 6px rgba(255,181,71,.78); }
+.monitor-desktop-minimized-node.has-report { font-weight:900;line-height:14px;padding:0 1px; }
+.monitor-desktop-minimized-node.is-working { color:#ff9e35!important; }
+.monitor-desktop-minimized-node.is-ready { color:#45e67b!important;cursor:pointer;pointer-events:auto; }
+.monitor-desktop-minimized-node.is-abnormal { color:#ff5f67!important;cursor:pointer;pointer-events:auto; }
+.monitor-desktop-minimized-node.is-role-manager { outline:1px solid #ffd75a!important;outline-offset:1px;border-radius:0!important; }
+.monitor-desktop-minimized-node.is-role-supervisor { outline:1px solid #55a9ff!important;outline-offset:1px;border-radius:0!important; }
+.monitor-desktop-minimized-node-selected { color:#fff!important;font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.16);transform-origin:center;text-shadow:none!important; }
 .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more { flex:0 0 auto;letter-spacing:.04em; }
 .monitor-desktop-minimized-prefix,.monitor-desktop-minimized-separator { color:rgba(255,255,255,.94);font:800 10px/14px "Segoe UI","Malgun Gothic",sans-serif; }

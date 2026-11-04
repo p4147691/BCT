@@ -137,13 +137,16 @@
         const report = typeof options.statusForTab === "function"
           ? options.statusForTab(item.tabId, hwnd, item.token, state)
           : null;
-        const kind = text(report?.kind).toLowerCase();
-        const reportClass = ['working', 'ready', 'abnormal'].includes(kind) ? ` has-report is-${kind}` : "";
-        const selectedClass = selectedByTab || selectedByToken ? " is-selected" : "";
-        part.className = `monitor-thumbnail-tab-token${reportClass}${selectedClass}`;
+        const visuals = root.MonitorNodeTokenVisualContract;
+        const node = typeof options.nodeForTab === "function"
+          ? options.nodeForTab(item.tabId, hwnd, item.token, state) : null;
+        const classes = visuals?.classesFor(node, report, selectedByTab || selectedByToken) || [];
+        part.className = ["monitor-thumbnail-tab-token", ...classes].join(" ");
         part.textContent = token;
-        if (reportClass) {
-          const interactive = kind !== "working" && typeof options.onAcknowledge === "function";
+        if (visuals?.activityFor(report)) {
+          const kind = visuals.activityFor(report);
+          const interactive = visuals.shouldAcknowledge(report) &&
+            typeof options.onAcknowledge === "function";
           const nodeName = item.token === "?" ? "새 노드" : `N${item.token}`;
           part.title = `${nodeName} · ${text(report?.label) || (kind === "working" ? "처리 중" : kind === "abnormal" ? "상태 확인 필요" : "확인 대기")}${interactive ? " · 클릭하여 확인" : ""}`;
           if (interactive) {
