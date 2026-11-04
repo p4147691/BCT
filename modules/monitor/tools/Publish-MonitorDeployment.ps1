@@ -37,7 +37,7 @@ if ($null -eq $nodeCommand) {
 }
 
 function Invoke-MonitorStructureGate {
-    $gateOutput = @(& $pythonCommand.Source $checkerPath --root $sourceRoot 2>&1)
+    $gateOutput = @(& $pythonCommand.Source -X utf8 $checkerPath --root $sourceRoot 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw ("Monitor pre-publish gate failed:" + [Environment]::NewLine + ($gateOutput -join [Environment]::NewLine))
     }
@@ -187,7 +187,7 @@ $nativeRoleChecker = Join-Path $sourceRoot 'tools\check_monitor_native_host_role
 if (!(Test-Path -LiteralPath $nativeRoleChecker -PathType Leaf)) {
     throw 'Monitor Native host role preflight missing'
 }
-$nativeRoleResult = @(& $pythonCommand.Source $nativeRoleChecker --root $sourceRoot --probe 2>&1)
+$nativeRoleResult = @(& $pythonCommand.Source -X utf8 $nativeRoleChecker --root $sourceRoot --probe 2>&1)
 if ($LASTEXITCODE -ne 0) {
     throw ("Monitor Native host role preflight failed:" + [Environment]::NewLine + ($nativeRoleResult -join [Environment]::NewLine))
 }

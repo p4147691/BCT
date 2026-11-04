@@ -23,7 +23,7 @@ $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
 if ($null -eq $pythonCommand) {
   throw "Monitor pre-reload gate cannot run: python not found"
 }
-$gateOutput = @(& $pythonCommand.Source $checkerPath --root $runtimeRoot 2>&1)
+$gateOutput = @(& $pythonCommand.Source -X utf8 $checkerPath --root $runtimeRoot 2>&1)
 $gateExitCode = $LASTEXITCODE
 if ($gateExitCode -ne 0) {
   $gateText = $gateOutput -join [Environment]::NewLine

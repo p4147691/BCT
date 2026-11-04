@@ -35,6 +35,8 @@ for (const source of [publish, request]) {
   assert.match(source, /reload_token/);
   assert.match(source, /seen_at_ms/);
   assert.match(source, /runtime=verified/);
+  assert.match(source, /\.Source -X utf8/,
+    "Monitor deployment checks must not depend on the Windows system code page");
 }
 
 assert.ok((publish.match(/Invoke-MonitorStructureGate/g) || []).length >= 3,
