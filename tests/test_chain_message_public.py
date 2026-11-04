@@ -44,6 +44,7 @@ class ChainMessagePublicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("send-message",send["arguments"]["command"])
         self.assertEqual(arm["arguments"]["planned_send_operation_id"],send["operation_id"])
         self.assertEqual(arm["arguments"]["planned_send_text"],send["arguments"]["text"])
+        self.assertIs(True, arm["arguments"]["exclusive_conversation_watch"])
         self.assertEqual(send["arguments"]["tab_id"],12)
     async def test_canonical_target_and_origin_names_start_the_same_recipe(self):
         legacy = self.arguments()

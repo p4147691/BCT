@@ -310,7 +310,8 @@ class DurableWatchLedger:
                     conversation_key: str, manager_conversation_key: str,
                     manager_instance_id: str, baseline: dict,
                     registration_receipt: str, planned_send_operation_id: str = "",
-                    planned_send_text: str = "") -> dict:
+                    planned_send_text: str = "",
+                    exclusive_conversation_watch: bool = False) -> dict:
         """Worker prearms one current response, reusing any reserved next turn."""
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id):
             raise ValueError("DELAYED_TASK_ID_INVALID")
@@ -360,6 +361,17 @@ class DurableWatchLedger:
                 raise ValueError("DELAYED_SOURCE_USER_PROOF_REQUIRED")
             context["source_proof_kind"] = "RCC_PREARM_USER_TURN"
         with self.store.transaction() as db:
+            if exclusive_conversation_watch:
+                overlapping = db.execute(
+                    "SELECT task_id,generation FROM delayed_send_watches "
+                    "WHERE state='WATCHING' AND conversation_key=? AND task_id!=? "
+                    "AND json_extract(context_json,'$.work_id')=? "
+                    "AND json_extract(context_json,'$.assignment_epoch')=? "
+                    "ORDER BY task_id,generation LIMIT 1",
+                    (conversation_key, task_id, work_id, assignment_epoch),
+                ).fetchone()
+                if overlapping is not None:
+                    raise ValueError("DELAYED_CONVERSATION_ALREADY_WATCHING")
             existing = db.execute(
                 "SELECT * FROM delayed_send_watches WHERE task_id=? "
                 "ORDER BY generation DESC LIMIT 1", (task_id,)
@@ -524,6 +536,66 @@ class DurableWatchLedger:
             return db.execute(
                 "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
                 "AND generation=? AND state='WATCHING'",
+                (json.dumps(ctx, sort_keys=True), row["task_id"], row["generation"]),
+            ).rowcount == 1
+
+    def mark_source_superseded(self, row: dict, observed: dict) -> bool:
+        """Retire a watch only after a different exact terminal source is proven.
+
+        RCC intentionally exposes the latest Assistant response.  Once a later
+        unique user turn has a terminal response, an older watch can no longer
+        recover its own response from that surface.  Keep that boundary honest:
+        this is a non-success terminal state and never authorizes a send.
+        """
+        latest_key = str(observed.get("latestUserTurnKey") or "")
+        source_key = str(observed.get("responseSourceUserTurnKey") or "")
+        latest_sha = str(observed.get("latestUserSha256") or "")
+        source_sha = str(observed.get("responseSourceUserSha256") or "")
+        current_count = observed.get("responseTurnCount")
+        baseline_count = row.get("context", {}).get("baseline_count")
+        response_key = str(observed.get("responseTurnKey") or "")
+        response_sha = str(observed.get("responseSha256") or "")
+        baseline_key = str(row.get("context", {}).get("baseline_key") or "")
+        baseline_sha = str(row.get("context", {}).get("baseline_sha") or "")
+        newer_response = (
+            isinstance(current_count, int) and isinstance(baseline_count, int)
+            and (current_count > baseline_count
+                 or (response_key != baseline_key and response_sha != baseline_sha))
+        )
+        if (observed.get("terminal") is not True
+                or observed.get("inputReady") is not True
+                or observed.get("generating") is not False
+                or not newer_response
+                or not latest_key or latest_key != source_key
+                or not re.fullmatch(r"[0-9a-f]{64}", latest_sha)
+                or latest_sha != source_sha
+                or observed.get("latestUserTextOccurrenceCount") != 1
+                or observed.get("responseSourceUserTextOccurrenceCount") != 1):
+            return False
+        with self.store.transaction() as db:
+            found = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if found is None:
+                return False
+            ctx = json.loads(found["context_json"] or "{}")
+            expected_sha = str(ctx.get("source_user_sha256") or "")
+            if (not re.fullmatch(r"[0-9a-f]{64}", expected_sha)
+                    or latest_sha == expected_sha):
+                return False
+            if ctx.get("source_proof_kind") == "BCT_PLANNED_SOURCE_SEND":
+                if (not ctx.get("source_send_operation_id")
+                        or ctx.get("source_send_sha256") != expected_sha):
+                    return False
+            ctx.pop("watch_diagnostic_reason", None)
+            ctx["watch_terminal_reason"] = "SOURCE_SUPERSEDED"
+            ctx["superseding_source_turn_key"] = latest_key
+            ctx["superseding_source_sha256"] = latest_sha
+            return db.execute(
+                "UPDATE delayed_send_watches SET state='SUPERSEDED',context_json=? "
+                "WHERE task_id=? AND generation=? AND state='WATCHING'",
                 (json.dumps(ctx, sort_keys=True), row["task_id"], row["generation"]),
             ).rowcount == 1
 
@@ -940,7 +1012,8 @@ class DelayedSendService:
                conversation_key: str, manager_conversation_key: str,
                manager_instance_id: str, operation_id: str,
                planned_send_operation_id: str = "",
-               planned_send_text: str = "") -> dict:
+               planned_send_text: str = "",
+               exclusive_conversation_watch: bool = False) -> dict:
         # Later SELF turns need only the stable Task ID; use the prior binding.
         from bct.integrations.rcc import validate_instance_id
         previous = self.ledger.latest_binding(task_id)
@@ -987,6 +1060,7 @@ class DelayedSendService:
             registration_receipt=operation_id,
             planned_send_operation_id=planned_send_operation_id,
             planned_send_text=planned_send_text,
+            exclusive_conversation_watch=exclusive_conversation_watch,
         )
 
     def _response_for(self, row: dict) -> dict:
@@ -1046,6 +1120,9 @@ class DelayedSendService:
             and observed.get("latestUserSha256") == source_sha
         )
         if source_key and not source_match:
+            if (getattr(self, "ledger", None) is not None
+                    and self.ledger.mark_source_superseded(row, observed)):
+                return {}
             return reject("SOURCE_PROVENANCE_MISMATCH")
         source_send_op = str(ctx.get("source_send_operation_id") or "")
         source_send_sha = str(ctx.get("source_send_sha256") or "")

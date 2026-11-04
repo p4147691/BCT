@@ -600,7 +600,8 @@ class BrowserFeature:
     ) -> FeatureRequest:
         allowed = {"command","task_id","instance_id","conversation_key",
                    "manager_conversation_key","manager_instance_id",
-                   "planned_send_operation_id", "planned_send_text"}
+                   "planned_send_operation_id", "planned_send_text",
+                   "exclusive_conversation_watch"}
         if set(arguments) - allowed:
             raise PreconditionError("DELAYED_ARGUMENT_NOT_ALLOWED")
         task_id = str(arguments.get("task_id") or "").strip()
@@ -608,6 +609,9 @@ class BrowserFeature:
             raise PreconditionError("DELAYED_TASK_ID_INVALID")
         plan_id = str(arguments.get("planned_send_operation_id") or "").strip()
         plan_text = str(arguments.get("planned_send_text") or "")
+        exclusive = arguments.get("exclusive_conversation_watch", False)
+        if type(exclusive) is not bool:
+            raise PreconditionError("DELAYED_EXCLUSIVE_WATCH_INVALID")
         if bool(plan_id) != bool(plan_text) or (plan_id and
                 (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", plan_id)
                  or len(plan_text) > 12000)):
@@ -621,7 +625,8 @@ class BrowserFeature:
              "manager_conversation_key":str(
                  arguments.get("manager_conversation_key") or "").strip().lower(),
              "manager_instance_id":str(arguments.get("manager_instance_id") or "").strip(),
-             "planned_send_operation_id":plan_id,"planned_send_text":plan_text},
+             "planned_send_operation_id":plan_id,"planned_send_text":plan_text,
+             "exclusive_conversation_watch":exclusive},
             (f"delayed-send:{work.work_id}:{task_id}",),
             {"command":"delayed-send-message","mutating":True},
         )
@@ -1898,6 +1903,8 @@ class BrowserFeature:
                     operation_id=request.operation_id,
                     planned_send_operation_id=values.get("planned_send_operation_id",""),
                     planned_send_text=values.get("planned_send_text",""),
+                    exclusive_conversation_watch=values.get(
+                        "exclusive_conversation_watch", False),
                 )
             except (ValueError, KeyError) as exc:
                 raise PreconditionError(str(exc)) from exc

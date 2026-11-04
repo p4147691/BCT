@@ -682,6 +682,7 @@ def build_mcp(
                         "BOUND" if response_key else
                         "AWAITING_VERIFIED_RESPONSE" if watch["state"] == "WATCHING"
                         else "UNAVAILABLE"),
+                    "terminal_reason":ctx.get("watch_terminal_reason", ""),
                     "watch_diagnostic_reason": watch_diagnostic_for_status(
                         str(watch["state"]), ctx,
                     )}
@@ -739,7 +740,8 @@ def build_mcp(
              "manager_conversation_key":origin_conversation,
              "manager_instance_id":origin_instance or instance_id,
              "planned_send_operation_id":send_id,
-             "planned_send_text":instruction})
+             "planned_send_text":instruction,
+             "exclusive_conversation_watch":True})
         if armed.get("outcome") != "APPLIED":
             return {"status":"PREARM_FAILED","prearm":armed}
         sent=await make_executor("browser")(

@@ -358,6 +358,30 @@ class DelayedSendMessageTests(unittest.TestCase):
                 ledger.cancel_task(task_id="task-cancel",generation=1,
                     work_id="work-owner",principal_id="principal-owner",assignment_epoch=2)
 
+    def test_chain_mode_exclusively_prearms_one_conversation_watch(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = DurableWatchLedger(Store(Path(root) / "state.sqlite"))
+            baseline = {"responseTurnCount": 1, "generating": False,
+                        "responseTurnKey": "old", "responseSha256": "a" * 64}
+            common = dict(work_id="work-owner", principal_id="principal-owner",
+                          assignment_epoch=1, instance_id="instance",
+                          conversation_key="worker", manager_conversation_key="manager",
+                          manager_instance_id="instance", baseline=baseline,
+                          planned_send_text="one instruction",
+                          exclusive_conversation_watch=True)
+            ledger.prearm_task(task_id="first", registration_receipt="arm-first",
+                planned_send_operation_id="send-first", **common)
+            with self.assertRaisesRegex(
+                    ValueError, "DELAYED_CONVERSATION_ALREADY_WATCHING"):
+                ledger.prearm_task(task_id="second", registration_receipt="arm-second",
+                    planned_send_operation_id="send-second", **common)
+            self.assertIsNone(ledger.get("second", 1))
+            ledger.cancel_task(task_id="first", generation=1,
+                work_id="work-owner", principal_id="principal-owner", assignment_epoch=1)
+            started = ledger.prearm_task(task_id="second", registration_receipt="arm-second",
+                planned_send_operation_id="send-second", **common)
+            self.assertEqual("WATCHING", started["state"])
+
     def test_response_count_decrease_requires_exact_source_user_pairing(self):
         from bct.delayed_send_message import DelayedSendService
         body = "NEXT TASK — MANAGER\\nExact current result."
