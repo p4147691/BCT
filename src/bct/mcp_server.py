@@ -22,6 +22,7 @@ from .code_block_organize import plan_block_replacement, prepare_block_apply
 from .conversation_network import (
     ConversationNetworkError, project_view, resolve_project_id, scope_directory,
 )
+from .desktop_recipes import desktop_catalogue, plan_desktop_recipe
 from .core.models import Principal, Work
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view, STATUS_SCOPES
@@ -37,7 +38,7 @@ _GENERAL_TOOLS = (
     "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
     "bct_set_chain_execution_plan", "bct_get_chain_execution_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
-    "bct_work_create", "bct_operation_get",
+    "bct_work_create", "bct_operation_get", "bct_desktop",
 )
 _CAPABILITY_USAGE = {
     "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; this requires verify and every child capability in work scope.",
@@ -191,6 +192,24 @@ def build_mcp(
             wait_ms=0.0, execution_ms=handler_ms,
         )
         return value
+
+    @server.tool(
+        description=(
+            "Show the existing BDC desktop-control building blocks or plan one safe named recipe. "
+            "action=catalog lists primitive/module/recipe boundaries. action=plan requires recipe="
+            "inspect_desktop|use_application|use_chrome|arrange_window|launch_program|open_folder. "
+            "This representative command never performs desktop effects: execute each returned public "
+            "capability with its own Work-scoped Operation, exact target, lease and receipt."
+        ),
+        structured_output=True,
+    )
+    async def bct_desktop(action: str = "catalog", recipe: str = "") -> dict[str, Any]:
+        selected = str(action or "").strip().casefold()
+        if selected == "catalog":
+            return desktop_catalogue()
+        if selected == "plan":
+            return plan_desktop_recipe(recipe)
+        return {"status": "INVALID_REQUEST", "reason": "BDC_ACTION_INVALID", "actions": ["catalog", "plan"]}
 
     @server.tool(
         description=(

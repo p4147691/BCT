@@ -192,7 +192,7 @@ class MCPIntegrationTests(unittest.TestCase):
                             "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_set_chain_execution_plan", "bct_get_chain_execution_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
-                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
+                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab", "bct_desktop",
                         },
                         names,
                     )
@@ -212,10 +212,20 @@ class MCPIntegrationTests(unittest.TestCase):
                             "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_set_chain_execution_plan", "bct_get_chain_execution_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_network", "bct_check_run", "bct_plan_run", "bct_set_network", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
-                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
+                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab", "bct_desktop",
                         },
                         set(capabilities.structuredContent["tools"]),
                     )
+                    desktop_catalogue = await session.call_tool(
+                        "bct_desktop", {"action": "catalog"}
+                    )
+                    self.assertFalse(desktop_catalogue.isError)
+                    self.assertEqual("PLAN_ONLY", desktop_catalogue.structuredContent["execution"])
+                    desktop_plan = await session.call_tool(
+                        "bct_desktop", {"action": "plan", "recipe": "use_chrome"}
+                    )
+                    self.assertFalse(desktop_plan.isError)
+                    self.assertEqual("use_chrome", desktop_plan.structuredContent["recipe"])
                     status = await session.call_tool("bct_status", {})
                     self.assertFalse(status.isError)
                     self.assertTrue(status.structuredContent["core"]["ready"])
