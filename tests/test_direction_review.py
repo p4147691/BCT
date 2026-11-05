@@ -64,6 +64,7 @@ class Operations:
         self.calls = []
         self.unknown_target = None
         self.after_send = None
+        self.after_network = None
         self.network_receipts = {}
 
     def run(self, **kwargs):
@@ -80,6 +81,8 @@ class Operations:
                     if tab["conversation_key"] == args.get("conversation_key"):
                         tab["conversation_scope"].update(scope_name=args["scope_name"], role_tags=args["role_tags"])
                 self.network_receipts[kwargs["operation_id"]] = True
+                if self.after_network:
+                    self.after_network(args)
         elif args["command"] == "send-message":
             if self.unknown_target == args["conversation_key"]:
                 outcome = "UNKNOWN"
@@ -139,6 +142,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("bct_set_direction", result["available_tools"])
         self.assertIsNone(result["reality"]["work"])
         self.assertFalse(result["authorizes_send"])
+        self.assertEqual("CALLER_PROVIDED_TEXT", result["source_evidence"])
         self.assertEqual([], self.ops.calls)
         with self.store._readonly() as db:
             self.assertEqual([tuple(r) for r in before], [tuple(r) for r in db.execute("SELECT name FROM sqlite_master ORDER BY name")])
@@ -151,6 +155,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("OK", saved["status"], saved)
         row = saved["chain_direction"]
         self.assertEqual(assessment(), row["assessment"])
+        self.assertEqual("CALLER_PROVIDED_TEXT", row["source_evidence"])
         self.assertEqual("Complete the translation program safely.", row["source_text"])
         self.assertEqual([], self.ops.calls)
         replay = await self.save()
@@ -247,6 +252,32 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("INVALID_REQUEST", (await self.save(value))["status"])
         self.assertEqual([], self.ops.calls)
 
+    async def test_closed_target_blocks_before_any_network_effect(self):
+        value = assessment()
+        value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
+            "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
+            "expected_scope_id": "", "expected_role_tags_sha256": role_tags_sha256([])}]
+        await self.save(value)
+        self.tabs[1]["presence"] = "CLOSED"
+        result = await self.start()
+        self.assertEqual("BEFORE_NETWORK_EFFECTS", result["stage"], result)
+        self.assertFalse(result["network_preparation_applied"])
+        self.assertEqual([], self.ops.calls)
+
+    async def test_target_closing_during_preparation_keeps_partial_effect_receipt(self):
+        value = assessment()
+        value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
+            "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
+            "expected_scope_id": "", "expected_role_tags_sha256": role_tags_sha256([])}]
+        await self.save(value)
+        self.ops.after_network = lambda _: self.tabs[1].update(presence="CLOSED")
+        result = await self.start()
+        self.assertEqual("AFTER_NETWORK_EFFECTS", result["stage"], result)
+        self.assertTrue(result["network_preparation_applied"])
+        self.assertFalse(result["all_targets_started"])
+        self.assertEqual("APPLIED", result["network_results"][0]["outcome"])
+        self.assertEqual([], self.sends())
+
     async def test_unknown_keeps_original_ids_and_is_not_resent(self):
         await self.save()
         self.ops.unknown_target = B
@@ -293,6 +324,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
             source_kind="MANAGER_RETURN", source_task_id="returned-b", source_generation=1)
         self.assertEqual("DIRECTION_REQUIRED", result["status"], result)
         self.assertEqual("c" * 64, result["source_result_sha256"])
+        self.assertEqual("VERIFIED_MANAGER_RETURN", result["source_evidence"])
         self.assertIn("Tests passed.", json.dumps(result["source_return"]))
         self.assertEqual(10, len(result["questions"]))
         invalid = await self.call("bct_chain_message", action="prepare", work_id=self.work.work_id,

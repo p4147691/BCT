@@ -36,6 +36,11 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def direction_source_evidence(source_kind: str) -> str:
+    # A user request copied into an MCP argument is not authenticated chat-turn evidence.
+    return "VERIFIED_MANAGER_RETURN" if source_kind == "MANAGER_RETURN" else "CALLER_PROVIDED_TEXT"
+
+
 def prepare_direction_review(*, source_text: str, source_kind: str,
                              reality: dict, network: dict, source_return: dict | None = None,
                              available_tools: list[str] | None = None) -> dict:
@@ -46,6 +51,7 @@ def prepare_direction_review(*, source_text: str, source_kind: str,
         raise ValueError("CHAIN_DIRECTION_SOURCE_TEXT_REQUIRED")
     return {
         "status": "DIRECTION_REQUIRED", "source_kind": source_kind,
+        "source_evidence": direction_source_evidence(source_kind),
         "source_text": source_text, "source_return": source_return,
         "reality": reality, "conversation_network": network,
         "questions": [{"id": key, "title": title, "question": question}
@@ -284,7 +290,8 @@ class ChainDirectionLedger:
                 ))
                 if actual != proposed:
                     raise ValueError("CHAIN_DIRECTION_CONFLICT")
-                return {**dict(existing), "assessment": json.loads(existing["assessment_json"]), "duplicate": True}
+                return {**dict(existing), "assessment": json.loads(existing["assessment_json"]),
+                        "source_evidence": direction_source_evidence(existing["source_kind"]), "duplicate": True}
             db.execute("""
                 INSERT INTO chain_directions(
                     direction_id,work_id,source_kind,source_task_id,source_generation,
@@ -318,6 +325,7 @@ class ChainDirectionLedger:
         if row is None:
             return None
         return {**dict(row), "assessment": json.loads(row["assessment_json"]),
+                "source_evidence": direction_source_evidence(row["source_kind"]),
                 "target_deliveries": [dict(target) for target in targets]}
 
     def plan_chain(self, *, direction_id: str, work_id: str, task_id: str,

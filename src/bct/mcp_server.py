@@ -668,7 +668,7 @@ def build_mcp(
         import hashlib
         from bct.chain_direction import (
             ChainDirectionLedger, compose_target_direction, resolve_direction_network,
-            validate_direction_assessment,
+            resolve_direction_target, validate_direction_assessment,
         )
         if status_provider is None:
             return {"status":"UNAVAILABLE","reason":"STATUS_PROVIDER_NOT_CONFIGURED"}
@@ -692,6 +692,19 @@ def build_mcp(
         updates = assessment.get("network_updates", [])
         if updates and not any(capability_matches(action, "conversation_network_update") for action in work.actions):
             return {"status":"BLOCKED","reason":"DIRECTION_NETWORK_ACTION_REQUIRED"}
+        # Check every required attachment BEFORE changing metadata. Role/network checks
+        # follow the recorded updates, since preparing those roles is their purpose.
+        before = await asyncio.to_thread(status_provider)
+        try:
+            required_keys = {assessment["manager_conversation_key"], assessment["supervisor_conversation_key"],
+                             *(target["conversation_key"] for _, target in targets)}
+            for key in required_keys:
+                resolve_direction_target(snapshot=before, conversation_key=key)
+        except ValueError as exc:
+            return {"status":"NETWORK_PREPARATION_REQUIRED", "reason":str(exc),
+                    "stage":"BEFORE_NETWORK_EFFECTS", "network_results":[],
+                    "network_preparation_applied":False, "all_targets_started":False,
+                    "direction_id":direction["direction_id"]}
         preparation = []
         for i, arguments in enumerate(updates, 1):
             if action == "preflight":
@@ -702,12 +715,16 @@ def build_mcp(
             preparation.append(result)
             if result.get("outcome") != "APPLIED":
                 return {"status":"NETWORK_PREPARATION_INCOMPLETE", "network_results":preparation,
+                        "stage":"NETWORK_EFFECTS", "network_preparation_applied":any(
+                            item.get("outcome") == "APPLIED" for item in preparation), "all_targets_started":False,
                         "reason":"REVIEW_ORIGINAL_RECEIPT", "direction_id":direction["direction_id"]}
         snapshot = await asyncio.to_thread(status_provider)
         try:
             origin, resolved = resolve_direction_network(snapshot=snapshot, assessment=assessment, targets=targets)
         except ValueError as exc:
             return {"status":"NETWORK_PREPARATION_REQUIRED","reason":str(exc),
+                    "stage":"AFTER_NETWORK_EFFECTS" if preparation else "READINESS",
+                    "network_preparation_applied":bool(preparation), "all_targets_started":False,
                     "next_tool":"bct_set_conversation_network", "network_results":preparation,
                     "network_updates":updates, "direction_id":direction["direction_id"],
                     "instructions_for_a":"기록된 판단에 따라 기존 생성·복구·대화망 설정 부품으로 준비하고 같은 Direction을 다시 확인한다."}
@@ -756,7 +773,9 @@ def build_mcp(
             except ValueError as exc:
                 results.append({"status":"BLOCKED","reason":str(exc),
                                 "target_conversation_key":target["conversation_key"]})
-        return {"status":"STARTED" if all(r["status"] in {"WATCHING","ALREADY_STARTED"} for r in results) else "PARTIAL",
+        all_started = all(r["status"] in {"WATCHING","ALREADY_STARTED"} for r in results)
+        return {"status":"STARTED" if all_started else "PARTIAL",
+                "network_preparation_applied":bool(preparation), "all_targets_started":all_started,
                 "direction_id":direction["direction_id"],"network_results":preparation,"targets":results}
 
     @server.tool(

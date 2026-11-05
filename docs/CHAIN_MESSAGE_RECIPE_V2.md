@@ -75,6 +75,9 @@ save는 `assessment.answers`의 모든 답, Manager/Supervisor UUID, 대화망 �
 대상별 `{conversation_key, role, instruction}`, `network_updates`를 검증하고
 원문과 함께 기록한다. 같은 Direction ID의 내용 변경은 거부한다.
 `bct_get_direction`으로 판단과 대상별 Task/Operation 연결을 함께 읽는다.
+USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이며 인증된 사용자 턴을
+직접 읽었다는 증거가 아니다. MANAGER_RETURN은 정확한 원장·응답 해시를 확인한 뒤
+`VERIFIED_MANAGER_RETURN`으로 표시한다. 두 출처의 증거 수준을 같게 취급하지 않는다.
 
 질문에 성실히 답했는지를 문자열 검사만으로 증명할 수는 없다. BCT가 검증하는
 것은 필수 답의 존재, 구체적 식별값·역할·소속·입력 계약·동일 영수증 등의 조건이다.
@@ -98,6 +101,10 @@ save는 `assessment.answers`의 모든 답, Manager/Supervisor UUID, 대화망 �
   기존 정확 1:1 전송 원장을 재사용하기 위한 내부 기록이며 새 사용자 명령이 아니다.
 - 특정 대상만 진행하려면 같은 Direction과 Task/Operation 접두사에
   `target_conversation_key`를 지정한다. 이미 시작한 대상은 재전송하지 않는다.
+- 망 변경 전 모든 필요한 대상의 현재 연결을 먼저 검사하고, 변경 후 역할·소속을
+  재검사한다. 그 사이 창이 닫힐 수 있으므로 전체 과정은 단일 원자적 효과가 아니다.
+  `network_results`, `network_preparation_applied`, `all_targets_started`로 부분 효과와
+  전송 결과를 구분한다. 적용된 망 변경을 지우거나 자동으로 되돌리지 않는다.
 
 ## Work와 권한
 
@@ -135,6 +142,7 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
   흐름은 그 특수 경로를 호출하지 않고 같은 대상별 전송 경로로 C를 처리한다.
 - `bct_set_execute_plan` / `bct_get_execute_plan`은 B가 작성한 정확한 계획의
   저장·조회와 같은 Chain의 SELF 맥락 연결이다. 임의 프로그램을 실행하는 명령이 아니다.
+  A의 전송 성공만으로 B가 계획을 작성·저장했다는 사실까지 증명되지는 않는다.
 - 기존 `bct_run_task`, `bct_plan_run`, `bct_set_project_plan`은 별도 기능이다.
   이 레시피는 그들을 숨은 실행기로 호출하지 않으며 `bct_run_execute_plan`을 새로 만들지 않는다.
 - `action="preflight"`는 읽기 전용이다. 망 변경을 미리 적용하지 않으므로 준비가
