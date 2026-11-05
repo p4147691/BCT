@@ -94,6 +94,10 @@ B는 A의 목표·범위·금지사항·위험 경계를 변경할 수 없다. �
 읽기 전용 현실 확인이다. `bct_status(scope="bct")`를 기본 입력으로 사용하고,
 필요한 경우 프로젝트·Work·영수증·Git·CI·LIVE·대화망 정보를 함께 읽는다.
 `bct_status`는 `reality_check` 전체가 아니라 가장 기본적인 상태 부품이다.
+현재 `reality_check` 하나를 실행하는 공개 함수는 없다. A가 `bct_status`,
+필요할 때 `bct_get_network`과 `bct_check_network`, Work·영수증 조회를 조합하는
+레시피다. 이전의 `bct_check_run`과 `bct_run_check`은 이 전체를 수행하지 않고
+Network Check만 실행하는 호환 이름이다.
 
 ### 3. `set_network`
 
@@ -120,6 +124,10 @@ B는 A의 목표·범위·금지사항·위험 경계를 변경할 수 없다. �
 ## 실제 공개 명령 이름
 
 - `bct_set_direction` / `bct_get_direction`: A의 Direction을 저장·조회한다.
+- `bct_status`: Core·RCC·Monitor의 현재 상태를 읽는 기본 부품이다.
+- `bct_get_network`: 한 대화망의 저장된 구성 정보를 읽는다.
+- `bct_check_network`: 현재 노드·RCC·Supervisor 준비 상태 등을 읽는 Network
+  Check 레시피다. 전체 현실 확인이나 계획 실행은 아니다.
 - `bct_set_execute_plan` / `bct_get_execute_plan`: 정확히 전달된 A Direction에
   연결된 B의 **Execute Plan**을 저장·조회한다. 저장만 하며 실행하지 않는다.
 - `bct_run_task`: 이미 준비된 orchestration session의 작업 하나를 실행한다.

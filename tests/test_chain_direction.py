@@ -105,7 +105,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "bct_set_direction", "bct_get_direction",
                 "bct_set_execute_plan", "bct_get_execute_plan",
                 "bct_set_execution_plan", "bct_get_execution_plan",
-                "bct_set_project_plan",
+                "bct_set_project_plan", "bct_get_network",
             } <= names)
 
     async def test_exact_manager_return_can_become_an_a_direction(self):

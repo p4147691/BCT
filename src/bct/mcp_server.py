@@ -34,7 +34,7 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
-    "bct_capabilities", "bct_status", "queue_message", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "organize_code_blocks",
+    "bct_capabilities", "bct_status", "queue_message", "bct_conversation_network_get", "bct_network_get", "bct_get_network", "bct_check_network", "scan_code_blocks", "organize_code_blocks",
     "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
     "bct_set_chain_execution_plan", "bct_get_chain_execution_plan",
     "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
@@ -274,6 +274,14 @@ def build_mcp(
     @server.tool(description="Read a registered project network. Canonical short name for bct_conversation_network_get.", structured_output=True)
     async def bct_network_get(project: str) -> dict[str, Any]:
         return await bct_conversation_network_get(project)
+
+    @server.tool(
+        name="bct_get_network",
+        description="Read one registered conversation network. Canonical GET name; bct_network_get remains available for compatibility.",
+        structured_output=True,
+    )
+    async def bct_get_network(project: str) -> dict[str, Any]:
+        return await bct_network_get(project)
 
     @server.tool(description="Run the read-only Network Check recipe: current node/RCC evidence, durable active and closed scope directory, current supervisor readiness, and optionally authorized project-context summaries. Does not create plans, networks or messages.", structured_output=True)
     async def bct_check_network(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
@@ -1662,11 +1670,11 @@ def build_mcp(
         ("bct_get_execution_plan", bct_get_chain_execution_plan,
          "Compatibility name for bct_get_execute_plan. Read one exact B Execute Plan; bct_get_chain_execution_plan remains available for older callers."),
         ("bct_network", bct_network_get,
-         "Show one registered conversation network. Canonical name; bct_network_get remains a compatibility alias."),
+         "Compatibility name for bct_get_network. Read one registered conversation network."),
         ("bct_check_run", bct_check_network,
-         "Legacy compatibility alias for bct_check_network."),
+         "Compatibility name for bct_check_network. It runs the selected Network Check recipe, not a whole Chain Run check."),
         ("bct_run_check", bct_check_network,
-         "Legacy compatibility alias for bct_check_network."),
+         "Compatibility name for bct_check_network. It runs the selected Network Check recipe, not a whole Chain Run check."),
         ("bct_plan_run", bct_run_plan,
          "Compatibility name for bct_set_project_plan. It saves a generic project-plan ledger; it does not run a plan."),
         ("bct_set_network", bct_network_set,

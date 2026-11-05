@@ -26,7 +26,7 @@ class DummyOperations:
 
 # Exact shared catalogue: Inbox is a Work-scoped read endpoint in every mode.
 SHARED_MCP_TOOLS = {
-    "bct_capabilities", "queue_message", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "organize_code_blocks", "bct_run_check", "bct_run_plan", "bct_network_set", "bct_desktop_capture",
+    "bct_capabilities", "queue_message", "bct_conversation_network_get", "bct_network_get", "bct_get_network", "bct_check_network", "scan_code_blocks", "organize_code_blocks", "bct_run_check", "bct_run_plan", "bct_network_set", "bct_desktop_capture",
     "bct_desktop_session_status", "bct_inbox_get", "bct_github_inbox_get", "bct_operation_get",
     "bct_status", "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction", "bct_set_chain_execution_plan", "bct_get_chain_execution_plan", "bct_set_direction", "bct_get_direction", "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_execution_plan", "bct_get_execution_plan", "bct_work_create", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_delayed_send_message", "bct_delayed_send_cancel",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
