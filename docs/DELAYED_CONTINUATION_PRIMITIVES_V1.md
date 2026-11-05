@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Replace the internally coupled Delayed Send Message implementation with a
+Replace the internally coupled Send Delayed Message implementation with a
 composable continuation recipe without changing its existing public behaviour.
 The original command remains a compatibility recipe during the migration.
 
@@ -87,7 +87,7 @@ create-watch    start a separately authorized subsequent watch
 context/alarm reference to a designated conversation; the receiving agent
 performs any judgment.
 
-## Compatibility recipe: Delayed Send Message
+## Compatibility recipe: Send Delayed Message
 
 ```text
 existing chain/Work context
@@ -119,7 +119,7 @@ to its exact operation id and submitted-text digest.
    Delayed Send API.
 2. Add equivalence tests for SELF, MANAGER, incomplete input, wrong response,
    duplicate poll, cancellation, and planned-send digest/receipt proof.
-3. Keep `delayed-send-message` as the first recipe and pass the existing test
+3. Keep `send-delayed-message` as the first recipe and pass the existing test
    suite unchanged.
 4. Add a read-only alarm/status surface before adding a new action type.
 5. Add `wake` only after its exact recipient, payload bound, and receipt model

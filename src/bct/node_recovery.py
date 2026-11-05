@@ -93,7 +93,7 @@ class NodeRecoveryLedger:
         self.store = store
         # Pause/Replace operate on the existing Delayed Send ledger. Some
         # read-only recovery tests create this ledger before any chain has run.
-        from .delayed_send_message import DurableWatchLedger
+        from .send_delayed_message import DurableWatchLedger
         DurableWatchLedger(store)
         with self.store.transaction() as db:
             db.execute("""

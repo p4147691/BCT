@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from bct.core.models import Work
 from bct.core.store import Store
-from bct.delayed_send_message import DurableWatchLedger, DelayedSendMessageRunner, Watch
+from bct.send_delayed_message import DurableWatchLedger, SendDelayedMessageRunner, Watch
 from bct.mcp_server import build_mcp
 from bct.task_message import prepare_task_message_instruction
 
@@ -141,7 +141,7 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
                 "bounded-task", 1, "worker-uuid", "task:bounded-task:1", "arm-1",
             )
             sent = []
-            result = DelayedSendMessageRunner(
+            result = SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda _: {
                     "conversation_key": "worker-uuid",

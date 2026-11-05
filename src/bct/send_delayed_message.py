@@ -1,4 +1,4 @@
-"""One-response Delayed Send Message continuation for BCT Task Run.
+"""One-response Send Delayed Message continuation for BCT Task Run.
 
 This module owns the state transition, not RCC delivery. Callers supply the
 existing durable watch registration and send-message implementations.
@@ -155,12 +155,12 @@ def bind_next_response(watch: Watch, *, send_receipt: str,
                  response_turn_id, send_receipt)
 
 
-def dispatch_delayed_send_message(
+def dispatch_send_delayed_message(
     *, watch: Watch, alarm: Alarm, decision: ContinuationDecision,
     manager_conversation_key: str, register_next_watch: Callable[[Watch], None],
     send_message: Callable[[str, str, str], str],
 ) -> Continuation:
-    """Perform the message-only action of the Delayed Send Message recipe.
+    """Perform the message-only action of the Send Delayed Message recipe.
 
     The caller has already observed the exact response, created an alarm, and
     recorded the prior B turn's decision.  This function deliberately owns
@@ -185,7 +185,7 @@ def dispatch_delayed_send_message(
     return Continuation("RETURNED_TO_MANAGER", None, receipt)
 
 
-def continue_delayed_send_message(
+def continue_send_delayed_message(
     *, watch: Watch, response_turn_id: str, response_text: str,
     response_complete: bool, input_ready: bool, manager_conversation_key: str,
     register_next_watch: Callable[[Watch], None],
@@ -215,13 +215,13 @@ def continue_delayed_send_message(
         decision = next_instruction_decision(alarm)
     except InstructionError:
         return Continuation("INSTRUCTION_UNAVAILABLE")
-    return dispatch_delayed_send_message(
+    return dispatch_send_delayed_message(
         watch=watch, alarm=alarm, decision=decision,
         manager_conversation_key=manager_conversation_key,
         register_next_watch=register_next_watch, send_message=send_message,
     )
 
-def continue_delayed_send_message_from_rcc(
+def continue_send_delayed_message_from_rcc(
     *, watch: Watch, observation: dict, manager_conversation_key: str,
     register_next_watch: Callable[[Watch], None],
     send_message: Callable[[str, str, str], str],
@@ -240,7 +240,7 @@ def continue_delayed_send_message_from_rcc(
     body = observation.get("response_text")
     if not isinstance(body, str):
         return Continuation("WAITING_RESPONSE")
-    return continue_delayed_send_message(
+    return continue_send_delayed_message(
         watch=watch, response_turn_id=turn, response_text=body,
         response_complete=observation.get("response_complete") is True,
         input_ready=observation.get("input_ready") is True,
@@ -989,7 +989,7 @@ class DurableWatchLedger:
 
 
 
-class DelayedSendMessageRunner:
+class SendDelayedMessageRunner:
     """Connect existing RCC read/send callbacks to durable continuation state."""
     def __init__(self, ledger: DurableWatchLedger, *, read_response, send_message):
         self.ledger = ledger
@@ -1050,7 +1050,7 @@ class DelayedSendMessageRunner:
             self.ledger.mark_result(watch, "UNKNOWN")
             return Continuation("ALREADY_DISPATCHING")
         try:
-            result = dispatch_delayed_send_message(
+            result = dispatch_send_delayed_message(
                 watch=watch, alarm=alarm, decision=decision,
                 manager_conversation_key=manager_conversation_key,
                 register_next_watch=lambda next_watch: self.ledger.reserve_next(
@@ -1157,7 +1157,7 @@ class RccLatestAssistantReader:
         )
 
 
-class DelayedSendService:
+class SendDelayedMessageService:
     """Core tick: observe a single reserved B response, then send using BCT receipts."""
     def __init__(self, *, store, browser_feature, operations):
         self.store = store
@@ -1399,7 +1399,7 @@ class DelayedSendService:
             )
             message = _self_message_with_execute_plan(message, plan)
             message=(
-                "작업 시작 전에 BCT Delayed Send Message를 다시 선예약하세요. "
+                "작업 시작 전에 BCT Send Delayed Message를 다시 선예약하세요. "
                 f"work_id={work.work_id}, task_id={row['task_id']}. "
                 "이후 아래 작업을 수행하고 응답 마지막에 "
                 "NEXT TASK — SELF 또는 NEXT TASK — MANAGER 및 다음 지시서/보고서를 작성하세요.\n\n"
@@ -1435,7 +1435,7 @@ class DelayedSendService:
                             row["conversation_key"],row["response_turn_id"],
                             row["source_send_receipt"])
                 ctx=row["context"]
-                runner=DelayedSendMessageRunner(
+                runner=SendDelayedMessageRunner(
                     self.ledger,
                     read_response=lambda _watch:observation,
                     send_message=lambda dest,body,key:self._send_for(

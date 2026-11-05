@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bct.component_library import BUNDLE_PATH, discover, load_library
+from bct.component_library import BUNDLE_PATH, discover, load_library, get_manual_guidance
 from bct.mcp_server import build_mcp
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +28,23 @@ class Operations:
 
 
 class LibraryBundleTests(unittest.TestCase):
+    def test_guidance_is_bounded_section_of_same_manual_not_a_second_copy(self):
+        bundle = load_library()
+        guide = get_manual_guidance(bundle)
+        self.assertEqual("AVAILABLE", guide["status"])
+        self.assertIn(guide["text"], bundle["manual"]["text"])
+        self.assertLessEqual(len(guide["text"]), 3000)
+        self.assertEqual(bundle["manual"]["sha256"], guide["manual_sha256"])
+        self.assertFalse(guide["authorizes_execution"])
+        self.assertIn("새 Manager를 자칭하지 않는다", guide["text"])
+
+    def test_missing_or_unbounded_guidance_is_explicit(self):
+        for bundle in ({}, {"manual": {"text": "## 바로 시작하는 노드 안내\n" + "x" * 3001}}):
+            guide = get_manual_guidance(bundle)
+            self.assertEqual("UNAVAILABLE", guide["status"])
+            self.assertNotIn("text", guide)
+            self.assertEqual("bct_capabilities", guide["read_more"]["tool"])
+
     def test_bundle_matches_manual_catalogue_and_every_tracked_source(self):
         self.assertEqual(builder.render(builder.build_bundle()), builder.source_text(BUNDLE_PATH),
                          "Review manual and run build_component_library.py --write --reviewed")
@@ -70,6 +87,19 @@ class LibraryBundleTests(unittest.TestCase):
 
 
 class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
+    async def test_every_catalogue_exposes_guidance_and_chain_lookup_includes_manual(self):
+        for mode in ("full", "compact", "hybrid"):
+            server = self.server(mode)
+            default = await self.call(server)
+            self.assertEqual(get_manual_guidance(), default["manual_guidance"])
+            chain = await self.call(server, tool_name="bct_chain_message")
+            self.assertEqual(load_library()["manual"], chain["manual"])
+            self.assertIn("manual_guidance", chain["tool"]["description"])
+            self.assertIn("include_manual=true", server.instructions)
+            other = await self.call(server, tool_name="bct_set_direction")
+            self.assertEqual(default["manual_guidance"], other["manual_guidance"])
+            self.assertNotIn("manual", other)
+
     def server(self, mode="full"):
         return build_mcp(SimpleNamespace(operations=Operations()),
                          compact_catalogue=mode == "compact", hybrid_catalogue=mode == "hybrid")
@@ -110,9 +140,13 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
         actual.update(t.name for t in await self.server("compact").list_tools())
         text = builder.source_text(ROOT / builder.MANUAL)
         mentioned = set(re.findall(r"\bbct_[a-z_]+\b", text))
-        # This name is explicitly documented as NOT implemented, not an available command.
+        # Explicitly unavailable names must not be advertised as callable tools.
         self.assertIn("`bct_run_execute_plan`을 새로 만들지 않는다", text)
-        self.assertEqual(set(), mentioned - actual - {"bct_run_execute_plan"})
+        self.assertIn("이전 `bct_delayed_send_message`는 공개 별칭으로 남기지 않는다", text)
+        self.assertNotIn("bct_delayed_send_message", actual)
+        self.assertIn("bct_send_delayed_message", actual)
+        self.assertEqual(set(), mentioned - actual - {
+            "bct_run_execute_plan", "bct_delayed_send_message"})
         self.assertIn("bct_create_work", actual)  # Public alias is real, not a documentation typo.
         for example in (await self.call(server))["discovery"]["examples"]:
             self.assertEqual("OK", (await self.call(server, **example))["status"])

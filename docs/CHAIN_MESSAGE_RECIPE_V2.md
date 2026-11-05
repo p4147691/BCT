@@ -7,6 +7,30 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
 [실제 흐름](#실제-호출-흐름) · [이름과 역할](#이름과-역할) ·
 [부품 찾기](#필요한-부품과-도구-찾기) · [감시와 반환](#감시와-반환) · [갱신 방법](#설명서-갱신과-검사)
 
+## 바로 시작하는 노드 안내
+
+일반 작업의 기본 입구는 `bct_chain_message`다. Task Message / Send Message를 사용자가
+명시한 경우에만 그 별도 경로를 사용한다. 이 안내는 역할 지정이나 실행 권한을 새로 부여하지 않는다.
+
+- A: `bct_chain_message(instruction=요청)` → 현재 현실·대화망과 내부 질문 확인 →
+  A가 의도·완료 기준·대상별 지시·필요한 망 변경을 판단 →
+  `bct_set_direction(action="save", assessment=판단, ...)` →
+  `bct_chain_message(action="start", chain_direction_id=저장한ID, ...)`.
+  질문은 A가 답한다. 사용자에게 사용법이나 질문지 작성을 떠넘기지 않는다.
+- 전달받은 B/C: 이 지시의 수신자로서 지정된 범위만 처리한다. 새 Manager를 자칭하지 않는다.
+  현재 환경을 읽고 세부 계획을 세워 `bct_set_execute_plan`으로 전달받은
+  Work·Direction·Task·generation에 연결한다. 필요한 부품은 직접 선택하되 기존 권한을 넘지 않는다.
+- 응답 끝: 진전이 있고 계속할 일이 있으면 `NEXT TASK — SELF: 다음 지시`,
+  완료·위험·정체·판단 필요이면 `NEXT TASK — MANAGER: 결과와 반환 지시` 중 하나를 남긴다.
+  고정 횟수만으로 왕복하지 않는다. 응답 감시는 BCT 백그라운드가 담당하므로 A가 붙잡혀 기다리지 않는다.
+- BA/CA를 받은 A: 정확한 반환 Task/generation으로 Chain Message의 prepare에 다시 들어가
+  현재 상태와 방향을 재검토한다. 필요한 병합·배포·E2E는 Supervisor에게 별도 지시한다.
+- 사용법이 불명확하면 `bct_capabilities(tool_name="사용할 실제 명령")`으로 현재 입력 계약을 읽고,
+  `query="필요한 기능"`으로 부품을 찾는다. 전체 설명서는
+  `bct_capabilities(include_manual=true)`이며 로컬 파일 접근 없이 일반 Chat에서도 읽을 수 있다.
+- UNKNOWN은 새 ID로 재전송하지 않는다. 소스·테스트·CI·main·설치·LIVE 증거를 구분한다.
+  이 설명서는 배포된 소스의 사용법이지 해당 작업의 완료 증거가 아니다.
+
 ## 이 문서의 범위
 
 이 문서는 **이 체크아웃의 소스 동작**을 설명한다. 테스트 통과는 main 병합·설치·
@@ -125,6 +149,13 @@ ChatGPT Work 모드, 한 번의 Task ID와 다르며 이름이나 기존 ID를 �
 
 ## 감시와 반환
 
+공개 명령과 Python 함수는 `bct_send_delayed_message`, 구현 모듈은
+`bct.send_delayed_message`, 새 내부 요청 command는 `send-delayed-message`다.
+이전 `bct_delayed_send_message`는 공개 별칭으로 남기지 않는다. 오래된 클라이언트의
+도구 목록은 갱신해야 한다. 이미 발급한 Operation/Task ID, DB 테이블, 감시·Claim 잠금
+키와 기존 영수증은 변경하지 않으며, 기존 준비 요청의 옛 command는 이력 호환을 위해
+실행 경계에서만 읽는다. 이름 변경은 감시·전송 정책 변경이 아니다.
+
 감시기는 BCT 백그라운드 런타임에서 일한다. A가 화면을 붙잡고 기다리는 방식이
 아니므로 사용자와 대화하거나 다른 독립 작업을 진행할 수 있다. WATCHING은
 정확한 원 전송에 대응하는 응답 완료를 기다리는 상태이며 작업 완료 증거가 아니다.
@@ -170,7 +201,8 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 | `bct_set_conversation_network` | A가 결정한 망·역할·Node Info 변경을 기존 계약으로 적용 |
 | `bct_set_direction` / `bct_get_direction` | A 내부 질문·판단·정제된 지시의 준비/저장과 조회 |
 | `bct_set_execute_plan` / `bct_get_execute_plan` | B가 생각한 세부 계획의 결합·저장과 조회. 계획 문장 자체를 실행하지 않음 |
-| `bct_delayed_send_message` / `bct_context` | 정확한 응답을 기다리는 백그라운드 감시·후속 메시지와 맥락 조회 |
+| `bct_send_delayed_message` | 해당 작업의 응답 완료를 백그라운드에서 기다린 뒤 SELF/MANAGER 후속 지시를 전달하도록 등록 |
+| `bct_context` | 특정 작업·회차의 이전 응답 증거, SELF/MANAGER 결정과 이어가기 기록 조회. 조회 자체는 감시하거나 전송하지 않음 |
 | `bct_capabilities` | 현재 도구·입력 계약·부품·이 설명서 조회. 도구 실행이나 권한 부여는 아님 |
 | Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 종합 상태나 과거 망 이력과 구분 |
 | Work / task_id / Operation | 기존 지속 작업 경계 / 한 체인의 연속 처리 식별값 / 개별 효과와 영수증 |
@@ -201,6 +233,16 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 사용 가능하다고 추측하지 말고 현재 `bct_capabilities` 결과를 기준으로 판단한다.
 
 ## 설명서 갱신과 검사
+
+위의 노드 안내는 별도 사본으로 편집하지 않는다. `bct_capabilities` 기본 응답과
+Chain/Set Direction의 prepare 응답에 `manual_guidance`로 자동 포함한다.
+`bct_capabilities(tool_name="bct_chain_message")`에는 전체 설명서도 자동 포함된다.
+새 질문 기반 방향의 수신자 지시에는 같은 안내·설명서 해시·조회 방법이 붙는다.
+이미 기록한 대상 지시와 기존 직접 전송 원문은 재작성하지 않으며, 기존 SELF/BA 감시도 재등록하지 않는다.
+설명서 번들이 없거나 손상되면 조회에 `UNAVAILABLE`을 표시하고, 안내가 필요한 새 대상 지시를
+전송하기 전에 `MANUAL_GUIDANCE_UNAVAILABLE`로 알린다. 이미 기록된 지시는 보존한다.
+일반 Chat·Work·Codex 모두 같은 MCP 응답을 받지만 클라이언트의 오래된 도구 설명은
+연결/도구 목록 갱신이 필요할 수 있다. AI가 읽고 판단하는 단계까지 코드가 대신 실행하거나 보장하지 않는다.
 
 원본은 이 파일과 `docs/component-library.v1.json`이다. Chat 전용·Work 전용·Codex 전용 설명서를
 따로 편집하지 않는다. 배포용 `src/bct/data/component-library.json`은 두 원본과 관련 소스의

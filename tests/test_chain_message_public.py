@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from bct.core.models import Work
 from bct.core.store import Store
-from bct.delayed_send_message import DurableWatchLedger, DelayedSendMessageRunner, Watch
+from bct.send_delayed_message import DurableWatchLedger, SendDelayedMessageRunner, Watch
 from bct.mcp_server import build_mcp
 
 class Applied:
@@ -57,7 +57,7 @@ class ChainMessagePublicTests(unittest.IsolatedAsyncioTestCase):
         arm,send=self.ops.calls
         self.assertEqual(["e2e-test-01-arm","e2e-test-01-send"],
                          [arm["operation_id"],send["operation_id"]])
-        self.assertEqual("delayed-send-message",arm["arguments"]["command"])
+        self.assertEqual("send-delayed-message",arm["arguments"]["command"])
         self.assertEqual("send-message",send["arguments"]["command"])
         self.assertEqual(arm["arguments"]["planned_send_operation_id"],send["operation_id"])
         self.assertEqual(arm["arguments"]["planned_send_text"],send["arguments"]["text"])
@@ -115,7 +115,7 @@ class ChainMessagePublicTests(unittest.IsolatedAsyncioTestCase):
             watch = Watch(
                 "test-task", 1, "worker-uuid", "task:test-task:1", "arm-1",
             )
-            result = DelayedSendMessageRunner(
+            result = SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda _watch: {
                     "conversation_key": "worker-uuid",

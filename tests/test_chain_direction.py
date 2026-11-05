@@ -10,7 +10,7 @@ from bct.chain_direction import ChainDirectionLedger
 from bct.chain_execution_plan import ChainExecutionPlanLedger
 from bct.core.models import Work
 from bct.core.store import Store
-from bct.delayed_send_message import DurableWatchLedger, DelayedSendMessageRunner, Watch
+from bct.send_delayed_message import DurableWatchLedger, SendDelayedMessageRunner, Watch
 from bct.mcp_server import build_mcp
 
 
@@ -156,7 +156,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 }, registration_receipt="prearm-b",
             )
             watch = Watch("task-b", 1, "worker-uuid", "task:task-b:1", "prearm-b")
-            returned = DelayedSendMessageRunner(
+            returned = SendDelayedMessageRunner(
                 delayed,
                 read_response=lambda _: {
                     "conversation_key": "worker-uuid", "response_turn_id": watch.response_turn_id,
@@ -256,7 +256,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 }, registration_receipt="prearm-receipt",
             )
             watch = Watch("task-1", 1, "worker-uuid", "task:task-1:1", "prearm-receipt")
-            DelayedSendMessageRunner(
+            SendDelayedMessageRunner(
                 delayed,
                 read_response=lambda _: {
                     "conversation_key": "worker-uuid", "response_turn_id": watch.response_turn_id,
@@ -310,7 +310,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                     }, registration_receipt="prearm-" + task_id,
                 )
                 watch = Watch(task_id, 1, "worker-uuid", f"task:{task_id}:1", "prearm-" + task_id)
-                outcome = DelayedSendMessageRunner(
+                outcome = SendDelayedMessageRunner(
                     delayed,
                     read_response=lambda _: {
                         "conversation_key": "worker-uuid", "response_turn_id": watch.response_turn_id,
