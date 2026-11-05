@@ -4,7 +4,7 @@
 
 ## 제공 기능
 
-BCT Control MCP에 `bct_conversation_network_get(project="표시 이름")`를 추가했다.
+BCT Control MCP에 `bct_get_conversation_network(project="표시 이름")`를 추가했다.
 
 이 도구는 등록된 프로젝트 하나의 다음 표시 정보를 읽기만 한다.
 

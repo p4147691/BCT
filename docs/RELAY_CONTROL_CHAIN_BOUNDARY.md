@@ -4,7 +4,7 @@
 
 **Relay Control** (`bct_relay_control`, `src/bct/relay_executor.py`) is a bounded adapter for registered, authorized BCT operations. A caller supplies a purpose and scope; the fixed registry selects a known handler. The Work must separately authorize the underlying capability. Settings never grant authority, create arbitrary handlers, or create AI plans.
 
-**Chain Direction** records the human/Manager's intent and direction. **Chain Execution Plan** (`bct_set_chain_execution_plan`, `src/bct/chain_execution_plan.py`) stores a Worker B-authored plan bound to the started direction/task, preserving the original plan and SHA-256. **Chain Message** coordinates the work lifecycle; **Task Run** handles authorized execution. Storing a plan does not execute it.
+**Chain Direction** records the human/Manager's intent and direction. **Chain Execution Plan** (`bct_set_execute_plan`, `src/bct/chain_execution_plan.py`) stores a Worker B-authored plan bound to the started direction/task, preserving the original plan and SHA-256. **Chain Message** coordinates the work lifecycle; **Task Run** handles authorized execution. Storing a plan does not execute it.
 
 ## Do not conflate
 

@@ -3,7 +3,7 @@
 
 ## 실제 코드 조사
 - Monitor 우클릭: monitor.js -> monitor-bct-shell.js updateConversationScope -> POST /monitor/conversation-network/update -> runtime_server.run_monitor_conversation_scope_update -> conversation_network.configure_conversation_scope -> 기존 SQLite DB.
-- AI: bct_network_set -> conversation_network_update capability -> ConversationNetworkUpdateFeature -> upsert_project / assign_conversation_membership / patch_conversation_role_tags -> 같은 SQLite DB.
+- AI: bct_set_conversation_network -> conversation_network_update capability -> ConversationNetworkUpdateFeature -> upsert_project / assign_conversation_membership / patch_conversation_role_tags -> 같은 SQLite DB.
 - configure_conversation_scope에는 이미 이름 기반 기존 대화망 조회, 미존재시 UUID 기반 내부 ID 발급, 원자적 참여/미소속/이동, 역할 태그, 노드 메모/담당 작업 보존이 구현돼 있다.
 - 전체 대화망 이름 변경(기존 ID 유지)은 별도 Core 변경 함수가 필요하다. 현재 project-upsert는 ID 지정 갱신은 가능하나 사용자 중심 이름변경 계약과 명확히 분리해야 한다.
 

@@ -132,8 +132,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue({
                 "bct_set_direction", "bct_get_direction",
                 "bct_set_execute_plan", "bct_get_execute_plan",
-                "bct_set_execution_plan", "bct_get_execution_plan",
-                "bct_set_project_plan", "bct_get_network",
+                "bct_set_project_plan", "bct_get_conversation_network",
                 "bct_prepare_supervisor_chain",
             } <= names)
 
@@ -273,7 +272,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             with store.transaction() as db:
                 db.execute("DELETE FROM continuation_decisions")
             mcp = build_mcp(SimpleNamespace(operations=Operations(), store=store), compact_catalogue=True)
-            _, saved = await mcp.call_tool("bct_set_chain_direction", {
+            _, saved = await mcp.call_tool("bct_set_direction", {
                 "work_id": "work-1", "direction_id": "direction-return-1",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-1",
                 "source_generation": 1, "decision": "NEW_TASK",
@@ -281,7 +280,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual("OK", saved["status"])
             self.assertEqual("c" * 64, saved["chain_direction"]["source_result_sha256"])
-            _, read = await mcp.call_tool("bct_get_chain_direction", {
+            _, read = await mcp.call_tool("bct_get_direction", {
                 "work_id": "work-1", "direction_id": "direction-return-1",
             })
             self.assertEqual("NEW_TASK", read["chain_direction"]["decision"])
@@ -325,7 +324,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
 
             # B1 → A2: exact BA return.
             return_to_manager("task-one", "c" * 64, "First B report.")
-            _, direction = await mcp.call_tool("bct_set_chain_direction", {
+            _, direction = await mcp.call_tool("bct_set_direction", {
                 "work_id": work.work_id, "direction_id": "direction-two",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-one",
                 "source_generation": 1, "decision": "NEW_TASK",
@@ -385,7 +384,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
 
             # B2 → A3: the final BA return; A3 closes instead of creating B3.
             return_to_manager("task-two", "d" * 64, "Second B report.")
-            _, completed = await mcp.call_tool("bct_set_chain_direction", {
+            _, completed = await mcp.call_tool("bct_set_direction", {
                 "work_id": work.work_id, "direction_id": "direction-complete",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-two",
                 "source_generation": 1, "decision": "COMPLETE",

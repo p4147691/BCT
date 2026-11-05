@@ -87,13 +87,15 @@
           "symbol": "bct_set_direction / bct_get_direction"
         }
       ],
-      "contract": "Durably records A's user direction and high-level work plan for one next Chain Message without sending, choosing a Worker, or interpreting the result.",
+      "contract": "Reusable Set Direction stage: prepare reads reality and current/historical networks, supplies ten internal questions for A, and save validates A's answers, original user request or exact return, network changes and distinct per-target instructions. Chain Message composes this stage and reuses exact send/watch for each A-selected recipient. BCT does not make AI judgments.",
       "effects": [
         "bct-sqlite-direction-metadata"
       ],
       "safety": [
         "work-owner-bound",
         "exact-manager-return-source-when-applicable",
+        "per-target-direction-and-receipt-lineage",
+        "fresh-uuid-role-network-check-before-send",
         "idempotent-direction-id",
         "no-external-message-send"
       ],
@@ -112,7 +114,7 @@
         },
         {
           "path": "src/bct/mcp_server.py",
-            "symbol": "bct_set_execute_plan / bct_get_execute_plan (compatibility: bct_set_execution_plan / bct_get_execution_plan)"
+            "symbol": "bct_set_execute_plan / bct_get_execute_plan"
         }
       ],
       "contract": "Durably records B's one concrete execution plan only after the linked A direction has been delivered. The exact plan is returned only to the same Worker on that Chain's next SELF continuation; B may choose files, tools, tests, and safe next steps within A's stated boundaries.",

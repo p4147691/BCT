@@ -43,13 +43,13 @@
 
 ```text
 bct_status
-bct_check_network
+bct_check_conversation_network
 bct_send_message
 bct_delayed_send_message
 bct_cancel_delayed_send
 ```
 
-기존 뒤집힌 이름(`bct_network_get`, `bct_task_run` 등)은 현재 호출을
+기존 뒤집힌 이름(`bct_task_run` 등)은 현재 호출을
 깨지 않도록 호환 별칭으로 남기고, 이후 레시피에서는 표준 이름을 쓴다.
 
 ### 메시지·탭 부분 레시피의 실제 이름
@@ -115,10 +115,10 @@ bct_close_tab → close-conversation-tab
 특정 대화망 전체 구성표가 필요할 때만 다음 블록을 이어 붙인다.
 
 ```text
-대화망 확인 = bct_check_network(project="...")
+대화망 확인 = bct_check_conversation_network(project="...")
 ```
 
-`bct_check_network`는 대화망을 만들거나 바꾸지 않는다. 현재 노드에 이미
+`bct_check_conversation_network`는 대화망을 만들거나 바꾸지 않는다. 현재 노드에 이미
 기록된 network/role/assigned_task 정보를 대화망·프로젝트 관점으로 정리하고,
 필요하면 등록된 대화망과 권한 있는 프로젝트 문맥을 함께 읽는다. 1:1 체인의
 기본 단계에는 넣지 않고, 대화망을 실제로 쓰는 조합에서만 이어 붙인다.
@@ -209,7 +209,7 @@ Manager는 4가 있을 때만 새 판단을 한다.
   → 시작 점검: 지금 계획을 만들어도 되는가?
   → 작업 계획: 목표를 어떤 실행 단계로 끝낼 것인가?
   → 환경 준비 부속 계획: 대화망·노드 조정이 필요한가?
-  → 필요할 때만 대화망 확인: bct_check_network
+  → 필요할 때만 대화망 확인: bct_check_conversation_network
   → 대화망·노드 준비: 필요한 경우에만 실제 구성을 맞춘다
   → 세션 준비와 Task Run
 ```
@@ -286,7 +286,7 @@ Manager는 4가 있을 때만 새 판단을 한다.
 
 ### 이 조합에 포함하지 않는 것
 
-- `bct_network_get`/`bct_network_set`을 요구하는 대화망 구성 변경
+- `bct_get_conversation_network`/`bct_set_conversation_network`을 요구하는 대화망 구성 변경
 - 새 ChatGPT 노드의 자동 생성
 - 여러 Worker에게 동시 또는 순차로 분배하는 실행기
 - B가 현재 맡은 흐름 밖의 새 체인 전체를 만드는 기본 동작

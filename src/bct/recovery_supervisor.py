@@ -8,7 +8,7 @@ CAPABILITIES = {
     "status_read": "bct_status",
     "receipt_read": "bct_operation_get",
     "inbox_read": "bct_inbox_get",
-    "candidate_read": "bct_conversation_network_get",
+    "candidate_read": "bct_get_conversation_network",
     "card_write": "bct_work_create",
     "assignment": "bct_relay_control",
     "result_read": "bct_delivery_status",
