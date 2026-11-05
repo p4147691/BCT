@@ -15,6 +15,7 @@ from starlette.responses import JSONResponse
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .chat_input_queue import ChatInputQueue
 from .chain_entry_policy import public_entry_policy
+from .component_library import DISCOVERY_GUIDE, discover
 from .chain_message_preflight import (
     EXPLICIT_NEXT_TASK_SUFFIX, check_chain_work, prepare_chain_instruction,
 )
@@ -160,6 +161,8 @@ def build_mcp(
             "to read current reality and enter Set Direction. Answer its internal questions as A; "
             "do not delegate that questionnaire to the user. Reuse an appropriate bounded Work "
             "or create one before effects, then use the matching bct_<capability> tools. "
+            "Use bct_capabilities(query=...) to find existing parts, tool_name for the current input schema, "
+            "and include_manual=true for the shared source manual. Discovery never executes tools. "
             "Reuse operation_id only for the exact same request."
         ),
         stateless_http=True,
@@ -177,17 +180,26 @@ def build_mcp(
             work_id=work_id, conversation_key=conversation_key,
         )
 
-    @server.tool(description="List the exact BCT capabilities exposed by this runtime.", structured_output=True)
-    async def bct_capabilities() -> dict[str, Any]:
+    @server.tool(description=(
+        "List this runtime's actual tools and capabilities. Optional query searches reusable parts and tools; "
+        "tool_name returns the exact current input schema; component_id reads one part; include_manual "
+        "returns the shared Chain Message manual. Read-only, no Work required. limit/offset paginate search results."
+    ), structured_output=True)
+    async def bct_capabilities(query: str = "", tool_name: str = "", component_id: str = "",
+                               include_manual: bool = False, limit: int = 8, offset: int = 0) -> dict[str, Any]:
         started_ns = time.perf_counter_ns()
+        tool_metadata = [tool.model_dump(mode="json", exclude_none=True) for tool in await server.list_tools()]
         value = {
             "capabilities": list(capabilities),
-            "tools": [tool.name for tool in await server.list_tools()],
+            "tools": [tool["name"] for tool in tool_metadata],
             # The live runtime contract takes precedence over client-cached tool descriptions.
             "browser_usage": _CAPABILITY_USAGE["browser"],
             "browser_contract_version": "rcc-send-message-v1",
             "browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"],
             "message_entry_policy": public_entry_policy(),
+            **discover(tools=tool_metadata, capabilities=capabilities, usage=_CAPABILITY_USAGE,
+                       query=query, tool_name=tool_name, component_id=component_id,
+                       include_manual=include_manual, limit=limit, offset=offset),
         }
         settings = getattr(server, "catalogue_settings", None)
         if settings is not None and settings.last_error:
@@ -1671,6 +1683,7 @@ def build_mcp(
                     network=network, source_return=context,
                     available_tools=[tool.name for tool in await server.list_tools()],
                 )
+                review["resource_discovery"] = DISCOVERY_GUIDE
             except (ValueError, PreconditionError) as exc:
                 return {"status":"INVALID_REQUEST","reason":str(exc)}
             return {**review, "work_id": work_id, "direction_id": direction_id,

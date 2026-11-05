@@ -67,6 +67,8 @@ def prepare_direction_review(*, source_text: str, source_kind: str,
             "node-info-set에는 관찰한 expected_scope_id와 expected_role_tags_sha256도 넣어 사용자 변경을 덮어쓰지 않는다. "
             "기존 Work를 먼저 비교하여 재사용하고 없거나 작업 경계가 다르면 기존 bct_create_work로 준비한다. Work는 노드나 ChatGPT Work 모드가 아니다. "
             "없는 창·탭은 기존 생성/복구 부품으로 준비하고 실제 UUID를 확인한다. "
+            "필요한 기능은 bct_capabilities(query=...)로 찾고 tool_name으로 입력 계약을 확인한다. "
+            "선택 이유와 기대 결과를 resources 답에 기록한다. 모든 도구를 의무 실행하지 않는다. "
             "bct_set_direction(action=save)로 답과 direction_text를 저장한 뒤 같은 bct_chain_message(action=start)를 호출한다. "
             "B의 구체적 실행계획은 전달 후 B가 작성한다. 반환받으면 Chain Message의 prepare부터 다시 판단한다."
         ),
@@ -194,6 +196,8 @@ def compose_target_direction(*, direction: dict, target: dict, task_id: str) -> 
     text = (direction["direction_text"] + "\n\n이번 대상에게 맡기는 일:\n" + target["instruction"]
             + "\n\nB 실행 규칙: 전달받은 방향 안에서 현재 환경을 다시 확인하고 구체적인 계획과 부품을 스스로 선택한다. "
             + "bct_set_execute_plan으로 계획을 기록한다. "
+            + "필요한 부품은 bct_capabilities(query=...)로 찾고 tool_name으로 현재 사용법을 확인한다. "
+            + "include_manual=true로 공통 설명서를 읽을 수 있다. 선택 이유는 계획에, 수행 결과와 영수증은 보고에 남긴다. "
             + f"work_id={direction['work_id']}, direction_id={child_id}, task_id={task_id}, generation=1. "
             + "허용된 범위에서 실행하고 진전이 있으면 SELF, 완료·위험·정체·판단 필요 시 MANAGER로 반환한다. "
             + "고정 반복 횟수만으로 반환하지 않는다. 실제 수행과 미확인을 구분하여 보고한다.")

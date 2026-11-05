@@ -197,6 +197,17 @@ class MCPIntegrationTests(unittest.TestCase):
                         names,
                     )
                     capabilities = await session.call_tool("bct_capabilities", {})
+                    library = await session.call_tool("bct_capabilities", {
+                        "query": "코드 블럭", "tool_name": "scan_code_blocks", "include_manual": True,
+                    })
+                    self.assertFalse(library.isError)
+                    self.assertEqual("AVAILABLE", library.structuredContent["library_status"])
+                    self.assertTrue(library.structuredContent["read_only"])
+                    scan_tool = next(t for t in catalogue.tools if t.name == "scan_code_blocks")
+                    self.assertEqual(scan_tool.inputSchema, library.structuredContent["tool"]["inputSchema"])
+                    manual = library.structuredContent["manual"]
+                    self.assertIn("Chain Message 공통 설명서", manual["text"])
+                    self.assertEqual(hashlib.sha256(manual["text"].encode("utf-8")).hexdigest(), manual["sha256"])
                     self.assertFalse(capabilities.isError)
                     live_relay_usage = capabilities.structuredContent["browser_usage"]
                     self.assertNotIn("send-to-tab", live_relay_usage)

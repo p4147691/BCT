@@ -1,4 +1,11 @@
-# Chain Message Recipe V2
+# Chain Message 공통 설명서
+
+Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 계약을 확인할 수 있다.
+소스 옆에서 볼 때는 이 파일을 열고, 일반 Chat에서는 `bct_capabilities(include_manual=true)`를 호출한다.
+설치된 설명서의 `manual.sha256`과 소스 파일의 UTF-8/LF 해시를 비교하면 같은 내용인지 확인할 수 있다.
+
+[실제 흐름](#실제-호출-흐름) · [이름과 역할](#이름과-역할) ·
+[부품 찾기](#필요한-부품과-도구-찾기) · [감시와 반환](#감시와-반환) · [갱신 방법](#설명서-갱신과-검사)
 
 ## 이 문서의 범위
 
@@ -19,7 +26,7 @@ bct_chain_message(instruction=요청) 또는 action="prepare"
       ├─ 현재 Core/런타임/Work/작업 영수증/CI Inbox 조회
       ├─ bct_check_conversation_network 내부 호출
       │    열린 Node Info + RCC + 저장된 대화망 이력
-      └─ A가 판단할 내부 질문과 사용 가능한 대표 명령 목록 반환
+      └─ A가 판단할 내부 질문·사용 가능한 대표 명령 목록·부품 검색 사용법 반환
   ↓ 실제 A의 판단 턴 — BCT가 AI 대신 생각하지 않음
 A가 질문에 답하고 전체 방향·대상별 지시·필요한 망 변경을 정함
   ├─ 필요한 경우 기존 부품으로 추가 정보/창·탭/Work 준비
@@ -151,3 +158,61 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 소스 회귀 검증: `tests/test_direction_review.py`, `tests/test_chain_direction.py`,
 `tests/test_chain_message_preflight.py`와 기존 Chain/네트워크/복구/MCP 테스트.
 브라우저 효과를 모의한 격리 테스트와 실제 일반 Chat LIVE E2E는 구분해서 보고한다.
+
+## 이름과 역할
+
+| 이름 | 이 소스에서 하는 일 |
+| --- | --- |
+| `bct_chain_message` | 전체 레시피의 입구. A 질문 준비 → A 판단 기록 → 대상별 정확 전송·감시 조합 |
+| `bct_status` | 현재 Core·런타임·노드 등 종합 상태 조회 |
+| `bct_get_conversation_network` | 저장된 대화망 정보 조회 |
+| `bct_check_conversation_network` | 현재 관찰과 저장된 망 정보를 함께 점검. 조회가 망 변경을 뜻하지 않음 |
+| `bct_set_conversation_network` | A가 결정한 망·역할·Node Info 변경을 기존 계약으로 적용 |
+| `bct_set_direction` / `bct_get_direction` | A 내부 질문·판단·정제된 지시의 준비/저장과 조회 |
+| `bct_set_execute_plan` / `bct_get_execute_plan` | B가 생각한 세부 계획의 결합·저장과 조회. 계획 문장 자체를 실행하지 않음 |
+| `bct_delayed_send_message` / `bct_context` | 정확한 응답을 기다리는 백그라운드 감시·후속 메시지와 맥락 조회 |
+| `bct_capabilities` | 현재 도구·입력 계약·부품·이 설명서 조회. 도구 실행이나 권한 부여는 아님 |
+| Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 종합 상태나 과거 망 이력과 구분 |
+| Work / task_id / Operation | 기존 지속 작업 경계 / 한 체인의 연속 처리 식별값 / 개별 효과와 영수증 |
+
+공개 도구의 입구는 `src/bct/mcp_server.py`에 등록된다. 일부 보존된 공개명은 같은 내부 함수를
+호출하므로 공개명과 내부 함수가 모두 1:1인 것은 아니다. 내부 재사용 함수·파일은 부품 조회의
+`implementation`에서 확인한다. 새 이름을 추측하지 않는다.
+
+## 필요한 부품과 도구 찾기
+
+1. A는 Direction의 자율 선택 질문에서, B는 세부 계획을 작성하거나 수정할 때 필요한 기능을 찾는다.
+   `bct_capabilities(query="코드 블럭")`, `query="데스크탑"`, `query="github_run_watch"`처럼 검색한다.
+2. 결과의 부품 `contract`, `effects`, `safety`, `implementation`을 확인한다.
+   `SOURCE_COMPONENT_ONLY`는 소스 내부 부품이지 직접 호출 가능한 MCP 도구가 아니다.
+3. 실제 도구는 `bct_capabilities(tool_name="scan_code_blocks")`처럼 조회한다.
+   `tool.inputSchema`는 **그 서버에 실제 등록된 계약**이다. 문서에 복사한 입력 예제가 아니다.
+   compact 모드에서 capability를 간접 호출해야 하면 결과의 `capability_routes`에 실제 `bct_dispatch` 경로를 표시한다.
+4. 필요한 것만 선택한다. A는 기존 `assessment.answers.resources`, B는 Execute Plan 본문에
+   선택한 기능·이유·기대 결과를 남긴다. 실행 결과와 Operation 영수증은 기존 보고·맥락에 연결한다.
+   검색 순위가 실행 결정은 아니며, 도구 목록 전체를 순서대로 실행하지 않는다.
+
+부품 도서관은 `curated-not-exhaustive`다. 등록된 도구 전체와 분류를 마친 내부 부품의 범위는 다르다.
+프로그램·PowerShell·BDC·브라우저 기능도 실제 제공되는 도구와 기존 Work 범위 안에서 선택할 수 있다.
+새로운 기능·브리지 제작이나 외부 효과의 승인 규칙은 검색으로 바뀌지 않는다.
+
+검색은 `limit`(1~20), `offset`, `next_offset`으로 나누어 읽는다.
+`component_id`는 한 부품, `tool_name`은 한 도구의 상세 조회다. 라이브러리가 없는 구버전이면
+사용 가능하다고 추측하지 말고 현재 `bct_capabilities` 결과를 기준으로 판단한다.
+
+## 설명서 갱신과 검사
+
+원본은 이 파일과 `docs/component-library.v1.json`이다. Chat 전용·Work 전용·Codex 전용 설명서를
+따로 편집하지 않는다. 배포용 `src/bct/data/component-library.json`은 두 원본과 관련 소스의
+지문을 포함하는 생성물이며 Python 패키지와 Core 릴리스에 함께 포함된다.
+
+흐름·질문·도구·부품 구현 변경 시 작업자는 설명서를 대조해 수정한 뒤
+`python scripts/build_component_library.py --write --reviewed`로 생성물을 갱신한다.
+`python scripts/build_component_library.py`와 `tests/test_component_library_discovery.py`가
+문서·소스·생성물 불일치를 검사한다. CI의 scope 단계가 Core 검사 생략 여부를 정하기 전에
+생성물 일치를 확인하므로 문서만 바꾼 경우에도 낡은 사본이 통과하지 않는다.
+기계 검사는 낡은 사본과 누락을 찾으며, 설명 문장의 의미가 옳다는 것까지 자동 증명하지는 않는다.
+
+실행 중인 서버는 자기 릴리스에 포함된 설명서를 돌려준다. 소스 설명서를 열었다고 LIVE가
+업데이트된 것은 아니다. source fingerprint·manual hash, `bct_status`의 release SHA,
+테스트·CI·설치·E2E 영수증은 각각 구분한다.

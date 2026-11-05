@@ -148,6 +148,8 @@ files = [
   "src/bct/runtime_server.py",
   "src/bct/supervisor.py",
   "src/bct/mcp_server.py",
+  "src/bct/component_library.py",
+  "src/bct/data/component-library.json",
   "src/bct/code_block_scan.py",
   "src/bct/chat_input_queue.py",
   "src/bct/chain_entry_policy.py",

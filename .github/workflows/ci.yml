@@ -24,6 +24,9 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Check shared manual and component library freshness
+        run: python scripts/build_component_library.py
+
       - name: Resolve exact validation scope
         id: plan
         shell: pwsh

@@ -140,6 +140,8 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Historical network", json.dumps(result["conversation_network"]))
         self.assertIn(A, json.dumps(result["conversation_network"]))
         self.assertIn("bct_set_direction", result["available_tools"])
+        self.assertEqual("bct_capabilities", result["resource_discovery"]["tool"])
+        self.assertIn("bct_capabilities", result["instructions_for_a"])
         self.assertIsNone(result["reality"]["work"])
         self.assertFalse(result["authorizes_send"])
         self.assertEqual("CALLER_PROVIDED_TEXT", result["source_evidence"])
