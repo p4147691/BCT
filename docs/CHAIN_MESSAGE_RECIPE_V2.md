@@ -36,13 +36,13 @@ BB 반복 또는 BA 반환으로 끝내는 전체 레시피다.
   ↓
 A / Manager
   1. set_direction  : 사용자 방향 + 전체 계획 기록
-  2. check_run      : 현재 현실 확인
+  2. reality_check  : 현재 현실 확인
   3. set_network    : 이번 A→B에 필요한 최소 망 준비
   4. check_ready    : Work·대상·영수증·UNKNOWN 최종 확인
   5. chain_message  : 감시 선등록 후 정확히 한 번 전송
   ───────────── 실제 대화 턴과 판단 주체 변경 ─────────────
 B / Worker
-  6. plan_run       : B의 구체적인 실행계획과 자원 선택
+  6. set_execute_plan : B의 구체적인 Execute Plan과 자원 선택
   7. run_task       : 실행
       ├─ BB: 진전이 있고 다음 안전한 실행이 분명하면 B가 계속
       └─ BA: 완료·위험·정체·판단 필요면 A에게 결과 반환
@@ -69,7 +69,7 @@ A는 사용자 요청을 다음 내용으로 정리한다.
 A는 방향만 말하고 B에게 모든 판단을 넘기지 않는다. 반대로 파일명·명령 한 줄
 단위까지 미리 고정해 B의 독립적 점검을 무력화하지도 않는다.
 
-### B: `plan_run` — 구체적인 실행계획
+### B: `set_execute_plan` — 구체적인 Execute Plan
 
 B는 전달받은 A 방향과 실제 자기 환경을 읽은 뒤 다음을 결정한다.
 
@@ -89,11 +89,11 @@ B는 A의 목표·범위·금지사항·위험 경계를 변경할 수 없다. �
 현재 공개 저장 부품은 `bct_set_direction`이며, 호환 이름은
 `bct_set_chain_direction`이다. 이 기록은 전송하지 않는다.
 
-### 2. `check_run`
+### 2. `reality_check`
 
 읽기 전용 현실 확인이다. `bct_status(scope="bct")`를 기본 입력으로 사용하고,
 필요한 경우 프로젝트·Work·영수증·Git·CI·LIVE·대화망 정보를 함께 읽는다.
-`bct_status`는 `check_run` 전체가 아니라 가장 기본적인 상태 부품이다.
+`bct_status`는 `reality_check` 전체가 아니라 가장 기본적인 상태 부품이다.
 
 ### 3. `set_network`
 
@@ -116,6 +116,21 @@ B는 A의 목표·범위·금지사항·위험 경계를 변경할 수 없다. �
 `bct_task_message`는 여기서 필요할 때만 붙이는 Worker용 기술 봉투다. A가 사용자의
 의도·목표·범위·완료 기준을 정리하는 1단계 `set_direction`과는 다른 부품이며,
 그 단계를 대체하지 않는다.
+
+## 실제 공개 명령 이름
+
+- `bct_set_direction` / `bct_get_direction`: A의 Direction을 저장·조회한다.
+- `bct_set_execute_plan` / `bct_get_execute_plan`: 정확히 전달된 A Direction에
+  연결된 B의 **Execute Plan**을 저장·조회한다. 저장만 하며 실행하지 않는다.
+- `bct_run_task`: 이미 준비된 orchestration session의 작업 하나를 실행한다.
+  아직 `bct_set_execute_plan`을 읽어 실행하는 함수가 아니므로
+  **`bct_run_execute_plan`은 현재 공개하지 않는다.**
+- `bct_set_project_plan`: 범용 프로젝트 계획 원장을 저장하는 별도 부품이다.
+  Chain의 B Execute Plan과 다르며 실행하지 않는다.
+
+`bct_set_execution_plan`, `bct_get_execution_plan`, `bct_plan_run`은 기존 대화와
+영수증을 깨지 않기 위한 호환 이름으로 남긴다. 새 설명과 새 사용에서는 각각
+`bct_set_execute_plan`, `bct_get_execute_plan`, `bct_set_project_plan`을 쓴다.
 
 ## BB와 BA
 

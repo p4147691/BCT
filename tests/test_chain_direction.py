@@ -96,14 +96,16 @@ class ChainDirectionLedgerTests(unittest.TestCase):
 
 
 class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
-    async def test_short_direction_and_execution_plan_names_are_public(self):
+    async def test_direction_and_execute_plan_names_are_public(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
             mcp = build_mcp(SimpleNamespace(operations=Operations(), store=store), compact_catalogue=True)
             names = {tool.name for tool in await mcp.list_tools()}
             self.assertTrue({
                 "bct_set_direction", "bct_get_direction",
+                "bct_set_execute_plan", "bct_get_execute_plan",
                 "bct_set_execution_plan", "bct_get_execution_plan",
+                "bct_set_project_plan",
             } <= names)
 
     async def test_exact_manager_return_can_become_an_a_direction(self):
@@ -234,7 +236,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "Progress 1/2. Inspect the current evidence, perform the bounded "
                 "change reversibly, verify E2E, and return exact artifacts to A."
             )
-            _, b_plan = await mcp.call_tool("bct_set_chain_execution_plan", {
+            _, b_plan = await mcp.call_tool("bct_set_execute_plan", {
                 "work_id": work.work_id, "direction_id": "direction-two",
                 "task_id": "task-two", "generation": 1,
                 "plan_id": "b-plan-two", "plan_text": b_plan_text,
@@ -244,7 +246,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 direction["chain_direction"]["direction_text"],
                 b_plan["chain_execution_plan"]["plan_text"],
             )
-            _, read_plan = await mcp.call_tool("bct_get_chain_execution_plan", {
+            _, read_plan = await mcp.call_tool("bct_get_execute_plan", {
                 "work_id": work.work_id, "plan_id": "b-plan-two",
             })
             self.assertEqual(b_plan_text, read_plan["chain_execution_plan"]["plan_text"])

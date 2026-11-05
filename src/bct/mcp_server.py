@@ -37,6 +37,7 @@ _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "queue_message", "bct_conversation_network_get", "bct_network_get", "bct_check_network", "scan_code_blocks", "organize_code_blocks",
     "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
     "bct_set_chain_execution_plan", "bct_get_chain_execution_plan",
+    "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
     "bct_work_create", "bct_operation_get",
 )
@@ -601,7 +602,7 @@ def build_mcp(
         }
         return result
 
-    @server.tool(description="Persist an AI-authored execution plan as a versioned, Work-authorized project-context ledger. No AI planning or execution is performed.", structured_output=True)
+    @server.tool(description="Compatibility name for saving an AI-authored project plan as a versioned, Work-authorized project-context ledger. This is not B's Chain Execute Plan and does not plan or execute work. Prefer bct_set_project_plan.", structured_output=True)
     async def bct_run_plan(
         work_id: str, operation_id: str, plan_id: str, project: str,
         objective: str, acceptance: str, steps: list[dict[str, Any]],
@@ -1598,7 +1599,57 @@ def build_mcp(
             acknowledge=acknowledge, limit=limit,
         )
 
-    # Public names follow the agreed vocabulary.  The older reversed names
+    # Public names follow the agreed vocabulary.  These three canonical
+    # wrappers intentionally have distinct Python function names.  FastMCP
+    # otherwise collapses several aliases of the same handler and leaves only
+    # the last compatibility name visible in tools/list.
+    @server.tool(
+        name="bct_set_execute_plan",
+        description=(
+            "Save B's Execute Plan for an exact delivered A Direction. This stores "
+            "B's files, tools, checks, and safe next steps; it does not execute them."
+        ),
+        structured_output=True,
+    )
+    async def bct_set_execute_plan(
+        work_id: str, direction_id: str, task_id: str, plan_text: str,
+        generation: int = 1, plan_id: str = "",
+    ) -> dict[str, Any]:
+        return await bct_set_chain_execution_plan(
+            work_id=work_id, direction_id=direction_id, task_id=task_id,
+            plan_text=plan_text, generation=generation, plan_id=plan_id,
+        )
+
+    @server.tool(
+        name="bct_get_execute_plan",
+        description="Read one exact B Execute Plan. It does not send, plan, decide, or execute.",
+        structured_output=True,
+    )
+    async def bct_get_execute_plan(work_id: str, plan_id: str) -> dict[str, Any]:
+        return await bct_get_chain_execution_plan(work_id=work_id, plan_id=plan_id)
+
+    @server.tool(
+        name="bct_set_project_plan",
+        description=(
+            "Save a generic project-plan ledger. This is separate from B's Chain "
+            "Execute Plan and does not execute work."
+        ),
+        structured_output=True,
+    )
+    async def bct_set_project_plan(
+        work_id: str, operation_id: str, plan_id: str, project: str,
+        objective: str, acceptance: str, steps: list[dict[str, Any]],
+        author: str, expected_revision: int = 0, discretion: str = "normal",
+        assumptions: list[str] | None = None, approval_ref: str | None = None,
+    ) -> dict[str, Any]:
+        return await bct_run_plan(
+            work_id=work_id, operation_id=operation_id, plan_id=plan_id,
+            project=project, objective=objective, acceptance=acceptance,
+            steps=steps, author=author, expected_revision=expected_revision,
+            discretion=discretion, assumptions=assumptions, approval_ref=approval_ref,
+        )
+
+    # The older reversed names
     # remain visible only as compatibility aliases so existing Chats, receipts,
     # and saved prompts are not broken during the vocabulary transition.
     _canonical_command_aliases = (
@@ -1607,9 +1658,9 @@ def build_mcp(
         ("bct_get_direction", bct_get_chain_direction,
          "Read one exact A direction and overall plan. Canonical short name; bct_get_chain_direction remains available."),
         ("bct_set_execution_plan", bct_set_chain_execution_plan,
-         "Save B's concrete execution plan for a delivered A direction. Canonical short name; bct_set_chain_execution_plan remains available."),
+         "Compatibility name for bct_set_execute_plan. Save B's Execute Plan; bct_set_chain_execution_plan remains available for older callers."),
         ("bct_get_execution_plan", bct_get_chain_execution_plan,
-         "Read one exact B execution plan. Canonical short name; bct_get_chain_execution_plan remains available."),
+         "Compatibility name for bct_get_execute_plan. Read one exact B Execute Plan; bct_get_chain_execution_plan remains available for older callers."),
         ("bct_network", bct_network_get,
          "Show one registered conversation network. Canonical name; bct_network_get remains a compatibility alias."),
         ("bct_check_run", bct_check_network,
@@ -1617,7 +1668,7 @@ def build_mcp(
         ("bct_run_check", bct_check_network,
          "Legacy compatibility alias for bct_check_network."),
         ("bct_plan_run", bct_run_plan,
-         "Save one execution plan. Canonical name; bct_run_plan remains a compatibility alias."),
+         "Compatibility name for bct_set_project_plan. It saves a generic project-plan ledger; it does not run a plan."),
         ("bct_set_network", bct_network_set,
          "Change registered network metadata. Canonical name; bct_network_set remains a compatibility alias."),
         ("bct_run_task", bct_task_run,
