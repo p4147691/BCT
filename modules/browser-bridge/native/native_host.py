@@ -12,10 +12,15 @@ from urllib.parse import urlparse
 MAX_FRAME = 65536
 APPROVED_ORIGIN = os.environ.get("BCT_BRIDGE_EXTENSION_ORIGIN", "")
 MCP_URL = os.environ.get("BCT_BRIDGE_MCP_URL", "")
-_url = urlparse(MCP_URL)
-if (_url.scheme != "http" or _url.hostname not in ("127.0.0.1", "localhost")
-        or _url.path != "/mcp" or _url.port == 18790 or _url.username or _url.password):
-    raise RuntimeError("HOST_MCP_URL_DENIED")
+def require_approved_mcp_url():
+    # Required only for the legacy BCT-read operation. The independent
+    # node mailbox never opens an HTTP/MCP connection.
+    url = urlparse(MCP_URL)
+    if (url.scheme != "http" or url.hostname not in ("127.0.0.1", "localhost")
+            or url.path != "/mcp" or url.port == 18790
+            or url.username or url.password or url.query or url.fragment):
+        raise ValueError("HOST_MCP_URL_DENIED")
+    return MCP_URL
 TOKEN_PATH = Path(os.environ.get("BCT_BRIDGE_TOKEN_PATH", ""))
 WORK_ID = os.environ.get("BCT_BRIDGE_WORK_ID", "")
 
@@ -69,6 +74,7 @@ def validate(message):
 
 async def dispatch(message):
     request_id, arguments = validate(message)
+    require_approved_mcp_url()
     if not WORK_ID or not TOKEN_PATH.is_file():
         raise ValueError("HOST_AUTH_NOT_CONFIGURED")
     token = TOKEN_PATH.read_text(encoding="utf-8").strip()
