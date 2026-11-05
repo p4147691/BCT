@@ -1,5 +1,6 @@
 "use strict";
-// No content scripts or external web-page command channel.
+// The exact enabled ChatGPT conversation may request registered BCT tools.
+// Page content never receives the Native Messaging port or bearer credential.
 const HOST = "com.bct.browser_bridge.prototype";
 let port = null;
 const pending = new Map();
