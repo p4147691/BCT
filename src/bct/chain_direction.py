@@ -186,21 +186,37 @@ def resolve_direction_network(*, snapshot: dict, assessment: dict, targets: list
     return origin, resolved
 
 
-def compose_target_direction(*, direction: dict, target: dict, task_id: str) -> tuple[str, str]:
-    """Pure composition used by preflight and by the exact-delivery ledger."""
+def target_direction_id(direction: dict, target: dict) -> str:
+    suffix = hashlib.sha256((direction["direction_id"] + ":" + target["conversation_key"]).encode()).hexdigest()[:24]
+    return "direction-" + suffix
+
+
+def compose_target_direction(*, direction: dict, target: dict, task_id: str,
+                             recorded_direction: dict | None = None) -> tuple[str, str]:
+    """Compose a new instruction, or preserve its exact recorded predecessor."""
     assessment = json.loads(direction.get("assessment_json") or "{}")
     if target not in assessment.get("targets", []):
         raise ValueError("DIRECTION_TARGET_NOT_DECLARED")
-    suffix = hashlib.sha256((direction["direction_id"] + ":" + target["conversation_key"]).encode()).hexdigest()[:24]
-    child_id = "direction-" + suffix
+    child_id = target_direction_id(direction, target)
+    # A new manual must never rewrite an already recorded instruction/digest.
+    if recorded_direction is not None:
+        expected = {"direction_id": child_id, "work_id": direction["work_id"],
+                    "parent_direction_id": direction["direction_id"],
+                    "target_conversation_key": target["conversation_key"], "decision": "NEW_TASK"}
+        expected.update({key: direction[key] for key in (
+            "source_kind", "source_task_id", "source_generation", "source_result_sha256")})
+        if any(recorded_direction.get(key) != value for key, value in expected.items()):
+            raise ValueError("DIRECTION_TARGET_RECORD_MISMATCH")
+        return child_id, recorded_direction["direction_text"]
+    from bct.component_library import get_manual_guidance
+    guidance = get_manual_guidance()
+    if guidance["status"] != "AVAILABLE":
+        raise ValueError("MANUAL_GUIDANCE_UNAVAILABLE")
     text = (direction["direction_text"] + "\n\n이번 대상에게 맡기는 일:\n" + target["instruction"]
-            + "\n\nB 실행 규칙: 전달받은 방향 안에서 현재 환경을 다시 확인하고 구체적인 계획과 부품을 스스로 선택한다. "
-            + "bct_set_execute_plan으로 계획을 기록한다. "
-            + "필요한 부품은 bct_capabilities(query=...)로 찾고 tool_name으로 현재 사용법을 확인한다. "
-            + "include_manual=true로 공통 설명서를 읽을 수 있다. 선택 이유는 계획에, 수행 결과와 영수증은 보고에 남긴다. "
+            + f"\n\n이번 대상의 역할: {target['role']}. 이 작업의 실행계획과 결과는 다음 식별값에 연결한다: "
             + f"work_id={direction['work_id']}, direction_id={child_id}, task_id={task_id}, generation=1. "
-            + "허용된 범위에서 실행하고 진전이 있으면 SELF, 완료·위험·정체·판단 필요 시 MANAGER로 반환한다. "
-            + "고정 반복 횟수만으로 반환하지 않는다. 실제 수행과 미확인을 구분하여 보고한다.")
+            + f"\n\n공통 설명서의 노드 안내 (manual SHA-256: {guidance['manual_sha256']}):\n"
+            + guidance["text"])
     from bct.chain_message_preflight import prepare_chain_instruction
     # Include the actual marker suffix in the size check before any effects.
     prepare_chain_instruction(text, output_contract="explicit-next-task-v1")
@@ -307,7 +323,8 @@ class ChainDirectionLedger:
 
     def target_direction(self, *, direction: dict, target: dict, task_id: str) -> dict:
         """Reuse the existing exact 1:1 ledger for each A-approved recipient."""
-        child_id, text = compose_target_direction(direction=direction, target=target, task_id=task_id)
+        child_id, text = compose_target_direction(direction=direction, target=target, task_id=task_id,
+            recorded_direction=self.get(direction_id=target_direction_id(direction, target)))
         return self.save(
             direction_id=child_id, work_id=direction["work_id"],
             source_kind=direction["source_kind"], source_task_id=direction["source_task_id"],

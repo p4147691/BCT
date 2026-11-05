@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .chat_input_queue import ChatInputQueue
 from .chain_entry_policy import public_entry_policy
-from .component_library import DISCOVERY_GUIDE, discover
+from .component_library import DISCOVERY_GUIDE, discover, get_manual_guidance
 from .chain_message_preflight import (
     EXPLICIT_NEXT_TASK_SUFFIX, check_chain_work, prepare_chain_instruction,
 )
@@ -162,7 +162,10 @@ def build_mcp(
             "do not delegate that questionnaire to the user. Reuse an appropriate bounded Work "
             "or create one before effects, then use the matching bct_<capability> tools. "
             "Use bct_capabilities(query=...) to find existing parts, tool_name for the current input schema, "
-            "and include_manual=true for the shared source manual. Discovery never executes tools. "
+            "and include_manual=true for the shared source manual. Before using unfamiliar commands, "
+            "read their current tool_name contract instead of asking the user to explain BCT. "
+            "Chain prepare and capabilities include manual_guidance; "
+            "tool_name=bct_chain_message also returns the full shared manual. Discovery never executes tools. "
             "Reuse operation_id only for the exact same request."
         ),
         stateless_http=True,
@@ -183,7 +186,9 @@ def build_mcp(
     @server.tool(description=(
         "List this runtime's actual tools and capabilities. Optional query searches reusable parts and tools; "
         "tool_name returns the exact current input schema; component_id reads one part; include_manual "
-        "returns the shared Chain Message manual. Read-only, no Work required. limit/offset paginate search results."
+        "returns the shared Chain Message manual. manual_guidance is always included; "
+        "tool_name=bct_chain_message automatically includes the full manual. "
+        "Read-only, no Work required. limit/offset paginate search results."
     ), structured_output=True)
     async def bct_capabilities(query: str = "", tool_name: str = "", component_id: str = "",
                                include_manual: bool = False, limit: int = 8, offset: int = 0) -> dict[str, Any]:
@@ -681,6 +686,7 @@ def build_mcp(
         from bct.chain_direction import (
             ChainDirectionLedger, compose_target_direction, resolve_direction_network,
             resolve_direction_target, validate_direction_assessment,
+            target_direction_id,
         )
         if status_provider is None:
             return {"status":"UNAVAILABLE","reason":"STATUS_PROVIDER_NOT_CONFIGURED"}
@@ -696,9 +702,12 @@ def build_mcp(
             return {"status":"INVALID_REQUEST","reason":"DIRECTION_TARGET_NOT_DECLARED"}
         if len(task_id) > 70 or len(operation_id) > 65:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
+        ledger = ChainDirectionLedger(bct.store)
         try:
             for i, target in targets:
-                compose_target_direction(direction=direction, target=target, task_id=f"{task_id}-{i}")
+                recorded = await asyncio.to_thread(ledger.get, direction_id=target_direction_id(direction, target))
+                compose_target_direction(direction=direction, target=target, task_id=f"{task_id}-{i}",
+                                         recorded_direction=recorded)
         except ValueError as exc:
             return {"status":"INVALID_REQUEST","reason":str(exc)}
         updates = assessment.get("network_updates", [])
@@ -746,7 +755,6 @@ def build_mcp(
                                for _, target, route in resolved],
                     "network_updates":updates, "effects":"NONE_READ_ONLY","authorizes_send":False}
         results = []
-        ledger = ChainDirectionLedger(bct.store)
         for i, target, _ in resolved:
             child_task, child_op = f"{task_id}-{i}", f"{operation_id}-{i}"
             try:
@@ -795,6 +803,8 @@ def build_mcp(
         description=(
             "DEFAULT ENTRY for ordinary assigned work: call with instruction only or action=prepare "
             "to read reality and conversation networks and enter the question-guided Set Direction stage. "
+            "Read its automatic manual_guidance; bct_capabilities(tool_name='bct_chain_message') "
+            "returns the full shared manual and current schema without local file access. "
             "After A saves an assessment, action=start with chain_direction_id prepares its declared "
             "network updates and sends each distinct target instruction through the existing exact path. "
             "Work/task/operation identifiers are required for effects, not the initial read. Use this route "
@@ -1684,6 +1694,7 @@ def build_mcp(
                     available_tools=[tool.name for tool in await server.list_tools()],
                 )
                 review["resource_discovery"] = DISCOVERY_GUIDE
+                review["manual_guidance"] = get_manual_guidance()
             except (ValueError, PreconditionError) as exc:
                 return {"status":"INVALID_REQUEST","reason":str(exc)}
             return {**review, "work_id": work_id, "direction_id": direction_id,

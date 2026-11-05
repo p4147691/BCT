@@ -32,10 +32,10 @@
       "kind": "module",
       "maturity": "isolated",
       "implementation": [
-        {"path": "src/bct/component_library.py", "symbol": "discover"},
+        {"path": "src/bct/component_library.py", "symbol": "discover / get_manual_guidance"},
         {"path": "src/bct/mcp_server.py", "symbol": "bct_capabilities"}
       ],
-      "contract": "Read-only reusable-part search, exact runtime tool metadata and one packaged Chain Message manual shared by Chat, Work and Codex. Selection remains an A/B decision. Generated bundle is checked against canonical docs and affected sources.",
+      "contract": "Read-only reusable-part search, exact runtime tool metadata and one packaged Chain Message manual shared by Chat, Work and Codex. Source-backed quick guidance is included in discovery, Chain prepare and new per-target instructions; looking up bct_chain_message returns the full manual. Existing recorded instructions remain immutable. Selection remains an A/B decision. Generated bundle is checked against canonical docs and affected sources.",
       "effects": [],
       "safety": ["no-tool-execution", "no-permission-grant", "runtime-schema-authority", "internal-parts-not-callable-tools", "source-not-live-proof"],
       "used_by": ["bct.manager_direction", "bct.worker_execution_plan", "bct.chain_message"]

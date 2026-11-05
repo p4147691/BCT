@@ -14,6 +14,7 @@ from bct.chain_direction import (
     validate_direction_assessment,
 )
 from bct.chain_execution_plan import ChainExecutionPlanLedger
+from bct.component_library import get_manual_guidance
 from bct.conversation_network import upsert_project, role_tags_sha256
 from bct.core.models import Work
 from bct.core.store import Store
@@ -141,6 +142,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(A, json.dumps(result["conversation_network"]))
         self.assertIn("bct_set_direction", result["available_tools"])
         self.assertEqual("bct_capabilities", result["resource_discovery"]["tool"])
+        self.assertEqual(get_manual_guidance(), result["manual_guidance"])
         self.assertIn("bct_capabilities", result["instructions_for_a"])
         self.assertIsNone(result["reality"]["work"])
         self.assertFalse(result["authorizes_send"])
@@ -192,6 +194,8 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(target["conversation_key"], send["arguments"]["conversation_key"])
             self.assertEqual(arm["arguments"]["planned_send_text"], send["arguments"]["text"])
             self.assertIn(target["instruction"], send["arguments"]["text"])
+            self.assertIn(get_manual_guidance()["text"], send["arguments"]["text"])
+            self.assertIn(get_manual_guidance()["manual_sha256"], send["arguments"]["text"])
             self.assertNotIn(assessment()["targets"][1 - index]["instruction"], send["arguments"]["text"])
             child = ChainDirectionLedger(self.store).get(direction_id=result["targets"][index]["direction_id"])
             self.assertEqual("direction-review", child["parent_direction_id"])
@@ -215,6 +219,55 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("STARTED", result["status"], result)
         self.assertEqual(25, self.sends()[0]["arguments"]["tab_id"])
         self.assertEqual(26, self.sends()[0]["arguments"]["window_id"])
+
+    async def test_manual_change_keeps_recorded_instruction_and_no_resend(self):
+        await self.save()
+        self.ops.unknown_target = B
+        first = await self.start()
+        sent_texts = [s["arguments"]["text"] for s in self.sends()]
+        with patch("bct.component_library.get_manual_guidance", side_effect=AssertionError("Must reuse recorded text")):
+            result = await self.start(operation_id="another-prefix")
+        self.assertEqual(["RECEIPT_REVIEW_REQUIRED", "ALREADY_STARTED"], [t["status"] for t in result["targets"]])
+        self.assertEqual(sent_texts, [s["arguments"]["text"] for s in self.sends()])
+        self.assertEqual("PARTIAL", first["status"])
+        self.assertEqual("review-task-1", result["targets"][0]["task_id"])
+        self.assertEqual("review-operation-1", result["targets"][0]["operation_id"])
+
+    async def test_legacy_recorded_child_without_manual_survives_upgrade(self):
+        await self.save()
+        ledger = ChainDirectionLedger(self.store)
+        parent = ledger.get(direction_id="direction-review")
+        from bct.chain_direction import target_direction_id
+        target = assessment()["targets"][0]
+        child_id = target_direction_id(parent, target)
+        ledger.save(direction_id=child_id, work_id=self.work.work_id, source_kind="USER",
+                    decision="NEW_TASK", direction_text="Old exact instruction, no new manual.",
+                    parent_direction_id=parent["direction_id"], target_conversation_key=B)
+        with patch("bct.component_library.get_manual_guidance", side_effect=AssertionError("Old text must be immutable")):
+            result = await self.start(target_conversation_key=B)
+        self.assertEqual("STARTED", result["status"], result)
+        self.assertTrue(self.sends()[0]["arguments"]["text"].startswith("Old exact instruction, no new manual."))
+        self.assertNotIn("공통 설명서의 노드 안내", self.sends()[0]["arguments"]["text"])
+
+    async def test_missing_manual_blocks_new_instruction_before_effects(self):
+        await self.save()
+        with patch("bct.component_library.get_manual_guidance", return_value={"status": "UNAVAILABLE"}):
+            result = await self.start()
+        self.assertEqual("MANUAL_GUIDANCE_UNAVAILABLE", result["reason"])
+        self.assertEqual([], self.ops.calls)
+
+    async def test_recorded_child_with_wrong_parent_is_not_reused(self):
+        await self.save()
+        ledger = ChainDirectionLedger(self.store)
+        parent = ledger.get(direction_id="direction-review")
+        from bct.chain_direction import target_direction_id
+        ledger.save(direction_id=target_direction_id(parent, assessment()["targets"][0]),
+                    work_id=self.work.work_id, source_kind="USER", decision="NEW_TASK",
+                    direction_text="Wrong parent instruction", parent_direction_id="different-parent",
+                    target_conversation_key=B)
+        result = await self.start()
+        self.assertEqual("DIRECTION_TARGET_RECORD_MISMATCH", result["reason"])
+        self.assertEqual([], self.ops.calls)
 
     async def test_roles_are_rechecked_between_targets(self):
         await self.save()

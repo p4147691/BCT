@@ -55,6 +55,26 @@ def _terms(query: str) -> set[str]:
     return words
 
 
+def get_manual_guidance(bundle: dict | None = None) -> dict:
+    """Read the bounded onboarding section from the same shipped manual."""
+    bundle = load_library() if bundle is None else bundle
+    manual = bundle.get("manual", {})
+    heading = "## 바로 시작하는 노드 안내\n"
+    section = str(manual.get("text", "")).partition(heading)[2].split("\n## ", 1)[0].strip()
+    result = {
+        "status": "AVAILABLE" if section and len(section) <= 3000 else "UNAVAILABLE",
+        "read_only": True, "authorizes_execution": False,
+        "path": manual.get("path"), "manual_sha256": manual.get("sha256"),
+        "source_fingerprint": bundle.get("source_fingerprint"),
+        "read_more": {"tool": "bct_capabilities", "arguments": {"include_manual": True}},
+    }
+    if result["status"] == "AVAILABLE":
+        result["text"] = section
+    else:
+        result["reason"] = "MANUAL_GUIDANCE_UNAVAILABLE"
+    return result
+
+
 def _matches(value: Any, terms: set[str]) -> bool:
     text = json.dumps(value, ensure_ascii=False).casefold()
     return not terms or any(term in text for term in terms)
@@ -85,6 +105,7 @@ def discover(*, tools: list[dict], capabilities: tuple[str, ...], usage: dict[st
     result: dict[str, Any] = {
         "status": "OK", "read_only": True, "authorizes_execution": False,
         "discovery": DISCOVERY_GUIDE, "library_status": bundle.get("status", "AVAILABLE"),
+        "manual_guidance": get_manual_guidance(bundle),
         "coverage": bundle.get("catalogue", {}).get("coverage", "UNAVAILABLE"),
         "source_fingerprint": bundle.get("source_fingerprint"),
         "components": matches[offset:offset + limit] if query or component_id else [],
@@ -114,7 +135,7 @@ def discover(*, tools: list[dict], capabilities: tuple[str, ...], usage: dict[st
                            "usage": usage.get(capability, ""), "requires_work_authorization": True})
         result["capability_routes"] = routes[offset:offset + limit]
         result["capability_total"] = len(routes)
-    if include_manual:
+    if include_manual or tool_name == "bct_chain_message":
         result["manual"] = bundle.get("manual", {"status": "UNAVAILABLE"})
         result["manual_scope"] = "Packaged source description; check bct_status and receipts for LIVE acceptance."
     totals = [result.get(key, 0) for key in ("component_total", "tool_total", "capability_total")]
