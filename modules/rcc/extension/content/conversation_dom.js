@@ -176,7 +176,7 @@ function messageUnitText(node, role) {
     clone.querySelectorAll('[data-search-result-target] + span[aria-hidden="true"]').forEach((item) => {
       if (item.textContent === '…') item.remove();
     });
-    return RelayCore.normalizeMessageText(clone.textContent || '');
+    return RelayCore.normalizeMessageText(logicalUserCloneText(clone));
   }
   return RelayCore.normalizeMessageText(content.innerText || content.textContent || '');
 }
@@ -393,7 +393,14 @@ function submittedPromptMatchesTurn(record, turn) {
   const inlineCodeRendered = RelayCore.normalizeMessageText(
     submitted.replace(/`([^`\r\n]+)`/g, '$1')
   );
-  return rendered === inlineCodeRendered;
+  if (rendered === inlineCodeRendered) return true;
+  // Markdown rendering can replace blank-line/block boundaries with nested
+  // DOM blocks. Compare the logical text only after preserving the exact and
+  // inline-code paths above. The before-turn fence and unique-match rule still
+  // prevent a different or duplicated user turn from acquiring provenance.
+  const canonical = (value) => RelayCore.normalizeMessageText(value).replace(/\s+/g, ' ');
+  return canonical(rendered) === canonical(submitted)
+    || canonical(rendered) === canonical(inlineCodeRendered);
 }
 
 
@@ -444,6 +451,45 @@ function resolveRoutedTurn(record) {
   if (matches.length > 1) return { ok: false, terminal: true, reason: 'ROUTE_TURN_AMBIGUOUS' };
   if (matches.length !== 1) return { ok: false, terminal: false, reason: 'ROUTE_TURN_NOT_RESOLVED' };
   return { ok: true, turn: matches[0], turnKey: turnIdentity(matches[0]) };
+}
+
+
+function logicalUserCloneText(root) {
+  // A submitted multi-line Markdown prompt can be replaced by nested
+  // paragraph/list DOM before RCC observes the user turn. textContent glues
+  // those blocks together and omits list markers, losing exact operation
+  // provenance. Reconstruct only rendered layout semantics; uniqueness and
+  // before-turn fences remain mandatory.
+  const blockTags = new Set([
+    'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIELDSET',
+    'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4',
+    'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE',
+    'SECTION', 'TABLE', 'UL'
+  ]);
+  const childrenOf = (node) => Array.from(node?.childNodes || node?.children || []);
+  const tagOf = (node) => String(node?.tagName || '').toUpperCase();
+  const walk = (node) => {
+    if (typeof node === 'string') return node;
+    if (Number(node?.nodeType) === 3) return String(node.nodeValue || '');
+    const tag = tagOf(node);
+    if (tag === 'BR') return '\n';
+    let value = '';
+    let previousBlock = false;
+    childrenOf(node).forEach((child, index) => {
+      const childTag = tagOf(child);
+      const childBlock = blockTags.has(childTag);
+      let part = walk(child);
+      if (childTag === 'LI') {
+        if (tag === 'UL') part = '- ' + part;
+        else if (tag === 'OL') part = String(index + 1) + '. ' + part;
+      }
+      if (value && part && (previousBlock || childBlock)) value += '\n';
+      value += part;
+      previousBlock = childBlock;
+    });
+    return value;
+  };
+  return walk(root);
 }
 
 
