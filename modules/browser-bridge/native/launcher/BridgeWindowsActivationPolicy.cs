@@ -167,14 +167,35 @@ internal sealed class BridgeWindowsActivationPolicy : IDisposable {
   // Explicit-fixture-only bridge from PR3-h's disposable file to the exact
   // Windows policy.  It never creates paths and refuses reparse/foreign paths.
   internal bool SealExistingFixtureBoundary(string rootPath, string credentialPath) {
-    if (!StrictExistingRoot(rootPath) || !StrictExistingFile(credentialPath) ||
-        !StrictChild(rootPath, credentialPath)) return false;
-    if (!SetFileSecurityW(rootPath,
-          DaclSecurityInformation | ProtectedDaclSecurityInformation, exact.Value) ||
-        !SetFileSecurityW(credentialPath,
-          DaclSecurityInformation | ProtectedDaclSecurityInformation, exact.Value))
+    if (!StrictExistingRoot(rootPath)) {
+      Console.Error.WriteLine("SEAL_DENIED:root");
       return false;
-    return VerifyCredentialBoundary(rootPath, credentialPath);
+    }
+    if (!StrictExistingFile(credentialPath)) {
+      Console.Error.WriteLine("SEAL_DENIED:file");
+      return false;
+    }
+    if (!StrictChild(rootPath, credentialPath)) {
+      Console.Error.WriteLine("SEAL_DENIED:child");
+      return false;
+    }
+    if (!SetFileSecurityW(rootPath,
+          DaclSecurityInformation | ProtectedDaclSecurityInformation, exact.Value)) {
+      Console.Error.WriteLine("SEAL_DENIED:root-dacl:" +
+        Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
+      return false;
+    }
+    if (!SetFileSecurityW(credentialPath,
+          DaclSecurityInformation | ProtectedDaclSecurityInformation, exact.Value)) {
+      Console.Error.WriteLine("SEAL_DENIED:file-dacl:" +
+        Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
+      return false;
+    }
+    if (!VerifyCredentialBoundary(rootPath, credentialPath)) {
+      Console.Error.WriteLine("SEAL_DENIED:verify");
+      return false;
+    }
+    return true;
   }
 
   internal bool VerifyCredentialBoundary(string rootPath, string credentialPath) =>
