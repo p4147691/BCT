@@ -197,7 +197,7 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
     baseline_version = installed_version or ("1.0.59" if rollback["fileCount"] == 57 else "1.0.60")
     if _identity(live) != (EXTENSION_ID, baseline_version):
         raise PreconditionError("RCC_INSTALL_LIVE_IDENTITY_MISMATCH")
-    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63"}:
+    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64"}:
         raise PreconditionError("RCC_INSTALL_CANDIDATE_VERSION_UNSUPPORTED")
     if _identity(candidate) != (EXTENSION_ID, candidate_version):
         raise PreconditionError("RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH")

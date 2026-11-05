@@ -182,6 +182,26 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.RENDERED_MARKDOWN_IDENTITY_MANIFEST_SHA256,
         )
 
+    def test_protected_plan_accepts_rendered_markdown_candidate_64(self):
+        identities = {
+            self.live: (self.extension_id, "1.0.63"),
+            self.source: (self.extension_id, "1.0.64"),
+            self.reference: (self.extension_id, "1.0.63"),
+        }
+        with patch.object(ri, "_identity", side_effect=lambda path: identities[path]), \
+                patch.object(ri, "_exact"):
+            plan = ri._plan(
+                "N73-TEST-RC42",
+                live=self.live,
+                candidate=self.source,
+                backup_source=self.reference,
+                manifest_file=self.policy_manifest,
+                journal=self.journal / "N73-TEST-RC42.json",
+                candidate_version="1.0.64",
+                installed_version="1.0.63",
+            )
+        self.assertEqual(plan["candidate_files"], 58)
+
     def test_01_exact_read_only_preflight_57_58_identity(self):
         plan=self.inspect()
         self.assertEqual((plan["installed_files"],plan["candidate_files"]),(57,58))
