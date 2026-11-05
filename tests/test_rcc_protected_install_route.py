@@ -113,6 +113,29 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.SEMANTIC_TURN_MANIFEST_SHA256,
         )
 
+    def test_submit_activation_fence_route_is_exact_63_and_separate(self):
+        route = DeployFeature._rcc_route_config(
+            "rcc-inspect-submit-activation-fence"
+        )
+        self.assertEqual(route["candidate_version"], "1.0.63")
+        self.assertEqual(route["installed_version"], "1.0.63")
+        self.assertEqual(
+            route["manifest_file"], ri.SUBMIT_ACTIVATION_FENCE_MANIFEST
+        )
+        self.assertEqual(
+            route["candidate"], ri.SUBMIT_ACTIVATION_FENCE_STAGE
+        )
+        self.assertEqual(
+            route["backup_source"], ri.SUBMIT_ACTIVATION_FENCE_ROLLBACK
+        )
+        self.assertEqual(
+            route["journal_root"], ri.SUBMIT_ACTIVATION_FENCE_JOURNAL
+        )
+        self.assertEqual(
+            route["pinned_manifest_sha256"],
+            ri.SUBMIT_ACTIVATION_FENCE_MANIFEST_SHA256,
+        )
+
     def test_01_exact_read_only_preflight_57_58_identity(self):
         plan=self.inspect()
         self.assertEqual((plan["installed_files"],plan["candidate_files"]),(57,58))

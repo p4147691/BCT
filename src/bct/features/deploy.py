@@ -817,11 +817,15 @@ class DeployFeature:
                           "rcc-rollback-source-proof-v2",
                           "rcc-inspect-semantic-turn", "rcc-install-semantic-turn",
                           "rcc-rollback-semantic-turn",
+                          "rcc-inspect-submit-activation-fence",
+                          "rcc-install-submit-activation-fence",
+                          "rcc-rollback-submit-activation-fence",
                           "rcc-verify-installed", "rcc-verify-installed-pr388",
                           "rcc-verify-installed-rename-actions",
                           "rcc-verify-installed-source-proof",
                           "rcc-verify-installed-source-proof-v2",
-                          "rcc-verify-installed-semantic-turn"}:
+                          "rcc-verify-installed-semantic-turn",
+                          "rcc-verify-installed-submit-activation-fence"}:
             return self._prepare_rcc(work, operation, arguments)
         if operation not in {"apply", "reconcile", "reconcile-rollback"}:
             raise PreconditionError("DEPLOYMENT_OPERATION_INVALID")
@@ -897,11 +901,15 @@ class DeployFeature:
             "rcc-rollback-source-proof-v2",
             "rcc-inspect-semantic-turn", "rcc-install-semantic-turn",
             "rcc-rollback-semantic-turn",
+            "rcc-inspect-submit-activation-fence",
+            "rcc-install-submit-activation-fence",
+            "rcc-rollback-submit-activation-fence",
             "rcc-verify-installed", "rcc-verify-installed-pr388",
             "rcc-verify-installed-rename-actions",
             "rcc-verify-installed-source-proof",
             "rcc-verify-installed-source-proof-v2",
             "rcc-verify-installed-semantic-turn",
+            "rcc-verify-installed-submit-activation-fence",
         }:
             return self._execute_rcc(request)
         if request.arguments.get("operation") == "reconcile":
@@ -931,21 +939,23 @@ class DeployFeature:
         source_proof = operation.endswith("-source-proof")
         source_proof_v2 = operation.endswith("-source-proof-v2")
         semantic_turn = operation.endswith("-semantic-turn")
+        submit_activation_fence = operation.endswith("-submit-activation-fence")
         return {
             "pinned_manifest_sha256": (
-                rcc.SEMANTIC_TURN_MANIFEST_SHA256 if semantic_turn
+                rcc.SUBMIT_ACTIVATION_FENCE_MANIFEST_SHA256 if submit_activation_fence
+                else rcc.SEMANTIC_TURN_MANIFEST_SHA256 if semantic_turn
                 else rcc.DELAYED_SOURCE_PROOF_V2_MANIFEST_SHA256 if source_proof_v2
                 else rcc.DELAYED_SOURCE_PROOF_MANIFEST_SHA256 if source_proof
                 else rcc.RENAME_ACTIONS_MANIFEST_SHA256 if rename_actions
                 else rcc.PR388_MANIFEST_SHA256 if pr388 else rcc.PINNED_MANIFEST_SHA256
             ),
             "live": rcc.EXACT_INSTALLED,
-            "candidate": rcc.SEMANTIC_TURN_STAGE if semantic_turn else rcc.DELAYED_SOURCE_PROOF_V2_STAGE if source_proof_v2 else rcc.DELAYED_SOURCE_PROOF_STAGE if source_proof else rcc.RENAME_ACTIONS_STAGE if rename_actions else rcc.PR388_STAGE if pr388 else rcc.EXACT_STAGE,
-            "backup_source": rcc.SEMANTIC_TURN_ROLLBACK if semantic_turn else rcc.DELAYED_SOURCE_PROOF_V2_ROLLBACK if source_proof_v2 else rcc.DELAYED_SOURCE_PROOF_ROLLBACK if source_proof else rcc.RENAME_ACTIONS_ROLLBACK if rename_actions else rcc.PR388_ROLLBACK if pr388 else rcc.EXACT_ROLLBACK,
-            "manifest_file": rcc.SEMANTIC_TURN_MANIFEST if semantic_turn else rcc.DELAYED_SOURCE_PROOF_V2_MANIFEST if source_proof_v2 else rcc.DELAYED_SOURCE_PROOF_MANIFEST if source_proof else rcc.RENAME_ACTIONS_MANIFEST if rename_actions else rcc.PR388_MANIFEST if pr388 else rcc.EXACT_MANIFEST,
-            "journal_root": rcc.SEMANTIC_TURN_JOURNAL if semantic_turn else rcc.DELAYED_SOURCE_PROOF_V2_JOURNAL if source_proof_v2 else rcc.DELAYED_SOURCE_PROOF_JOURNAL if source_proof else rcc.RENAME_ACTIONS_JOURNAL if rename_actions else rcc.PR388_JOURNAL if pr388 else rcc.EXACT_JOURNAL,
-            "candidate_version": "1.0.63" if semantic_turn else "1.0.61" if (pr388 or rename_actions or source_proof or source_proof_v2) else "1.0.60",
-            "installed_version": "1.0.63" if semantic_turn else "1.0.61" if (rename_actions or source_proof or source_proof_v2) else None,
+            "candidate": rcc.SUBMIT_ACTIVATION_FENCE_STAGE if submit_activation_fence else rcc.SEMANTIC_TURN_STAGE if semantic_turn else rcc.DELAYED_SOURCE_PROOF_V2_STAGE if source_proof_v2 else rcc.DELAYED_SOURCE_PROOF_STAGE if source_proof else rcc.RENAME_ACTIONS_STAGE if rename_actions else rcc.PR388_STAGE if pr388 else rcc.EXACT_STAGE,
+            "backup_source": rcc.SUBMIT_ACTIVATION_FENCE_ROLLBACK if submit_activation_fence else rcc.SEMANTIC_TURN_ROLLBACK if semantic_turn else rcc.DELAYED_SOURCE_PROOF_V2_ROLLBACK if source_proof_v2 else rcc.DELAYED_SOURCE_PROOF_ROLLBACK if source_proof else rcc.RENAME_ACTIONS_ROLLBACK if rename_actions else rcc.PR388_ROLLBACK if pr388 else rcc.EXACT_ROLLBACK,
+            "manifest_file": rcc.SUBMIT_ACTIVATION_FENCE_MANIFEST if submit_activation_fence else rcc.SEMANTIC_TURN_MANIFEST if semantic_turn else rcc.DELAYED_SOURCE_PROOF_V2_MANIFEST if source_proof_v2 else rcc.DELAYED_SOURCE_PROOF_MANIFEST if source_proof else rcc.RENAME_ACTIONS_MANIFEST if rename_actions else rcc.PR388_MANIFEST if pr388 else rcc.EXACT_MANIFEST,
+            "journal_root": rcc.SUBMIT_ACTIVATION_FENCE_JOURNAL if submit_activation_fence else rcc.SEMANTIC_TURN_JOURNAL if semantic_turn else rcc.DELAYED_SOURCE_PROOF_V2_JOURNAL if source_proof_v2 else rcc.DELAYED_SOURCE_PROOF_JOURNAL if source_proof else rcc.RENAME_ACTIONS_JOURNAL if rename_actions else rcc.PR388_JOURNAL if pr388 else rcc.EXACT_JOURNAL,
+            "candidate_version": "1.0.63" if (semantic_turn or submit_activation_fence) else "1.0.61" if (pr388 or rename_actions or source_proof or source_proof_v2) else "1.0.60",
+            "installed_version": "1.0.63" if (semantic_turn or submit_activation_fence) else "1.0.61" if (rename_actions or source_proof or source_proof_v2) else None,
         }
 
     @staticmethod
@@ -976,6 +986,7 @@ class DeployFeature:
             "rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions",
             "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2",
             "rcc-rollback-semantic-turn",
+            "rcc-rollback-submit-activation-fence",
         }
         is_post_install_verify = operation.startswith("rcc-verify-installed")
         if (is_rollback or is_post_install_verify) and not rcc.OP_ID.fullmatch(original):
@@ -1024,7 +1035,7 @@ class DeployFeature:
             values["manifest_sha256"],
         )
         route = DeployFeature._rcc_route_config(values["operation"])
-        if values["operation"].endswith(("-pr388", "-rename-actions", "-source-proof", "-source-proof-v2", "-semantic-turn")):
+        if values["operation"].endswith(("-pr388", "-rename-actions", "-source-proof", "-source-proof-v2", "-semantic-turn", "-submit-activation-fence")):
             from hashlib import sha256
             release_path = route["manifest_file"]
             if (not release_path.is_file() or sha256(release_path.read_bytes()).hexdigest()
@@ -1060,7 +1071,7 @@ class DeployFeature:
                  "original_install_operation_id": original_id},
                 output=result,
             )
-        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions", "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2", "rcc-rollback-semantic-turn"}:
+        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions", "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2", "rcc-rollback-semantic-turn", "rcc-rollback-submit-activation-fence"}:
             original_id = values["install_operation_id"]
             receipt = route["journal_root"] / (original_id + ".json")
             if not receipt.is_file():
@@ -1086,7 +1097,7 @@ class DeployFeature:
         if (plan["installed_aggregate"], plan["candidate_aggregate"],
                 plan["manifest_sha256"]) != expected:
             raise PreconditionError("RCC_INSTALL_EXPECTATIONS_CHANGED")
-        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388", "rcc-inspect-rename-actions", "rcc-inspect-source-proof", "rcc-inspect-source-proof-v2", "rcc-inspect-semantic-turn"}:
+        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388", "rcc-inspect-rename-actions", "rcc-inspect-source-proof", "rcc-inspect-source-proof-v2", "rcc-inspect-semantic-turn", "rcc-inspect-submit-activation-fence"}:
             return FeatureResult(
                 Outcome.APPLIED, {"read_only": True, "reload": "NOT_PERFORMED",
                                  "live_accepted": False},

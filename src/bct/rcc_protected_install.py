@@ -52,6 +52,12 @@ SEMANTIC_TURN_ROLLBACK = SEMANTIC_TURN_ROOT / "rollback_installed_1_0_63"
 SEMANTIC_TURN_MANIFEST = SEMANTIC_TURN_ROOT / "release_manifest_semantic_turn_immutable.json"
 SEMANTIC_TURN_MANIFEST_SHA256 = "56caa01e0e1ba700f39e51ae58b91836931a461c2710683a87fd2ab4550d6653"
 SEMANTIC_TURN_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-semantic-turn")
+SUBMIT_ACTIVATION_FENCE_ROOT = Path(r"D:\BCT\data\RCC_SUBMIT_ACTIVATION_FENCE_20261105")
+SUBMIT_ACTIVATION_FENCE_STAGE = SUBMIT_ACTIVATION_FENCE_ROOT / "candidate_1_0_63"
+SUBMIT_ACTIVATION_FENCE_ROLLBACK = SUBMIT_ACTIVATION_FENCE_ROOT / "rollback_installed_1_0_63"
+SUBMIT_ACTIVATION_FENCE_MANIFEST = SUBMIT_ACTIVATION_FENCE_ROOT / "release_manifest_submit_activation_fence_immutable.json"
+SUBMIT_ACTIVATION_FENCE_MANIFEST_SHA256 = "d969dc3789beb08bf32da57b5f06c9db65b8704a7a29bcb8e96446baadceb3ab"
+SUBMIT_ACTIVATION_FENCE_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-submit-activation-fence")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
