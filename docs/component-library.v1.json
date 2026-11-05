@@ -15,6 +15,32 @@
   },
   "components": [
     {
+      "id": "bct.chain_message",
+      "kind": "full_recipe",
+      "maturity": "bounded",
+      "implementation": [
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_chain_message"},
+        {"path": "src/bct/chain_direction.py", "symbol": "prepare_direction_review / compose_target_direction"}
+      ],
+      "contract": "General Chain Message recipe: current reality and questions for A, A-authored direction and per-recipient network decisions, exact first delivery and background response watch; B authors its own Execute Plan, then SELF or MANAGER. Manager return re-enters prepare for fresh A judgment. Existing exact-identity calls remain supported; BCT does not run an AI judgment loop internally.",
+      "effects": ["direction-and-target-ledger", "declared-conversation-network-updates", "exact-browser-message", "durable-response-watch"],
+      "safety": ["actual-ai-turn-boundaries", "fresh-recipient-uuid-and-role", "per-target-instructions-and-receipts", "work-authorization", "partial-effects-reported", "unknown-no-replay"],
+      "used_by": ["ordinary-user-assigned-work"]
+    },
+    {
+      "id": "bct.component_library",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/component_library.py", "symbol": "discover"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_capabilities"}
+      ],
+      "contract": "Read-only reusable-part search, exact runtime tool metadata and one packaged Chain Message manual shared by Chat, Work and Codex. Selection remains an A/B decision. Generated bundle is checked against canonical docs and affected sources.",
+      "effects": [],
+      "safety": ["no-tool-execution", "no-permission-grant", "runtime-schema-authority", "internal-parts-not-callable-tools", "source-not-live-proof"],
+      "used_by": ["bct.manager_direction", "bct.worker_execution_plan", "bct.chain_message"]
+    },
+    {
       "id": "bct.chain_entry_policy",
       "kind": "module",
       "maturity": "isolated",
@@ -87,13 +113,15 @@
           "symbol": "bct_set_direction / bct_get_direction"
         }
       ],
-      "contract": "Durably records A's user direction and high-level work plan for one next Chain Message without sending, choosing a Worker, or interpreting the result.",
+      "contract": "Reusable Set Direction stage: prepare reads reality and current/historical networks, supplies ten internal questions for A, and save validates A's answers, original user request or exact return, network changes and distinct per-target instructions. Chain Message composes this stage and reuses exact send/watch for each A-selected recipient. BCT does not make AI judgments.",
       "effects": [
         "bct-sqlite-direction-metadata"
       ],
       "safety": [
         "work-owner-bound",
         "exact-manager-return-source-when-applicable",
+        "per-target-direction-and-receipt-lineage",
+        "fresh-uuid-role-network-check-before-send",
         "idempotent-direction-id",
         "no-external-message-send"
       ],
@@ -112,7 +140,7 @@
         },
         {
           "path": "src/bct/mcp_server.py",
-            "symbol": "bct_set_execute_plan / bct_get_execute_plan (compatibility: bct_set_execution_plan / bct_get_execution_plan)"
+            "symbol": "bct_set_execute_plan / bct_get_execute_plan"
         }
       ],
       "contract": "Durably records B's one concrete execution plan only after the linked A direction has been delivered. The exact plan is returned only to the same Worker on that Chain's next SELF continuation; B may choose files, tools, tests, and safe next steps within A's stated boundaries.",

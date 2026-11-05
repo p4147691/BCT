@@ -19,7 +19,7 @@ BCT
 ├─ 대화망·노드
 │  ├─ bct_status            Core/Monitor 전체 노드·연결·작업 관측
 │  │  └─ current_nodes      현재 확인된 ChatGPT 탭/노드, 등록 노드와 별도 집계
-│  ├─ bct_conversation_network_get 등록된 대화 범위·구성원·라벨 조회
+│  ├─ bct_get_conversation_network 등록된 대화 범위·구성원·라벨 조회
 │  ├─ bct_orchestrate       협업 세션/매니저·작업자 연결
 │  │  ├─ node-sync         내부 노드·대화 연결 동기화 (보존)
 │  │  ├─ status            협업 상태 조회
@@ -46,7 +46,7 @@ BCT
 | 분류 | 대상 | 근거 / 조치 |
 |---|---|---|
 | 유지 | send-message, create-chat-tab, create-chat-window, state | Core Gen250 공개 계약; 실제 새 탭·새 창 전송 E2E |
-| 유지 | bct_status.current_nodes, bct_conversation_network_get, node-sync | 실제 등록망·현재 탭 분리 및 협업 연결 |
+| 유지 | bct_status.current_nodes, bct_get_conversation_network, node-sync | 실제 등록망·현재 탭 분리 및 협업 연결 |
 | 유지 | send-to-tab, send-to-created-tab, result, bct_operation_get | 현재 send-message 하위 경로 및 영수증 확인 |
 | 내부 전용 | simple-relay-send/return, delivery-status/return/response-read, manager-wake | 기존 협업/복구 계층; 공개 명령으로 재노출하지 않음 |
 | 제거 후보 | send, create-and-send, result-of-create-and-send | 신규 공개 사용 차단; PR #374에서 과거 영수증 권한/판독 경로를 분리한 뒤 실행 분기 제거 |
@@ -60,7 +60,7 @@ BCT
 
 1. 하나의 자연어 메시지 요청에는 공개 `send-message`만 선택한다. 내부 하위 명령은 Core가 결정한다.
 2. 제출 ACK, 실제 수신, 최종 Assistant 응답을 구분한다. `read-latest-assistant`만으로 해당 사용자 턴 완료를 선언하지 않는다.
-3. `state`는 RCC 탭 확인, `bct_status`는 Core/Monitor 전체 상태, `bct_conversation_network_get`은 등록 대화 범위 정보다.
+3. `state`는 RCC 탭 확인, `bct_status`는 Core/Monitor 전체 상태, `bct_get_conversation_network`은 등록 대화 범위 정보다.
 4. 구형 명령 제거는 기존 영수증 판독·소유권 검증을 분리하고 회귀시험이 통과한 경우에만 진행한다.
 5. 운영 Monitor/Chrome/RCC/Browser Bridge를 변경하는 별도 PR은 각 소유권·릴리스/실사용 시험 경계를 따로 검증한다.
 6. 불완전한 측정값이나 미검증 Claim은 개발 차단·성공 증명으로 사용하지 않는다.

@@ -15,6 +15,7 @@ from starlette.responses import JSONResponse
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .chat_input_queue import ChatInputQueue
 from .chain_entry_policy import public_entry_policy
+from .component_library import DISCOVERY_GUIDE, discover
 from .chain_message_preflight import (
     EXPLICIT_NEXT_TASK_SUFFIX, check_chain_work, prepare_chain_instruction,
 )
@@ -23,7 +24,8 @@ from .code_block_organize import plan_block_replacement, prepare_block_apply
 from .conversation_network import (
     ConversationNetworkError, project_view, resolve_project_id, scope_directory,
 )
-from .core.models import Principal, Work
+from .core.models import Principal, Work, PreconditionError
+from .core.capabilities import capability_matches
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view, STATUS_SCOPES
 from .task_message import prepare_task_message_instruction
@@ -34,10 +36,9 @@ from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
-    "bct_capabilities", "bct_status", "queue_message", "bct_conversation_network_get", "bct_network_get", "bct_get_network", "bct_check_network", "scan_code_blocks", "organize_code_blocks",
-    "bct_execution_context", "bct_set_chain_direction", "bct_get_chain_direction",
+    "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks",
+    "bct_execution_context", "bct_set_direction", "bct_get_direction",
     "bct_prepare_supervisor_chain",
-    "bct_set_chain_execution_plan", "bct_get_chain_execution_plan",
     "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
     "bct_work_create", "bct_operation_get",
@@ -57,7 +58,7 @@ _CAPABILITY_USAGE = {
     "file_action_plan": "Read-only preview of one exact reversible file move or quarantine: operation=move_preview|quarantine_preview, source and destination in same Work root/device. Validates full SHA256 and produces restore plan. No file changes; apply disabled until approval verifier exists.",
     "process_stop_plan": "Read-only exact PID/process-birth/executable inspection. No process signals; use existing owned process_session.stop where authorized, and require verified approval for any new stop capability.",
     "monitor": "Use arguments.operation as status or validate.",
-    "conversation_network_update": "Update advisory conversation-network membership or role tags. For an existing member use arguments={\"operation\":\"role-patch\",\"project\":\"scope name or id\",\"node_label\":\"N14\",\"add\":[\"CI\"],\"remove\":[],\"expected_role_tags_sha256\":\"digest from bct_conversation_network_get\"}. To place an observed chat in a scope use operation=membership-assign with project, conversation_key, role_tags, and expected_scope_id (empty only when the chat is currently unassigned). This changes no tool permission or browser route; it applies to newly composed messages only.",
+    "conversation_network_update": "Update advisory conversation-network membership or role tags. For an existing member use arguments={\"operation\":\"role-patch\",\"project\":\"scope name or id\",\"node_label\":\"N14\",\"add\":[\"CI\"],\"remove\":[],\"expected_role_tags_sha256\":\"digest from bct_get_conversation_network\"}. To place an observed chat in a scope use operation=membership-assign with project, conversation_key, role_tags, and expected_scope_id (empty only when the chat is currently unassigned). This changes no tool permission or browser route; it applies to newly composed messages only.",
     "project_context": "Shared, bounded context records; this does not capture browser text or send a message. Use central-get/central-save for the one current project context, worklog-get/worklog-save for a project plus journal_work_id, and overview for central context plus compact worklog records. Saves require expected_revision and author. A work log must link its exact journal_work_id as links:[{type:'bct_work',id:'...'}].",
     "cdp_inspect": "Read-only existing Chrome tab listing via a single approved Chrome DevTools MCP connection. Use arguments={\\\"operation\\\":\\\"list_pages\\\"}. Requires a work with cdp_inspect permission and locally enabled CDP policy; does not send messages, create tabs, or bypass Chrome consent.",
     "browser_extension_manage": "Read-only Chrome extension inventory via CDP. arguments={\\\"operation\\\":\\\"inventory\\\"} (or pages). Work-scoped; create/update/delete not enabled in this initial common MCP adapter. CDP only. Do not infer Tampermonkey CRUD support from this tool yet.",
@@ -156,7 +157,12 @@ def build_mcp(
     server = FastMCP(
         "BCT",
         instructions=(
-            "Create one bounded work record, then call the matching bct_<capability> tool. "
+            "For ordinary assigned work, begin with bct_chain_message(instruction=the request) "
+            "to read current reality and enter Set Direction. Answer its internal questions as A; "
+            "do not delegate that questionnaire to the user. Reuse an appropriate bounded Work "
+            "or create one before effects, then use the matching bct_<capability> tools. "
+            "Use bct_capabilities(query=...) to find existing parts, tool_name for the current input schema, "
+            "and include_manual=true for the shared source manual. Discovery never executes tools. "
             "Reuse operation_id only for the exact same request."
         ),
         stateless_http=True,
@@ -174,17 +180,26 @@ def build_mcp(
             work_id=work_id, conversation_key=conversation_key,
         )
 
-    @server.tool(description="List the exact BCT capabilities exposed by this runtime.", structured_output=True)
-    async def bct_capabilities() -> dict[str, Any]:
+    @server.tool(description=(
+        "List this runtime's actual tools and capabilities. Optional query searches reusable parts and tools; "
+        "tool_name returns the exact current input schema; component_id reads one part; include_manual "
+        "returns the shared Chain Message manual. Read-only, no Work required. limit/offset paginate search results."
+    ), structured_output=True)
+    async def bct_capabilities(query: str = "", tool_name: str = "", component_id: str = "",
+                               include_manual: bool = False, limit: int = 8, offset: int = 0) -> dict[str, Any]:
         started_ns = time.perf_counter_ns()
+        tool_metadata = [tool.model_dump(mode="json", exclude_none=True) for tool in await server.list_tools()]
         value = {
             "capabilities": list(capabilities),
-            "tools": [tool.name for tool in await server.list_tools()],
+            "tools": [tool["name"] for tool in tool_metadata],
             # The live runtime contract takes precedence over client-cached tool descriptions.
             "browser_usage": _CAPABILITY_USAGE["browser"],
             "browser_contract_version": "rcc-send-message-v1",
             "browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"],
             "message_entry_policy": public_entry_policy(),
+            **discover(tools=tool_metadata, capabilities=capabilities, usage=_CAPABILITY_USAGE,
+                       query=query, tool_name=tool_name, component_id=component_id,
+                       include_manual=include_manual, limit=limit, offset=offset),
         }
         settings = getattr(server, "catalogue_settings", None)
         if settings is not None and settings.last_error:
@@ -249,7 +264,7 @@ def build_mcp(
         ),
         structured_output=True,
     )
-    async def bct_conversation_network_get(project: str) -> dict[str, Any]:
+    async def bct_get_conversation_network(project: str) -> dict[str, Any]:
         """Read a user-facing conversation-network view without exposing route UUIDs."""
         started_ns = time.perf_counter_ns()
         try:
@@ -272,20 +287,8 @@ def build_mcp(
         )
         return value
 
-    @server.tool(description="Read a registered project network. Canonical short name for bct_conversation_network_get.", structured_output=True)
-    async def bct_network_get(project: str) -> dict[str, Any]:
-        return await bct_conversation_network_get(project)
-
-    @server.tool(
-        name="bct_get_network",
-        description="Read one registered conversation network. Canonical GET name; bct_network_get remains available for compatibility.",
-        structured_output=True,
-    )
-    async def bct_get_network(project: str) -> dict[str, Any]:
-        return await bct_network_get(project)
-
-    @server.tool(description="Run the read-only Network Check recipe: current node/RCC evidence, durable active and closed scope directory, current supervisor readiness, and optionally authorized project-context summaries. Does not create plans, networks or messages.", structured_output=True)
-    async def bct_check_network(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
+    @server.tool(description="Check Conversation Network with read-only current node/RCC evidence, durable active and closed scope directory, current supervisor readiness, and optionally authorized project-context summaries. Does not create plans, conversation networks, or messages.", structured_output=True)
+    async def bct_check_conversation_network(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
         snapshot = await asyncio.to_thread(status_provider)
@@ -658,7 +661,7 @@ def build_mcp(
         )
 
     @server.tool(description="Set existing project membership or role tags through the authorized conversation_network_update capability; supports project-upsert, membership-assign and role-patch.", structured_output=True)
-    async def bct_network_set(
+    async def bct_set_conversation_network(
         work_id: str, operation_id: str, arguments: dict[str, Any],
         approval_ref: str | None = None,
     ) -> dict[str, Any]:
@@ -668,10 +671,133 @@ def build_mcp(
             work_id, operation_id, arguments, approval_ref
         )
 
+    async def _run_direction_targets(
+        *, direction: dict, assessment: dict, work: Work, task_id: str,
+        operation_id: str, action: str, target_conversation_key: str,
+        max_generations: int,
+    ) -> dict[str, Any]:
+        """Compose the existing network setter and exact per-target Chain paths."""
+        import hashlib
+        from bct.chain_direction import (
+            ChainDirectionLedger, compose_target_direction, resolve_direction_network,
+            resolve_direction_target, validate_direction_assessment,
+        )
+        if status_provider is None:
+            return {"status":"UNAVAILABLE","reason":"STATUS_PROVIDER_NOT_CONFIGURED"}
+        try:
+            assessment = validate_direction_assessment(assessment, decision=direction["decision"])
+        except ValueError as exc:
+            return {"status":"INVALID_REQUEST","reason":str(exc)}
+        if type(max_generations) is not int or not 0 <= max_generations <= 12:
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_MAX_GENERATIONS_INVALID"}
+        targets = [(i, t) for i, t in enumerate(assessment["targets"], 1)
+                   if not target_conversation_key or t["conversation_key"] == target_conversation_key]
+        if not targets:
+            return {"status":"INVALID_REQUEST","reason":"DIRECTION_TARGET_NOT_DECLARED"}
+        if len(task_id) > 70 or len(operation_id) > 65:
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
+        try:
+            for i, target in targets:
+                compose_target_direction(direction=direction, target=target, task_id=f"{task_id}-{i}")
+        except ValueError as exc:
+            return {"status":"INVALID_REQUEST","reason":str(exc)}
+        updates = assessment.get("network_updates", [])
+        if updates and not any(capability_matches(action, "conversation_network_update") for action in work.actions):
+            return {"status":"BLOCKED","reason":"DIRECTION_NETWORK_ACTION_REQUIRED"}
+        # Check every required attachment BEFORE changing metadata. Role/network checks
+        # follow the recorded updates, since preparing those roles is their purpose.
+        before = await asyncio.to_thread(status_provider)
+        try:
+            required_keys = {assessment["manager_conversation_key"], assessment["supervisor_conversation_key"],
+                             *(target["conversation_key"] for _, target in targets)}
+            for key in required_keys:
+                resolve_direction_target(snapshot=before, conversation_key=key)
+        except ValueError as exc:
+            return {"status":"NETWORK_PREPARATION_REQUIRED", "reason":str(exc),
+                    "stage":"BEFORE_NETWORK_EFFECTS", "network_results":[],
+                    "network_preparation_applied":False, "all_targets_started":False,
+                    "direction_id":direction["direction_id"]}
+        preparation = []
+        for i, arguments in enumerate(updates, 1):
+            if action == "preflight":
+                continue
+            # Stable across partial resumes and caller operation prefixes.
+            update_id = "direction-" + hashlib.sha256(direction["direction_id"].encode()).hexdigest()[:24] + f"-network-{i}"
+            result = await bct_set_conversation_network(work.work_id, update_id, arguments)
+            preparation.append(result)
+            if result.get("outcome") != "APPLIED":
+                return {"status":"NETWORK_PREPARATION_INCOMPLETE", "network_results":preparation,
+                        "stage":"NETWORK_EFFECTS", "network_preparation_applied":any(
+                            item.get("outcome") == "APPLIED" for item in preparation), "all_targets_started":False,
+                        "reason":"REVIEW_ORIGINAL_RECEIPT", "direction_id":direction["direction_id"]}
+        snapshot = await asyncio.to_thread(status_provider)
+        try:
+            origin, resolved = resolve_direction_network(snapshot=snapshot, assessment=assessment, targets=targets)
+        except ValueError as exc:
+            return {"status":"NETWORK_PREPARATION_REQUIRED","reason":str(exc),
+                    "stage":"AFTER_NETWORK_EFFECTS" if preparation else "READINESS",
+                    "network_preparation_applied":bool(preparation), "all_targets_started":False,
+                    "next_tool":"bct_set_conversation_network", "network_results":preparation,
+                    "network_updates":updates, "direction_id":direction["direction_id"],
+                    "instructions_for_a":"기록된 판단에 따라 기존 생성·복구·대화망 설정 부품으로 준비하고 같은 Direction을 다시 확인한다."}
+        if action == "preflight":
+            return {"status":"READY","direction_id":direction["direction_id"],
+                    "targets":[{"conversation_key":target["conversation_key"], **route}
+                               for _, target, route in resolved],
+                    "network_updates":updates, "effects":"NONE_READ_ONLY","authorizes_send":False}
+        results = []
+        ledger = ChainDirectionLedger(bct.store)
+        for i, target, _ in resolved:
+            child_task, child_op = f"{task_id}-{i}", f"{operation_id}-{i}"
+            try:
+                child = await asyncio.to_thread(ledger.target_direction, direction=direction,
+                                               target=target, task_id=child_task)
+                if child["chain_state"] == "CHAIN_STARTED":
+                    results.append({"status":"ALREADY_STARTED", "target_conversation_key":target["conversation_key"],
+                                    "direction_id":child["direction_id"], "task_id":child["chain_task_id"],
+                                    "operation_id":child["chain_operation_id"], "resent":False})
+                    continue
+                if child["chain_state"] != "NOT_PLANNED":
+                    results.append({"status":"RECEIPT_REVIEW_REQUIRED", "direction_id":child["direction_id"],
+                                    "task_id":child["chain_task_id"],"operation_id":child["chain_operation_id"]})
+                    continue
+                # A tab may have moved since other targets were prepared/sent.
+                fresh = await asyncio.to_thread(status_provider)
+                origin, current_targets = resolve_direction_network(
+                    snapshot=fresh, assessment=assessment, targets=[(i, target)],
+                )
+                route = current_targets[0][2]
+                if route["node_info"].get("generating") is True:
+                    results.append({"status":"TARGET_BUSY","target_conversation_key":target["conversation_key"]})
+                    continue
+                result = await bct_chain_message(
+                    work_id=work.work_id, task_id=child_task, operation_id=child_op, action="start",
+                    chain_direction_id=child["direction_id"],
+                    instance_id=route["instance_id"], session_id=route["session_id"],
+                    target_tab_id=route["tab_id"], target_window_id=route["window_id"],
+                    target_conversation_key=target["conversation_key"],
+                    origin_conversation_key=assessment["manager_conversation_key"],
+                    origin_instance_id=origin["instance_id"],
+                    continuation_output_contract="explicit-next-task-v1", max_generations=max_generations,
+                )
+                results.append({**result,"target_conversation_key":target["conversation_key"],
+                                "direction_id":child["direction_id"]})
+            except ValueError as exc:
+                results.append({"status":"BLOCKED","reason":str(exc),
+                                "target_conversation_key":target["conversation_key"]})
+        all_started = all(r["status"] in {"WATCHING","ALREADY_STARTED"} for r in results)
+        return {"status":"STARTED" if all_started else "PARTIAL", "stage":"TARGET_DISPATCH",
+                "network_preparation_applied":bool(preparation), "all_targets_started":all_started,
+                "direction_id":direction["direction_id"],"network_results":preparation,"targets":results}
+
     @server.tool(
         name="bct_chain_message",
         description=(
-            "DEFAULT ENTRY for ordinary assigned work: use this Chain Message route "
+            "DEFAULT ENTRY for ordinary assigned work: call with instruction only or action=prepare "
+            "to read reality and conversation networks and enter the question-guided Set Direction stage. "
+            "After A saves an assessment, action=start with chain_direction_id prepares its declared "
+            "network updates and sends each distinct target instruction through the existing exact path. "
+            "Work/task/operation identifiers are required for effects, not the initial read. Use this route "
             "unless the user explicitly asks for Task Message or Send Message. "
             "Start/status/cancel a durable one-target message continuation using "
             "existing BCT send-message, Delayed Send and their exact receipts. "
@@ -687,14 +813,14 @@ def build_mcp(
             "An opt-in continuation_output_contract=explicit-next-task-v1 appends an "
             "explicit SELF/MANAGER marker request to both prearm and sent text; it "
             "never creates a follow-up or relaxes response parsing. "
-            "This is the first message-flow stage, NOT a completed Run Plan/Task Run "
-            "or multi-worker Chain Run implementation. Legacy worker_/manager_ "
+            "A must supply the decisions; this recipe does not contain an LLM. "
+            "Existing exact-target calls still use the same send/watch path. Legacy worker_/manager_ "
             "identity fields remain accepted only for compatibility. No UNKNOWN replay."
         ),
         structured_output=True,
     )
     async def bct_chain_message(
-        work_id: str, task_id: str, operation_id: str,
+        work_id: str = "", task_id: str = "", operation_id: str = "",
         action: str = "start",
         instance_id: str = "", session_id: str = "",
         worker_tab_id: int = 0, worker_window_id: int = 0,
@@ -707,7 +833,17 @@ def build_mcp(
         origin_instance_id: str = "",
         continuation_output_contract: str = "none",
         max_generations: int = 0,
+        source_kind: str = "USER", source_task_id: str = "",
+        source_generation: int = 0, project: str = "",
     ) -> dict[str, Any]:
+        # An ordinary request can enter here before Work or targets exist.
+        # The same reusable Set Direction stage also handles an exact BA/CA report.
+        if action == "prepare" or (action == "start" and not task_id and not chain_direction_id):
+            return await bct_set_direction(
+                work_id=work_id, action="prepare", source_text=instruction,
+                source_kind=source_kind, source_task_id=source_task_id,
+                source_generation=source_generation, project=project,
+            )
         if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ID_INVALID"}
@@ -817,6 +953,21 @@ def build_mcp(
                 return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_NOT_FOUND"}
             if direction.get("decision") != "NEW_TASK":
                 return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_NOT_A_NEW_TASK"}
+            if (direction.get("target_conversation_key")
+                    and direction["target_conversation_key"] != target_conversation):
+                return {"status":"INVALID_REQUEST","reason":"DIRECTION_TARGET_IDENTITY_MISMATCH"}
+            import json
+            assessment = json.loads(direction.get("assessment_json") or "{}")
+            if assessment:
+                if (instruction or target_tab or target_window or instance_id or session_id
+                        or origin_conversation or origin_instance):
+                    return {"status":"INVALID_REQUEST","reason":"DIRECTION_USES_RECORDED_IDENTITIES"}
+                return await _run_direction_targets(
+                    direction=direction, assessment=assessment, work=work,
+                    task_id=task_id, operation_id=operation_id, action=action,
+                    target_conversation_key=str(target_conversation or ""),
+                    max_generations=max_generations,
+                )
             if instruction and instruction != direction.get("direction_text"):
                 return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_TEXT_MISMATCH"}
             if (direction.get("chain_task_id",""), direction.get("chain_operation_id","")) not in {
@@ -1436,32 +1587,42 @@ def build_mcp(
             return {"status": "INVALID_REQUEST", "reason": str(exc)}
 
     @server.tool(
-        name="bct_set_chain_direction",
+        name="bct_set_direction",
         description=(
-            "Save A's free-form direction and overall plan for the next Chain Message. "
-            "A records the user goal, acceptance, scope, boundaries, and high-level "
-            "work order; B later writes its own concrete execution plan. This never "
-            "writes the direction, sends a message, or interprets a report. Use "
+            "Prepare and save A's direction. action=prepare automatically reads current BCT "
+            "status, Node Info and stored conversation networks, then supplies questions for "
+            "A about user intent, completion, topology, roles, multiple recipients, resources, "
+            "recovery and Supervisor integration. A answers them in assessment and writes "
+            "direction_text; action=save validates and records those decisions and each target's "
+            "distinct instruction. B later authors its concrete Execute Plan. No send at this stage. Use "
             "source_kind=MANAGER_RETURN only with the exact BA task/generation that "
             "supplied the report."
         ),
         structured_output=True,
     )
-    async def bct_set_chain_direction(
-        work_id: str, direction_text: str, decision: str,
+    async def bct_set_direction(
+        work_id: str = "", direction_text: str = "", decision: str = "",
         source_kind: str = "USER", source_task_id: str = "",
         source_generation: int = 0, direction_id: str = "",
+        action: str = "save", source_text: str = "", project: str = "",
+        assessment: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from bct.chain_direction import ChainDirectionLedger
+        from bct.chain_direction import ChainDirectionLedger, prepare_direction_review
+        if action not in {"prepare", "save"}:
+            return {"status":"INVALID_REQUEST","reason":"DIRECTION_ACTION_INVALID"}
+        if action == "prepare" and source_kind == "USER" and not work_id:
+            work = None
+        else:
+            try:
+                work = await asyncio.to_thread(bct.store.get_work, work_id)
+            except KeyError:
+                return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+            if work.owner_principal_id != principal.principal_id:
+                return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
         if not direction_id:
-            direction_id = "chain-direction-" + uuid.uuid4().hex[:24]
-        try:
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-        except KeyError:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        if work.owner_principal_id != principal.principal_id:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+            direction_id = "direction-" + uuid.uuid4().hex[:24]
         result_sha = ""
+        context = None
         if source_kind == "MANAGER_RETURN":
             from bct.delayed_send_message import DurableWatchLedger
             delayed_ledger = DurableWatchLedger(bct.store)
@@ -1498,6 +1659,51 @@ def build_mcp(
                         or legacy.get("assignment_epoch") != work.assignment_epoch
                         or not re.fullmatch(r"[0-9a-f]{64}", result_sha)):
                     return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_RETURN_NOT_EXACT"}
+        if action == "prepare":
+            if status_provider is None:
+                return {"status":"UNAVAILABLE","reason":"STATUS_PROVIDER_NOT_CONFIGURED"}
+            snapshot = await asyncio.to_thread(status_provider)
+            network = await bct_check_conversation_network(project=project)
+            monitor = snapshot.get("monitor", {})
+            reality = {
+                "core": snapshot.get("core", {}), "runtime": snapshot.get("runtime", {}),
+                "observed_at": monitor.get("generated_at"),
+                "available_works": [entry for entry in monitor.get("works", [])
+                                    if entry.get("owner_principal_id") == principal.principal_id],
+                "work": ({"work_id": work.work_id, "state": work.state,
+                          "request_summary": work.request_summary, "roots": list(work.roots),
+                          "actions": sorted(work.actions)} if work else None),
+                "operations": monitor.get("operations", []),
+                "unresolved_claims": monitor.get("unresolved_claims", []),
+                "github_run_inbox": monitor.get("github_run_inbox", []),
+            }
+            try:
+                review = prepare_direction_review(
+                    source_text=source_text, source_kind=source_kind, reality=reality,
+                    network=network, source_return=context,
+                    available_tools=[tool.name for tool in await server.list_tools()],
+                )
+                review["resource_discovery"] = DISCOVERY_GUIDE
+            except (ValueError, PreconditionError) as exc:
+                return {"status":"INVALID_REQUEST","reason":str(exc)}
+            return {**review, "work_id": work_id, "direction_id": direction_id,
+                    "source_task_id": source_task_id, "source_generation": source_generation,
+                    "source_result_sha256": result_sha}
+        if assessment is not None:
+            from bct.chain_direction import validate_direction_assessment
+            from bct.features.conversation_network import ConversationNetworkUpdateFeature
+            try:
+                assessment = validate_direction_assessment(assessment, decision=decision)
+                for arguments in assessment.get("network_updates", []):
+                    if not isinstance(arguments, dict):
+                        raise ValueError("DIRECTION_NETWORK_UPDATE_INVALID")
+                    if arguments.get("operation") == "node-info-set" and (
+                            "expected_scope_id" not in arguments
+                            or not re.fullmatch(r"[0-9a-f]{64}", str(arguments.get("expected_role_tags_sha256", "")))):
+                        raise ValueError("DIRECTION_NETWORK_OBSERVATION_REQUIRED")
+                    ConversationNetworkUpdateFeature(bct.store).prepare(work=work, arguments=arguments)
+            except (ValueError, PreconditionError) as exc:
+                return {"status":"INVALID_REQUEST","reason":str(exc)}
         try:
             direction = await asyncio.to_thread(
                 ChainDirectionLedger(bct.store).save,
@@ -1506,17 +1712,19 @@ def build_mcp(
                 source_generation=source_generation,
                 source_result_sha256=result_sha, decision=decision,
                 direction_text=direction_text,
+                assessment=assessment,
+                source_text=source_text,
             )
         except ValueError as exc:
             return {"status":"INVALID_REQUEST","reason":str(exc)}
         return {"status":"OK","chain_direction":direction}
 
     @server.tool(
-        name="bct_get_chain_direction",
+        name="bct_get_direction",
         description="Read one exact A-authored Chain Direction from its owning Work. Does not send or decide.",
         structured_output=True,
     )
-    async def bct_get_chain_direction(work_id: str, direction_id: str) -> dict[str, Any]:
+    async def bct_get_direction(work_id: str, direction_id: str) -> dict[str, Any]:
         from bct.chain_direction import ChainDirectionLedger
         try:
             work = await asyncio.to_thread(bct.store.get_work, work_id)
@@ -1573,7 +1781,7 @@ def build_mcp(
         return {"status":"READY","supervisor_route":route}
 
     @server.tool(
-        name="bct_set_chain_execution_plan",
+        name="bct_set_execute_plan",
         description=(
             "Save B's concrete execution plan after an exact A Direction has already "
             "been delivered by Chain Message. A's direction supplies the goal and "
@@ -1582,7 +1790,7 @@ def build_mcp(
         ),
         structured_output=True,
     )
-    async def bct_set_chain_execution_plan(
+    async def bct_set_execute_plan(
         work_id: str, direction_id: str, task_id: str, plan_text: str,
         generation: int = 1, plan_id: str = "",
     ) -> dict[str, Any]:
@@ -1606,11 +1814,11 @@ def build_mcp(
         return {"status":"OK","chain_execution_plan":plan}
 
     @server.tool(
-        name="bct_get_chain_execution_plan",
+        name="bct_get_execute_plan",
         description="Read one exact B-authored Chain Execution Plan. Does not send, plan, or decide.",
         structured_output=True,
     )
-    async def bct_get_chain_execution_plan(work_id: str, plan_id: str) -> dict[str, Any]:
+    async def bct_get_execute_plan(work_id: str, plan_id: str) -> dict[str, Any]:
         from bct.chain_execution_plan import ChainExecutionPlanLedger
         try:
             work = await asyncio.to_thread(bct.store.get_work, work_id)
@@ -1730,37 +1938,6 @@ def build_mcp(
             acknowledge=acknowledge, limit=limit,
         )
 
-    # Public names follow the agreed vocabulary.  These three canonical
-    # wrappers intentionally have distinct Python function names.  FastMCP
-    # otherwise collapses several aliases of the same handler and leaves only
-    # the last compatibility name visible in tools/list.
-    @server.tool(
-        name="bct_set_execute_plan",
-        description=(
-            "Save B's Execute Plan for an exact delivered A Direction. This stores "
-            "B's files, tools, checks, and safe next steps. On SELF, the one exact "
-            "plan saved for that Chain turn is carried back to the same Worker; BCT "
-            "does not author the plan or choose its actions."
-        ),
-        structured_output=True,
-    )
-    async def bct_set_execute_plan(
-        work_id: str, direction_id: str, task_id: str, plan_text: str,
-        generation: int = 1, plan_id: str = "",
-    ) -> dict[str, Any]:
-        return await bct_set_chain_execution_plan(
-            work_id=work_id, direction_id=direction_id, task_id=task_id,
-            plan_text=plan_text, generation=generation, plan_id=plan_id,
-        )
-
-    @server.tool(
-        name="bct_get_execute_plan",
-        description="Read one exact B Execute Plan. It does not send, plan, decide, or execute.",
-        structured_output=True,
-    )
-    async def bct_get_execute_plan(work_id: str, plan_id: str) -> dict[str, Any]:
-        return await bct_get_chain_execution_plan(work_id=work_id, plan_id=plan_id)
-
     @server.tool(
         name="bct_set_project_plan",
         description=(
@@ -1782,28 +1959,10 @@ def build_mcp(
             discretion=discretion, assumptions=assumptions, approval_ref=approval_ref,
         )
 
-    # The older reversed names
-    # remain visible only as compatibility aliases so existing Chats, receipts,
-    # and saved prompts are not broken during the vocabulary transition.
+    # Remaining compatibility aliases are outside the current naming cleanup.
     _canonical_command_aliases = (
-        ("bct_set_direction", bct_set_chain_direction,
-         "Save A's user direction and overall plan for the next Chain Message. Canonical short name; bct_set_chain_direction remains available."),
-        ("bct_get_direction", bct_get_chain_direction,
-         "Read one exact A direction and overall plan. Canonical short name; bct_get_chain_direction remains available."),
-        ("bct_set_execution_plan", bct_set_chain_execution_plan,
-         "Compatibility name for bct_set_execute_plan. Save B's Execute Plan; bct_set_chain_execution_plan remains available for older callers."),
-        ("bct_get_execution_plan", bct_get_chain_execution_plan,
-         "Compatibility name for bct_get_execute_plan. Read one exact B Execute Plan; bct_get_chain_execution_plan remains available for older callers."),
-        ("bct_network", bct_network_get,
-         "Compatibility name for bct_get_network. Read one registered conversation network."),
-        ("bct_check_run", bct_check_network,
-         "Compatibility name for bct_check_network. It runs the selected Network Check recipe, not a whole Chain Run check."),
-        ("bct_run_check", bct_check_network,
-         "Compatibility name for bct_check_network. It runs the selected Network Check recipe, not a whole Chain Run check."),
         ("bct_plan_run", bct_run_plan,
          "Compatibility name for bct_set_project_plan. It saves a generic project-plan ledger; it does not run a plan."),
-        ("bct_set_network", bct_network_set,
-         "Change registered network metadata. Canonical name; bct_network_set remains a compatibility alias."),
         ("bct_run_task", bct_task_run,
          "Run one task in a prepared session. Canonical name; bct_task_run remains a compatibility alias."),
         ("bct_context", bct_execution_context,

@@ -1,8 +1,12 @@
-# 1:1 Chain Flow Modules V1
+# Chain Flow Modules V1 — 대상별 전송 부품
 
 > 현재 원시 부품과 구현 경계를 설명하는 문서다. 사용자에게 보이는 전체
 > 작업 흐름과 A 전체 계획/B 실행계획의 구분은
 > [Chain Message Recipe V2](CHAIN_MESSAGE_RECIPE_V2.md)를 정본으로 삼는다.
+>
+> 전체 입구 `bct_chain_message`는 현재 정보 → Set Direction 질문/판단 → 망 준비 →
+> A가 정한 여러 대상의 각각의 전송을 조합한다. 아래 1:1은 전체 레시피의 제한이
+> 아니라 **대상 하나마다 재사용하는 전송·감시 계약**이다.
 
 ## 한 문장
 
@@ -23,9 +27,9 @@ X가 더 필요함  → X → X → … → X → A
 | 부품 | 하는 일 | 현재 진입점 |
 | --- | --- | --- |
 | 현재 보기 | 열린 노드·역할·대화 UUID·RCC·경고를 읽는다 | `bct_status(scope="bct")` |
-| 범위 목록 읽기 | 탭이 닫혀도 남아 있는 활성/종결 대화망 범위와 역할 수를 읽는다 | Check Network 내부 원시 읽기 |
+| 범위 목록 읽기 | 탭이 닫혀도 남아 있는 활성/종결 대화망 범위와 역할 수를 읽는다 | Check Conversation Network 내부 원시 읽기 |
 | 역할 표지 | 한 노드가 이번에 어떤 창구 역할인지 기록한다 | 현재 노드 정보 설정 경로 |
-| 방향 기록 | A가 보고를 읽고 다음 판단을 남긴다 | `bct_set_chain_direction` / `bct_get_chain_direction` |
+| 방향 정리 | 현재 정보와 내부 질문을 읽고 A가 다음 판단과 대상별 지시를 남긴다 | `bct_set_direction` / `bct_get_direction` |
 | 정확한 메시지 전달 | 이미 고른 정확한 대상에게 한 메시지를 보낸다 | `bct_send_message` |
 | 감시·alarm | 대상 X의 응답 완료와 입력 가능 상태를 확인한다 | Delayed Send 내부 원시 부품 |
 | 예약 취소 | 아직 기다리는 정확한 반복 하나를 멈춘다 | `bct_delayed_send_cancel` |
@@ -36,19 +40,19 @@ X가 더 필요함  → X → X → … → X → A
 ## 부분 레시피
 
 ```text
-대화망 확인·준비 (전체 Chain Message의 고정 첫 블록, 읽기 부분 레시피)
-  A → bct_check_network
+대화망 확인·준비 (조회 뒤 A의 Direction 판단을 거쳐 설정)
+  A → bct_check_conversation_network
       현재 열린 노드 + 저장된 범위 목록 + 역할 상태를 함께 읽음
       이전 활성 범위: 이어가기 / 다른 범위와 병합 / 새 범위 중 A가 판단
       supervisor=PRESENT: 원래 작업 계획으로 진행
       supervisor=MISSING: A가 기존 노드 하나를 고르거나 새 노드를 준비
         → 감독관 초기 지시를 한 번 보냄
         → 대화 UUID 확인 뒤 supervisor 역할을 기록
-        → bct_check_network 재확인
+        → bct_check_conversation_network 재확인
       supervisor=MULTIPLE: A가 어느 하나를 정리할지 판단
-  → 필요하면 bct_set_network(node-info-set)으로
+  → 필요하면 bct_set_conversation_network(node-info-set)으로
       대화망·노드 이름·역할·메모·담당 작업을 함께 기록
-  → bct_check_network로 다시 확인
+  → bct_check_conversation_network로 다시 확인
 
 대상 고르기
   현재 보기
@@ -94,13 +98,13 @@ X가 더 필요함  → X → X → … → X → A
 
 `대화망 확인·준비`은 대화망을 꼭 새로 만드는 단계가 아니다. 같은 설정 경로로
 노드 이름·역할·메모·담당 작업도 함께 다루는 준비 블록이다. 모든 Chain Message는
-`bct_check_network`에서 `supervisor` 역할이 정확히 하나인지 먼저 본다. 없으면
+`bct_check_conversation_network`에서 `supervisor` 역할이 정확히 하나인지 먼저 본다. 없으면
 A가 기존 노드를 고르거나 새 노드를 준비해 역할을 기록하고 다시 확인한다.
-둘 이상이면 자동 삭제하지 않고 A가 정리 방향을 고른다. 이 확인은 레시피의
-준비 규칙이며, BCT가 감독관을 자동 선택·생성하거나 체인 전송을 몰래 막는
-강제 권한 규칙은 아니다.
+둘 이상이면 A가 정리 방향을 고른다. BCT가 감독관을 스스로 선택하지 않는다.
+질문 기반 Direction의 전송은 A가 기록한 유일한 Supervisor와 현재 역할·소속이
+일치하는지 검사한다. 불일치는 `NETWORK_PREPARATION_REQUIRED`로 명시한다.
 
-`bct_check_network`는 원시 명령 하나가 아니라, 위의 현재 보기·범위 목록·역할
+`bct_check_conversation_network`는 원시 명령 하나가 아니라, 위의 현재 보기·범위 목록·역할
 상태·권한 있는 프로젝트 맥락 요약을 조립한 **읽기 부분 레시피**다. 활성 범위는
 그 소속 탭이나 Manager/Worker가 닫혀도 사라지지 않는다. A가 명시적으로 종결
 처리하기 전까지 다음 작업은 그 범위를 이어가거나, 다른 활성 범위와 병합할지
@@ -123,20 +127,21 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 새 Chat 창 생성
 → 첫 감독관 초기 지시를 정확히 한 번 보냄
 → ChatGPT가 대화 UUID를 생성하고 RCC가 이를 확인
-→ bct_set_network(node-info-set)으로 supervisor 역할·이름·메모를 기록
-→ bct_check_network에서 supervisor=PRESENT 확인
+→ bct_set_conversation_network(node-info-set)으로 supervisor 역할·이름·메모를 기록
+→ bct_check_conversation_network에서 supervisor=PRESENT 확인
 ```
 
 초기 지시는 빈 창을 실제 노드로 묶기 위한 한 번의 부트스트랩이며, 이후의
 프로젝트 작업 지시와는 구분한다. BCT는 그 지시 내용을 스스로 쓰거나 보내지
 않는다.
 
-역할만 기록할 때는 `bct_set_network(operation="node-info-set")`으로 한 노드의
+역할만 기록할 때는 `bct_set_conversation_network(operation="node-info-set")`으로 한 노드의
 `role_tags`에 `supervisor`를 넣는다. 실제 대화망 구성까지 필요할 때만 같은
 설정 경로의 대화망 생성·소속 설정 단계를 이어 붙인다. 이 설정은 대상 선택을
 도울 뿐, 권한을 만들거나 메시지를 보내지 않는다.
 
-`체인 시작`은 현재 `bct_chain_message`가 제공하는 부분 레시피다. 이 명령의
+`체인 시작`은 `bct_chain_message` 내부에서 대상마다 재사용하는 부분 레시피다.
+기존 정확 대상 호출의
 정식 인수는 `target_tab_id`, `target_window_id`, `target_conversation_key`와
 `origin_conversation_key`다. 기존 `worker_` / `manager_` 인수는 이전 호출을
 깨지 않도록 남긴 호환 별칭이다. 개념상 Target은 **이번 정확한 대상 X**를
@@ -168,7 +173,8 @@ Work의 `browser` 작업 권한 및 출력 계약을 점검한다. 이 호출은
   짧은 고정 문구를 덧붙인다. 이 확장된 **동일한 원문**이 Delayed Send
   선예약의 `planned_send_text`와 단일 `send-message`의 `text`가 된다.
   연결된 Chain Direction의 A 작성 원본 `direction_text`는 수정하지 않는다.
-  A가 이 옵션을 명시적으로 선택하지 않으면 문구는 덧붙이지 않는다.
+  기존 정확 대상 호출에서는 명시적으로 선택해야 붙는다. 질문 기반 Direction을
+  사용하는 전체 입구는 대상별 지시에 이 계약을 함께 붙인다.
 
 Worker가 지시를 따르지 않아 마커를 누락하거나, 서로 충돌하거나, 구체적인
 후속 지시가 없다면 기존 `extract_next_instruction`과 durable watch가
@@ -189,19 +195,18 @@ A가 보존된 응답을 검토해 새 메시지를 작성한다. 외부 효과�
 ### 전체 Chain Message 레시피
 
 ```text
-현재 보기
-→ 대화망 확인·준비 (bct_check_network는 항상 실행)
-→ 실행 전 점검
-→ A의 작업 방향 정리
-→ 통합 경로 선택 (LOCAL_FIRST / GUARDED_CI_FIRST)
-→ 대상 X 고르기
-→ 체인 시작: A → X
-→ X 내부 반복 또는 X → A 반환
+현재 보기 + 저장된 대화망 비교
+→ Set Direction 질문을 토대로 A 판단: 방향·통합 경로·대상별 지시
+→ 필요한 망·역할 준비
+→ 현재 역할·대상 재확인
+→ 각 대상마다 체인 시작: A → X
+→ X 구체적 Execute Plan·실행 → XX 또는 XA
+→ 반환 뒤 A가 전체 입구부터 재판단
 ```
 
-여기서 `bct_chain_message`는 마지막의 **체인 시작** 부분 레시피다. 전체
-Chain Message 레시피가 대화망 준비까지 포함한다고 해서, 전송 부품 하나가
-대화망을 몰래 바꾸는 것은 아니다.
+`bct_chain_message`는 위 전체 흐름의 입구이며, 내부에서 대상별 **체인 시작**
+부분을 재사용한다. 망 변경은 A가 Direction에 명시한 기존 setter 인수만 적용하고,
+변경 영수증과 각 전송 영수증은 따로 보존한다.
 
 통합 경로 역시 `bct_chain_message`가 자동으로 정하지 않는다. A가 현재 공통
 운영 정책과 실제 영향 범위를 읽고 방향에 기록하며, X는 실행계획과 반환 보고에
@@ -258,4 +263,5 @@ X에게 이미 지시문이 도착함
 - BCT는 X가 누구여야 하는지 판단하지 않는다.
 - `감독관` 역할은 병합·배포·E2E 권한을 뜻하지 않는다.
 - Chain Direction은 A의 다음 지시문을 자동으로 쓰거나 전송하지 않는다.
-- 1:N 분배·점유·결과 수집은 이 1:1 모듈 위에 나중에 별도 레시피로 만든다.
+- 대상별 1:1 계약은 전체 Chain의 1:N 분배에 재사용된다. 여러 결과의 우선순위·
+  의존성·통합 판단을 BCT가 대신하지 않는다. A가 각 반환을 읽고 다음 회차를 결정한다.
