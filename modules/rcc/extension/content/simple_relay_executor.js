@@ -183,6 +183,13 @@ function waitForReadySendButton(editor = null, timeoutMs = 8000, options = {}) {
 
 async function submitEditor(editor, options = {}) {
   const allowKeyboardFallback = options?.allowKeyboardFallback !== false;
+  const submissionState = options?.submissionState && typeof options.submissionState === 'object'
+    ? options.submissionState : null;
+  const markActivation = method => {
+    if (!submissionState) return;
+    submissionState.activationAttempted = true;
+    submissionState.method = method;
+  };
   const waitMs = Math.max(0, Math.min(8000, Number(options?.waitMs ?? 8000)));
   const expected = typeof options?.expectedText === 'string'
     ? RelayCore.normalizeMessageText(options.expectedText) : null;
@@ -233,6 +240,7 @@ async function submitEditor(editor, options = {}) {
     }
     if (findReadySendButton(liveEditor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
     const readyAt = Date.now();
+    markActivation('send-button');
     button.click();
     return { ok: true, method: 'send-button', readyAt, clickedAt: Date.now(),
       bindingAttestation: activationAttestation };
@@ -256,6 +264,7 @@ async function submitEditor(editor, options = {}) {
     : bindingAttestation;
   if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
   if (!focusEditorAtEnd(liveEditor)) throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
+  markActivation('enter-fallback');
   for (const type of ['keydown', 'keypress', 'keyup']) {
     liveEditor.dispatchEvent(new KeyboardEvent(type, {
       key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
@@ -572,6 +581,7 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
   const isNewChatBootstrap = tracking?.bootstrapCreatedTab === true;
   const submitPolicy = tracking?.submitPolicy && typeof tracking.submitPolicy === 'object'
     ? tracking.submitPolicy : {};
+  const submissionState = {activationAttempted: false, method: ''};
   try {
     await submitEditor(editor, {
       expectedText: text,
@@ -583,6 +593,7 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
         ? false : submitPolicy.allowKeyboardFallback !== false,
       composerWakeMode: String(submitPolicy.composerWakeMode || 'none'),
       waitMs: submitPolicy.sendButtonWaitMs,
+      submissionState,
     });
   } catch (error) {
     // A provider event handler can consume the exact draft and create the user
@@ -593,6 +604,17 @@ async function sendPrompt(text, tracking = null, awaitReply = true) {
     // RELAY_DRAFT_CLEAR_UNPROVEN false-UNKNOWN without clicking twice.
     const liveEditor = getEditor();
     const expectedDraft = RelayCore.normalizeMessageText(text);
+    if (!submissionState.activationAttempted) {
+      if (liveEditor && editorDraftText(liveEditor) === expectedDraft) {
+        setEditorText(liveEditor, '');
+        const clearedEditor = getEditor();
+        if (!clearedEditor || editorDraftText(clearedEditor)) {
+          throw new Error('RELAY_DRAFT_CLEAR_UNPROVEN');
+        }
+      }
+      const originalCode = String(error?.message || error || 'RELAY_SUBMIT_FAILED');
+      throw new Error(`RELAY_SUBMIT_NOT_ACTIVATED:${originalCode}`);
+    }
     if (!liveEditor || editorDraftText(liveEditor) !== expectedDraft) {
       if (tracking?.relayId && Array.isArray(tracking.beforeTurnKeys)) {
         const recovered = {
@@ -726,7 +748,7 @@ async function executeSimpleRelayV0(message) {
       'RELAY_COMPOSER_NOT_EMPTY', 'RELAY_SEND_BUTTON_NOT_READY',
       'RELAY_EDITOR_FOCUS_OR_CARET_INVALID', 'RELAY_EDITOR_WAKE_FAILED',
       'RELAY_EDITOR_TEXT_MISMATCH', 'RELAY_SEND_BUTTON_CHANGED',
-    ].includes(code);
+    ].includes(code) || code.startsWith('RELAY_SUBMIT_NOT_ACTIVATED:');
     return { ok: false, submitted: false,
       effectState: notApplied ? 'NOT_APPLIED' : 'UNKNOWN', error: code };
   }

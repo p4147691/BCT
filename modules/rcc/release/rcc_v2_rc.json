@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC39_SURFACE_HANDOFF",
+  "candidate": "RCC_REBUILD_V2_RC40_SUBMIT_ACTIVATION_FENCE",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -123,8 +123,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 40815,
-        "sha256": "9557a616a0e2d49044b9a10b89fce8bc0bde66a662277f191bacafb78037a41e"
+        "size": 41826,
+        "sha256": "de73e4b56a5ddafeb8be728e46035b3f04b430392491bfab4bb8a678981a2d47"
       },
       {
         "path": "core/conversation.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "42a45dfe7b6aa936876663e0a34413022c41cfb1dabf1e397afa6f960e8171bc"
+    "aggregateSha256": "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada"
   },
   "activeLoaderGraph": {
     "background": [

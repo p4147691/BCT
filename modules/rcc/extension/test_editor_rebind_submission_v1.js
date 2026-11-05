@@ -199,7 +199,9 @@ assert.equal(
     getAssistantNodes: () => [],
     lastAssistantText: () => '',
     setEditorText: (editor, value) => { editor.text = value; },
-    submitEditor: async () => {
+    submitEditor: async (_editor, options) => {
+      options.submissionState.activationAttempted = true;
+      options.submissionState.method = 'send-button';
       uncertainEditor.text = '';
       throw new Error('provider activation acknowledgement lost');
     },
@@ -220,6 +222,105 @@ assert.equal(
   assert.equal(recoveredSubmit.recoveredAfterSubmitError, true);
   assert.equal(recoveredRecord.phase, 'submitted');
   assert.equal(recoveredRecord.routeTurnKey, 'semantic:user:exact-return');
+
+  // If the provider replaces the composer before any click/Enter activation,
+  // a vanished BCT draft is evidence of a failed preparation, not an
+  // ambiguous external send. Preserve the original stage in the error and do
+  // not misclassify it as RELAY_DRAFT_CLEAR_UNPROVEN.
+  const preActivationEditor = {text: ''};
+  const preActivationState = {current: preActivationEditor};
+  const preActivationContext = vm.createContext({
+    RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+    isGenerating: () => false,
+    waitForEditor: async () => preActivationEditor,
+    getEditor: () => preActivationState.current,
+    editorDraftText: editor => String(editor.text || '').trim(),
+    getAssistantNodes: () => [],
+    lastAssistantText: () => '',
+    setEditorText: (editor, value) => { editor.text = value; },
+    submitEditor: async (_editor, options) => {
+      preActivationState.current = null;
+      assert.equal(options.submissionState.activationAttempted, false);
+      throw new Error('RELAY_SEND_BUTTON_CHANGED');
+    },
+    currentConversationKey: () => '22222222-2222-2222-2222-222222222222',
+    waitForExactUserSubmission: async () => { throw new Error('must not recover an unactivated send'); },
+    saveRelayExecution() {},
+    waitForReply: async () => 'unused',
+  });
+  vm.runInContext(
+    slice(source, 'async function sendPrompt(', '// V0 is a one-way')
+      + ';globalThis.sendPromptForTest = sendPrompt;',
+    preActivationContext
+  );
+  await assert.rejects(
+    preActivationContext.sendPromptForTest('pre-activation draft', {
+      relayId: 'pre-activation-001', submittedText: 'pre-activation draft',
+      beforeTurnKeys: ['old-turn'],
+      conversationKey: '22222222-2222-2222-2222-222222222222',
+    }, false),
+    /RELAY_SUBMIT_NOT_ACTIVATED:RELAY_SEND_BUTTON_CHANGED/,
+  );
+
+  // Once a click/Enter activation was attempted, the same missing draft is
+  // still ambiguous unless the exact rendered user turn can be recovered.
+  const postActivationEditor = {text: ''};
+  const postActivationContext = vm.createContext({
+    RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+    isGenerating: () => false,
+    waitForEditor: async () => postActivationEditor,
+    getEditor: () => null,
+    editorDraftText: editor => String(editor.text || '').trim(),
+    getAssistantNodes: () => [],
+    lastAssistantText: () => '',
+    setEditorText: (editor, value) => { editor.text = value; },
+    submitEditor: async (_editor, options) => {
+      options.submissionState.activationAttempted = true;
+      options.submissionState.method = 'send-button';
+      throw new Error('provider activation acknowledgement lost');
+    },
+    currentConversationKey: () => '22222222-2222-2222-2222-222222222222',
+    waitForExactUserSubmission: async () => { throw new Error('exact turn not observed'); },
+    saveRelayExecution() {},
+    waitForReply: async () => 'unused',
+  });
+  vm.runInContext(
+    slice(source, 'async function sendPrompt(', '// V0 is a one-way')
+      + ';globalThis.sendPromptForTest = sendPrompt;',
+    postActivationContext
+  );
+  await assert.rejects(
+    postActivationContext.sendPromptForTest('post-activation draft', {
+      relayId: 'post-activation-001', submittedText: 'post-activation draft',
+      beforeTurnKeys: ['old-turn'],
+      conversationKey: '22222222-2222-2222-2222-222222222222',
+    }, false),
+    /RELAY_DRAFT_CLEAR_UNPROVEN/,
+  );
+
+  const classificationContext = vm.createContext({
+    RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+    currentConversationKey: () => '22222222-2222-2222-2222-222222222222',
+    loadRelayExecution: () => null,
+    getConversationTurns: () => [],
+    turnIdentity: () => '',
+    sendPrompt: async () => {
+      throw new Error('RELAY_SUBMIT_NOT_ACTIVATED:RELAY_SEND_BUTTON_CHANGED');
+    },
+  });
+  vm.runInContext(
+    slice(source, 'async function executeSimpleRelayV0(', '// This read is intentionally narrow')
+      + ';globalThis.executeSimpleRelayV0ForTest = executeSimpleRelayV0;',
+    classificationContext
+  );
+  const notActivated = await classificationContext.executeSimpleRelayV0ForTest({
+    relayId: 'not-activated-001',
+    conversationKey: '22222222-2222-2222-2222-222222222222',
+    text: 'pre-activation draft',
+  });
+  assert.equal(notActivated.effectState, 'NOT_APPLIED');
+  assert.equal(notActivated.error,
+    'RELAY_SUBMIT_NOT_ACTIVATED:RELAY_SEND_BUTTON_CHANGED');
 
   const accepted = await context.submitEditorForTest(original, {
     expectedText: expected,
