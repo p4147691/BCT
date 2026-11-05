@@ -180,13 +180,13 @@ internal sealed class BridgeWindowsActivationPolicy : IDisposable {
       return false;
     }
     if (!SetFileSecurityW(rootPath,
-          DaclSecurityInformation | ProtectedDaclSecurityInformation, exact.Value)) {
+          SecurityInformation | ProtectedDaclSecurityInformation, exact.Value)) {
       Console.Error.WriteLine("SEAL_DENIED:root-dacl:" +
         Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
       return false;
     }
     if (!SetFileSecurityW(credentialPath,
-          DaclSecurityInformation | ProtectedDaclSecurityInformation, exact.Value)) {
+          SecurityInformation | ProtectedDaclSecurityInformation, exact.Value)) {
       Console.Error.WriteLine("SEAL_DENIED:file-dacl:" +
         Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
       return false;
