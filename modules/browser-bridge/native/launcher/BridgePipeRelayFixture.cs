@@ -1,5 +1,3 @@
-using Microsoft.Win32.SafeHandles;
-using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -26,10 +24,6 @@ internal static class BridgePipeRelayFixture {
     internal IntPtr Data;
   }
 
-  [DllImport("kernel32.dll", SetLastError = true)]
-  private static extern bool GetNamedPipeClientProcessId(
-    SafePipeHandle pipe, out uint clientProcessId);
-
   [DllImport("crypt32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool CryptUnprotectData(
@@ -44,7 +38,8 @@ internal static class BridgePipeRelayFixture {
     string OriginValue, long Sequence, byte[] Envelope);
 
   internal static async Task<int> RunServer(string pipeName, string expectedClientSha256) {
-    if (!ValidPipeName(pipeName) || !ValidSha256(expectedClientSha256)) return 4;
+    if (!BridgeWindowsActivationPolicy.ValidPipeName(pipeName) ||
+        !BridgeWindowsActivationPolicy.ValidSha256(expectedClientSha256)) return 4;
     try {
       using var pipe = new NamedPipeServerStream(
         pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
@@ -53,21 +48,13 @@ internal static class BridgePipeRelayFixture {
       Console.Out.Flush();
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
       await pipe.WaitForConnectionAsync(timeout.Token);
-      if (!GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint processId) ||
-          !ClientMatches(processId, expectedClientSha256)) {
+      if (!BridgeWindowsActivationPolicy.VerifyConnectedProcess(
+            pipe.SafePipeHandle, expectedClientSha256, out string digest)) {
         await pipe.WriteAsync(new byte[] { Denied }.AsMemory(), timeout.Token);
         return 7;
       }
-      byte[] prefix = new byte[4];
-      if (!await ReadExact(pipe, prefix, timeout.Token)) return 7;
-      int bodyLength = BitConverter.ToInt32(prefix, 0);
-      if (bodyLength <= 0 || bodyLength > MaxTransportBytes) return 7;
-      byte[] body = new byte[bodyLength];
-      if (!await ReadExact(pipe, body, timeout.Token)) return 7;
-      byte[] transport = new byte[4 + bodyLength];
-      Buffer.BlockCopy(prefix, 0, transport, 0, 4);
-      Buffer.BlockCopy(body, 0, transport, 4, bodyLength);
-      string digest = ClientDigest(processId) ?? throw new InvalidOperationException();
+      byte[]? transport = await ReadTransport(pipe, timeout.Token);
+      if (transport is null) return 7;
       Console.Out.WriteLine("FRAME:" + digest + ":" + Convert.ToBase64String(transport));
       Console.Out.Flush();
       await pipe.WriteAsync(new byte[] { Accepted }.AsMemory(), timeout.Token);
@@ -79,12 +66,25 @@ internal static class BridgePipeRelayFixture {
 
   internal static async Task<int> RunClient(
       string pipeName, string fixturePath, string protectedSecretPath) {
-    if (!ValidPipeName(pipeName) || !StrictFile(fixturePath) ||
+    return await RunClient(
+      pipeName, fixturePath, protectedSecretPath, waitForPolicyGate: false);
+  }
+
+  internal static async Task<int> RunGatedClient(
+      string pipeName, string fixturePath, string protectedSecretPath) {
+    return await RunClient(
+      pipeName, fixturePath, protectedSecretPath, waitForPolicyGate: true);
+  }
+
+  private static async Task<int> RunClient(
+      string pipeName, string fixturePath, string protectedSecretPath,
+      bool waitForPolicyGate) {
+    if (!BridgeWindowsActivationPolicy.ValidPipeName(pipeName) || !StrictFile(fixturePath) ||
         !StrictFile(protectedSecretPath)) return 4;
     byte[]? secret = null;
     try {
       RelayFixture fixture = LoadFixture(fixturePath);
-      string selfDigest = SelfDigest();
+      string selfDigest = BridgeWindowsActivationPolicy.SelfDigest();
       if (!string.Equals(selfDigest, fixture.LauncherSha256,
                          StringComparison.Ordinal)) return 7;
       byte[] protectedSecret = File.ReadAllBytes(protectedSecretPath);
@@ -97,6 +97,14 @@ internal static class BridgePipeRelayFixture {
         ".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
       await pipe.ConnectAsync(timeout.Token);
+      if (waitForPolicyGate) {
+        byte[] gate = new byte[1];
+        if (await pipe.ReadAsync(gate.AsMemory(), timeout.Token) != 1 ||
+            gate[0] != 0x56) {
+          if (gate[0] == Denied) Console.Out.WriteLine("DENIED_WITHOUT_WRITE");
+          return 7;
+        }
+      }
       await pipe.WriteAsync(transport.AsMemory(), timeout.Token);
       byte[] response = new byte[1];
       return await pipe.ReadAsync(response, timeout.Token) == 1 &&
@@ -131,7 +139,8 @@ internal static class BridgePipeRelayFixture {
     string origin = root.GetProperty("origin").GetString() ?? "";
     long sequence = root.GetProperty("sequence").GetInt64();
     string encoded = root.GetProperty("envelope_b64").GetString() ?? "";
-    if (!ValidPeerId(peerId) || generation < 1 || !ValidSha256(launcher) ||
+    if (!ValidPeerId(peerId) || generation < 1 ||
+        !BridgeWindowsActivationPolicy.ValidSha256(launcher) ||
         launcher != launcher.ToLowerInvariant() || origin != Origin || sequence < 1)
       throw new InvalidDataException();
     byte[] envelope = Convert.FromBase64String(encoded);
@@ -216,6 +225,20 @@ internal static class BridgePipeRelayFixture {
     return result;
   }
 
+  internal static async Task<byte[]?> ReadTransport(
+      Stream stream, CancellationToken token) {
+    byte[] prefix = new byte[4];
+    if (!await ReadExact(stream, prefix, token)) return null;
+    int bodyLength = BitConverter.ToInt32(prefix, 0);
+    if (bodyLength <= 0 || bodyLength > MaxTransportBytes) return null;
+    byte[] body = new byte[bodyLength];
+    if (!await ReadExact(stream, body, token)) return null;
+    byte[] transport = new byte[4 + bodyLength];
+    Buffer.BlockCopy(prefix, 0, transport, 0, 4);
+    Buffer.BlockCopy(body, 0, transport, 4, bodyLength);
+    return transport;
+  }
+
   private static async Task<bool> ReadExact(
       Stream stream, byte[] destination, CancellationToken token) {
     int offset = 0;
@@ -225,29 +248,6 @@ internal static class BridgePipeRelayFixture {
       offset += count;
     }
     return true;
-  }
-
-  private static bool ClientMatches(uint processId, string expected) =>
-    string.Equals(ClientDigest(processId), expected, StringComparison.OrdinalIgnoreCase);
-
-  private static string? ClientDigest(uint processId) {
-    try {
-      using var process = Process.GetProcessById(checked((int)processId));
-      string? path = process.MainModule?.FileName;
-      if (string.IsNullOrEmpty(path) || !Path.IsPathFullyQualified(path)) return null;
-      using var executable = File.OpenRead(path);
-      return Convert.ToHexString(SHA256.HashData(executable)).ToLowerInvariant();
-    } catch {
-      return null;
-    }
-  }
-
-  private static string SelfDigest() {
-    string? path = Environment.ProcessPath;
-    if (string.IsNullOrEmpty(path) || !Path.IsPathFullyQualified(path))
-      throw new InvalidOperationException();
-    using var executable = File.OpenRead(path);
-    return Convert.ToHexString(SHA256.HashData(executable)).ToLowerInvariant();
   }
 
   private static bool StrictFile(string value) {
@@ -262,17 +262,8 @@ internal static class BridgePipeRelayFixture {
     }
   }
 
-  private static bool ValidPipeName(string value) =>
-    !string.IsNullOrEmpty(value) && value.Length <= 128 &&
-    value.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_');
-
   private static bool ValidPeerId(string value) =>
     !string.IsNullOrEmpty(value) && value.Length <= 128 &&
     value.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.');
 
-  private static bool ValidSha256(string value) =>
-    value.Length == 64 && value.All(character =>
-      (character is >= '0' and <= '9') ||
-      (character is >= 'a' and <= 'f') ||
-      (character is >= 'A' and <= 'F'));
 }

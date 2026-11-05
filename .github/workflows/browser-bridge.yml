@@ -1,0 +1,41 @@
+name: Browser Bridge CI
+
+on:
+  pull_request:
+    paths:
+      - "modules/browser-bridge/**"
+      - "src/bct/core/bridge_pr3*.py"
+      - "tests/test_bridge_pr3*.py"
+      - ".github/workflows/browser-bridge.yml"
+  push:
+    branches: [main]
+    paths:
+      - "modules/browser-bridge/**"
+      - "src/bct/core/bridge_pr3*.py"
+      - "tests/test_bridge_pr3*.py"
+      - ".github/workflows/browser-bridge.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-bridge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  listener:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e .
+      - run: dotnet build modules/browser-bridge/native/launcher/BctBridgeHost.csproj -c Release
+      - run: python -m unittest discover -s tests -p test_bridge_pr3o_listener.py -v
+      - run: python -m unittest discover -s modules/browser-bridge/tests -p test_bridge_boundary.py -v
+      - run: python -m unittest discover -s modules/browser-bridge/tests -p listener_windows_e2e.py -v
+      - run: python -m compileall -q src tests modules/browser-bridge

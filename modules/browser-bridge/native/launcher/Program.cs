@@ -19,6 +19,15 @@ class Program {
       return await BridgeActivationPolicyFixture.RunServer(args[1], args[2], args[3]);
     if (args.Length == 2 && args[0] == "--bridge-activation-policy-client")
       return await BridgeActivationPolicyFixture.RunClient(args[1]);
+    if (args.Length == 3 && args[0] == "--bridge-listener-seal-fixture")
+      return BridgeListenerFixture.SealFixtureBoundary(args[1], args[2]);
+    if (args.Length == 6 && args[0] == "--bridge-listener-server")
+      return await BridgeListenerFixture.RunServer(
+        args[1], args[2], args[3], args[4], args[5]);
+    if (args.Length == 4 && args[0] == "--bridge-listener-client")
+      return await BridgeListenerFixture.RunClient(args[1], args[2], args[3]);
+    if (args.Length == 3 && args[0] == "--bridge-listener-fault-client")
+      return await BridgeListenerFixture.RunFaultClient(args[1], args[2]);
     // Neither a PATH search nor a caller-supplied origin may choose the host runtime.
     if (args.Length != 1 || !string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)) return 4;
     if (!string.Equals(Environment.GetEnvironmentVariable("BCT_BRIDGE_EXTENSION_ORIGIN"), ApprovedOrigin, StringComparison.Ordinal)) return 4;

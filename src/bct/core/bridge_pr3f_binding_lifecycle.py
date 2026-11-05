@@ -82,6 +82,10 @@ class BindingLifecycle:
         self._secret_store = secret_store
         install_schema(store)
 
+    def uses_secret_store(self, secret_store: PeerSecretStore) -> bool:
+        """Confirm the exact credential boundary injected at construction."""
+        return self._secret_store is secret_store
+
     def provision(self, peer_id: str, *, binding_generation: int,
                   launcher_sha256: str, secret: bytes) -> BindingRecord:
         if not _arguments_valid(peer_id, binding_generation, launcher_sha256, secret):

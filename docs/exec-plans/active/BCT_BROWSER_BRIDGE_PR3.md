@@ -1,6 +1,6 @@
 # BCT Browser Bridge PR3 — peer adapter checkpoint
 
-Status: `PR3M_WINDOWS_RELAY_E2E_ACCEPTED / PRODUCT_GATE_BLOCKED`.
+Status: `PR3O_PRODUCTION_DISABLED_LISTENER_IN_PROGRESS / PRODUCT_GATE_BLOCKED`.
 
 This plan is a source and review checkpoint for the independent Browser Bridge.
 It is not part of RCC, does not use the RCC Native Host, and does not authorize
@@ -135,6 +135,23 @@ product. Continue in bounded checkpoints:
 6. Only after the isolated acceptance passes, prepare a separately approved
    packaging/deployment checkpoint with verifiable artifacts, rollback and
    operational observability. CI success alone never enables the listener.
+
+## In-progress checkpoint: PR3-o listener composition
+
+PR3-n's Windows owner/DACL/logon-session checks are being extracted into the
+same narrow policy primitive used by an explicit PR3-o one-shot listener
+fixture. The new composition injects the accepted PR3-f lifecycle, PR3-h DPAPI
+store and PR3-l relay; PR3-l continues to own PR3-k decoding and PR3-e
+binding/proof/sequence ingress. No wire, lifecycle or retry state machine is
+reimplemented.
+
+The acceptance boundary is deliberately two-phase: the same connected pipe
+must pass root/file/pipe ACL, session, PID and executable-digest checks, then
+Python must authorize the current binding before the client can write a
+payload. Client success is withheld until Core dispatch and result publication
+complete. Shutdown owns only the disposable listener resources, while the
+credential and replay sequence persist across restart. This is still an
+explicit CI fixture, not a runtime listener or product activation.
 
 ## In-progress checkpoint: PR3-n Windows activation policy
 

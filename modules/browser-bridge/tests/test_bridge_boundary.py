@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 NATIVE = ROOT / "native"
 LAUNCHER = NATIVE / "launcher" / "Program.cs"
 ACTIVATION_POLICY = NATIVE / "launcher" / "BridgeActivationPolicyFixture.cs"
+WINDOWS_POLICY = NATIVE / "launcher" / "BridgeWindowsActivationPolicy.cs"
+LISTENER_FIXTURE = NATIVE / "launcher" / "BridgeListenerFixture.cs"
 sys.path.insert(0, str(NATIVE))
 os.environ.setdefault("BCT_BRIDGE_MCP_URL", "http://127.0.0.1:19991/mcp")
 import persistent_host
@@ -28,11 +30,13 @@ class BridgeBoundaryContractTests(unittest.TestCase):
     def test_activation_policy_is_explicit_fixture_only_and_denies_before_read(self):
         launcher = LAUNCHER.read_text(encoding="utf-8")
         policy = ACTIVATION_POLICY.read_text(encoding="utf-8")
+        windows_policy = WINDOWS_POLICY.read_text(encoding="utf-8")
         self.assertIn('args[0] == "--bridge-activation-policy-server"', launcher)
         self.assertIn('args[0] == "--bridge-activation-policy-client"', launcher)
-        self.assertIn("GetNamedPipeClientSessionId", policy)
+        self.assertIn("BridgeWindowsActivationPolicy", policy)
+        self.assertIn("GetNamedPipeClientSessionId", windows_policy)
         server_read = policy.index("pipe.ReadAsync(request.AsMemory()")
-        self.assertLess(policy.index("!GetNamedPipeClientSessionId("), server_read)
+        self.assertLess(policy.index("VerifyConnectedBeforeRead("), server_read)
         self.assertLess(policy.index("DENIED_BEFORE_READ"), server_read)
         self.assertLess(policy.index("pipe.WriteAsync(new byte[] { Verified }"),
                         server_read)
@@ -47,6 +51,26 @@ class BridgeBoundaryContractTests(unittest.TestCase):
             "peer_frame", "persistent_host.py",
         ):
             self.assertNotIn(runtime_dependency, policy)
+
+    def test_listener_is_explicit_only_and_combines_same_connection_gate(self):
+        launcher = LAUNCHER.read_text(encoding="utf-8")
+        listener = LISTENER_FIXTURE.read_text(encoding="utf-8")
+        policy = WINDOWS_POLICY.read_text(encoding="utf-8")
+        self.assertIn('args[0] == "--bridge-listener-server"', launcher)
+        self.assertIn('args[0] == "--bridge-listener-client"', launcher)
+        self.assertNotIn("BCT_BRIDGE_LISTENER", launcher)
+        self.assertIn("VerifyConnectedBeforeRead", listener)
+        self.assertIn("BridgePipeRelayFixture.ReadTransport", listener)
+        self.assertLess(listener.index("VerifyConnectedBeforeRead("),
+                        listener.index("ReadTransport("))
+        self.assertLess(listener.index('"AUTHORIZE"'), listener.index("ReadTransport("))
+        self.assertLess(listener.index('"PUBLISH:OK"'),
+                        listener.index("new byte[] { Accepted }"))
+        for required in ("VerifyCredentialBoundary(rootPath, credentialPath)",
+                         "KernelSecurityMatches(pipe.SafePipeHandle)",
+                         "GetNamedPipeClientSessionId",
+                         "VerifyConnectedProcess(pipe.SafePipeHandle"):
+            self.assertIn(required, policy)
 
     def test_core_receipt_error_does_not_become_success(self):
         r = persistent_host.core_reply(SimpleNamespace(isError=True, structuredContent={"error": "not_found"}), "a"*32)
