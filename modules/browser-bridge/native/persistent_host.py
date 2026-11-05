@@ -48,13 +48,23 @@ def core_reply(result, request_id, operation_type="bridge_read"):
     return {"ok": True, "request_id": request_id, "result": content}
 
 
+def tool_reply(result, request_id, tool_name):
+    """Preserve a generic MCP tool result without inventing receipt semantics."""
+    content = getattr(result, "structuredContent", None)
+    if getattr(result, "isError", True):
+        return {"ok": False, "request_id": request_id, "tool_name": tool_name,
+                "outcome": "TOOL_ERROR", "result": content}
+    return {"ok": True, "request_id": request_id, "tool_name": tool_name,
+            "result": content}
+
+
 async def serve(inp, out):
     global LAST_REQUEST_ID
     first = await asyncio.to_thread(read_frame, inp, True)
     if first is None:
         return 0
     LAST_REQUEST_ID = first.get("request_id") if isinstance(first, dict) else None
-    if not WORK_ID or not TOKEN_PATH.is_file():
+    if not TOKEN_PATH.is_file():
         write_frame(out, error_reply(LAST_REQUEST_ID, "HOST_AUTH_NOT_CONFIGURED", "AUTH_DENIED"))
         return 4
     token = TOKEN_PATH.read_text(encoding="utf-8").strip()
@@ -77,20 +87,33 @@ async def serve(inp, out):
                     if message is None:
                         return 0
                     try:
-                        request_id, arguments = validate(message)
+                        request_id, tool_name, arguments = validate(message)
+                        if message.get("schema_version") == 1 and not WORK_ID:
+                            raise ValueError("HOST_AUTH_NOT_CONFIGURED")
                         if TOKEN_PATH.read_text(encoding="utf-8").strip() != token:
                             write_frame(out, error_reply(request_id, "HOST_TOKEN_CHANGED_RECONNECT_REQUIRED", "AUTH_DENIED"))
                             return 0
                         try:
-                            if message["type"] == "receipt_lookup":
-                                result = await session.call_tool("bct_operation_get", {"work_id": WORK_ID, "operation_id": request_id})
-                            else:
-                                result = await session.call_tool("bct_read", {"work_id": WORK_ID, "operation_id": request_id, "arguments": arguments})
+                            tools = await session.list_tools()
+                            available = {item.name: item for item in tools.tools}
+                            if message["type"] == "tool_list":
+                                reply = {"ok": True, "request_id": request_id,
+                                         "tools": [item.name for item in tools.tools]}
+                                write_frame(out, reply)
+                                continue
+                            if tool_name not in available:
+                                reply = error_reply(request_id, "TOOL_NOT_REGISTERED", "INPUT_DENIED")
+                                write_frame(out, reply)
+                                continue
+                            result = await session.call_tool(tool_name, arguments)
                         except Exception:
                             # The request may have been committed before transport failed.
                             reply = error_reply(request_id, "DISPATCH_RESULT_AMBIGUOUS_NO_RETRY", "UNKNOWN")
                         else:
-                            reply = core_reply(result, request_id, message["type"])
+                            if message.get("schema_version") == 1:
+                                reply = core_reply(result, request_id, message["type"])
+                            else:
+                                reply = tool_reply(result, request_id, tool_name)
                     except (ValueError, TypeError) as exc:
                         reply = error_reply(message.get("request_id") if isinstance(message, dict) else None, str(exc), "INPUT_DENIED")
                     except OSError:

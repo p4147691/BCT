@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "BCT Browser Bridge (Prototype)",
-  "version": "0.0.1",
-  "description": "Manual read-only BCT transport prototype; not production.",
-  "permissions": ["nativeMessaging"],
+  "name": "BCT Browser Bridge",
+  "version": "0.1.0",
+  "description": "Independent BCT control transport for exact ChatGPT conversations.",
+  "permissions": ["nativeMessaging", "storage", "tabs"],
   "action": {"default_popup": "popup.html"},
   "background": {"service_worker": "background.js"},
+  "content_scripts": [{
+    "matches": ["https://chatgpt.com/c/*"],
+    "js": ["tool_protocol.js", "chat_tools.js"],
+    "run_at": "document_idle"
+  }],
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4XXY4rhavkQ+P1DUPGHdTmvs8xioKBXSeF70ZmzsDfvJKU38kb2RpX+6nRhEFKh3wuekoleeSooy5qSgxG724JvzAYvcx+Bip+baTVFffRGoitL89FNVIUlRTF+ug1QCwrap4a8Q/G5TekpOZWbxJBiLa2fMVH1kbIkiIDGuBdUzZbiM8qWvCq/TEk4HK+D9kKnVNekskyeBu6UYLpeIQUIR5rYiAAsuMhtADLWJ7Y0aeBqsvT2rcPbCyTlSoBYY/7b0OLp4O03sI67a8v8DfRUmfhhctnMVORT+eSxIu9YrYjMv6eZOEZqX9tkhpgPhUe2sGcwZoRA5OWVUFO1aNwIDAQAB"
 }

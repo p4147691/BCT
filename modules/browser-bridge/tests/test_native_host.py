@@ -22,6 +22,11 @@ def valid():
             "operation_id": "a" * 32, "capability": "read", "arguments": {"path": r"C:\fixture\hello.txt"}}
 
 
+def tool_call():
+    return {"schema_version": 2, "type": "tool_call", "request_id": "b" * 32,
+            "tool_name": "bct_status", "arguments": {"compact": True}}
+
+
 class BridgeHostTests(unittest.TestCase):
     def test_frame_roundtrip(self):
         self.assertEqual(valid(), host.read_frame(io.BytesIO(frame(valid()))))
@@ -30,14 +35,28 @@ class BridgeHostTests(unittest.TestCase):
 
     def test_malformed_frames_rejected(self):
         with self.assertRaisesRegex(ValueError, "FRAME_TOO_LARGE"):
-            host.read_frame(io.BytesIO(struct.pack("<I", 65537)))
+            host.read_frame(io.BytesIO(struct.pack("<I", host.MAX_FRAME + 1)))
         with self.assertRaises(ValueError):
             host.read_frame(io.BytesIO(struct.pack("<I", 12) + b"abc"))
 
-    def test_schema_is_read_only_and_exact(self):
+    def test_legacy_read_schema_remains_exact(self):
         for fields in ({"capability": "write"}, {"type": "execute"}, {"request_id": "bad"}, {"operation_id": "b" * 32}, {"arguments": {"path": "x", "command": "whoami"}}, {"extra": "unexpected"}):
             with self.subTest(fields=fields):
                 with self.assertRaises(ValueError): host.validate({**valid(), **fields})
+
+    def test_generic_tool_call_and_list_are_exact(self):
+        self.assertEqual(("b" * 32, "bct_status", {"compact": True}), host.validate(tool_call()))
+        listing = {"schema_version": 2, "type": "tool_list", "request_id": "c" * 32,
+                   "tool_name": "", "arguments": {}}
+        self.assertEqual(("c" * 32, "", {}), host.validate(listing))
+        for fields in ({"tool_name": "bad tool"}, {"arguments": []}, {"extra": True}):
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                host.validate({**tool_call(), **fields})
+
+    def test_live_core_requires_explicit_activation_flag(self):
+        source = Path(host.__file__).read_text(encoding="utf-8")
+        self.assertIn('BCT_BRIDGE_ALLOW_LIVE_CORE', source)
+        self.assertIn('_url.port == 18790', source)
 
     def test_origin_fails_closed(self):
         with patch.object(host, "APPROVED_ORIGIN", ""):

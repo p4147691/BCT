@@ -1,10 +1,15 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "9893ea213c17eda28192b464a126a91e3af0789013724e0a6066da78ab1eb896",
+  "source_fingerprint": "e3ba9297ac0d25a1f4f0e67f7e931488b208a317025060a19aff72bb207375df",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "be7ee7d02530be509d7b7e012d8227929041920b0340405d786d7d70a3da18da",
     "docs/PRIMITIVE_MODULES_V1.md": "15c1b2595163bd4d7de5d5c021e78f76d55d39f5bd92d6162e6ea68ce7437d16",
-    "docs/component-library.v1.json": "7c332d03d4a8c21fbcba05055bca3eb198c122211197bede5f230364be6e04eb",
+    "docs/component-library.v1.json": "713af37031bf773698b5d388232174a572254d15248d87bd8502e7336a3be582",
+    "modules/browser-bridge/extension/background.js": "e88a78ead69a5218a40398cae5f59c1acfbd1b7212b3338c857721a28ca2af07",
+    "modules/browser-bridge/extension/chat_tools.js": "72655273bd6184a7699d04c4e7873ce8472566c40d9b8a90453819cb3d638847",
+    "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
+    "modules/browser-bridge/native/native_host.py": "c00384a433457e17ba222a65c92684811e77f9c7cd9c204c8693b4cd811baf1f",
+    "modules/browser-bridge/native/persistent_host.py": "bf767f14ec87372b451181d141026262220f565d59f0642d4fca5d27c55f8678",
     "modules/monitor/domains/desktop-lifecycle.js": "8269e05b3597723b2d47fdf2a8ddc8d3cca7cc93ae49a0f4db6ec506a6084158",
     "modules/monitor/domains/node-identity.js": "92e31f61a43114ddff67ed482508f31f358b94b0d4b029ba4592b7d6e7a96138",
     "modules/monitor/extension/browser/tab-close-adapter.js": "25098987008308e97822ee12b5e62e93f39506bae165014c51b0aab3c95025b7",
@@ -46,6 +51,49 @@
       "embedded": "Reusable function boundary still embedded in a large recipe module."
     },
     "components": [
+      {
+        "id": "browser_bridge.bct_tool_transport",
+        "kind": "partial_recipe",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "modules/browser-bridge/extension/background.js",
+            "symbol": "nativeRequest / chatGrant"
+          },
+          {
+            "path": "modules/browser-bridge/extension/tool_protocol.js",
+            "symbol": "BctToolProtocol.parse"
+          },
+          {
+            "path": "modules/browser-bridge/extension/chat_tools.js",
+            "symbol": "scan / sendResult"
+          },
+          {
+            "path": "modules/browser-bridge/native/native_host.py",
+            "symbol": "validate / dispatch"
+          },
+          {
+            "path": "modules/browser-bridge/native/persistent_host.py",
+            "symbol": "serve / tool_reply"
+          }
+        ],
+        "contract": "Expose only tools registered by the authenticated BCT MCP server to one explicitly enabled exact ChatGPT conversation. The assistant emits one strict tool request envelope; the Bridge calls that exact tool once and returns the result to the same conversation.",
+        "effects": [
+          "authenticated-mcp-tool-call",
+          "same-conversation-result-delivery"
+        ],
+        "safety": [
+          "per-tab-conversation-grant",
+          "core-principal-and-work-authority",
+          "registered-tools-only",
+          "no-second-shell",
+          "unknown-no-replay",
+          "exact-extension-origin"
+        ],
+        "used_by": [
+          "ordinary-chat-bct-control"
+        ]
+      },
       {
         "id": "bct.chain_message",
         "kind": "full_recipe",

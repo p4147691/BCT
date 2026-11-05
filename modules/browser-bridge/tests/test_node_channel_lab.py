@@ -12,10 +12,11 @@ LAB = ROOT / "node-channel"
 
 
 class IndependentNodeChannelLabTests(unittest.TestCase):
-    def test_existing_bridge_identity_and_permissions_remain_unmodified(self):
+    def test_existing_bridge_identity_is_stable_and_product_permissions_are_explicit(self):
         product = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
         node = json.loads((LAB / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(["nativeMessaging"], product["permissions"])
+        self.assertEqual(["nativeMessaging", "storage", "tabs"], product["permissions"])
+        self.assertEqual(["https://chatgpt.com/c/*"], product["content_scripts"][0]["matches"])
         self.assertNotIn("host_permissions", product)
         self.assertNotIn("key", node)
         self.assertNotIn("nativeMessaging", node["permissions"])

@@ -1,44 +1,47 @@
-# Real Chrome E2E gate
+# Browser Bridge Chrome E2E gate
 
-This is a manual, explicitly approved acceptance gate.  It is not run by CI, does not use the production BCT Core at port 18790, and must not touch RCC, LIVE work, Issue #111 records, UNKNOWN operations, or claims.
+Browser Bridge Chrome acceptance has two separate stages. Neither stage may
+reuse RCC identity or erase an existing Native Host registration.
 
-## Browser decision
+## Stage 1: disposable candidate acceptance
 
-Use **ordinary Chrome with a new, named test profile and Developer Mode → Load unpacked** for the first product acceptance.  Chrome documents this as the local-development installation path, and it proves the same UI-mediated installation that an operator will perform.  It also keeps the manifest-pinned ID visible before the native host allowlist is registered.
+1. Use a new Bridge-owned Chrome profile and load the exact unpacked candidate.
+2. Build/stage the exact candidate launcher in a new Bridge-owned directory.
+3. Register only `com.bct.browser_bridge.prototype` under HKCU with the pinned
+   origin `chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/`.
+4. Start an isolated BCT Core on a random loopback port and create a temporary
+   Bridge token and fixture Work.
+5. In one ordinary `chatgpt.com/c/<uuid>` conversation, enable Bridge control.
+6. Confirm the bootstrap causes an exact `bct_capabilities` tool request, then
+   prove tool list, status, Work creation, read, write and bounded execute.
+7. Prove malformed tool, wrong origin, missing token and outside-Work effects
+   are denied. An interrupted effect is UNKNOWN and is not resent.
+8. Close only the owned Chrome/Core and remove only the exact profile, registry,
+   manifest, token, runtime and staging artifacts created by the test.
 
-Use **Chrome for Testing (CfT) only for a later automated suite**, pinned to a version and launched by Puppeteer with `enableExtensions`.  Do not use the raw `--load-extension` path that the earlier harness used: the normal Chrome invocation was observed to end in `CHROME_EXTENSION_LOAD_BLOCKED`, so it is not the reproducible acceptance path.  CfT is appropriate for automation because its binary can be pinned, but it requires a separate approved download and test run.
+## Stage 2: operating activation
 
-Chrome references: [Load unpacked](https://developer.chrome.com/docs/extensions/get-started/tutorial/scripts-activetab), [extension E2E testing](https://developer.chrome.com/docs/extensions/how-to/test/end-to-end-testing), and [Puppeteer extension enablement](https://developer.chrome.com/docs/extensions/how-to/test/puppeteer).
+Operating activation is allowed only after exact candidate CI and Stage 1.
+Trusted staging must:
 
-## Required approval, exactly scoped
+- preserve the pinned extension and Host identities;
+- install a Bridge-owned launcher/runtime with recorded SHA-256 values;
+- provision the current local BCT MCP bearer to the Native Host through a restrictive host-only path (the current Core does not yet issue a separate Bridge principal);
+- set the exact loopback MCP URL and `BCT_BRIDGE_ALLOW_LIVE_CORE=1`;
+- record the previous registration state and a reversible rollback plan;
+- reload only the Browser Bridge extension once;
+- verify `bct_capabilities`, `bct_status`, one bounded read and one separately
+  approved harmless control effect before broader use.
 
-Before any real E2E, approve all of the following together:
+Source tests, candidate CI, disposable Chrome proof and operating LIVE proof are
+reported separately. A successful isolated test is not an installed result.
 
-1. Launch one ordinary Chrome process with a newly created, bridge-owned profile directory; no existing profile may be selected.
-2. Use Chrome UI to enable Developer Mode and load only `modules/browser-bridge/extension` unpacked.
-3. Build and stage the committed launcher into a new bridge-owned directory; no RCC executable is replaced.
-4. Create one **HKCU** registration only for `com.bct.browser_bridge.prototype`, pointing to a generated bridge-owned manifest whose sole origin is `chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/`.
-5. Create a temporary isolated BCT Core, random loopback port, test work, fixture, and token with an ACL restricted to the current user and SYSTEM.  Never use port 18790 or an operating token.
-6. Perform one manual popup read of the fixture, receipt lookup, denied outside-fixture read, then a second valid read; capture only outcome/receipt metadata.
-7. Remove the exact registry key, owned manifest, Core/runtime, token, fixture, staged launcher, and profile after the browser and test Core have stopped.
+Chrome references: [Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging), [Load unpacked](https://developer.chrome.com/docs/extensions/get-started/tutorial/scripts-activetab), and [extension E2E testing](https://developer.chrome.com/docs/extensions/how-to/test/end-to-end-testing).
 
-Approval must also name the rollback owner and confirm that a test-only HKCU key with the same name does not already exist.  If it exists, stop rather than overwrite it.
+## Rollback
 
-## Preflight and acceptance
-
-Preflight must prove:
-
-- Current source package tests pass and `git diff --check` is clean.
-- The extension ID calculated from the checked-in manifest key is `acdgnmbgpkfjkckccbhmccojgigbfcge`.
-- The generated host manifest's name, executable path, and sole allowed origin match the values above.
-- Test paths, test profile, and target HKCU registry key do not already exist.
-- The selected Chrome process is new and uses only the approved test profile.
-- The isolated Core URL is loopback `/mcp` on a random port other than 18790; its token is never logged.
-
-Record PASS only when all four browser-visible/receipt outcomes succeed: valid read, exact receipt lookup, denied outside-fixture read, and reconnect/follow-up read.  A native disconnect or ambiguous dispatch is `UNKNOWN`; do not resend the same operation.
-
-## Rollback and cleanup
-
-The cleanup is ordered: close only the owned Chrome process; stop only the isolated Core; verify the registry value still points to the generated manifest; delete that key; then delete owned manifest, launcher staging, Core/runtime/token/fixture, and test profile.  If ownership/value checks fail, preserve the artifact and report `CLEANUP_BLOCKED`; never delete a pre-existing key, profile, executable, BCT data, or RCC file.
-
-`PENDING_FILE_RENAME` or a stale closed browser process is not by itself permission to reboot.  A reboot is outside this gate.
+Disable the Bridge manifest/host activation first, close only the owned Host, verify the
+current registry value still matches the activation receipt, restore or remove
+that exact value, and then remove owned staging files. Do not touch RCC, other
+Chrome profiles, operating Core data, UNKNOWN receipts or Claims. Ownership
+mismatch is `CLEANUP_BLOCKED`, not permission to delete.

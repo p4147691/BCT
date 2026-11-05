@@ -15,6 +15,22 @@
   },
   "components": [
     {
+      "id": "browser_bridge.bct_tool_transport",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "modules/browser-bridge/extension/background.js", "symbol": "nativeRequest / chatGrant"},
+        {"path": "modules/browser-bridge/extension/tool_protocol.js", "symbol": "BctToolProtocol.parse"},
+        {"path": "modules/browser-bridge/extension/chat_tools.js", "symbol": "scan / sendResult"},
+        {"path": "modules/browser-bridge/native/native_host.py", "symbol": "validate / dispatch"},
+        {"path": "modules/browser-bridge/native/persistent_host.py", "symbol": "serve / tool_reply"}
+      ],
+      "contract": "Expose only tools registered by the authenticated BCT MCP server to one explicitly enabled exact ChatGPT conversation. The assistant emits one strict tool request envelope; the Bridge calls that exact tool once and returns the result to the same conversation.",
+      "effects": ["authenticated-mcp-tool-call", "same-conversation-result-delivery"],
+      "safety": ["per-tab-conversation-grant", "core-principal-and-work-authority", "registered-tools-only", "no-second-shell", "unknown-no-replay", "exact-extension-origin"],
+      "used_by": ["ordinary-chat-bct-control"]
+    },
+    {
       "id": "bct.chain_message",
       "kind": "full_recipe",
       "maturity": "bounded",

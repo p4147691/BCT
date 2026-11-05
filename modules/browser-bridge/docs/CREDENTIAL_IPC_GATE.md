@@ -1,114 +1,59 @@
-# Browser Bridge credential and local-IPC activation gate
+# Browser Bridge credential and local transport gate
 
-This is a design gate, not an implementation or deployment instruction.  It
-does not create a secret, registry value, profile, listener, or Core release.
-It exists because PR3-e needs a Bridge-specific `PeerBindingProvider`, whereas
-the existing read-only Native Host only reads an isolated MCP token from a
-staging environment variable.
+Browser Bridge is an independent control client for the BCT Core. It uses its
+own extension identity, Native Host registration, launcher, staging directory
+and the host-only BCT MCP token. It does not reuse RCC files or the general operator
+token used by another BCT client.
 
-## Non-reuse rule
+## Authority boundary
 
-The following identities are deliberately incompatible with a PR3-e peer
-binding and must never be copied, derived, or repurposed as one:
+The current Core exposes one local BCT MCP bearer mapped to `bct-mcp-local`; it
+does not yet issue a distinct Browser Bridge principal. The bearer stays inside
+the Native Host and is never returned to the extension or chat. Core principal
+capabilities are the upper bound for every call. Each effectful
+tool still requires its normal Work actions, operation identity, policy and
+resource fences. The extension and Native Host cannot grant themselves another
+capability or turn a denied tool into PowerShell.
 
-- BCT Core control and MCP bearer tokens;
-- the read-only Browser Bridge test token and `BCT_BRIDGE_*` environment
-  variables;
-- every RCC extension, Native Host, manifest, executable, profile, or token;
-- a Chrome extension origin by itself.
+The token must:
 
-PR3-e proof is a Host/Core possession check.  It is not a replacement for the
-Core capability grant, Chrome extension identity, or OS process protection.
+- live in a Bridge-owned file with a restrictive current-user/SYSTEM ACL;
+- never enter Chrome storage, a command line, log, receipt or tool result;
+- be rotated by trusted staging rather than overwritten by the extension;
+- be revoked before removing an operating Host;
+- connect only to the configured loopback BCT MCP endpoint.
 
-## Required binding record
+`BCT_BRIDGE_ALLOW_LIVE_CORE=1` is a required activation flag for port 18790.
+Its presence is not authorization by itself; origin, launcher/runtime digests,
+token, principal, Work and Core policy must also pass.
 
-A future provisioning operation may create exactly one Bridge-owned binding
-record per approved Host identity.  Its durable non-secret metadata is:
+## Browser and request boundary
 
-| Field | Requirement |
-| --- | --- |
-| `peer_id` | Opaque, bounded Bridge-only identifier. |
-| `binding_generation` | Positive, monotonic generation; never reused for the same peer. |
-| `launcher_sha256` | Exact approved launcher executable digest. |
-| `origin` | The fixed Browser Bridge origin only. |
-| `state` | `ACTIVE`, `REVOKED`, or `RETIRED`; no implicit fallback. |
-| `created_at` / `revoked_at` | Audit metadata only; never a plaintext secret. |
+Only the pinned Browser Bridge origin may launch the Native Host. Ordinary Chat
+access is opt-in per exact tab and conversation UUID for the current Chrome
+session. Assistant text is untrusted input and must match the strict tool
+envelope. The Host then verifies the requested tool against the authenticated
+Core's actual MCP tool list before one call.
 
-The 32-byte proof secret is separate from this record.  On the present
-same-user Windows topology, user-scope DPAPI is a candidate protection
-mechanism, but selecting it requires a separate implementation review.  No
-command line, environment variable, SQLite row, receipt, log, error response,
-or browser extension storage may contain the plaintext secret.
+A transport interruption after dispatch is `UNKNOWN`. The Bridge never retries
+that request automatically. Recovery uses the original Work/Operation receipt.
 
-## Lifecycle and fencing
+## Optional protected-pipe path
 
-```text
-unprovisioned --provision--> ACTIVE(generation N)
-ACTIVE(N) --rotate--> ACTIVE(N+1) + RETIRED(N)
-ACTIVE(N) --revoke--> REVOKED(N)
-RETIRED/REVOKED --remove--> absent
-```
-
-- Provisioning must verify the exact Bridge launcher digest and fixed origin
-  before secret creation.  It must fail if any target Bridge resource already
-  exists with different ownership or values.
-- Rotation creates and verifies `N+1` before retiring `N`; it never overwrites
-  a secret in place.  New frames must use `N+1`.  Frames signed by a retired or
-  revoked generation are denied.
-- PR3-e replay state is keyed by `(peer_id, binding_generation)`.  Retirement
-  therefore cannot make an old sequence valid for the new generation.
-- Revocation is fail-closed: provider lookup must return no usable binding
-  before Core accepts another frame.  A frame in transit may be denied or
-  become an auditable unknown transport effect, but it must not be retried
-  automatically.
-- Recovery starts by inspecting only Bridge-owned metadata and the release
-  receipt.  It may not infer that a missing reply means no previous Core
-  effect; receipt lookup governs recovery.
-
-## Protected local IPC contract
-
-The future transport must carry the canonical bytes from
-`native/peer_frame.py` to the Core PR3-e adapter without exposing the proof
-secret to Chrome or another user process.  It must additionally prove, before
-dispatch, all of the following:
-
-1. the server accepts only the current Windows user and the approved
-   Bridge-owned Host process boundary;
-2. the launching executable matches `launcher_sha256` at connection time;
-3. the endpoint is newly Bridge-owned, has no pre-existing foreign listener,
-   and cannot collide with RCC or the read-only Bridge host;
-4. peer binding lookup and sequence reservation fail closed if credential or
-   process inspection fails; and
-5. endpoint removal is possible using only its recorded Bridge ownership
-   receipt.
-
-An arbitrary loopback HTTP port, inherited environment secret, or an existing
-BCT/RCC native host does not satisfy this contract.  The transport choice
-(for example a Windows named pipe with restricted ACL plus peer-process
-inspection) remains a separately reviewed implementation decision.
-
-PR3-n records the first disposable proof of that decision: the intended
-logon SID is placed on a protected pipe DACL, the connected client session is
-queried and compared before payload read, and separately protected temporary
-credential root/file ACLs are revalidated after connect. This does not create
-or enable a production listener. `CurrentUserOnly` remains insufficient as the
-sole activation evidence, and a same-account malicious-process boundary still
-requires the independent executable proof and peer/capability checks.
+The checked-in PR3 peer-binding, DPAPI and named-pipe components remain an
+alternative hardened local transport. They are not silently combined with the
+direct MCP path and are not required to claim the current generic tool
+transport works. Enabling them is a separate release decision with its own
+binding-generation and executable-proof acceptance tests.
 
 ## Activation acceptance
 
-Before production code is enabled, an isolated test must prove:
+Before operating activation, prove all of the following on the exact candidate:
 
-1. provisioned Host → signed frame → PR3-c success;
-2. wrong user/process/origin/launcher digest/secret/generation is denied
-   without exposing a secret;
-3. sequence replay, retired generation, and revoked generation are denied;
-4. rotation accepts the new generation and refuses the old one;
-5. an interrupted post-send exchange is recovered through existing immutable
-   delivery/receipt contracts, never by resending the same request; and
-6. cleanup deletes only artifacts created by that test and leaves BCT LIVE,
-   RCC, existing Chrome, Issue #111, UNKNOWN records, and Claims unchanged.
-
-Only after this gate, exact-head CI, an independent review, and a separate
-explicit activation approval may a listener, credential provider, registry
-entry, or Chrome E2E be implemented or run.
+1. package, Native Host, component-library and isolated MCP tests pass;
+2. exact candidate CI builds the launcher;
+3. tool listing and read/control/write/execute calls pass against an isolated Core;
+4. wrong origin, missing token, unregistered tool and malformed arguments fail closed;
+5. a disposable Chrome profile completes the same-conversation request/result loop;
+6. installation records exact source, launcher, manifest, token path, current Core principal and rollback ownership;
+7. existing Chrome, RCC, BCT Core, UNKNOWN operations and Claims remain untouched.

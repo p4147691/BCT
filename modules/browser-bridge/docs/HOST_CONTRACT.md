@@ -7,8 +7,9 @@ The standalone bridge launcher is **not** RCC. The signed or otherwise separatel
 - `BCT_BRIDGE_PYTHON_EXE`: an existing, absolute, canonical Windows `.exe` path to a separately approved Python runtime. PATH resolution, relative paths, and implicit `python` are forbidden. Approval must bind the absolute path and executable SHA-256 to the test manifest/receipt; the launcher enforces runtime file SHA-256 as well as path shape and existence.
 - `BCT_BRIDGE_PYTHON_SHA256`: mandatory 64-character SHA-256 of the approved runtime file; launcher computes file hash and fails closed on mismatch.
 - `BCT_BRIDGE_EXTENSION_ORIGIN`: exactly `chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/`. Both C# and Python require ordinal equality.
-- `BCT_BRIDGE_MCP_URL`: isolated HTTP loopback `/mcp` URL, never port 18790.
-- `BCT_BRIDGE_TOKEN_PATH` and `BCT_BRIDGE_WORK_ID`: isolated test-only credentials and least-privilege work.
+- `BCT_BRIDGE_MCP_URL`: exact HTTP loopback `/mcp` URL. Port 18790 is rejected unless trusted staging explicitly sets `BCT_BRIDGE_ALLOW_LIVE_CORE=1`.
+- `BCT_BRIDGE_TOKEN_PATH`: path to the current local BCT MCP bearer, held only by the Native Host with a restrictive ACL. The current Core maps it to `bct-mcp-local`; Work scope, capability policy and operation fences remain the authorization boundary for every generic tool call.
+- `BCT_BRIDGE_WORK_ID`: retained for schema-v1 read compatibility only. Generic schema-v2 calls carry the exact arguments required by the registered MCP tool, including Work and Operation IDs where applicable.
 
 The configured runtime and host script are separate assets. Never use the user's general Python installation without explicit executable approval. No host registration, Chrome installation, tokens, or Core resources are created by this package.
 
@@ -26,9 +27,15 @@ The configured runtime and host script are separate assets. Never use the user's
 
 Receipt lookup is read-only. Failed receipt lookup must not be interpreted as lack of an earlier effect. A timeout after dispatch is ambiguous even if no response was received. The request ID must remain associated with the exact operation/receipt.
 
+## Generic BCT tool boundary
+
+Schema v2 supports `tool_list` and `tool_call`. The Host obtains the live MCP tool list on the same authenticated session and rejects names that are not registered. It does not translate a tool call into shell text, broaden Work permissions, invent missing IDs, retry UNKNOWN effects, or treat a transport response as stronger evidence than the Core result.
+
+Ordinary Chat integration is an explicitly enabled per-tab/per-conversation adapter. Its assistant marker is only a request envelope; it is not authority. The Bridge credential, Core principal, Work, capability policy and operation/resource fences remain authoritative.
+
 ## Durable orchestration boundary (PR2/PR3)
 
-This PR does not implement completion observation or message delivery. Proposed **future** APIs (not implemented): `bridge_completion_report`, `bridge_result_get`, `bridge_delivery_request`, `bridge_delivery_receipt_get`. Completion events must bind session, assignment, generation, node, result digest and unique event ID; retrieval must not consume a result. Targeted delivery must fence target identity and connection generation and distinguish accepted / sent / ACK / UNKNOWN receipts.
+The Bridge does not create a second completion or delivery ledger. Chain Message, delayed sends, browser delivery, completion observation and return-to-Manager use the corresponding registered BCT tools and their existing Core ledgers.
 
 PR1 owns atomic result-consumption and manager decision, PR2 owns durable orchestration/wake/outbox contracts, and PR3 will own authorized browser completion/delivery integration once separately approved. No SQLite consumption logic, manager epochs, RCC internals or browser DOM control are added here.
 
