@@ -1615,7 +1615,9 @@ def build_mcp(
         name="bct_set_execute_plan",
         description=(
             "Save B's Execute Plan for an exact delivered A Direction. This stores "
-            "B's files, tools, checks, and safe next steps; it does not execute them."
+            "B's files, tools, checks, and safe next steps. On SELF, the one exact "
+            "plan saved for that Chain turn is carried back to the same Worker; BCT "
+            "does not author the plan or choose its actions."
         ),
         structured_output=True,
     )

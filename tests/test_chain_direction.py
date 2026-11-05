@@ -94,6 +94,34 @@ class ChainDirectionLedgerTests(unittest.TestCase):
                     generation=1, plan_text="Inspect, modify reversibly, then verify.",
                 )
 
+    def test_b_turn_rejects_a_second_execute_plan_instead_of_guessing_one(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            directions = ChainDirectionLedger(store)
+            directions.save(
+                direction_id="direction-1", work_id="work-1", source_kind="USER",
+                decision="NEW_TASK", direction_text="Perform the bounded task.",
+            )
+            directions.plan_chain(
+                direction_id="direction-1", work_id="work-1",
+                task_id="task-1", operation_id="chain-1",
+                instruction_text="Perform the bounded task.",
+            )
+            directions.mark_chain_started(
+                direction_id="direction-1", work_id="work-1",
+                task_id="task-1", operation_id="chain-1",
+            )
+            plans = ChainExecutionPlanLedger(store)
+            plans.save(
+                plan_id="plan-1", work_id="work-1", direction_id="direction-1",
+                task_id="task-1", generation=1, plan_text="Inspect then verify.",
+            )
+            with self.assertRaisesRegex(ValueError, "TURN_CONFLICT"):
+                plans.save(
+                    plan_id="plan-2", work_id="work-1", direction_id="direction-1",
+                    task_id="task-1", generation=1, plan_text="Do something else.",
+                )
+
 
 class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
     async def test_direction_and_execute_plan_names_are_public(self):

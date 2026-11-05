@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 
 from bct.service import BCT
+from bct.chain_direction import ChainDirectionLedger
+from bct.chain_execution_plan import ChainExecutionPlanLedger
 from bct.core.models import Principal, Outcome
 from bct.features.rcc import BrowserFeature
 from bct.delayed_send_message import DelayedSendService, _rcc_submitted_text_sha256
@@ -209,12 +211,38 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             )
             self.assertEqual(Outcome.APPLIED, armed.outcome)
             self.assertEqual(1, armed.output["generation"])
+            # B records its concrete plan after A's direction has started.
+            # The next SELF delivery must carry that exact plan back to B,
+            # without creating another Chain or using task_run.
+            directions = ChainDirectionLedger(bct.store)
+            directions.save(
+                direction_id="direction-1", work_id=work.work_id,
+                source_kind="USER", decision="NEW_TASK",
+                direction_text="Complete the bounded Worker task safely.",
+            )
+            directions.plan_chain(
+                direction_id="direction-1", work_id=work.work_id,
+                task_id="task-1", operation_id="chain-1",
+                instruction_text="Complete the bounded Worker task safely.",
+            )
+            directions.mark_chain_started(
+                direction_id="direction-1", work_id=work.work_id,
+                task_id="task-1", operation_id="chain-1",
+            )
+            plan_text = "Inspect the remaining code, make the bounded fix, then verify E2E."
+            ChainExecutionPlanLedger(bct.store).save(
+                plan_id="plan-1", work_id=work.work_id,
+                direction_id="direction-1", task_id="task-1",
+                generation=1, plan_text=plan_text,
+            )
             rcc.reply(WORKER, "Implemented stage one.\nNEXT TASK — SELF\nFinish the remaining code.")
             first = service.poll_once()
             self.assertEqual("SELF_SENT", first["events"][0]["status"])
             self.assertEqual(1, len(rcc.sent))
             self.assertEqual(WORKER, rcc.sent[0][0])
             self.assertIn("Finish the remaining code.", rcc.sent[0][1])
+            self.assertIn(plan_text, rcc.sent[0][1])
+            self.assertIn("plan_id=plan-1", rcc.sent[0][1])
             self.assertIn("Delayed Send Message", rcc.sent[0][1])
             self.assertEqual("RESERVED", service.ledger.get("task-1", 2)["state"])
             import json

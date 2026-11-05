@@ -1,13 +1,15 @@
 """Durable B-authored execution plans for a delivered Chain Message.
 
 The plan is deliberately created only after its source Chain Direction has
-started an exact Chain Message. BCT stores the relationship and text hash; it
-does not write the plan or decide how B should execute it.
+started an exact Chain Message. BCT records the exact relationship and text
+hash. A later SELF continuation may carry that one saved plan back to the
+same Worker; BCT still never authors the plan or decides the next action.
 """
 from __future__ import annotations
 
 import hashlib
 import re
+import sqlite3
 import time
 from typing import Any
 
@@ -68,6 +70,16 @@ class ChainExecutionPlanLedger:
                 if actual != proposed:
                     raise ValueError("CHAIN_EXECUTION_PLAN_CONFLICT")
                 return {**dict(existing), "duplicate": True}
+            # A single B turn has one declared Execute Plan. Selecting one
+            # from two different plans during a later SELF continuation would
+            # be an unsafe inference, so reject the second declaration.
+            turn_existing = db.execute(
+                "SELECT plan_id FROM chain_execution_plans "
+                "WHERE work_id=? AND direction_id=? AND task_id=? AND generation=?",
+                (work_id, direction_id, task_id, generation),
+            ).fetchone()
+            if turn_existing is not None:
+                raise ValueError("CHAIN_EXECUTION_PLAN_TURN_CONFLICT")
             db.execute("""
                 INSERT INTO chain_execution_plans(
                     plan_id,work_id,direction_id,task_id,generation,
@@ -82,3 +94,26 @@ class ChainExecutionPlanLedger:
                 "SELECT * FROM chain_execution_plans WHERE plan_id=?", (plan_id,)
             ).fetchone()
         return dict(row) if row is not None else None
+
+    @staticmethod
+    def get_for_chain_turn(*, store, work_id: str, task_id: str,
+                           generation: int) -> dict[str, Any] | None:
+        """Return the one B plan eligible for this exact continuing turn.
+
+        Older databases can contain more than one record for a turn because
+        the original schema had no turn-level uniqueness rule. In that case
+        preserve the ordinary SELF message; no plan is selected automatically.
+        """
+        try:
+            with store._readonly() as db:
+                rows = db.execute(
+                    "SELECT * FROM chain_execution_plans "
+                    "WHERE work_id=? AND task_id=? AND generation=? "
+                    "ORDER BY created_at ASC LIMIT 2",
+                    (work_id, task_id, generation),
+                ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc).lower():
+                return None
+            raise
+        return dict(rows[0]) if len(rows) == 1 else None

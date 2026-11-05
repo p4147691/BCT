@@ -28,6 +28,22 @@ def _rcc_submitted_text_sha256(message: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _self_message_with_execute_plan(message: str, plan: dict | None) -> str:
+    """Carry B's exact saved plan into the next turn of the same Chain."""
+    if plan is None:
+        return message
+    return (
+        "이전 B 턴에서 이 Chain에 저장한 Execute Plan입니다. "
+        "A Direction의 범위와 금지사항 안에서 이 계획을 실행하세요.\n"
+        f"plan_id={plan['plan_id']}, plan_sha256={plan['plan_sha256']}\n"
+        "[Execute Plan]\n"
+        f"{plan['plan_text']}\n"
+        "[/Execute Plan]\n\n"
+        "이번 SELF 지시:\n"
+        + message
+    )
+
+
 class NextTarget(str, Enum):
     SELF = "SELF"
     MANAGER = "MANAGER"
@@ -1374,6 +1390,14 @@ class DelayedSendService:
                   else ctx["manager_instance_id"])
         session,tab,window=self._locate(instance,destination)
         if destination==row["conversation_key"]:
+            # This plan belongs to the response that caused this exact SELF
+            # continuation. It never starts a new Chain or chooses for B.
+            from bct.chain_execution_plan import ChainExecutionPlanLedger
+            plan = ChainExecutionPlanLedger.get_for_chain_turn(
+                store=self.store, work_id=work.work_id,
+                task_id=row["task_id"], generation=row["generation"],
+            )
+            message = _self_message_with_execute_plan(message, plan)
             message=(
                 "작업 시작 전에 BCT Delayed Send Message를 다시 선예약하세요. "
                 f"work_id={work.work_id}, task_id={row['task_id']}. "

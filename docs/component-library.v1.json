@@ -115,7 +115,7 @@
             "symbol": "bct_set_execute_plan / bct_get_execute_plan (compatibility: bct_set_execution_plan / bct_get_execution_plan)"
         }
       ],
-      "contract": "Durably records B's concrete execution plan only after the linked A direction has been delivered. B may choose files, tools, tests, and safe next steps within A's stated boundaries.",
+      "contract": "Durably records B's one concrete execution plan only after the linked A direction has been delivered. The exact plan is returned only to the same Worker on that Chain's next SELF continuation; B may choose files, tools, tests, and safe next steps within A's stated boundaries.",
       "effects": [
         "bct-sqlite-execution-plan-metadata"
       ],

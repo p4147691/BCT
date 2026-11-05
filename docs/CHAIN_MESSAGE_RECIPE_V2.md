@@ -43,7 +43,7 @@ A / Manager
   ───────────── 실제 대화 턴과 판단 주체 변경 ─────────────
 B / Worker
   6. set_execute_plan : B의 구체적인 Execute Plan과 자원 선택
-  7. run_task       : 실행
+  7. SELF continuation: 같은 Chain의 다음 B 턴에서 계획 실행
       ├─ BB: 진전이 있고 다음 안전한 실행이 분명하면 B가 계속
       └─ BA: 완료·위험·정체·판단 필요면 A에게 결과 반환
   ↓
@@ -129,7 +129,9 @@ Network Check만 실행하는 호환 이름이다.
 - `bct_check_network`: 현재 노드·RCC·Supervisor 준비 상태 등을 읽는 Network
   Check 레시피다. 전체 현실 확인이나 계획 실행은 아니다.
 - `bct_set_execute_plan` / `bct_get_execute_plan`: 정확히 전달된 A Direction에
-  연결된 B의 **Execute Plan**을 저장·조회한다. 저장만 하며 실행하지 않는다.
+  연결된 B의 **Execute Plan**을 저장·조회한다. B가 작성한 정확한 한 계획은 같은
+  Chain의 다음 SELF 메시지에 함께 실려 같은 B에게 돌아간다. BCT가 계획을 작성하거나
+  행동을 선택하지는 않는다.
 - `bct_run_task`: 이미 준비된 orchestration session의 작업 하나를 실행한다.
   아직 `bct_set_execute_plan`을 읽어 실행하는 함수가 아니므로
   **`bct_run_execute_plan`은 현재 공개하지 않는다.**
