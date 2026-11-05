@@ -29,7 +29,17 @@ class Program {
     if (args.Length == 3 && args[0] == "--bridge-listener-fault-client")
       return await BridgeListenerFixture.RunFaultClient(args[1], args[2]);
     // Neither a PATH search nor a caller-supplied origin may choose the host runtime.
-    if (args.Length != 1 || !string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)) return 4;
+    // Chrome passes the caller origin first. On Windows it also passes the
+    // documented native parent window handle as a decimal argument. Keep the
+    // origin pinned and accept no other launcher-controlled arguments.
+    if (args.Length is < 1 or > 2 ||
+        !string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)) return 4;
+    const string ParentWindowPrefix = "--parent-window=";
+    if (args.Length == 2) {
+      if (!args[1].StartsWith(ParentWindowPrefix, StringComparison.Ordinal)) return 4;
+      var parentWindow = args[1][ParentWindowPrefix.Length..];
+      if (parentWindow.Length == 0 || !parentWindow.All(c => c is >= '0' and <= '9')) return 4;
+    }
     if (!string.Equals(Environment.GetEnvironmentVariable("BCT_BRIDGE_EXTENSION_ORIGIN"), ApprovedOrigin, StringComparison.Ordinal)) return 4;
     var python = Environment.GetEnvironmentVariable("BCT_BRIDGE_PYTHON_EXE");
     if (string.IsNullOrWhiteSpace(python) || !Path.IsPathFullyQualified(python) ||

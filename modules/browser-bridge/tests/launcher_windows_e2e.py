@@ -38,6 +38,13 @@ class BuiltLauncherBoundaryTests(unittest.TestCase):
             wrong = subprocess.run([exe, "chrome-extension://wrong/"], input=b"", capture_output=True, env=env, timeout=15)
             self.assertEqual(4, wrong.returncode)
             self.assertEqual(b"", wrong.stdout)
+            for invalid_parent in ("--parent-window=", "--parent-window=-1", "--parent-window=1x", "--other=1"):
+                rejected = subprocess.run([exe, ORIGIN, invalid_parent], input=b"", capture_output=True, env=env, timeout=15)
+                self.assertEqual(4, rejected.returncode)
+                self.assertEqual(b"", rejected.stdout)
+            rejected_extra = subprocess.run([exe, ORIGIN, "--parent-window=0", "extra"], input=b"", capture_output=True, env=env, timeout=15)
+            self.assertEqual(4, rejected_extra.returncode)
+            self.assertEqual(b"", rejected_extra.stdout)
             env["BCT_BRIDGE_PYTHON_EXE"] = "python"
             denied = subprocess.run([exe, ORIGIN], input=b"", capture_output=True, env=env, timeout=15)
             self.assertEqual(5, denied.returncode)
@@ -49,7 +56,7 @@ class BuiltLauncherBoundaryTests(unittest.TestCase):
             env["BCT_BRIDGE_PYTHON_SHA256"] = correct_sha
             payload = json.dumps({"schema_version":1, "type":"bridge_read", "request_id":"a"*32,
                                   "operation_id":"a"*32, "capability":"read", "arguments":{"path":"fixture"}}).encode()
-            proc = subprocess.run([exe, ORIGIN], input=struct.pack("<I",len(payload))+payload,
+            proc = subprocess.run([exe, ORIGIN, "--parent-window=0"], input=struct.pack("<I",len(payload))+payload,
                                   capture_output=True, env=env, timeout=15)
             self.assertEqual(4, proc.returncode, proc.stderr.decode(errors="replace"))
             self.assertGreaterEqual(len(proc.stdout), 4)

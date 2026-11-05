@@ -25,6 +25,8 @@ class BridgeBoundaryContractTests(unittest.TestCase):
         self.assertIn('BCT_BRIDGE_PYTHON_EXE', source)
         self.assertIn('Path.IsPathFullyQualified(python)', source)
         self.assertIn('string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)', source)
+        self.assertIn('ParentWindowPrefix = "--parent-window="', source)
+        self.assertIn("parentWindow.All(c => c is >= '0' and <= '9')", source)
         self.assertNotIn('StartsWith("chrome-extension://"', source)
 
     def test_activation_policy_is_explicit_fixture_only_and_denies_before_read(self):
