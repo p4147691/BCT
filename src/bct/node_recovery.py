@@ -310,8 +310,14 @@ class NodeRecoveryLedger:
             if watch is None or watch["conversation_key"] != row["replacement_conversation_key"]:
                 raise ValueError("NODE_REPLACEMENT_INHERITANCE_NOT_SENT")
             binding = json.loads(watch["context_json"] or "{}")
+            # A successor can finish its first inheritance response before a
+            # Manager authors a next instruction.  That is still a confirmed
+            # inheritance delivery, not a failed or unknown send.  Keep the
+            # evidence requirement: only this explicit terminal state may
+            # join the existing watched/returned states.
             if binding.get("work_id") != work.work_id or watch["state"] not in {
-                    "WATCHING", "SELF_SENT", "RETURNED_TO_MANAGER"}:
+                    "WATCHING", "SELF_SENT", "RETURNED_TO_MANAGER",
+                    "MANAGER_DECISION_REQUIRED"}:
                 raise ValueError("NODE_REPLACEMENT_INHERITANCE_NOT_READY")
             # Keep inheritance proof, advisory role/scope transfer, old-watch
             # retirement and recovery-case completion in one transaction.  A

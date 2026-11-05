@@ -172,6 +172,7 @@ files = [
   "src/bct/node_recovery.py",
   "src/bct/continuation_primitives.py",
   "src/bct/chain_direction.py",
+  "src/bct/chain_supervisor_route.py",
   "src/bct/chain_execution_plan.py",
   "src/bct/background_operations.py",
   "src/bct/operation_worker.py",

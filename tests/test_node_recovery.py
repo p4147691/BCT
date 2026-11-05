@@ -141,6 +141,40 @@ class NodeRecoveryTests(unittest.TestCase):
         self.assertEqual("old memo", directory[NEW]["node_memo"])
         self.assertEqual("old task", directory[NEW]["assigned_task"])
 
+    def test_replace_accepts_completed_inheritance_awaiting_manager_decision(self):
+        configure_conversation_scope(
+            self.store, conversation_key=OLD, display_name="old supervisor",
+            scope_name="", role_tags=["supervisor"],
+        )
+        configure_conversation_scope(
+            self.store, conversation_key=NEW, display_name="new supervisor",
+            scope_name="", role_tags=[],
+        )
+        self.ledger.check(
+            work=self.work, case_id="case-manager-decision", task_id="task-old",
+            conversation_key=OLD, evidence=observe_node(view(), OLD), kind="CHECK",
+        )
+        self.ledger.pause(work=self.work, case_id="case-manager-decision", reason="stalled")
+        self.ledger.prepare_replace(
+            work=self.work, case_id="case-manager-decision", successor_conversation_key=NEW,
+            inheritance_task_id="task-manager-decision",
+            successor_evidence=observe_node(view(NEW), NEW),
+        )
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO delayed_send_watches(task_id,generation,conversation_key,"
+                "response_turn_id,source_send_receipt,state,context_json) VALUES(?,?,?,?,?,?,?)",
+                ("task-manager-decision", 1, NEW, "turn", "send",
+                 "MANAGER_DECISION_REQUIRED",
+                 '{"work_id":"work","principal_id":"principal","assignment_epoch":1,'
+                 '"observed_response_sha":"' + "a" * 64 + '"}'),
+            )
+        committed = self.ledger.commit_replace(
+            work=self.work, case_id="case-manager-decision",
+            successor_evidence=observe_node(view(NEW), NEW),
+        )
+        self.assertEqual("REPLACED", committed["state"])
+
     def test_unassigned_supervisor_moves_without_duplicate(self):
         configure_conversation_scope(
             self.store, conversation_key=OLD, display_name="old supervisor",
