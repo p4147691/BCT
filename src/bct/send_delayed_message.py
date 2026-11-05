@@ -44,6 +44,24 @@ def _self_message_with_execute_plan(message: str, plan: dict | None) -> str:
     )
 
 
+def _self_prearm_guidance(*, work_id: str, task_id: str) -> str:
+    """Give an ordinary Chat worker one exact public rearm call.
+
+    The next generation is already reserved and carries the exact worker,
+    manager and RCC source-send binding.  Asking the worker to rediscover a
+    target through the generic execute capability is both unnecessary and
+    error-prone, so the continuation names the narrow public command and the
+    only two required identifiers.
+    """
+    return (
+        "다음 BB 응답 감시를 먼저 선예약하세요. 아래 공개 명령을 그대로 호출합니다.\n"
+        f'`bct_send_delayed_message(work_id="{work_id}", task_id="{task_id}")`\n'
+        "이 SELF 회차에는 대상·창·탭을 다시 고르지 않습니다. 이전 정확 전송의 예약 문맥을 "
+        "재사용하므로 범용 execute capability를 사용하지 마세요. "
+        "선예약 결과가 APPLIED인지 확인한 뒤에만 아래 작업을 시작하세요."
+    )
+
+
 class NextTarget(str, Enum):
     SELF = "SELF"
     MANAGER = "MANAGER"
@@ -1399,8 +1417,10 @@ class SendDelayedMessageService:
             )
             message = _self_message_with_execute_plan(message, plan)
             message=(
-                "작업 시작 전에 BCT Send Delayed Message를 다시 선예약하세요. "
-                f"work_id={work.work_id}, task_id={row['task_id']}. "
+                _self_prearm_guidance(
+                    work_id=work.work_id, task_id=row["task_id"],
+                )
+                + "\n\n"
                 "이후 아래 작업을 수행하고 응답 마지막에 "
                 "NEXT TASK — SELF 또는 NEXT TASK — MANAGER 및 다음 지시서/보고서를 작성하세요.\n\n"
                 +message

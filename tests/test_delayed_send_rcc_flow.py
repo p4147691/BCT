@@ -10,7 +10,10 @@ from bct.chain_direction import ChainDirectionLedger
 from bct.chain_execution_plan import ChainExecutionPlanLedger
 from bct.core.models import Principal, Outcome
 from bct.features.rcc import BrowserFeature
-from bct.send_delayed_message import SendDelayedMessageService, _rcc_submitted_text_sha256
+from bct.send_delayed_message import (
+    SendDelayedMessageService, _rcc_submitted_text_sha256,
+    _self_prearm_guidance,
+)
 
 INSTANCE = "instance123"
 SESSION = "a" * 32
@@ -95,6 +98,17 @@ class SimulatedRcc:
                 "tabId": extra["tabId"], "windowId": extra["windowId"],
             }
         raise AssertionError(f"Unexpected RCC command: {command}")
+
+
+class SelfPrearmGuidanceTests(unittest.TestCase):
+    def test_names_exact_public_command_without_rediscovering_target(self):
+        text = _self_prearm_guidance(work_id="work-1", task_id="task-1")
+        self.assertIn(
+            'bct_send_delayed_message(work_id="work-1", task_id="task-1")',
+            text,
+        )
+        self.assertIn("대상·창·탭을 다시 고르지 않습니다", text)
+        self.assertIn("범용 execute capability", text)
 
 
 class DelayedSendRccFlowTests(unittest.TestCase):
@@ -243,7 +257,8 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             self.assertIn("Finish the remaining code.", rcc.sent[0][1])
             self.assertIn(plan_text, rcc.sent[0][1])
             self.assertIn("plan_id=plan-1", rcc.sent[0][1])
-            self.assertIn("Send Delayed Message", rcc.sent[0][1])
+            self.assertIn("bct_send_delayed_message", rcc.sent[0][1])
+            self.assertIn("범용 execute capability", rcc.sent[0][1])
             self.assertEqual("RESERVED", service.ledger.get("task-1", 2)["state"])
             import json
             reserved = json.loads(service.ledger.get("task-1", 2)["context_json"])
