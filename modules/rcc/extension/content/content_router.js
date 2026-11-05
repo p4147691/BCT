@@ -374,10 +374,20 @@ if (message.type === 'relay:readLatestAssistant') {
     ).at(-1) : null;
     const latestUserTurnKey = latestUserUnit ? messageUnitIdentity(latestUserUnit) : '';
     const responseSourceUserTurnKey = sourceUserUnit ? messageUnitIdentity(sourceUserUnit) : '';
+    // The submitted relay text can contain Markdown syntax (for example
+    // inline-code backticks) that ChatGPT intentionally omits from the
+    // rendered user bubble.  When the retained relay record resolves to one
+    // exact routed turn, keep the original submitted SHA as the durable
+    // identity.  Manual/later turns continue to use rendered DOM identity.
+    const activeRecord = loadRelayExecution();
+    const latestSubmittedSource = exactSubmittedSourceForUnit(activeRecord, latestUserUnit);
+    const responseSubmittedSource = exactSubmittedSourceForUnit(activeRecord, sourceUserUnit);
     const latestUserSha256 = latestUserUnit
-      ? await newChatTextSha256(messageUnitText(latestUserUnit, 'user')) : '';
+      ? await newChatTextSha256(latestSubmittedSource?.submittedText
+        || messageUnitText(latestUserUnit, 'user')) : '';
     const responseSourceUserSha256 = sourceUserUnit
-      ? await newChatTextSha256(messageUnitText(sourceUserUnit, 'user')) : '';
+      ? await newChatTextSha256(responseSubmittedSource?.submittedText
+        || messageUnitText(sourceUserUnit, 'user')) : '';
     // A fallback-turn-N key is positional, not a durable unique identity.
     // Permit a source bound by SHA only if its exact user text occurs once in
     // the rendered conversation. Duplicate prompts fail closed.
@@ -385,8 +395,10 @@ if (message.type === 'relay:readLatestAssistant') {
       ? userUnits.filter((candidate) =>
           messageUnitText(candidate, 'user') === messageUnitText(unit, 'user')
         ).length : 0;
-    const latestUserTextOccurrenceCount = userTextOccurrenceCount(latestUserUnit);
-    const responseSourceUserTextOccurrenceCount = userTextOccurrenceCount(sourceUserUnit);
+    const latestUserTextOccurrenceCount = latestSubmittedSource?.occurrenceCount
+      || userTextOccurrenceCount(latestUserUnit);
+    const responseSourceUserTextOccurrenceCount = responseSubmittedSource?.occurrenceCount
+      || userTextOccurrenceCount(sourceUserUnit);
     const turn = node?.closest('[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]');
     const responseTurnKey = turn?.getAttribute('data-turn-key')
       || turn?.getAttribute('data-content-search-turn-key')

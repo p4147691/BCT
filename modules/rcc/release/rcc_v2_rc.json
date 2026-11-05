@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC40_SUBMIT_ACTIVATION_FENCE",
+  "candidate": "RCC_REBUILD_V2_RC41_RENDERED_PROMPT_PROVENANCE",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -103,13 +103,13 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 28702,
-        "sha256": "31b4e52fba75260b2a91a4c7cec858c71d730a465a2e199295252c7db6325ce0"
+        "size": 29504,
+        "sha256": "3d2033ad44d4c5b1418a224b78d9a5fde1d9067f2fd46ecb259057ad530fd2f2"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 23049,
-        "sha256": "c0ec659fbf07302adec32027e4b5a0452d096357b633ad6c8843640afb83a699"
+        "size": 23910,
+        "sha256": "f3657610bb6a79f8e8312fc5a2474df5cea87beaef4fd602cb703caf736e27c0"
       },
       {
         "path": "content/conversation_rename.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada"
+    "aggregateSha256": "11ae45b92bb97c555b22a6c314994e41883767572e6e6c0b9adf4227987816f3"
   },
   "activeLoaderGraph": {
     "background": [

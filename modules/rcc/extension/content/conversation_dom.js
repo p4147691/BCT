@@ -447,6 +447,27 @@ function resolveRoutedTurn(record) {
 }
 
 
+function exactSubmittedSourceForUnit(record, unit) {
+  if (!record?.submittedText || !(unit instanceof Element)) return null;
+  const routed = resolveRoutedTurn(record);
+  if (!routed.ok || !(routed.turn instanceof Element)) return null;
+  const wrapperSelector =
+    '[data-turn-key], [data-content-search-turn-key], [data-testid^="conversation-turn-"]';
+  const unitTurn = unit.closest(wrapperSelector) || unit;
+  if (routed.turn !== unitTurn
+      && !routed.turn.contains?.(unit)
+      && !unitTurn.contains?.(routed.turn)) return null;
+  const matches = getConversationTurns().filter((turn) =>
+    submittedPromptMatchesTurn(record, turn));
+  if (matches.length !== 1 || matches[0] !== routed.turn) return null;
+  return {
+    submittedText: RelayCore.normalizeMessageText(record.submittedText),
+    occurrenceCount: 1,
+    turnKey: routed.turnKey,
+  };
+}
+
+
 function isVisible(node) {
 
 

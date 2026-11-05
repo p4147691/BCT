@@ -80,7 +80,7 @@ function slice(source, start, end) {
 }
 vm.runInContext(slice(content, 'function canonicalMessageUnit(', 'function getAssistantNodes(')
   + slice(content, 'function turnUserText(', 'function isVisible(')
-  + ';globalThis.api={getConversationTurns,messageUnitText,messageUnitIdentity,turnUserText,resolveRoutedTurn,exactUserTurnsBySubmittedSha256};', context);
+  + ';globalThis.api={getConversationTurns,messageUnitText,messageUnitIdentity,turnUserText,resolveRoutedTurn,exactUserTurnsBySubmittedSha256,exactSubmittedSourceForUnit};', context);
 const directContext = vm.createContext({RelayCore, isChatTab: () => true,
   getComputedStyle: () => ({visibility: 'visible', display: 'block'}),
   get document() { return document; },
@@ -120,6 +120,13 @@ const longPrompt = '[BCT_ORCHESTRATION_ASSIGNMENT_V1]\n' + 'bounded task '.repea
   }
   document = el('main', {}, turn('inline', 'Keep code and …'));
   assert.equal(context.api.resolveRoutedTurn(record('Keep `code` and …')).ok, true);
+  const inlineUnit = context.api.getConversationTurns()[0]
+    .querySelector('[data-content-search-unit-key$=":user"]');
+  assert.equal(
+    context.api.exactSubmittedSourceForUnit(record('Keep `code` and …'), inlineUnit).submittedText,
+    'Keep `code` and …',
+    'an exact routed relay keeps submitted Markdown identity even when the UI renders it away',
+  );
   assert.equal((await directContext.direct(901, 'conversation-test', 'Keep `code` and …')).recovered, true);
   for (const options of [{ariaHidden:'false'}, {decoration:'unexpected'}, {decoration:'...'}, {insideText:true}]) {
     document = el('main', {}, turn('new', longPrompt, options));
@@ -127,6 +134,10 @@ const longPrompt = '[BCT_ORCHESTRATION_ASSIGNMENT_V1]\n' + 'bounded task '.repea
     await assert.rejects(directContext.direct(901, 'conversation-test', longPrompt), /TURN_NOT_FOUND/);
   }
   document = el('main', {}, turn('a', longPrompt), turn('b', longPrompt));
+  const duplicateUnit = context.api.getConversationTurns()[1]
+    .querySelector('[data-content-search-unit-key$=":user"]');
+  assert.equal(context.api.exactSubmittedSourceForUnit(record(longPrompt), duplicateUnit), null,
+    'duplicate submitted prompts never acquire relay-backed identity');
   assert.equal(context.api.resolveRoutedTurn(record(longPrompt)).reason, 'ROUTE_TURN_AMBIGUOUS');
   const longPromptTurns = context.api.getConversationTurns();
   const longPromptHash = await context.newChatTextSha256(

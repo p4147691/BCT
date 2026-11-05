@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_REBUILD_V2_RC40_SUBMIT_ACTIVATION_FENCE", release["candidate"])
+        self.assertEqual("RCC_REBUILD_V2_RC41_RENDERED_PROMPT_PROVENANCE", release["candidate"])
         self.assertEqual(
             "42a45dfe7b6aa936876663e0a34413022c41cfb1dabf1e397afa6f960e8171bc",
             release["rollbackBaseline"]["aggregateSha256"],
