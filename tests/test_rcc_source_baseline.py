@@ -21,7 +21,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         ).read_text(encoding="utf-8-sig"))
         self.assertEqual("RCC_REBUILD_V2_RC41_RENDERED_PROMPT_PROVENANCE", release["candidate"])
         self.assertEqual(
-            "42a45dfe7b6aa936876663e0a34413022c41cfb1dabf1e397afa6f960e8171bc",
+            "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada",
             release["rollbackBaseline"]["aggregateSha256"],
         )
         self.assertEqual(58, release["rollbackBaseline"]["fileCount"])

@@ -136,6 +136,29 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.SUBMIT_ACTIVATION_FENCE_MANIFEST_SHA256,
         )
 
+    def test_rendered_prompt_provenance_route_is_exact_63_and_separate(self):
+        route = DeployFeature._rcc_route_config(
+            "rcc-inspect-rendered-prompt-provenance"
+        )
+        self.assertEqual(route["candidate_version"], "1.0.63")
+        self.assertEqual(route["installed_version"], "1.0.63")
+        self.assertEqual(
+            route["manifest_file"], ri.RENDERED_PROMPT_PROVENANCE_MANIFEST
+        )
+        self.assertEqual(
+            route["candidate"], ri.RENDERED_PROMPT_PROVENANCE_STAGE
+        )
+        self.assertEqual(
+            route["backup_source"], ri.RENDERED_PROMPT_PROVENANCE_ROLLBACK
+        )
+        self.assertEqual(
+            route["journal_root"], ri.RENDERED_PROMPT_PROVENANCE_JOURNAL
+        )
+        self.assertEqual(
+            route["pinned_manifest_sha256"],
+            ri.RENDERED_PROMPT_PROVENANCE_MANIFEST_SHA256,
+        )
+
     def test_01_exact_read_only_preflight_57_58_identity(self):
         plan=self.inspect()
         self.assertEqual((plan["installed_files"],plan["candidate_files"]),(57,58))

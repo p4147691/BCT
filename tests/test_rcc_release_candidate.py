@@ -28,7 +28,7 @@ class RccReleaseCandidateTests(unittest.TestCase):
         self.assertEqual(receipt["rollbackFileCount"], 58)
         self.assertEqual(receipt["candidateFileCount"], 58)
         self.assertEqual(
-            "42a45dfe7b6aa936876663e0a34413022c41cfb1dabf1e397afa6f960e8171bc",
+            "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada",
             receipt["rollbackAggregateSha256"],
         )
 
