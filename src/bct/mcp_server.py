@@ -774,7 +774,7 @@ def build_mcp(
                 results.append({"status":"BLOCKED","reason":str(exc),
                                 "target_conversation_key":target["conversation_key"]})
         all_started = all(r["status"] in {"WATCHING","ALREADY_STARTED"} for r in results)
-        return {"status":"STARTED" if all_started else "PARTIAL",
+        return {"status":"STARTED" if all_started else "PARTIAL", "stage":"TARGET_DISPATCH",
                 "network_preparation_applied":bool(preparation), "all_targets_started":all_started,
                 "direction_id":direction["direction_id"],"network_results":preparation,"targets":results}
 

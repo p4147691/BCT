@@ -219,8 +219,23 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.ops.after_send = lambda _: self.tabs[2]["conversation_scope"].update(role_tags=[])
         result = await self.start()
         self.assertEqual("PARTIAL", result["status"], result)
+        self.assertEqual("TARGET_DISPATCH", result["stage"])
         self.assertEqual(1, len(self.sends()))
         self.assertEqual("DIRECTION_SUPERVISOR_PREPARATION_REQUIRED", result["targets"][1]["reason"])
+
+    async def test_busy_second_target_reports_dispatch_stage_without_resending_first(self):
+        await self.save()
+        self.ops.after_send = lambda _: self.snapshot["monitor"]["current_nodes"]["items"][2].update(generating=True)
+        result = await self.start()
+        self.assertEqual("PARTIAL", result["status"], result)
+        self.assertEqual("TARGET_DISPATCH", result["stage"])
+        self.assertFalse(result["all_targets_started"])
+        self.assertEqual("TARGET_BUSY", result["targets"][1]["status"])
+        self.assertEqual(1, len(self.sends()))
+        replay = await self.start()
+        self.assertEqual("ALREADY_STARTED", replay["targets"][0]["status"])
+        self.assertEqual("TARGET_BUSY", replay["targets"][1]["status"])
+        self.assertEqual(1, len(self.sends()))
 
     async def test_absent_supervisor_does_not_guess_or_send(self):
         await self.save()
@@ -285,6 +300,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("PARTIAL", result["status"], result)
         self.assertEqual(2, len(self.sends()))
         replay = await self.start(operation_id="different-prefix")
+        self.assertEqual("TARGET_DISPATCH", replay["stage"])
         self.assertEqual("RECEIPT_REVIEW_REQUIRED", replay["targets"][0]["status"], replay)
         self.assertEqual("review-operation-1", replay["targets"][0]["operation_id"])
         self.assertEqual("ALREADY_STARTED", replay["targets"][1]["status"])
