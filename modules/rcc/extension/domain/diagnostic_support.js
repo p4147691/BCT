@@ -38,6 +38,38 @@ async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, subm
       const compareCanonical = (value) => normalize(value).replace(/\s+/g, ' ');
       const submittedCanonical = compareCanonical(submitted);
       const submittedInlineCanonical = compareCanonical(submittedInline);
+      const logicalUserCloneText = (root) => {
+        const blockTags = new Set([
+          'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIELDSET',
+          'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4',
+          'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE',
+          'SECTION', 'TABLE', 'UL'
+        ]);
+        const childrenOf = (node) => Array.from(node?.childNodes || node?.children || []);
+        const tagOf = (node) => String(node?.tagName || '').toUpperCase();
+        const walk = (node) => {
+          if (typeof node === 'string') return node;
+          if (Number(node?.nodeType) === 3) return String(node.nodeValue || '');
+          const tag = tagOf(node);
+          if (tag === 'BR') return '\n';
+          let value = '';
+          let previousBlock = false;
+          childrenOf(node).forEach((child, index) => {
+            const childTag = tagOf(child);
+            const childBlock = blockTags.has(childTag);
+            let part = walk(child);
+            if (childTag === 'LI') {
+              if (tag === 'UL') part = '- ' + part;
+              else if (tag === 'OL') part = String(index + 1) + '. ' + part;
+            }
+            if (value && part && (previousBlock || childBlock)) value += '\n';
+            value += part;
+            previousBlock = childBlock;
+          });
+          return value;
+        };
+        return walk(root);
+      };
       const userText = (turn) => {
         const unit = turn.querySelector(
           '[data-message-author-role="user"],[data-content-search-unit-key$=":user"],[data-user-message-bubble="true"]'
@@ -50,7 +82,7 @@ async function recoverCompletedReplyDirectlyFromTab(tabId, conversationKey, subm
         clone.querySelectorAll('[data-search-result-target] + span[aria-hidden="true"]').forEach((item) => {
           if (item.textContent === '…') item.remove();
         });
-        return normalize(clone.textContent || '');
+        return normalize(logicalUserCloneText(clone));
       };
       const matches = turns.filter((turn) => {
         const rendered = userText(turn);

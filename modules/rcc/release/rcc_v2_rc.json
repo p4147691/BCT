@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC41_RENDERED_PROMPT_PROVENANCE",
+  "candidate": "RCC_REBUILD_V2_RC42_RENDERED_MARKDOWN_IDENTITY",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -108,8 +108,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 23910,
-        "sha256": "f3657610bb6a79f8e8312fc5a2474df5cea87beaef4fd602cb703caf736e27c0"
+        "size": 26011,
+        "sha256": "d8c90fa5674feca225e591e151599771182a609dab26021b2d421d9b014ab546"
       },
       {
         "path": "content/conversation_rename.js",
@@ -168,8 +168,8 @@
       },
       {
         "path": "domain/diagnostic_support.js",
-        "size": 12770,
-        "sha256": "e3afe41d8e01b71657d3ee2394b5ccdb4ace77e28d54104346d8feb97cad169f"
+        "size": 14210,
+        "sha256": "e3de3b0e0f1469feae77cc26c826e1722ae78b9995bb8940705f71ea68ab8791"
       },
       {
         "path": "domain/endpoint_service.js",
@@ -233,8 +233,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1555,
-        "sha256": "30430045f47e5037a98bec47dc7b119eba8344ea62ba2287447d3d90b5a68ee6"
+        "size": 1564,
+        "sha256": "d90c9f4c5db1adef04b2d8b20f6d99642f4689a9dae46b22be2eb8291584a63b"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "11ae45b92bb97c555b22a6c314994e41883767572e6e6c0b9adf4227987816f3"
+    "aggregateSha256": "e27eabdc5b51912f231ea6d8eb13fd7ef80a6631511e8fbc021e3a269b0e1c8a"
   },
   "activeLoaderGraph": {
     "background": [

@@ -66,6 +66,25 @@ function turn(key, prompt, options = {}) {
       el('div', {'data-message-author-role': 'assistant'}, '{"ok":true}'),
       el('button', {'data-testid': 'copy-turn-action-button'}, 'Copy')));
 }
+function renderedMarkdownTurn(key) {
+  const semantic = el('div', {'data-content-search-unit-key': `${key}:user`},
+    el('div', {'data-user-message-bubble': 'true'},
+      el('p', {}, 'PR #421 Supervisor integration task.'),
+      el('p', {}, 'Verified candidate:'),
+      el('ul', {},
+        el('li', {}, 'exact head SHA: ', el('code', {}, 'f19d3bc')),
+        el('li', {}, 'CI: SUCCESS')),
+      el('p', {}, 'Perform:'),
+      el('ol', {},
+        el('li', {}, 'merge exact head'),
+        el('li', {}, 'deploy LIVE'),
+        el('li', {}, 'run E2E'))));
+  return el('article', {'data-testid': `conversation-turn-${key}`},
+    el('section', {'data-turn-key': key, 'data-talvt-turn-state': 'complete'},
+      el('div', {'data-message-author-role': 'user'}, semantic),
+      el('div', {'data-message-author-role': 'assistant'}, 'completed'),
+      el('button', {'data-testid': 'copy-turn-action-button'}, 'Copy')));
+}
 let document = el('main', {});
 const context = vm.createContext({Element, RelayCore,
   newChatTextSha256: async value => require('node:crypto').createHash('sha256')
@@ -118,6 +137,25 @@ const longPrompt = '[BCT_ORCHESTRATION_ASSIGNMENT_V1]\n' + 'bounded task '.repea
       assert.equal(context.api.resolveRoutedTurn(record(prompt + 'wrong')).ok, false);
     }
   }
+  const markdownPrompt = [
+    'PR #421 Supervisor integration task.',
+    '',
+    'Verified candidate:',
+    '- exact head SHA: `f19d3bc`',
+    '- CI: SUCCESS',
+    '',
+    'Perform:',
+    '1. merge exact head',
+    '2. deploy LIVE',
+    '3. run E2E',
+  ].join('\n');
+  document = el('main', {}, renderedMarkdownTurn('markdown'));
+  assert.equal(context.api.resolveRoutedTurn(record(markdownPrompt)).ok, true,
+    'rendered paragraph and list DOM retains exact submitted prompt provenance');
+  assert.equal((await directContext.direct(901, 'conversation-test', markdownPrompt)).recovered, true,
+    'direct recovery uses the same rendered Markdown identity contract');
+  assert.equal(context.api.resolveRoutedTurn(record(markdownPrompt.replace('run E2E', 'skip E2E'))).ok, false,
+    'canonical rendering may not accept a different instruction');
   document = el('main', {}, turn('inline', 'Keep code and …'));
   assert.equal(context.api.resolveRoutedTurn(record('Keep `code` and …')).ok, true);
   const inlineUnit = context.api.getConversationTurns()[0]
