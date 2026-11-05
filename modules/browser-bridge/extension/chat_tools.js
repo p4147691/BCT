@@ -58,6 +58,12 @@
       if (!status?.enabled) { baseline = null; grantId = null; return; }
       const messages = assistants();
       if (grantId !== status.grantId) { grantId = status.grantId; baseline = messages.length; return; }
+      const pendingKey = "bct-tool-result-pending:" + conversationKey;
+      const pendingResult = (await chrome.storage.local.get(pendingKey))[pendingKey];
+      if (pendingResult && await sendResult(pendingResult)) {
+        await chrome.storage.local.remove(pendingKey);
+        return;
+      }
       if (generating() || messages.length <= baseline) return;
       baseline = messages.length;
       const text = String(messages[messages.length - 1]?.innerText || "").trim();
@@ -76,7 +82,7 @@
         result = {ok: false, outcome: "UNKNOWN", error: "CHAT_TOOL_TRANSPORT_UNKNOWN_NO_RETRY"};
       }
       if (!(await sendResult(result))) {
-        await chrome.storage.local.set({["bct-tool-result-pending:" + conversationKey]: result});
+        await chrome.storage.local.set({[pendingKey]: result});
       }
     } finally { busy = false; }
   }
