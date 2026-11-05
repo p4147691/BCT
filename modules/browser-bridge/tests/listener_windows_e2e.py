@@ -172,7 +172,12 @@ class BridgeListenerWindowsTests(unittest.TestCase):
         self.executable = (BUILT / "BctBridgeHost.exe").resolve()
         self.assertTrue(self.executable.is_file(), "dotnet build required")
         self.launcher_sha = hashlib.sha256(self.executable.read_bytes()).hexdigest()
-        self.temp = tempfile.TemporaryDirectory(prefix="bct-bridge-listener-")
+        # GitHub's RUNNER_TEMP can live below a junction.  The production
+        # boundary deliberately rejects every reparse-point ancestor, so put
+        # this disposable fixture below the real user profile instead.
+        self.temp = tempfile.TemporaryDirectory(
+            prefix="bct-bridge-listener-", dir=Path.home()
+        )
         self.addCleanup(self.temp.cleanup)
         self.owned = Path(self.temp.name, "owned").resolve()
         self.owned.mkdir()
