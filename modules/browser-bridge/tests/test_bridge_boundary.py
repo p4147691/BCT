@@ -27,6 +27,9 @@ class BridgeBoundaryContractTests(unittest.TestCase):
         self.assertIn('string.Equals(args[0], ApprovedOrigin, StringComparison.Ordinal)', source)
         self.assertIn('ParentWindowPrefix = "--parent-window="', source)
         self.assertIn("parentWindow.All(c => c is >= '0' and <= '9')", source)
+        self.assertIn('RuntimeConfigName = "bridge-runtime.json"', source)
+        self.assertIn('!allowed.Contains(property.Name) || !seen.Add(property.Name)', source)
+        self.assertIn('psi.Environment["BCT_BRIDGE_MCP_URL"] = config.McpUrl', source)
         self.assertNotIn('StartsWith("chrome-extension://"', source)
 
     def test_activation_policy_is_explicit_fixture_only_and_denies_before_read(self):

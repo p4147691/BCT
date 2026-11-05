@@ -65,6 +65,46 @@ class BuiltLauncherBoundaryTests(unittest.TestCase):
             self.assertEqual("AUTH_DENIED", reply["outcome"])
             self.assertEqual("a"*32, reply["request_id"])
 
+            runtime_config = {
+                "extension_origin": ORIGIN,
+                "python_exe": str(Path(sys.executable).resolve()),
+                "python_sha256": correct_sha,
+                "mcp_url": "http://127.0.0.1:19991/mcp",
+                "token_path": str(stage / "absent.token"),
+                "allow_live_core": False,
+                "work_id": "",
+            }
+            (stage / "bridge-runtime.json").write_text(
+                json.dumps(runtime_config), encoding="utf-8"
+            )
+            config_only_env = {
+                key: value for key, value in os.environ.items()
+                if not key.startswith("BCT_BRIDGE_")
+            }
+            configured = subprocess.run(
+                [exe, ORIGIN, "--parent-window=0"],
+                input=struct.pack("<I", len(payload)) + payload,
+                capture_output=True,
+                env=config_only_env,
+                timeout=15,
+            )
+            self.assertEqual(4, configured.returncode, configured.stderr.decode(errors="replace"))
+            self.assertGreaterEqual(len(configured.stdout), 4)
+            configured_size = struct.unpack("<I", configured.stdout[:4])[0]
+            configured_reply = json.loads(configured.stdout[4:4 + configured_size])
+            self.assertEqual("AUTH_DENIED", configured_reply["outcome"])
+
+            runtime_config["unexpected"] = True
+            (stage / "bridge-runtime.json").write_text(
+                json.dumps(runtime_config), encoding="utf-8"
+            )
+            invalid_config = subprocess.run(
+                [exe, ORIGIN], input=b"", capture_output=True,
+                env=config_only_env, timeout=15,
+            )
+            self.assertEqual(5, invalid_config.returncode)
+            self.assertEqual(b"", invalid_config.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

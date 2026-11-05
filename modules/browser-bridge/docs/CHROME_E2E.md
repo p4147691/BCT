@@ -6,7 +6,7 @@ reuse RCC identity or erase an existing Native Host registration.
 ## Stage 1: disposable candidate acceptance
 
 1. Use a new Bridge-owned Chrome profile and load the exact unpacked candidate.
-2. Build/stage the exact candidate launcher in a new Bridge-owned directory.
+2. Build/stage the exact candidate launcher in a new Bridge-owned directory. Write the strict `bridge-runtime.json` beside the `launcher` directory with restrictive ACLs; do not store the token value in it. This allows Chrome to launch the verified host without a browser restart for inherited environment changes.
 3. Register only `com.bct.browser_bridge.prototype` under HKCU with the pinned
    origin `chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/`.
 4. Start an isolated BCT Core on a random loopback port and create a temporary

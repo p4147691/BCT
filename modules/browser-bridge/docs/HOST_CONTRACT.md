@@ -2,7 +2,17 @@
 
 ## Native launcher preflight
 
-The standalone bridge launcher is **not** RCC. The signed or otherwise separately approved bridge-owned staging process must set these variables **before** launching Chrome's Native Messaging integration:
+The standalone bridge launcher is **not** RCC. The signed or otherwise separately approved bridge-owned staging process must create a restrictive-ACL `bridge-runtime.json` beside the `launcher` directory. The launcher reads it directly, so an already-running Chrome process does not need to inherit new environment variables. The file contains exactly these fields and rejects unknown fields, malformed JSON, comments, and trailing commas:
+
+- `extension_origin`: exactly `chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/`.
+- `python_exe`: an existing, absolute, canonical Windows `.exe` path to a separately approved Python runtime.
+- `python_sha256`: mandatory 64-character SHA-256 of that runtime file.
+- `mcp_url`: an absolute loopback HTTP URL whose path is exactly `/mcp`.
+- `token_path`: an absolute, canonical path to the Bridge-owned token file. The token value is never stored in the JSON file.
+- `allow_live_core`: JSON boolean. It must be `true` for the LIVE Core boundary.
+- `work_id`: optional string; use an empty string when the caller will provide the Work explicitly.
+
+After validation, the launcher passes the resolved values only to its child Native Host process. Environment-variable provisioning remains a CI/test fallback only when `bridge-runtime.json` does not exist:
 
 - `BCT_BRIDGE_PYTHON_EXE`: an existing, absolute, canonical Windows `.exe` path to a separately approved Python runtime. PATH resolution, relative paths, and implicit `python` are forbidden. Approval must bind the absolute path and executable SHA-256 to the test manifest/receipt; the launcher enforces runtime file SHA-256 as well as path shape and existence.
 - `BCT_BRIDGE_PYTHON_SHA256`: mandatory 64-character SHA-256 of the approved runtime file; launcher computes file hash and fails closed on mismatch.
@@ -41,7 +51,7 @@ PR1 owns atomic result-consumption and manager decision, PR2 owns durable orches
 
 ## Test boundary
 
-The Python subprocess tests exercise framed Host input/output, authorization denial, origin rejection, and receipt mapping without Chrome, Core or token creation. C# source-contract checks inspect the launcher code. The Windows GitHub CI builds the real C# launcher and runs launcher → Python Host framing, wrong-Origin, runtime-path, runtime-SHA and auth-denial tests without Chrome, registry, Core or token creation. The local workstation lacks the .NET SDK, so local tests do not independently establish the compiled launcher path. No SDK downloads are authorized by this task. The BCT_BRIDGE_PYTHON_EXE and BCT_BRIDGE_PYTHON_SHA256 environment variables must be provisioned by trusted staging with restrictive ACLs. The launcher verifies the configured path and file digest, but those checks alone do not eliminate TOCTOU replacement or guarantee the trustworthiness of staging.
+The Python subprocess tests exercise framed Host input/output, authorization denial, origin rejection, and receipt mapping without Chrome, Core or token creation. C# source-contract checks inspect the launcher code. The Windows GitHub CI builds the real C# launcher and runs launcher → Python Host framing, wrong-Origin, runtime-path, runtime-SHA, strict config-file and auth-denial tests without Chrome, registry, Core or token creation. The local workstation lacks the .NET SDK, so local tests do not independently establish the compiled launcher path. No SDK downloads are authorized by this task. Trusted staging must provision `bridge-runtime.json`, its parent directory and the referenced token with restrictive ACLs. The launcher verifies the configured path and file digest, but those checks alone do not eliminate TOCTOU replacement or guarantee the trustworthiness of staging.
 
 ## Core receipt acceptance
 
