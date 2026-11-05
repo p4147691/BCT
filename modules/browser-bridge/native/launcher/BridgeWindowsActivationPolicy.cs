@@ -201,7 +201,8 @@ internal sealed class BridgeWindowsActivationPolicy : IDisposable {
   internal bool VerifyCredentialBoundary(string rootPath, string credentialPath) =>
     StrictExistingRoot(rootPath) && StrictExistingFile(credentialPath) &&
     StrictChild(rootPath, credentialPath) &&
-    NamedSecurityMatches(rootPath) && NamedSecurityMatches(credentialPath);
+    NamedSecurityMatches(rootPath, "root") &&
+    NamedSecurityMatches(credentialPath, "file");
 
   internal NamedPipeServerStream CreateFirstInstancePipe(string pipeName) {
     if (!ValidPipeName(pipeName)) throw new InvalidOperationException();
@@ -314,12 +315,12 @@ internal sealed class BridgeWindowsActivationPolicy : IDisposable {
     } finally { Marshal.FreeHGlobal(information); }
   }
 
-  private bool NamedSecurityMatches(string path) {
+  private bool NamedSecurityMatches(string path, string label) {
     uint error = GetNamedSecurityInfoW(
       path, FileObject, SecurityInformation,
       out _, out _, out _, out _, out IntPtr descriptor);
     if (error != ErrorSuccess || descriptor == IntPtr.Zero) return false;
-    try { return DescriptorMatches(descriptor); }
+    try { return DescriptorMatches(descriptor, label); }
     catch { return false; }
     finally { LocalFree(descriptor); }
   }
@@ -329,21 +330,31 @@ internal sealed class BridgeWindowsActivationPolicy : IDisposable {
       handle, KernelObject, SecurityInformation,
       out _, out _, out _, out _, out IntPtr descriptor);
     if (error != ErrorSuccess || descriptor == IntPtr.Zero) return false;
-    try { return DescriptorMatches(descriptor); }
+    try { return DescriptorMatches(descriptor, "pipe"); }
     catch { return false; }
     finally { LocalFree(descriptor); }
   }
 
-  private bool DescriptorMatches(IntPtr descriptor) {
+  private bool DescriptorMatches(IntPtr descriptor, string label) {
     uint nativeLength = GetSecurityDescriptorLength(descriptor);
     if (nativeLength == 0 || nativeLength > 65536) return false;
     byte[] raw = new byte[checked((int)nativeLength)];
     Marshal.Copy(descriptor, raw, 0, raw.Length);
     var security = new RawSecurityDescriptor(raw, 0);
-    if (!string.Equals(security.Owner?.Value, UserSid, StringComparison.Ordinal) ||
-        (security.ControlFlags & ControlFlags.DiscretionaryAclProtected) == 0 ||
-        security.DiscretionaryAcl is null || security.DiscretionaryAcl.Count != 2)
+    if (!string.Equals(security.Owner?.Value, UserSid, StringComparison.Ordinal)) {
+      Console.Error.WriteLine("POLICY_MISMATCH:" + label + ":owner");
       return false;
+    }
+    if ((security.ControlFlags & ControlFlags.DiscretionaryAclProtected) == 0) {
+      Console.Error.WriteLine("POLICY_MISMATCH:" + label + ":unprotected-dacl");
+      return false;
+    }
+    if (security.DiscretionaryAcl is null || security.DiscretionaryAcl.Count != 2) {
+      Console.Error.WriteLine("POLICY_MISMATCH:" + label + ":ace-count:" +
+        (security.DiscretionaryAcl?.Count ?? -1).ToString(
+          System.Globalization.CultureInfo.InvariantCulture));
+      return false;
+    }
     var logon = new SecurityIdentifier(LogonSid);
     var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
     bool sawLogon = false;
@@ -351,11 +362,16 @@ internal sealed class BridgeWindowsActivationPolicy : IDisposable {
     foreach (GenericAce ace in security.DiscretionaryAcl) {
       if (ace is not CommonAce common ||
           common.AceQualifier != AceQualifier.AccessAllowed ||
-          common.AceFlags != AceFlags.None || common.AccessMask != FileAllAccess)
+          common.AceFlags != AceFlags.None || common.AccessMask != FileAllAccess) {
+        Console.Error.WriteLine("POLICY_MISMATCH:" + label + ":ace-contract");
         return false;
+      }
       if (common.SecurityIdentifier.Equals(logon) && !sawLogon) sawLogon = true;
       else if (common.SecurityIdentifier.Equals(system) && !sawSystem) sawSystem = true;
-      else return false;
+      else {
+        Console.Error.WriteLine("POLICY_MISMATCH:" + label + ":ace-principal");
+        return false;
+      }
     }
     return sawLogon && sawSystem;
   }
