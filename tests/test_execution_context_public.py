@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from bct.core.models import Work
 from bct.core.store import Store
-from bct.delayed_send_message import DelayedSendMessageRunner, DurableWatchLedger, Watch
+from bct.send_delayed_message import SendDelayedMessageRunner, DurableWatchLedger, Watch
 from bct.mcp_server import build_mcp
 
 
@@ -35,7 +35,7 @@ class ExecutionContextPublicTests(unittest.IsolatedAsyncioTestCase):
                 }, registration_receipt="prearm-receipt",
             )
             watch = Watch("task-1", 1, "worker-uuid", "task:task-1:1", "prearm-receipt")
-            DelayedSendMessageRunner(
+            SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda _: {
                     "conversation_key": "worker-uuid", "response_turn_id": "task:task-1:1",

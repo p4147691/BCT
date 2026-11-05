@@ -125,6 +125,13 @@ ChatGPT Work 모드, 한 번의 Task ID와 다르며 이름이나 기존 ID를 �
 
 ## 감시와 반환
 
+공개 명령과 Python 함수는 `bct_send_delayed_message`, 구현 모듈은
+`bct.send_delayed_message`, 새 내부 요청 command는 `send-delayed-message`다.
+이전 `bct_delayed_send_message`는 공개 별칭으로 남기지 않는다. 오래된 클라이언트의
+도구 목록은 갱신해야 한다. 이미 발급한 Operation/Task ID, DB 테이블, 감시·Claim 잠금
+키와 기존 영수증은 변경하지 않으며, 기존 준비 요청의 옛 command는 이력 호환을 위해
+실행 경계에서만 읽는다. 이름 변경은 감시·전송 정책 변경이 아니다.
+
 감시기는 BCT 백그라운드 런타임에서 일한다. A가 화면을 붙잡고 기다리는 방식이
 아니므로 사용자와 대화하거나 다른 독립 작업을 진행할 수 있다. WATCHING은
 정확한 원 전송에 대응하는 응답 완료를 기다리는 상태이며 작업 완료 증거가 아니다.
@@ -170,7 +177,8 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 | `bct_set_conversation_network` | A가 결정한 망·역할·Node Info 변경을 기존 계약으로 적용 |
 | `bct_set_direction` / `bct_get_direction` | A 내부 질문·판단·정제된 지시의 준비/저장과 조회 |
 | `bct_set_execute_plan` / `bct_get_execute_plan` | B가 생각한 세부 계획의 결합·저장과 조회. 계획 문장 자체를 실행하지 않음 |
-| `bct_delayed_send_message` / `bct_context` | 정확한 응답을 기다리는 백그라운드 감시·후속 메시지와 맥락 조회 |
+| `bct_send_delayed_message` | 해당 작업의 응답 완료를 백그라운드에서 기다린 뒤 SELF/MANAGER 후속 지시를 전달하도록 등록 |
+| `bct_context` | 특정 작업·회차의 이전 응답 증거, SELF/MANAGER 결정과 이어가기 기록 조회. 조회 자체는 감시하거나 전송하지 않음 |
 | `bct_capabilities` | 현재 도구·입력 계약·부품·이 설명서 조회. 도구 실행이나 권한 부여는 아님 |
 | Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 종합 상태나 과거 망 이력과 구분 |
 | Work / task_id / Operation | 기존 지속 작업 경계 / 한 체인의 연속 처리 식별값 / 개별 효과와 영수증 |

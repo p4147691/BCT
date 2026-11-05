@@ -110,9 +110,13 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
         actual.update(t.name for t in await self.server("compact").list_tools())
         text = builder.source_text(ROOT / builder.MANUAL)
         mentioned = set(re.findall(r"\bbct_[a-z_]+\b", text))
-        # This name is explicitly documented as NOT implemented, not an available command.
+        # Explicitly unavailable names must not be advertised as callable tools.
         self.assertIn("`bct_run_execute_plan`을 새로 만들지 않는다", text)
-        self.assertEqual(set(), mentioned - actual - {"bct_run_execute_plan"})
+        self.assertIn("이전 `bct_delayed_send_message`는 공개 별칭으로 남기지 않는다", text)
+        self.assertNotIn("bct_delayed_send_message", actual)
+        self.assertIn("bct_send_delayed_message", actual)
+        self.assertEqual(set(), mentioned - actual - {
+            "bct_run_execute_plan", "bct_delayed_send_message"})
         self.assertIn("bct_create_work", actual)  # Public alias is real, not a documentation typo.
         for example in (await self.call(server))["discovery"]["examples"]:
             self.assertEqual("OK", (await self.call(server, **example))["status"])

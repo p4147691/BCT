@@ -848,7 +848,7 @@ def build_mcp(
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ID_INVALID"}
         if action == "status":
-            from bct.delayed_send_message import (
+            from bct.send_delayed_message import (
                 DurableWatchLedger, watch_diagnostic_for_status,
             )
             work=await asyncio.to_thread(bct.store.get_work,work_id)
@@ -1025,7 +1025,7 @@ def build_mcp(
                         return {"status":"BLOCKED","reason":str(exc)}
                 expected_origin = ""
                 if direction.get("source_kind") == "MANAGER_RETURN":
-                    from bct.delayed_send_message import DurableWatchLedger
+                    from bct.send_delayed_message import DurableWatchLedger
                     context = await asyncio.to_thread(
                         DurableWatchLedger(bct.store).read_execution_context,
                         task_id=str(direction.get("source_task_id") or ""),
@@ -1097,7 +1097,7 @@ def build_mcp(
         except ValueError as exc:
             return {"status":"PAUSED","reason":str(exc)}
         armed=await make_executor("browser")(
-            work_id,arm_id,{"command":"delayed-send-message",
+            work_id,arm_id,{"command":"send-delayed-message",
              "task_id":task_id,"instance_id":instance_id,
              "conversation_key":target_conversation,
              "manager_conversation_key":origin_conversation,
@@ -1215,9 +1215,9 @@ def build_mcp(
         )
 
     @server.tool(
-        name="bct_delayed_send_message",
+        name="bct_send_delayed_message",
         description=(
-            "Prearm one Delayed Send Message for the worker's current response. "
+            "Prearm one Send Delayed Message for the worker's current response. "
             "On the first turn supply the exact RCC instance, worker conversation "
             "and manager conversation. Later SELF turns need only work_id, "
             "operation_id and task_id. The Core waits for a completed response "
@@ -1229,7 +1229,7 @@ def build_mcp(
         ),
         structured_output=True,
     )
-    async def bct_delayed_send_message(
+    async def bct_send_delayed_message(
         work_id: str, task_id: str, operation_id: str = "",
         instance_id: str = "", conversation_key: str = "",
         manager_conversation_key: str = "", manager_instance_id: str = "",
@@ -1249,10 +1249,10 @@ def build_mcp(
                 )
         except ValueError as exc:
             return {"status":"PAUSED","reason":str(exc)}
-        generated = operation_id or ("delayed-arm-" + uuid.uuid4().hex[:24])
+        generated = operation_id or ("send-delayed-" + uuid.uuid4().hex[:24])
         return await make_executor("browser")(
             work_id, generated,
-            {"command":"delayed-send-message","task_id":task_id,
+            {"command":"send-delayed-message","task_id":task_id,
              "instance_id":instance_id,"conversation_key":conversation_key,
              "manager_conversation_key":manager_conversation_key,
              "manager_instance_id":manager_instance_id,
@@ -1355,7 +1355,7 @@ def build_mcp(
             return {"status": "INVALID_REQUEST", "reason": "EXECUTION_CONTEXT_INPUT_INVALID"}
         try:
             work = await asyncio.to_thread(bct.store.get_work, work_id)
-            from bct.delayed_send_message import DurableWatchLedger
+            from bct.send_delayed_message import DurableWatchLedger
             context = await asyncio.to_thread(
                 DurableWatchLedger(bct.store).read_execution_context,
                 task_id=task_id,
@@ -1624,7 +1624,7 @@ def build_mcp(
         result_sha = ""
         context = None
         if source_kind == "MANAGER_RETURN":
-            from bct.delayed_send_message import DurableWatchLedger
+            from bct.send_delayed_message import DurableWatchLedger
             delayed_ledger = DurableWatchLedger(bct.store)
             context = await asyncio.to_thread(
                 delayed_ledger.read_execution_context,
@@ -2046,7 +2046,7 @@ def build_mcp(
         ) -> dict[str, Any]:
             selected = capability
             if selected == "browser" and str(arguments.get("command") or "").strip().lower() in _SEALED_BROWSER_COMMANDS:
-                raise ValueError("RCC_INTERNAL_COMMAND_UNAVAILABLE:use create-chat-window, create-chat-tab, send-message, or bct_delayed_send_message")
+                raise ValueError("RCC_INTERNAL_COMMAND_UNAVAILABLE:use create-chat-window, create-chat-tab, send-message, or bct_send_delayed_message")
             if capability == "test" and arguments.get("operation") == "verify":
                 selected = "verify"
                 arguments = {key: value for key, value in arguments.items() if key != "operation"}

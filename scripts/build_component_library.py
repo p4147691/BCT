@@ -17,7 +17,7 @@ OUTPUT = "src/bct/data/component-library.json"
 FLOW_SOURCES = (
     "src/bct/mcp_server.py", "src/bct/chain_direction.py", "src/bct/chain_execution_plan.py",
     "src/bct/chain_entry_policy.py", "src/bct/chain_message_preflight.py",
-    "src/bct/delayed_send_message.py", "src/bct/continuation_primitives.py",
+    "src/bct/send_delayed_message.py", "src/bct/continuation_primitives.py",
     "src/bct/component_library.py", "src/bct/conversation_network.py",
     "src/bct/features/conversation_network.py", "src/bct/node_recovery.py",
     "src/bct/task_message.py", "src/bct/core/chat_stream_rcc_watch.py",

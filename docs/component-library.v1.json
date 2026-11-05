@@ -172,7 +172,7 @@
           "symbol": "bct_task_message"
         },
         {
-          "path": "src/bct/delayed_send_message.py",
+          "path": "src/bct/send_delayed_message.py",
           "symbol": "DurableWatchLedger.enforce_generation_limit"
         }
       ],

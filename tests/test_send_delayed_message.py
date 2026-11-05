@@ -4,21 +4,21 @@ import tempfile
 from pathlib import Path
 from bct.core.store import Store
 
-from bct.delayed_send_message import (
-    Watch, continue_delayed_send_message, continue_delayed_send_message_from_rcc, extract_next_instruction, next_instruction_action,
+from bct.send_delayed_message import (
+    Watch, continue_send_delayed_message, continue_send_delayed_message_from_rcc, extract_next_instruction, next_instruction_action,
     next_instruction_decision, InstructionError, DurableWatchLedger,
-    DelayedSendMessageRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
+    SendDelayedMessageRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
     watch_diagnostic_for_status,
 )
 
 
-class DelayedSendMessageTests(unittest.TestCase):
+class SendDelayedMessageTests(unittest.TestCase):
     def setUp(self):
         self.watch = Watch("task-1", 1, "worker-uuid", "turn-1", "send-1")
         self.events = []
 
     def advance(self, response, *, complete=True, ready=True, turn="turn-1"):
-        return continue_delayed_send_message(
+        return continue_send_delayed_message(
             watch=self.watch, response_turn_id=turn, response_text=response,
             response_complete=complete, input_ready=ready,
             manager_conversation_key="manager-uuid",
@@ -33,7 +33,7 @@ class DelayedSendMessageTests(unittest.TestCase):
                     "response_text": "NEXT TASK — SELF\nContinue coding.",
                     "response_complete": True, "input_ready": True}
         def run(data):
-            return continue_delayed_send_message_from_rcc(
+            return continue_send_delayed_message_from_rcc(
                 watch=self.watch, observation=data,
                 manager_conversation_key="manager-uuid",
                 register_next_watch=lambda w: self.events.append(("watch", w)),
@@ -105,7 +105,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             ledger.bind(Watch("task-1",1,"worker-uuid","",""),
                         send_receipt="send-1",response_turn_id="turn-1")
             sent=[]
-            runner=DelayedSendMessageRunner(
+            runner=SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda watch: {
                     "conversation_key":"worker-uuid","response_turn_id":"turn-1",
@@ -133,7 +133,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             ledger.reserve(Watch("task-1",1,"worker-uuid","",""))
             ledger.bind(Watch("task-1",1,"worker-uuid","",""),
                         send_receipt="send-1",response_turn_id="turn-1")
-            runner=DelayedSendMessageRunner(
+            runner=SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda watch: {
                     "conversation_key":"worker-uuid","response_turn_id":"turn-1",
@@ -163,7 +163,7 @@ class DelayedSendMessageTests(unittest.TestCase):
                 Watch("task-1", 1, "worker-uuid", "", ""),
                 send_receipt="send-1", response_turn_id="turn-1",
             )
-            runner = DelayedSendMessageRunner(
+            runner = SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda _: {
                     "conversation_key": "worker-uuid",
@@ -206,7 +206,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertTrue(ledger.record_watch_diagnostic(
                 {**row,"context":__import__("json").loads(row["context_json"])},
                 "RESPONSE_NOT_TERMINAL"))
-            runner=DelayedSendMessageRunner(
+            runner=SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda _: {
                     "conversation_key":"worker-uuid","response_turn_id":"turn-1",
@@ -226,7 +226,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             ledger.reserve(Watch("task-1", 1, "worker-uuid", "", ""))
             watch = ledger.bind(Watch("task-1", 1, "worker-uuid", "", ""),
                                 send_receipt="send-1", response_turn_id="turn-1")
-            runner = DelayedSendMessageRunner(
+            runner = SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda _: {
                     "conversation_key": "worker-uuid", "response_turn_id": "turn-1",
@@ -302,7 +302,7 @@ class DelayedSendMessageTests(unittest.TestCase):
                 "response_complete":True,"input_ready":True,
                 "response_sha256":"sha-current"}
             current = dict(observation)
-            runner = DelayedSendMessageRunner(ledger, read_response=lambda _:current,
+            runner = SendDelayedMessageRunner(ledger, read_response=lambda _:current,
                 send_message=lambda *args:sent.append(args) or "receipt")
             for change in ({"response_turn_key":""},
                            {"response_turn_key":"current","response_complete":False},
@@ -326,7 +326,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             def sender(target, body, key):
                 sent.append((target,body,key))
                 return "receipt-" + str(len(sent))
-            runner = DelayedSendMessageRunner(ledger,read_response=lambda w:{
+            runner = SendDelayedMessageRunner(ledger,read_response=lambda w:{
                 "conversation_key":"worker-uuid",
                 "response_turn_id":w.response_turn_id,
                 "response_turn_key":"rcc-key-"+str(w.generation),
@@ -429,7 +429,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             self.assertEqual("WATCHING", started["state"])
 
     def test_response_count_decrease_requires_exact_source_user_pairing(self):
-        from bct.delayed_send_message import DelayedSendService
+        from bct.send_delayed_message import SendDelayedMessageService
         body = "NEXT TASK — MANAGER\\nExact current result."
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         source_key = "trusted-user-turn-A"
@@ -454,7 +454,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             "responseSourceUserTurnKey": source_key,
             "responseSourceUserSha256": source_sha,
         }
-        service = DelayedSendService.__new__(DelayedSendService)
+        service = SendDelayedMessageService.__new__(SendDelayedMessageService)
         from types import SimpleNamespace
         from bct.core.models import Outcome
         class ReceiptStore:
@@ -605,7 +605,7 @@ class DelayedSendMessageTests(unittest.TestCase):
             ledger = DurableWatchLedger(Store(Path(root) / "state.sqlite"))
             watch = Watch("manager-review", 1, "worker-uuid", "turn-1", "send-1")
             ledger.prearm(watch)
-            runner = DelayedSendMessageRunner(
+            runner = SendDelayedMessageRunner(
                 ledger,
                 read_response=lambda _watch: {
                     "conversation_key": "worker-uuid",

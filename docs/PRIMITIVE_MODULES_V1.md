@@ -18,7 +18,7 @@
 부분 레시피
   = 원시 부품을 묶어 한 가지 재사용 가능한 결과를 만든다
   = 다른 부분 레시피를 포함할 수 있다
-  = 예: Delayed Send Message, 메시지 보내기
+  = 예: Send Delayed Message, 메시지 보내기
 
 전체 레시피
   = 사용자의 목표를 끝까지 수행하는 흐름
@@ -37,7 +37,7 @@
 예를 들어 `wakeup`은 하나의 기능 이름이므로 `bct_wakeup_message`로 쓴다.
 
 그래서 `bct_send_message`는 메시지 보내기라는 기본 행동이고,
-`bct_delayed_send_message`는 그 행동에 감시·alarm·지연이라는 부분
+`bct_send_delayed_message`는 그 행동에 감시·alarm·지연이라는 부분
 레시피를 얹은 이름이다. `delayed`는 뒤집힌 대상이 아니라 Send Message를
 꾸미는 실행 방식이므로 유지한다.
 
@@ -45,7 +45,7 @@
 bct_status
 bct_check_conversation_network
 bct_send_message
-bct_delayed_send_message
+bct_send_delayed_message
 bct_cancel_delayed_send
 ```
 
@@ -394,7 +394,7 @@ legacy NEXT TASK 본문
 
 - `bct_task_run`은 준비된 세션에서 Worker 한 명에게 작업 하나를
   dispatch하는 실행 단위다. 현재는 자체 결과 영수증을 기다린다.
-- `bct_delayed_send_message`와 `bct_chain_message`는 감시를 먼저
+- `bct_send_delayed_message`와 `bct_chain_message`는 감시를 먼저
   준비한 뒤 정확한 메시지를 보내는 경로다.
 - `bct_task_message`는 한 Manager와 한 Worker 사이에서 사용할 수 있는
   선택형 지시문 봉투다. 기본 `max_rounds=0`은 진전 기반 반복이며, 고정 한도는

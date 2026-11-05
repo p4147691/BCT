@@ -16,7 +16,7 @@ from bct.chain_message_preflight import (
 from bct.core.models import Work
 from bct.chain_direction import ChainDirectionLedger
 from bct.core.store import Store
-from bct.delayed_send_message import InstructionError, extract_next_instruction
+from bct.send_delayed_message import InstructionError, extract_next_instruction
 from bct.mcp_server import build_mcp
 
 
@@ -132,7 +132,7 @@ class ChainMessagePreflightTests(unittest.IsolatedAsyncioTestCase):
         arm, send = self.operations.calls
         self.assertEqual(expected, arm["arguments"]["planned_send_text"])
         self.assertEqual(expected, send["arguments"]["text"])
-        self.assertEqual("delayed-send-message", arm["arguments"]["command"])
+        self.assertEqual("send-delayed-message", arm["arguments"]["command"])
         self.assertEqual("send-message", send["arguments"]["command"])
 
     async def test_default_start_is_exact_backward_compatible_prompt(self):

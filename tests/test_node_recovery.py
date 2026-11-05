@@ -11,7 +11,7 @@ from bct.conversation_network import (
     configure_conversation_scope, conversation_scope_directory,
     transfer_conversation_state,
 )
-from bct.delayed_send_message import DurableWatchLedger
+from bct.send_delayed_message import DurableWatchLedger
 from bct.mcp_server import build_mcp
 from bct.node_recovery import NodeRecoveryLedger, observe_node
 

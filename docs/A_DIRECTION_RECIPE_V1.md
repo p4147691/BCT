@@ -20,7 +20,7 @@ B의 보고, 영수증, 현재 확인값을 읽고 만든 **다음 지시 방향
   → 필요하면 다음 Chain Message
 ```
 
-`Delayed Send Message`는 B 내부의 BB 반복에 쓰는 부품이다. A가 BA 보고를
+`Send Delayed Message`는 B 내부의 BB 반복에 쓰는 부품이다. A가 BA 보고를
 받아 다음 지시 방향을 정리한다고 해서 자동으로 필요하지는 않다.
 
 ## ABABA: 두 번 왕복하고 종료

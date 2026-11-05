@@ -17,7 +17,7 @@ from bct.chain_execution_plan import ChainExecutionPlanLedger
 from bct.conversation_network import upsert_project, role_tags_sha256
 from bct.core.models import Work
 from bct.core.store import Store
-from bct.delayed_send_message import DurableWatchLedger, DelayedSendMessageRunner, Watch
+from bct.send_delayed_message import DurableWatchLedger, SendDelayedMessageRunner, Watch
 from bct.features.conversation_network import ConversationNetworkUpdateFeature
 from bct.mcp_server import build_mcp
 
@@ -188,7 +188,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, len(self.sends()))
         for index, target in enumerate(assessment()["targets"]):
             arm, send = self.ops.calls[index * 2:index * 2 + 2]
-            self.assertEqual("delayed-send-message", arm["arguments"]["command"])
+            self.assertEqual("send-delayed-message", arm["arguments"]["command"])
             self.assertEqual(target["conversation_key"], send["arguments"]["conversation_key"])
             self.assertEqual(arm["arguments"]["planned_send_text"], send["arguments"]["text"])
             self.assertIn(target["instruction"], send["arguments"]["text"])
@@ -332,7 +332,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
                 "responseTurnKey": "old", "responseSha256": "a" * 64,
                 "latestUserTurnKey": "source-user", "latestUserSha256": "b" * 64}, registration_receipt="arm-b")
         watch = Watch("returned-b", 1, B, "task:returned-b:1", "arm-b")
-        DelayedSendMessageRunner(ledger, read_response=lambda _: {
+        SendDelayedMessageRunner(ledger, read_response=lambda _: {
             "conversation_key": B, "response_turn_id": watch.response_turn_id,
             "response_turn_key": "response-b", "response_sha256": "c" * 64,
             "response_text": "Tests passed.\nNEXT TASK — MANAGER\nAsk Supervisor to review release.",

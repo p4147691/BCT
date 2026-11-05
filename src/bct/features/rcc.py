@@ -595,7 +595,7 @@ class BrowserFeature:
             {"command":"delayed-send-cancel","mutating":True},
         )
 
-    def _prepare_delayed_send_message(
+    def _prepare_send_delayed_message(
         self, *, work: Work, arguments: dict[str, Any]
     ) -> FeatureRequest:
         allowed = {"command","task_id","instance_id","conversation_key",
@@ -621,7 +621,7 @@ class BrowserFeature:
             raise PreconditionError("DELAYED_PLANNED_SOURCE_INVALID")
         return FeatureRequest(
             self.capability, f"delayed-send:{work.work_id}:{task_id}",
-            {"command":"delayed-send-message","task_id":task_id,
+            {"command":"send-delayed-message","task_id":task_id,
              "work_id":work.work_id,
              "instance_id":str(arguments.get("instance_id") or "").strip(),
              "conversation_key":str(arguments.get("conversation_key") or "").strip().lower(),
@@ -632,15 +632,15 @@ class BrowserFeature:
              "exclusive_conversation_watch":exclusive,
              "max_generations":max_generations},
             (f"delayed-send:{work.work_id}:{task_id}",),
-            {"command":"delayed-send-message","mutating":True},
+            {"command":"send-delayed-message","mutating":True},
         )
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         command = str(arguments.get("command") or "").strip().lower()
         if command == "delayed-send-cancel":
             return self._prepare_delayed_cancel(work=work,arguments=arguments)
-        if command == "delayed-send-message":
-            return self._prepare_delayed_send_message(work=work, arguments=arguments)
+        if command == "send-delayed-message":
+            return self._prepare_send_delayed_message(work=work, arguments=arguments)
         if command == "send-message":
             return self._prepare_send_message(work=work, arguments=arguments)
         if command not in _COMMANDS:
@@ -1876,7 +1876,7 @@ class BrowserFeature:
         if request.arguments["command"] == "delayed-send-cancel":
             if self.store is None:
                 raise PreconditionError("DELAYED_STORE_UNAVAILABLE")
-            from bct.delayed_send_message import DurableWatchLedger
+            from bct.send_delayed_message import DurableWatchLedger
             values=request.arguments
             work=self.store.get_work(values["work_id"])
             try:
@@ -1888,14 +1888,16 @@ class BrowserFeature:
                 raise PreconditionError(str(exc)) from exc
             return FeatureResult(Outcome.APPLIED,{"command":"delayed-send-cancel",**result},
                                  output=result)
-        if request.arguments["command"] == "delayed-send-message":
+        # Decode already-prepared historical requests without offering the old
+        # spelling for new prepare/MCP calls. Keep original IDs and receipts.
+        if request.arguments["command"] in {"send-delayed-message", "delayed-send-message"}:
             if self.store is None:
                 raise PreconditionError("DELAYED_STORE_UNAVAILABLE")
-            from bct.delayed_send_message import DelayedSendService
+            from bct.send_delayed_message import SendDelayedMessageService
             from bct.core.models import Work
             values = request.arguments
             work = self.store.get_work(values["work_id"])
-            service = DelayedSendService(
+            service = SendDelayedMessageService(
                 store=self.store, browser_feature=self, operations=None)
             try:
                 result = service.prearm(
@@ -1914,7 +1916,7 @@ class BrowserFeature:
             except (ValueError, KeyError) as exc:
                 raise PreconditionError(str(exc)) from exc
             return FeatureResult(Outcome.APPLIED, {
-                "command":"delayed-send-message",**result,
+                "command":request.arguments["command"],**result,
                 "watch_registered":True,
             }, output=result)
         if request.arguments["command"] in {"send-to-self", "node-continue"}:
@@ -2637,7 +2639,7 @@ class BrowserFeature:
                     }
             source_proof = {}
             if values["command"] == "send-to-tab":
-                from bct.delayed_send_message import _rcc_submitted_text_sha256
+                from bct.send_delayed_message import _rcc_submitted_text_sha256
                 source_proof = {
                     "conversation_key": extra["conversationKey"],
                     "source_message_sha256": _rcc_submitted_text_sha256(values["text"]),

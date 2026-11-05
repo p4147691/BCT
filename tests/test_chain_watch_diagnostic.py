@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from bct.core.store import Store
-from bct.delayed_send_message import DurableWatchLedger, DelayedSendService, Watch
+from bct.send_delayed_message import DurableWatchLedger, SendDelayedMessageService, Watch
 
 
 class ChainWatchDiagnosticTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class ChainWatchDiagnosticTests(unittest.TestCase):
                 "responseSourceUserTextOccurrenceCount": 1,
                 "terminal": True, "inputReady": True, "generating": False,
             }
-            service = DelayedSendService.__new__(DelayedSendService)
+            service = SendDelayedMessageService.__new__(SendDelayedMessageService)
             service.ledger = ledger
             service.latest = lambda **kwargs: previous_terminal
             self.assertEqual({}, service._response_for(row))
@@ -95,7 +95,7 @@ class ChainWatchDiagnosticTests(unittest.TestCase):
             saved = ledger.get("active-chain", 1)
             row = dict(saved)
             row["context"] = json.loads(row.pop("context_json"))
-            service = DelayedSendService.__new__(DelayedSendService)
+            service = SendDelayedMessageService.__new__(SendDelayedMessageService)
             service.ledger = ledger
             service.latest = lambda **kwargs: {
                 "ok": True, "responseTurnCount": 5,

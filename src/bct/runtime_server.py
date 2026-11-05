@@ -281,7 +281,7 @@ def main() -> int:
         policy_path=policy_path,
         data_root=runtime_root.parent / "data",
     )
-    from .delayed_send_message import DelayedSendService
+    from .send_delayed_message import SendDelayedMessageService
     from .background_operations import recover_orphaned_orchestration_operations
     orphan_recoveries = recover_orphaned_orchestration_operations(bct)
     monitor_principal = ensure_monitor_work(bct, runtime_root=runtime_root)
@@ -477,7 +477,7 @@ def main() -> int:
                 }
 
     def delayed_send_watch_loop() -> None:
-        service = DelayedSendService(
+        service = SendDelayedMessageService(
             store=bct.store,
             browser_feature=bct.operations._features["browser"],
             operations=bct.operations,
