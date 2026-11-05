@@ -34,6 +34,8 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: python -m pip install -e .
+      - run: python -m unittest discover -s modules/browser-bridge/tests -v
+      - run: node modules/browser-bridge/tests/check_tool_protocol.cjs
       - run: dotnet build modules/browser-bridge/native/launcher/BctBridgeHost.csproj -c Release
       - uses: actions/upload-artifact@v4
         with:
@@ -45,8 +47,6 @@ jobs:
             modules/browser-bridge/native/launcher/bin/Release/net8.0/BctBridgeHost.runtimeconfig.json
           if-no-files-found: error
           retention-days: 7
-      - run: python -m unittest discover -s modules/browser-bridge/tests -v
-      - run: node modules/browser-bridge/tests/check_tool_protocol.cjs
       - run: python -m unittest discover -s tests -p test_bridge_pr3o_listener.py -v
       - run: python -m unittest discover -s modules/browser-bridge/tests -p test_bridge_boundary.py -v
       - run: python -m unittest discover -s modules/browser-bridge/tests -p listener_windows_e2e.py -v
