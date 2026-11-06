@@ -56,12 +56,27 @@ def observe_node(node_view: dict[str, Any], conversation_key: str) -> dict[str, 
         row: dict[str, Any] = {}
     else:
         row = matches[0]
+        connection = row.get("connection") if isinstance(row.get("connection"), dict) else {}
+        telemetry = row.get("telemetry") if isinstance(row.get("telemetry"), dict) else {}
+        attention = telemetry.get("user_attention") \
+            if isinstance(telemetry.get("user_attention"), dict) else {}
+        attention_kind = str(attention.get("kind") or "").strip().upper()
         if observation_state != "FRESH" or row.get("status") != "CONFIRMED":
             result, reason = "CHECK", "NODE_NOT_FRESH_CONFIRMED"
+        elif connection.get("disconnected") is True:
+            result, reason = "CHECK", "NODE_CONNECTION_DISCONNECTED"
+        elif attention_kind == "RETRY_REQUIRED":
+            result, reason = "CHECK", "NODE_RETRY_REQUIRED"
+        elif attention_kind == "NEW_CHAT_REQUIRED":
+            result, reason = "CHECK", "NODE_NEW_CHAT_REQUIRED"
+        elif attention_kind == "RECOVERY_REQUIRED":
+            result, reason = "CHECK", "NODE_RECOVERY_REQUIRED"
         elif row.get("generating") is True:
             result, reason = "WAIT", "NODE_GENERATING"
         else:
             result, reason = "OK", "NODE_READY"
+    connection = row.get("connection") if isinstance(row.get("connection"), dict) else {}
+    telemetry = row.get("telemetry") if isinstance(row.get("telemetry"), dict) else {}
     evidence = {
         "conversation_key": key,
         "result": result,
@@ -74,10 +89,28 @@ def observe_node(node_view: dict[str, Any], conversation_key: str) -> dict[str, 
                 "name", "network", "network_id", "roles", "assigned_task",
             )
         } if row else None,
+        "activity": {
+            "connection": {
+                "disconnected": connection.get("disconnected")
+                if type(connection.get("disconnected")) is bool else None,
+                "reason": str(connection.get("reason") or "")[:160],
+            },
+            "generating": row.get("generating") is True if row else False,
+            "generation_state": str(telemetry.get("generation_state") or "")[:32],
+            "readiness": str(telemetry.get("readiness") or "")[:32],
+            "last_activity_at": telemetry.get("last_activity_at"),
+            "generation_started_at": telemetry.get("generation_started_at"),
+            "generation_finished_at": telemetry.get("generation_finished_at"),
+            "rendered_chars": telemetry.get("rendered_chars"),
+            "turns": telemetry.get("turns"),
+            "user_attention": telemetry.get("user_attention")
+            if isinstance(telemetry.get("user_attention"), dict) else None,
+            "signal_source": str(telemetry.get("signal_source") or "")[:32],
+        },
     }
     evidence["state_sha256"] = _digest({
         key: evidence[key] for key in (
-            "conversation_key", "result", "reason", "observation_state", "node"
+            "conversation_key", "result", "reason", "observation_state", "node", "activity"
         )
     })
     evidence["evidence_sha256"] = _digest(evidence)
@@ -127,6 +160,57 @@ class NodeRecoveryLedger:
     def _case(self, db, case_id: str):
         return db.execute("SELECT * FROM node_recovery_cases WHERE case_id=?", (case_id,)).fetchone()
 
+    @staticmethod
+    def _attach_existing_task_activity(
+        db, *, evidence: dict[str, Any], work_id: str, task_id: str,
+        conversation_key: str,
+    ) -> None:
+        """Join existing task/operation progress without creating another receipt."""
+        activity: dict[str, Any] | None = None
+        if task_id:
+            watch = db.execute(
+                "SELECT generation,state,conversation_key,context_json "
+                "FROM delayed_send_watches WHERE task_id=? "
+                "ORDER BY generation DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            if watch is not None and str(watch["conversation_key"]) == conversation_key:
+                context = json.loads(watch["context_json"] or "{}")
+                if context.get("work_id") in {None, "", work_id}:
+                    activity = {
+                        "generation": int(watch["generation"]),
+                        "state": str(watch["state"]),
+                        "response_observed": bool(
+                            context.get("observed_response_turn_key")
+                            or context.get("observed_response_sha")
+                        ),
+                    }
+                    operation_id = str(context.get("source_send_operation_id") or "")
+                    if operation_id:
+                        operation = db.execute(
+                            "SELECT operation_id,capability,state,outcome,updated_at "
+                            "FROM operations WHERE operation_id=? AND work_id=?",
+                            (operation_id, work_id),
+                        ).fetchone()
+                        if operation is not None:
+                            activity["source_operation"] = {
+                                "operation_id": str(operation["operation_id"]),
+                                "capability": str(operation["capability"]),
+                                "state": str(operation["state"]),
+                                "outcome": str(operation["outcome"] or ""),
+                                "updated_at": operation["updated_at"],
+                            }
+        evidence["task_activity"] = activity
+        evidence["state_sha256"] = _digest({
+            key: evidence.get(key) for key in (
+                "conversation_key", "result", "reason", "observation_state",
+                "node", "activity", "task_activity",
+            )
+        })
+        evidence["evidence_sha256"] = _digest({
+            key: value for key, value in evidence.items() if key != "evidence_sha256"
+        })
+
     def check(self, *, work, case_id: str, task_id: str,
               conversation_key: str, evidence: dict[str, Any], kind: str) -> dict[str, Any]:
         case_id = _valid_id(case_id, "NODE_RECOVERY_CASE_ID_INVALID")
@@ -158,6 +242,10 @@ class NodeRecoveryLedger:
                 "SELECT result,evidence_sha256,evidence_json FROM node_recovery_checks WHERE case_id=? "
                 "ORDER BY sequence DESC LIMIT 1", (case_id,),
             ).fetchone()
+            self._attach_existing_task_activity(
+                db, evidence=evidence, work_id=work.work_id, task_id=task_id,
+                conversation_key=conversation_key,
+            )
             encoded = _canonical(evidence)
             db.execute(
                 "INSERT INTO node_recovery_checks VALUES(?,?,?,?,?,?,?)",
@@ -172,12 +260,15 @@ class NodeRecoveryLedger:
             next_action = "RECHECK"
         elif kind == "CHECK":
             next_action = "RECHECK"
+        elif not unchanged:
+            next_action = "RECHECK"
         else:
             next_action = "PAUSE_REVIEW"
         return {
             "case_id": case_id, "sequence": sequence, "kind": kind,
             "result": evidence["result"], "reason": evidence["reason"],
-            "unchanged": unchanged, "next_action": next_action,
+            "unchanged": unchanged, "progress_changed": bool(previous and not unchanged),
+            "next_action": next_action,
             "evidence": evidence,
         }
 

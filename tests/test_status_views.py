@@ -62,6 +62,10 @@ class StatusViewTests(unittest.TestCase):
             "tabs": [{
                 "tab_id": 8, "window_id": 9, "conversation_key": uuid,
                 "presence": "OPEN", "title": "Worker A", "active": True,
+                "connection": {"disconnected": True, "reason": "network-banner"},
+                "telemetry": {"readiness": "UNKNOWN", "last_activity_at": 123,
+                              "user_attention": {"kind": "RETRY_REQUIRED",
+                                                 "label": "다시 시도 필요"}},
                 "conversation_scope": {
                     "scope_id": "project-one", "scope_name": "Project One",
                     "role_tags": ["developer"],
@@ -71,6 +75,8 @@ class StatusViewTests(unittest.TestCase):
         item = with_current_node_details(self.snapshot)["monitor"]["current_nodes"]["items"][0]
         self.assertEqual("Project One", item["network"])
         self.assertEqual(["developer"], item["roles"])
+        self.assertTrue(item["connection"]["disconnected"])
+        self.assertEqual("RETRY_REQUIRED", item["telemetry"]["user_attention"]["kind"])
         self.assertTrue(item["active"])
 
     def test_node_sort_modes(self):

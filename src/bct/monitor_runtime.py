@@ -186,6 +186,12 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                 telemetry = endpoint.get("telemetry")
                 if not isinstance(telemetry, dict):
                     telemetry = {}
+                connection = endpoint.get("connection")
+                if not isinstance(connection, dict):
+                    connection = {}
+                user_attention = telemetry.get("user_attention")
+                if not isinstance(user_attention, dict):
+                    user_attention = None
                 tabs.append({
                     "tab_id": item["tabId"],
                     "window_id": item.get("windowId"),
@@ -203,7 +209,15 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                         "observed_at": reasoning.get("observedAt"),
                     },
                     "surface": {"kind": surface_kind, "source": surface_source},
+                    "connection": {
+                        "disconnected": connection.get("disconnected")
+                        if type(connection.get("disconnected")) is bool else None,
+                        "reason": str(connection.get("reason") or "")[:160],
+                    },
                     "telemetry": {
+                        "generation_state": str(telemetry.get("generationState") or "")[:32],
+                        "readiness": str(telemetry.get("readiness") or "")[:32],
+                        "last_activity_at": telemetry.get("lastActivityAt"),
                         "generation_started_at": telemetry.get("generationStartedAt"),
                         "generation_finished_at": telemetry.get("generationFinishedAt"),
                         "js_heap_used_mb": telemetry.get("js_heap_used_mb"),
@@ -212,6 +226,11 @@ def _rcc_states(instance_ids: list[str]) -> list[dict[str, Any]]:
                         "turns": telemetry.get("turns"),
                         "performance_state": telemetry.get("performanceState"),
                         "rolling_avg_response_ms": telemetry.get("rollingAvgResponseMs"),
+                        "signal_source": str(telemetry.get("signal_source") or "")[:32],
+                        "user_attention": {
+                            "kind": str(user_attention.get("kind") or "")[:64],
+                            "label": str(user_attention.get("label") or "")[:120],
+                        } if user_attention else None,
                     },
                 })
             live_row = {

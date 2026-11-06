@@ -20,7 +20,8 @@ OLD = "11111111-1111-1111-1111-111111111111"
 NEW = "22222222-2222-2222-2222-222222222222"
 
 
-def view(key=OLD, *, generating=False, fresh=True):
+def view(key=OLD, *, generating=False, fresh=True, disconnected=False,
+         attention=None, last_activity_at=100, rendered_chars=10):
     return {
         "status": "OK",
         "current_nodes": {
@@ -31,6 +32,13 @@ def view(key=OLD, *, generating=False, fresh=True):
                 "node_number": "N4", "window_id": 12, "tab_id": 13,
                 "generating": generating, "name": "node", "network": "test",
                 "network_id": "network.test", "roles": [], "assigned_task": "task",
+                "connection": {"disconnected": disconnected,
+                               "reason": "network-banner" if disconnected else ""},
+                "telemetry": {"readiness": "BUSY" if generating else "IDLE",
+                              "generation_state": "GENERATING" if generating else "IDLE",
+                              "last_activity_at": last_activity_at,
+                              "rendered_chars": rendered_chars, "turns": 2,
+                              "user_attention": attention, "signal_source": "dom"},
             }],
         },
     }
@@ -256,6 +264,71 @@ class NodeRecoveryTests(unittest.TestCase):
             "observation": {"state": "FRESH"}, "items": []}}, OLD)
         self.assertEqual("CHECK", evidence["result"])
         self.assertEqual("NODE_NOT_OBSERVED", evidence["reason"])
+
+    def test_observation_uses_existing_connection_and_dom_attention_signals(self):
+        disconnected = observe_node(view(disconnected=True), OLD)
+        self.assertEqual(("CHECK", "NODE_CONNECTION_DISCONNECTED"),
+                         (disconnected["result"], disconnected["reason"]))
+        self.assertTrue(disconnected["activity"]["connection"]["disconnected"])
+
+        retry = observe_node(view(attention={
+            "kind": "RETRY_REQUIRED", "label": "다시 시도 필요",
+        }), OLD)
+        self.assertEqual(("CHECK", "NODE_RETRY_REQUIRED"),
+                         (retry["result"], retry["reason"]))
+        self.assertEqual("RETRY_REQUIRED", retry["activity"]["user_attention"]["kind"])
+
+    def test_recheck_waits_when_existing_activity_evidence_changed(self):
+        self.ledger.check(
+            work=self.work, case_id="case-progress", task_id="task-progress",
+            conversation_key=OLD,
+            evidence=observe_node(view(disconnected=True, last_activity_at=100), OLD),
+            kind="CHECK",
+        )
+        changed = self.ledger.check(
+            work=self.work, case_id="case-progress", task_id="task-progress",
+            conversation_key=OLD,
+            evidence=observe_node(view(disconnected=True, last_activity_at=101), OLD),
+            kind="RECHECK",
+        )
+        self.assertTrue(changed["progress_changed"])
+        self.assertEqual("RECHECK", changed["next_action"])
+        unchanged = self.ledger.check(
+            work=self.work, case_id="case-progress", task_id="task-progress",
+            conversation_key=OLD,
+            evidence=observe_node(view(disconnected=True, last_activity_at=101), OLD),
+            kind="RECHECK",
+        )
+        self.assertTrue(unchanged["unchanged"])
+        self.assertEqual("PAUSE_REVIEW", unchanged["next_action"])
+
+    def test_check_compares_existing_task_progress_without_new_operation(self):
+        first = self.ledger.check(
+            work=self.work, case_id="case-task-progress", task_id="task-existing",
+            conversation_key=OLD,
+            evidence=observe_node(view(disconnected=True), OLD), kind="CHECK",
+        )
+        self.assertIsNone(first["evidence"]["task_activity"])
+        DurableWatchLedger(self.store).prearm_task(
+            task_id="task-existing", work_id=self.work.work_id,
+            principal_id=self.work.owner_principal_id,
+            assignment_epoch=self.work.assignment_epoch,
+            instance_id="instance", conversation_key=OLD,
+            manager_conversation_key=NEW, manager_instance_id="instance",
+            baseline={"responseTurnCount": 0, "generating": False,
+                      "responseSha256": "a" * 64, "responseTurnKey": "turn-0",
+                      "latestUserTurnKey": "user-0", "latestUserSha256": "b" * 64,
+                      "latestUserTextOccurrenceCount": 1},
+            registration_receipt="arm",
+        )
+        second = self.ledger.check(
+            work=self.work, case_id="case-task-progress", task_id="task-existing",
+            conversation_key=OLD,
+            evidence=observe_node(view(disconnected=True), OLD), kind="RECHECK",
+        )
+        self.assertTrue(second["progress_changed"])
+        self.assertEqual("WATCHING", second["evidence"]["task_activity"]["state"])
+        self.assertEqual("RECHECK", second["next_action"])
 
 
 class _Applied:

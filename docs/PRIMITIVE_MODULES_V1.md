@@ -429,11 +429,14 @@ Work / 실행 세션 / B의 정확한 대화 UUID·탭 / Task Run·Delayed Send 
 ```text
 Check Node
   = 읽기/관측 부분 레시피
-  = 정확한 현재 노드를 읽고 OK / WAIT / CHECK 증거를 저장
+  = 사람이 이상하다고 본 정확한 현재 노드를 읽음
+  = 기존 RCC의 DOM 오류·연결·생성·최근 활동과 기존 Task/Operation 변화를 조합
+  = OK / WAIT / CHECK 및 원인을 반환
+  = Recheck 비교용 최소 스냅샷 외 새 Operation·진단 영수증을 만들지 않음
 
 Recheck Node
   = 비교 부분 레시피
-  = Delayed Send 또는 대기 경계 뒤 같은 노드를 다시 읽고 이전 증거와 비교
+  = 같은 노드를 다시 읽고 이전 최소 스냅샷과 진행 변화를 비교
   = CONTINUE / RECHECK / PAUSE_REVIEW를 제안하지만 스스로 교체하지 않음
 
 Pause Node
@@ -470,7 +473,7 @@ bct_reset_node(action=status|plan|apply)
 
 이상 관측:
   Check Node
-    → WAIT/CHECK이면 Delayed Send 또는 정해진 대기 뒤 Recheck Node
+    → WAIT/CHECK이면 다음 관측에서 Recheck Node
     → 회복되면 기존 체인 계속
     → 여전히 이상하면 Manager가 Pause Node 결정
       → Replace Node가 후임에게 승계 Chain Message

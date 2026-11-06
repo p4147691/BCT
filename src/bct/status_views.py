@@ -68,6 +68,14 @@ def status_view(snapshot: dict[str, Any], scope: str, sort_by: str = "number") -
                         "assigned_task": str(scope_data.get("assigned_task") or ""),
                         "display_order": scope_data.get("display_order"),
                         "active": tab.get("active") is True,
+                        # Existing RCC activity signals are read-only node
+                        # evidence.  Expose them in the common node view so
+                        # Check Node does not create another observer, receipt,
+                        # or authority layer.
+                        "connection": dict(tab.get("connection") or {})
+                        if isinstance(tab.get("connection"), dict) else {},
+                        "telemetry": dict(tab.get("telemetry") or {})
+                        if isinstance(tab.get("telemetry"), dict) else {},
                     })
             projected.append(row)
         if sort_by not in ("number", "network", "role", "activity"):

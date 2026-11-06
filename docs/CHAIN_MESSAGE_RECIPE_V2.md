@@ -99,7 +99,7 @@ Codex 전용 computer-use나 숨은 외부 오케스트레이터를 호출하지
 | Supervisor | 전역 한 명 유지, 부재·닫힘·복수 역할 정리 |
 | 대상별 분담 | AB/AC/AD 수와 각각의 지시, 독립/선행 의존 작업 구분 |
 | 자율 선택 | 부품·블럭·레시피·PowerShell·프로그램·BDC·창/탭 기능, B 재량 |
-| 정체·승계 | Check Node → Recheck Node → Pause Node → Replace Node → Reset Node, 기존 영수증 보존 |
+| 정체·승계 | Check Node가 기존 DOM·연결·진행 신호를 조합 → Recheck Node가 변화 비교 → 필요한 경우에만 후속 복구, 기존 작업 영수증 보존 |
 | 검증·반환 | Supervisor 통합 검토, CI 알람, 배포/E2E 순서·rollback·반환 조건 |
 
 save는 `assessment.answers`의 모든 답, Manager/Supervisor UUID, 대화망 이름,

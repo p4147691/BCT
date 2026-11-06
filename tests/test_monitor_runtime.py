@@ -307,7 +307,7 @@ class MonitorRuntimeTests(unittest.TestCase):
                 _RCC_HEALTH.clear()
                 _RCC_INFLIGHT.clear()
 
-    def test_rcc_state_exposes_only_window_tab_and_presence_fields(self):
+    def test_rcc_state_exposes_bounded_node_activity_without_private_settings(self):
         class Client:
             def request(self, **kwargs):
                 return {"state": {
@@ -316,7 +316,19 @@ class MonitorRuntimeTests(unittest.TestCase):
                     "settings": {"token": "must-not-leak"},
                     "registrations": {"MANAGER": {"secret": "must-not-leak"}},
                     "tabs": [{"tabId": 12, "windowId": 34, "index": 7, "title": "Manager", "url": "https://chatgpt.com/c/x"}],
-                    "endpoints": [{"tabId": 12, "tabIndex": 8, "presence": "OPEN", "tabActive": True, "generating": False}],
+                    "endpoints": [{
+                        "tabId": 12, "tabIndex": 8, "presence": "OPEN",
+                        "tabActive": True, "generating": False,
+                        "connection": {"disconnected": True, "reason": "network-banner"},
+                        "telemetry": {
+                            "generationState": "IDLE", "readiness": "UNKNOWN",
+                            "lastActivityAt": 456, "rendered_chars": 789, "turns": 3,
+                            "signal_source": "dom",
+                            "user_attention": {
+                                "kind": "RETRY_REQUIRED", "label": "다시 시도 필요",
+                            },
+                        },
+                    }],
                 }}
 
         with patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
@@ -325,6 +337,12 @@ class MonitorRuntimeTests(unittest.TestCase):
         self.assertEqual("session-123", rows[0]["session_id"])
         self.assertEqual(12, rows[0]["tabs"][0]["tab_id"])
         self.assertEqual(7, rows[0]["tabs"][0]["tab_index"])
+        self.assertTrue(rows[0]["tabs"][0]["connection"]["disconnected"])
+        self.assertEqual(456, rows[0]["tabs"][0]["telemetry"]["last_activity_at"])
+        self.assertEqual(
+            "RETRY_REQUIRED",
+            rows[0]["tabs"][0]["telemetry"]["user_attention"]["kind"],
+        )
         self.assertNotIn("settings", rows[0])
         self.assertNotIn("registrations", rows[0])
         self.assertNotIn("must-not-leak", repr(rows))

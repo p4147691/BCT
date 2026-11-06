@@ -1413,9 +1413,10 @@ def build_mcp(
     @server.tool(
         name="bct_check_node",
         description=(
-            "Check one exact node without sending or changing it. Stores a bounded "
-            "observation case and returns OK, WAIT, or CHECK plus exact evidence. "
-            "BCT does not decide replacement."
+            "Check one exact node without sending or changing it. Reuses the existing "
+            "RCC DOM activity, connection, and task/operation progress signals and stores "
+            "only the bounded comparison needed by Recheck Node. Returns OK, WAIT, or "
+            "CHECK; BCT does not decide replacement."
         ),
         structured_output=True,
     )
@@ -1439,8 +1440,8 @@ def build_mcp(
     @server.tool(
         name="bct_recheck_node",
         description=(
-            "Recheck the same exact node case after the caller's Delayed Send/wait "
-            "boundary. Compares durable evidence and suggests CONTINUE, RECHECK, or "
+            "Recheck the same exact node case and compare existing DOM activity, "
+            "connection, and task/operation progress. Suggests CONTINUE, RECHECK, or "
             "PAUSE_REVIEW; it does not send, pause, or replace by itself."
         ),
         structured_output=True,
