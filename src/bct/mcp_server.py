@@ -898,7 +898,9 @@ def build_mcp(
                         "continuation_route_override_reason", ""),
                     "watch_diagnostic_reason": watch_diagnostic_for_status(
                         str(watch["state"]), ctx,
-                    )}
+                    ),
+                    "execution_path": ctx.get("execution_path", "LEGACY_UNCLASSIFIED"),
+                    "chain_direction_id": ctx.get("chain_direction_id", "")}
         if action == "cancel":
             return await make_executor("browser")(
                 work_id,operation_id,{"command":"delayed-send-cancel",
@@ -939,6 +941,7 @@ def build_mcp(
 
         direction = None
         supervisor_route = None
+        execution_path = "DIRECTION_DECLARED" if chain_direction_id else "DIRECT_EXACT_TARGET"
         if chain_direction_id:
             if not hasattr(bct, "store"):
                 return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_STORE_REQUIRED"}
@@ -1087,6 +1090,8 @@ def build_mcp(
                 "outgoing_instruction_sha256": prepared_text["instruction_sha256"],
                 "outgoing_instruction_characters": prepared_text["instruction_characters"],
                 "max_generations": max_generations,
+                "execution_path": execution_path,
+                "chain_direction_id": chain_direction_id,
                 "effects": "NONE_READ_ONLY", "authorizes_send": False,
             }
         if chain_direction_id:
@@ -1114,6 +1119,8 @@ def build_mcp(
              "manager_instance_id":origin_instance or instance_id,
              "planned_send_operation_id":send_id,
              "planned_send_text":outgoing_instruction,
+             "execution_path":execution_path,
+             "chain_direction_id":chain_direction_id,
              "exclusive_conversation_watch":True,
              "max_generations":max_generations})
         if armed.get("outcome") != "APPLIED":
@@ -1136,6 +1143,8 @@ def build_mcp(
             )
         return {"status":"WATCHING","task_id":task_id,"generation":generation,
                 "max_generations":max_generations,
+                "execution_path":execution_path,
+                "chain_direction_id":chain_direction_id,
                 "prearm":armed,"send":sent,
                 **({"chain_direction": direction} if direction is not None else {}),
                 **({"supervisor_route": supervisor_route} if supervisor_route is not None else {})}
@@ -1617,7 +1626,10 @@ def build_mcp(
         action: str = "save", source_text: str = "", project: str = "",
         assessment: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from bct.chain_direction import ChainDirectionLedger, prepare_direction_review
+        from bct.chain_direction import (
+            ChainDirectionLedger, direction_assessment_contract,
+            prepare_direction_review,
+        )
         if action not in {"prepare", "save"}:
             return {"status":"INVALID_REQUEST","reason":"DIRECTION_ACTION_INVALID"}
         if action == "prepare" and source_kind == "USER" and not work_id:
@@ -1714,7 +1726,9 @@ def build_mcp(
                         raise ValueError("DIRECTION_NETWORK_OBSERVATION_REQUIRED")
                     ConversationNetworkUpdateFeature(bct.store).prepare(work=work, arguments=arguments)
             except (ValueError, PreconditionError) as exc:
-                return {"status":"INVALID_REQUEST","reason":str(exc)}
+                return {"status":"INVALID_REQUEST","reason":str(exc),
+                        "assessment_contract": direction_assessment_contract(
+                            assessment, reason=str(exc))}
         try:
             direction = await asyncio.to_thread(
                 ChainDirectionLedger(bct.store).save,

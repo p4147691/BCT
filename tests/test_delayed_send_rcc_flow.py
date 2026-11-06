@@ -148,9 +148,15 @@ class DelayedSendRccFlowTests(unittest.TestCase):
                             "instance_id":INSTANCE,"conversation_key":WORKER,
                             "manager_conversation_key":MANAGER,
                             "planned_send_operation_id":send_id,
-                            "planned_send_text":prompt})
+                            "planned_send_text":prompt,
+                            "execution_path":"DIRECTION_DECLARED",
+                            "chain_direction_id":"direction-e2e"})
             self.assertEqual(Outcome.APPLIED,planned.outcome,planned.as_dict())
             self.assertEqual("WATCHING",service.ledger.get("planned-task",1)["state"])
+            import json
+            provenance = json.loads(service.ledger.get("planned-task",1)["context_json"])
+            self.assertEqual("DIRECTION_DECLARED", provenance["execution_path"])
+            self.assertEqual("direction-e2e", provenance["chain_direction_id"])
             # No BCT send receipt yet -> no dispatch of the previous answer.
             self.assertEqual([],service.poll_once()["events"])
             send=bct.operations.run(principal=principal,work_id=work.work_id,

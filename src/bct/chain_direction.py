@@ -32,6 +32,45 @@ DIRECTION_QUESTIONS = (
 )
 
 
+def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dict[str, Any]:
+    """Return recovery-safe schema guidance without accepting a partial Direction."""
+    answers = value.get("answers") if isinstance(value, dict) else None
+    expected_answers = [key for key, _, _ in DIRECTION_QUESTIONS]
+    answer_keys = set(answers) if isinstance(answers, dict) else set()
+    targets = value.get("targets") if isinstance(value, dict) else None
+    target_diagnostics = []
+    if isinstance(targets, list):
+        for index, target in enumerate(targets):
+            if not isinstance(target, dict) or set(target) != {"conversation_key", "role", "instruction"}:
+                target_diagnostics.append({
+                    "index": index,
+                    "expected_fields": ["conversation_key", "role", "instruction"],
+                    "received_fields": sorted(target) if isinstance(target, dict) else [],
+                })
+    return {
+        "reason": reason,
+        "answers": {
+            "required_keys": expected_answers,
+            "missing_keys": sorted(set(expected_answers) - answer_keys),
+            "unexpected_keys": sorted(answer_keys - set(expected_answers)),
+            "value_rule": "each required answer is a non-empty string of at most 4000 characters",
+        },
+        "required_for_new_task": {
+            "manager_conversation_key": "lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
+            "supervisor_conversation_key": "different lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
+            "network_name": "non-empty existing, reused, changed, or new network name selected by A",
+            "targets": [{
+                "conversation_key": "lowercase canonical ChatGPT conversation UUID; not N96 or a tab title",
+                "role": "worker or supervisor",
+                "instruction": "non-empty per-target instruction, at most 6000 characters",
+            }],
+            "network_updates": "list of existing bct_set_conversation_network argument objects; [] is valid when reusing the network unchanged",
+        },
+        "target_diagnostics": target_diagnostics,
+        "recovery": "Correct only the reported fields, then call bct_set_direction(action='save') again with the same intended direction_id. Read the saved record with bct_get_direction before starting.",
+    }
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 

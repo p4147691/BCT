@@ -134,6 +134,8 @@ class ChainMessagePreflightTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(expected, send["arguments"]["text"])
         self.assertEqual("send-delayed-message", arm["arguments"]["command"])
         self.assertEqual("send-message", send["arguments"]["command"])
+        self.assertEqual("DIRECT_EXACT_TARGET", arm["arguments"]["execution_path"])
+        self.assertEqual("DIRECT_EXACT_TARGET", start["execution_path"])
 
     async def test_default_start_is_exact_backward_compatible_prompt(self):
         self.register()
