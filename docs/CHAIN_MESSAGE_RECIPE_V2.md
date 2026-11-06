@@ -102,7 +102,7 @@ Codex 전용 computer-use나 숨은 외부 오케스트레이터를 호출하지
 | 정체·승계 | Check Node가 기존 DOM·연결·진행 신호를 조합 → Recheck Node가 변화 비교 → 필요한 경우에만 후속 복구, 기존 작업 영수증 보존 |
 | 검증·반환 | Supervisor 통합 검토, CI 알람, 배포/E2E 순서·rollback·반환 조건 |
 
-save는 `assessment.answers`의 모든 답, Manager/Supervisor UUID, 대화망 이름,
+save는 필요한 경우에만 기록한 `assessment.answers`, Manager/Supervisor UUID, 대화망 이름,
 대상별 `{conversation_key, role, instruction}`, `network_updates`를 검증하고
 원문과 함께 기록한다. 같은 Direction ID의 내용 변경은 거부한다.
 `bct_get_direction`으로 판단과 대상별 Task/Operation 연결을 함께 읽는다.
@@ -118,8 +118,9 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
 직접 읽었다는 증거가 아니다. MANAGER_RETURN은 정확한 원장·응답 해시를 확인한 뒤
 `VERIFIED_MANAGER_RETURN`으로 표시한다. 두 출처의 증거 수준을 같게 취급하지 않는다.
 
-질문에 성실히 답했는지를 문자열 검사만으로 증명할 수는 없다. BCT가 검증하는
-것은 필수 답의 존재, 구체적 식별값·역할·소속·입력 계약·동일 영수증 등의 조건이다.
+질문은 A의 내부 판단 안내이며 저장을 허가하는 설문 관문이 아니다. `assessment.answers`는
+전부 생략하거나 필요한 판단 근거만 기록할 수 있다. BCT가 검증하는 것은 실제 실행에
+필요한 구체적 식별값·역할·소속·입력 계약·동일 영수증 등의 조건이다.
 다른 AI 노드의 검토 및 실제 결과 검증은 여전히 필요하다.
 
 ## 망 준비와 1:N

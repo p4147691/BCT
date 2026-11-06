@@ -33,7 +33,7 @@ DIRECTION_QUESTIONS = (
 
 
 def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dict[str, Any]:
-    """Return recovery-safe schema guidance without accepting a partial Direction."""
+    """Return recovery-safe schema guidance for the fields that actually failed."""
     answers = value.get("answers") if isinstance(value, dict) else None
     expected_answers = [key for key, _, _ in DIRECTION_QUESTIONS]
     answer_keys = set(answers) if isinstance(answers, dict) else set()
@@ -66,10 +66,11 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
     return {
         "reason": reason,
         "answers": {
-            "required_keys": expected_answers,
-            "missing_keys": sorted(set(expected_answers) - answer_keys),
+            "required_keys": [],
+            "guidance_keys": expected_answers,
+            "missing_guidance_keys": sorted(set(expected_answers) - answer_keys),
             "unexpected_keys": sorted(answer_keys - set(expected_answers)),
-            "value_rule": "each required answer is a non-empty string of at most 4000 characters",
+            "value_rule": "answers are optional A reasoning notes; each provided value must be a non-empty string of at most 4000 characters",
         },
         "required_for_new_task": {
             "manager_conversation_key": "lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
@@ -114,7 +115,7 @@ def prepare_direction_review(*, source_text: str, source_kind: str,
         "available_tools": available_tools or [],
         "next_tool": "bct_set_direction",
         "instructions_for_a": (
-            "A가 각 질문을 판단하여 assessment.answers에 답한다. 사용자에게 이 질문지를 넘기지 않는다. "
+            "A가 질문을 내부 판단 안내로 사용한다. assessment.answers는 필수 설문이 아니며 필요한 판단 근거만 기록할 수 있다. 사용자에게 이 질문지를 넘기지 않는다. "
             "assessment에는 manager_conversation_key, supervisor_conversation_key, network_name, "
             "targets:[{conversation_key, role, instruction}]를 기록한다. role은 worker 또는 supervisor다. "
             "targets에는 지금 독립적으로 시작할 수 있는 대상만 넣는다. 선행 결과가 필요한 일은 BA/CA 반환 후 다음 회차에서 판단한다. "
@@ -138,12 +139,13 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
         "network_name", "targets", "network_updates",
     }:
         raise ValueError("DIRECTION_ASSESSMENT_INVALID")
-    answers = value.get("answers")
-    required = {key for key, _, _ in DIRECTION_QUESTIONS}
-    if (not isinstance(answers, dict) or set(answers) != required
+    answers = value.get("answers", {})
+    guidance_keys = {key for key, _, _ in DIRECTION_QUESTIONS}
+    if (not isinstance(answers, dict) or set(answers) - guidance_keys
             or any(not isinstance(v, str) or not v.strip() or len(v) > 4000
                    for v in answers.values())):
-        raise ValueError("DIRECTION_ANSWERS_REQUIRED")
+        raise ValueError("DIRECTION_ANSWERS_INVALID")
+    value = {**value, "answers": answers}
     targets = value.get("targets", [])
     updates = value.get("network_updates", [])
     if not isinstance(targets, list) or not isinstance(updates, list):

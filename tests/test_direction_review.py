@@ -151,13 +151,27 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         with self.store._readonly() as db:
             self.assertEqual([tuple(r) for r in before], [tuple(r) for r in db.execute("SELECT name FROM sqlite_master ORDER BY name")])
 
-    async def test_save_requires_ai_answers_and_preserves_original_user_text(self):
+    async def test_save_keeps_ai_answers_optional_and_preserves_original_user_text(self):
         value = assessment()
         del value["answers"]["recovery"]
         missing = await self.save(value)
-        self.assertEqual("DIRECTION_ANSWERS_REQUIRED", missing["reason"])
-        self.assertEqual(["recovery"], missing["assessment_contract"]["answers"]["missing_keys"])
-        self.assertIn("conversation UUID", missing["assessment_contract"]["required_for_new_task"]["targets"][0]["conversation_key"])
+        self.assertEqual("OK", missing["status"], missing)
+        self.assertNotIn("recovery", missing["chain_direction"]["assessment"]["answers"])
+        no_answers = assessment()
+        del no_answers["answers"]
+        saved_without_answers = await self.save(
+            no_answers, direction_id="direction-without-answers")
+        self.assertEqual("OK", saved_without_answers["status"], saved_without_answers)
+        self.assertEqual({}, saved_without_answers["chain_direction"]["assessment"]["answers"])
+        invalid_answers = assessment()
+        invalid_answers["answers"]["made_up_gate"] = "must not become a new requirement"
+        rejected_answers = await self.save(
+            invalid_answers, direction_id="direction-invalid-answers")
+        self.assertEqual("DIRECTION_ANSWERS_INVALID", rejected_answers["reason"])
+        self.assertEqual(
+            ["made_up_gate"],
+            rejected_answers["assessment_contract"]["answers"]["unexpected_keys"],
+        )
         malformed = assessment()
         malformed["targets"][0] = {"node": "N96", "role": "worker", "instruction": "Do the work."}
         rejected = await self.save(malformed)
@@ -178,19 +192,22 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
             "instruction must be a non-empty string of at most 6000 characters",
             diagnostic["issues"],
         )
-        saved = await self.save()
+        saved = await self.save(direction_id="direction-complete-answers")
         self.assertEqual("OK", saved["status"], saved)
         row = saved["chain_direction"]
         self.assertEqual(assessment(), row["assessment"])
         self.assertEqual("CALLER_PROVIDED_TEXT", row["source_evidence"])
         self.assertEqual("Complete the translation program safely.", row["source_text"])
         self.assertEqual([], self.ops.calls)
-        replay = await self.save()
+        replay = await self.save(direction_id="direction-complete-answers")
         self.assertTrue(replay["chain_direction"]["duplicate"])
         self.assertEqual(assessment(), replay["chain_direction"]["assessment"])
         value = assessment()
         value["targets"][0]["instruction"] = "Changed instruction"
-        self.assertEqual("CHAIN_DIRECTION_CONFLICT", (await self.save(value))["reason"])
+        self.assertEqual(
+            "CHAIN_DIRECTION_CONFLICT",
+            (await self.save(value, direction_id="direction-complete-answers"))["reason"],
+        )
 
     async def test_multi_target_preflight_is_read_only(self):
         await self.save()
