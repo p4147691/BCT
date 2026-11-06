@@ -298,6 +298,26 @@ class FileReadFeature:
         return entries, truncated
 
 
+def validate_write_preconditions(arguments: dict[str, Any]) -> None:
+    """Fail fast on ambiguous or missing write conditions before any Operation."""
+    expected_sha = arguments.get("expected_sha256")
+    expected_absent = arguments.get("expected_absent", False)
+    if expected_absent is not True and expected_absent is not False:
+        raise PreconditionError("BAD_EXPECTED_ABSENT: expected_absent must be boolean")
+    if expected_absent == bool(expected_sha):
+        raise PreconditionError(
+            "EXACTLY_ONE_WRITE_PRECONDITION_REQUIRED: "
+            "new file -> expected_absent=true; "
+            "existing file -> expected_sha256=<64-character SHA-256>; supply exactly one"
+        )
+    if expected_sha is not None and (
+        not isinstance(expected_sha, str)
+        or len(expected_sha) != 64
+        or any(ch not in "0123456789abcdefABCDEF" for ch in expected_sha)
+    ):
+        raise PreconditionError("BAD_EXPECTED_SHA256: supply 64 hexadecimal characters")
+
+
 class FileWriteFeature:
     capability = "write"
 
@@ -308,10 +328,7 @@ class FileWriteFeature:
         expected_absent = bool(arguments.get("expected_absent", False))
         if not isinstance(content, str):
             raise PreconditionError("CONTENT_MUST_BE_TEXT")
-        if expected_absent == bool(expected_sha):
-            raise PreconditionError("EXACTLY_ONE_WRITE_PRECONDITION_REQUIRED")
-        if expected_sha is not None and (not isinstance(expected_sha, str) or len(expected_sha) != 64):
-            raise PreconditionError("BAD_EXPECTED_SHA256")
+        validate_write_preconditions(arguments)
         return FeatureRequest(
             self.capability, str(path),
             {"path": str(path), "content": content, "expected_sha256": expected_sha,

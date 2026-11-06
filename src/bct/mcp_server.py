@@ -2100,6 +2100,10 @@ def build_mcp(
             if capability == "test" and arguments.get("operation") == "verify":
                 selected = "verify"
                 arguments = {key: value for key, value in arguments.items() if key != "operation"}
+            if selected == "write":
+                # Reject invalid preconditions before allocating an Operation or touching a file.
+                from .features.files import validate_write_preconditions
+                validate_write_preconditions(arguments)
             background = (
                 selected == "github_run_watch"
                 or
