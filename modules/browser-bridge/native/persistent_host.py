@@ -9,10 +9,18 @@ from mcp.client.streamable_http import streamable_http_client
 from native_host import APPROVED_ORIGIN, MCP_URL, TOKEN_PATH, WORK_ID, read_frame, validate, write_frame
 
 LAST_REQUEST_ID = None
+CORE_HTTP_TIMEOUT_SECONDS = 30
 
 
 def error_reply(request_id, error, outcome):
     return {"ok": False, "request_id": request_id, "outcome": outcome, "error": error}
+
+
+def contains_timeout(exc):
+    """Recognize nested transport timeouts without exposing exception details."""
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    return any(contains_timeout(child) for child in getattr(exc, "exceptions", ()))
 
 
 def core_reply(result, request_id, operation_type="bridge_read"):
@@ -72,7 +80,9 @@ async def serve(inp, out):
         write_frame(out, error_reply(LAST_REQUEST_ID, "HOST_AUTH_NOT_CONFIGURED", "AUTH_DENIED"))
         return 4
     pending_first = first
-    async with httpx.AsyncClient(headers={"Authorization": "Bearer " + token}, timeout=12) as client:
+    async with httpx.AsyncClient(
+            headers={"Authorization": "Bearer " + token},
+            timeout=CORE_HTTP_TIMEOUT_SECONDS) as client:
         async with streamable_http_client(MCP_URL, http_client=client) as (reader, writer, _):
             async with ClientSession(reader, writer) as session:
                 await session.initialize()
@@ -127,9 +137,10 @@ def main():
         return 4
     try:
         return asyncio.run(serve(sys.stdin.buffer, sys.stdout.buffer))
-    except Exception:
+    except Exception as exc:
         try:
-            write_frame(sys.stdout.buffer, error_reply(LAST_REQUEST_ID, "HOST_AUTH_OR_CONNECT_FAILED", "CONNECTION_FAILED"))
+            error = "HOST_CONNECT_TIMEOUT" if contains_timeout(exc) else "HOST_AUTH_OR_CONNECT_FAILED"
+            write_frame(sys.stdout.buffer, error_reply(LAST_REQUEST_ID, error, "CONNECTION_FAILED"))
             return 0
         except Exception:
             return 5

@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 MAX_FRAME = 1024 * 1024
 SCHEMA_VERSION = 2
 TOOL_NAME_MAX = 128
+CORE_HTTP_TIMEOUT_SECONDS = 30
 APPROVED_ORIGIN = os.environ.get("BCT_BRIDGE_EXTENSION_ORIGIN", "")
 MCP_URL = os.environ.get("BCT_BRIDGE_MCP_URL", "")
 _url = urlparse(MCP_URL)
@@ -112,7 +113,9 @@ async def dispatch(message):
     import httpx
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
-    async with httpx.AsyncClient(headers={"Authorization": "Bearer " + token}, timeout=12) as client:
+    async with httpx.AsyncClient(
+            headers={"Authorization": "Bearer " + token},
+            timeout=CORE_HTTP_TIMEOUT_SECONDS) as client:
         async with streamable_http_client(MCP_URL, http_client=client) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()

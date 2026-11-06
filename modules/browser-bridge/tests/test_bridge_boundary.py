@@ -85,6 +85,17 @@ class BridgeBoundaryContractTests(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertEqual("UNKNOWN", r["outcome"])
 
+    def test_live_core_timeout_budget_and_safe_timeout_classification(self):
+        native_source = (NATIVE / "native_host.py").read_text(encoding="utf-8")
+        persistent_source = (NATIVE / "persistent_host.py").read_text(encoding="utf-8")
+        self.assertEqual(30, persistent_host.CORE_HTTP_TIMEOUT_SECONDS)
+        self.assertIn("CORE_HTTP_TIMEOUT_SECONDS = 30", native_source)
+        self.assertIn("timeout=CORE_HTTP_TIMEOUT_SECONDS", native_source)
+        self.assertIn("timeout=CORE_HTTP_TIMEOUT_SECONDS", persistent_source)
+        self.assertTrue(persistent_host.contains_timeout(
+            persistent_host.httpx.ReadTimeout("slow Core")))
+        self.assertFalse(persistent_host.contains_timeout(RuntimeError("other")))
+
     def test_host_rejects_wrong_origin_before_network(self):
         env = dict(os.environ)
         env.update(BCT_BRIDGE_EXTENSION_ORIGIN="chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/",
