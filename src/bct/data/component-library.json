@@ -1,12 +1,12 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "7e51d5f851c3675342e3ac9ac489fbdc09bfa4fc608cfd9cd40a1c02b4e24318",
+  "source_fingerprint": "41769caba27d8678d7ad4d986fdf98e33ead3f4c321c72053519748693534643",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "2ece6a8d8c7dc99b838617d456933a70aa5a6f723d409439f52233143738873b",
     "docs/PRIMITIVE_MODULES_V1.md": "15c1b2595163bd4d7de5d5c021e78f76d55d39f5bd92d6162e6ea68ce7437d16",
     "docs/component-library.v1.json": "713af37031bf773698b5d388232174a572254d15248d87bd8502e7336a3be582",
     "modules/browser-bridge/extension/background.js": "55f54f0fec3bb167c90b6b3000a11d30ec322885e074350b8dc2ccea8fea89da",
-    "modules/browser-bridge/extension/chat_tools.js": "a299138417276151916b702cbb1985a5a61b74a05d579b18ede119c1ee8be9b4",
+    "modules/browser-bridge/extension/chat_tools.js": "4f0dea66fda18602bd796d65175c905eb96e5a10c40a85d9201ca0a37ad7911c",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
     "modules/browser-bridge/native/native_host.py": "c00384a433457e17ba222a65c92684811e77f9c7cd9c204c8693b4cd811baf1f",
     "modules/browser-bridge/native/persistent_host.py": "bf767f14ec87372b451181d141026262220f565d59f0642d4fca5d27c55f8678",
