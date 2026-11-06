@@ -19,12 +19,17 @@ INSTANCE = "instance123"
 SESSION = "a" * 32
 WORKER = "6ae54613-5be8-83ee-9c47-1486efa232d8"
 MANAGER = "6ae467d4-6d64-83e8-9b3e-c8c8aeb91bb3"
+SUCCESSOR = "7be65724-6cf9-84ff-ad58-2597fab343e9"
 
 
 class SimulatedRcc:
     """Contract-compatible fake RCC for the full Task B SELF→MANAGER cycle."""
     def __init__(self):
         self.sent = []
+        self.attention = ""
+        self.created = None
+        self.create_count = 0
+        self.new_chat_send_outcomes = []
         self.manual_user_text = "Initial manual work request"
         self.visible_count_override = None
         self.responses = {WORKER: ("", 0), MANAGER: ("", 0)}
@@ -47,13 +52,31 @@ class SimulatedRcc:
         assert instance_id == INSTANCE
         extra = extra or {}
         if command == "state":
+            tabs = [
+                {**self.locations[WORKER], "url": "https://chatgpt.com/c/" + WORKER},
+                {**self.locations[MANAGER], "url": "https://chatgpt.com/c/" + MANAGER},
+            ]
+            if self.created:
+                tabs.append({**self.created, "url": self.created.get("url", "https://chatgpt.com/")})
             return {"ok": True, "state": {
                 "instanceId": INSTANCE, "sessionId": SESSION,
-                "tabs": [
-                    {**self.locations[WORKER], "url": "https://chatgpt.com/c/" + WORKER},
-                    {**self.locations[MANAGER], "url": "https://chatgpt.com/c/" + MANAGER},
+                "tabs": tabs,
+                "endpoints": [
+                    {**self.locations[WORKER], "conversationKey": WORKER,
+                     "generating": False, "connection": {"disconnected": False},
+                     "telemetry": {"user_attention": (
+                         {"kind": self.attention, "label": self.attention}
+                         if self.attention else None)}},
+                    {**self.locations[MANAGER], "conversationKey": MANAGER,
+                     "generating": False, "connection": {"disconnected": False},
+                     "telemetry": {"user_attention": None}},
                 ],
             }}
+        if command == "create-chat-tab":
+            self.create_count += 1
+            self.created = {"tabId": 20, "windowId": extra.get("windowId", 11), "index": 2}
+            return {"ok": True, "requestId": request_id,
+                    "tabId": self.created["tabId"], "windowId": self.created["windowId"]}
         if command == "read-latest-assistant":
             key = extra["conversationKey"]
             location = self.locations[key]
@@ -97,6 +120,25 @@ class SimulatedRcc:
                 "instanceId": instance_id, "sessionId": extra["sessionId"],
                 "tabId": extra["tabId"], "windowId": extra["windowId"],
             }
+        if command == "send-to-created-tab":
+            assert self.created and extra["tabId"] == self.created["tabId"]
+            if self.new_chat_send_outcomes:
+                outcome = self.new_chat_send_outcomes.pop(0)
+                if outcome == "NOT_APPLIED":
+                    return {"type": "host:result", "ok": False,
+                            "state": "NOT_APPLIED", "error": "SEND_REJECTED"}
+                if outcome == "UNKNOWN":
+                    return {"type": "host:result", "ok": False,
+                            "state": "SUBMIT_UNKNOWN"}
+            self.created["url"] = "https://chatgpt.com/c/" + SUCCESSOR
+            self.locations[SUCCESSOR] = dict(self.created)
+            self.responses[SUCCESSOR] = ("", 0)
+            self.sent.append((SUCCESSOR, text, request_id))
+            return {"type": "host:result", "ok": True, "state": "SUBMITTED",
+                    "submitted": True, "operationId": request_id,
+                    "conversationKey": SUCCESSOR, "instanceId": instance_id,
+                    "sessionId": extra["sessionId"], "tabId": extra["tabId"],
+                    "windowId": extra["windowId"]}
         raise AssertionError(f"Unexpected RCC command: {command}")
 
 
@@ -112,6 +154,172 @@ class SelfPrearmGuidanceTests(unittest.TestCase):
 
 
 class DelayedSendRccFlowTests(unittest.TestCase):
+    def test_explicit_worker_stop_signal_restarts_same_chain_generation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
+                encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            feature = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = feature
+            principal = Principal("tester", "test", frozenset({"browser"}))
+            work = bct.create_work(
+                work_id="auto-restart-work", request_summary="restart stopped Worker",
+                roots=[str(root)], actions=["browser"], principal=principal,
+            )
+            service = SendDelayedMessageService(
+                store=bct.store, browser_feature=feature, operations=bct.operations,
+            )
+            armed = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="auto-restart-prearm", capability="browser",
+                arguments={"command": "send-delayed-message", "task_id": "restart-task",
+                           "instance_id": INSTANCE, "conversation_key": WORKER,
+                           "manager_conversation_key": MANAGER},
+            )
+            self.assertEqual(Outcome.APPLIED, armed.outcome)
+            rcc.attention = "RETRY_REQUIRED"
+            self.assertEqual([], service.poll_once()["events"])
+            second = service.poll_once()
+            self.assertEqual("RESTARTED", second["events"][0]["status"])
+            self.assertEqual("SAME_CONVERSATION", second["events"][0]["route"])
+            self.assertEqual("RESTARTED", service.ledger.get("restart-task", 1)["state"])
+            self.assertEqual("WATCHING", service.ledger.get("restart-task", 2)["state"])
+            self.assertEqual(1, len(rcc.sent))
+            self.assertEqual(WORKER, rcc.sent[0][0])
+            self.assertIn("다음 미완료 단계부터 다시 시작", rcc.sent[0][1])
+
+    def test_new_chat_required_moves_network_and_restarts_chain(self):
+        from bct.conversation_network import upsert_conversation, configure_conversation_scope
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
+                encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            feature = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = feature
+            principal = Principal("tester", "test", frozenset({"browser"}))
+            work = bct.create_work(
+                work_id="new-chat-restart-work", request_summary="replace stopped Worker",
+                roots=[str(root)], actions=["browser"], principal=principal,
+            )
+            upsert_conversation(bct.store, conversation_key=WORKER, display_name="Worker")
+            configure_conversation_scope(
+                bct.store, conversation_key=WORKER, display_name="Worker",
+                scope_name="Restart network",
+                role_tags=["Worker"], assigned_task="restart-task",
+            )
+            service = SendDelayedMessageService(
+                store=bct.store, browser_feature=feature, operations=bct.operations,
+            )
+            armed = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="new-chat-prearm", capability="browser",
+                arguments={"command": "send-delayed-message", "task_id": "replace-task",
+                           "instance_id": INSTANCE, "conversation_key": WORKER,
+                           "manager_conversation_key": MANAGER},
+            )
+            self.assertEqual(Outcome.APPLIED, armed.outcome)
+            rcc.attention = "NEW_CHAT_REQUIRED"
+            self.assertEqual([], service.poll_once()["events"])
+            result = service.poll_once()["events"][0]
+            self.assertEqual("RESTARTED", result["status"])
+            self.assertEqual("NEW_CONVERSATION", result["route"])
+            self.assertEqual(SUCCESSOR, result["conversation_key"])
+            self.assertEqual("RESTARTED", service.ledger.get("replace-task", 1)["state"])
+            self.assertEqual(SUCCESSOR,
+                             service.ledger.get("replace-task", 2)["conversation_key"])
+            with bct.store._readonly() as db:
+                active = db.execute(
+                    "SELECT conversation_key FROM conversation_network_memberships "
+                    "WHERE activity='ACTIVE'"
+                ).fetchall()
+            self.assertEqual([SUCCESSOR], [row["conversation_key"] for row in active])
+
+    def test_new_chat_send_not_applied_reuses_created_tab_then_restarts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
+                encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            rcc.new_chat_send_outcomes = ["NOT_APPLIED"]
+            feature = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = feature
+            principal = Principal("tester", "test", frozenset({"browser"}))
+            work = bct.create_work(
+                work_id="retry-created-chat-work", request_summary="retry created Chat",
+                roots=[str(root)], actions=["browser"], principal=principal,
+            )
+            service = SendDelayedMessageService(
+                store=bct.store, browser_feature=feature, operations=bct.operations,
+            )
+            armed = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="retry-created-chat-prearm", capability="browser",
+                arguments={"command": "send-delayed-message", "task_id": "retry-created-chat",
+                           "instance_id": INSTANCE, "conversation_key": WORKER,
+                           "manager_conversation_key": MANAGER},
+            )
+            self.assertEqual(Outcome.APPLIED, armed.outcome)
+            rcc.attention = "NEW_CHAT_REQUIRED"
+            service.poll_once()
+            first = service.poll_once()["events"][0]
+            self.assertEqual("RESTART_NOT_APPLIED", first["status"])
+            second = service.poll_once()["events"][0]
+            self.assertEqual("RESTARTED", second["status"])
+            self.assertEqual(1, rcc.create_count)
+            self.assertEqual(1, len(rcc.sent))
+            self.assertEqual(SUCCESSOR, rcc.sent[0][0])
+
+    def test_unknown_new_chat_send_stops_without_automatic_redispatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
+                encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            rcc.new_chat_send_outcomes = ["UNKNOWN"]
+            feature = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = feature
+            principal = Principal("tester", "test", frozenset({"browser"}))
+            work = bct.create_work(
+                work_id="unknown-created-chat-work", request_summary="unknown created Chat",
+                roots=[str(root)], actions=["browser"], principal=principal,
+            )
+            service = SendDelayedMessageService(
+                store=bct.store, browser_feature=feature, operations=bct.operations,
+            )
+            armed = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="unknown-created-chat-prearm", capability="browser",
+                arguments={"command": "send-delayed-message", "task_id": "unknown-created-chat",
+                           "instance_id": INSTANCE, "conversation_key": WORKER,
+                           "manager_conversation_key": MANAGER},
+            )
+            self.assertEqual(Outcome.APPLIED, armed.outcome)
+            rcc.attention = "NEW_CHAT_REQUIRED"
+            service.poll_once()
+            result = service.poll_once()["events"][0]
+            self.assertEqual("RESTART_UNKNOWN", result["status"])
+            self.assertEqual("UNKNOWN", service.ledger.get("unknown-created-chat", 1)["state"])
+            self.assertEqual([], service.poll_once()["events"])
+            self.assertEqual(1, rcc.create_count)
+
     def test_verified_prearm_before_send_handles_fast_completed_reply(self):
         # Regression: real 2026-11-01 tests armed AFTER an already-terminal
         # response. A planned, exact BCT send must be reserved BEFORE sending.

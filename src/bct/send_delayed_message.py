@@ -632,6 +632,227 @@ class DurableWatchLedger:
                 (json.dumps(ctx, sort_keys=True), row["task_id"], row["generation"]),
             ).rowcount == 1
 
+    def note_recovery_signal(self, row: dict, *, kind: str, observed_at: float) -> int:
+        """Count consecutive explicit RCC stop signals on the existing watch."""
+        if kind not in {
+                "CONNECTION_DISCONNECTED", "RETRY_REQUIRED",
+                "NEW_CHAT_REQUIRED", "RECOVERY_REQUIRED"}:
+            return 0
+        with self.store.transaction() as db:
+            found = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if found is None:
+                return 0
+            context = json.loads(found["context_json"] or "{}")
+            prior = context.get("recovery_signal")
+            count = (int(prior.get("count") or 0) + 1
+                     if isinstance(prior, dict) and prior.get("kind") == kind else 1)
+            context["recovery_signal"] = {
+                "kind": kind, "count": count, "observed_at": float(observed_at),
+            }
+            db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+            return count
+
+    def clear_recovery_signal(self, row: dict) -> None:
+        with self.store.transaction() as db:
+            found = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if found is None:
+                return
+            context = json.loads(found["context_json"] or "{}")
+            if "recovery_signal" not in context:
+                return
+            context.pop("recovery_signal", None)
+            db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+
+    def prepare_recovery_generation(
+        self, row: dict, *, conversation_key: str, baseline: dict,
+        operation_id: str, message_sha256: str, recovery_kind: str,
+    ) -> int:
+        """Move one stalled watch to the next generation before an exact send."""
+        next_generation = int(row["generation"]) + 1
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT state,context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=?", (row["task_id"], row["generation"]),
+            ).fetchone()
+            if current is None or current["state"] != "WATCHING":
+                raise ValueError("DELAYED_RECOVERY_WATCH_CHANGED")
+            existing = db.execute(
+                "SELECT conversation_key,state,context_json FROM delayed_send_watches "
+                "WHERE task_id=? AND generation=?",
+                (row["task_id"], next_generation),
+            ).fetchone()
+            if existing is not None:
+                context = json.loads(existing["context_json"] or "{}")
+                if (existing["conversation_key"] != conversation_key
+                        or context.get("source_send_operation_id") != operation_id
+                        or context.get("source_send_sha256") != message_sha256):
+                    raise ValueError("DELAYED_RECOVERY_GENERATION_CONFLICT")
+                return next_generation
+            old_context = json.loads(current["context_json"] or "{}")
+            context = dict(old_context)
+            for key in (
+                    "observed_response_turn_key", "observed_response_sha",
+                    "watch_diagnostic_reason", "watch_terminal_reason",
+                    "manager_action", "recovery_signal"):
+                context.pop(key, None)
+            context.update({
+                "baseline_count": int(baseline.get("responseTurnCount") or 0),
+                "baseline_generating": baseline.get("generating") is True,
+                "baseline_key": str(baseline.get("responseTurnKey") or ""),
+                "baseline_sha": str(baseline.get("responseSha256") or ""),
+                "source_proof_kind": "BCT_PLANNED_SOURCE_SEND",
+                "source_user_turn_key": "",
+                "source_user_sha256": message_sha256,
+                "source_send_operation_id": operation_id,
+                "source_send_sha256": message_sha256,
+                "recovery_kind": recovery_kind,
+                "recovered_from_generation": int(row["generation"]),
+            })
+            old_context["recovery_kind"] = recovery_kind
+            old_context["recovery_next_generation"] = next_generation
+            changed = db.execute(
+                "UPDATE delayed_send_watches SET state='RECOVERING',context_json=? "
+                "WHERE task_id=? AND generation=? AND state='WATCHING'",
+                (json.dumps(old_context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+            if changed.rowcount != 1:
+                raise ValueError("DELAYED_RECOVERY_WATCH_CHANGED")
+            db.execute(
+                "INSERT INTO delayed_send_watches(task_id,generation,conversation_key,"
+                "response_turn_id,source_send_receipt,state,context_json) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (row["task_id"], next_generation, conversation_key,
+                 f"task:{row['task_id']}:{next_generation}", operation_id,
+                 "WATCHING", json.dumps(context, sort_keys=True)),
+            )
+        return next_generation
+
+    def finish_recovery(self, row: dict, *, next_generation: int) -> None:
+        with self.store.transaction() as db:
+            changed = db.execute(
+                "UPDATE delayed_send_watches SET state='RESTARTED' WHERE task_id=? "
+                "AND generation=? AND state='RECOVERING'",
+                (row["task_id"], row["generation"]),
+            )
+            next_row = db.execute(
+                "SELECT state FROM delayed_send_watches WHERE task_id=? AND generation=?",
+                (row["task_id"], next_generation),
+            ).fetchone()
+            if changed.rowcount != 1 or next_row is None or next_row["state"] != "WATCHING":
+                raise ValueError("DELAYED_RECOVERY_FINISH_CONFLICT")
+
+    def rollback_recovery(self, row: dict, *, next_generation: int, reason: str) -> None:
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='RECOVERING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if current is None:
+                return
+            context = json.loads(current["context_json"] or "{}")
+            context["recovery_not_applied"] = reason
+            db.execute(
+                "UPDATE delayed_send_watches SET state='WATCHING',context_json=? "
+                "WHERE task_id=? AND generation=? AND state='RECOVERING'",
+                (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+            db.execute(
+                "UPDATE delayed_send_watches SET state='CANCELLED' WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], next_generation),
+            )
+
+    def mark_recovery_unknown(self, row: dict, *, next_generation: int) -> None:
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE delayed_send_watches SET state='UNKNOWN' WHERE task_id=? "
+                "AND generation IN (?,?) AND state IN ('RECOVERING','WATCHING')",
+                (row["task_id"], row["generation"], next_generation),
+            )
+
+    def mark_current_recovery_unknown(self, row: dict, *, reason: str) -> None:
+        """Stop one unresolved recovery without retrying a possibly applied effect."""
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if current is None:
+                return
+            context = json.loads(current["context_json"] or "{}")
+            context["recovery_unknown_reason"] = reason
+            db.execute(
+                "UPDATE delayed_send_watches SET state='UNKNOWN',context_json=? "
+                "WHERE task_id=? AND generation=? AND state='WATCHING'",
+                (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+
+    def next_recovery_attempt(self, row: dict, *, route: str) -> int:
+        """Allocate a retry number inside the existing watch context."""
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if current is None:
+                raise ValueError("DELAYED_RECOVERY_WATCH_CHANGED")
+            context = json.loads(current["context_json"] or "{}")
+            attempts = context.get("recovery_attempts")
+            if not isinstance(attempts, dict):
+                attempts = {}
+            attempt = int(attempts.get(route) or 0) + 1
+            attempts[route] = attempt
+            context["recovery_attempts"] = attempts
+            db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+            return attempt
+
+    def remember_recovery_chat(self, row: dict, *, create_operation_id: str,
+                               session_id: str, tab_id: int, window_id: int) -> None:
+        """Keep a confirmed new Chat so a safe send retry does not create more tabs."""
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if current is None:
+                raise ValueError("DELAYED_RECOVERY_WATCH_CHANGED")
+            context = json.loads(current["context_json"] or "{}")
+            context["recovery_created_chat"] = {
+                "create_operation_id": create_operation_id,
+                "session_id": session_id,
+                "tab_id": int(tab_id),
+                "window_id": int(window_id),
+            }
+            db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+
     def mark_source_superseded(self, row: dict, observed: dict) -> bool:
         """Retire a watch only after a different exact terminal source is proven.
 
@@ -1234,6 +1455,207 @@ class SendDelayedMessageService:
             timeout_s=5.0,
         )
 
+    def _activity_for(self, row: dict) -> dict:
+        """Read the existing RCC DOM activity signal for one exact watched chat."""
+        ctx = row["context"]
+        instance = str(ctx["instance_id"])
+        response = self.browser_feature.client.request(
+            instance_id=instance,
+            request_id="delayed-activity-" + hashlib.sha256(
+                f"{row['task_id']}|{row['generation']}".encode()
+            ).hexdigest()[:24],
+            command="state", timeout_s=2.0,
+        )
+        state = response.get("state") if isinstance(response, dict) else None
+        endpoints = state.get("endpoints") if isinstance(state, dict) else None
+        if not (isinstance(response, dict) and response.get("ok") is True
+                and isinstance(endpoints, list)):
+            return {}
+        matches = [item for item in endpoints if isinstance(item, dict)
+                   and str(item.get("conversationKey") or "").lower()
+                   == str(row["conversation_key"]).lower()]
+        if len(matches) != 1:
+            return {}
+        endpoint = matches[0]
+        telemetry = endpoint.get("telemetry") if isinstance(endpoint.get("telemetry"), dict) else {}
+        attention = telemetry.get("user_attention") \
+            if isinstance(telemetry.get("user_attention"), dict) else {}
+        connection = endpoint.get("connection") \
+            if isinstance(endpoint.get("connection"), dict) else {}
+        kind = str(attention.get("kind") or "").strip().upper()
+        if connection.get("disconnected") is True:
+            kind = "CONNECTION_DISCONNECTED"
+        if kind not in {
+                "CONNECTION_DISCONNECTED", "RETRY_REQUIRED",
+                "NEW_CHAT_REQUIRED", "RECOVERY_REQUIRED"}:
+            return {}
+        return {
+            "kind": kind,
+            "session_id": str(state.get("sessionId") or ""),
+            "tab_id": int(endpoint.get("tabId") or 0),
+            "window_id": int(endpoint.get("windowId") or 0),
+        }
+
+    @staticmethod
+    def _recovery_message(row: dict, kind: str) -> str:
+        return (
+            "[BCT 자동 계속]\n"
+            f"Task: {row['task_id']}\n멈춤 신호: {kind}\n"
+            "기존 작업의 영수증과 현재 파일 상태를 먼저 확인하세요. 이미 끝난 단계와 "
+            "UNKNOWN 외부 효과는 반복하지 말고, 다음 미완료 단계부터 다시 시작해 끝까지 "
+            "진행하세요. 먼저 이번 턴의 구체적인 Execute Plan을 세우고 실행하세요. "
+            "응답 마지막에는 NEXT TASK — SELF 또는 NEXT TASK — MANAGER와 다음 지시/보고를 남기세요."
+        )
+
+    @staticmethod
+    def _recovery_operation_id(row: dict, suffix: str, attempt: int = 0) -> str:
+        material = f"{row['task_id']}|{row['generation']}|{suffix}|{attempt}"
+        return "recovery-" + hashlib.sha256(material.encode()).hexdigest()[:56]
+
+    def _recover_same_conversation(self, row: dict, *, kind: str) -> dict:
+        from bct.core.models import Principal, Outcome
+        ctx = row["context"]
+        work = self.store.get_work(ctx["work_id"])
+        message = self._recovery_message(row, kind)
+        operation_id = self._recovery_operation_id(row, "same-chat")
+        baseline = self.latest(
+            instance_id=ctx["instance_id"], conversation_key=row["conversation_key"],
+        )
+        next_generation = self.ledger.prepare_recovery_generation(
+            row, conversation_key=row["conversation_key"], baseline=baseline,
+            operation_id=operation_id,
+            message_sha256=_rcc_submitted_text_sha256(message), recovery_kind=kind,
+        )
+        principal = Principal(work.owner_principal_id, "delayed-send-auto-recovery",
+                              frozenset({"browser"}))
+        session, tab, window = self._locate(ctx["instance_id"], row["conversation_key"])
+        result = self.operations.run(
+            principal=principal, work_id=work.work_id, operation_id=operation_id,
+            capability="browser",
+            arguments={"command": "send-message", "instance_id": ctx["instance_id"],
+                       "session_id": session, "tab_id": tab, "window_id": window,
+                       "conversation_key": row["conversation_key"], "text": message},
+        )
+        if result.outcome == Outcome.APPLIED:
+            self.ledger.finish_recovery(row, next_generation=next_generation)
+            return {"status": "RESTARTED", "route": "SAME_CONVERSATION",
+                    "generation": next_generation}
+        if result.outcome == Outcome.NOT_APPLIED:
+            self.ledger.rollback_recovery(
+                row, next_generation=next_generation, reason="SAME_CONVERSATION_NOT_APPLIED",
+            )
+            return {"status": "RESTART_NOT_APPLIED", "route": "SAME_CONVERSATION"}
+        self.ledger.mark_recovery_unknown(row, next_generation=next_generation)
+        return {"status": "RESTART_UNKNOWN", "route": "SAME_CONVERSATION"}
+
+    def _recover_new_conversation(self, row: dict, *, kind: str) -> dict:
+        """Create one successor Chat, send once, then move the existing flow to it."""
+        from bct.core.models import Principal, Outcome
+        from bct.conversation_network import ensure_observed_node_labels, transfer_conversation_state
+        ctx = row["context"]
+        work = self.store.get_work(ctx["work_id"])
+        principal = Principal(work.owner_principal_id, "delayed-send-auto-recovery",
+                              frozenset({"browser"}))
+        attempt = self.ledger.next_recovery_attempt(row, route="NEW_CONVERSATION")
+        current = self.ledger.get(row["task_id"], row["generation"])
+        current_context = json.loads(current["context_json"] or "{}") if current else {}
+        saved = current_context.get("recovery_created_chat")
+        if isinstance(saved, dict):
+            create_id = str(saved.get("create_operation_id") or "")
+            session_id = str(saved.get("session_id") or "")
+            tab_id = int(saved.get("tab_id") or 0)
+            window_id = int(saved.get("window_id") or 0)
+        else:
+            activity = self._activity_for(row)
+            if not activity.get("window_id") or not activity.get("session_id"):
+                return {"status": "RESTART_WAITING_STATE", "route": "NEW_CONVERSATION"}
+            session_id = str(activity["session_id"])
+            create_id = self._recovery_operation_id(row, "create-chat", attempt)
+            created = self.operations.run(
+                principal=principal, work_id=work.work_id, operation_id=create_id,
+                capability="browser",
+                arguments={"command": "create-chat-tab", "instance_id": ctx["instance_id"],
+                           "window_id": activity["window_id"]},
+            )
+            if created.outcome == Outcome.UNKNOWN:
+                self.ledger.mark_current_recovery_unknown(
+                    row, reason="CREATE_CHAT_EFFECT_UNKNOWN",
+                )
+                return {"status": "RESTART_UNKNOWN", "route": "NEW_CONVERSATION"}
+            if created.outcome == Outcome.NOT_APPLIED:
+                return {"status": "RESTART_NOT_APPLIED", "route": "NEW_CONVERSATION"}
+            tab_id = int(created.evidence["created_tab_id"])
+            window_id = int(created.evidence["created_window_id"])
+            self.ledger.remember_recovery_chat(
+                row, create_operation_id=create_id, session_id=session_id,
+                tab_id=tab_id, window_id=window_id,
+            )
+        message = self._recovery_message(row, kind)
+        send_id = self._recovery_operation_id(row, "send-new-chat", attempt)
+        sent = self.operations.run(
+            principal=principal, work_id=work.work_id, operation_id=send_id,
+            capability="browser",
+            arguments={"command": "send-message", "instance_id": ctx["instance_id"],
+                       "session_id": session_id, "tab_id": tab_id,
+                       "window_id": window_id, "create_operation_id": create_id,
+                       "text": message},
+        )
+        if sent.outcome == Outcome.UNKNOWN:
+            self.ledger.mark_current_recovery_unknown(
+                row, reason="NEW_CHAT_SEND_EFFECT_UNKNOWN",
+            )
+            return {"status": "RESTART_UNKNOWN", "route": "NEW_CONVERSATION"}
+        if sent.outcome == Outcome.NOT_APPLIED:
+            return {"status": "RESTART_NOT_APPLIED", "route": "NEW_CONVERSATION"}
+        successor = str(sent.evidence.get("conversation_key") or "").lower()
+        if not successor:
+            self.ledger.mark_current_recovery_unknown(
+                row, reason="NEW_CHAT_CONVERSATION_ID_UNKNOWN",
+            )
+            return {"status": "RESTART_UNKNOWN", "route": "NEW_CONVERSATION"}
+        next_generation = self.ledger.prepare_recovery_generation(
+            row, conversation_key=successor,
+            baseline={"responseTurnCount": 0, "generating": False,
+                      "responseTurnKey": "", "responseSha256": ""},
+            operation_id=send_id,
+            message_sha256=_rcc_submitted_text_sha256(message), recovery_kind=kind,
+        )
+        self.ledger.finish_recovery(row, next_generation=next_generation)
+        metadata = "TRANSFERRED"
+        try:
+            ensure_observed_node_labels(
+                self.store,
+                conversations=[(row["conversation_key"], "ChatGPT"),
+                               (successor, "ChatGPT")],
+            )
+            transfer_conversation_state(
+                self.store, predecessor_conversation_key=row["conversation_key"],
+                successor_conversation_key=successor,
+            )
+        except (KeyError, ValueError):
+            # Advisory Monitor metadata must not stop the already-confirmed
+            # continuation.  The new exact watch remains authoritative.
+            metadata = "PRESERVED_OLD"
+        return {"status": "RESTARTED", "route": "NEW_CONVERSATION",
+                "generation": next_generation, "conversation_key": successor,
+                "metadata": metadata}
+
+    def _recover_if_stopped(self, row: dict) -> dict:
+        activity = self._activity_for(row)
+        if not activity:
+            self.ledger.clear_recovery_signal(row)
+            return {}
+        kind = str(activity["kind"])
+        count = self.ledger.note_recovery_signal(row, kind=kind, observed_at=time.time())
+        if count < 2:
+            return {"status": "STOP_CONFIRMED_ONCE", "kind": kind}
+        current = self.ledger.get(row["task_id"], row["generation"])
+        context = json.loads(current["context_json"] or "{}") if current else {}
+        use_new = (kind == "NEW_CHAT_REQUIRED"
+                   or context.get("recovery_not_applied") == "SAME_CONVERSATION_NOT_APPLIED")
+        return (self._recover_new_conversation(row, kind=kind) if use_new
+                else self._recover_same_conversation(row, kind=kind))
+
     def prearm(self, *, task_id: str, work, instance_id: str,
                conversation_key: str, manager_conversation_key: str,
                manager_instance_id: str, operation_id: str,
@@ -1469,6 +1891,10 @@ class SendDelayedMessageService:
             try:
                 observation=self._response_for(row)
                 if not observation:
+                    recovery = self._recover_if_stopped(row)
+                    if recovery and recovery.get("status") != "STOP_CONFIRMED_ONCE":
+                        events.append({"task_id": row["task_id"],
+                                       "generation": row["generation"], **recovery})
                     continue
                 watch=Watch(row["task_id"],row["generation"],
                             row["conversation_key"],row["response_turn_id"],

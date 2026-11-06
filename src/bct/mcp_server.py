@@ -1442,7 +1442,7 @@ def build_mcp(
         description=(
             "Recheck the same exact node case and compare existing DOM activity, "
             "connection, and task/operation progress. Suggests CONTINUE, RECHECK, or "
-            "PAUSE_REVIEW; it does not send, pause, or replace by itself."
+            "RESTART. Active Chain watches use the same signals to restart automatically."
         ),
         structured_output=True,
     )

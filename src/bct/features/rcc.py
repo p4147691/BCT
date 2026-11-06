@@ -2519,12 +2519,14 @@ class BrowserFeature:
                     terminal, operation_id=request.operation_id, values=values
                 ):
                     receipt = terminal["result"]
+                    from bct.send_delayed_message import _rcc_submitted_text_sha256
                     return FeatureResult(Outcome.APPLIED, {
                         "instance_id": values["instance_id"],
                         "command": values["command"],
                         "host_request_id": request.operation_id,
                         "host_state": "SUBMITTED_CONFIRMED_BY_TERMINAL_RESULT",
                         "conversation_key": str(receipt["conversationKey"]),
+                        "source_message_sha256": _rcc_submitted_text_sha256(values["text"]),
                         "result_state": "RESULT_PERSISTED",
                         **send_latency_evidence(
                             command=values["command"],
@@ -2650,10 +2652,12 @@ class BrowserFeature:
                         "created_window_id": result["windowId"],
                     }
             source_proof = {}
-            if values["command"] == "send-to-tab":
+            if values["command"] in {"send-to-tab", "send-to-created-tab"}:
                 from bct.send_delayed_message import _rcc_submitted_text_sha256
                 source_proof = {
-                    "conversation_key": extra["conversationKey"],
+                    "conversation_key": str(
+                        result.get("conversationKey") or extra.get("conversationKey") or ""
+                    ),
                     "source_message_sha256": _rcc_submitted_text_sha256(values["text"]),
                 }
             return FeatureResult(Outcome.APPLIED, {

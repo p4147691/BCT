@@ -263,7 +263,7 @@ class NodeRecoveryLedger:
         elif not unchanged:
             next_action = "RECHECK"
         else:
-            next_action = "PAUSE_REVIEW"
+            next_action = "RESTART"
         return {
             "case_id": case_id, "sequence": sequence, "kind": kind,
             "result": evidence["result"], "reason": evidence["reason"],

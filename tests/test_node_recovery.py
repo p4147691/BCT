@@ -300,7 +300,7 @@ class NodeRecoveryTests(unittest.TestCase):
             kind="RECHECK",
         )
         self.assertTrue(unchanged["unchanged"])
-        self.assertEqual("PAUSE_REVIEW", unchanged["next_action"])
+        self.assertEqual("RESTART", unchanged["next_action"])
 
     def test_check_compares_existing_task_progress_without_new_operation(self):
         first = self.ledger.check(

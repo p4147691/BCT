@@ -437,7 +437,7 @@ Check Node
 Recheck Node
   = 비교 부분 레시피
   = 같은 노드를 다시 읽고 이전 최소 스냅샷과 진행 변화를 비교
-  = CONTINUE / RECHECK / PAUSE_REVIEW를 제안하지만 스스로 교체하지 않음
+  = CONTINUE / RECHECK / RESTART를 제안하며 활성 Chain 감시는 같은 신호로 자동 계속
 
 Pause Node
   = 상태 변경 원시 부품
