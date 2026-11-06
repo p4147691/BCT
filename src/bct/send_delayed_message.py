@@ -348,8 +348,15 @@ class DurableWatchLedger:
             parent_context = json.loads(row["context_json"] or "{}") if row else {}
             carried = {
                 key: parent_context[key] for key in
-                ("recipe", "max_generations", "execution_path", "chain_direction_id") if key in parent_context
+                ("recipe", "max_generations") if key in parent_context
             }
+            # Legacy and Task Message watches predate execution-path
+            # provenance. Do not rewrite their receipt shape by carrying empty
+            # placeholders, while preserving an actually declared/direct path
+            # across BB generations.
+            for key in ("execution_path", "chain_direction_id"):
+                if parent_context.get(key):
+                    carried[key] = parent_context[key]
             db.execute(
                 "INSERT INTO delayed_send_watches("
                 "task_id,generation,conversation_key,response_turn_id,"

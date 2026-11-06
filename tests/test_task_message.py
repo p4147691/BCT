@@ -198,6 +198,38 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
                 json.loads(saved["context_json"]),
             )
 
+    def test_next_bb_watch_carries_nonempty_chain_execution_provenance(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            ledger = DurableWatchLedger(store)
+            ledger.prearm_task(
+                task_id="direction-task", work_id="work", principal_id="owner",
+                assignment_epoch=1, instance_id="worker-instance",
+                conversation_key="worker-uuid",
+                manager_conversation_key="manager-uuid",
+                manager_instance_id="manager-instance",
+                baseline={
+                    "responseTurnCount": 1, "generating": False,
+                    "responseTurnKey": "old", "responseSha256": "a" * 64,
+                },
+                registration_receipt="arm-1",
+                planned_send_operation_id="send-1",
+                planned_send_text="Do declared work.",
+                execution_path="DIRECTION_DECLARED",
+                chain_direction_id="direction-e2e",
+            )
+            parent = Watch(
+                "direction-task", 1, "worker-uuid", "task:direction-task:1", "arm-1",
+            )
+            next_watch = Watch(
+                "direction-task", 2, "worker-uuid", "task:direction-task:2", "arm-2",
+            )
+
+            self.assertTrue(ledger.reserve_next(parent, next_watch))
+            saved = json.loads(ledger.get("direction-task", 2)["context_json"])
+            self.assertEqual("DIRECTION_DECLARED", saved["execution_path"])
+            self.assertEqual("direction-e2e", saved["chain_direction_id"])
+
 
 if __name__ == "__main__":
     unittest.main()
