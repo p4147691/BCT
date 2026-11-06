@@ -17,6 +17,7 @@ from bct.core.models import Work
 from bct.chain_direction import ChainDirectionLedger
 from bct.core.store import Store
 from bct.send_delayed_message import InstructionError, extract_next_instruction
+from bct.send_delayed_message import DurableWatchLedger
 from bct.mcp_server import build_mcp
 
 
@@ -149,6 +150,25 @@ class ChainMessagePreflightTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("WATCHING", result["status"])
         self.assertEqual(original, self.operations.calls[0]["arguments"]["planned_send_text"])
         self.assertEqual(original, self.operations.calls[1]["arguments"]["text"])
+
+    async def test_legacy_watch_with_empty_execution_path_is_unclassified(self):
+        work = self.register()
+        DurableWatchLedger(self.store).prearm_task(
+            task_id="legacy-watch", work_id=self.work_id,
+            principal_id=work.owner_principal_id,
+            assignment_epoch=work.assignment_epoch,
+            instance_id="fixed-instance", conversation_key=WORKER,
+            manager_conversation_key=MANAGER, manager_instance_id="manager-instance",
+            baseline={"responseTurnCount": 0, "generating": False,
+                      "responseTurnKey": "", "responseSha256": ""},
+            registration_receipt="legacy-receipt",
+            planned_send_operation_id="legacy-send",
+            planned_send_text="Legacy exact instruction.",
+        )
+        result = await self.call(
+            action="status", task_id="legacy-watch", operation_id="status-op")
+        self.assertEqual("WATCHING", result["status"])
+        self.assertEqual("LEGACY_UNCLASSIFIED", result["execution_path"])
 
     async def test_invalid_contract_and_size_fail_before_reservation(self):
         self.register()

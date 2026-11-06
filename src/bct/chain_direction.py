@@ -41,12 +41,28 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
     target_diagnostics = []
     if isinstance(targets, list):
         for index, target in enumerate(targets):
-            if not isinstance(target, dict) or set(target) != {"conversation_key", "role", "instruction"}:
-                target_diagnostics.append({
-                    "index": index,
-                    "expected_fields": ["conversation_key", "role", "instruction"],
-                    "received_fields": sorted(target) if isinstance(target, dict) else [],
-                })
+            diagnostic = {"index": index, "issues": []}
+            if not isinstance(target, dict):
+                diagnostic["issues"].append("target must be an object")
+                diagnostic["received_fields"] = []
+            else:
+                expected_fields = {"conversation_key", "role", "instruction"}
+                if set(target) != expected_fields:
+                    diagnostic["issues"].append("target fields do not match the contract")
+                    diagnostic["received_fields"] = sorted(target)
+                conversation_key = target.get("conversation_key")
+                if not isinstance(conversation_key, str) or not _UUID.fullmatch(conversation_key):
+                    diagnostic["issues"].append("conversation_key must be a lowercase canonical UUID")
+                if target.get("role") not in {"worker", "supervisor"}:
+                    diagnostic["issues"].append("role must be worker or supervisor")
+                instruction = target.get("instruction")
+                if (not isinstance(instruction, str) or not instruction.strip()
+                        or len(instruction) > 6000):
+                    diagnostic["issues"].append(
+                        "instruction must be a non-empty string of at most 6000 characters")
+            if diagnostic["issues"]:
+                diagnostic["expected_fields"] = ["conversation_key", "role", "instruction"]
+                target_diagnostics.append(diagnostic)
     return {
         "reason": reason,
         "answers": {

@@ -899,7 +899,7 @@ def build_mcp(
                     "watch_diagnostic_reason": watch_diagnostic_for_status(
                         str(watch["state"]), ctx,
                     ),
-                    "execution_path": ctx.get("execution_path", "LEGACY_UNCLASSIFIED"),
+                    "execution_path": ctx.get("execution_path") or "LEGACY_UNCLASSIFIED",
                     "chain_direction_id": ctx.get("chain_direction_id", "")}
         if action == "cancel":
             return await make_executor("browser")(

@@ -165,6 +165,19 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, rejected["assessment_contract"]["target_diagnostics"][0]["index"])
         self.assertEqual(["conversation_key", "role", "instruction"],
                          rejected["assessment_contract"]["target_diagnostics"][0]["expected_fields"])
+        malformed = assessment()
+        malformed["targets"][0] = {
+            "conversation_key": "N96", "role": "manager", "instruction": " "}
+        rejected = await self.save(malformed)
+        self.assertEqual("DIRECTION_TARGET_CONFLICT", rejected["reason"])
+        diagnostic = rejected["assessment_contract"]["target_diagnostics"][0]
+        self.assertEqual(0, diagnostic["index"])
+        self.assertIn("conversation_key must be a lowercase canonical UUID", diagnostic["issues"])
+        self.assertIn("role must be worker or supervisor", diagnostic["issues"])
+        self.assertIn(
+            "instruction must be a non-empty string of at most 6000 characters",
+            diagnostic["issues"],
+        )
         saved = await self.save()
         self.assertEqual("OK", saved["status"], saved)
         row = saved["chain_direction"]

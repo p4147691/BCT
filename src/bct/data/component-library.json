@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "bd30e73ec0e04c7f1194b050bc7b19ae87e36c1e00eb72392662db8641401192",
+  "source_fingerprint": "5eba70de369df62eda7e4c580fe63e51428f398ec5023a70d96c8881caf31952",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "2ece6a8d8c7dc99b838617d456933a70aa5a6f723d409439f52233143738873b",
     "docs/PRIMITIVE_MODULES_V1.md": "15c1b2595163bd4d7de5d5c021e78f76d55d39f5bd92d6162e6ea68ce7437d16",
@@ -16,7 +16,7 @@
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "ec9123afd6e583b7a0c92602c84652df7edd25f275b6ee017d2c573e290781d8",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "2168eeb18875dfa5c23aaa37aaad5acc7f6b43449c5a2c828ac937834314669e",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
-    "src/bct/chain_direction.py": "f1f4dc668330846116cf578464d3e9f26253c2f76e09bf27c0fd3937ff0e3470",
+    "src/bct/chain_direction.py": "f4a8603f99cd26934a8a01bfbd113bb6c93d510eb49fab379f0d4bb0f637ebfa",
     "src/bct/chain_entry_policy.py": "2c076fd541dfaa9353b12526c6a41bdb1396169a6a81162e81861b8cc313dd34",
     "src/bct/chain_execution_plan.py": "0f98de6cf1abaf1454972982bbeb6ae104a60c4a6537df5b1441afcb2b1aab6a",
     "src/bct/chain_message_preflight.py": "41965f2d1e04f8514ce86f42461e075910a628816f7b0e20b023ca2aa6dc1220",
@@ -30,7 +30,7 @@
     "src/bct/delivery_continuation_recovery.py": "2da105389388c6e1e3e405b178dc3ce85ff50fd874edfd322619d7e1f4aff4cb",
     "src/bct/features/conversation_network.py": "8344f9dce683111111dc600fc446f9838bddca7b8bccb207034815e6d5619c06",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
-    "src/bct/mcp_server.py": "c59228c6c4efa5cb810c3a242b6ce7a3c9b7514d236de87353ccc42d71dccc2c",
+    "src/bct/mcp_server.py": "adeba774922e16e76bb7d2f6b1da2f9ac49e3e87be74a16d06ed93025d23c8b0",
     "src/bct/node_recovery.py": "435f491c38013b3eff3ed91b49a299bd2de56e17c144e7d78a6e5df9fc0ad817",
     "src/bct/send_delayed_message.py": "dd743ee311aa3ef39710f7b510fdff0d3e503abe950c9fef72c8aa6b8fe481a5",
     "src/bct/task_message.py": "549f40e968a0797065da0725c1380c97ab98729695047426463b2767fd63b5ed"
