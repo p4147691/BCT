@@ -400,6 +400,40 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, next_mutation.outcome)
 
+    def test_created_tab_response_timeout_reconciles_exact_original_send(self):
+        self.client.error = RelayEffectUnknown("RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH")
+        original = self.call("unknown-created-tab-timeout", {
+            "command": "send-to-created-tab", "instance_id": "instance123",
+            "session_id": "session-1", "tab_id": 10, "window_id": 11,
+            "create_operation_id": "create-1", "text": "hello",
+        })
+        self.assertEqual(Outcome.UNKNOWN, original.outcome)
+        self.assertEqual("RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH", original.error)
+
+        self.client.error = None
+        self.client.result = {
+            "type": "host:result", "ok": True,
+            "relayId": "unknown-created-tab-timeout",
+            "found": True, "completed": True, "pending": False,
+            "result": {
+                "id": "unknown-created-tab-timeout",
+                "resultState": "RESULT_PERSISTED",
+                "conversationKey": "conversation-1234", "ok": True,
+                "ackState": "ACKED", "tabId": 10,
+                "fingerprint": '["create-1","instance123","session-1",10,11,"hello"]',
+            },
+        }
+        reconciled = self.call("reconcile-created-tab-timeout", {
+            "command": "reconcile-send-to-created-tab",
+            "instance_id": "instance123",
+            "relay_id": "unknown-created-tab-timeout",
+        })
+        self.assertEqual(Outcome.APPLIED, reconciled.outcome)
+        self.assertEqual(
+            "unknown-created-tab-timeout",
+            reconciled.evidence["reconciled_operation_id"],
+        )
+
     def test_reconciliation_without_terminal_receipt_does_not_block_new_operation(self):
         self.client.result = {
             "type": "host:result", "ok": False, "state": "SUBMIT_UNKNOWN"

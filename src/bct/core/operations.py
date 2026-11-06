@@ -185,6 +185,12 @@ class OperationCoordinator:
                         "RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH",
                         "RCC_TRANSPORT_UNKNOWN_AFTER_DISPATCH",
                     })
+                or (rcc_command == "reconcile-send-to-created-tab"
+                    and original.outcome is Outcome.UNKNOWN
+                    and str(original.error or "") in {
+                        "RCC_HOST_OUTCOME_UNVERIFIED:SUBMIT_UNKNOWN",
+                        "RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH",
+                    })
                 or (rcc_command in {"result-of-create-and-send", "reconcile-create-and-send"}
                  and (original.evidence.get("command") == "create-and-send"
                       or str(original.error or "").startswith((
@@ -221,7 +227,10 @@ class OperationCoordinator:
                     raise PreconditionError("RCC_GENERIC_SEND_ORIGINAL_DIGEST_MISMATCH")
             if rcc_command == "reconcile-send-to-created-tab" and (
                 original.outcome is not Outcome.UNKNOWN
-                or str(original.error or "") != "RCC_HOST_OUTCOME_UNVERIFIED:SUBMIT_UNKNOWN"
+                or str(original.error or "") not in {
+                    "RCC_HOST_OUTCOME_UNVERIFIED:SUBMIT_UNKNOWN",
+                    "RCC_RESPONSE_TIMEOUT_AFTER_DISPATCH",
+                }
             ):
                 raise PreconditionError("RCC_RECONCILE_ORIGINAL_UNKNOWN_REQUIRED")
             if rcc_command == "reconcile-create-and-send" and (
