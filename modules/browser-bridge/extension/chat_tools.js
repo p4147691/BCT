@@ -80,7 +80,13 @@
       const status = await chrome.runtime.sendMessage({type: "BCT_CHAT_STATUS"});
       if (!status?.enabled) { baseline = null; grantId = null; return; }
       const messages = assistants();
-      if (grantId !== status.grantId) { grantId = status.grantId; baseline = messages.length; return; }
+      if (grantId !== status.grantId) {
+        grantId = status.grantId;
+        // Enabling a conversation is an explicit request to inspect its latest
+        // completed assistant turn. Keep older turns behind the baseline while
+        // allowing an already-rendered strict tool envelope to run once.
+        baseline = Math.max(0, messages.length - 1);
+      }
       const pendingKey = "bct-tool-result-pending:" + conversationKey;
       const pendingResult = (await chrome.storage.local.get(pendingKey))[pendingKey];
       if (pendingResult && await sendResult(pendingResult)) {
