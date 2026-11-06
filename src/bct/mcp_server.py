@@ -1122,7 +1122,10 @@ def build_mcp(
              "execution_path":execution_path,
              "chain_direction_id":chain_direction_id,
              "exclusive_conversation_watch":True,
-             "max_generations":max_generations})
+             "max_generations":max_generations,
+             "watched_session_id":session_id,
+             "watched_tab_id":target_tab,
+             "watched_window_id":target_window})
         if armed.get("outcome") != "APPLIED":
             return {"status":"PREARM_FAILED","prearm":armed}
         sent=await make_executor("browser")(

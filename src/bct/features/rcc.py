@@ -602,7 +602,8 @@ class BrowserFeature:
                    "manager_conversation_key","manager_instance_id",
                    "planned_send_operation_id", "planned_send_text",
                    "exclusive_conversation_watch", "max_generations",
-                   "execution_path", "chain_direction_id"}
+                   "execution_path", "chain_direction_id",
+                   "watched_session_id", "watched_tab_id", "watched_window_id"}
         if set(arguments) - allowed:
             raise PreconditionError("DELAYED_ARGUMENT_NOT_ALLOWED")
         task_id = str(arguments.get("task_id") or "").strip()
@@ -640,7 +641,10 @@ class BrowserFeature:
              "planned_send_operation_id":plan_id,"planned_send_text":plan_text,
              "execution_path":execution_path,"chain_direction_id":direction_id,
              "exclusive_conversation_watch":exclusive,
-             "max_generations":max_generations},
+             "max_generations":max_generations,
+             "watched_session_id":str(arguments.get("watched_session_id") or ""),
+             "watched_tab_id":int(arguments.get("watched_tab_id") or 0),
+             "watched_window_id":int(arguments.get("watched_window_id") or 0)},
             (f"delayed-send:{work.work_id}:{task_id}",),
             {"command":"send-delayed-message","mutating":True},
         )
@@ -1924,6 +1928,9 @@ class BrowserFeature:
                     exclusive_conversation_watch=values.get(
                         "exclusive_conversation_watch", False),
                     max_generations=values.get("max_generations", 0),
+                    watched_session_id=values.get("watched_session_id", ""),
+                    watched_tab_id=values.get("watched_tab_id", 0),
+                    watched_window_id=values.get("watched_window_id", 0),
                 )
             except (ValueError, KeyError) as exc:
                 raise PreconditionError(str(exc)) from exc

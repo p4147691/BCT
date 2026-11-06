@@ -32,6 +32,7 @@ class SimulatedRcc:
         self.new_chat_send_outcomes = []
         self.manual_user_text = "Initial manual work request"
         self.visible_count_override = None
+        self.worker_detached = False
         self.responses = {WORKER: ("", 0), MANAGER: ("", 0)}
         self.locations = {
             WORKER: {"tabId": 10, "windowId": 11, "index": 0},
@@ -62,7 +63,8 @@ class SimulatedRcc:
                 "instanceId": INSTANCE, "sessionId": SESSION,
                 "tabs": tabs,
                 "endpoints": [
-                    {**self.locations[WORKER], "conversationKey": WORKER,
+                    {**self.locations[WORKER],
+                     "conversationKey": "" if self.worker_detached else WORKER,
                      "generating": False, "connection": {"disconnected": False},
                      "telemetry": {"user_attention": (
                          {"kind": self.attention, "label": self.attention}
@@ -152,7 +154,61 @@ class SelfPrearmGuidanceTests(unittest.TestCase):
         self.assertIn("대상·창·탭을 다시 고르지 않습니다", text)
         self.assertIn("범용 execute capability", text)
 
-
+    def test_exact_watched_tab_detach_restarts_in_new_chat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
+                encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            browser = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = browser
+            principal = Principal("tester", "test", frozenset({"browser"}))
+            work = bct.create_work(
+                work_id="detached-worker-work", request_summary="restart detached Worker",
+                roots=[str(root)], actions=["browser"], principal=principal,
+            )
+            service = SendDelayedMessageService(
+                store=bct.store, browser_feature=browser, operations=bct.operations,
+            )
+            prompt = "Long running task with explicit continuation."
+            send_id = "detached-worker-send"
+            armed = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="detached-worker-arm", capability="browser",
+                arguments={"command": "send-delayed-message",
+                           "task_id": "detached-worker-task",
+                           "instance_id": INSTANCE,
+                           "conversation_key": WORKER,
+                           "manager_conversation_key": MANAGER,
+                           "planned_send_operation_id": send_id,
+                           "planned_send_text": prompt,
+                           "watched_session_id": SESSION,
+                           "watched_tab_id": 10,
+                           "watched_window_id": 11},
+            )
+            self.assertEqual(Outcome.APPLIED, armed.outcome, armed.as_dict())
+            sent = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id=send_id, capability="browser",
+                arguments={"command": "send-message", "instance_id": INSTANCE,
+                           "session_id": SESSION, "tab_id": 10, "window_id": 11,
+                           "conversation_key": WORKER, "text": prompt},
+            )
+            self.assertEqual(Outcome.APPLIED, sent.outcome, sent.as_dict())
+            rcc.worker_detached = True
+            self.assertEqual([], service.poll_once()["events"])
+            second = service.poll_once()
+            self.assertEqual("RESTARTED", second["events"][0]["status"])
+            self.assertEqual("NEW_CONVERSATION", second["events"][0]["route"])
+            self.assertEqual(1, rcc.create_count)
+            self.assertEqual("RESTARTED", service.ledger.get(
+                "detached-worker-task", 1)["state"])
+            self.assertEqual("WATCHING", service.ledger.get(
+                "detached-worker-task", 2)["state"])
 class DelayedSendRccFlowTests(unittest.TestCase):
     def test_explicit_worker_stop_signal_restarts_same_chain_generation(self):
         with tempfile.TemporaryDirectory() as tmp:

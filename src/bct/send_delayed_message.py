@@ -388,7 +388,8 @@ class DurableWatchLedger:
                     planned_send_text: str = "",
                     execution_path: str = "", chain_direction_id: str = "",
                     exclusive_conversation_watch: bool = False,
-                    max_generations: int = 0) -> dict:
+                    max_generations: int = 0, watched_session_id: str = "",
+                    watched_tab_id: int = 0, watched_window_id: int = 0) -> dict:
         """Worker prearms one current response, reusing any reserved next turn."""
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id):
             raise ValueError("DELAYED_TASK_ID_INVALID")
@@ -430,6 +431,12 @@ class DurableWatchLedger:
             "execution_path": execution_path,
             "chain_direction_id": chain_direction_id,
         }
+        if watched_session_id and watched_tab_id > 0 and watched_window_id > 0:
+            context.update({
+                "watched_session_id": watched_session_id,
+                "watched_tab_id": watched_tab_id,
+                "watched_window_id": watched_window_id,
+            })
         if max_generations:
             context["recipe"] = "task-message-v1"
         if not isinstance(context["baseline_count"], int) or context["baseline_count"] < 0:
@@ -1474,9 +1481,32 @@ class SendDelayedMessageService:
         matches = [item for item in endpoints if isinstance(item, dict)
                    and str(item.get("conversationKey") or "").lower()
                    == str(row["conversation_key"]).lower()]
-        if len(matches) != 1:
+        if len(matches) == 1:
+            endpoint = matches[0]
+        elif len(matches) == 0:
+            # A navigation/error page can remove the conversation UUID from
+            # the RCC endpoint before its visible recovery UI is rendered.
+            # Use only the exact tab/window captured by the original Chain
+            # prearm; never select another blank Chat tab heuristically.
+            watched_tab = int(ctx.get("watched_tab_id") or 0)
+            watched_window = int(ctx.get("watched_window_id") or 0)
+            endpoint_matches = [item for item in endpoints if isinstance(item, dict)
+                                and int(item.get("tabId") or 0) == watched_tab
+                                and int(item.get("windowId") or 0) == watched_window]
+            if watched_tab <= 0 or watched_window <= 0 or len(endpoint_matches) != 1:
+                return {}
+            endpoint = endpoint_matches[0]
+            if str(endpoint.get("conversationKey") or "").lower() != str(
+                    row["conversation_key"]).lower():
+                return {
+                    "kind": "NEW_CHAT_REQUIRED",
+                    "session_id": str(state.get("sessionId") or ctx.get(
+                        "watched_session_id") or ""),
+                    "tab_id": watched_tab,
+                    "window_id": watched_window,
+                }
+        else:
             return {}
-        endpoint = matches[0]
         telemetry = endpoint.get("telemetry") if isinstance(endpoint.get("telemetry"), dict) else {}
         attention = telemetry.get("user_attention") \
             if isinstance(telemetry.get("user_attention"), dict) else {}
@@ -1663,7 +1693,8 @@ class SendDelayedMessageService:
                planned_send_text: str = "",
                execution_path: str = "", chain_direction_id: str = "",
                exclusive_conversation_watch: bool = False,
-               max_generations: int = 0) -> dict:
+               max_generations: int = 0, watched_session_id: str = "",
+               watched_tab_id: int = 0, watched_window_id: int = 0) -> dict:
         # Later SELF turns need only the stable Task ID; use the prior binding.
         from bct.integrations.rcc import validate_instance_id
         previous = self.ledger.latest_binding(task_id)
@@ -1713,6 +1744,9 @@ class SendDelayedMessageService:
             execution_path=execution_path, chain_direction_id=chain_direction_id,
             exclusive_conversation_watch=exclusive_conversation_watch,
             max_generations=max_generations,
+            watched_session_id=watched_session_id,
+            watched_tab_id=watched_tab_id,
+            watched_window_id=watched_window_id,
         )
 
     def _response_for(self, row: dict) -> dict:
@@ -1889,12 +1923,14 @@ class SendDelayedMessageService:
         events=[]
         for row in self.ledger.watching(limit=limit):
             try:
-                observation=self._response_for(row)
-                if not observation:
-                    recovery = self._recover_if_stopped(row)
-                    if recovery and recovery.get("status") != "STOP_CONFIRMED_ONCE":
+                recovery = self._recover_if_stopped(row)
+                if recovery:
+                    if recovery.get("status") != "STOP_CONFIRMED_ONCE":
                         events.append({"task_id": row["task_id"],
                                        "generation": row["generation"], **recovery})
+                    continue
+                observation=self._response_for(row)
+                if not observation:
                     continue
                 watch=Watch(row["task_id"],row["generation"],
                             row["conversation_key"],row["response_turn_id"],
