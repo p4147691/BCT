@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,6 +31,8 @@ class SimulatedRcc:
         self.created = None
         self.create_count = 0
         self.new_chat_send_outcomes = []
+        self.reconcile_terminal = False
+        self.reconcile_send = None
         self.manual_user_text = "Initial manual work request"
         self.visible_count_override = None
         self.worker_detached = False
@@ -132,6 +135,21 @@ class SimulatedRcc:
                 if outcome == "UNKNOWN":
                     return {"type": "host:result", "ok": False,
                             "state": "SUBMIT_UNKNOWN"}
+                if outcome == "UNKNOWN_APPLIED":
+                    self.created["url"] = "https://chatgpt.com/c/" + SUCCESSOR
+                    self.locations[SUCCESSOR] = dict(self.created)
+                    self.responses[SUCCESSOR] = ("", 0)
+                    self.sent.append((SUCCESSOR, text, request_id))
+                    self.reconcile_send = {
+                        "id": request_id,
+                        "create_id": extra["createOperationId"],
+                        "session_id": extra["sessionId"],
+                        "tab_id": extra["tabId"],
+                        "window_id": extra["windowId"],
+                        "text": text,
+                    }
+                    return {"type": "host:result", "ok": False,
+                            "state": "SUBMIT_UNKNOWN"}
             self.created["url"] = "https://chatgpt.com/c/" + SUCCESSOR
             self.locations[SUCCESSOR] = dict(self.created)
             self.responses[SUCCESSOR] = ("", 0)
@@ -141,6 +159,22 @@ class SimulatedRcc:
                     "conversationKey": SUCCESSOR, "instanceId": instance_id,
                     "sessionId": extra["sessionId"], "tabId": extra["tabId"],
                     "windowId": extra["windowId"]}
+        if command == "result":
+            if not self.reconcile_terminal or not self.reconcile_send:
+                return {"type": "host:result", "ok": True, "relayId": text,
+                        "found": False, "completed": False, "pending": True}
+            sent = self.reconcile_send
+            fingerprint = json.dumps([
+                sent["create_id"], INSTANCE, sent["session_id"], sent["tab_id"],
+                sent["window_id"], sent["text"],
+            ], separators=(",", ":"))
+            return {"type": "host:result", "ok": True, "relayId": text,
+                    "found": True, "completed": True, "pending": False,
+                    "result": {"id": sent["id"], "ok": True, "ambiguous": False,
+                               "tabId": sent["tab_id"],
+                               "conversationKey": SUCCESSOR,
+                               "resultState": "RESULT_PERSISTED",
+                               "fingerprint": fingerprint}}
         raise AssertionError(f"Unexpected RCC command: {command}")
 
 
@@ -339,7 +373,7 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             self.assertEqual(1, len(rcc.sent))
             self.assertEqual(SUCCESSOR, rcc.sent[0][0])
 
-    def test_unknown_new_chat_send_stops_without_automatic_redispatch(self):
+    def test_unknown_new_chat_send_reconciles_without_automatic_redispatch(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             policy = root / "bct.toml"
@@ -351,6 +385,7 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             rcc = SimulatedRcc()
             rcc.new_chat_send_outcomes = ["UNKNOWN"]
             feature = BrowserFeature(rcc, store=bct.store)
+            feature.result_readback_timeout_s = 0.01
             bct.operations._features["browser"] = feature
             principal = Principal("tester", "test", frozenset({"browser"}))
             work = bct.create_work(
@@ -371,10 +406,62 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             rcc.attention = "NEW_CHAT_REQUIRED"
             service.poll_once()
             result = service.poll_once()["events"][0]
-            self.assertEqual("RESTART_UNKNOWN", result["status"])
-            self.assertEqual("UNKNOWN", service.ledger.get("unknown-created-chat", 1)["state"])
-            self.assertEqual([], service.poll_once()["events"])
+            self.assertEqual("RESTART_RECONCILING", result["status"])
+            self.assertEqual("WATCHING", service.ledger.get("unknown-created-chat", 1)["state"])
+            self.assertEqual(
+                "RESTART_RECONCILING", service.poll_once()["events"][0]["status"],
+            )
             self.assertEqual(1, rcc.create_count)
+            self.assertEqual([], rcc.sent)
+
+    def test_applied_unknown_new_chat_send_is_reconciled_without_resend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
+                encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            rcc.new_chat_send_outcomes = ["UNKNOWN_APPLIED"]
+            feature = BrowserFeature(rcc, store=bct.store)
+            feature.result_readback_timeout_s = 0.01
+            bct.operations._features["browser"] = feature
+            principal = Principal("tester", "test", frozenset({"browser"}))
+            work = bct.create_work(
+                work_id="reconcile-created-chat-work",
+                request_summary="reconcile created Chat send",
+                roots=[str(root)], actions=["browser"], principal=principal,
+            )
+            service = SendDelayedMessageService(
+                store=bct.store, browser_feature=feature, operations=bct.operations,
+            )
+            armed = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="reconcile-created-chat-prearm", capability="browser",
+                arguments={"command": "send-delayed-message",
+                           "task_id": "reconcile-created-chat",
+                           "instance_id": INSTANCE, "conversation_key": WORKER,
+                           "manager_conversation_key": MANAGER},
+            )
+            self.assertEqual(Outcome.APPLIED, armed.outcome)
+            rcc.attention = "NEW_CHAT_REQUIRED"
+            service.poll_once()
+            first = service.poll_once()["events"][0]
+            self.assertEqual("RESTART_RECONCILING", first["status"])
+            self.assertEqual(1, len(rcc.sent))
+            rcc.reconcile_terminal = True
+            second = service.poll_once()["events"][0]
+            self.assertEqual("RESTARTED", second["status"])
+            self.assertTrue(second["reconciled"])
+            self.assertEqual(SUCCESSOR, second["conversation_key"])
+            self.assertEqual(1, rcc.create_count)
+            self.assertEqual(1, len(rcc.sent))
+            self.assertEqual("RESTARTED", service.ledger.get(
+                "reconcile-created-chat", 1)["state"])
+            self.assertEqual("WATCHING", service.ledger.get(
+                "reconcile-created-chat", 2)["state"])
 
     def test_verified_prearm_before_send_handles_fast_completed_reply(self):
         # Regression: real 2026-11-01 tests armed AFTER an already-terminal

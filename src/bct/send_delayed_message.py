@@ -860,6 +860,63 @@ class DurableWatchLedger:
                 (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
             )
 
+    def remember_recovery_send_unknown(self, row: dict, *, send_operation_id: str,
+                                       create_operation_id: str) -> None:
+        """Keep one ambiguous successor send for receipt-only reconciliation.
+
+        The watch deliberately remains WATCHING.  A later poll may query the
+        exact original RCC operation, but must never submit the message again.
+        """
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if current is None:
+                raise ValueError("DELAYED_RECOVERY_WATCH_CHANGED")
+            context = json.loads(current["context_json"] or "{}")
+            context["recovery_pending_send"] = {
+                "send_operation_id": send_operation_id,
+                "create_operation_id": create_operation_id,
+            }
+            context["recovery_unknown_reason"] = "NEW_CHAT_SEND_EFFECT_UNKNOWN"
+            db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+
+    def next_recovery_reconcile_attempt(self, row: dict, *, observed_at: float) -> int:
+        """Allocate a bounded, backoff-controlled receipt reconciliation attempt."""
+        with self.store.transaction() as db:
+            current = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (row["task_id"], row["generation"]),
+            ).fetchone()
+            if current is None:
+                raise ValueError("DELAYED_RECOVERY_WATCH_CHANGED")
+            context = json.loads(current["context_json"] or "{}")
+            state = context.get("recovery_reconcile")
+            if not isinstance(state, dict):
+                state = {}
+            attempt = int(state.get("attempt") or 0)
+            last_at = float(state.get("last_at") or 0.0)
+            wait_seconds = min(30.0, 2.0 ** max(0, attempt - 1)) if attempt else 0.0
+            if observed_at - last_at < wait_seconds:
+                return 0
+            attempt += 1
+            context["recovery_reconcile"] = {
+                "attempt": attempt, "last_at": observed_at,
+            }
+            db.execute(
+                "UPDATE delayed_send_watches SET context_json=? WHERE task_id=? "
+                "AND generation=? AND state='WATCHING'",
+                (json.dumps(context, sort_keys=True), row["task_id"], row["generation"]),
+            )
+            return attempt
+
     def mark_source_superseded(self, row: dict, observed: dict) -> bool:
         """Retire a watch only after a different exact terminal source is proven.
 
@@ -1586,9 +1643,65 @@ class SendDelayedMessageService:
         work = self.store.get_work(ctx["work_id"])
         principal = Principal(work.owner_principal_id, "delayed-send-auto-recovery",
                               frozenset({"browser"}))
-        attempt = self.ledger.next_recovery_attempt(row, route="NEW_CONVERSATION")
         current = self.ledger.get(row["task_id"], row["generation"])
         current_context = json.loads(current["context_json"] or "{}") if current else {}
+        pending = current_context.get("recovery_pending_send")
+        if isinstance(pending, dict):
+            send_id = str(pending.get("send_operation_id") or "")
+            if not send_id:
+                self.ledger.mark_current_recovery_unknown(
+                    row, reason="NEW_CHAT_RECONCILE_ID_MISSING",
+                )
+                return {"status": "RESTART_UNKNOWN", "route": "NEW_CONVERSATION"}
+            reconcile_attempt = self.ledger.next_recovery_reconcile_attempt(
+                row, observed_at=time.time(),
+            )
+            if reconcile_attempt == 0:
+                return {"status": "RESTART_RECONCILING", "route": "NEW_CONVERSATION"}
+            reconcile_id = self._recovery_operation_id(
+                row, "reconcile-send-new-chat", reconcile_attempt,
+            )
+            reconciled = self.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id=reconcile_id, capability="browser",
+                arguments={"command": "reconcile-send-to-created-tab",
+                           "instance_id": ctx["instance_id"], "relay_id": send_id},
+            )
+            if reconciled.outcome != Outcome.APPLIED:
+                return {"status": "RESTART_RECONCILING", "route": "NEW_CONVERSATION"}
+            successor = str(reconciled.evidence.get("conversation_key") or "").lower()
+            if not successor:
+                self.ledger.mark_current_recovery_unknown(
+                    row, reason="NEW_CHAT_RECONCILED_CONVERSATION_ID_UNKNOWN",
+                )
+                return {"status": "RESTART_UNKNOWN", "route": "NEW_CONVERSATION"}
+            message = self._recovery_message(row, kind)
+            next_generation = self.ledger.prepare_recovery_generation(
+                row, conversation_key=successor,
+                baseline={"responseTurnCount": 0, "generating": False,
+                          "responseTurnKey": "", "responseSha256": ""},
+                operation_id=send_id,
+                message_sha256=_rcc_submitted_text_sha256(message), recovery_kind=kind,
+            )
+            self.ledger.finish_recovery(row, next_generation=next_generation)
+            metadata = "TRANSFERRED"
+            try:
+                ensure_observed_node_labels(
+                    self.store,
+                    conversations=[(row["conversation_key"], "ChatGPT"),
+                                   (successor, "ChatGPT")],
+                )
+                transfer_conversation_state(
+                    self.store, predecessor_conversation_key=row["conversation_key"],
+                    successor_conversation_key=successor,
+                )
+            except (KeyError, ValueError):
+                metadata = "PRESERVED_OLD"
+            return {"status": "RESTARTED", "route": "NEW_CONVERSATION",
+                    "generation": next_generation, "conversation_key": successor,
+                    "metadata": metadata, "reconciled": True}
+
+        attempt = self.ledger.next_recovery_attempt(row, route="NEW_CONVERSATION")
         saved = current_context.get("recovery_created_chat")
         if isinstance(saved, dict):
             create_id = str(saved.get("create_operation_id") or "")
@@ -1631,10 +1744,10 @@ class SendDelayedMessageService:
                        "text": message},
         )
         if sent.outcome == Outcome.UNKNOWN:
-            self.ledger.mark_current_recovery_unknown(
-                row, reason="NEW_CHAT_SEND_EFFECT_UNKNOWN",
+            self.ledger.remember_recovery_send_unknown(
+                row, send_operation_id=send_id, create_operation_id=create_id,
             )
-            return {"status": "RESTART_UNKNOWN", "route": "NEW_CONVERSATION"}
+            return {"status": "RESTART_RECONCILING", "route": "NEW_CONVERSATION"}
         if sent.outcome == Outcome.NOT_APPLIED:
             return {"status": "RESTART_NOT_APPLIED", "route": "NEW_CONVERSATION"}
         successor = str(sent.evidence.get("conversation_key") or "").lower()
