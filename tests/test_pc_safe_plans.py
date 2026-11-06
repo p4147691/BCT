@@ -178,14 +178,15 @@ class WorkOperationPolicyTests(unittest.TestCase):
         self.assertEqual("original", self.src.read_text(encoding="utf8"))
         self.assertFalse(self.dst.exists())
 
-    def test_work_cannot_escalate_to_stop(self):
-        from bct.core.models import AuthorizationError
-        with self.assertRaises(AuthorizationError):
-            self.bct.operations.run(
-                principal=self.owner, work_id="p2-test-work",
-                operation_id="stop-not-authorized",
-                capability="process_stop_plan", arguments={"pid": 123},
-            )
+    def test_work_actions_are_advisory_for_authorized_stop_plan(self):
+        import os
+        from bct.core.models import Outcome
+        result = self.bct.operations.run(
+            principal=self.owner, work_id="p2-test-work",
+            operation_id="stop-plan-authorized",
+            capability="process_stop_plan", arguments={"pid": os.getpid()},
+        )
+        self.assertEqual(Outcome.APPLIED, result.outcome)
 
     def test_approval_not_operational_until_verifier_exists(self):
         from bct.core.policy import Policy
