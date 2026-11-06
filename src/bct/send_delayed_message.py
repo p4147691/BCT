@@ -689,6 +689,7 @@ class DurableWatchLedger:
     def prepare_recovery_generation(
         self, row: dict, *, conversation_key: str, baseline: dict,
         operation_id: str, message_sha256: str, recovery_kind: str,
+        reconcile_operation_id: str = "",
     ) -> int:
         """Move one stalled watch to the next generation before an exact send."""
         next_generation = int(row["generation"]) + 1
@@ -708,7 +709,9 @@ class DurableWatchLedger:
                 context = json.loads(existing["context_json"] or "{}")
                 if (existing["conversation_key"] != conversation_key
                         or context.get("source_send_operation_id") != operation_id
-                        or context.get("source_send_sha256") != message_sha256):
+                        or context.get("source_send_sha256") != message_sha256
+                        or str(context.get("source_send_reconcile_operation_id") or "")
+                           != reconcile_operation_id):
                     raise ValueError("DELAYED_RECOVERY_GENERATION_CONFLICT")
                 return next_generation
             old_context = json.loads(current["context_json"] or "{}")
@@ -727,6 +730,7 @@ class DurableWatchLedger:
                 "source_user_turn_key": "",
                 "source_user_sha256": message_sha256,
                 "source_send_operation_id": operation_id,
+                "source_send_reconcile_operation_id": reconcile_operation_id,
                 "source_send_sha256": message_sha256,
                 "recovery_kind": recovery_kind,
                 "recovered_from_generation": int(row["generation"]),
@@ -1683,6 +1687,7 @@ class SendDelayedMessageService:
                           "responseTurnKey": "", "responseSha256": ""},
                 operation_id=send_id,
                 message_sha256=_rcc_submitted_text_sha256(message), recovery_kind=kind,
+                reconcile_operation_id=reconcile_id,
             )
             self.ledger.finish_recovery(row, next_generation=next_generation)
             metadata = "TRANSFERRED"
@@ -1944,14 +1949,54 @@ class SendDelayedMessageService:
             except Exception:
                 return reject("SEND_RECEIPT_UNAVAILABLE")
             evidence = receipt.evidence
-            if (receipt.state.value != "FINISHED"
-                    or receipt.outcome != Outcome.APPLIED
-                    or not isinstance(evidence, dict)
-                    or evidence.get("command") not in {"send-to-tab", "send-to-created-tab"}
-                    or evidence.get("host_request_id") != source_send_op
-                    or evidence.get("instance_id") != ctx["instance_id"]
-                    or evidence.get("conversation_key") != row["conversation_key"]
-                    or evidence.get("source_message_sha256") != source_sha):
+            direct_receipt_valid = (
+                receipt.state.value == "FINISHED"
+                and receipt.outcome == Outcome.APPLIED
+                and isinstance(evidence, dict)
+                and evidence.get("command") in {"send-to-tab", "send-to-created-tab"}
+                and evidence.get("host_request_id") == source_send_op
+                and evidence.get("instance_id") == ctx["instance_id"]
+                and evidence.get("conversation_key") == row["conversation_key"]
+                and evidence.get("source_message_sha256") == source_sha
+            )
+            reconciled_receipt_valid = False
+            if not direct_receipt_valid:
+                reconcile_op = str(ctx.get("source_send_reconcile_operation_id") or "")
+                if not reconcile_op:
+                    reconcile_state = ctx.get("recovery_reconcile")
+                    recovered_from = int(ctx.get("recovered_from_generation") or 0)
+                    if isinstance(reconcile_state, dict) and recovered_from > 0:
+                        attempt = int(reconcile_state.get("attempt") or 0)
+                        if attempt > 0:
+                            reconcile_op = self._recovery_operation_id(
+                                {"task_id": row["task_id"], "generation": recovered_from},
+                                "reconcile-send-new-chat", attempt,
+                            )
+                if reconcile_op:
+                    try:
+                        reconciled = self.store.get_operation_for(
+                            operation_id=reconcile_op, work_id=ctx["work_id"],
+                            principal_id=ctx["principal_id"],
+                        )
+                    except (KeyError, ValueError):
+                        reconciled = None
+                    except Exception:
+                        reconciled = None
+                    reconciled_evidence = reconciled.evidence if reconciled else {}
+                    reconciled_receipt_valid = (
+                        reconciled is not None
+                        and reconciled.state.value == "FINISHED"
+                        and reconciled.outcome == Outcome.APPLIED
+                        and isinstance(reconciled_evidence, dict)
+                        and reconciled_evidence.get("command")
+                            == "reconcile-send-to-created-tab"
+                        and reconciled_evidence.get("reconciled_operation_id")
+                            == source_send_op
+                        and reconciled_evidence.get("instance_id") == ctx["instance_id"]
+                        and reconciled_evidence.get("conversation_key")
+                            == row["conversation_key"]
+                    )
+            if not (direct_receipt_valid or reconciled_receipt_valid):
                 return reject("SEND_RECEIPT_INVALID")
         response_changed = (
             str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")

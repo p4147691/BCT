@@ -99,10 +99,10 @@ class SimulatedRcc:
                 "latestUserSha256": latest_user_sha,
                 "latestUserTextOccurrenceCount": 1,
                 "responseSourceUserTextOccurrenceCount": 1,
-                "responseSourceUserTurnKey": ("manual-user-turn-1" if count == 1
+                "responseSourceUserTurnKey": ("manual-user-turn-1" if count == 1 and key != SUCCESSOR
                     else latest_user_key) if count else "",
                 "responseSourceUserSha256": (_rcc_submitted_text_sha256(
-                    self.manual_user_text) if count == 1 else latest_user_sha)
+                    self.manual_user_text) if count == 1 and key != SUCCESSOR else latest_user_sha)
                     if count else "",
                 "ok": True, "conversationKey": key,
                 "responseTurnCount": (self.visible_count_override
@@ -463,6 +463,21 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             self.assertEqual("RESTARTED", service.ledger.get(
                 "reconcile-created-chat", 1)["state"])
             self.assertEqual("WATCHING", service.ledger.get(
+                "reconcile-created-chat", 2)["state"])
+            generation_two = service.ledger.get("reconcile-created-chat", 2)
+            generation_two_context = json.loads(generation_two["context_json"])
+            self.assertTrue(
+                generation_two_context["source_send_reconcile_operation_id"]
+            )
+            rcc.reply(
+                SUCCESSOR,
+                "NEXT TASK — MANAGER: reconciled Worker recovery complete",
+            )
+            generation_two["context"] = generation_two_context
+            self.assertTrue(service._response_for(generation_two))
+            returned = service.poll_once()["events"][0]
+            self.assertEqual("RETURNED_TO_MANAGER", returned["status"])
+            self.assertEqual("RETURNED_TO_MANAGER", service.ledger.get(
                 "reconcile-created-chat", 2)["state"])
 
     def test_verified_prearm_before_send_handles_fast_completed_reply(self):
