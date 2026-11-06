@@ -1585,9 +1585,10 @@ class SendDelayedMessageService:
 
     @staticmethod
     def _recovery_message(row: dict, kind: str) -> str:
+        work_id = str(row.get("context", {}).get("work_id") or "")
         return (
             "[BCT 자동 계속]\n"
-            f"Task: {row['task_id']}\n멈춤 신호: {kind}\n"
+            f"Work: {work_id}\nTask: {row['task_id']}\n멈춤 신호: {kind}\n"
             "기존 작업의 영수증과 현재 파일 상태를 먼저 확인하세요. 이미 끝난 단계와 "
             "UNKNOWN 외부 효과는 반복하지 말고, 다음 미완료 단계부터 다시 시작해 끝까지 "
             "진행하세요. 먼저 이번 턴의 구체적인 Execute Plan을 세우고 실행하세요. "

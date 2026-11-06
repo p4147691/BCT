@@ -239,6 +239,8 @@ class SelfPrearmGuidanceTests(unittest.TestCase):
             self.assertEqual("RESTARTED", second["events"][0]["status"])
             self.assertEqual("NEW_CONVERSATION", second["events"][0]["route"])
             self.assertEqual(1, rcc.create_count)
+            self.assertIn("Work: detached-worker-work", rcc.sent[-1][1])
+            self.assertIn("Task: detached-worker-task", rcc.sent[-1][1])
             self.assertEqual("RESTARTED", service.ledger.get(
                 "detached-worker-task", 1)["state"])
             self.assertEqual("WATCHING", service.ledger.get(
