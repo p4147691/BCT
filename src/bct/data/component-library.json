@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "04a3e024be4c6e2ab3ff4bf996099ad1f271e5e0d7b0c32330bfab162de04b36",
+  "source_fingerprint": "15a375cfc7e3814ccdedf515d945526245f2abf4671a1e37b7c524b106303d71",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "aed5303ed0b3583489ee8759e4c9cfaf4d98a3bbaba23d246b24cadce3123b3d",
     "docs/PRIMITIVE_MODULES_V1.md": "4b588bbb89c6ed9a7a5e472033ca31e6900cb666f3b133c77026c202f3edc5b5",
@@ -32,7 +32,7 @@
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/mcp_server.py": "81b65333d314fd3d6ec4548394328bc4c82ceb6b0b07df8c8930ecfd14bc312f",
     "src/bct/node_recovery.py": "27c7845d6f18fa8a36e1adb609b5658e1b60a62512d087b0f0fec6623fb77713",
-    "src/bct/send_delayed_message.py": "6dbf5bfc22b4e1a3a0ed57939cd559669ae3f86c2b6c54b8430065247e32c8b7",
+    "src/bct/send_delayed_message.py": "5cd442b819eb7bd9c3bffd4784b0255fa57f62fa806b5a7fb2de556a8eccaf78",
     "src/bct/task_message.py": "549f40e968a0797065da0725c1380c97ab98729695047426463b2767fd63b5ed"
   },
   "catalogue": {
