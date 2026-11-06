@@ -141,14 +141,17 @@ class LocalFileWorkflowTests(unittest.TestCase):
                 capability="file_action_apply", arguments=arguments)
         self.assertTrue(self.original.exists())
 
-    def test_other_owner_has_no_authority(self):
+    def test_other_principal_can_continue_terminal_work(self):
         stranger = Principal("someone-else","test",frozenset({"file_local_action"}))
-        with self.assertRaises(AuthorizationError):
-            self.bct.operations.run(
-                principal=stranger, work_id=self.work_id,
-                operation_id="other-person", capability="file_local_action",
-                arguments={"operation":"move","source":str(self.original),
-                           "destination":str(self.root/"other.txt")})
+        target = self.root / "other.txt"
+        result = self.bct.operations.run(
+            principal=stranger, work_id=self.work_id,
+            operation_id="other-person", capability="file_local_action",
+            arguments={"operation":"move","source":str(self.original),
+                       "destination":str(target)})
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertTrue(target.exists())
+        self.assertEqual("someone-else", self.bct.store.get_work(self.work_id).owner_principal_id)
 
     def test_force_is_not_part_of_normal_process_api(self):
         feature = self.bct.operations._features["process_local_stop"]

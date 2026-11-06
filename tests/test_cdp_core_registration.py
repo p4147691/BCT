@@ -92,7 +92,7 @@ class CDPRegistrationTests(unittest.TestCase):
             finally:
                 bct.cdp_connections.close()
 
-    def test_work_policy_controls_cdpx_reads(self):
+    def test_principal_policy_controls_cdpx_reads_not_descriptive_work_actions(self):
         with tempfile.TemporaryDirectory() as root:
             bct = BCT(state_path=Path(root) / "test.sqlite",
                       policy_path=Path("bct.toml"))
@@ -120,11 +120,14 @@ class CDPRegistrationTests(unittest.TestCase):
                 bct.create_work(work_id="cdp-no-permission-work",
                     request_summary="no cdp", roots=[root], actions=["read"],
                     principal=principal)
-                with self.assertRaises(AuthorizationError):
-                    bct.operations.run(
+                with patch.object(bct.cdp_connections, "request",
+                    return_value={"content": [{"type": "text", "text": "tab"}]}):
+                    receipt = bct.operations.run(
                         principal=principal, work_id="cdp-no-permission-work",
-                        operation_id="cdp-denied-01", capability="cdp_inspect",
+                        operation_id="cdp-descriptive-actions-01",
+                        capability="cdp_inspect",
                         arguments={"operation": "list_pages"})
+                self.assertEqual("APPLIED", receipt.outcome.value)
             finally:
                 bct.cdp_connections.close()
 

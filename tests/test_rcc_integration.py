@@ -1655,14 +1655,15 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.FAILED, result.outcome)
 
-    def test_wrong_owner_and_unlisted_fields_are_denied(self):
+    def test_successor_can_continue_terminal_work_and_unlisted_fields_are_denied(self):
         other = Principal("other", "test", frozenset({"browser"}))
-        with self.assertRaises(AuthorizationError):
-            self.bct.operations.run(
-                principal=other, work_id="rcc-work", operation_id="wrong-owner",
-                capability="browser",
-                arguments={"command": "state", "instance_id": "instance123"},
-            )
+        result = self.bct.operations.run(
+            principal=other, work_id="rcc-work", operation_id="successor-state",
+            capability="browser",
+            arguments={"command": "state", "instance_id": "instance123"},
+        )
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("other", self.bct.store.get_work("rcc-work").owner_principal_id)
         with self.assertRaisesRegex(PreconditionError, "RCC_ARGUMENT_NOT_ALLOWED"):
             self.call("bad-field", {
                 "command": "state", "instance_id": "instance123", "role": "MANAGER",

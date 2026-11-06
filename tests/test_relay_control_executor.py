@@ -251,7 +251,7 @@ class RelayControlExecutorTests(unittest.TestCase):
             principal_id="principal",
         )["capability"])
 
-    def test_coordinator_denies_before_preparing_delegated_effect(self):
+    def test_coordinator_denies_missing_principal_capability_before_delegated_effect(self):
         state = Path(self.tmp.name) / "denied.sqlite3"
         policy_path = Path(self.tmp.name) / "denied-policy.toml"
         policy_path.write_text(
@@ -271,7 +271,7 @@ class RelayControlExecutorTests(unittest.TestCase):
         )
         store.create_work(denied_work)
         principal = Principal(
-            "principal", "test", frozenset({"read", "browser", "relay_control"})
+            "principal", "test", frozenset({"read", "relay_control"})
         )
         with self.assertRaises(AuthorizationError):
             coordinator.run(
