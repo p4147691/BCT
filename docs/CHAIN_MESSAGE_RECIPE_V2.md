@@ -106,6 +106,14 @@ save는 `assessment.answers`의 모든 답, Manager/Supervisor UUID, 대화망 �
 대상별 `{conversation_key, role, instruction}`, `network_updates`를 검증하고
 원문과 함께 기록한다. 같은 Direction ID의 내용 변경은 거부한다.
 `bct_get_direction`으로 판단과 대상별 Task/Operation 연결을 함께 읽는다.
+
+`conversation_key`는 Monitor 번호(`N96`)나 창 제목이 아니라 소문자 canonical 대화 UUID다.
+`targets`의 허용 키는 정확히 `conversation_key`, `role`, `instruction`이고 역할은
+`worker` 또는 `supervisor`다. 기존 대화망을 그대로 재사용하면 `network_updates: []`가
+정상이다. 저장 실패 응답의 `assessment_contract`는 누락된 질문 키, 잘못된 대상의
+인덱스·허용 키, UUID/역할 규칙과 같은 Direction ID로 안전하게 재시도하는 방법을 돌려준다.
+저장 성공 뒤에는 반드시 `bct_get_direction`으로 Direction ID와 기록된 대상·판단을 읽고
+그 ID로 시작한다.
 USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이며 인증된 사용자 턴을
 직접 읽었다는 증거가 아니다. MANAGER_RETURN은 정확한 원장·응답 해시를 확인한 뒤
 `VERIFIED_MANAGER_RETURN`으로 표시한다. 두 출처의 증거 수준을 같게 취급하지 않는다.
@@ -182,6 +190,11 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 
 - 이미 정확한 대상·지시를 가진 기존 호출은 종전 send/watch 경로를 유지한다.
   기존 자유문 Direction은 보존하지만 새 질문 검토를 거친 것으로 표시하지 않는다.
+- `bct_chain_message`의 결과와 상태 영수증은 `execution_path`를 기록한다.
+  `DIRECTION_DECLARED`는 저장된 `chain_direction_id`에 연결된 정식 경로이고,
+  `DIRECT_EXACT_TARGET`은 Direction 없이 정확한 대상·지시를 명시한 호환 직접 경로다.
+  직접 경로는 유효한 1:1 전송·감시일 수 있으나 대화망 판단이나 Direction 저장 성공을
+  뜻하지 않는다. 과거 감시는 임의로 재분류하지 않고 `LEGACY_UNCLASSIFIED`로 읽는다.
 - 기존 `bct_prepare_supervisor_chain` 기록과 과거 ID는 삭제하지 않는다. 새 질문 기반
   흐름은 그 특수 경로를 호출하지 않고 같은 대상별 전송 경로로 C를 처리한다.
 - `bct_set_execute_plan` / `bct_get_execute_plan`은 B가 작성한 정확한 계획의

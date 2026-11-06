@@ -601,7 +601,8 @@ class BrowserFeature:
         allowed = {"command","task_id","instance_id","conversation_key",
                    "manager_conversation_key","manager_instance_id",
                    "planned_send_operation_id", "planned_send_text",
-                   "exclusive_conversation_watch", "max_generations"}
+                   "exclusive_conversation_watch", "max_generations",
+                   "execution_path", "chain_direction_id"}
         if set(arguments) - allowed:
             raise PreconditionError("DELAYED_ARGUMENT_NOT_ALLOWED")
         task_id = str(arguments.get("task_id") or "").strip()
@@ -619,6 +620,14 @@ class BrowserFeature:
                 (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", plan_id)
                  or len(plan_text) > 12000)):
             raise PreconditionError("DELAYED_PLANNED_SOURCE_INVALID")
+        execution_path = str(arguments.get("execution_path") or "")
+        direction_id = str(arguments.get("chain_direction_id") or "")
+        if execution_path not in {"", "DIRECTION_DECLARED", "DIRECT_EXACT_TARGET"}:
+            raise PreconditionError("DELAYED_EXECUTION_PATH_INVALID")
+        if direction_id and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", direction_id):
+            raise PreconditionError("DELAYED_CHAIN_DIRECTION_ID_INVALID")
+        if (execution_path == "DIRECTION_DECLARED") != bool(direction_id):
+            raise PreconditionError("DELAYED_EXECUTION_PATH_DIRECTION_MISMATCH")
         return FeatureRequest(
             self.capability, f"delayed-send:{work.work_id}:{task_id}",
             {"command":"send-delayed-message","task_id":task_id,
@@ -629,6 +638,7 @@ class BrowserFeature:
                  arguments.get("manager_conversation_key") or "").strip().lower(),
              "manager_instance_id":str(arguments.get("manager_instance_id") or "").strip(),
              "planned_send_operation_id":plan_id,"planned_send_text":plan_text,
+             "execution_path":execution_path,"chain_direction_id":direction_id,
              "exclusive_conversation_watch":exclusive,
              "max_generations":max_generations},
             (f"delayed-send:{work.work_id}:{task_id}",),
@@ -1909,6 +1919,8 @@ class BrowserFeature:
                     operation_id=request.operation_id,
                     planned_send_operation_id=values.get("planned_send_operation_id",""),
                     planned_send_text=values.get("planned_send_text",""),
+                    execution_path=values.get("execution_path", ""),
+                    chain_direction_id=values.get("chain_direction_id", ""),
                     exclusive_conversation_watch=values.get(
                         "exclusive_conversation_watch", False),
                     max_generations=values.get("max_generations", 0),

@@ -32,6 +32,61 @@ DIRECTION_QUESTIONS = (
 )
 
 
+def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dict[str, Any]:
+    """Return recovery-safe schema guidance without accepting a partial Direction."""
+    answers = value.get("answers") if isinstance(value, dict) else None
+    expected_answers = [key for key, _, _ in DIRECTION_QUESTIONS]
+    answer_keys = set(answers) if isinstance(answers, dict) else set()
+    targets = value.get("targets") if isinstance(value, dict) else None
+    target_diagnostics = []
+    if isinstance(targets, list):
+        for index, target in enumerate(targets):
+            diagnostic = {"index": index, "issues": []}
+            if not isinstance(target, dict):
+                diagnostic["issues"].append("target must be an object")
+                diagnostic["received_fields"] = []
+            else:
+                expected_fields = {"conversation_key", "role", "instruction"}
+                if set(target) != expected_fields:
+                    diagnostic["issues"].append("target fields do not match the contract")
+                    diagnostic["received_fields"] = sorted(target)
+                conversation_key = target.get("conversation_key")
+                if not isinstance(conversation_key, str) or not _UUID.fullmatch(conversation_key):
+                    diagnostic["issues"].append("conversation_key must be a lowercase canonical UUID")
+                if target.get("role") not in {"worker", "supervisor"}:
+                    diagnostic["issues"].append("role must be worker or supervisor")
+                instruction = target.get("instruction")
+                if (not isinstance(instruction, str) or not instruction.strip()
+                        or len(instruction) > 6000):
+                    diagnostic["issues"].append(
+                        "instruction must be a non-empty string of at most 6000 characters")
+            if diagnostic["issues"]:
+                diagnostic["expected_fields"] = ["conversation_key", "role", "instruction"]
+                target_diagnostics.append(diagnostic)
+    return {
+        "reason": reason,
+        "answers": {
+            "required_keys": expected_answers,
+            "missing_keys": sorted(set(expected_answers) - answer_keys),
+            "unexpected_keys": sorted(answer_keys - set(expected_answers)),
+            "value_rule": "each required answer is a non-empty string of at most 4000 characters",
+        },
+        "required_for_new_task": {
+            "manager_conversation_key": "lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
+            "supervisor_conversation_key": "different lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
+            "network_name": "non-empty existing, reused, changed, or new network name selected by A",
+            "targets": [{
+                "conversation_key": "lowercase canonical ChatGPT conversation UUID; not N96 or a tab title",
+                "role": "worker or supervisor",
+                "instruction": "non-empty per-target instruction, at most 6000 characters",
+            }],
+            "network_updates": "list of existing bct_set_conversation_network argument objects; [] is valid when reusing the network unchanged",
+        },
+        "target_diagnostics": target_diagnostics,
+        "recovery": "Correct only the reported fields, then call bct_set_direction(action='save') again with the same intended direction_id. Read the saved record with bct_get_direction before starting.",
+    }
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 

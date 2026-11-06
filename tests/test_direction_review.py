@@ -154,7 +154,30 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
     async def test_save_requires_ai_answers_and_preserves_original_user_text(self):
         value = assessment()
         del value["answers"]["recovery"]
-        self.assertEqual("DIRECTION_ANSWERS_REQUIRED", (await self.save(value))["reason"])
+        missing = await self.save(value)
+        self.assertEqual("DIRECTION_ANSWERS_REQUIRED", missing["reason"])
+        self.assertEqual(["recovery"], missing["assessment_contract"]["answers"]["missing_keys"])
+        self.assertIn("conversation UUID", missing["assessment_contract"]["required_for_new_task"]["targets"][0]["conversation_key"])
+        malformed = assessment()
+        malformed["targets"][0] = {"node": "N96", "role": "worker", "instruction": "Do the work."}
+        rejected = await self.save(malformed)
+        self.assertEqual("DIRECTION_TARGET_INVALID", rejected["reason"])
+        self.assertEqual(0, rejected["assessment_contract"]["target_diagnostics"][0]["index"])
+        self.assertEqual(["conversation_key", "role", "instruction"],
+                         rejected["assessment_contract"]["target_diagnostics"][0]["expected_fields"])
+        malformed = assessment()
+        malformed["targets"][0] = {
+            "conversation_key": "N96", "role": "manager", "instruction": " "}
+        rejected = await self.save(malformed)
+        self.assertEqual("DIRECTION_TARGET_CONFLICT", rejected["reason"])
+        diagnostic = rejected["assessment_contract"]["target_diagnostics"][0]
+        self.assertEqual(0, diagnostic["index"])
+        self.assertIn("conversation_key must be a lowercase canonical UUID", diagnostic["issues"])
+        self.assertIn("role must be worker or supervisor", diagnostic["issues"])
+        self.assertIn(
+            "instruction must be a non-empty string of at most 6000 characters",
+            diagnostic["issues"],
+        )
         saved = await self.save()
         self.assertEqual("OK", saved["status"], saved)
         row = saved["chain_direction"]
@@ -205,6 +228,8 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
                 direction_id=child["direction_id"], task_id=f"review-task-{index + 1}", generation=1,
                 plan_text="B independently chooses steps, parts and verification.")
             self.assertEqual(child["direction_id"], plan["direction_id"])
+            self.assertEqual("DIRECTION_DECLARED", result["targets"][index]["execution_path"])
+            self.assertEqual(child["direction_id"], result["targets"][index]["chain_direction_id"])
         read = await self.call("bct_get_direction", work_id=self.work.work_id, direction_id="direction-review")
         self.assertEqual(2, len(read["chain_direction"]["target_deliveries"]))
         repeat = await self.start()

@@ -350,6 +350,13 @@ class DurableWatchLedger:
                 key: parent_context[key] for key in
                 ("recipe", "max_generations") if key in parent_context
             }
+            # Legacy and Task Message watches predate execution-path
+            # provenance. Do not rewrite their receipt shape by carrying empty
+            # placeholders, while preserving an actually declared/direct path
+            # across BB generations.
+            for key in ("execution_path", "chain_direction_id"):
+                if parent_context.get(key):
+                    carried[key] = parent_context[key]
             db.execute(
                 "INSERT INTO delayed_send_watches("
                 "task_id,generation,conversation_key,response_turn_id,"
@@ -379,6 +386,7 @@ class DurableWatchLedger:
                     manager_instance_id: str, baseline: dict,
                     registration_receipt: str, planned_send_operation_id: str = "",
                     planned_send_text: str = "",
+                    execution_path: str = "", chain_direction_id: str = "",
                     exclusive_conversation_watch: bool = False,
                     max_generations: int = 0) -> dict:
         """Worker prearms one current response, reusing any reserved next turn."""
@@ -386,6 +394,12 @@ class DurableWatchLedger:
             raise ValueError("DELAYED_TASK_ID_INVALID")
         if type(max_generations) is not int or not 0 <= max_generations <= 12:
             raise ValueError("DELAYED_MAX_GENERATIONS_INVALID")
+        if execution_path not in {"", "DIRECTION_DECLARED", "DIRECT_EXACT_TARGET"}:
+            raise ValueError("DELAYED_EXECUTION_PATH_INVALID")
+        if chain_direction_id and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", chain_direction_id):
+            raise ValueError("DELAYED_CHAIN_DIRECTION_ID_INVALID")
+        if (execution_path == "DIRECTION_DECLARED") != bool(chain_direction_id):
+            raise ValueError("DELAYED_EXECUTION_PATH_DIRECTION_MISMATCH")
         planned = bool(planned_send_operation_id or planned_send_text)
         if planned:
             if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", planned_send_operation_id)
@@ -413,6 +427,8 @@ class DurableWatchLedger:
             "source_user_turn_key": str(baseline.get("latestUserTurnKey") or ""),
             "source_user_sha256": str(baseline.get("latestUserSha256") or ""),
             "max_generations": max_generations,
+            "execution_path": execution_path,
+            "chain_direction_id": chain_direction_id,
         }
         if max_generations:
             context["recipe"] = "task-message-v1"
@@ -473,7 +489,8 @@ class DurableWatchLedger:
                 context.update({
                     key: old[key] for key in
                     ("source_send_operation_id", "source_send_sha256",
-                     "recipe", "max_generations") if key in old
+                     "recipe", "max_generations", "execution_path",
+                     "chain_direction_id") if key in old
                 })
                 db.execute(
                     "UPDATE delayed_send_watches SET response_turn_id=?, "
@@ -1222,6 +1239,7 @@ class SendDelayedMessageService:
                manager_instance_id: str, operation_id: str,
                planned_send_operation_id: str = "",
                planned_send_text: str = "",
+               execution_path: str = "", chain_direction_id: str = "",
                exclusive_conversation_watch: bool = False,
                max_generations: int = 0) -> dict:
         # Later SELF turns need only the stable Task ID; use the prior binding.
@@ -1270,6 +1288,7 @@ class SendDelayedMessageService:
             registration_receipt=operation_id,
             planned_send_operation_id=planned_send_operation_id,
             planned_send_text=planned_send_text,
+            execution_path=execution_path, chain_direction_id=chain_direction_id,
             exclusive_conversation_watch=exclusive_conversation_watch,
             max_generations=max_generations,
         )
