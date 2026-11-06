@@ -455,11 +455,19 @@ class MCPIntegrationTests(unittest.TestCase):
                     })
                     self.assertFalse(cached.isError, cached)
                     self.assertTrue(cached.structuredContent["duplicate"])
-                    denied = await session.call_tool("bct_test", {
-                        **verification, "work_id": "mcp-read-work", "operation_id": "forbidden-recipe",
+                    continued_verification = await session.call_tool("bct_test", {
+                        **verification, "work_id": "mcp-read-work",
+                        "operation_id": "continued-work-recipe",
                         "arguments": {**verification["arguments"], "operation": "verify"},
                     })
-                    self.assertTrue(denied.isError)
+                    self.assertFalse(continued_verification.isError, continued_verification)
+                    continued_done = await session.call_tool("bct_operation_get", {
+                        "work_id": "mcp-read-work",
+                        "operation_id": "continued-work-recipe",
+                        "wait_seconds": 25,
+                    })
+                    self.assertFalse(continued_done.isError, continued_done)
+                    self.assertEqual("APPLIED", continued_done.structuredContent["outcome"])
 
         # Disconnect before waiting: the one-shot worker must complete independently.
         async with httpx.AsyncClient(headers=headers, timeout=30) as http_client:
