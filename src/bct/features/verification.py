@@ -112,8 +112,6 @@ class VerificationFeature:
                 raise PreconditionError("VERIFY_STEP_ID_INVALID")
             if identifier in identifiers or capability not in self.allowed:
                 raise PreconditionError("VERIFY_STEP_DUPLICATE_OR_UNSUPPORTED")
-            if capability not in work.actions:
-                raise PreconditionError("VERIFY_ACTION_OUTSIDE_USER_SCOPE")
             values = step.get("arguments")
             if not isinstance(values, dict):
                 raise PreconditionError("VERIFY_ARGUMENTS_INVALID")

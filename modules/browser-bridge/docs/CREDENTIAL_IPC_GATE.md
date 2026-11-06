@@ -10,10 +10,11 @@ token used by another BCT client.
 The current Core exposes one local BCT MCP bearer mapped to `bct-mcp-local`; it
 does not yet issue a distinct Browser Bridge principal. The bearer stays inside
 the Native Host and is never returned to the extension or chat. Core principal
-capabilities are the upper bound for every call. Each effectful
-tool still requires its normal Work actions, operation identity, policy and
-resource fences. The extension and Native Host cannot grant themselves another
-capability or turn a denied tool into PowerShell.
+capabilities are the upper bound for every call. Work actions describe the task
+but are not a second permission list. Each effectful tool still requires exact
+operation identity, current Core policy and resource/effect fences. The
+extension and Native Host cannot grant themselves another capability or turn a
+denied tool into PowerShell.
 
 The token must:
 
@@ -29,11 +30,12 @@ token, principal, Work and Core policy must also pass.
 
 ## Browser and request boundary
 
-Only the pinned Browser Bridge origin may launch the Native Host. Ordinary Chat
-access is opt-in per exact tab and conversation UUID for the current Chrome
-session. Assistant text is untrusted input and must match the strict tool
-envelope. The Host then verifies the requested tool against the authenticated
-Core's actual MCP tool list before one call.
+Only the pinned Browser Bridge origin may launch the Native Host. Every exact
+`chatgpt.com/c/<uuid>` conversation gets the same automatic transport; Monitor
+Node Info and a popup click are not permission gates. Assistant text is
+untrusted input and must match the strict tool envelope. The Host then verifies
+the requested tool against the authenticated Core's actual MCP tool list before
+one call.
 
 A transport interruption after dispatch is `UNKNOWN`. The Bridge never retries
 that request automatically. Recovery uses the original Work/Operation receipt.

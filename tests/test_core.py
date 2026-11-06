@@ -238,16 +238,55 @@ class CoreTests(unittest.TestCase):
             self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-1",
                                     capability="write", arguments={"resource": "y"})
 
-    def test_wrong_principal_cannot_run_or_read_result(self):
+    def test_trusted_successor_continues_terminal_work_and_reads_receipt(self):
         self.replace_feature(CountingFeature())
         self.bct.operations.run(principal=self.owner, work_id="work-1", operation_id="op-1",
                                 capability="write", arguments={"resource": "x"})
-        with self.assertRaises(AuthorizationError):
-            self.bct.operations.run(principal=self.other, work_id="work-1", operation_id="op-2",
-                                    capability="write", arguments={"resource": "x"})
-        with self.assertRaises(ConflictError):
-            self.bct.store.get_operation_for(operation_id="op-1", work_id="work-1",
-                                             principal_id=self.other.principal_id)
+        continued = self.bct.operations.run(
+            principal=self.other, work_id="work-1", operation_id="op-2",
+            capability="write", arguments={"resource": "y"},
+        )
+        self.assertEqual(Outcome.APPLIED, continued.outcome)
+        work = self.bct.store.get_work("work-1")
+        self.assertEqual("other", work.owner_principal_id)
+        self.assertEqual(2, work.assignment_epoch)
+        prior = self.bct.store.get_operation_for(
+            operation_id="op-1", work_id="work-1",
+            principal_id=self.other.principal_id,
+        )
+        self.assertEqual(Outcome.APPLIED, prior.outcome)
+
+    def test_trusted_successor_cannot_take_over_active_operation(self):
+        self.replace_feature(CountingFeature())
+        created, _ = self.bct.operations.begin(
+            principal=self.owner, work_id="work-1", operation_id="active-op",
+            capability="write", arguments={"resource": "x"},
+        )
+        self.assertTrue(created)
+        with self.assertRaisesRegex(ConflictError, "WORK_HAS_ACTIVE_OPERATION"):
+            self.bct.operations.run(
+                principal=self.other, work_id="work-1", operation_id="op-after-active",
+                capability="write", arguments={"resource": "y"},
+            )
+
+    def test_work_actions_are_descriptive_not_a_second_permission_gate(self):
+        feature = CountingFeature()
+        feature.capability = "read"
+        self.replace_feature(feature)
+        self.bct.create_work(
+            work_id="narrow-declaration", request_summary="descriptive scope",
+            roots=[str(self.root)], actions=["write"], principal=self.owner,
+        )
+        work = self.bct.store.get_work("narrow-declaration")
+        self.assertNotIn("read", work.actions)
+        # The principal capability and reviewed policy remain authoritative;
+        # the Work action list does not add another blocking boundary.
+        result = self.bct.operations.run(
+            principal=self.owner, work_id="narrow-declaration",
+            operation_id="read-outside-declared-scope",
+            capability="read", arguments={"resource": "status"},
+        )
+        self.assertEqual(Outcome.APPLIED, result.outcome)
 
     def test_unreliable_read_measurement_is_not_external_unknown(self):
         from bct.core.operations import _is_measurement_only_request

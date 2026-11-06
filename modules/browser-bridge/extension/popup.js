@@ -1,7 +1,7 @@
 const result = document.getElementById("result");
 const show = value => { result.textContent = JSON.stringify(value, null, 2); };
-document.getElementById("enable").addEventListener("click", async () => {
-  try { show(await chrome.runtime.sendMessage({type: "BCT_CHAT_ENABLE_CURRENT"})); }
+document.getElementById("status").addEventListener("click", async () => {
+  try { show(await chrome.runtime.sendMessage({type: "BCT_CHAT_STATUS_CURRENT"})); }
   catch (error) { result.textContent = String(error); }
 });
 document.getElementById("list").addEventListener("click", async () => {

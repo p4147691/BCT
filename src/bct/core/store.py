@@ -905,6 +905,48 @@ class Store:
                     frozenset(json.loads(row["actions_json"])), row["owner_principal_id"],
                     row["assignment_epoch"], row["state"])
 
+    def update_work_scope(
+        self, *, work_id: str, principal_id: str, expected_epoch: int,
+        request_summary: str, roots: tuple[str, ...], actions: frozenset[str],
+    ) -> tuple[Work, bool]:
+        """Extend the descriptive scope of an active Work continuation.
+
+        Operation IDs and receipts remain immutable. Roots still fence local
+        filesystem effects, while actions record intended task scope rather
+        than acting as a second capability allowlist.
+        """
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM works WHERE work_id=?", (work_id,)).fetchone()
+            if row is None:
+                raise KeyError("WORK_NOT_FOUND")
+            if row["owner_principal_id"] != principal_id:
+                raise ConflictError("WORK_OWNER_MISMATCH")
+            if int(row["assignment_epoch"]) != int(expected_epoch):
+                raise ConflictError("WORK_ASSIGNMENT_EPOCH_MISMATCH")
+            if row["state"] != "ACTIVE":
+                raise ConflictError("WORK_NOT_ACTIVE")
+            existing_roots = tuple(json.loads(row["roots_json"]))
+            existing_actions = frozenset(json.loads(row["actions_json"]))
+            merged_roots = tuple(dict.fromkeys((*existing_roots, *roots)))
+            merged_actions = existing_actions | actions
+            changed = (
+                row["request_summary"] != request_summary
+                or merged_roots != existing_roots
+                or merged_actions != existing_actions
+            )
+            if changed:
+                db.execute(
+                    "UPDATE works SET request_summary=?,roots_json=?,actions_json=? WHERE work_id=?",
+                    (request_summary, json.dumps(merged_roots),
+                     json.dumps(sorted(merged_actions)), work_id),
+                )
+                self._event(db, "WORK_SCOPE_UPDATED", work_id, {
+                    "assignment_epoch": expected_epoch,
+                    "added_roots": [root for root in merged_roots if root not in existing_roots],
+                    "added_actions": sorted(merged_actions - existing_actions),
+                })
+        return self.get_work(work_id), changed
+
     def active_rcc_attachment_for_node(
         self, *, work_id: str, orchestration_session_id: str, node_id: str,
         instance_id: str,

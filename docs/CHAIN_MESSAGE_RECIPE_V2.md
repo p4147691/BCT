@@ -147,13 +147,16 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
 
 ## Work와 권한
 
-Work는 작업 루트·허용 기능·소유자 등을 보존하는 기존 실행 경계다. 노드, 대화망,
+Work는 작업 루트·의도한 기능·현재 실행 주체 등을 보존하는 지속 작업 기록이다. 노드, 대화망,
 ChatGPT Work 모드, 한 번의 Task ID와 다르며 이름이나 기존 ID를 바꾸지 않는다.
 초기 정보 조회에는 Work가 없어도 된다. 효과를 만들기 전에는 A가 기존 Work를
 확인해 재사용하거나 `bct_create_work`로 요청 범위에 맞게 준비한다.
 
-망 변경에는 기존 `conversation_network_update`, 전송에는 기존 `browser` 권한이
-필요하다. 레시피가 기존 Work 권한을 자동으로 넓히지 않는다.
+`actions`는 의도한 작업 범위를 설명하지만 두 번째 권한 목록으로 실행을 막지 않는다.
+신뢰된 후속 노드는 앞선 Operation이 모두 terminal이면 같은 Work를 자동 승계한다.
+실제 실행은 현재 Principal capability와 Core Policy를 따르며, 진행 중 Operation,
+동일 Operation 영수증, 자원 충돌, UNKNOWN 재전송 및 고위험 승인은 계속 차단한다.
+파일 효과의 Work root 경계도 유지한다.
 
 ## 감시와 반환
 

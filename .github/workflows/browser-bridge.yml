@@ -36,6 +36,9 @@ jobs:
       - run: python -m pip install -e .
       - run: python -m unittest discover -s modules/browser-bridge/tests -v
       - run: node modules/browser-bridge/tests/check_tool_protocol.cjs
+      - run: node modules/browser-bridge/tests/check_chat_tools.cjs
+      - run: node --check modules/browser-bridge/extension/background.js
+      - run: node --check modules/browser-bridge/extension/popup.js
       - run: dotnet build modules/browser-bridge/native/launcher/BctBridgeHost.csproj -c Release
       - uses: actions/upload-artifact@v4
         with:

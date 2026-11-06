@@ -68,6 +68,17 @@ class OperationCoordinator:
         if feature is None:
             raise KeyError("FEATURE_NOT_REGISTERED:" + capability)
         work = self.store.get_work(work_id)
+        if work.owner_principal_id != principal.principal_id:
+            # Work ownership identifies the current executor; it is not a
+            # permanent permission wall. A trusted successor may continue the
+            # same Work once every earlier operation is terminal. The epoch
+            # still advances, so a late former executor cannot commit.
+            work = self.store.handoff_work(
+                work_id=work_id,
+                old_principal_id=work.owner_principal_id,
+                new_principal_id=principal.principal_id,
+                expected_epoch=work.assignment_epoch,
+            )
         if capability == "relay_control":
             # Relay settings select an already-registered capability; they do
             # not create a new authority.  Identify the static registry target

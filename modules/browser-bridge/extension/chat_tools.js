@@ -5,7 +5,7 @@
   if (!conversationKey) return;
   let busy = false;
   let baseline = null;
-  let grantId = null;
+  let bridgeReady = false;
   let timer = null;
   const assistants = () => {
     const legacy = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
@@ -67,24 +67,18 @@
       "\n[[/BCT_TOOL_RESULT]]\n이 결과는 직전 BCT 도구 호출의 데이터입니다. 같은 호출을 자동 재전송하지 마세요.";
     return submitComposer(text);
   }
-  async function sendBootstrap() {
-    const text = "이 대화에는 BCT Browser Bridge가 연결되었습니다. BCT 도구가 필요하면 설명으로 실행했다고 주장하지 말고 다음 형식만 단독 응답하세요:\n" +
-      "[[BCT_TOOL_REQUEST]]\n{\"tool\":\"bct_capabilities\",\"arguments\":{\"include_manual\":true}}\n[[/BCT_TOOL_REQUEST]]\n" +
-      "Bridge가 실제 결과를 같은 대화로 반환하면 그 결과를 바탕으로 다음 도구를 선택하세요. 외부 효과에는 정확한 Work와 Operation ID를 사용하고 UNKNOWN은 새 ID로 재전송하지 마세요.";
-    return submitComposer(text);
-  }
   async function scan() {
     if (busy) return;
     busy = true;
     try {
       const status = await chrome.runtime.sendMessage({type: "BCT_CHAT_STATUS"});
-      if (!status?.enabled) { baseline = null; grantId = null; return; }
+      if (!status?.enabled) { baseline = null; bridgeReady = false; return; }
       const messages = assistants();
-      if (grantId !== status.grantId) {
-        grantId = status.grantId;
-        // Enabling a conversation is an explicit request to inspect its latest
-        // completed assistant turn. Keep older turns behind the baseline while
-        // allowing an already-rendered strict tool envelope to run once.
+      if (!bridgeReady) {
+        bridgeReady = true;
+        // On attachment, inspect only the latest completed assistant turn.
+        // Older turns stay behind the baseline and the persistent fingerprint
+        // prevents the same exact request from being replayed after reload.
         baseline = Math.max(0, messages.length - 1);
       }
       const pendingKey = "bct-tool-result-pending:" + conversationKey;
@@ -106,7 +100,7 @@
       let result;
       try {
         result = await chrome.runtime.sendMessage({type: "BCT_CHAT_TOOL_CALL",
-          conversationKey, grantId, toolName: request.tool, arguments: request.arguments});
+          conversationKey, toolName: request.tool, arguments: request.arguments});
       } catch (_) {
         result = {ok: false, outcome: "UNKNOWN", error: "CHAT_TOOL_TRANSPORT_UNKNOWN_NO_RETRY"};
       }
@@ -122,10 +116,6 @@
     {subtree: true, childList: true, characterData: true});
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "BCT_BRIDGE_SCAN_NOW") schedule();
-    if (message?.type === "BCT_BRIDGE_BOOTSTRAP") {
-      sendBootstrap().then(sent => sendResponse({sent})).catch(() => sendResponse({sent: false}));
-      return true;
-    }
     return false;
   });
   schedule();

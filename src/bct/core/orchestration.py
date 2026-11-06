@@ -240,8 +240,11 @@ class OrchestrationService:
             for child in delegated_roots
         ):
             raise PreconditionError("ORCHESTRATION_ROOT_OUTSIDE_WORK")
-        if not set(delegated_actions).issubset(work.actions):
-            raise PreconditionError("ORCHESTRATION_ACTION_OUTSIDE_WORK")
+        # Session actions describe the intended delegation. Actual child
+        # execution is authorized later against the authenticated principal,
+        # reviewed policy, exact operation identity and effect fences; do not
+        # turn the Work's historical action list into another permission wall.
+        self.assert_current_unattended_policy(delegated_actions)
         expected = {
             "work_id": work.work_id,
             "work_assignment_epoch": work.assignment_epoch,

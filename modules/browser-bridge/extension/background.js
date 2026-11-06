@@ -1,5 +1,7 @@
 "use strict";
-// The exact enabled ChatGPT conversation may request registered BCT tools.
+// Any exact ChatGPT conversation may request registered BCT tools. The page
+// never receives the Native Messaging port or bearer credential; BCT Core owns
+// Work, capability, operation, receipt, UNKNOWN, and recovery authorization.
 // Page content never receives the Native Messaging port or bearer credential.
 const HOST = "com.bct.browser_bridge.prototype";
 let port = null;
@@ -43,13 +45,10 @@ function nativeRequest(type, toolName, args, sendResponse) {
   }
   return true;
 }
-async function chatGrant(sender, suppliedKey, grantId) {
+function exactChatSender(sender, suppliedKey) {
   if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !sender.tab) return false;
   const key = conversationKey(sender.url);
-  if (!key || key !== conversationKey(sender.tab.url) || key !== suppliedKey) return false;
-  const storageKey = "bct-chat-grant:" + sender.tab.id;
-  const stored = (await chrome.storage.session.get(storageKey))[storageKey];
-  return stored?.conversationKey === key && stored?.grantId === grantId;
+  return !!key && key === conversationKey(sender.tab.url) && key === suppliedKey;
 }
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "BCT_TOOL_LIST" && sender.id === chrome.runtime.id && !sender.tab) {
@@ -63,8 +62,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === "BCT_CHAT_TOOL_CALL") {
     (async () => {
-      if (!(await chatGrant(sender, message.conversationKey, message.grantId))) {
-        sendResponse({ok: false, outcome: "AUTH_DENIED", error: "CHAT_GRANT_DENIED"}); return;
+      if (!exactChatSender(sender, message.conversationKey)) {
+        sendResponse({ok: false, outcome: "AUTH_DENIED", error: "CHAT_SENDER_DENIED"}); return;
       }
       if (!TOOL.test(message.toolName || "") || !message.arguments || typeof message.arguments !== "object" || Array.isArray(message.arguments)) {
         sendResponse({ok: false, outcome: "INPUT_DENIED", error: "INVALID_TOOL_CALL"}); return;
@@ -73,32 +72,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })().catch(() => sendResponse(unknown("CHAT_AUTH_UNKNOWN")));
     return true;
   }
-  if (message?.type === "BCT_CHAT_ENABLE_CURRENT" && sender.id === chrome.runtime.id && !sender.tab) {
+  if (message?.type === "BCT_CHAT_STATUS_CURRENT" && sender.id === chrome.runtime.id && !sender.tab) {
     (async () => {
       const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
       const key = conversationKey(tab?.url);
       if (!key) { sendResponse({ok: false, error: "ACTIVE_TAB_NOT_CHAT_CONVERSATION"}); return; }
-      const grantId = identifier();
-      const storageKey = "bct-chat-grant:" + tab.id;
-      await chrome.storage.session.set({[storageKey]: {conversationKey: key, grantId}});
-      let bootstrapSent = false;
-      try {
-        const reply = await chrome.tabs.sendMessage(tab.id, {type: "BCT_BRIDGE_BOOTSTRAP"});
-        bootstrapSent = reply?.sent === true;
-      } catch (_) {}
-      sendResponse({ok: true, tabId: tab.id, conversationKey: key, grantId, bootstrapSent});
-      chrome.tabs.sendMessage(tab.id, {type: "BCT_BRIDGE_SCAN_NOW"}).catch(() => {});
+      sendResponse({ok: true, enabled: true, automatic: true, tabId: tab.id, conversationKey: key});
     })().catch(() => sendResponse({ok: false, error: "ENABLE_FAILED"}));
     return true;
   }
   if (message?.type === "BCT_CHAT_STATUS" && sender.id === chrome.runtime.id && sender.frameId === 0 && sender.tab) {
-    (async () => {
-      const key = conversationKey(sender.tab?.url);
-      const storageKey = "bct-chat-grant:" + sender.tab?.id;
-      const stored = (await chrome.storage.session.get(storageKey))[storageKey];
-      sendResponse(stored?.conversationKey === key ? {enabled: true, tabId: sender.tab.id, ...stored} : {enabled: false});
-    })().catch(() => sendResponse({enabled: false}));
-    return true;
+    const key = conversationKey(sender.url);
+    sendResponse(key && key === conversationKey(sender.tab.url)
+      ? {enabled: true, automatic: true, tabId: sender.tab.id, conversationKey: key}
+      : {enabled: false});
+    return false;
   }
   if (sender.id !== chrome.runtime.id || !["READ_FIXTURE", "RECEIPT_LOOKUP"].includes(message?.type)) return false;
   const lookup = message.type === "RECEIPT_LOOKUP";

@@ -44,8 +44,8 @@ _GENERAL_TOOLS = (
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
-    "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; this requires verify and every child capability in work scope.",
-    "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled. Requires each child action in work scope. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
+    "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; each child is checked against the authenticated principal and current policy.",
+    "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled and authorized against the authenticated principal and current policy. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
     "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",
     "github_run_watch": "Register one exact Actions run for a detached, advisory-only Inbox completion. It never merges, pushes, deploys, or changes Work state; retrieve terminal results with bct_inbox_get.",
     "read": "Read a scoped file or directory with operation=file|directory_tree|batch|snapshot. Read-only discovery: operation=search with path, query, depth, max_entries, limit; operation=duplicates with path and bounded SHA-256 verification (max_hash_bytes, timeout_seconds); operation=compare with path_a and path_b. Partial searches/hash budgets report complete=false. Never deletes files.",
@@ -1873,7 +1873,7 @@ def build_mcp(
              "generation":generation},
         )
 
-    @server.tool(description="Create or recover an exact user-scoped BCT work record.", structured_output=True)
+    @server.tool(description="Create, recover, or continue a BCT Work. Roots fence filesystem effects; actions describe intended scope but are not a second capability allowlist. A trusted successor automatically takes over only after prior operations are terminal.", structured_output=True)
     async def bct_work_create(
         work_id: str,
         request_summary: str,
@@ -1900,11 +1900,31 @@ def build_mcp(
         except KeyError:
             current = bct.store.create_work(expected)
             duplicate = False
+            updated = False
         else:
-            if current != expected:
-                raise ValueError("WORK_ID_CONFLICT")
-            duplicate = True
-        return {"work": _work_dict(current), "duplicate": duplicate}
+            if current.owner_principal_id != principal.principal_id:
+                # Work ownership coordinates the current executor; it is not a
+                # permanent permission boundary. Once every prior operation is
+                # terminal, hand the Work to the current trusted principal and
+                # advance the epoch so a late former executor cannot write.
+                current = await asyncio.to_thread(
+                    bct.store.handoff_work,
+                    work_id=work_id,
+                    old_principal_id=current.owner_principal_id,
+                    new_principal_id=principal.principal_id,
+                    expected_epoch=current.assignment_epoch,
+                )
+            current, updated = await asyncio.to_thread(
+                bct.store.update_work_scope,
+                work_id=work_id,
+                principal_id=principal.principal_id,
+                expected_epoch=current.assignment_epoch,
+                request_summary=request_summary,
+                roots=normalized_roots,
+                actions=requested_actions,
+            )
+            duplicate = not updated
+        return {"work": _work_dict(current), "duplicate": duplicate, "updated": updated}
 
     @server.tool(description="Read one exact operation receipt owned by the current MCP work.", structured_output=True)
     async def bct_operation_get(work_id: str, operation_id: str, wait_seconds: float = 0) -> dict[str, Any]:

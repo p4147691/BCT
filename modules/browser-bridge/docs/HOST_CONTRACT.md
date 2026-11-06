@@ -41,7 +41,7 @@ Receipt lookup is read-only. Failed receipt lookup must not be interpreted as la
 
 Schema v2 supports `tool_list` and `tool_call`. The Host obtains the live MCP tool list on the same authenticated session and rejects names that are not registered. It does not translate a tool call into shell text, broaden Work permissions, invent missing IDs, retry UNKNOWN effects, or treat a transport response as stronger evidence than the Core result.
 
-Ordinary Chat integration is an explicitly enabled per-tab/per-conversation adapter. Its assistant marker is only a request envelope; it is not authority. The Bridge credential, Core principal, Work, capability policy and operation/resource fences remain authoritative.
+Ordinary Chat integration is an automatic transport for exact `chatgpt.com/c/<uuid>` conversations. It does not use a per-tab or per-conversation permission gate. Its assistant marker is only a request envelope; it is not authority. The Bridge credential, Core principal, Work, capability policy and operation/resource fences remain authoritative.
 
 ## Durable orchestration boundary (PR2/PR3)
 

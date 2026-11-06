@@ -390,10 +390,23 @@ class MCPIntegrationTests(unittest.TestCase):
                         "hello from MCP\n",
                         batch_result.structuredContent["output"]["items"][0]["output"]["text"],
                     )
-                    conflict = await session.call_tool("bct_work_create", {
-                        **work_arguments, "roots": [str(self.root)],
+                    continued = await session.call_tool("bct_work_create", {
+                        **work_arguments,
+                        "request_summary": "continue the same task with a broader authorized root",
+                        "roots": [str(self.root)],
+                        "actions": ["read", "write"],
                     })
-                    self.assertTrue(conflict.isError)
+                    self.assertFalse(continued.isError, continued)
+                    self.assertTrue(continued.structuredContent["updated"])
+                    self.assertFalse(continued.structuredContent["duplicate"])
+                    self.assertEqual(
+                        {"read", "write"},
+                        set(continued.structuredContent["work"]["actions"]),
+                    )
+                    self.assertEqual(
+                        [str(self.project.resolve()), str(self.root.resolve())],
+                        continued.structuredContent["work"]["roots"],
+                    )
 
                     execute_work = {
                         "work_id": "mcp-execute-work",

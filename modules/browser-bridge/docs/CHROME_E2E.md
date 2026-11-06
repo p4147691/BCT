@@ -11,9 +11,10 @@ reuse RCC identity or erase an existing Native Host registration.
    origin `chrome-extension://acdgnmbgpkfjkckccbhmccojgigbfcge/`.
 4. Start an isolated BCT Core on a random loopback port and create a temporary
    Bridge token and fixture Work.
-5. In one ordinary `chatgpt.com/c/<uuid>` conversation, enable Bridge control.
-6. Confirm the bootstrap causes an exact `bct_capabilities` tool request, then
-   prove tool list, status, Work creation, read, write and bounded execute.
+5. Open one ordinary `chatgpt.com/c/<uuid>` conversation and confirm automatic Bridge attachment.
+6. Submit one strict assistant `BCT_TOOL_REQUEST`, confirm the exact result is
+   returned to the same conversation, then prove tool list, status, Work
+   creation, read, write and bounded execute.
 7. Prove malformed tool, wrong origin, missing token and outside-Work effects
    are denied. An interrupted effect is UNKNOWN and is not resent.
 8. Close only the owned Chrome/Core and remove only the exact profile, registry,

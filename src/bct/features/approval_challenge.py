@@ -25,8 +25,8 @@ class ApprovalChallengeFeature:
             raise PreconditionError("APPROVAL_CHALLENGE_FIELDS_INVALID")
         effect = arguments["capability"]
         operation = arguments["operation_id"]
-        if effect not in self._ALLOWED or effect not in work.actions:
-            raise PreconditionError("APPROVAL_CHALLENGE_EFFECT_OUTSIDE_WORK")
+        if effect not in self._ALLOWED:
+            raise PreconditionError("APPROVAL_CHALLENGE_EFFECT_UNSUPPORTED")
         if not isinstance(operation, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", operation):
             raise PreconditionError("APPROVAL_CHALLENGE_OPERATION_INVALID")
         supplied = arguments["arguments"]
