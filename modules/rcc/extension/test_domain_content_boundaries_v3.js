@@ -82,7 +82,7 @@ assert(executor.includes('async function readNewChatBootstrapStatus('));
 assert(executor.includes('const isNewChatBootstrap = tracking?.bootstrapCreatedTab === true;'));
 assert(executor.includes('submitPolicy.allowKeyboardFallback !== false'));
 assert(executor.includes("if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING')"));
-assert(executor.includes('focusEditorAtEnd(liveEditor)'));
+assert(executor.includes('ensureEditorFocusAtEnd(liveEditor)'));
 assert(conversationRename.includes('async function renameConversationUi('));
 assert(router.includes("message.type === 'relay:simpleExecute'"));
 assert(router.includes("message.type === 'relay:simpleReadReply'"));
