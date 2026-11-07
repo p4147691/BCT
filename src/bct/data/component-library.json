@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "9434827ea3e2ad7ea678f2d85f07025391a15bf84d0c4f1a9a402a8ade5a5c32",
+  "source_fingerprint": "870d93c9b3f8fb5e88a98d1696c0cb62778f98857807c541500997a4e902c27a",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "9457f14aa048f8b7387e47aaa5b49bc13f715c41538f416c4a819846ed1448f5",
     "docs/component-library.v1.json": "9578132c6b3dd6e31dbc3455d6a326a603fccd3cd5283fece65c3f5235a52ef3",
@@ -15,7 +15,7 @@
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "ec9123afd6e583b7a0c92602c84652df7edd25f275b6ee017d2c573e290781d8",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "2168eeb18875dfa5c23aaa37aaad5acc7f6b43449c5a2c828ac937834314669e",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
-    "src/bct/chain_direction.py": "95a6043b102536aa8afd3c5af0e8dd6d96af5e05e8855160402cb4c0df723832",
+    "src/bct/chain_direction.py": "9697c66fe4f3ca1fc5f3bbe61aaa46d64dc654237c631f7bdf94ec859ff6dcd2",
     "src/bct/chain_entry_policy.py": "2c076fd541dfaa9353b12526c6a41bdb1396169a6a81162e81861b8cc313dd34",
     "src/bct/chain_execution_plan.py": "b100f2ee64a4e32168ad69b468b31b977d806504abc6af00521316c0d404c062",
     "src/bct/chain_message_preflight.py": "4c55a0214df2cafd2002d5fc7ba3885ea564c4945f392224a814a3b50ca16160",
