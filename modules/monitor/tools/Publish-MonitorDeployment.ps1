@@ -100,21 +100,21 @@ function Get-MonitorDirectorySha256([string]$DirectoryPath) {
 }
 
 function Set-MonitorManifestVersion([string]$ManifestPath, [string]$Version) {
-    $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $manifest.version = $Version
     [System.IO.File]::WriteAllText(
         $ManifestPath,
         (($manifest | ConvertTo-Json -Depth 20) + [Environment]::NewLine),
         $utf8NoBom)
-    $observed = [string]((Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json).version)
+    $observed = [string]((Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json).version)
     if ($observed -ne $Version) {
         throw "Staged manifest version verification failed: expected $Version, got $observed"
     }
 }
 
 function Assert-MonitorExtensionIdentity([string]$SourceManifestPath, [string]$InstalledManifestPath) {
-    $source = Get-Content -LiteralPath $SourceManifestPath -Raw | ConvertFrom-Json
-    $installed = Get-Content -LiteralPath $InstalledManifestPath -Raw | ConvertFrom-Json
+    $source = Get-Content -LiteralPath $SourceManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $installed = Get-Content -LiteralPath $InstalledManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     foreach ($field in @('manifest_version', 'name', 'key')) {
         if ([string]$source.$field -ne [string]$installed.$field) {
             throw "Monitor extension identity mismatch at manifest field '$field'"
@@ -134,7 +134,7 @@ function Test-MonitorExtensionCandidate([string]$CandidateExt) {
     $desktopHtml = Get-Content -LiteralPath $desktopPath -Raw
     $relativeScripts = @([regex]::Matches($desktopHtml, '<script\s+src="([^"]+)"') |
         ForEach-Object { $_.Groups[1].Value })
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.background.service_worker) { $relativeScripts += [string]$manifest.background.service_worker }
 
     foreach ($relative in ($relativeScripts | Sort-Object -Unique)) {
@@ -214,7 +214,15 @@ if (!(Test-Path -LiteralPath $targetExt -PathType Container)) {
     throw "DesktopWindow Monitor target extension directory not found: $targetExt"
 }
 
-$currentVersion = [string]((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).version)
+# A promoted candidate must advance from the active installation, not from the
+# source tree's development manifest. The source manifest deliberately stays
+# at its development baseline between releases, while the installed payload
+# carries the monotonic Chrome build version.
+$currentVersion = if ($externalInstall) {
+    $ExpectedInstalledVersion
+} else {
+    [string]((Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json).version)
+}
 $nextVersion = Get-MonitorNextVersion $currentVersion
 $observedInstalledPayload = ''
 $observedInstalledToolsPayload = ''
@@ -317,7 +325,7 @@ if ($externalInstall) {
         if (Test-Path -LiteralPath $stageRoot) { Remove-Item -LiteralPath $stageRoot -Recurse -Force }
     }
 } else {
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $manifest.version = $nextVersion
     $stagedManifest = Join-Path $targetExt ('.manifest-stage-' + [guid]::NewGuid().ToString('N'))
     $replacementBackup = Join-Path $targetExt ('.manifest-backup-' + [guid]::NewGuid().ToString('N'))
