@@ -74,6 +74,21 @@ function focusEditorAtEnd(editor) {
     && editor.contains(selection.getRangeAt(0).endContainer);
 }
 
+async function ensureEditorFocusAtEnd(editor, retries = 2) {
+  // Chrome may apply focus asynchronously when React has just rebound the
+  // composer root.  A failed synchronous observation is still fail-closed,
+  // but give that non-mutating transition a couple of event-loop turns before
+  // classifying the submission as NOT_APPLIED.  This never types or clicks.
+  const attempts = Math.max(1, Math.min(3, Number(retries) + 1));
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (focusEditorAtEnd(editor)) return true;
+    if (attempt + 1 < attempts) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
+  return false;
+}
+
 function wakeEditorWithTrailingSpace(editor, expectedText = null) {
   if (!focusEditorAtEnd(editor)) return false;
   const originalText = expectedText === null
@@ -200,7 +215,7 @@ async function submitEditor(editor, options = {}) {
   };
   if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
   let liveEditor = getEditor();
-  if (!liveEditor || !focusEditorAtEnd(liveEditor)) {
+  if (!liveEditor || !(await ensureEditorFocusAtEnd(liveEditor))) {
     throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
   }
   if (currentVerifiedEditor() && !findReadySendButton(liveEditor, options)
@@ -235,7 +250,7 @@ async function submitEditor(editor, options = {}) {
       : bindingAttestation;
     if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
     liveEditor = currentVerifiedEditor();
-    if (!liveEditor || !focusEditorAtEnd(liveEditor)) {
+    if (!liveEditor || !(await ensureEditorFocusAtEnd(liveEditor))) {
       throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
     }
     if (findReadySendButton(liveEditor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
@@ -263,7 +278,9 @@ async function submitEditor(editor, options = {}) {
     ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
     : bindingAttestation;
   if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
-  if (!focusEditorAtEnd(liveEditor)) throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
+  if (!(await ensureEditorFocusAtEnd(liveEditor))) {
+    throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
+  }
   markActivation('enter-fallback');
   for (const type of ['keydown', 'keypress', 'keyup']) {
     liveEditor.dispatchEvent(new KeyboardEvent(type, {

@@ -36,6 +36,10 @@ const context = vm.createContext({
     editor.focus();
     return true;
   },
+  ensureEditorFocusAtEnd: async editor => {
+    editor.focus();
+    return true;
+  },
   wakeEditorWithTrailingSpace: () => true,
 });
 vm.runInContext(
@@ -77,7 +81,8 @@ const caretContext = vm.createContext({
 });
 vm.runInContext(
   slice(source, 'function focusEditorAtEnd(', 'function wakeEditorWithTrailingSpace(')
-    + ';globalThis.focusEditorAtEndForTest = focusEditorAtEnd;',
+    + ';globalThis.focusEditorAtEndForTest = focusEditorAtEnd;'
+    + 'globalThis.ensureEditorFocusAtEndForTest = ensureEditorFocusAtEnd;',
   caretContext
 );
 const textarea = {
@@ -89,6 +94,32 @@ const textarea = {
 assert.equal(caretContext.focusEditorAtEndForTest(textarea), true);
 assert.equal(textarea.selectionStart, expected.length);
 assert.equal(textarea.selectionEnd, expected.length);
+
+// React can rebind a valid composer one task after editor.focus().  The relay
+// must wait for that non-mutating focus transition, then still require the
+// exact end-of-draft caret before any activation is attempted.
+const delayedFocusDocument = {activeElement: null};
+let focusCalls = 0;
+const delayedFocusContext = vm.createContext({
+  document: delayedFocusDocument,
+  window: {getSelection() { throw new Error('textarea must not use DOM selection'); }},
+  setTimeout(callback) { callback(); return 0; },
+});
+vm.runInContext(
+  slice(source, 'function focusEditorAtEnd(', 'function wakeEditorWithTrailingSpace(')
+    + ';globalThis.ensureEditorFocusAtEndForTest = ensureEditorFocusAtEnd;',
+  delayedFocusContext
+);
+const delayedTextarea = {
+  tagName: 'TEXTAREA', value: expected, selectionStart: 0, selectionEnd: 0,
+  focus() {
+    focusCalls += 1;
+    if (focusCalls > 1) delayedFocusDocument.activeElement = this;
+  },
+  contains() { return false; },
+  setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
+};
+const delayedFocusCheck = delayedFocusContext.ensureEditorFocusAtEndForTest(delayedTextarea);
 
 // The composer wake pulse must never become part of the submitted payload.
 // A previous implementation appended one space and immediately compared the
@@ -179,6 +210,12 @@ assert.equal(
 );
 
 (async () => {
+  assert.equal(await delayedFocusCheck, true,
+    'a delayed active-editor transition retries without typing or clicking');
+  assert.equal(focusCalls, 2);
+  assert.equal(delayedTextarea.selectionStart, expected.length);
+  assert.equal(delayedTextarea.selectionEnd, expected.length);
+
   await assert.rejects(
     cleanupContext.sendPromptForTest('queued payload', {
       submitPolicy: {allowKeyboardFallback: false},
