@@ -31,6 +31,15 @@
       return Object.freeze({ ok: true, hwnd });
     }
 
+    async function focusExactTab(tabTarget = null) {
+      if (!focusBrowserTab) throw new Error("BCT_NODE_TAB_FOCUS_REQUIRED");
+      const tabReceipt = await focusBrowserTab(tabTarget);
+      if (!tabReceipt?.ok || tabReceipt?.status !== "APPLIED") {
+        throw new Error(tabReceipt?.error || "정확한 ChatGPT 탭 선택 실패");
+      }
+      return tabReceipt;
+    }
+
     async function activate(hwndValue, tabTarget = null) {
       const hwnd = select(hwndValue).hwnd;
       const state = await nativeRequest({ type: "getVirtualDesktops" });
@@ -58,16 +67,12 @@
 
       const foreground = await nativeRequest({ type: "restoreForegroundWindow", hwnd });
       if (!foreground?.ok) throw new Error(foreground?.error || "웹브라우저 창 활성화 실패");
-      if (!focusBrowserTab) throw new Error("BCT_NODE_TAB_FOCUS_REQUIRED");
-      const tabReceipt = await focusBrowserTab(tabTarget);
-      if (!tabReceipt?.ok || tabReceipt?.status !== "APPLIED") {
-        throw new Error(tabReceipt?.error || "정확한 ChatGPT 탭 선택 실패");
-      }
+      const tabReceipt = await focusExactTab(tabTarget);
       highlight(hwnd);
       return Object.freeze({ ok: true, hwnd, index, tabReceipt });
     }
 
-    return Object.freeze({ select, activate });
+    return Object.freeze({ select, focusExactTab, activate });
   }
 
   root.MonitorBctNodeInteraction = Object.freeze({ create });

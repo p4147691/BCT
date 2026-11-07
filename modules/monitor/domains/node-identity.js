@@ -1834,13 +1834,20 @@ function renderMonitorBctWindowNodes(nodes) {
       event.preventDefault();
       event.stopPropagation();
       row.classList.add("monitor-bct-node-switch-pending");
-      void resolveMonitorBctNodeHwnd(node).then((hwnd) => (
+      const tabTarget = {
+        tabId: node.tabId,
+        windowId: node.windowId,
+        conversationKey: node.conversationKey,
+      };
+      // A newly-created Chrome window does not have an exact HWND binding
+      // until its tab becomes the observed active conversation.  Select the
+      // exact tab first, then refresh the current-session HWND join and move
+      // its desktop/window.  This never guesses a tab or conversation.
+      void getMonitorBctNodeInteractionService().focusExactTab(tabTarget).then(() =>
+        resolveMonitorBctNodeHwnd(node)
+      ).then((hwnd) => (
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node),
-        getMonitorBctNodeInteractionService().activate(hwnd, {
-          tabId: node.tabId,
-          windowId: node.windowId,
-          conversationKey: node.conversationKey,
-        })
+        getMonitorBctNodeInteractionService().activate(hwnd, tabTarget)
       )).then((result) => {
         setMonitorStatus(`${node.nodeLabel || "N?"} 창이 있는 D${result.index + 1}(으)로 이동해 정확한 ChatGPT 탭을 선택했습니다.`, true, 3200);
       }).catch((error) => {
