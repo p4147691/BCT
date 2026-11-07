@@ -1530,6 +1530,7 @@ class SendDelayedMessageService:
                manager_instance_id: str, operation_id: str,
                planned_send_operation_id: str = "",
                planned_send_text: str = "",
+               bootstrap_create_operation_id: str = "",
                execution_path: str = "", chain_direction_id: str = "",
                exclusive_conversation_watch: bool = False,
                max_generations: int = 0, watched_session_id: str = "",
@@ -1551,7 +1552,81 @@ class SendDelayedMessageService:
         if not re.fullmatch(uuid_pat, conversation_key) or not re.fullmatch(
                 uuid_pat, manager_conversation_key):
             raise ValueError("DELAYED_CONVERSATION_INVALID")
-        self._locate(instance_id, conversation_key)
+        located_session, located_tab, located_window = self._locate(
+            instance_id, conversation_key
+        )
+        if bootstrap_create_operation_id:
+            if (not planned_send_operation_id or not planned_send_text
+                    or not re.fullmatch(
+                        r"[A-Za-z0-9_.:-]{1,80}", bootstrap_create_operation_id
+                    )):
+                raise ValueError("DELAYED_BOOTSTRAP_CREATION_INVALID")
+            from bct.core.models import ConflictError
+            try:
+                creation = self.store.get_operation_for(
+                    operation_id=bootstrap_create_operation_id,
+                    work_id=work.work_id,
+                    principal_id=work.owner_principal_id,
+                )
+                delivery = self.store.get_operation_for(
+                    operation_id=planned_send_operation_id,
+                    work_id=work.work_id,
+                    principal_id=work.owner_principal_id,
+                )
+            except (KeyError, ConflictError) as exc:
+                # Preserve one symbolic boundary for missing or foreign
+                # receipts. No effect is retried here.
+                raise ValueError("DELAYED_BOOTSTRAP_RECEIPT_NOT_FOUND") from exc
+            created = creation.evidence if isinstance(creation.evidence, dict) else {}
+            sent = delivery.evidence if isinstance(delivery.evidence, dict) else {}
+            if not (
+                creation.state.value == "FINISHED"
+                and creation.outcome is not None and creation.outcome.value == "APPLIED"
+                and created.get("command") in {"create-chat-tab", "create-chat-window"}
+                and created.get("instance_id") == instance_id
+                and created.get("created_request_id") == bootstrap_create_operation_id
+                and created.get("created_tab_id") == located_tab
+                and created.get("created_window_id") == located_window
+                and delivery.state.value == "FINISHED"
+                and delivery.outcome is not None and delivery.outcome.value == "APPLIED"
+                and sent.get("command") == "send-to-created-tab"
+                and sent.get("host_request_id") == planned_send_operation_id
+                and sent.get("instance_id") == instance_id
+                and sent.get("conversation_key") == conversation_key
+                and sent.get("source_message_sha256")
+                    == _rcc_submitted_text_sha256(planned_send_text)
+            ):
+                raise ValueError("DELAYED_BOOTSTRAP_RECEIPT_INVALID")
+            if (watched_session_id and watched_session_id != located_session
+                    or watched_tab_id and watched_tab_id != located_tab
+                    or watched_window_id and watched_window_id != located_window):
+                raise ValueError("DELAYED_BOOTSTRAP_ATTACHMENT_CHANGED")
+            # A newly created conversation has no earlier Assistant response.
+            # Bind the already-applied exact send to a zero baseline so a fast
+            # first response remains observable after UUID discovery.
+            return self.ledger.prearm_task(
+                task_id=task_id, work_id=work.work_id,
+                principal_id=work.owner_principal_id,
+                assignment_epoch=work.assignment_epoch,
+                instance_id=instance_id, conversation_key=conversation_key,
+                manager_conversation_key=manager_conversation_key,
+                manager_instance_id=manager_instance_id,
+                baseline={
+                    "responseTurnCount": 0, "generating": False,
+                    "responseTurnKey": "", "responseSha256": "",
+                    "latestUserTurnKey": "", "latestUserSha256": "",
+                },
+                registration_receipt=operation_id,
+                planned_send_operation_id=planned_send_operation_id,
+                planned_send_text=planned_send_text,
+                execution_path=execution_path,
+                chain_direction_id=chain_direction_id,
+                exclusive_conversation_watch=exclusive_conversation_watch,
+                max_generations=max_generations,
+                watched_session_id=located_session,
+                watched_tab_id=located_tab,
+                watched_window_id=located_window,
+            )
         if planned_send_operation_id:
             from bct.core.models import ConflictError
             try:

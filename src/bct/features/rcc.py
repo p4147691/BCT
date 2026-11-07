@@ -601,6 +601,7 @@ class BrowserFeature:
         allowed = {"command","task_id","instance_id","conversation_key",
                    "manager_conversation_key","manager_instance_id",
                    "planned_send_operation_id", "planned_send_text",
+                   "bootstrap_create_operation_id",
                    "exclusive_conversation_watch", "max_generations",
                    "execution_path", "chain_direction_id",
                    "watched_session_id", "watched_tab_id", "watched_window_id"}
@@ -611,6 +612,9 @@ class BrowserFeature:
             raise PreconditionError("DELAYED_TASK_ID_INVALID")
         plan_id = str(arguments.get("planned_send_operation_id") or "").strip()
         plan_text = str(arguments.get("planned_send_text") or "")
+        bootstrap_create_id = str(
+            arguments.get("bootstrap_create_operation_id") or ""
+        ).strip()
         exclusive = arguments.get("exclusive_conversation_watch", False)
         if type(exclusive) is not bool:
             raise PreconditionError("DELAYED_EXCLUSIVE_WATCH_INVALID")
@@ -621,6 +625,10 @@ class BrowserFeature:
                 (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", plan_id)
                  or len(plan_text) > 12000)):
             raise PreconditionError("DELAYED_PLANNED_SOURCE_INVALID")
+        if bootstrap_create_id and (
+                not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", bootstrap_create_id)
+                or not plan_id):
+            raise PreconditionError("DELAYED_BOOTSTRAP_CREATION_INVALID")
         execution_path = str(arguments.get("execution_path") or "")
         direction_id = str(arguments.get("chain_direction_id") or "")
         if execution_path not in {"", "DIRECTION_DECLARED", "DIRECT_EXACT_TARGET"}:
@@ -639,6 +647,7 @@ class BrowserFeature:
                  arguments.get("manager_conversation_key") or "").strip().lower(),
              "manager_instance_id":str(arguments.get("manager_instance_id") or "").strip(),
              "planned_send_operation_id":plan_id,"planned_send_text":plan_text,
+             "bootstrap_create_operation_id":bootstrap_create_id,
              "execution_path":execution_path,"chain_direction_id":direction_id,
              "exclusive_conversation_watch":exclusive,
              "max_generations":max_generations,
@@ -1923,6 +1932,8 @@ class BrowserFeature:
                     operation_id=request.operation_id,
                     planned_send_operation_id=values.get("planned_send_operation_id",""),
                     planned_send_text=values.get("planned_send_text",""),
+                    bootstrap_create_operation_id=values.get(
+                        "bootstrap_create_operation_id", ""),
                     execution_path=values.get("execution_path", ""),
                     chain_direction_id=values.get("chain_direction_id", ""),
                     exclusive_conversation_watch=values.get(

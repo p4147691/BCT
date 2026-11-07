@@ -988,6 +988,9 @@ def build_mcp(
             "Chain Recipe (full recipe). This entry runs Input R and State R, then presents Write Direction R "
             "plus the remaining visible recipe sequence. action=send runs the declared "
             "Send Direction R after its saved Direction and target records are available. "
+            "action=provision_worker composes the existing create-chat-tab/window, "
+            "send-message, delayed-response watch, node-info-set, and optional move-tab "
+            "operations for one Manager-declared additional Worker. "
             "Classifies a new USER request or verifies one exact MANAGER_RETURN, then reads one current "
             "snapshot, current Node Info, durable conversation-network directory, their comparison, and "
             "an optional selected project's stored network. "
@@ -1003,10 +1006,46 @@ def build_mcp(
         direction_id: str = "", assessment: dict[str, Any] | None = None,
         task_id: str = "", operation_id: str = "", target_conversation_key: str = "",
         max_generations: int = 0, report_target_conversation_key: str = "",
+        worker_preparation_id: str = "",
     ) -> dict[str, Any]:
         """Run one explicit boundary of the Chain Recipe."""
-        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send"}:
+        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send", "provision_worker"}:
             return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ACTION_INVALID"}
+        if action == "provision_worker":
+            if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,60}", worker_preparation_id)):
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_WORKER_PREPARATION_REQUIRED"}
+            loaded_direction = await read_saved_direction(
+                work_id=work_id, direction_id=direction_id,
+            )
+            if loaded_direction["status"] != "READY":
+                return loaded_direction
+            direction = loaded_direction["direction"]
+            if direction.get("decision") != "NEW_TASK":
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_NOT_A_NEW_TASK"}
+            import json
+            saved_assessment = json.loads(direction.get("assessment_json") or "{}")
+            matches = [item for item in saved_assessment.get("worker_preparations", [])
+                       if item.get("preparation_id") == worker_preparation_id]
+            if len(matches) != 1:
+                return {"status": "INVALID_REQUEST",
+                        "reason": "CHAIN_WORKER_PREPARATION_NOT_DECLARED"}
+            work_access = await check_chain_work_access(work_id=work_id, action="start")
+            work = work_access["work"]
+            if work is None:
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_WORK_REQUIRED"}
+            from bct.chain_worker_provision import ChainWorkerProvisionRecipe
+            try:
+                return await asyncio.to_thread(
+                    ChainWorkerProvisionRecipe(
+                        bct=bct, principal=principal, status_provider=status_provider,
+                    ).run,
+                    direction=direction, assessment=saved_assessment, work=work,
+                    task_id=task_id, worker_preparation=matches[0],
+                    max_generations=max_generations,
+                )
+            except ValueError as exc:
+                return {"status": "INVALID_REQUEST", "reason": str(exc)}
         if action == "save":
             confirmed_input = await input_recipe(
                 work_id=work_id, source_kind=source_kind,
@@ -1080,6 +1119,7 @@ def build_mcp(
             return {
                 "status": "READY", "direction_id": direction_id,
                 "targets": [target for _, target in prepared_send["targets"]],
+                "derived_dispatch": prepared_send.get("derived_dispatch"),
                 "effects": "NONE_READ_ONLY", "authorizes_send": False,
                 "recipe_progress": chain_recipe_progress(completed_through=5, next_number=6),
             }
@@ -1603,6 +1643,40 @@ def build_mcp(
             "effects": "NONE_READ_ONLY" if action == "preflight" else "APPLIED_OR_NONE",
         }
 
+    def prepare_derived_dispatch_recipe(
+        *, assessment: dict[str, Any], targets: list[tuple[int, dict[str, Any]]],
+    ) -> dict[str, Any]:
+        """Select only Manager-declared, immediately independent targets.
+
+        This is a Chain Recipe sub-recipe, not a public command and not an AI
+        decision maker.  It turns the saved Direction assessment into either
+        a target subset that may proceed to delivery or a durable deferred
+        card.  It does not create a node, inspect a browser, or send anything.
+        """
+        from bct.chain_derived_tasks import dispatch_plan
+
+        derived_dispatch = dispatch_plan(
+            tasks=list(assessment.get("derived_tasks") or []),
+            targets=[target for _, target in targets],
+        )
+        ready_targets = [
+            (index, target) for index, target in targets
+            if target["conversation_key"] in derived_dispatch["ready_target_keys"]
+        ]
+        dispatch_card = {
+            "classification": derived_dispatch["classification"],
+            "deferred": derived_dispatch["deferred"],
+        }
+        if not ready_targets:
+            return {
+                "status": "DEFERRED", "reason": "CHAIN_DERIVED_TASKS_NOT_READY",
+                "derived_dispatch": dispatch_card, "authorizes_send": False,
+            }
+        return {
+            "status": "READY", "targets": ready_targets,
+            "derived_dispatch": dispatch_card,
+        }
+
     async def prepare_send_direction_recipe(
         *, direction: dict[str, Any], assessment: dict[str, Any], task_id: str,
         operation_id: str, target_conversation_key: str, max_generations: int,
@@ -1624,6 +1698,10 @@ def build_mcp(
                    if not target_conversation_key or target["conversation_key"] == target_conversation_key]
         if not targets:
             return {"status": "INVALID_REQUEST", "reason": "DIRECTION_TARGET_NOT_DECLARED"}
+        derived = prepare_derived_dispatch_recipe(assessment=checked, targets=targets)
+        if derived["status"] != "READY":
+            return derived
+        targets = derived["targets"]
         if len(task_id) > 70 or len(operation_id) > 65:
             return {"status": "INVALID_REQUEST", "reason": "CHAIN_MESSAGE_OPERATION_TOO_LONG"}
         ledger = ChainDirectionLedger(bct.store)
@@ -1638,7 +1716,10 @@ def build_mcp(
                 )
         except ValueError as exc:
             return {"status": "INVALID_REQUEST", "reason": str(exc)}
-        return {"status": "READY", "assessment": checked, "targets": targets}
+        return {
+            "status": "READY", "assessment": checked, "targets": targets,
+            "derived_dispatch": derived["derived_dispatch"],
+        }
 
     async def send_direction_recipe(
         *, direction: dict[str, Any], assessment: dict[str, Any], work: Work,
@@ -1738,6 +1819,7 @@ def build_mcp(
             network_results=network["network_results"], max_generations=max_generations,
         )
         return {
+            "derived_dispatch": prepared.get("derived_dispatch"),
             **sent,
             "recipe_progress": chain_recipe_progress(completed_through=5, next_number=6),
         }
@@ -2263,6 +2345,7 @@ def build_mcp(
         instance_id: str = "", conversation_key: str = "",
         manager_conversation_key: str = "", manager_instance_id: str = "",
         planned_send_operation_id: str = "", planned_send_text: str = "",
+        bootstrap_create_operation_id: str = "",
     ) -> dict[str, Any]:
         guarded_conversation = conversation_key
         try:
@@ -2286,7 +2369,8 @@ def build_mcp(
              "manager_conversation_key":manager_conversation_key,
              "manager_instance_id":manager_instance_id,
              "planned_send_operation_id":planned_send_operation_id,
-             "planned_send_text":planned_send_text},
+             "planned_send_text":planned_send_text,
+             "bootstrap_create_operation_id":bootstrap_create_operation_id},
         )
 
     @server.tool(

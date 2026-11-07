@@ -75,7 +75,7 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
         },
         "required_for_new_task": {
             "manager_conversation_key": "A's return destination: lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
-            "worker_conversation_key": "the one initial Worker UUID; it must differ from Manager and Supervisor",
+            "worker_conversation_key": "the one existing initial Worker UUID; omit only when worker_preparations declares the initial Worker to create",
             "supervisor_conversation_key": "the one global Supervisor UUID; it must differ from Manager and Worker",
             "targets": [{
                 "conversation_key": "lowercase canonical ChatGPT conversation UUID; not N96 or a tab title",
@@ -83,9 +83,16 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
                 "instruction": "non-empty per-target instruction, at most 6000 characters",
             }],
             "network_updates": "list of existing bct_set_conversation_network argument objects; [] is valid when reusing the network unchanged. Select topology in this order: an existing global Supervisor, then an unassigned idle Worker; create only the missing node. Never select a Manager from another network as Worker or Supervisor.",
+            "worker_preparations": "optional persisted create-chat-tab/window requests for missing Workers; execute one by preparation_id through bct_chain_recipe(action='provision_worker')",
         },
         "optional_node_recovery": {
             "conversation_key": "the exact lowercase canonical UUID of one node A explicitly asks Recover Node R to observe before sending",
+        },
+        "optional_derived_tasks": {
+            "contract": "Manager-declared derived work; BCT validates the classification and safe immediate dispatch set but does not infer a task from prose.",
+            "classification": ["SELF", "INDEPENDENT", "BLOCKED", "RISK", "ASK_USER"],
+            "independent_rule": "An INDEPENDENT task names one declared target, has no unresolved depends_on entries, and may not share mutable_scopes with another INDEPENDENT task.",
+            "deferred_rule": "BLOCKED, RISK, ASK_USER, SELF, and dependent INDEPENDENT tasks are stored as Manager evidence and are not sent by this Direction.",
         },
         "target_diagnostics": target_diagnostics,
         "recovery": "Correct only the reported fields, then call bct_set_direction(action='save') again with the same intended direction_id. Read the saved record with bct_get_direction before starting.",
@@ -105,7 +112,8 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
     """Validate A's declared decisions without pretending to evaluate prose."""
     if not isinstance(value, dict) or set(value) - {
         "answers", "manager_conversation_key", "worker_conversation_key", "supervisor_conversation_key",
-        "network_name", "targets", "network_updates", "node_recovery",
+        "network_name", "targets", "network_updates", "node_recovery", "derived_tasks",
+        "worker_preparations",
     }:
         raise ValueError("DIRECTION_ASSESSMENT_INVALID")
     answers = value.get("answers", {})
@@ -116,9 +124,11 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
         raise ValueError("DIRECTION_ANSWERS_INVALID")
     value = {**value, "answers": answers}
     targets = value.get("targets", [])
+    preparations = value.get("worker_preparations", [])
     updates = value.get("network_updates", [])
     recovery = value.get("node_recovery")
-    if not isinstance(targets, list) or not isinstance(updates, list):
+    if (not isinstance(targets, list) or not isinstance(updates, list)
+            or not isinstance(preparations, list)):
         raise ValueError("DIRECTION_TARGETS_INVALID")
     if recovery is not None:
         if (not isinstance(recovery, dict) or set(recovery) != {"conversation_key"}
@@ -126,20 +136,31 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
                 or not _UUID.fullmatch(recovery["conversation_key"])):
             raise ValueError("DIRECTION_NODE_RECOVERY_INVALID")
         value["node_recovery"] = {"conversation_key": recovery["conversation_key"]}
-    if decision != "NEW_TASK" and (targets or updates or recovery is not None):
+    if decision != "NEW_TASK" and (targets or updates or recovery is not None
+                                    or preparations or value.get("derived_tasks") is not None):
         raise ValueError("DIRECTION_TERMINAL_HAS_ACTIONS")
     if decision == "NEW_TASK":
-        for field in ("manager_conversation_key", "worker_conversation_key", "supervisor_conversation_key"):
+        required_identities = ["manager_conversation_key", "supervisor_conversation_key"]
+        if not preparations:
+            required_identities.append("worker_conversation_key")
+        for field in required_identities:
             if (not isinstance(value.get(field), str) or not _UUID.fullmatch(value[field])):
                 raise ValueError("DIRECTION_" + field.upper() + "_REQUIRED")
-        if len({value["manager_conversation_key"], value["worker_conversation_key"],
-                value["supervisor_conversation_key"]}) != 3:
+        identities = [value[field] for field in required_identities]
+        if len(set(identities)) != len(identities):
             raise ValueError("DIRECTION_TOPOLOGY_IDENTITIES_MUST_DIFFER")
         if "network_name" in value and (not isinstance(value["network_name"], str)
                                         or len(value["network_name"]) > 200):
             raise ValueError("DIRECTION_NETWORK_INVALID")
-        if not targets:
+        if not targets and not preparations:
             raise ValueError("DIRECTION_TARGETS_REQUIRED")
+    if preparations:
+        from bct.chain_worker_preparation import validate_worker_preparation
+        normalized_preparations = [validate_worker_preparation(item) for item in preparations]
+        preparation_ids = [item["preparation_id"] for item in normalized_preparations]
+        if len(preparation_ids) != len(set(preparation_ids)) or len(preparation_ids) > 32:
+            raise ValueError("CHAIN_WORKER_PREPARATION_ID_CONFLICT")
+        value["worker_preparations"] = normalized_preparations
     keys = set()
     for target in targets:
         if not isinstance(target, dict) or set(target) != {"conversation_key", "role", "instruction"}:
@@ -153,8 +174,14 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
             raise ValueError("DIRECTION_TARGET_ROLE_INVALID")
         if not isinstance(target["instruction"], str) or not target["instruction"].strip() or len(target["instruction"]) > 6000:
             raise ValueError("DIRECTION_TARGET_INSTRUCTION_REQUIRED")
-    if decision == "NEW_TASK" and value["worker_conversation_key"] not in keys:
+    if (decision == "NEW_TASK" and not preparations
+            and value["worker_conversation_key"] not in keys):
         raise ValueError("DIRECTION_WORKER_TARGET_REQUIRED")
+    if "derived_tasks" in value:
+        from bct.chain_derived_tasks import validate_derived_tasks
+        value["derived_tasks"] = validate_derived_tasks(
+            value["derived_tasks"], target_keys=keys,
+        )
     # Resource bounds, not a cap on autonomous SELF continuation.
     if len(_json(value)) > 90000 or len(targets) > 32 or len(updates) > 64:
         raise ValueError("DIRECTION_ASSESSMENT_TOO_LARGE")
@@ -272,6 +299,45 @@ def compose_target_direction(*, direction: dict, target: dict, task_id: str,
             + guidance["text"])
     from bct.chain_message_preflight import prepare_chain_instruction
     # Include the actual marker suffix in the size check before any effects.
+    prepare_chain_instruction(text, output_contract="explicit-next-task-v1")
+    return child_id, text
+
+
+def compose_prepared_worker_direction(
+    *, direction: dict, preparation_id: str, conversation_key: str,
+    role: str, instruction: str, task_id: str,
+    recorded_direction: dict | None = None,
+) -> tuple[str, str]:
+    """Compose one receipt-bound child Direction for a newly prepared Worker."""
+    suffix = hashlib.sha256(
+        (direction["direction_id"] + ":prepared:" + preparation_id).encode()
+    ).hexdigest()[:24]
+    child_id = "direction-" + suffix
+    if recorded_direction is not None:
+        expected = {
+            "direction_id": child_id, "work_id": direction["work_id"],
+            "parent_direction_id": direction["direction_id"],
+            "target_conversation_key": conversation_key, "decision": "NEW_TASK",
+        }
+        expected.update({key: direction[key] for key in (
+            "source_kind", "source_task_id", "source_generation", "source_result_sha256"
+        )})
+        if any(recorded_direction.get(key) != value for key, value in expected.items()):
+            raise ValueError("DIRECTION_PREPARED_WORKER_RECORD_MISMATCH")
+        return child_id, recorded_direction["direction_text"]
+    from bct.component_library import get_manual_guidance
+    guidance = get_manual_guidance()
+    if guidance["status"] != "AVAILABLE":
+        raise ValueError("MANUAL_GUIDANCE_UNAVAILABLE")
+    text = (
+        direction["direction_text"] + "\n\n이번 대상에게 맡기는 일:\n" + instruction
+        + f"\n\n이번 대상의 역할: {role}. 이 작업의 실행계획과 결과는 다음 식별값에 연결한다: "
+        + f"work_id={direction['work_id']}, direction_id={child_id}, "
+        + f"task_id={task_id}, generation=1. "
+        + f"\n\n공통 설명서의 노드 안내 (manual SHA-256: {guidance['manual_sha256']}):\n"
+        + guidance["text"]
+    )
+    from bct.chain_message_preflight import prepare_chain_instruction
     prepare_chain_instruction(text, output_contract="explicit-next-task-v1")
     return child_id, text
 
