@@ -11,6 +11,7 @@ from bct.conversation_network import (
     conversation_display_order_directory,
     conversation_scope_directory,
     ensure_observed_node_labels,
+    node_labels_for_conversations,
 )
 from bct.integrations.rcc import NamedPipeRelayClient, RelayEffectUnknown, RelayUnavailable, discover_instance_ids
 from bct.integrations.native_process import process_matches
@@ -470,4 +471,66 @@ def build_monitor_state(
         "process_sessions": sessions,
         "claim_diagnostics": claim_diagnostics,
         **snapshot,
+    }
+
+
+def build_monitor_ui_state(
+    *, store: Any, service_state: dict[str, Any], data_root: Path,
+) -> dict[str, Any]:
+    """Return the bounded, read-only snapshot needed to paint the Monitor roster.
+
+    This deliberately does not allocate labels, wake notifications, inspect
+    process sessions, hash payload files, or enumerate historical Work/Claim
+    data.  Those are operator/maintenance concerns, not prerequisites for
+    showing the current RCC roster.
+    """
+    started = time.perf_counter()
+    instance_ids = discover_instance_ids()
+    after_discovery = time.perf_counter()
+    rcc = _rcc_states(instance_ids)
+    after_rcc = time.perf_counter()
+    observed_conversations = [
+        (str(tab.get("conversation_key") or ""), str(tab.get("title") or ""))
+        for instance in rcc for tab in instance.get("tabs", [])
+        if isinstance(tab, dict)
+    ]
+    conversation_keys = [key for key, _title in observed_conversations]
+    manager_statuses = _conversation_network_manager_statuses(
+        store, observed_conversation_keys=conversation_keys,
+    )
+    labels = node_labels_for_conversations(store, conversation_keys=conversation_keys)
+    scopes = conversation_scope_directory(store, conversation_keys=conversation_keys)
+    display_orders = conversation_display_order_directory(store, conversation_keys=conversation_keys)
+    for instance in rcc:
+        for tab in instance.get("tabs", []):
+            if not isinstance(tab, dict):
+                continue
+            key = str(tab.get("conversation_key") or "").lower()
+            label = labels.get(key)
+            if label:
+                tab["node_label"] = label
+            scope = dict(scopes.get(key) or {})
+            if key in display_orders:
+                scope["display_order"] = display_orders[key]
+            if scope:
+                tab["conversation_scope"] = scope
+    after_projection = time.perf_counter()
+    return {
+        "observability": {
+            "schema": 1,
+            "read_only": True,
+            "timings": {
+                "rcc_discovery_ms": round((after_discovery - started) * 1000, 3),
+                "rcc_state_ms": round((after_rcc - after_discovery) * 1000, 3),
+                "projection_ms": round((after_projection - after_rcc) * 1000, 3),
+                "total_ms": round((after_projection - started) * 1000, 3),
+            },
+        },
+        "schema": 1,
+        "generated_at": time.time(),
+        "service": dict(service_state),
+        "current_nodes": classify_current_nodes(rcc, observed_at=time.time()),
+        "conversation_network_managers": manager_statuses,
+        "rcc": {"instances": rcc},
+        "github_run_inbox": store.get_github_run_inbox(limit=12),
     }

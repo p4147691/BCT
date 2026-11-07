@@ -1,8 +1,4 @@
-"""Regression: public /monitor/state must use the same RCC provenance paths as bct_status.
-
-This prevents a valid N-number projection from being silently suppressed with
-SOURCE_MISSING when the HTTP handler omits both paths.
-"""
+"""Regression contracts for the public Monitor roster route."""
 from __future__ import annotations
 
 import ast
@@ -11,7 +7,7 @@ import unittest
 
 
 class FaviconMonitorHttpProjectionTests(unittest.TestCase):
-    def test_public_and_mcp_monitor_provenance_path_parity(self):
+    def test_public_monitor_route_uses_read_only_ui_snapshot(self):
         source = (Path(__file__).resolve().parents[1]
                   / "src" / "bct" / "runtime_server.py").read_text(encoding="utf-8")
         module = ast.parse(source)
@@ -23,28 +19,26 @@ class FaviconMonitorHttpProjectionTests(unittest.TestCase):
         }
         self.assertEqual({"monitor_state", "status_snapshot"}, set(methods))
 
-        for method_name, method in methods.items():
-            calls = [
-                node for node in ast.walk(method)
-                if isinstance(node, ast.Call) and (
-                    isinstance(node.func, ast.Name) and node.func.id == "build_monitor_state"
-                    or isinstance(node.func, ast.Attribute) and node.func.attr == "to_thread"
-                    and node.args and isinstance(node.args[0], ast.Name)
-                    and node.args[0].id == "build_monitor_state"
-                )
-            ]
-            self.assertEqual(1, len(calls), method_name)
-            names = {keyword.arg: keyword.value for keyword in calls[0].keywords}
-            self.assertEqual(
-                "RCC_BACKGROUND_SOURCE_PATH",
-                getattr(names.get("rcc_source_path"), "id", None),
-                method_name,
-            )
-            self.assertEqual(
-                "RCC_BACKGROUND_LIVE_PATH",
-                getattr(names.get("rcc_live_path"), "id", None),
-                method_name,
-            )
+        def threaded_target(method):
+            calls = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                     and isinstance(node.func, ast.Attribute) and node.func.attr == "to_thread"]
+            self.assertEqual(1, len(calls))
+            self.assertIsInstance(calls[0].args[0], ast.Name)
+            return calls[0].args[0].id, {keyword.arg for keyword in calls[0].keywords}
+
+        ui_target, ui_keywords = threaded_target(methods["monitor_state"])
+        self.assertEqual("build_monitor_ui_state", ui_target)
+        self.assertEqual({"store", "service_state", "data_root"}, ui_keywords)
+
+        status_calls = [node for node in ast.walk(methods["status_snapshot"])
+                        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id == "build_monitor_state"]
+        self.assertEqual(1, len(status_calls))
+        status_keywords = {keyword.arg for keyword in status_calls[0].keywords}
+        self.assertEqual(
+            {"store", "service_state", "data_root", "rcc_source_path", "rcc_live_path"},
+            status_keywords,
+        )
 
     def test_node_label_notifier_is_in_core_runtime_release(self):
         import tomllib

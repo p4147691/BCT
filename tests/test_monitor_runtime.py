@@ -7,12 +7,38 @@ from unittest.mock import patch
 
 from bct.core.models import Principal, Work
 from bct.core.store import Store
-from bct.monitor_runtime import _rcc_states, build_monitor_state
+from bct.monitor_runtime import _rcc_states, build_monitor_state, build_monitor_ui_state
 from bct.conversation_network import configure_conversation_scope, upsert_conversation
 from bct.integrations.rcc import RelayUnavailable, RelayEffectUnknown
 
 
 class MonitorRuntimeTests(unittest.TestCase):
+    def test_ui_snapshot_is_read_only_and_uses_existing_labels_only(self):
+        conversation = "6ad733b6-95d4-83ee-b4ba-49a671229d77"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "state.sqlite")
+
+            class Client:
+                def request(self, **kwargs):
+                    return {"state": {"sessionId": "live", "tabs": [{
+                        "tabId": 71, "windowId": 44, "title": "Monitor", "url": f"https://chatgpt.com/c/{conversation}",
+                    }], "endpoints": []}}
+
+            with patch("bct.monitor_runtime.discover_instance_ids", return_value=["instance"]), \
+                 patch("bct.monitor_runtime.NamedPipeRelayClient", return_value=Client()):
+                state = build_monitor_ui_state(
+                    store=store, service_state={"status": "OK", "ready": True, "service": "bct-core"},
+                    data_root=root / "data",
+                )
+
+            self.assertTrue(state["observability"]["read_only"])
+            self.assertEqual([], store.monitor_snapshot()["events"])
+            self.assertNotIn("node_label", state["rcc"]["instances"][0]["tabs"][0])
+            self.assertEqual("OK", state["service"]["status"])
+            self.assertEqual(set(("rcc_discovery_ms", "rcc_state_ms", "projection_ms", "total_ms")),
+                             set(state["observability"]["timings"]))
+
     def test_snapshot_is_bounded_and_omits_operation_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -493,13 +493,14 @@ class MCPIntegrationTests(unittest.TestCase):
         monitor_state = monitor.json()
         self.assertEqual(1, monitor_state["schema"])
         self.assertEqual(self.release_sha, monitor_state["service"]["release_sha"])
-        self.assertGreaterEqual(monitor_state["counts"]["works"], 2)
-        self.assertGreaterEqual(monitor_state["counts"]["operations"], 2)
+        self.assertTrue(monitor_state["observability"]["read_only"])
+        self.assertNotIn("counts", monitor_state)
+        self.assertIn("instances", monitor_state["rcc"])
 
         current_nodes = httpx.get(f"http://127.0.0.1:{self.port}/monitor/current-nodes", timeout=3)
         self.assertEqual(200, current_nodes.status_code)
         current_node_view = current_nodes.json()
-        self.assertEqual("SAME_MONITOR_SNAPSHOT", current_node_view["source"])
+        self.assertEqual("READ_ONLY_MONITOR_UI_SNAPSHOT", current_node_view["source"])
         self.assertIn("items", current_node_view["current_nodes"])
         self.assertIn("conversation_network_managers", current_node_view)
 

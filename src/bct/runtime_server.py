@@ -18,7 +18,7 @@ from bct import BCT
 from bct.core.capabilities import canonical_capability
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
-from bct.monitor_runtime import build_monitor_state
+from bct.monitor_runtime import build_monitor_state, build_monitor_ui_state
 from bct.status_views import status_view
 from bct.core.chat_stream_rcc_watch import ChatStreamRccWatch
 from bct.integrations.rcc import NamedPipeRelayClient
@@ -538,13 +538,12 @@ def main() -> int:
 
     @mcp.custom_route("/monitor/state", methods=["GET"], include_in_schema=False)
     async def monitor_state(request: Request) -> JSONResponse:
+        """Serve the display roster without running Monitor maintenance work."""
         return JSONResponse(await asyncio.to_thread(
-            build_monitor_state,
+            build_monitor_ui_state,
             store=bct.store,
             service_state=state,
             data_root=runtime_root.parent / "data",
-            rcc_source_path=RCC_BACKGROUND_SOURCE_PATH,
-            rcc_live_path=RCC_BACKGROUND_LIVE_PATH,
         ))
 
     @mcp.custom_route("/monitor/current-nodes", methods=["GET"], include_in_schema=False)
@@ -556,13 +555,17 @@ def main() -> int:
         work/event lists from ``/monitor/state`` and does not create a watcher,
         lease, delivery, or permission decision.
         """
-        snapshot = await asyncio.to_thread(status_snapshot)
-        monitor = snapshot.get("monitor") if isinstance(snapshot.get("monitor"), dict) else {}
+        monitor = await asyncio.to_thread(
+            build_monitor_ui_state,
+            store=bct.store,
+            service_state=state,
+            data_root=runtime_root.parent / "data",
+        )
         return JSONResponse({
             "schema": 1,
-            "source": "SAME_MONITOR_SNAPSHOT",
+            "source": "READ_ONLY_MONITOR_UI_SNAPSHOT",
             "generated_at": monitor.get("generated_at"),
-            "current_nodes": status_view(snapshot, "node").get("current_nodes"),
+            "current_nodes": monitor.get("current_nodes"),
             "conversation_network_managers": monitor.get("conversation_network_managers", []),
         }, headers={"Cache-Control": "no-store"})
 
