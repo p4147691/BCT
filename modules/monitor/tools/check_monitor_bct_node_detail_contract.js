@@ -59,6 +59,16 @@ const minimized = context.monitorBctNodeDetail({
 assert.equal(minimized.text, "D1 _ Work E 120분 높음");
 assert.match(minimized.title, /위치 D1 · 최소화됨 · 종류 Work · 추론 xhigh · 관측 120분 · 부담 높음/);
 
+const prefixedObservation = context.monitorBctNodeDetail({
+  conversationKey: "chat-1",
+  surfaceKind: "CHAT",
+  reasoningRaw: "추론 수준Instant",
+  reasoningLevel: "I",
+}, 1, { iconic: false });
+assert.equal(prefixedObservation.text, "D2 Chat I 5분 미확인");
+assert.match(prefixedObservation.title, /추론 추론 수준Instant/,
+  "the detail title retains the exact observed raw value");
+
 const ordinary = context.monitorBctNodeDetail({
   conversationKey: "chat-1",
   surfaceKind: "CHAT",

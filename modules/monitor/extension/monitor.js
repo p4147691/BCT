@@ -6505,6 +6505,14 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
     ? "미확인"
     : reasoningObserved;
+  // RCC can expose the model-selector label together with its value (for
+  // example, "추론 수준Instant").  Keep that raw observation for the detail
+  // surface, but remove the presentation label before producing the compact
+  // card token.
+  const compactReasoningKey = reasoning
+    .replace(/^(?:추론\s*수준|reasoning\s*level)\s*[:：-]?\s*/i, "")
+    .trim()
+    .toLowerCase();
   const normalizedReasoningLabel = ({
     instant: "I",
     low: "L",
@@ -6516,7 +6524,7 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
     pro: "P",
     max: "Max",
     ultra: "Ultra",
-  })[reasoning.toLowerCase()] || reasoning;
+  })[compactReasoningKey] || reasoning;
   // The raw observation is the display authority.  Cached node records from
   // an earlier Monitor build may carry an uncompressed reasoningLevel, so do
   // not let that stale presentation value widen a freshly rendered card.
