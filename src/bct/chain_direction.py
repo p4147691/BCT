@@ -22,9 +22,9 @@ DIRECTION_QUESTIONS = (
     ("intent", "사용자 의도", "원문 또는 반환 보고에서 사용자가 실제로 원하는 결과는 무엇인가? 이전 목표를 유지하면서 무엇을 보완해야 하는가?"),
     ("acceptance", "완료 기준", "무엇을 직접 확인하면 완료인가? 이미 끝난 것, 남은 것, 아직 확인하지 못한 것을 구분하라."),
     ("scope", "범위와 조건", "허용 범위, 금지사항, 우선순위, 보존할 사용자 작업과 외부 효과는 무엇인가? 모르는 것은 어떻게 확인할 것인가?"),
-    ("network", "대화망 선택", "열린 Node Info(우클릭 정보)의 대화망·역할·담당 작업·메모와 저장된 대화망 이력을 비교하라. 재사용·신규·병합 중 무엇을 왜 선택하는가?"),
+    ("network", "대화망 선택", "열린 Node Info(우클릭 정보)의 대화망·역할·담당 작업·메모와 저장된 대화망 이력을 비교하라. 전역 Supervisor의 과거 담당 작업·메모는 참고 정보이며 프로젝트 귀속이나 재사용 배제 근거가 아니다. 재사용·신규·병합 중 무엇을 왜 선택하는가?"),
     ("manager", "Manager", "지시를 받은 A가 어떤 대화망의 Manager가 되는가? 기존 Manager가 있으면 어떤 기록을 보존하고 역할을 넘겨받는가?"),
-    ("supervisor", "Supervisor", "전역 Supervisor 하나를 어떻게 유지하는가? 없거나 닫혔으면 기존 노드 재사용·새 노드 준비·승계를 판단하고, 여럿이면 역할을 하나로 정리하라."),
+    ("supervisor", "Supervisor", "전역 Supervisor 하나를 어떻게 유지하는가? 대화망 미소속 Supervisor는 서로 다른 프로젝트 Manager가 같은 정확한 UUID로 재사용할 수 있으며, 각 Direction·Work·Task·Generation·Operation·영수증은 분리한다. Supervisor는 조정·독립 검수만 하고 Manager 지휘나 Worker 실행 책임을 대체하지 않는다. 없거나 닫혔으면 기존 노드 재사용·새 노드 준비·승계를 판단하고, 여럿이면 역할을 하나로 정리하라."),
     ("delegation", "대상별 분담", "AB·AC·AD 중 필요한 대상 수와 각각 맡길 일은 무엇인가? 독립 작업과 순서 의존성을 구분하고 각 대상에 별도 지시문을 작성하라."),
     ("resources", "자율 선택", "필요한 부품·모듈·블럭·레시피·프로그램·PowerShell·BDC·브라우저 기능은 무엇인가? 창·탭 생성/이동/정리 계획과 B의 자율 선택 범위를 정하라. 등록·허용된 실제 기능을 확인하라."),
     ("recovery", "정체와 승계", "Manager·Worker·Supervisor가 멈추면 Check Node → Recheck Node → Pause Node → Replace Node → Reset Node 중 무엇을 사용하는가? 기존 영수증과 UNKNOWN을 보존하라."),
@@ -76,13 +76,13 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
         "required_for_new_task": {
             "manager_conversation_key": "A's return destination: lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
             "worker_conversation_key": "the one existing initial Worker UUID; omit only when worker_preparations declares the initial Worker to create",
-            "supervisor_conversation_key": "the one global Supervisor UUID; it must differ from Manager and Worker",
+            "supervisor_conversation_key": "the one global Supervisor UUID; it must differ from Manager and Worker. A network-unassigned Supervisor remains reusable across projects even when its node memo or assigned task names an earlier project; each Direction/Work/Task/generation/Operation receipt remains separate",
             "targets": [{
                 "conversation_key": "lowercase canonical ChatGPT conversation UUID; not N96 or a tab title",
                 "role": "A's free-form role label, for example worker, reviewer, or deployer",
                 "instruction": "non-empty per-target instruction, at most 6000 characters",
             }],
-            "network_updates": "list of existing bct_set_conversation_network argument objects; [] is valid when reusing the network unchanged. Select topology in this order: an existing global Supervisor, then an unassigned idle Worker; create only the missing node. Never select a Manager from another network as Worker or Supervisor.",
+            "network_updates": "list of existing bct_set_conversation_network argument objects; [] is valid when reusing the network unchanged. Select topology in this order: an existing network-unassigned global Supervisor (do not exclude it merely for an earlier-project memo or assigned task), then an unassigned idle Worker; create only the missing node. Never select a Manager from another network as Worker or Supervisor.",
             "worker_preparations": "optional persisted create-chat-tab/window requests for missing Workers; execute one by preparation_id through bct_chain_recipe(action='provision_worker')",
         },
         "optional_node_recovery": {

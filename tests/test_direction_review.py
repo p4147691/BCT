@@ -195,6 +195,19 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(topology["required_creation"]["supervisor"])
         self.assertIn(A, [item["conversation_key"] for item in topology["reserved_nodes"]])
 
+    async def test_global_supervisor_with_an_earlier_project_memo_remains_reusable(self):
+        # Memo and assigned-task history are not project membership. C remains
+        # the global Supervisor while A/B retain their own current network.
+        self.tabs[2]["conversation_scope"]["node_memo"] = "Previous Browser Bridge review"
+        self.tabs[2]["conversation_scope"]["assigned_task"] = "Review earlier Browser Bridge receipts"
+        result = await self.call(
+            "bct_chain_recipe", action="prepare", work_id=self.work.work_id,
+            source_text="Prepare a separate VTL chain without creating another Supervisor.",
+        )
+        topology = result["state"]["chain_topology_preparation"]
+        self.assertEqual([C], [item["conversation_key"] for item in topology["global_supervisor_candidates"]])
+        self.assertFalse(topology["required_creation"]["supervisor"])
+
     async def test_manager_cannot_be_selected_as_worker_even_with_worker_tag(self):
         await self.save()
         self.snapshot["monitor"]["current_nodes"]["items"][1]["roles"] = ["manager", "worker"]

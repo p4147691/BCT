@@ -159,6 +159,20 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
 전송에는 Manager·초기 Worker·전역 Supervisor의 서로 다른 UUID와 현재 역할/대화망
 관계도 실행 조건이다. 이후 대상별 실제 실행 판단은 그 위에서 계속 분리한다.
 
+### 전역 Supervisor의 재사용과 분리
+
+전역 Supervisor는 특정 프로젝트 대화망의 구성원이 아니다. 역할 태그가 `Supervisor` 단독이고
+대화망이 비어 있는 열린 정확한 UUID라면, 브라우저 브릿지·VTL처럼 서로 다른 Manager가 같은
+Supervisor를 공통 조정·독립 검수에 재사용할 수 있다. 과거 `node_memo`와 `assigned_task`에
+프로젝트명이 있어도 그것은 이력·가용성 판단의 참고 정보일 뿐 프로젝트 귀속 또는 재사용 배제
+근거가 아니다. 실제 귀속 판단은 현재 역할 태그와 대화망 식별자다.
+
+공유는 작업 상태의 공유가 아니다. 각 전달은 자기 `Work ID`, `Task ID`, `Generation`,
+`Direction ID`, `Operation ID`, 정확한 대상 UUID와 영수증을 유지하며, 반환은 그 Direction의
+Manager로만 연결한다. Supervisor는 순서 조정과 독립 검수를 수행할 뿐 각 Manager의 지휘권이나
+Worker의 실행·반환 책임을 대체하지 않는다. 실제 중복 효과와 `UNKNOWN`은 기존 Claim·영수증
+계약으로 막고, 서로 다른 프로젝트라는 이유만으로 정상 Supervisor 재사용을 막지 않는다.
+
 ## Recover Node R: 선택형 노드 복구 점검
 
 `Recover Node R`은 “복구 담당 노드”가 아니라 **하나의 노드를 복구 흐름으로 점검하는
