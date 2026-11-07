@@ -66,6 +66,15 @@ class CIScopeTests(unittest.TestCase):
         self.assertNotIn("actions/cache/restore", workflow)
         self.assertNotIn("actions/cache/save", workflow)
 
+    def test_pull_requests_are_lightweight_and_main_runs_core(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("on:\n  push:\n    branches: [main]\n  pull_request:", workflow)
+        self.assertEqual(
+            2, workflow.count("github.event_name != 'pull_request' && needs.scope.outputs.core == 'true'"),
+        )
+
     def test_unknown_non_document_path_fails_closed(self):
         plan = scope.classify(["new-platform-boundary.bin"])
         self.assertFalse(plan.skip)

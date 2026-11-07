@@ -30,29 +30,66 @@ EXPLICIT_NEXT_TASK_SUFFIX = (
 )
 
 
+def execute_plan_progress_suffix(*, work_id: str, direction_id: str, task_id: str,
+                                 generation: int) -> str:
+    """Give the selected target the initial-plan and per-response contract.
+
+    This is an instruction footer only. BCT neither writes the target's plan nor treats
+    a progress fraction as proof that work was completed.
+    """
+    if not all(isinstance(value, str) and value for value in (work_id, direction_id, task_id)):
+        raise ValueError("CHAIN_EXECUTION_PLAN_CONTEXT_INVALID")
+    if type(generation) is not int or generation < 1:
+        raise ValueError("CHAIN_EXECUTION_PLAN_CONTEXT_INVALID")
+    return (
+        "[BCT Execute Plan and progress contract — requested by A]\n"
+        "Before performing the task, write one concrete Execute Plan and save it once with:\n"
+        f'`bct_set_execute_plan(work_id="{work_id}", direction_id="{direction_id}", '
+        f'task_id="{task_id}", generation={generation}, plan_text="...")`\n'
+        "Each plan revision must use numbered bounded steps and its own total. In every response, include "
+        "`PLAN REVISION: <current revision>` and "
+        "`PROGRESS: <completed>/<total> — completed evidence; next step`.\n"
+        "If the remaining plan needs adjustment, call `bct_update_execute_plan` with the returned plan_id, "
+        "the revised remaining plan, and the reason; the initial saved plan stays in history. Also state "
+        "`PLAN UPDATE: <reason and revised remaining steps>`. Reaching `<total>/<total>` does not "
+        "automatically return to A: if the original Direction is still unfinished, revise this same plan "
+        "and use NEXT TASK — SELF for its next bounded phase. Return with NEXT TASK — MANAGER only "
+        "when the task is complete, unsafe, blocked, or needs A's decision."
+    )
+
+
 def check_chain_work(work: Any, *, principal_id: str) -> dict[str, Any]:
-    """Check existing Work authority without adding or assuming capabilities."""
+    """Observe Work state for Chain Message; this never authorizes or blocks a send."""
     if str(getattr(work, "owner_principal_id", "")) != principal_id:
-        return {"status": "BLOCKED", "reason": "CHAIN_MESSAGE_WORK_OWNER_MISMATCH"}
+        return {
+            "status": "OBSERVED",
+            "work_access": "MISMATCH",
+            "reason": "CHAIN_MESSAGE_WORK_OWNER_MISMATCH",
+        }
     if str(getattr(work, "state", "")) != "ACTIVE":
-        return {"status": "BLOCKED", "reason": "CHAIN_MESSAGE_WORK_NOT_ACTIVE"}
+        return {
+            "status": "OBSERVED",
+            "work_access": "INACTIVE",
+            "reason": "CHAIN_MESSAGE_WORK_NOT_ACTIVE",
+        }
     actions = getattr(work, "actions", ())
     if not any(capability_matches(action, "browser") for action in actions):
         return {
-            "status": "BLOCKED",
+            "status": "OBSERVED",
+            "work_access": "BROWSER_ACTION_MISSING",
             "reason": "CHAIN_MESSAGE_BROWSER_ACTION_REQUIRED",
             "required_action": "browser",
-            "guidance": (
-                "Use an already authorized ACTIVE Work with browser action "
-                "or request a separately approved new Work. "
-                "The existing Work is never upgraded automatically."
-            ),
         }
-    return {"status": "READY", "required_action": "browser"}
+    return {
+        "status": "OBSERVED",
+        "work_access": "MATCHED",
+        "required_action": "browser",
+    }
 
 
 def prepare_chain_instruction(
-    instruction: str, *, output_contract: str = OUTPUT_CONTRACT_NONE
+    instruction: str, *, output_contract: str = OUTPUT_CONTRACT_NONE,
+    execution_plan_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return the exact authorized outgoing bytes or an explicit validation error.
 
@@ -66,6 +103,9 @@ def prepare_chain_instruction(
     outgoing = instruction
     if output_contract == OUTPUT_CONTRACT_EXPLICIT:
         outgoing += "\n\n" + EXPLICIT_NEXT_TASK_SUFFIX
+    plan_contract_appended = execution_plan_context is not None
+    if execution_plan_context is not None:
+        outgoing += "\n\n" + execute_plan_progress_suffix(**execution_plan_context)
     if len(outgoing) > 12000:
         raise ValueError("CHAIN_MESSAGE_OUTPUT_CONTRACT_TOO_LONG")
     return {
@@ -74,4 +114,5 @@ def prepare_chain_instruction(
         "instruction_characters": len(outgoing),
         "output_contract": output_contract,
         "output_contract_appended": output_contract == OUTPUT_CONTRACT_EXPLICIT,
+        "execution_plan_contract_appended": plan_contract_appended,
     }

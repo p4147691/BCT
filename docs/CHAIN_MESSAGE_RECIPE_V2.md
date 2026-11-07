@@ -5,7 +5,7 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
 설치된 설명서의 `manual.sha256`과 소스 파일의 UTF-8/LF 해시를 비교하면 같은 내용인지 확인할 수 있다.
 
 [실제 흐름](#실제-호출-흐름) · [이름과 역할](#이름과-역할) ·
-[부품 찾기](#필요한-부품과-도구-찾기) · [감시와 반환](#감시와-반환) · [갱신 방법](#설명서-갱신과-검사)
+[부품 찾기](#필요한-부품과-도구-찾기) · [응답 대기와 반환](#응답-대기와-반환) · [갱신 방법](#설명서-갱신과-검사)
 
 ## 바로 시작하는 노드 안내
 
@@ -36,6 +36,18 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
 이 문서는 **이 체크아웃의 소스 동작**을 설명한다. 테스트 통과는 main 병합·설치·
 LIVE 검증의 증거가 아니다. 실행 중인 버전은 Core 상태와 정확한 영수증으로 별도 확인한다.
 
+## 기본 운영 방침: 제한보다 관찰과 부분 진행
+
+중요하지 않거나 실제 효과 안전에 필요하지 않은 제한은 기본적으로 두지 않는다.
+역할, 대화망 모양, 처리 순서, 과거 경로, Work/세대의 참고값은 A가 판단할 때 읽는
+정보이며 그 자체로 전송을 막는 권한 장치가 아니다. 대상 하나가 현재 닫혀 있으면
+다른 정확한 대상의 전송은 계속하고, 닫힌 대상만 그 사실을 결과로 남긴다.
+
+유지하는 제한은 세 가지뿐이다. 같은 대화 UUID가 아닌 곳으로 임의 전환하지 않기,
+UNKNOWN 외부 효과를 새 ID로 재전송하지 않기, 이미 발생한 효과의 영수증을 덮어쓰지
+않기다. 같은 UUID가 다른 탭/창으로 이동한 경우에는 현재 관찰로 다시 결합한다.
+다른 대화 노드가 필요하면 A가 다음 Direction에서 그 UUID를 명시한다.
+
 대표 입구는 `bct_chain_message`다. 일반 작업 요청은 이 입구를 사용한다.
 사용자가 Task Message 또는 Send Message를 명시한 경우에만 그 방식을 직접 쓴다.
 `bct_task_message`는 사용자 방향을 다듬는 Set Direction의 다른 이름이 아니다.
@@ -46,31 +58,46 @@ LIVE 검증의 증거가 아니다. 실행 중인 버전은 Core 상태와 정�
 사용자의 요청 또는 정확한 BA/CA 반환
   ↓
 bct_chain_message(instruction=요청) 또는 action="prepare"
+  └─ 현재 A의 정확한 UUID를 알고 있으면 `origin_conversation_key`로 함께 넘김
   └─ bct_set_direction(action="prepare") 내부 호출
       ├─ 현재 Core/런타임/Work/작업 영수증/CI Inbox 조회
       ├─ bct_check_conversation_network 내부 호출
       │    열린 Node Info + RCC + 저장된 대화망 이력
+      ├─ 해당 A UUID가 제공된 경우 그 A의 `Recovery Notices` Wake 기록 조회
+      ├─ 같은 Work·A UUID에 정확히 연결된 `GitHub CI Notices` 조회
+      │    └─ 완료 결과를 보여 줄 뿐, 자동 전송·재시도·다음 Direction 작성은 하지 않음
       └─ A가 판단할 내부 질문·사용 가능한 대표 명령 목록·부품 검색 사용법 반환
   ↓ 실제 A의 판단 턴 — BCT가 AI 대신 생각하지 않음
 A가 질문에 답하고 전체 방향·대상별 지시·필요한 망 변경을 정함
   ├─ 필요한 경우 기존 부품으로 추가 정보/창·탭/Work 준비
   └─ bct_set_direction(action="save", assessment=판단, direction_text=방향)
   ↓
+선택: Direction에 `node_recovery: {conversation_key: 정확한 UUID}`가 있을 때만
+Recover Node R
+  ├─ Check Node R — 해당 노드의 현재 신호를 기록
+  └─ State R 다시 읽기 — 복구 확인 뒤에도 현재 현실을 다시 봄
+  └─ Pause / Replace / Reset은 자동 실행하지 않음. 필요하면 A가 별도 부품을 명시적으로 선택
+  └─ 감시 중인 노드가 반복 중단되면 BCT는 해당 A 반환 UUID의 `recovery_notices`에
+     `RECOVERY_NEEDED` Wake 기록만 남김. A가 읽고 다음 Direction을 작성하며,
+     BCT는 자동 재전송·새 Chat 생성·교체를 하지 않음.
+  ↓
 bct_chain_message(action="start", chain_direction_id=기록한 방향)
   ├─ 기록한 망 변경을 기존 bct_set_conversation_network로 적용
-  ├─ 현재 A Manager / 전역 Supervisor 한 명 / 각 대상 재확인
+  ├─ A의 반환 대화와 각 선언 대상의 현재 UUID·탭·창 재확인
   └─ 지금 실행할 각 대상 B/C/D에 대해
        ├─ 해당 대상만의 지시와 Direction 연결 기록
        ├─ 같은 대화 UUID의 현재 RCC 탭·창·세션 재확인
-       ├─ 기존 Delayed Send 감시 선등록
+       ├─ BCT의 응답 대기 기록 생성
        └─ 기존 send-message로 정확히 한 번 전송
   ↓ 실제 대상의 새 판단 턴
-B/C/D가 자기 범위의 구체적인 계획을 세움
+B/C/X/S가 자기 범위의 구체적인 계획을 세움
   └─ bct_set_execute_plan으로 해당 Direction/Task/generation에 기록
      → 필요한 부품·모듈·프로그램으로 실제 실행
-     → NEXT TASK — SELF: 다음 작업 / MANAGER: 반환 지시
-  ↓ 백그라운드 감시기
-응답 출처·완료·입력 가능 상태와 분기 확인
+     → 한 계획 revision의 N/N은 자동 반환 조건이 아님
+     → Direction이 아직 미완료면 같은 plan_id를 update하여 다음 bounded phase를 만들고 SELF
+     → 대상이 완료·위험·정체·A 판단 필요를 판단한 경우에만 MANAGER 반환
+  ↓ BCT 백그라운드 응답 처리
+응답 발견 기록 후 출처·완료·입력 가능 상태와 분기 확인
   ├─ SELF → 같은 대상에 다음 턴 전달, 기존 계획·맥락 연결
   └─ MANAGER → A에게 결과 반환
                  ↓
@@ -79,7 +106,7 @@ B/C/D가 자기 범위의 구체적인 계획을 세움
 현재 현실부터 다시 읽고 다음 방향을 판단
 ```
 
-하나의 도구 호출이 A와 B의 여러 AI 턴을 내부에서 대신 실행한다는 뜻이 아니다.
+하나의 도구 호출이 A와 대상 노드의 여러 AI 턴을 내부에서 대신 실행한다는 뜻이 아니다.
 입구가 조회와 질문 제공을 호출하고, **호출한 AI가 판단 결과로 다음 단계를 진행**한다.
 일반 Chat에서도 같은 MCP 명령을 호출할 수 있으면 같은 계약을 쓴다.
 Codex 전용 computer-use나 숨은 외부 오케스트레이터를 호출하지 않는다.
@@ -95,21 +122,29 @@ Codex 전용 computer-use나 숨은 외부 오케스트레이터를 호출하지
 | 완료 기준 | 완료·미완료·미확인, 요구할 실제 증거 |
 | 범위와 조건 | 우선순위·금지사항·보존 대상·확인할 불명확한 부분 |
 | 대화망 | 열린 Node Info와 저장된 이력 비교, 재사용·신규·병합 판단 |
-| Manager | 지시받은 A의 역할, 기존 Manager 역할 해제·승계 |
-| Supervisor | 전역 한 명 유지, 부재·닫힘·복수 역할 정리 |
+| A 반환 대상 | 이번 Chain 결과가 돌아올 정확한 A 대화 UUID. 역할 라벨과 별개 |
+| 대상 역할 라벨 | `worker`·`reviewer`·`deployer` 등 A가 붙이는 설명용 이름. 전송 권한이나 전역 단일성을 만들지 않음 |
 | 대상별 분담 | AB/AC/AD 수와 각각의 지시, 독립/선행 의존 작업 구분 |
 | 자율 선택 | 부품·블럭·레시피·PowerShell·프로그램·BDC·창/탭 기능, B 재량 |
 | 정체·승계 | Check Node가 기존 DOM·연결·진행 신호를 조합 → Recheck Node가 변화 비교 → 필요한 경우에만 후속 복구, 기존 작업 영수증 보존 |
 | 검증·반환 | Supervisor 통합 검토, CI 알람, 배포/E2E 순서·rollback·반환 조건 |
 
-save는 필요한 경우에만 기록한 `assessment.answers`, Manager/Supervisor UUID, 대화망 이름,
+### 통합 CI 책임
+
+Worker는 자신의 Worktree에서 필요한 로컬 검증과 변경·증거 보고를 한다. 개별 Worker가
+PR이나 `main` push를 만들지 않는 한 GitHub CI는 시작되지 않는다. Supervisor가 통합 PR과
+`main` 병합을 맡는다. PR은 범위·설명서 일치만 확인하고, 병합 뒤의 정확한 `main` revision에서
+6분할 Core CI와 필요한 E2E를 Supervisor가 확인한 뒤 A에 반환한다. CI 결과는 역할 라벨이
+아니라 그 CI를 등록한 정확한 실행 대상 Work·대화 UUID에 연결한다.
+
+save는 필요한 경우에만 기록한 `assessment.answers`, A의 반환 대화 UUID, 선택 메타데이터,
 대상별 `{conversation_key, role, instruction}`, `network_updates`를 검증하고
 원문과 함께 기록한다. 같은 Direction ID의 내용 변경은 거부한다.
 `bct_get_direction`으로 판단과 대상별 Task/Operation 연결을 함께 읽는다.
 
 `conversation_key`는 Monitor 번호(`N96`)나 창 제목이 아니라 소문자 canonical 대화 UUID다.
 `targets`의 허용 키는 정확히 `conversation_key`, `role`, `instruction`이고 역할은
-`worker` 또는 `supervisor`다. 기존 대화망을 그대로 재사용하면 `network_updates: []`가
+`worker`, `reviewer`, `deployer`처럼 A가 붙이는 자유 라벨이다. 기존 대화망을 그대로 재사용하면 `network_updates: []`가
 정상이다. 저장 실패 응답의 `assessment_contract`는 누락된 질문 키, 잘못된 대상의
 인덱스·허용 키, UUID/역할 규칙과 같은 Direction ID로 안전하게 재시도하는 방법을 돌려준다.
 저장 성공 뒤에는 반드시 `bct_get_direction`으로 Direction ID와 기록된 대상·판단을 읽고
@@ -120,7 +155,18 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
 
 질문은 A의 내부 판단 안내이며 저장을 허가하는 설문 관문이 아니다. `assessment.answers`는
 전부 생략하거나 필요한 판단 근거만 기록할 수 있다. BCT가 검증하는 것은 실제 실행에
-필요한 구체적 식별값·역할·소속·입력 계약·동일 영수증 등의 조건이다.
+필요한 구체적 대화 UUID·입력 계약·동일 영수증 등의 조건이다. 역할과 소속은 판단용
+메타데이터이며 단독으로 전송을 막지 않는다.
+
+## Recover Node R: 선택형 노드 복구 점검
+
+`Recover Node R`은 “복구 담당 노드”가 아니라 **하나의 노드를 복구 흐름으로 점검하는
+부분 레시피**다. Direction의 선택 필드 `node_recovery`에 정확한 대화 UUID 하나를 기록할 때만
+실행한다. 구성은 `Check Node R → State R 재읽기`다.
+
+현재 이 레시피는 복구 필요 신호를 기록하고 최신 상태를 돌려줄 뿐이다. `Pause Node`,
+`Replace Node R`, `Reset Node R`은 브라우저 전송·승계·탭 닫기 같은 외부 효과가 있으므로
+이 레시피가 알아서 실행하지 않는다. A가 그 다음 Direction 또는 명시적 부품 호출로 선택한다.
 다른 AI 노드의 검토 및 실제 결과 검증은 여전히 필요하다.
 
 ## 망 준비와 1:N
@@ -132,19 +178,17 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
   기록하여 뒤늦게 사용자 변경을 덮어쓰지 않는다.
 - 창·탭이 없으면 A가 기존 생성·복구 부품으로 준비하고 실제 대화 UUID를 얻는다.
   새 브라우저를 몰래 열거나, 제목으로 UUID를 추측하지 않는다.
-- Supervisor가 없거나 복수이면 A가 기존 설정/복구 기능으로 준비·정리한다.
-  현재 관찰이 그 판단과 일치하기 전에는 전송하지 않는다. 준비 필요는 영구 차단이
-  아니라 같은 Direction을 안전하게 재확인할 수 있는 상태다.
+- 역할·대화망 표기는 A의 판단용 메타데이터다. Supervisor 부재·복수·역할 변경만으로
+  전송을 막지 않는다. 현재 UUID가 열린 대상만 전송하고, 없는 대상은 결과에 남긴다.
 - `targets`에는 **지금 독립적으로 시작 가능한 대상만** 넣는다. 선행 구현 결과가
   필요한 병합·배포는 같은 목록에 미리 실행시키지 않고 BA 뒤 새 Direction에서 C에게 맡긴다.
 - 하나의 A 방향 아래 대상별 Direction/Task/Operation이 따로 연결된다. 이것은
   기존 정확 1:1 전송 원장을 재사용하기 위한 내부 기록이며 새 사용자 명령이 아니다.
 - 특정 대상만 진행하려면 같은 Direction과 Task/Operation 접두사에
   `target_conversation_key`를 지정한다. 이미 시작한 대상은 재전송하지 않는다.
-- 망 변경 전 모든 필요한 대상의 현재 연결을 먼저 검사하고, 변경 후 역할·소속을
-  재검사한다. 그 사이 창이 닫힐 수 있으므로 전체 과정은 단일 원자적 효과가 아니다.
-  `network_results`, `network_preparation_applied`, `all_targets_started`로 부분 효과와
-  전송 결과를 구분한다. 적용된 망 변경을 지우거나 자동으로 되돌리지 않는다.
+- 망 변경과 대상 전송은 부분 효과일 수 있다. 한 대상이 닫혀도 다른 열린 대상의 전송은
+  계속하며, `network_results`, `network_preparation_applied`, `all_targets_started`로 결과를
+  구분한다. 적용된 망 변경을 지우거나 자동으로 되돌리지 않는다.
 
 ## Work와 권한
 
@@ -159,7 +203,17 @@ ChatGPT Work 모드, 한 번의 Task ID와 다르며 이름이나 기존 ID를 �
 동일 Operation 영수증, 자원 충돌, UNKNOWN 재전송 및 고위험 승인은 계속 차단한다.
 파일 효과의 Work root 경계도 유지한다.
 
-## 감시와 반환
+## 응답 대기와 반환
+
+사람이 읽는 공통 용어는 다음 네 단계다. 이는 창을 잠그거나 닫고 여는 절차가 아니다.
+
+```text
+전송 기록 생성 → 응답 대기 → 응답 발견 → 결과 기록
+```
+
+`Watch Alarm R`은 코드 안의 부분 레시피 이름이다. 사람에게는 “BCT의 응답 대기·응답 발견
+처리”라고 설명한다. A는 대기하지 않고, BCT 백그라운드가 해당 전송의 다음 응답을 찾는다.
+기록은 끝난 뒤에도 지우거나 해지하지 않고 결과가 추가된 이력으로 남는다.
 
 공개 명령과 Python 함수는 `bct_send_delayed_message`, 구현 모듈은
 `bct.send_delayed_message`, 새 내부 요청 command는 `send-delayed-message`다.
@@ -168,23 +222,21 @@ ChatGPT Work 모드, 한 번의 Task ID와 다르며 이름이나 기존 ID를 �
 키와 기존 영수증은 변경하지 않으며, 기존 준비 요청의 옛 command는 이력 호환을 위해
 실행 경계에서만 읽는다. 이름 변경은 감시·전송 정책 변경이 아니다.
 
-감시기는 BCT 백그라운드 런타임에서 일한다. A가 화면을 붙잡고 기다리는 방식이
+응답 대기는 BCT 백그라운드 런타임에서 일한다. A가 화면을 붙잡고 기다리는 방식이
 아니므로 사용자와 대화하거나 다른 독립 작업을 진행할 수 있다. WATCHING은
 정확한 원 전송에 대응하는 응답 완료를 기다리는 상태이며 작업 완료 증거가 아니다.
 
-감시 중 정확한 Worker 대화의 RCC DOM 상태가 연결 끊김, 다시 보내기, 새 Chat 필요,
-복구 필요를 연속 두 번 표시하면 기존 Chain의 다음 generation으로 자동 재개한다.
-먼저 같은 대화에 한 번 계속 지시하고, 효과가 없다고 확인되거나 새 Chat이 필요하면
-기존 생성·정확 전송·대화망 승계 부품으로 새 대화에서 이어간다. 새 대화 생성 뒤
-전송만 실패한 경우에는 같은 새 탭을 재사용하여 불필요한 탭을 늘리지 않는다.
-확정된 NOT_APPLIED는 새 Operation으로 계속 시도하지만, 전송 효과가 UNKNOWN이면
-중복 실행을 피하기 위해 해당 generation을 UNKNOWN으로 끝내고 자동 재전송하지 않는다.
+감시 중 정확한 Worker 대화가 연결 끊김, 다시 보내기, 새 Chat 필요, 복구 필요를
+연속 두 번 표시하면 BCT는 `RECOVERY_NEEDED` 영수증을 남긴다. 이때 BCT는 Worker에게
+자동 재전송하지 않고, 새 Chat을 만들거나 역할·대화망을 승계하지도 않는다. 현재 보고
+대상은 이 영수증을 읽어 `Recover Node R` Direction을 작성하고, 필요할 때만 Pause,
+Replace, Reset을 명시적으로 선택한다.
 
-각 대상에는 SELF/MANAGER 명시 출력 계약을 붙인다. 그 **동일한 원문**이 감시
-선등록과 실제 전송에 사용된다. 기본 `max_generations=0`은 고정 반복 한도 없음이다.
-진전·위험·완료 여부는 B가 판단하며, 사용자/A가 명시한 예산만 선택적으로 제한한다.
+각 대상에는 SELF/MANAGER 명시 출력 계약을 붙인다. 그 **동일한 원문**이 응답 대기 기록과
+실제 전송에 사용된다. 기본 `max_generations=0`은 고정 반복 한도 없음이다.
+진전·위험·완료 여부는 대상 노드가 판단하며, 사용자/A가 명시한 예산만 선택적으로 제한한다.
 
-SELF로 같은 B에게 다음 회차가 전달되면 B는 메시지에 표시된 정확한
+SELF로 같은 대상에게 다음 회차가 전달되면 대상은 메시지에 표시된 정확한
 `bct_send_delayed_message(work_id=..., task_id=...)`를 먼저 호출한다. 다음 세대에는
 이전 정확 전송의 대상·Manager·RCC 결합이 이미 예약되어 있으므로 창·탭이나 target을
 다시 고르지 않으며 범용 execute capability를 사용하지 않는다. 선예약이 APPLIED인 것을
@@ -207,11 +259,16 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
   `DIRECT_EXACT_TARGET`은 Direction 없이 정확한 대상·지시를 명시한 호환 직접 경로다.
   직접 경로는 유효한 1:1 전송·감시일 수 있으나 대화망 판단이나 Direction 저장 성공을
   뜻하지 않는다. 과거 감시는 임의로 재분류하지 않고 `LEGACY_UNCLASSIFIED`로 읽는다.
-- 기존 `bct_prepare_supervisor_chain` 기록과 과거 ID는 삭제하지 않는다. 새 질문 기반
-  흐름은 그 특수 경로를 호출하지 않고 같은 대상별 전송 경로로 C를 처리한다.
-- `bct_set_execute_plan` / `bct_get_execute_plan`은 B가 작성한 정확한 계획의
+- 기존 `bct_prepare_supervisor_chain` 기록과 과거 ID는 삭제하지 않는다. 이 도구는
+  저장된 `assessment`가 없는 옛 Direction만 읽는 호환 경로다. 새 질문 기반 Direction으로
+  호출하면 `SUPERVISOR_ROUTE_LEGACY_COMPATIBILITY_ONLY`를 돌려주며, C를 포함한 모든 대상은
+  같은 대상별 Chain Recipe 전송 경로로 처리한다.
+- `bct_set_execute_plan` / `bct_get_execute_plan`은 수신 대상이 작성한 정확한 계획의
   저장·조회와 같은 Chain의 SELF 맥락 연결이다. 임의 프로그램을 실행하는 명령이 아니다.
-  A의 전송 성공만으로 B가 계획을 작성·저장했다는 사실까지 증명되지는 않는다.
+  하나의 Direction/Task는 하나의 `plan_id`를 가지며, 여러 작업 phase는 새 계획 ID가 아니라
+  `bct_update_execute_plan` revision으로 이어진다. 한 revision의 `N/N` 달성은 자동 반환이
+  아니며, 수신 대상이 원 Direction의 완료 여부와 NEXT TASK를 판단한다.
+  A의 전송 성공만으로 수신 대상이 계획을 작성·저장했다는 사실까지 증명되지는 않는다.
 - 기존 `bct_run_task`, `bct_plan_run`, `bct_set_project_plan`은 별도 기능이다.
   이 레시피는 그들을 숨은 실행기로 호출하지 않으며 `bct_run_execute_plan`을 새로 만들지 않는다.
 - `action="preflight"`는 읽기 전용이다. 망 변경을 미리 적용하지 않으므로 준비가
@@ -231,7 +288,7 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 | `bct_check_conversation_network` | 현재 관찰과 저장된 망 정보를 함께 점검. 조회가 망 변경을 뜻하지 않음 |
 | `bct_set_conversation_network` | A가 결정한 망·역할·Node Info 변경을 기존 계약으로 적용 |
 | `bct_set_direction` / `bct_get_direction` | A 내부 질문·판단·정제된 지시의 준비/저장과 조회 |
-| `bct_set_execute_plan` / `bct_get_execute_plan` | B가 생각한 세부 계획의 결합·저장과 조회. 계획 문장 자체를 실행하지 않음 |
+| `bct_set_execute_plan` / `bct_get_execute_plan` | 수신 대상이 생각한 세부 계획의 결합·저장과 조회. 계획 문장 자체를 실행하지 않음 |
 | `bct_send_delayed_message` | 해당 작업의 응답 완료를 백그라운드에서 기다린 뒤 SELF/MANAGER 후속 지시를 전달하도록 등록 |
 | `bct_context` | 특정 작업·회차의 이전 응답 증거, SELF/MANAGER 결정과 이어가기 기록 조회. 조회 자체는 감시하거나 전송하지 않음 |
 | `bct_capabilities` | 현재 도구·입력 계약·부품·이 설명서 조회. 도구 실행이나 권한 부여는 아님 |

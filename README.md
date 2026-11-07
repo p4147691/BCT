@@ -96,6 +96,14 @@ GitHub main은 BCT의 유일한 공식 소스다. 인증정보, Chrome 프로필
 
 ```powershell
 python -m pip install -e .
-python -m unittest discover -s tests -v
+# 평소에는 수정한 영역에 맞는 검증만 선택한다. PR은 범위/설명서만 확인하고,
+# main 병합 뒤 GitHub CI의 6개 병렬 shard가 전체 Core 검증을 맡는다.
 python -m compileall -q src tests
 ```
+
+워커는 Worktree에서 필요한 로컬 검증과 결과 보고만 한다. 감독관이 통합 PR·main 병합을
+맡으며, PR은 범위/설명서 일치만 확인한다. 전체 Core CI와 필요한 E2E는 main 병합 뒤
+감독관의 흐름에서 확인한다. 전체 테스트를 한 프로세스에서 직렬로 돌리는 명령은 일상 검증용이 아니다. 수정 범위에 맞는
+검증 명령은 해당 작업의 검증 기록에만 적는다. CI가 완료될 때까지
+대기하지 말고 다음 독립 작업을 계속한다. CI 결과는 GitHub Inbox 알림 연결이 완료되기 전까지는
+GitHub의 Checks 화면에서 확인한다.

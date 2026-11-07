@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bct.chain_direction import ChainDirectionLedger
-from bct.chain_execution_plan import ChainExecutionPlanLedger
+from bct.chain_execution_plan import ChainExecutionPlanLedger, check_execute_plan
 from bct.core.models import Work
 from bct.core.store import Store
 from bct.send_delayed_message import DurableWatchLedger, SendDelayedMessageRunner, Watch
@@ -94,7 +94,7 @@ class ChainDirectionLedgerTests(unittest.TestCase):
                     generation=1, plan_text="Inspect, modify reversibly, then verify.",
                 )
 
-    def test_b_turn_rejects_a_second_execute_plan_instead_of_guessing_one(self):
+    def test_chain_rejects_a_second_execute_plan_instead_of_guessing_one(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
             directions = ChainDirectionLedger(store)
@@ -116,14 +116,107 @@ class ChainDirectionLedgerTests(unittest.TestCase):
                 plan_id="plan-1", work_id="work-1", direction_id="direction-1",
                 task_id="task-1", generation=1, plan_text="Inspect then verify.",
             )
-            with self.assertRaisesRegex(ValueError, "TURN_CONFLICT"):
+            with self.assertRaisesRegex(ValueError, "CHAIN_CONFLICT"):
                 plans.save(
                     plan_id="plan-2", work_id="work-1", direction_id="direction-1",
-                    task_id="task-1", generation=1, plan_text="Do something else.",
+                    task_id="task-1", generation=2, plan_text="Do something else.",
                 )
+
+    def test_execute_plan_update_preserves_initial_plan_and_exposes_current_revision(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            directions = ChainDirectionLedger(store)
+            directions.save(
+                direction_id="direction-update", work_id="work-1", source_kind="USER",
+                decision="NEW_TASK", direction_text="Perform the bounded task.",
+            )
+            directions.plan_chain(
+                direction_id="direction-update", work_id="work-1",
+                task_id="task-1", operation_id="chain-update",
+            )
+            directions.mark_chain_started(
+                direction_id="direction-update", work_id="work-1",
+                task_id="task-1", operation_id="chain-update",
+            )
+            plans = ChainExecutionPlanLedger(store)
+            plans.save(
+                plan_id="plan-update", work_id="work-1", direction_id="direction-update",
+                task_id="task-1", generation=1, plan_text="1. Inspect. 2. Verify.",
+            )
+            revised = plans.update(
+                plan_id="plan-update", plan_text="1. Inspect. 2. Repair. 3. Verify.",
+                update_reason="The inspection added one safe repair step.",
+            )
+            self.assertEqual(1, revised["revision"])
+            self.assertEqual("1. Inspect. 2. Verify.", revised["original_plan_text"])
+            self.assertEqual("1. Inspect. 2. Repair. 3. Verify.", revised["plan_text"])
+
+    def test_chain_plan_continues_across_later_b_generations(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            directions = ChainDirectionLedger(store)
+            directions.save(
+                direction_id="direction-continuing", work_id="work-1", source_kind="USER",
+                decision="NEW_TASK", direction_text="Perform the bounded task.",
+            )
+            directions.plan_chain(
+                direction_id="direction-continuing", work_id="work-1",
+                task_id="task-1", operation_id="chain-continuing",
+            )
+            directions.mark_chain_started(
+                direction_id="direction-continuing", work_id="work-1",
+                task_id="task-1", operation_id="chain-continuing",
+            )
+            plans = ChainExecutionPlanLedger(store)
+            plans.save(
+                plan_id="plan-continuing", work_id="work-1",
+                direction_id="direction-continuing", task_id="task-1",
+                generation=1, plan_text="1. Inspect. 2. Verify.",
+            )
+            plans.update(
+                plan_id="plan-continuing",
+                plan_text="1. Inspect. 2. Repair. 3. Verify.",
+                update_reason="One bounded repair was found.",
+            )
+            continued = plans.get_for_chain(
+                store=store, work_id="work-1", direction_id="direction-continuing",
+                task_id="task-1",
+            )
+            self.assertEqual("plan-continuing", continued["plan_id"])
+            self.assertEqual(1, continued["generation"])
+            self.assertEqual(1, continued["revision"])
+            self.assertEqual("1. Inspect. 2. Repair. 3. Verify.", continued["plan_text"])
+            assessment = check_execute_plan(
+                plan=continued,
+                response_text="PLAN REVISION: 1\nPROGRESS: 2/3 — repair complete; verify next",
+            )
+            check = plans.record_execute_plan_check(
+                work_id="work-1", direction_id="direction-continuing", task_id="task-1",
+                generation=2, response_sha256="a" * 64, assessment=assessment,
+            )
+            self.assertEqual(2, check["completed_steps"])
+            self.assertEqual(3, check["total_steps"])
+            self.assertEqual((), check["issues"])
+            listed = ChainExecutionPlanLedger.list_latest_execute_plan_checks(
+                store=store,
+            )
+            self.assertEqual(1, len(listed))
+            self.assertEqual("OK", listed[0]["status"])
+            self.assertEqual(1, listed[0]["current_plan_revision"])
+            self.assertEqual(2, listed[0]["completed_steps"])
 
 
 class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_status_exposes_execute_plan_checks_without_creating_them(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            mcp = build_mcp(
+                SimpleNamespace(operations=Operations(), store=store),
+                compact_catalogue=True, status_provider=lambda: {"monitor": {}},
+            )
+            _, status = await mcp.call_tool("bct_status", {"scope": "bct"})
+            self.assertEqual([], status["execute_plan_checks"])
+
     async def test_direction_and_execute_plan_names_are_public(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
@@ -131,7 +224,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             names = {tool.name for tool in await mcp.list_tools()}
             self.assertTrue({
                 "bct_set_direction", "bct_get_direction",
-                "bct_set_execute_plan", "bct_get_execute_plan",
+                "bct_set_execute_plan", "bct_update_execute_plan", "bct_get_execute_plan",
                 "bct_set_project_plan", "bct_get_conversation_network",
                 "bct_prepare_supervisor_chain",
             } <= names)
@@ -356,10 +449,12 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("WATCHING", started["status"])
             self.assertEqual("CHAIN_STARTED", started["chain_direction"]["chain_state"])
             self.assertEqual(["chain-two-arm", "chain-two-send"], [call["operation_id"] for call in ops.calls])
-            self.assertEqual(
-                "Do the second bounded task, then return to A.",
-                ops.calls[1]["arguments"]["text"],
-            )
+            sent_text = ops.calls[1]["arguments"]["text"]
+            self.assertTrue(sent_text.startswith(
+                "Do the second bounded task, then return to A.\n\n"
+            ))
+            self.assertIn("bct_set_execute_plan(", sent_text)
+            self.assertIn("PROGRESS: <completed>/<total>", sent_text)
 
             # Only after delivery does B author its own concrete plan. It may
             # develop A's direction and is intentionally not text-equal to it.

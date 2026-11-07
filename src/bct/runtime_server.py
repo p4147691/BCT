@@ -19,6 +19,7 @@ from bct.core.capabilities import canonical_capability
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state
+from bct.status_views import status_view
 from bct.core.chat_stream_rcc_watch import ChatStreamRccWatch
 from bct.integrations.rcc import NamedPipeRelayClient
 from bct.node_label_notifications import NodeLabelNotifier, ensure_notification_work
@@ -545,6 +546,25 @@ def main() -> int:
             rcc_source_path=RCC_BACKGROUND_SOURCE_PATH,
             rcc_live_path=RCC_BACKGROUND_LIVE_PATH,
         ))
+
+    @mcp.custom_route("/monitor/current-nodes", methods=["GET"], include_in_schema=False)
+    async def monitor_current_nodes(request: Request) -> JSONResponse:
+        """Return the small, read-only current-node view from one Monitor snapshot.
+
+        This route exists for callers that need an exact open conversation/node
+        identity before acting.  It deliberately does not expose the historical
+        work/event lists from ``/monitor/state`` and does not create a watcher,
+        lease, delivery, or permission decision.
+        """
+        snapshot = await asyncio.to_thread(status_snapshot)
+        monitor = snapshot.get("monitor") if isinstance(snapshot.get("monitor"), dict) else {}
+        return JSONResponse({
+            "schema": 1,
+            "source": "SAME_MONITOR_SNAPSHOT",
+            "generated_at": monitor.get("generated_at"),
+            "current_nodes": status_view(snapshot, "node").get("current_nodes"),
+            "conversation_network_managers": monitor.get("conversation_network_managers", []),
+        }, headers={"Cache-Control": "no-store"})
 
     @mcp.custom_route("/monitor", methods=["GET"], include_in_schema=False)
     async def monitor(request: Request) -> FileResponse:

@@ -189,7 +189,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks", "bct_run_plan", "bct_set_conversation_network",
-                            "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_prepare_supervisor_chain", "bct_set_execute_plan", "bct_get_execute_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_send_delayed_message", "bct_delayed_send_cancel",
+                            "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_recipe", "bct_prepare_supervisor_chain", "bct_set_execute_plan", "bct_update_execute_plan", "bct_get_execute_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_send_delayed_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_set_project_plan", "bct_plan_run", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
                             "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
@@ -220,7 +220,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks", "bct_run_plan", "bct_set_conversation_network",
-                            "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_prepare_supervisor_chain", "bct_set_execute_plan", "bct_get_execute_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_send_delayed_message", "bct_delayed_send_cancel",
+                            "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_recipe", "bct_prepare_supervisor_chain", "bct_set_execute_plan", "bct_update_execute_plan", "bct_get_execute_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_send_delayed_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_set_project_plan", "bct_plan_run", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
                             "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
@@ -495,6 +495,13 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(self.release_sha, monitor_state["service"]["release_sha"])
         self.assertGreaterEqual(monitor_state["counts"]["works"], 2)
         self.assertGreaterEqual(monitor_state["counts"]["operations"], 2)
+
+        current_nodes = httpx.get(f"http://127.0.0.1:{self.port}/monitor/current-nodes", timeout=3)
+        self.assertEqual(200, current_nodes.status_code)
+        current_node_view = current_nodes.json()
+        self.assertEqual("SAME_MONITOR_SNAPSHOT", current_node_view["source"])
+        self.assertIn("items", current_node_view["current_nodes"])
+        self.assertIn("conversation_network_managers", current_node_view)
 
     def test_authenticated_catalogue_work_call_and_duplicate_receipt(self):
         asyncio.run(self.exercise_mcp())

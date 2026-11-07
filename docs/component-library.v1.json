@@ -40,7 +40,7 @@
       ],
       "contract": "General Chain Message recipe: current reality and questions for A, A-authored direction and per-recipient network decisions, exact first delivery and background response watch; B authors its own Execute Plan, then SELF or MANAGER. Manager return re-enters prepare for fresh A judgment. Existing exact-identity calls remain supported; BCT does not run an AI judgment loop internally.",
       "effects": ["direction-and-target-ledger", "declared-conversation-network-updates", "exact-browser-message", "durable-response-watch"],
-      "safety": ["actual-ai-turn-boundaries", "fresh-recipient-uuid-and-role", "per-target-instructions-and-receipts", "work-authorization", "partial-effects-reported", "unknown-no-replay"],
+      "safety": ["actual-ai-turn-boundaries", "fresh-recipient-uuid", "role-label-is-advisory", "per-target-instructions-and-receipts", "work-authorization", "partial-effects-reported", "unknown-no-replay"],
       "used_by": ["ordinary-user-assigned-work"]
     },
     {
@@ -54,7 +54,7 @@
       "contract": "Read-only reusable-part search, exact runtime tool metadata and one packaged Chain Message manual shared by Chat, Work and Codex. Source-backed quick guidance is included in discovery, Chain prepare and new per-target instructions; looking up bct_chain_message returns the full manual. Existing recorded instructions remain immutable. Selection remains an A/B decision. Generated bundle is checked against canonical docs and affected sources.",
       "effects": [],
       "safety": ["no-tool-execution", "no-permission-grant", "runtime-schema-authority", "internal-parts-not-callable-tools", "source-not-live-proof"],
-      "used_by": ["bct.manager_direction", "bct.worker_execution_plan", "bct.chain_message"]
+      "used_by": ["bct.manager_direction", "bct.target_execution_plan", "bct.chain_message"]
     },
     {
       "id": "bct.chain_entry_policy",
@@ -129,7 +129,7 @@
           "symbol": "bct_set_direction / bct_get_direction"
         }
       ],
-      "contract": "Reusable Set Direction stage: prepare reads reality and current/historical networks, supplies ten internal questions for A, and save validates A's answers, original user request or exact return, network changes and distinct per-target instructions. Chain Message composes this stage and reuses exact send/watch for each A-selected recipient. BCT does not make AI judgments.",
+      "contract": "Reusable Set Direction stage: prepare reads reality and current/historical networks and supplies internal review items for A. Save records A's original user request or exact return, optional network changes, and distinct per-target instructions. Chain Message composes this stage and reuses exact send/watch for each A-selected recipient. BCT does not make AI judgments.",
       "effects": [
         "bct-sqlite-direction-metadata"
       ],
@@ -137,7 +137,8 @@
         "work-owner-bound",
         "exact-manager-return-source-when-applicable",
         "per-target-direction-and-receipt-lineage",
-        "fresh-uuid-role-network-check-before-send",
+        "fresh-recipient-uuid-check-before-send",
+        "role-and-network-are-advisory",
         "idempotent-direction-id",
         "no-external-message-send"
       ],
@@ -146,7 +147,7 @@
       ]
     },
     {
-      "id": "bct.worker_execution_plan",
+      "id": "bct.target_execution_plan",
       "kind": "module",
       "maturity": "isolated",
       "implementation": [
@@ -156,10 +157,10 @@
         },
         {
           "path": "src/bct/mcp_server.py",
-            "symbol": "bct_set_execute_plan / bct_get_execute_plan"
+            "symbol": "bct_set_execute_plan / bct_update_execute_plan / bct_get_execute_plan"
         }
       ],
-      "contract": "Durably records B's one concrete execution plan only after the linked A direction has been delivered. The exact plan is returned only to the same Worker on that Chain's next SELF continuation; B may choose files, tools, tests, and safe next steps within A's stated boundaries.",
+      "contract": "Durably records one receiving target's concrete execution plan only after the linked A direction has been delivered. The exact plan is returned only to that same target across SELF continuations; the target may revise it while retaining the initial text. The same contract applies to B, C, X, and Supervisor targets. Separate primitive blocks check the target's declared revision/progress and record one non-blocking observation per generation for later status display.",
       "effects": [
         "bct-sqlite-execution-plan-metadata"
       ],
@@ -172,6 +173,78 @@
       ],
       "used_by": [
         "bct.chain_message"
+      ]
+    },
+    {
+      "id": "bct.check_execute_plan",
+      "kind": "primitive",
+      "maturity": "bounded",
+      "implementation": [
+        {
+          "path": "src/bct/chain_execution_plan.py",
+          "symbol": "check_execute_plan"
+        }
+      ],
+      "contract": "Read one B response against one saved Execute Plan and return only plan presence, reported revision, completed/total steps, and explicit missing or mismatch markers.",
+      "effects": [],
+      "safety": [
+        "no-durable-write",
+        "no-route-selection",
+        "no-message-send",
+        "no-ai-judgment"
+      ],
+      "used_by": [
+        "bct.watch_alarm_continuation"
+      ]
+    },
+    {
+      "id": "bct.record_execute_plan_check",
+      "kind": "primitive",
+      "maturity": "bounded",
+      "implementation": [
+        {
+          "path": "src/bct/chain_execution_plan.py",
+          "symbol": "ChainExecutionPlanLedger.record_execute_plan_check"
+        }
+      ],
+      "contract": "Persist the one observed Execute Plan check for a Chain Direction, Task, and B generation so status readers can display it later. A conflicting later observation is retained as a conflict result, not overwritten or used to stop the Chain.",
+      "effects": [
+        "bct-sqlite-execution-plan-check"
+      ],
+      "safety": [
+        "exact-chain-task-generation-key",
+        "first-observation-preserved",
+        "no-route-selection",
+        "no-message-send",
+        "nonblocking-observation"
+      ],
+      "used_by": [
+        "bct.watch_alarm_continuation",
+        "future-status-card"
+      ]
+    },
+    {
+      "id": "bct.check_execute_plan_recipe",
+      "kind": "partial_recipe",
+      "maturity": "bounded",
+      "implementation": [
+        {
+          "path": "src/bct/send_delayed_message.py",
+          "symbol": "check_execute_plan_recipe"
+        }
+      ],
+      "contract": "Check Execute Plan R composes Get Execute Plan, Check Execute Plan, and Record Execute Plan Check for one completed B response. It returns visible markers to the existing continuation but never selects a route, sends a message, or blocks the Chain.",
+      "effects": [
+        "bct-sqlite-execution-plan-check"
+      ],
+      "safety": [
+        "same-chain-task-generation-only",
+        "no-route-selection",
+        "no-message-send",
+        "nonblocking-observation"
+      ],
+      "used_by": [
+        "bct.watch_alarm_continuation"
       ]
     },
     {
@@ -491,15 +564,15 @@
     },
     {
       "id": "node.recovery",
-      "kind": "full_recipe",
+      "kind": "partial_recipe",
       "maturity": "isolated",
       "implementation": [
-        {"path": "docs/PRIMITIVE_MODULES_V1.md", "symbol": "Node Recovery"}
+        {"path": "src/bct/mcp_server.py", "symbol": "recover_node_recipe / bct_chain_recipe(action=recover_node)"}
       ],
-      "contract": "Check, recheck, pause, replace when needed, then reset the old node without duplicate external effects.",
-      "effects": ["node.check", "node.recheck", "node.pause", "node.replace", "node.reset"],
-      "safety": ["manager-judgment-between-stages", "unknown-no-resend", "bounded-old-node-cleanup"],
-      "used_by": []
+      "contract": "A Direction may declare one exact node UUID for Recover Node R. It composes Check Node R with a fresh State R reread before send preparation. It never silently pauses, replaces, resets, or sends; those remain separately selected recipes.",
+      "effects": ["node.check"],
+      "safety": ["exact-conversation-uuid", "no-automatic-pause-replace-reset", "fresh-state-reread", "unknown-no-resend"],
+      "used_by": ["bct.chain_message"]
     }
   ]
 }

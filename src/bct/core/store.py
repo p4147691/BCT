@@ -1145,11 +1145,14 @@ class Store:
         return self._github_inbox_row(row)
 
     def get_github_run_inbox(self, *, node_id: str | None = None, work_id: str | None = None,
-                             acknowledge: bool = False, limit: int = 80) -> list[dict[str, Any]]:
+                             conversation_uuid: str | None = None, acknowledge: bool = False,
+                             limit: int = 80) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 80))
         clauses, values = [], []
         if node_id: clauses.append("r.node_id=?"); values.append(node_id)
         if work_id: clauses.append("r.work_id=?"); values.append(work_id)
+        if conversation_uuid:
+            clauses.append("r.conversation_uuid=?"); values.append(conversation_uuid)
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         with self.transaction() if acknowledge else self._readonly() as db:
             rows = db.execute("SELECT i.*,r.work_id,r.node_id,r.conversation_uuid,r.notify_user,r.notify_manager,r.unread,r.delivery_state,r.next_step AS recipient_next_step "

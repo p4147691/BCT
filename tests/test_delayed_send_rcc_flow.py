@@ -188,7 +188,7 @@ class SelfPrearmGuidanceTests(unittest.TestCase):
         self.assertIn("대상·창·탭을 다시 고르지 않습니다", text)
         self.assertIn("범용 execute capability", text)
 
-    def test_exact_watched_tab_detach_restarts_in_new_chat(self):
+    def test_exact_watched_tab_detach_records_recovery_needed_without_new_chat(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             policy = root / "bct.toml"
@@ -236,17 +236,14 @@ class SelfPrearmGuidanceTests(unittest.TestCase):
             rcc.worker_detached = True
             self.assertEqual([], service.poll_once()["events"])
             second = service.poll_once()
-            self.assertEqual("RESTARTED", second["events"][0]["status"])
-            self.assertEqual("NEW_CONVERSATION", second["events"][0]["route"])
-            self.assertEqual(1, rcc.create_count)
-            self.assertIn("Work: detached-worker-work", rcc.sent[-1][1])
-            self.assertIn("Task: detached-worker-task", rcc.sent[-1][1])
-            self.assertEqual("RESTARTED", service.ledger.get(
-                "detached-worker-task", 1)["state"])
-            self.assertEqual("WATCHING", service.ledger.get(
-                "detached-worker-task", 2)["state"])
+            self.assertEqual("RECOVERY_NEEDED", second["events"][0]["status"])
+            self.assertEqual("NEW_CHAT_REQUIRED", second["events"][0]["kind"])
+            self.assertEqual(0, rcc.create_count)
+            watched = service.ledger.get("detached-worker-task", 1)
+            self.assertEqual("WATCHING", watched["state"])
+            self.assertEqual(MANAGER, json.loads(watched["context_json"])["recovery_needed"]["reported_manager_conversation_key"])
 class DelayedSendRccFlowTests(unittest.TestCase):
-    def test_explicit_worker_stop_signal_restarts_same_chain_generation(self):
+    def test_explicit_worker_stop_signal_records_recovery_needed_without_resend(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             policy = root / "bct.toml"
@@ -277,15 +274,13 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             rcc.attention = "RETRY_REQUIRED"
             self.assertEqual([], service.poll_once()["events"])
             second = service.poll_once()
-            self.assertEqual("RESTARTED", second["events"][0]["status"])
-            self.assertEqual("SAME_CONVERSATION", second["events"][0]["route"])
-            self.assertEqual("RESTARTED", service.ledger.get("restart-task", 1)["state"])
-            self.assertEqual("WATCHING", service.ledger.get("restart-task", 2)["state"])
-            self.assertEqual(1, len(rcc.sent))
-            self.assertEqual(WORKER, rcc.sent[0][0])
-            self.assertIn("다음 미완료 단계부터 다시 시작", rcc.sent[0][1])
+            self.assertEqual("RECOVERY_NEEDED", second["events"][0]["status"])
+            self.assertEqual("RETRY_REQUIRED", second["events"][0]["kind"])
+            self.assertEqual("WATCHING", service.ledger.get("restart-task", 1)["state"])
+            self.assertIsNone(service.ledger.get("restart-task", 2))
+            self.assertEqual([], rcc.sent)
 
-    def test_new_chat_required_moves_network_and_restarts_chain(self):
+    def test_new_chat_required_records_recovery_needed_without_metadata_transfer(self):
         from bct.conversation_network import upsert_conversation, configure_conversation_scope
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -323,20 +318,18 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             rcc.attention = "NEW_CHAT_REQUIRED"
             self.assertEqual([], service.poll_once()["events"])
             result = service.poll_once()["events"][0]
-            self.assertEqual("RESTARTED", result["status"])
-            self.assertEqual("NEW_CONVERSATION", result["route"])
-            self.assertEqual(SUCCESSOR, result["conversation_key"])
-            self.assertEqual("RESTARTED", service.ledger.get("replace-task", 1)["state"])
-            self.assertEqual(SUCCESSOR,
-                             service.ledger.get("replace-task", 2)["conversation_key"])
+            self.assertEqual("RECOVERY_NEEDED", result["status"])
+            self.assertEqual("NEW_CHAT_REQUIRED", result["kind"])
+            self.assertEqual("WATCHING", service.ledger.get("replace-task", 1)["state"])
+            self.assertIsNone(service.ledger.get("replace-task", 2))
             with bct.store._readonly() as db:
                 active = db.execute(
                     "SELECT conversation_key FROM conversation_network_memberships "
                     "WHERE activity='ACTIVE'"
                 ).fetchall()
-            self.assertEqual([SUCCESSOR], [row["conversation_key"] for row in active])
+            self.assertEqual([WORKER], [row["conversation_key"] for row in active])
 
-    def test_new_chat_send_not_applied_reuses_created_tab_then_restarts(self):
+    def test_new_chat_required_never_creates_or_retries_a_tab_automatically(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             policy = root / "bct.toml"
@@ -368,14 +361,12 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             rcc.attention = "NEW_CHAT_REQUIRED"
             service.poll_once()
             first = service.poll_once()["events"][0]
-            self.assertEqual("RESTART_NOT_APPLIED", first["status"])
-            second = service.poll_once()["events"][0]
-            self.assertEqual("RESTARTED", second["status"])
-            self.assertEqual(1, rcc.create_count)
-            self.assertEqual(1, len(rcc.sent))
-            self.assertEqual(SUCCESSOR, rcc.sent[0][0])
+            self.assertEqual("RECOVERY_NEEDED", first["status"])
+            self.assertEqual(0, rcc.create_count)
+            self.assertEqual([], rcc.sent)
+            self.assertEqual([], service.poll_once()["events"])
 
-    def test_unknown_new_chat_send_reconciles_without_automatic_redispatch(self):
+    def test_unknown_new_chat_signal_never_creates_a_chat_automatically(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             policy = root / "bct.toml"
@@ -408,15 +399,13 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             rcc.attention = "NEW_CHAT_REQUIRED"
             service.poll_once()
             result = service.poll_once()["events"][0]
-            self.assertEqual("RESTART_RECONCILING", result["status"])
+            self.assertEqual("RECOVERY_NEEDED", result["status"])
             self.assertEqual("WATCHING", service.ledger.get("unknown-created-chat", 1)["state"])
-            self.assertEqual(
-                "RESTART_RECONCILING", service.poll_once()["events"][0]["status"],
-            )
-            self.assertEqual(1, rcc.create_count)
+            self.assertEqual([], service.poll_once()["events"])
+            self.assertEqual(0, rcc.create_count)
             self.assertEqual([], rcc.sent)
 
-    def test_applied_unknown_new_chat_send_is_reconciled_without_resend(self):
+    def test_applied_unknown_new_chat_signal_is_reported_without_any_send(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             policy = root / "bct.toml"
@@ -451,34 +440,13 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             rcc.attention = "NEW_CHAT_REQUIRED"
             service.poll_once()
             first = service.poll_once()["events"][0]
-            self.assertEqual("RESTART_RECONCILING", first["status"])
-            self.assertEqual(1, len(rcc.sent))
-            rcc.reconcile_terminal = True
-            second = service.poll_once()["events"][0]
-            self.assertEqual("RESTARTED", second["status"])
-            self.assertTrue(second["reconciled"])
-            self.assertEqual(SUCCESSOR, second["conversation_key"])
-            self.assertEqual(1, rcc.create_count)
-            self.assertEqual(1, len(rcc.sent))
-            self.assertEqual("RESTARTED", service.ledger.get(
-                "reconcile-created-chat", 1)["state"])
-            self.assertEqual("WATCHING", service.ledger.get(
-                "reconcile-created-chat", 2)["state"])
-            generation_two = service.ledger.get("reconcile-created-chat", 2)
-            generation_two_context = json.loads(generation_two["context_json"])
-            self.assertTrue(
-                generation_two_context["source_send_reconcile_operation_id"]
-            )
-            rcc.reply(
-                SUCCESSOR,
-                "NEXT TASK — MANAGER: reconciled Worker recovery complete",
-            )
-            generation_two["context"] = generation_two_context
-            self.assertTrue(service._response_for(generation_two))
-            returned = service.poll_once()["events"][0]
-            self.assertEqual("RETURNED_TO_MANAGER", returned["status"])
-            self.assertEqual("RETURNED_TO_MANAGER", service.ledger.get(
-                "reconcile-created-chat", 2)["state"])
+            self.assertEqual("RECOVERY_NEEDED", first["status"])
+            self.assertEqual(0, rcc.create_count)
+            self.assertEqual([], rcc.sent)
+            watched = service.ledger.get("reconcile-created-chat", 1)
+            self.assertEqual("WATCHING", watched["state"])
+            self.assertEqual("NEW_CHAT_REQUIRED", json.loads(
+                watched["context_json"])["recovery_needed"]["kind"])
 
     def test_verified_prearm_before_send_handles_fast_completed_reply(self):
         # Regression: real 2026-11-01 tests armed AFTER an already-terminal
@@ -550,7 +518,8 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             polled=service.poll_once()
             self.assertEqual("RETURNED_TO_MANAGER",polled["events"][0]["status"])
             self.assertEqual(MANAGER,rcc.sent[-1][0])
-            self.assertEqual("PLANNED_SEND_E2E_OK",rcc.sent[-1][1])
+            self.assertIn("PLAN_MISSING", rcc.sent[-1][1])
+            self.assertTrue(rcc.sent[-1][1].endswith("PLANNED_SEND_E2E_OK"))
             self.assertEqual("RETURNED_TO_MANAGER",
                              service.ledger.get("planned-task",1)["state"])
             self.assertEqual([],service.poll_once()["events"])
@@ -595,7 +564,9 @@ class DelayedSendRccFlowTests(unittest.TestCase):
                 arguments={"command": "send-delayed-message",
                            "task_id": "task-1", "instance_id": INSTANCE,
                            "conversation_key": WORKER,
-                           "manager_conversation_key": MANAGER},
+                           "manager_conversation_key": MANAGER,
+                           "execution_path": "DIRECTION_DECLARED",
+                           "chain_direction_id": "direction-1"},
             )
             self.assertEqual(Outcome.APPLIED, armed.outcome)
             self.assertEqual(1, armed.output["generation"])
@@ -623,14 +594,23 @@ class DelayedSendRccFlowTests(unittest.TestCase):
                 direction_id="direction-1", task_id="task-1",
                 generation=1, plan_text=plan_text,
             )
+            revised_plan_text = (
+                "Inspect the remaining code, repair the discovered edge case, then verify E2E."
+            )
+            ChainExecutionPlanLedger(bct.store).update(
+                plan_id="plan-1", plan_text=revised_plan_text,
+                update_reason="The initial inspection found one additional bounded repair.",
+            )
             rcc.reply(WORKER, "Implemented stage one.\nNEXT TASK — SELF\nFinish the remaining code.")
             first = service.poll_once()
             self.assertEqual("SELF_SENT", first["events"][0]["status"])
             self.assertEqual(1, len(rcc.sent))
             self.assertEqual(WORKER, rcc.sent[0][0])
             self.assertIn("Finish the remaining code.", rcc.sent[0][1])
-            self.assertIn(plan_text, rcc.sent[0][1])
+            self.assertIn(revised_plan_text, rcc.sent[0][1])
+            self.assertNotIn(plan_text, rcc.sent[0][1])
             self.assertIn("plan_id=plan-1", rcc.sent[0][1])
+            self.assertIn("PROGRESS: <completed>/<total>", rcc.sent[0][1])
             self.assertIn("bct_send_delayed_message", rcc.sent[0][1])
             self.assertIn("범용 execute capability", rcc.sent[0][1])
             self.assertEqual("RESERVED", service.ledger.get("task-1", 2)["state"])
@@ -647,7 +627,12 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             )
             self.assertEqual(Outcome.APPLIED, rearmed.outcome, rearmed.as_dict())
             self.assertEqual(2, rearmed.output["generation"])
-            rcc.reply(WORKER, "Final stage done.\nNEXT TASK — MANAGER\nFinished, report complete.")
+            rcc.reply(
+                WORKER,
+                "Final stage done.\nPLAN REVISION: 1\n"
+                "PROGRESS: 3/3 — final stage complete; report to A\n"
+                "NEXT TASK — MANAGER\nFinished, report complete.",
+            )
             # DOM may render fewer assistant nodes than at prearm; trusted SELF
             # source receipt + exact user pair still identify this response.
             rcc.visible_count_override = 0
@@ -656,6 +641,14 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             self.assertEqual(2, len(rcc.sent))
             self.assertEqual(MANAGER, rcc.sent[1][0])
             self.assertEqual("Finished, report complete.", rcc.sent[1][1])
+            observed = ChainExecutionPlanLedger(bct.store).get_latest_execute_plan_check(
+                work_id=work.work_id, direction_id="direction-1", task_id="task-1",
+            )
+            self.assertEqual(2, observed["generation"])
+            self.assertEqual("plan-1", observed["plan_id"])
+            self.assertEqual(1, observed["reported_revision"])
+            self.assertEqual((3, 3), (observed["completed_steps"], observed["total_steps"]))
+            self.assertEqual((), observed["issues"])
             self.assertEqual("RETURNED_TO_MANAGER", service.ledger.get("task-1", 2)["state"])
             self.assertEqual([], service.poll_once()["events"])
             self.assertEqual([], bct.store.claim_diagnostics())
