@@ -6517,9 +6517,10 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
     max: "Max",
     ultra: "Ultra",
   })[reasoning.toLowerCase()] || reasoning;
-  const reasoningLabel = String(node?.reasoningRaw || "").trim()
-    ? (String(node?.reasoningLevel || "").trim() || normalizedReasoningLabel)
-    : normalizedReasoningLabel;
+  // The raw observation is the display authority.  Cached node records from
+  // an earlier Monitor build may carry an uncompressed reasoningLevel, so do
+  // not let that stale presentation value widen a freshly rendered card.
+  const reasoningLabel = normalizedReasoningLabel;
   const observedAge = monitorBctNodeObservedAgeText(node);
   const observedAgeCompact = observedAge
     .replace("관측 확인 중", "확인중")
