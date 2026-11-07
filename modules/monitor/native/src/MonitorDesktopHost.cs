@@ -4215,7 +4215,23 @@ if (type == "launchNaverChatGpt") return LaunchNaverChatGpt(request);
 
 
 
-        return new Dictionary<string, object> { { "ok", SetForegroundWindow(new IntPtr(raw)) }, { "hwnd", raw.ToString(CultureInfo.InvariantCulture) } };
+        IntPtr hWnd = new IntPtr(raw);
+        if (!IsWindow(hWnd)) return Error("Window no longer exists.");
+
+        // `SetForegroundWindow` alone does not restore a minimized Chrome
+        // window, and its return value does not prove this HWND is foreground.
+        bool wasIconic = IsIconic(hWnd);
+        bool restored = !wasIconic || ShowWindow(hWnd, 9 /* SW_RESTORE */);
+        bool foregroundRequested = SetForegroundWindow(hWnd);
+        bool foregroundMatched = GetForegroundWindow() == hWnd;
+        return new Dictionary<string, object> {
+            { "ok", restored && foregroundMatched },
+            { "hwnd", raw.ToString(CultureInfo.InvariantCulture) },
+            { "wasIconic", wasIconic },
+            { "restored", restored },
+            { "foregroundRequested", foregroundRequested },
+            { "foregroundMatched", foregroundMatched }
+        };
 
 
 

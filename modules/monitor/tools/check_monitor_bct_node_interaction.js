@@ -12,6 +12,7 @@ const cssPath = path.join(root, "extension", "monitor.css");
 const projectionPath = path.join(root, "extension", "monitor-bct-thumbnail-projection.js");
 const backgroundPath = path.join(root, "extension", "background.js");
 const bootstrapPath = path.join(root, "extension", "google-bootstrap.js");
+const nativeHostPath = path.join(root, "native", "src", "MonitorDesktopHost.cs");
 
 function loadModule() {
   const context = { globalThis: null, Object, String, Number, Array, Error, RegExp, Promise };
@@ -91,6 +92,19 @@ function loadModule() {
   const projection = fs.readFileSync(projectionPath, "utf8");
   const background = fs.readFileSync(backgroundPath, "utf8");
   const bootstrap = fs.readFileSync(bootstrapPath, "utf8");
+  const nativeHost = fs.readFileSync(nativeHostPath, "utf8");
+  const restoreStart = nativeHost.indexOf("private static object RestoreForegroundWindow(");
+  const restoreEnd = nativeHost.indexOf("\n    private static object GetCodexRuntimeStatus", restoreStart);
+  const restore = nativeHost.slice(restoreStart, restoreEnd);
+  assert.ok(restoreStart >= 0 && restoreEnd > restoreStart, "native foreground handler must be present");
+  assert.match(restore, /IsIconic\(hWnd\)/,
+    "node activation must detect a minimized browser window before foregrounding it");
+  assert.match(restore, /ShowWindow\(hWnd, 9 \/\* SW_RESTORE \*\/\)/,
+    "node activation must restore a minimized browser window");
+  assert.match(restore, /GetForegroundWindow\(\) == hWnd/,
+    "native success must prove the requested Chrome HWND is foreground");
+  assert.match(restore, /\{ "ok", restored && foregroundMatched \}/,
+    "native success must require both restore and foreground confirmation");
   assert.match(css, /\.monitor-bct-node-view-mode \{[^}]*color-scheme:dark;/,
     "node view selector must request a readable dark native popup");
   assert.match(css, /\.monitor-bct-node-view-mode option \{[^}]*background:#172535;[^}]*color:#eef6ff;/,
