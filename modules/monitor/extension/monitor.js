@@ -6501,11 +6501,11 @@ function monitorBctNodeBurdenScore(node) {
 function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const minimized = nativeLocation?.iconic === true;
   const burden = monitorBctNodeBurden(node);
-  const reasoningObserved = String(node?.reasoningLevel || "").trim();
+  const reasoningObserved = String(node?.reasoningRaw || node?.reasoningLevel || "").trim();
   const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
     ? "미확인"
     : reasoningObserved;
-  const reasoningLabel = ({
+  const normalizedReasoningLabel = ({
     instant: "I",
     low: "L",
     medium: "M",
@@ -6517,6 +6517,9 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
     max: "Max",
     ultra: "Ultra",
   })[reasoning.toLowerCase()] || reasoning;
+  const reasoningLabel = String(node?.reasoningRaw || "").trim()
+    ? (String(node?.reasoningLevel || "").trim() || normalizedReasoningLabel)
+    : normalizedReasoningLabel;
   const observedAge = monitorBctNodeObservedAgeText(node);
   const observedAgeCompact = observedAge
     .replace("관측 확인 중", "확인중")
@@ -6817,7 +6820,7 @@ function openMonitorBctRenameEditor(node, row) {
   const desktopPosition = nativeLocation
     ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
     : -1;
-  const reasoningObserved = String(node.reasoningLevel || "").trim();
+  const reasoningObserved = String(node.reasoningRaw || node.reasoningLevel || "").trim();
   const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
     ? "미확인"
     : reasoningObserved;

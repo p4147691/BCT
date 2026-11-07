@@ -19,6 +19,7 @@
     const fetcher = options.fetcher || root.fetch?.bind(root);
     const windowsApi = options.windowsApi || root.chrome?.windows;
     const randomId = options.randomId || (() => root.crypto?.randomUUID?.());
+    const compactReasoningLevel = (value) => ({instant:"I",low:"L",medium:"M",high:"H",xhigh:"E","extra high":"E","extra-high":"E",pro:"P",max:"Max",ultra:"Ultra"})[String(value || "").trim().toLowerCase()] || String(value || "").trim();
 
     async function health() {
       if (typeof fetcher !== "function") throw new Error("BCT_HEALTH_FETCH_UNAVAILABLE");
@@ -75,6 +76,7 @@
           const scope = tab?.conversation_scope && typeof tab.conversation_scope === "object"
             ? tab.conversation_scope
             : {};
+          const reasoningRaw = String(tab?.reasoning?.status || "").trim().toUpperCase() === "OBSERVED" ? String(tab?.reasoning?.level || "").trim() : "";
           nodes.push(Object.freeze({
             instanceId,
             sessionId: String(instance?.session_id || "").trim(),
@@ -97,9 +99,8 @@
             roleTagsSha256: String(scope?.role_tags_sha256 || "").trim().toLowerCase(),
             nodeMemo: String(scope?.node_memo || ""),
             assignedTask: String(scope?.assigned_task || ""),
-            reasoningLevel: String(tab?.reasoning?.status || "").trim().toUpperCase() === "OBSERVED"
-              ? String(tab?.reasoning?.level || "").trim()
-              : "",
+            reasoningLevel: compactReasoningLevel(reasoningRaw),
+            reasoningRaw,
             reasoningSource: String(tab?.reasoning?.source || "").trim(),
             surfaceKind: String(tab?.surface?.kind || "UNKNOWN").trim().toUpperCase(),
             surfaceSource: String(tab?.surface?.source || "").trim(),

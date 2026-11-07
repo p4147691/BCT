@@ -1358,7 +1358,7 @@ function openMonitorBctRenameEditor(node, row) {
   const desktopPosition = nativeLocation
     ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
     : -1;
-  const reasoningObserved = String(node.reasoningLevel || "").trim();
+  const reasoningObserved = String(node.reasoningRaw || node.reasoningLevel || "").trim();
   const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
     ? "미확인"
     : reasoningObserved;
