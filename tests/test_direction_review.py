@@ -180,6 +180,30 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(B, notices["notices"][0]["node_conversation_key"])
         self.assertEqual([], self.ops.calls)
 
+    async def test_prepare_state_orders_topology_candidates_without_reassigning_roles(self):
+        # C is the only global Supervisor in the fixture.  A and B are already
+        # assigned, so neither is silently offered as a reusable Worker.
+        result = await self.call(
+            "bct_chain_recipe", action="prepare", work_id=self.work.work_id,
+            source_text="Prepare a new chain without stealing another Manager.",
+        )
+        topology = result["state"]["chain_topology_preparation"]
+        self.assertEqual("READY", topology["status"])
+        self.assertEqual([C], [item["conversation_key"] for item in topology["global_supervisor_candidates"]])
+        self.assertEqual([], topology["unassigned_worker_candidates"])
+        self.assertTrue(topology["required_creation"]["worker"])
+        self.assertFalse(topology["required_creation"]["supervisor"])
+        self.assertIn(A, [item["conversation_key"] for item in topology["reserved_nodes"]])
+
+    async def test_manager_cannot_be_selected_as_worker_even_with_worker_tag(self):
+        await self.save()
+        self.snapshot["monitor"]["current_nodes"]["items"][1]["roles"] = ["manager", "worker"]
+        self.tabs[1]["conversation_scope"]["role_tags"] = ["manager", "worker"]
+        result = await self.start()
+        self.assertEqual("NETWORK_PREPARATION_REQUIRED", result["status"], result)
+        self.assertEqual("DIRECTION_WORKER_CANNOT_BE_MANAGER", result["reason"])
+        self.assertEqual([], self.sends())
+
     async def test_prepare_state_includes_only_the_declared_a_github_ci_notices(self):
         self.store.register_github_run_inbox(
             subscription_id="ci-for-a", repository="owner/repo", run_id=7,

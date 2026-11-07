@@ -82,7 +82,7 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
                 "role": "A's free-form role label, for example worker, reviewer, or deployer",
                 "instruction": "non-empty per-target instruction, at most 6000 characters",
             }],
-            "network_updates": "list of existing bct_set_conversation_network argument objects; [] is valid when reusing the network unchanged",
+            "network_updates": "list of existing bct_set_conversation_network argument objects; [] is valid when reusing the network unchanged. Select topology in this order: an existing global Supervisor, then an unassigned idle Worker; create only the missing node. Never select a Manager from another network as Worker or Supervisor.",
         },
         "optional_node_recovery": {
             "conversation_key": "the exact lowercase canonical UUID of one node A explicitly asks Recover Node R to observe before sending",
@@ -197,6 +197,8 @@ def resolve_direction_network(*, snapshot: dict, assessment: dict, targets: list
 
     This is a proof gate, not an election or creation mechanism: A must name
     the three identities and current Node Info/RCC must still resolve each one.
+    A Manager is never reusable as a Worker or Supervisor, including when it
+    belongs to a different conversation network.
     """
     origin = resolve_direction_target(snapshot=snapshot, conversation_key=assessment["manager_conversation_key"])
     worker = resolve_direction_target(snapshot=snapshot, conversation_key=assessment["worker_conversation_key"])
@@ -209,8 +211,18 @@ def resolve_direction_network(*, snapshot: dict, assessment: dict, targets: list
         return isinstance(roles, list) and any(str(item).strip().casefold() == role for item in roles)
     if not has_role(origin, "manager"):
         raise ValueError("DIRECTION_MANAGER_ROLE_NOT_CONFIRMED")
+    if has_role(origin, "worker") or has_role(origin, "supervisor"):
+        raise ValueError("DIRECTION_MANAGER_ROLE_CONFLICT")
+    if has_role(worker, "manager"):
+        raise ValueError("DIRECTION_WORKER_CANNOT_BE_MANAGER")
     if not has_role(worker, "worker"):
         raise ValueError("DIRECTION_WORKER_ROLE_NOT_CONFIRMED")
+    if has_role(worker, "supervisor"):
+        raise ValueError("DIRECTION_WORKER_ROLE_CONFLICT")
+    if has_role(supervisor, "manager"):
+        raise ValueError("DIRECTION_SUPERVISOR_CANNOT_BE_MANAGER")
+    if has_role(supervisor, "worker"):
+        raise ValueError("DIRECTION_SUPERVISOR_CANNOT_BE_WORKER")
     if not has_role(supervisor, "supervisor"):
         raise ValueError("DIRECTION_SUPERVISOR_ROLE_NOT_CONFIRMED")
     manager_scope = str(origin["node_info"].get("network_id") or origin["node_info"].get("network") or "").strip()
