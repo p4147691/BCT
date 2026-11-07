@@ -1342,6 +1342,8 @@ def build_mcp(
     @server.tool(
         description=(
             "Store instructions in an isolated per-target FIFO inbox; never sends to ChatGPT. "
+            "It is a state-only ledger, not an authority or role gate: an existing active "
+            "Work ID and canonical target Conversation UUID identify its partition. "
             "action=enqueue registers one stable message_id; status reads without consuming; "
             "claim returns only the next eligible instruction for a verified idle Worker; "
             "complete acknowledges that claim, hold fences uncertain work, resume only "
@@ -1364,16 +1366,15 @@ def build_mcp(
         limit: int = 30,
     ) -> dict[str, Any]:
         work = await asyncio.to_thread(bct.store.get_work, work_id)
-        if work.owner_principal_id != principal.principal_id:
-            raise PermissionError("CHAT_QUEUE_WORK_OWNER_INVALID")
         if work.state != "ACTIVE":
-            raise PermissionError("CHAT_QUEUE_WORK_INACTIVE")
+            raise ValueError("CHAT_QUEUE_WORK_INACTIVE")
         selected = str(action or "").strip().lower()
         if selected not in {"enqueue", "status", "claim", "complete", "hold", "resume"}:
             raise ValueError("CHAT_QUEUE_ACTION_INVALID")
-        permission = "read" if selected == "status" else "orchestrate"
-        if permission not in work.actions:
-            raise PermissionError("CHAT_QUEUE_" + permission.upper() + "_REQUIRED")
+        # Queue operations alter only the durable queue ledger. Work actions,
+        # principal ownership, and Manager/Worker role tags are not permissions
+        # for that ledger. External dispatch remains separately fenced by its
+        # exact target identity, operation receipt, and UNKNOWN-effect rules.
         ledger = await asyncio.to_thread(ChatInputQueue, bct.store)
         common = {"work_id": work_id, "target_conversation_key": target_conversation_key}
         if selected == "status":

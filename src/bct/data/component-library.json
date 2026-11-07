@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "c4e0a346f612ab1ec5eeff049720abd6e8a7210e81ec662640d6cc50d04060ab",
+  "source_fingerprint": "1065a280bcd4f78922dce83ee567b6bdebc27a6e220902be952eb23805173d8a",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "768aeca6c64ae19ddc062eb0f2656139a596bb7207e91771d436259144b8d7d5",
-    "docs/component-library.v1.json": "9578132c6b3dd6e31dbc3455d6a326a603fccd3cd5283fece65c3f5235a52ef3",
+    "docs/component-library.v1.json": "13e84810c93ca7823211c420d4e8c7865a16817258386e4342e95a1f63cef5fb",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -19,7 +19,7 @@
     "src/bct/chain_entry_policy.py": "2c076fd541dfaa9353b12526c6a41bdb1396169a6a81162e81861b8cc313dd34",
     "src/bct/chain_execution_plan.py": "b100f2ee64a4e32168ad69b468b31b977d806504abc6af00521316c0d404c062",
     "src/bct/chain_message_preflight.py": "4c55a0214df2cafd2002d5fc7ba3885ea564c4945f392224a814a3b50ca16160",
-    "src/bct/chat_input_queue.py": "2eed87e32313b92bfa4910ff15e8944d531b19d289e33758a2a5a4c86000f9ea",
+    "src/bct/chat_input_queue.py": "0873721a88bdca3a84f16e5be9426a63360e98253ce02ceb6ec0dcf1fe9b3a87",
     "src/bct/code_block_organize.py": "aa9471232321334c1c2ce7f52f0fa4725a4016e13ba19bac942dd71f62622cfd",
     "src/bct/code_block_scan.py": "179a2a63497310b53900e49e44da9f71cbc9d2d1c2b9321279c9ebebb2c5646f",
     "src/bct/component_library.py": "f5e5d5f3640639f3e1a725c12dae68383a33a2cebee205300f9a0e9ec1ead54a",
@@ -29,7 +29,7 @@
     "src/bct/delivery_continuation_recovery.py": "2da105389388c6e1e3e405b178dc3ce85ff50fd874edfd322619d7e1f4aff4cb",
     "src/bct/features/conversation_network.py": "8344f9dce683111111dc600fc446f9838bddca7b8bccb207034815e6d5619c06",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
-    "src/bct/mcp_server.py": "42bde73875e52bdc6e5cb76f924c94849097d0035402da4c98230965968ec814",
+    "src/bct/mcp_server.py": "577c9b7f4eb66a3aec0b6a773c120f242c4033bc5e9bd49598f13c4172673fc1",
     "src/bct/node_recovery.py": "27c7845d6f18fa8a36e1adb609b5658e1b60a62512d087b0f0fec6623fb77713",
     "src/bct/send_delayed_message.py": "b83f70aae1d92b2fc7c46823e476c0d2b706f9096b459d6fb536567ec35c0f58",
     "src/bct/task_message.py": "549f40e968a0797065da0725c1380c97ab98729695047426463b2767fd63b5ed"
@@ -438,8 +438,8 @@
           "bct-sqlite-queue-metadata"
         ],
         "safety": [
-          "work-owner-bound",
-          "read-for-status-orchestrate-for-mutation",
+          "active-work-identity",
+          "roles-and-ownership-are-not-queue-permissions",
           "exact-conversation-uuid",
           "message-and-claim-idempotence",
           "strict-head-of-line",
