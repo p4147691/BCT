@@ -9,8 +9,10 @@ from pathlib import Path
 from bct.service import BCT
 from bct.chain_direction import ChainDirectionLedger
 from bct.chain_execution_plan import ChainExecutionPlanLedger
+from bct.chain_worker_provision import ChainWorkerProvisionRecipe
 from bct.core.models import Principal, Outcome
 from bct.features.rcc import BrowserFeature
+from bct.mcp_server import build_mcp
 from bct.send_delayed_message import (
     SendDelayedMessageService, _rcc_submitted_text_sha256,
     _self_prearm_guidance,
@@ -82,6 +84,16 @@ class SimulatedRcc:
             self.created = {"tabId": 20, "windowId": extra.get("windowId", 11), "index": 2}
             return {"ok": True, "requestId": request_id,
                     "tabId": self.created["tabId"], "windowId": self.created["windowId"]}
+        if command == "move-tab":
+            assert self.created and extra["tabId"] == self.created["tabId"]
+            self.created.update({"windowId": extra["targetWindowId"],
+                                 "index": extra["index"]})
+            for key, location in list(self.locations.items()):
+                if location["tabId"] == extra["tabId"]:
+                    self.locations[key] = dict(self.created)
+            return {"ok": True, "requestId": request_id, "state": "APPLIED",
+                    "tabId": extra["tabId"], "windowId": extra["targetWindowId"],
+                    "index": extra["index"]}
         if command == "read-latest-assistant":
             key = extra["conversationKey"]
             location = self.locations[key]
@@ -243,6 +255,131 @@ class SelfPrearmGuidanceTests(unittest.TestCase):
             self.assertEqual("WATCHING", watched["state"])
             self.assertEqual(MANAGER, json.loads(watched["context_json"])["recovery_needed"]["reported_manager_conversation_key"])
 class DelayedSendRccFlowTests(unittest.TestCase):
+    def test_chain_worker_provision_recipe_replays_without_duplicate_tab_or_send(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser","conversation_network_update"]\n'
+                'approval_actions=[]\n', encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            feature = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = feature
+            principal = Principal(
+                "tester", "test", frozenset({"browser", "conversation_network_update"}),
+            )
+            work = bct.create_work(
+                work_id="worker-provision-work", request_summary="parallel child Worker",
+                roots=[str(root)], actions=["browser", "conversation_network_update"],
+                principal=principal,
+            )
+            direction = {
+                "direction_id": "parent-direction", "work_id": work.work_id,
+                "source_kind": "USER", "source_task_id": "", "source_generation": 0,
+                "source_result_sha256": "", "direction_text": "Complete the parent goal.",
+            }
+            def status_provider():
+                tabs = [
+                    {"tab_id": value["tabId"], "window_id": value["windowId"],
+                     "conversation_key": key}
+                    for key, value in rcc.locations.items()
+                ]
+                if rcc.created and SUCCESSOR not in rcc.locations:
+                    tabs.append({"tab_id": rcc.created["tabId"],
+                                 "window_id": rcc.created["windowId"],
+                                 "conversation_key": ""})
+                return {"monitor": {"rcc": {"instances": [{
+                    "instance_id": INSTANCE, "session_id": SESSION,
+                    "state": "OPEN", "cached": False, "tabs": tabs,
+                }]}}}
+            recipe = ChainWorkerProvisionRecipe(
+                bct=bct, principal=principal, status_provider=status_provider,
+            )
+            request = {
+                "preparation_id": "parallel-lint-fix", "command": "create-chat-tab",
+                "instance_id": INSTANCE, "window_id": 11,
+                "instruction": "Fix the independent lint regression.",
+                "display_name": "Lint Worker", "scope_name": "Project",
+                "role_tags": ["Worker"],
+                "arrange": {"target_window_id": 21, "index": 0},
+            }
+            first = recipe.run(
+                direction=direction, assessment={"manager_conversation_key": MANAGER},
+                work=work, task_id="lint-child", worker_preparation=request,
+            )
+            self.assertEqual("STARTED", first["status"], first)
+            self.assertEqual(SUCCESSOR, first["conversation_key"])
+            self.assertEqual(21, first["attachment"]["window_id"])
+            self.assertEqual(11, rcc.locations[MANAGER]["windowId"])
+            self.assertEqual(11, rcc.locations[WORKER]["windowId"])
+            second = recipe.run(
+                direction=direction, assessment={"manager_conversation_key": MANAGER},
+                work=work, task_id="lint-child", worker_preparation=request,
+            )
+            self.assertEqual("STARTED", second["status"], second)
+            self.assertEqual(1, rcc.create_count)
+            self.assertEqual(1, len([item for item in rcc.sent if item[0] == SUCCESSOR]))
+
+    def test_created_chat_receipts_bind_zero_baseline_and_capture_fast_first_response(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
+                encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            feature = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = feature
+            principal = Principal("tester", "test", frozenset({"browser"}))
+            work = bct.create_work(
+                work_id="created-worker-work", request_summary="prepare exact new Worker",
+                roots=[str(root)], actions=["browser"], principal=principal,
+            )
+            prompt = "Handle the independent child task and report to Manager."
+            created = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="created-worker-tab", capability="browser",
+                arguments={"command": "create-chat-tab", "instance_id": INSTANCE,
+                           "window_id": 11},
+            )
+            self.assertEqual(Outcome.APPLIED, created.outcome, created.as_dict())
+            sent = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="created-worker-send", capability="browser",
+                arguments={"command": "send-message", "instance_id": INSTANCE,
+                           "session_id": SESSION, "tab_id": 20, "window_id": 11,
+                           "conversation_key": "", "create_operation_id": "created-worker-tab",
+                           "text": prompt},
+            )
+            self.assertEqual(Outcome.APPLIED, sent.outcome, sent.as_dict())
+            self.assertEqual(SUCCESSOR, sent.evidence["conversation_key"])
+            # Prove the bootstrap baseline does not miss a response which is
+            # already terminal when the newly assigned UUID is bound.
+            rcc.reply(SUCCESSOR, "NEXT TASK — MANAGER: CHILD_TASK_COMPLETE")
+            armed = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="created-worker-watch", capability="browser",
+                arguments={"command": "send-delayed-message", "task_id": "created-child-task",
+                           "instance_id": INSTANCE, "conversation_key": SUCCESSOR,
+                           "manager_conversation_key": MANAGER,
+                           "manager_instance_id": INSTANCE,
+                           "planned_send_operation_id": "created-worker-send",
+                           "planned_send_text": prompt,
+                           "bootstrap_create_operation_id": "created-worker-tab",
+                           "watched_session_id": SESSION, "watched_tab_id": 20,
+                           "watched_window_id": 11},
+            )
+            self.assertEqual(Outcome.APPLIED, armed.outcome, armed.as_dict())
+            watch = SendDelayedMessageService(
+                store=bct.store, browser_feature=feature, operations=bct.operations,
+            ).ledger.get("created-child-task", 1)
+            self.assertEqual("WATCHING", watch["state"])
+            self.assertEqual(0, json.loads(watch["context_json"])["baseline_count"])
+
     def test_explicit_worker_stop_signal_records_recovery_needed_without_resend(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -652,6 +789,75 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             self.assertEqual("RETURNED_TO_MANAGER", service.ledger.get("task-1", 2)["state"])
             self.assertEqual([], service.poll_once()["events"])
             self.assertEqual([], bct.store.claim_diagnostics())
+
+
+class ChainWorkerProvisionPublicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_public_chain_recipe_provisions_saved_worker_preparation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser","conversation_network_update"]\n'
+                'approval_actions=[]\n', encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            feature = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = feature
+            principal = Principal(
+                "bct-mcp-local", "test",
+                frozenset({"browser", "conversation_network_update"}),
+            )
+            work = bct.create_work(
+                work_id="public-worker-provision", request_summary="public Chain Worker",
+                roots=[str(root)], actions=["browser", "conversation_network_update"],
+                principal=principal,
+            )
+            preparation = {
+                "preparation_id": "public-child", "command": "create-chat-tab",
+                "instance_id": INSTANCE, "window_id": 11,
+                "instruction": "Handle the independent public child task.",
+                "display_name": "Public Worker", "scope_name": "Project",
+                "role_tags": ["Worker"], "arrange": None,
+            }
+            ChainDirectionLedger(bct.store).save(
+                direction_id="public-parent", work_id=work.work_id,
+                source_kind="USER", decision="NEW_TASK",
+                direction_text="Complete the public parent task.", source_text="User request",
+                assessment={
+                    "answers": {}, "manager_conversation_key": MANAGER,
+                    "supervisor_conversation_key": WORKER,
+                    "network_name": "Project", "targets": [], "network_updates": [],
+                    "worker_preparations": [preparation],
+                },
+            )
+            def status_provider():
+                tabs = [{"tab_id": value["tabId"], "window_id": value["windowId"],
+                         "conversation_key": key} for key, value in rcc.locations.items()]
+                if rcc.created and SUCCESSOR not in rcc.locations:
+                    tabs.append({"tab_id": rcc.created["tabId"],
+                                 "window_id": rcc.created["windowId"],
+                                 "conversation_key": ""})
+                return {"monitor": {"rcc": {"instances": [{
+                    "instance_id": INSTANCE, "session_id": SESSION,
+                    "state": "OPEN", "cached": False, "tabs": tabs,
+                }]}}}
+            mcp = build_mcp(bct, compact_catalogue=True, status_provider=status_provider)
+            _, result = await mcp.call_tool("bct_chain_recipe", {
+                "action": "provision_worker", "work_id": work.work_id,
+                "direction_id": "public-parent", "task_id": "public-child-task",
+                "worker_preparation_id": "public-child",
+            })
+            self.assertEqual("STARTED", result["status"], result)
+            self.assertEqual(SUCCESSOR, result["conversation_key"])
+            self.assertEqual(1, rcc.create_count)
+            rcc.reply(SUCCESSOR, "NEXT TASK — MANAGER: PUBLIC_CHILD_COMPLETE")
+            returned = SendDelayedMessageService(
+                store=bct.store, browser_feature=feature, operations=bct.operations,
+            ).poll_once()
+            self.assertEqual("RETURNED_TO_MANAGER", returned["events"][0]["status"])
+            self.assertEqual(MANAGER, rcc.sent[-1][0])
+            self.assertIn("PUBLIC_CHILD_COMPLETE", rcc.sent[-1][1])
 
 
 if __name__ == "__main__":

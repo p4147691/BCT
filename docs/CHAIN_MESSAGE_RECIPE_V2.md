@@ -186,8 +186,31 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
   아니라 잘못된 토폴로지로 체인을 시작하지 않기 위한 시작 검증이다.
 - `targets`에는 **지금 독립적으로 시작 가능한 대상만** 넣는다. 선행 구현 결과가
   필요한 병합·배포는 같은 목록에 미리 실행시키지 않고 BA 뒤 새 Direction에서 C에게 맡긴다.
+- Manager가 `derived_tasks`를 기록하면 각 항목은 `SELF`, `INDEPENDENT`, `BLOCKED`,
+  `RISK`, `ASK_USER` 중 하나로 분류한다. `INDEPENDENT`만 정확히 선언된 대상 UUID와
+  연결해 이번 Direction에서 병렬 시작할 수 있다. 선행 `depends_on`, 위험·사용자 판단,
+  SELF 연속은 저장된 근거로 남기고 전송하지 않는다. 두 독립 작업이 같은
+  `mutable_scopes`를 선언하면 Direction 저장을 거부한다. 이 검사는 Manager의 판단을
+  대신하거나 완료된 선행 효과를 추측하지 않는다.
 - 하나의 A 방향 아래 대상별 Direction/Task/Operation이 따로 연결된다. 이것은
   기존 정확 1:1 전송 원장을 재사용하기 위한 내부 기록이며 새 사용자 명령이 아니다.
+- 추가 Worker가 필요하다고 A가 판단한 경우 `bct_chain_recipe(action="provision_worker")`는
+  별도 공개 도구를 만들지 않고 기존 `create-chat-tab`/`create-chat-window`, `send-message`,
+  응답 대기, `node-info-set`, 선택적 `move-tab`을 부분 레시피로 조립한다. 생성·전송·감시·
+  등록·정렬은 서로 다른 결정적 Operation ID와 영수증을 사용한다. 같은 준비 요청을
+  재실행해도 기존 영수증을 읽으며 새 탭이나 첫 메시지를 중복 생성하지 않는다.
+- A의 준비 판단은 Direction의 `worker_preparations`에 먼저 저장한다. 각 준비 항목은
+  `preparation_id`, 생성 명령과 대상 RCC instance/window, 대상별 instruction, Node Info,
+  선택적 정렬 위치를 보존한다. 실행할 때는 저장된 `preparation_id`만 선택하므로 재시작한
+  호출자가 생성·역할·지시 내용을 다르게 바꿀 수 없다. 기존 Worker가 충분하면 이 목록을
+  만들지 않고 기존 `targets` 경로를 그대로 사용한다.
+- 새 빈 Chat은 첫 전송 전 대화 UUID가 없을 수 있다. 이때 생성 영수증으로 정확한 탭에만
+  첫 메시지를 한 번 제출하고, 그 전송 영수증에서 얻은 UUID와 현재 RCC 탭이 일치한 뒤
+  기존 응답 대기 원장에 0회 기준점으로 결합한다. UUID가 없거나 탭이 일치하지 않으면
+  `WAITING_FOR_CONVERSATION_UUID`로 남기며 다른 탭에 보내거나 새 ID로 재전송하지 않는다.
+- 탭 정렬은 응답 대기 기록이 영속화된 뒤 그 Worker UUID로 해당 탭 하나만 이동한다.
+  사용자가 배치한 다른 탭은 이동하지 않는다. 정렬 실패는 이미 정확히 전달된 Child Task를
+  취소하거나 다른 탭으로 우회하는 근거가 아니다.
 - 특정 대상만 진행하려면 같은 Direction과 Task/Operation 접두사에
   `target_conversation_key`를 지정한다. 이미 시작한 대상은 재전송하지 않는다.
 - 망 변경과 대상 전송은 부분 효과일 수 있다. 한 대상이 닫혀도 다른 열린 대상의 전송은

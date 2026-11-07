@@ -451,6 +451,29 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["ALREADY_STARTED", "ALREADY_STARTED"], [r["status"] for r in repeat["targets"]])
         self.assertEqual(2, len(self.sends()))
 
+    async def test_declared_independent_derived_task_starts_while_blocker_is_deferred(self):
+        value = assessment()
+        value["derived_tasks"] = [
+            {
+                "task_id": "worker-fix", "classification": "INDEPENDENT",
+                "summary": "Fix the independent regression.", "depends_on": [],
+                "target_conversation_key": B, "mutable_scopes": ["src/fix.py"],
+            },
+            {
+                "task_id": "environment-blocker", "classification": "BLOCKED",
+                "summary": "Wait for the separately recorded environment prerequisite.",
+                "depends_on": [], "target_conversation_key": "", "mutable_scopes": [],
+            },
+        ]
+        await self.save(value)
+        result = await self.start()
+        self.assertEqual("STARTED", result["status"], result)
+        self.assertEqual([B], [entry["arguments"]["conversation_key"] for entry in self.sends()])
+        self.assertEqual("MANAGER_DECLARED", result["derived_dispatch"]["classification"])
+        self.assertEqual(["environment-blocker", ""], [
+            item["task_id"] for item in result["derived_dispatch"]["deferred"]
+        ])
+
     async def test_moved_tab_is_reacquired_by_same_uuid(self):
         await self.save()
         self.tabs[1].update(tab_id=25, window_id=26)
