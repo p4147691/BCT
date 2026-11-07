@@ -33,7 +33,8 @@ A, B, C = (key(letter) for letter in "abc")
 def assessment():
     return {
         "answers": {name: f"A's explicit decision about {name}." for name, _, _ in DIRECTION_QUESTIONS},
-        "manager_conversation_key": A, "supervisor_conversation_key": C,
+        "manager_conversation_key": A, "worker_conversation_key": B,
+        "supervisor_conversation_key": C,
         "network_name": "Project", "network_updates": [],
         "targets": [
             {"conversation_key": B, "role": "worker", "instruction": "Inspect the owned source without changing LIVE."},
@@ -47,7 +48,9 @@ def snapshot():
     for number, uuid, roles, network in [(1, A, ["manager"], "Project"),
                                         (2, B, ["worker"], "Project"), (3, C, ["supervisor"], "")]:
         items.append({"status": "CONFIRMED", "conversation_uuid": uuid, "node_number": f"N{number}",
-                      "tab_id": number, "window_id": 10, "generating": False})
+                      "tab_id": number, "window_id": 10, "generating": False,
+                      "roles": roles, "network": network,
+                      "network_id": "project" if network else ""})
         tabs.append({"presence": "OPEN", "conversation_key": uuid, "tab_id": number, "window_id": 10,
                      "title": f"Node {number}", "conversation_scope": {
                          "scope_name": network, "role_tags": roles, "node_memo": "Keep user data",
@@ -482,13 +485,14 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("DIRECTION_TARGET_RECORD_MISMATCH", result["reason"])
         self.assertEqual([], self.ops.calls)
 
-    async def test_role_metadata_change_between_targets_does_not_block_delivery(self):
+    async def test_supervisor_role_drift_between_targets_blocks_that_target(self):
         await self.save()
         self.ops.after_send = lambda _: self.tabs[2]["conversation_scope"].update(role_tags=[])
         result = await self.start()
-        self.assertEqual("STARTED", result["status"], result)
+        self.assertEqual("PARTIAL", result["status"], result)
         self.assertEqual("TARGET_DISPATCH", result["stage"])
-        self.assertEqual(2, len(self.sends()))
+        self.assertEqual(1, len(self.sends()))
+        self.assertEqual("DIRECTION_SUPERVISOR_ROLE_NOT_CONFIRMED", result["targets"][1]["reason"])
 
     async def test_busy_second_target_reports_dispatch_stage_without_resending_first(self):
         await self.save()
@@ -504,15 +508,13 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("TARGET_BUSY", replay["targets"][1]["status"])
         self.assertEqual(1, len(self.sends()))
 
-    async def test_absent_target_does_not_block_other_declared_target(self):
+    async def test_missing_supervisor_blocks_initial_chain_dispatch(self):
         await self.save()
         self.tabs[2]["presence"] = "CLOSED"
         result = await self.start()
-        self.assertEqual("PARTIAL", result["status"], result)
-        self.assertEqual(1, len(self.sends()))
-        self.assertEqual(C, result["targets"][1]["target_conversation_key"])
-        self.assertEqual("BLOCKED", result["targets"][1]["status"])
-        self.assertEqual("DIRECTION_ATTACHMENT_NOT_UNIQUE_OR_OPEN", result["targets"][1]["reason"])
+        self.assertEqual("NETWORK_PREPARATION_REQUIRED", result["status"], result)
+        self.assertEqual("DIRECTION_ATTACHMENT_NOT_UNIQUE_OR_OPEN", result["reason"])
+        self.assertEqual([], self.sends())
 
     async def test_prepared_network_updates_use_existing_setter_before_sending(self):
         self.tabs[0]["conversation_scope"].update(scope_name="", role_tags=[])
@@ -521,7 +523,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
             "display_name": "Manager A", "scope_name": "Project", "role_tags": ["manager"],
             "expected_scope_id": "", "expected_role_tags_sha256": role_tags_sha256([])}]
         self.assertEqual("OK", (await self.save(value))["status"])
-        self.assertEqual("READY", (await self.start(action="preflight"))["status"])
+        self.assertEqual("NETWORK_PREPARATION_REQUIRED", (await self.start(action="preflight"))["status"])
         self.assertEqual([], self.ops.calls)
         result = await self.start()
         self.assertEqual("STARTED", result["status"], result)
@@ -538,7 +540,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("INVALID_REQUEST", (await self.start(action="preflight"))["status"])
         self.assertEqual([], self.ops.calls)
 
-    async def test_closed_target_does_not_block_network_effect_or_other_target(self):
+    async def test_missing_initial_worker_blocks_dispatch_after_network_update(self):
         value = assessment()
         value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
             "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
@@ -546,13 +548,12 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         await self.save(value)
         self.tabs[1]["presence"] = "CLOSED"
         result = await self.start()
-        self.assertEqual("TARGET_DISPATCH", result["stage"], result)
+        self.assertEqual("NETWORK_PREPARATION_REQUIRED", result["status"], result)
+        self.assertEqual("AFTER_NETWORK_EFFECTS", result["stage"])
         self.assertTrue(result["network_preparation_applied"])
-        self.assertEqual("BLOCKED", result["targets"][0]["status"])
-        self.assertEqual("WATCHING", result["targets"][1]["status"])
-        self.assertEqual(1, len(self.sends()))
+        self.assertEqual([], self.sends())
 
-    async def test_target_closing_during_preparation_keeps_partial_dispatch_receipt(self):
+    async def test_initial_worker_closing_during_network_preparation_blocks_dispatch(self):
         value = assessment()
         value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
             "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
@@ -560,13 +561,11 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         await self.save(value)
         self.ops.after_network = lambda _: self.tabs[1].update(presence="CLOSED")
         result = await self.start()
-        self.assertEqual("TARGET_DISPATCH", result["stage"], result)
+        self.assertEqual("NETWORK_PREPARATION_REQUIRED", result["status"], result)
+        self.assertEqual("AFTER_NETWORK_EFFECTS", result["stage"])
         self.assertTrue(result["network_preparation_applied"])
-        self.assertFalse(result["all_targets_started"])
         self.assertEqual("APPLIED", result["network_results"][0]["outcome"])
-        self.assertEqual("BLOCKED", result["targets"][0]["status"])
-        self.assertEqual("WATCHING", result["targets"][1]["status"])
-        self.assertEqual(1, len(self.sends()))
+        self.assertEqual([], self.sends())
 
     async def test_unknown_keeps_original_ids_and_is_not_resent(self):
         await self.save()
@@ -712,7 +711,10 @@ class DirectionAssessmentValidationTests(unittest.TestCase):
         value = assessment()
         value["targets"][0]["role"] = "deployer"
         value.pop("supervisor_conversation_key")
-        value.pop("network_name")
+        with self.assertRaisesRegex(ValueError, "SUPERVISOR_CONVERSATION_KEY_REQUIRED"):
+            validate_direction_assessment(value, decision="NEW_TASK")
+        value = assessment()
+        value["targets"][0]["role"] = "deployer"
         self.assertEqual("deployer", validate_direction_assessment(
             value, decision="NEW_TASK")["targets"][0]["role"])
 
