@@ -9,6 +9,7 @@ import hashlib
 import re
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 _SCHEMA = "bct.chat-input-queue.v1"
@@ -43,6 +44,23 @@ def _sha(value: str) -> str:
     if not isinstance(value, str) or not _SHA.fullmatch(value):
         raise ValueError("CHAT_QUEUE_RESULT_SHA_INVALID")
     return value
+
+
+@dataclass(frozen=True)
+class QueueIdentity:
+    """Canonical queue partition identity; it grants no execution authority."""
+
+    work_id: str
+    target_conversation_key: str
+
+
+def validate_queue_identity(*, work_id: str,
+                            target_conversation_key: str) -> QueueIdentity:
+    """Validate the durable Work and Conversation identifiers shared by every action."""
+    return QueueIdentity(
+        work_id=_valid_id(work_id, "WORK"),
+        target_conversation_key=_conversation(target_conversation_key),
+    )
 
 
 class ChatInputQueue:
@@ -128,9 +146,10 @@ class ChatInputQueue:
     def enqueue(self, *, work_id: str, target_conversation_key: str,
                 message_id: str, instruction: str,
                 origin_conversation_key: str = "") -> dict[str, Any]:
-        work_id = _valid_id(work_id, "WORK")
+        identity = validate_queue_identity(
+            work_id=work_id, target_conversation_key=target_conversation_key)
+        work_id, target = identity.work_id, identity.target_conversation_key
         message_id = _valid_id(message_id, "MESSAGE_ID")
-        target = _conversation(target_conversation_key)
         origin = _conversation(origin_conversation_key) if origin_conversation_key else ""
         if (not isinstance(instruction, str) or not instruction.strip()
                 or len(instruction.encode("utf-8")) > 24000 or "\x00" in instruction):
@@ -164,8 +183,9 @@ class ChatInputQueue:
 
     def status(self, *, work_id: str, target_conversation_key: str,
                limit: int = 30) -> dict[str, Any]:
-        work_id = _valid_id(work_id, "WORK")
-        target = _conversation(target_conversation_key)
+        identity = validate_queue_identity(
+            work_id=work_id, target_conversation_key=target_conversation_key)
+        work_id, target = identity.work_id, identity.target_conversation_key
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("CHAT_QUEUE_LIMIT_INVALID")
         # A read never claims, releases, creates tables or alters worker state.
@@ -202,8 +222,9 @@ class ChatInputQueue:
 
     def claim(self, *, work_id: str, target_conversation_key: str,
               claim_id: str) -> dict[str, Any]:
-        work_id = _valid_id(work_id, "WORK")
-        target = _conversation(target_conversation_key)
+        identity = validate_queue_identity(
+            work_id=work_id, target_conversation_key=target_conversation_key)
+        work_id, target = identity.work_id, identity.target_conversation_key
         claim_id = _valid_id(claim_id, "CLAIM_ID")
         self._ensure_schema()
         with self.store.transaction() as db:
@@ -247,8 +268,9 @@ class ChatInputQueue:
     def complete(self, *, work_id: str, target_conversation_key: str,
                  message_id: str, claim_id: str,
                  result_sha256: str) -> dict[str, Any]:
-        _valid_id(work_id, "WORK")
-        target = _conversation(target_conversation_key)
+        identity = validate_queue_identity(
+            work_id=work_id, target_conversation_key=target_conversation_key)
+        work_id, target = identity.work_id, identity.target_conversation_key
         _valid_id(message_id, "MESSAGE_ID")
         _valid_id(claim_id, "CLAIM_ID")
         digest = _sha(result_sha256)
@@ -278,8 +300,9 @@ class ChatInputQueue:
     def hold(self, *, work_id: str, target_conversation_key: str,
              message_id: str, claim_id: str, reason: str,
              kind: str = "UNKNOWN") -> dict[str, Any]:
-        _valid_id(work_id, "WORK")
-        target = _conversation(target_conversation_key)
+        identity = validate_queue_identity(
+            work_id=work_id, target_conversation_key=target_conversation_key)
+        work_id, target = identity.work_id, identity.target_conversation_key
         _valid_id(message_id, "MESSAGE_ID")
         _valid_id(claim_id, "CLAIM_ID")
         if kind not in {"UNKNOWN", "PRE_DISPATCH"}:
@@ -310,8 +333,9 @@ class ChatInputQueue:
 
     def resume(self, *, work_id: str, target_conversation_key: str,
                message_id: str, claim_id: str) -> dict[str, Any]:
-        _valid_id(work_id, "WORK")
-        target = _conversation(target_conversation_key)
+        identity = validate_queue_identity(
+            work_id=work_id, target_conversation_key=target_conversation_key)
+        work_id, target = identity.work_id, identity.target_conversation_key
         _valid_id(message_id, "MESSAGE_ID")
         _valid_id(claim_id, "CLAIM_ID")
         self._ensure_schema()

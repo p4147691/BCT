@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from bct import BCT
-from bct.chat_input_queue import ChatInputQueue
+from bct.chat_input_queue import ChatInputQueue, validate_queue_identity
 from bct.core.models import Principal
 from bct.core.store import Store
 from bct.mcp_server import build_mcp
@@ -170,6 +170,13 @@ class ChatInputQueueTests(unittest.TestCase):
                                 result_sha256="wrong")
         self.assertIsNone(self.queue.status(work_id=self.work, target_conversation_key=A)["head"])
 
+    def test_common_identity_validator_canonicalizes_every_queue_partition(self):
+        identity = validate_queue_identity(work_id=self.work, target_conversation_key=A)
+        self.assertEqual(self.work, identity.work_id)
+        self.assertEqual(A, identity.target_conversation_key)
+        with self.assertRaisesRegex(ValueError, "TARGET_NOT_CANONICAL"):
+            validate_queue_identity(work_id=self.work, target_conversation_key=A.upper())
+
 
 class ChatInputQueueMCPTests(unittest.TestCase):
     def setUp(self):
@@ -184,7 +191,7 @@ class ChatInputQueueMCPTests(unittest.TestCase):
                               frozenset({"read", "orchestrate"}))
         self.work = self.bct.create_work(
             work_id="queue-mcp", request_summary="queue", roots=[str(root)],
-            actions=["read", "orchestrate"], principal=principal,
+            actions=["read"], principal=principal,
         )
         other = Principal("different-principal", "test", frozenset({"read", "orchestrate"}))
         self.other = self.bct.create_work(
@@ -192,7 +199,7 @@ class ChatInputQueueMCPTests(unittest.TestCase):
             actions=["read", "orchestrate"], principal=other,
         )
 
-    def test_public_tool_registration_and_authorization(self):
+    def test_public_tool_uses_active_work_and_exact_queue_identity_not_authority(self):
         async def check():
             full = build_mcp(self.bct)
             compact = build_mcp(self.bct, compact_catalogue=True)
@@ -219,10 +226,18 @@ class ChatInputQueueMCPTests(unittest.TestCase):
             })
             self.assertEqual("DONE", ChatInputQueue(self.bct.store).status(
                 work_id=self.work.work_id, target_conversation_key=A)["messages"][0]["state"])
-            with self.assertRaisesRegex(Exception, "WORK_OWNER_INVALID"):
+            await full.call_tool("queue_message", {
+                "work_id": self.other.work_id, "target_conversation_key": A,
+                "action": "enqueue", "message_id": "foreign-work-01",
+                "instruction": "same durable identity rules, no owner gate",
+            })
+            self.assertEqual(1, ChatInputQueue(self.bct.store).status(
+                work_id=self.other.work_id, target_conversation_key=A)["counts"]["QUEUED"])
+            with self.assertRaisesRegex(Exception, "TARGET_INVALID"):
                 await full.call_tool("queue_message", {
-                    "work_id": self.other.work_id,
-                    "target_conversation_key": A, "action": "status",
+                    "work_id": self.work.work_id, "target_conversation_key": "N4",
+                    "action": "enqueue", "message_id": "invalid-target",
+                    "instruction": "must retain exact conversation identity",
                 })
         asyncio.run(check())
 

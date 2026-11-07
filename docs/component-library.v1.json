@@ -338,8 +338,8 @@
         "bct-sqlite-queue-metadata"
       ],
       "safety": [
-        "work-owner-bound",
-        "read-for-status-orchestrate-for-mutation",
+        "active-work-identity",
+        "roles-and-ownership-are-not-queue-permissions",
         "exact-conversation-uuid",
         "message-and-claim-idempotence",
         "strict-head-of-line",
