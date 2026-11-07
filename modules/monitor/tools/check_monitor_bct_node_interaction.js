@@ -68,6 +68,10 @@ function loadModule() {
   assert.deepEqual(calls[3], { type: "switchVirtualDesktop", index: 1 });
   assert.deepEqual(calls[4], { type: "restoreForegroundWindow", hwnd: "4242" });
 
+  const preactivated = await service.focusExactTab(target);
+  assert.equal(preactivated.status, "APPLIED");
+  assert.deepEqual(focusedTabs, [target, target]);
+
   const missingCalls = [];
   const missing = loadModule().create({
     nativeRequest: async (message) => {
@@ -111,6 +115,8 @@ function loadModule() {
     "node view selector options must keep explicit contrast before hover");
   assert.match(monitor, /row\.addEventListener\("click"/);
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
+  assert.match(monitor, /focusExactTab\(tabTarget\)[\s\S]{0,300}resolveMonitorBctNodeHwnd\(node\)/,
+    "node double-click must activate the exact Chrome tab before resolving its fresh HWND binding");
   assert.match(monitor, /const detail = monitorBctNodeDetail\(node, desktopPosition, nativeLocation\);\s*location\.textContent = detail\.text;/,
     "initial node-card render must use the complete compact detail contract");
   assert.match(monitor, /const detail = monitorBctNodeDetail\(node, index, location\);\s*position\.textContent = detail\.text;/,
