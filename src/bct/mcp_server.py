@@ -527,6 +527,73 @@ def build_mcp(
             **summary,
         }
 
+    def chain_topology_preparation_recipe(*, current_items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Expose a deterministic, read-only candidate order for a new chain.
+
+        This deliberately does not repurpose an active role.  It tells the
+        Manager which existing conversation can safely be reused and when a
+        new conversation must be created through the existing browser recipe.
+        """
+        global_supervisors: list[dict[str, str]] = []
+        reusable_workers: list[dict[str, str]] = []
+        reserved: list[dict[str, str]] = []
+        for node in current_items:
+            if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
+                continue
+            key = str(node.get("conversation_uuid") or "").strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}", key):
+                continue
+            roles = {
+                str(role).strip().casefold() for role in (node.get("roles") or [])
+                if str(role).strip()
+            }
+            scope = str(node.get("network_id") or node.get("network") or "").strip()
+            summary = {
+                "conversation_key": key,
+                "node_number": str(node.get("node_number") or ""),
+            }
+            # A global Supervisor is reusable only when it is not also an
+            # operational Manager/Worker and is not tied to a project network.
+            if roles == {"supervisor"} and not scope:
+                global_supervisors.append(summary)
+                continue
+            # A Worker may be drawn only from a genuinely unassigned, idle
+            # conversation.  A named task, active generation, role, or network
+            # makes the node unavailable for implicit reassignment.
+            if (not roles and not scope and not str(node.get("assigned_task") or "").strip()
+                    and node.get("generating") is not True):
+                reusable_workers.append(summary)
+                continue
+            if roles or scope:
+                reserved.append({
+                    **summary,
+                    "roles": sorted(roles),
+                    "scope": scope,
+                    "reason": "ROLE_OR_NETWORK_ALREADY_ASSIGNED",
+                })
+        return {
+            "status": "READY",
+            "read_only": True,
+            "selection_order": [
+                "reuse one existing global Supervisor",
+                "otherwise create one new global Supervisor",
+                "reuse one unassigned idle conversation as Worker and apply the Manager's network",
+                "otherwise create one new Worker and apply the Manager's network",
+            ],
+            "global_supervisor_candidates": global_supervisors,
+            "unassigned_worker_candidates": reusable_workers,
+            "reserved_nodes": reserved,
+            "required_creation": {
+                "supervisor": not bool(global_supervisors),
+                "worker": not bool(reusable_workers),
+            },
+            "prohibitions": [
+                "Never reuse a Manager as Worker or Supervisor.",
+                "Never take a node from another conversation network as an implicit Worker.",
+                "Never use a network-bound Supervisor; Supervisor is global.",
+            ],
+        }
+
     async def state_recipe(
         *, project: str = "", source_kind: str = "USER", work: Work | None = None,
         source_return: dict[str, Any] | None = None,
@@ -599,6 +666,7 @@ def build_mcp(
                         if terminal_notices else "NONE"
                     ),
                 }
+        topology_preparation = chain_topology_preparation_recipe(current_items=current_items)
         return {
             "status": "OK",
             "observed_at": monitor.get("generated_at"),
@@ -613,6 +681,7 @@ def build_mcp(
             "return_execute_plan_check": return_plan_check,
             "recovery_notices": recovery_notices,
             "github_ci_notices": github_ci_notices,
+            "chain_topology_preparation": topology_preparation,
             "read_only": True,
         }
 
