@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "1c4c3b88319d15141f195d657aac1aad0b1cdeb506dceb0bedb8cba6595f3ab5",
+  "source_fingerprint": "971c03e30f2807791a37f6ad4869e9e19229267dc4fd42e1958ce86f0c38f379",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "126a43ca8aea9fb8909248d306ac63d7d3040e4416ddbea1a70c0b3774595af1",
     "docs/component-library.v1.json": "9578132c6b3dd6e31dbc3455d6a326a603fccd3cd5283fece65c3f5235a52ef3",
@@ -10,7 +10,7 @@
     "modules/browser-bridge/native/native_host.py": "7a618302522f954fb953ce4f24c273d9fb1bc1d9c4eb0846f0c4cccdfb818b78",
     "modules/browser-bridge/native/persistent_host.py": "306d2bf6618cd5a274dd4e91fe0a2999ee0ce8cba1171bbfa80c4cb2d003f015",
     "modules/monitor/domains/desktop-lifecycle.js": "8269e05b3597723b2d47fdf2a8ddc8d3cca7cc93ae49a0f4db6ec506a6084158",
-    "modules/monitor/domains/node-identity.js": "92e31f61a43114ddff67ed482508f31f358b94b0d4b029ba4592b7d6e7a96138",
+    "modules/monitor/domains/node-identity.js": "2a1a7aab26c063f0c83811f1c734ff69c898c2a986749cbf09f6b1aebf97244f",
     "modules/monitor/extension/browser/tab-close-adapter.js": "25098987008308e97822ee12b5e62e93f39506bae165014c51b0aab3c95025b7",
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "ec9123afd6e583b7a0c92602c84652df7edd25f275b6ee017d2c573e290781d8",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "2168eeb18875dfa5c23aaa37aaad5acc7f6b43449c5a2c828ac937834314669e",
