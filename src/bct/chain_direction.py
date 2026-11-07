@@ -75,6 +75,8 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
         },
         "required_for_new_task": {
             "manager_conversation_key": "A's return destination: lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
+            "worker_conversation_key": "the one initial Worker UUID; it must differ from Manager and Supervisor",
+            "supervisor_conversation_key": "the one global Supervisor UUID; it must differ from Manager and Worker",
             "targets": [{
                 "conversation_key": "lowercase canonical ChatGPT conversation UUID; not N96 or a tab title",
                 "role": "A's free-form role label, for example worker, reviewer, or deployer",
@@ -102,7 +104,7 @@ def direction_source_evidence(source_kind: str) -> str:
 def validate_direction_assessment(value: dict, *, decision: str) -> dict:
     """Validate A's declared decisions without pretending to evaluate prose."""
     if not isinstance(value, dict) or set(value) - {
-        "answers", "manager_conversation_key", "supervisor_conversation_key",
+        "answers", "manager_conversation_key", "worker_conversation_key", "supervisor_conversation_key",
         "network_name", "targets", "network_updates", "node_recovery",
     }:
         raise ValueError("DIRECTION_ASSESSMENT_INVALID")
@@ -127,13 +129,12 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
     if decision != "NEW_TASK" and (targets or updates or recovery is not None):
         raise ValueError("DIRECTION_TERMINAL_HAS_ACTIONS")
     if decision == "NEW_TASK":
-        if (not isinstance(value.get("manager_conversation_key"), str)
-                or not _UUID.fullmatch(value["manager_conversation_key"])):
-            raise ValueError("DIRECTION_MANAGER_CONVERSATION_KEY_REQUIRED")
-        for field in ("supervisor_conversation_key",):
-            if field in value and value[field] and (
-                    not isinstance(value[field], str) or not _UUID.fullmatch(value[field])):
-                raise ValueError("DIRECTION_" + field.upper() + "_INVALID")
+        for field in ("manager_conversation_key", "worker_conversation_key", "supervisor_conversation_key"):
+            if (not isinstance(value.get(field), str) or not _UUID.fullmatch(value[field])):
+                raise ValueError("DIRECTION_" + field.upper() + "_REQUIRED")
+        if len({value["manager_conversation_key"], value["worker_conversation_key"],
+                value["supervisor_conversation_key"]}) != 3:
+            raise ValueError("DIRECTION_TOPOLOGY_IDENTITIES_MUST_DIFFER")
         if "network_name" in value and (not isinstance(value["network_name"], str)
                                         or len(value["network_name"]) > 200):
             raise ValueError("DIRECTION_NETWORK_INVALID")
@@ -152,6 +153,8 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
             raise ValueError("DIRECTION_TARGET_ROLE_INVALID")
         if not isinstance(target["instruction"], str) or not target["instruction"].strip() or len(target["instruction"]) > 6000:
             raise ValueError("DIRECTION_TARGET_INSTRUCTION_REQUIRED")
+    if decision == "NEW_TASK" and value["worker_conversation_key"] not in keys:
+        raise ValueError("DIRECTION_WORKER_TARGET_REQUIRED")
     # Resource bounds, not a cap on autonomous SELF continuation.
     if len(_json(value)) > 90000 or len(targets) > 32 or len(updates) > 64:
         raise ValueError("DIRECTION_ASSESSMENT_TOO_LARGE")
@@ -190,16 +193,33 @@ def resolve_direction_target(*, snapshot: dict, conversation_key: str) -> dict:
 
 
 def resolve_direction_network(*, snapshot: dict, assessment: dict, targets: list) -> tuple:
-    """Resolve declared delivery identities, not a role/topology gate.
+    """Resolve a declared Manager–Worker–Supervisor topology before delivery.
 
-    A Direction records who should receive a message.  Node Info roles and
-    network labels help A compose that Direction, but they do not turn a
-    send into a requirement for one global supervisor or one prescribed
-    topology.  Every route is reacquired by the same conversation UUID, so a
-    tab/window move is harmless while a different conversation is never an
-    implicit replacement.
+    This is a proof gate, not an election or creation mechanism: A must name
+    the three identities and current Node Info/RCC must still resolve each one.
     """
     origin = resolve_direction_target(snapshot=snapshot, conversation_key=assessment["manager_conversation_key"])
+    worker = resolve_direction_target(snapshot=snapshot, conversation_key=assessment["worker_conversation_key"])
+    supervisor = resolve_direction_target(snapshot=snapshot, conversation_key=assessment["supervisor_conversation_key"])
+    if len({assessment["manager_conversation_key"], assessment["worker_conversation_key"],
+            assessment["supervisor_conversation_key"]}) != 3:
+        raise ValueError("DIRECTION_TOPOLOGY_IDENTITIES_MUST_DIFFER")
+    def has_role(route: dict, role: str) -> bool:
+        roles = route["node_info"].get("roles")
+        return isinstance(roles, list) and any(str(item).strip().casefold() == role for item in roles)
+    if not has_role(origin, "manager"):
+        raise ValueError("DIRECTION_MANAGER_ROLE_NOT_CONFIRMED")
+    if not has_role(worker, "worker"):
+        raise ValueError("DIRECTION_WORKER_ROLE_NOT_CONFIRMED")
+    if not has_role(supervisor, "supervisor"):
+        raise ValueError("DIRECTION_SUPERVISOR_ROLE_NOT_CONFIRMED")
+    manager_scope = str(origin["node_info"].get("network_id") or origin["node_info"].get("network") or "").strip()
+    worker_scope = str(worker["node_info"].get("network_id") or worker["node_info"].get("network") or "").strip()
+    supervisor_scope = str(supervisor["node_info"].get("network_id") or supervisor["node_info"].get("network") or "").strip()
+    if not manager_scope or manager_scope != worker_scope:
+        raise ValueError("DIRECTION_MANAGER_WORKER_NETWORK_MISMATCH")
+    if supervisor_scope:
+        raise ValueError("DIRECTION_SUPERVISOR_MUST_BE_GLOBAL")
     resolved = []
     for i, target in targets:
         route = resolve_direction_target(snapshot=snapshot, conversation_key=target["conversation_key"])
