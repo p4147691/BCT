@@ -52,7 +52,9 @@ jobs:
 
   preflight:
     needs: scope
-    if: needs.scope.outputs.core == 'true'
+    # A supervisor's PR only proves scope/manual freshness.  The complete
+    # validation belongs to the exact main revision after integration.
+    if: github.event_name != 'pull_request' && needs.scope.outputs.core == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -68,14 +70,17 @@ jobs:
           python -m unittest discover -s tests -p test_ci_acceleration.py -v
   core:
     needs: [scope, preflight]
-    if: needs.scope.outputs.core == 'true'
+    if: github.event_name != 'pull_request' && needs.scope.outputs.core == 'true'
     runs-on: windows-latest
     strategy:
       # Keep every shard running so one failure yields a complete diagnosis and
       # does not force another push merely to discover a second failure.
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        # Six is the measured balance point: it lowers the estimated slowest
+        # shard from about 8 minutes (four shards) to about 5.5 minutes
+        # without paying the startup overhead of seven or eight Windows jobs.
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -84,5 +89,5 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: python -m pip install -e .
-      - name: Run BCT core shard ${{ matrix.shard }} of 4
-        run: python scripts/ci_test_shard.py --start-directory tests --shard-index ${{ matrix.shard }} --shard-count 4 --durations 20 --duration-input scripts/ci_test_duration_seed.json
+      - name: Run BCT core shard ${{ matrix.shard }} of 6
+        run: python scripts/ci_test_shard.py --start-directory tests --shard-index ${{ matrix.shard }} --shard-count 6 --durations 20 --duration-input scripts/ci_test_duration_seed.json

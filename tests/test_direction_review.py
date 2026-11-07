@@ -103,8 +103,12 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.snapshot = snapshot()
         self.tabs = self.snapshot["monitor"]["rcc"]["instances"][0]["tabs"]
         self.ops = Operations(self)
+        self.status_reads = 0
+        def status_provider():
+            self.status_reads += 1
+            return copy.deepcopy(self.snapshot)
         self.mcp = build_mcp(SimpleNamespace(operations=self.ops, store=self.store),
-                             compact_catalogue=True, status_provider=lambda: copy.deepcopy(self.snapshot))
+                             compact_catalogue=True, status_provider=status_provider)
         guard = patch("bct.node_recovery.NodeRecoveryLedger.assert_send_allowed", return_value=None)
         guard.start()
         self.addCleanup(guard.stop)
@@ -135,21 +139,188 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         with self.store._readonly() as db:
             before = list(db.execute("SELECT name FROM sqlite_master ORDER BY name"))
         result = await self.call("bct_chain_message", instruction="Finish the translation program.")
-        self.assertEqual("DIRECTION_REQUIRED", result["status"], result)
-        self.assertEqual(10, len(result["questions"]))
-        self.assertIn("사용자에게 이 질문지를 넘기지 않는다", result["instructions_for_a"])
-        self.assertIn("Historical network", json.dumps(result["conversation_network"]))
-        self.assertIn(A, json.dumps(result["conversation_network"]))
-        self.assertIn("bct_set_direction", result["available_tools"])
-        self.assertEqual("bct_capabilities", result["resource_discovery"]["tool"])
-        self.assertEqual(get_manual_guidance(), result["manual_guidance"])
-        self.assertIn("bct_capabilities", result["instructions_for_a"])
-        self.assertIsNone(result["reality"]["work"])
+        self.assertEqual("RECIPE_READY", result["status"], result)
+        self.assertNotIn("questions", result["direction"])
+        self.assertIn("Historical network", json.dumps(result["state"]["stored_networks"]))
+        self.assertIn(A, json.dumps(result["state"]["current_nodes"]))
+        self.assertEqual("bct_set_direction", result["direction"]["save"]["tool"])
+        self.assertEqual("WORK_REQUIRED", result["direction"]["save_gate"]["status"])
         self.assertFalse(result["authorizes_send"])
-        self.assertEqual("CALLER_PROVIDED_TEXT", result["source_evidence"])
+        self.assertEqual("CALLER_PROVIDED_TEXT", result["input"]["source_evidence"])
         self.assertEqual([], self.ops.calls)
         with self.store._readonly() as db:
             self.assertEqual([tuple(r) for r in before], [tuple(r) for r in db.execute("SELECT name FROM sqlite_master ORDER BY name")])
+
+    async def test_prepare_state_includes_only_the_declared_a_recovery_notices(self):
+        ledger = DurableWatchLedger(self.store)
+        ledger.prearm_task(
+            task_id="stalled-task", work_id=self.work.work_id,
+            principal_id=self.work.owner_principal_id,
+            assignment_epoch=self.work.assignment_epoch,
+            instance_id="fixture-instance", conversation_key=B,
+            manager_conversation_key=A, manager_instance_id="fixture-instance",
+            baseline={"responseTurnCount": 0, "generating": False,
+                      "responseTurnKey": "", "responseSha256": ""},
+            registration_receipt="arm-stalled", planned_send_operation_id="send-stalled",
+            planned_send_text="Perform the bounded task.",
+        )
+        self.assertTrue(ledger.record_recovery_needed(
+            ledger.get("stalled-task", 1), kind="CONNECTION_DISCONNECTED", observed_at=100.0,
+        ))
+        result = await self.call(
+            "bct_chain_recipe", action="prepare", work_id=self.work.work_id,
+            source_text="Continue the existing work safely.", report_target_conversation_key=A,
+        )
+        notices = result["state"]["recovery_notices"]
+        self.assertEqual("OK", notices["status"])
+        self.assertEqual("AUTHOR_RECOVER_NODE_DIRECTION", notices["next_action"])
+        self.assertEqual(B, notices["notices"][0]["node_conversation_key"])
+        self.assertEqual([], self.ops.calls)
+
+    async def test_prepare_state_includes_only_the_declared_a_github_ci_notices(self):
+        self.store.register_github_run_inbox(
+            subscription_id="ci-for-a", repository="owner/repo", run_id=7,
+            head_sha="a" * 40, workflow="CI", context={"pr": 1},
+            work_id=self.work.work_id, node_id="manager-a", conversation_uuid=A,
+            notify_user=True, notify_manager=False, next_step="Review CI.",
+            trigger="github-run:7:terminal",
+        )
+        self.store.register_github_run_inbox(
+            subscription_id="ci-for-b", repository="owner/repo", run_id=8,
+            head_sha="b" * 40, workflow="CI", context={"pr": 2},
+            work_id=self.work.work_id, node_id="manager-b", conversation_uuid=B,
+            notify_user=True, notify_manager=False, next_step="Review CI.",
+            trigger="github-run:8:terminal",
+        )
+        self.store.finish_github_run_inbox(
+            subscription_id="ci-for-a", state="SUCCESS", conclusion="success",
+            url="https://example.invalid/runs/7", error_summary=None,
+        )
+        self.store.finish_github_run_inbox(
+            subscription_id="ci-for-b", state="FAILED", conclusion="failure",
+            url="https://example.invalid/runs/8", error_summary="failed job: Core",
+        )
+        result = await self.call(
+            "bct_chain_recipe", action="prepare", work_id=self.work.work_id,
+            source_text="Review the completed CI safely.", report_target_conversation_key=A,
+        )
+        notices = result["state"]["github_ci_notices"]
+        self.assertEqual("OK", notices["status"])
+        self.assertEqual("REVIEW_CI_RESULT_AND_AUTHOR_NEXT_DIRECTION", notices["next_action"])
+        self.assertEqual(["ci-for-a"], [notice["subscription_id"] for notice in notices["notices"]])
+        self.assertEqual([], self.ops.calls)
+
+    async def test_saved_direction_exposes_the_next_recipe_stage(self):
+        result = await self.save()
+        self.assertEqual("OK", result["status"])
+        self.assertEqual(
+            ["Input R", "State R", "Write Direction R", "Save Direction R"],
+            [stage["name"] for stage in result["recipe_progress"]["completed"]],
+        )
+        self.assertEqual("Prepare Send Direction R", result["recipe_progress"]["next"]["name"])
+
+    async def test_declared_recover_node_recipe_checks_then_rereads_state_before_send(self):
+        value = assessment()
+        value["node_recovery"] = {"conversation_key": B}
+        saved = await self.save(value)
+        self.assertEqual("Recover Node R", saved["recipe_progress"]["next"]["name"])
+        recovered = await self.call(
+            "bct_chain_recipe", action="recover_node", work_id=self.work.work_id,
+            direction_id="direction-review",
+        )
+        self.assertEqual("CHECKED", recovered["status"], recovered)
+        self.assertEqual("OK", recovered["recover_node"]["result"])
+        self.assertIn(B, json.dumps(recovered["state"]["current_nodes"]))
+        self.assertEqual("Prepare Send Direction R", recovered["recipe_progress"]["next"]["name"])
+        sent = await self.call(
+            "bct_chain_recipe", action="send", work_id=self.work.work_id,
+            direction_id="direction-review", task_id="review-task", operation_id="review-operation",
+        )
+        self.assertEqual("CHECKED", sent["recover_node"]["status"])
+        self.assertEqual("STARTED", sent["status"], sent)
+
+    async def test_prepare_send_recipe_is_read_only_and_stops_before_network_apply(self):
+        await self.save()
+        before = len(self.ops.calls)
+        result = await self.call(
+            "bct_chain_recipe", action="prepare_send", work_id=self.work.work_id,
+            direction_id="direction-review", task_id="review-task", operation_id="review-operation",
+        )
+        self.assertEqual("READY", result["status"])
+        self.assertEqual(2, len(result["targets"]))
+        self.assertEqual("Apply Conversation Network R", result["recipe_progress"]["next"]["name"])
+        self.assertEqual(before, len(self.ops.calls))
+
+    async def test_apply_network_recipe_exposes_send_as_the_next_stage(self):
+        await self.save()
+        result = await self.call(
+            "bct_chain_recipe", action="apply_network", work_id=self.work.work_id,
+            direction_id="direction-review", task_id="review-task", operation_id="review-operation",
+        )
+        self.assertEqual("READY", result["status"])
+        self.assertEqual("Send Direction R", result["recipe_progress"]["next"]["name"])
+        self.assertEqual([], result["network_results"])
+
+    async def test_send_direction_recipe_runs_stage_six_from_chain_recipe(self):
+        await self.save()
+        result = await self.call(
+            "bct_chain_recipe", action="send", work_id=self.work.work_id,
+            direction_id="direction-review", task_id="review-task", operation_id="review-operation",
+        )
+        self.assertEqual("STARTED", result["status"], result)
+        self.assertEqual(
+            ["Input R", "State R", "Write Direction R", "Save Direction R",
+             "Recover Node R", "Prepare Send Direction R", "Apply Conversation Network R", "Send Direction R"],
+            [stage["name"] for stage in result["recipe_progress"]["completed"]],
+        )
+        self.assertIsNone(result["recipe_progress"]["next"])
+        self.assertEqual(2, len(self.sends()))
+        self.assertEqual({B, C}, {
+            call["arguments"]["conversation_key"] for call in self.sends()
+        })
+
+    async def test_chain_recipe_input_r_accepts_unbound_user_text_without_observing_or_sending(self):
+        self.status_reads = 0
+        result = await self.call("bct_chain_recipe", source_text="Finish the translation program.")
+        self.assertEqual("RECIPE_READY", result["status"], result)
+        self.assertEqual({"name": "chain_recipe", "kind": "full_recipe"}, result["recipe"])
+        self.assertEqual([
+            {"number": 0, "name": "Input R"},
+            {"number": 1, "name": "State R"},
+            {"number": 2, "name": "Write Direction R", "status": "A_REQUIRED"},
+        ], result["completed_stages"])
+        self.assertEqual({"number": 2, "name": "Write Direction R", "status": "A_REQUIRED"}, result["next_stage"])
+        self.assertEqual([
+            "Input R", "State R", "Write Direction R", "Save Direction R",
+            "Recover Node R", "Prepare Send Direction R", "Apply Conversation Network R", "Send Direction R",
+        ], [stage["name"] for stage in result["recipe_outline"]])
+        self.assertEqual(
+            ["Check Chain Work", "Read Saved Direction", "Send Delayed Message", "Send Direction Message"],
+            [block["name"] for block in result["recipe_outline"][-1]["contains"]],
+        )
+        self.assertEqual(
+            ["Watch Alarm R", "Continuation R"],
+            [part["name"] for part in result["recipe_outline"][-1]["after_response"]["contains"]],
+        )
+        self.assertEqual(
+            ["Interpret Next Task", "SELF / MANAGER follow-up"],
+            [part["name"] for part in result["recipe_outline"][-1]["after_response"]["contains"][1]["contains"]],
+        )
+        self.assertEqual("UNCONNECTED", result["input"]["connection"])
+        self.assertEqual("CALLER_PROVIDED_TEXT", result["input"]["source_evidence"])
+        self.assertEqual(1, self.status_reads)
+        self.assertTrue(result["state"]["read_only"])
+        self.assertIn("network_comparison", result["state"])
+        self.assertEqual("A_DIRECTION_REQUIRED", result["direction"]["status"])
+        self.assertEqual("WORK_REQUIRED", result["direction"]["save_gate"]["status"])
+        self.assertEqual("bct_set_direction", result["direction"]["save"]["tool"])
+        self.assertEqual("save", result["direction"]["save"]["action"])
+        self.assertIn("direction_text", result["direction"]["save"]["required"])
+        self.assertIn("assessment", result["direction"]["save"]["optional"])
+        self.assertNotIn("questions", result["direction"])
+        self.assertTrue(result["read_only"])
+        self.assertFalse(result["authorizes_send"])
+        self.assertEqual([], self.ops.calls)
 
     async def test_save_keeps_ai_answers_optional_and_preserves_original_user_text(self):
         value = assessment()
@@ -181,13 +352,13 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
                          rejected["assessment_contract"]["target_diagnostics"][0]["expected_fields"])
         malformed = assessment()
         malformed["targets"][0] = {
-            "conversation_key": "N96", "role": "manager", "instruction": " "}
+            "conversation_key": "N96", "role": "", "instruction": " "}
         rejected = await self.save(malformed)
         self.assertEqual("DIRECTION_TARGET_CONFLICT", rejected["reason"])
         diagnostic = rejected["assessment_contract"]["target_diagnostics"][0]
         self.assertEqual(0, diagnostic["index"])
         self.assertIn("conversation_key must be a lowercase canonical UUID", diagnostic["issues"])
-        self.assertIn("role must be worker or supervisor", diagnostic["issues"])
+        self.assertIn("role must be a non-empty label of at most 80 characters", diagnostic["issues"])
         self.assertIn(
             "instruction must be a non-empty string of at most 6000 characters",
             diagnostic["issues"],
@@ -311,14 +482,13 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("DIRECTION_TARGET_RECORD_MISMATCH", result["reason"])
         self.assertEqual([], self.ops.calls)
 
-    async def test_roles_are_rechecked_between_targets(self):
+    async def test_role_metadata_change_between_targets_does_not_block_delivery(self):
         await self.save()
         self.ops.after_send = lambda _: self.tabs[2]["conversation_scope"].update(role_tags=[])
         result = await self.start()
-        self.assertEqual("PARTIAL", result["status"], result)
+        self.assertEqual("STARTED", result["status"], result)
         self.assertEqual("TARGET_DISPATCH", result["stage"])
-        self.assertEqual(1, len(self.sends()))
-        self.assertEqual("DIRECTION_SUPERVISOR_PREPARATION_REQUIRED", result["targets"][1]["reason"])
+        self.assertEqual(2, len(self.sends()))
 
     async def test_busy_second_target_reports_dispatch_stage_without_resending_first(self):
         await self.save()
@@ -334,12 +504,15 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("TARGET_BUSY", replay["targets"][1]["status"])
         self.assertEqual(1, len(self.sends()))
 
-    async def test_absent_supervisor_does_not_guess_or_send(self):
+    async def test_absent_target_does_not_block_other_declared_target(self):
         await self.save()
         self.tabs[2]["presence"] = "CLOSED"
         result = await self.start()
-        self.assertEqual("NETWORK_PREPARATION_REQUIRED", result["status"], result)
-        self.assertEqual([], self.ops.calls)
+        self.assertEqual("PARTIAL", result["status"], result)
+        self.assertEqual(1, len(self.sends()))
+        self.assertEqual(C, result["targets"][1]["target_conversation_key"])
+        self.assertEqual("BLOCKED", result["targets"][1]["status"])
+        self.assertEqual("DIRECTION_ATTACHMENT_NOT_UNIQUE_OR_OPEN", result["targets"][1]["reason"])
 
     async def test_prepared_network_updates_use_existing_setter_before_sending(self):
         self.tabs[0]["conversation_scope"].update(scope_name="", role_tags=[])
@@ -348,7 +521,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
             "display_name": "Manager A", "scope_name": "Project", "role_tags": ["manager"],
             "expected_scope_id": "", "expected_role_tags_sha256": role_tags_sha256([])}]
         self.assertEqual("OK", (await self.save(value))["status"])
-        self.assertEqual("NETWORK_PREPARATION_REQUIRED", (await self.start(action="preflight"))["status"])
+        self.assertEqual("READY", (await self.start(action="preflight"))["status"])
         self.assertEqual([], self.ops.calls)
         result = await self.start()
         self.assertEqual("STARTED", result["status"], result)
@@ -358,13 +531,14 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(self.ops.network_receipts))
         self.assertEqual(2, len(self.sends()))
 
-    async def test_invalid_network_arguments_fail_during_save(self):
+    async def test_invalid_network_arguments_fail_during_apply(self):
         value = assessment()
         value["network_updates"] = [{"operation": "node-info-set", "conversation_key": "N1"}]
-        self.assertEqual("INVALID_REQUEST", (await self.save(value))["status"])
+        self.assertEqual("OK", (await self.save(value))["status"])
+        self.assertEqual("INVALID_REQUEST", (await self.start(action="preflight"))["status"])
         self.assertEqual([], self.ops.calls)
 
-    async def test_closed_target_blocks_before_any_network_effect(self):
+    async def test_closed_target_does_not_block_network_effect_or_other_target(self):
         value = assessment()
         value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
             "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
@@ -372,11 +546,13 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         await self.save(value)
         self.tabs[1]["presence"] = "CLOSED"
         result = await self.start()
-        self.assertEqual("BEFORE_NETWORK_EFFECTS", result["stage"], result)
-        self.assertFalse(result["network_preparation_applied"])
-        self.assertEqual([], self.ops.calls)
+        self.assertEqual("TARGET_DISPATCH", result["stage"], result)
+        self.assertTrue(result["network_preparation_applied"])
+        self.assertEqual("BLOCKED", result["targets"][0]["status"])
+        self.assertEqual("WATCHING", result["targets"][1]["status"])
+        self.assertEqual(1, len(self.sends()))
 
-    async def test_target_closing_during_preparation_keeps_partial_effect_receipt(self):
+    async def test_target_closing_during_preparation_keeps_partial_dispatch_receipt(self):
         value = assessment()
         value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
             "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
@@ -384,11 +560,13 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         await self.save(value)
         self.ops.after_network = lambda _: self.tabs[1].update(presence="CLOSED")
         result = await self.start()
-        self.assertEqual("AFTER_NETWORK_EFFECTS", result["stage"], result)
+        self.assertEqual("TARGET_DISPATCH", result["stage"], result)
         self.assertTrue(result["network_preparation_applied"])
         self.assertFalse(result["all_targets_started"])
         self.assertEqual("APPLIED", result["network_results"][0]["outcome"])
-        self.assertEqual([], self.sends())
+        self.assertEqual("BLOCKED", result["targets"][0]["status"])
+        self.assertEqual("WATCHING", result["targets"][1]["status"])
+        self.assertEqual(1, len(self.sends()))
 
     async def test_unknown_keeps_original_ids_and_is_not_resent(self):
         await self.save()
@@ -427,40 +605,116 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
                 "responseTurnKey": "old", "responseSha256": "a" * 64,
                 "latestUserTurnKey": "source-user", "latestUserSha256": "b" * 64}, registration_receipt="arm-b")
         watch = Watch("returned-b", 1, B, "task:returned-b:1", "arm-b")
-        SendDelayedMessageRunner(ledger, read_response=lambda _: {
+        outcome = SendDelayedMessageRunner(ledger, read_response=lambda _: {
             "conversation_key": B, "response_turn_id": watch.response_turn_id,
             "response_turn_key": "response-b", "response_sha256": "c" * 64,
             "response_text": "Tests passed.\nNEXT TASK — MANAGER\nAsk Supervisor to review release.",
             "response_complete": True, "input_ready": True}, send_message=lambda *_: "return-b"
         ).poll_once(watch, manager_conversation_key=A)
+        self.assertEqual("RETURNED_TO_MANAGER", outcome.status)
+        recipe_return = await self.call("bct_chain_recipe", work_id=self.work.work_id,
+            source_kind="MANAGER_RETURN", source_task_id="returned-b", source_generation=1)
+        self.assertEqual("RECIPE_READY", recipe_return["status"], recipe_return)
+        self.assertEqual("EXACT_RETURN_BOUND", recipe_return["input"]["connection"])
+        self.assertEqual("c" * 64, recipe_return["input"]["source_result_sha256"])
         result = await self.call("bct_chain_message", action="prepare", work_id=self.work.work_id,
             source_kind="MANAGER_RETURN", source_task_id="returned-b", source_generation=1)
-        self.assertEqual("DIRECTION_REQUIRED", result["status"], result)
-        self.assertEqual("c" * 64, result["source_result_sha256"])
-        self.assertEqual("VERIFIED_MANAGER_RETURN", result["source_evidence"])
-        self.assertIn("Tests passed.", json.dumps(result["source_return"]))
-        self.assertEqual(10, len(result["questions"]))
+        self.assertEqual("RECIPE_READY", result["status"], result)
+        self.assertEqual("c" * 64, result["input"]["source_result_sha256"])
+        self.assertEqual("EXACT_RETURN_BOUND", result["input"]["connection"])
+        self.assertIn("Tests passed.", json.dumps(result["input"]["source_return"]))
+        self.assertEqual("NOT_DECLARED", result["state"]["return_execute_plan_check"]["status"])
+        self.assertNotIn("questions", result["direction"])
         invalid = await self.call("bct_chain_message", action="prepare", work_id=self.work.work_id,
             source_kind="MANAGER_RETURN", source_task_id="missing", source_generation=1)
         self.assertEqual("CHAIN_DIRECTION_RETURN_NOT_EXACT", invalid["reason"])
         self.assertEqual([], self.ops.calls)
 
+    async def test_exact_return_state_includes_its_plan_check_without_writing(self):
+        directions = ChainDirectionLedger(self.store)
+        directions.save(direction_id="return-direction", work_id=self.work.work_id,
+                        source_kind="USER", decision="NEW_TASK", direction_text="Bounded task.")
+        directions.plan_chain(direction_id="return-direction", work_id=self.work.work_id,
+                              task_id="returned-plan", operation_id="return-plan")
+        directions.mark_chain_started(direction_id="return-direction", work_id=self.work.work_id,
+                                      task_id="returned-plan", operation_id="return-plan")
+        plans = ChainExecutionPlanLedger(self.store)
+        plans.save(plan_id="return-plan-id", work_id=self.work.work_id,
+                   direction_id="return-direction", task_id="returned-plan", generation=1,
+                   plan_text="1. Inspect.\n2. Verify.")
+        ledger = DurableWatchLedger(self.store)
+        ledger.prearm_task(task_id="returned-plan", work_id=self.work.work_id,
+            principal_id="bct-mcp-local", assignment_epoch=1, instance_id="a" * 32,
+            conversation_key=B, manager_conversation_key=A, manager_instance_id="a" * 32,
+            baseline={"responseTurnCount": 1, "generating": True, "responseTurnKey": "old",
+                      "responseSha256": "a" * 64, "latestUserTurnKey": "source-user",
+                      "latestUserSha256": "b" * 64}, registration_receipt="arm-plan",
+            execution_path="DIRECTION_DECLARED", chain_direction_id="return-direction")
+        watch = Watch("returned-plan", 1, B, "task:returned-plan:1", "arm-plan")
+        outcome = SendDelayedMessageRunner(ledger, read_response=lambda _: {
+            "conversation_key": B, "response_turn_id": watch.response_turn_id,
+            "response_turn_key": "response-plan", "response_sha256": "d" * 64,
+            "response_text": "PLAN REVISION: 0\nPROGRESS: 2/2 — complete\nDone.\nNEXT TASK — MANAGER\nReturn the evidence to A.",
+            "response_complete": True, "input_ready": True}, send_message=lambda *_: "return-plan"
+        ).poll_once(watch, manager_conversation_key=A)
+        self.assertEqual("RETURNED_TO_MANAGER", outcome.status)
+
+        result = await self.call("bct_chain_recipe", work_id=self.work.work_id,
+            source_kind="MANAGER_RETURN", source_task_id="returned-plan", source_generation=1)
+        self.assertEqual("RECIPE_READY", result["status"], result)
+        card = result["state"]["return_execute_plan_check"]
+        self.assertEqual("RECORDED", card["status"])
+        self.assertEqual("return-direction", card["chain"]["direction_id"])
+        self.assertEqual("return-plan-id", card["plan"]["plan_id"])
+        self.assertEqual(2, card["return_check"]["completed_steps"])
+        self.assertEqual([], card["return_check"]["issues"])
+
+        saved = await self.call(
+            "bct_chain_recipe", action="save", work_id=self.work.work_id,
+            source_kind="MANAGER_RETURN", source_task_id="returned-plan", source_generation=1,
+            direction_id="return-to-supervisor", decision="NEW_TASK",
+            direction_text="Have the declared targets review the returned evidence.",
+            assessment=assessment(),
+        )
+        self.assertEqual("OK", saved["status"], saved)
+        legacy_route = await self.call(
+            "bct_prepare_supervisor_chain", work_id=self.work.work_id,
+            direction_id="return-to-supervisor",
+        )
+        self.assertEqual("INVALID_REQUEST", legacy_route["status"], legacy_route)
+        self.assertEqual("SUPERVISOR_ROUTE_LEGACY_COMPATIBILITY_ONLY", legacy_route["reason"])
+        started = await self.call(
+            "bct_chain_recipe", action="send", work_id=self.work.work_id,
+            direction_id="return-to-supervisor", task_id="supervisor-review",
+            operation_id="supervisor-review-operation",
+        )
+        self.assertEqual("STARTED", started["status"], started)
+        self.assertNotIn("supervisor_route", started)
+        self.assertEqual({B, C}, {
+            call["arguments"]["conversation_key"] for call in self.sends()
+        })
+
     async def test_foreign_work_cannot_save_or_start(self):
         self.store.create_work(Work("foreign-work", "another user", (), frozenset({"browser"}), "foreign", 1))
         self.assertEqual("NOT_FOUND", (await self.save(work_id="foreign-work"))["status"])
-        self.assertEqual("BLOCKED", (await self.start(work_id="foreign-work"))["status"])
+        # Work ownership is now an observation at Chain Message entry.  The
+        # separate saved-Direction binding still rejects a non-matching Work.
+        self.assertEqual("INVALID_REQUEST", (await self.start(work_id="foreign-work"))["status"])
         self.assertEqual([], self.ops.calls)
 
 
 class DirectionAssessmentValidationTests(unittest.TestCase):
-    def test_manager_supervisor_and_duplicate_target_conflicts(self):
-        for mutate in [lambda v: v.update(supervisor_conversation_key=A),
-                       lambda v: v["targets"].append(copy.deepcopy(v["targets"][0])),
-                       lambda v: v["targets"][0].update(conversation_key=A)]:
-            value = assessment()
-            mutate(value)
-            with self.assertRaises(ValueError):
-                validate_direction_assessment(value, decision="NEW_TASK")
+    def test_duplicate_target_conflicts_but_roles_are_free_labels(self):
+        value = assessment()
+        value["targets"].append(copy.deepcopy(value["targets"][0]))
+        with self.assertRaises(ValueError):
+            validate_direction_assessment(value, decision="NEW_TASK")
+        value = assessment()
+        value["targets"][0]["role"] = "deployer"
+        value.pop("supervisor_conversation_key")
+        value.pop("network_name")
+        self.assertEqual("deployer", validate_direction_assessment(
+            value, decision="NEW_TASK")["targets"][0]["role"])
 
     def test_terminal_direction_may_not_carry_effects(self):
         with self.assertRaisesRegex(ValueError, "TERMINAL_HAS_ACTIONS"):

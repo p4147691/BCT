@@ -20,15 +20,18 @@ def _schedule(bct, principal, source_work_id: str, *, repository: str,
         return {"status": "WORK_NOT_ACTIVE"}
     with bct.store._readonly() as db:
         attached = db.execute(
-            "SELECT DISTINCT s.manager_node_id FROM orchestration_sessions s "
+            "SELECT DISTINCT s.manager_node_id,a.conversation_key FROM orchestration_sessions s "
             "JOIN orchestration_attachments a ON a.node_id=s.manager_node_id AND a.active=1 "
             "WHERE s.work_id=? AND s.work_assignment_epoch=? "
             "AND s.state='ACTIVE' AND s.manager_epoch>0 "
             "AND s.manager_node_id IS NOT NULL",
             (work.work_id, work.assignment_epoch),
         ).fetchall()
-    managers = {str(row["manager_node_id"]) for row in attached}
-    manager = next(iter(managers)) if len(managers) == 1 else ""
+    managers = {
+        (str(row["manager_node_id"]), str(row["conversation_key"]))
+        for row in attached
+    }
+    manager, conversation_uuid = next(iter(managers)) if len(managers) == 1 else ("", "")
     recipient = manager or ("work:" + hashlib.sha256(source_work_id.encode()).hexdigest()[:24])
     digest = hashlib.sha256(f"{source_work_id}|{repo}|{sha}|{event}".encode()).hexdigest()[:24]
     follow_work_id = "bct-ci-follow-" + digest
@@ -44,6 +47,10 @@ def _schedule(bct, principal, source_work_id: str, *, repository: str,
         "repository": repo, "head_sha": sha, "follow_head": True,
         "expected_event": event,
         "workflow": "BCT CI", "initiator_node_id": recipient,
+        # This is only a routing observation for State R.  It does not grant
+        # authority or submit a browser message; an ambiguous attachment is
+        # deliberately left unconnected.
+        "initiator_conversation_uuid": conversation_uuid or None,
         "inbox_work_id": source_work_id,
         "notify_user": True, "notify_manager": bool(manager),
         "manager_node_id": manager or None,

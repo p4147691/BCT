@@ -28,7 +28,7 @@ DIRECTION_QUESTIONS = (
     ("delegation", "대상별 분담", "AB·AC·AD 중 필요한 대상 수와 각각 맡길 일은 무엇인가? 독립 작업과 순서 의존성을 구분하고 각 대상에 별도 지시문을 작성하라."),
     ("resources", "자율 선택", "필요한 부품·모듈·블럭·레시피·프로그램·PowerShell·BDC·브라우저 기능은 무엇인가? 창·탭 생성/이동/정리 계획과 B의 자율 선택 범위를 정하라. 등록·허용된 실제 기능을 확인하라."),
     ("recovery", "정체와 승계", "Manager·Worker·Supervisor가 멈추면 Check Node → Recheck Node → Pause Node → Replace Node → Reset Node 중 무엇을 사용하는가? 기존 영수증과 UNKNOWN을 보존하라."),
-    ("integration", "검증과 반환", "병합·GitHub CI·LIVE 배포·E2E가 필요하면 Supervisor에게 무엇을 지시하는가? 위험도에 따른 순서, 비동기 CI 알림, rollback, B의 SELF/Manager 반환 조건을 정하라."),
+    ("integration", "검증과 반환", "각 Worker는 Worktree의 필요한 로컬 검증과 증거 보고만 하는가, 아니면 예외적으로 PR/push가 필요한가? 통합 PR·main 병합·main CI·E2E를 맡을 정확한 대상 하나와 순서를 정하라. PR은 가벼운 범위/설명서 확인이고 전체 CI는 main 뒤에 실행됨을 반영하라. 비동기 CI 알림, rollback, 대상의 SELF/A 반환 조건을 정하라."),
 )
 
 
@@ -53,8 +53,9 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
                 conversation_key = target.get("conversation_key")
                 if not isinstance(conversation_key, str) or not _UUID.fullmatch(conversation_key):
                     diagnostic["issues"].append("conversation_key must be a lowercase canonical UUID")
-                if target.get("role") not in {"worker", "supervisor"}:
-                    diagnostic["issues"].append("role must be worker or supervisor")
+                if (not isinstance(target.get("role"), str)
+                        or not target["role"].strip() or len(target["role"]) > 80):
+                    diagnostic["issues"].append("role must be a non-empty label of at most 80 characters")
                 instruction = target.get("instruction")
                 if (not isinstance(instruction, str) or not instruction.strip()
                         or len(instruction) > 6000):
@@ -73,15 +74,16 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
             "value_rule": "answers are optional A reasoning notes; each provided value must be a non-empty string of at most 4000 characters",
         },
         "required_for_new_task": {
-            "manager_conversation_key": "lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
-            "supervisor_conversation_key": "different lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
-            "network_name": "non-empty existing, reused, changed, or new network name selected by A",
+            "manager_conversation_key": "A's return destination: lowercase canonical ChatGPT conversation UUID; not a Monitor node number",
             "targets": [{
                 "conversation_key": "lowercase canonical ChatGPT conversation UUID; not N96 or a tab title",
-                "role": "worker or supervisor",
+                "role": "A's free-form role label, for example worker, reviewer, or deployer",
                 "instruction": "non-empty per-target instruction, at most 6000 characters",
             }],
             "network_updates": "list of existing bct_set_conversation_network argument objects; [] is valid when reusing the network unchanged",
+        },
+        "optional_node_recovery": {
+            "conversation_key": "the exact lowercase canonical UUID of one node A explicitly asks Recover Node R to observe before sending",
         },
         "target_diagnostics": target_diagnostics,
         "recovery": "Correct only the reported fields, then call bct_set_direction(action='save') again with the same intended direction_id. Read the saved record with bct_get_direction before starting.",
@@ -97,46 +99,11 @@ def direction_source_evidence(source_kind: str) -> str:
     return "VERIFIED_MANAGER_RETURN" if source_kind == "MANAGER_RETURN" else "CALLER_PROVIDED_TEXT"
 
 
-def prepare_direction_review(*, source_text: str, source_kind: str,
-                             reality: dict, network: dict, source_return: dict | None = None,
-                             available_tools: list[str] | None = None) -> dict:
-    """Expose the evidence A needs before choosing any topology or message."""
-    if source_kind not in _SOURCES:
-        raise ValueError("CHAIN_DIRECTION_STATE_INVALID")
-    if source_kind == "USER" and (not source_text.strip() or len(source_text) > 12000):
-        raise ValueError("CHAIN_DIRECTION_SOURCE_TEXT_REQUIRED")
-    return {
-        "status": "DIRECTION_REQUIRED", "source_kind": source_kind,
-        "source_evidence": direction_source_evidence(source_kind),
-        "source_text": source_text, "source_return": source_return,
-        "reality": reality, "conversation_network": network,
-        "questions": [{"id": key, "title": title, "question": question}
-                      for key, title, question in DIRECTION_QUESTIONS],
-        "available_tools": available_tools or [],
-        "next_tool": "bct_set_direction",
-        "instructions_for_a": (
-            "A가 질문을 내부 판단 안내로 사용한다. assessment.answers는 필수 설문이 아니며 필요한 판단 근거만 기록할 수 있다. 사용자에게 이 질문지를 넘기지 않는다. "
-            "assessment에는 manager_conversation_key, supervisor_conversation_key, network_name, "
-            "targets:[{conversation_key, role, instruction}]를 기록한다. role은 worker 또는 supervisor다. "
-            "targets에는 지금 독립적으로 시작할 수 있는 대상만 넣는다. 선행 결과가 필요한 일은 BA/CA 반환 후 다음 회차에서 판단한다. "
-            "필요한 망·역할 변경은 network_updates에 기존 bct_set_conversation_network 인수로 기록한다. "
-            "node-info-set에는 관찰한 expected_scope_id와 expected_role_tags_sha256도 넣어 사용자 변경을 덮어쓰지 않는다. "
-            "기존 Work를 먼저 비교하여 재사용하고 없거나 작업 경계가 다르면 기존 bct_create_work로 준비한다. Work는 노드나 ChatGPT Work 모드가 아니다. "
-            "없는 창·탭은 기존 생성/복구 부품으로 준비하고 실제 UUID를 확인한다. "
-            "필요한 기능은 bct_capabilities(query=...)로 찾고 tool_name으로 입력 계약을 확인한다. "
-            "선택 이유와 기대 결과를 resources 답에 기록한다. 모든 도구를 의무 실행하지 않는다. "
-            "bct_set_direction(action=save)로 답과 direction_text를 저장한 뒤 같은 bct_chain_message(action=start)를 호출한다. "
-            "B의 구체적 실행계획은 전달 후 B가 작성한다. 반환받으면 Chain Message의 prepare부터 다시 판단한다."
-        ),
-        "read_only": True, "authorizes_send": False,
-    }
-
-
 def validate_direction_assessment(value: dict, *, decision: str) -> dict:
     """Validate A's declared decisions without pretending to evaluate prose."""
     if not isinstance(value, dict) or set(value) - {
         "answers", "manager_conversation_key", "supervisor_conversation_key",
-        "network_name", "targets", "network_updates",
+        "network_name", "targets", "network_updates", "node_recovery",
     }:
         raise ValueError("DIRECTION_ASSESSMENT_INVALID")
     answers = value.get("answers", {})
@@ -148,18 +115,28 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
     value = {**value, "answers": answers}
     targets = value.get("targets", [])
     updates = value.get("network_updates", [])
+    recovery = value.get("node_recovery")
     if not isinstance(targets, list) or not isinstance(updates, list):
         raise ValueError("DIRECTION_TARGETS_INVALID")
-    if decision != "NEW_TASK" and (targets or updates):
+    if recovery is not None:
+        if (not isinstance(recovery, dict) or set(recovery) != {"conversation_key"}
+                or not isinstance(recovery["conversation_key"], str)
+                or not _UUID.fullmatch(recovery["conversation_key"])):
+            raise ValueError("DIRECTION_NODE_RECOVERY_INVALID")
+        value["node_recovery"] = {"conversation_key": recovery["conversation_key"]}
+    if decision != "NEW_TASK" and (targets or updates or recovery is not None):
         raise ValueError("DIRECTION_TERMINAL_HAS_ACTIONS")
     if decision == "NEW_TASK":
-        for field in ("manager_conversation_key", "supervisor_conversation_key"):
-            if not isinstance(value.get(field), str) or not _UUID.fullmatch(value[field]):
-                raise ValueError("DIRECTION_" + field.upper() + "_REQUIRED")
-        if value["manager_conversation_key"] == value["supervisor_conversation_key"]:
-            raise ValueError("DIRECTION_MANAGER_SUPERVISOR_CONFLICT")
-        if not isinstance(value.get("network_name"), str) or not value["network_name"].strip():
-            raise ValueError("DIRECTION_NETWORK_REQUIRED")
+        if (not isinstance(value.get("manager_conversation_key"), str)
+                or not _UUID.fullmatch(value["manager_conversation_key"])):
+            raise ValueError("DIRECTION_MANAGER_CONVERSATION_KEY_REQUIRED")
+        for field in ("supervisor_conversation_key",):
+            if field in value and value[field] and (
+                    not isinstance(value[field], str) or not _UUID.fullmatch(value[field])):
+                raise ValueError("DIRECTION_" + field.upper() + "_INVALID")
+        if "network_name" in value and (not isinstance(value["network_name"], str)
+                                        or len(value["network_name"]) > 200):
+            raise ValueError("DIRECTION_NETWORK_INVALID")
         if not targets:
             raise ValueError("DIRECTION_TARGETS_REQUIRED")
     keys = set()
@@ -167,14 +144,12 @@ def validate_direction_assessment(value: dict, *, decision: str) -> dict:
         if not isinstance(target, dict) or set(target) != {"conversation_key", "role", "instruction"}:
             raise ValueError("DIRECTION_TARGET_INVALID")
         key = target["conversation_key"]
-        if (not isinstance(key, str) or not _UUID.fullmatch(key) or key in keys
-                or key == value.get("manager_conversation_key")):
+        if not isinstance(key, str) or not _UUID.fullmatch(key) or key in keys:
             raise ValueError("DIRECTION_TARGET_CONFLICT")
         keys.add(key)
-        if target["role"] not in {"worker", "supervisor"}:
+        if (not isinstance(target["role"], str) or not target["role"].strip()
+                or len(target["role"]) > 80):
             raise ValueError("DIRECTION_TARGET_ROLE_INVALID")
-        if (target["role"] == "supervisor") != (key == value.get("supervisor_conversation_key")):
-            raise ValueError("DIRECTION_SUPERVISOR_TARGET_MISMATCH")
         if not isinstance(target["instruction"], str) or not target["instruction"].strip() or len(target["instruction"]) > 6000:
             raise ValueError("DIRECTION_TARGET_INSTRUCTION_REQUIRED")
     # Resource bounds, not a cap on autonomous SELF continuation.
@@ -215,30 +190,19 @@ def resolve_direction_target(*, snapshot: dict, conversation_key: str) -> dict:
 
 
 def resolve_direction_network(*, snapshot: dict, assessment: dict, targets: list) -> tuple:
-    """Check the recorded topology at the send boundary, without electing roles."""
-    from bct.status_views import status_view
+    """Resolve declared delivery identities, not a role/topology gate.
+
+    A Direction records who should receive a message.  Node Info roles and
+    network labels help A compose that Direction, but they do not turn a
+    send into a requirement for one global supervisor or one prescribed
+    topology.  Every route is reacquired by the same conversation UUID, so a
+    tab/window move is harmless while a different conversation is never an
+    implicit replacement.
+    """
     origin = resolve_direction_target(snapshot=snapshot, conversation_key=assessment["manager_conversation_key"])
-    supervisor = resolve_direction_target(snapshot=snapshot, conversation_key=assessment["supervisor_conversation_key"])
-    current = status_view(snapshot, "node").get("current_nodes", {}).get("items", [])
-
-    def has_role(node, role):
-        return role in {str(r).casefold() for r in node.get("roles", [])}
-
-    managers = [n for n in current if n.get("network") == assessment["network_name"] and has_role(n, "manager")]
-    if (len(managers) != 1 or not has_role(origin["node_info"], "manager")
-            or origin["node_info"].get("network") != assessment["network_name"]):
-        raise ValueError("DIRECTION_MANAGER_PREPARATION_REQUIRED")
-    supervisors = [n for n in current if has_role(n, "supervisor")]
-    if (len(supervisors) != 1 or not has_role(supervisor["node_info"], "supervisor")
-            or supervisor["node_info"].get("network")):
-        raise ValueError("DIRECTION_SUPERVISOR_PREPARATION_REQUIRED")
     resolved = []
     for i, target in targets:
         route = resolve_direction_target(snapshot=snapshot, conversation_key=target["conversation_key"])
-        if target["role"] == "worker" and (
-                route["node_info"].get("network") != assessment["network_name"]
-                or has_role(route["node_info"], "manager") or has_role(route["node_info"], "supervisor")):
-            raise ValueError("DIRECTION_TARGET_NETWORK_PREPARATION_REQUIRED")
         resolved.append((i, target, route))
     return origin, resolved
 

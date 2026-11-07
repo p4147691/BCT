@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import math
 import re
@@ -22,7 +23,8 @@ from .chain_message_preflight import (
 from .code_block_scan import resolve_scan_root, scan as run_code_block_scan
 from .code_block_organize import plan_block_replacement, prepare_block_apply
 from .conversation_network import (
-    ConversationNetworkError, project_view, resolve_project_id, scope_directory,
+    ConversationNetworkError, conversation_scope_directory, project_view,
+    resolve_project_id, scope_directory,
 )
 from .core.models import Principal, Work, PreconditionError
 from .core.capabilities import capability_matches
@@ -158,8 +160,8 @@ def build_mcp(
         "BCT",
         instructions=(
             "For ordinary assigned work, begin with bct_chain_message(instruction=the request) "
-            "to read current reality and enter Set Direction. Answer its internal questions as A; "
-            "do not delegate that questionnaire to the user. Reuse an appropriate bounded Work "
+            "to read current reality and enter the Chain Recipe Direction R stage. A writes the "
+            "refined direction; do not delegate its internal judgment to the user. Reuse an appropriate bounded Work "
             "or create one before effects, then use the matching bct_<capability> tools. "
             "Use bct_capabilities(query=...) to find existing parts, tool_name for the current input schema, "
             "and include_manual=true for the shared source manual. Before using unfamiliar commands, "
@@ -181,6 +183,605 @@ def build_mcp(
         from bct.node_recovery import NodeRecoveryLedger
         NodeRecoveryLedger(bct.store).assert_send_allowed(
             work_id=work_id, conversation_key=conversation_key,
+        )
+
+    async def input_recipe(
+        *,
+        work_id: str,
+        source_kind: str,
+        source_task_id: str,
+        source_generation: int,
+        source_text: str,
+        allow_unbound_user: bool,
+        require_source_text: bool,
+    ) -> dict[str, Any]:
+        """Run the read-only input-confirmation part of the Chain Recipe.
+
+        This deliberately does not observe runtime state, create a Direction,
+        or send a message.  A returned report is accepted only when its exact
+        delayed-watch evidence belongs to the supplied Work.
+        """
+        if source_kind not in {"USER", "MANAGER_RETURN"}:
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_STATE_INVALID"}
+        if require_source_text and source_kind == "USER" and (
+            not source_text.strip() or len(source_text) > 12000
+        ):
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_SOURCE_TEXT_REQUIRED"}
+
+        work = None
+        if not (allow_unbound_user and source_kind == "USER" and not work_id):
+            try:
+                work = await asyncio.to_thread(bct.store.get_work, work_id)
+            except KeyError:
+                return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+            if work.owner_principal_id != principal.principal_id:
+                return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+
+        result_sha = ""
+        context = None
+        if source_kind == "MANAGER_RETURN":
+            # A return cannot be unbound: its Work, Task, generation, and
+            # durable response hash are the evidence that it is a real BA/CA
+            # return rather than caller-supplied prose.
+            if work is None:
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_RETURN_NOT_EXACT"}
+            from bct.send_delayed_message import DurableWatchLedger
+            delayed_ledger = DurableWatchLedger(bct.store)
+            context = await asyncio.to_thread(
+                delayed_ledger.read_execution_context,
+                task_id=source_task_id,
+                generation=source_generation,
+            )
+            binding = (context or {}).get("binding") or {}
+            prior = (context or {}).get("decision") or {}
+            if (context is not None and binding.get("work_id") == work.work_id
+                    and binding.get("principal_id") == work.owner_principal_id
+                    and binding.get("assignment_epoch") == work.assignment_epoch
+                    and prior.get("route") == "MANAGER"):
+                result_sha = str(prior.get("response_sha256") or "")
+            else:
+                row = await asyncio.to_thread(
+                    delayed_ledger.get, source_task_id, source_generation,
+                )
+                import json
+                try:
+                    legacy = json.loads(str((row or {}).get("context_json") or "{}"))
+                except ValueError:
+                    legacy = {}
+                result_sha = str(legacy.get("observed_response_sha") or "")
+                if (not row or row.get("state") != "RETURNED_TO_MANAGER"
+                        or legacy.get("work_id") != work.work_id
+                        or legacy.get("principal_id") != work.owner_principal_id
+                        or legacy.get("assignment_epoch") != work.assignment_epoch
+                        or not re.fullmatch(r"[0-9a-f]{64}", result_sha)):
+                    return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_RETURN_NOT_EXACT"}
+        return {
+            "status": "OK", "work": work, "source_return": context,
+            "source_result_sha256": result_sha,
+        }
+
+    def compare_current_and_stored_networks_recipe(
+        *, nodes: dict[str, Any], stored_scopes: list[dict[str, object]],
+        stored_nodes: dict[str, dict[str, object]],
+    ) -> dict[str, Any]:
+        """Compare current Node Info with durable scope metadata; never decide a topology."""
+        current_items = (
+            nodes.get("current_nodes", {}).get("items", [])
+            if isinstance(nodes.get("current_nodes"), dict) else []
+        )
+        node_cards: list[dict[str, Any]] = []
+        observed_by_scope: dict[str, list[str]] = {}
+        for node in current_items:
+            if not isinstance(node, dict):
+                continue
+            key = str(node.get("conversation_uuid") or "").strip().lower()
+            node_number = str(node.get("node_number") or "")
+            if node.get("status") != "CONFIRMED" or not key:
+                node_cards.append({
+                    "node_number": node_number, "conversation_key": key,
+                    "comparison": "UNCONFIRMED_CURRENT_NODE",
+                })
+                continue
+            current_scope = str(node.get("network_id") or "")
+            stored = stored_nodes.get(key)
+            if stored is None:
+                node_cards.append({
+                    "node_number": node_number, "conversation_key": key,
+                    "current_scope_id": current_scope,
+                    "comparison": "CURRENT_ONLY",
+                })
+                continue
+            differences = []
+            checks = (
+                ("scope_id", current_scope, str(stored.get("scope_id") or "")),
+                ("scope_name", str(node.get("network") or ""), str(stored.get("scope_name") or "")),
+                ("roles", sorted(str(x).casefold() for x in node.get("roles", []) if str(x).strip()),
+                 sorted(str(x).casefold() for x in stored.get("role_tags", []) if str(x).strip())),
+                ("node_memo", str(node.get("node_memo") or ""), str(stored.get("node_memo") or "")),
+                ("assigned_task", str(node.get("assigned_task") or ""), str(stored.get("assigned_task") or "")),
+            )
+            for field, current, durable in checks:
+                if current != durable:
+                    differences.append(field)
+            scope_id = str(stored.get("scope_id") or current_scope)
+            if scope_id:
+                observed_by_scope.setdefault(scope_id, []).append(key)
+            node_cards.append({
+                "node_number": node_number, "conversation_key": key,
+                "scope_id": scope_id,
+                "comparison": "MATCH" if not differences else "MISMATCH",
+                "different_fields": differences,
+            })
+        scope_cards = [
+            {
+                "scope_id": str(scope.get("scope_id") or ""),
+                "scope_name": str(scope.get("scope_name") or ""),
+                "stored_state": str(scope.get("state") or ""),
+                "stored_member_count": int(scope.get("member_count") or 0),
+                "open_member_keys": observed_by_scope.get(str(scope.get("scope_id") or ""), []),
+                "current_presence": (
+                    "OPEN_OBSERVED" if observed_by_scope.get(str(scope.get("scope_id") or ""))
+                    else "NOT_OPEN"
+                ),
+            }
+            for scope in stored_scopes
+        ]
+        return {"nodes": node_cards, "scopes": scope_cards}
+
+    def build_current_node_info_recipe(*, snapshot: dict[str, Any], sort_by: str = "number") -> dict[str, Any]:
+        """Build current-only Node/RCC evidence from one already-read snapshot."""
+        nodes = status_view(snapshot, "node", sort_by=sort_by)
+        rcc = status_view(snapshot, "rcc", sort_by=sort_by)
+        current_node_items = (
+            nodes.get("current_nodes", {}).get("items", [])
+            if isinstance(nodes.get("current_nodes"), dict) else []
+        )
+        candidates: dict[str, dict[str, Any]] = {}
+        supervisor_candidates: list[dict[str, Any]] = []
+        for node in current_node_items:
+            if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
+                continue
+            name = str(node.get("network") or "").strip()
+            scope_id = str(node.get("network_id") or "").strip()
+            if name:
+                candidates.setdefault(scope_id or name.casefold(), {"title": name, "network_id": scope_id})
+            roles = node.get("roles") if isinstance(node.get("roles"), list) else []
+            if any(str(role).strip().casefold() == "supervisor" for role in roles):
+                supervisor_candidates.append({
+                    "node_number": str(node.get("node_number") or ""),
+                    "name": str(node.get("name") or ""),
+                    "conversation_uuid": str(node.get("conversation_uuid") or ""),
+                    "network": name, "network_id": scope_id, "roles": list(roles),
+                    "active": node.get("active") is True,
+                })
+        return {
+            "nodes": nodes, "rcc": rcc, "current_node_items": current_node_items,
+            "candidates": candidates,
+            "supervisor": {
+                "status": ("MISSING" if not supervisor_candidates else
+                           "PRESENT" if len(supervisor_candidates) == 1 else "MULTIPLE"),
+                "role_tag": "supervisor", "candidates": supervisor_candidates,
+                "scope": "CURRENT_CONFIRMED_NODES_ONLY",
+            },
+        }
+
+    async def read_stored_networks_recipe(
+        *, current_node_items: list[dict[str, Any]], candidates: dict[str, dict[str, Any]],
+        project: str = "", work_id: str = "", operation_id: str = "",
+        stored_scope_directory: list[dict[str, object]] | None = None,
+    ) -> dict[str, Any]:
+        """Read durable network records and authorized historical context; no runtime observation."""
+        scopes = (stored_scope_directory if stored_scope_directory is not None
+                  else await asyncio.to_thread(scope_directory, bct.store))
+        network = None
+        context = None
+        context_status = "NOT_REQUESTED"
+        historical_contexts: list[Any] = []
+        historical_contexts_status = "AUTH_CONTEXT_REQUIRED"
+        if not project and work_id and operation_id:
+            try:
+                directory = await make_executor("project_context")(
+                    work_id, operation_id, {"operation": "directory-get"},
+                )
+                if directory.get("outcome") == "APPLIED":
+                    payload = directory.get("output") or {}
+                    historical_contexts = payload.get("items", []) if isinstance(payload, dict) else []
+                    historical_contexts_status = "OK" if historical_contexts else "NO_CONTEXT"
+                    summaries = {str(item["project_id"]): item for item in historical_contexts
+                                 if isinstance(item, dict) and item.get("project_id")}
+                    with bct.store.transaction() as db:
+                        rows = db.execute(
+                            "SELECT project_id,display_name,active FROM conversation_network_projects "
+                            "ORDER BY display_name,project_id LIMIT 200"
+                        ).fetchall()
+                    for row in rows:
+                        key = str(row["project_id"])
+                        candidates[key] = {"title": str(row["display_name"]), "network_id": key,
+                                           "active": bool(row["active"]),
+                                           "context_summary": summaries.get(key)}
+                    for key, item in summaries.items():
+                        if key not in candidates:
+                            candidates[key] = {"title": str(item.get("title") or key),
+                                               "network_id": key, "active": False,
+                                               "context_summary": item}
+                else:
+                    historical_contexts_status = "ACCESS_DENIED" if directory.get("error") and any(
+                        marker in str(directory.get("error")).upper()
+                        for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                    ) else "QUERY_ERROR"
+            except Exception as exc:
+                historical_contexts_status = "ACCESS_DENIED" if any(
+                    marker in (type(exc).__name__ + ":" + str(exc)).upper()
+                    for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                ) else "QUERY_ERROR"
+        elif project:
+            historical_contexts_status = "NOT_REQUESTED"
+        if project:
+            try:
+                project_id = await asyncio.to_thread(resolve_project_id, bct.store, project_reference=project)
+                raw_network = await asyncio.to_thread(
+                    project_view, bct.store, project_id=project_id, include_internal_identity=True,
+                )
+                current_keys: dict[str, list[dict[str, Any]]] = {}
+                for node in current_node_items:
+                    if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
+                        continue
+                    key = str(node.get("conversation_uuid") or "").strip()
+                    if key:
+                        current_keys.setdefault(key, []).append(node)
+                for member in raw_network.get("members", []):
+                    if not isinstance(member, dict):
+                        continue
+                    key = str(member.pop("_conversation_key", ""))
+                    matches = current_keys.get(key, [])
+                    member["current_node_presence"] = (
+                        "NOT_OPEN" if not matches else "CONFIRMED" if len(matches) == 1 else "AMBIGUOUS"
+                    )
+                    member["current_node"] = ({
+                        "node_number": str(matches[0].get("node_number") or ""),
+                        "active": matches[0].get("active") is True,
+                        "generating": matches[0].get("generating") is True,
+                    } if len(matches) == 1 else None)
+                network = {"status": "OK", **raw_network}
+            except (ConversationNetworkError, ValueError) as exc:
+                network = {"status": "NOT_FOUND", "reason": str(exc)}
+            if not work_id or not operation_id:
+                context_status = "AUTH_CONTEXT_REQUIRED"
+            else:
+                try:
+                    context = await make_executor("project_context")(
+                        work_id, operation_id, {"operation": "overview-get", "project": project},
+                    )
+                    if context.get("outcome") == "APPLIED":
+                        payload = context.get("output")
+                        context_status = ("NO_CONTEXT" if not isinstance(payload, dict)
+                                          or (payload.get("central") is None and not payload.get("worklogs"))
+                                          else "OK")
+                    else:
+                        reason = str(context.get("error") or "").upper()
+                        context_status = "ACCESS_DENIED" if any(
+                            marker in reason for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                        ) else "QUERY_ERROR"
+                except Exception as exc:
+                    context_status = "ACCESS_DENIED" if any(
+                        marker in (type(exc).__name__ + ":" + str(exc)).upper()
+                        for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
+                    ) else "QUERY_ERROR"
+                    context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
+        return {
+            "scope_directory": scopes, "network": network,
+            "historical_contexts": historical_contexts,
+            "historical_contexts_status": historical_contexts_status,
+            "project_context": context, "context_status": context_status,
+            "context_requires_work": bool(project and (not work_id or not operation_id)),
+        }
+
+    async def check_conversation_network_recipe(
+        *, snapshot: dict[str, Any], project: str = "", sort_by: str = "number",
+        work_id: str = "", operation_id: str = "",
+    ) -> dict[str, Any]:
+        """Compatibility composition of current and stored network recipes."""
+        current = build_current_node_info_recipe(snapshot=snapshot, sort_by=sort_by)
+        stored = await read_stored_networks_recipe(
+            current_node_items=current["current_node_items"], candidates=current["candidates"],
+            project=project, work_id=work_id, operation_id=operation_id,
+        )
+        return {
+            "status": "OK", "nodes": current["nodes"], "rcc": current["rcc"],
+            "network": stored["network"], "network_candidates": list(current["candidates"].values()),
+            "scope_directory": stored["scope_directory"], "supervisor": current["supervisor"],
+            "candidates_scope": ("CURRENT_AND_HISTORICAL_AUTHORIZED"
+                                 if stored["historical_contexts_status"] in {"OK", "NO_CONTEXT"}
+                                 else "CURRENT_CONFIRMED_NODES_ONLY"),
+            "historical_contexts": stored["historical_contexts"],
+            "historical_contexts_status": stored["historical_contexts_status"],
+            "project_context": stored["project_context"], "context_status": stored["context_status"],
+            "context_requires_work": stored["context_requires_work"], "read_only": True,
+        }
+
+    async def return_execute_plan_check_recipe(
+        *, source_kind: str, work: Work | None, source_return: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Read plan evidence for this exact return; never create or repair it."""
+        if source_kind != "MANAGER_RETURN":
+            return {"status": "NOT_APPLICABLE"}
+        binding = (source_return or {}).get("binding") or {}
+        direction_id = str(binding.get("chain_direction_id") or "")
+        task_id = str((source_return or {}).get("task_id") or "")
+        generation = (source_return or {}).get("generation")
+        if work is None or not direction_id or not task_id or type(generation) is not int:
+            return {"status": "NOT_DECLARED"}
+        if str(binding.get("work_id") or "") != work.work_id:
+            return {"status": "UNAVAILABLE", "reason": "RETURN_WORK_BINDING_MISMATCH"}
+        from bct.chain_execution_plan import ChainExecutionPlanLedger
+        summary = await asyncio.to_thread(
+            ChainExecutionPlanLedger.read_chain_return_summary,
+            store=bct.store, work_id=work.work_id, direction_id=direction_id,
+            task_id=task_id, generation=generation,
+        )
+        return {
+            "chain": {
+                "work_id": work.work_id, "direction_id": direction_id,
+                "task_id": task_id, "generation": generation,
+            },
+            **summary,
+        }
+
+    async def state_recipe(
+        *, project: str = "", source_kind: str = "USER", work: Work | None = None,
+        source_return: dict[str, Any] | None = None,
+        report_target_conversation_key: str = "",
+    ) -> dict[str, Any]:
+        """Run State R with exactly one current runtime snapshot."""
+        if status_provider is None:
+            return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
+        snapshot = await asyncio.to_thread(status_provider)
+        current = build_current_node_info_recipe(snapshot=snapshot)
+        nodes = current["nodes"]
+        monitor = snapshot.get("monitor") if isinstance(snapshot.get("monitor"), dict) else {}
+        current_items = (
+            nodes.get("current_nodes", {}).get("items", [])
+            if isinstance(nodes.get("current_nodes"), dict) else []
+        )
+        current_keys = [
+            str(node.get("conversation_uuid") or "").strip().lower()
+            for node in current_items
+            if isinstance(node, dict) and node.get("status") == "CONFIRMED"
+        ]
+        stored_scopes, stored_nodes = await asyncio.gather(
+            asyncio.to_thread(scope_directory, bct.store),
+            asyncio.to_thread(conversation_scope_directory, bct.store, conversation_keys=current_keys),
+        )
+        stored = await read_stored_networks_recipe(
+            current_node_items=current_items, candidates=current["candidates"], project=project,
+            stored_scope_directory=stored_scopes,
+        )
+        return_plan_check = await return_execute_plan_check_recipe(
+            source_kind=source_kind, work=work, source_return=source_return,
+        )
+        recovery_notices: dict[str, Any] = {"status": "NOT_REQUESTED", "notices": []}
+        github_ci_notices: dict[str, Any] = {"status": "NOT_REQUESTED", "notices": []}
+        if report_target_conversation_key:
+            if not re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    report_target_conversation_key):
+                return {"status": "INVALID_REQUEST", "reason": "STATE_REPORT_TARGET_ID_INVALID"}
+            if work is None:
+                recovery_notices = {"status": "WORK_UNAVAILABLE", "notices": []}
+            else:
+                from bct.send_delayed_message import DurableWatchLedger
+                notices = await asyncio.to_thread(
+                    DurableWatchLedger(bct.store).recovery_notices,
+                    work_id=work.work_id,
+                    report_target_conversation_key=report_target_conversation_key,
+                )
+                recovery_notices = {
+                    "status": "OK", "report_target_conversation_key": report_target_conversation_key,
+                    "notices": notices,
+                    "next_action": "AUTHOR_RECOVER_NODE_DIRECTION" if notices else "NONE",
+                }
+                ci_notices = await asyncio.to_thread(
+                    bct.store.get_github_run_inbox,
+                    work_id=work.work_id,
+                    conversation_uuid=report_target_conversation_key,
+                    limit=20,
+                )
+                terminal_notices = [
+                    notice for notice in ci_notices
+                    if notice.get("state") != "WAITING_EXTERNAL"
+                ]
+                github_ci_notices = {
+                    "status": "OK",
+                    "report_target_conversation_key": report_target_conversation_key,
+                    "notices": ci_notices,
+                    "next_action": (
+                        "REVIEW_CI_RESULT_AND_AUTHOR_NEXT_DIRECTION"
+                        if terminal_notices else "NONE"
+                    ),
+                }
+        return {
+            "status": "OK",
+            "observed_at": monitor.get("generated_at"),
+            "current_nodes": nodes,
+            "stored_networks": stored_scopes,
+            "network_comparison": compare_current_and_stored_networks_recipe(
+                nodes=nodes, stored_scopes=stored_scopes, stored_nodes=stored_nodes,
+            ),
+            "selected_network": stored["network"],
+            "project_context": stored["project_context"],
+            "context_status": stored["context_status"],
+            "return_execute_plan_check": return_plan_check,
+            "recovery_notices": recovery_notices,
+            "github_ci_notices": github_ci_notices,
+            "read_only": True,
+        }
+
+    async def prepare_direction_recipe(
+        *, source_text: str, source_kind: str, work_id: str, source_task_id: str,
+        source_generation: int, project: str, report_target_conversation_key: str = "",
+    ) -> dict[str, Any]:
+        """Compose Input R and State R before A writes a Direction."""
+        confirmed = await input_recipe(
+            work_id=work_id, source_kind=source_kind,
+            source_task_id=source_task_id, source_generation=source_generation,
+            source_text=source_text, allow_unbound_user=True, require_source_text=True,
+        )
+        if confirmed["status"] != "OK":
+            return confirmed
+        state = await state_recipe(
+            project=project, source_kind=source_kind, work=confirmed["work"],
+            source_return=confirmed["source_return"],
+            report_target_conversation_key=report_target_conversation_key,
+        )
+        if state["status"] != "OK":
+            return state
+        return {
+            "status": "PREPARED",
+            "recipe": {"name": "prepare_direction_recipe", "kind": "partial_recipe"},
+            "completed_stages": [
+                {"number": 0, "name": "Input R"},
+                {"number": 1, "name": "State R"},
+            ],
+            "confirmed_input": confirmed,
+            "state": state,
+        }
+
+    def write_direction_recipe(*, source_kind: str, work: Work | None) -> dict[str, Any]:
+        """Prepare A's compact Direction R handoff without simulating A's judgment.
+
+        The source text and State R card stay in the enclosing Chain Recipe
+        result.  Repeating them here would make two competing direction cards.
+        """
+        save_gate = (
+            {"status": "READY", "next": "bct_chain_recipe(action='save')"}
+            if work is not None else
+            {"status": "WORK_REQUIRED", "next": "A reuses or creates a bounded Work before save"}
+        )
+        return {
+            "status": "A_DIRECTION_REQUIRED",
+            "direction_text": None,
+            "author": "A",
+            "inputs": ["Input R", "State R"],
+            "write": (
+                "A writes one refined natural-language direction from the source and current facts. "
+                "Keep the user goal, preserve stated constraints, and do not invent facts."
+            ),
+            "assumption_policy": (
+                "Proceed with ordinary reversible assumptions. State only assumptions that materially "
+                "change scope, result, or safety."
+            ),
+            "ask_user_only_when": [
+                "an irreversible external effect is required",
+                "current facts conflict and no safe interpretation exists",
+                "materially different completion results remain equally plausible",
+            ],
+            "decision_options": ["COMPLETE", "NEW_TASK", "ASK_USER", "HOLD"],
+            "save": {
+                "tool": "bct_set_direction",
+                "action": "save",
+                "required": ["work_id", "decision", "direction_text"],
+                "optional": {
+                    "direction_id": "omit to let BCT assign one new stable ID",
+                    "assessment": (
+                        "only for machine-checked topology, target, role, or network-update details; "
+                        "omit for an ordinary single-direction decision"
+                    ),
+                },
+                "source_binding": "preserve the Input R source_kind/task_id/generation when saving",
+            },
+            "source_kind": source_kind,
+            "save_gate": save_gate,
+            "read_only": True,
+            "authorizes_send": False,
+        }
+
+    def validate_direction(
+        *, work: Work, direction_id: str, source_kind: str, source_task_id: str,
+        source_generation: int, source_result_sha256: str, decision: str,
+        direction_text: str,
+    ) -> dict[str, Any]:
+        """Validate the Direction record fields without writing a record."""
+        from bct.chain_direction import ChainDirectionLedger
+        if not direction_id:
+            direction_id = "direction-" + uuid.uuid4().hex[:24]
+        try:
+            ChainDirectionLedger._validate(
+                direction_id=direction_id, work_id=work.work_id, source_kind=source_kind,
+                source_task_id=source_task_id, source_generation=source_generation,
+                source_result_sha256=source_result_sha256, decision=decision,
+                direction_text=direction_text,
+            )
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return {"status": "VALID", "direction_id": direction_id}
+
+    def validate_assessment(
+        *, assessment: dict[str, Any] | None, decision: str, source_kind: str, source_text: str,
+    ) -> dict[str, Any]:
+        """Validate optional machine-checked Direction details without writing them."""
+        if assessment is None:
+            return {"status": "NOT_PROVIDED", "assessment": None}
+        from bct.chain_direction import direction_assessment_contract, validate_direction_assessment
+        try:
+            checked = validate_direction_assessment(assessment, decision=decision)
+            if checked and source_kind == "USER" and (not source_text.strip() or len(source_text) > 12000):
+                raise ValueError("CHAIN_DIRECTION_SOURCE_TEXT_REQUIRED")
+        except (ValueError, PreconditionError) as exc:
+            return {
+                "status": "INVALID_REQUEST", "reason": str(exc),
+                "assessment_contract": direction_assessment_contract(assessment, reason=str(exc)),
+            }
+        return {"status": "VALID", "assessment": checked}
+
+    async def record_direction(
+        *, work: Work, direction_id: str, source_kind: str, source_task_id: str,
+        source_generation: int, source_result_sha256: str, decision: str,
+        direction_text: str, assessment: dict[str, Any] | None, source_text: str,
+    ) -> dict[str, Any]:
+        """Write one already-validated Direction record; never sends it."""
+        from bct.chain_direction import ChainDirectionLedger
+        if assessment is not None:
+            # The ledger repeats validation as a final storage safety fence.
+            # The visible recipe has already performed the user-facing validation.
+            assessment = dict(assessment)
+        try:
+            direction = await asyncio.to_thread(
+                ChainDirectionLedger(bct.store).save,
+                direction_id=direction_id, work_id=work.work_id,
+                source_kind=source_kind, source_task_id=source_task_id,
+                source_generation=source_generation,
+                source_result_sha256=source_result_sha256, decision=decision,
+                direction_text=direction_text, assessment=assessment, source_text=source_text,
+            )
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return {"status": "OK", "chain_direction": direction}
+
+    async def save_direction_recipe(
+        *, work: Work, direction_id: str, source_kind: str, source_task_id: str,
+        source_generation: int, source_result_sha256: str, decision: str,
+        direction_text: str, assessment: dict[str, Any] | None, source_text: str,
+    ) -> dict[str, Any]:
+        """Compose Direction validation and recording without changing the conversation network."""
+        direction_check = validate_direction(
+            work=work, direction_id=direction_id, source_kind=source_kind,
+            source_task_id=source_task_id, source_generation=source_generation,
+            source_result_sha256=source_result_sha256, decision=decision,
+            direction_text=direction_text,
+        )
+        if direction_check["status"] != "VALID":
+            return direction_check
+        assessment_check = validate_assessment(
+            assessment=assessment, decision=decision, source_kind=source_kind, source_text=source_text,
+        )
+        if assessment_check["status"] == "INVALID_REQUEST":
+            return assessment_check
+        checked_assessment = assessment_check["assessment"]
+        return await record_direction(
+            work=work, direction_id=direction_check["direction_id"], source_kind=source_kind,
+            source_task_id=source_task_id, source_generation=source_generation,
+            source_result_sha256=source_result_sha256, decision=decision,
+            direction_text=direction_text, assessment=checked_assessment, source_text=source_text,
         )
 
     @server.tool(description=(
@@ -216,6 +817,327 @@ def build_mcp(
         )
         return value
 
+    def chain_recipe_outline() -> list[dict[str, Any]]:
+        """One visible, non-executing map of the Chain Recipe's fixed composition."""
+        return [
+            {"number": 0, "name": "Input R", "kind": "partial_recipe"},
+            {"number": 1, "name": "State R", "kind": "partial_recipe"},
+            {"number": 2, "name": "Write Direction R", "kind": "partial_recipe"},
+            {"number": 3, "name": "Save Direction R", "kind": "partial_recipe"},
+            {
+                "number": 4,
+                "name": "Recover Node R",
+                "kind": "partial_recipe",
+                "optional": True,
+                "effect": "runs only when A saved node_recovery with one exact node UUID; Check Node R then rereads State R",
+            },
+            {"number": 5, "name": "Prepare Send Direction R", "kind": "partial_recipe"},
+            {
+                "number": 6,
+                "name": "Apply Conversation Network R",
+                "kind": "partial_recipe",
+                "effect": "applies only declared network updates; otherwise rechecks the current route",
+            },
+            {
+                "number": 7,
+                "name": "Send Direction R",
+                "kind": "partial_recipe",
+                "contains": [
+                    {"name": "Check Chain Work", "kind": "block", "effect": "advisory observation only"},
+                    {"name": "Read Saved Direction", "kind": "block"},
+                    {"name": "Send Delayed Message", "kind": "block", "effect": "prearms the response Watch"},
+                    {"name": "Send Direction Message", "kind": "block"},
+                ],
+                "after_response": {
+                    "name": "Watch·Alarm Continuation R",
+                    "kind": "partial_recipe",
+                    "contains": [
+                        {"name": "Watch Alarm R", "kind": "partial_recipe"},
+                        {
+                            "name": "Continuation R",
+                            "kind": "partial_recipe",
+                            "contains": [
+                                {"name": "Interpret Next Task", "kind": "block"},
+                                {"name": "SELF / MANAGER follow-up", "kind": "branch"},
+                            ],
+                        },
+                    ],
+                },
+            },
+        ]
+
+    def chain_recipe_progress(*, completed_through: int, next_number: int | None) -> dict[str, Any]:
+        """Describe recipe progress only; it never executes or selects a step."""
+        outline = chain_recipe_outline()
+        return {
+            "completed": [stage for stage in outline if stage["number"] <= completed_through],
+            "next": next((stage for stage in outline if stage["number"] == next_number), None),
+        }
+
+    async def recover_node_recipe(
+        *, direction: dict[str, Any], assessment: dict[str, Any], work: Work,
+    ) -> dict[str, Any]:
+        """Run the declared Recover Node R boundary without choosing a repair.
+
+        This composes Check Node R with a fresh State R read.  Pause, Replace,
+        and Reset remain separately chosen recipes because they can affect an
+        existing watch, a successor conversation, or a browser tab.
+        """
+        recovery = assessment.get("node_recovery")
+        if not recovery:
+            return {"status": "SKIPPED", "reason": "NODE_RECOVERY_NOT_DECLARED"}
+        if status_provider is None:
+            return {"status": "UNAVAILABLE", "reason": "NODE_RECOVERY_STATUS_UNAVAILABLE"}
+        from bct.node_recovery import NodeRecoveryLedger
+        key = str(recovery["conversation_key"])
+        case_id = "node-recovery-" + hashlib.sha256(
+            (str(direction["direction_id"]) + ":" + key).encode("utf-8")
+        ).hexdigest()[:24]
+        try:
+            checked = await asyncio.to_thread(
+                NodeRecoveryLedger(bct.store).check,
+                work=work, case_id=case_id, task_id="", conversation_key=key,
+                evidence=_current_node_evidence(key), kind="CHECK",
+            )
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        refreshed_state = await state_recipe(
+            project="", source_kind="USER", work=work, source_return=None,
+        )
+        return {
+            "status": "CHECKED",
+            "recipe": {"name": "recover_node_recipe", "kind": "partial_recipe"},
+            "recover_node": checked,
+            "state": refreshed_state,
+            "does_not": ["pause", "replace", "reset", "send"],
+            "next": "Continue to Prepare Send Direction R; choose Pause/Replace/Reset explicitly if needed.",
+        }
+
+    @server.tool(
+        name="bct_chain_recipe",
+        description=(
+            "Chain Recipe (full recipe). This entry runs Input R and State R, then presents Write Direction R "
+            "plus the remaining visible recipe sequence. action=send runs the declared "
+            "Send Direction R after its saved Direction and target records are available. "
+            "Classifies a new USER request or verifies one exact MANAGER_RETURN, then reads one current "
+            "snapshot, current Node Info, durable conversation-network directory, their comparison, and "
+            "an optional selected project's stored network. "
+            "When report_target_conversation_key is supplied, State R also reads that exact A return "
+            "conversation's Recovery Notices. Does not save a Direction or send."
+        ),
+        structured_output=True,
+    )
+    async def bct_chain_recipe(
+        source_text: str = "", source_kind: str = "USER", work_id: str = "",
+        source_task_id: str = "", source_generation: int = 0, project: str = "",
+        action: str = "prepare", direction_text: str = "", decision: str = "",
+        direction_id: str = "", assessment: dict[str, Any] | None = None,
+        task_id: str = "", operation_id: str = "", target_conversation_key: str = "",
+        max_generations: int = 0, report_target_conversation_key: str = "",
+    ) -> dict[str, Any]:
+        """Run one explicit boundary of the Chain Recipe."""
+        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send"}:
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ACTION_INVALID"}
+        if action == "save":
+            confirmed_input = await input_recipe(
+                work_id=work_id, source_kind=source_kind,
+                source_task_id=source_task_id, source_generation=source_generation,
+                source_text=source_text, allow_unbound_user=False, require_source_text=False,
+            )
+            if confirmed_input["status"] != "OK":
+                return confirmed_input
+            saved = await save_direction_recipe(
+                work=confirmed_input["work"], direction_id=direction_id, source_kind=source_kind,
+                source_task_id=source_task_id, source_generation=source_generation,
+                source_result_sha256=str(confirmed_input["source_result_sha256"]),
+                decision=decision, direction_text=direction_text, assessment=assessment,
+                source_text=source_text,
+            )
+            if saved.get("status") != "OK":
+                return saved
+            has_recovery = bool((saved["chain_direction"].get("assessment") or {}).get("node_recovery"))
+            next_number = 4 if has_recovery else 5 if decision == "NEW_TASK" else None
+            return {
+                **saved,
+                "recipe_progress": chain_recipe_progress(
+                    completed_through=3,
+                    next_number=next_number,
+                ),
+            }
+        if action == "recover_node":
+            loaded_direction = await read_saved_direction(work_id=work_id, direction_id=direction_id)
+            if loaded_direction["status"] != "READY":
+                return loaded_direction
+            direction = loaded_direction["direction"]
+            import json
+            saved_assessment = json.loads(direction.get("assessment_json") or "{}")
+            if not saved_assessment.get("node_recovery"):
+                return {"status": "NOT_APPLICABLE", "reason": "NODE_RECOVERY_NOT_DECLARED"}
+            work_access = await check_chain_work_access(work_id=work_id, action="start")
+            work = work_access["work"]
+            if work is None:
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_RECOVERY_WORK_REQUIRED"}
+            recovered = await recover_node_recipe(
+                direction=direction, assessment=saved_assessment, work=work,
+            )
+            return {
+                **recovered,
+                "direction_id": direction_id,
+                "recipe_progress": chain_recipe_progress(completed_through=4, next_number=5),
+            }
+        if action == "prepare_send":
+            if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ID_INVALID"}
+            loaded_direction = await read_saved_direction(
+                work_id=work_id, direction_id=direction_id,
+            )
+            if loaded_direction["status"] != "READY":
+                return loaded_direction
+            direction = loaded_direction["direction"]
+            if direction.get("decision") != "NEW_TASK":
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_NOT_A_NEW_TASK"}
+            import json
+            saved_assessment = json.loads(direction.get("assessment_json") or "{}")
+            if not saved_assessment:
+                return {"status": "NOT_APPLICABLE", "reason": "CHAIN_RECIPE_DIRECTION_HAS_NO_TARGETS"}
+            prepared_send = await prepare_send_direction_recipe(
+                direction=direction, assessment=saved_assessment, task_id=task_id,
+                operation_id=operation_id, target_conversation_key=target_conversation_key,
+                max_generations=max_generations,
+            )
+            if prepared_send["status"] != "READY":
+                return prepared_send
+            return {
+                "status": "READY", "direction_id": direction_id,
+                "targets": [target for _, target in prepared_send["targets"]],
+                "effects": "NONE_READ_ONLY", "authorizes_send": False,
+                "recipe_progress": chain_recipe_progress(completed_through=5, next_number=6),
+            }
+        if action == "apply_network":
+            if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ID_INVALID"}
+            loaded_direction = await read_saved_direction(
+                work_id=work_id, direction_id=direction_id,
+            )
+            if loaded_direction["status"] != "READY":
+                return loaded_direction
+            direction = loaded_direction["direction"]
+            if direction.get("decision") != "NEW_TASK":
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_NOT_A_NEW_TASK"}
+            import json
+            saved_assessment = json.loads(direction.get("assessment_json") or "{}")
+            if not saved_assessment:
+                return {"status": "NOT_APPLICABLE", "reason": "CHAIN_RECIPE_DIRECTION_HAS_NO_TARGETS"}
+            prepared_send = await prepare_send_direction_recipe(
+                direction=direction, assessment=saved_assessment, task_id=task_id,
+                operation_id=operation_id, target_conversation_key=target_conversation_key,
+                max_generations=max_generations,
+            )
+            if prepared_send["status"] != "READY":
+                return prepared_send
+            work_access = await check_chain_work_access(work_id=work_id, action="start")
+            work = work_access["work"]
+            if work is None:
+                return {
+                    "status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_NETWORK_WORK_REQUIRED",
+                    "work_observation": {key: value for key, value in work_access.items() if key != "work"},
+                }
+            network = await apply_conversation_network_recipe(
+                direction=direction, assessment=prepared_send["assessment"], work=work,
+                targets=prepared_send["targets"], action="start",
+            )
+            if network["status"] != "READY":
+                return network
+            return {
+                "status": "READY", "direction_id": direction_id,
+                "targets": [{"conversation_key": target["conversation_key"], **route}
+                            for _, target, route in network["resolved"]],
+                "network_updates": network["network_updates"],
+                "network_results": network["network_results"],
+                "effects": network["effects"],
+                "recipe_progress": chain_recipe_progress(completed_through=6, next_number=7),
+            }
+        if action == "send":
+            if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ID_INVALID"}
+            loaded_direction = await read_saved_direction(
+                work_id=work_id, direction_id=direction_id,
+            )
+            if loaded_direction["status"] != "READY":
+                return loaded_direction
+            direction = loaded_direction["direction"]
+            if direction.get("decision") != "NEW_TASK":
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_NOT_A_NEW_TASK"}
+            import json
+            saved_assessment = json.loads(direction.get("assessment_json") or "{}")
+            if not saved_assessment:
+                return {"status": "NOT_APPLICABLE", "reason": "CHAIN_RECIPE_DIRECTION_HAS_NO_TARGETS"}
+            work_access = await check_chain_work_access(work_id=work_id, action="start")
+            work = work_access["work"]
+            if work is None:
+                return {
+                    "status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_SEND_WORK_REQUIRED",
+                    "work_observation": {key: value for key, value in work_access.items() if key != "work"},
+                }
+            recovered = await recover_node_recipe(
+                direction=direction, assessment=saved_assessment, work=work,
+            )
+            if recovered["status"] not in {"CHECKED", "SKIPPED"}:
+                return recovered
+            sent = await _run_direction_targets(
+                direction=direction, assessment=saved_assessment, work=work,
+                task_id=task_id, operation_id=operation_id, action="start",
+                target_conversation_key=target_conversation_key,
+                max_generations=max_generations,
+            )
+            return {
+                **sent,
+                "recover_node": recovered,
+                "recipe_progress": chain_recipe_progress(completed_through=7, next_number=None),
+            }
+        prepared = await prepare_direction_recipe(
+            source_text=source_text, source_kind=source_kind, work_id=work_id,
+            source_task_id=source_task_id, source_generation=source_generation, project=project,
+            report_target_conversation_key=report_target_conversation_key,
+        )
+        if prepared["status"] != "PREPARED":
+            return prepared
+        confirmed = prepared["confirmed_input"]
+        state = prepared["state"]
+        work = confirmed["work"]
+        direction = write_direction_recipe(source_kind=source_kind, work=work)
+        return {
+            "status": "RECIPE_READY",
+            "recipe": {"name": "chain_recipe", "kind": "full_recipe"},
+            "recipe_outline": chain_recipe_outline(),
+            "completed_stages": [
+                {"number": 0, "name": "Input R"},
+                {"number": 1, "name": "State R"},
+                {"number": 2, "name": "Write Direction R", "status": "A_REQUIRED"},
+            ],
+            "next_stage": {"number": 2, "name": "Write Direction R", "status": "A_REQUIRED"},
+            "input": {
+                "source_kind": source_kind,
+                "source_evidence": (
+                    "VERIFIED_MANAGER_RETURN" if source_kind == "MANAGER_RETURN"
+                    else "CALLER_PROVIDED_TEXT"
+                ),
+                "source_text": source_text if source_kind == "USER" else "",
+                "source_return": confirmed["source_return"],
+                "source_result_sha256": confirmed["source_result_sha256"],
+                "work": _work_dict(work) if work is not None else None,
+                "connection": "EXACT_RETURN_BOUND" if source_kind == "MANAGER_RETURN"
+                              else ("WORK_BOUND" if work is not None else "UNCONNECTED"),
+            },
+            "state": state,
+            "direction": direction,
+            "read_only": True,
+            "authorizes_send": False,
+        }
+
     @server.tool(
         description=(
             "Return the current read-only BCT summary: Core release/health, Monitor projection, "
@@ -237,6 +1159,12 @@ def build_mcp(
         # snapshot rather than making callers request scope=node separately.
         from bct.status_views import with_current_node_details
         snapshot = with_current_node_details(snapshot, sort_by=sort_by)
+        from bct.chain_execution_plan import ChainExecutionPlanLedger
+        execute_plan_checks = await asyncio.to_thread(
+            ChainExecutionPlanLedger.list_latest_execute_plan_checks,
+            store=bct.store, limit=5 if compact else 20,
+        )
+        snapshot = {**snapshot, "execute_plan_checks": execute_plan_checks}
         if compact and isinstance(snapshot.get("monitor"), dict):
             monitor = dict(snapshot["monitor"])
             for key in (
@@ -297,165 +1225,10 @@ def build_mcp(
         if status_provider is None:
             return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
         snapshot = await asyncio.to_thread(status_provider)
-        nodes = status_view(snapshot, "node", sort_by=sort_by)
-        rcc = status_view(snapshot, "rcc", sort_by=sort_by)
-        scopes = await asyncio.to_thread(scope_directory, bct.store)
-        # Candidates come from confirmed current nodes, never from guessed project IDs.
-        # Historical projects need a separately authorized directory/summary lookup.
-        candidates: dict[str, dict[str, str]] = {}
-        current_node_items = (
-            nodes.get("current_nodes", {}).get("items", [])
-            if isinstance(nodes, dict) and isinstance(nodes.get("current_nodes"), dict)
-            else []
+        return await check_conversation_network_recipe(
+            snapshot=snapshot, project=project, sort_by=sort_by,
+            work_id=work_id, operation_id=operation_id,
         )
-        supervisor_candidates: list[dict[str, Any]] = []
-        for node in current_node_items:
-            if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
-                continue
-            name = str(node.get("network") or "").strip()
-            scope_id = str(node.get("network_id") or "").strip()
-            if name:
-                key = scope_id or name.casefold()
-                candidates.setdefault(key, {"title": name, "network_id": scope_id})
-            roles = node.get("roles") if isinstance(node.get("roles"), list) else []
-            if any(str(role).strip().casefold() == "supervisor" for role in roles):
-                supervisor_candidates.append({
-                    "node_number": str(node.get("node_number") or ""),
-                    "name": str(node.get("name") or ""),
-                    "conversation_uuid": str(node.get("conversation_uuid") or ""),
-                    "network": name,
-                    "network_id": scope_id,
-                    "roles": list(roles),
-                    "active": node.get("active") is True,
-                })
-        supervisor_status = (
-            "MISSING" if not supervisor_candidates else
-            "PRESENT" if len(supervisor_candidates) == 1 else
-            "MULTIPLE"
-        )
-        network = None
-        context = None
-        context_status = "NOT_REQUESTED"
-        historical_contexts = []
-        historical_contexts_status = "AUTH_CONTEXT_REQUIRED"
-        if not project and work_id and operation_id:
-            try:
-                directory = await make_executor("project_context")(
-                    work_id, operation_id,
-                    {"operation": "directory-get"},
-                )
-                if directory.get("outcome") == "APPLIED":
-                    payload = directory.get("output") or {}
-                    historical_contexts = payload.get("items", []) if isinstance(payload, dict) else []
-                    historical_contexts_status = "OK" if historical_contexts else "NO_CONTEXT"
-                    # Combine authorized central summaries with the existing BCT network DB.
-                    summaries = {str(item["project_id"]): item for item in historical_contexts
-                                 if isinstance(item, dict) and item.get("project_id")}
-                    with bct.store.transaction() as db:
-                        rows = db.execute(
-                            "SELECT project_id,display_name,active FROM conversation_network_projects "
-                            "ORDER BY display_name,project_id LIMIT 200"
-                        ).fetchall()
-                    for row in rows:
-                        key = str(row["project_id"])
-                        candidates[key] = {"title": str(row["display_name"]), "network_id": key,
-                                           "active": bool(row["active"]),
-                                           "context_summary": summaries.get(key)}
-                    # A stored project can outlive its network: return evidence, not a selection.
-                    for key, item in summaries.items():
-                        if key not in candidates:
-                            candidates[key] = {"title": str(item.get("title") or key),
-                                               "network_id": key, "active": False,
-                                               "context_summary": item}
-                else:
-                    historical_contexts_status = "ACCESS_DENIED" if directory.get("error") and any(
-                        marker in str(directory.get("error")).upper()
-                        for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
-                    ) else "QUERY_ERROR"
-            except Exception as exc:
-                historical_contexts_status = "ACCESS_DENIED" if any(
-                    marker in (type(exc).__name__ + ":" + str(exc)).upper()
-                    for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
-                ) else "QUERY_ERROR"
-        elif project:
-            historical_contexts_status = "NOT_REQUESTED"
-        if project:
-            try:
-                project_id = await asyncio.to_thread(
-                    resolve_project_id, bct.store, project_reference=project,
-                )
-                raw_network = await asyncio.to_thread(
-                    project_view, bct.store, project_id=project_id,
-                    include_internal_identity=True,
-                )
-                current_keys: dict[str, list[dict[str, Any]]] = {}
-                for node in current_node_items:
-                    if not isinstance(node, dict) or node.get("status") != "CONFIRMED":
-                        continue
-                    key = str(node.get("conversation_uuid") or "").strip()
-                    if key:
-                        current_keys.setdefault(key, []).append(node)
-                for member in raw_network.get("members", []):
-                    if not isinstance(member, dict):
-                        continue
-                    key = str(member.pop("_conversation_key", ""))
-                    matches = current_keys.get(key, [])
-                    member["current_node_presence"] = (
-                        "NOT_OPEN" if not matches else
-                        "CONFIRMED" if len(matches) == 1 else
-                        "AMBIGUOUS"
-                    )
-                    if len(matches) == 1:
-                        member["current_node"] = {
-                            "node_number": str(matches[0].get("node_number") or ""),
-                            "active": matches[0].get("active") is True,
-                            "generating": matches[0].get("generating") is True,
-                        }
-                    else:
-                        member["current_node"] = None
-                network = {"status": "OK", **raw_network}
-            except (ConversationNetworkError, ValueError) as exc:
-                network = {"status": "NOT_FOUND", "reason": str(exc)}
-            if not work_id or not operation_id:
-                context_status = "AUTH_CONTEXT_REQUIRED"
-            else:
-                try:
-                    context = await make_executor("project_context")(
-                        work_id, operation_id, {"operation": "overview-get", "project": project}
-                    )
-                    if context.get("outcome") == "APPLIED":
-                        payload = context.get("output")
-                        context_status = ("NO_CONTEXT" if not isinstance(payload, dict)
-                                          or (payload.get("central") is None and not payload.get("worklogs"))
-                                          else "OK")
-                    else:
-                        reason = str(context.get("error") or "").upper()
-                        context_status = "ACCESS_DENIED" if any(
-                            marker in reason for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
-                        ) else "QUERY_ERROR"
-                except Exception as exc:
-                    context_status = "ACCESS_DENIED" if any(
-                        marker in (type(exc).__name__ + ":" + str(exc)).upper()
-                        for marker in ("AUTH", "PERMISSION", "FORBIDDEN", "WORK_")
-                    ) else "QUERY_ERROR"
-                    context = {"status": "UNAVAILABLE", "reason_type": type(exc).__name__}
-        return {"status": "OK", "nodes": nodes, "rcc": rcc,
-                "network": network, "network_candidates": list(candidates.values()),
-                "scope_directory": scopes,
-                "supervisor": {
-                    "status": supervisor_status,
-                    "role_tag": "supervisor",
-                    "candidates": supervisor_candidates,
-                    "scope": "CURRENT_CONFIRMED_NODES_ONLY",
-                },
-                "candidates_scope": ("CURRENT_AND_HISTORICAL_AUTHORIZED"
-                                     if historical_contexts_status in {"OK", "NO_CONTEXT"}
-                                     else "CURRENT_CONFIRMED_NODES_ONLY"),
-                "historical_contexts": historical_contexts,
-                "historical_contexts_status": historical_contexts_status,
-                "project_context": context, "context_status": context_status,
-                "context_requires_work": bool(project and (not work_id or not operation_id)),
-                "read_only": True}
 
     @server.tool(
         description=(
@@ -619,7 +1392,7 @@ def build_mcp(
         }
         return result
 
-    @server.tool(description="Compatibility name for saving an AI-authored project plan as a versioned, Work-authorized project-context ledger. This is not B's Chain Execute Plan and does not plan or execute work. Prefer bct_set_project_plan.", structured_output=True)
+    @server.tool(description="Compatibility name for saving an AI-authored project plan as a versioned, Work-authorized project-context ledger. This is not a target's Chain Execute Plan and does not plan or execute work. Prefer bct_set_project_plan.", structured_output=True)
     async def bct_run_plan(
         work_id: str, operation_id: str, plan_id: str, project: str,
         objective: str, acceptance: str, steps: list[dict[str, Any]],
@@ -676,107 +1449,160 @@ def build_mcp(
             work_id, operation_id, arguments, approval_ref
         )
 
-    async def _run_direction_targets(
-        *, direction: dict, assessment: dict, work: Work, task_id: str,
-        operation_id: str, action: str, target_conversation_key: str,
-        max_generations: int,
+    def validate_conversation_network_updates(*, work: Work, updates: list[Any]) -> dict[str, Any]:
+        """Validate every saved conversation-network change before any one is applied."""
+        from bct.features.conversation_network import ConversationNetworkUpdateFeature
+        try:
+            for arguments in updates:
+                if not isinstance(arguments, dict):
+                    raise ValueError("DIRECTION_NETWORK_UPDATE_INVALID")
+                if arguments.get("operation") == "node-info-set" and (
+                        "expected_scope_id" not in arguments
+                        or not re.fullmatch(r"[0-9a-f]{64}", str(arguments.get("expected_role_tags_sha256", "")))):
+                    raise ValueError("DIRECTION_NETWORK_OBSERVATION_REQUIRED")
+                ConversationNetworkUpdateFeature(bct.store).prepare(work=work, arguments=arguments)
+        except (ValueError, PreconditionError) as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return {"status": "VALID"}
+
+    async def apply_conversation_network_recipe(
+        *, direction: dict[str, Any], assessment: dict[str, Any], work: Work,
+        targets: list[tuple[int, dict[str, Any]]], action: str,
     ) -> dict[str, Any]:
-        """Compose the existing network setter and exact per-target Chain paths."""
+        """Apply saved network metadata, then reacquire only A's return route.
+
+        Target routes are deliberately resolved one at a time in Send Direction
+        R.  A disappeared target must not prevent an unrelated declared target
+        from receiving its own exact message.
+        """
         import hashlib
+        from bct.chain_direction import resolve_direction_network, resolve_direction_target
+
+        updates = assessment.get("network_updates", [])
+        updates_check = validate_conversation_network_updates(work=work, updates=updates)
+        if updates_check["status"] != "VALID":
+            return updates_check
+        if updates and not any(capability_matches(item, "conversation_network_update") for item in work.actions):
+            return {"status": "BLOCKED", "reason": "DIRECTION_NETWORK_ACTION_REQUIRED"}
+        before = await asyncio.to_thread(status_provider)
+        try:
+            resolve_direction_target(
+                snapshot=before, conversation_key=assessment["manager_conversation_key"],
+            )
+        except ValueError as exc:
+            return {
+                "status": "NETWORK_PREPARATION_REQUIRED", "reason": str(exc),
+                "stage": "BEFORE_NETWORK_EFFECTS", "network_results": [],
+                "network_preparation_applied": False, "all_targets_started": False,
+                "direction_id": direction["direction_id"],
+            }
+        results = []
+        for index, arguments in enumerate(updates, 1):
+            if action == "preflight":
+                continue
+            operation_id = (
+                "direction-" + hashlib.sha256(direction["direction_id"].encode()).hexdigest()[:24]
+                + f"-network-{index}"
+            )
+            result = await bct_set_conversation_network(work.work_id, operation_id, arguments)
+            results.append(result)
+            if result.get("outcome") != "APPLIED":
+                return {
+                    "status": "NETWORK_PREPARATION_INCOMPLETE", "network_results": results,
+                    "stage": "NETWORK_EFFECTS",
+                    "network_preparation_applied": any(item.get("outcome") == "APPLIED" for item in results),
+                    "all_targets_started": False, "reason": "REVIEW_ORIGINAL_RECEIPT",
+                    "direction_id": direction["direction_id"],
+                }
+        snapshot = await asyncio.to_thread(status_provider)
+        try:
+            origin, resolved = resolve_direction_network(
+                snapshot=snapshot, assessment=assessment, targets=[],
+            )
+        except ValueError as exc:
+            return {
+                "status": "NETWORK_PREPARATION_REQUIRED", "reason": str(exc),
+                "stage": "AFTER_NETWORK_EFFECTS" if results else "READINESS",
+                "network_preparation_applied": bool(results), "all_targets_started": False,
+                "next_tool": "bct_set_conversation_network", "network_results": results,
+                "network_updates": updates, "direction_id": direction["direction_id"],
+                "instructions_for_a": "기록된 판단에 따라 기존 생성·복구·대화망 설정 부품으로 준비하고 같은 Direction을 다시 확인한다.",
+            }
+        return {
+            "status": "READY", "origin": origin, "resolved": resolved,
+            "network_updates": updates, "network_results": results,
+            "effects": "NONE_READ_ONLY" if action == "preflight" else "APPLIED_OR_NONE",
+        }
+
+    async def prepare_send_direction_recipe(
+        *, direction: dict[str, Any], assessment: dict[str, Any], task_id: str,
+        operation_id: str, target_conversation_key: str, max_generations: int,
+    ) -> dict[str, Any]:
+        """Validate a saved Direction and select targets before any network effect or send."""
         from bct.chain_direction import (
-            ChainDirectionLedger, compose_target_direction, resolve_direction_network,
-            resolve_direction_target, validate_direction_assessment,
+            ChainDirectionLedger, compose_target_direction, validate_direction_assessment,
             target_direction_id,
         )
         if status_provider is None:
-            return {"status":"UNAVAILABLE","reason":"STATUS_PROVIDER_NOT_CONFIGURED"}
+            return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
         try:
-            assessment = validate_direction_assessment(assessment, decision=direction["decision"])
+            checked = validate_direction_assessment(assessment, decision=direction["decision"])
         except ValueError as exc:
-            return {"status":"INVALID_REQUEST","reason":str(exc)}
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
         if type(max_generations) is not int or not 0 <= max_generations <= 12:
-            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_MAX_GENERATIONS_INVALID"}
-        targets = [(i, t) for i, t in enumerate(assessment["targets"], 1)
-                   if not target_conversation_key or t["conversation_key"] == target_conversation_key]
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_MESSAGE_MAX_GENERATIONS_INVALID"}
+        targets = [(index, target) for index, target in enumerate(checked["targets"], 1)
+                   if not target_conversation_key or target["conversation_key"] == target_conversation_key]
         if not targets:
-            return {"status":"INVALID_REQUEST","reason":"DIRECTION_TARGET_NOT_DECLARED"}
+            return {"status": "INVALID_REQUEST", "reason": "DIRECTION_TARGET_NOT_DECLARED"}
         if len(task_id) > 70 or len(operation_id) > 65:
-            return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_MESSAGE_OPERATION_TOO_LONG"}
         ledger = ChainDirectionLedger(bct.store)
         try:
-            for i, target in targets:
-                recorded = await asyncio.to_thread(ledger.get, direction_id=target_direction_id(direction, target))
-                compose_target_direction(direction=direction, target=target, task_id=f"{task_id}-{i}",
-                                         recorded_direction=recorded)
+            for index, target in targets:
+                recorded = await asyncio.to_thread(
+                    ledger.get, direction_id=target_direction_id(direction, target),
+                )
+                compose_target_direction(
+                    direction=direction, target=target, task_id=f"{task_id}-{index}",
+                    recorded_direction=recorded,
+                )
         except ValueError as exc:
-            return {"status":"INVALID_REQUEST","reason":str(exc)}
-        updates = assessment.get("network_updates", [])
-        if updates and not any(capability_matches(action, "conversation_network_update") for action in work.actions):
-            return {"status":"BLOCKED","reason":"DIRECTION_NETWORK_ACTION_REQUIRED"}
-        # Check every required attachment BEFORE changing metadata. Role/network checks
-        # follow the recorded updates, since preparing those roles is their purpose.
-        before = await asyncio.to_thread(status_provider)
-        try:
-            required_keys = {assessment["manager_conversation_key"], assessment["supervisor_conversation_key"],
-                             *(target["conversation_key"] for _, target in targets)}
-            for key in required_keys:
-                resolve_direction_target(snapshot=before, conversation_key=key)
-        except ValueError as exc:
-            return {"status":"NETWORK_PREPARATION_REQUIRED", "reason":str(exc),
-                    "stage":"BEFORE_NETWORK_EFFECTS", "network_results":[],
-                    "network_preparation_applied":False, "all_targets_started":False,
-                    "direction_id":direction["direction_id"]}
-        preparation = []
-        for i, arguments in enumerate(updates, 1):
-            if action == "preflight":
-                continue
-            # Stable across partial resumes and caller operation prefixes.
-            update_id = "direction-" + hashlib.sha256(direction["direction_id"].encode()).hexdigest()[:24] + f"-network-{i}"
-            result = await bct_set_conversation_network(work.work_id, update_id, arguments)
-            preparation.append(result)
-            if result.get("outcome") != "APPLIED":
-                return {"status":"NETWORK_PREPARATION_INCOMPLETE", "network_results":preparation,
-                        "stage":"NETWORK_EFFECTS", "network_preparation_applied":any(
-                            item.get("outcome") == "APPLIED" for item in preparation), "all_targets_started":False,
-                        "reason":"REVIEW_ORIGINAL_RECEIPT", "direction_id":direction["direction_id"]}
-        snapshot = await asyncio.to_thread(status_provider)
-        try:
-            origin, resolved = resolve_direction_network(snapshot=snapshot, assessment=assessment, targets=targets)
-        except ValueError as exc:
-            return {"status":"NETWORK_PREPARATION_REQUIRED","reason":str(exc),
-                    "stage":"AFTER_NETWORK_EFFECTS" if preparation else "READINESS",
-                    "network_preparation_applied":bool(preparation), "all_targets_started":False,
-                    "next_tool":"bct_set_conversation_network", "network_results":preparation,
-                    "network_updates":updates, "direction_id":direction["direction_id"],
-                    "instructions_for_a":"기록된 판단에 따라 기존 생성·복구·대화망 설정 부품으로 준비하고 같은 Direction을 다시 확인한다."}
-        if action == "preflight":
-            return {"status":"READY","direction_id":direction["direction_id"],
-                    "targets":[{"conversation_key":target["conversation_key"], **route}
-                               for _, target, route in resolved],
-                    "network_updates":updates, "effects":"NONE_READ_ONLY","authorizes_send":False}
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return {"status": "READY", "assessment": checked, "targets": targets}
+
+    async def send_direction_recipe(
+        *, direction: dict[str, Any], assessment: dict[str, Any], work: Work,
+        targets: list[tuple[int, dict[str, Any]]], task_id: str, operation_id: str,
+        network_results: list[dict[str, Any]], max_generations: int,
+    ) -> dict[str, Any]:
+        """Record each target Direction, recheck its live route, then send it."""
+        from bct.chain_direction import ChainDirectionLedger, resolve_direction_network
+
+        ledger = ChainDirectionLedger(bct.store)
         results = []
-        for i, target, _ in resolved:
-            child_task, child_op = f"{task_id}-{i}", f"{operation_id}-{i}"
+        for index, target in targets:
+            child_task, child_op = f"{task_id}-{index}", f"{operation_id}-{index}"
             try:
-                child = await asyncio.to_thread(ledger.target_direction, direction=direction,
-                                               target=target, task_id=child_task)
+                child = await asyncio.to_thread(
+                    ledger.target_direction, direction=direction, target=target, task_id=child_task,
+                )
                 if child["chain_state"] == "CHAIN_STARTED":
-                    results.append({"status":"ALREADY_STARTED", "target_conversation_key":target["conversation_key"],
-                                    "direction_id":child["direction_id"], "task_id":child["chain_task_id"],
-                                    "operation_id":child["chain_operation_id"], "resent":False})
+                    results.append({"status": "ALREADY_STARTED", "target_conversation_key": target["conversation_key"],
+                                    "direction_id": child["direction_id"], "task_id": child["chain_task_id"],
+                                    "operation_id": child["chain_operation_id"], "resent": False})
                     continue
                 if child["chain_state"] != "NOT_PLANNED":
-                    results.append({"status":"RECEIPT_REVIEW_REQUIRED", "direction_id":child["direction_id"],
-                                    "task_id":child["chain_task_id"],"operation_id":child["chain_operation_id"]})
+                    results.append({"status": "RECEIPT_REVIEW_REQUIRED", "direction_id": child["direction_id"],
+                                    "task_id": child["chain_task_id"], "operation_id": child["chain_operation_id"]})
                     continue
-                # A tab may have moved since other targets were prepared/sent.
                 fresh = await asyncio.to_thread(status_provider)
                 origin, current_targets = resolve_direction_network(
-                    snapshot=fresh, assessment=assessment, targets=[(i, target)],
+                    snapshot=fresh, assessment=assessment, targets=[(index, target)],
                 )
                 route = current_targets[0][2]
                 if route["node_info"].get("generating") is True:
-                    results.append({"status":"TARGET_BUSY","target_conversation_key":target["conversation_key"]})
+                    results.append({"status": "TARGET_BUSY", "target_conversation_key": target["conversation_key"]})
                     continue
                 result = await bct_chain_message(
                     work_id=work.work_id, task_id=child_task, operation_id=child_op, action="start",
@@ -788,25 +1614,113 @@ def build_mcp(
                     origin_instance_id=origin["instance_id"],
                     continuation_output_contract="explicit-next-task-v1", max_generations=max_generations,
                 )
-                results.append({**result,"target_conversation_key":target["conversation_key"],
-                                "direction_id":child["direction_id"]})
+                results.append({**result, "target_conversation_key": target["conversation_key"],
+                                "direction_id": child["direction_id"]})
             except ValueError as exc:
-                results.append({"status":"BLOCKED","reason":str(exc),
-                                "target_conversation_key":target["conversation_key"]})
-        all_started = all(r["status"] in {"WATCHING","ALREADY_STARTED"} for r in results)
-        return {"status":"STARTED" if all_started else "PARTIAL", "stage":"TARGET_DISPATCH",
-                "network_preparation_applied":bool(preparation), "all_targets_started":all_started,
-                "direction_id":direction["direction_id"],"network_results":preparation,"targets":results}
+                results.append({"status": "BLOCKED", "reason": str(exc),
+                                "target_conversation_key": target["conversation_key"]})
+        all_started = all(result["status"] in {"WATCHING", "ALREADY_STARTED"} for result in results)
+        return {
+            "status": "STARTED" if all_started else "PARTIAL", "stage": "TARGET_DISPATCH",
+            "network_preparation_applied": bool(network_results), "all_targets_started": all_started,
+            "direction_id": direction["direction_id"], "network_results": network_results,
+            "targets": results,
+        }
+
+    async def _run_direction_targets(
+        *, direction: dict, assessment: dict, work: Work, task_id: str,
+        operation_id: str, action: str, target_conversation_key: str,
+        max_generations: int,
+    ) -> dict[str, Any]:
+        """Compose prepare, apply-conversation-network, and send-direction recipes."""
+        prepared = await prepare_send_direction_recipe(
+            direction=direction, assessment=assessment, task_id=task_id, operation_id=operation_id,
+            target_conversation_key=target_conversation_key, max_generations=max_generations,
+        )
+        if prepared["status"] != "READY":
+            return prepared
+        network = await apply_conversation_network_recipe(
+            direction=direction, assessment=prepared["assessment"], work=work,
+            targets=prepared["targets"], action=action,
+        )
+        if network["status"] != "READY":
+            return network
+        if action == "preflight":
+            from bct.chain_direction import resolve_direction_target
+            target_routes = []
+            for _, target in prepared["targets"]:
+                try:
+                    route = resolve_direction_target(
+                        snapshot=await asyncio.to_thread(status_provider),
+                        conversation_key=target["conversation_key"],
+                    )
+                    target_routes.append({"conversation_key": target["conversation_key"], **route})
+                except ValueError as exc:
+                    target_routes.append({"conversation_key": target["conversation_key"],
+                                          "status": "UNAVAILABLE", "reason": str(exc)})
+            return {"status": "READY", "direction_id": direction["direction_id"],
+                    "targets": target_routes,
+                    "network_updates": network["network_updates"],
+                    "effects": "NONE_READ_ONLY", "authorizes_send": False,
+                    "recipe_progress": chain_recipe_progress(completed_through=5, next_number=6)}
+        sent = await send_direction_recipe(
+            direction=direction, assessment=prepared["assessment"], work=work,
+            targets=prepared["targets"], task_id=task_id, operation_id=operation_id,
+            network_results=network["network_results"], max_generations=max_generations,
+        )
+        return {
+            **sent,
+            "recipe_progress": chain_recipe_progress(completed_through=5, next_number=6),
+        }
+
+    async def check_chain_work_access(*, work_id: str, action: str) -> dict[str, Any]:
+        """Read one Work as an advisory observation before chain preparation or sending."""
+        if not hasattr(bct, "store"):
+            return {
+                "status": "OBSERVED", "work": None,
+                "work_access": "UNAVAILABLE",
+                "reason": "CHAIN_MESSAGE_WORK_STORE_UNAVAILABLE",
+            }
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except (KeyError, ValueError):
+            return {
+                "status": "OBSERVED", "work": None,
+                "work_access": "NOT_FOUND",
+                "reason": "CHAIN_MESSAGE_WORK_NOT_FOUND",
+            }
+        observation = check_chain_work(work, principal_id=principal.principal_id)
+        return {**observation, "work": work}
+
+    async def read_saved_direction(*, work_id: str, direction_id: str) -> dict[str, Any]:
+        """Read one saved Direction without creating schema or changing durable state."""
+        if not hasattr(bct, "store"):
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_STORE_REQUIRED"}
+        if not isinstance(direction_id, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", direction_id):
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_ID_INVALID"}
+        def read_existing():
+            with bct.store._readonly() as db:
+                row = db.execute(
+                    "SELECT * FROM chain_directions WHERE direction_id=?", (direction_id,),
+                ).fetchone()
+                return dict(row) if row is not None else None
+        try:
+            direction = await asyncio.to_thread(read_existing)
+        except Exception:
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_READ_UNAVAILABLE"}
+        if direction is None or direction.get("work_id") != work_id:
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_NOT_FOUND"}
+        return {"status": "READY", "direction": direction}
 
     @server.tool(
         name="bct_chain_message",
         description=(
             "DEFAULT ENTRY for ordinary assigned work: call with instruction only or action=prepare "
-            "to read reality and conversation networks and enter the question-guided Set Direction stage. "
+            "to read reality and conversation networks and enter the Chain Recipe Direction R stage. "
             "Read its automatic manual_guidance; bct_capabilities(tool_name='bct_chain_message') "
             "returns the full shared manual and current schema without local file access. "
-            "After A saves an assessment, action=start with chain_direction_id prepares its declared "
-            "network updates and sends each distinct target instruction through the existing exact path. "
+            "After A saves an assessment, action=start with chain_direction_id applies its declared "
+            "conversation-network changes and sends each distinct target instruction through the existing exact path. "
             "Work/task/operation identifiers are required for effects, not the initial read. Use this route "
             "unless the user explicitly asks for Task Message or Send Message. "
             "Start/status/cancel a durable one-target message continuation using "
@@ -818,6 +1732,8 @@ def build_mcp(
             "be omitted, and any supplied copy must match exactly. The command PREARMS BEFORE sending, "
             "then submits the reserved text under the exact planned operation ID. "
             "Status reads the owning Work's exact durable watch. "
+            "action=recovery_notices reads durable node-recovery Wake records for one exact "
+            "A return conversation; it does not send or recover a node. "
             "Use action=preflight to verify existing Work browser authority and exact "
             "outgoing instruction digest without sending or recording an Operation. "
             "An opt-in continuation_output_contract=explicit-next-task-v1 appends an "
@@ -849,11 +1765,38 @@ def build_mcp(
         # An ordinary request can enter here before Work or targets exist.
         # The same reusable Set Direction stage also handles an exact BA/CA report.
         if action == "prepare" or (action == "start" and not task_id and not chain_direction_id):
-            return await bct_set_direction(
+            if (manager_conversation_key and origin_conversation_key
+                    and manager_conversation_key != origin_conversation_key):
+                return {"status": "INVALID_REQUEST", "reason": "CHAIN_MESSAGE_IDENTITY_CONFLICT"}
+            return await bct_chain_recipe(
                 work_id=work_id, action="prepare", source_text=instruction,
                 source_kind=source_kind, source_task_id=source_task_id,
                 source_generation=source_generation, project=project,
+                report_target_conversation_key=(
+                    origin_conversation_key or manager_conversation_key
+                ),
             )
+        if action == "recovery_notices":
+            if (not work_id or not re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    manager_conversation_key or "")):
+                return {"status": "INVALID_REQUEST", "reason": "RECOVERY_NOTICES_IDENTITY_REQUIRED"}
+            from bct.send_delayed_message import DurableWatchLedger
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+            if work.owner_principal_id != principal.principal_id:
+                return {"status": "NOT_FOUND", "work_id": work_id}
+            notices = await asyncio.to_thread(
+                DurableWatchLedger(bct.store).recovery_notices,
+                work_id=work_id,
+                report_target_conversation_key=manager_conversation_key,
+            )
+            return {
+                "status": "OK",
+                "work_id": work_id,
+                "report_target_conversation_key": manager_conversation_key,
+                "notices": notices,
+                "next_action": "AUTHOR_RECOVER_NODE_DIRECTION" if notices else "NONE",
+            }
         if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ID_INVALID"}
@@ -899,6 +1842,7 @@ def build_mcp(
                     "watch_diagnostic_reason": watch_diagnostic_for_status(
                         str(watch["state"]), ctx,
                     ),
+                    "recovery_needed": ctx.get("recovery_needed"),
                     "execution_path": ctx.get("execution_path") or "LEGACY_UNCLASSIFIED",
                     "chain_direction_id": ctx.get("chain_direction_id", "")}
         if action == "cancel":
@@ -923,47 +1867,19 @@ def build_mcp(
         if len(send_id)>80 or len(arm_id)>80:
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_OPERATION_TOO_LONG"}
 
-        # Read-only Work authority check BEFORE direction planning or prearm.
-        # It never adds browser (or any other) action to an existing Work.
-        if not hasattr(bct, "store"):
-            if action == "preflight":
-                return {"status":"UNAVAILABLE","reason":"CHAIN_MESSAGE_WORK_STORE_UNAVAILABLE"}
-            # Historical transport-only unit tests instantiate no Store. A
-            # production BCT runtime always has one and enforces this fence.
-        else:
-            try:
-                work = await asyncio.to_thread(bct.store.get_work, work_id)
-            except (KeyError, ValueError):
-                return {"status":"BLOCKED","reason":"CHAIN_MESSAGE_WORK_NOT_FOUND"}
-            permission = check_chain_work(work, principal_id=principal.principal_id)
-            if permission["status"] != "READY":
-                return permission
+        work_access = await check_chain_work_access(work_id=work_id, action=action)
+        work = work_access["work"]
 
         direction = None
         supervisor_route = None
         execution_path = "DIRECTION_DECLARED" if chain_direction_id else "DIRECT_EXACT_TARGET"
         if chain_direction_id:
-            if not hasattr(bct, "store"):
-                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_STORE_REQUIRED"}
-            if (not isinstance(chain_direction_id, str)
-                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", chain_direction_id)):
-                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_ID_INVALID"}
-            # Do not construct ChainDirectionLedger here: its constructor
-            # creates tables. Preflight must be a pure read even for a missing
-            # direction schema; start plans only after every earlier gate.
-            def read_existing_direction():
-                with bct.store._readonly() as db:
-                    row = db.execute(
-                        "SELECT * FROM chain_directions WHERE direction_id=?",
-                        (chain_direction_id,),
-                    ).fetchone()
-                    return dict(row) if row is not None else None
-            try:
-                direction = await asyncio.to_thread(read_existing_direction)
-            except Exception:
-                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_READ_UNAVAILABLE"}
-            if direction is None or direction.get("work_id") != work_id:
-                return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_NOT_FOUND"}
+            loaded_direction = await read_saved_direction(
+                work_id=work_id, direction_id=chain_direction_id,
+            )
+            if loaded_direction["status"] != "READY":
+                return loaded_direction
+            direction = loaded_direction["direction"]
             if direction.get("decision") != "NEW_TASK":
                 return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_NOT_A_NEW_TASK"}
             if (direction.get("target_conversation_key")
@@ -975,9 +1891,16 @@ def build_mcp(
                 if (instruction or target_tab or target_window or instance_id or session_id
                         or origin_conversation or origin_instance):
                     return {"status":"INVALID_REQUEST","reason":"DIRECTION_USES_RECORDED_IDENTITIES"}
-                return await _run_direction_targets(
-                    direction=direction, assessment=assessment, work=work,
-                    task_id=task_id, operation_id=operation_id, action=action,
+                if action == "preflight":
+                    return await _run_direction_targets(
+                        direction=direction, assessment=assessment, work=work,
+                        task_id=task_id, operation_id=operation_id, action=action,
+                        target_conversation_key=str(target_conversation or ""),
+                        max_generations=max_generations,
+                    )
+                return await bct_chain_recipe(
+                    action="send", work_id=work_id, direction_id=chain_direction_id,
+                    task_id=task_id, operation_id=operation_id,
                     target_conversation_key=str(target_conversation or ""),
                     max_generations=max_generations,
                 )
@@ -1072,6 +1995,15 @@ def build_mcp(
         try:
             prepared_text = prepare_chain_instruction(
                 instruction, output_contract=continuation_output_contract,
+                execution_plan_context=(
+                    {
+                        "work_id": work_id,
+                        "direction_id": chain_direction_id,
+                        "task_id": task_id,
+                        "generation": generation,
+                    }
+                    if chain_direction_id else None
+                ),
             )
         except ValueError as exc:
             return {"status":"INVALID_REQUEST","reason":str(exc)}
@@ -1083,8 +2015,14 @@ def build_mcp(
                 "status": "READY", "work_id": work_id, "task_id": task_id,
                 "target_conversation_key": target_conversation,
                 "required_action": "browser",
+                "work_observation": {
+                    key: value for key, value in work_access.items() if key != "work"
+                },
                 "continuation_output_contract": continuation_output_contract,
                 "contract_appended": prepared_text["output_contract_appended"],
+                "execution_plan_contract_appended": prepared_text[
+                    "execution_plan_contract_appended"
+                ],
                 "contract_suffix": EXPLICIT_NEXT_TASK_SUFFIX
                     if prepared_text["output_contract_appended"] else "",
                 "outgoing_instruction_sha256": prepared_text["instruction_sha256"],
@@ -1445,7 +2383,8 @@ def build_mcp(
         description=(
             "Recheck the same exact node case and compare existing DOM activity, "
             "connection, and task/operation progress. Suggests CONTINUE, RECHECK, or "
-            "RESTART. Active Chain watches use the same signals to restart automatically."
+            "RESTART. Active Chain watches record repeated signals as RECOVERY_NEEDED; "
+            "they do not restart automatically."
         ),
         structured_output=True,
     )
@@ -1612,11 +2551,8 @@ def build_mcp(
     @server.tool(
         name="bct_set_direction",
         description=(
-            "Prepare and save A's direction. action=prepare automatically reads current BCT "
-            "status, Node Info and stored conversation networks, then supplies questions for "
-            "A about user intent, completion, topology, roles, multiple recipients, resources, "
-            "recovery and Supervisor integration. These questions guide A; they are not a required "
-            "questionnaire. A may omit assessment.answers or record only useful reasoning notes, then writes "
+            "Prepare and save A's direction. action=prepare is the compatibility entry for the "
+            "read-only Chain Recipe (Input R, State R, Direction R). A writes "
             "direction_text; action=save validates and records the actual execution fields and each target's "
             "distinct instruction. B later authors its concrete Execute Plan. No send at this stage. Use "
             "source_kind=MANAGER_RETURN only with the exact BA task/generation that "
@@ -1631,123 +2567,12 @@ def build_mcp(
         action: str = "save", source_text: str = "", project: str = "",
         assessment: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from bct.chain_direction import (
-            ChainDirectionLedger, direction_assessment_contract,
-            prepare_direction_review,
+        return await bct_chain_recipe(
+            action=action, work_id=work_id, direction_text=direction_text, decision=decision,
+            source_kind=source_kind, source_task_id=source_task_id,
+            source_generation=source_generation, direction_id=direction_id,
+            source_text=source_text, project=project, assessment=assessment,
         )
-        if action not in {"prepare", "save"}:
-            return {"status":"INVALID_REQUEST","reason":"DIRECTION_ACTION_INVALID"}
-        if action == "prepare" and source_kind == "USER" and not work_id:
-            work = None
-        else:
-            try:
-                work = await asyncio.to_thread(bct.store.get_work, work_id)
-            except KeyError:
-                return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-            if work.owner_principal_id != principal.principal_id:
-                return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        if not direction_id:
-            direction_id = "direction-" + uuid.uuid4().hex[:24]
-        result_sha = ""
-        context = None
-        if source_kind == "MANAGER_RETURN":
-            from bct.send_delayed_message import DurableWatchLedger
-            delayed_ledger = DurableWatchLedger(bct.store)
-            context = await asyncio.to_thread(
-                delayed_ledger.read_execution_context,
-                task_id=source_task_id,
-                generation=source_generation,
-            )
-            binding = (context or {}).get("binding") or {}
-            prior = (context or {}).get("decision") or {}
-            if (context is not None and binding.get("work_id") == work.work_id
-                    and binding.get("principal_id") == work.owner_principal_id
-                    and binding.get("assignment_epoch") == work.assignment_epoch
-                    and prior.get("route") == "MANAGER"):
-                result_sha = str(prior.get("response_sha256") or "")
-            else:
-                # Older Delayed Send returns predate the explicit B-decision
-                # ledger.  They can still anchor a Chain Direction, but only
-                # when the exact watch itself is durably RETURNED_TO_MANAGER
-                # and carries the observed response hash.  This is a targeted
-                # compatibility bridge, not natural-language reconstruction.
-                row = await asyncio.to_thread(
-                    delayed_ledger.get, source_task_id, source_generation,
-                )
-                import json
-                try:
-                    legacy = json.loads(str((row or {}).get("context_json") or "{}"))
-                except ValueError:
-                    legacy = {}
-                result_sha = str(legacy.get("observed_response_sha") or "")
-                if (not row or row.get("state") != "RETURNED_TO_MANAGER"
-                        or legacy.get("work_id") != work.work_id
-                        or legacy.get("principal_id") != work.owner_principal_id
-                        or legacy.get("assignment_epoch") != work.assignment_epoch
-                        or not re.fullmatch(r"[0-9a-f]{64}", result_sha)):
-                    return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_RETURN_NOT_EXACT"}
-        if action == "prepare":
-            if status_provider is None:
-                return {"status":"UNAVAILABLE","reason":"STATUS_PROVIDER_NOT_CONFIGURED"}
-            snapshot = await asyncio.to_thread(status_provider)
-            network = await bct_check_conversation_network(project=project)
-            monitor = snapshot.get("monitor", {})
-            reality = {
-                "core": snapshot.get("core", {}), "runtime": snapshot.get("runtime", {}),
-                "observed_at": monitor.get("generated_at"),
-                "available_works": [entry for entry in monitor.get("works", [])
-                                    if entry.get("owner_principal_id") == principal.principal_id],
-                "work": ({"work_id": work.work_id, "state": work.state,
-                          "request_summary": work.request_summary, "roots": list(work.roots),
-                          "actions": sorted(work.actions)} if work else None),
-                "operations": monitor.get("operations", []),
-                "unresolved_claims": monitor.get("unresolved_claims", []),
-                "github_run_inbox": monitor.get("github_run_inbox", []),
-            }
-            try:
-                review = prepare_direction_review(
-                    source_text=source_text, source_kind=source_kind, reality=reality,
-                    network=network, source_return=context,
-                    available_tools=[tool.name for tool in await server.list_tools()],
-                )
-                review["resource_discovery"] = DISCOVERY_GUIDE
-                review["manual_guidance"] = get_manual_guidance()
-            except (ValueError, PreconditionError) as exc:
-                return {"status":"INVALID_REQUEST","reason":str(exc)}
-            return {**review, "work_id": work_id, "direction_id": direction_id,
-                    "source_task_id": source_task_id, "source_generation": source_generation,
-                    "source_result_sha256": result_sha}
-        if assessment is not None:
-            from bct.chain_direction import validate_direction_assessment
-            from bct.features.conversation_network import ConversationNetworkUpdateFeature
-            try:
-                assessment = validate_direction_assessment(assessment, decision=decision)
-                for arguments in assessment.get("network_updates", []):
-                    if not isinstance(arguments, dict):
-                        raise ValueError("DIRECTION_NETWORK_UPDATE_INVALID")
-                    if arguments.get("operation") == "node-info-set" and (
-                            "expected_scope_id" not in arguments
-                            or not re.fullmatch(r"[0-9a-f]{64}", str(arguments.get("expected_role_tags_sha256", "")))):
-                        raise ValueError("DIRECTION_NETWORK_OBSERVATION_REQUIRED")
-                    ConversationNetworkUpdateFeature(bct.store).prepare(work=work, arguments=arguments)
-            except (ValueError, PreconditionError) as exc:
-                return {"status":"INVALID_REQUEST","reason":str(exc),
-                        "assessment_contract": direction_assessment_contract(
-                            assessment, reason=str(exc))}
-        try:
-            direction = await asyncio.to_thread(
-                ChainDirectionLedger(bct.store).save,
-                direction_id=direction_id, work_id=work_id,
-                source_kind=source_kind, source_task_id=source_task_id,
-                source_generation=source_generation,
-                source_result_sha256=result_sha, decision=decision,
-                direction_text=direction_text,
-                assessment=assessment,
-                source_text=source_text,
-            )
-        except ValueError as exc:
-            return {"status":"INVALID_REQUEST","reason":str(exc)}
-        return {"status":"OK","chain_direction":direction}
 
     @server.tool(
         name="bct_get_direction",
@@ -1772,24 +2597,40 @@ def build_mcp(
     @server.tool(
         name="bct_prepare_supervisor_chain",
         description=(
-            "Prepare A→C only after A has saved a NEW_TASK Direction anchored to an exact BA "
+            "Legacy compatibility only: prepare A→C only for an older NEW_TASK Direction with no saved "
+            "assessment, anchored to an exact BA "
             "Manager return. Reads the fresh current node/RCC observation, requires exactly one "
             "open global Supervisor, and binds that exact C conversation/tab/session to the Direction. "
             "It never creates a role, elects a Supervisor, sends a message, or guesses a stopped node. "
             "Call bct_chain_message with this direction afterward; a changed tab can be prepared again "
-            "before sending, but a different C requires a new A Direction."
+            "before sending, but a different C requires a new A Direction. New Directions should use "
+            "the ordinary Chain Recipe targets path for every target role, including Supervisor."
         ),
         structured_output=True,
     )
     async def bct_prepare_supervisor_chain(work_id: str, direction_id: str) -> dict[str, Any]:
-        if status_provider is None:
-            return {"status":"UNAVAILABLE","reason":"SUPERVISOR_ROUTE_STATUS_UNAVAILABLE"}
         try:
             work = await asyncio.to_thread(bct.store.get_work, work_id)
         except KeyError:
             return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
         if work.owner_principal_id != principal.principal_id:
             return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
+        saved_direction = await read_saved_direction(work_id=work_id, direction_id=direction_id)
+        if saved_direction["status"] != "READY":
+            return saved_direction
+        import json
+        try:
+            assessment = json.loads(saved_direction["direction"].get("assessment_json") or "{}")
+        except (TypeError, ValueError):
+            return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_ASSESSMENT_INVALID"}
+        if assessment:
+            return {
+                "status": "INVALID_REQUEST",
+                "reason": "SUPERVISOR_ROUTE_LEGACY_COMPATIBILITY_ONLY",
+                "next": "Use bct_chain_recipe(action='send') for this declared target.",
+            }
+        if status_provider is None:
+            return {"status":"UNAVAILABLE","reason":"SUPERVISOR_ROUTE_STATUS_UNAVAILABLE"}
         from bct.chain_supervisor_route import (
             ChainSupervisorRouteLedger, resolve_confirmed_supervisor,
         )
@@ -1813,9 +2654,9 @@ def build_mcp(
     @server.tool(
         name="bct_set_execute_plan",
         description=(
-            "Save B's concrete execution plan after an exact A Direction has already "
+            "Save the receiving target's concrete execution plan after an exact A Direction has already "
             "been delivered by Chain Message. A's direction supplies the goal and "
-            "boundaries; B's plan supplies the files, tools, checks, and safe next "
+            "boundaries; the target's plan supplies the files, tools, checks, and safe next "
             "steps. BCT stores it but never writes or executes it."
         ),
         structured_output=True,
@@ -1828,12 +2669,6 @@ def build_mcp(
         if not plan_id:
             plan_id = "chain-execution-plan-" + uuid.uuid4().hex[:18]
         try:
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-        except KeyError:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        if work.owner_principal_id != principal.principal_id:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        try:
             plan = await asyncio.to_thread(
                 ChainExecutionPlanLedger(bct.store).save,
                 plan_id=plan_id, work_id=work_id, direction_id=direction_id,
@@ -1844,24 +2679,51 @@ def build_mcp(
         return {"status":"OK","chain_execution_plan":plan}
 
     @server.tool(
+        name="bct_update_execute_plan",
+        description=(
+            "Append the receiving target's revised remaining Execute Plan without erasing the initial plan. "
+            "plan_id is the durable plan identity; supplied work/task/generation are optional "
+            "continuity references and are reported when they differ. They never block a plan update."
+        ),
+        structured_output=True,
+    )
+    async def bct_update_execute_plan(
+        plan_id: str, plan_text: str, update_reason: str,
+        work_id: str = "", task_id: str = "", generation: int | None = None,
+    ) -> dict[str, Any]:
+        from bct.chain_execution_plan import ChainExecutionPlanLedger
+        ledger = ChainExecutionPlanLedger(bct.store)
+        existing = await asyncio.to_thread(ledger.get, plan_id=plan_id)
+        if existing is None:
+            return {"status": "NOT_FOUND", "reason": "CHAIN_EXECUTION_PLAN_NOT_FOUND"}
+        plan = await asyncio.to_thread(
+            ledger.update, plan_id=plan_id, plan_text=plan_text, update_reason=update_reason,
+        )
+        supplied = {"work_id": work_id, "task_id": task_id, "generation": generation}
+        recorded = {key: existing[key] for key in supplied}
+        mismatched = [key for key, value in supplied.items() if value not in {"", None} and value != recorded[key]]
+        return {
+            "status": "OK", "chain_execution_plan": plan,
+            "continuity": "CONTEXT_CHANGED" if mismatched else "CONTINUED",
+            "context_mismatches": mismatched,
+        }
+
+    @server.tool(
         name="bct_get_execute_plan",
         description="Read one exact B-authored Chain Execution Plan. Does not send, plan, or decide.",
         structured_output=True,
     )
-    async def bct_get_execute_plan(work_id: str, plan_id: str) -> dict[str, Any]:
+    async def bct_get_execute_plan(plan_id: str, work_id: str = "") -> dict[str, Any]:
         from bct.chain_execution_plan import ChainExecutionPlanLedger
-        try:
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-        except KeyError:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        if work.owner_principal_id != principal.principal_id:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
         plan = await asyncio.to_thread(
             ChainExecutionPlanLedger(bct.store).get, plan_id=plan_id,
         )
-        if plan is None or plan.get("work_id") != work.work_id:
+        if plan is None:
             return {"status":"NOT_FOUND","plan_id":plan_id}
-        return {"status":"OK","chain_execution_plan":plan}
+        return {
+            "status": "OK", "chain_execution_plan": plan,
+            "continuity": "CONTEXT_CHANGED" if work_id and work_id != plan["work_id"] else "CONTINUED",
+        }
 
     @server.tool(
         name="bct_delayed_send_cancel",
@@ -1991,7 +2853,7 @@ def build_mcp(
     @server.tool(
         name="bct_set_project_plan",
         description=(
-            "Save a generic project-plan ledger. This is separate from B's Chain "
+            "Save a generic project-plan ledger. This is separate from a target's Chain "
             "Execute Plan and does not execute work."
         ),
         structured_output=True,

@@ -46,6 +46,7 @@ class AutoInboxTests(unittest.TestCase):
         self.assertEqual("WORK", result["recipient_kind"])
         self.assertTrue(launched[0]["arguments"]["initiator_node_id"].startswith("work:"))
         self.assertFalse(launched[0]["arguments"]["notify_manager"])
+        self.assertIsNone(launched[0]["arguments"]["initiator_conversation_uuid"])
         self.assertEqual("ci-work", launched[0]["arguments"]["inbox_work_id"])
         self.assertEqual("github_run_watch", launched[0]["capability"])
         self.assertEqual("RUNNING", result["receipt_state"])
