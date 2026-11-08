@@ -2336,7 +2336,13 @@ class BrowserFeature:
             # Duplicate operation IDs never reach execute, so neither this
             # probe nor the reload is repeated.
             try:
-                state_reply = self._request_rcc(
+                # A newly installed extension is not active until the reload
+                # itself succeeds.  Use the established wire spelling for
+                # this one bootstrap proof so an already-running prior
+                # extension can authorize its own upgrade.  The actual reload
+                # below still crosses the canonical ``rcc_reload_extension``
+                # boundary via ``_request_rcc``.
+                state_reply = self.client.request(
                     instance_id=values["instance_id"],
                     request_id="rcc-reload-idle-" + hashlib.sha256(
                         request.operation_id.encode("utf-8")
