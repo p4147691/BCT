@@ -320,6 +320,41 @@
       ]
     },
     {
+      "id": "monitor.rcc_command_catalog",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/features/rcc.py",
+          "symbol": "command_catalog"
+        },
+        {
+          "path": "src/bct/runtime_server.py",
+          "symbol": "monitor_rcc_command_catalog"
+        },
+        {
+          "path": "modules/monitor/extension/monitor-bct-shell.js",
+          "symbol": "create().rccCommandCatalog"
+        },
+        {
+          "path": "modules/monitor/extension/features/rcc-command-catalog/monitor-rcc-command-catalog.js",
+          "symbol": "MonitorRccCommandCatalog.create"
+        }
+      ],
+      "contract": "Expose the authoritative public RCC/BCT command catalogue to Monitor as a read-only searchable explanation list. A selected row displays implementation boundary, effect class, exact target class and compatibility keys without invoking a browser command.",
+      "effects": [],
+      "safety": [
+        "single-authoritative-command-catalog",
+        "read-only-monitor-route",
+        "no-command-invocation",
+        "no-role-or-owner-availability-inference",
+        "exact-identity-and-unknown-contract-remain-per-command"
+      ],
+      "used_by": [
+        "monitor.workbench"
+      ]
+    },
+    {
       "id": "bct.chat_input_queue",
       "kind": "module",
       "maturity": "isolated",

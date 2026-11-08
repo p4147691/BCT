@@ -19,6 +19,7 @@ MonitorApp (composition only)
 ├─ Workbench
 │  ├─ SketchFeature
 │  ├─ NotesFeature
+│  ├─ RccCommandCatalogFeature
 │  └─ NodePanelFeature
 │     ├─ ConnectedNodesView
 │     ├─ SharedChromeWindowRows
@@ -48,6 +49,7 @@ MonitorApp (composition only)
 | Header | Monitor header, version/status and utility buttons | collapsed state and command busy state | deployment, RCC, ACT and tunnel commands |
 | Sketch | drawing panel, canvas, tools and cursor | tool, strokes, text size and undo/redo | sketch persistence only |
 | Notes | note list, editor and note buttons | notes, selection, edit history and dirty state | storage, shared-note transport and AI organizer |
+| RCC command catalog | read-only public RCC/BCT command list, search and row detail | loaded catalogue and selected row | read-only BCT command-catalog port only |
 | Node panel | connected-window rows, shared Chrome cards, GitHub Inbox and node detail dialog | selected node, grouping, row projection and refresh state | BCT/RCC reader, exact-tab focus and role commands |
 | Desktop stage | full visible wallpaper and current-window projection behind the Monitor | selected desktop visual snapshot | read-only visual/frame ports |
 | Desktop strip | bottom rail, scrolling, selection, create, trash and undo | desktop order, selected GUID and strip interaction | desktop mutation port and Thumbnail API |
@@ -92,6 +94,7 @@ The existing edit domains intentionally do not dictate the final layout:
 
 - Sketch DOM, CSS, mutable state and persistence now live in `extension/features/sketch/`.
 - Notes DOM, CSS, model, history and shared-view synchronization now live in `extension/features/notes/`; `sketch-notes.js` retains only Recovery trash adapters and the narrow Sketch/Notes layout composition.
+- RCC command-catalog DOM, CSS, search and detail rendering live in `extension/features/rcc-command-catalog/`; its only BCT input is the read-only authoritative public catalogue.
 - `node-identity.js`, `conversations.js` and relevant `shared-ui.js` code converge into `NodePanelFeature`.
 - `thumbnail-wallpaper.js` plus the three standalone thumbnail layers become `ThumbnailFeature`.
 - desktop visual code in `thumbnail-wallpaper.js`, `desktop-lifecycle.js` and `shared-ui.js` separates into `DesktopStageFeature` and `DesktopStripFeature`.

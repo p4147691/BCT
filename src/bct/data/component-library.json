@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "16f04fd5c338c070a40099597e6d2adae19e7574b0a32076447ee385f06205e9",
+  "source_fingerprint": "88a568605698b1035899bf888371ddc570f60e358d69c4664f4292c1d9a5934e",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "768aeca6c64ae19ddc062eb0f2656139a596bb7207e91771d436259144b8d7d5",
-    "docs/component-library.v1.json": "13e84810c93ca7823211c420d4e8c7865a16817258386e4342e95a1f63cef5fb",
+    "docs/component-library.v1.json": "5ca48d83b63d0ba0728740188b5aede858898840d31b7278392d5e64fff339fd",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -12,6 +12,8 @@
     "modules/monitor/domains/desktop-lifecycle.js": "8269e05b3597723b2d47fdf2a8ddc8d3cca7cc93ae49a0f4db6ec506a6084158",
     "modules/monitor/domains/node-identity.js": "26b000f6749579117fd2a7b2adf4903a4a2c31c478aff2a9e24acc807b1410af",
     "modules/monitor/extension/browser/tab-close-adapter.js": "25098987008308e97822ee12b5e62e93f39506bae165014c51b0aab3c95025b7",
+    "modules/monitor/extension/features/rcc-command-catalog/monitor-rcc-command-catalog.js": "6b7499f46ea8d5bbc35921afca4b24bde7c40202344d2391222b74bb8b1814e7",
+    "modules/monitor/extension/monitor-bct-shell.js": "cea5b36cde29059bf3ead8274382b0c7f2aa6c6391d9c4e618b6482716ae9776",
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "ec9123afd6e583b7a0c92602c84652df7edd25f275b6ee017d2c573e290781d8",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "2168eeb18875dfa5c23aaa37aaad5acc7f6b43449c5a2c828ac937834314669e",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
@@ -29,8 +31,10 @@
     "src/bct/delivery_continuation_recovery.py": "2da105389388c6e1e3e405b178dc3ce85ff50fd874edfd322619d7e1f4aff4cb",
     "src/bct/features/conversation_network.py": "8344f9dce683111111dc600fc446f9838bddca7b8bccb207034815e6d5619c06",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
+    "src/bct/features/rcc.py": "bb9d0e6d7f44d408deba32c5daab333b0fee5bee311edd85db12fc3ef8963b02",
     "src/bct/mcp_server.py": "80cd376030b79fb19b46dff431ffda5b5a3471e2d215b5080241bb796fcabe70",
     "src/bct/node_recovery.py": "27c7845d6f18fa8a36e1adb609b5658e1b60a62512d087b0f0fec6623fb77713",
+    "src/bct/runtime_server.py": "eaa3e23373fd47b69a2c9eeb3d118494bbe2ff67cc0e74e37c48bc229b90f6c0",
     "src/bct/send_delayed_message.py": "b83f70aae1d92b2fc7c46823e476c0d2b706f9096b459d6fb536567ec35c0f58",
     "src/bct/task_message.py": "549f40e968a0797065da0725c1380c97ab98729695047426463b2767fd63b5ed"
   },
@@ -417,6 +421,41 @@
         "used_by": [
           "monitor.thumbnail_node_badges",
           "monitor.minimized_node_summary"
+        ]
+      },
+      {
+        "id": "monitor.rcc_command_catalog",
+        "kind": "module",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "src/bct/features/rcc.py",
+            "symbol": "command_catalog"
+          },
+          {
+            "path": "src/bct/runtime_server.py",
+            "symbol": "monitor_rcc_command_catalog"
+          },
+          {
+            "path": "modules/monitor/extension/monitor-bct-shell.js",
+            "symbol": "create().rccCommandCatalog"
+          },
+          {
+            "path": "modules/monitor/extension/features/rcc-command-catalog/monitor-rcc-command-catalog.js",
+            "symbol": "MonitorRccCommandCatalog.create"
+          }
+        ],
+        "contract": "Expose the authoritative public RCC/BCT command catalogue to Monitor as a read-only searchable explanation list. A selected row displays implementation boundary, effect class, exact target class and compatibility keys without invoking a browser command.",
+        "effects": [],
+        "safety": [
+          "single-authoritative-command-catalog",
+          "read-only-monitor-route",
+          "no-command-invocation",
+          "no-role-or-owner-availability-inference",
+          "exact-identity-and-unknown-contract-remain-per-command"
+        ],
+        "used_by": [
+          "monitor.workbench"
         ]
       },
       {

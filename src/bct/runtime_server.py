@@ -569,6 +569,21 @@ def main() -> int:
             "conversation_network_managers": monitor.get("conversation_network_managers", []),
         }, headers={"Cache-Control": "no-store"})
 
+    @mcp.custom_route("/monitor/rcc-command-catalog", methods=["GET"], include_in_schema=False)
+    async def monitor_rcc_command_catalog(request: Request) -> JSONResponse:
+        """Expose the MCP public-command catalogue for Monitor's read-only viewer.
+
+        This route neither invokes a command nor derives availability from role,
+        ownership, or remembered browser state.  Keeping the rows sourced from
+        ``command_catalog`` prevents a separately maintained Monitor list.
+        """
+        from bct.features.rcc import command_catalog
+        return JSONResponse({
+            "schema": 1,
+            "source": "bct.features.rcc.command_catalog",
+            "commands": command_catalog(),
+        }, headers={"Cache-Control": "no-store"})
+
     @mcp.custom_route("/monitor", methods=["GET"], include_in_schema=False)
     async def monitor(request: Request) -> FileResponse:
         asset = release_root / "modules" / "status-ui" / "index.html"

@@ -6,6 +6,7 @@
   const URLS = Object.freeze({
     health: "http://127.0.0.1:18790/health",
     monitorState: "http://127.0.0.1:18790/monitor/state",
+    rccCommandCatalog: "http://127.0.0.1:18790/monitor/rcc-command-catalog",
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
     updateConversationScope: "http://127.0.0.1:18790/monitor/conversation-network/update",
     reorderConversations: "http://127.0.0.1:18790/monitor/conversation-network/reorder",
@@ -49,6 +50,17 @@
         throw new Error("BCT_MONITOR_CONTRACT_INVALID");
       }
       return state;
+    }
+
+    async function rccCommandCatalog() {
+      if (typeof fetcher !== "function") throw new Error("BCT_RCC_COMMAND_CATALOG_FETCH_UNAVAILABLE");
+      const response = await fetcher(URLS.rccCommandCatalog, { cache: "no-store" });
+      if (!response?.ok) throw new Error(`BCT_RCC_COMMAND_CATALOG_HTTP_${Number(response?.status || 0)}`);
+      const payload = await response.json();
+      if (Number(payload?.schema) !== 1 || !Array.isArray(payload?.commands)) {
+        throw new Error("BCT_RCC_COMMAND_CATALOG_CONTRACT_INVALID");
+      }
+      return Object.freeze(payload.commands.map((row) => Object.freeze({ ...row })));
     }
 
     function windowNodes(state) {
@@ -369,6 +381,7 @@
     return Object.freeze({
       health,
       monitorState,
+      rccCommandCatalog,
       windowNodes,
       managerStatuses,
       displayWindowNodes,

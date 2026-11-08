@@ -164,6 +164,11 @@ const MONITOR_BCT_ROLE_HISTORY_LIMIT = 30;
 monitorBctRoleUndo?.addEventListener("click", () => void applyMonitorBctRoleHistory("undo"));
 monitorBctRoleRedo?.addEventListener("click", () => void applyMonitorBctRoleHistory("redo"));
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
+const monitorRccCommandCatalog = globalThis.MonitorRccCommandCatalog?.create?.({
+  document,
+  shell: monitorBctShell,
+});
+void monitorRccCommandCatalog?.refresh?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
