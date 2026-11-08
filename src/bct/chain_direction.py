@@ -17,6 +17,12 @@ _ID = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
 _DECISIONS = {"COMPLETE", "NEW_TASK", "ASK_USER", "HOLD"}
 _SOURCES = {"USER", "MANAGER_RETURN"}
 _UUID = re.compile(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}")
+_BRANCH_KINDS = {"PRIMARY", "DELIVERY", "OBSERVATION", "DIAGNOSIS", "FIX", "VERIFICATION", "RESUME"}
+_BRANCH_STATES = {
+    "READY", "IN_PROGRESS", "WAITING_INPUT", "WAITING_EXTERNAL",
+    "IDENTITY_MISMATCH", "CHECK_FAILED", "NOT_APPLIED", "UNKNOWN",
+    "BLOCKED", "COMPLETED",
+}
 
 # These are questions for A, not an additional questionnaire for the user.
 DIRECTION_QUESTIONS = (
@@ -366,6 +372,12 @@ class ChainDirectionLedger:
                     recipe_state TEXT NOT NULL DEFAULT 'LEGACY_UNCLASSIFIED',
                     next_safe_step TEXT NOT NULL DEFAULT 'INSPECT_DIRECTION',
                     recipe_reason TEXT NOT NULL DEFAULT '',
+                    root_work_id TEXT NOT NULL DEFAULT '',
+                    parent_work_id TEXT NOT NULL DEFAULT '',
+                    parent_step_id TEXT NOT NULL DEFAULT '',
+                    branch_kind TEXT NOT NULL DEFAULT 'PRIMARY',
+                    branch_reason TEXT NOT NULL DEFAULT '',
+                    branch_request_id TEXT NOT NULL DEFAULT '',
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL
                 )
@@ -375,9 +387,34 @@ class ChainDirectionLedger:
                                   ("parent_direction_id", ""), ("target_conversation_key", ""),
                                   ("recipe_state", "LEGACY_UNCLASSIFIED"),
                                   ("next_safe_step", "INSPECT_DIRECTION"),
-                                  ("recipe_reason", "")):
+                                  ("recipe_reason", ""),
+                                  ("root_work_id", ""), ("parent_work_id", ""),
+                                  ("parent_step_id", ""), ("branch_kind", "PRIMARY"),
+                                  ("branch_reason", ""), ("branch_request_id", "")):
                 if name not in columns:
                     db.execute(f"ALTER TABLE chain_directions ADD COLUMN {name} TEXT NOT NULL DEFAULT '{default}'")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS chain_branch_requests (
+                    request_id TEXT PRIMARY KEY,
+                    root_work_id TEXT NOT NULL,
+                    parent_work_id TEXT NOT NULL,
+                    parent_direction_id TEXT NOT NULL,
+                    parent_step_id TEXT NOT NULL,
+                    parent_task_id TEXT NOT NULL,
+                    parent_generation INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    exact_refs_json TEXT NOT NULL,
+                    required INTEGER NOT NULL,
+                    state TEXT NOT NULL,
+                    state_reason TEXT NOT NULL,
+                    next_safe_step TEXT NOT NULL,
+                    evidence_json TEXT NOT NULL,
+                    child_direction_id TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """)
 
     @staticmethod
     def _validate(*, direction_id: str, work_id: str, source_kind: str,
@@ -405,7 +442,9 @@ class ChainDirectionLedger:
              source_result_sha256: str = "", decision: str,
              direction_text: str, assessment: dict | None = None,
              source_text: str = "", parent_direction_id: str = "",
-             target_conversation_key: str = "") -> dict[str, Any]:
+             target_conversation_key: str = "", parent_work_id: str = "",
+             parent_step_id: str = "", branch_kind: str = "PRIMARY",
+             branch_reason: str = "", branch_request_id: str = "") -> dict[str, Any]:
         self._validate(
             direction_id=direction_id, work_id=work_id, source_kind=source_kind,
             source_task_id=source_task_id, source_generation=source_generation,
@@ -415,8 +454,18 @@ class ChainDirectionLedger:
         checked = validate_direction_assessment(assessment, decision=decision) if assessment is not None else {}
         if checked and source_kind == "USER" and (not source_text.strip() or len(source_text) > 12000):
             raise ValueError("CHAIN_DIRECTION_SOURCE_TEXT_REQUIRED")
-        if parent_direction_id and (not _ID.fullmatch(parent_direction_id) or not _UUID.fullmatch(target_conversation_key)):
+        if (not isinstance(branch_kind, str) or branch_kind not in _BRANCH_KINDS
+                or not isinstance(branch_reason, str) or len(branch_reason) > 2000
+                or not isinstance(parent_step_id, str) or len(parent_step_id) > 120):
+            raise ValueError("CHAIN_BRANCH_CONTEXT_INVALID")
+        if parent_direction_id and not _ID.fullmatch(parent_direction_id):
             raise ValueError("DIRECTION_PARENT_TARGET_INVALID")
+        if target_conversation_key and not _UUID.fullmatch(target_conversation_key):
+            raise ValueError("DIRECTION_PARENT_TARGET_INVALID")
+        if branch_request_id and not _ID.fullmatch(branch_request_id):
+            raise ValueError("CHAIN_BRANCH_REQUEST_ID_INVALID")
+        if parent_direction_id and not (parent_work_id or target_conversation_key or parent_step_id):
+            raise ValueError("CHAIN_BRANCH_PARENT_CONTEXT_REQUIRED")
         assessment_json = _json(checked)
         if decision == "NEW_TASK":
             recipe_state = "READY"
@@ -447,16 +496,71 @@ class ChainDirectionLedger:
                 ))
                 if actual != proposed:
                     raise ValueError("CHAIN_DIRECTION_CONFLICT")
+                # Historical per-target Directions have the old primary
+                # defaults. Preserve those receipts verbatim instead of
+                # rewriting their newly-added branch metadata on replay.
+                if branch_request_id and existing["branch_request_id"] != branch_request_id:
+                    raise ValueError("CHAIN_BRANCH_CONTEXT_CONFLICT")
                 return {**dict(existing), "assessment": json.loads(existing["assessment_json"]),
                         "source_evidence": direction_source_evidence(existing["source_kind"]), "duplicate": True}
+            parent = None
+            if parent_direction_id:
+                parent = db.execute(
+                    "SELECT * FROM chain_directions WHERE direction_id=?", (parent_direction_id,)
+                ).fetchone()
+                if parent is None or parent["work_id"] != (parent_work_id or work_id):
+                    # Existing ledgers can contain a historical per-target
+                    # parent pointer which is no longer present. Preserve it
+                    # verbatim; only the new explicit branch contract needs
+                    # a live, exact parent at write time.
+                    if branch_request_id or parent_step_id or branch_kind != "PRIMARY":
+                        raise ValueError("CHAIN_BRANCH_PARENT_NOT_FOUND")
+                    parent = None
+                if parent_direction_id == direction_id:
+                    raise ValueError("CHAIN_BRANCH_CYCLE")
+            root_work_id = str(parent["root_work_id"] or parent["work_id"]) if parent else work_id
+            resolved_parent_work = parent_work_id or (str(parent["work_id"]) if parent else "")
+            resolved_step = parent_step_id or ("SEND_DIRECTION" if parent else "")
+            resolved_kind = branch_kind
+            resolved_reason = branch_reason
+            if branch_request_id:
+                request = db.execute(
+                    "SELECT * FROM chain_branch_requests WHERE request_id=?", (branch_request_id,)
+                ).fetchone()
+                if request is None or request["root_work_id"] != root_work_id:
+                    raise ValueError("CHAIN_BRANCH_REQUEST_NOT_FOUND")
+                if request["child_direction_id"] and request["child_direction_id"] != direction_id:
+                    raise ValueError("CHAIN_BRANCH_REQUEST_ALREADY_ADOPTED")
+                if (parent_direction_id and parent_direction_id != request["parent_direction_id"]
+                        or parent_work_id and parent_work_id != request["parent_work_id"]
+                        or parent_step_id and parent_step_id != request["parent_step_id"]
+                        or branch_kind != "PRIMARY" and branch_kind != request["kind"]):
+                    raise ValueError("CHAIN_BRANCH_REQUEST_CONTEXT_MISMATCH")
+                parent_direction_id = str(request["parent_direction_id"])
+                resolved_parent_work = str(request["parent_work_id"])
+                resolved_step = str(request["parent_step_id"])
+                resolved_kind = str(request["kind"])
+                resolved_reason = str(request["reason"])
             db.execute("""
                 INSERT INTO chain_directions(
                     direction_id,work_id,source_kind,source_task_id,source_generation,
                     source_result_sha256,decision,direction_text,assessment_json,
                     source_text,parent_direction_id,target_conversation_key,
-                    recipe_state,next_safe_step,recipe_reason,created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (direction_id, *proposed, recipe_state, next_safe_step, recipe_reason, now, now))
+                    recipe_state,next_safe_step,recipe_reason,root_work_id,parent_work_id,
+                    parent_step_id,branch_kind,branch_reason,branch_request_id,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (direction_id, work_id, source_kind, source_task_id, source_generation,
+                  source_result_sha256, decision, direction_text, assessment_json, source_text,
+                  parent_direction_id, target_conversation_key, recipe_state, next_safe_step,
+                  recipe_reason, root_work_id, resolved_parent_work, resolved_step, resolved_kind,
+                  resolved_reason, branch_request_id, now, now))
+            if branch_request_id:
+                db.execute("""
+                    UPDATE chain_branch_requests
+                    SET state='READY', state_reason='A recorded a child Direction; it has not started.',
+                        next_safe_step='START_CHAIN_RECIPE', child_direction_id=?, updated_at=?
+                    WHERE request_id=?
+                """, (direction_id, now, branch_request_id))
         return {**(self.get(direction_id=direction_id) or {}), "duplicate": False}
 
     def target_direction(self, *, direction: dict, target: dict, task_id: str) -> dict:
@@ -469,6 +573,8 @@ class ChainDirectionLedger:
             source_generation=direction["source_generation"], source_result_sha256=direction["source_result_sha256"],
             decision="NEW_TASK", direction_text=text,
             parent_direction_id=direction["direction_id"], target_conversation_key=target["conversation_key"],
+            parent_work_id=direction["work_id"], parent_step_id="SEND_DIRECTION",
+            branch_kind="DELIVERY", branch_reason="Manager-declared target delivery.",
         )
 
     def get(self, *, direction_id: str) -> dict[str, Any] | None:
@@ -493,6 +599,15 @@ class ChainDirectionLedger:
             "chain_state": direction["chain_state"],
             "work_id": direction["work_id"],
             "direction_id": direction["direction_id"],
+        }
+        direction["chain_branch"] = {
+            "root_work_id": direction.get("root_work_id") or direction["work_id"],
+            "parent_work_id": direction.get("parent_work_id") or "",
+            "parent_direction_id": direction.get("parent_direction_id") or "",
+            "parent_step_id": direction.get("parent_step_id") or "",
+            "kind": direction.get("branch_kind") or "PRIMARY",
+            "reason": direction.get("branch_reason") or "",
+            "branch_request_id": direction.get("branch_request_id") or "",
         }
         return direction
 
@@ -555,6 +670,13 @@ class ChainDirectionLedger:
                         updated_at=?
                     WHERE direction_id=?
                 """, (task_id, operation_id, time.time(), direction_id))
+                if row["branch_request_id"]:
+                    db.execute("""
+                        UPDATE chain_branch_requests
+                        SET state='IN_PROGRESS', state_reason='Child Chain Recipe has a planned exact operation.',
+                            next_safe_step='PREARM_AND_SEND', updated_at=?
+                        WHERE request_id=?
+                    """, (time.time(), row["branch_request_id"]))
         return self.get(direction_id=direction_id) or {}
 
     def mark_chain_started(self, *, direction_id: str, work_id: str,
@@ -582,3 +704,197 @@ class ChainDirectionLedger:
             if updated.rowcount != 1:
                 raise ValueError("CHAIN_DIRECTION_CHAIN_CONFLICT")
         return {**(self.get(direction_id=direction_id) or {}), "duplicate": False}
+
+
+class ChainBranchRequestLedger:
+    """Durable reports requesting a Manager-authored child Chain.
+
+    A request has no transport side effect and is not a child Direction.  A
+    Manager later adopts it by saving a normal Direction with branch_request_id.
+    """
+
+    def __init__(self, store):
+        self.store = store
+        # The direction ledger owns the additive schema so one transaction can
+        # bind adoption without an orphaned child Direction.
+        ChainDirectionLedger(store)
+
+    @staticmethod
+    def _refs(value: dict | None) -> dict:
+        if value is None:
+            return {}
+        allowed = {"conversation_key", "operation_id", "receipt_id", "generation", "task_id", "direction_id"}
+        if not isinstance(value, dict) or set(value) - allowed:
+            raise ValueError("CHAIN_BRANCH_EXACT_REFS_INVALID")
+        if "conversation_key" in value and (not isinstance(value["conversation_key"], str)
+                                             or not _UUID.fullmatch(value["conversation_key"])):
+            raise ValueError("CHAIN_BRANCH_EXACT_REFS_INVALID")
+        for key in ("operation_id", "receipt_id", "task_id", "direction_id"):
+            if key in value and (not isinstance(value[key], str) or not _ID.fullmatch(value[key])):
+                raise ValueError("CHAIN_BRANCH_EXACT_REFS_INVALID")
+        if "generation" in value and (type(value["generation"]) is not int or value["generation"] < 1):
+            raise ValueError("CHAIN_BRANCH_EXACT_REFS_INVALID")
+        return value
+
+    def request(self, *, request_id: str, root_work_id: str, parent_work_id: str,
+                parent_direction_id: str, parent_step_id: str, parent_task_id: str,
+                parent_generation: int, kind: str, reason: str, exact_refs: dict | None = None,
+                required: bool = True) -> dict:
+        if (not all(isinstance(value, str) and _ID.fullmatch(value) for value in
+                    (request_id, root_work_id, parent_work_id, parent_direction_id, parent_task_id))
+                or not isinstance(parent_step_id, str) or not parent_step_id or len(parent_step_id) > 120
+                or kind not in _BRANCH_KINDS - {"PRIMARY", "DELIVERY", "RESUME"}
+                or not isinstance(reason, str) or not reason.strip() or len(reason) > 2000
+                or type(parent_generation) is not int or parent_generation < 1
+                or type(required) is not bool):
+            raise ValueError("CHAIN_BRANCH_REQUEST_INVALID")
+        refs = self._refs(exact_refs)
+        now = time.time()
+        with self.store.transaction() as db:
+            parent = db.execute("SELECT * FROM chain_directions WHERE direction_id=?", (parent_direction_id,)).fetchone()
+            if (parent is None or parent["work_id"] != parent_work_id
+                    or str(parent["root_work_id"] or parent["work_id"]) != root_work_id
+                    or parent["chain_task_id"] != parent_task_id
+                    or parent["chain_state"] != "CHAIN_STARTED"):
+                raise ValueError("CHAIN_BRANCH_PARENT_NOT_EXACT")
+            existing = db.execute("SELECT * FROM chain_branch_requests WHERE request_id=?", (request_id,)).fetchone()
+            proposed = (root_work_id, parent_work_id, parent_direction_id, parent_step_id,
+                        parent_task_id, parent_generation, kind, reason, _json(refs), int(required))
+            if existing is not None:
+                actual = tuple(existing[key] for key in (
+                    "root_work_id", "parent_work_id", "parent_direction_id", "parent_step_id",
+                    "parent_task_id", "parent_generation", "kind", "reason", "exact_refs_json", "required"))
+                if actual != proposed:
+                    raise ValueError("CHAIN_BRANCH_REQUEST_CONFLICT")
+                return {**dict(existing), "duplicate": True, "exact_refs": json.loads(existing["exact_refs_json"])}
+            duplicate = db.execute("""
+                SELECT request_id FROM chain_branch_requests
+                WHERE root_work_id=? AND parent_direction_id=? AND parent_step_id=?
+                  AND parent_task_id=? AND parent_generation=? AND kind=?
+                  AND exact_refs_json=? AND state!='COMPLETED'
+            """, (root_work_id, parent_direction_id, parent_step_id, parent_task_id,
+                  parent_generation, kind, _json(refs))).fetchone()
+            if duplicate is not None:
+                raise ValueError("CHAIN_BRANCH_DUPLICATE_REQUEST")
+            db.execute("""
+                INSERT INTO chain_branch_requests(
+                    request_id,root_work_id,parent_work_id,parent_direction_id,parent_step_id,
+                    parent_task_id,parent_generation,kind,reason,exact_refs_json,required,state,
+                    state_reason,next_safe_step,evidence_json,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,'WAITING_INPUT',?,'MANAGER_REVIEW_BRANCH_REQUEST','{}',?,?)
+            """, (request_id, *proposed,
+                  "A Manager must decide whether to create a linked child Chain Direction.", now, now))
+        return self.get(request_id=request_id) or {}
+
+    def report(self, *, request_id: str, state: str, reason: str,
+               next_safe_step: str, evidence: dict | None = None) -> dict:
+        if (state not in _BRANCH_STATES or state in {"READY", "IN_PROGRESS"}
+                or not isinstance(reason, str) or not reason.strip() or len(reason) > 2000
+                or not isinstance(next_safe_step, str) or not next_safe_step or len(next_safe_step) > 120
+                or evidence is not None and not isinstance(evidence, dict)):
+            raise ValueError("CHAIN_BRANCH_REPORT_INVALID")
+        if state == "UNKNOWN" and "RECONCILE" not in next_safe_step.upper():
+            raise ValueError("CHAIN_BRANCH_UNKNOWN_RECONCILE_REQUIRED")
+        if state == "COMPLETED" and not (isinstance(evidence, dict) and any(
+                key in evidence for key in ("receipt_id", "task_id", "direction_id"))):
+            raise ValueError("CHAIN_BRANCH_COMPLETION_EVIDENCE_REQUIRED")
+        with self.store.transaction() as db:
+            row = db.execute("SELECT * FROM chain_branch_requests WHERE request_id=?", (request_id,)).fetchone()
+            if row is None:
+                raise ValueError("CHAIN_BRANCH_REQUEST_NOT_FOUND")
+            db.execute("""
+                UPDATE chain_branch_requests
+                SET state=?,state_reason=?,next_safe_step=?,evidence_json=?,updated_at=?
+                WHERE request_id=?
+            """, (state, reason, next_safe_step, _json(evidence or {}), time.time(), request_id))
+        return self.get(request_id=request_id) or {}
+
+    def get(self, *, request_id: str) -> dict | None:
+        with self.store._readonly() as db:
+            row = db.execute("SELECT * FROM chain_branch_requests WHERE request_id=?", (request_id,)).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["exact_refs"] = json.loads(result.pop("exact_refs_json"))
+        result["evidence"] = json.loads(result.pop("evidence_json"))
+        result["required"] = bool(result["required"])
+        if result["state"] == "UNKNOWN":
+            result["prohibited_actions"] = ["DO_NOT_RESEND_OR_CREATE_A_REPLACEMENT_OPERATION"]
+        else:
+            result["prohibited_actions"] = []
+        return result
+
+    @classmethod
+    def tree(cls, *, store, root_work_id: str) -> dict:
+        """Read one root's durable tree without changing a receipt or a watch."""
+        try:
+            with store._readonly() as db:
+                directions = [dict(row) for row in db.execute(
+                    "SELECT * FROM chain_directions WHERE root_work_id=? OR (root_work_id='' AND work_id=?) ORDER BY created_at,direction_id",
+                    (root_work_id, root_work_id),
+                ).fetchall()]
+                requests = [dict(row) for row in db.execute(
+                    "SELECT * FROM chain_branch_requests WHERE root_work_id=? ORDER BY created_at,request_id",
+                    (root_work_id,),
+                ).fetchall()]
+                try:
+                    watches = [dict(row) for row in db.execute(
+                        "SELECT task_id,generation,state,context_json FROM delayed_send_watches ORDER BY generation DESC"
+                    ).fetchall()]
+                except sqlite3.OperationalError:
+                    watches = []
+        except sqlite3.OperationalError:
+            return {"root_work_id": root_work_id, "nodes": [], "branch_requests": [], "manager_attention": []}
+        latest_watches = {}
+        for watch in watches:
+            latest_watches.setdefault(str(watch["task_id"]), watch)
+        nodes = []
+        for direction in directions:
+            state = str(direction.get("recipe_state") or "LEGACY_UNCLASSIFIED")
+            reason = str(direction.get("recipe_reason") or "")
+            next_step = str(direction.get("next_safe_step") or "INSPECT_DIRECTION")
+            watch = latest_watches.get(str(direction.get("chain_task_id") or ""))
+            if watch:
+                watch_state = str(watch["state"])
+                if watch_state == "WATCHING":
+                    state, next_step = "WAITING_EXTERNAL", "WAIT_FOR_EXACT_RESPONSE"
+                    reason = "The exact sent operation is waiting for its durable response Watch."
+                elif watch_state in {"MANAGER_DECISION_REQUIRED", "RETURNED_TO_MANAGER"}:
+                    state, next_step = "WAITING_INPUT", "MANAGER_REENTER_CHAIN_RECIPE"
+                    reason = "The exact Worker return is recorded; A must prepare and save the next Direction."
+                elif watch_state == "UNKNOWN":
+                    state, next_step = "UNKNOWN", "RECONCILE_SAME_RECEIPT_ONLY"
+                    reason = "The external effect is uncertain. Do not resend or create a replacement operation."
+                elif watch_state == "SELF_SENT":
+                    state, next_step = "IN_PROGRESS", "WAIT_FOR_CURRENT_GENERATION"
+                    reason = "The same exact task has a later self-continuation."
+            nodes.append({
+                "direction_id": direction["direction_id"], "work_id": direction["work_id"],
+                "parent_work_id": direction.get("parent_work_id") or "",
+                "parent_direction_id": direction.get("parent_direction_id") or "",
+                "parent_step_id": direction.get("parent_step_id") or "",
+                "kind": direction.get("branch_kind") or "PRIMARY",
+                "reason": direction.get("branch_reason") or reason,
+                "branch_request_id": direction.get("branch_request_id") or "",
+                "task_id": direction.get("chain_task_id") or "",
+                "operation_id": direction.get("chain_operation_id") or "",
+                "send_operation_id": direction.get("chain_send_operation_id") or "",
+                "state": state, "state_reason": reason, "next_safe_step": next_step,
+                "watch_state": str(watch["state"]) if watch else "",
+                "prohibited_actions": (["DO_NOT_RESEND_OR_CREATE_A_REPLACEMENT_OPERATION"]
+                                       if state == "UNKNOWN" else []),
+            })
+        branch_requests = []
+        for row in requests:
+            item = dict(row)
+            item["exact_refs"] = json.loads(item.pop("exact_refs_json"))
+            item["evidence"] = json.loads(item.pop("evidence_json"))
+            item["required"] = bool(item["required"])
+            item["prohibited_actions"] = (["DO_NOT_RESEND_OR_CREATE_A_REPLACEMENT_OPERATION"]
+                                           if item["state"] == "UNKNOWN" else [])
+            branch_requests.append(item)
+        attention = [item for item in branch_requests if item["state"] not in {"COMPLETED", "IN_PROGRESS"}]
+        attention += [item for item in nodes if item["state"] in {
+            "WAITING_INPUT", "IDENTITY_MISMATCH", "CHECK_FAILED", "NOT_APPLIED", "UNKNOWN", "BLOCKED"}]
+        return {"root_work_id": root_work_id, "nodes": nodes,
+                "branch_requests": branch_requests, "manager_attention": attention}

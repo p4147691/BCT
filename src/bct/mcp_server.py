@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import math
 import re
+import sqlite3
 import time
 import uuid
 from pathlib import Path
@@ -39,7 +40,7 @@ MCP_PRINCIPAL_ID = "bct-mcp-local"
 
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks",
-    "bct_execution_context", "bct_set_direction", "bct_get_direction",
+    "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_branch",
     "bct_prepare_supervisor_chain",
     "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
@@ -784,6 +785,8 @@ def build_mcp(
         *, work: Work, direction_id: str, source_kind: str, source_task_id: str,
         source_generation: int, source_result_sha256: str, decision: str,
         direction_text: str, assessment: dict[str, Any] | None, source_text: str,
+        parent_direction_id: str = "", parent_step_id: str = "",
+        branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
     ) -> dict[str, Any]:
         """Write one already-validated Direction record; never sends it."""
         from bct.chain_direction import ChainDirectionLedger
@@ -799,6 +802,10 @@ def build_mcp(
                 source_generation=source_generation,
                 source_result_sha256=source_result_sha256, decision=decision,
                 direction_text=direction_text, assessment=assessment, source_text=source_text,
+                parent_direction_id=parent_direction_id,
+                parent_work_id=work.work_id if parent_direction_id else "",
+                parent_step_id=parent_step_id, branch_kind=branch_kind,
+                branch_reason=branch_reason, branch_request_id=branch_request_id,
             )
         except ValueError as exc:
             return {"status": "INVALID_REQUEST", "reason": str(exc)}
@@ -808,6 +815,8 @@ def build_mcp(
         *, work: Work, direction_id: str, source_kind: str, source_task_id: str,
         source_generation: int, source_result_sha256: str, decision: str,
         direction_text: str, assessment: dict[str, Any] | None, source_text: str,
+        parent_direction_id: str = "", parent_step_id: str = "",
+        branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
     ) -> dict[str, Any]:
         """Compose Direction validation and recording without changing the conversation network."""
         direction_check = validate_direction(
@@ -829,6 +838,9 @@ def build_mcp(
             source_task_id=source_task_id, source_generation=source_generation,
             source_result_sha256=source_result_sha256, decision=decision,
             direction_text=direction_text, assessment=checked_assessment, source_text=source_text,
+            parent_direction_id=parent_direction_id, parent_step_id=parent_step_id,
+            branch_kind=branch_kind, branch_reason=branch_reason,
+            branch_request_id=branch_request_id,
         )
 
     @server.tool(description=(
@@ -986,6 +998,8 @@ def build_mcp(
         task_id: str = "", operation_id: str = "", target_conversation_key: str = "",
         max_generations: int = 0, report_target_conversation_key: str = "",
         worker_preparation_id: str = "",
+        parent_direction_id: str = "", parent_step_id: str = "",
+        branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
     ) -> dict[str, Any]:
         """Run one explicit boundary of the Chain Recipe."""
         if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send", "provision_worker"}:
@@ -1038,7 +1052,9 @@ def build_mcp(
                 source_task_id=source_task_id, source_generation=source_generation,
                 source_result_sha256=str(confirmed_input["source_result_sha256"]),
                 decision=decision, direction_text=direction_text, assessment=assessment,
-                source_text=source_text,
+                source_text=source_text, parent_direction_id=parent_direction_id,
+                parent_step_id=parent_step_id, branch_kind=branch_kind,
+                branch_reason=branch_reason, branch_request_id=branch_request_id,
             )
             if saved.get("status") != "OK":
                 return saved
@@ -1258,6 +1274,24 @@ def build_mcp(
             store=bct.store, principal_id=principal.principal_id,
             limit=5 if compact else 20,
         )
+        # A compact Manager attention list supplements, but never replaces,
+        # the exact root-tree read. It is observation only and does not create
+        # a branch, Direction, Work, Operation, or delivery.
+        from bct.chain_direction import ChainBranchRequestLedger
+        chain_branch_attention = []
+        try:
+            with bct.store._readonly() as db:
+                roots = [str(row[0]) for row in db.execute(
+                    "SELECT work_id FROM works WHERE owner_principal_id=?", (principal.principal_id,)
+                ).fetchall()]
+            for root in roots:
+                tree = await asyncio.to_thread(ChainBranchRequestLedger.tree, store=bct.store, root_work_id=root)
+                chain_branch_attention.extend({"root_work_id": root, **item}
+                                              for item in tree["manager_attention"])
+        except (sqlite3.OperationalError, AttributeError):
+            # Status is a read-only summary even for legacy stores that do not
+            # yet have the additive chain tables.
+            chain_branch_attention = []
         snapshot = {
             **snapshot,
             "execute_plan_checks": execute_plan_checks,
@@ -1265,6 +1299,7 @@ def build_mcp(
             # the normal Manager status view so it cannot disappear between
             # Set Direction and the exact start/send boundary.
             "pending_chain_starts": pending_chain_starts,
+            "chain_branch_attention": chain_branch_attention[:5 if compact else 20],
         }
         if compact and isinstance(snapshot.get("monitor"), dict):
             monitor = dict(snapshot["monitor"])
@@ -2712,12 +2747,17 @@ def build_mcp(
         source_generation: int = 0, direction_id: str = "",
         action: str = "save", source_text: str = "", project: str = "",
         assessment: dict[str, Any] | None = None,
+        parent_direction_id: str = "", parent_step_id: str = "",
+        branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
     ) -> dict[str, Any]:
         return await bct_chain_recipe(
             action=action, work_id=work_id, direction_text=direction_text, decision=decision,
             source_kind=source_kind, source_task_id=source_task_id,
             source_generation=source_generation, direction_id=direction_id,
             source_text=source_text, project=project, assessment=assessment,
+            parent_direction_id=parent_direction_id, parent_step_id=parent_step_id,
+            branch_kind=branch_kind, branch_reason=branch_reason,
+            branch_request_id=branch_request_id,
         )
 
     @server.tool(
@@ -2739,6 +2779,64 @@ def build_mcp(
         if direction is None or direction.get("work_id") != work.work_id:
             return {"status":"NOT_FOUND","direction_id":direction_id}
         return {"status":"OK","chain_direction":direction}
+
+    @server.tool(
+        name="bct_chain_branch",
+        description=(
+            "Record or read one Root Work's linked branch tree. action=request is a Worker observation "
+            "that asks A Manager to consider a child Direction; it never creates a Direction, Work, "
+            "Operation, browser message, or delivery. action=report records a check/identity/UNKNOWN "
+            "state on that exact request. action=tree is read-only and shows the next safe step, exact "
+            "references, unresolved attention, and no-resend warnings. A adopts a request only by saving "
+            "a normal bct_set_direction/bct_chain_recipe Direction with branch_request_id, then starts "
+            "that Direction through the ordinary Chain Recipe."
+        ),
+        structured_output=True,
+    )
+    async def bct_chain_branch(
+        action: str = "tree", work_id: str = "", request_id: str = "",
+        parent_work_id: str = "", parent_direction_id: str = "", parent_step_id: str = "",
+        parent_task_id: str = "", parent_generation: int = 1, kind: str = "DIAGNOSIS",
+        reason: str = "", exact_refs: dict[str, Any] | None = None, required: bool = True,
+        state: str = "", next_safe_step: str = "", evidence: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from bct.chain_direction import ChainBranchRequestLedger
+        if action not in {"request", "report", "tree"}:
+            return {"status": "INVALID_REQUEST", "reason": "CHAIN_BRANCH_ACTION_INVALID"}
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+        except (KeyError, ValueError):
+            return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+        if work.owner_principal_id != principal.principal_id:
+            return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+        if action == "tree":
+            tree = await asyncio.to_thread(
+                ChainBranchRequestLedger.tree, store=bct.store, root_work_id=work.work_id,
+            )
+            return {"status": "OK", "effects": "NONE_READ_ONLY", "chain_tree": tree}
+        ledger = ChainBranchRequestLedger(bct.store)
+        try:
+            if action == "request":
+                branch = await asyncio.to_thread(
+                    ledger.request, request_id=request_id, root_work_id=work.work_id,
+                    parent_work_id=parent_work_id or work.work_id,
+                    parent_direction_id=parent_direction_id, parent_step_id=parent_step_id,
+                    parent_task_id=parent_task_id, parent_generation=parent_generation,
+                    kind=kind, reason=reason, exact_refs=exact_refs, required=required,
+                )
+                return {
+                    "status": "WAITING_INPUT", "branch_request": branch,
+                    "next_safe_step": "MANAGER_REVIEW_BRANCH_REQUEST",
+                    "does_not": ["create_child_direction", "send_message", "create_operation"],
+                }
+            branch = await asyncio.to_thread(
+                ledger.report, request_id=request_id, state=state, reason=reason,
+                next_safe_step=next_safe_step, evidence=evidence,
+            )
+            return {"status": branch["state"], "branch_request": branch,
+                    "next_safe_step": branch["next_safe_step"]}
+        except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
 
     @server.tool(
         name="bct_prepare_supervisor_chain",

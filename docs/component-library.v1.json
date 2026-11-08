@@ -126,10 +126,10 @@
         },
         {
           "path": "src/bct/mcp_server.py",
-          "symbol": "bct_set_direction / bct_get_direction"
+          "symbol": "bct_set_direction / bct_get_direction / bct_chain_branch"
         }
       ],
-      "contract": "Reusable Set Direction stage: prepare reads reality and current/historical networks and supplies internal review items for A. Save records A's original user request or exact return, optional network changes, and distinct per-target instructions. Chain Message composes this stage and reuses exact send/watch for each A-selected recipient. BCT does not make AI judgments.",
+      "contract": "Reusable Set Direction stage: prepare reads reality and current/historical networks and supplies internal review items for A. Save records A's original user request or exact return, optional network changes, and distinct per-target instructions. A linked branch request records a Worker observation only; A adopts it by saving a normal Direction and then starts the ordinary Chain Recipe. Root-tree reads preserve parent step, exact task/operation/receipt references, state, reason and next safe step. BCT does not make AI judgments.",
       "effects": [
         "bct-sqlite-direction-metadata"
       ],
@@ -137,6 +137,8 @@
         "work-owner-bound",
         "exact-manager-return-source-when-applicable",
         "per-target-direction-and-receipt-lineage",
+        "branch-request-never-creates-a-delivery",
+        "unknown-branch-no-replacement-operation",
         "fresh-recipient-uuid-check-before-send",
         "role-and-network-are-advisory",
         "idempotent-direction-id",
