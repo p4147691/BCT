@@ -121,12 +121,21 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         return result
 
     async def save(self, value=None, **overrides):
-        return await self.call("bct_set_direction", **{
+        arguments = {
             "work_id": self.work.work_id, "direction_id": "direction-review", "decision": "NEW_TASK",
             "source_text": "Complete the translation program safely.",
             "direction_text": "Preserve user data and produce verified results.",
             "assessment": assessment() if value is None else value, **overrides,
+        }
+        prepared = await self.call("bct_chain_recipe", action="prepare", **{
+            key: arguments[key] for key in (
+                "work_id", "source_text", "source_kind", "source_task_id",
+                "source_generation", "project", "report_target_conversation_key",
+            ) if key in arguments
         })
+        if prepared["status"] != "RECIPE_READY":
+            return prepared
+        return await self.call("bct_chain_recipe", action="save", entry_context_id=prepared["entry_context_id"], **arguments)
 
     async def start(self, **overrides):
         return await self.call("bct_chain_message", **{
@@ -146,13 +155,64 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("questions", result["direction"])
         self.assertIn("Historical network", json.dumps(result["state"]["stored_networks"]))
         self.assertIn(A, json.dumps(result["state"]["current_nodes"]))
-        self.assertEqual("bct_set_direction", result["direction"]["save"]["tool"])
+        self.assertEqual("bct_chain_recipe", result["direction"]["save"]["tool"])
         self.assertEqual("WORK_REQUIRED", result["direction"]["save_gate"]["status"])
         self.assertFalse(result["authorizes_send"])
         self.assertEqual("CALLER_PROVIDED_TEXT", result["input"]["source_evidence"])
         self.assertEqual([], self.ops.calls)
         with self.store._readonly() as db:
             self.assertEqual([tuple(r) for r in before], [tuple(r) for r in db.execute("SELECT name FROM sqlite_master ORDER BY name")])
+
+    async def test_direction_save_requires_the_current_chain_recipe_entry(self):
+        prepared = await self.call(
+            "bct_chain_recipe", action="prepare", work_id=self.work.work_id,
+            source_text="Continue the bounded work.",
+        )
+        self.assertEqual("RECIPE_READY", prepared["status"])
+        self.assertEqual("OK", prepared["state"]["chain_work_context"]["status"])
+        self.assertEqual([], prepared["state"]["chain_work_context"]["nodes"])
+
+        bypass = await self.call(
+            "bct_chain_recipe", action="save", work_id=self.work.work_id,
+            source_text="Continue the bounded work.", direction_id="bypass-direction",
+            decision="HOLD", direction_text="Do not create a Direction without current state.",
+        )
+        self.assertEqual("CHAIN_RECIPE_REENTER_REQUIRED", bypass["status"])
+        self.assertEqual("CHAIN_RECIPE_ENTRY_CONTEXT_REQUIRED", bypass["reason"])
+        self.assertEqual([], self.ops.calls)
+
+        direct_compatibility = await self.call(
+            "bct_set_direction", action="save", work_id=self.work.work_id,
+            direction_id="compatibility-bypass", decision="HOLD",
+            direction_text="This cannot bypass Chain Recipe.",
+        )
+        self.assertEqual("DIRECTION_DIRECT_SAVE_PROHIBITED_USE_CHAIN_RECIPE", direct_compatibility["reason"])
+
+        # A state change after prepare invalidates the old handle and presents
+        # the Manager with a fresh read-only Root Work tree instead of saving.
+        ChainDirectionLedger(self.store).save(
+            direction_id="state-changed", work_id=self.work.work_id, source_kind="USER",
+            decision="HOLD", direction_text="An independently recorded state change.",
+        )
+        stale = await self.call(
+            "bct_chain_recipe", action="save", work_id=self.work.work_id,
+            source_text="Continue the bounded work.", entry_context_id=prepared["entry_context_id"],
+            direction_id="stale-direction", decision="HOLD",
+            direction_text="Re-enter after the observed state change.",
+        )
+        self.assertEqual("CHAIN_RECIPE_REENTER_REQUIRED", stale["status"])
+        self.assertEqual("CHAIN_RECIPE_ENTRY_CONTEXT_CHANGED", stale["reason"])
+        self.assertEqual(["state-changed"], [node["direction_id"] for node in stale["state"]["chain_work_context"]["nodes"]])
+
+    async def test_target_direction_includes_bounded_local_work_context(self):
+        await self.save()
+        started = await self.start()
+        self.assertEqual("STARTED", started["status"])
+        sent_text = self.sends()[0]["arguments"]["text"]
+        self.assertIn("[현재 작업 맥락 — 참고 정보, 새 지시 아님]", sent_text)
+        self.assertIn(f"root_work_id={self.work.work_id}", sent_text)
+        self.assertIn("local_kind=DELIVERY; local_state=READY_TO_SEND", sent_text)
+        self.assertIn("Manager의 다음 Chain Recipe", sent_text)
 
     async def test_prepare_state_includes_only_the_declared_a_recovery_notices(self):
         ledger = DurableWatchLedger(self.store)
@@ -340,7 +400,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("network_comparison", result["state"])
         self.assertEqual("A_DIRECTION_REQUIRED", result["direction"]["status"])
         self.assertEqual("WORK_REQUIRED", result["direction"]["save_gate"]["status"])
-        self.assertEqual("bct_set_direction", result["direction"]["save"]["tool"])
+        self.assertEqual("bct_chain_recipe", result["direction"]["save"]["tool"])
         self.assertEqual("save", result["direction"]["save"]["action"])
         self.assertIn("direction_text", result["direction"]["save"]["required"])
         self.assertIn("assessment", result["direction"]["save"]["optional"])
@@ -718,6 +778,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         saved = await self.call(
             "bct_chain_recipe", action="save", work_id=self.work.work_id,
             source_kind="MANAGER_RETURN", source_task_id="returned-plan", source_generation=1,
+            entry_context_id=result["entry_context_id"],
             direction_id="return-to-supervisor", decision="NEW_TASK",
             direction_text="Have the declared targets review the returned evidence.",
             assessment=assessment(),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
 import math
 import re
 import sqlite3
@@ -236,6 +237,8 @@ def build_mcp(
                     return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_RETURN_NOT_EXACT"}
         return {
             "status": "OK", "work": work, "source_return": context,
+            "source_kind": source_kind, "source_task_id": source_task_id,
+            "source_generation": source_generation,
             "source_result_sha256": result_sha,
         }
 
@@ -646,6 +649,26 @@ def build_mcp(
                     ),
                 }
         topology_preparation = chain_topology_preparation_recipe(current_items=current_items)
+        # The Manager needs a compact, receipt-backed view of the work already
+        # in motion before authoring another Direction.  It is information, not
+        # an authorization or a request for BCT to choose a branch.  The
+        # existing Direction/branch/watch ledgers remain the only durable
+        # relationship records.
+        chain_work_context: dict[str, Any] = {
+            "status": "NOT_APPLICABLE",
+            "root_work_id": "",
+            "nodes": [],
+            "branch_requests": [],
+            "manager_attention": [],
+            "effects": "NONE_READ_ONLY",
+        }
+        if work is not None:
+            from bct.chain_direction import ChainBranchRequestLedger
+            tree = await asyncio.to_thread(
+                ChainBranchRequestLedger.tree, store=bct.store,
+                root_work_id=work.work_id,
+            )
+            chain_work_context = {"status": "OK", **tree, "effects": "NONE_READ_ONLY"}
         return {
             "status": "OK",
             "observed_at": monitor.get("generated_at"),
@@ -660,9 +683,38 @@ def build_mcp(
             "return_execute_plan_check": return_plan_check,
             "recovery_notices": recovery_notices,
             "github_ci_notices": github_ci_notices,
+            "chain_work_context": chain_work_context,
             "chain_topology_preparation": topology_preparation,
             "read_only": True,
         }
+
+    def chain_recipe_entry_context_id(
+        *, confirmed_input: dict[str, Any], state: dict[str, Any],
+        report_target_conversation_key: str,
+    ) -> str:
+        """Return a non-durable identity for one Manager-visible recipe entry.
+
+        This is deliberately a continuity handle, not an authority token.  It
+        is derived only from the exact input binding and the existing current
+        work tree.  It lets Save Direction R reject a bypass or a changed
+        branch/receipt state without introducing a second relationship store.
+        """
+        work = confirmed_input.get("work")
+        payload = {
+            "version": 1,
+            "work_id": work.work_id if isinstance(work, Work) else "",
+            "source_kind": confirmed_input.get("source_kind", ""),
+            "source_task_id": confirmed_input.get("source_task_id", ""),
+            "source_generation": confirmed_input.get("source_generation", 0),
+            "source_result_sha256": confirmed_input.get("source_result_sha256", ""),
+            "report_target_conversation_key": report_target_conversation_key,
+            "chain_work_context": state.get("chain_work_context", {}),
+        }
+        encoded = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+        return "entry-" + hashlib.sha256(encoded).hexdigest()[:24]
 
     async def prepare_direction_recipe(
         *, source_text: str, source_kind: str, work_id: str, source_task_id: str,
@@ -692,6 +744,10 @@ def build_mcp(
             ],
             "confirmed_input": confirmed,
             "state": state,
+            "entry_context_id": chain_recipe_entry_context_id(
+                confirmed_input=confirmed, state=state,
+                report_target_conversation_key=report_target_conversation_key,
+            ),
         }
 
     def write_direction_recipe(*, source_kind: str, work: Work | None) -> dict[str, Any]:
@@ -701,7 +757,11 @@ def build_mcp(
         result.  Repeating them here would make two competing direction cards.
         """
         save_gate = (
-            {"status": "READY", "next": "bct_chain_recipe(action='save')"}
+            {
+                "status": "READY",
+                "next": "bct_chain_recipe(action='save', entry_context_id=prepared entry_context_id)",
+                "required": ["entry_context_id"],
+            }
             if work is not None else
             {"status": "WORK_REQUIRED", "next": "A reuses or creates a bounded Work before save"}
         )
@@ -725,9 +785,9 @@ def build_mcp(
             ],
             "decision_options": ["COMPLETE", "NEW_TASK", "ASK_USER", "HOLD"],
             "save": {
-                "tool": "bct_set_direction",
+                "tool": "bct_chain_recipe",
                 "action": "save",
-                "required": ["work_id", "decision", "direction_text"],
+                "required": ["work_id", "entry_context_id", "decision", "direction_text"],
                 "optional": {
                     "direction_id": "omit to let BCT assign one new stable ID",
                     "assessment": (
@@ -735,7 +795,7 @@ def build_mcp(
                         "omit for an ordinary single-direction decision"
                     ),
                 },
-                "source_binding": "preserve the Input R source_kind/task_id/generation when saving",
+                "source_binding": "preserve the Input R source_kind/task_id/generation and entry_context_id when saving",
             },
             "source_kind": source_kind,
             "save_gate": save_gate,
@@ -997,6 +1057,7 @@ def build_mcp(
         direction_id: str = "", assessment: dict[str, Any] | None = None,
         task_id: str = "", operation_id: str = "", target_conversation_key: str = "",
         max_generations: int = 0, report_target_conversation_key: str = "",
+        entry_context_id: str = "",
         worker_preparation_id: str = "",
         parent_direction_id: str = "", parent_step_id: str = "",
         branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
@@ -1040,13 +1101,42 @@ def build_mcp(
             except ValueError as exc:
                 return {"status": "INVALID_REQUEST", "reason": str(exc)}
         if action == "save":
-            confirmed_input = await input_recipe(
-                work_id=work_id, source_kind=source_kind,
+            # Saving a Direction is not an independent ingress.  Re-run the
+            # mandatory current-state read and require the continuity handle
+            # returned by the same Chain Recipe entry.  No record is created
+            # here when the Manager did not enter (or the relevant work tree
+            # changed) first.
+            if not isinstance(entry_context_id, str) or not re.fullmatch(r"entry-[0-9a-f]{24}", entry_context_id):
+                return {
+                    "status": "CHAIN_RECIPE_REENTER_REQUIRED",
+                    "reason": "CHAIN_RECIPE_ENTRY_CONTEXT_REQUIRED",
+                    "next_safe_step": "REENTER_CHAIN_RECIPE_PREPARE",
+                    "does_not": ["save_direction", "send_message", "create_operation"],
+                }
+            prepared = await prepare_direction_recipe(
+                source_text=source_text, source_kind=source_kind, work_id=work_id,
                 source_task_id=source_task_id, source_generation=source_generation,
-                source_text=source_text, allow_unbound_user=False, require_source_text=False,
+                project=project,
+                report_target_conversation_key=report_target_conversation_key,
             )
-            if confirmed_input["status"] != "OK":
-                return confirmed_input
+            if prepared["status"] != "PREPARED":
+                return prepared
+            confirmed_input = prepared["confirmed_input"]
+            expected_entry_context_id = prepared["entry_context_id"]
+            if not hmac.compare_digest(entry_context_id, expected_entry_context_id):
+                return {
+                    "status": "CHAIN_RECIPE_REENTER_REQUIRED",
+                    "reason": "CHAIN_RECIPE_ENTRY_CONTEXT_CHANGED",
+                    "next_safe_step": "REVIEW_CURRENT_STATE_THEN_AUTHOR_DIRECTION",
+                    "entry_context_id": expected_entry_context_id,
+                    "input": {
+                        "source_kind": source_kind,
+                        "source_result_sha256": confirmed_input["source_result_sha256"],
+                        "work": _work_dict(confirmed_input["work"]),
+                    },
+                    "state": prepared["state"],
+                    "does_not": ["save_direction", "send_message", "create_operation"],
+                }
             saved = await save_direction_recipe(
                 work=confirmed_input["work"], direction_id=direction_id, source_kind=source_kind,
                 source_task_id=source_task_id, source_generation=source_generation,
@@ -1237,6 +1327,7 @@ def build_mcp(
                               else ("WORK_BOUND" if work is not None else "UNCONNECTED"),
             },
             "state": state,
+            "entry_context_id": prepared["entry_context_id"],
             "direction": direction,
             "read_only": True,
             "authorizes_send": False,
@@ -2275,7 +2366,7 @@ def build_mcp(
             "EXPLICIT REQUEST ONLY: Optional technical envelope for one already-planned Manager-to-Worker "
             "instruction. It composes exact Chain Message send/watch with explicit "
             "SELF/MANAGER continuation, but it does not replace A's user direction "
-            "or overall plan recorded by bct_set_direction. The normal "
+            "or overall plan recorded inside Chain Recipe. The normal "
             "max_rounds=0 policy has no fixed limit: Worker continues only while real "
             "progress and a safe next step exist, then returns to Manager on BA. A positive "
             "max_rounds is an explicit budget. This is a 1:1 message recipe, not the overall "
@@ -2732,12 +2823,10 @@ def build_mcp(
     @server.tool(
         name="bct_set_direction",
         description=(
-            "Prepare and save A's direction. action=prepare is the compatibility entry for the "
-            "read-only Chain Recipe (Input R, State R, Direction R). A writes "
-            "direction_text; action=save validates and records the actual execution fields and each target's "
-            "distinct instruction. B later authors its concrete Execute Plan. No send at this stage. Use "
-            "source_kind=MANAGER_RETURN only with the exact BA task/generation that "
-            "supplied the report."
+            "Compatibility read-only entry for Chain Recipe prepare only. It returns Input R, State R, "
+            "the current linked Work tree, and the entry_context_id required by bct_chain_recipe(action='save'). "
+            "It cannot save a Direction directly, so a Manager return or branch adoption cannot bypass the "
+            "single Chain Recipe entry."
         ),
         structured_output=True,
     )
@@ -2745,13 +2834,20 @@ def build_mcp(
         work_id: str = "", direction_text: str = "", decision: str = "",
         source_kind: str = "USER", source_task_id: str = "",
         source_generation: int = 0, direction_id: str = "",
-        action: str = "save", source_text: str = "", project: str = "",
+        action: str = "prepare", source_text: str = "", project: str = "",
         assessment: dict[str, Any] | None = None,
         parent_direction_id: str = "", parent_step_id: str = "",
         branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
     ) -> dict[str, Any]:
+        if action != "prepare":
+            return {
+                "status": "INVALID_REQUEST",
+                "reason": "DIRECTION_DIRECT_SAVE_PROHIBITED_USE_CHAIN_RECIPE",
+                "next_safe_step": "bct_chain_recipe(action='prepare')",
+                "does_not": ["save_direction", "send_message", "create_operation"],
+            }
         return await bct_chain_recipe(
-            action=action, work_id=work_id, direction_text=direction_text, decision=decision,
+            action="prepare", work_id=work_id, direction_text=direction_text, decision=decision,
             source_kind=source_kind, source_task_id=source_task_id,
             source_generation=source_generation, direction_id=direction_id,
             source_text=source_text, project=project, assessment=assessment,
@@ -2787,9 +2883,9 @@ def build_mcp(
             "that asks A Manager to consider a child Direction; it never creates a Direction, Work, "
             "Operation, browser message, or delivery. action=report records a check/identity/UNKNOWN "
             "state on that exact request. action=tree is read-only and shows the next safe step, exact "
-            "references, unresolved attention, and no-resend warnings. A adopts a request only by saving "
-            "a normal bct_set_direction/bct_chain_recipe Direction with branch_request_id, then starts "
-            "that Direction through the ordinary Chain Recipe."
+            "references, unresolved attention, and no-resend warnings. A adopts a request only after "
+            "re-entering bct_chain_recipe(action='prepare'), then saving a normal Chain Recipe Direction "
+            "with branch_request_id and the returned entry_context_id."
         ),
         structured_output=True,
     )

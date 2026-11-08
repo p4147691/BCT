@@ -14,7 +14,7 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
 
 - A: `bct_chain_message(instruction=요청)` → 현재 현실·대화망과 내부 질문 확인 →
   A가 의도·완료 기준·대상별 지시·필요한 망 변경을 판단 →
-  `bct_set_direction(action="save", assessment=판단, ...)` →
+  같은 `bct_chain_recipe(action="save", entry_context_id=준비 결과, assessment=판단, ...)` →
   `bct_chain_message(action="start", chain_direction_id=저장한ID, ...)`.
   질문은 A가 답한다. 사용자에게 사용법이나 질문지 작성을 떠넘기지 않는다.
 - 전달받은 B/C: 이 지시의 수신자로서 지정된 범위만 처리한다. 새 Manager를 자칭하지 않는다.
@@ -27,8 +27,8 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
   현재 상태와 방향을 재검토한다. 필요한 병합·배포·E2E는 Supervisor에게 별도 지시한다.
 - B/C가 관찰·진단·수정·검증의 추가 작업을 제안할 때는 `bct_chain_branch(action="request")`에
   현재 Root Work, 부모 Direction/단계, Task/generation, 이유와 정확한 영수증 참조를 남긴다.
-  이는 **자식 지시나 전송을 만들지 않는 보고**다. A만 일반 `bct_set_direction(...,
-  branch_request_id=...)`으로 이를 채택하고, 저장 뒤에는 반드시 그 Direction의 Chain Recipe를
+  이는 **자식 지시나 전송을 만들지 않는 보고**다. A만 Chain Recipe를 처음부터 다시 들어가
+  `bct_chain_recipe(action="save", entry_context_id=..., branch_request_id=...)`으로 이를 채택하고, 저장 뒤에는 반드시 그 Direction의 Chain Recipe를
   시작한다. `bct_chain_branch(action="tree")`와 `bct_status`의 주의 목록은 이 연결과 다음
   안전 단계를 읽을 뿐 판단·전송하지 않는다.
 - 사용법이 불명확하면 `bct_capabilities(tool_name="사용할 실제 명령")`으로 현재 입력 계약을 읽고,
@@ -65,7 +65,7 @@ UNKNOWN 외부 효과를 새 ID로 재전송하지 않기, 이미 발생한 효�
   ↓
 bct_chain_message(instruction=요청) 또는 action="prepare"
   └─ 현재 A의 정확한 UUID를 알고 있으면 `origin_conversation_key`로 함께 넘김
-  └─ bct_set_direction(action="prepare") 내부 호출
+  └─ bct_chain_recipe(action="prepare") 내부 호출
       ├─ 현재 Core/런타임/Work/작업 영수증/CI Inbox 조회
       ├─ bct_check_conversation_network 내부 호출
       │    열린 Node Info + RCC + 저장된 대화망 이력
@@ -74,9 +74,10 @@ bct_chain_message(instruction=요청) 또는 action="prepare"
       │    └─ 완료 결과를 보여 줄 뿐, 자동 전송·재시도·다음 Direction 작성은 하지 않음
       └─ A가 판단할 내부 질문·사용 가능한 대표 명령 목록·부품 검색 사용법 반환
   ↓ 실제 A의 판단 턴 — BCT가 AI 대신 생각하지 않음
-A가 질문에 답하고 전체 방향·대상별 지시·필요한 망 변경을 정함
+A가 현재 Work tree·영수증·Node Info를 본 뒤 질문에 답하고 전체 방향·대상별 지시·필요한 망 변경을 정함
   ├─ 필요한 경우 기존 부품으로 추가 정보/창·탭/Work 준비
-  └─ bct_set_direction(action="save", assessment=판단, direction_text=방향)
+  └─ 같은 Chain Recipe의 `entry_context_id`로
+     `bct_chain_recipe(action="save", entry_context_id=..., assessment=판단, direction_text=방향)`
   ↓
 선택: Direction에 `node_recovery: {conversation_key: 정확한 UUID}`가 있을 때만
 Recover Node R
@@ -136,7 +137,7 @@ Codex 전용 computer-use나 숨은 외부 오케스트레이터를 호출하지
 
 ## Set Direction: 질문 → A 판단 → 결과 기록
 
-`bct_set_direction(action="prepare")`는 독립적으로 재사용할 수 있다. 질문은
+`bct_set_direction(action="prepare")`는 과거 호출자를 위한 **읽기 전용 준비 별칭**이다. Direction 저장은 이 별칭으로 할 수 없고, 항상 `bct_chain_recipe`의 prepare → save 순서로만 한다. 질문은
 사용자에게 떠넘기는 설문지가 아니라 **A가 답할 내부 검토 항목**이다.
 
 | 질문 | A가 결정할 내용 |
@@ -170,6 +171,9 @@ save는 필요한 경우에만 기록한 `assessment.answers`, A의 반환 대�
 `worker`, `reviewer`, `deployer`처럼 A가 붙이는 자유 라벨이다. 기존 대화망을 그대로 재사용하면 `network_updates: []`가
 정상이다. 저장 실패 응답의 `assessment_contract`는 누락된 질문 키, 잘못된 대상의
 인덱스·허용 키, UUID/역할 규칙과 같은 Direction ID로 안전하게 재시도하는 방법을 돌려준다.
+`entry_context_id`는 이번 prepare에서 읽은 정확한 입력 결속과 현재 Root Work tree의
+식별값이다. 새 관계 저장소나 권한 토큰이 아니다. 저장 직전에 반환·분기·영수증 상태가 바뀌면
+저장은 `CHAIN_RECIPE_REENTER_REQUIRED`로 멈추고, Manager에게 최신 State R을 다시 돌려준다.
 저장 성공 뒤에는 반드시 `bct_get_direction`으로 Direction ID와 기록된 대상·판단을 읽고
 그 ID로 시작한다.
 USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이며 인증된 사용자 턴을
@@ -337,13 +341,14 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 | `bct_get_conversation_network` | 저장된 대화망 정보 조회 |
 | `bct_check_conversation_network` | 현재 관찰과 저장된 망 정보를 함께 점검. 조회가 망 변경을 뜻하지 않음 |
 | `bct_set_conversation_network` | A가 결정한 망·역할·Node Info 변경을 기존 계약으로 적용 |
-| `bct_set_direction` / `bct_get_direction` | A 내부 질문·판단·정제된 지시의 준비/저장과 조회 |
+| `bct_chain_recipe` | 유일한 Chain Recipe 입구와 준비·Direction 저장·대상 전송 단계. prepare는 현재 Work tree를 Manager에게 보여 주고 save는 같은 entry_context_id를 요구 |
+| `bct_set_direction` / `bct_get_direction` | 과거 호출자를 위한 읽기 전용 prepare 별칭 / 저장된 Direction 조회. 직접 저장은 불가 |
 | `bct_chain_branch` | Worker의 연결된 분기 요청/상태 보고와 Root Work 트리 조회. 요청은 전송하지 않으며 A가 Direction으로 채택해야 한다. |
 | `bct_set_execute_plan` / `bct_get_execute_plan` | 수신 대상이 생각한 세부 계획의 결합·저장과 조회. 계획 문장 자체를 실행하지 않음 |
 | `bct_send_delayed_message` | 해당 작업의 응답 완료를 백그라운드에서 기다린 뒤 SELF/MANAGER 후속 지시를 전달하도록 등록 |
 | `bct_context` | 특정 작업·회차의 이전 응답 증거, SELF/MANAGER 결정과 이어가기 기록 조회. 조회 자체는 감시하거나 전송하지 않음 |
 | `bct_capabilities` | 현재 도구·입력 계약·부품·이 설명서 조회. 도구 실행이나 권한 부여는 아님 |
-| Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 종합 상태나 과거 망 이력과 구분 |
+| Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 이 단계는 메모를 자동 변경하지 않으며, 관계의 정본은 Direction·branch·Watch 영수증이다. 이후 표시가 필요하면 사용자 메모와 분리된 짧은 관리 구간만 갱신한다. |
 | Work / task_id / Operation | 기존 지속 작업 경계 / 한 체인의 연속 처리 식별값 / 개별 효과와 영수증 |
 
 공개 도구의 입구는 `src/bct/mcp_server.py`에 등록된다. 일부 보존된 공개명은 같은 내부 함수를

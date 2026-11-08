@@ -27,6 +27,23 @@ class Operations:
         })
 
 
+async def save_direction_via_recipe(mcp, arguments):
+    """Exercise the only Direction-writing path: Chain Recipe prepare → save."""
+    prepare_arguments = {
+        key: arguments[key] for key in (
+            "work_id", "source_text", "source_kind", "source_task_id",
+            "source_generation", "project", "report_target_conversation_key",
+        ) if key in arguments
+    }
+    _, prepared = await mcp.call_tool("bct_chain_recipe", {"action": "prepare", **prepare_arguments})
+    if prepared["status"] != "RECIPE_READY":
+        raise AssertionError(prepared)
+    _, saved = await mcp.call_tool("bct_chain_recipe", {
+        "action": "save", "entry_context_id": prepared["entry_context_id"], **arguments,
+    })
+    return saved
+
+
 class ChainDirectionLedgerTests(unittest.TestCase):
     def test_new_task_direction_links_to_a_planned_then_started_chain(self):
         with tempfile.TemporaryDirectory() as root:
@@ -324,7 +341,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(operations=ops, store=store),
                 compact_catalogue=True, status_provider=lambda: snapshot,
             )
-            _, direction = await mcp.call_tool("bct_set_direction", {
+            direction = await save_direction_via_recipe(mcp, {
                 "work_id": work.work_id, "direction_id": "direction-c",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-b",
                 "source_generation": 1, "decision": "NEW_TASK",
@@ -407,8 +424,9 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             # table.  Its observed response hash remains the safe link.
             with store.transaction() as db:
                 db.execute("DELETE FROM continuation_decisions")
-            mcp = build_mcp(SimpleNamespace(operations=Operations(), store=store), compact_catalogue=True)
-            _, saved = await mcp.call_tool("bct_set_direction", {
+            mcp = build_mcp(SimpleNamespace(operations=Operations(), store=store), compact_catalogue=True,
+                            status_provider=lambda: {"monitor": {}})
+            saved = await save_direction_via_recipe(mcp, {
                 "work_id": "work-1", "direction_id": "direction-return-1",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-1",
                 "source_generation": 1, "decision": "NEW_TASK",
@@ -431,7 +449,8 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(node_guard.stop)
             delayed = DurableWatchLedger(store)
             ops = Operations()
-            mcp = build_mcp(SimpleNamespace(operations=ops, store=store), compact_catalogue=True)
+            mcp = build_mcp(SimpleNamespace(operations=ops, store=store), compact_catalogue=True,
+                            status_provider=lambda: {"monitor": {}})
 
             def return_to_manager(task_id: str, response_sha: str, text: str) -> None:
                 delayed.prearm_task(
@@ -460,7 +479,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
 
             # B1 → A2: exact BA return.
             return_to_manager("task-one", "c" * 64, "First B report.")
-            _, direction = await mcp.call_tool("bct_set_direction", {
+            direction = await save_direction_via_recipe(mcp, {
                 "work_id": work.work_id, "direction_id": "direction-two",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-one",
                 "source_generation": 1, "decision": "NEW_TASK",
@@ -522,7 +541,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
 
             # B2 → A3: the final BA return; A3 closes instead of creating B3.
             return_to_manager("task-two", "d" * 64, "Second B report.")
-            _, completed = await mcp.call_tool("bct_set_direction", {
+            completed = await save_direction_via_recipe(mcp, {
                 "work_id": work.work_id, "direction_id": "direction-complete",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-two",
                 "source_generation": 1, "decision": "COMPLETE",

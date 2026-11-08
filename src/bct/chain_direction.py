@@ -102,7 +102,7 @@ def direction_assessment_contract(value: Any = None, *, reason: str = "") -> dic
             "deferred_rule": "BLOCKED, RISK, ASK_USER, SELF, and dependent INDEPENDENT tasks are stored as Manager evidence and are not sent by this Direction.",
         },
         "target_diagnostics": target_diagnostics,
-        "recovery": "Correct only the reported fields, then call bct_set_direction(action='save') again with the same intended direction_id. Read the saved record with bct_get_direction before starting.",
+        "recovery": "Correct only the reported fields, re-enter bct_chain_recipe(action='prepare'), then call bct_chain_recipe(action='save') with its current entry_context_id and the same intended direction_id. Read the saved record with bct_get_direction before starting.",
     }
 
 
@@ -278,6 +278,46 @@ def target_direction_id(direction: dict, target: dict) -> str:
     return "direction-" + suffix
 
 
+def current_work_context_block(*, direction: dict, child_direction_id: str,
+                               target_conversation_key: str, task_id: str,
+                               delivery_kind: str = "DELIVERY") -> str:
+    """Compose a bounded local context card for one recipient.
+
+    This is intentionally not a second instruction, authority rule, or a
+    durable conversation-network mutation.  The Manager's direction remains
+    the text above it.  The card gives a child enough positional awareness to
+    return evidence through the same Root Work without copying the entire
+    network into every message.
+    """
+    root_work_id = str(direction.get("root_work_id") or direction.get("work_id") or "")
+    parent_work_id = str(direction.get("work_id") or "")
+    parent_direction_id = str(direction.get("direction_id") or "")
+    upstream_direction_id = str(direction.get("parent_direction_id") or "")
+    upstream_kind = str(direction.get("branch_kind") or "PRIMARY")
+    upstream_step = str(direction.get("parent_step_id") or "")
+    upstream_reason = str(direction.get("branch_reason") or "")
+    lines = [
+        "[현재 작업 맥락 — 참고 정보, 새 지시 아님]",
+        f"root_work_id={root_work_id}",
+        f"local_direction_id={child_direction_id}",
+        f"parent_work_id={parent_work_id}",
+        f"parent_direction_id={parent_direction_id}",
+        f"task_id={task_id}; target_conversation_uuid={target_conversation_key}",
+        f"local_kind={delivery_kind}; local_state=READY_TO_SEND",
+    ]
+    if upstream_direction_id:
+        lines.append(f"upstream_parent_direction_id={upstream_direction_id}")
+        lines.append(f"upstream_kind={upstream_kind}; upstream_step={upstream_step or 'UNSPECIFIED'}")
+        if upstream_reason:
+            lines.append(f"upstream_branch_reason={upstream_reason}")
+    lines.extend([
+        "반환/새 분기 요청은 이 Root Work와 정확한 Direction·Task·영수증에 연결한다.",
+        "이 카드는 현재 위치 안내일 뿐, 대상 선택·새 노드 생성·재전송 판단은 Manager의 다음 Chain Recipe가 한다.",
+        "[/현재 작업 맥락]",
+    ])
+    return "\n".join(lines)
+
+
 def compose_target_direction(*, direction: dict, target: dict, task_id: str,
                              recorded_direction: dict | None = None) -> tuple[str, str]:
     """Compose a new instruction, or preserve its exact recorded predecessor."""
@@ -299,9 +339,14 @@ def compose_target_direction(*, direction: dict, target: dict, task_id: str,
     guidance = get_manual_guidance()
     if guidance["status"] != "AVAILABLE":
         raise ValueError("MANUAL_GUIDANCE_UNAVAILABLE")
+    context = current_work_context_block(
+        direction=direction, child_direction_id=child_id,
+        target_conversation_key=target["conversation_key"], task_id=task_id,
+    )
     text = (direction["direction_text"] + "\n\n이번 대상에게 맡기는 일:\n" + target["instruction"]
             + f"\n\n이번 대상의 역할: {target['role']}. 이 작업의 실행계획과 결과는 다음 식별값에 연결한다: "
             + f"work_id={direction['work_id']}, direction_id={child_id}, task_id={task_id}, generation=1. "
+            + "\n\n" + context
             + f"\n\n공통 설명서의 노드 안내 (manual SHA-256: {guidance['manual_sha256']}):\n"
             + guidance["text"])
     from bct.chain_message_preflight import prepare_chain_instruction
@@ -336,11 +381,16 @@ def compose_prepared_worker_direction(
     guidance = get_manual_guidance()
     if guidance["status"] != "AVAILABLE":
         raise ValueError("MANUAL_GUIDANCE_UNAVAILABLE")
+    context = current_work_context_block(
+        direction=direction, child_direction_id=child_id,
+        target_conversation_key=conversation_key, task_id=task_id,
+    )
     text = (
         direction["direction_text"] + "\n\n이번 대상에게 맡기는 일:\n" + instruction
         + f"\n\n이번 대상의 역할: {role}. 이 작업의 실행계획과 결과는 다음 식별값에 연결한다: "
         + f"work_id={direction['work_id']}, direction_id={child_id}, "
         + f"task_id={task_id}, generation=1. "
+        + "\n\n" + context
         + f"\n\n공통 설명서의 노드 안내 (manual SHA-256: {guidance['manual_sha256']}):\n"
         + guidance["text"]
     )
