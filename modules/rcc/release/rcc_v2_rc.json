@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC42_RENDERED_MARKDOWN_IDENTITY",
+  "candidate": "RCC_REBUILD_V2_RC43_RENAME_RESILIENCE",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -233,8 +233,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1564,
-        "sha256": "d90c9f4c5db1adef04b2d8b20f6d99642f4689a9dae46b22be2eb8291584a63b"
+        "size": 1557,
+        "sha256": "8c7862446adf6645b6690b4f62e41575248549a555403ae330ca5c67ccb9006e"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "558c96e0829fa933b65df496c28c22bea1cc9bdf25443e7c3c3e0b700d4f6834"
+    "aggregateSha256": "fbede0178b4f4fb6fad4dbaf9017b790fcbd0a6a882da41d6cb5b03e8f0357c2"
   },
   "activeLoaderGraph": {
     "background": [
