@@ -11,6 +11,9 @@
     "monitorMcpTunnelRecover",
     "monitorBctControlRefresh"
   ]);
+  // Informational actions are not configurable recovery controls. Keep them
+  // visually after the configurable toolbar, regardless of its saved order.
+  const TRAILING_BUTTONS = Object.freeze(["monitorCommandCatalogOpen"]);
   const DEFAULT = Object.freeze({
     version: 1,
     toolbar: Object.freeze({
@@ -157,7 +160,8 @@
     const toolbar = root.querySelector(".monitor-utility-actions");
     if (!titleLine || !titleBlock || !toolbar) throw new TypeError("UI_LAYOUT_ANCHOR_MISSING");
     const nodes = new Map(BUTTONS.map((id) => [id, root.querySelector("#" + id)]));
-    if ([...nodes.values()].some((node) => !node || node.parentNode !== toolbar)) {
+    const trailingNodes = new Map(TRAILING_BUTTONS.map((id) => [id, root.querySelector("#" + id)]));
+    if ([...nodes.values(), ...trailingNodes.values()].some((node) => !node || node.parentNode !== toolbar)) {
       throw new TypeError("UI_LAYOUT_BUTTON_ID_MISMATCH");
     }
     const fetcher = has(options, "fetcher")
@@ -194,6 +198,7 @@
         toolbar.appendChild(button); // existing real element and handler are retained
         button.hidden = next.toolbar.hidden.includes(id);
       }
+      for (const button of trailingNodes.values()) toolbar.appendChild(button);
       const policyChanged = JSON.stringify(state.captureFallback) !== JSON.stringify(next.captureFallback);
       state = next;
       if (policyChanged && typeof options.onCaptureFallbackChange === "function") {
@@ -276,6 +281,6 @@
     });
   }
 
-  global.MonitorUiLayout = Object.freeze({ KEY, ENDPOINT, BUTTONS, DEFAULT,
+  global.MonitorUiLayout = Object.freeze({ KEY, ENDPOINT, BUTTONS, TRAILING_BUTTONS, DEFAULT,
     normalize, merge, chooseCaptureView, create });
 })(typeof globalThis !== "undefined" ? globalThis : this);
