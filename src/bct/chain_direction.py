@@ -9,6 +9,7 @@ import time
 import re
 import hashlib
 import json
+import sqlite3
 from typing import Any
 
 
@@ -362,13 +363,19 @@ class ChainDirectionLedger:
                     chain_operation_id TEXT NOT NULL DEFAULT '',
                     chain_send_operation_id TEXT NOT NULL DEFAULT '',
                     chain_state TEXT NOT NULL DEFAULT 'NOT_PLANNED',
+                    recipe_state TEXT NOT NULL DEFAULT 'LEGACY_UNCLASSIFIED',
+                    next_safe_step TEXT NOT NULL DEFAULT 'INSPECT_DIRECTION',
+                    recipe_reason TEXT NOT NULL DEFAULT '',
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL
                 )
             """)
             columns = {row[1] for row in db.execute("PRAGMA table_info(chain_directions)")}
             for name, default in (("assessment_json", "{}"), ("source_text", ""),
-                                  ("parent_direction_id", ""), ("target_conversation_key", "")):
+                                  ("parent_direction_id", ""), ("target_conversation_key", ""),
+                                  ("recipe_state", "LEGACY_UNCLASSIFIED"),
+                                  ("next_safe_step", "INSPECT_DIRECTION"),
+                                  ("recipe_reason", "")):
                 if name not in columns:
                     db.execute(f"ALTER TABLE chain_directions ADD COLUMN {name} TEXT NOT NULL DEFAULT '{default}'")
 
@@ -411,6 +418,17 @@ class ChainDirectionLedger:
         if parent_direction_id and (not _ID.fullmatch(parent_direction_id) or not _UUID.fullmatch(target_conversation_key)):
             raise ValueError("DIRECTION_PARENT_TARGET_INVALID")
         assessment_json = _json(checked)
+        if decision == "NEW_TASK":
+            recipe_state = "READY"
+            next_safe_step = "START_CHAIN_RECIPE"
+            recipe_reason = (
+                "A saved a new direction. The Chain Recipe has not started; "
+                "A must supply the exact task, operation, and target boundary."
+            )
+        else:
+            recipe_state = "COMPLETED"
+            next_safe_step = "NONE"
+            recipe_reason = "This Direction does not declare a new delivery chain."
         proposed = (
             work_id, source_kind, source_task_id, source_generation,
             source_result_sha256, decision, direction_text, assessment_json,
@@ -435,9 +453,10 @@ class ChainDirectionLedger:
                 INSERT INTO chain_directions(
                     direction_id,work_id,source_kind,source_task_id,source_generation,
                     source_result_sha256,decision,direction_text,assessment_json,
-                    source_text,parent_direction_id,target_conversation_key,created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (direction_id, *proposed, now, now))
+                    source_text,parent_direction_id,target_conversation_key,
+                    recipe_state,next_safe_step,recipe_reason,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (direction_id, *proposed, recipe_state, next_safe_step, recipe_reason, now, now))
         return {**(self.get(direction_id=direction_id) or {}), "duplicate": False}
 
     def target_direction(self, *, direction: dict, target: dict, task_id: str) -> dict:
@@ -464,9 +483,47 @@ class ChainDirectionLedger:
             ).fetchall()
         if row is None:
             return None
-        return {**dict(row), "assessment": json.loads(row["assessment_json"]),
+        direction = {**dict(row), "assessment": json.loads(row["assessment_json"]),
                 "source_evidence": direction_source_evidence(row["source_kind"]),
                 "target_deliveries": [dict(target) for target in targets]}
+        direction["chain_continuation"] = {
+            "state": direction.get("recipe_state") or "LEGACY_UNCLASSIFIED",
+            "reason": direction.get("recipe_reason") or "",
+            "next_safe_step": direction.get("next_safe_step") or "INSPECT_DIRECTION",
+            "chain_state": direction["chain_state"],
+            "work_id": direction["work_id"],
+            "direction_id": direction["direction_id"],
+        }
+        return direction
+
+    @classmethod
+    def list_pending_chain_starts(cls, *, store, principal_id: str,
+                                  limit: int = 20) -> list[dict[str, Any]]:
+        """Read A's saved Directions that have not yet re-entered Chain Recipe.
+
+        This is visibility only: it does not choose a target, create an
+        Operation, or turn the saved Direction into a send.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("CHAIN_DIRECTION_LIST_LIMIT_INVALID")
+        try:
+            with store._readonly() as db:
+                rows = db.execute("""
+                    SELECT d.* FROM chain_directions AS d
+                    JOIN works AS w ON w.work_id=d.work_id
+                    WHERE w.owner_principal_id=? AND d.recipe_state='READY'
+                    ORDER BY d.updated_at DESC LIMIT ?
+                """, (principal_id, limit)).fetchall()
+        except sqlite3.OperationalError:
+            # Status remains a read-only observation for stores created before
+            # this additive field. A later Direction write performs migration.
+            return []
+        result = []
+        for row in rows:
+            direction = cls(store).get(direction_id=str(row["direction_id"]))
+            if direction is not None:
+                result.append(direction["chain_continuation"])
+        return result
 
     def plan_chain(self, *, direction_id: str, work_id: str, task_id: str,
                    operation_id: str, instruction_text: str = "") -> dict[str, Any]:
@@ -492,7 +549,10 @@ class ChainDirectionLedger:
             if current == ("", ""):
                 db.execute("""
                     UPDATE chain_directions
-                    SET chain_task_id=?,chain_operation_id=?,chain_state='CHAIN_PLANNED',updated_at=?
+                    SET chain_task_id=?,chain_operation_id=?,chain_state='CHAIN_PLANNED',
+                        recipe_state='IN_PROGRESS',next_safe_step='PREARM_AND_SEND',
+                        recipe_reason='Exact Chain Recipe start was planned; prearm and send use this operation.',
+                        updated_at=?
                     WHERE direction_id=?
                 """, (task_id, operation_id, time.time(), direction_id))
         return self.get(direction_id=direction_id) or {}
@@ -513,7 +573,10 @@ class ChainDirectionLedger:
                 raise ValueError("CHAIN_DIRECTION_CHAIN_CONFLICT")
             updated = db.execute("""
                 UPDATE chain_directions
-                SET chain_state='CHAIN_STARTED',chain_send_operation_id=?,updated_at=?
+                SET chain_state='CHAIN_STARTED',chain_send_operation_id=?,
+                    recipe_state='IN_PROGRESS',next_safe_step='WAIT_FOR_RETURN',
+                    recipe_reason='The exact direction was sent and its durable Watch now owns the return boundary.',
+                    updated_at=?
                 WHERE direction_id=? AND chain_state='CHAIN_PLANNED'
             """, (operation_id + "-send", time.time(), direction_id))
             if updated.rowcount != 1:

@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "118c1f47f5f4fab170fede8eec949b0702fb429f5d02ef62e23e663832d524d1",
+  "source_fingerprint": "fa2cc6caf9170cd211b33a7859dac75d6567a31b9038456b3108017241a2fd8e",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "768aeca6c64ae19ddc062eb0f2656139a596bb7207e91771d436259144b8d7d5",
     "docs/component-library.v1.json": "5ca48d83b63d0ba0728740188b5aede858898840d31b7278392d5e64fff339fd",
@@ -17,7 +17,7 @@
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "ec9123afd6e583b7a0c92602c84652df7edd25f275b6ee017d2c573e290781d8",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "2168eeb18875dfa5c23aaa37aaad5acc7f6b43449c5a2c828ac937834314669e",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
-    "src/bct/chain_direction.py": "26793c4f1b23e2b193f4f3f32f18e5b224178d2ca7ea344aa2bfcbac4605000d",
+    "src/bct/chain_direction.py": "283918278e32f63f64ab467cabfd74100b235cd2e963f6a7c601eeb423fd35d8",
     "src/bct/chain_entry_policy.py": "2c076fd541dfaa9353b12526c6a41bdb1396169a6a81162e81861b8cc313dd34",
     "src/bct/chain_execution_plan.py": "b100f2ee64a4e32168ad69b468b31b977d806504abc6af00521316c0d404c062",
     "src/bct/chain_message_preflight.py": "4c55a0214df2cafd2002d5fc7ba3885ea564c4945f392224a814a3b50ca16160",
@@ -32,7 +32,7 @@
     "src/bct/features/conversation_network.py": "8344f9dce683111111dc600fc446f9838bddca7b8bccb207034815e6d5619c06",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "bb9d0e6d7f44d408deba32c5daab333b0fee5bee311edd85db12fc3ef8963b02",
-    "src/bct/mcp_server.py": "80cd376030b79fb19b46dff431ffda5b5a3471e2d215b5080241bb796fcabe70",
+    "src/bct/mcp_server.py": "51a2fa91001291209b962f0ab5632a43fccce5cebe5ba7f6f4da076c3a5f67fd",
     "src/bct/node_recovery.py": "27c7845d6f18fa8a36e1adb609b5658e1b60a62512d087b0f0fec6623fb77713",
     "src/bct/runtime_server.py": "eaa3e23373fd47b69a2c9eeb3d118494bbe2ff67cc0e74e37c48bc229b90f6c0",
     "src/bct/send_delayed_message.py": "b83f70aae1d92b2fc7c46823e476c0d2b706f9096b459d6fb536567ec35c0f58",

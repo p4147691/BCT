@@ -1252,7 +1252,20 @@ def build_mcp(
             ChainExecutionPlanLedger.list_latest_execute_plan_checks,
             store=bct.store, limit=5 if compact else 20,
         )
-        snapshot = {**snapshot, "execute_plan_checks": execute_plan_checks}
+        from bct.chain_direction import ChainDirectionLedger
+        pending_chain_starts = await asyncio.to_thread(
+            ChainDirectionLedger.list_pending_chain_starts,
+            store=bct.store, principal_id=principal.principal_id,
+            limit=5 if compact else 20,
+        )
+        snapshot = {
+            **snapshot,
+            "execute_plan_checks": execute_plan_checks,
+            # A saved Direction is not a started Chain. Keep that handoff in
+            # the normal Manager status view so it cannot disappear between
+            # Set Direction and the exact start/send boundary.
+            "pending_chain_starts": pending_chain_starts,
+        }
         if compact and isinstance(snapshot.get("monitor"), dict):
             monitor = dict(snapshot["monitor"])
             for key in (

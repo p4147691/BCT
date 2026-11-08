@@ -37,18 +37,35 @@ class ChainDirectionLedgerTests(unittest.TestCase):
                 decision="NEW_TASK", direction_text="Check the release evidence, then ask B for E2E.",
             )
             self.assertFalse(saved["duplicate"])
+            self.assertEqual("READY", saved["chain_continuation"]["state"])
+            self.assertEqual("START_CHAIN_RECIPE", saved["chain_continuation"]["next_safe_step"])
             planned = ledger.plan_chain(
                 direction_id="direction-1", work_id="work-1",
                 task_id="task-1", operation_id="chain-1",
                 instruction_text="Check the release evidence, then ask B for E2E.",
             )
             self.assertEqual("CHAIN_PLANNED", planned["chain_state"])
+            self.assertEqual("PREARM_AND_SEND", planned["chain_continuation"]["next_safe_step"])
             started = ledger.mark_chain_started(
                 direction_id="direction-1", work_id="work-1",
                 task_id="task-1", operation_id="chain-1",
             )
             self.assertEqual("CHAIN_STARTED", started["chain_state"])
             self.assertEqual("chain-1-send", started["chain_send_operation_id"])
+            self.assertEqual("WAIT_FOR_RETURN", started["chain_continuation"]["next_safe_step"])
+
+    def test_saved_direction_persists_chain_start_handoff_after_reopen(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "state.sqlite"
+            store = Store(path)
+            ChainDirectionLedger(store).save(
+                direction_id="direction-handoff", work_id="work-1", source_kind="USER",
+                decision="NEW_TASK", direction_text="Keep the chain visible until it starts.",
+            )
+            reopened = ChainDirectionLedger(Store(path)).get(direction_id="direction-handoff")
+            self.assertEqual("READY", reopened["chain_continuation"]["state"])
+            self.assertEqual("START_CHAIN_RECIPE", reopened["chain_continuation"]["next_safe_step"])
+            self.assertIn("has not started", reopened["chain_continuation"]["reason"])
 
     def test_direction_rejects_a_different_delivery_text_before_planning(self):
         with tempfile.TemporaryDirectory() as root:
@@ -216,6 +233,31 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             )
             _, status = await mcp.call_tool("bct_status", {"scope": "bct"})
             self.assertEqual([], status["execute_plan_checks"])
+            self.assertEqual([], status["pending_chain_starts"])
+            with store._readonly() as db:
+                self.assertIsNone(db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name='chain_directions'"
+                ).fetchone())
+
+    async def test_status_exposes_saved_direction_waiting_to_start(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            work = store.create_work(Work(
+                "work-pending", "fixture", (), frozenset({"browser"}), "bct-mcp-local", 1,
+            ))
+            ChainDirectionLedger(store).save(
+                direction_id="pending-direction", work_id=work.work_id,
+                source_kind="USER", decision="NEW_TASK", direction_text="Inspect before sending.",
+            )
+            mcp = build_mcp(
+                SimpleNamespace(operations=Operations(), store=store),
+                compact_catalogue=True, status_provider=lambda: {"monitor": {}},
+            )
+            _, status = await mcp.call_tool("bct_status", {"scope": "bct"})
+            self.assertEqual(["pending-direction"], [
+                item["direction_id"] for item in status["pending_chain_starts"]
+            ])
+            self.assertEqual("START_CHAIN_RECIPE", status["pending_chain_starts"][0]["next_safe_step"])
 
     async def test_direction_and_execute_plan_names_are_public(self):
         with tempfile.TemporaryDirectory() as root:
