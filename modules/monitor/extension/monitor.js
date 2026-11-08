@@ -103,7 +103,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BWM</strong><span id="monitorVersion" class="monitor-version" role="status"></span><span id="monitorService" style="display:none">호환 계층 확인 중…</span></div><div class="monitor-utility-actions" role="toolbar" aria-label="BWM 복구 도구"><button id="monitorExtensionReload" type="button" title="이미 설치된 BWM 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">확장 리로드</button><button id="monitorRccReload" type="button" title="현재 관측된 정확한 RCC 인스턴스 하나를 BCT 영수증 경로로 다시 로드합니다.">RCC 리로드</button><button id="monitorBctRecover" type="button" title="Windows의 BCT Core Supervisor 공식 작업을 실행하고 READY를 확인합니다.">BCT 시작·복구</button><button id="monitorMcpTunnelRecover" type="button" title="Windows의 BCT Tunnel Supervisor 공식 작업을 실행하고 health/ready를 확인합니다.">MCP 터널 복구</button><button id="monitorBctControlRefresh" type="button" title="선택한 정확한 ChatGPT 대화 탭을 다시 불러와 BC 도구 연결을 새로 읽습니다.">BC 도구 새로고침</button></div></div>
+    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BWM</strong><span id="monitorVersion" class="monitor-version" role="status"></span><span id="monitorService" style="display:none">호환 계층 확인 중…</span></div><div class="monitor-utility-actions" role="toolbar" aria-label="BWM 복구 도구"><button id="monitorExtensionReload" type="button" title="이미 설치된 BWM 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">확장 리로드</button><button id="monitorCommandCatalogOpen" type="button" title="RCC 확장 내부 명령과 BCT 조합 명령의 목록·설명을 읽기 전용 창으로 엽니다.">명령 목록</button><button id="monitorRccReload" type="button" title="현재 관측된 정확한 RCC 인스턴스 하나를 BCT 영수증 경로로 다시 로드합니다.">RCC 리로드</button><button id="monitorBctRecover" type="button" title="Windows의 BCT Core Supervisor 공식 작업을 실행하고 READY를 확인합니다.">BCT 시작·복구</button><button id="monitorMcpTunnelRecover" type="button" title="Windows의 BCT Tunnel Supervisor 공식 작업을 실행하고 health/ready를 확인합니다.">MCP 터널 복구</button><button id="monitorBctControlRefresh" type="button" title="선택한 정확한 ChatGPT 대화 탭을 다시 불러와 BC 도구 연결을 새로 읽습니다.">BC 도구 새로고침</button></div></div>
 
 
 
@@ -203,13 +203,18 @@ monitorRoot.innerHTML = `
 
   </section>
 
-  <section class="monitor-section monitor-command-catalog-section" aria-label="RCC와 BCT 명령 목록">
-    <div class="monitor-bct-nodes-head monitor-command-catalog-head"><strong>명령 목록</strong><span id="monitorCommandCatalogSummary">카탈로그 확인 중…</span><button id="monitorCommandCatalogRefresh" type="button" title="현재 BCT 공개 명령 카탈로그를 다시 읽습니다.">새로고침</button></div>
-    <label class="monitor-command-catalog-search-label" for="monitorCommandCatalogSearch">명령 검색</label>
-    <input id="monitorCommandCatalogSearch" class="monitor-command-catalog-search" type="search" placeholder="명령명 또는 기능 설명 검색" autocomplete="off">
-    <div id="monitorCommandCatalogList" class="monitor-command-catalog-list" aria-live="polite"></div>
-    <section id="monitorCommandCatalogDetail" class="monitor-command-catalog-detail" aria-live="polite"><strong>명령을 선택하세요</strong><span>목록은 읽기 전용이며 명령을 실행하지 않습니다.</span></section>
-  </section>
+  <dialog id="monitorCommandCatalogDialog" class="monitor-command-catalog-dialog" aria-labelledby="monitorCommandCatalogTitle">
+    <header class="monitor-command-catalog-dialog-header">
+      <div><strong id="monitorCommandCatalogTitle">명령 목록</strong><span id="monitorCommandCatalogSummary">열면 현재 목록을 읽습니다</span></div>
+      <div><button id="monitorCommandCatalogRefresh" type="button" title="현재 BCT 공개 명령 카탈로그를 다시 읽습니다.">새로고침</button><button id="monitorCommandCatalogClose" type="button" title="명령 목록 닫기" aria-label="명령 목록 닫기">×</button></div>
+    </header>
+    <div class="monitor-command-catalog-dialog-body">
+      <label class="monitor-command-catalog-search-label" for="monitorCommandCatalogSearch">명령 검색</label>
+      <input id="monitorCommandCatalogSearch" class="monitor-command-catalog-search" type="search" placeholder="명령명 또는 기능 설명 검색" autocomplete="off">
+      <div id="monitorCommandCatalogList" class="monitor-command-catalog-list" aria-live="polite"></div>
+      <section id="monitorCommandCatalogDetail" class="monitor-command-catalog-detail" aria-live="polite"><strong>명령을 선택하세요</strong><span>목록은 읽기 전용이며 명령을 실행하지 않습니다.</span></section>
+    </div>
+  </dialog>
 
 
 
@@ -6333,7 +6338,6 @@ const monitorRccCommandCatalog = globalThis.MonitorRccCommandCatalog?.create?.({
   document,
   shell: monitorBctShell,
 });
-void monitorRccCommandCatalog?.refresh?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.

@@ -214,8 +214,10 @@ vm.runInContext(source, context);
     "startup revalidation remains strictly bounded and cannot become polling");
   assert.match(monitorSource, /monitorBctWindowNodesCache\.some\(\(node\) => node\.displayStale === true\)[\s\S]*?scheduleMonitorBctNodeStartupRevalidation\(\)/,
     "a stale initial node list must refresh without a Monitor focus click");
-  assert.match(monitorSource, /const location = monitorWindowDesktopLocations\.get\(String\(hwnd\)\);\s*return !location \|\| monitorDesktopState\.desktopIds\.indexOf/,
-    "projection convergence must continue until the resolved HWND also has a visible desktop location");
+  assert.match(monitorSource, /const location = monitorWindowDesktopLocations\.get\(String\(hwnd\)\);\s*if \(!location \|\| monitorDesktopState\.desktopIds\.indexOf\(String\(location\.desktopId \|\| ""\)\) < 0\) return true;/,
+    "projection convergence must continue until the resolved HWND has a visible desktop location");
+  assert.match(monitorSource, /const frame = \[\.\.\.visual\.querySelectorAll\("\.monitor-desktop-thumb-window\[data-hwnd\]"\)\][\s\S]*?return !frame \|\| frame\.hidden \|\| frame\.style\.display === "none";/,
+    "projection convergence must also wait for the resolved HWND thumbnail frame");
   assert.match(monitorSource, /addEventListener\("contextmenu"/);
   assert.match(monitorSource, /monitorBctShell\.renameConversation\(node, title\)/);
   assert.match(monitorSource, /monitorBctShell\.updateConversationScope\(node,/);

@@ -8,6 +8,7 @@ const vm = require("node:vm");
 const extensionRoot = path.join(__dirname, "..", "extension");
 const shellSource = fs.readFileSync(path.join(extensionRoot, "monitor-bct-shell.js"), "utf8");
 const featureSource = fs.readFileSync(path.join(extensionRoot, "features", "rcc-command-catalog", "monitor-rcc-command-catalog.js"), "utf8");
+const bundleSource = fs.readFileSync(path.join(extensionRoot, "monitor.js"), "utf8");
 const catalog = [{
   command: "rcc_get_extension_state", origin: "rcc-native", group: "status-and-targets",
   display_group: "상태·대상", summary: "RCC 확장 상태를 읽습니다.", effect: "조회만",
@@ -35,5 +36,11 @@ vm.runInContext(featureSource, context);
   assert.equal(normalized[0].group, "상태·대상");
   assert.equal(normalized[0].origin, "rcc-native");
   assert.ok(Object.isFrozen(normalized));
+  assert.match(bundleSource, /id="monitorCommandCatalogOpen"[^>]*>명령 목록/);
+  assert.match(bundleSource, /id="monitorCommandCatalogDialog"/);
+  assert.ok(bundleSource.indexOf('id="monitorExtensionReload"') < bundleSource.indexOf('id="monitorCommandCatalogOpen"'));
+  assert.doesNotMatch(bundleSource, /monitor-command-catalog-section/);
+  assert.match(featureSource, /async function open\(\)/);
+  assert.match(featureSource, /dialog\.showModal\(\)/);
   console.log("PASS: Monitor reads and presents the authoritative command catalogue without command execution.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

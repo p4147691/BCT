@@ -168,7 +168,6 @@ const monitorRccCommandCatalog = globalThis.MonitorRccCommandCatalog?.create?.({
   document,
   shell: monitorBctShell,
 });
-void monitorRccCommandCatalog?.refresh?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
