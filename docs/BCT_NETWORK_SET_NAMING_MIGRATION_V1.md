@@ -8,7 +8,7 @@
 
 ## 정식 경로
 - bct_get_conversation_network: 대화망 및 참여 노드 조회
-- bct_set_conversation_network: name-based node-info-set(소속/역할/메모/담당작업) 및 network-name-set(대화망 전체 이름 변경). 내부 operation 이름은 API 하위 동작이며 사용자 명령과 구분한다.
+- bct_set_conversation_network: name-based set-node-info(소속/역할/메모/담당작업) 및 network-name-set(대화망 전체 이름 변경). 내부 operation 이름은 API 하위 동작이며 사용자 명령과 구분한다. 과거 Direction·영수증의 `node-info-set`은 재작성하지 않고 읽기 호환으로만 유지한다.
 - Monitor 우클릭: 동일 configure_conversation_scope Core 저장 함수 재사용. Monitor가 꺼져 있어도 AI 경로는 Core에 독립적으로 접근.
 - 기존 project-upsert/membership-assign/role-patch와 bct_conversation_network_update는 당분간 호환 경로로 유지하되 새로운 호출자는 사용하지 않는다.
 

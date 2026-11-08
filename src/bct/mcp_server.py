@@ -1040,7 +1040,7 @@ def build_mcp(
             "plus the remaining visible recipe sequence. action=send runs the declared "
             "Send Direction R after its saved Direction and target records are available. "
             "action=provision_worker composes the existing create-chat-tab/window, "
-            "send-message, delayed-response watch, node-info-set, and optional move-tab "
+            "send-message, delayed-response watch, set-node-info, and optional move-tab "
             "operations for one Manager-declared additional Worker. "
             "Classifies a new USER request or verifies one exact MANAGER_RETURN, then reads one current "
             "snapshot, current Node Info, durable conversation-network directory, their comparison, and "
@@ -1671,7 +1671,7 @@ def build_mcp(
         work_id: str, operation_id: str, arguments: dict[str, Any],
         approval_ref: str | None = None,
     ) -> dict[str, Any]:
-        if arguments.get("operation") not in {"project-upsert", "membership-assign", "role-patch", "node-info-set", "network-name-set"}:
+        if arguments.get("operation") not in {"project-upsert", "membership-assign", "role-patch", "set-node-info", "node-info-set", "network-name-set"}:
             return {"status": "INVALID_REQUEST", "reason": "NETWORK_SET_OPERATION_INVALID"}
         return await make_executor("conversation_network_update")(
             work_id, operation_id, arguments, approval_ref
@@ -1684,7 +1684,7 @@ def build_mcp(
             for arguments in updates:
                 if not isinstance(arguments, dict):
                     raise ValueError("DIRECTION_NETWORK_UPDATE_INVALID")
-                if arguments.get("operation") == "node-info-set" and (
+                if arguments.get("operation") in {"set-node-info", "node-info-set"} and (
                         "expected_scope_id" not in arguments
                         or not re.fullmatch(r"[0-9a-f]{64}", str(arguments.get("expected_role_tags_sha256", "")))):
                     raise ValueError("DIRECTION_NETWORK_OBSERVATION_REQUIRED")

@@ -202,7 +202,7 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
 - 망은 무조건 새로 만들지 않는다. A가 현재 Node Info(우클릭 정보)와 저장된 이력을
   비교하여 재사용·신규·병합과 역할 승계를 결정한다.
 - `network_updates`는 기존 `bct_set_conversation_network` 인수 목록이다.
-  `node-info-set`에는 관찰한 `expected_scope_id`와 `expected_role_tags_sha256`도
+  `set-node-info`에는 관찰한 `expected_scope_id`와 `expected_role_tags_sha256`도
   기록하여 뒤늦게 사용자 변경을 덮어쓰지 않는다.
 - 창·탭이 없으면 A가 기존 생성·복구 부품으로 준비하고 실제 대화 UUID를 얻는다.
   새 브라우저를 몰래 열거나, 제목으로 UUID를 추측하지 않는다.
@@ -223,7 +223,7 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
   기존 정확 1:1 전송 원장을 재사용하기 위한 내부 기록이며 새 사용자 명령이 아니다.
 - 추가 Worker가 필요하다고 A가 판단한 경우 `bct_chain_recipe(action="provision_worker")`는
   별도 공개 도구를 만들지 않고 기존 `create-chat-tab`/`create-chat-window`, `send-message`,
-  응답 대기, `node-info-set`, 선택적 `move-tab`을 부분 레시피로 조립한다. 생성·전송·감시·
+  응답 대기, `set-node-info`, 선택적 `move-tab`을 부분 레시피로 조립한다. 생성·전송·감시·
   등록·정렬은 서로 다른 결정적 Operation ID와 영수증을 사용한다. 같은 준비 요청을
   재실행해도 기존 영수증을 읽으며 새 탭이나 첫 메시지를 중복 생성하지 않는다.
 - A의 준비 판단은 Direction의 `worker_preparations`에 먼저 저장한다. 각 준비 항목은
@@ -348,7 +348,7 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 | `bct_send_delayed_message` | 해당 작업의 응답 완료를 백그라운드에서 기다린 뒤 SELF/MANAGER 후속 지시를 전달하도록 등록 |
 | `bct_context` | 특정 작업·회차의 이전 응답 증거, SELF/MANAGER 결정과 이어가기 기록 조회. 조회 자체는 감시하거나 전송하지 않음 |
 | `bct_capabilities` | 현재 도구·입력 계약·부품·이 설명서 조회. 도구 실행이나 권한 부여는 아님 |
-| Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 관계의 정본은 Direction·branch·Watch 영수증이다. 자식/손자 지시에는 임시 관계 정보를 포함하고, Manager가 계속 참고할 짧은 상태가 필요하다고 판단하면 기존 `node-info-set`의 `node_memo`에 적을 수 있다. 메모만 바꿀 때는 현재 관찰한 `scope_name`·역할·기대 scope를 그대로 넣으므로 대화망 소속이나 역할은 바꾸지 않는다. BCT는 이 메모를 임의로 쓰지도, Manager의 명시적 기록을 막지도 않는다. |
+| Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 관계의 정본은 Direction·branch·Watch 영수증이다. 자식/손자 지시에는 임시 관계 정보를 포함하고, Manager가 계속 참고할 짧은 상태가 필요하다고 판단하면 기존 `set-node-info`의 `node_memo`에 적을 수 있다. 메모만 바꿀 때는 현재 관찰한 `scope_name`·역할·기대 scope를 그대로 넣으므로 대화망 소속이나 역할은 바꾸지 않는다. BCT는 이 메모를 임의로 쓰지도, Manager의 명시적 기록을 막지도 않는다. |
 | Work / task_id / Operation | 기존 지속 작업 경계 / 한 체인의 연속 처리 식별값 / 개별 효과와 영수증 |
 
 공개 도구의 입구는 `src/bct/mcp_server.py`에 등록된다. 일부 보존된 공개명은 같은 내부 함수를

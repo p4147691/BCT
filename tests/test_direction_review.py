@@ -626,7 +626,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
     async def test_prepared_network_updates_use_existing_setter_before_sending(self):
         self.tabs[0]["conversation_scope"].update(scope_name="", role_tags=[])
         value = assessment()
-        value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
+        value["network_updates"] = [{"operation": "set-node-info", "conversation_key": A,
             "display_name": "Manager A", "scope_name": "Project", "role_tags": ["manager"],
             "expected_scope_id": "", "expected_role_tags_sha256": role_tags_sha256([])}]
         self.assertEqual("OK", (await self.save(value))["status"])
@@ -642,14 +642,14 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_network_arguments_fail_during_apply(self):
         value = assessment()
-        value["network_updates"] = [{"operation": "node-info-set", "conversation_key": "N1"}]
+        value["network_updates"] = [{"operation": "set-node-info", "conversation_key": "N1"}]
         self.assertEqual("OK", (await self.save(value))["status"])
         self.assertEqual("INVALID_REQUEST", (await self.start(action="preflight"))["status"])
         self.assertEqual([], self.ops.calls)
 
     async def test_missing_initial_worker_blocks_dispatch_after_network_update(self):
         value = assessment()
-        value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
+        value["network_updates"] = [{"operation": "set-node-info", "conversation_key": A,
             "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
             "expected_scope_id": "", "expected_role_tags_sha256": role_tags_sha256([])}]
         await self.save(value)
@@ -662,7 +662,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_initial_worker_closing_during_network_preparation_blocks_dispatch(self):
         value = assessment()
-        value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
+        value["network_updates"] = [{"operation": "set-node-info", "conversation_key": A,
             "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
             "expected_scope_id": "", "expected_role_tags_sha256": role_tags_sha256([])}]
         await self.save(value)
@@ -689,7 +689,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_oversized_composed_text_fails_before_network_or_send_effects(self):
         value = assessment()
-        value["network_updates"] = [{"operation": "node-info-set", "conversation_key": A,
+        value["network_updates"] = [{"operation": "set-node-info", "conversation_key": A,
             "display_name": "A", "scope_name": "Project", "role_tags": ["manager"],
             "expected_scope_id": "", "expected_role_tags_sha256": role_tags_sha256([])}]
         await self.save(value, direction_text="x" * 11990)

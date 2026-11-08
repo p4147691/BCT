@@ -207,7 +207,7 @@ class ChainWorkerProvisionRecipe:
         registered = self._receipt(
             work=work, operation_id=ids["register"],
         ) or self._run(work.work_id, ids["register"], "conversation_network_update", {
-            "operation": "node-info-set", "conversation_key": conversation_key,
+            "operation": "set-node-info", "conversation_key": conversation_key,
             "display_name": prepared["display_name"],
             "scope_name": prepared["scope_name"], "role_tags": prepared["role_tags"],
             "expected_scope_id": "",
