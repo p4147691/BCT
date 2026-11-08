@@ -1248,6 +1248,35 @@ class RccIntegrationTests(unittest.TestCase):
             "operationId": "rename-1",
         }, self.client.calls[0]["extra"])
 
+    def test_conversation_rename_preserves_only_bounded_ui_diagnostic(self):
+        self.client.result = {
+            "type": "host:result", "ok": False, "state": "NOT_APPLIED",
+            "error": "RENAME_ACTION_NOT_FOUND",
+            "renameDiagnostic": {
+                "version": 1,
+                "identity": "MATCH",
+                "menuButton": "FOUND",
+                "menuClick": "ATTEMPTED",
+                "menuVisible": "OBSERVED",
+                "renameAction": "NOT_FOUND",
+                "editor": "NOT_CHECKED",
+                "pageText": "must not persist",
+            },
+        }
+        result = self.call("rename-diagnostic", {
+            "command": "rename-conversation", "instance_id": "instance123",
+            "session_id": "session-1", "tab_id": 10,
+            "conversation_key": "conversation-1234", "title": "새 대화 이름",
+        })
+        self.assertEqual(Outcome.NOT_APPLIED, result.outcome)
+        self.assertEqual("RENAME_ACTION_NOT_FOUND", result.evidence["error"])
+        self.assertEqual({
+            "version": "1",
+            "identity": "MATCH", "menuButton": "FOUND", "menuClick": "ATTEMPTED",
+            "menuVisible": "OBSERVED", "renameAction": "NOT_FOUND",
+            "editor": "NOT_CHECKED",
+        }, result.evidence["rename_diagnostic"])
+
     def _rename_recovery_fixture(self, tag="legacy", title="새 제목"):
         original = {
             "command": "rename-conversation", "instance_id": "instance123",
