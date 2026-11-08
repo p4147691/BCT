@@ -24,9 +24,9 @@
   const ORCHESTRATION_COMMANDS = new Set(['send']);
   const NODE_LABEL_COMMANDS = new Set(['node-label-notify']);
   const READ_ONLY_COMMANDS = new Set([
-    'ping', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
+    'ping', 'presence', 'state', 'result', 'rename-receipt', 'probe', 'probe-tabs',
     'diagnose-activity', 'diagnose-composer', 'diagnose-conversation-ui',
-    'api-probe', 'main-capture-get', 'delivery-manager-status', 'delivery-recovery-inspect',
+    'api-probe', 'main-capture-get', 'delivery-manager-status', 'delivery-response-read', 'delivery-recovery-inspect',
     'tab-get', 'windows-list', 'window-get', 'tab-groups-list', 'tab-group-get', 'read-latest-assistant',
   ]);
   // This is lifecycle maintenance, not a product relay path. Its caller is

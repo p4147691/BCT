@@ -35,6 +35,8 @@ from bct.integrations.rcc import (
 _READ_COMMANDS = {
     "state", "presence", "result", "result-of-create-and-send", "target-discover",
     "tab-get", "windows-list", "window-get", "tab-groups-list", "tab-group-get", "read-latest-assistant",
+    "ping", "probe", "probe-tabs", "diagnose-activity", "diagnose-composer",
+    "diagnose-conversation-ui", "api-probe", "main-capture-get", "rename-receipt",
 }
 _RECONCILE_COMMANDS = {
     "reconcile-send-to-created-tab", "reconcile-create-and-send",
@@ -48,7 +50,8 @@ _MUTATING_COMMANDS = {
     "create-tab-group", "add-tab-to-group", "remove-tab-from-group", "move-tab-group",
     "update-tab-group", "close-conversation-tab",
     "rename-conversation", "reload-extension", "send", "send-to-tab", "send-to-self",
-    "node-continue", "create-and-send", "send-message",
+    "node-continue", "create-and-send", "new-chat-send", "send-message",
+    "conversation-bind",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
     "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
     "retire-composer-draft", "retire-recovered-execution",
@@ -61,6 +64,83 @@ _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
+
+
+def command_catalog() -> list[dict[str, str]]:
+    """Return the public MCP discovery view without exposing transport state."""
+    special = {
+        _RENAME_INSPECTION_COMMAND: "recovery-read",
+        _OPERATOR_QUARANTINE_COMMAND: "recovery-effect",
+        "delivery-manager-status": "delivery-read",
+        "delivery-recovery-inspect": "recovery-read",
+        "delivery-response-read": "delivery-read",
+        "delivery-preview": "delivery-read",
+    }
+    rows: list[dict[str, str]] = []
+    for command in sorted(_COMMANDS):
+        category = (
+            "read" if command in _READ_COMMANDS
+            else "effect" if command in _MUTATING_COMMANDS
+            else "reconcile" if command in _RECONCILE_COMMANDS
+            else special[command]
+        )
+        rows.append({"command": command, "category": category})
+    return rows
+
+
+def recipe_catalog() -> list[dict[str, Any]]:
+    """Describe visible RCC command sequences without adding a hidden executor.
+
+    Recipes are discovery records only.  A caller invokes every listed command
+    explicitly through ``bct_browser`` and receives its own Operation receipt.
+    """
+    return [
+        {
+            "recipe": "inspect-target",
+            "purpose": "Read the current RCC endpoint and choose one exact target.",
+            "steps": ["state", "windows-list", "tab-get"],
+        },
+        {
+            "recipe": "read-latest-assistant",
+            "purpose": "Read only the latest assistant response from one exact conversation.",
+            "steps": ["state", "read-latest-assistant"],
+        },
+        {
+            "recipe": "send-existing-conversation",
+            "purpose": "Send once to an already identified conversation and read its receipt.",
+            "steps": ["state", "send-to-tab", "result"],
+        },
+        {
+            "recipe": "create-chat-and-send",
+            "purpose": "Create one tab, send its first message once, then inspect the receipt.",
+            "steps": ["target-discover", "new-chat-send", "result"],
+        },
+        {
+            "recipe": "bind-existing-conversation",
+            "purpose": "Record one exact opened conversation under a caller-chosen workflow label.",
+            "steps": ["state", "tab-get", "conversation-bind"],
+        },
+        {
+            "recipe": "rename-conversation",
+            "purpose": "Confirm one target then rename it; an UNKNOWN result is reconciled, never resent.",
+            "steps": ["state", "rename-conversation", "inspect-rename-receipt", "reconcile-rename-conversation"],
+        },
+        {
+            "recipe": "arrange-tabs",
+            "purpose": "Inspect a target, then move or group exactly the selected tab.",
+            "steps": ["state", "move-tab", "create-tab-group", "add-tab-to-group"],
+        },
+        {
+            "recipe": "recover-unknown-send",
+            "purpose": "Read the original receipt and reconcile the same operation without a second send.",
+            "steps": ["result", "reconcile-send"],
+        },
+        {
+            "recipe": "reload-installed-extension",
+            "purpose": "Reload an already installed RCC payload; installation and reload remain separate effects.",
+            "steps": ["reload-extension", "state"],
+        },
+    ]
 
 
 def _target_snapshot_fingerprint(tabs: list[dict[str, Any]]) -> str:
@@ -765,7 +845,39 @@ class BrowserFeature:
                     "originalTimeoutS": float(arguments.get("original_timeout_s", 30.0)),
                 })
         elif command in _READ_COMMANDS:
-            if command == "target-discover":
+            if command in {"ping", "probe-tabs", "diagnose-composer"}:
+                pass
+            elif command in {"probe", "api-probe", "main-capture-get"}:
+                allowed.add("to")
+                target = str(arguments.get("to") or "").strip()
+                if not target or len(target) > 80:
+                    raise PreconditionError("RCC_READ_TARGET_REQUIRED")
+                prepared["to"] = target
+            elif command in {"diagnose-activity", "diagnose-conversation-ui"}:
+                allowed.add("conversation_key")
+                key = str(arguments.get("conversation_key") or "").strip().lower()
+                if key and not re.fullmatch(
+                    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", key
+                ):
+                    raise PreconditionError("RCC_DIAGNOSTIC_CONVERSATION_KEY_INVALID")
+                prepared["text"] = key
+                if command == "diagnose-conversation-ui":
+                    prepared["extra"]["conversationKey"] = key
+            elif command == "rename-receipt":
+                allowed.update({"relay_id", "tab_id", "conversation_key"})
+                relay_id = str(arguments.get("relay_id") or "").strip()
+                key = str(arguments.get("conversation_key") or "").strip().lower()
+                if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", relay_id)
+                        or not re.fullmatch(
+                            r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", key
+                        )):
+                    raise PreconditionError("RCC_RENAME_RECEIPT_IDENTITY_REQUIRED")
+                prepared["text"] = relay_id
+                prepared["extra"].update({
+                    "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                    "conversationKey": key,
+                })
+            elif command == "target-discover":
                 prepared["extra"]["workId"] = work.work_id
             elif command == "tab-get":
                 allowed.add("tab_id")
@@ -811,7 +923,7 @@ class BrowserFeature:
                 })
         elif command in {"create-chat-window", "reload-extension"}:
             pass
-        elif command == "create-and-send":
+        elif command in {"create-and-send", "new-chat-send"}:
             # The opaque target reference is resolved before reservation. A
             # terminal prior RCC claim, if any, is handled by the coordinator's
             # common read-only live-proof path and never authorizes a retry.
@@ -833,6 +945,43 @@ class BrowserFeature:
             prepared["extra"].update({
                 "windowId": target["windowId"], "targetRef": str(arguments["target_ref"]),
                 "targetEpoch": target["epoch"],
+            })
+        elif command == "conversation-bind":
+            # Binding records one logical label against one already observed
+            # endpoint. The label is workflow metadata, not an execution
+            # rank; RCC independently verifies the exact tab/UUID/session.
+            allowed.update({
+                "to", "session_id", "tab_id", "conversation_key", "binding_receipt_id",
+                "replace_stale", "expected_current_conversation_key",
+                "expected_current_binding_receipt_id",
+            })
+            role = str(arguments.get("to") or "").strip()
+            session = str(arguments.get("session_id") or "").strip()
+            key = str(arguments.get("conversation_key") or "").strip().lower()
+            receipt_id = str(arguments.get("binding_receipt_id") or "").strip()
+            key_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+            if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", role)
+                    or not session or len(session) > 128
+                    or not re.fullmatch(key_pattern, key)
+                    or not re.fullmatch(r"RCB-[A-Z0-9]{12,40}", receipt_id)):
+                raise PreconditionError("RCC_CONVERSATION_BIND_IDENTITY_REQUIRED")
+            replace_stale = arguments.get("replace_stale") is True
+            expected_key = str(arguments.get("expected_current_conversation_key") or "").strip().lower()
+            expected_receipt = str(arguments.get("expected_current_binding_receipt_id") or "").strip()
+            if replace_stale and (
+                not re.fullmatch(key_pattern, expected_key)
+                or not re.fullmatch(r"RCB-[A-Z0-9]{12,40}", expected_receipt)
+            ):
+                raise PreconditionError("RCC_CONVERSATION_BIND_REPLACEMENT_FENCE_REQUIRED")
+            prepared["to"] = role
+            prepared["extra"].update({
+                "sessionId": session,
+                "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                "conversationKey": key,
+                "bindingReceiptId": receipt_id,
+                "replaceStale": replace_stale,
+                "expectedCurrentConversationKey": expected_key,
+                "expectedCurrentBindingReceiptId": expected_receipt,
             })
         elif command == "create-chat-tab":
             allowed.add("window_id")
@@ -1793,6 +1942,7 @@ class BrowserFeature:
         browser effects as separate legacy commands.
         """
         values = request.arguments
+        public_command = values["command"]
         instance_id, extra = values["instance_id"], values["extra"]
         began = time.monotonic()
         # The Native Host must return terminal evidence before the outer pipe
@@ -1820,7 +1970,7 @@ class BrowserFeature:
         if (result.get("ok") is False and result.get("effectState") == "NOT_APPLIED"):
             return FeatureResult(
                 Outcome.NOT_APPLIED,
-                {"command": "create-and-send", "phase": "NOT_APPLIED"},
+                {"command": public_command, "phase": "NOT_APPLIED"},
                 output={"result": _sanitize(result)},
             )
         try:
@@ -1851,7 +2001,7 @@ class BrowserFeature:
         return FeatureResult(
             Outcome.APPLIED,
             {
-                "command": "create-and-send",
+                "command": public_command,
                 "rcc_command": "new-chat-send",
                 "operation_id": request.operation_id,
                 "instance_id": instance_id,
@@ -2112,7 +2262,7 @@ class BrowserFeature:
             }, output={"result": _sanitize(result)})
         if request.arguments["command"] == "target-discover":
             return self._execute_target_discover(request)
-        if request.arguments["command"] == "create-and-send":
+        if request.arguments["command"] in {"create-and-send", "new-chat-send"}:
             return self._execute_create_and_send(request)
         values = request.arguments
         extra = dict(values["extra"])
@@ -2204,7 +2354,8 @@ class BrowserFeature:
             if values["command"] in {"create-chat-window", "create-chat-tab",
                                      "create-tab-group", "add-tab-to-group",
                                      "remove-tab-from-group", "move-tab-group",
-                                     "update-tab-group", "close-conversation-tab"}:
+                                     "update-tab-group", "close-conversation-tab",
+                                     "conversation-bind"}:
                 extra["instanceId"] = values["instance_id"]
         if values["command"] == "read-latest-assistant":
             extra["instanceId"] = values["instance_id"]
@@ -2628,6 +2779,17 @@ class BrowserFeature:
                     "error": str(result.get("error") or "RCC_CLOSE_NOT_APPLIED")[:128],
                 }, release_claims=True, output={"result": _sanitize(result)})
             raise UnknownEffectError("RCC_CLOSE_ACK_UNVERIFIED")
+        if values["command"] == "conversation-bind" and result.get("ok") is True:
+            binding = result.get("binding") if isinstance(result.get("binding"), dict) else {}
+            if not (
+                binding.get("logicalNode") == values["to"]
+                and binding.get("instanceId") == values["instance_id"]
+                and binding.get("sessionId") == extra["sessionId"]
+                and binding.get("tabId") == extra["tabId"]
+                and binding.get("conversationKey") == extra["conversationKey"]
+                and binding.get("bindingReceiptId") == extra["bindingReceiptId"]
+            ):
+                raise UnknownEffectError("RCC_CONVERSATION_BIND_ACK_UNVERIFIED")
         if values["command"] == "simple-relay-bind" and result.get("ok") is True:
             binding = result.get("binding") if isinstance(result.get("binding"), dict) else {}
             if not (

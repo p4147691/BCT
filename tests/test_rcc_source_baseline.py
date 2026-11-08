@@ -84,11 +84,11 @@ class RccSourceBaselineTests(unittest.TestCase):
         background = (self.extension / "domain" / "readonly_diagnostics.js").read_text(encoding="utf-8")
         runtime = (self.extension / "domain" / "runtime_message_service.js").read_text(encoding="utf-8")
         for command in (
-            "ping", "state", "simple-relay-bind", "simple-relay-send",
+            "ping", "presence", "state", "simple-relay-bind", "simple-relay-send",
             "simple-relay-return", "new-chat-send", "rename-conversation",
             "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
             "retire-composer-draft", "retire-recovered-execution",
-            "delivery-manager-status", "send-to-tab", "close-conversation-tab",
+            "delivery-manager-status", "delivery-response-read", "send-to-tab", "close-conversation-tab",
             "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
             "create-tab-group", "add-tab-to-group", "remove-tab-from-group",
             "move-tab-group", "update-tab-group",

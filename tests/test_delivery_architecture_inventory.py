@@ -48,9 +48,9 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
             },
             "ORCHESTRATION_COMMANDS": {"send"},
             "READ_ONLY_COMMANDS": {
-                "ping", "state", "result", "rename-receipt", "probe",
+                "ping", "presence", "state", "result", "rename-receipt", "probe",
                 "probe-tabs", "diagnose-activity", "diagnose-composer",
-                "delivery-manager-status", "delivery-recovery-inspect",
+                "delivery-manager-status", "delivery-response-read", "delivery-recovery-inspect",
                 "diagnose-conversation-ui", "api-probe", "main-capture-get",
                 "windows-list", "window-get", "tab-get", "tab-groups-list",
                 "tab-group-get", "read-latest-assistant",
