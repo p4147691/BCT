@@ -155,7 +155,7 @@ def run_monitor_conversation_scope_update(
     This is metadata only. It does not create a Work, acquire a Claim, elect a
     privileged Manager, or perform any browser action.
     """
-    operation = str(payload.get("operation") or "node-info-set").strip().casefold()
+    operation = str(payload.get("operation") or "set-node-info").strip().casefold()
     if operation == "manager-transfer":
         allowed = {
             "operation", "project_id", "predecessor_conversation_key",

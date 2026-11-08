@@ -432,7 +432,7 @@ function loadModule() {
   successorManager.monitorBctCommitRoleLongPress();
   await Promise.resolve();
   await Promise.resolve();
-  assert.equal(roleUpdates.length, 4, "explicit succession must not create a second Manager through node-info-set");
+  assert.equal(roleUpdates.length, 4, "explicit succession must not create a second Manager through set-node-info");
   assert.equal(managerTransfers.length, 1, "explicit succession uses the atomic Manager transfer path");
   assert.equal(managerTransfers[0].manager.managerNodeLabel, "N98");
   assert.match(holdContext.statusMessages.at(-1), /역할을 넘겼습니다/);

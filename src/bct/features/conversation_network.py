@@ -21,6 +21,7 @@ _NODE_LABEL = re.compile(r"N[1-9][0-9]*\Z", re.I)
 _UUID = re.compile(
     r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\Z", re.I
 )
+_NODE_INFO_SET_OPERATIONS = {"set-node-info", "node-info-set"}
 
 
 class ConversationNetworkUpdateFeature:
@@ -46,8 +47,8 @@ class ConversationNetworkUpdateFeature:
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "role-patch").strip().casefold()
-        if operation == "node-info-set":
-            return self._prepare_node_info_set(arguments)
+        if operation in _NODE_INFO_SET_OPERATIONS:
+            return self._prepare_node_info_set(arguments, operation=operation)
         if operation == "network-name-set":
             return self._prepare_network_name_set(arguments)
         if operation == "project-upsert":
@@ -58,7 +59,9 @@ class ConversationNetworkUpdateFeature:
             return self._prepare_membership_assign(arguments)
         raise PreconditionError("CONVERSATION_NETWORK_UPDATE_OPERATION_INVALID")
 
-    def _prepare_node_info_set(self, arguments: dict[str, Any]) -> FeatureRequest:
+    def _prepare_node_info_set(
+        self, arguments: dict[str, Any], *, operation: str
+    ) -> FeatureRequest:
         allowed = {"operation", "conversation_key", "display_name", "scope_name",
                    "role_tags", "expected_scope_id", "expected_role_tags_sha256",
                    "node_memo", "assigned_task"}
@@ -76,7 +79,9 @@ class ConversationNetworkUpdateFeature:
         if expected_sha and not _SHA256.fullmatch(expected_sha):
             raise PreconditionError("CONVERSATION_NETWORK_ROLE_TAGS_SHA256_INVALID")
         tags = self._tags(arguments.get("role_tags", []), "CONVERSATION_NETWORK_ROLE_TAGS_INVALID")
-        values = {"operation": "node-info-set", "conversation_key": key,
+        # Keep an already-recorded legacy operation verbatim so its receipt can
+        # be replayed exactly.  New callers emit the canonical set-node-info.
+        values = {"operation": operation, "conversation_key": key,
                   "display_name": name, "scope_name": scope, "role_tags": tags,
                   "expected_scope_id": expected_scope,
                   "expected_role_tags_sha256": expected_sha}
@@ -193,7 +198,7 @@ class ConversationNetworkUpdateFeature:
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
         operation = request.arguments["operation"]
-        if operation == "node-info-set":
+        if operation in _NODE_INFO_SET_OPERATIONS:
             values = request.arguments
             try:
                 result = configure_conversation_scope(

@@ -52,12 +52,12 @@ class ConversationNetworkUpdateFeatureTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def test_ai_node_info_set_uses_monitor_core_and_preserves_metadata(self):
+    def test_ai_set_node_info_uses_monitor_core_and_preserves_metadata(self):
         first = self.bct.operations.run(
             principal=self.principal, work_id="role-work",
-            operation_id="node-info-set-1", capability="conversation_network_update",
+            operation_id="set-node-info-1", capability="conversation_network_update",
             arguments={
-                "operation": "node-info-set", "conversation_key": MANAGER,
+                "operation": "set-node-info", "conversation_key": MANAGER,
                 "display_name": "매니저", "scope_name": "새 대화망",
                 "role_tags": ["Manager"], "expected_scope_id": self.configured["scope_id"],
                 "expected_role_tags_sha256": self.configured["role_tags_sha256"],
@@ -71,15 +71,37 @@ class ConversationNetworkUpdateFeatureTests(unittest.TestCase):
         self.assertEqual("진행 중", current["assigned_task"])
         duplicate = self.bct.operations.run(
             principal=self.principal, work_id="role-work",
-            operation_id="node-info-set-1", capability="conversation_network_update",
+            operation_id="set-node-info-1", capability="conversation_network_update",
             arguments={
-                "operation": "node-info-set", "conversation_key": MANAGER,
+                "operation": "set-node-info", "conversation_key": MANAGER,
                 "display_name": "매니저", "scope_name": "새 대화망",
                 "role_tags": ["Manager"], "expected_scope_id": self.configured["scope_id"],
                 "expected_role_tags_sha256": self.configured["role_tags_sha256"],
                 "node_memo": "기존 메모", "assigned_task": "진행 중",
             },
         )
+        self.assertTrue(duplicate.duplicate)
+
+    def test_legacy_node_info_set_direction_remains_replayable(self):
+        arguments = {
+            "operation": "node-info-set", "conversation_key": MANAGER,
+            "display_name": "매니저", "scope_name": "테스트 대화망",
+            "role_tags": ["Manager", "조정"],
+            "expected_scope_id": self.configured["scope_id"],
+            "expected_role_tags_sha256": self.configured["role_tags_sha256"],
+            "node_memo": "기존 Direction의 메모",
+        }
+        first = self.bct.operations.run(
+            principal=self.principal, work_id="role-work",
+            operation_id="node-info-set-legacy-1",
+            capability="conversation_network_update", arguments=arguments,
+        )
+        duplicate = self.bct.operations.run(
+            principal=self.principal, work_id="role-work",
+            operation_id="node-info-set-legacy-1",
+            capability="conversation_network_update", arguments=arguments,
+        )
+        self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(duplicate.duplicate)
 
     def test_ai_network_name_set_preserves_member_identity(self):

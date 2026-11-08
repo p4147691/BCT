@@ -50,7 +50,7 @@ X가 더 필요함  → X → X → … → X → A
         → 대화 UUID 확인 뒤 supervisor 역할을 기록
         → bct_check_conversation_network 재확인
       supervisor=MULTIPLE: A가 어느 하나를 정리할지 판단
-  → 필요하면 bct_set_conversation_network(node-info-set)으로
+  → 필요하면 bct_set_conversation_network(set-node-info)으로
       대화망·노드 이름·역할·메모·담당 작업을 함께 기록
   → bct_check_conversation_network로 다시 확인
 
@@ -127,7 +127,7 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 새 Chat 창 생성
 → 첫 감독관 초기 지시를 정확히 한 번 보냄
 → ChatGPT가 대화 UUID를 생성하고 RCC가 이를 확인
-→ bct_set_conversation_network(node-info-set)으로 supervisor 역할·이름·메모를 기록
+→ bct_set_conversation_network(set-node-info)으로 supervisor 역할·이름·메모를 기록
 → bct_check_conversation_network에서 supervisor=PRESENT 확인
 ```
 
@@ -135,7 +135,7 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 프로젝트 작업 지시와는 구분한다. BCT는 그 지시 내용을 스스로 쓰거나 보내지
 않는다.
 
-역할만 기록할 때는 `bct_set_conversation_network(operation="node-info-set")`으로 한 노드의
+역할만 기록할 때는 `bct_set_conversation_network(operation="set-node-info")`으로 한 노드의
 `role_tags`에 `supervisor`를 넣는다. 실제 대화망 구성까지 필요할 때만 같은
 설정 경로의 대화망 생성·소속 설정 단계를 이어 붙인다. 이 설정은 대상 선택을
 도울 뿐, 권한을 만들거나 메시지를 보내지 않는다.
