@@ -79,7 +79,7 @@ function makeRoot() {
   block.appendChild(toolbar);
   root.appendChild(block);
   const buttons = new Map();
-  for (const id of layout.BUTTONS) {
+  for (const id of [...layout.BUTTONS, ...layout.TRAILING_BUTTONS]) {
     const button = new FakeElement(id);
     toolbar.appendChild(button);
     buttons.set(id, button);
@@ -179,7 +179,7 @@ async function main() {
   assert.equal(first.root.querySelector("#bwmUiLayoutEditor"), null, "no overlay");
   assert.equal(storage.data.get("existingWorkerColumnsPreference"), 3);
   assert.equal(storage.mutations, 0, "configuration read does not mutate existing storage");
-  assert.deepEqual(first.toolbar.children.map(x => x.id), layout.BUTTONS);
+  assert.deepEqual(first.toolbar.children.map(x => x.id), [...layout.BUTTONS, ...layout.TRAILING_BUTTONS]);
   assert.equal(first.toolbar.styleValues["--bwm-ui-toolbar-gap"], "2px");
   assert.equal(first.root.styleValues["--bwm-node-title-size"], "12px");
   assert.equal(first.root.styleValues["--bwm-node-card-min-height"], "36px");
@@ -232,12 +232,12 @@ async function main() {
   assert.equal(first.buttons.get("monitorRccReload"), rccButton);
   rccButton.click();
   assert.equal(clicks, 2, "real button handlers retained");
-  assert.deepEqual(first.toolbar.children.map(x => x.id), reverse);
+  assert.deepEqual(first.toolbar.children.map(x => x.id), [...reverse, ...layout.TRAILING_BUTTONS]);
   assert.equal(first.buttons.get("monitorMcpTunnelRecover").hidden, true);
   assert.equal(storage.data.get("existingWorkerColumnsPreference"), 3);
   nextRemote = { status: "READY", config: { version: 1, toolbar: { placement: "javascript:bad" } } };
   await controller.refreshRemote();
-  assert.deepEqual(first.toolbar.children.map(x => x.id), reverse, "bad remote config ignored");
+  assert.deepEqual(first.toolbar.children.map(x => x.id), [...reverse, ...layout.TRAILING_BUTTONS], "bad remote config ignored");
   assert.equal(first.toolbar.parentNode, first.line);
   await assert.rejects(async () => layout.normalize({
     version:1,toolbar:{order:["random"],hidden:[]}
