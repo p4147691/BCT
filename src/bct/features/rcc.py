@@ -2338,10 +2338,11 @@ class BrowserFeature:
             try:
                 # A newly installed extension is not active until the reload
                 # itself succeeds.  Use the established wire spelling for
-                # this one bootstrap proof so an already-running prior
-                # extension can authorize its own upgrade.  The actual reload
-                # below still crosses the canonical ``rcc_reload_extension``
-                # boundary via ``_request_rcc``.
+                # this bootstrap proof so an already-running prior extension
+                # can authorize its own upgrade.  The reload request below
+                # uses the same compatibility spelling; after it succeeds,
+                # every ordinary command crosses the canonical ``rcc_*``
+                # wire boundary.
                 state_reply = self.client.request(
                     instance_id=values["instance_id"],
                     request_id="rcc-reload-idle-" + hashlib.sha256(
@@ -2443,12 +2444,19 @@ class BrowserFeature:
                 (_RECONCILE_COMMANDS | {"result-of-create-and-send"})
                 else values["command"]
             )
-            result = self._request_rcc(
-                instance_id=values["instance_id"], request_id=request.operation_id,
-                command=host_command, to=values["to"], text=values["text"],
-                extra=({} if values["command"] == "reconcile-send" else extra),
-                timeout_s=values["timeout_s"],
-            )
+            request_values = {
+                "instance_id": values["instance_id"], "request_id": request.operation_id,
+                "command": host_command, "to": values["to"], "text": values["text"],
+                "extra": ({} if values["command"] == "reconcile-send" else extra),
+                "timeout_s": values["timeout_s"],
+            }
+            # The public action is rcc_reload_extension, but an installed
+            # previous extension cannot understand that new wire value until
+            # it has reloaded its newly installed files.  This is the one
+            # intentional bootstrap alias at the wire boundary.
+            result = (self.client.request(**request_values)
+                      if values["command"] == "reload-extension"
+                      else self._request_rcc(**request_values))
         except RelayUnavailable as exc:
             raise ConfirmedFailure(str(exc), release_claims=True) from exc
         except RelayEffectUnknown as exc:
