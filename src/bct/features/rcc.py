@@ -37,6 +37,7 @@ _READ_COMMANDS = {
     "tab-get", "windows-list", "window-get", "tab-groups-list", "tab-group-get", "read-latest-assistant",
     "ping", "probe", "probe-tabs", "diagnose-activity", "diagnose-composer",
     "diagnose-conversation-ui", "api-probe", "main-capture-get", "rename-receipt",
+    "delivery-result",
 }
 _RECONCILE_COMMANDS = {
     "reconcile-send-to-created-tab", "reconcile-create-and-send",
@@ -81,14 +82,95 @@ _RCC_NATIVE_COMMANDS = {
     "state", "tab-get", "tab-group-get", "tab-groups-list", "update-tab-group",
     "window-get", "windows-list",
 }
+_RCC_CANONICAL_PUBLIC_BY_NATIVE = {
+    "add-tab-to-group": "rcc_move_tab_to_group",
+    "api-probe": "rcc_get_conversation_api_response",
+    "close-conversation-tab": "rcc_close_conversation_tab",
+    "conversation-bind": "rcc_bind_conversation_to_node",
+    "create-chat-tab": "rcc_create_chat_tab",
+    "create-chat-window": "rcc_create_chat_window",
+    "create-tab-group": "rcc_create_tab_group_from_tabs",
+    "delivery-cancel": "rcc_cancel_delivery",
+    "delivery-manager-status": "rcc_get_delivery_manager_response",
+    "delivery-recovery-inspect": "rcc_get_delivery_recovery_evidence",
+    "delivery-response-read": "rcc_get_delivery_response",
+    "delivery-return": "rcc_return_delivery_to_manager",
+    "delivery-start": "rcc_start_delivery_to_worker",
+    "delivery-status": "rcc_get_delivery_evidence",
+    "diagnose-activity": "rcc_get_conversation_activity",
+    "diagnose-composer": "rcc_get_composer_state",
+    "diagnose-conversation-ui": "rcc_get_conversation_ui_diagnostics",
+    "main-capture-get": "rcc_get_conversation_capture",
+    "move-tab": "rcc_move_tab_to_window",
+    "move-tab-group": "rcc_move_tab_group_to_window",
+    "new-chat-send": "rcc_create_chat_and_send_message",
+    "node-label-notify": "rcc_update_conversation_favicon",
+    "ping": "rcc_get_extension_connection",
+    "presence": "rcc_get_target_availability",
+    "probe": "rcc_check_target_tab_response",
+    "probe-tabs": "rcc_check_chat_tab_responses",
+    "read-latest-assistant": "rcc_get_latest_assistant_message",
+    "reload-extension": "rcc_reload_extension",
+    "remove-tab-from-group": "rcc_move_tab_from_group",
+    "rename-conversation": "rcc_rename_conversation",
+    "rename-receipt": "rcc_get_conversation_rename_evidence",
+    "result": "rcc_get_operation_result",
+    "retire-composer-draft": "rcc_retire_delivery_draft",
+    "retire-recovered-execution": "rcc_retire_recovered_delivery_execution",
+    "send": "rcc_send_message",
+    "send-to-created-tab": "rcc_send_message_to_created_tab",
+    "send-to-tab": "rcc_send_message_to_tab",
+    "simple-relay-bind": "rcc_bind_simple_relay",
+    "simple-relay-return": "rcc_return_simple_relay_response",
+    "simple-relay-send": "rcc_send_simple_relay_message",
+    "state": "rcc_get_extension_state",
+    "tab-get": "rcc_get_tab",
+    "tab-group-get": "rcc_get_tab_group",
+    "tab-groups-list": "rcc_list_tab_groups",
+    "update-tab-group": "rcc_update_tab_group",
+    "window-get": "rcc_get_window",
+    "windows-list": "rcc_list_windows",
+}
+assert set(_RCC_CANONICAL_PUBLIC_BY_NATIVE) == _RCC_NATIVE_COMMANDS
 _RCC_PUBLIC_TO_NATIVE_COMMAND = {
+    public: native for native, public in _RCC_CANONICAL_PUBLIC_BY_NATIVE.items()
+}
+# Public spellings before the vocabulary pass and the unprefixed wire spellings
+# remain accepted.  They are compatibility aliases only: catalogues advertise
+# the canonical names above, while installed RCC extensions continue to receive
+# their unchanged, versioned wire command.
+_RCC_COMPAT_PUBLIC_TO_NATIVE_COMMAND = {
     "rcc_" + command.replace("-", "_"): command for command in _RCC_NATIVE_COMMANDS
 }
 _RCC_NATIVE_TO_PUBLIC_COMMAND = {
     native: public for public, native in _RCC_PUBLIC_TO_NATIVE_COMMAND.items()
 }
+_RCC_NATIVE_TO_WIRE_COMMAND = {
+    command: "rcc_" + command.replace("-", "_") for command in _RCC_NATIVE_COMMANDS
+}
 _BCT_COMMANDS = _COMMANDS - _RCC_NATIVE_COMMANDS
+_BCT_CANONICAL_PUBLIC_BY_INTERNAL = {
+    "create-and-send": "bct_create_chat_and_send_message",
+    "delivery-preview": "bct_preview_delivery_message",
+    "delivery-result": "bct_get_delivery_result",
+    "inspect-rename-receipt": "bct_get_conversation_rename_evidence",
+    "node-continue": "bct_continue_node_message",
+    "quarantine-legacy-rename-claim": "bct_quarantine_legacy_rename_claim",
+    "reclassify-rename-claim": "bct_reclassify_rename_claim",
+    "reconcile-create-and-send": "bct_reconcile_created_chat_and_send",
+    "reconcile-rename-conversation": "bct_reconcile_conversation_rename",
+    "reconcile-send": "bct_reconcile_message_send",
+    "reconcile-send-to-created-tab": "bct_reconcile_created_chat_message_send",
+    "result-of-create-and-send": "bct_get_created_chat_send_result",
+    "send-message": "bct_send_message",
+    "send-to-self": "bct_send_message_to_self",
+    "target-discover": "bct_discover_target",
+}
+assert set(_BCT_CANONICAL_PUBLIC_BY_INTERNAL) == _BCT_COMMANDS
 _BCT_PUBLIC_TO_INTERNAL_COMMAND = {
+    public: internal for internal, public in _BCT_CANONICAL_PUBLIC_BY_INTERNAL.items()
+}
+_BCT_COMPAT_PUBLIC_TO_INTERNAL_COMMAND = {
     "bct_" + command.replace("-", "_"): command for command in _BCT_COMMANDS
 }
 _BCT_INTERNAL_TO_PUBLIC_COMMAND = {
@@ -99,7 +181,7 @@ _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
 
 
-def command_catalog() -> list[dict[str, str]]:
+def command_catalog() -> list[dict[str, Any]]:
     """Return public names with an explicit RCC-versus-BCT ownership boundary."""
     special = {
         _RENAME_INSPECTION_COMMAND: "recovery-read",
@@ -109,7 +191,7 @@ def command_catalog() -> list[dict[str, str]]:
         "delivery-response-read": "delivery-read",
         "delivery-preview": "delivery-read",
     }
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     for command in sorted(_COMMANDS):
         category = (
             "read" if command in _READ_COMMANDS
@@ -122,16 +204,57 @@ def command_catalog() -> list[dict[str, str]]:
                 "command": _RCC_NATIVE_TO_PUBLIC_COMMAND[command],
                 "category": category,
                 "origin": "rcc-native",
+                "group": _command_group(command),
                 "legacy_alias": command,
+                "compatibility_alias": "rcc_" + command.replace("-", "_"),
             })
         else:
             rows.append({
                 "command": _BCT_INTERNAL_TO_PUBLIC_COMMAND[command],
                 "category": category,
                 "origin": "bct",
+                "group": _command_group(command),
                 "legacy_alias": command,
+                "compatibility_alias": "bct_" + command.replace("-", "_"),
             })
     return rows
+
+
+def _command_group(command: str) -> str:
+    """Return a stable display group; this never changes execution semantics."""
+    if command.startswith("simple-relay-"):
+        return "compatibility-legacy-relay"
+    if command.startswith("delivery-") or command == "delivery-result":
+        return "delivery-process"
+    if command in {
+        "state", "presence", "ping", "probe", "probe-tabs", "result",
+        "target-discover", "tab-get", "windows-list", "window-get",
+        "tab-groups-list", "tab-group-get",
+    }:
+        return "status-and-targets"
+    if command in {
+        "diagnose-activity", "diagnose-composer", "diagnose-conversation-ui",
+        "api-probe", "main-capture-get", "read-latest-assistant",
+    }:
+        return "diagnostics-and-reading"
+    if command in {
+        "create-chat-tab", "create-chat-window", "create-tab-group", "move-tab",
+        "move-tab-group", "add-tab-to-group", "remove-tab-from-group",
+        "update-tab-group", "close-conversation-tab", "reload-extension",
+    }:
+        return "chrome-layout-and-maintenance"
+    if command in {
+        "conversation-bind", "rename-conversation", "rename-receipt",
+        "node-label-notify", "inspect-rename-receipt", "reconcile-rename-conversation",
+        "reclassify-rename-claim", "quarantine-legacy-rename-claim",
+    }:
+        return "conversation-identity-and-display"
+    if command in {
+        "send", "send-to-tab", "send-to-created-tab", "new-chat-send",
+        "create-and-send", "send-message", "send-to-self", "node-continue",
+    }:
+        return "message-and-new-chat"
+    return "recovery-and-reconciliation"
 
 
 def recipe_catalog() -> list[dict[str, Any]]:
@@ -144,42 +267,42 @@ def recipe_catalog() -> list[dict[str, Any]]:
         {
             "recipe": "inspect-target",
             "purpose": "Read the current RCC endpoint and choose one exact target.",
-            "steps": ["rcc_state", "rcc_windows_list", "rcc_tab_get"],
+            "steps": ["rcc_get_extension_state", "rcc_list_windows", "rcc_get_tab"],
         },
         {
             "recipe": "read-latest-assistant",
             "purpose": "Read only the latest assistant response from one exact conversation.",
-            "steps": ["rcc_state", "rcc_read_latest_assistant"],
+            "steps": ["rcc_get_extension_state", "rcc_get_latest_assistant_message"],
         },
         {
             "recipe": "send-existing-conversation",
             "purpose": "Send once to an already identified conversation and read its receipt.",
-            "steps": ["rcc_state", "rcc_send_to_tab", "rcc_result"],
+            "steps": ["rcc_get_extension_state", "rcc_send_message_to_tab", "rcc_get_operation_result"],
         },
         {
             "recipe": "create-chat-and-send",
             "purpose": "Create one tab, send its first message once, then inspect the receipt.",
-            "steps": ["bct_target_discover", "rcc_new_chat_send", "rcc_result"],
+            "steps": ["bct_discover_target", "rcc_create_chat_and_send_message", "rcc_get_operation_result"],
         },
         {
             "recipe": "bind-existing-conversation",
             "purpose": "Record one exact opened conversation under a caller-chosen workflow label.",
-            "steps": ["rcc_state", "rcc_tab_get", "rcc_conversation_bind"],
+            "steps": ["rcc_get_extension_state", "rcc_get_tab", "rcc_bind_conversation_to_node"],
         },
         {
             "recipe": "rename-conversation",
             "purpose": "Confirm one target then rename it; an UNKNOWN result is reconciled, never resent.",
-            "steps": ["rcc_state", "rcc_rename_conversation", "bct_inspect_rename_receipt", "bct_reconcile_rename_conversation"],
+            "steps": ["rcc_get_extension_state", "rcc_rename_conversation", "bct_get_conversation_rename_evidence", "bct_reconcile_conversation_rename"],
         },
         {
             "recipe": "arrange-tabs",
             "purpose": "Inspect a target, then move or group exactly the selected tab.",
-            "steps": ["rcc_state", "rcc_move_tab", "rcc_create_tab_group", "rcc_add_tab_to_group"],
+            "steps": ["rcc_get_extension_state", "rcc_move_tab_to_window", "rcc_create_tab_group_from_tabs", "rcc_move_tab_to_group"],
         },
         {
             "recipe": "recover-unknown-send",
             "purpose": "Read the original receipt and reconcile the same operation without a second send.",
-            "steps": ["rcc_result", "bct_reconcile_send"],
+            "steps": ["rcc_get_operation_result", "bct_reconcile_message_send"],
         },
         {
             "recipe": "reload-installed-extension",
@@ -337,14 +460,16 @@ class BrowserFeature:
         self._target_snapshots: dict[tuple[str, str], str] = {}
 
     def _request_rcc(self, **kwargs: Any) -> dict[str, Any]:
-        """Send the canonical RCC wire command while retaining legacy core logic.
+        """Send the installed RCC wire alias while retaining canonical public names.
 
         ``prepare`` stores the long-standing internal command spelling so its
-        receipt and recovery rules remain stable.  The extension boundary is
-        the one place that must speak the versioned ``rcc_*`` protocol.
+        receipt and recovery rules remain stable.  Installed extension builds
+        speak the established versioned ``rcc_<legacy>`` spelling; the public
+        canonical name is resolved before this boundary and is not a second
+        wire protocol.
         """
         command = str(kwargs.get("command") or "")
-        kwargs["command"] = _RCC_NATIVE_TO_PUBLIC_COMMAND.get(command, command)
+        kwargs["command"] = _RCC_NATIVE_TO_WIRE_COMMAND.get(command, command)
         return self.client.request(**kwargs)
 
     def _self_attachment(
@@ -798,11 +923,20 @@ class BrowserFeature:
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         requested_command = str(arguments.get("command") or "").strip().lower()
         # ``rcc_*`` is the public spelling for an extension-native command.
-        # The extension's unprefixed spelling remains a compatibility alias
-        # until every installed RCC version has moved to the new protocol.
+        # Canonical public names describe the action and its target.  Older
+        # public spellings and the extension's unprefixed wire spelling remain
+        # compatibility aliases until every installed RCC version has moved.
         command = _RCC_PUBLIC_TO_NATIVE_COMMAND.get(
             requested_command,
-            _BCT_PUBLIC_TO_INTERNAL_COMMAND.get(requested_command, requested_command),
+            _RCC_COMPAT_PUBLIC_TO_NATIVE_COMMAND.get(
+                requested_command,
+                _BCT_PUBLIC_TO_INTERNAL_COMMAND.get(
+                    requested_command,
+                    _BCT_COMPAT_PUBLIC_TO_INTERNAL_COMMAND.get(
+                        requested_command, requested_command,
+                    ),
+                ),
+            ),
         )
         if command == "delayed-send-cancel":
             return self._prepare_delayed_cancel(work=work,arguments=arguments)
@@ -828,8 +962,17 @@ class BrowserFeature:
             "command": command, "instance_id": instance_id,
             "timeout_s": timeout_s, "to": "", "text": "", "extra": {},
         }
-        if (command in {"result", "result-of-create-and-send", _RENAME_INSPECTION_COMMAND,
-                        _OPERATOR_QUARANTINE_COMMAND}
+        if command == "delivery-result":
+            allowed.add("delivery_id")
+            delivery_id = str(arguments.get("delivery_id") or "").strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", delivery_id):
+                raise PreconditionError("RCC_DELIVERY_ID_INVALID")
+            prepared["extra"].update({
+                "deliveryId": delivery_id,
+                "workId": work.work_id,
+            })
+        elif (command in {"result", "result-of-create-and-send", _RENAME_INSPECTION_COMMAND,
+                          _OPERATOR_QUARANTINE_COMMAND}
                 or command in _RECONCILE_COMMANDS):
             allowed.add("relay_id")
             relay_id = str(arguments.get("relay_id") or "").strip()
@@ -2165,6 +2308,39 @@ class BrowserFeature:
             }, output=result)
         if request.arguments["command"] in {"send-to-self", "node-continue"}:
             return self._execute_self_command(request)
+        if request.arguments["command"] == "delivery-result":
+            if self.delivery_ledger is None:
+                raise ConfirmedFailure("RCC_DELIVERY_LEDGER_UNAVAILABLE", release_claims=True)
+            extra = request.arguments["extra"]
+            try:
+                delivery = self.delivery_ledger.get_for_work(
+                    delivery_id=extra["deliveryId"], work_id=extra["workId"],
+                )
+            except (KeyError, ConflictError) as exc:
+                raise PreconditionError("RCC_DELIVERY_NOT_FOUND") from exc
+            state = str(delivery["state"])
+            # This is a read-only conclusion from the durable delivery ledger.
+            # A failed or review-required boundary remains UNKNOWN rather than
+            # encouraging a second send under a new operation id.
+            result_status = (
+                "APPLIED" if state == DeliveryState.RETURNED.value
+                else "NOT_APPLIED" if state == DeliveryState.NOT_APPLIED.value
+                else "UNKNOWN" if state in {
+                    DeliveryState.NEEDS_REVIEW.value, DeliveryState.FAILED.value,
+                }
+                else "PENDING"
+            )
+            return FeatureResult(
+                Outcome.APPLIED,
+                {
+                    "command": "delivery-result",
+                    "delivery_id": extra["deliveryId"],
+                    "delivery_state": state,
+                    "result_status": result_status,
+                },
+                release_claims=True,
+                output={"delivery": delivery, "result_status": result_status},
+            )
         if request.arguments["command"] == "delivery-preview":
             if self.delivery_ledger is None:
                 raise ConfirmedFailure(

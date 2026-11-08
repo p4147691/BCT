@@ -112,6 +112,32 @@ class DeliveryFeatureTests(unittest.TestCase):
             call["extra"]["deliveryId"] == "delivery-001" for call in self.host.calls
         ))
 
+    def test_delivery_result_is_read_only_and_never_replays_unknown(self) -> None:
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            request_sha256=hashlib.sha256(b"one exact delivery").hexdigest(),
+        )
+        pending = self.execute({
+            **self.base, "command": "bct_get_delivery_result",
+        }, "result-pending")
+        self.assertEqual(Outcome.APPLIED, pending.outcome)
+        self.assertEqual("PENDING", pending.evidence["result_status"])
+        self.assertEqual(0, len(self.host.calls))
+
+        self.feature.delivery_ledger.observe(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+            observation={"error_code": "UNPROVEN"},
+        )
+        unknown = self.execute({
+            **self.base, "command": "bct_get_delivery_result",
+        }, "result-unknown")
+        self.assertEqual("UNKNOWN", unknown.evidence["result_status"])
+        self.assertEqual(0, len(self.host.calls))
+
     def test_busy_manager_return_is_queued_without_false_failure(self) -> None:
         self.execute({
             **self.base, "command": "delivery-start",

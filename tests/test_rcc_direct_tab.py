@@ -23,10 +23,26 @@ class DirectTabPrepareTests(unittest.TestCase):
         self.assertEqual("send-to-tab", request.arguments["command"])
         self.assertTrue(request.preconditions["mutating"])
 
+    def test_canonical_public_name_uses_the_existing_native_transport(self):
+        request = self.feature.prepare(
+            work=self.work,
+            arguments={**self.args, "command": "rcc_send_message_to_tab"},
+        )
+        self.assertEqual("send-to-tab", request.arguments["command"])
+        self.assertTrue(request.preconditions["mutating"])
+
     def test_bct_prefixed_composition_name_uses_the_existing_internal_command(self):
         request = self.feature.prepare(
             work=self.work,
             arguments={"command": "bct_target_discover", "instance_id": self.args["instance_id"]},
+        )
+        self.assertEqual("target-discover", request.arguments["command"])
+        self.assertFalse(request.preconditions["mutating"])
+
+    def test_canonical_bct_composition_name_uses_the_existing_internal_command(self):
+        request = self.feature.prepare(
+            work=self.work,
+            arguments={"command": "bct_discover_target", "instance_id": self.args["instance_id"]},
         )
         self.assertEqual("target-discover", request.arguments["command"])
         self.assertFalse(request.preconditions["mutating"])
