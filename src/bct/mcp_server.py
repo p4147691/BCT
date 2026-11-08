@@ -73,18 +73,12 @@ _CAPABILITY_USAGE = {
         "Use one operation_id and never retry UNKNOWN with a new ID."
     ),
     "browser": (
-        "RCC contract rcc-send-message-v1. For ChatGPT messages use ONLY command=send-message "
-        "with exact instance_id, session_id, tab_id, window_id, text, and either "
-        "conversation_key (empty string for an existing blank tab) OR create_operation_id "
-        "(from a verified BCT-created window/tab in the SAME Work). The Core selects the "
-        "exact existing- or newly-created-target implementation under ONE BCT Operation. Never select a tab "
-        "by title or order, never fall back to another send command, and NEVER retry "
-        "UNKNOWN using a new operation. Use original receipt/result for recovery. "
-        "create-chat-window and create-chat-tab are independent creation commands. "
-        "The only caller-facing relay commands are create-chat-window, create-chat-tab, "
-        "and send-message. Lower-level compatibility commands, including raw state "
-        "inspection, are internal and unavailable through this tool. Use bct_status "
-        "for the current BCT state."
+        "RCC direct-command contract rcc-browser-command-v2. Discover every callable command with "
+        "bct_rcc_command_catalog and visible command sequences with bct_rcc_recipe_catalog; invoke each "
+        "step explicitly through bct_browser(arguments.command=...). Commands are not hidden by role or "
+        "ownership. Effects still require their exact target identity and one Operation receipt: never select "
+        "a tab by title or order, never substitute another conversation UUID, and NEVER retry UNKNOWN using "
+        "a new operation. Use the original receipt/result for reconciliation."
     ),
     "relay_control": "Execute one enabled hot-read relay purpose using arguments={\"purpose\":\"selected purpose\",\"scope_id\":\"project scope\",\"context\":{...},\"expected_settings_sha256\":\"preview revision\"}. The fixed registry permits one existing BCT operation step per invocation. Settings never grant authority: the Work must contain the delegated capability such as browser or cdp_inspect. Reuse operation_id only for the exact same frozen request and never retry UNKNOWN with a new ID.",
     "orchestrate": "Durable read-evidence manager/worker sessions. Use project-run-plan to select one advisory Manager conversation from an existing conversation scope, then start and sync a session, select a manager epoch, and project-run-bind the exact active RCC attachment. A later attachment generation for the same conversation may be rebound; stale generations are rejected only at the effect boundary. Use dispatch, tool-build-request, or chain-run for work. dispatch is one exact immediate target, not a fallback scheduler. Durable Manager FOLLOW_UP successors may instead include routing={affinity: REQUIRED|PREFERRED|ANY, fallbacks:[{node_id,attachment_id,attachment_generation}], allow_provision:boolean}; it is evaluated only before a send. REQUIRED holds then escalates, PREFERRED/ANY may use an idle fallback after policy wait, and allow_provision records PROVISION_REQUIRED for Manager judgment rather than creating a node automatically. tool-build-request is usable from any ordinary connected ChatGPT conversation: give session_id, assignment_id, tool_name, problem, required_behaviors, acceptance, and actions including read/write/test. It auto-resolves exactly one active Worker when unambiguous; otherwise pass worker_node_id or attachment_id. manager_epoch is optional internal fencing. It may implement, test, and use a tool only within the existing Work authority, then records PENDING_USER_REPORT. Read that report with tool-build-report; user later chooses KEEP, CHANGE, or RETIRE. Browser mutations run in background; recover with bct_operation_get. Recovery never resends an UNKNOWN effect.",
@@ -848,13 +842,14 @@ def build_mcp(
                                include_manual: bool = False, limit: int = 8, offset: int = 0) -> dict[str, Any]:
         started_ns = time.perf_counter_ns()
         tool_metadata = [tool.model_dump(mode="json", exclude_none=True) for tool in await server.list_tools()]
+        from bct.features.rcc import command_catalog
         value = {
             "capabilities": list(capabilities),
             "tools": [tool["name"] for tool in tool_metadata],
             # The live runtime contract takes precedence over client-cached tool descriptions.
             "browser_usage": _CAPABILITY_USAGE["browser"],
-            "browser_contract_version": "rcc-send-message-v1",
-            "browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"],
+            "browser_contract_version": "rcc-browser-command-v2",
+            "browser_public_commands": [item["command"] for item in command_catalog()],
             "message_entry_policy": public_entry_policy(),
             **discover(tools=tool_metadata, capabilities=capabilities, usage=_CAPABILITY_USAGE,
                        query=query, tool_name=tool_name, component_id=component_id,

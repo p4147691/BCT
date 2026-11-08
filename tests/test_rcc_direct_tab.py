@@ -56,12 +56,11 @@ class DirectTabPrepareTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         guide = (root / "docs" / "RCC_FIRST_USE.md").read_text(encoding="utf-8")
         catalogue = (root / "src" / "bct" / "mcp_server.py").read_text(encoding="utf-8")
-        for text in (guide, catalogue):
-            self.assertIn("send-to-tab", text)
+        self.assertIn("send-to-tab", guide)
         self.assertIn('conversation_key: ""', guide)
-        self.assertIn("send-message", catalogue)
-        self.assertIn("rcc-send-message-v1", catalogue)
-        self.assertIn('"browser_public_commands": ["create-chat-window", "create-chat-tab", "send-message"]', catalogue)
+        self.assertIn("bct_rcc_command_catalog", catalogue)
+        self.assertIn("rcc-browser-command-v2", catalogue)
+        self.assertIn("command_catalog", catalogue)
         relay_source = (root / "src" / "bct" / "features" / "rcc.py").read_text(encoding="utf-8")
         self.assertIn('if command == "send-message":', relay_source)
         self.assertIn('return self._prepare_send_message(work=work, arguments=arguments)', relay_source)

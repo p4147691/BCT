@@ -228,8 +228,8 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 4635,
-        "sha256": "fc87926f25548c7df3ff78712a2c75fa3d45d74ceb9a3b5cefd253a3e7464887"
+        "size": 4673,
+        "sha256": "fc40192a5647240ef26f0d8b577c032befff8dc457767da104552555ebd047d1"
       },
       {
         "path": "manifest.json",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "32f5459e6201c28f40113c1a84eca4254f6f70ff65fe5f1d8e1f47a5f7681401"
+    "aggregateSha256": "558c96e0829fa933b65df496c28c22bea1cc9bdf25443e7c3c3e0b700d4f6834"
   },
   "activeLoaderGraph": {
     "background": [
@@ -440,6 +440,7 @@
       ],
       "nativeReadOnly": [
         "ping",
+        "presence",
         "state",
         "result",
         "rename-receipt",
@@ -451,6 +452,7 @@
         "api-probe",
         "main-capture-get",
         "delivery-manager-status",
+        "delivery-response-read",
         "delivery-recovery-inspect",
         "tab-get",
         "windows-list",
