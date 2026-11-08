@@ -55,9 +55,14 @@ Scanned 557 source/test files. Counts are literal occurrences, not proven execut
 | `window-get` | read | src/bct/mcp_server.py (1); src/bct/core/operations.py (1); src/bct/features/rcc.py (2); modules/rcc/extension/test_browser_tab_create_adapter_v1.js (1) | Keep sealed; separate security review |
 | `windows-list` | read | src/bct/mcp_server.py (1); src/bct/core/operations.py (1); src/bct/features/rcc.py (1); modules/rcc/extension/test_legacy_command_policy_v6.js (2) | Keep sealed; separate security review |
 
-## Security boundaries
+## Confirmation and safety boundaries
+- **Confirmation procedure** here means checking the exact Work, Operation,
+  instance, session, tab, window and Conversation UUID before this one read is
+  performed.  It is not a Manager/Worker/Supervisor role gate and it does not
+  treat ownership history as an execution rank.
 - Existing `_SEALED_BROWSER_COMMANDS` remains unchanged.
-- Dedicated read tool uses the original authenticated `bct.operations.run` gateway with Work/Operation IDs.
+- Dedicated read tool reuses the existing `bct.operations.run` Work/Operation
+  confirmation path.
 - RCC validates exact session/tab/window/conversation identity; no alternate send/reconcile path.
 - No LIVE installation or restart; no UNKNOWN effect replay.
 - This literal scan does not prove all dynamic call sites or command reachability.
@@ -82,7 +87,7 @@ merely because their browser-side handler is read-only.
 
 `bct_rcc_read_latest_assistant` is intentionally the sole new MCP entry point:
 
-`MCP bearer principal + Work ID + Operation ID` -> `operations.run(browser)` ->
+`MCP caller identity + Work ID + Operation ID` -> `operations.run(browser)` ->
 `RccFeature.prepare/execute(read-latest-assistant)` -> `NamedPipeRelayClient`
 -> RCC Native Messaging router -> `readLatestAssistant`.
 

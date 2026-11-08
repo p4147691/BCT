@@ -3106,7 +3106,8 @@ def build_mcp(
 
     @server.tool(
         description=("Read the latest assistant response from one exact existing RCC ChatGPT tab. "
-                     "Requires an authorized browser Work and durable operation ID; "
+                     "Requires an exact Work and durable operation ID, which BCT verifies together "
+                     "with the RCC target identity before reading; "
                      "never sends, creates, reconciles, or retries an UNKNOWN effect."),
         structured_output=True,
     )
@@ -3116,8 +3117,8 @@ def build_mcp(
         conversation_key: str,
     ) -> dict[str, Any]:
         # The ordinary bct_browser executor deliberately seals this command.
-        # This single-purpose gateway retains the authenticated Operation
-        # authority and the existing RCC identity/receipt validation.
+        # This single-purpose gateway reuses the existing Work/Operation
+        # confirmation path and RCC identity/receipt validation.
         if not re.fullmatch(r"[a-f0-9]{32}", session_id):
             raise ValueError("RCC_READ_LATEST_ASSISTANT_IDENTITY_REQUIRED")
         key = conversation_key.strip().lower()

@@ -30,7 +30,7 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
             "conversation_key": "12345678-1234-1234-1234-123456789abc",
         }
 
-    async def test_exact_read_uses_existing_authorized_operation(self):
+    async def test_exact_read_uses_existing_work_operation_confirmation(self):
         tools = {t.name for t in await self.server.list_tools()}
         self.assertIn("bct_rcc_read_latest_assistant", tools)
         await self.server.call_tool("bct_rcc_read_latest_assistant", self.args)
@@ -57,7 +57,7 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
                         "bct_rcc_read_latest_assistant", {**self.args, field: value})
         self.assertEqual(self.operations.calls, [])
 
-    async def test_authority_denial_has_no_fallback_or_replay(self):
+    async def test_work_confirmation_failure_has_no_fallback_or_replay(self):
         def deny(**kwargs):
             self.operations.calls.append(kwargs)
             raise PermissionError("WORK_SCOPE_DENIED")
